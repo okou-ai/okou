@@ -557,11 +557,6 @@
       "owner": "publishAtomPlanInvoice$"
     },
     {
-      "id": "TX-0327",
-      "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
-      "owner": "publishConcurrencyInvoice$"
-    },
-    {
       "id": "TX-0329",
       "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
       "owner": "publishLegacyPlanSubscription$"

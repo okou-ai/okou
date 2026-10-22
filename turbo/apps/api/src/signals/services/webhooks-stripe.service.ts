@@ -37,7 +37,17 @@ import {
   usagePackAllocations,
 } from "@okouai/db/schema/usage-pack-subscription";
 import { command } from "ccstate";
-import { and, eq, gt, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  notInArray,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -2619,6 +2629,46 @@ function retiredConcurrencyState(
   };
 }
 
+/** Preserve partial-insert defaults and publish invoice lines only with a projection. */
+function concurrencyInvoiceEntitlementsInsertSql(
+  projectionRows: SQL,
+  values: readonly ConcurrencyInvoiceEntitlementValue[],
+): SQL {
+  const rows = values.map((value) => {
+    return sql`(
+      ${sql.param(value.orgId, orgConcurrencyEntitlements.orgId)}::text,
+      ${sql.param(value.stripeSubscriptionId, orgConcurrencyEntitlements.stripeSubscriptionId)}::text,
+      ${sql.param(value.stripeInvoiceId, orgConcurrencyEntitlements.stripeInvoiceId)}::text,
+      ${sql.param(value.stripeInvoiceLineId, orgConcurrencyEntitlements.stripeInvoiceLineId)}::text,
+      ${sql.param(value.stripePriceId, orgConcurrencyEntitlements.stripePriceId)}::text,
+      ${sql.param(value.slots, orgConcurrencyEntitlements.slots)}::integer,
+      ${sql.param(value.startsAt, orgConcurrencyEntitlements.startsAt)}::timestamp,
+      ${sql.param(value.expiresAt, orgConcurrencyEntitlements.expiresAt)}::timestamp
+    )`;
+  });
+  // Drizzle insert-select requires every column; retain the database-owned UUID
+  // and created_at defaults instead of manufacturing either value in application code.
+  return sql`INSERT INTO ${orgConcurrencyEntitlements} (
+    ${sql.identifier(orgConcurrencyEntitlements.orgId.name)},
+    ${sql.identifier(orgConcurrencyEntitlements.stripeSubscriptionId.name)},
+    ${sql.identifier(orgConcurrencyEntitlements.stripeInvoiceId.name)},
+    ${sql.identifier(orgConcurrencyEntitlements.stripeInvoiceLineId.name)},
+    ${sql.identifier(orgConcurrencyEntitlements.stripePriceId.name)},
+    ${sql.identifier(orgConcurrencyEntitlements.slots.name)},
+    ${sql.identifier(orgConcurrencyEntitlements.startsAt.name)},
+    ${sql.identifier(orgConcurrencyEntitlements.expiresAt.name)}
+  ) SELECT invoice_rows.org_id, invoice_rows.stripe_subscription_id,
+    invoice_rows.stripe_invoice_id, invoice_rows.stripe_invoice_line_id,
+    invoice_rows.stripe_price_id, invoice_rows.slots,
+    invoice_rows.starts_at, invoice_rows.expires_at
+  FROM (VALUES ${sql.join(rows, sql`, `)}) AS invoice_rows(
+    org_id, stripe_subscription_id, stripe_invoice_id, stripe_invoice_line_id,
+    stripe_price_id, slots, starts_at, expires_at
+  ) CROSS JOIN (${projectionRows}) AS published_projection
+  WHERE true
+  ON CONFLICT DO NOTHING`;
+}
+
 const publishConcurrencyInvoice$ = command(
   async (
     { set },
@@ -2666,30 +2716,18 @@ const publishConcurrencyInvoice$ = command(
     if (!projectionState) {
       return { handled: true, drainOrgId: orgId };
     }
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0327; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      // Payment evidence remains valid even after the renewable subscription or
-      // concurrency item disappears. Record its immutable invoice identity without
-      // reviving a current projection from that historical payment.
-      const insertedRows =
-        values.length === 0
-          ? []
-          : await tx
-              .insert(orgConcurrencyEntitlements)
-              .values([...values])
-              .onConflictDoNothing()
-              .returning({ id: orgConcurrencyEntitlements.id });
-      const projection = {
-        orgId: orgId,
-        stripePriceId: projectionState.stripePriceId,
-        slots: projectionState.slots,
-        subscriptionStatus: projectionState.subscriptionStatus,
-        currentPeriodEnd: projectionState.currentPeriodEnd,
-        cancelAtPeriodEnd: projectionState.cancelAtPeriodEnd,
-        ...(!state ? { scheduledSlots: null, scheduledChangeAt: null } : {}),
-      };
-      const written = existing
-        ? await tx
+    const projection = {
+      orgId: orgId,
+      stripePriceId: projectionState.stripePriceId,
+      slots: projectionState.slots,
+      subscriptionStatus: projectionState.subscriptionStatus,
+      currentPeriodEnd: projectionState.currentPeriodEnd,
+      cancelAtPeriodEnd: projectionState.cancelAtPeriodEnd,
+      ...(!state ? { scheduledSlots: null, scheduledChangeAt: null } : {}),
+    };
+    const published = db.$with("published_concurrency_projection").as(
+      existing
+        ? db
             .update(orgConcurrencySubscriptions)
             .set({
               ...projection,
@@ -2697,7 +2735,7 @@ const publishConcurrencyInvoice$ = command(
             })
             .where(originalVersion)
             .returning({ id: orgConcurrencySubscriptions.stripeSubscriptionId })
-        : await tx
+        : db
             .insert(orgConcurrencySubscriptions)
             .values({
               ...projection,
@@ -2709,14 +2747,31 @@ const publishConcurrencyInvoice$ = command(
             })
             .returning({
               id: orgConcurrencySubscriptions.stripeSubscriptionId,
-            });
-      if (written.length === 0) {
-        // Roll back the related invoice inserts and let Stripe retry the entire
-        // delivery against current state. A stale result is never a success.
-        throw new ConcurrencyProjectionChangedError();
-      }
-      return { insertedLines: insertedRows.length, state: projectionState };
-    });
+            }),
+    );
+    // A stale projection returns no row, so no invoice identity is consumed.
+    // Any entitlement failure also rolls back the projection in this statement.
+    const entitlements =
+      values.length === 0
+        ? []
+        : [
+            db
+              .$with("published_concurrency_invoice_lines", {})
+              .as(
+                concurrencyInvoiceEntitlementsInsertSql(
+                  db.select({ id: published.id }).from(published).getSQL(),
+                  values,
+                ),
+              ),
+          ];
+    const written = await db
+      .with(published, ...entitlements)
+      .select({ id: published.id })
+      .from(published);
+    if (written.length === 0) {
+      // Stripe retries the entire delivery against current state, as before.
+      throw new ConcurrencyProjectionChangedError();
+    }
 
     return { handled: true, drainOrgId: orgId };
   },
