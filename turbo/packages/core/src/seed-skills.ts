@@ -7,6 +7,5 @@
 export const SEED_SKILLS: readonly string[] = [
   "computer-use",
   "gen",
-  "office",
   "workflow-setup",
 ] as const;
