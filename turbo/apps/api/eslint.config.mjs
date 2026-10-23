@@ -233,7 +233,6 @@ const credentialForgingLegacyConsumers = exactTestPaths(
     "src/signals/routes/__tests__/uploads-complete.test.ts",
     "src/signals/routes/__tests__/uploads-prepare.test.ts",
     "src/signals/routes/__tests__/vnc-access.test.ts",
-    "src/signals/routes/__tests__/web-download.test.ts",
     "src/signals/routes/__tests__/web-file-url.test.ts",
     "src/signals/routes/__tests__/webhooks-agent-health-usage-telemetry.test.ts",
     "src/signals/routes/__tests__/webhooks-agent-session-output.test.ts",

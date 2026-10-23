@@ -164,7 +164,7 @@ test("An optimistic QuickTime preview does not list artifacts before thread crea
     filename: "recording.mov",
     contentType: "video/quicktime",
     size: 24,
-    url: `http://localhost/api/web/download-file?file_id=${fileId}`,
+    url: `http://localhost/api/web/file-url?file_id=${fileId}`,
   });
   context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
     return respond(404, {

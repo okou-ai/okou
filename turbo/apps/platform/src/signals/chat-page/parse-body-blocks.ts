@@ -369,7 +369,7 @@ export function classifyChatAttachment(
 
 function isAuthenticatedFileUrl(url: URL): boolean {
   return (
-    url.pathname === "/api/web/download-file" &&
+    url.pathname === "/api/web/file-url" &&
     url.username === "" &&
     url.password === "" &&
     Boolean(url.searchParams.get("file_id")) &&

@@ -516,7 +516,7 @@ test("Copy and paste a structured chat message from the keyboard without flatten
     filename: "structured-reference.pdf",
   });
   expect(new URL(copiedAttachment.url)).toMatchObject({
-    pathname: "/api/web/download-file",
+    pathname: "/api/web/file-url",
     search: `?file_id=${STRUCTURED_FILE_ID}`,
   });
 

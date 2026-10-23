@@ -2,6 +2,7 @@ export interface ChatTeamsFileTokenPayload {
   readonly tenantId: string;
   readonly url: string;
   readonly downloadMode?: "graph";
+  readonly downloadInfo?: true;
   readonly id?: string;
   readonly name?: string;
   readonly contentType?: string;

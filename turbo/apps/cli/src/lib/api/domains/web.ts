@@ -4,10 +4,10 @@ import {
   resolveOwnedArtifactReference,
 } from "./artifact-references";
 import { isUtf8 } from "node:buffer";
-import { createWriteStream, readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import { downloadFileFromUrl } from "../download-file-url";
 import { basename, extname, join } from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { MIMEType } from "node:util";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
@@ -19,6 +19,7 @@ import {
 import {
   ApiRequestError,
   getBaseUrl,
+  getClientConfig,
   handleError,
 } from "../core/client-factory";
 import { getActiveToken } from "../config";
@@ -210,7 +211,7 @@ export async function webFileReferenceId(
   const baseUrl = new URL(await getBaseUrl());
   if (
     url.origin !== baseUrl.origin ||
-    url.pathname !== "/api/web/download-file" ||
+    url.pathname !== "/api/web/file-url" ||
     url.username ||
     url.password
   ) {
@@ -223,30 +224,20 @@ export async function webFileReferenceId(
   return id;
 }
 
-async function fetchWebFile(fileId: string): Promise<Response> {
-  const baseUrl = await getBaseUrl();
-  const token = await getActiveToken();
-  if (!token) {
-    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
-  }
-
-  const url = new URL("/api/web/download-file", baseUrl);
-  url.searchParams.set("file_id", fileId);
-
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-  };
-
-  const response = await fetch(url, {
-    headers: headersWithCliClientHeaders(headers),
-  });
-  return response;
+async function resolveWebFileDownloadUrl(fileId: string): Promise<string> {
+  const metadata = await initClient(
+    webFilesContract,
+    await getClientConfig(),
+  ).fileUrl({ query: { file_id: fileId } });
+  if (metadata.status === 200) return metadata.body.downloadUrl;
+  handleError(metadata, "Failed to resolve web file download");
 }
 
 /**
  * Download an authorized artifact or web-uploaded file to a local path.
  * Artifact authorization uses OKOU_TOKEN, but its delivery URL never receives
- * the CLI credential. Raw file IDs retain the authenticated download route.
+ * the CLI credential. Raw file IDs use the existing authenticated file-url
+ * metadata route.
  */
 export async function downloadWebFile(
   fileId: string,
@@ -266,49 +257,25 @@ export async function downloadWebFile(
       entrypoint: join(outPath, "index.html"),
     };
   }
-  const response = artifact
-    ? await fetch(artifact.url)
-    : await fetchWebFile((await webFileReferenceId(fileId)) ?? fileId);
-
-  if (!response.ok) {
-    let message = `Failed to download web file (HTTP ${response.status})`;
-    let code = "UNKNOWN";
-    try {
-      const body = (await response.json()) as {
-        error?: { message?: string; code?: string };
-      };
-      if (body.error?.message) message = body.error.message;
-      if (body.error?.code) code = body.error.code;
-    } catch {
-      // ignore parse errors — keep generic message
-    }
-    throw new ApiRequestError(message, code, response.status);
-  }
-
-  if (!response.body) {
-    throw new ApiRequestError(
-      "Web download response has no body",
-      "EMPTY_BODY",
-      502,
+  if (artifact?.kind === "file") {
+    return downloadFileFromUrl(
+      {
+        downloadUrl: artifact.url,
+        filename: artifact.filename,
+        contentType: artifact.contentType,
+      },
+      outPath,
     );
   }
-
-  const mimetype =
-    response.headers.get("x-file-mimetype") ??
-    response.headers.get("content-type") ??
-    artifact?.contentType ??
-    "application/octet-stream";
-
-  // Cast required: Web API ReadableStream and Node.js ReadableStream are
-  // structurally compatible but have incompatible type declarations.
-  await pipeline(
-    Readable.fromWeb(response.body as never),
-    createWriteStream(outPath),
+  const rawFileId = (await webFileReferenceId(fileId)) ?? fileId;
+  return downloadFileFromUrl(
+    {
+      downloadUrl: await resolveWebFileDownloadUrl(rawFileId),
+      filename: basename(outPath),
+      contentType: "application/octet-stream",
+    },
+    outPath,
   );
-
-  const size = statSync(outPath).size;
-
-  return { path: outPath, mimetype, size };
 }
 
 interface UploadWebFileResult {

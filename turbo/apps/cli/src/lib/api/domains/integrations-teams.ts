@@ -1,6 +1,3 @@
-import { createWriteStream } from "node:fs";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
   integrationsTeamsMessageContract,
@@ -14,13 +11,11 @@ import {
   type TeamsUploadInitResponse,
 } from "@okouai/api-contracts/contracts/integrations";
 import {
-  ApiRequestError,
   getBaseUrl,
   getClientConfig,
   handleError,
 } from "../core/client-factory";
-import { getActiveToken } from "../config";
-import { headersWithCliClientHeaders } from "../client-headers";
+import { downloadFileFromApi } from "../download-file-url";
 
 export async function sendTeamsMessage(
   body: SendTeamsMessageBody,
@@ -77,58 +72,15 @@ export async function downloadTeamsFile(
   fileId: string,
   outPath: string,
 ): Promise<DownloadTeamsFileResult> {
-  const baseUrl = await getBaseUrl();
-  const token = await getActiveToken();
-  if (!token) {
-    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
-  }
-
-  const url = new URL("/api/integrations/teams/download-file", baseUrl);
-  url.searchParams.set("file_id", fileId);
-
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-  };
-
-  const response = await fetch(url, {
-    headers: headersWithCliClientHeaders(headers),
-  });
-
-  if (!response.ok) {
-    let message = `Failed to download Microsoft Teams file (HTTP ${response.status})`;
-    let code = "UNKNOWN";
-    try {
-      const body = (await response.json()) as {
-        error?: { message?: string; code?: string };
-      };
-      if (body.error?.message) message = body.error.message;
-      if (body.error?.code) code = body.error.code;
-    } catch {
-      // Keep the generic HTTP message when the server returned non-JSON.
-    }
-    throw new ApiRequestError(message, code, response.status);
-  }
-
-  if (!response.body) {
-    throw new ApiRequestError(
-      "Microsoft Teams download response has no body",
-      "EMPTY_BODY",
-      502,
-    );
-  }
-
-  const mimetype =
-    response.headers.get("x-file-mimetype") ??
-    response.headers.get("content-type") ??
-    "application/octet-stream";
-
-  await pipeline(
-    Readable.fromWeb(response.body as never),
-    createWriteStream(outPath),
+  const url = new URL(
+    "/api/integrations/teams/download-file",
+    await getBaseUrl(),
   );
-
-  const contentLengthHeader = response.headers.get("content-length");
-  const size = contentLengthHeader ? Number(contentLengthHeader) : 0;
-
-  return { path: outPath, mimetype, size };
+  url.searchParams.set("file_id", fileId);
+  return downloadFileFromApi(url, outPath, {
+    maxBytes: 100 * 1024 * 1024,
+    acceptContentType: (contentType) => {
+      return contentType !== "text/html";
+    },
+  });
 }

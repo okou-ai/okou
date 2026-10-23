@@ -77,7 +77,7 @@ function fileClients() {
     init: app(integrationsDiscordUploadInitContract).init,
     materialize: app(integrationsDiscordUploadMaterializeContract).materialize,
     complete: app(integrationsDiscordUploadCompleteContract).complete,
-    download: app(integrationsDiscordDownloadFileContract).download,
+    fileUrl: app(integrationsDiscordDownloadFileContract).fileUrl,
   };
 }
 
@@ -325,19 +325,8 @@ function incomingAttachment(fixture: DiscordFileProviderIdentity) {
     http.get(messageUrl, () => {
       return HttpResponse.json(message);
     }),
-    http.get(url, ({ request }) => {
-      expect(request.headers.get("authorization")).toBeNull();
-      expect(request.headers.get("cookie")).toBeNull();
-      return new HttpResponse(bytes, {
-        headers: {
-          "content-type": attachment.content_type,
-          "content-length": String(attachment.size),
-        },
-      });
-    }),
   );
   return {
-    bytes,
     attachment,
     message,
     messageUrl,
@@ -587,7 +576,7 @@ describe("Discord file authorization and input validation", () => {
       await accept(client.materialize({ headers: {}, body: operation }), [401]),
       await accept(client.complete({ headers: {}, body: operation }), [401]),
       await accept(
-        client.download({
+        client.fileUrl({
           headers: {},
           query: { channelId, messageId, attachmentId },
         }),
@@ -610,7 +599,7 @@ describe("Discord file authorization and input validation", () => {
       [403],
     );
     const download = await accept(
-      client.download({
+      client.fileUrl({
         headers,
         query: { channelId, messageId, attachmentId },
       }),
@@ -633,7 +622,7 @@ describe("Discord file authorization and input validation", () => {
       [403],
     );
     const download = await accept(
-      client.download({
+      client.fileUrl({
         headers,
         query: { channelId, messageId, attachmentId },
       }),
@@ -652,7 +641,7 @@ describe("Discord file authorization and input validation", () => {
       [FeatureSwitchKey.DiscordIntegration]: true,
     });
     const response = await accept(
-      fileClients().download({
+      fileClients().fileUrl({
         headers: { authorization: "Bearer clerk-session" },
         query: { channelId, messageId, attachmentId },
       }),
@@ -687,7 +676,7 @@ describe("Discord file authorization and input validation", () => {
   it("rejects download identifiers that cannot identify a Discord attachment", async () => {
     await actorSession();
     const response = await accept(
-      fileClients().download({
+      fileClients().fileUrl({
         headers: { authorization: "Bearer clerk-session" },
         query: {
           channelId,
@@ -703,6 +692,48 @@ describe("Discord file authorization and input validation", () => {
 });
 
 describe("Discord attachment downloads", () => {
+  it.each([
+    { contentType: "text/csv", expectedType: "text/csv" },
+    { contentType: undefined, expectedType: "application/octet-stream" },
+  ])(
+    "resolves fresh attachment metadata with MIME type $expectedType",
+    async ({ contentType, expectedType }) => {
+      const fixture = await boundFixture();
+      const source = incomingAttachment(fixture);
+      const freshUrl = `${source.attachment.url}&version=fresh`;
+      server.use(
+        http.get(source.messageUrl, () => {
+          return HttpResponse.json({
+            ...source.message,
+            attachments: [
+              {
+                ...source.attachment,
+                url: freshUrl,
+                content_type: contentType,
+              },
+            ],
+          });
+        }),
+      );
+
+      const response = await accept(
+        fileClients().fileUrl({
+          headers: fixture.headers,
+          query: source.query,
+        }),
+        [200],
+      );
+
+      expect(response.body).toStrictEqual({
+        downloadUrl: freshUrl,
+        filename: source.attachment.filename,
+        contentType: expectedType,
+        size: source.attachment.size,
+      });
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+    },
+  );
+
   it.each(["member", "bot"])(
     "requires the %s to have ATTACH_FILES in addition to readable channel access",
     async (deniedParty) => {
@@ -730,7 +761,7 @@ describe("Discord attachment downloads", () => {
       );
       const client = fileClients();
       const readable = await accept(
-        client.download({ headers: fixture.headers, query: source.query }),
+        client.fileUrl({ headers: fixture.headers, query: source.query }),
         [200],
       );
       const upload = await accept(
@@ -741,7 +772,10 @@ describe("Discord attachment downloads", () => {
         [404],
       );
 
-      expect(readable.body).toBe(source.bytes);
+      expect(readable.body).toMatchObject({
+        downloadUrl: source.attachment.url,
+        filename: source.attachment.filename,
+      });
       expect(upload.body.error.code).toBe("NOT_FOUND");
     },
   );
@@ -777,7 +811,7 @@ describe("Discord attachment downloads", () => {
         ),
       );
       const denied = await accept(
-        fileClients().download({
+        fileClients().fileUrl({
           headers: fixture.headers,
           query: source.query,
         }),
@@ -823,255 +857,6 @@ describe("Discord attachment downloads", () => {
         [200],
       );
       expect(delivered.body.delivery.status).toBe("delivered");
-    },
-  );
-
-  it("returns fresh, authorized attachment bytes with private download headers", async () => {
-    const fixture = await boundFixture();
-    const source = incomingAttachment(fixture);
-    const response = await accept(
-      fileClients().download({ headers: fixture.headers, query: source.query }),
-      [200],
-    );
-
-    expect(response.body).toBe(source.bytes);
-    expect(response.headers.get("content-type")).toBe("text/csv");
-    expect(response.headers.get("content-length")).toBe(
-      String(source.attachment.size),
-    );
-    expect(response.headers.get("x-file-name")).toBe(
-      encodeURIComponent(source.attachment.filename),
-    );
-    expect(response.headers.get("x-file-mimetype")).toBe("text/csv");
-    expect(response.headers.get("content-disposition")).toContain(
-      "attachment;",
-    );
-    expect(response.headers.get("cache-control")).toContain("no-store");
-    expect(response.headers.get("cache-control")).toContain("private");
-    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
-  });
-
-  it("does not download a forged attachment ID from an otherwise readable message", async () => {
-    const fixture = await boundFixture();
-    const source = incomingAttachment(fixture);
-    const response = await accept(
-      fileClients().download({
-        headers: fixture.headers,
-        query: { ...source.query, attachmentId: discordSnowflake() },
-      }),
-      [404],
-    );
-
-    expect(response.body.error.code).toBe("NOT_FOUND");
-  });
-
-  it("refreshes an expired CDN URL once from the same message identity", async () => {
-    const fixture = await boundFixture();
-    const source = incomingAttachment(fixture);
-    const requests: string[] = [];
-    let messageReads = 0;
-    server.use(
-      http.get(source.messageUrl, () => {
-        messageReads += 1;
-        return HttpResponse.json({
-          ...source.message,
-          attachments: [
-            {
-              ...source.attachment,
-              url: `${source.attachment.url}&version=${messageReads}`,
-            },
-          ],
-        });
-      }),
-      http.get(source.attachment.url, ({ request }) => {
-        requests.push(request.url);
-        expect(request.headers.get("authorization")).toBeNull();
-        if (new URL(request.url).searchParams.get("version") === "1") {
-          return new HttpResponse(null, { status: 403 });
-        }
-        return new HttpResponse(source.bytes, {
-          headers: { "content-type": "text/csv" },
-        });
-      }),
-    );
-
-    const response = await accept(
-      fileClients().download({ headers: fixture.headers, query: source.query }),
-      [200],
-    );
-
-    expect(response.body).toBe(source.bytes);
-    expect(messageReads).toBe(2);
-    expect(requests).toStrictEqual([
-      `${source.attachment.url}&version=1`,
-      `${source.attachment.url}&version=2`,
-    ]);
-  });
-
-  it("stops after the refreshed attachment URL is still unavailable", async () => {
-    const fixture = await boundFixture();
-    const source = incomingAttachment(fixture);
-    let messageReads = 0;
-    let downloads = 0;
-    server.use(
-      http.get(source.messageUrl, () => {
-        messageReads += 1;
-        return HttpResponse.json(source.message);
-      }),
-      http.get(source.attachment.url, () => {
-        downloads += 1;
-        return new HttpResponse(null, { status: 404 });
-      }),
-    );
-
-    const response = await accept(
-      fileClients().download({ headers: fixture.headers, query: source.query }),
-      [404],
-    );
-
-    expect(response.body.error.code).toBe("NOT_FOUND");
-    expect(messageReads).toBe(2);
-    expect(downloads).toBe(2);
-  });
-
-  it("rechecks the live feature gate before refreshing an expired attachment", async () => {
-    const fixture = await boundFixture();
-    const source = incomingAttachment(fixture);
-    let downloads = 0;
-    server.use(
-      http.get(source.attachment.url, async () => {
-        downloads += 1;
-        await updateFeatureSwitchesForUser(context, fixture.actor, {
-          [FeatureSwitchKey.DiscordIntegration]: false,
-        });
-        return new HttpResponse(null, { status: 403 });
-      }),
-    );
-
-    const response = await accept(
-      fileClients().download({ headers: fixture.headers, query: source.query }),
-      [403],
-    );
-
-    expect(response.body.error.code).toBe("FORBIDDEN");
-    expect(downloads).toBe(1);
-  });
-
-  it.each(["host", "attachment-path", "redirect"])(
-    "rejects an unsafe CDN %s without requesting another origin",
-    async (unsafeKind) => {
-      const fixture = await boundFixture();
-      const source = incomingAttachment(fixture);
-      const attackerUrl = "https://download.example.test/private-report";
-      const attackerRequests: string[] = [];
-      const url =
-        unsafeKind === "host"
-          ? attackerUrl
-          : unsafeKind === "attachment-path"
-            ? source.attachment.url.replace(
-                source.query.attachmentId,
-                discordSnowflake(),
-              )
-            : source.attachment.url;
-      server.use(
-        http.get(attackerUrl, ({ request }) => {
-          attackerRequests.push(request.url);
-          return new HttpResponse(source.bytes);
-        }),
-        http.get(source.messageUrl, () => {
-          return HttpResponse.json({
-            ...source.message,
-            attachments: [{ ...source.attachment, url }],
-          });
-        }),
-        http.get(source.attachment.url, ({ request }) => {
-          expect(request.headers.get("authorization")).toBeNull();
-          return new HttpResponse(null, {
-            status: 302,
-            headers: { location: attackerUrl },
-          });
-        }),
-      );
-      if (unsafeKind === "attachment-path") {
-        server.use(
-          http.get(url, ({ request }) => {
-            attackerRequests.push(request.url);
-            return new HttpResponse(source.bytes, {
-              headers: { "content-type": "text/csv" },
-            });
-          }),
-        );
-      }
-
-      const response = await accept(
-        fileClients().download({
-          headers: fixture.headers,
-          query: source.query,
-        }),
-        [502],
-      );
-
-      expect(response.body.error.code).toBe("DISCORD_FILE_ERROR");
-      expect(attackerRequests).toStrictEqual([]);
-    },
-  );
-
-  it("rejects streamed bytes beyond the Discord file limit without a length header", async () => {
-    const fixture = await boundFixture();
-    const source = incomingAttachment(fixture);
-    server.use(
-      http.get(source.messageUrl, () => {
-        return HttpResponse.json({
-          ...source.message,
-          attachments: [
-            { ...source.attachment, size: MAX_DISCORD_FILE_SIZE_BYTES },
-          ],
-        });
-      }),
-      http.get(source.attachment.url, () => {
-        return new HttpResponse(
-          new ReadableStream<Uint8Array>({
-            start(controller) {
-              controller.enqueue(new Uint8Array(MAX_DISCORD_FILE_SIZE_BYTES));
-              controller.enqueue(new Uint8Array([1]));
-              controller.close();
-            },
-          }),
-          { headers: { "content-type": "text/csv" } },
-        );
-      }),
-    );
-
-    const response = await accept(
-      fileClients().download({ headers: fixture.headers, query: source.query }),
-      [413],
-    );
-
-    expect(response.body.error.message).toMatch(/size|large|exceed/iu);
-  });
-
-  it.each(["application/x-msdownload", "image/png"])(
-    "rejects an unsupported or mismatched CDN MIME type %s",
-    async (contentType) => {
-      const fixture = await boundFixture();
-      const source = incomingAttachment(fixture);
-      server.use(
-        http.get(source.attachment.url, () => {
-          return new HttpResponse(source.bytes, {
-            headers: { "content-type": contentType },
-          });
-        }),
-      );
-
-      const response = await accept(
-        fileClients().download({
-          headers: fixture.headers,
-          query: source.query,
-        }),
-        [502],
-      );
-
-      expect(response.body.error.message).toMatch(/mime|type/iu);
     },
   );
 });

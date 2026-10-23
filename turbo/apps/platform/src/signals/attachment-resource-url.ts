@@ -22,7 +22,7 @@ import {
   hostedSiteUrlChanges$,
 } from "./hosted-site-url-changes.ts";
 
-const AUTHENTICATED_FILE_PATH = "/api/web/download-file";
+const AUTHENTICATED_FILE_PATH = "/api/web/file-url";
 
 export function isAuthenticatedAttachmentUrl(url: string): boolean {
   if (!URL.canParse(url)) {

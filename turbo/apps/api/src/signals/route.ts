@@ -222,7 +222,6 @@ import { voiceIoPolishRoutes } from "./routes/voice-io-polish";
 import { voiceIoQuotaRoutes } from "./routes/voice-io-quota";
 import { voiceIoTranscribeRoutes } from "./routes/voice-io-transcribe";
 import { weatherRoutes } from "./routes/weather";
-import { webDownloadRoutes } from "./routes/web-download";
 import { webFileUrlRoutes } from "./routes/web-file-url";
 import { webSearchRoutes } from "./routes/web-search";
 
@@ -401,7 +400,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...voiceIoPolishRoutes,
   ...agentSetupPromptRoutes,
   ...voiceIoTranscribeRoutes,
-  ...webDownloadRoutes,
   ...webFileUrlRoutes,
   ...realtimeTokenRoutes,
   ...runDetailRoutes,

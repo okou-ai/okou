@@ -2,6 +2,7 @@ import { z } from "zod";
 import { artifactUrlSchema } from "./artifact-references";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { fileDownloadUrlSchema } from "./file-download";
 
 const c = initContract();
 
@@ -510,6 +511,7 @@ export const integrationsPhoneDownloadFileContract = c.router({
     query: phoneDownloadFileQuerySchema,
     responses: {
       200: c.type<Blob>(),
+      302: c.noBody(),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -844,6 +846,7 @@ export const integrationsTeamsDownloadFileContract = c.router({
         contentType: "application/octet-stream",
         body: z.unknown(),
       }),
+      302: c.noBody(),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -1041,27 +1044,25 @@ export const integrationsTeamsUploadCompleteContract = c.router({
  * gates who may ask the API to reach a GitHub attachment host at all.
  */
 export const integrationsGithubDownloadFileContract = c.router({
-  download: {
+  fileUrl: {
     method: "GET",
-    path: "/api/integrations/github/download-file",
+    path: "/api/integrations/github/download-file/url",
     headers: authHeadersSchema,
     query: z.object({
       url: z.string().url("url must be a GitHub file URL"),
       filename: z.string().min(1).max(255).optional(),
     }),
     responses: {
-      200: c.otherResponse({
-        contentType: "application/octet-stream",
-        body: z.unknown(),
-      }),
+      200: fileDownloadUrlSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
+      409: apiErrorSchema,
       413: apiErrorSchema,
       502: apiErrorSchema,
     },
-    summary: "Download a GitHub context file URL",
+    summary: "Resolve a GitHub context file download URL",
   },
 });
 
