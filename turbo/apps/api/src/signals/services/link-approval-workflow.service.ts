@@ -108,8 +108,8 @@ const approvalFailureState$ = command(
         "WALLET_AUTHORIZATION_CHANGED",
       ].includes(error.code)
     ) {
-      // Rotating refresh temporarily consumes credentials on the same grant.
-      // Wait for that operation without replaying its one-time refresh token.
+      // Retry recoverable authorization failures while the original grant is
+      // still active; a revoked or replaced grant ends this approval watch.
       const [grant] = await get(db$)
         .select({ id: linkWalletConnections.id })
         .from(linkWalletConnections)

@@ -8219,7 +8219,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await connectors.deleteCustomConnector(actor, custom.id);
       });
 
-      it("serializes reconnect-marked custom OAuth recovery", async () => {
+      it("recovers reconnect-marked custom OAuth and rotates refreshed tokens", async () => {
         const provider = mockCustomConnectorOAuth2Provider(context, {
           initialExpiresIn: 3600,
           refreshResponse: (requestAttempt) => {
@@ -8412,46 +8412,21 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         onTestFinished(() => {
           clearMockNow();
         });
-        const [firstResolved, secondResolved] = await Promise.all([
-          own(() => {
-            return fw.requestFirewallAuth(
-              { authorization: `Bearer ${claim.sandboxToken}` },
-              currentAuthBody,
-              [200],
-            );
-          }),
-          own(() => {
-            return fw.requestFirewallAuth(
-              { authorization: `Bearer ${claim.sandboxToken}` },
-              currentAuthBody,
-              [200],
-            );
-          }),
-        ]);
-        const concurrentResolvedBodies = [firstResolved, secondResolved].map(
-          (resolved) => {
-            if (resolved.status !== 200) {
-              throw new Error("Expected custom OAuth firewall auth to resolve");
-            }
-            expect(resolved.body.headers).toStrictEqual({
-              Authorization: "Bearer custom-oauth-refreshed-access-token",
-            });
-            expect(resolved.body.expiresAt).toBe(
-              Math.floor((firstRefreshAt + 3_600_000) / 1000),
-            );
-            return resolved.body;
+        const recovered = await own(() => {
+          return fw.requestFirewallAuth(
+            { authorization: `Bearer ${claim.sandboxToken}` },
+            currentAuthBody,
+            [200],
+          );
+        });
+        expect(recovered.body).toMatchObject({
+          headers: {
+            Authorization: "Bearer custom-oauth-refreshed-access-token",
           },
-        );
-        expect(
-          concurrentResolvedBodies.flatMap((body) => {
-            return body.refreshedConnectors;
-          }),
-        ).toStrictEqual([custom.id]);
-        expect(
-          concurrentResolvedBodies.flatMap((body) => {
-            return body.refreshedSecrets;
-          }),
-        ).toStrictEqual([secretKey]);
+          expiresAt: Math.floor((firstRefreshAt + 3_600_000) / 1000),
+          refreshedConnectors: [custom.id],
+          refreshedSecrets: [secretKey],
+        });
         expect(
           provider.tokenBodies.map((body) => {
             return body.get("grant_type");

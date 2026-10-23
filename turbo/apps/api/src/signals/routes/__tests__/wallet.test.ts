@@ -880,7 +880,7 @@ test("refreshes wallet settings before loading cards and transactions in paralle
   ]);
   expect(cards.body.data).toStrictEqual([]);
   expect(transactions.body.data).toStrictEqual([]);
-  // A rotating refresh credential must be consumed only once by the page load.
+  // Follow-up reads reuse the credentials published by the settings request.
   expect(refreshes).toBe(1);
 });
 
@@ -1621,9 +1621,12 @@ test.each([
   },
 );
 
-test.each(["spend", "settings"] as const)(
-  "finishes revocation if disconnect races a rotating refresh from %s, without resurrecting access",
-  async (operation) => {
+test.each([
+  { operation: "spend", failRotatedRevocation: false },
+  { operation: "settings", failRotatedRevocation: true },
+] as const)(
+  "revokes a delayed refresh after disconnect from $operation (cleanup retry: $failRotatedRevocation)",
+  async ({ operation, failRotatedRevocation }) => {
     const fixture = await carrier();
     server.use(tokenHandler({ expiresIn: 30 }));
     await connect(fixture);
@@ -1634,9 +1637,19 @@ test.each(["spend", "settings"] as const)(
         finishRefresh.resolve();
       }
     });
+    const revokedTokens: string[] = [];
     server.use(
-      http.post("https://login.link.com/auth/revoke", () => {
-        return new HttpResponse(null, { status: 200 });
+      http.post("https://login.link.com/auth/revoke", async ({ request }) => {
+        const token = new URLSearchParams(await request.text()).get("token");
+        if (!token) {
+          throw new Error("Expected a token to revoke");
+        }
+        revokedTokens.push(token);
+        const fail =
+          failRotatedRevocation &&
+          token === "wallet-new-refresh-fixture" &&
+          revokedTokens.length === 2;
+        return new HttpResponse(null, { status: fail ? 503 : 200 });
       }),
     );
     server.use(
@@ -1654,7 +1667,7 @@ test.each(["spend", "settings"] as const)(
     );
     const creation =
       operation === "settings"
-        ? accept(userClient().status({ headers: sessionHeaders }), [409])
+        ? accept(userClient().status({ headers: sessionHeaders }), [502])
         : accept(
             client().createSpend({
               headers: fixture.headers,
@@ -1663,21 +1676,36 @@ test.each(["spend", "settings"] as const)(
             [409],
           );
     await refreshStarted.promise;
-    const unconfirmed = await accept(
-      client().disconnect({ headers: fixture.headers, body: {} }),
-      [503],
-    );
-    expect(unconfirmed.body.error.code).toBe("WALLET_REVOCATION_UNCONFIRMED");
-    finishRefresh.resolve();
-    await creation;
-    expect(
-      (await accept(client().status({ headers: fixture.headers }), [200])).body
-        .connected,
-    ).toBeFalsy();
     await accept(
       client().disconnect({ headers: fixture.headers, body: {} }),
       [200],
     );
+    finishRefresh.resolve();
+    await creation;
+    expect(
+      (await accept(userClient().status({ headers: sessionHeaders }), [200]))
+        .body,
+    ).toMatchObject({
+      connected: false,
+      revocationPending: failRotatedRevocation,
+    });
+    expect(revokedTokens).toStrictEqual([
+      "wallet-refresh-fixture",
+      "wallet-new-refresh-fixture",
+    ]);
+    await accept(
+      client().disconnect({ headers: fixture.headers, body: {} }),
+      [200],
+    );
+    expect(revokedTokens).toStrictEqual([
+      "wallet-refresh-fixture",
+      "wallet-new-refresh-fixture",
+      ...(failRotatedRevocation ? ["wallet-new-refresh-fixture"] : []),
+    ]);
+    expect(
+      (await accept(userClient().status({ headers: sessionHeaders }), [200]))
+        .body,
+    ).toMatchObject({ connected: false, revocationPending: false });
   },
 );
 
@@ -3408,41 +3436,6 @@ test("approval polling distinguishes resumable Link actions from actions requiri
     state: "done",
   });
   expect((await approvalCard(fixture)).body.status).toBe("stopped");
-});
-
-test("approval polling waits while a manual query rotates the same wallet grant", async () => {
-  const fixture = await trackedPurchase(false, 120);
-  mockNow(now() + 65_000);
-  const entered = createDeferredPromise<void>(context.signal);
-  const release = createDeferredPromise<void>(context.signal);
-  server.use(
-    http.post("https://login.link.com/auth/token", async () => {
-      entered.resolve();
-      await release.promise;
-      return HttpResponse.json({
-        access_token: "wallet-rotated-access-fixture",
-        refresh_token: "wallet-rotated-refresh-fixture",
-        token_type: "Bearer",
-        expires_in: 3600,
-        scope: "payment_methods.agentic userinfo:read",
-        authorization_details: [
-          { type: "source", actions: ["read_link_transactions"] },
-        ],
-      });
-    }),
-  );
-  const manual = client().getSpend({
-    headers: fixture.headers,
-    params: { id: fixture.spend.id },
-  });
-  await entered.promise;
-  const duringRefresh = await pollPurchase(fixture.spend.id);
-  release.resolve();
-  expect((await manual).status).toBe(200);
-  expect(duringRefresh.body).toStrictEqual({ state: "waiting" });
-  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
-    state: "waiting",
-  });
 });
 
 test("a provider outage remains retryable and cannot manufacture approval or denial", async () => {

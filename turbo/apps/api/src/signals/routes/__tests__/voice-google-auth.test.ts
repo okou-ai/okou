@@ -416,26 +416,48 @@ describe("Google voice workload identity through the public API", () => {
     expect(accounts[2]).toContain(productionAccount);
   });
 
-  it("shares one in-flight refresh across concurrent public requests", async () => {
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
+  it("finishes a concurrent request when another request cancels authentication", async () => {
+    const controller = new AbortController();
+    const firstEntered = createDeferredPromise<void>(context.signal);
+    const firstAborted = createDeferredPromise<void>(context.signal);
+    const secondEntered = createDeferredPromise<void>(context.signal);
+    const releaseSecond = createDeferredPromise<void>(context.signal);
     let exchanges = 0;
     server.use(
-      http.post(GOOGLE_STS_URL, async () => {
+      http.post(GOOGLE_STS_URL, async ({ request }) => {
         exchanges += 1;
         if (exchanges === 1) {
-          entered.resolve();
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              firstAborted.resolve();
+            },
+            { once: true },
+          );
+          firstEntered.resolve();
+          await firstAborted.promise;
+        } else {
+          secondEntered.resolve();
+          await releaseSecond.promise;
         }
-        await release.promise;
         return HttpResponse.json(stsToken());
       }),
     );
-    const first = polish();
-    const second = polish();
-    await entered.promise;
-    release.resolve();
-    await Promise.all([accept(first, [200]), accept(second, [200])]);
-    expect(exchanges).toBe(1);
+    const first = polish(controller.signal);
+    const completeConcurrentRequest = async () => {
+      await firstEntered.promise;
+      const second = polish();
+      await secondEntered.promise;
+      controller.abort();
+      await firstAborted.promise;
+      releaseSecond.resolve();
+      const completed = await accept(second, [200]);
+      expect(completed.body).toStrictEqual({ text: "Synthetic dictation." });
+    };
+    await Promise.all([
+      expect(first).rejects.toMatchObject({ name: "AbortError" }),
+      completeConcurrentRequest(),
+    ]);
   });
 
   it.each([GOOGLE_STS_URL, GOOGLE_IMPERSONATION_URL])(

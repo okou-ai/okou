@@ -12,7 +12,7 @@ export function isFetchNetworkError(error: unknown): boolean {
 
 /** An upstream outage is not evidence that the stored authorization changed.
  * Keep explicit invalid_grant responses terminal even if their HTTP status is
- * unexpected; provider-specific rotating-token admission remains separate. */
+ * unexpected. */
 export function isTransientOAuthRefreshFailure(error: unknown): boolean {
   if (isOAuthProviderHttpError(error)) {
     if (error.oauthError === "invalid_grant") {
