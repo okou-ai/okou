@@ -19,6 +19,15 @@ final class ChatComposerPasteTests: XCTestCase {
     defer { unmount(window) }
     let input = try XCTUnwrap(textView(in: host.view))
     input.becomeFirstResponder()
+    // The editing menu operates after native focus and SwiftUI expansion settle.
+    // Wait before setting the selection so the focus handoff cannot replace it.
+    try await eventually(
+      message: "Composer did not focus and expand: firstResponder=\(input.isFirstResponder), "
+        + "bounds=\(input.bounds), attached=\(input.window === window), "
+        + "current=\(self.textView(in: host.view) === input)"
+    ) {
+      input.isFirstResponder && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
+    }
     input.selectedRange = NSRange(location: 7, length: 3)
     let png = imageData()
     // This is the test device's pasteboard; no host clipboard or logged-in device is used.
@@ -29,7 +38,12 @@ final class ChatComposerPasteTests: XCTestCase {
       ], options: [.localOnly: true])
     defer { UIPasteboard.general.items = [] }
     input.paste(nil)
-    try await eventually {
+    try await eventually(
+      message: "Mixed paste not ready: draft=\(conversation.draft), "
+        + "items=\(conversation.attachmentDraft.items.count), "
+        + "importing=\(conversation.attachmentDraft.importingCount), "
+        + "error=\(String(describing: conversation.attachmentDraft.error))"
+    ) {
       conversation.draft == "Before pasted after"
         && conversation.attachmentDraft.items.count == 2 && conversation.attachmentDraft.isReady
     }

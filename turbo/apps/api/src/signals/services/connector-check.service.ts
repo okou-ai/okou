@@ -1,9 +1,7 @@
 import type {
-  ConnectorCheckDiagnosticResult,
   ConnectorCheckPolicy,
   ConnectorCheckRequest,
   ConnectorCheckRequestBody,
-  ConnectorCheckResponseBody,
   ConnectorCheckTargetAwareDiagnosticResult,
   ConnectorCheckTargetAwareUrlRequest,
 } from "@okouai/api-contracts/contracts/connector-check";
@@ -69,13 +67,6 @@ import {
 } from "./builtin-connector-credential-access.service";
 
 type FeatureStates = ReturnType<typeof getAllFeatureStates>;
-
-interface ConnectorCheckLegacyIdentity {
-  readonly connectorSlug: ConnectorSlug;
-  readonly label: string;
-  readonly visibility: "available" | "unavailable";
-  readonly credentialResolution: "network-boundary" | "none";
-}
 
 interface ConnectorCheckTargetIdentity {
   readonly target: ConnectorRuntimeTarget;
@@ -155,7 +146,7 @@ interface ResolveConnectorCheckArgs {
 type ResolveConnectorCheckResult =
   | {
       readonly kind: "ok";
-      readonly diagnostic: ConnectorCheckResponseBody;
+      readonly diagnostic: ConnectorCheckTargetAwareDiagnosticResult;
       readonly awsContextIncomplete?: true;
     }
   | { readonly kind: "not-found" };
@@ -1573,112 +1564,12 @@ function resolveEnvironmentMode(
   };
 }
 
-function legacyIdentity(
-  identity: ConnectorCheckTargetIdentity,
-): ConnectorCheckLegacyIdentity {
-  if (identity.target.kind !== "builtin") {
-    throw new Error(
-      "Legacy connector diagnostics cannot contain custom targets",
-    );
-  }
-  return {
-    connectorSlug: identity.target.connectorSlug,
-    label: identity.label,
-    visibility: identity.visibility,
-    credentialResolution: identity.credentialResolution,
-  };
-}
-
-function legacyDiagnostic(
-  diagnostic: ConnectorCheckTargetAwareDiagnosticResult,
-): ConnectorCheckDiagnosticResult {
-  switch (diagnostic.outcome) {
-    case "resolved": {
-      return diagnostic.mode === "url"
-        ? {
-            outcome: diagnostic.outcome,
-            mode: diagnostic.mode,
-            connector: legacyIdentity(diagnostic.connector),
-            environmentNames: diagnostic.environmentNames,
-            run: diagnostic.run,
-            method: diagnostic.method,
-            base: diagnostic.base,
-            relativePath: diagnostic.relativePath,
-            permission: diagnostic.permission,
-          }
-        : {
-            outcome: diagnostic.outcome,
-            mode: diagnostic.mode,
-            connector: legacyIdentity(diagnostic.connector),
-            environmentName: diagnostic.environmentName,
-            run: diagnostic.run,
-            permission: diagnostic.permission,
-          };
-    }
-    case "ambiguous": {
-      return {
-        outcome: diagnostic.outcome,
-        candidates: diagnostic.candidates.map((candidate) => {
-          if (candidate.target.kind !== "builtin") {
-            throw new Error(
-              "Legacy connector diagnostics cannot contain custom candidates",
-            );
-          }
-          return {
-            connectorSlug: candidate.target.connectorSlug,
-            label: candidate.label,
-          };
-        }),
-      };
-    }
-    case "connector-mismatch":
-    case "environment-not-owned":
-    case "unresolved-dynamic-base": {
-      return {
-        outcome: diagnostic.outcome,
-        connector: legacyIdentity(diagnostic.connector),
-      };
-    }
-    case "environment-not-used": {
-      return {
-        outcome: diagnostic.outcome,
-        connector: legacyIdentity(diagnostic.connector),
-        environmentNames: diagnostic.environmentNames,
-      };
-    }
-    case "target-unavailable": {
-      throw new Error("Legacy connector diagnostics cannot be target-aware");
-    }
-    case "unsafe-input":
-    case "unknown-connector":
-    case "unknown-environment":
-    case "no-match":
-    case "run-context-unavailable": {
-      return diagnostic;
-    }
-  }
-}
-
 function parseCheckRequest(
   request: ConnectorCheckRequestBody,
 ): ReturnType<typeof parseConnectorDiagnosticRequest> | null {
   return request.mode === "url"
     ? parseConnectorDiagnosticRequest(request.method, request.url)
     : null;
-}
-
-function publicCheckResult(
-  request: ConnectorCheckRequestBody,
-  diagnostic: ConnectorCheckTargetAwareDiagnosticResult,
-  awsContextIncomplete: boolean,
-): ResolveConnectorCheckResult {
-  return {
-    kind: "ok",
-    diagnostic: targetAwareUrlRequest(request)
-      ? diagnostic
-      : legacyDiagnostic(diagnostic),
-    ...(awsContextIncomplete ? { awsContextIncomplete: true as const } : {}),
-  };
 }
 
 function storedConnectorReadScope(
@@ -1811,29 +1702,25 @@ export const resolveConnectorCheck$ = command(
       snapshot,
       visibleConnectorSlugs: new Set(visibleConnectorSlugs),
     };
-    let diagnostic: ConnectorCheckTargetAwareDiagnosticResult;
-    let awsContextIncomplete = false;
-    if (args.request.mode === "url") {
-      if (!parsed) {
-        throw new Error("Missing parsed connector diagnostic request");
-      }
-      const resolution = await resolveUrlMode(
+    if (args.request.mode === "environment") {
+      const diagnostic = await resolveEnvironmentMode(
         args.request,
-        parsed,
         timeline,
         catalogContext,
       );
       signal.throwIfAborted();
-      diagnostic = resolution.diagnostic;
-      awsContextIncomplete = resolution.awsContextIncomplete === true;
-    } else {
-      diagnostic = await resolveEnvironmentMode(
-        args.request,
-        timeline,
-        catalogContext,
-      );
+      return { kind: "ok", diagnostic };
     }
+    if (!parsed) {
+      throw new Error("Missing parsed connector diagnostic request");
+    }
+    const resolution = await resolveUrlMode(
+      args.request,
+      parsed,
+      timeline,
+      catalogContext,
+    );
     signal.throwIfAborted();
-    return publicCheckResult(args.request, diagnostic, awsContextIncomplete);
+    return { kind: "ok", ...resolution };
   },
 );
