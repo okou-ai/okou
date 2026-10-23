@@ -32,11 +32,6 @@
       "owner": "commitWorkflowCopy$"
     },
     {
-      "id": "TX-0045",
-      "file": "turbo/apps/api/src/signals/routes/workflows.ts",
-      "owner": "commitPreparedWorkflow$"
-    },
-    {
       "id": "TX-0046",
       "file": "turbo/apps/api/src/signals/routes/workflows.ts",
       "owner": "applyWorkflowVisibility$"
