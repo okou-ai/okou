@@ -87,6 +87,68 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     await program.parseAsync(argv);
   }
 
+  it.each([false, true])(
+    "only deletes disabled image guidance from the original sprite packet (disabled: %s)",
+    async (disabled) => {
+      vi.stubEnv(
+        DISABLED_PAID_TOOLS_ENV_VAR,
+        disabled ? '["image-generation"]' : "[]",
+      );
+      await run(["generate", "sprite", "--prompt", "A fox"]);
+      // Golden output from the PR base 152d5a8; includes instruction ordering.
+      const baseline = await readFile(
+        new URL(
+          "../commands/generate/__tests__/fixtures/sprite-enabled.txt",
+          import.meta.url,
+        ),
+        "utf8",
+      );
+      const filtered = baseline
+        .replace("generate each raw sheet with built-in image generation, ", "")
+        .replace(
+          "Every raw sprite image must come from built-in image generation. ",
+          "",
+        )
+        .replace(
+          "Generate each raw sheet with built-in image generation as described under Image Generation. ",
+          "",
+        )
+        .replace(
+          /^- Generate every raw sheet via built-in image generation.*\n/m,
+          "",
+        )
+        .replace(
+          /^- Pick a sheet-friendly square or grid-aligned size.*\n/m,
+          "",
+        );
+      expect(output).toBe(disabled ? filtered : baseline);
+      expect(requests).toEqual([]);
+    },
+  );
+
+  it.each([
+    [["generate"], "generate-help.txt"],
+    [["generate", "sprite"], "sprite-help.txt"],
+    [["web-search"], "web-search-help.txt"],
+  ] as const)(
+    "preserves pre-filtering help for %s with all tools enabled",
+    async (args, fixture) => {
+      await expect(run([...args, "--help"])).rejects.toMatchObject({
+        code: "commander.helpDisplayed",
+      });
+      expect(output).toBe(
+        await readFile(
+          new URL(
+            `../commands/generate/__tests__/fixtures/${fixture}`,
+            import.meta.url,
+          ),
+          "utf8",
+        ),
+      );
+      expect(requests).toEqual([]);
+    },
+  );
+
   it.each(managedFamilies)(
     "removes disabled %s from help, actions and suggestions",
     async (tool) => {
@@ -142,6 +204,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       ["generate", "--help"],
       ["help", "generate"],
       ["generate", "image", "--help"],
+      ["generate", "sprite", "--help"],
     ]) {
       output = "";
       await expect(run(args)).rejects.toMatchObject({
@@ -152,12 +215,12 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       expect(output).not.toContain("--provider built-in");
       expect(output).not.toContain("image-batch");
       expect(output).not.toContain("disabled");
+      expect(output).not.toContain("built-in image generation");
+      expect(output).not.toContain("okou generate image --style");
     }
-    expect(output).toContain("--provider <name>");
     output = "";
     await run(["generate", "sprite", "--prompt", "A fox"]);
     expect(output).toContain("## Core Invariants");
-    expect(output).toContain("--provider <connector>");
     expect(output).not.toContain("--provider built-in");
     expect(output).not.toContain("Settings › Built-in tools");
     for (const args of [
@@ -173,7 +236,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     ]) {
       output = "";
       await run(["generate", ...args]);
-      expect(output).toContain("Image workflow:");
+      expect(output).not.toContain("Image workflow:");
       expect(output).not.toContain("okou generate image-batch");
       expect(output).not.toContain("--provider built-in");
     }

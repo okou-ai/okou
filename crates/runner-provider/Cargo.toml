@@ -18,7 +18,7 @@ bytes = { workspace = true, features = ["std"] }
 chrono = { workspace = true, features = ["now", "serde"] }
 futures-util = { workspace = true, features = ["async-await", "async-await-macro", "sink", "std"] }
 nix = { workspace = true, features = ["fs", "inotify"] }
-reqwest = { workspace = true, features = ["json", "rustls"] }
+reqwest = { workspace = true, features = ["json", "query", "rustls"] }
 hyper.workspace = true
 hyper-util = { workspace = true, features = ["client-legacy", "tokio"] }
 serde = { workspace = true, features = ["derive", "std"] }

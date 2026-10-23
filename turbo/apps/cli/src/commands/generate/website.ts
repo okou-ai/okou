@@ -177,7 +177,7 @@ ${formatRegistryListing(templates, "website templates")}`;
           ...templateSelectionRules,
           "If it is a marketing site, make the product or offer visible in the first viewport.",
           "For app or tool surfaces, prioritize dense, scannable, task-focused UI over decorative sections.",
-          websiteImageInstructions(isPaidToolEnabled("image-generation")),
+          ...websiteImageInstructions(isPaidToolEnabled("image-generation")),
           "Use responsive HTML/CSS and verify the page works at mobile and desktop widths.",
         ],
       });

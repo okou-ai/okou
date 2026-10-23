@@ -82,7 +82,7 @@ const BUILT_IN_GENERATION_COMMANDS: Partial<
   sprite: {
     label: "Built-in sprite asset generation",
     command: "okou generate sprite -h",
-    description: "Returns sprite authoring and postprocessing instructions.",
+    description: `Models: Built-in image generation with ${IMAGE_MODEL_SETTING_SUMMARY}`,
   },
 };
 
@@ -327,7 +327,9 @@ function renderBuiltInCommand(generationType: GenerationType): void {
   console.log("");
   console.log("Built-in command:");
   console.log(`  Okou  ${command.label}`);
-  console.log(`  ${command.description}`);
+  if (generationType !== "sprite" || isPaidToolEnabled("image-generation")) {
+    console.log(`  ${command.description}`);
+  }
   console.log(`  Use: ${command.command}`);
 }
 

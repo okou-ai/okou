@@ -3,6 +3,7 @@ import {
   MODEL_PROVIDER_FIREWALL_CONFIGS,
 } from "../contracts/model-providers";
 import {
+  DISABLED_PAID_TOOLS_ENV_VAR,
   ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
   ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
 } from "../contracts/paid-tools";
@@ -319,6 +320,12 @@ export const rustConstantBindings = [
     rustConstName: "CLIENT_TYPE_RUNNER",
     value: rustString(CLIENT_TYPE_RUNNER),
     rustDoc: ["Client type value for the runner."],
+  },
+  {
+    rustModulePath: paidToolsModule,
+    rustConstName: "DISABLED_PAID_TOOLS_ENV_VAR",
+    value: rustString(DISABLED_PAID_TOOLS_ENV_VAR),
+    rustDoc: ["Captured disabled managed-tool preferences for this Run."],
   },
   {
     rustModulePath: paidToolsModule,

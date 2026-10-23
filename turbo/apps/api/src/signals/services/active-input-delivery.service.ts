@@ -205,6 +205,7 @@ export const loadNextSteerableInput$ = command(
       readonly runId: string;
       readonly userId: string;
       readonly orgId: string;
+      readonly includeManagedImageInstructions: boolean;
     },
     signal: AbortSignal,
   ): Promise<NextSteerableInputResult> => {
@@ -243,7 +244,16 @@ export const loadNextSteerableInput$ = command(
       throw new Error("Pending steerable input disappeared from its thread");
     }
     const prompt = await settle(
-      set(materializeActiveInputSource$, db, source, scope, signal),
+      set(
+        materializeActiveInputSource$,
+        db,
+        source,
+        {
+          ...scope,
+          includeManagedImageInstructions: args.includeManagedImageInstructions,
+        },
+        signal,
+      ),
       signal,
     );
     if (!prompt.ok) {

@@ -184,7 +184,7 @@ ${formatPresentationTemplateListing(templates)}`;
             "- Use a fixed 1920x1080 slide canvas and scale it uniformly for smaller viewports.",
             "- Use one section per slide and keep repeated elements in consistent positions.",
             PRESENTATION_STATIC_HTML_INSTRUCTION,
-            presentationImageInstructions(
+            ...presentationImageInstructions(
               isPaidToolEnabled("image-generation"),
             ),
             "- Make keyboard navigation work with ArrowLeft, ArrowRight, Home, and End.",

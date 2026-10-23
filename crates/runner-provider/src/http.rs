@@ -169,7 +169,6 @@ pub struct ApiRequestBuilder {
     client: Client,
     builder: reqwest::RequestBuilder,
     client_headers: ClientHeaders,
-    query: Vec<(String, String)>,
 }
 
 impl ApiRequestBuilder {
@@ -178,13 +177,11 @@ impl ApiRequestBuilder {
             client,
             builder,
             client_headers,
-            query,
         } = self;
         Self {
             client,
             builder: builder.json(json),
             client_headers,
-            query,
         }
     }
 
@@ -193,23 +190,19 @@ impl ApiRequestBuilder {
             client,
             builder,
             client_headers,
-            query,
         } = self;
         Self {
             client,
             builder: builder.timeout(timeout),
             client_headers,
-            query,
         }
     }
 
-    pub fn query(mut self, pairs: &[(&str, &str)]) -> Self {
-        self.query.extend(
-            pairs
-                .iter()
-                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned())),
-        );
-        self
+    pub fn query<T: Serialize + ?Sized>(self, query: &T) -> Self {
+        Self {
+            builder: self.builder.query(query),
+            ..self
+        }
     }
 
     pub async fn send(self, endpoint_label: &'static str) -> ProviderResult<Response> {
@@ -244,12 +237,6 @@ impl ApiRequestBuilder {
             .builder
             .build()
             .map_err(|e| ProviderError::Api(format!("build API request: {e}")))?;
-        if !self.query.is_empty() {
-            request
-                .url_mut()
-                .query_pairs_mut()
-                .extend_pairs(self.query.iter().map(|(name, value)| (name, value)));
-        }
         let applied_headers = self.client_headers.apply(request.headers_mut())?;
         let context = request_context(endpoint_label, &request, applied_headers);
         Ok(FinalizedApiRequest { request, context })
@@ -261,13 +248,11 @@ impl ApiRequestBuilder {
             client,
             builder,
             client_headers,
-            query,
         } = self;
         Self {
             client,
             builder: builder.header(name, value),
             client_headers,
-            query,
         }
     }
 }
@@ -436,7 +421,6 @@ impl HttpClient {
             client: self.inner.client.clone(),
             builder: req,
             client_headers: self.inner.client_headers.clone(),
-            query: Vec::new(),
         }
     }
 }

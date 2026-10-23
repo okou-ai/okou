@@ -11,7 +11,6 @@ fn builder(client: reqwest::Client, url: String) -> ApiRequestBuilder {
         builder: client.post(url).bearer_auth("private-test-token"),
         client,
         client_headers: ClientHeaders::new("observed-session".into(), "1.2.3").unwrap(),
-        query: Vec::new(),
     }
 }
 

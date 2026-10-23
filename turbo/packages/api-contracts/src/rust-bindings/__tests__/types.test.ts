@@ -119,6 +119,11 @@ const expectedBindings = [
     direction: "response",
   },
   {
+    rustModulePath: ["runners", "runs", "steerable_inputs", "next"],
+    rustTypeName: "Query",
+    direction: "request",
+  },
+  {
     rustModulePath: ["runners", "runs", "steerable_inputs", "steered"],
     rustTypeName: "Response",
     direction: "response",

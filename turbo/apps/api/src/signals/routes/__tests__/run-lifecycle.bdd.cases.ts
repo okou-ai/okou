@@ -2,6 +2,7 @@ import { captureSessionStorageMocks } from "./helpers/prepared-session-history";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 import { createHash, randomUUID } from "node:crypto";
@@ -11463,6 +11464,57 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await finishCancelledRun(run.runId, claim.sandboxToken);
       });
 
+      it("preserves the complete pre-filtering Agent Tools prompt when all managed tools are enabled", async () => {
+        const api = createRunsApi(context);
+        const { actor, agentId, runnerGroup } = await entitledRunActor(
+          {},
+          NATIVE_RUNNER_ROUTE,
+        );
+        if (!actor.orgId) {
+          throw new Error("Expected an organization");
+        }
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...actor, orgId: actor.orgId },
+          {
+            [FeatureSwitchKey.WechatIntegration]: false,
+            [FeatureSwitchKey.Banking]: false,
+            [FeatureSwitchKey.VncAccess]: false,
+            [FeatureSwitchKey.RemoteConnectionDiagnostics]: false,
+            [FeatureSwitchKey.DiscordIntegration]: false,
+            [FeatureSwitchKey.LarkIntegration]: false,
+            [FeatureSwitchKey.PresentationConvert]: false,
+            [FeatureSwitchKey.BrowserNativeInput]: false,
+            [FeatureSwitchKey.BatchConnectorPermissions]: false,
+          },
+        );
+        const run = await api.createThreadRun(actor, {
+          agentId,
+          prompt: "preserve enabled instructions",
+        });
+        await api.heartbeatRunner(runnerGroup);
+        const claim = await api.claimRunnerJob(run.runId);
+        const prompt = claim.appendSystemPrompt ?? "";
+        const start = prompt.indexOf("# Agent Tools\n");
+        const tools = prompt.slice(start, prompt.indexOf("\n\n#", start));
+        // Golden outputs from PR base 152d5a8; browser access is independent.
+        const expected = ["agent-tools.txt", "agent-tools-browser.txt"].map(
+          (name) => {
+            return readFileSync(
+              new URL(
+                `./fixtures/managed-tools-enabled/${name}`,
+                import.meta.url,
+              ),
+              "utf8",
+            ).trimEnd();
+          },
+        );
+        expect(start).toBeGreaterThanOrEqual(0);
+        expect(expected).toContain(tools);
+        await api.requestCancelRun(actor, run.runId, [200]);
+        await finishCancelledRun(run.runId, claim.sandboxToken);
+      });
+
       it("snapshots paid tool preferences for queued runs and applies later changes to new runs", async () => {
         const api = createRunsApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor(
@@ -11485,7 +11537,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         expect(claim.appendSystemPrompt).toContain("okou people-search");
         expect(claim.appendSystemPrompt).toContain("okou seo");
-        expect(claim.appendSystemPrompt).toContain("connector-backed image");
+        expect(claim.appendSystemPrompt).toContain(
+          "plus connector-backed music",
+        );
         expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
           '["image-generation","web-search"]',
         );

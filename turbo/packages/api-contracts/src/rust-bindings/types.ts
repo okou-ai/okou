@@ -11,6 +11,7 @@ import {
   runnerCancellationResponseSchema,
   runnerNextSteerableInputResponseSchema,
   runnerSteeredInputResponseSchema,
+  runnersSteerContract,
   sandboxStartupPathSchema,
   storageMountEntrySchema,
 } from "../contracts/runners";
@@ -524,6 +525,23 @@ export const rustTypeBindings = [
         fields: {
           eventId: ["Source chat-event identity to declare steered."],
           prompt: ["Materialized prompt sent to the active Guest."],
+        },
+      },
+    ],
+  },
+  {
+    schema: runnersSteerContract.next.query,
+    rustModulePath: ["runners", "runs", "steerable_inputs", "next"],
+    rustTypeName: "Query",
+    direction: "request",
+    declarations: [
+      {
+        rustTypeName: "Query",
+        rustDoc: ["Captured Run preferences for active template guidance."],
+        fields: {
+          disabledPaidTools: [
+            "Original disabled-tool JSON environment value; never grants permissions.",
+          ],
         },
       },
     ],

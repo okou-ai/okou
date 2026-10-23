@@ -56,6 +56,7 @@ pub struct ApiActiveInputSource {
     api: ApiClient,
     run_id: RunId,
     sandbox_token: String,
+    disabled_paid_tools: Option<String>,
     notifications: ActiveInputSubscription,
 }
 
@@ -143,11 +144,13 @@ impl ActiveInputSource {
         run_id: RunId,
         sandbox_token: String,
         notifications: ActiveInputSubscription,
+        disabled_paid_tools: Option<String>,
     ) -> Self {
         Self::Api(ApiActiveInputSource {
             api,
             run_id,
             sandbox_token,
+            disabled_paid_tools,
             notifications,
         })
     }
@@ -186,7 +189,11 @@ impl ActiveInputSource {
 async fn read_api_active_input(source: &ApiActiveInputSource) -> ProviderResult<ActiveInputBatch> {
     source
         .api
-        .next_steerable_input(source.run_id, &source.sandbox_token)
+        .next_steerable_input(
+            source.run_id,
+            &source.sandbox_token,
+            source.disabled_paid_tools.clone(),
+        )
         .await
         .map(ActiveInputBatch::Api)
 }

@@ -9,15 +9,10 @@ export const PRESENTATION_STATIC_HTML_INSTRUCTION =
 export const PRESENTATION_DELIVERY_INSTRUCTION =
   "- Presentation delivery: first author and check the deck as HTML, then choose HTML or PPTX from the user's request, remembered preferences, and intended use. Explicit requests take priority. Deliver one format unless the user requests multiple formats.";
 
-export const IMAGE_ASSET_INSTRUCTION =
-  "Image workflow: use supplied images first. When new images are needed, use an image tool exposed in the current agent context or an authorized connector. Bundle durable local copies in the output; never embed authenticated API URLs or expiring signatures.";
-
 export function presentationImageInstructions(
   imageGenerationEnabled: boolean,
-): string {
-  return imageGenerationEnabled
-    ? PRESENTATION_IMAGE_BATCH_INSTRUCTION
-    : `- ${IMAGE_ASSET_INSTRUCTION}`;
+): readonly string[] {
+  return imageGenerationEnabled ? [PRESENTATION_IMAGE_BATCH_INSTRUCTION] : [];
 }
 
 export function presentationDeliveryInstructions(

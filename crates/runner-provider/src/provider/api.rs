@@ -9,13 +9,16 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use api_contracts::generated::{
+    constants::paid_tools::DISABLED_PAID_TOOLS_ENV_VAR,
     constants::runners::{
         BUILTIN_FIREWALL_CATALOG_MAX_BYTES, CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
         PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION, PI_MODEL_CONFIG_CURRENT_GENERATION,
         PI_MODEL_CONFIG_DIALECT_TIER_GENERATION, RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
     },
     decode_paths, routes,
-    types::runners::runs::steerable_inputs::next::Response as NextSteerableInputResponse,
+    types::runners::runs::steerable_inputs::next::{
+        Query as NextSteerableInputQuery, Response as NextSteerableInputResponse,
+    },
 };
 use bytes::Bytes;
 use reqwest::{Response, StatusCode};
@@ -899,6 +902,9 @@ impl JobProvider for ApiProvider {
                             run_id,
                             ctx.sandbox_token.clone(),
                             self.active_input_notifications.subscribe(run_id),
+                            ctx.platform_environment
+                                .get(DISABLED_PAID_TOOLS_ENV_VAR)
+                                .cloned(),
                         )
                     });
                 let claimed = match if let Some(active_input_source) = active_input_source {
@@ -1541,17 +1547,22 @@ impl ApiClient {
         &self,
         run_id: RunId,
         sandbox_token: &str,
+        disabled_paid_tools: Option<String>,
     ) -> ProviderResult<NextSteerableInputResponse> {
         let run_id = run_id.to_string();
         let resp = send_api(
-            self.http.request_resolved_route(
-                routes::runners::runs::by_run_id::steerable_inputs::next::route(
-                    routes::runners::runs::by_run_id::steerable_inputs::next::Params {
-                        run_id: run_id.as_str(),
-                    },
-                ),
-                sandbox_token,
-            ),
+            self.http
+                .request_resolved_route(
+                    routes::runners::runs::by_run_id::steerable_inputs::next::route(
+                        routes::runners::runs::by_run_id::steerable_inputs::next::Params {
+                            run_id: run_id.as_str(),
+                        },
+                    ),
+                    sandbox_token,
+                )
+                .query(&NextSteerableInputQuery {
+                    disabled_paid_tools,
+                }),
             "read next steerable input",
         )
         .await?;
@@ -2357,6 +2368,7 @@ mod tests {
 
     const TEST_HEARTBEAT_GENERATION: u64 = 7;
 
+    mod active_input_policy;
     mod claim_observation;
     mod finalizing_source;
     mod parallel_claim;

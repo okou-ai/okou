@@ -20,7 +20,6 @@ import {
   userPresentationTemplateDirectory,
 } from "@okouai/core/presentation-template-selection";
 import {
-  IMAGE_ASSET_INSTRUCTION,
   presentationImageInstructions,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
   presentationDeliveryInstructions,
@@ -369,7 +368,7 @@ function buildUserPresentationTemplatePrompt(
       "- Lay out live rows, columns, and text flow with CSS Grid or Flexbox. Absolute positioning is for backgrounds, fixed chrome, decoration, and intentional overlays.",
       "- Background images from the package are optional visual material. New text, charts, tables, labels, and diagrams stay live HTML or SVG so they reflow and stay legible.",
       "- Use the slide count the user asks for; if unspecified, default to 8 pages.",
-      presentationImageInstructions(imageGenerationEnabled),
+      ...presentationImageInstructions(imageGenerationEnabled),
       PRESENTATION_STATIC_HTML_INSTRUCTION,
       ...presentationDeliveryInstructions(),
       "- Check `okou host --help` and, when supported, add `--title` with a concise human-readable presentation name, independently of the URL slug.",
@@ -450,7 +449,9 @@ function buildWebsiteTemplatePackagePrompt(
       `- Work from ${packageDir}. Inspect the bundled package metadata and instructions before editing.`,
       `- Read ${packageDir}/SKILL.md before authoring; it owns this package's contract.`,
       "- Assemble the page once with `node tools/compose.mjs <section-ids...>`, then author the composed index.html directly. The command refuses a second compose pass; bypassing that guard would discard authored work.",
-      `- ${websiteImageInstructions(imageGenerationEnabled)}`,
+      ...websiteImageInstructions(imageGenerationEnabled).map((line) => {
+        return `- ${line}`;
+      }),
       "- Repair every blocking failure from `bash checks/verify.sh index.html qa` until it prints QA_READY.",
       "- Stage once: `node tools/stage.mjs publish` writes the final clean ./publish directory before cover capture.",
       ...artifactPreviewInstructions({ outputDir: "./publish" }),
@@ -483,7 +484,7 @@ function buildIllustrationGenerationTemplatePrompt(
   if (!imageGenerationEnabled) {
     return {
       status: "resolved",
-      prompt: [...styleContext, "", `- ${IMAGE_ASSET_INSTRUCTION}`].join("\n"),
+      prompt: styleContext.join("\n"),
     };
   }
   const styleSource = `private R2 registry resource ${imageStyle.id}`;

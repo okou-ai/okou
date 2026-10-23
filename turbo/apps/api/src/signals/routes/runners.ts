@@ -84,7 +84,7 @@ import { authRoute } from "../auth/auth-route";
 import { runnerAuth$, type RunnerAuthContext } from "../auth/runner-auth";
 import { generateSandboxToken } from "../auth/tokens";
 import { authorization$, request$ } from "../context/hono";
-import { bodyResultOf, pathParamsOf } from "../context/request";
+import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import type { JsonResponseObserver } from "../context/route";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$, type Db } from "../external/db";
@@ -133,7 +133,7 @@ import {
   networkPolicyRefreshesRecord,
   readActiveNetworkPolicyRefreshes$,
 } from "../services/user-permission-grants.service";
-import { safeSync, settle, tapError } from "../utils";
+import { safeJsonParse, safeSync, settle, tapError } from "../utils";
 
 const L = logger("Runners");
 
@@ -2474,18 +2474,36 @@ const builtinFirewallsResolveInner$ = command(
 );
 
 const steeredInputBody$ = bodyResultOf(runnersSteerContract.steered);
+const steerableInputQuery$ = queryOf(runnersSteerContract.next);
+
+function includeManagedImageInstructions(policy: string | undefined): boolean {
+  // Old Runner owners omit this query. Remove the omission default only after
+  // they and their queued contexts have drained and rollback excludes them.
+  if (!policy?.trim()) {
+    return true;
+  }
+  const parsed = z.array(z.string()).safeParse(safeJsonParse(policy));
+  return parsed.success && !parsed.data.includes("image-generation");
+}
 
 const nextSteerableInputInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(authContext$);
     const { runId } = get(pathParamsOf(runnersSteerContract.next));
+    const { disabledPaidTools } = get(steerableInputQuery$);
     if (auth.tokenType !== "sandbox" || auth.runId !== runId) {
       return forbidden("Steering is not available");
     }
     const result = await set(
       loadNextSteerableInput$,
       set(writeDb$),
-      { runId, userId: auth.userId, orgId: auth.orgId },
+      {
+        runId,
+        userId: auth.userId,
+        orgId: auth.orgId,
+        includeManagedImageInstructions:
+          includeManagedImageInstructions(disabledPaidTools),
+      },
       signal,
     );
     if (result.outcome === "forbidden") {

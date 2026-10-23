@@ -15,6 +15,7 @@ import {
 export function resolveThreadGenerationTemplatePrompt(args: {
   readonly explicit: LiveGenerationTemplate | null | undefined;
   readonly explicitTemplates?: readonly LiveGenerationTemplate[];
+  readonly includeManagedImageInstructions: boolean;
   /**
    * Private template row ids whose packages the run being built will mount.
    * Required rather than optional so every caller states what its run carries.
@@ -29,9 +30,7 @@ export function resolveThreadGenerationTemplatePrompt(args: {
   const options = {
     mountedUserPresentationTemplateIds: args.mountedUserPresentationTemplateIds,
     mountedUserTemplates: args.mountedUserTemplates,
-    // The active Run already owns its tool context. Add template content
-    // without advertising a provider or consulting current preferences.
-    includeManagedImageInstructions: false,
+    includeManagedImageInstructions: args.includeManagedImageInstructions,
   };
   if (args.explicitTemplates && args.explicitTemplates.length > 0) {
     const built = buildGenerationTemplatesPrompt(
