@@ -9,6 +9,18 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.1.2](https://github.com/okou-ai/okou/compare/api-v2.1.1...api-v2.1.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* **api:** require authenticated integration oauth completion ([#42592](https://github.com/okou-ai/okou/issues/42592)) ([91c48b0](https://github.com/okou-ai/okou/commit/91c48b09a6488aa3d218b36a9962030da27ef841))
+
+
+### Refactoring
+
+* **api:** atomically persist failed materialization ([#42611](https://github.com/okou-ai/okou/issues/42611)) ([837ab3e](https://github.com/okou-ai/okou/commit/837ab3efa59ec2a7907be085f3bb1156eeaa7604))
+
 ## [2.1.1](https://github.com/okou-ai/okou/compare/api-v2.1.0...api-v2.1.1) (2026-10-23)
 
 

@@ -1,7 +1,7 @@
 {
   "turbo/packages/core": "8.783.1",
   "turbo/apps/cli": "10.0.2",
-  "turbo/apps/api": "2.1.1",
+  "turbo/apps/api": "2.1.2",
   "turbo/apps/platform": "0.1058.1",
   "turbo/apps/app-worker": "1.10.42",
   "turbo/apps/host-worker": "1.8.3",
@@ -16,7 +16,7 @@
   "crates/process-control-ipc": "0.5.31",
   "crates/process-launch": "0.1.2",
   "crates/guest-agent": "0.108.6",
-  "crates/guest-agent-tests": "0.1.54",
+  "crates/guest-agent-tests": "0.1.55",
   "crates/guest-contracts": "0.27.2",
   "crates/guest-tool-exec": "0.3.29",
   "crates/guest-task-exec": "0.2.31",
