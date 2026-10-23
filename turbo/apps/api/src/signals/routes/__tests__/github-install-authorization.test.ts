@@ -1,7 +1,16 @@
+import {
+  authenticateCallbackActor,
+  callbackAuthenticationModes,
+  callbackBrowserHeaders,
+  callbackNeedsSignIn,
+} from "./helpers/oauth-callback-auth";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { githubOauthRoutes } from "../github-oauth";
+import { githubOauthContract } from "@okouai/api-contracts/contracts/github-oauth";
 import { randomInt, randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -56,7 +65,7 @@ describe("GitHub installation authorization", () => {
         orgId: actor.orgId!,
         composeId: agentId,
       }).toString(),
-      { origin: ORIGIN },
+      { origin: ORIGIN, auth: null },
     );
     expect(new URL(response.location!).pathname).toBe("/sign-in");
     expect(response.cacheControl).toBe("no-store");
@@ -119,7 +128,7 @@ describe("GitHub installation authorization", () => {
         installation_id: "2002",
         setup_action: "install",
       }).toString(),
-      { origin: ORIGIN },
+      { origin: ORIGIN, auth: actor },
     );
     expect(error(response.location)).toContain(
       "active organization administrator",
@@ -161,7 +170,7 @@ describe("GitHub installation authorization", () => {
         code: "authorized-installation",
         installation_id: installed.remoteInstallationId,
       }).toString(),
-      { origin: ORIGIN },
+      { origin: ORIGIN, auth: actor },
     );
     expect(error(replay.location)).toContain("expired or was already used");
     await expect(github.readInstallation(actor)).resolves.toMatchObject({
@@ -203,7 +212,7 @@ describe("GitHub installation authorization", () => {
         code: "other-personal-owner",
         installation_id: "7007",
       }).toString(),
-      { origin: ORIGIN },
+      { origin: ORIGIN, auth: actor },
     );
     expect(error(response.location)).toContain("GitHub account owner");
     await github.requestReadInstallation(actor, [404]);
@@ -218,7 +227,7 @@ describe("GitHub installation authorization", () => {
         installation_id: "3003",
         setup_action: "install",
       }).toString(),
-      { origin: ORIGIN },
+      { origin: ORIGIN, auth: actor },
     );
     const authorization = new URL(pending.location!);
     expect(authorization.pathname).toBe("/login/oauth/authorize");
@@ -230,7 +239,7 @@ describe("GitHub installation authorization", () => {
         code: "another-installation",
         installation_id: "4004",
       }).toString(),
-      { origin: ORIGIN },
+      { origin: ORIGIN, auth: actor },
     );
     expect(error(switched.location)).toContain(
       "does not match this authorization",
@@ -249,7 +258,7 @@ describe("GitHub installation authorization", () => {
         installation_id: installationId,
         setup_action: "update",
       }).toString(),
-      { origin: ORIGIN },
+      { origin: ORIGIN, auth: actor },
     );
     const authorization = new URL(configured.location!);
     expect(authorization.pathname).toBe("/login/oauth/authorize");
@@ -270,7 +279,7 @@ describe("GitHub installation authorization", () => {
         state: authorization.searchParams.get("state")!,
         code: "verify-existing-installation",
       }).toString(),
-      { origin: ORIGIN },
+      { origin: ORIGIN, auth: actor },
     );
     expect(new URL(completed.location!).pathname).toBe("/workflows");
     await expect(github.readInstallation(actor)).resolves.toMatchObject({
@@ -291,9 +300,165 @@ describe("GitHub installation authorization", () => {
         code: "late-code",
         installation_id: "5005",
       }).toString(),
-      { origin: ORIGIN },
+      { origin: ORIGIN, auth: actor },
     );
     expect(error(response.location)).toContain("expired or was already used");
     await github.requestReadInstallation(actor, [404]);
   });
+  it.each(callbackAuthenticationModes)(
+    "requires the GitHub installation completing actor (%s)",
+    async (mode) => {
+      const { actor, agentId } = await installationActor();
+      const state = await start(actor, agentId);
+      const installationId = String(randomInt(1_000_000_000, 9_999_999_999));
+      github.mockInstallation({
+        installationId,
+        targetId: "888001",
+        type: "User",
+        login: "provider-owner",
+      });
+      github.mockUserAuthorization({
+        code: "provider-result",
+        githubUserId: "888001",
+      });
+      const query = {
+        state,
+        code: "provider-result",
+        installation_id: installationId,
+      };
+      const browser = await github.requestSetupCallback(
+        new URLSearchParams(query).toString(),
+        { origin: ORIGIN, auth: null },
+      );
+      expect(new URL(browser.location!).searchParams.get("integration")).toBe(
+        "github",
+      );
+      await github.requestReadInstallation(actor, [404]);
+      const client = setupApp({
+        context,
+        routes: githubOauthRoutes,
+        baseUrl: ORIGIN,
+      })(githubOauthContract);
+      const completion = await accept(
+        client.setupCallback({
+          query: { ...query, responseMode: "json" },
+          extraHeaders: callbackBrowserHeaders(context, mode, actor),
+        }),
+        [200, 401],
+      );
+      expect(completion.status).toBe(callbackNeedsSignIn(mode) ? 401 : 200);
+      if (completion.status === 200) {
+        const target = new URL(completion.body.redirectUrl);
+        if (mode === "matching-cookie") {
+          expect(target.searchParams.get("error")).toBeNull();
+        } else {
+          expect(target.searchParams.get("error")).toContain(
+            "active account or organization changed",
+          );
+        }
+      }
+      if (mode === "matching-cookie") {
+        await expect(github.readInstallation(actor)).resolves.toMatchObject({
+          isConnected: true,
+          connectedGithubUserId: "888001",
+          installation: { installationId },
+        });
+      } else {
+        await github.requestReadInstallation(actor, [404]);
+      }
+      if (callbackNeedsSignIn(mode)) {
+        const resumed = await github.requestSetupCallback(
+          new URLSearchParams(query).toString(),
+          { origin: ORIGIN, auth: actor },
+        );
+        expect(new URL(resumed.location!).searchParams.get("error")).toBeNull();
+        await expect(github.readInstallation(actor)).resolves.toMatchObject({
+          isConnected: true,
+          connectedGithubUserId: "888001",
+          installation: { installationId },
+        });
+      }
+    },
+  );
+  it.each(["missing", "expired-cookie"] as const)(
+    "protects GitHub no-code continuation (%s)",
+    async (mode) => {
+      const { actor, agentId } = await installationActor();
+      const state = await start(actor, agentId);
+      const installationId = String(randomInt(1_000_000_000, 9_999_999_999));
+      const first = await github.requestSetupCallback(
+        new URLSearchParams({
+          state,
+          installation_id: installationId,
+          setup_action: "install",
+        }).toString(),
+        { origin: ORIGIN, auth: actor },
+      );
+      const authorization = new URL(first.location!);
+      expect(authorization.pathname).toBe("/login/oauth/authorize");
+      await github.requestReadInstallation(actor, [404]);
+      github.mockInstallation({
+        installationId,
+        targetId: "888002",
+        type: "User",
+        login: "provider-owner",
+      });
+      github.mockUserAuthorization({
+        code: "provider-verification",
+        githubUserId: "888002",
+      });
+      const client = setupApp({
+        context,
+        routes: githubOauthRoutes,
+        baseUrl: ORIGIN,
+      })(githubOauthContract);
+      const query = {
+        state: authorization.searchParams.get("state")!,
+        code: "provider-verification",
+        responseMode: "json" as const,
+      };
+      await accept(
+        client.setupCallback({
+          query,
+          extraHeaders: callbackBrowserHeaders(context, mode, actor),
+        }),
+        [401],
+      );
+      await github.requestReadInstallation(actor, [404]);
+      authenticateCallbackActor(context, actor);
+      const completed = await accept(
+        client.setupCallback({
+          query,
+          extraHeaders: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(
+        new URL(completed.body.redirectUrl).searchParams.get("error"),
+      ).toBeNull();
+      await expect(github.readInstallation(actor)).resolves.toMatchObject({
+        isConnected: false,
+        installation: { installationId },
+      });
+    },
+  );
+  it.each([undefined, "invalid-state"])(
+    "keeps GitHub update without valid state read only (%s)",
+    async (state) => {
+      const { actor } = await installationActor();
+      const query = new URLSearchParams({
+        setup_action: "update",
+        installation_id: "988000",
+      });
+      if (state) {
+        query.set("state", state);
+      }
+      const result = await github.requestSetupCallback(query.toString(), {
+        origin: ORIGIN,
+        auth: null,
+      });
+      expect(new URL(result.location!).pathname).toBe("/workflows");
+      await github.requestReadInstallation(actor, [404]);
+    },
+  );
 });

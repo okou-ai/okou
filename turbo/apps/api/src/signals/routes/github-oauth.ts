@@ -16,8 +16,12 @@ import {
 
 import { requiredAuthContext$ } from "../auth/auth-context";
 import { checkOAuthCallbackActor$ } from "../services/oauth-callback-actor";
+import {
+  authenticatedIntegrationOAuthCallback,
+  integrationOAuthAppRedirect,
+} from "../services/integration-oauth-callback";
 import { queryOf } from "../context/request";
-import { request$ } from "../context/hono";
+import { authorization$, request$ } from "../context/hono";
 import { db$, writeDb$ } from "../external/db";
 import { claimBuiltinConnectorOAuthState$ } from "../services/connector-oauth-state.service";
 import { publishUserSignal } from "../external/realtime";
@@ -1187,7 +1191,7 @@ const claimGithubInstallationCallback$ = command(
   },
 );
 
-const callbackGithubOauth$ = command(
+const completeCallbackGithubOauth$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const request = get(request$).raw;
     const query = get(queryOf(githubOauthContract.setupCallback));
@@ -1261,6 +1265,50 @@ const callbackGithubOauth$ = command(
       },
       signal,
     );
+  },
+);
+
+const callbackGithubJson$ = authenticatedIntegrationOAuthCallback(
+  completeCallbackGithubOauth$,
+  "json",
+);
+const callbackGithubAuthenticated$ = authenticatedIntegrationOAuthCallback(
+  completeCallbackGithubOauth$,
+  "redirect",
+);
+
+const callbackGithubOauth$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const query = get(queryOf(githubOauthContract.setupCallback));
+    if (query.responseMode === "json") {
+      return await set(callbackGithubJson$, signal);
+    }
+    const stateResolution = await resolveGithubCallbackState({
+      stateString: query.state,
+      secretsEncryptionKey: env("SECRETS_ENCRYPTION_KEY"),
+    });
+    signal.throwIfAborted();
+    const replay = signedGithubCallbackReplayResponse({
+      request: get(request$).raw,
+      stateString: query.state,
+      stateResolution,
+    });
+    if (replay) {
+      return replay;
+    }
+    if (
+      query.state &&
+      stateResolution.ok &&
+      stateResolution.state.userId &&
+      stateResolution.state.orgId
+    ) {
+      if (get(authorization$)) {
+        return await set(callbackGithubAuthenticated$, signal);
+      }
+      return integrationOAuthAppRedirect("github", query);
+    }
+    // Stateless updates only navigate; they never create an Okou association.
+    return await set(completeCallbackGithubOauth$, signal);
   },
 );
 

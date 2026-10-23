@@ -1579,6 +1579,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
         state: signedSlackOAuthStateText(installStart.headers.get("location")),
       },
       [307],
+      admin,
     );
     expect(installed.headers.get("location") ?? "").toContain(
       `/settings/slack?status=connected&workspace=${encodeURIComponent(
@@ -1663,6 +1664,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
         state: connectStateText,
       },
       [307],
+      member,
     );
     expect(connected.headers.get("location") ?? "").toContain(
       `/settings/slack?status=connected&workspace=${encodeURIComponent(
@@ -1705,6 +1707,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
         ),
       },
       [307],
+      disconnectedMember,
     );
     expect(wrongTeam.headers.get("location") ?? "").toContain(
       "different%20Slack%20workspace",
@@ -6542,6 +6545,8 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
         state: signedState,
       },
       [307],
+      "https://api.okou.ai",
+      admin,
     );
     expect(requestSetup.headers.get("location") ?? "").toContain(
       "permission%20to%20install%20this%20GitHub%20App",
@@ -6562,6 +6567,8 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
           state: missingIdState,
         },
         [307],
+        "https://api.okou.ai",
+        admin,
       );
     expect(missingInstallation.headers.get("location") ?? "").toContain(
       "Missing%20installation%20ID%20from%20GitHub",

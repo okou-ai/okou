@@ -8,7 +8,7 @@ import { slackOauthContract } from "@okouai/api-contracts/contracts/slack-oauth"
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { eq } from "drizzle-orm";
 
-import { request$ } from "../context/hono";
+import { authorization$, request$ } from "../context/hono";
 import { queryOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
@@ -37,6 +37,10 @@ import {
 import { SLACK_CONNECTOR_OAUTH_STATE_PREFIX } from "../services/slack-connector-oauth-state";
 import { requiredAuthContext$ } from "../auth/auth-context";
 import { checkOAuthCallbackActor$ } from "../services/oauth-callback-actor";
+import {
+  authenticatedIntegrationOAuthCallback,
+  integrationOAuthAppRedirect,
+} from "../services/integration-oauth-callback";
 import { connectorOAuthStateExpiresAt } from "../../lib/connector-oauth-state";
 import {
   claimBuiltinConnectorOAuthState$,
@@ -818,67 +822,80 @@ const handleConnectCallback$ = command(
   },
 );
 
-const callbackOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const query = get(queryOf(slackOauthContract.callback));
-  if (query.state?.startsWith(SLACK_CONNECTOR_OAUTH_STATE_PREFIX)) {
-    return await set(
-      completeSlackConnectorOAuth$,
-      {
-        state: query.state,
-        code: query.code,
-        error: query.error,
-      },
-      signal,
-    );
-  }
-  const credentials = slackCredentials();
-  if (!credentials) {
-    return jsonErrorResponse("Slack integration is not configured", 503);
-  }
-
-  const parsedState = parseOAuthState(query.state);
-
-  if (parsedState && (parsedState.state.orgId || parsedState.state.userId)) {
-    const claimed = await set(
-      claimBuiltinConnectorOAuthState$,
-      { state: query.state!, connectorSlug: "slack" },
-      signal,
-    );
-    if (
-      claimed.kind !== "usable" ||
-      claimed.state.authMethod !== "slack-integration" ||
-      claimed.state.orgId !== parsedState.state.orgId ||
-      claimed.state.userId !== parsedState.state.userId ||
-      claimed.state.redirectUri !== parsedState.redirectUri
-    ) {
-      return failedRedirect(
-        "This authorization has expired or was already used. Please reconnect Slack from settings.",
+const completeCallbackOauth$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const query = get(queryOf(slackOauthContract.callback));
+    if (query.state?.startsWith(SLACK_CONNECTOR_OAUTH_STATE_PREFIX)) {
+      return await set(
+        completeSlackConnectorOAuth$,
+        {
+          state: query.state,
+          code: query.code,
+          error: query.error,
+        },
+        signal,
       );
     }
-    const actorError = await set(
-      checkOAuthCallbackActor$,
-      { userId: claimed.state.userId, orgId: claimed.state.orgId },
-      signal,
-    );
-    if (actorError) {
-      return failedRedirect(actorError);
+    const credentials = slackCredentials();
+    if (!credentials) {
+      return jsonErrorResponse("Slack integration is not configured", 503);
     }
-  }
-  if (query.error) {
-    return failedRedirect(query.error);
-  }
 
-  if (!query.code) {
-    return jsonErrorResponse("Missing authorization code", 400);
-  }
+    const parsedState = parseOAuthState(query.state);
 
-  if (!parsedState) {
-    return failedRedirect("Invalid OAuth state.");
-  }
-  const { state, redirectUri } = parsedState;
-  if (state.flow === "connect") {
+    if (parsedState && (parsedState.state.orgId || parsedState.state.userId)) {
+      const claimed = await set(
+        claimBuiltinConnectorOAuthState$,
+        { state: query.state!, connectorSlug: "slack" },
+        signal,
+      );
+      if (
+        claimed.kind !== "usable" ||
+        claimed.state.authMethod !== "slack-integration" ||
+        claimed.state.orgId !== parsedState.state.orgId ||
+        claimed.state.userId !== parsedState.state.userId ||
+        claimed.state.redirectUri !== parsedState.redirectUri
+      ) {
+        return failedRedirect(
+          "This authorization has expired or was already used. Please reconnect Slack from settings.",
+        );
+      }
+      const actorError = await set(
+        checkOAuthCallbackActor$,
+        { userId: claimed.state.userId, orgId: claimed.state.orgId },
+        signal,
+      );
+      if (actorError) {
+        return failedRedirect(actorError);
+      }
+    }
+    if (query.error) {
+      return failedRedirect(query.error);
+    }
+
+    if (!query.code) {
+      return jsonErrorResponse("Missing authorization code", 400);
+    }
+
+    if (!parsedState) {
+      return failedRedirect("Invalid OAuth state.");
+    }
+    const { state, redirectUri } = parsedState;
+    if (state.flow === "connect") {
+      return await set(
+        handleConnectCallback$,
+        {
+          code: query.code,
+          state,
+          credentials,
+          redirectUri,
+        },
+        signal,
+      );
+    }
+
     return await set(
-      handleConnectCallback$,
+      handleInstallCallback$,
       {
         code: query.code,
         state,
@@ -887,18 +904,36 @@ const callbackOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
       },
       signal,
     );
-  }
+  },
+);
 
-  return await set(
-    handleInstallCallback$,
-    {
-      code: query.code,
-      state,
-      credentials,
-      redirectUri,
-    },
-    signal,
-  );
+const callbackJson$ = authenticatedIntegrationOAuthCallback(
+  completeCallbackOauth$,
+  "json",
+);
+const callbackAuthenticated$ = authenticatedIntegrationOAuthCallback(
+  completeCallbackOauth$,
+  "redirect",
+);
+
+const callbackOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const query = get(queryOf(slackOauthContract.callback));
+  if (query.responseMode === "json") {
+    return await set(callbackJson$, signal);
+  }
+  const parsed = parseOAuthState(query.state);
+  if (
+    query.state?.startsWith(SLACK_CONNECTOR_OAUTH_STATE_PREFIX) ||
+    parsed?.state.orgId ||
+    parsed?.state.userId
+  ) {
+    if (get(authorization$)) {
+      return await set(callbackAuthenticated$, signal);
+    }
+    return integrationOAuthAppRedirect("slack", query);
+  }
+  // Marketplace installs stay anonymous and do not associate an Okou identity.
+  return await set(completeCallbackOauth$, signal);
 });
 
 export const slackOauthRoutes: readonly RouteEntry[] = [

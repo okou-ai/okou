@@ -1,4 +1,10 @@
 import {
+  authenticateCallbackActor,
+  callbackAuthenticationModes,
+  callbackBrowserHeaders,
+  callbackNeedsSignIn,
+} from "./helpers/oauth-callback-auth";
+import {
   billingStatusContract,
   billingUsagePackCreditsContract,
 } from "@okouai/api-contracts/contracts/billing";
@@ -64,9 +70,17 @@ async function appRequest(
     signal: context.signal,
     routes: slackOauthRoutes,
   });
+  // Model App submitting the provider result with its explicitly arranged session.
+  const headers = new Headers(options.headers);
+  if (
+    path.startsWith("/api/integrations/slack/oauth/callback") &&
+    !headers.has("authorization")
+  ) {
+    headers.set("authorization", "Bearer clerk-session");
+  }
   return await app.request(`${options.origin ?? "http://api.test"}${path}`, {
     method: "GET",
-    headers: options.headers,
+    headers,
   });
 }
 
@@ -441,7 +455,10 @@ describe("Slack OAuth API routes", () => {
             authedUserId: installation.slackUserId,
           });
           const response = await accept(
-            callbackClient().callback({ query: { code, state } }),
+            callbackClient().callback({
+              query: { code, state },
+              extraHeaders: { authorization: "Bearer clerk-session" },
+            }),
             [307],
           );
           const location = response.headers.get("location");
@@ -487,6 +504,7 @@ describe("Slack OAuth API routes", () => {
           });
           const response = await accept(
             callbackClient().callback({
+              extraHeaders: { authorization: "Bearer clerk-session" },
               query: { code: `connect-${randomUUID()}`, state },
             }),
             [307],
@@ -507,6 +525,7 @@ describe("Slack OAuth API routes", () => {
             context.mocks.slack.oauth.v2.access.mock.calls.length;
           const expired = await accept(
             callbackClient().callback({
+              extraHeaders: { authorization: "Bearer clerk-session" },
               query: { code: `connect-${randomUUID()}`, state },
             }),
             [307],
@@ -1687,4 +1706,126 @@ describe("Slack OAuth API routes", () => {
       );
     });
   });
+  it.each(callbackAuthenticationModes)(
+    "requires the completing actor for legacy Slack install (%s)",
+    async (mode) => {
+      const actor = createBddApi(context).user();
+      authenticateCallbackActor(context, actor);
+      const state = await installStateFor({
+        orgId: actor.orgId!,
+        userId: actor.userId,
+      });
+      const victimWorkspace = `T_${randomUUID()}`;
+      const victimUser = uniqueSlackUserId();
+      mockOAuthSuccess({ teamId: victimWorkspace, authedUserId: victimUser });
+      const query = { state, code: "provider-result" };
+      const browserHeaders = callbackBrowserHeaders(context, mode, actor);
+      const browser = await accept(
+        callbackClient().callback({
+          query,
+          extraHeaders: browserHeaders.cookie
+            ? { cookie: browserHeaders.cookie }
+            : {},
+        }),
+        [307],
+      );
+      const handoff = new URL(browser.headers.get("location")!);
+      expect(handoff.pathname).toBe("/connectors/slack/callback");
+      expect(handoff.searchParams.get("integration")).toBe("slack");
+      expect(handoff.searchParams.get("state")).toBe(state);
+      expect(browser.headers.get("cache-control")).toBe("no-store");
+      authenticateCallbackActor(context, actor);
+      await expect(
+        readIntegrationStatus(actor.orgId!, actor.userId),
+      ).resolves.toMatchObject({ isInstalled: false, isConnected: false });
+      const completion = await accept(
+        callbackClient().callback({
+          query: { ...query, responseMode: "json" },
+          extraHeaders: callbackBrowserHeaders(context, mode, actor),
+        }),
+        [200, 401],
+      );
+      expect(completion.status).toBe(callbackNeedsSignIn(mode) ? 401 : 200);
+      expect(completion.headers.get("cache-control")).toBe("no-store");
+      expect(completion.headers.get("referrer-policy")).toBe("no-referrer");
+      if (completion.status === 200) {
+        const target = new URL(completion.body.redirectUrl);
+        if (mode === "matching-cookie") {
+          expect(target.searchParams.get("status")).toBe("connected");
+        } else {
+          expect(target.searchParams.get("error")).toContain(
+            "active account or organization changed",
+          );
+        }
+      }
+      authenticateCallbackActor(context, actor);
+      await expect(
+        readIntegrationStatus(actor.orgId!, actor.userId),
+      ).resolves.toMatchObject({
+        isInstalled: mode === "matching-cookie",
+        isConnected: mode === "matching-cookie",
+      });
+      if (callbackNeedsSignIn(mode)) {
+        const resumed = await accept(
+          callbackClient().callback({
+            query,
+            extraHeaders: { authorization: "Bearer clerk-session" },
+          }),
+          [307],
+        );
+        expect(
+          new URL(resumed.headers.get("location")!).searchParams.get("status"),
+        ).toBe("connected");
+        await expect(
+          readIntegrationStatus(actor.orgId!, actor.userId),
+        ).resolves.toMatchObject({ isInstalled: true, isConnected: true });
+      }
+    },
+  );
+  it.each(["missing", "expired-cookie"] as const)(
+    "defers legacy Slack user connection until authentication (%s)",
+    async (mode) => {
+      const installation = await installPublicOrg();
+      mockCallbackDirectory(installation.actor);
+      const state = await startPublicCallback(installation);
+      const victimUser = uniqueSlackUserId();
+      mockOAuthSuccess({
+        teamId: installation.slackWorkspaceId,
+        authedUserId: victimUser,
+      });
+      const query = { state, code: "provider-user-result" };
+      const browser = await accept(callbackClient().callback({ query }), [307]);
+      expect(
+        new URL(browser.headers.get("location")!).searchParams.get(
+          "integration",
+        ),
+      ).toBe("slack");
+      const refused = await accept(
+        callbackClient().callback({
+          query: { ...query, responseMode: "json" },
+          extraHeaders: callbackBrowserHeaders(
+            context,
+            mode,
+            installation.actor,
+          ),
+        }),
+        [401],
+      );
+      expect(refused.body.error.code).toBe("UNAUTHORIZED");
+      authenticateCallbackActor(context, installation.actor);
+      await expect(
+        readIntegrationStatus(installation.orgId, installation.userId),
+      ).resolves.toMatchObject({ isConnected: false });
+      const completed = await accept(
+        callbackClient().callback({
+          query,
+          extraHeaders: { authorization: "Bearer clerk-session" },
+        }),
+        [307],
+      );
+      expect(
+        new URL(completed.headers.get("location")!).searchParams.get("status"),
+      ).toBe("connected");
+    },
+  );
 });

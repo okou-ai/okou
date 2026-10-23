@@ -6,7 +6,7 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { teamsBotDisplayName } from "../../lib/teams-official-app";
-import { request$ } from "../context/hono";
+import { authorization$, request$ } from "../context/hono";
 import { queryOf } from "../context/request";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
 import {
@@ -19,7 +19,14 @@ import { safeJsonParse, tapError } from "../utils";
 import type { RouteEntry } from "../route-entry";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
 import { requiredAuthContext$ } from "../auth/auth-context";
-import { checkOAuthCallbackActor$ } from "../services/oauth-callback-actor";
+import {
+  checkOAuthCallbackActor$,
+  checkOAuthEntryActor$,
+} from "../services/oauth-callback-actor";
+import {
+  authenticatedIntegrationOAuthCallback,
+  integrationOAuthAppRedirect,
+} from "../services/integration-oauth-callback";
 import {
   claimTeamsOAuthState$,
   createTeamsOAuthState$,
@@ -327,7 +334,7 @@ const connectOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
   if (entry) {
-    const actorError = await set(checkOAuthCallbackActor$, entry, signal);
+    const actorError = await set(checkOAuthEntryActor$, entry, signal);
     if (actorError) {
       return settingsErrorRedirect(actorError);
     }
@@ -358,92 +365,111 @@ const connectOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
   return noStoreRedirect(authUrl.toString());
 });
 
-const callbackOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const credentials = microsoftCredentials();
-  if (!credentials) {
-    return jsonErrorResponse(
-      "Microsoft Teams integration is not configured",
-      503,
-    );
-  }
+const completeCallbackOauth$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const credentials = microsoftCredentials();
+    if (!credentials) {
+      return jsonErrorResponse(
+        "Microsoft Teams integration is not configured",
+        503,
+      );
+    }
 
-  const query = get(queryOf(teamsOauthContract.callback));
-  const state = query.state
-    ? await set(
-        claimTeamsOAuthState$,
+    const query = get(queryOf(teamsOauthContract.callback));
+    const state = query.state
+      ? await set(
+          claimTeamsOAuthState$,
+          {
+            state: query.state,
+            purpose: "teams-callback",
+          },
+          signal,
+        )
+      : null;
+    if (query.error) {
+      return settingsErrorRedirect(query.error_description ?? query.error);
+    }
+    if (!query.code) {
+      return jsonErrorResponse("Missing authorization code", 400);
+    }
+
+    if (!state?.orgId || !state.userId) {
+      return settingsErrorRedirect("Invalid connect state.");
+    }
+    const actorError = await set(
+      checkOAuthCallbackActor$,
+      { userId: state.userId, orgId: state.orgId },
+      signal,
+    );
+    if (actorError) {
+      return settingsErrorRedirect(actorError);
+    }
+
+    const auth = await set(resolveTeamsOauthStateAuth$, state, signal);
+    if (!auth) {
+      return settingsErrorRedirect("Invalid connect state.");
+    }
+
+    const exchange = await tapError(
+      exchangeMicrosoftTeamsOAuthCode(
         {
-          state: query.state,
-          purpose: "teams-callback",
+          clientId: credentials.clientId,
+          clientSecret: credentials.clientSecret,
+          code: query.code,
+          redirectUri: state.redirectUri,
         },
         signal,
-      )
-    : null;
-  if (query.error) {
-    return settingsErrorRedirect(query.error_description ?? query.error);
-  }
-  if (!query.code) {
-    return jsonErrorResponse("Missing authorization code", 400);
-  }
-
-  if (!state?.orgId || !state.userId) {
-    return settingsErrorRedirect("Invalid connect state.");
-  }
-  const actorError = await set(
-    checkOAuthCallbackActor$,
-    { userId: state.userId, orgId: state.orgId },
-    signal,
-  );
-  if (actorError) {
-    return settingsErrorRedirect(actorError);
-  }
-
-  const auth = await set(resolveTeamsOauthStateAuth$, state, signal);
-  if (!auth) {
-    return settingsErrorRedirect("Invalid connect state.");
-  }
-
-  const exchange = await tapError(
-    exchangeMicrosoftTeamsOAuthCode(
-      {
-        clientId: credentials.clientId,
-        clientSecret: credentials.clientSecret,
-        code: query.code,
-        redirectUri: state.redirectUri,
+      ),
+      (error) => {
+        L.error("Microsoft Teams OAuth exchange failed", { error });
       },
-      signal,
-    ),
-    (error) => {
-      L.error("Microsoft Teams OAuth exchange failed", { error });
-    },
-  );
-  signal.throwIfAborted();
-
-  if (!exchange) {
-    return settingsErrorRedirect(
-      "Failed to connect Microsoft Teams account. Please try again.",
     );
-  }
-
-  const connectArgs = {
-    userId: auth.userId,
-    orgId: auth.orgId,
-    orgRole: auth.orgRole,
-    tenantId: exchange.tenantId,
-    teamsAadObjectId: exchange.user.id,
-    teamsUserDisplayName: exchange.user.displayName ?? undefined,
-    teamsUserPrincipalName:
-      exchange.user.userPrincipalName ?? exchange.user.mail ?? undefined,
-  };
-
-  const result = await set(connectTeamsInstallation$, connectArgs, signal);
-  signal.throwIfAborted();
-
-  if (result.kind === "not_found") {
-    const prepared = await set(prepareTeamsInstallation$, connectArgs, signal);
     signal.throwIfAborted();
 
-    if (prepared.kind !== "ok") {
-      return settingsErrorRedirect(prepared.message);
+    if (!exchange) {
+      return settingsErrorRedirect(
+        "Failed to connect Microsoft Teams account. Please try again.",
+      );
+    }
+
+    const connectArgs = {
+      userId: auth.userId,
+      orgId: auth.orgId,
+      orgRole: auth.orgRole,
+      tenantId: exchange.tenantId,
+      teamsAadObjectId: exchange.user.id,
+      teamsUserDisplayName: exchange.user.displayName ?? undefined,
+      teamsUserPrincipalName:
+        exchange.user.userPrincipalName ?? exchange.user.mail ?? undefined,
+    };
+
+    const result = await set(connectTeamsInstallation$, connectArgs, signal);
+    signal.throwIfAborted();
+
+    if (result.kind === "not_found") {
+      const prepared = await set(
+        prepareTeamsInstallation$,
+        connectArgs,
+        signal,
+      );
+      signal.throwIfAborted();
+
+      if (prepared.kind !== "ok") {
+        return settingsErrorRedirect(prepared.message);
+      }
+
+      await set(
+        publishTeamsChanged$,
+        { orgId: auth.orgId, userIds: [auth.userId] },
+        signal,
+      );
+      signal.throwIfAborted();
+
+      return teamsPendingInstallationRedirect(exchange.tenantId);
+    }
+
+    if (result.kind === "forbidden") {
+      return settingsErrorRedirect(result.message);
     }
 
     await set(
@@ -453,29 +479,40 @@ const callbackOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
     signal.throwIfAborted();
 
-    return teamsPendingInstallationRedirect(exchange.tenantId);
+    if (!isTeamsInstallationActive(result.installation)) {
+      return teamsPendingInstallationRedirect(
+        result.installation.teamsTenantId,
+      );
+    }
+
+    return settingsSuccessRedirect({
+      tenantName: result.installation.teamsTenantName,
+      teamName: result.installation.teamsTeamName,
+      botName: result.installation.botName,
+    });
+  },
+);
+
+const callbackJson$ = authenticatedIntegrationOAuthCallback(
+  completeCallbackOauth$,
+  "json",
+);
+const callbackAuthenticated$ = authenticatedIntegrationOAuthCallback(
+  completeCallbackOauth$,
+  "redirect",
+);
+
+const callbackOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const query = get(queryOf(teamsOauthContract.callback));
+  if (query.responseMode === "json") {
+    return await set(callbackJson$, signal);
   }
-
-  if (result.kind === "forbidden") {
-    return settingsErrorRedirect(result.message);
+  if (!query.state?.startsWith("teams-callback.")) {
+    return await set(completeCallbackOauth$, signal);
   }
-
-  await set(
-    publishTeamsChanged$,
-    { orgId: auth.orgId, userIds: [auth.userId] },
-    signal,
-  );
-  signal.throwIfAborted();
-
-  if (!isTeamsInstallationActive(result.installation)) {
-    return teamsPendingInstallationRedirect(result.installation.teamsTenantId);
-  }
-
-  return settingsSuccessRedirect({
-    tenantName: result.installation.teamsTenantName,
-    teamName: result.installation.teamsTeamName,
-    botName: result.installation.botName,
-  });
+  return get(authorization$)
+    ? await set(callbackAuthenticated$, signal)
+    : integrationOAuthAppRedirect("teams", query);
 });
 
 export const teamsOauthRoutes: readonly RouteEntry[] = [
