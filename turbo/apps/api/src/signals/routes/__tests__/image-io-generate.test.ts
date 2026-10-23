@@ -10,7 +10,6 @@ import {
 import { imageModelIdSchema } from "@okouai/api-contracts/contracts/image-models";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { http, HttpResponse } from "msw";
 
@@ -35,7 +34,6 @@ import { createRouteMocks } from "./helpers/route-test";
 
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createPublicImageMember } from "./helpers/public-image-member";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { chargePublicSeoUsage } from "./helpers/public-seo-charge";
 
 import {
@@ -58,8 +56,6 @@ const IMAGE_IO_MODEL = "gpt-image-1";
 const FAL_GPT_IMAGE_1_URL =
   "https://queue.fal.run/fal-ai/gpt-image-1/text-to-image";
 const FAL_GPT_IMAGE_2_URL = "https://queue.fal.run/openai/gpt-image-2";
-const OPENAI_IMAGE_GENERATIONS_URL =
-  "https://api.openai.com/v1/images/generations";
 
 const FAL_GPT_MEDIA_URL = "https://fal.media/files/test/gpt-image-1.webp";
 const FAL_OUTPUT_SAFETY_FILTER_MESSAGE =
@@ -118,10 +114,6 @@ const FAL_IDEOGRAM_4_TURBO_MEGAPIXEL_CREDITS = 7.5;
 const FAL_IDEOGRAM_4_QUALITY_MEGAPIXEL_CREDITS = 25;
 const API_ORIGIN = "https://api.okou.test";
 const WEB_ORIGIN = "https://www.okou.test";
-const GPT_IMAGE_2_5_MODELS = [
-  "gpt-image-2.5-flare",
-  "gpt-image-2.5-sunburst",
-] as const;
 
 // Recovers the generation ID for a synchronously failed submission from its
 // realtime failure publish (`built-in-generation:{id}`), the product-visible
@@ -368,59 +360,6 @@ describe("POST /api/image-io/generate", () => {
       expect(calledFal).toBeFalsy();
     });
   });
-
-  it.each(GPT_IMAGE_2_5_MODELS)(
-    "keeps the priced %s Images API path when Responses is disabled",
-    async (model) => {
-      const fixture = await createPublicImageMember(context, {
-        credits: 1000,
-        ownsFeatures: true,
-      });
-      await fixture.run(async () => {
-        await updateFeatureSwitchesForUser(context, fixture, {
-          [FeatureSwitchKey.DurableOpenAiImageGeneration]: false,
-        });
-        await useImageModel(fixture, model);
-        mocks.clerk.session(fixture.userId, fixture.orgId);
-        let providerCalls = 0;
-        server.use(
-          http.post(OPENAI_IMAGE_GENERATIONS_URL, () => {
-            providerCalls += 1;
-            return HttpResponse.json({
-              data: [{ b64_json: IMAGE_BYTES.toString("base64") }],
-              usage: {
-                input_tokens_details: { text_tokens: 1, image_tokens: 0 },
-                output_tokens: 1,
-              },
-            });
-          }),
-        );
-        const app = createImageIoTestApp(fixture);
-        const response = await app.request("/api/image-io/generate", {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ prompt: "a product illustration" }),
-        });
-        expect(response.status).toBe(202);
-        const generationId = readAcceptedGenerationId(
-          await response.json(),
-          "image",
-          fixture.userId,
-        );
-        await flushWaitUntilForTest();
-        const status = await app.request(
-          `/api/built-in-generations/${generationId}`,
-          { headers: authHeaders() },
-        );
-        await expect(status.json()).resolves.toMatchObject({
-          status: "completed",
-          result: { model, provider: "openai" },
-        });
-        expect(providerCalls).toBe(1);
-        await expect(orgCredits(fixture)).resolves.toBeLessThan(1000);
-      });
-    },
-  );
 
   it("keeps GPT Image 2 limited to its supported quality levels", async () => {
     const fixture = await publicFundedImageFixture({});

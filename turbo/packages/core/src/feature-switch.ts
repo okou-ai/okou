@@ -53,12 +53,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Connect your Slack identity independently of bot installation and use it in shared channels.",
     enabled: false,
   },
-  [FeatureSwitchKey.DurableOpenAiImageGeneration]: {
-    maintainer: "ethan@okou.ai",
-    displayName: "Durable OpenAI image generation",
-    description: "Use background Responses image jobs with durable recovery.",
-    enabled: true,
-  },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
     displayName: "Batch connector permissions",

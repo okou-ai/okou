@@ -1,6 +1,5 @@
 import { builtInGenerationResponseSchema } from "@okouai/api-contracts/contracts/built-in-generation";
 import { cronCompactUsageEventsContract } from "@okouai/api-contracts/contracts/cron";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -11,10 +10,6 @@ import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { builtInGenerationRoutes } from "../built-in-generation";
 import { cronCompactUsageEventsRoutes } from "../cron-compact-usage-events";
 import { cronReconcileImageGenerationsRoutes } from "../cron-reconcile-image-generations";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
 import {
   completedImageResponseWithUsage,
   mockOpenAiImageResponses,
@@ -64,11 +59,6 @@ describe("durable image settlement retention", () => {
         "gpt-image-2.5-flare",
         0,
       );
-      onTestFinished(async () => {
-        await fixture.run(async () => {
-          await deleteFeatureSwitchesForUser(context, fixture);
-        });
-      });
       await fixture.run(async () => {
         // The fixture snapshots external implementations when run starts:
         // install provider/env mocks before the first awaited request.
@@ -79,9 +69,6 @@ describe("durable image settlement retention", () => {
         context.mocks.s3.send.mockResolvedValue({});
         const provider = mockOpenAiImageResponses();
         const app = createImageIoTestApp(context);
-        await updateFeatureSwitchesForUser(context, fixture, {
-          [FeatureSwitchKey.DurableOpenAiImageGeneration]: true,
-        });
         expect(fixture.initialCredits).toBe(20_000);
         const generated = await app.request("/api/image-io/generate", {
           method: "POST",
