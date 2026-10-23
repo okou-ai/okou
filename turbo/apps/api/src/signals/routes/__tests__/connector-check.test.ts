@@ -327,7 +327,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       outcome: "resolved",
       mode: "url",
       connector: {
-        connectorSlug: "reap",
+        target: { kind: "builtin", connectorSlug: "reap" },
         label: "Reap",
       },
       run: { status: "configured" },
@@ -387,7 +387,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
   });
 
-  it("accepts canonical connector identities", async () => {
+  it("returns canonical identities for both URL request forms", async () => {
     const actor = bdd.user();
     const base = {
       mode: "url" as const,
@@ -395,16 +395,18 @@ describe("POST /api/connectors/diagnostics/check", () => {
       url: "https://api.github.com/repos/okou-ai/okou",
     };
 
-    const canonical = await checkWithSession(actor, {
-      ...base,
-      connectorSlug: "github",
-    });
-    expect(canonical.body).toMatchObject({
-      outcome: "resolved",
-      connector: {
-        connectorSlug: "github",
-      },
-    });
+    for (const selector of [
+      { connectorSlug: "github" },
+      { target: { kind: "builtin", connectorSlug: "github" } },
+    ] as const) {
+      const response = await checkWithSession(actor, { ...base, ...selector });
+      expect(response.body).toMatchObject({
+        outcome: "resolved",
+        connector: {
+          target: { kind: "builtin", connectorSlug: "github" },
+        },
+      });
+    }
   });
 
   it("returns an unknown endpoint for AWS without selectors and matches explicit SigV4 selectors", async () => {
@@ -419,7 +421,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     expect(withoutSelectors.body).toMatchObject({
       outcome: "resolved",
       mode: "url",
-      connector: { connectorSlug: "aws" },
+      connector: { target: { kind: "builtin", connectorSlug: "aws" } },
       base: "https://{awsHost+}.amazonaws.com",
       permission: {
         kind: "unknown-endpoint",
@@ -440,7 +442,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     expect(withSelectors.body).toMatchObject({
       outcome: "resolved",
       mode: "url",
-      connector: { connectorSlug: "aws" },
+      connector: { target: { kind: "builtin", connectorSlug: "aws" } },
       environmentNames: expect.arrayContaining([
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
@@ -488,7 +490,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
     expect(wrongEnvironment.body).toMatchObject({
       outcome: "environment-not-used",
-      connector: { connectorSlug: "aws" },
+      connector: { target: { kind: "builtin", connectorSlug: "aws" } },
       environmentNames: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
     });
   });
@@ -548,7 +550,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
     expect(response.body).toMatchObject({
       outcome: "resolved",
-      connector: { connectorSlug: "aws" },
+      connector: { target: { kind: "builtin", connectorSlug: "aws" } },
       permission: {
         kind: "matched",
         permissions: [
@@ -601,7 +603,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       outcome: "resolved",
       mode: "url",
       connector: {
-        connectorSlug: "slack",
+        target: { kind: "builtin", connectorSlug: "slack" },
         visibility: "available",
         credentialResolution: "network-boundary",
       },
@@ -635,7 +637,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     expect(hidden.body).toMatchObject({
       outcome: "resolved",
       connector: {
-        connectorSlug: "test-oauth",
+        target: { kind: "builtin", connectorSlug: "test-oauth" },
         label: "Test OAuth",
         visibility: "unavailable",
       },
@@ -656,7 +658,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       outcome: "resolved",
       mode: "environment",
       connector: {
-        connectorSlug: "github",
+        target: { kind: "builtin", connectorSlug: "github" },
         label: "GitHub",
         visibility: "available",
         credentialResolution: "network-boundary",
@@ -673,7 +675,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
     expect(siblingAlias.body).toMatchObject({
       outcome: "resolved",
-      connector: { connectorSlug: "github" },
+      connector: { target: { kind: "builtin", connectorSlug: "github" } },
       environmentNames: ["GH_TOKEN"],
     });
     const unknownEnvironment = await checkWithSession(actor, {
@@ -694,11 +696,14 @@ describe("POST /api/connectors/diagnostics/check", () => {
       outcome: "ambiguous",
       candidates: [
         {
-          connectorSlug: "nintendo-store",
+          target: { kind: "builtin", connectorSlug: "nintendo-store" },
           label: "Nintendo Store",
         },
         {
-          connectorSlug: "nintendo-switch-parental-controls",
+          target: {
+            kind: "builtin",
+            connectorSlug: "nintendo-switch-parental-controls",
+          },
           label: "Nintendo Switch Parental Controls",
         },
       ],
@@ -713,7 +718,10 @@ describe("POST /api/connectors/diagnostics/check", () => {
     expect(selected.body).toMatchObject({
       outcome: "resolved",
       connector: {
-        connectorSlug: "nintendo-switch-parental-controls",
+        target: {
+          kind: "builtin",
+          connectorSlug: "nintendo-switch-parental-controls",
+        },
       },
       environmentNames: ["NINTENDO_SWITCH_PARENTAL_CONTROLS_ACCOUNT_TOKEN"],
     });
@@ -726,7 +734,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
     expect(mismatch.body).toMatchObject({
       outcome: "connector-mismatch",
-      connector: { connectorSlug: "github" },
+      connector: { target: { kind: "builtin", connectorSlug: "github" } },
     });
 
     const notOwned = await checkWithSession(actor, {
@@ -737,7 +745,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
     expect(notOwned.body).toMatchObject({
       outcome: "environment-not-owned",
-      connector: { connectorSlug: "github" },
+      connector: { target: { kind: "builtin", connectorSlug: "github" } },
     });
 
     const notUsed = await checkWithSession(actor, {
@@ -750,7 +758,10 @@ describe("POST /api/connectors/diagnostics/check", () => {
     expect(notUsed.body).toStrictEqual({
       outcome: "environment-not-used",
       connector: {
-        connectorSlug: "nintendo-switch-parental-controls",
+        target: {
+          kind: "builtin",
+          connectorSlug: "nintendo-switch-parental-controls",
+        },
         label: "Nintendo Switch Parental Controls",
         visibility: "available",
         credentialResolution: "network-boundary",
@@ -797,7 +808,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
     expect(unresolved.body).toMatchObject({
       outcome: "unresolved-dynamic-base",
-      connector: { connectorSlug: "reap" },
+      connector: { target: { kind: "builtin", connectorSlug: "reap" } },
     });
 
     const connected = await own(() => {
@@ -811,7 +822,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
     expect(resolved.body).toMatchObject({
       outcome: "resolved",
-      connector: { connectorSlug: "reap" },
+      connector: { target: { kind: "builtin", connectorSlug: "reap" } },
       base: storedBase,
       relativePath: "/users",
       run: { status: "not-scoped" },
@@ -865,7 +876,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       });
       expect(isolated.body).toMatchObject({
         outcome: "unresolved-dynamic-base",
-        connector: { connectorSlug: "reap" },
+        connector: { target: { kind: "builtin", connectorSlug: "reap" } },
       });
     }
   });
@@ -895,7 +906,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       const foreignCold = await checkWithSession(foreign, foreignRequest);
       expect(cold.body).toMatchObject({
         outcome: "unresolved-dynamic-base",
-        connector: { connectorSlug: "reap" },
+        connector: { target: { kind: "builtin", connectorSlug: "reap" } },
       });
       expect(foreignCold.body).toStrictEqual(cold.body);
       const accounts: {
@@ -940,7 +951,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
           const ownerResolved = await checkWithSession(owner, request);
           expect(ownerResolved.body).toMatchObject({
             outcome: "resolved",
-            connector: { connectorSlug: "reap" },
+            connector: { target: { kind: "builtin", connectorSlug: "reap" } },
             base: ownerBase,
             relativePath: "/users",
             run: { status: "not-scoped" },
@@ -951,7 +962,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
           );
           expect(foreignResolved.body).toMatchObject({
             outcome: "resolved",
-            connector: { connectorSlug: "reap" },
+            connector: { target: { kind: "builtin", connectorSlug: "reap" } },
             base: foreignBase,
             relativePath: "/users",
             run: { status: "not-scoped" },
@@ -985,7 +996,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
           });
           expect(fresh.body).toMatchObject({
             outcome: "resolved",
-            connector: { connectorSlug: "reap" },
+            connector: { target: { kind: "builtin", connectorSlug: "reap" } },
             base: changedBase,
             relativePath: "/users",
             run: { status: "not-scoped" },
@@ -1101,7 +1112,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
     expect(initial.body).toMatchObject({
       outcome: "resolved",
-      connector: { connectorSlug: "reap" },
+      connector: { target: { kind: "builtin", connectorSlug: "reap" } },
       run: { status: "configured", bases: [runBase] },
       base: runBase,
       permission: {
@@ -1269,7 +1280,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       );
       expect(allowed.body).toMatchObject({
         outcome: "resolved",
-        connector: { connectorSlug: "cloudflare" },
+        connector: { target: { kind: "builtin", connectorSlug: "cloudflare" } },
         permission: {
           permissions: [
             {
@@ -1286,7 +1297,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       );
       expect(expired.body).toMatchObject({
         outcome: "resolved",
-        connector: { connectorSlug: "cloudflare" },
+        connector: { target: { kind: "builtin", connectorSlug: "cloudflare" } },
         permission: {
           permissions: [
             {
@@ -1339,7 +1350,9 @@ describe("POST /api/connectors/diagnostics/check", () => {
               expect(original.body).toMatchObject({
                 outcome: "resolved",
                 mode: "environment",
-                connector: { connectorSlug: "github" },
+                connector: {
+                  target: { kind: "builtin", connectorSlug: "github" },
+                },
                 environmentName: "GH_TOKEN",
                 run: { status: "not-configured" },
                 permission: null,
@@ -1586,7 +1599,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       });
       expect(legacy.body).toMatchObject({
         outcome: "resolved",
-        connector: { connectorSlug: "reap" },
+        connector: { target: { kind: "builtin", connectorSlug: "reap" } },
       });
       expect(JSON.stringify(legacy.body)).not.toContain(custom.id);
     });
@@ -1829,7 +1842,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
         outcome: "resolved",
         mode: "environment",
         connector: {
-          connectorSlug: "github",
+          target: { kind: "builtin", connectorSlug: "github" },
           label: "GitHub",
           visibility: "available",
           credentialResolution: "network-boundary",
