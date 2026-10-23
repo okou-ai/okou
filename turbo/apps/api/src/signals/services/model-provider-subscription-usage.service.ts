@@ -12,11 +12,11 @@ import {
   prepareCodexResetCreditExpiryRead,
 } from "./codex-reset-credit-expiry.service";
 import { logger } from "../../lib/log";
-import { db$, writeDb$ } from "../external/db";
+import { db$ } from "../external/db";
 import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import { notFound } from "../../lib/error";
 import { tapError } from "../utils";
-import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
+import { resolveCurrentPersonalSubscriptionBundleForApi$ } from "./agent-webhook-firewall-auth.service";
 import { fetchClaudeCodeSubscriptionMetadata } from "./claude-code-usage.service";
 import {
   consumeCodexRateLimitResetCredit,
@@ -136,19 +136,18 @@ const refreshCodexProvider$ = command(
       ...(args.provider.modelProviderId ? { sourceId: args.provider.id } : {}),
       metadataKey: args.provider.type,
     };
-    const accessTokenResult =
-      await resolveCurrentPersonalSubscriptionBundleForApi(
-        {
-          db: set(writeDb$),
-          orgId: args.orgId,
-          userId: args.userId,
-          key: "CHATGPT_ACCESS_TOKEN",
-          providerKey: args.provider.type,
-          metadata: accountMetadata,
-          featureSwitchContext: args.featureSwitchContext,
-        },
-        signal,
-      );
+    const accessTokenResult = await set(
+      resolveCurrentPersonalSubscriptionBundleForApi$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        key: "CHATGPT_ACCESS_TOKEN",
+        providerKey: args.provider.type,
+        metadata: accountMetadata,
+        featureSwitchContext: args.featureSwitchContext,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (accessTokenResult.status === "unavailable") {
       return accessTokenResult.reconnectState
@@ -199,9 +198,9 @@ const refreshClaudeCodeProvider$ = command(
     args: RefreshProviderArgs,
     signal: AbortSignal,
   ): Promise<ModelProviderResponse> => {
-    const bundle = await resolveCurrentPersonalSubscriptionBundleForApi(
+    const bundle = await set(
+      resolveCurrentPersonalSubscriptionBundleForApi$,
       {
-        db: set(writeDb$),
         orgId: args.orgId,
         userId: args.userId,
         key: CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME,
@@ -373,32 +372,30 @@ export const consumePersonalCodexRateLimitResetCredit$ = command(
       }
     | NotFoundResponse
   > => {
-    const database = set(writeDb$);
     const featureSwitchContext = await get(
       userFeatureSwitchContext(args.orgId, args.userId),
     );
     signal.throwIfAborted();
 
-    const accessTokenResult =
-      await resolveCurrentPersonalSubscriptionBundleForApi(
-        {
-          db: database,
-          orgId: args.orgId,
-          userId: args.userId,
-          key: "CHATGPT_ACCESS_TOKEN",
-          providerKey: "codex-oauth-token",
-          metadata: {
-            sourceType: "model-provider",
-            sourceUserId: args.userId,
-            ...(args.modelProviderAccountId
-              ? { sourceId: args.modelProviderAccountId }
-              : {}),
-            metadataKey: "codex-oauth-token",
-          },
-          featureSwitchContext,
+    const accessTokenResult = await set(
+      resolveCurrentPersonalSubscriptionBundleForApi$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        key: "CHATGPT_ACCESS_TOKEN",
+        providerKey: "codex-oauth-token",
+        metadata: {
+          sourceType: "model-provider",
+          sourceUserId: args.userId,
+          ...(args.modelProviderAccountId
+            ? { sourceId: args.modelProviderAccountId }
+            : {}),
+          metadataKey: "codex-oauth-token",
         },
-        signal,
-      );
+        featureSwitchContext,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (accessTokenResult.status === "unavailable") {
       if (!accessTokenResult.reconnectState) {
