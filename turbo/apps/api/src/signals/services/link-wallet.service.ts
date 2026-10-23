@@ -620,36 +620,34 @@ const refreshWalletConnection$ = command(
   }> => {
     const { owner, connection } = input;
     const db = set(writeDb$);
-    // Consume the one-time refresh credential before the remote effect. Only a
-    // returned row may use it; failures require reconnecting, never blind reuse.
-    const [consumed] = await db
-      .update(linkWalletConnections)
-      .set({ encryptedCredentials: null })
-      .where(
-        and(
-          connectionOwner(owner),
-          eq(linkWalletConnections.authorizationId, connection.authorizationId),
-          eq(
-            linkWalletConnections.encryptedCredentials,
-            connection.encryptedCredentials,
-          ),
-          isNull(linkWalletConnections.revokedAt),
-        ),
-      )
-      .returning();
-    if (!consumed) {
-      throw new LinkWalletError(
-        409,
-        "WALLET_RECONNECT_REQUIRED",
-        "Wallet authorization changed; check status or reconnect",
-      );
-    }
     const refreshed = await onRejection(
       linkTokenRequest(
         { grant_type: "refresh_token", refresh_token: input.refreshToken },
         AbortSignal.timeout(15_000),
       ),
-      () => {
+      async (error) => {
+        if (
+          error instanceof LinkWalletError &&
+          error.code === "WALLET_RECONNECT_REQUIRED"
+        ) {
+          await db
+            .update(linkWalletConnections)
+            .set({ encryptedCredentials: null })
+            .where(
+              and(
+                connectionOwner(owner),
+                eq(
+                  linkWalletConnections.authorizationId,
+                  connection.authorizationId,
+                ),
+                eq(
+                  linkWalletConnections.encryptedCredentials,
+                  connection.encryptedCredentials,
+                ),
+                isNull(linkWalletConnections.revokedAt),
+              ),
+            );
+        }
         return publishWalletChanged(owner);
       },
     );
@@ -687,7 +685,10 @@ const refreshWalletConnection$ = command(
         and(
           connectionOwner(owner),
           eq(linkWalletConnections.authorizationId, connection.authorizationId),
-          isNull(linkWalletConnections.encryptedCredentials),
+          eq(
+            linkWalletConnections.encryptedCredentials,
+            connection.encryptedCredentials,
+          ),
           isNull(linkWalletConnections.revokedAt),
         ),
       )
@@ -697,7 +698,7 @@ const refreshWalletConnection$ = command(
       // only for revocation. It cannot authorize access while revokedAt is set.
       const [revoked] = await db
         .update(linkWalletConnections)
-        .set({ encryptedCredentials })
+        .set({ encryptedCredentials, revocationConfirmedAt: null })
         .where(
           and(
             connectionOwner(owner),
@@ -705,7 +706,13 @@ const refreshWalletConnection$ = command(
               linkWalletConnections.authorizationId,
               connection.authorizationId,
             ),
-            isNull(linkWalletConnections.encryptedCredentials),
+            or(
+              eq(
+                linkWalletConnections.encryptedCredentials,
+                connection.encryptedCredentials,
+              ),
+              isNull(linkWalletConnections.encryptedCredentials),
+            ),
             isNotNull(linkWalletConnections.revokedAt),
           ),
         )

@@ -79,22 +79,9 @@ interface Credential {
   readonly expiresAt: number;
 }
 
-interface Refresh {
-  readonly id: symbol;
-  readonly controller: AbortController;
-  readonly promise: Promise<Credential>;
-  waiters: number;
-}
-
-interface CacheEntry {
-  credential?: Credential;
-  refresh?: Refresh;
-}
-
-// Configuration is immutable within a deployment; separate entries also keep
-// simultaneous requests for different service accounts from sharing credentials.
+// Cache completed credentials only; each request owns its token exchange.
 const credentials = singleton(() => {
-  return new Map<string, CacheEntry>();
+  return new Map<string, Credential>();
 });
 
 const stsResponseSchema = z.object({
@@ -156,7 +143,7 @@ async function readTokenResponse(
   return safeJsonParse(body.text);
 }
 
-/** Recover only the failed token endpoint, within the shared refresh budget. */
+/** Recover only the failed token endpoint, within the request's auth budget. */
 async function tokenResponse(
   request: () => Promise<Response>,
   stage: "sts" | "impersonation",
@@ -273,10 +260,8 @@ async function exchange(
   };
 }
 
-async function completeRefresh(
+async function refreshCredential(
   configuration: Configuration,
-  entry: CacheEntry,
-  refreshId: symbol,
   ownerSignal: AbortSignal,
 ): Promise<Credential> {
   const deadlineAt = now() + AUTH_TIMEOUT_MS;
@@ -304,66 +289,22 @@ async function completeRefresh(
     },
   );
   signal.throwIfAborted();
-  if (entry.refresh?.id === refreshId) {
-    entry.credential = credential;
-  }
   return credential;
 }
 
-function refreshCredential(
-  configuration: Configuration,
-  entry: CacheEntry,
-): Refresh {
-  const controller = new AbortController();
-  const refreshId = Symbol("Google LLM credential refresh");
-  const refresh: Refresh = {
-    id: refreshId,
-    controller,
-    waiters: 0,
-    promise: completeRefresh(
-      configuration,
-      entry,
-      refreshId,
-      controller.signal,
-    ).finally(() => {
-      if (entry.refresh === refresh) {
-        delete entry.refresh;
-      }
-    }),
-  };
-  entry.refresh = refresh;
-  return refresh;
-}
-
-/** Each request owns its wait; only the last departing waiter cancels exchange. */
+/** Reuse completed tokens without sharing request-owned authentication I/O. */
 export async function gcpLlmAccessToken(
   configuration: Configuration,
   signal: AbortSignal,
 ): Promise<string> {
   signal.throwIfAborted();
   const key = JSON.stringify([configuration, env("ENV"), STS_URL, SCOPE]);
-  let entry = credentials().get(key);
-  if (!entry) {
-    entry = {};
-    credentials().set(key, entry);
+  const cached = credentials().get(key);
+  if (cached && cached.expiresAt > now() + REFRESH_SKEW_MS) {
+    return cached.accessToken;
   }
-  if (
-    entry.credential &&
-    entry.credential.expiresAt > now() + REFRESH_SKEW_MS
-  ) {
-    return entry.credential.accessToken;
-  }
-  const refresh = entry.refresh ?? refreshCredential(configuration, entry);
-  refresh.waiters += 1;
-  const credential = await awaitWithSignal(refresh.promise, signal).finally(
-    () => {
-      refresh.waiters -= 1;
-      if (refresh.waiters === 0 && entry.refresh === refresh) {
-        delete entry.refresh;
-        refresh.controller.abort();
-      }
-    },
-  );
+  const credential = await refreshCredential(configuration, signal);
   signal.throwIfAborted();
+  credentials().set(key, credential);
   return credential.accessToken;
 }

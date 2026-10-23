@@ -292,7 +292,6 @@
     "src/signals/services/mcp-oauth-safe-fetch.service.ts",
     "src/signals/services/model-provider-account.service.ts",
     "src/signals/services/model-provider-subscription-usage.types.ts",
-    "src/signals/services/same-process-refresh.ts",
     "src/signals/services/vnc-client-identity.service.ts",
     "src/signals/services/vnc-configuration.utils.ts",
     "src/signals/services/vnc-connection.service.ts",
