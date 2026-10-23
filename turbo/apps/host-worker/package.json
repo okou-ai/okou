@@ -30,6 +30,7 @@
     "@types/node": "^24.13.4"
   },
   "dependencies": {
+    "entities": "7.0.1",
     "@okouai/api-contracts": "workspace:*",
     "@okouai/core": "workspace:*",
     "zod": "^4.5.4",

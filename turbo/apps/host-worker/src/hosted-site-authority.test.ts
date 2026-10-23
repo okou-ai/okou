@@ -243,6 +243,27 @@ it.each([
   },
 );
 
+it("delivers the original document when the rollout omits presentation metadata", async () => {
+  server.use(
+    http.get(endpoint, () => {
+      return HttpResponse.json({ allowed: true, decision: "allow" });
+    }),
+  );
+  const original =
+    "<!doctype html><html><body><h1>Business report</h1></body></html>";
+  const response = await fetchWorker(
+    new Request("https://demo.okou.app/", {
+      headers: { "Sec-Fetch-Dest": "document" },
+    }),
+    {
+      ...environment(true, undefined, "okou", false, original),
+      HOSTED_SITE_AUTH_URL: "https://app.okou.ai/hosted-site-authorize",
+    },
+  );
+  expect(response.status).toBe(200);
+  expect(await response.text()).toBe(original);
+});
+
 it("fetches the latest banner preference on refresh without republishing", async () => {
   let showBanner = true;
   server.use(

@@ -14,6 +14,7 @@ import { versionsHostedSiteCommand } from "./versions";
 import { screenshotHostedSiteCommand } from "./screenshot";
 import { completeHostedSiteCommand } from "./complete";
 import { titleHostedSiteCommand } from "./title";
+import { createHostedSiteBannerCommand } from "./banner";
 import {
   createArtifactVisibilityOption,
   type ArtifactVisibility,
@@ -46,7 +47,8 @@ function formatBytes(bytes: number): string {
 }
 
 export function createHostCommand(): Command {
-  return new Command()
+  const settingsEnabled = hostedSiteVisibilityEnabled();
+  const command = new Command()
     .name("host")
     .description(
       "Publish, redeploy, inspect, clone, and delete static hosted sites",
@@ -72,23 +74,28 @@ export function createHostCommand(): Command {
       "PNG/JPEG artifact cover outside the hosted directory (up to 5 MiB)",
     )
     .option("--json", "Output the result and Markdown return forms as JSON")
-    .addOption(
-      createArtifactVisibilityOption().hideHelp(!hostedSiteVisibilityEnabled()),
-    )
+    .addOption(createArtifactVisibilityOption().hideHelp(!settingsEnabled))
     .addCommand(cloneHostedSiteCommand)
     .addCommand(versionsHostedSiteCommand)
     .addCommand(deleteHostedSiteCommand)
     .addCommand(screenshotHostedSiteCommand)
     .addCommand(completeHostedSiteCommand)
-    .addCommand(titleHostedSiteCommand)
+    .addCommand(titleHostedSiteCommand);
+  if (settingsEnabled) {
+    command.addCommand(createHostedSiteBannerCommand());
+  }
+  return command
     .addHelpText("after", () => {
+      const bannerExample = settingsEnabled
+        ? "\n  Hide the banner:      okou host banner my-product-demo off"
+        : "";
       return `
 Examples:
   Capture a cover:      okou host screenshot ./dist --out ./preview.png --spa
   Publish with cover:   okou host ./dist --site my-product-demo --title "Product demo" --spa --preview ./preview.png
   Publish a Vite build:  okou host ./dist --site my-product-demo --title "Product demo" --spa
   Redeploy the same URL: okou host ./dist --site my-product-demo --title "Product demo" --spa
-  Change display title: okou host title my-product-demo "New product demo"
+  Change display title: okou host title my-product-demo "New product demo"${bannerExample}
   List site versions:    okou host versions my-product-demo
   Clone a hosted site:   okou host clone my-product-demo ./site
   Take a site offline:   okou host delete my-product-demo

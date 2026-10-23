@@ -389,9 +389,9 @@ test("the owner's switch controls anonymous banner presentation and preserves th
   const disabled = (
     await accept(client().deliveryAuthorization(delivery), [200])
   ).body;
-  expect(disabled).toMatchObject({
+  expect(disabled).toStrictEqual({
     allowed: true,
-    presentation: { showBanner: false },
+    decision: "allow",
   });
   await enable(owner);
   const initial = (
@@ -412,6 +412,9 @@ test("the owner's switch controls anonymous banner presentation and preserves th
     [200],
   );
   await enable(owner, false);
+  expect(
+    (await accept(client().deliveryAuthorization(delivery), [200])).body,
+  ).toStrictEqual({ allowed: true, decision: "allow" });
   await enable(owner);
   expect(
     (

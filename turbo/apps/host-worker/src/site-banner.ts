@@ -1,5 +1,6 @@
 import { createElement } from "react";
 import { renderToReadableStream } from "react-dom/server.edge";
+import { escapeUTF8 } from "entities/escape";
 import type { z } from "zod";
 import type { hostedSitePresentationSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import {
@@ -91,10 +92,7 @@ export async function withSiteBanner(
     { signal: request.signal },
   );
   const chrome = await new Response(markup).text();
-  const siteUrl = presentation.siteUrl
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;");
+  const siteUrl = escapeUTF8(presentation.siteUrl);
   const banner = `<style nonce="${nonce}">#okou-site-banner{all:initial;position:fixed;inset:0 0 auto;z-index:2147483646;display:block;height:56px;font:14px/1.5 system-ui,sans-serif}#okou-site-banner-space{all:initial;display:block;height:56px}:fullscreen #okou-site-banner,:fullscreen #okou-site-banner-space{display:none}</style><div id="okou-site-banner-space" aria-hidden="true"></div><div id="okou-site-banner" data-site-url="${siteUrl}" data-theme="light"><template shadowrootmode="open"><style nonce="${nonce}">${assets.css}</style>${chrome}</template></div><script nonce="${nonce}">${assets.script}</script>`;
   let body = response.body;
   if (body && (encoding === "gzip" || encoding === "deflate")) {

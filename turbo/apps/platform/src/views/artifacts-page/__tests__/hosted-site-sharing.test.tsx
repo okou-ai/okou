@@ -399,6 +399,8 @@ test("restricted Site previews work with visibility settings disabled and share 
   await openShare();
   expect(queryAllByRoleFast("radio")).toHaveLength(0);
   expect(screen.queryByText("Anyone with the link")).not.toBeInTheDocument();
+  expect(screen.queryByText("Show Okou banner")).not.toBeInTheDocument();
+  expect(screen.queryByRole("switch")).not.toBeInTheDocument();
   click(getButtonByName("Copy link"));
   await waitFor(() => {
     return expect(clipboard.writes).toStrictEqual([site.url]);

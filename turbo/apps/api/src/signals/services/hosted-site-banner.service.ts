@@ -134,10 +134,11 @@ export const hostedSitePresentation$ = command(
       site.userId,
       signal,
     );
+    if (!isFeatureEnabled(FeatureSwitchKey.HostedSiteVisibility, features)) {
+      return undefined;
+    }
     return {
-      showBanner:
-        site.showBanner &&
-        isFeatureEnabled(FeatureSwitchKey.HostedSiteVisibility, features),
+      showBanner: site.showBanner,
       title: site.title ?? site.slug,
       siteUrl: `${hostedLinkOrigin("current", site.publicSlug)}/`,
     };

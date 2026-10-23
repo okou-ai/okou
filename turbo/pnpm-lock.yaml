@@ -555,6 +555,9 @@ importers:
       '@okouai/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      entities:
+        specifier: 7.0.1
+        version: 7.0.1
       react:
         specifier: ^19.2.6
         version: 19.2.6
