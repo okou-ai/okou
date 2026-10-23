@@ -6836,43 +6836,6 @@
         "time": "Horário ({{timezone}})",
         "updateScheduleAria": "Atualizar automação agendada"
       },
-      "stripe": {
-        "addAction": "Adicionar automação do Stripe",
-        "addAria": "Adicionar automação de fatura paga do Stripe",
-        "addDescription": "Execute este workflow quando uma fatura correspondente for paga na conta Stripe Live conectada.",
-        "addTitle": "Adicionar automação do Stripe",
-        "anyBillingReason": "Qualquer motivo de cobrança",
-        "billingReason": {
-          "automaticPendingInvoiceItemInvoice": "Itens de fatura pendentes automáticos",
-          "manual": "Manual",
-          "quoteAccept": "Cotação aceita",
-          "subscription": "Assinatura",
-          "subscriptionCreate": "Assinatura criada",
-          "subscriptionCycle": "Ciclo de assinatura",
-          "subscriptionThreshold": "Limite de assinatura",
-          "subscriptionUpdate": "Assinatura atualizada",
-          "upcoming": "Próxima"
-        },
-        "billingReasons": "Motivos de cobrança",
-        "billingReasonsHint": "Não selecione nenhuma opção para aceitar qualquer motivo de cobrança.",
-        "bindingSummary": "Conta Stripe {{accountId}} · Modo Live · {{billingReasons}}",
-        "delivery": "Entrega",
-        "deliveryStatus": {
-          "delivered": "Entregue",
-          "failed": "Falhou",
-          "pending": "Pendente",
-          "skipped": "Ignorada"
-        },
-        "deliveryWarning": "A entrega terminal mais recente falhou. Verifique a atividade do workflow antes de tentar novamente.",
-        "immutableHint": "A conta Stripe e os motivos de cobrança são fixos. Para alterá-los, exclua esta automação e crie-a novamente.",
-        "invoicePaidDescription": "Execute quando uma fatura correspondente do Stripe for paga.",
-        "invoicePaidTitle": "Fatura do Stripe paga",
-        "lastEvent": "Último evento",
-        "manageConnection": "Gerenciar conexão do Stripe",
-        "noDeliveries": "Nenhuma entrega ainda",
-        "noMatchingEvents": "Nenhum evento correspondente ainda",
-        "rule": "Quando uma fatura correspondente da Stripe é paga"
-      },
       "types": {
         "chat": "Chat",
         "github": "GitHub",
@@ -6881,7 +6844,6 @@
         "googleForms": "Google Forms",
         "googleMeet": "Google Meet",
         "notion": "Notion",
-        "stripe": "Stripe",
         "webhook": "Webhook"
       },
       "webhook": {

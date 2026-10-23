@@ -1,24 +1,5 @@
 import { workflowAutomationSnapshot } from "./workflow-automation-snapshot";
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
-import {
-  connectorCatalog,
-  connectorCatalogEntries,
-} from "@okouai/db/runtime/connector-catalog";
-import { variables } from "@okouai/db/schema/variable";
-import {
-  builtinConnectorCredentialConnectionReadPlan,
-  builtinConnectorCredentialConnectionFromRow,
-} from "./builtin-connector-credential-runtime.service";
-import {
-  connectorRuntimeAuthSelectionReadPlan,
-  connectorRuntimeAuthSelectionFromRows,
-  connectorCatalogCurrentWhere,
-} from "./connector-catalog-slug-source.service";
-import { builtinConnectorCredentialVariableReadCondition } from "./builtin-connector-credential-access.service";
-import {
-  stripeConnectionReadiness,
-  stripeLiveModeReadinessMessage,
-} from "./stripe-invoice-paid-workflow-automation.service";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { z } from "zod";
@@ -48,7 +29,6 @@ import {
   notionChildPageCreatedEventConfigSchema,
   notionDatabaseItemCreatedEventConfigSchema,
   notionPageContentUpdatedEventConfigSchema,
-  stripeInvoicePaidEventConfigSchema,
   webhookReceivedEventConfigSchema,
   type ChatRunFinishedEventConfig,
   type ChatThreadWorkflowAutomation,
@@ -66,9 +46,6 @@ import {
   type NotionDatabaseItemCreatedEventCreateConfig,
   type NotionPageContentUpdatedEventConfig,
   type NotionPageContentUpdatedEventCreateConfig,
-  type StripeInvoicePaidEventConfig,
-  type StripeInvoicePaidEventCreateConfig,
-  type StripeWorkflowAutomationHealth,
   type WebhookReceivedEventConfig,
   type WorkflowAutomationEventType,
   type WorkflowAutomationsListEntry,
@@ -84,7 +61,6 @@ import { googleCalendarWatchStates } from "@okouai/db/schema/google-calendar-eve
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
-import { stripeWorkflowAutomationHealth } from "@okouai/db/schema/stripe-automation-event";
 import {
   officialWorkflowAutomationIdentities,
   workflows,
@@ -164,8 +140,6 @@ import {
   createdChatThreadFromRow,
   chatThreadCreatedEventSql,
 } from "./chat-thread-create.service";
-import { stripeInvoicePaidWorkflowAutomationEnabledForOwner } from "./stripe-invoice-paid-workflow-automation-feature-switch.service";
-import { readStripeInvoicePaidAutomationBinding$ } from "./stripe-invoice-paid-workflow-automation-read.service";
 import { calculateNextRun } from "./time-automation";
 import {
   workflowAutomationAccountConnectorSlug,
@@ -249,10 +223,6 @@ type NotionAutomationEventType = Extract<
   | "notion-database-item-created"
   | "notion-page-content-updated"
 >;
-type StripeInvoicePaidAutomationEventType = Extract<
-  WorkflowAutomationEventType,
-  "stripe-invoice-paid"
->;
 /**
  * Outcome of an automation mutation, mapped to an HTTP response by the route layer.
  */
@@ -291,16 +261,6 @@ function workflowWebhookTeamRequiredResult(): {
   return {
     kind: "team-required",
     message: "Webhook automations require a Team or Custom workspace",
-  };
-}
-
-function stripeInvoicePaidWorkflowAutomationsDisabledResult(): {
-  readonly kind: "bad-request";
-  readonly message: string;
-} {
-  return {
-    kind: "bad-request",
-    message: "Stripe invoice-paid workflow automations are not enabled",
   };
 }
 type AutomationActionFailure = Exclude<
@@ -529,7 +489,6 @@ function supportedAutomationEventType(
     eventType === "notion-child-page-created" ||
     eventType === "notion-database-item-created" ||
     eventType === "notion-page-content-updated" ||
-    eventType === "stripe-invoice-paid" ||
     eventType === "webhook-received"
   );
 }
@@ -603,12 +562,6 @@ function supportedNotionEventType(
     eventType === "notion-database-item-created" ||
     eventType === "notion-page-content-updated"
   );
-}
-
-function supportedStripeInvoicePaidEventType(
-  eventType: string | null,
-): eventType is StripeInvoicePaidAutomationEventType {
-  return eventType === "stripe-invoice-paid";
 }
 
 function rowSummaryBase(row: AutomationRow, chatThreadId: string | null) {
@@ -786,66 +739,6 @@ function githubEventRowToSummary(
     }
   }
 }
-
-function stripeInvoicePaidRowToSummary(
-  row: AutomationRow,
-  chatThreadId: string | null,
-  health: StripeWorkflowAutomationHealth,
-): WorkflowAutomationSummary {
-  return {
-    ...rowSummaryBase(row, chatThreadId),
-    kind: "event",
-    eventType: "stripe-invoice-paid",
-    eventConfig: stripeInvoicePaidEventConfigSchema.parse(row.eventConfig),
-    schedule: null,
-    scheduleSummary: null,
-    health,
-  };
-}
-
-function stripeAutomationHealthSummary(
-  health:
-    | {
-        readonly lastMatchingEventReceivedAt: Date | null;
-        readonly lastDeliveryStatus: StripeWorkflowAutomationHealth["lastDeliveryStatus"];
-        readonly lastDeliveryStatusAt: Date | null;
-      }
-    | undefined,
-): StripeWorkflowAutomationHealth {
-  return {
-    lastMatchingEventReceivedAt:
-      health?.lastMatchingEventReceivedAt?.toISOString() ?? null,
-    lastDeliveryStatus: health?.lastDeliveryStatus ?? null,
-    lastDeliveryStatusAt: health?.lastDeliveryStatusAt?.toISOString() ?? null,
-    warning: health?.lastDeliveryStatus === "failed" ? "delivery_failed" : null,
-  };
-}
-
-function stripeAutomationHealthColumns() {
-  return {
-    lastMatchingEventReceivedAt:
-      stripeWorkflowAutomationHealth.lastMatchingEventReceivedAt,
-    lastDeliveryStatus: stripeWorkflowAutomationHealth.latestDeliveryStatus,
-    lastDeliveryStatusAt: stripeWorkflowAutomationHealth.latestDeliveryStatusAt,
-  };
-}
-const loadStripeWorkflowAutomationHealth$ = command(
-  async (
-    { get },
-    automationId: string,
-    signal: AbortSignal,
-  ): Promise<StripeWorkflowAutomationHealth> => {
-    const db = get(db$);
-
-    const [health] = await db
-      .select(stripeAutomationHealthColumns())
-      .from(stripeWorkflowAutomationHealth)
-      .where(eq(stripeWorkflowAutomationHealth.automationId, automationId))
-      .limit(1);
-    signal.throwIfAborted();
-    return stripeAutomationHealthSummary(health);
-  },
-);
 
 interface EventSummaryWarnings {
   readonly googleCalendar?: GoogleCalendarWatchActionRequiredReason;
@@ -1052,13 +945,6 @@ const rowToSummary$ = command(
     );
     signal.throwIfAborted();
     if (row.kind === "event") {
-      if (row.eventType === "stripe-invoice-paid") {
-        return stripeInvoicePaidRowToSummary(
-          row,
-          chatThreadId,
-          await set(loadStripeWorkflowAutomationHealth$, row.id, signal),
-        );
-      }
       if (row.eventType === "webhook-received") {
         return {
           ...rowSummaryBase(row, chatThreadId),
@@ -1810,16 +1696,6 @@ interface CreateNotionEventAutomationInput {
   readonly autonomyBudget?: number;
 }
 
-interface CreateStripeInvoicePaidEventAutomationInput {
-  readonly orgId: string;
-  readonly member: WorkflowMember;
-  readonly workflowId: string;
-  readonly eventType: StripeInvoicePaidAutomationEventType;
-  readonly eventConfig: StripeInvoicePaidEventCreateConfig;
-  readonly enabled: boolean;
-  readonly autonomyBudget?: number;
-}
-
 interface CreateWebhookEventAutomationInput {
   readonly orgId: string;
   readonly member: WorkflowMember;
@@ -1851,7 +1727,6 @@ export type CreateAutomationInput = (
   | CreateGoogleFormsEventAutomationInput
   | CreateGoogleMeetEventAutomationInput
   | CreateNotionEventAutomationInput
-  | CreateStripeInvoicePaidEventAutomationInput
   | CreateWebhookEventAutomationInput
 ) & {
   readonly officialInstallation?: OfficialAutomationCreationMetadata;
@@ -1919,12 +1794,6 @@ function automationCreateInputIsNotion(
   return supportedNotionEventType(args.eventType);
 }
 
-function automationCreateInputIsStripeInvoicePaid(
-  args: CreateEventAutomationInput,
-): args is CreateStripeInvoicePaidEventAutomationInput {
-  return supportedStripeInvoicePaidEventType(args.eventType);
-}
-
 type InsertEventAutomationArgs = {
   readonly threadPreparation: WorkflowThreadPreparation;
   readonly input:
@@ -1936,9 +1805,6 @@ type InsertEventAutomationArgs = {
         readonly eventConfig: GoogleFormsResponseSubmittedEventConfig;
       })
     | CreateGoogleMeetEventAutomationInput
-    | (CreateStripeInvoicePaidEventAutomationInput & {
-        readonly eventConfig: StripeInvoicePaidEventConfig;
-      })
     | (CreateNotionEventAutomationInput & {
         readonly eventConfig: NotionAutomationEventConfig;
       });
@@ -3725,298 +3591,6 @@ const persistCreatedNotionAutomation$ = command(
       : { kind: "ok", summary };
   },
 );
-
-function stripeAutomationCreateValues(
-  args: {
-    readonly context: CreateEventAutomationWorkflowContext;
-    readonly input: CreateStripeInvoicePaidEventAutomationInput;
-  },
-  binding: {
-    readonly connectorId: string;
-    readonly stripeAccountId: string;
-    readonly mode: "live";
-  },
-  currentTime: Date,
-) {
-  return {
-    id: args.context.automationId,
-    orgId: args.input.orgId,
-    workflowId: args.context.workflowId,
-    ownerUserId: args.input.member.userId,
-    kind: "event" as const,
-    eventType: args.input.eventType,
-    eventConfig: stripeInvoicePaidEventConfigSchema.parse({
-      ...args.input.eventConfig,
-      ...binding,
-    }),
-    eventConnectorId: binding.connectorId,
-    scheduleType: null,
-    cronExpression: null,
-    intervalSeconds: null,
-    atTime: null,
-    timezone: "UTC",
-    enabled: args.input.enabled,
-    nextRunAt: null,
-    ...(args.input.autonomyBudget === undefined
-      ? {}
-      : { autonomyBudget: args.input.autonomyBudget }),
-    createdAt: currentTime,
-    updatedAt: currentTime,
-  };
-}
-type StripeAutomationCreateArgs = {
-  readonly context: CreateEventAutomationWorkflowContext;
-  readonly input: CreateStripeInvoicePaidEventAutomationInput;
-};
-const stripeAutomationCatalogPlan = connectorRuntimeAuthSelectionReadPlan({
-  connectorSlugs: ["stripe"],
-});
-function stripeAutomationCreationPlans(
-  args: StripeAutomationCreateArgs,
-  currentTime: Date,
-) {
-  const owner = {
-    orgId: args.input.orgId,
-    userId: args.input.member.userId,
-    workflowId: args.context.workflowId,
-  };
-  return {
-    owner,
-    thread: automationThreadInsertPlan({
-      input: args.input,
-      agentId: args.context.agentId,
-      threadPreparation: args.context.threadPreparation,
-      currentTime,
-    }),
-    binding: {
-      values: { ...owner, createdAt: currentTime, updatedAt: currentTime },
-      conflict: {
-        target: [
-          workflowUserAutomationThreads.orgId,
-          workflowUserAutomationThreads.userId,
-          workflowUserAutomationThreads.workflowId,
-        ],
-      },
-    },
-  };
-}
-function stripeAutomationConnectionPlan(
-  owner: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly workflowId: string;
-  },
-  connectorId: string,
-  rows: Parameters<typeof connectorRuntimeAuthSelectionFromRows>[0],
-) {
-  const snapshot = connectorRuntimeAuthSelectionFromRows(
-    rows,
-    stripeAutomationCatalogPlan.requestedConnectorSlugs,
-    stripeAutomationCatalogPlan.firewallConnectorSlugs,
-  );
-  const args = { ...owner, connectorId, connectorSlug: "stripe", snapshot };
-  return { args, ...builtinConnectorCredentialConnectionReadPlan(args) };
-}
-function stripeAutomationLiveModeCondition(
-  connection: Extract<
-    ReturnType<typeof stripeConnectionReadiness>,
-    { kind: "ok" }
-  >["connection"],
-) {
-  return builtinConnectorCredentialVariableReadCondition({
-    groups: [{ access: connection.access, names: ["STRIPE_LIVEMODE"] }],
-  });
-}
-function stripeCreatedAutomationResult(
-  row: AutomationRow,
-  chatThreadId: string,
-  health: Parameters<typeof stripeAutomationHealthSummary>[0],
-): AutomationResult {
-  return {
-    kind: "ok",
-    summary: stripeInvoicePaidRowToSummary(
-      row,
-      chatThreadId,
-      stripeAutomationHealthSummary(health),
-    ),
-  };
-}
-function stripeAutomationCreateOutcome(
-  settled: Awaited<ReturnType<typeof settle<AutomationResult>>>,
-): AutomationResult {
-  if (settled.ok) {
-    return settled.value;
-  }
-  if (isAutomationEventConnectorMissing(settled.error)) {
-    return {
-      kind: "bad-request",
-      message: "Stripe account selection changed; retry adding the automation",
-    };
-  }
-  throw settled.error;
-}
-
-const createStripeInvoicePaidEventAutomationForWorkflow$ = command(
-  async (
-    { set },
-    args: StripeAutomationCreateArgs,
-    signal: AbortSignal,
-  ): Promise<AutomationResult> => {
-    const db = set(writeDb$);
-    const currentTime = nowDate();
-    const {
-      owner,
-      thread: threadPlan,
-      binding: bindingPlan,
-    } = stripeAutomationCreationPlans(args, currentTime);
-    const settled = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0336; new non-billing transactions are prohibited.
-      db.transaction(async (tx): Promise<AutomationResult> => {
-        // Keep the shared thread/event/automation publication and FK rollback.
-        // Readiness stays after the binding statement, and a business failure
-        // still commits the lazy thread, as before.
-        await tx
-          .insert(workflowUserAutomationThreads)
-          .values(bindingPlan.values)
-          .onConflictDoNothing(bindingPlan.conflict);
-        const [binding] = await tx
-          .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
-          .from(workflowUserAutomationThreads)
-          .where(workflowUserAutomationThreadOwnerCondition(owner))
-          .limit(1);
-        let chatThreadId = binding?.chatThreadId;
-        if (!chatThreadId) {
-          const [threadRow] = await tx
-            .with(...threadPlan.defaults)
-            .insert(chatThreads)
-            .values(threadPlan.values)
-            .onConflictDoNothing()
-            .returning(automationCreatedThreadColumns());
-          if (!threadRow) {
-            throw new Error("Failed to create workflow automation chat thread");
-          }
-          const thread = createdChatThreadFromRow(
-            threadRow,
-            args.context.agentId,
-          );
-          await tx.execute(
-            chatThreadCreatedEventSql({ orgId: args.input.orgId, thread }),
-          );
-          await tx
-            .update(workflowUserAutomationThreads)
-            .set({ chatThreadId: thread.id, updatedAt: currentTime })
-            .where(workflowUserAutomationThreadOwnerCondition(owner));
-          chatThreadId = thread.id;
-        }
-        signal.throwIfAborted();
-        const [selected] = parseRawRows(
-          z.object({ connectorId: z.string().nullable() }),
-          await tx.execute(
-            workflowAutomationConnectorSelectionSql({
-              ...owner,
-              connectorSlug: "stripe",
-            }),
-          ),
-        );
-        signal.throwIfAborted();
-        if (!selected?.connectorId) {
-          return {
-            kind: "bad-request",
-            message:
-              "Connect Stripe with OAuth in Live mode before adding a Stripe invoice-paid automation",
-          };
-        }
-        const catalogRows = await tx
-          .select(stripeAutomationCatalogPlan.columns)
-          .from(connectorCatalog)
-          .leftJoin(connectorCatalogEntries, stripeAutomationCatalogPlan.join)
-          .where(connectorCatalogCurrentWhere());
-        signal.throwIfAborted();
-        const connectorPlan = stripeAutomationConnectionPlan(
-          owner,
-          selected.connectorId,
-          catalogRows,
-        );
-        const [connectorRow] = await tx
-          .select(connectorPlan.columns)
-          .from(connectors)
-          .where(connectorPlan.condition)
-          .limit(1);
-        signal.throwIfAborted();
-        const ready = stripeConnectionReadiness(
-          builtinConnectorCredentialConnectionFromRow(
-            connectorPlan.args,
-            connectorRow,
-          ),
-          "The selected Stripe account changed; retry the operation",
-        );
-        if (ready.kind === "bad_request") {
-          return { kind: "bad-request", message: ready.message };
-        }
-        const [liveMode] = await tx
-          .select({ value: variables.value })
-          .from(variables)
-          .where(stripeAutomationLiveModeCondition(ready.connection));
-        signal.throwIfAborted();
-        const modeError = stripeLiveModeReadinessMessage(liveMode?.value);
-        if (modeError !== null) {
-          return { kind: "bad-request", message: modeError };
-        }
-        const stripeBinding = {
-          connectorId: ready.connection.connectorId,
-          stripeAccountId: ready.stripeAccountId,
-          mode: "live" as const,
-        };
-        const [row] = await tx
-          .insert(workflowAutomations)
-          .values(
-            stripeAutomationCreateValues(args, stripeBinding, currentTime),
-          )
-          .returning(workflowAutomationColumns());
-        if (!row) {
-          throw new Error("Failed to create Stripe workflow automation");
-        }
-        const [health] = await tx
-          .select(stripeAutomationHealthColumns())
-          .from(stripeWorkflowAutomationHealth)
-          .where(eq(stripeWorkflowAutomationHealth.automationId, row.id))
-          .limit(1);
-        return stripeCreatedAutomationResult(row, chatThreadId, health);
-      }),
-    );
-    signal.throwIfAborted();
-    return stripeAutomationCreateOutcome(settled);
-  },
-);
-
-const createStripeInvoicePaidEventAutomation$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly context: CreateEventAutomationWorkflowContext;
-      readonly input: CreateStripeInvoicePaidEventAutomationInput;
-    },
-    signal: AbortSignal,
-  ): Promise<AutomationResult> => {
-    const featureEnabled = await get(
-      stripeInvoicePaidWorkflowAutomationEnabledForOwner(
-        args.input.orgId,
-        args.input.member.userId,
-      ),
-    );
-    signal.throwIfAborted();
-    if (!featureEnabled) {
-      return stripeInvoicePaidWorkflowAutomationsDisabledResult();
-    }
-    return await set(
-      createStripeInvoicePaidEventAutomationForWorkflow$,
-      {
-        ...args,
-      },
-      signal,
-    );
-  },
-);
 const createChatRunFinishedEventAutomationForWorkflow$ = command(
   async (
     { get, set },
@@ -4183,15 +3757,6 @@ const createEventAutomationForWorkflow$ = command(
         },
         signal,
       );
-    }
-    if (automationCreateInputIsStripeInvoicePaid(input)) {
-      const result = await set(
-        createStripeInvoicePaidEventAutomation$,
-        { context, input },
-        signal,
-      );
-      signal.throwIfAborted();
-      return result;
     }
     if (automationCreateInputIsGmail(input)) {
       return await set(
@@ -4934,35 +4499,6 @@ const prepareOfficialGoogleMeetEvent$ = command(
   },
 );
 
-const prepareOfficialStripeEvent$ = command(
-  async (
-    { set },
-    input: CreateStripeInvoicePaidEventAutomationInput,
-    signal: AbortSignal,
-  ): Promise<OfficialAutomationEventPreparationResult> => {
-    const readiness = await set(
-      readStripeInvoicePaidAutomationBinding$,
-      {
-        orgId: input.orgId,
-        userId: input.member.userId,
-        workflowId: input.workflowId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (readiness.kind === "bad_request") {
-      return { kind: "bad-request", message: readiness.message };
-    }
-    return preparedOfficialEvent(
-      stripeInvoicePaidEventConfigSchema.parse({
-        ...input.eventConfig,
-        ...readiness.binding,
-      }),
-      { eventConnectorId: readiness.binding.connectorId },
-    );
-  },
-);
-
 export const prepareOfficialAutomationReconfiguration$ = command(
   async (
     { get, set },
@@ -5015,18 +4551,6 @@ export const prepareOfficialAutomationReconfiguration$ = command(
     }
     if (automationCreateInputIsNotion(input)) {
       return await set(prepareOfficialNotionEvent$, input, signal);
-    }
-    if (automationCreateInputIsStripeInvoicePaid(input)) {
-      const enabled = await get(
-        stripeInvoicePaidWorkflowAutomationEnabledForOwner(
-          input.orgId,
-          input.member.userId,
-        ),
-      );
-      signal.throwIfAborted();
-      return enabled
-        ? await set(prepareOfficialStripeEvent$, input, signal)
-        : stripeInvoicePaidWorkflowAutomationsDisabledResult();
     }
     if (input.eventType === "webhook-received") {
       const [webhook] = await db
@@ -5709,12 +5233,6 @@ const updateEventAutomationForWorkflow$ = command(
         message: "Webhook event automations cannot be updated",
       };
     }
-    if (args.automation.eventType === "stripe-invoice-paid") {
-      return {
-        kind: "bad-request",
-        message: "Stripe invoice-paid event automations cannot be updated",
-      };
-    }
     if (supportedGoogleFormsEventType(args.automation.eventType)) {
       return {
         kind: "bad-request",
@@ -6336,10 +5854,6 @@ type EnabledAutomationAccountProjection =
       readonly status: "notion-account-changed";
     }
   | {
-      readonly status: "stripe-unavailable";
-      readonly message: string;
-    }
-  | {
       readonly status: "ok";
       readonly required: false;
     }
@@ -6353,7 +5867,7 @@ type EnabledAutomationAccountProjection =
     };
 
 function unavailableEnabledAutomationProjection(
-  provider: Exclude<WorkflowAutomationAccountConnectorSlug, "stripe">,
+  provider: WorkflowAutomationAccountConnectorSlug,
 ): EnabledAutomationAccountProjection {
   switch (provider) {
     case "gmail": {
@@ -6375,7 +5889,7 @@ function unavailableEnabledAutomationProjection(
 }
 
 function enabledAutomationUnavailableMessage(
-  provider: Exclude<WorkflowAutomationAccountConnectorSlug, "stripe">,
+  provider: WorkflowAutomationAccountConnectorSlug,
 ): string {
   switch (provider) {
     case "gmail": {
@@ -6415,30 +5929,6 @@ const readEnabledAutomationAccountProjection$ = command(
       userId: automation.ownerUserId,
       workflowId: automation.workflowId,
     };
-    if (provider === "stripe") {
-      const readiness = await set(
-        readStripeInvoicePaidAutomationBinding$,
-        connectorArgs,
-        signal,
-      );
-      signal.throwIfAborted();
-      if (readiness.kind === "bad_request") {
-        return {
-          status: "stripe-unavailable",
-          message: readiness.message,
-        };
-      }
-      return {
-        status: "ok",
-        required: true,
-        connectorSlug: provider,
-        eventConnectorId: readiness.binding.connectorId,
-        eventConfig: {
-          ...stripeInvoicePaidEventConfigSchema.parse(automation.eventConfig),
-          ...readiness.binding,
-        },
-      };
-    }
     const eventConnectorId = await set(
       readEventAutomationConnectorId$,
       { ...connectorArgs, connectorSlug: provider },
@@ -6530,10 +6020,6 @@ type PersistEnabledWorkflowAutomationResult =
     }
   | {
       readonly status: "notion-account-changed";
-    }
-  | {
-      readonly status: "stripe-unavailable";
-      readonly message: string;
     }
   | {
       readonly status: "google-forms-unavailable";
@@ -6740,7 +6226,7 @@ const prepareEnabledAutomationAccountProjection$ = command(
     const provider = workflowAutomationAccountConnectorSlug(
       automation.eventType,
     );
-    if (provider === null || provider === "stripe") {
+    if (provider === null) {
       return { kind: "ok", eventConnectorId: automation.eventConnectorId };
     }
     const connectorArgs = {
@@ -7097,9 +6583,6 @@ function enabledWorkflowAutomationFailure(
         "Notion account selection changed; retry enabling the automation",
     };
   }
-  if (enabled.status === "stripe-unavailable") {
-    return { kind: "bad-request", message: enabled.message };
-  }
   if (enabled.status === "google-forms-unavailable") {
     return {
       kind: "bad-request",
@@ -7228,28 +6711,6 @@ const persistAndReconcileEnabledWorkflowAutomation$ = command(
   },
 );
 
-const validateStripeFeature$ = command(
-  async (
-    { get },
-    automation: AutomationRow,
-    signal: AbortSignal,
-  ): Promise<AutomationResult | null> => {
-    if (automation.eventType !== "stripe-invoice-paid") {
-      return null;
-    }
-    const featureEnabled = await get(
-      stripeInvoicePaidWorkflowAutomationEnabledForOwner(
-        automation.orgId,
-        automation.ownerUserId,
-      ),
-    );
-    signal.throwIfAborted();
-    return featureEnabled
-      ? null
-      : stripeInvoicePaidWorkflowAutomationsDisabledResult();
-  },
-);
-
 const readWorkflowAutomationEnableTarget$ = command(
   async (
     { get },
@@ -7326,11 +6787,6 @@ export const enableWorkflowAutomation$ = command(
         : officialAutomationReconfigurationFailure(automation);
     if (reconfigurationFailure) {
       return reconfigurationFailure;
-    }
-    const stripeFailure = await set(validateStripeFeature$, automation, signal);
-    signal.throwIfAborted();
-    if (stripeFailure) {
-      return stripeFailure;
     }
     const now = nowDate();
     const nextRunAt =

@@ -6758,43 +6758,6 @@
         "time": "Zeit ({{timezone}})",
         "updateScheduleAria": "Automatisierung des Aktualisierungsplans"
       },
-      "stripe": {
-        "addAction": "Stripe-Automatisierung hinzufügen",
-        "addAria": "Automatisierung für bezahlte Stripe-Rechnungen hinzufügen",
-        "addDescription": "Diesen Workflow ausführen, wenn eine passende Rechnung im verbundenen Stripe-Live-Konto bezahlt wird.",
-        "addTitle": "Stripe-Automatisierung hinzufügen",
-        "anyBillingReason": "Beliebiger Abrechnungsgrund",
-        "billingReason": {
-          "automaticPendingInvoiceItemInvoice": "Automatische ausstehende Rechnungspositionen",
-          "manual": "Manuell",
-          "quoteAccept": "Angebot angenommen",
-          "subscription": "Abonnement",
-          "subscriptionCreate": "Abonnement erstellt",
-          "subscriptionCycle": "Abonnementzyklus",
-          "subscriptionThreshold": "Abonnementschwellenwert",
-          "subscriptionUpdate": "Abonnement aktualisiert",
-          "upcoming": "Bevorstehend"
-        },
-        "billingReasons": "Abrechnungsgründe",
-        "billingReasonsHint": "Keine Auswahl entspricht einem beliebigen Abrechnungsgrund.",
-        "bindingSummary": "Stripe-Konto {{accountId}} · Live-Modus · {{billingReasons}}",
-        "delivery": "Zustellung",
-        "deliveryStatus": {
-          "delivered": "Zugestellt",
-          "failed": "Fehlgeschlagen",
-          "pending": "Ausstehend",
-          "skipped": "Übersprungen"
-        },
-        "deliveryWarning": "Die letzte endgültige Zustellung ist fehlgeschlagen. Prüfen Sie die Workflow-Aktivität, bevor Sie es erneut versuchen.",
-        "immutableHint": "Das Stripe-Konto und die Abrechnungsgründe sind festgelegt. Löschen Sie diese Automatisierung und erstellen Sie sie neu, um sie zu ändern.",
-        "invoicePaidDescription": "Ausführen, wenn eine passende Stripe-Rechnung bezahlt wird.",
-        "invoicePaidTitle": "Stripe-Rechnung bezahlt",
-        "lastEvent": "Letztes Ereignis",
-        "manageConnection": "Stripe-Verbindung verwalten",
-        "noDeliveries": "Noch keine Zustellungen",
-        "noMatchingEvents": "Noch keine passenden Ereignisse",
-        "rule": "Wenn eine passende Stripe-Rechnung bezahlt wird"
-      },
       "types": {
         "chat": "Chat",
         "github": "GitHub",
@@ -6803,7 +6766,6 @@
         "googleForms": "Google Forms",
         "googleMeet": "Google Meet",
         "notion": "Notion",
-        "stripe": "Stripe",
         "webhook": "Webhook"
       },
       "webhook": {

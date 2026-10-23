@@ -375,12 +375,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Enable Stripe invoice-paid workflow automations with immutable Live-mode OAuth bindings.",
-    enabled: false,
-  },
   [FeatureSwitchKey.TestOauthConnector]: {
     maintainer: "liangyou@okou.ai",
     description:
