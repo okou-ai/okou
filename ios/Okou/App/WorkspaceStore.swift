@@ -95,6 +95,7 @@ final class WorkspaceStore {
     newComposer = ComposerDraftStore(
       target: .unassigned, commands: commands, storage: draftStorage,
       didFail: { _ in })
+    newComposer.setForeground(isForeground)
     do {
       selectedAgentID = try draftStorage?.load("active-agent", as: String.self)
       if selectedAgentID != nil { activateAgentDraft() }
@@ -164,6 +165,7 @@ final class WorkspaceStore {
       workflowSource: composerWorkflows,
       draftRepository: draftRepository, draftStorage: draftStorage,
       didRequestNewChat: { [weak self] in self?.startNewChat(agentID: thread.agentID) })
+    conversation.composer.setForeground(isForeground)
     conversations[id] = conversation
     return conversation
   }
@@ -191,17 +193,15 @@ final class WorkspaceStore {
   }
 
   func setForeground(_ active: Bool) {
+    guard !closed, isForeground != active else { return }
     isForeground = active
+    newComposer.setForeground(active)
+    for composer in agentDrafts.values { composer.setForeground(active) }
+    for conversation in conversations.values { conversation.composer.setForeground(active) }
     selectedConversation?.reconcileVisibility()
-    if !active {
-      Task { [weak self] in await self?.synchronizeDrafts() }
+    if active {
+      (selectedConversation?.composer ?? newComposer).requestSync()
     }
-  }
-
-  func synchronizeDrafts() async {
-    guard !closed else { return }
-    await newComposer.synchronize()
-    for conversation in conversations.values { await conversation.composer.synchronize() }
   }
 
   private func activateAgentDraft() {
@@ -221,6 +221,7 @@ final class WorkspaceStore {
       newComposer = composer
     }
     let composer = newComposer
+    composer.setForeground(isForeground)
     agentDraftTask = Task { await composer.synchronize() }
   }
 
@@ -274,7 +275,6 @@ final class WorkspaceStore {
         await conversation(for: id)?.refresh()
       }
     }
-    if full { await synchronizeDrafts() }
     if modelStore.configuration != nil && (full || batch.contains(.threadList)) {
       await selectedConversation?.modelSelection?.refresh()
     }
@@ -499,6 +499,7 @@ final class WorkspaceStore {
     selectedThreadID = nil
     selectedAgentID =
       agentID ?? selectedAgentID ?? list.agents.first(where: \.isDefaultAgent)?.agentId
+    newComposer.requestSync()
     newModelSelection.resetNewChat()
     error = nil
   }

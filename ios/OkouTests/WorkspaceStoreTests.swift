@@ -8,6 +8,69 @@ import XCTest
 
 @MainActor
 final class WorkspaceStoreTests: XCTestCase {
+  func testHistoryRefreshPreservesTheComposerAndForegroundRecoveryLoadsOtherDeviceChanges()
+    async throws
+  {
+    let remoteDraft = Mutex("First device draft")
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Draft recovery")
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+      case "/api/agents/\(storeAgentID)/draft":
+        return ChatHTTPResponse(body: "{\"draftUserMessage\":null,\"draftAttachments\":null}")
+      case "/api/chat-threads/\(storeThreadID)/draft":
+        return ChatHTTPResponse(
+          body: """
+            {"draftUserMessage":{"version":1,"parts":[{"type":"text",\
+            "text":"\(remoteDraft.withLock { $0 })"}]},"draftAttachments":null}
+            """)
+      case "/api/chat-threads/\(storeThreadID)/event-snapshot": return missingHistorySnapshot()
+      case "/api/chat-threads/\(storeThreadID)/event-rows":
+        let after = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems?.first { $0.name == "sinceSeqId" }?.value
+        let rows =
+          after == "0"
+          ? [
+            historyEvent(sequence: 1, type: "output.message", payload: "{\"content\":\"Answer\"}")
+          ] : []
+        return historyPage(rows: rows, lastSequence: 1)
+      case "/api/chat-threads/\(storeThreadID)":
+        return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let storage = ChatDraftStorage(
+      scope: ChatCacheScope(
+        apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"),
+      directory: directory)
+    let store = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL, draftStorage: storage)
+    defer { store.close() }
+    store.setForeground(true)
+    await store.refresh()
+    store.selectChat(storeThreadID)
+    let conversation = try XCTUnwrap(store.selectedConversation)
+    await conversation.composer.synchronize()
+    await conversation.refresh()
+    XCTAssertEqual(conversation.draft, "First device draft")
+
+    remoteDraft.withLock { $0 = "Changed on the other device" }
+    await store.refresh()
+    XCTAssertEqual(conversation.messages.map(\.text), ["Answer"])
+    XCTAssertEqual(conversation.draft, "First device draft")
+
+    store.setForeground(false)
+    store.setForeground(true)
+    await conversation.composer.synchronize()
+    XCTAssertEqual(conversation.draft, "Changed on the other device")
+    XCTAssertNil(conversation.composer.error)
+  }
+
   func testBackgroundWarmingIncludesRecentAndActiveUnopenedChats() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
