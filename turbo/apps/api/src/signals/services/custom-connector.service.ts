@@ -38,7 +38,7 @@ import {
   type OrgCustomConnectorOAuthTokenEndpointAuthMethod,
 } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
@@ -2539,9 +2539,8 @@ export const deleteCustomConnector$ = command(
     signal: AbortSignal,
   ): Promise<NotFoundResponse | ForbiddenResponse | undefined> => {
     const writeDb = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0146; new non-billing transactions are prohibited.
-    const deletion = writeDb.transaction(async (tx) => {
-      const [existing] = await tx
+    const deletion = (async () => {
+      const [existing] = await writeDb
         .select({
           id: orgCustomConnectors.id,
           providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
@@ -2563,26 +2562,31 @@ export const deleteCustomConnector$ = command(
       ) {
         return integrationManagedCustomConnectorMutationForbidden();
       }
-      const selectionDeletion = { customConnectorId: args.id };
-      await tx
-        .delete(chatThreadConnectorSelections)
-        .where(
-          eq(
-            chatThreadConnectorSelections.customConnectorId,
-            selectionDeletion.customConnectorId,
-          ),
-        );
       signal.throwIfAborted();
-      await tx
+      const removedSelections = writeDb
+        .$with("deleted_custom_connector_selections")
+        .as(
+          writeDb
+            .delete(chatThreadConnectorSelections)
+            .where(eq(chatThreadConnectorSelections.customConnectorId, args.id))
+            .returning({
+              connectorId: chatThreadConnectorSelections.connectorId,
+            }),
+        );
+      // Consume the complete cleanup before cascading account deletion. Both
+      // writes share one statement, including the existing NO ACTION checks.
+      await writeDb
+        .with(removedSelections)
         .delete(orgCustomConnectors)
         .where(
           and(
             eq(orgCustomConnectors.id, args.id),
             eq(orgCustomConnectors.orgId, args.orgId),
+            gte(writeDb.select({ count: count() }).from(removedSelections), 0),
           ),
         );
       return true;
-    });
+    })();
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
     const deleted = await (async () => {
       const result = await deletion;

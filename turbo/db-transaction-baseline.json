@@ -207,11 +207,6 @@
       "owner": "persistCustomConnectorUpdate$"
     },
     {
-      "id": "TX-0146",
-      "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
-      "owner": "deleteCustomConnector$"
-    },
-    {
       "id": "TX-0147",
       "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
       "owner": "setCustomConnectorValues$"
