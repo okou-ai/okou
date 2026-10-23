@@ -5,23 +5,23 @@ use guest_agent_tests as common;
 use guest_agent::masker::SecretMasker;
 use serde_json::json;
 use std::time::Duration;
+use tokio::io::AsyncReadExt;
+use tokio::net::TcpListener;
 
 #[tokio::test]
-async fn dropping_execution_during_drain_stops_event_retries()
+async fn dropping_execution_during_drain_closes_active_upload()
 -> Result<(), Box<dyn std::error::Error>> {
     let mock = common::build_and_locate_mock()?;
     let tmp = tempfile::tempdir()?;
-    let mut server = common::ControlledHttpServer::start().await?;
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let api_url = format!("http://{}", listener.local_addr()?);
     let prompt = format!(
         "@ECHO@\n{}",
         json!({"type":"result","marker":"cancel-delivery"})
     );
     unsafe {
         common::setup_env(&mock, tmp.path(), &prompt, 3, 1)?;
-        std::env::set_var(
-            guest_contracts::env::CANONICAL_API_URL_ENV,
-            &server.base_url,
-        );
+        std::env::set_var(guest_contracts::env::CANONICAL_API_URL_ENV, &api_url);
         std::env::set_var(guest_contracts::env::CANONICAL_API_TOKEN_ENV, "test-token");
     }
     let runtime = common::guest_runtime_from_process_env()?;
@@ -36,7 +36,13 @@ async fn dropping_execution_during_drain_stops_event_retries()
         )
         .await
     });
-    let stalled = server.next_request(Duration::from_secs(5)).await?;
+    let (mut upload, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept()).await??;
+    let mut request_started = [0u8; 1];
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        upload.read_exact(&mut request_started),
+    )
+    .await??;
     common::wait_for_file_contains(
         &system_log,
         "Event delivery drain started:",
@@ -50,16 +56,13 @@ async fn dropping_execution_during_drain_stops_event_retries()
             .expect_err("aborted execution should join as cancelled")
             .is_cancelled()
     );
-    drop(stalled);
-    tokio::time::pause();
-    for _ in 0..150 {
-        tokio::time::advance(Duration::from_secs(1)).await;
-        tokio::task::yield_now().await;
-    }
-    assert_eq!(
-        server.request_count(),
-        1,
-        "dropping the owner must stop later requests"
-    );
+    // Keep the peer open without replying. EOF proves cancellation retired the
+    // active upload, without advancing virtual time through real socket I/O.
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        tokio::io::copy(&mut upload, &mut tokio::io::sink()),
+    )
+    .await
+    .expect("dropping the owner must close the active upload before its HTTP timeout")?;
     Ok(())
 }
