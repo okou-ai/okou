@@ -346,7 +346,7 @@ test("switches a legacy workspace connection to a new home identity without reta
   expect(switched.searchParams.get("status")).toBe("connected");
   await expect(integrationStatus()).resolves.toMatchObject({
     isConnected: true,
-    isInstalled: false,
+    isInstalled: true,
   });
   await accept(
     clients()(integrationsSlackMessageContract).sendMessage({
@@ -462,12 +462,34 @@ test("connects through an external bot and authorizes only the sender's installe
     isInstalled: false,
   });
 
-  // The bot belongs to a different Okou organization. Its Slack workspace,
-  // authenticated membership and channel access determine the user's capability.
+  // A Slack identity never borrows a bot owned by another Okou organization.
   const installer = actor({ workspaceId: current.workspaceId });
   await complete(await startInstall(), installer);
   await flushWaitUntilForTest();
   authenticate(current);
+  await expect(integrationStatus()).resolves.toMatchObject({
+    isConnected: true,
+    isInstalled: false,
+    isAdmin: true,
+  });
+  await accept(
+    clients()(integrationsSlackMessageContract).sendMessage({
+      headers,
+      body: { channel: "C_OWN_SHARED", text: "cannot borrow a workspace bot" },
+    }),
+    [404],
+  );
+  authenticate(installer);
+  await accept(
+    clients()(integrationsSlackContract).disconnect({
+      headers,
+      query: { action: "uninstall" },
+    }),
+    [200],
+  );
+  authenticate(current);
+  await complete(await startInstall(), current);
+  await flushWaitUntilForTest();
   context.mocks.slack.users.info.mockResolvedValue({
     ok: true,
     user: {
@@ -479,15 +501,8 @@ test("connects through an external bot and authorizes only the sender's installe
   await expect(integrationStatus()).resolves.toMatchObject({
     isConnected: true,
     isInstalled: true,
-    isAdmin: false,
+    isAdmin: true,
   });
-  await accept(
-    clients()(integrationsSlackContract).disconnect({
-      headers,
-      query: { action: "uninstall" },
-    }),
-    [404],
-  );
   mockSharedSlackConversations(["C_OWN_SHARED"]);
   server.use(
     http.get("https://slack.com/api/users.conversations", ({ request }) => {
@@ -575,7 +590,7 @@ test("connects through an external bot and authorizes only the sender's installe
     [404],
   );
 
-  authenticate(installer);
+  authenticate(current);
   await accept(
     clients()(integrationsSlackContract).disconnect({
       headers,

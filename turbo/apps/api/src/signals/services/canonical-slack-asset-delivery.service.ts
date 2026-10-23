@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import type { CanonicalAssetSlackDeliveryDestination } from "@okouai/db/jsonb-contracts/run-uploaded-file";
 import {
   CANONICAL_ASSET_VERSION,
   canonicalAssetDeliveries,
@@ -9,7 +10,7 @@ import { and, eq, isNull, ne, sql, type SQL } from "drizzle-orm";
 import type { SlackClient } from "../external/slack-message-client";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
-import { resolveSlackTargetChannel$ } from "./slack-message-context.service";
+import { resolveSlackWriteTarget$ } from "./slack-write-access.service";
 
 interface CanonicalSlackDeliveryRow {
   readonly assetId: string;
@@ -18,12 +19,7 @@ interface CanonicalSlackDeliveryRow {
   readonly assetUrl: string | null;
   readonly operationId: string;
   readonly status: "pending" | "delivered" | "failed";
-  readonly destination: {
-    readonly channelId: string;
-    readonly threadTs?: string;
-    readonly title?: string;
-    readonly initialComment?: string;
-  };
+  readonly destination: CanonicalAssetSlackDeliveryDestination;
   readonly externalId: string | null;
   readonly deliveryUrl: string | null;
   readonly lastError: {
@@ -342,8 +338,6 @@ interface PrepareCanonicalSlackDeliveryArgs {
   readonly runId: string;
   readonly userId: string;
   readonly orgId: string;
-  readonly botToken: string;
-  readonly client: SlackClient;
 }
 
 function slackDeliveryReadCondition(
@@ -380,22 +374,22 @@ const readCanonicalSlackConflict$ = command(
   },
 );
 
-const authorizeCanonicalSlackDelivery$ = command(
+const resolveCanonicalSlackDelivery$ = command(
   async (
     { set },
     args: Pick<
       PrepareCanonicalSlackDeliveryArgs,
-      "orgId" | "userId" | "botToken" | "client"
+      "orgId" | "userId" | "runId"
     > & {
       destination: CanonicalSlackDeliveryRow["destination"];
     },
     signal: AbortSignal,
   ) => {
     const access = await set(
-      resolveSlackTargetChannel$,
+      resolveSlackWriteTarget$,
       {
-        client: args.client,
-        botToken: args.botToken,
+        runId: args.runId,
+        workspaceId: args.destination.workspaceId,
         orgId: args.orgId,
         userId: args.userId,
         channel: args.destination.channelId,
@@ -409,7 +403,7 @@ const authorizeCanonicalSlackDelivery$ = command(
           message: access.body.error.message,
           retryable: access.body.error.code === "SLACK_ERROR",
         })
-      : null;
+      : access;
   },
 );
 
@@ -434,13 +428,13 @@ export const prepareCanonicalSlackDelivery$ = command(
     if (row.status === "delivered") {
       return deliveredResult(row);
     }
-    const accessFailure = await set(
-      authorizeCanonicalSlackDelivery$,
+    const access = await set(
+      resolveCanonicalSlackDelivery$,
       { ...args, destination: row.destination },
       signal,
     );
-    if (accessFailure) {
-      return accessFailure;
+    if ("status" in access) {
+      return access;
     }
 
     const readConflict = () => {
@@ -493,7 +487,7 @@ export const prepareCanonicalSlackDelivery$ = command(
       };
       return await recordDeliverySuccess(permalinkResult.permalink);
     };
-    const client = args.client;
+    const client = access.client;
     const reconciliation = await settle(reconcileExistingSlackFile(), signal);
     signal.throwIfAborted();
     if (!reconciliation.ok) {
@@ -510,7 +504,7 @@ export const prepareCanonicalSlackDelivery$ = command(
     }
 
     const preparation = await settle(
-      args.client.getUploadUrlExternal(
+      client.getUploadUrlExternal(
         slackUploadRequest(row.filename, row.sizeBytes),
       ),
       signal,
@@ -554,10 +548,8 @@ interface CompleteCanonicalSlackDeliveryArgs {
   readonly runId: string;
   readonly userId: string;
   readonly orgId: string;
-  readonly botToken: string;
   readonly fileId: string;
   readonly uploadError?: string;
-  readonly client: SlackClient;
 }
 
 /**
@@ -590,14 +582,15 @@ export const completeCanonicalSlackDelivery$ = command(
     if (row.status === "delivered") {
       return { ...deliveredResult(row), channelId: row.destination.channelId };
     }
-    const accessFailure = await set(
-      authorizeCanonicalSlackDelivery$,
+    const access = await set(
+      resolveCanonicalSlackDelivery$,
       { ...args, destination: row.destination },
       signal,
     );
-    if (accessFailure) {
-      return { ...accessFailure, channelId: row.destination.channelId };
+    if ("status" in access) {
+      return { ...access, channelId: row.destination.channelId };
     }
+    const client = access.client;
     const readConflict = () => {
       return set(readCanonicalSlackConflict$, row);
     };
@@ -631,7 +624,7 @@ export const completeCanonicalSlackDelivery$ = command(
       }
 
       const completion = await settle(
-        args.client.completeUploadExternal({
+        client.completeUploadExternal({
           fileId: args.fileId,
           channel: row.destination.channelId,
           threadTs: row.destination.threadTs,
@@ -658,7 +651,7 @@ export const completeCanonicalSlackDelivery$ = command(
       }
 
       const infoResult = await settle(
-        args.client.getFileInfo(args.fileId),
+        client.getFileInfo(args.fileId),
         deliverySignal,
       );
       deliverySignal.throwIfAborted();

@@ -45,7 +45,7 @@ export function slackAccountOwnerCondition(identity: SlackAccountOwner) {
   );
 }
 
-/** A verified account selects its own workspace, never the entry bot's workspace. */
+/** Resolve the verified Slack identity independently of bot installation. */
 export function slackAccountConnection(
   identity$: Computed<SlackAccountOwner | Promise<SlackAccountOwner>>,
 ) {

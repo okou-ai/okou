@@ -1301,14 +1301,17 @@ export function createBddIntegrationApi(context: TestContext) {
       );
     },
 
-    async enableSlackWorkspaceIdentity(actor: ApiTestUser): Promise<void> {
+    async enableSlackWorkspaceIdentity(
+      actor: ApiTestUser,
+      enabled = true,
+    ): Promise<void> {
       await accept(
         setupApp({ context, routes: featureSwitchesRoutes })(
           featureSwitchesContract,
         ).update({
           headers: authenticate(context, routeMocks, actor),
           body: {
-            switches: { [FeatureSwitchKey.SlackWorkspaceIdentity]: true },
+            switches: { [FeatureSwitchKey.SlackWorkspaceIdentity]: enabled },
           },
         }),
         [200],

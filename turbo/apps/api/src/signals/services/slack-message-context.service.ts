@@ -11,6 +11,7 @@ import type { SlackClient } from "../external/slack-message-client";
 import { settle, tapError } from "../utils";
 import {
   isSlackConversationShared,
+  isSlackConversationSharedByMembers,
   isSlackConversationWritable,
 } from "../../lib/slack-client";
 import { integrationMessageSendLabels$ } from "./integration-message-context.service";
@@ -85,6 +86,7 @@ interface SlackTargetChannelArgs {
   readonly botToken: string;
   readonly userId: string;
   readonly orgId: string;
+  readonly workspaceId: string;
   readonly channel?: string;
   readonly user?: string;
   readonly threadTs?: string;
@@ -114,7 +116,10 @@ export const resolveSlackTargetChannel$ = command(
     let connectedUser: string | null;
     if (isFeatureEnabled(FeatureSwitchKey.SlackWorkspaceIdentity, features)) {
       const [row, additional] = await db
-        .select({ slackUserId: slackOrgConnections.slackUserId })
+        .select({
+          slackUserId: slackOrgConnections.slackUserId,
+          workspaceId: slackOrgConnections.slackWorkspaceId,
+        })
         .from(slackOrgConnections)
         .leftJoin(
           slackOrgInstallations,
@@ -126,7 +131,22 @@ export const resolveSlackTargetChannel$ = command(
         .where(slackAccountOwnerCondition(args))
         .limit(2);
       signal.throwIfAborted();
-      connectedUser = additional ? null : (row?.slackUserId ?? null);
+      connectedUser =
+        additional || row?.workspaceId !== args.workspaceId
+          ? null
+          : row.slackUserId;
+      if (connectedUser) {
+        const identity = await args.client.fetchUserIdentity(connectedUser);
+        signal.throwIfAborted();
+        if (
+          !identity ||
+          identity.deleted ||
+          identity.isBot ||
+          identity.teamId !== args.workspaceId
+        ) {
+          connectedUser = null;
+        }
+      }
     } else {
       const [row] = await db
         .select({ slackUserId: slackOrgConnections.slackUserId })
@@ -166,15 +186,54 @@ export const resolveSlackTargetChannel$ = command(
       }
       channelId = dm.channelId;
     }
+    return await set(
+      authorizeSlackChannel$,
+      {
+        botToken: args.botToken,
+        connectedUser,
+        channelId,
+        recipientId,
+        threadTs: args.threadTs,
+      },
+      signal,
+    );
+  },
+);
+
+/** Source-channel permissions never inherit the ordinary outbound-DM exception. */
+export const authorizeSlackChannel$ = command(
+  async (
+    _context,
+    args: {
+      readonly botToken: string;
+      readonly connectedUser: string;
+      readonly channelId: string;
+      readonly recipientId?: string;
+      readonly threadTs?: string;
+      readonly sourceBotUserId?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<SlackTargetChannelResult> => {
+    const { channelId, connectedUser, recipientId } = args;
     const shared = await settle(
-      channelId.startsWith("D")
-        ? Promise.resolve(true)
-        : isSlackConversationShared(
-            args.botToken,
-            connectedUser,
-            channelId,
+      args.sourceBotUserId
+        ? isSlackConversationSharedByMembers(
+            {
+              token: args.botToken,
+              slackUserId: connectedUser,
+              botUserId: args.sourceBotUserId,
+              channelId,
+            },
             signal,
-          ),
+          )
+        : channelId.startsWith("D")
+          ? Promise.resolve(true)
+          : isSlackConversationShared(
+              args.botToken,
+              connectedUser,
+              channelId,
+              signal,
+            ),
       signal,
     );
     if (!shared.ok) {

@@ -183,6 +183,11 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
 
   beforeEach(() => {
     mockSharedSlackConversations();
+    context.mocks.slack.chat.postMessage.mockResolvedValue({
+      ok: true,
+      channel: "D_CONNECTED",
+      ts: "1.0",
+    });
     context.mocks.slack.files.completeUploadExternal.mockResolvedValue({
       ok: true,
     });
@@ -336,9 +341,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     }
     async function seedWithInstallation() {
       const base = await seedBaseContext();
-      const installerOrgId = workspaceIdentity
-        ? `org_installer_${randomUUID()}`
-        : base.orgId;
+      const installerOrgId = base.orgId;
       const installed = await scenario.run(() => {
         return slackOrgs.installForOrg({
           orgId: installerOrgId,
@@ -669,7 +672,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     },
   );
 
-  it("revokes pending canonical delivery when the connected home bot is uninstalled", async () => {
+  it("revokes pending canonical delivery when the organization bot is uninstalled", async () => {
     const fixture = createUploadFixture(true);
     const upload = await pendingCanonicalUpload(fixture);
     const materialized = await fixture.run(() => {
@@ -682,12 +685,12 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     });
     const delivery = materialized.body.delivery;
     if (delivery.status !== "pending") {
-      throw new Error("Expected a prepared home-workspace upload");
+      throw new Error("Expected a prepared organization upload");
     }
     await fixture.run(() => {
       return slackOrgs.uninstallWorkspace(upload.actor.slackWorkspaceId);
     });
-    await fixture.run(() => {
+    const denied = await fixture.run(() => {
       return accept(
         setupApp({ context, routes: integrationsSlackUploadCompleteRoutes })(
           integrationsSlackUploadCompleteContract,
@@ -700,8 +703,12 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
             channel: "C123",
           },
         }),
-        [404],
+        [200],
       );
+    });
+    expect(denied.body).toMatchObject({
+      channel: "C123",
+      deliveryStatus: "failed",
     });
     expect(
       context.mocks.slack.files.completeUploadExternal,

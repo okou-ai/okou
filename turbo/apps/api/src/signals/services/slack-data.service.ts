@@ -171,13 +171,11 @@ function slackAccountStatus(
   installation: typeof slackOrgInstallations.$inferSelect | undefined,
   defaultAgentName: string | null,
 ): SlackOrgStatusResult {
-  const ownInstallation = account?.installation;
-  const isAdmin =
-    args.orgRole === "admin" &&
-    (!ownInstallation || ownInstallation.orgId === args.orgId);
+  const ownInstallation = installation;
+  const isAdmin = args.orgRole === "admin";
   return {
     isConnected: Boolean(account),
-    isInstalled: Boolean(account ? ownInstallation : installation),
+    isInstalled: Boolean(ownInstallation),
     isAdmin,
     workspaceName:
       account?.connection.slackWorkspaceName ??
@@ -319,7 +317,7 @@ export function slackOrgStatus(
   });
 }
 
-export function slackOrgInstallation(
+function slackOrgInstallation(
   input$: Computed<{
     readonly orgId: string;
     readonly userId?: string;
@@ -366,34 +364,6 @@ export function slackOrgInstallation(
     const args = get(input$);
     const db = get(db$);
 
-    if (args.userId && (await get(accountEnabled$))) {
-      const account = await get(account$);
-      const installation = account?.installation;
-      if (!account || !installation) {
-        return null;
-      }
-      const botToken = await decryptPersistentSecretValue(
-        installation.encryptedBotToken,
-        installation.orgId ? { orgId: installation.orgId } : {},
-      );
-      const member = await createSlackClient(botToken).fetchUserIdentity(
-        account.connection.slackUserId,
-      );
-      if (
-        !member ||
-        member.deleted ||
-        member.isBot ||
-        member.teamId !== account.connection.slackWorkspaceId
-      ) {
-        return null;
-      }
-      return {
-        workspaceId: installation.slackWorkspaceId,
-        botToken,
-        workspaceName: installation.slackWorkspaceName,
-      };
-    }
-
     const [installation] = await db
       .select()
       .from(slackOrgInstallations)
@@ -409,6 +379,26 @@ export function slackOrgInstallation(
       args.userId ? await get(featureContext$) : { orgId: args.orgId },
     );
 
+    if (args.userId && (await get(accountEnabled$))) {
+      const account = await get(account$);
+      if (
+        !account ||
+        account.connection.slackWorkspaceId !== installation.slackWorkspaceId
+      ) {
+        return null;
+      }
+      const member = await createSlackClient(botToken).fetchUserIdentity(
+        account.connection.slackUserId,
+      );
+      if (
+        !member ||
+        member.deleted ||
+        member.isBot ||
+        member.teamId !== installation.slackWorkspaceId
+      ) {
+        return null;
+      }
+    }
     return {
       workspaceId: installation.slackWorkspaceId,
       botToken,
@@ -451,9 +441,6 @@ export function slackUserInstallation(
       const account = await get(account$);
       if (!account) {
         return { kind: "not-connected" } as const;
-      }
-      if (!account.installation) {
-        return { kind: "not-installed" } as const;
       }
       const installation = await get(accountInstallation$);
       if (!installation) {

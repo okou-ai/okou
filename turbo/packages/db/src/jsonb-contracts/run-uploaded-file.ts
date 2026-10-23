@@ -36,6 +36,8 @@ export interface CanonicalAssetMaterializationError {
 
 export interface CanonicalAssetSlackDeliveryDestination {
   readonly provider?: never;
+  /** Installation selected at publication; omitted by pre-identity writers. */
+  readonly workspaceId?: string;
   readonly channelId: string;
   readonly threadTs?: string;
   readonly title?: string;

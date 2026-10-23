@@ -1332,6 +1332,7 @@ function sameCanonicalDeliveryDestination(
   }
   return (
     stored.channelId === requested.channelId &&
+    stored.workspaceId === requested.workspaceId &&
     stored.threadTs === requested.threadTs &&
     stored.title === requested.title &&
     stored.initialComment === requested.initialComment
