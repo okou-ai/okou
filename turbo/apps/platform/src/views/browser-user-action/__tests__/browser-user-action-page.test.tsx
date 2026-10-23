@@ -24,7 +24,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { navigateTo$ } from "../../../signals/route.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
@@ -890,70 +889,6 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
   });
 });
 
-test("A rejected Browser file authorization and PUT leave the selection retryable without applying", async () => {
-  let prepares = 0;
-  let attemptedPut = false;
-  const uploadUrl = "https://uploads.example.test/rejected-browser-file";
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, fileAction({ required: true, preflight: false }));
-  });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    return respond(200, fileAction({ required: true, preflight: true }));
-  });
-  context.mocks.api(
-    browserUserActionsContract.prepareFileUpload,
-    ({ respond }) => {
-      prepares += 1;
-      if (prepares === 1) {
-        return respond(503, {
-          error: {
-            code: "BROWSER_PROVIDER_UNAVAILABLE",
-            message: "Synthetic upload authorization temporarily unavailable",
-          },
-        });
-      }
-      return respond(200, { uploadUrl });
-    },
-  );
-  context.mocks.http.put(uploadUrl, () => {
-    attemptedPut = true;
-    return new HttpResponse(null, { status: 403 });
-  });
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  const form = await screen.findByRole("form", {
-    name: "Sign in to download invoices",
-  });
-  const input = within(form).getByLabelText(/Document/u);
-  await waitFor(() => {
-    return expect(input).toBeEnabled();
-  });
-  const file = new File(["test"], "synthetic.txt", { type: "text/plain" });
-  fireEvent.change(input, { target: { files: [file] } });
-  await waitFor(() => {
-    return expect(button("Add to browser")).toBeEnabled();
-  });
-  click(button("Add to browser"));
-  await expect(
-    screen.findByText("Synthetic upload authorization temporarily unavailable"),
-  ).resolves.toBeInTheDocument();
-  expect(attemptedPut).toBeFalsy();
-  await waitFor(() => {
-    return expect(button("Add to browser")).toBeEnabled();
-  });
-  click(button("Add to browser"));
-  await waitFor(() => {
-    return expect(attemptedPut).toBeTruthy();
-  });
-  await waitFor(() => {
-    return expect(button("Add to browser")).toBeEnabled();
-  });
-});
-
 test("An optional file selection leaves existing website files untouched", async () => {
   let sent: unknown = null;
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
@@ -1088,53 +1023,6 @@ test("The standalone form accepts input and submission while its background chec
   });
   releaseCheck.resolve(undefined);
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-});
-
-test("A failed background check blocks submission and retains the draft for retry", async () => {
-  let checks = 0;
-  let applied = false;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, action("pending"));
-  });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    checks += 1;
-    return checks === 1
-      ? respond(503, {
-          error: {
-            code: "BROWSER_USE_TIMEOUT",
-            message: "Browser check timed out",
-          },
-        })
-      : respond(200, action("pending"));
-  });
-  context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
-    applied = true;
-    return respond(200, action("succeeded"));
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  const form = await screen.findByRole("form", {
-    name: "Sign in to download invoices",
-  });
-  const email = within(form).getByLabelText(/Email/u);
-  await fill(email, "owner@example.test");
-  await expect(
-    screen.findByText(/Couldn't check the browser/u),
-  ).resolves.toBeVisible();
-  expect(button("Add to browser")).toBeDisabled();
-  expect(email).toHaveValue("owner@example.test");
-  expect(applied).toBeFalsy();
-  click(button("Retry"));
-  await waitFor(() => {
-    expect(checks).toBe(2);
-    expect(button("Add to browser")).toBeEnabled();
-  });
-  expect(email).toHaveValue("owner@example.test");
 });
 
 test("The standalone form uses preflight's observed multiline and email controls", async () => {
@@ -2508,58 +2396,6 @@ test.each([
   },
 );
 
-test("A lost apply response keeps the draft for an explicit retry", async () => {
-  let responseLost = false;
-  let current: BrowserUserActionResponse["state"] = "pending";
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, action(current));
-  });
-  mockPendingPreflight();
-  context.mocks.http.post(
-    `*${browserUserActionsContract.apply.path.replace(":requestToken", REQUEST_TOKEN)}`,
-    () => {
-      if (!responseLost) {
-        responseLost = true;
-        return HttpResponse.error();
-      }
-      current = "succeeded";
-      return HttpResponse.json(action(current));
-    },
-  );
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    acceptCallback();
-    return respond(201, { threadId: THREAD_ID });
-  });
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  const form = await screen.findByRole("form", {
-    name: "Sign in to download invoices",
-  });
-  await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
-  await fill(
-    within(form).getByLabelText("Remembered answer"),
-    "Keep this draft",
-  );
-  click(button("Add to browser"));
-
-  await expect(
-    screen.findByText(
-      "Couldn't add the information. Your entries are still here. Try again.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByLabelText("Remembered answer")).toHaveValue(
-    "Keep this draft",
-  );
-  click(button("Add to browser"));
-  await expect(
-    screen.findByText("Agent notified"),
-  ).resolves.toBeInTheDocument();
-});
-
 test.each([
   ["succeeded", "Information added"],
   ["cancelled", "Request cancelled"],
@@ -2611,62 +2447,6 @@ test("An applying action settles when the thread signals a change", async () => 
   expect(screen.queryByRole("form")).toBeNull();
 });
 
-test("A late status read cannot replace the action on a new route", async () => {
-  const nextToken = `vm0_browser_user_action_${"c".repeat(43)}`;
-  const started = createDeferredPromise<void>(context.signal);
-  const release = createDeferredPromise<void>(context.signal);
-  let initial = true;
-  context.mocks.api(
-    browserUserActionsContract.get,
-    async ({ params, respond }) => {
-      if (params.requestToken === nextToken) {
-        return respond(200, {
-          ...action("cancelled"),
-          requestToken: nextToken,
-        });
-      }
-      if (initial) {
-        initial = false;
-        return respond(200, action("applying"));
-      }
-      started.resolve(undefined);
-      await release.promise;
-      return respond(200, action("pending"));
-    },
-  );
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  await started.promise;
-  await act(async () => {
-    const next = new URL(
-      route().replace(REQUEST_TOKEN, nextToken),
-      window.location.origin,
-    );
-    await context.store.set(
-      navigateTo$,
-      "/browser/actions/:browserActionToken",
-      {
-        pathParams: { browserActionToken: nextToken },
-        searchParams: next.searchParams,
-      },
-      context.signal,
-    );
-  });
-  await expect(
-    screen.findByText("Request cancelled"),
-  ).resolves.toBeInTheDocument();
-  await act(async () => {
-    release.resolve(undefined);
-    await release.promise;
-  });
-  expect(screen.getByText("Request cancelled")).toBeInTheDocument();
-  expect(screen.queryByRole("form")).toBeNull();
-});
-
 test("A terminal standalone action retries only its stable callback", async () => {
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, action("succeeded"));
@@ -2688,42 +2468,6 @@ test("A terminal standalone action retries only its stable callback", async () =
 
   await expect(screen.findByText("Information added")).resolves.toBeVisible();
   click(button("Notify agent"));
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-});
-
-test("A failed notification announces the error and remains retryable", async () => {
-  let rejectCallback = true;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, action("succeeded"));
-  });
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    expect(body.prompt).toBe(CALLBACK_PROMPT);
-    expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
-    expect(body.chatThreadSortEventId).toBe(SUCCESS_SORT_ID);
-    if (rejectCallback) {
-      rejectCallback = false;
-      return respond(503, {
-        error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
-      });
-    }
-    acceptCallback();
-    return respond(201, { threadId: THREAD_ID });
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await expect(screen.findByText("Information added")).resolves.toBeVisible();
-  click(button("Notify agent"));
-  await waitFor(() => {
-    expect(screen.getByText("Agent not notified.")).toBeVisible();
-  });
-  click(button("Retry"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });

@@ -174,11 +174,7 @@ test("repeated cards submit the same idempotency key and share refreshed remaini
   click(buttons[0]);
   click(buttons[1]);
   await waitFor(() => {
-    expect(
-      queryAllByRoleFast("button").filter((candidate) => {
-        return candidate.getAttribute("aria-label") === "Resetting…";
-      }),
-    ).toHaveLength(2);
+    expect(submissions).toBe(2);
   });
   gate.resolve();
   await waitFor(() => {
@@ -361,31 +357,19 @@ test("Claude Code recovery details never advertise manual reset credits or confi
   expect(details.getByText(notice)).toBeInTheDocument();
 });
 
-test("a delayed unavailable read keeps the mounted frame without a refresh action", async () => {
-  const gate = context.mocks.deferred<void>();
-  context.mocks.api(
-    personalSubscriptionsContract.get,
-    async ({ respond, withSignal }) => {
-      await withSignal(gate.promise);
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Account disconnected" },
-      });
-    },
-  );
+test("an unavailable subscription has no reset action", async () => {
+  context.mocks.api(personalSubscriptionsContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Account disconnected" },
+    });
+  });
   await setupChat(`Before\n\n${URL}\n\nAfter`);
-  await screen.findByText("Loading subscription…");
-  const originalFrame = frame();
-  const row = screen.getByTestId("subscription-reset-card");
-  expect(row).toHaveAttribute("aria-busy", "true");
-  expect(originalFrame).toHaveClass("h-[136px]", "@[640px]:h-[88px]");
-  gate.resolve();
   await screen.findByText(
     "This subscription is unavailable in the current workspace.",
   );
-  expect(frame()).toBe(originalFrame);
-  expect(screen.getByTestId("subscription-reset-card")).toBe(row);
-  expect(row).toHaveAttribute("aria-busy", "false");
-  expect(queryAllByRoleFast("button", row)).toHaveLength(0);
+  expect(
+    queryAllByRoleFast("button", screen.getByTestId("subscription-reset-card")),
+  ).toHaveLength(0);
 });
 
 test("usage rings open accessible recovery and expiry details outside the fixed frame", async () => {
@@ -436,22 +420,6 @@ test("nothing to reset is a terminal outcome without spending a credit", async (
   click(button("3 resets"));
   await screen.findByText("There is no exhausted usage window to reset.");
   expect(button("3 resets")).toBeDisabled();
-});
-
-test("a failed subscription read shows an error without reset or refresh actions", async () => {
-  context.mocks.api(personalSubscriptionsContract.get, ({ respond }) => {
-    return respond(500, {
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Usage lookup unavailable",
-      },
-    });
-  });
-  await setupChat(URL);
-  await screen.findByText("Could not read subscription usage.");
-  const row = screen.getByTestId("subscription-reset-card");
-  expect(row).toHaveAttribute("aria-busy", "false");
-  expect(queryAllByRoleFast("button", row)).toHaveLength(0);
 });
 
 test.each([

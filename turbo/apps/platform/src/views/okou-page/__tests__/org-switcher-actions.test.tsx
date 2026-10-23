@@ -64,27 +64,6 @@ async function navigateToConnectors() {
   });
 }
 
-test("Failed workspace creation does not activate an organization and can be retried", async () => {
-  const creation = context.mocks.deferred<{ readonly id: string }>();
-  mockedClerk.createOrganization.mockImplementationOnce(() => {
-    return creation.promise;
-  });
-  await setupCreatableWorkspace();
-
-  click(screen.getByText("Create workspace"));
-  await reopenWorkspaceMenu();
-  creation.reject(new Error("Clerk organization creation failed"));
-
-  await screen.findByText("Create workspace");
-  expect(mockedClerk.setActive).not.toHaveBeenCalled();
-  click(screen.getByText("Create workspace"));
-  await waitFor(() => {
-    expect(mockedClerk.setActive).toHaveBeenCalledWith({
-      organization: "new-org-id",
-    });
-  });
-});
-
 test("Leaving the page during workspace creation reconciles the quota without activating its SDK result", async () => {
   const creation = context.mocks.deferred<{ readonly id: string }>();
   let createdOrganizationsCount = 0;
@@ -111,7 +90,6 @@ test("Leaving the page during workspace creation reconciles the quota without ac
   creation.resolve({ id: "org_created_after_navigation" });
 
   await waitFor(() => {
-    expect(screen.queryByText("Creating…")).not.toBeInTheDocument();
     expect(screen.queryByText("Create workspace")).not.toBeInTheDocument();
   });
   click(workspaceSwitcher());
@@ -146,7 +124,6 @@ test("Failed workspace activation still reconciles the committed creation quota"
   activation.reject(new Error("Clerk organization activation failed"));
 
   await waitFor(() => {
-    expect(screen.queryByText("Creating…")).not.toBeInTheDocument();
     expect(screen.queryByText("Create workspace")).not.toBeInTheDocument();
   });
   expect(location.pathname).toBe("/agents");

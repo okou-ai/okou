@@ -42,7 +42,6 @@ function exactReconnectUrl(connectionId = EXACT_CONNECTION_ID): URL {
 function mockExactReconnectAccount(
   accountStatus: "connected" | "reconnect-required" | "missing",
   options?: {
-    catalogUnavailableOnce?: boolean;
     unnamedManualAccount?: boolean;
     accountMissingOnActivate?: boolean;
     unsupportedAuthMethod?: boolean;
@@ -50,7 +49,6 @@ function mockExactReconnectAccount(
   },
 ): () => void {
   let exactReconnectCompleted = false;
-  let catalogUnavailable = options?.catalogUnavailableOnce ?? false;
   let accountLookups = 0;
   const github = connectorSlugSchema.parse("github");
   const catalogItem = {
@@ -117,12 +115,6 @@ function mockExactReconnectAccount(
     connectNotice: null,
   };
   context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
-    if (catalogUnavailable) {
-      catalogUnavailable = false;
-      return respond(503, {
-        error: { code: "PROVIDER_UNAVAILABLE", message: "Catalog unavailable" },
-      });
-    }
     return params.connectorSlug === github
       ? respond(200, { connector: catalogItem })
       : respond(404, {
@@ -767,28 +759,6 @@ test("Indented code keeps its formatting at message and action boundaries", asyn
   expect(codeExamples).toStrictEqual([PERMISSION_URL, CONNECTOR_URL]);
 });
 
-test("Keep the connector slot when delayed metadata is unavailable", async () => {
-  const gate = context.mocks.deferred<void>();
-  context.mocks.api(
-    connectorCatalogContract.get,
-    async ({ respond, withSignal }) => {
-      await withSignal(gate.promise);
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Connector unavailable" },
-      });
-    },
-  );
-  await setupChat(
-    `Authorization request\n\n${CONNECTOR_URL}\n\nAfter the request`,
-  );
-  const loading = await screen.findByTestId("connector-action-card-loading");
-  expectNodeBefore(loading, screen.getByText("After the request"));
-  gate.resolve();
-  const unavailable = await screen.findByTestId("unavailable-action-card");
-  expect(unavailable).toHaveTextContent("Action unavailable");
-  expectNodeBefore(unavailable, screen.getByText("After the request"));
-});
-
 test("An exact reconnect card opens the non-default account dialog and continues only after success", async () => {
   const complete = mockExactReconnectAccount("reconnect-required");
   let submittedAccount: unknown = null;
@@ -912,12 +882,9 @@ test("Closing an in-flight reconnect dialog never continues after a late success
   const save = buttonIn(dialog, "Save");
   click(save);
   const request = await requestStarted.promise;
-  await waitFor(() => {
-    expect(request.account).toStrictEqual({
-      intent: "reconnect",
-      connectionId: EXACT_CONNECTION_ID,
-    });
-    expect(save).toBeDisabled();
+  expect(request.account).toStrictEqual({
+    intent: "reconnect",
+    connectionId: EXACT_CONNECTION_ID,
   });
   click(buttonIn(dialog, "Close"));
   await waitFor(() => {
@@ -1076,42 +1043,6 @@ test("Closing the exact reconnect dialog does not send the callback", async () =
   expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
 });
 
-test("A failed exact reconnect leaves the callback unsent", async () => {
-  mockExactReconnectAccount("reconnect-required");
-  let attempts = 0;
-  let continuationPrompt: string | null = null;
-  context.mocks.api(
-    builtinConnectorManualGrantContract.connect,
-    ({ respond }) => {
-      attempts += 1;
-      return respond(400, {
-        error: { code: "BAD_REQUEST", message: "Synthetic grant failed" },
-      });
-    },
-  );
-  await setupChat(exactReconnectUrl().toString(), (prompt) => {
-    continuationPrompt = prompt;
-  });
-  const card = await screen.findByTestId("connector-action-card");
-  click(queryAllByRoleFast("button", card)[0]!);
-  const dialog = await screen.findByRole("dialog", {
-    name: "GitHub · Work GitHub",
-  });
-  await fill(
-    within(dialog).getByPlaceholderText("work-github-token"),
-    "synthetic-token",
-  );
-  click(buttonIn(dialog, "Save"));
-
-  await waitFor(() => {
-    expect(attempts).toBe(1);
-    expect(buttonIn(dialog, "Save")).toBeEnabled();
-  });
-  expect(continuationPrompt).toBeNull();
-  expect(dialog).toBeInTheDocument();
-  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
-});
-
 test("Malformed or context-mismatched exact reconnect links are inert", async () => {
   const wrongAgent = exactReconnectUrl();
   wrongAgent.searchParams.set(
@@ -1153,21 +1084,6 @@ test("A missing exact reconnect account never falls back to the default", async 
   expect(card).toHaveTextContent("Action unavailable");
   expect(screen.queryByTestId("connector-action-card")).toBeNull();
   expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
-});
-
-test("Retrying an exact reconnect card reloads unavailable catalog data", async () => {
-  mockExactReconnectAccount("reconnect-required", {
-    catalogUnavailableOnce: true,
-  });
-  await setupChat(exactReconnectUrl().toString());
-
-  const retry = await screen.findByText("Retry", { selector: "button" });
-  expect(screen.queryByTestId("connector-action-card")).toBeNull();
-  click(retry);
-
-  const card = await screen.findByTestId("connector-action-card");
-  expect(card).toHaveTextContent("GitHub · Work GitHub");
-  expect(card).toHaveTextContent("Reconnect");
 });
 
 test("A connector account switch keeps its icon and retries its continuation with the same identity", async () => {

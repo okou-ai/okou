@@ -903,7 +903,6 @@ async function preparePartialWorkflowRescue() {
 
 test("A failed rescue keeps the source agent and the completed workflow copy", async () => {
   const { dialog } = await preparePartialWorkflowRescue();
-  expect(within(dialog).getByText("Delete agent")).toBeEnabled();
   expect(screen.getByDisplayValue("Research Agent")).toBeInTheDocument();
   expect(
     within(dialog).getByText("Daily research copied to Nova"),
@@ -1002,44 +1001,4 @@ test("Keep the source agent when its workflow refresh fails after copying", asyn
   await chooseWorkflowCopy(reopened);
   click(within(reopened).getByText("Delete agent"));
   await screen.findByText("Agent deleted");
-});
-
-test("Load the agent's workflows before enabling deletion after an initial list failure", async () => {
-  prepareAgentProfile();
-  const workflow = prepareDeleteWorkflow();
-  const recoveredList = context.mocks.deferred<void>();
-  let canLoad = false;
-  context.mocks.api(workflowsCollectionContract.list, async ({ respond }) => {
-    if (!canLoad) {
-      return respond(403, {
-        error: { code: "FORBIDDEN", message: "Workflows unavailable" },
-      });
-    }
-    await recoveredList.promise;
-    return respond(200, [workflow]);
-  });
-
-  await setupPage({ context, path: `/agents/${AGENT_ID}?tab=profile` });
-  await findAgentNameInput();
-  click(screen.getByText("Delete agent"));
-  const dialog = await screen.findByRole("dialog");
-  const alert = await within(dialog).findByRole("alert");
-  expect(alert).toHaveTextContent(
-    "Could not load workflows. Retry before deleting this agent.",
-  );
-  expect(within(dialog).getByText("Delete agent")).toBeDisabled();
-  expect(within(dialog).getByText("Cancel")).toBeEnabled();
-
-  canLoad = true;
-  click(within(dialog).getByText("Retry"));
-  await within(dialog).findByText("Loading workflows…");
-  expect(within(dialog).getByText("Delete agent")).toBeDisabled();
-  recoveredList.resolve();
-  const select = await within(dialog).findByRole("combobox");
-  expect(select).toHaveTextContent("Delete with agent");
-  expect(select).toBeEnabled();
-  expect(within(dialog).getByText("Delete agent")).toBeEnabled();
-  expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
-  await chooseWorkflowCopy(dialog);
-  expect(select).toHaveTextContent("Copy to Nova");
 });

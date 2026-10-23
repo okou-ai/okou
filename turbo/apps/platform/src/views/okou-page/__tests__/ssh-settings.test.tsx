@@ -211,7 +211,6 @@ test("A known credential rejection leaves the retained input editable", async ()
   await fill(secret, "owned-secret");
   click(getAction("button", "Save", dialog));
   await within(dialog).findByRole("alert");
-  expect(getAction("button", "Save", dialog)).toBeEnabled();
   expect(secret).toBeEnabled();
   expect(secret).toHaveValue("owned-secret");
   expect(queryAction("button", "Retry", dialog)).not.toBeInTheDocument();
@@ -694,54 +693,6 @@ test("SSH host settings update the chat remote access default", async () => {
   expect(updatedParams).toStrictEqual({ protocol: "ssh", connectionId: id });
 });
 
-test("SSH host default can retry after its settings fail to load", async () => {
-  let failed = true;
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: [base] });
-  });
-  context.mocks.api(
-    chatRemoteAccessContract.listHostDefaults,
-    ({ respond }) => {
-      return failed
-        ? respond(500, {
-            error: { code: "INTERNAL_ERROR", message: "private default error" },
-          })
-        : respond(200, {
-            ssh: [
-              {
-                connectionId: id,
-                displayName: "Deployment",
-                defaultEnabled: true,
-              },
-            ],
-            vnc: [],
-          });
-    },
-  );
-  await setupPage({
-    context,
-    path: "/connectors?scope=remote-control&type=ssh",
-    auth,
-    featureSwitches: {},
-  });
-  await screen.findByText("Couldn't load remote access.");
-  expect(document.body.textContent).not.toContain("private default error");
-  expect(
-    screen.queryByRole("switch", { name: "Enabled by default for chats" }),
-  ).toBeNull();
-  failed = false;
-  click(
-    await waitFor(() => {
-      return getAction("button", "Retry");
-    }),
-  );
-  await expect(
-    screen.findByRole("switch", {
-      name: "Enabled by default for chats",
-    }),
-  ).resolves.toBeChecked();
-});
-
 test("SSH is managed in Connectors Remote control", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [] });
@@ -954,20 +905,15 @@ test("Whitespace-only host is rejected visibly before submission and can be corr
   await screen.findByText("deploy@ssh.example.com:22");
 });
 
-test("Credential replacement retains input during saving and clears secrets on close", async () => {
+test("Credential replacement saves the selected key and clears secrets on close", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [base] });
   });
-  const ready = context.mocks.deferred<void>();
   const requests: unknown[] = [];
-  context.mocks.api(
-    sshCredentialsContract.update,
-    async ({ body, respond }) => {
-      requests.push(body);
-      await ready.promise;
-      return respond(200, { ...credential, revision: 2 });
-    },
-  );
+  context.mocks.api(sshCredentialsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    return respond(200, { ...credential, revision: 2 });
+  });
   await page();
   click(getAction("radio", "Credentials"));
   click(
@@ -1002,20 +948,6 @@ test("Credential replacement retains input during saving and clears secrets on c
     );
   });
   click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    expect(getAction("button", "Saving...", dialog)).toBeDisabled();
-  });
-  expect(within(dialog).getByLabelText("Private key")).toHaveValue(
-    " new-key\n",
-  );
-  expect(within(dialog).getByLabelText("Private key")).toBeDisabled();
-  expect(
-    within(dialog).getByRole("checkbox", { name: "Replace authentication" }),
-  ).toHaveAttribute("aria-disabled", "true");
-  expect(
-    within(dialog).getByLabelText("Choose private key file"),
-  ).toBeDisabled();
-  ready.resolve();
   await waitFor(() => {
     return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });

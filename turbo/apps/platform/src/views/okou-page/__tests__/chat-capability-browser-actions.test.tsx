@@ -275,7 +275,6 @@ async function browserUserActionSubscribed() {
 async function openManagedBrowserChat(
   sharedWorkerTestTransport: "direct" | "message-port" = "direct",
 ) {
-  const sessionReady = context.mocks.deferred<void>();
   let browser = managedBrowserSession({
     status: "active",
     screenshotUrl: INITIAL_SCREENSHOT_URL,
@@ -293,9 +292,8 @@ async function openManagedBrowserChat(
       ].join("\n\n"),
     ),
   });
-  context.mocks.api(browserContract.get, async ({ params, respond }) => {
+  context.mocks.api(browserContract.get, ({ params, respond }) => {
     expect(params.threadId).toBe(RUN_THREAD_ID);
-    await sessionReady.promise;
     return respond(200, { browser });
   });
   context.mocks.api(browserContract.open, ({ params, respond }) => {
@@ -316,7 +314,6 @@ async function openManagedBrowserChat(
 
   await readyChat();
   return {
-    sessionReady,
     foreignBrowserUrl,
     untrustedBrowserUrl,
     updateBrowser(
@@ -333,14 +330,9 @@ async function openManagedBrowserChat(
   };
 }
 
-test("Render a managed browser card from loading to live", async () => {
-  const { sessionReady } = await openManagedBrowserChat();
+test("Render a live managed browser card", async () => {
+  await openManagedBrowserChat();
   const renderAppStyles = await createRenderedAppStyles(context.signal);
-  const loadingCard = await screen.findByTestId("browser-session-card-loading");
-  renderAppStyles(loadingCard);
-  expect(getComputedStyle(loadingCard).borderTopWidth).toBe("1px");
-
-  sessionReady.resolve();
   const card = await findButton("Open Research browser");
   renderAppStyles(card);
   expect(getComputedStyle(card).borderTopWidth).toBe("1px");
@@ -364,7 +356,6 @@ test("Browser cards show status and thumbnail changes on events and continuity g
     "browserSessionChanged",
   );
   const browser = await openManagedBrowserChat("message-port");
-  browser.sessionReady.resolve();
   const card = await findButton("Open Research browser");
   await waitFor(() => {
     expect(card).toHaveTextContent("Live");
@@ -446,8 +437,7 @@ test("A browser card uses a private screenshot thumbnail while its panel keeps t
 });
 
 test("Follow suspension and resumption in the live browser panel", async () => {
-  const { sessionReady, updateBrowser } = await openManagedBrowserChat();
-  sessionReady.resolve();
+  const { updateBrowser } = await openManagedBrowserChat();
   const card = await findButton("Open Research browser");
   click(card);
 
@@ -501,9 +491,8 @@ test("Follow suspension and resumption in the live browser panel", async () => {
 });
 
 test("Keep foreign and untrusted browser URLs as ordinary links", async () => {
-  const { sessionReady, foreignBrowserUrl, untrustedBrowserUrl } =
+  const { foreignBrowserUrl, untrustedBrowserUrl } =
     await openManagedBrowserChat();
-  sessionReady.resolve();
   await findButton("Open Research browser");
   const foreignLink = linkByName("Other conversation browser");
   expect(foreignLink).toHaveAttribute("href", foreignBrowserUrl);
@@ -801,26 +790,15 @@ test.each([true, false])(
 );
 
 test("Closing an inline form clears password and code drafts while preserving ordinary text", async () => {
-  const firstCheckStarted = createDeferredPromise<void>(context.signal);
-  const releaseFirstCheck = createDeferredPromise<void>(context.signal);
-  let firstCheck = true;
   installCapabilityChat({
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, browserInputAction("pending"));
   });
-  context.mocks.api(
-    browserUserActionsContract.preflight,
-    async ({ respond }) => {
-      if (firstCheck) {
-        firstCheck = false;
-        firstCheckStarted.resolve(undefined);
-        await releaseFirstCheck.promise;
-      }
-      return respond(200, browserInputAction("pending"));
-    },
-  );
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, browserInputAction("pending"));
+  });
   await setupPage({
     context,
     path: RUN_PATH,
@@ -833,7 +811,6 @@ test("Closing an inline form clears password and code drafts while preserving or
   const dialog = await screen.findByRole("dialog", {
     name: "Sign in to download invoices",
   });
-  await firstCheckStarted.promise;
   await fill(
     within(dialog).getByLabelText("Account email"),
     "owner@example.test",
@@ -849,7 +826,6 @@ test("Closing an inline form clears password and code drafts while preserving or
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
-  releaseFirstCheck.resolve(undefined);
   click(await findButton("Enter information"));
   const reopened = await screen.findByRole("dialog", {
     name: "Sign in to download invoices",

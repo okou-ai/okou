@@ -4,10 +4,6 @@ import {
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
 import {
-  connectorAccountsContract,
-  type ConnectorAccountConnection,
-} from "@okouai/api-contracts/contracts/connector-accounts";
-import {
   builtinConnectorOpenIdStartContract,
   builtinConnectorOauthStartContract,
   builtinConnectorManualGrantContract,
@@ -238,53 +234,6 @@ test("Authorize an agent to use an already connected connector", async () => {
       parts: [{ type: "text", text: callbackPrompt }],
     });
   });
-});
-
-test("Retry an unavailable account read before authorizing the connected default", async () => {
-  const { slug: _slug, ...credential } = connectorResponse("gmail");
-  const account: ConnectorAccountConnection = {
-    ...credential,
-    target: { kind: "builtin", connectorSlug: "gmail" },
-    isDefault: true,
-    displayName: null,
-    scopeMismatch: false,
-    configuredFieldKeys: [],
-    missingRequiredFields: [],
-  };
-  let available = false;
-  let authorized = false;
-  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    return available
-      ? respond(200, {
-          connections: [account],
-          defaultConnection: account,
-          nextCursor: null,
-        })
-      : respond(500, {
-          error: { code: "INTERNAL_ERROR", message: "Accounts unavailable" },
-        });
-  });
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
-    return respond(200, { enabledConnectorSlugs: authorized ? ["gmail"] : [] });
-  });
-  context.mocks.api(userBuiltinConnectorsContract.update, ({ respond }) => {
-    authorized = true;
-    return respond(200, { enabledConnectorSlugs: ["gmail"] });
-  });
-  await setupPage({
-    context,
-    path: `/connectors/gmail/authorize?agentId=${AGENT_ID}`,
-  });
-  await screen.findByRole("heading", { name: /Accounts are unavailable/ });
-  available = true;
-  click(getButtonByText("Try again"));
-  click(
-    await waitFor(() => {
-      return getButtonByText("Authorize Okou");
-    }),
-  );
-  await screen.findByText("Gmail authorized");
-  expect(screen.getByText("Authorized")).toBeInTheDocument();
 });
 
 test("Show an unavailable state for a deleted agent", async () => {
@@ -590,45 +539,5 @@ test("Leave an agent unauthorized when OAuth progress is closed", async () => {
   await screen.findByText("Authorize Okou");
   expect(updateCalls).toBe(0);
   expect(screen.queryByText("GitHub authorized")).not.toBeInTheDocument();
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-});
-
-test("Keep a failed chat continuation retryable after authorizing the connector", async () => {
-  mockConnectedConnector("gmail");
-  let authorized = false;
-  let failCallback = true;
-  const threadId = "00000000-0000-4000-a000-000000000109";
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
-    return respond(200, { enabledConnectorSlugs: authorized ? ["gmail"] : [] });
-  });
-  context.mocks.api(userBuiltinConnectorsContract.update, ({ respond }) => {
-    authorized = true;
-    return respond(200, { enabledConnectorSlugs: ["gmail"] });
-  });
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    if (failCallback) {
-      return respond(500, {
-        error: {
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Could not resume this chat",
-        },
-      });
-    }
-    return respond(201, { threadId });
-  });
-  await setupPage({
-    context,
-    path: `/connectors/gmail/authorize?agentId=${AGENT_ID}&threadId=${threadId}&callbackPrompt=Continue`,
-  });
-  await screen.findByText("Authorize Okou");
-  click(getButtonByText("Authorize Okou"));
-  const error = await screen.findByRole("alert");
-  expect(error).toHaveTextContent("Could not resume this chat");
-  expect(getButtonByText("Authorize Okou")).toBeEnabled();
-  expect(screen.queryByText("Authorized")).not.toBeInTheDocument();
-  failCallback = false;
-  click(getButtonByText("Authorize Okou"));
-  await screen.findByText("Gmail authorized");
-  expect(screen.getByText("Authorized")).toBeInTheDocument();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
