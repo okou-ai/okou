@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.18.6](https://github.com/okou-ai/okou/compare/ios-v0.18.5...ios-v0.18.6) (2026-10-23)
+
+
+### Bug Fixes
+
+* **ios:** align draft sync lifecycle and errors with pwa ([#42502](https://github.com/okou-ai/okou/issues/42502)) ([1c4650e](https://github.com/okou-ai/okou/commit/1c4650e098d728f6f1156732d94619ebee0bd13e))
+* **ios:** size user message bubbles to their text ([#42500](https://github.com/okou-ai/okou/issues/42500)) ([8ea235c](https://github.com/okou-ai/okou/commit/8ea235c123fa3a570fae77a59b5bc516ef104df1))
+
 ## [0.18.5](https://github.com/okou-ai/okou/compare/ios-v0.18.4...ios-v0.18.5) (2026-10-23)
 
 
