@@ -307,6 +307,7 @@
     "src/signals/services/time-automation.ts",
     "src/signals/services/user-connectors.service.ts",
     "src/signals/services/user-custom-connector-changes.ts",
+    "src/signals/services/user-custom-connector-grant-persistence.service.ts",
     "src/signals/services/user-permission-grants.service.ts",
     "src/signals/services/workflow-automation-account-classification.service.ts",
     "src/signals/services/workflow-automation-account-projection.service.ts",
