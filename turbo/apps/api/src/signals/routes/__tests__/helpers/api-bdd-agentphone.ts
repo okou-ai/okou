@@ -126,7 +126,8 @@ function agentPhoneWebhookHeaders(
 }
 
 export function uniquePhoneHandle(): string {
-  return `+1555${randomInt(1_000_000, 9_999_999)}`;
+  // Links outlive each test in shared PostgreSQL; use the full E.164 length.
+  return `+1${randomInt(10_000_000_000_000, 100_000_000_000_000)}`;
 }
 
 export function uniqueConversationId(): string {
@@ -224,6 +225,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
     if (!url) {
       throw new Error(
         "Expected a captured AgentPhone connect prompt with a connect URL",
+        { cause: [...capture.messages] },
       );
     }
     const params = new URL(url).searchParams;
