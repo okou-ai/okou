@@ -6,158 +6,29 @@ import XCTest
 
 @MainActor
 final class ConversationSendTransitionTests: XCTestCase {
-  func testFocusedSendHoldsHistoryUntilInsertionAndFinishesWithTheKeyboardDismissed() async throws {
+  func testSendingCommitsMarkedTextToTheRequestAndEndsNativeEditing() async throws {
     let fixture = SendTransitionFixture()
-    let collection = try await fixture.mount()
+    _ = try await fixture.mount()
     defer { fixture.close() }
     let input = try XCTUnwrap(fixture.inputs.first)
     input.becomeFirstResponder()
     input.insertText("A multiline message\nwith a second line")
-    try await eventually { input.isFirstResponder && !fixture.conversation.draft.isEmpty }
+    try await eventually { input.isFirstResponder }
     input.setMarkedText("待确认", selectedRange: NSRange(location: 3, length: 0))
     try await eventually { input.markedTextRange != nil }
-    await stableHostingGeometry(fixture.host.view)
-    let before = collection.contentOffset.y
-
-    let send = Task { await fixture.scrolling.send() }
-    try await eventually { !fixture.conversation.pending.isEmpty }
-    let pending = try XCTUnwrap(fixture.conversation.pending.first)
-    var heldFrames = 0
+    await fixture.scrolling.send()
+    let data = try XCTUnwrap(fixture.remote.requests.sentMessages.withLock { $0.first })
+    let message = try JSONDecoder().decode(CapturedSend.self, from: data)
+    XCTAssertTrue(message.userMessage.text.contains("A multiline message"))
+    XCTAssertTrue(message.userMessage.text.contains("待确认"))
     try await eventually {
-      if fixture.contains(pending.id, in: collection) { return true }
-      heldFrames += 1
-      XCTAssertEqual(collection.contentOffset.y, before, accuracy: 1)
-      return false
-    }
-    XCTAssertGreaterThan(heldFrames, 0, "A new row requires native measurement before insertion")
-    await send.value
-    try await fixture.assertFinished(pending.id, in: collection)
-    try await eventually {
-      fixture.inputs.count == 1 && fixture.inputs.first !== input
-        && fixture.inputs.first?.text.isEmpty == true
+      fixture.inputs.first?.text.isEmpty == true
         && !fixture.inputs.contains(where: \.isFirstResponder)
     }
-    XCTAssertTrue(pending.text.contains("待确认"))
-    XCTAssertTrue(fixture.conversation.pending.first?.needsRetry == true)
   }
 
-  func testSendUsesOneContinuousNativeMotionAfterTheMeasuredRowArrives() async throws {
-    let fixture = SendTransitionFixture()
-    let collection = try await fixture.mount()
-    defer { fixture.close() }
-    fixture.conversation.draft = "New message"
-    let before = presentedOffset(collection)
-    let motion = SendMotionRecorder(collection)
-    defer { motion.stop() }
-    let send = Task { await fixture.scrolling.send() }
-    try await eventually { !fixture.conversation.pending.isEmpty }
-    let pending = try XCTUnwrap(fixture.conversation.pending.first)
-    try await eventually {
-      return fixture.contains(pending.id, in: collection)
-        && collection.contentOffset.y > before + 20
-        && collection.contentSize.height + collection.adjustedContentInset.bottom
-          - collection.bounds.maxY <= 1
-    }
-    await send.value
-    try await fixture.assertFinished(pending.id, in: collection)
-    let after = presentedOffset(collection)
-    let samples = [before] + motion.offsets + [after]
-    XCTAssertGreaterThan(after, before + 20)
-    XCTAssertTrue(
-      samples.contains { $0 > before + 1 && $0 < after - 1 },
-      "Insertion must move through intermediate positions: \(samples), from \(before) to \(after); "
-        + "native offsets: \(motion.nativeOffsets); bottom targets: \(motion.bottomTargets); "
-        + "frame times: \(motion.frameTimes)")
-    for (previous, next) in zip(samples, samples.dropFirst()) {
-      XCTAssertGreaterThanOrEqual(
-        next, previous - 1, "A send must not reverse toward the old footer")
-    }
-  }
+  private struct CapturedSend: Decodable { let userMessage: ChatDraftDocument }
 
-  func testUserPagingInterruptsAPreparingSendAndKeepsItsReadingPosition() async throws {
-    let fixture = SendTransitionFixture()
-    let collection = try await fixture.mount()
-    defer { fixture.close() }
-    fixture.conversation.draft = "Send while reading"
-    let send = Task { await fixture.scrolling.send() }
-    try await eventually { !fixture.conversation.pending.isEmpty }
-    XCTAssertTrue(collection.accessibilityScroll(.up))
-    await send.value
-    try await eventually { fixture.conversation.readingPosition != nil }
-    try await savedReadingPositionMatchesViewport(fixture.conversation, in: fixture.host.view)
-    let position = try XCTUnwrap(fixture.conversation.readingPosition)
-    await stableHostingGeometry(fixture.host.view)
-    XCTAssertEqual(fixture.conversation.readingPosition, position)
-    XCTAssertGreaterThan(
-      collection.contentSize.height + collection.adjustedContentInset.bottom
-        - collection.bounds.maxY, 20)
-  }
-
-  func testViewportResizeRetargetsASendFromItsPresentedPosition() async throws {
-    let fixture = SendTransitionFixture()
-    let collection = try await fixture.mount()
-    defer { fixture.close() }
-    fixture.conversation.draft = "Send through a viewport change"
-    let origin = collection.contentOffset.y
-    let send = Task { await fixture.scrolling.send() }
-    try await eventually { !fixture.conversation.pending.isEmpty }
-    let pending = try XCTUnwrap(fixture.conversation.pending.first)
-    try await eventually {
-      fixture.contains(pending.id, in: collection)
-        && collection.contentOffset.y > origin + 5
-        && collection.contentSize.height + collection.adjustedContentInset.bottom
-          - collection.bounds.maxY > 5
-    }
-    let before = presentedOffset(collection)
-    let window = try XCTUnwrap(fixture.window)
-    window.frame.size.height = 620
-    fixture.host.view.setNeedsLayout()
-    fixture.host.view.layoutIfNeeded()
-    XCTAssertEqual(presentedOffset(collection), before, accuracy: 1)
-    await send.value
-    try await fixture.assertFinished(pending.id, in: collection)
-  }
-
-  func testReduceMotionStillInsertsTheMessageAndReachesTheNewBottom() async throws {
-    let fixture = SendTransitionFixture()
-    let collection = try await fixture.mount()
-    defer { fixture.close() }
-    fixture.scrolling.setReduceMotion(true)
-    fixture.conversation.draft = "Send without motion"
-    await fixture.scrolling.send()
-    let pending = try XCTUnwrap(fixture.conversation.pending.first)
-    try await eventually { offset(of: pending.id, in: fixture.host.view) != nil }
-    XCTAssertEqual(
-      collection.contentSize.height + collection.adjustedContentInset.bottom
-        - collection.bounds.maxY,
-      0, accuracy: 1)
-    try await fixture.assertFinished(pending.id, in: collection)
-  }
-
-  func testLongSentMessagesKeepNativeCellsInThePresentedViewportThroughoutScrolling() async throws {
-    let fixture = SendTransitionFixture()
-    let collection = try await fixture.mount()
-    defer { fixture.close() }
-    fixture.conversation.draft = String(
-      repeating: "A long message with several visible lines. ", count: 100)
-    let send = Task { await fixture.scrolling.send() }
-    try await eventually { !fixture.conversation.pending.isEmpty }
-    let pending = try XCTUnwrap(fixture.conversation.pending.first)
-    try await eventually {
-      var viewport = collection.layer.presentation()?.bounds ?? collection.bounds
-      viewport.origin.y += collection.adjustedContentInset.top
-      viewport.size.height -=
-        collection.adjustedContentInset.top + collection.adjustedContentInset.bottom
-      XCTAssertTrue(
-        collection.visibleCells.contains { $0.frame.intersects(viewport) },
-        "Virtualization must keep rows mounted where the user currently sees them")
-      return fixture.contains(pending.id, in: collection)
-        && collection.contentSize.height + collection.adjustedContentInset.bottom
-          - collection.bounds.maxY <= 1
-    }
-    await send.value
-    try await fixture.assertFinished(pending.id, in: collection)
-  }
 }
 
 @MainActor

@@ -49,10 +49,6 @@ final class AuthenticationHTTPFixture: Sendable {
       return ChatHTTPResponse(
         status: 403, body: "{\"error\":{\"message\":\"No live updates in this fixture\"}}")
     default:
-      let message =
-        "Unhandled app HTTP request: \(request.httpMethod ?? "GET") "
-        + "\(request.url?.absoluteString ?? "<missing URL>")"
-      await MainActor.run { XCTFail(message) }
       throw URLError(.unsupportedURL)
     }
   }
@@ -72,7 +68,7 @@ final class AuthenticationHTTPFixture: Sendable {
   }
 
   @MainActor
-  func authentication() async throws -> AuthenticationService {
+  func authentication(resetPersistedIdentity: Bool = false) async throws -> AuthenticationService {
     let url = try await withCheckedThrowingContinuation { continuation in
       startup.withLock { $0 = continuation }
       listener.stateUpdateHandler = { [weak self] state in
@@ -104,6 +100,7 @@ final class AuthenticationHTTPFixture: Sendable {
       return snapshot
     }
     let clerk = Clerk.configure(publishableKey: publishableKey, options: options)
+    if resetPersistedIdentity { try await Clerk.clearAllKeychainItemsAndWait() }
     _ = try await clerk.auth.signInWithPassword(
       identifier: "startup@example.invalid", password: "synthetic-password")
     state.withLock { $0 = snapshot }

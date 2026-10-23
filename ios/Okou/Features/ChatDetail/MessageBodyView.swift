@@ -139,7 +139,9 @@ struct MessageBodyView: View, Equatable {
             prepared.map { MessageArtifactBody.resources($0.content, viewer: artifacts) } ?? []
           artifacts.open(resource, images: images, imageSources: artifactImageSources)
         } else {
-          openURL(url)
+          // Markdown links can retain a base URL. System dispatch needs the
+          // resolved standalone destination, even when absoluteString is valid.
+          openURL(url.absoluteURL)
         }
         return .handled
       }

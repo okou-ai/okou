@@ -1,7 +1,6 @@
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
-import SwiftUI
 import Synchronization
 import XCTest
 
@@ -9,6 +8,20 @@ import XCTest
 
 @MainActor
 final class ConversationActivitySummaryTests: XCTestCase {
+
+  private func waitForSleep(_ clock: ActivityClock, _ duration: Duration) async throws {
+    let deadline = ContinuousClock.now + .seconds(3)
+    while !(await clock.hasSleeper(duration)), ContinuousClock.now < deadline { await Task.yield() }
+    let waiting = await clock.hasSleeper(duration)
+    XCTAssertTrue(waiting, "Expected a suspended timer for \(duration)")
+  }
+
+  private func waitForNoSleep(_ clock: ActivityClock, duration: Duration? = nil) async throws {
+    let deadline = ContinuousClock.now + .seconds(3)
+    while await clock.hasSleeper(duration), ContinuousClock.now < deadline { await Task.yield() }
+    let waiting = await clock.hasSleeper(duration)
+    XCTAssertFalse(waiting, "Cancelled timers must stop")
+  }
   func testRefreshRotationAndFailureDegradationDoNotChangeTranscript() async throws {
     let scenario = ActivityScenario()
     let clock = ActivityClock()
@@ -24,12 +37,12 @@ final class ConversationActivitySummaryTests: XCTestCase {
     let history = conversation.history
     try await waitForSleep(clock, .seconds(5))
     await clock.advance(.seconds(5))
-    try await eventually { conversation.activitySummary.text == "正在核对结果" }
+    try await eventually { conversation.activitySummary.text == "Comparing the results" }
     XCTAssertEqual(scenario.state.requests.withLock { $0 }, 1)
     try await waitForSleep(clock, .seconds(15))
     await clock.advance(.seconds(15))
     try await eventually { scenario.state.requests.withLock { $0 } == 2 }
-    XCTAssertEqual(conversation.activitySummary.text, "正在核对结果")
+    XCTAssertEqual(conversation.activitySummary.text, "Comparing the results")
     XCTAssertEqual(conversation.messages, messages)
     XCTAssertEqual(conversation.visibleItems, items)
     XCTAssertEqual(conversation.history, history)
@@ -133,37 +146,6 @@ final class ConversationActivitySummaryTests: XCTestCase {
     try await waitForNoSleep(clock)
   }
 
-  func testVoiceOverCanReadWithoutRotationAndNativeFooterKeepsItsHeight() async throws {
-    let scenario = ActivityScenario()
-    let clock = ActivityClock()
-    let conversation = scenario.conversation(clock: clock)
-    defer { conversation.close() }
-    await conversation.refresh()
-    let host = UIHostingController(
-      rootView: ChatDetailView(conversation: conversation))
-    let window = try await mountConversationHost(host)
-    defer { unmount(window) }
-    try await eventually { conversation.activitySummary.text != nil }
-    let scroll = try XCTUnwrap(markers(in: host.view).first?.enclosingScrollView)
-    await stableHostingGeometry(host.view)
-    let bounds = scroll.bounds
-    let size = scroll.contentSize
-    try await waitForSleep(clock, .seconds(5))
-    await clock.advance(.seconds(5))
-    try await eventually { conversation.activitySummary.text == "正在核对结果" }
-    await stableHostingGeometry(host.view)
-    XCTAssertEqual(scroll.bounds, bounds)
-    XCTAssertEqual(scroll.contentSize, size)
-    conversation.activitySummary.setRotates(false)
-    try await waitForSleep(clock, .seconds(15))
-    try await waitForNoSleep(clock, duration: .seconds(5))
-    XCTAssertEqual(conversation.activitySummary.text, "正在核对结果")
-    conversation.activitySummary.setRotates(true)
-    try await waitForSleep(clock, .seconds(5))
-    await clock.advance(.seconds(5))
-    try await eventually { conversation.activitySummary.text == "Checking the sources" }
-  }
-
   func testWorkspaceSelectionForegroundAndCloseOwnTheDemand() async throws {
     let scenario = ActivityScenario()
     let workspace = scenario.workspace()
@@ -187,67 +169,6 @@ final class ConversationActivitySummaryTests: XCTestCase {
     try await eventually { conversation.activitySummary.text != nil }
     workspace.close()
     XCTAssertNil(conversation.activitySummary.text)
-  }
-
-  func testNativeSummaryAppearanceSamples() async throws {
-    let scenario = ActivityScenario()
-    let clock = ActivityClock()
-    for (name, scheme, type, text) in [
-      ("light", ColorScheme.light, DynamicTypeSize.large, "Checking the sources"),
-      ("light-chinese", ColorScheme.light, DynamicTypeSize.large, "正在核对结果"),
-      (
-        "dark-long", ColorScheme.dark, DynamicTypeSize.large,
-        "Checking changes across the repository and comparing results"
-      ),
-      (
-        "large-type-arabic", ColorScheme.light, DynamicTypeSize.accessibility3,
-        "أراجع نتائج البحث وأتحقق من المصادر"
-      ),
-    ] {
-      let body = try JSONSerialization.data(withJSONObject: [
-        "runId": ActivityScenario.run, "status": "available",
-        "messages": [["id": "sample", "text": text]],
-      ])
-      scenario.state.response.withLock {
-        $0 = ChatHTTPResponse(body: String(decoding: body, as: UTF8.self))
-      }
-      let conversation = scenario.conversation(clock: clock)
-      defer { conversation.close() }
-      await conversation.refresh()
-      let host = UIHostingController(
-        rootView: ChatDetailView(conversation: conversation)
-          .environment(\.colorScheme, scheme).environment(\.dynamicTypeSize, type)
-      )
-      host.overrideUserInterfaceStyle = scheme == .dark ? .dark : .light
-      host.view.backgroundColor = .systemBackground
-      let window = try await mountConversationHost(host)
-      try await eventually { conversation.activitySummary.text == text }
-      let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
-      let image = renderer.image { _ in
-        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-      }
-      let attachment = XCTAttachment(image: image)
-      attachment.name =
-        "activity-summary-" + name
-        + (UIAccessibility.isReduceMotionEnabled ? "-reduce-motion" : "")
-      attachment.lifetime = .keepAlways
-      add(attachment)
-      unmount(window)
-    }
-  }
-
-  private func waitForSleep(_ clock: ActivityClock, _ duration: Duration) async throws {
-    let deadline = ContinuousClock.now + .seconds(3)
-    while !(await clock.hasSleeper(duration)), ContinuousClock.now < deadline { await Task.yield() }
-    let waiting = await clock.hasSleeper(duration)
-    XCTAssertTrue(waiting, "Expected a suspended timer for \(duration)")
-  }
-
-  private func waitForNoSleep(_ clock: ActivityClock, duration: Duration? = nil) async throws {
-    let deadline = ContinuousClock.now + .seconds(3)
-    while await clock.hasSleeper(duration), ContinuousClock.now < deadline { await Task.yield() }
-    let waiting = await clock.hasSleeper(duration)
-    XCTAssertFalse(waiting, "Cancelled timers must stop")
   }
 }
 
@@ -308,6 +229,8 @@ private final class ActivityScenario: Sendable {
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
         return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+      case path + "/mark-read":
+        return ChatHTTPResponse(body: #"{"lastReadAt":"2026-10-20T00:00:00Z"}"#)
       case path + "/activity-summary":
         state.requests.withLock { $0 += 1 }
         if let wait = state.hold.withLock({ $0 }) { await wait() }
@@ -316,7 +239,7 @@ private final class ActivityScenario: Sendable {
           try JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: String]
         return ChatHTTPResponse(
           body: """
-            {"runId":"\(body?["runId"] ?? "")","status":"available","messages":[{"id":"sources","text":"Checking the sources"},{"id":"results","text":"正在核对结果"}]}
+            {"runId":"\(body?["runId"] ?? "")","status":"available","messages":[{"id":"sources","text":"Checking the sources"},{"id":"results","text":"Comparing the results"}]}
             """)
       case path + "/event-snapshot":
         return ChatHTTPResponse(

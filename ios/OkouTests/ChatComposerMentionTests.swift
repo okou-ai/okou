@@ -74,6 +74,7 @@ final class ChatComposerMentionTests: XCTestCase {
   func testMultipleInlineReferencesPreserveCursorSurroundingTextAndNativeUndoCopyPaste()
     async throws
   {
+    preserveNativePasteboard(for: self)
     let navigation = MentionNavigationFixture()
     let workspace = try await navigation.workspace()
     defer { workspace.close() }
@@ -131,7 +132,6 @@ final class ChatComposerMentionTests: XCTestCase {
     input.copy(nil)
     XCTAssertTrue(UIPasteboard.general.string?.contains("/agents/") == true)
     XCTAssertTrue(UIPasteboard.general.string?.contains("/chats/") == true)
-    defer { UIPasteboard.general.items = [] }
     input.cut(nil)
     try await eventually { !workspace.newComposer.hasContent }
     input.paste(nil)
@@ -234,6 +234,7 @@ final class ChatComposerMentionTests: XCTestCase {
   }
 
   func testQuotedNotesMixReferencesAndAttachmentsWithoutChangingQuoteSource() async throws {
+    preserveNativePasteboard(for: self)
     let fixture = AttachmentFlowFixture()
     let conversation = fixture.conversation()
     let navigation = MentionNavigationFixture()
@@ -278,7 +279,6 @@ final class ChatComposerMentionTests: XCTestCase {
       UIBezierPath(rect: CGRect(x: 0, y: 0, width: 8, height: 8)).fill()
     }.pngData()!
     UIPasteboard.general.setItems([[UTType.png.identifier: png]], options: [.localOnly: true])
-    defer { UIPasteboard.general.items = [] }
     note.paste(nil)
     try await eventually {
       conversation.attachmentDraft.hasAttachments && conversation.attachmentDraft.isReady
@@ -348,43 +348,6 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertTrue(
       UIApplication.shared.sendAction(
         try XCTUnwrap(command.action), to: input, from: command, for: nil))
-  }
-
-  func testLongReferenceLabelsAdaptToDarkModeDynamicTypeAndNativeAccessibility() async throws {
-    let navigation = MentionNavigationFixture()
-    let workspace = try await navigation.workspace()
-    defer { workspace.close() }
-    let host = UIHostingController(rootView: MentionComposerHarness(workspace: workspace))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    window.overrideUserInterfaceStyle = .dark
-    window.traitOverrides.preferredContentSizeCategory = .accessibilityExtraExtraLarge
-    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
-    try await focusMentionInput(input)
-    input.insertText("@研究")
-    try await eventually { mentionTable(in: host.view)?.visibleCells.first != nil }
-    let cell = try XCTUnwrap(mentionTable(in: host.view)?.visibleCells.first)
-    XCTAssertTrue(cell.accessibilityTraits.contains(.button))
-    XCTAssertTrue(cell.accessibilityLabel?.contains("中文 and 🌷") == true)
-    XCTAssertGreaterThan(cell.bounds.height, 44)
-    XCTAssertGreaterThan(input.font?.pointSize ?? 0, 16)
-    attachMention(window, name: "Native dark Dynamic Type mention candidates (HTTP fixtures)")
-    XCTAssertTrue(cell.accessibilityActivate())
-    try await eventually { input.text == "\u{fffc} " }
-    let attachment = try XCTUnwrap(
-      input.attributedText.attribute(.attachment, at: 0, effectiveRange: nil)
-        as? ComposerReferenceAttachment)
-    XCTAssertEqual(attachment.accessibilityLabel, cell.accessibilityLabel)
-    let bounds = attachment.attachmentBounds(
-      for: input.textContainer, proposedLineFragment: input.bounds, glyphPosition: .zero,
-      characterIndex: 0)
-    XCTAssertLessThanOrEqual(bounds.width, input.bounds.width)
-    XCTAssertTrue(input.isFirstResponder)
-    attachMention(window, name: "Native dark long inline reference (HTTP fixtures)")
-    window.overrideUserInterfaceStyle = .light
-    window.traitOverrides.preferredContentSizeCategory = .large
-    await hostingPresentationFrame()
-    attachMention(window, name: "Native light long inline reference (HTTP fixtures)")
   }
 
   func testLateStructuredPasteAndRetiredCandidateCannotEnterAnotherAgentDraft() async throws {

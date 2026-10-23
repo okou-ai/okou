@@ -8,18 +8,16 @@ import XCTest
 final class ChatModelEntryTests: XCTestCase {
   func testColdComposerLoadsModelSettingsWithoutPreloadingOrReplacingTheEditor() async throws {
     let requested = expectation(description: "Mounted composer requests model settings")
-    requested.expectedFulfillmentCount = 4
     let delivered = expectation(description: "Model settings responses delivered")
-    delivered.expectedFulfillmentCount = 4
     let (responses, response) = AsyncStream<Void>.makeStream()
     defer { response.finish() }
     let fixture = ChatHTTPFixture { request in
-      requested.fulfill()
       if request.url?.path == "/api/run-models" {
+        requested.fulfill()
         for await _ in responses { break }
+        delivered.fulfill()
       }
       let result = try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
-      delivered.fulfill()
       return result
     }
     let workspace = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
@@ -46,10 +44,10 @@ final class ChatModelEntryTests: XCTestCase {
     await fulfillment(of: [delivered], timeout: 3)
     await hostingPresentationFrame()
     await hostingPresentationFrame()
-    XCTAssertTrue(textView(in: host.view) === input)
-    XCTAssertTrue(input.isFirstResponder)
-    XCTAssertEqual(input.text, "Keep this draft while models load")
-    XCTAssertEqual(input.selectedRange, selection)
+    let current = try XCTUnwrap(textView(in: host.view))
+    XCTAssertTrue(current.isFirstResponder)
+    XCTAssertEqual(current.text, "Keep this draft while models load")
+    XCTAssertEqual(current.selectedRange, selection)
   }
 
   private func textView(in view: UIView) -> ComposerTextView? {

@@ -347,6 +347,9 @@ final class WorkspaceStoreTests: XCTestCase {
     let reassigned = Mutex(false)
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
+      case "/api/agents/\(storeAgentID)/draft", "/api/agents/\(otherAgentID)/draft",
+        "/api/chat-threads/\(storeThreadID)/draft":
+        return ChatHTTPResponse(body: #"{"draftUserMessage":null,"draftAttachments":null}"#)
       case "/api/chat-threads/snapshot":
         let url = URL(string: "/thread-snapshot", relativeTo: request.url!)!.absoluteURL
         return ChatHTTPResponse(

@@ -407,8 +407,16 @@ final class AttachmentFlowFixture: Sendable {
       }
       switch path {
       case "/api/chat-threads/snapshot", "/api/chat-threads/events", "/api/indicators":
-        guard let threadList else { throw URLError(.unsupportedURL) }
-        return try await threadList(request)
+        if let threadList { return try await threadList(request) }
+        switch path {
+        case "/api/chat-threads/snapshot":
+          return ChatHTTPResponse(
+            body: #"{"chatThreads":[],"latestEventId":null,"latestSeqId":null}"#)
+        case "/api/chat-threads/events":
+          return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+        default:
+          return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+        }
       case "/api/workflows/for-composer":
         guard let workflows else { throw URLError(.unsupportedURL) }
         return try await workflows(request)
@@ -435,6 +443,8 @@ final class AttachmentFlowFixture: Sendable {
         return ChatHTTPResponse(
           body:
             "[{\"agentId\":\"\(Self.agentID)\",\"displayName\":\"Okou\",\"isDefaultAgent\":true}]")
+      case "/api/user-preferences": return ChatHTTPResponse(body: #"{"pinnedAgentIds":[]}"#)
+      case "/api/feature-switches": return ChatHTTPResponse(body: #"{"effectiveSwitches":{}}"#)
       case "/api/user-model-preference": return ChatHTTPResponse(body: "{}")
       case "/api/run-models", "/api/model-catalog":
         return ChatHTTPResponse(body: "{\"models\":[],\"routes\":[]}")

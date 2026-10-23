@@ -39,7 +39,7 @@ Conversation history renders durable user messages and assistant results using
 Textual 0.5.0. The renderer supports Markdown headings, lists, quotes, tables,
 links, images, and code blocks, with text selection, code copying, and horizontal
 overflow for wide tables and code. Ably notifications trigger fresh API reads;
-transient token output and tool cards are not rendered. Conversation sharing, Cloud Browser,
+transient token output is not rendered. Conversation sharing, Cloud Browser,
 Computer Use, artifact publishing, and the global connector picker are outside this local UI.
 Generated results retain inline link labels and show native cards for Markdown image
 embeds. Images support enlarged system viewing and navigation within their transcript
@@ -99,10 +99,6 @@ xcodebuild -project ios/Okou.xcodeproj -scheme Okou \
   -configuration Debug -destination 'platform=iOS Simulator,id=<DEVICE_ID>' \
   -derivedDataPath /tmp/okou-ios-derived build \
   CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES
-xcodebuild -project ios/Okou.xcodeproj -scheme Okou \
-  -configuration Debug -destination 'platform=iOS Simulator,id=<DEVICE_ID>' \
-  -derivedDataPath /tmp/okou-ios-derived test \
-  CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES
 xcrun simctl install <DEVICE_ID> /tmp/okou-ios-derived/Build/Products/Debug-iphonesimulator/Okou.app
 xcrun simctl launch <DEVICE_ID> ai.okou.ios
 ```
@@ -116,8 +112,8 @@ Normal simulator signing through Xcode is also appropriate; do not use
 
 The local [ChatDomain package](Packages/ChatDomain/Package.swift) contains pure
 chat models, event projection, and thread replay. It depends only on Foundation;
-the App explicitly imports its public API. Run the eight domain tests without
-launching an app or simulator:
+the App explicitly imports its public API. Run its tests without launching an
+app or simulator:
 
 ```sh
 swift test --package-path ios/Packages/ChatDomain
@@ -129,54 +125,56 @@ synchronization, commands, model selection, and SQLite storage. It depends on
 ChatDomain and Apple system frameworks; authentication/realtime SDK adapters,
 feature stores, Markdown rendering, and native UI remain in the App.
 
-Run the 32 data tests independently:
+Run the data tests independently:
 
 ```sh
 swift test --package-path ios/Packages/ChatData
 ```
 
 They retain real HTTP decoding, loopback snapshot transfers, and temporary SQLite
-files. ChatDataTestSupport shares the existing HTTP fixture with App integration
-tests and is linked only by test targets. Store and UI tests remain in
-`OkouTests`. CI requires both package suites and the App suite.
+files. ChatDataTestSupport shares strict external HTTP fixtures across the
+package and App targets. Required CI runs both package suites and the in-process
+`OkouTests` target. It prioritizes business and protocol contracts, minimizes UI
+coverage, and reports complete-workflow duration on standard runners. Visual and system
+interaction changes receive explicit on-demand native acceptance.
+
+Read the [iOS testing standard](../docs/ios/ios-testing.md) before adding or
+reviewing tests. It defines real entry points, observable assertions, native
+layout synchronization, fixture isolation, cleanup, and acceptance limits. Use
+the [CI test command](#ci) for the App suite: it supplies isolated service
+configuration instead of the normal production app configuration. Test totals
+come from the selected revision and runner output, not a fixed count in this guide.
 
 The project uses synchronized folders: adding Swift files beneath `Okou/` or
 `OkouTests/` adds them to the corresponding target. `Resources/Info.plist` is
 excluded from resource copying and used as the app's build-time Info.plist.
 
-## Authentication setup and distribution limits
+## Authentication and distribution
 
-During local acceptance on September 17, 2026, production Clerk initially rejected
-native requests because the Native API was disabled. It was enabled with explicit
-authorization and independently reloaded to verify the setting. The production
-Google/OAuth callback allowlist entry `ai.okou.ios://callback` was also added with
-explicit authorization and verified in the saved redirect list. The app registers
-the `ai.okou.ios` URL scheme and passes incoming URLs to Clerk. Google sign-in,
-session restoration, and authenticated chat access have since been exercised
-successfully in the installed app.
+The app registers `ai.okou.ios` and forwards incoming callback URLs to Clerk.
+Native API and OAuth callback configuration are external Clerk prerequisites;
+verify them in the intended environment when diagnosing login. Keep tests on
+fixture-owned identity and HTTP boundaries instead of real account sessions.
 
-`ai.okou.ios` is a provisional local Bundle ID. It has not been registered in
-Apple Developer, App Store Connect, or Clerk's native application settings.
-Associated-domain setup remains outstanding. Team `C5UWSXYB67` is configured for
-a later device build. Device signing, provisioning, and TestFlight distribution
-have not been validated.
-
-Internal TestFlight publication is integrated with release-please and the existing
-production approval. See [TestFlight releases](TESTFLIGHT.md) for the one-time
-App Store Connect group, signing, and credential setup. A successful signed CI
-upload and TestFlight installation have not yet been verified.
+Internal TestFlight publication is integrated with release-please and the
+production approval environment. See [TestFlight releases](TESTFLIGHT.md) for
+App Store Connect, signing, credential setup, and publication verification.
+Workflow configuration alone does not establish availability or installation of
+a particular release; verify its exact version/build and device behavior.
 
 Every `/api/` request identifies the app with `X-Client-Type: iOS`, an
 `X-Client-Version` equal to the marketing version (`CFBundleShortVersionString`,
 from `MARKETING_VERSION`), an `X-Client-Session-Id` generated once per API
 client, and a per-request `X-Client-Request-Id`. A bundle without a stable
 `x.y.z` marketing version fails configuration at launch. Signed snapshot
-downloads carry none of these headers. The API logs these values; an API-side
-iOS minimum-version floor is planned in
-[#38584](https://github.com/okou-ai/okou/issues/38584), and the app does not
-enforce one itself. Builds that predate these headers cannot be identified.
-Existing HTTP 426 responses show a blocking update screen. Old API-version
-compatibility and the future OpenAPI v1 migration are outside this MVP.
+downloads carry none of these headers. The API can use these values to identify
+the client. Builds that predate these headers cannot be identified through them.
+The API owns a source-controlled
+[iOS compatibility policy](../turbo/apps/api/src/lib/ios-client-compatibility.json)
+for the marketing version. A null minimum leaves the floor inactive; changing
+it requires the API's review and release process. HTTP 426 responses show a
+blocking update screen. Preserve this response handling when changing
+authentication, workspace startup, or data loading.
 
 The iOS icon retains the Desktop flower geometry from
 `desktop/Resources/symbol.svg`. Its source is `Assets/AppIcon.svg`, with a
@@ -185,62 +183,18 @@ PNG is RGB without alpha; it removes the transparent Desktop padding that
 appeared as a black border on the simulator. The SVG was exported using
 `@resvg/resvg-js` 2.6.2 and encoded as RGB PNG using `pngjs` 7.0.0.
 
-## Simulator Emoji issue
+## Native UI verification
 
-The current local host runs macOS 15.6 with Xcode 26.3. On its iOS 26.3.1 runtime
-(build `23D8133`), conversation-title Emoji can appear as question-mark boxes
-while accessibility text preserves the original characters. The app uses the
-system font and preserves the title unchanged. Apple has acknowledged this
-runtime Emoji-rendering bug; the forum reports iOS 26.1 as a working fallback
-and iOS 26.4 as a fix. See the
-[Apple developer discussion](https://developer.apple.com/forums/thread/817957).
+Record Xcode/SDK, simulator runtime, device, appearance, and Dynamic Type when
+reporting native rendering or interaction results. If title Emoji display
+incorrectly while accessibility preserves the original text, compare an isolated
+simulator on another supported runtime before changing application text. Keep
+the user's existing simulator and login state intact.
 
-For this host, a separate iOS 26.1 simulator is available as an acceptance
-fallback; visual verification on that device is still pending. The existing
-iOS 26.3.1 device and its login state are retained.
-To install the fallback runtime through Xcode's supported command-line path:
-
-```sh
-xcodebuild -downloadPlatform iOS -buildVersion 26.1 -architectureVariant arm64
-```
-
-Create a separate simulator using that runtime, install the app, and sign in
-again. Do not replace title Emoji in app code to mask this runtime issue.
-Xcode 26.4 requires macOS 26.2 or later; no host OS upgrade is part of this work.
-See Apple's [Xcode compatibility table](https://developer.apple.com/xcode/system-requirements)
-and [component installation guide](https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components).
-
-## Verification checkpoint
-
-On September 17, 2026:
-
-- The signed simulator app built, installed, and launched on iPhone 17 Pro.
-- Google login and session restoration worked. Real chat lists, existing history,
-  new-chat creation, message delivery, and assistant results were confirmed in
-  interactive acceptance.
-- The date parser was corrected for the API's SQL-style UTC timestamps.
-- Sending a follow-up while work was active, then backgrounding and returning,
-  displayed the durable result `IOS_STEER_OK`.
-- Fifteen simulator tests passed using the CI script from a fresh build directory.
-  Fourteen
-  use a `URLProtocol` HTTP-boundary fixture, keeping the client request,
-  decoding, projection, and state code real. One uses an actual loopback HTTP
-  server to verify gzip decoding. None requires production or preview services.
-- Markdown headings, bold/italic text, lists, blockquotes, a table, syntax-colored
-  code, and the code-copy action were verified in the installed app. Copying the
-  sample produced `print("OK")` in a draft, which was then cleared without sending.
-- The combined control showed a square stop icon during active work with an
-  empty draft. Stopping produced `Task stopped.` and restored the send arrow.
-- The list's decorative chat-bubble icons were removed. The installed app's
-  home-screen icon no longer showed the black border.
-- A persisted conversation containing an approximately 600-word reply reproduced
-  a main-thread SwiftUI layout hang near 99% CPU with `LazyVStack`. Restricting the
-  default scroll anchor to initial positioning did not resolve it. Replacing
-  `LazyVStack` with `VStack` made the same conversation responsive, with an observed
-  CPU sample of 2.2%. This does not establish a general performance bound.
-
-Wide-code/table scrolling, link opening, image rendering, and further
-long-history performance checks remain outside the completed interactive sample.
+Use the [iOS testing standard](../docs/ios/ios-testing.md#native-acceptance-and-ci)
+for runtime coverage, native input, accessibility, visual evidence, and measured
+device-performance requirements. Record results in the owning PR or issue;
+historical test totals and profiling samples do not establish current acceptance.
 
 The transcript uses a native `UICollectionView` cell for each message, with
 SwiftUI message content and measured row heights. A bounded batch of temporary
@@ -257,19 +211,9 @@ in local acceptance when changing the container. See
 [Chat UI architecture](CHAT_UI_ARCHITECTURE.md) for the Telegram reference and
 the presentation pipeline.
 
-A local investigation of a long conversation observed approximately 1.3 GB of
-process physical footprint with the eager stack and approximately 269 MB with
-the list. These are diagnostic snapshots from separate runs, not a controlled
-frame-rate benchmark. Sampling also found repeated ISO-8601 formatter creation
-during list refresh. The decoder now reuses its formatters under a lock. A local
-3,000-timestamp comparison took approximately 0.79 seconds before and 0.40 seconds
-after, with identical decoded dates across UTC, offset, and SQL-style inputs.
-
-Also verify uncertain-send recovery, signing out or switching workspaces clears
-the previous workspace's chats and drafts, and Emoji render on the replacement
-runtime. Record these outcomes separately from compilation and automated tests.
-Physical-device acceptance, independent build enforcement, and TestFlight release
-remain outstanding.
+Also verify uncertain-send recovery and that signing out or switching workspaces
+clears the previous workspace's chats and drafts. Record observed outcomes
+separately from compilation, automated tests, and release publication.
 
 ## CI
 
@@ -277,21 +221,29 @@ remain outstanding.
 and manual dispatch. Lightweight Linux jobs detect changes and test CI contracts
 on every run. Native jobs start after change detection while script checks run
 in parallel; archive publication and the required gate both require those checks.
-Changes to `ios/`, the iOS workflow, or the shared
-changed-base helper trigger Swift formatting, property-list validation, an app
-build, standalone ChatDomain/ChatData tests, and the simulator tests on the
-GitHub-hosted `xcode-27` image with Xcode 27.1 and iOS 27.0 on iPhone 18 Pro.
-The image is currently a public preview; the Xcode build is the stable
-`27A9275` release. Device archive builds, the optional archive proof, and
-TestFlight signing/export select the same Xcode version. Toolchain changes
-invalidate prior archive and test fingerprints, so the merge group must produce
-fresh matching evidence. The App build uses the system Git provider for locked
-package resolution and reports build timings. Formatting includes both package manifests, sources,
-and tests. Swift
-packages must match `Package.resolved`; CI checks that it remains unchanged.
+On pull requests, merge groups, and manual dispatch, changes selected by
+`ios/scripts/ci-changed.sh` trigger Swift formatting, property-list validation,
+an app build, standalone ChatDomain/ChatData tests, and simulator tests on the
+`xcode-27` runner with Xcode 27.1 and iOS 27.0 on iPhone 18 Pro. Native build/test
+jobs do not rerun on main pushes; release publication consumes verified archive
+evidence. The workflow owns the pinned toolchain and simulator configuration.
+Device archive builds, the optional archive proof, and TestFlight signing/export
+select the same Xcode version. Toolchain changes invalidate prior archive and
+test fingerprints, so the merge group must produce fresh matching evidence.
+The App build uses the system Git provider for locked package resolution and
+reports build timings. Formatting includes both package manifests, sources,
+and tests. Swift packages must match `Package.resolved`; CI checks that it
+remains unchanged. Explicit locked resolution overlaps simulator startup so
+Xcode initialization does not wait for the simulator before it can begin. Cache
+hits still validate current inputs and never replace test execution.
 Standalone package tests run on a separate macOS runner from the App build and
-simulator suite, so package compilation does not consume the simulator job's
-30-minute budget. Both jobs are required by the gate.
+simulator suite. Both package and App results are required by the gate. App
+build/tests retain a 30-minute limit; package tests and device archive builds
+retain 15-minute limits. Measure the complete required workflow when assessing
+performance.
+Release-only merge groups can reuse App test evidence only when exact input fingerprints match
+the verified prior result; missing evidence and mixed groups run the tests.
+See [archive promotion](ARCHIVE_PROMOTION.md).
 
 `ios-build-cache.yml` refreshes shared caches after iOS changes reach main and
 after a same-repository iOS workflow actually starts its native `build-test`
@@ -304,11 +256,13 @@ request starts. Manual dispatch on main remains available for recovery.
 
 The `ci-gate-ios` check succeeds only after the required build/tests pass, or
 after change detection confirms they are unnecessary. Detection failures,
-cancelled jobs, and unexpectedly skipped jobs fail the gate. Register this
-check alongside the existing required checks after the workflow is on main.
+cancelled jobs, and unexpectedly skipped jobs fail the gate. Preserve this
+required check and its change-detection contract.
+
 Pure `ios/` pull requests and merge groups skip Turbo TypeScript lint, types,
 formatting, Knip, App/API/CLI and other JavaScript tests, benchmarks, and App/CLI
-preview artifacts, along with the runtime API schema report. Existing crates-only TypeScript exemptions remain in place.
+preview artifacts, along with the runtime API schema report. Existing
+crates-only TypeScript exemptions remain in place.
 Mixed changes, root files, and workflow changes do not receive this exemption;
 main still builds release artifacts and runs the normal checks. E2E selection
 continues to use Turbo package hashes and CI input detection.
@@ -322,21 +276,23 @@ cancelled jobs remain failures. Desktop and Rust retain their own input filters.
 
 Tests use HTTP-boundary fixtures and a loopback server. The CI build also clears
 the Clerk key and overrides service origins with reserved `.invalid` domains.
-Root-view tests pass a fixture-owned HTTP session and service origin; unconfigured
-startup API requests fail with their method and URL. Fixture sessions reject
+Authentication tests use the real SDK with a fixture-owned identity service.
+API fixtures provide isolated sessions and origins; unconfigured requests fail
+with their method and URL. Fixture sessions reject
 unknown HTTP origins locally instead of falling through to DNS, while preserving
 the loopback HTTP servers used by attachment integration tests.
 Production services, PR preview provisioning, and deployed end-to-end tests are
-outside this scope. These tests do not constitute page-level UI acceptance or
-server contract verification. CI starts its configured simulator while resolving
+outside this scope. Passing suites do not establish live-server contracts or
+physical-device visual acceptance. CI starts its configured simulator while resolving
 locked dependencies, then waits for system boot readiness before asset and App
 compilation. This keeps cold system-service startup out of asset-tool discovery.
-After `build-for-testing` succeeds, CI executes every native test with
-`test-without-building`. Test results and attachments remain in `Tests.xcresult`;
-automatic simulator sysdiagnose collection is disabled so it cannot delay the
-failure verdict. Native prerequisite waits throw after recording a failed
-assertion, stopping dependent actions. Failed or
-cancelled preparation still blocks the required gate. The standalone command
+When App test execution is required, `build-for-testing` produces the test
+specification and `test-without-building` runs the complete in-process App suite.
+Package suites execute separately. Test results and attachments remain in
+`Tests.xcresult`; automatic simulator sysdiagnose collection is disabled so it
+cannot delay the failure verdict. Native prerequisite waits throw after
+recording a failed assertion, stopping dependent actions. Failed or cancelled
+preparation still blocks the required gate. The standalone command
 builds and runs every suite sequentially with an explicit local simulator:
 
 ```sh
@@ -345,8 +301,10 @@ RUNNER_TEMP="$(mktemp -d)" \
   bash ios/scripts/ci-test.sh
 ```
 
-iOS is not registered with release-please and has no automated publishing job.
-The existing release-PR gate helper reports `ci-gate-ios` success only when an
-unrelated release PR changes no iOS inputs, so adding the required check does
-not block release-please's bot-created commits. It rejects iOS changes instead
-of granting them an untested pass.
+iOS is registered as a release-please component. Its release job in
+`.github/workflows/release-please.yml` consumes the verified unsigned archive,
+signs and exports it, uploads to App Store Connect, and verifies availability in
+the configured internal testing group. It does not rebuild the release source.
+Follow [TestFlight releases](TESTFLIGHT.md) and
+[archive promotion](ARCHIVE_PROMOTION.md) for signing, exact-input evidence,
+and failure recovery; a successful merge is separate from distribution.

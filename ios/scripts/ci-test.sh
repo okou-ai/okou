@@ -72,6 +72,8 @@ export "GIT_CONFIG_VALUE_${git_config_index}=$build_root/package-sources.gitconf
 export GIT_CONFIG_COUNT=$((git_config_index + 1))
 
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == prepare ]]; then
+  # Resolve the locked graph while CoreSimulator boots. This also initializes
+  # Xcode before compilation instead of serializing both cold service startups.
   xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
   cmp "$resolved" "$build_root/Package.resolved.before"
   for repository in "$build_root"/SourcePackages/repositories/*; do

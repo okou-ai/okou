@@ -2,7 +2,6 @@ import ChatData
 import ChatDataTestSupport
 import ChatDomain
 import SwiftUI
-import Vision
 import XCTest
 
 @testable import Okou
@@ -360,60 +359,4 @@ final class FailureRecoveryTests: XCTestCase {
     XCTAssertFalse(AssistantFailureCopy.content(historical).description.contains("Checking"))
   }
 
-  func testNativeCardQuotaRefreshPreservesReadingPosition() async throws {
-    let fixture = FailureRecoveryFixture(
-      reason: "usage_limit", error: "You've hit your usage limit")
-    let (conversation, models) = await fixture.conversation()
-    defer {
-      conversation.close()
-      models.close()
-    }
-    let host = UIHostingController(
-      rootView: ChatDetailView(conversation: conversation).tint(.primary))
-    let window = try await mountConversationHost(host)
-    defer { unmount(window) }
-    try await eventually {
-      markers(in: host.view).contains { $0.messageID == FailureRecoveryFixture.id(2) }
-    }
-    let id = FailureRecoveryFixture.id(2)
-    let before = try XCTUnwrap(offset(of: id, in: host.view))
-    let scroll = try XCTUnwrap(markers(in: host.view).first?.enclosingScrollView)
-    let originalHeight = scroll.contentSize.height
-    conversation.rememberReadingPosition(.init(messageID: id, offset: before))
-    fixture.state.value.withLock {
-      $0.accounts = $0.accounts.replacingOccurrences(
-        of: "sample@example.invalid", with: "active-account-with-a-long-label@example.invalid")
-    }
-    await conversation.refreshFailureAccounts()
-    try await eventually { scroll.contentSize.height > originalHeight }
-    await stableHostingGeometry(host.view)
-    XCTAssertEqual(try XCTUnwrap(offset(of: id, in: host.view)), before, accuracy: 1)
-    let image = capture(window)
-    let observedText = renderedText(image).replacingOccurrences(
-      of: #"\s+"#, with: "", options: .regularExpression)
-    XCTAssertTrue(
-      observedText.contains("active-account-with-a-long-label@example.invalid"), observedText)
-    let attachment = XCTAttachment(image: image)
-    attachment.name = "Native failure recovery with current account"
-    attachment.lifetime = .keepAlways
-    add(attachment)
-  }
-
-  private func capture(_ window: UIWindow) -> UIImage {
-    UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-      window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-    }
-  }
-
-  private func renderedText(_ image: UIImage) -> String {
-    guard let cgImage = image.cgImage else { return "" }
-    let request = VNRecognizeTextRequest()
-    request.recognitionLevel = .accurate
-    request.usesLanguageCorrection = false
-    do { try VNImageRequestHandler(cgImage: cgImage).perform([request]) } catch {
-      XCTFail("Cannot read the rendered native card: \(error)")
-    }
-    return request.results?.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-      ?? ""
-  }
 }

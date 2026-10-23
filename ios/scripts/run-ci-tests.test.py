@@ -66,6 +66,10 @@ elif command == 'xcodebuild':
         role = 'build'
         if scenario != 'manual' and not (state / 'boot-finished').exists():
             sys.exit('Compilation started before system boot readiness')
+        for required in ['-onlyUsePackageVersionsFromResolvedFile',
+                         '-disableAutomaticPackageResolution', '-skipPackageUpdates']:
+            if required not in args:
+                sys.exit('Compilation must enforce locked package inputs: ' + required)
         mark('build-started')
         if scenario == 'build-failure':
             sys.exit(23)

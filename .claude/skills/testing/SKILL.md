@@ -21,6 +21,7 @@ Read the testing guide and relevant reference based on context:
 | CLI E2E (`e2e/tests/`)                    | [docs/testing.md](../../../docs/testing.md) | [cli-e2e-testing.md](../../../docs/cli/cli-e2e-testing.md)          |
 | API (`turbo/apps/api`)                    | [docs/testing.md](../../../docs/testing.md) | [api-testing.md](../../../docs/api/api-testing.md)                  |
 | App (`turbo/apps/platform`)               | [docs/testing.md](../../../docs/testing.md) | [app-testing.md](../../../docs/app/app-testing.md)                  |
+| iOS (`ios/`)                              | [docs/testing.md](../../../docs/testing.md) | [ios-testing.md](../../../docs/ios/ios-testing.md)                  |
 | Rust (`crates/`)                          | [docs/testing.md](../../../docs/testing.md) | [rust-testing.md](../../../docs/runner/rust-testing.md)             |
 | Python addon (`crates/runner/mitm-addon`) | [docs/testing.md](../../../docs/testing.md) | [mitm-addon-testing.md](../../../docs/runner/mitm-addon-testing.md) |
 
