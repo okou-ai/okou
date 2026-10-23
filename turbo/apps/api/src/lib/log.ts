@@ -13,7 +13,9 @@ import {
 
 import { createAxiomFetch } from "./axiom-fetch";
 import { env } from "./env";
+import { currentRequestRuntime } from "./request-runtime";
 import { singleton } from "./singleton";
+import { nowDate } from "./time";
 
 type LogMethod = (...args: unknown[]) => void;
 
@@ -123,6 +125,47 @@ function writeLog(...args: unknown[]): void {
 
 function writeError(...args: unknown[]): void {
   console.error(...args);
+}
+
+type TelemetryLevel = "debug" | "info" | "warn" | "error";
+
+/** Workers export these records through their configured OTel log destination. */
+export function writeNativeTelemetry(
+  dataset: string,
+  event: Readonly<Record<string, unknown>>,
+  level: TelemetryLevel = "info",
+): boolean {
+  if (!currentRequestRuntime()?.nativeTelemetry) {
+    return false;
+  }
+
+  const record = {
+    ...event,
+    axiom_dataset: dataset,
+    okou_runtime: "cloudflare-workers",
+    api_commit_sha: env("GIT_COMMIT_SHA"),
+  };
+  // Passing an object preserves structured fields and lets the Workers runtime
+  // serialize values without making JSON serialization part of the request.
+  switch (level) {
+    case "debug": {
+      console.debug(record);
+      break;
+    }
+    case "info": {
+      console.log(record);
+      break;
+    }
+    case "warn": {
+      console.warn(record);
+      break;
+    }
+    case "error": {
+      console.error(record);
+      break;
+    }
+  }
+  return true;
 }
 
 // ── Axiom integration ────────────────────────────────────────────────────
@@ -449,6 +492,9 @@ function logToAxiom(level: Level, name: string, args: unknown[]): void {
 }
 
 export async function flushLogs(): Promise<void> {
+  if (currentRequestRuntime()?.nativeTelemetry) {
+    return;
+  }
   const axiomLogger = getAxiomLogger();
   if (!axiomLogger) {
     return;
@@ -461,6 +507,38 @@ export async function flushLogs(): Promise<void> {
 // ── Logger creation ──────────────────────────────────────────────────────
 
 function createLogger(name: string): Logger {
+  function log(level: Level, args: unknown[]): void {
+    const shouldLog = loggerInstance.shouldLog(level);
+    if (currentRequestRuntime()?.nativeTelemetry) {
+      // Match the existing Axiom info threshold while retaining opt-in debug
+      // console output. Emit only once: the runtime owns export and delivery.
+      if (level !== Level.Debug || shouldLog) {
+        const fields = extractFields(args);
+        const severity = level === Level.Fatal ? Level.Error : level;
+        writeNativeTelemetry(
+          `vm0-web-logs-${env("AXIOM_DATASET_SUFFIX")}`,
+          {
+            _time: nowDate().toISOString(),
+            level: severity,
+            message: formatMessage(args),
+            source: "api",
+            ...rootEventFields(fields),
+            fields: { ...fields, context: name },
+          },
+          severity,
+        );
+      }
+      return;
+    }
+
+    if (shouldLog) {
+      const write =
+        level === Level.Error || level === Level.Fatal ? writeError : writeLog;
+      write(...formatArgs(level, name, args));
+    }
+    logToAxiom(level, name, args);
+  }
+
   const loggerInstance: Logger = {
     level: getInitialLevel(name),
     shouldLog(level: Level): boolean {
@@ -469,34 +547,19 @@ function createLogger(name: string): Logger {
       );
     },
     debug: (...args: unknown[]) => {
-      if (loggerInstance.shouldLog(Level.Debug)) {
-        writeLog(...formatArgs(Level.Debug, name, args));
-      }
-      logToAxiom(Level.Debug, name, args);
+      log(Level.Debug, args);
     },
     info: (...args: unknown[]) => {
-      if (loggerInstance.shouldLog(Level.Info)) {
-        writeLog(...formatArgs(Level.Info, name, args));
-      }
-      logToAxiom(Level.Info, name, args);
+      log(Level.Info, args);
     },
     warn: (...args: unknown[]) => {
-      if (loggerInstance.shouldLog(Level.Warn)) {
-        writeLog(...formatArgs(Level.Warn, name, args));
-      }
-      logToAxiom(Level.Warn, name, args);
+      log(Level.Warn, args);
     },
     error: (...args: unknown[]) => {
-      if (loggerInstance.shouldLog(Level.Error)) {
-        writeError(...formatArgs(Level.Error, name, args));
-      }
-      logToAxiom(Level.Error, name, args);
+      log(Level.Error, args);
     },
     fatal: (...args: unknown[]) => {
-      if (loggerInstance.shouldLog(Level.Fatal)) {
-        writeError(...formatArgs(Level.Fatal, name, args));
-      }
-      logToAxiom(Level.Fatal, name, args);
+      log(Level.Fatal, args);
     },
   };
 

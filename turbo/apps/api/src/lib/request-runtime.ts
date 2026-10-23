@@ -3,14 +3,22 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { ApiDb } from "./db-types";
 import { singleton } from "./singleton";
 
+/** Shared attributes supported by both native Workers and Node query spans. */
+export interface RequestQuerySpan {
+  readonly setAttributes: (
+    attributes: Readonly<Record<string, string | number>>,
+  ) => void;
+}
+
 /** Only Workers supply this context; Node/Vercel retain their existing owners. */
 export interface RequestRuntime {
+  readonly nativeTelemetry: boolean;
   readonly database: () => ApiDb;
   readonly waitUntil: (work: Promise<unknown>) => void;
   readonly traceQuery: (
     name: string,
     sql: string | undefined,
-    execute: () => Promise<unknown>,
+    execute: (span: RequestQuerySpan) => Promise<unknown>,
   ) => Promise<unknown>;
   readonly observeHttp: (method: string, route: string, status: number) => void;
 }

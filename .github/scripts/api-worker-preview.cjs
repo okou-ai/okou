@@ -3,6 +3,9 @@
 // deploy: JOB_REF, API_ENV_FILE, NEON_API_KEY, NEON_PROJECT_ID,
 // CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, GH_TOKEN, GITHUB_REPOSITORY.
 // PR deploys also require the captured event's EXPECTED_PR_HEAD_SHA.
+// CF_API_NATIVE_TELEMETRY=true requires preconfigured Axiom dev OTLP destination
+// slugs in CF_API_{LOGS,TRACES}_DESTINATION; otherwise those exports are optional.
+// Account destination provisioning and credentials belong to their operator.
 // deploy reads the branch prepared by deploy-api; it never creates or migrates it.
 // cleanup needs only JOB_REF, Cloudflare and GitHub credentials; PR refs only.
 // Credentials stay in memory/environment or private temporary files, never argv.
@@ -295,6 +298,32 @@ async function main(mode) {
   runtime.DATABASE_URL = database.toString();
   if (runtime.ENV !== "preview")
     throw new Error("Only preview runtime configuration is allowed");
+  const nativeTelemetry = process.env.CF_API_NATIVE_TELEMETRY === "true";
+  if (nativeTelemetry && !ref.startsWith("pr-"))
+    throw new Error("Native telemetry validation requires a PR preview");
+  const exports = {
+    logs: process.env.CF_API_LOGS_DESTINATION,
+    traces: process.env.CF_API_TRACES_DESTINATION,
+  };
+  if (nativeTelemetry) {
+    if (runtime.AXIOM_DATASET_SUFFIX !== "dev")
+      throw new Error(
+        "Native preview telemetry requires an Axiom dev configuration",
+      );
+    // Validate before building or changing Hyperdrive. CI only references
+    // operator-provisioned destinations; it never manages their credentials.
+    for (const kind of ["logs", "traces"]) {
+      if (!/^[a-z0-9-]+$/.test(exports[kind] ?? ""))
+        throw new Error(
+          `Native preview telemetry requires a valid CF_API_${kind.toUpperCase()}_DESTINATION slug`,
+        );
+    }
+  }
+  const subdomain = (await cf("GET", "/workers/subdomain"))?.subdomain;
+  if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(subdomain))
+    throw new Error("Invalid Workers preview subdomain");
+  if (!/^[a-f0-9]{40}$/.test(runtime.GIT_COMMIT_SHA))
+    throw new Error("Invalid Worker preview source revision");
   const root = process.cwd();
   command(
     "Build API Worker",
@@ -336,8 +365,7 @@ async function main(mode) {
     rawConfig.no_bundle !== true
   )
     throw new Error("Unexpected API Worker entrypoint");
-  const destination = process.env.CF_API_TRACES_DESTINATION;
-  if (!destination)
+  if (!exports.traces)
     console.log(
       "::notice::Native Worker tracing enabled; Axiom export requires the CF_API_TRACES_DESTINATION repository variable and an account OTLP destination",
     );
@@ -349,16 +377,20 @@ async function main(mode) {
     workers_dev: true,
     preview_urls: false,
     triggers: { crons: [] },
-    vars: {},
+    vars: { API_NATIVE_TELEMETRY: String(nativeTelemetry) },
     env: {},
     hyperdrive: [{ binding: "HYPERDRIVE", id: hyperdrive.id }],
     observability: {
       enabled: true,
-      logs: { enabled: true },
+      logs: {
+        enabled: true,
+        head_sampling_rate: 1,
+        destinations: exports.logs ? [exports.logs] : [],
+      },
       traces: {
         enabled: true,
         head_sampling_rate: 1,
-        destinations: destination ? [destination] : [],
+        destinations: exports.traces ? [exports.traces] : [],
       },
     },
   };
@@ -398,6 +430,19 @@ async function main(mode) {
     console.log(
       `Deployed ${names.worker}; no Worker HTTP/health/E2E requests were made`,
     );
+    const url = `https://${names.worker}.${subdomain}.workers.dev`;
+    console.log(`API Worker preview: ${url}`);
+    console.log(`API Worker source revision: ${runtime.GIT_COMMIT_SHA}`);
+    if (process.env.GITHUB_OUTPUT)
+      fs.appendFileSync(
+        process.env.GITHUB_OUTPUT,
+        `worker-url=${url}\nsource-sha=${runtime.GIT_COMMIT_SHA}\n`,
+      );
+    if (process.env.GITHUB_STEP_SUMMARY)
+      fs.appendFileSync(
+        process.env.GITHUB_STEP_SUMMARY,
+        `API Worker preview: ${url}\n\nSource: \`${runtime.GIT_COMMIT_SHA}\`\n\nNative Axiom export: ${nativeTelemetry}\n`,
+      );
   } finally {
     fs.rmSync(generatedPath, { force: true });
     fs.rmSync(temporary, { recursive: true, force: true });

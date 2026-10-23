@@ -19,6 +19,7 @@ import { flushWaitUntilForTest } from "../../signals/context/wait-until";
 import { healthRoutes } from "../../signals/routes/health";
 import { mockOptionalEnv } from "../env";
 import { clearMockMonotonicNow, mockMonotonicNow, mockNow } from "../time";
+import { withRequestRuntime } from "../request-runtime";
 
 const context = testContext();
 const FAILURE_MESSAGE =
@@ -66,6 +67,65 @@ describe("request lifecycle Axiom transport", () => {
     mockNow(wallTime);
     mockMonotonicNow(elapsed);
   }
+
+  it("exports Worker request and lifecycle RED once through native logs", async () => {
+    const restoreConsole = context.mocks.console.capture();
+    onTestFinished(restoreConsole);
+    context.mocks.axiom.useRealTelemetry.mockReturnValue(true);
+    const app = createApp({ signal: context.signal, routes: healthRoutes });
+
+    await withRequestRuntime(
+      {
+        nativeTelemetry: true,
+        database: () => {
+          throw new Error("The health route does not access the database");
+        },
+        waitUntil: () => {},
+        traceQuery: (_name, _sql, execute) => {
+          return execute({ setAttributes: () => {} });
+        },
+        observeHttp: () => {},
+      },
+      async () => {
+        const response = await app.request("/health", {
+          headers: { "X-Client-Request-Id": "native-health-red" },
+        });
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toStrictEqual({ status: "ok" });
+        await flushWaitUntilForTest();
+      },
+    );
+
+    const records = context.mocks.console.log.mock.calls.map(([record]) => {
+      return record;
+    });
+    expect(records).toStrictEqual([
+      expect.objectContaining({
+        axiom_dataset: "vm0-request-log-dev",
+        okou_runtime: "cloudflare-workers",
+        method: "GET",
+        path_template: "/health",
+        status: 200,
+        request_time_ms: expect.any(Number),
+        x_client_request_id: "native-health-red",
+      }),
+      expect.objectContaining({
+        axiom_dataset: "vm0-web-logs-dev",
+        type: "request_lifecycle",
+        method: "GET",
+        path_template: "/health",
+        status: 200,
+        request_time_ms: expect.any(Number),
+        lifecycle_time_ms: expect.any(Number),
+        background_time_ms: expect.any(Number),
+        wait_until_failure_count: 0,
+        lifecycle_error: false,
+        x_client_request_id: "native-health-red",
+      }),
+    ]);
+    expect(context.mocks.axiom.sdkIngest).not.toHaveBeenCalled();
+    expect(context.mocks.axiomLogging.flush).not.toHaveBeenCalled();
+  });
 
   it("returns health before request-log delivery and records lifecycle after delivery", async () => {
     const startedAt = Date.parse("2026-10-21T12:00:00.000Z");

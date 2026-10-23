@@ -14,7 +14,10 @@ import type { Pool, PoolClient } from "pg";
 
 import { singleton } from "./singleton";
 import { deriveSqlSpanName } from "./sql-span-name";
-import { currentRequestRuntime } from "./request-runtime";
+import {
+  currentRequestRuntime,
+  type RequestQuerySpan,
+} from "./request-runtime";
 import { now } from "./time";
 import { safeSync } from "../signals/utils";
 
@@ -31,6 +34,10 @@ const CONNECTION_ATTEMPT_FAILED_COUNT_ATTRIBUTE =
 const CONNECTION_ATTEMPT_TIMEOUT_COUNT_ATTRIBUTE =
   "vm0.db.connection.attempt_timeout_count";
 const CONNECTION_ADDRESS_FAMILY_ATTRIBUTE = "vm0.db.connection.address_family";
+
+const scopedRuntimePoolQuerySpan = singleton(() => {
+  return new AsyncLocalStorage<RequestQuerySpan>();
+});
 
 type AnyArgs = readonly unknown[];
 type PgQuery = (...args: AnyArgs) => unknown;
@@ -279,8 +286,13 @@ function instrumentQuery(
       // an unrelated Node SDK provider. Callback-style pool internals above
       // remain untraced so each query is counted only once.
       return runtime
-        .traceQuery(spanName, sql, () => {
-          return Reflect.apply(original, target, args) as Promise<unknown>;
+        .traceQuery(spanName, sql, (span) => {
+          const execute = (): Promise<unknown> => {
+            return Reflect.apply(original, target, args) as Promise<unknown>;
+          };
+          return markPoolQuery
+            ? scopedRuntimePoolQuerySpan().run(span, execute)
+            : execute();
         })
         .finally(recordExecution);
     }
@@ -374,6 +386,9 @@ export function instrumentPgPool(pool: Pool, tracer: Tracer): Pool {
     const callback = args[args.length - 1];
     if (isPoolConnectCallback(callback)) {
       const markedSpan = context.active().getValue(POOL_QUERY_SPAN_KEY);
+      // Capture before enqueueing: another request can release the client
+      // that eventually delivers this checkout.
+      const runtimeSpan = scopedRuntimePoolQuerySpan.peek()?.getStore();
       const capture = scopedPgPoolAcquisitionCapture.peek()?.getStore();
       const queryCapture = queryCaptureStorage.getStore();
 
@@ -387,6 +402,10 @@ export function instrumentPgPool(pool: Pool, tracer: Tracer): Pool {
             [POOL_ACQUIRE_PATH_ATTRIBUTE]: path,
           });
         }
+        runtimeSpan?.setAttributes({
+          [POOL_ACQUIRE_DURATION_ATTRIBUTE]: durationMs,
+          [POOL_ACQUIRE_PATH_ATTRIBUTE]: path,
+        });
         if (capture) {
           // Optional diagnostics must not interrupt delivery of the client or
           // its original acquisition error to the query owner.
