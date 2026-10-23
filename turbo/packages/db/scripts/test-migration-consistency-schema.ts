@@ -2817,6 +2817,14 @@ async function main(): Promise<void> {
     await runMigrations(dbUrl1);
     console.log("   ✅ Consecutive database resets completed successfully\n");
 
+    console.log("=== Presentation template data migration ===");
+    console.log(
+      execCommand("tsx scripts/test-presentation-template-migration.ts", {
+        cwd: PACKAGE_DIR,
+        env: { DATABASE_URL: dbUrl1 },
+      }),
+    );
+
     await validateCanonicalIntegrationIdentitySchema(dbUrl1);
     await validatePermanentTriggerAndFunctionInventory(dbUrl1);
     await validateCanonicalBillingSources(dbUrl1);
