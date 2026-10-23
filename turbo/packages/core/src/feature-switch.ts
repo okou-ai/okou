@@ -46,6 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.SlackWorkspaceIdentity]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Slack workspace identity",
+    description:
+      "Connect your Slack identity independently of bot installation and use it in shared channels.",
+    enabled: false,
+  },
   [FeatureSwitchKey.DurableOpenAiImageGeneration]: {
     maintainer: "ethan@okou.ai",
     displayName: "Durable OpenAI image generation",

@@ -1,4 +1,4 @@
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import {
   integrationsSlackUploadCompleteContract,
   type SlackUploadCompleteBody,
@@ -8,39 +8,11 @@ import { CURRENT_LINK_LAYOUT } from "@okouai/api-contracts/contracts/link-layout
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import {
-  createSlackClient,
-  type SlackClient,
-  type SlackFileInfo,
-} from "../external/slack-message-client";
+import type { SlackFileInfo } from "../external/slack-message-client";
 import { completeCanonicalSlackDelivery$ } from "../services/canonical-slack-asset-delivery.service";
 import { recordSlackUploadedFile$ } from "../services/run-uploaded-files.service";
-import { slackOrgInstallation } from "../services/slack-data.service";
-import { resolveSlackTargetChannel$ } from "../services/slack-message-context.service";
+import { resolveSlackWriteTarget$ } from "../services/slack-write-access.service";
 import type { RouteEntry } from "../route-entry";
-
-const slackInstallationInput$ = computed(
-  (
-    get,
-  ): {
-    readonly orgId: string;
-    readonly userId: string;
-  } => {
-    const auth = get(organizationAuthContext$);
-    return { orgId: auth.orgId, userId: auth.userId };
-  },
-);
-const slackInstallation$ = slackOrgInstallation(slackInstallationInput$);
-
-const noInstallation = Object.freeze({
-  status: 404 as const,
-  body: Object.freeze({
-    error: Object.freeze({
-      message: "No Slack installation found for this organization",
-      code: "NOT_FOUND",
-    }),
-  }),
-});
 
 function buildSlackUploadMetadata(
   body: SlackUploadCompleteBody,
@@ -67,8 +39,6 @@ interface CanonicalCompletionArgs {
   readonly runId: string | undefined;
   readonly userId: string;
   readonly orgId: string;
-  readonly botToken: string;
-  readonly client: SlackClient;
 }
 
 const completeCanonicalUpload$ = command(
@@ -94,10 +64,8 @@ const completeCanonicalUpload$ = command(
         runId,
         userId: args.userId,
         orgId: args.orgId,
-        botToken: args.botToken,
         fileId: body.fileId,
         ...(body.uploadError ? { uploadError: body.uploadError } : {}),
-        client: args.client,
       },
       signal,
     );
@@ -146,18 +114,16 @@ interface DirectCompletionArgs {
   readonly runId: string | undefined;
   readonly userId: string;
   readonly orgId: string;
-  readonly client: SlackClient;
-  readonly botToken: string;
 }
 
 const completeDirectUpload$ = command(
   async ({ set }, args: DirectCompletionArgs, signal: AbortSignal) => {
-    const { body, client } = args;
+    const { body } = args;
     const target = await set(
-      resolveSlackTargetChannel$,
+      resolveSlackWriteTarget$,
       {
-        client,
-        botToken: args.botToken,
+        runId: args.runId,
+        allowSource: false,
         userId: args.userId,
         orgId: args.orgId,
         channel: body.channel,
@@ -170,7 +136,7 @@ const completeDirectUpload$ = command(
       return target;
     }
     const channel = target.channelId;
-    const completeResult = await client.completeUploadExternal({
+    const completeResult = await target.client.completeUploadExternal({
       fileId: body.fileId,
       channel,
       threadTs: body.threadTs,
@@ -190,7 +156,7 @@ const completeDirectUpload$ = command(
       };
     }
 
-    const infoResult = await client.getFileInfo(body.fileId);
+    const infoResult = await target.client.getFileInfo(body.fileId);
     signal.throwIfAborted();
     if (infoResult.kind === "slack_error") {
       return {
@@ -247,15 +213,6 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const body = bodyResult.data;
 
-  const installation = await get(slackInstallation$);
-  signal.throwIfAborted();
-  if (!installation) {
-    return noInstallation;
-  }
-
-  const client = createSlackClient(installation.botToken, {
-    automaticRetries: false,
-  });
   const hasCanonicalIdentity =
     body.canonicalAssetId !== undefined || body.operationId !== undefined;
   if (hasCanonicalIdentity) {
@@ -266,8 +223,6 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         runId,
         userId: auth.userId,
         orgId: auth.orgId,
-        botToken: installation.botToken,
-        client,
       },
       signal,
     );
@@ -280,8 +235,6 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       runId,
       userId: auth.userId,
       orgId: auth.orgId,
-      client,
-      botToken: installation.botToken,
     },
     signal,
   );

@@ -1,6 +1,8 @@
 import { command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { agents } from "@okouai/db/schema/agent";
 import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
@@ -30,6 +32,7 @@ const ACTIVE_INGRESS_STATUSES = ["pending", "processing"] as const;
 const slackQueueEventRevoker = alias(chatEvents, "slack_queue_event_revoker");
 
 const slackStatusIngressPayloadSchema = z.object({
+  team_id: z.string(),
   event: z.object({
     ts: z.string(),
     thread_ts: z.string().optional(),
@@ -37,6 +40,7 @@ const slackStatusIngressPayloadSchema = z.object({
 });
 
 export interface CanonicalSlackThreadStatusTarget {
+  readonly workspaceId?: string;
   readonly chatThreadId: string;
   readonly channelId: string;
   readonly threadTs: string;
@@ -48,6 +52,7 @@ interface CanonicalSlackThreadStatusBinding {
   readonly orgId: string;
   readonly userId: string;
   readonly workspaceId: string;
+  readonly installationOrgId: string | null;
 }
 
 const loadCanonicalSlackThreadStatusBinding$ = command(
@@ -60,9 +65,10 @@ const loadCanonicalSlackThreadStatusBinding$ = command(
     const [binding] = await db
       .select({
         encryptedBotToken: slackOrgInstallations.encryptedBotToken,
-        orgId: slackOrgInstallations.orgId,
+        orgId: agents.orgId,
+        installationOrgId: slackOrgInstallations.orgId,
         userId: slackChatThreadRoutes.userId,
-        workspaceId: slackOrgConnections.slackWorkspaceId,
+        workspaceId: slackOrgInstallations.slackWorkspaceId,
       })
       .from(slackChatThreadRoutes)
       .innerJoin(
@@ -73,9 +79,14 @@ const loadCanonicalSlackThreadStatusBinding$ = command(
         slackOrgInstallations,
         eq(
           slackOrgInstallations.slackWorkspaceId,
-          slackOrgConnections.slackWorkspaceId,
+          target.workspaceId ?? slackOrgConnections.slackWorkspaceId,
         ),
       )
+      .innerJoin(
+        chatThreads,
+        eq(chatThreads.id, slackChatThreadRoutes.chatThreadId),
+      )
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           eq(slackChatThreadRoutes.chatThreadId, target.chatThreadId),
@@ -113,7 +124,7 @@ const canonicalSlackThreadHasOutstandingWork$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
-    const physicalThread = sql`coalesce(${slackChatIngress.payload}::jsonb -> 'event' ->> 'thread_ts', ${slackChatIngress.payload}::jsonb -> 'event' ->> 'ts') = ${target.threadTs}`;
+    const physicalThread = sql`coalesce(${slackChatIngress.payload}::jsonb -> 'event' ->> 'thread_ts', ${slackChatIngress.payload}::jsonb -> 'event' ->> 'ts') = ${target.threadTs} AND ${slackChatIngress.payload}::jsonb ->> 'team_id' = ${workspaceId}`;
     const activeIngress = db
       .select({ id: slackChatIngress.id })
       .from(slackChatIngress)
@@ -174,7 +185,6 @@ const canonicalSlackThreadHasOutstandingWork$ = command(
       )
       .where(
         and(
-          eq(slackOrgConnections.slackWorkspaceId, workspaceId),
           eq(slackChatThreadRoutes.channelId, target.channelId),
           or(
             eq(slackChatThreadRoutes.threadTs, target.threadTs),
@@ -219,8 +229,12 @@ export const canonicalSlackThreadStatusTargetForIngress$ = command(
       return undefined;
     }
     const threadTs = slackPhysicalThreadTs(target.payload);
+    const source = slackStatusIngressPayloadSchema.parse(
+      JSON.parse(target.payload) as unknown,
+    );
     return {
       chatThreadId: target.chatThreadId,
+      workspaceId: source.team_id,
       channelId: target.channelId,
       threadTs,
       ...(threadTs === target.routeThreadTs
@@ -261,14 +275,14 @@ const syncCanonicalSlackThreadStatus$ = command(
     signal.throwIfAborted();
     const featureContext = await set(
       loadUserFeatureSwitchContext$,
-      binding.orgId,
+      binding.installationOrgId ?? binding.orgId,
       binding.userId,
       signal,
     );
     signal.throwIfAborted();
     const botToken = await decryptPersistentSecretValue(
       binding.encryptedBotToken,
-      featureContext,
+      binding.installationOrgId ? featureContext : {},
     );
     signal.throwIfAborted();
     const client = createSlackClient(botToken);

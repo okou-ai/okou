@@ -26,6 +26,10 @@ import {
 import { db$, writeDb$ } from "../external/db";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { userFeatureSwitchContext } from "./feature-switches.service";
+import {
+  slackAccountConnection,
+  slackWorkspaceIdentityEnabled,
+} from "./slack-workspace-identity.service";
 
 type SlackInstallation = typeof slackOrgInstallations.$inferSelect;
 
@@ -126,6 +130,43 @@ const refreshSlackAppHome$ = command(
   },
 );
 
+function slackAccountLinkStatus(
+  connection: { readonly slackUserId: string } | undefined,
+  requestedSlackUserId: string,
+): SlackConnectLinkStatus {
+  if (connection?.slackUserId === requestedSlackUserId) {
+    return { kind: "connected" };
+  }
+  if (connection) {
+    return {
+      kind: "slack_account_mismatch",
+      currentSlackUserId: connection.slackUserId,
+      requestedSlackUserId,
+    };
+  }
+  return { kind: "connect" };
+}
+
+function slackWorkspaceLinkMismatch(
+  args: {
+    readonly orgId: string;
+    readonly workspaceId?: string;
+    readonly isAdmin: boolean;
+  },
+  requestedInstallation: SlackInstallation | undefined,
+  orgInstallation: SlackInstallation | undefined,
+): boolean {
+  return (
+    !requestedInstallation ||
+    (requestedInstallation.orgId !== null &&
+      requestedInstallation.orgId !== args.orgId) ||
+    (requestedInstallation.orgId === null &&
+      ((orgInstallation &&
+        orgInstallation.slackWorkspaceId !== args.workspaceId) ||
+        !args.isAdmin))
+  );
+}
+
 function slackConnectLinkStatus(
   args: {
     readonly orgId: string;
@@ -136,9 +177,24 @@ function slackConnectLinkStatus(
   },
   orgInstallation$: Computed<Promise<SlackInstallation | undefined>>,
 ): Computed<Promise<SlackConnectLinkStatus | undefined>> {
+  const identity$ = computed(() => {
+    return {
+      orgId: args.orgId,
+      userId: args.userId,
+    };
+  });
+  const account$ = slackAccountConnection(identity$);
+  const accountEnabled$ = slackWorkspaceIdentityEnabled(identity$);
   return computed(async (get): Promise<SlackConnectLinkStatus | undefined> => {
     if (!args.workspaceId || !args.slackUserId) {
       return undefined;
+    }
+
+    if (await get(accountEnabled$)) {
+      return slackAccountLinkStatus(
+        (await get(account$))?.connection,
+        args.slackUserId,
+      );
     }
 
     const orgInstallation = await get(orgInstallation$);
@@ -154,13 +210,7 @@ function slackConnectLinkStatus(
         : orgInstallation?.slackWorkspaceName;
 
     if (
-      !requestedInstallation ||
-      (requestedInstallation.orgId !== null &&
-        requestedInstallation.orgId !== args.orgId) ||
-      (requestedInstallation.orgId === null &&
-        ((orgInstallation &&
-          orgInstallation.slackWorkspaceId !== args.workspaceId) ||
-          !args.isAdmin))
+      slackWorkspaceLinkMismatch(args, requestedInstallation, orgInstallation)
     ) {
       return {
         kind: "workspace_mismatch",
@@ -247,6 +297,14 @@ export function slackConnectStatus(
     }
   >
 > {
+  const identity$ = computed(() => {
+    return {
+      orgId: args.orgId,
+      userId: args.userId,
+    };
+  });
+  const account$ = slackAccountConnection(identity$);
+  const accountEnabled$ = slackWorkspaceIdentityEnabled(identity$);
   const orgInstallation$ = computed(async (get) => {
     const [orgInstallation] = await get(db$)
       .select()
@@ -262,21 +320,25 @@ export function slackConnectStatus(
     const orgInstallation = await get(orgInstallation$);
     const linkStatus = await get(linkStatus$);
 
-    const [connection] = orgInstallation
-      ? await db
-          .select()
-          .from(slackOrgConnections)
-          .where(
-            and(
-              eq(slackOrgConnections.userId, args.userId),
-              eq(
-                slackOrgConnections.slackWorkspaceId,
-                orgInstallation.slackWorkspaceId,
+    const accountMode = await get(accountEnabled$);
+    const account = accountMode ? await get(account$) : undefined;
+    const [legacyConnection] =
+      !accountMode && orgInstallation
+        ? await db
+            .select()
+            .from(slackOrgConnections)
+            .where(
+              and(
+                eq(slackOrgConnections.userId, args.userId),
+                eq(
+                  slackOrgConnections.slackWorkspaceId,
+                  orgInstallation.slackWorkspaceId,
+                ),
               ),
-            ),
-          )
-          .limit(1)
-      : [];
+            )
+            .limit(1)
+        : [];
+    const connection = accountMode ? account?.connection : legacyConnection;
 
     if (!connection) {
       return {
@@ -302,7 +364,10 @@ export function slackConnectStatus(
 
     return {
       isConnected: true,
-      workspaceName: orgInstallation?.slackWorkspaceName ?? null,
+      workspaceName:
+        account?.connection.slackWorkspaceName ??
+        orgInstallation?.slackWorkspaceName ??
+        null,
       isAdmin: args.isAdmin,
       defaultAgentName: agent?.name ?? null,
       ...(linkStatus ? { linkStatus } : {}),

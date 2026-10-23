@@ -96,6 +96,44 @@ test("An installed member can authorize their account with the retained API shap
   expect(url.searchParams.get("prompt")).toBe("Hello team");
 });
 
+test("A member can connect their Slack identity before bot installation", async () => {
+  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+    return respond(200, {
+      isConnected: false,
+      isInstalled: false,
+      isAdmin: false,
+      connectUrl,
+    });
+  });
+  await setupPage({ context, path: "/settings/slack" });
+  await expect(
+    waitFor(() => {
+      return getAction("link", "Connect");
+    }),
+  ).resolves.toHaveAttribute("href", connectUrl);
+});
+
+test("A connected identity retains the installation action when its bot is missing", async () => {
+  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+    return respond(200, {
+      isConnected: true,
+      isInstalled: false,
+      isAdmin: true,
+      workspaceName: "Home workspace",
+      installUrl,
+    });
+  });
+  await setupPage({ context, path: "/settings/slack" });
+  await expect(
+    waitFor(() => {
+      return getAction("link", "Install to Slack");
+    }),
+  ).resolves.toHaveAttribute("href", installUrl);
+  expect(
+    screen.getByRole("heading", { name: "Slack is connected" }),
+  ).toBeInTheDocument();
+});
+
 test("An existing connection and failed authorization are reported separately", async () => {
   const launched = context.mocks.browser.locationAssign();
   context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {

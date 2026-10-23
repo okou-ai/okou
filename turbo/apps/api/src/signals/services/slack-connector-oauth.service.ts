@@ -1,4 +1,6 @@
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { connectSlackWorkspace$ } from "./slack-workspace-write.service";
 import { randomBytes } from "node:crypto";
 
@@ -16,7 +18,7 @@ import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation"
 import { env, optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   exchangeSlackOAuthCodeForConnector,
   fetchSlackConnectorUserInfo,
@@ -33,8 +35,14 @@ import {
   insertConnectorOAuthState$,
 } from "./connector-oauth-state.service";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
-import { userFeatureSwitchContext } from "./feature-switches.service";
-import { encryptPersistentSecretValue } from "./crypto.utils";
+import {
+  loadUserFeatureSwitchContext$,
+  userFeatureSwitchContext,
+} from "./feature-switches.service";
+import {
+  decryptPersistentSecretValue,
+  encryptPersistentSecretValue,
+} from "./crypto.utils";
 import { SLACK_BOT_SCOPES } from "./slack-data.service";
 import {
   notifySlackConnect$,
@@ -47,6 +55,8 @@ import {
   type SlackConnectorOAuthContext,
 } from "./slack-connector-oauth-state";
 import { resolveOAuthRequestedScopeSnapshot } from "./connector-oauth-scope-snapshot.service";
+import { connectSlackAccount$ } from "./slack-workspace-identity.service";
+import { createSlackClient } from "../external/slack-message-client";
 
 const L = logger("SlackConnectorOAuth");
 const slackOAuthResolver$ = connectorActionResolver(["slack"]);
@@ -119,7 +129,26 @@ export const startSlackConnectorOAuth$ = command(
     },
     signal: AbortSignal,
   ): Promise<Response> => {
-    const context = verifySlackConnectorOAuthStart(args.connectorState);
+    const signedContext = verifySlackConnectorOAuthStart(args.connectorState);
+    const featureContext = signedContext
+      ? await set(
+          loadUserFeatureSwitchContext$,
+          signedContext.orgId,
+          signedContext.userId,
+          signal,
+        )
+      : undefined;
+    signal.throwIfAborted();
+    const accountEnabled =
+      featureContext &&
+      isFeatureEnabled(FeatureSwitchKey.SlackWorkspaceIdentity, featureContext);
+    const context =
+      signedContext && signedContext.flow !== "install" && accountEnabled
+        ? { ...signedContext, accountConnection: true }
+        : signedContext;
+    if (context?.accountConnection && !accountEnabled) {
+      return failed("Slack workspace identity is not enabled.", context);
+    }
     const routeFlow = context?.flow === "switch" ? "connect" : context?.flow;
     if (!context || routeFlow !== args.flow) {
       return failed(
@@ -301,6 +330,20 @@ const resolveSlackConnectorCallback$ = command(
       stored.redirectUri,
     );
     signal.throwIfAborted();
+    if (context.accountConnection) {
+      const features = await set(
+        loadUserFeatureSwitchContext$,
+        context.orgId,
+        context.userId,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (
+        !isFeatureEnabled(FeatureSwitchKey.SlackWorkspaceIdentity, features)
+      ) {
+        return failed("Slack workspace identity is not enabled.", context);
+      }
+    }
     if (context.workspaceId && context.workspaceId !== oauth.teamId) {
       return failed(
         "Use the Slack workspace that opened this connection.",
@@ -350,6 +393,9 @@ const validateSlackWorkspace$ = command(
     signal: AbortSignal,
   ): Promise<Response | null> => {
     const { context } = args;
+    if (context.accountConnection) {
+      return null;
+    }
     const db = set(writeDb$);
     const [installation] = await db
       .select({ orgId: slackOrgInstallations.orgId })
@@ -422,6 +468,149 @@ const validateSlackWorkspace$ = command(
   },
 );
 
+const notifySlackAccountConnected$ = command(
+  async ({ get }, context: SlackConnectorOAuthContext, signal: AbortSignal) => {
+    if (
+      !context.sourceWorkspaceId ||
+      !context.channelId ||
+      !context.slackUserId
+    ) {
+      return;
+    }
+    const [installation] = await get(db$)
+      .select()
+      .from(slackOrgInstallations)
+      .where(
+        eq(slackOrgInstallations.slackWorkspaceId, context.sourceWorkspaceId),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!installation) {
+      return;
+    }
+    const token = await decryptPersistentSecretValue(
+      installation.encryptedBotToken,
+      installation.orgId ? { orgId: installation.orgId } : {},
+    );
+    signal.throwIfAborted();
+    await createSlackClient(token).postEphemeral({
+      channel: context.channelId,
+      user: context.slackUserId,
+      threadTs: context.threadTs,
+      text: "Your Slack account is connected. Bot tools use your own workspace's Okou installation.",
+    });
+    signal.throwIfAborted();
+  },
+);
+
+function slackConnectionSuccess(
+  context: SlackConnectorOAuthContext,
+  oauth: Awaited<ReturnType<typeof exchangeSlackOAuthCodeForConnector>>,
+): Response {
+  const url = new URL(INTEGRATION_SETTINGS_PATHS.slack, env("APP_URL"));
+  url.searchParams.set("status", "connected");
+  url.searchParams.set("workspace", oauth.teamName);
+  url.searchParams.set("w", oauth.teamId);
+  url.searchParams.set("u", oauth.userId);
+  if (context.channelId) {
+    url.searchParams.set("c", context.channelId);
+  }
+  if (context.threadTs) {
+    url.searchParams.set("t", context.threadTs);
+  }
+  if (context.reinstall) {
+    url.searchParams.set("updated", "1");
+  }
+  return redirect(url.toString());
+}
+
+const finishSlackAccountConnection$ = command(
+  async (
+    { set },
+    args: {
+      readonly context: SlackConnectorOAuthContext;
+      readonly oauth: Awaited<
+        ReturnType<typeof exchangeSlackOAuthCodeForConnector>
+      >;
+    },
+    signal: AbortSignal,
+  ): Promise<Response> => {
+    const { context, oauth } = args;
+    const account = await set(
+      connectSlackAccount$,
+      {
+        orgId: context.orgId,
+        userId: context.userId,
+        workspaceId: oauth.teamId,
+        workspaceName: oauth.teamName,
+        slackUserId: oauth.userId,
+        replace: context.flow === "switch",
+      },
+      signal,
+    );
+    if (account.kind !== "ok") {
+      return failed(account.message, context);
+    }
+    await set(
+      publishSlackAdminSignal$,
+      { orgId: context.orgId, topic: "slack:changed" },
+      signal,
+    );
+    if (context.sourceWorkspaceId && context.channelId) {
+      waitUntil(
+        tapError(
+          set(notifySlackAccountConnected$, context, signal),
+          (error) => {
+            return L.warn("Failed to notify Slack connection", { error });
+          },
+        ),
+      );
+    }
+    return slackConnectionSuccess(context, oauth);
+  },
+);
+
+const promoteSlackAccountConnection$ = command(
+  async (
+    { set },
+    args: {
+      readonly context: SlackConnectorOAuthContext;
+      readonly oauth: Awaited<
+        ReturnType<typeof exchangeSlackOAuthCodeForConnector>
+      >;
+    },
+    signal: AbortSignal,
+  ): Promise<Response | null> => {
+    const { context, oauth } = args;
+    const accountFeatures = await set(
+      loadUserFeatureSwitchContext$,
+      context.orgId,
+      context.userId,
+      signal,
+    );
+    if (
+      isFeatureEnabled(FeatureSwitchKey.SlackWorkspaceIdentity, accountFeatures)
+    ) {
+      const account = await set(
+        connectSlackAccount$,
+        {
+          orgId: context.orgId,
+          userId: context.userId,
+          workspaceId: oauth.teamId,
+          workspaceName: oauth.teamName,
+          slackUserId: oauth.userId,
+          replace: context.flow === "switch",
+        },
+        signal,
+      );
+      if (account.kind !== "ok") {
+        return failed(account.message, context);
+      }
+    }
+    return null;
+  },
+);
+
 const finishSlackConnectorOAuth$ = command(
   async (
     { set },
@@ -486,6 +675,13 @@ const finishSlackConnectorOAuth$ = command(
         context,
       );
     }
+    if (context.accountConnection) {
+      return await set(
+        finishSlackAccountConnection$,
+        { context, oauth },
+        signal,
+      );
+    }
     const connection = await set(
       connectSlackWorkspace$,
       {
@@ -503,6 +699,14 @@ const finishSlackConnectorOAuth$ = command(
     );
     if (connection.kind !== "ok") {
       return failed(connection.message, context);
+    }
+    const accountError = await set(
+      promoteSlackAccountConnection$,
+      { context, oauth },
+      signal,
+    );
+    if (accountError) {
+      return accountError;
     }
     await set(
       publishSlackAdminSignal$,
@@ -530,21 +734,7 @@ const finishSlackConnectorOAuth$ = command(
         },
       ),
     );
-    const url = new URL(INTEGRATION_SETTINGS_PATHS.slack, env("APP_URL"));
-    url.searchParams.set("status", "connected");
-    url.searchParams.set("workspace", oauth.teamName);
-    url.searchParams.set("w", oauth.teamId);
-    url.searchParams.set("u", oauth.userId);
-    if (context.channelId) {
-      url.searchParams.set("c", context.channelId);
-    }
-    if (context.threadTs) {
-      url.searchParams.set("t", context.threadTs);
-    }
-    if (context.reinstall) {
-      url.searchParams.set("updated", "1");
-    }
-    return redirect(url.toString());
+    return slackConnectionSuccess(context, oauth);
   },
 );
 
