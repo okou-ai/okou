@@ -4,8 +4,8 @@ from fontTools import subset
 from fontTools.ttLib import TTFont
 
 output = Path(__file__).resolve().parent
-app = output.parents[5]
-source = output.parents[1] / "chat-message-pdf.test.tsx"
+app = output.parents[1]
+source = app / "src/views/okou-page/__tests__/chat-message-pdf.test.tsx"
 text = source.read_text() + "".join(chr(code) for code in range(32, 127))
 fonts = [
     ("@fontpkg/noto-sans-cjk-sc/NotoSansCJKsc-Regular.otf", "Regular"),

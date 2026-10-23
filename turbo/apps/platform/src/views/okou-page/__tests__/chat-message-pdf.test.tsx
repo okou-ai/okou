@@ -267,7 +267,9 @@ async function exportRenderedPdf(markdown: string) {
     }
     const filename = file.split("/").at(-1);
     const data = await readFile(
-      require.resolve(`./fixtures/message-pdf-fonts/${filename}`),
+      require.resolve(
+        `../../../../test-fixtures/message-pdf-fonts/${filename}`,
+      ),
     );
     return HttpResponse.arrayBuffer(Uint8Array.from(data).buffer);
   });
