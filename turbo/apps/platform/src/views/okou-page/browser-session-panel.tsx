@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { CdpViewer } from "cdp-viewer";
 import { browserUse } from "cdp-viewer/extensions/browser-use";
-import "cdp-viewer/style.css";
 import {
   RectangleHorizontal,
   AppWindow,
