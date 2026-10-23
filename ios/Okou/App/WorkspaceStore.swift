@@ -114,6 +114,9 @@ final class WorkspaceStore {
         realtime = nil
       }
     }
+    // Match the web bootstrap: resolve visibility rules before publishing cached chats.
+    await refreshNavigation()
+    guard canContinueStartup(generation) else { return }
     await list.restoreCached()
     guard canContinueStartup(generation) else { return }
     let realtime = RealtimeService(
@@ -125,8 +128,6 @@ final class WorkspaceStore {
       onConnection: { [weak self] in self?.connectionStatus = $0 })
     self.realtime = realtime
     realtime.start()
-    await refreshNavigation()
-    guard canContinueStartup(generation) else { return }
     await refresh()
   }
 
