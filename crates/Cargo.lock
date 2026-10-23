@@ -2051,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.48"
+version = "0.1.49"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -4044,7 +4044,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.236.22"
+version = "0.236.23"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4117,7 +4117,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.15.16"
+version = "0.15.17"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4189,7 +4189,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.17.8"
+version = "0.17.9"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4392,7 +4392,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4434,7 +4434,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.20.16"
+version = "0.20.17"
 dependencies = [
  "api-contracts",
  "async-trait",

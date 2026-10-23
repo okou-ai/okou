@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.0...runner-storage-v0.6.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **runner:** join accepted fresh archive work during teardown ([#42501](https://github.com/okou-ai/okou/issues/42501)) ([41fea75](https://github.com/okou-ai/okou/commit/41fea75afe9f758e58738a82065b3f9fedf39db2))
+
 ## [0.6.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.31...runner-storage-v0.6.0) (2026-10-23)
 
 
