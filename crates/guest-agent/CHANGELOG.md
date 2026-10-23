@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.108.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.33...guest-agent-v0.108.0) (2026-10-23)
+
+
+### Features
+
+* enable native codex images when managed generation is disabled ([#42419](https://github.com/okou-ai/okou/issues/42419)) ([3747be0](https://github.com/okou-ai/okou/commit/3747be078230f27e490e7e693fc6a02e75182787))
+
+
+### Refactoring
+
+* remove retired pi memory storage and compatibility ([#42397](https://github.com/okou-ai/okou/issues/42397)) ([3f7e13b](https://github.com/okou-ai/okou/commit/3f7e13b76f0ea1d4ac1ff39a1f240a7af19dc1ad))
+
 ## [0.107.33](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.32...guest-agent-v0.107.33) (2026-10-22)
 
 ## [0.107.32](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.31...guest-agent-v0.107.32) (2026-10-22)

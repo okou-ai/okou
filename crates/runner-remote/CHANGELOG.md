@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.20](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.19...runner-remote-v0.29.20) (2026-10-23)
+
+
+### Bug Fixes
+
+* **runner:** share strict ssh and vnc invalidation parsing ([#42392](https://github.com/okou-ai/okou/issues/42392)) ([2854004](https://github.com/okou-ai/okou/commit/2854004e58cf88e87bedc75f109f4c2f60c3dd0a))
+
 ## [0.29.19](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.18...runner-remote-v0.29.19) (2026-10-22)
 
 ## [0.29.18](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.17...runner-remote-v0.29.18) (2026-10-22)

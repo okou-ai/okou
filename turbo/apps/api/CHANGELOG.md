@@ -9,6 +9,51 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.766.0](https://github.com/okou-ai/okou/compare/api-v1.765.2...api-v1.766.0) (2026-10-23)
+
+
+### Features
+
+* add durable image generation jobs and cli status queries ([#42352](https://github.com/okou-ai/okou/issues/42352)) ([328c79f](https://github.com/okou-ai/okou/commit/328c79f29a81e44e454ff155cd2416e78ea7860d))
+* add durable jobs and a proactive jobs loop ([#42404](https://github.com/okou-ai/okou/issues/42404)) ([c02f4b1](https://github.com/okou-ai/okou/commit/c02f4b14d603747e65b0ffb046dd10f3d0ade017))
+* **api:** report request lifecycle red metrics to axiom ([#42402](https://github.com/okou-ai/okou/issues/42402)) ([259bec1](https://github.com/okou-ai/okou/commit/259bec18f3bb08ace52b8d3fb07169e35bbe1842))
+* enable native codex images when managed generation is disabled ([#42419](https://github.com/okou-ai/okou/issues/42419)) ([3747be0](https://github.com/okou-ai/okou/commit/3747be078230f27e490e7e693fc6a02e75182787))
+
+
+### Refactoring
+
+* **api:** combine run admission counters ([#42394](https://github.com/okou-ai/okou/issues/42394)) ([0be2a4a](https://github.com/okou-ai/okou/commit/0be2a4ac149da11a82f28729ad6513cecf36e00a))
+* **api:** own builtin deletion account resolution ([#42422](https://github.com/okou-ai/okou/issues/42422)) ([75aa0ac](https://github.com/okou-ai/okou/commit/75aa0ac917c40cdb594c1809723286a97bc622ab))
+* **api:** own manual grant user credential cleanup ([#42403](https://github.com/okou-ai/okou/issues/42403)) ([1583615](https://github.com/okou-ai/okou/commit/1583615f2b0b2e0dddc027e8ef90915260fb4513))
+* **api:** publish billing downgrades in one atomic statement ([#42457](https://github.com/okou-ai/okou/issues/42457)) ([4de3edc](https://github.com/okou-ai/okou/commit/4de3edcca2dfced59a12febea9729f7a98e930fa))
+* **api:** publish browser starts in one atomic statement ([#42454](https://github.com/okou-ai/okou/issues/42454)) ([b924ae0](https://github.com/okou-ai/okou/commit/b924ae034217aea7be406e6683830d83eca73955))
+* **api:** remove atom expiry reconciliation transaction ([#42421](https://github.com/okou-ai/okou/issues/42421)) ([478bc70](https://github.com/okou-ai/okou/commit/478bc7039116cd9be3ffe422e5911572af4e297d))
+* **api:** remove canceled billing reconciliation transaction ([#42411](https://github.com/okou-ai/okou/issues/42411)) ([d420cb7](https://github.com/okou-ai/okou/commit/d420cb7865229ad8aac69a94320c2f92e034145f))
+* **api:** remove concurrency invoice publication transaction ([#42451](https://github.com/okou-ai/okou/issues/42451)) ([6e65458](https://github.com/okou-ai/okou/commit/6e65458055185275a2548683fde45240bf1442a2)) [#42450](https://github.com/okou-ai/okou/issues/42450)
+* **api:** remove nested credential deletion savepoint ([#42401](https://github.com/okou-ai/okou/issues/42401)) ([7b5446b](https://github.com/okou-ai/okou/commit/7b5446bd0bd09b94e4b59c2e521e3f8e193e38c7))
+* **api:** remove payment-failed paid-through transaction ([#42449](https://github.com/okou-ai/okou/issues/42449)) ([ed816ac](https://github.com/okou-ai/okou/commit/ed816acf4c1dd931195e2a11d43a8aa90a475948)) [#42448](https://github.com/okou-ai/okou/issues/42448)
+* **api:** remove payment-failed plan projection transaction ([#42439](https://github.com/okou-ai/okou/issues/42439)) ([648114e](https://github.com/okou-ai/okou/commit/648114ed4a3e0ac3aa07b5da499e43f46a001c68))
+* **api:** remove recovered billing projection transaction ([#42443](https://github.com/okou-ai/okou/issues/42443)) ([f16cf8c](https://github.com/okou-ai/okou/commit/f16cf8ccb13b9abb070046ac2af0585e90f0d77d))
+* **api:** remove schedule release transaction ([#42427](https://github.com/okou-ai/okou/issues/42427)) ([f809bab](https://github.com/okou-ai/okou/commit/f809babaecd4e25bce027407714eccfbc10cfc4a))
+* **api:** remove sharp from image delivery ([#42379](https://github.com/okou-ai/okou/issues/42379)) ([34515b9](https://github.com/okou-ai/okou/commit/34515b93ce5500ddb352b3a4f4b7f4ec4d92e537))
+* **connector:** activate canonical account status ([#42333](https://github.com/okou-ai/okou/issues/42333)) ([dc3fba8](https://github.com/okou-ai/okou/commit/dc3fba8d008ee10e4d65b9485a9fca63431face3))
+* remove retired pi memory storage and compatibility ([#42397](https://github.com/okou-ai/okou/issues/42397)) ([3f7e13b](https://github.com/okou-ai/okou/commit/3f7e13b76f0ea1d4ac1ff39a1f240a7af19dc1ad))
+
+
+### Performance Improvements
+
+* reduce resource tooltip and workflow fixture work ([#42429](https://github.com/okou-ai/okou/issues/42429)) ([d6eb8c0](https://github.com/okou-ai/okou/commit/d6eb8c0251e68a4755cbe29dd5f1d34d90468773))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.589.0
+    * @okouai/core bumped to 8.780.0
+    * @okouai/db bumped to 1.358.0
+    * @okouai/pi-agent-runtime bumped to 1.50.54
+
 ## [1.765.2](https://github.com/okou-ai/okou/compare/api-v1.765.1...api-v1.765.2) (2026-10-22)
 
 
