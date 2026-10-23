@@ -2,7 +2,6 @@ import { command, computed } from "ccstate";
 import { and, asc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { builtInGenerationJobs } from "@okouai/db/schema/built-in-generation-job";
-import { openaiImageWebhookReceipts } from "@okouai/db/schema/openai-image-webhook-receipt";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 
 import { env } from "../../lib/env";
@@ -133,7 +132,6 @@ const failJob$ = command(
 );
 
 // The queued -> running transition authorizes exactly one submission attempt.
-// A lost POST response is uncertainty, not permission to generate a second image.
 export const submitOpenAiImageJob$ = command(
   async (
     { set },
@@ -209,11 +207,12 @@ export const submitOpenAiImageJob$ = command(
     );
     signal.throwIfAborted();
     if (!submitted.ok) {
-      L.warn(
-        "OpenAI image submission outcome is unknown; awaiting signed receipt",
-        { generationId },
-      );
-      return null;
+      const error = {
+        code: "OPENAI_IMAGE_SUBMISSION_UNKNOWN",
+        message: "OpenAI image submission outcome is unknown",
+      };
+      await set(failJob$, { job, error }, signal);
+      return { status: 503, body: { error } };
     }
     if ("status" in submitted.value) {
       await set(failJob$, { job, error: submitted.value.body.error }, signal);
@@ -462,57 +461,6 @@ const advanceOpenAiImageJob$ = command(
   },
 );
 
-const recoverOpenAiImageReceipt$ = command(
-  async (
-    { set },
-    receipt: { eventId: string; responseId: string },
-    signal: AbortSignal,
-  ) => {
-    const apiKey = env("OPENAI_API_KEY");
-    if (!apiKey) {
-      throw new Error("OpenAI image generation is not configured");
-    }
-    const writeDb = set(writeDb$);
-    const [known] = await writeDb
-      .select({ id: builtInGenerationJobs.id })
-      .from(builtInGenerationJobs)
-      .where(
-        sql`${builtInGenerationJobs.request}->'__builtInGeneration'->>'providerJobId' = ${receipt.responseId}`,
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    const response = known
-      ? null
-      : await retrieveOpenAiImageResponse(receipt.responseId, apiKey, signal);
-    if (response && "body" in response) {
-      throw new Error(response.body.error.code);
-    }
-    const generationId = response?.metadata.generation_id;
-    if (generationId) {
-      // Bind only to our own Responses image job, never overwrite an established identity.
-      await writeDb
-        .update(builtInGenerationJobs)
-        .set({
-          request: sql`jsonb_set(${builtInGenerationJobs.request}, '{__builtInGeneration,providerJobId}', ${JSON.stringify(receipt.responseId)}::jsonb)`,
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(builtInGenerationJobs.id, generationId),
-            sql`${builtInGenerationJobs.request}->'__builtInGeneration'->>'providerTask' = 'image-response'`,
-            sql`(${builtInGenerationJobs.request}->'__builtInGeneration'->>'providerJobId' is null or ${builtInGenerationJobs.request}->'__builtInGeneration'->>'providerJobId' = ${receipt.responseId})`,
-          ),
-        );
-      signal.throwIfAborted();
-    }
-    await writeDb
-      .update(openaiImageWebhookReceipts)
-      .set({ processedAt: nowDate() })
-      .where(eq(openaiImageWebhookReceipts.eventId, receipt.eventId));
-    signal.throwIfAborted();
-  },
-);
-
 // The authenticated caller can drive the same short task in previews and while
 // explicitly waiting. Ownership is checked before any provider or storage I/O.
 export const reconcileOwnedOpenAiImageJob$ = command(
@@ -555,39 +503,10 @@ export const reconcileOwnedOpenAiImageJob$ = command(
 );
 
 // Fixed small batches; each job makes at most one provider request per invocation.
-// No polling loop, sleep, provider resubmission, or webhook-owned completion work.
+// No polling loop, sleep, or provider resubmission.
 export const reconcileOpenAiImageJobs$ = command(
   async ({ set }, signal: AbortSignal) => {
     const writeDb = set(writeDb$);
-    const receipts = await writeDb
-      .select({
-        eventId: openaiImageWebhookReceipts.eventId,
-        responseId: openaiImageWebhookReceipts.responseId,
-      })
-      .from(openaiImageWebhookReceipts)
-      .where(isNull(openaiImageWebhookReceipts.processedAt))
-      .orderBy(asc(openaiImageWebhookReceipts.updatedAt))
-      .limit(2);
-    signal.throwIfAborted();
-    for (const receipt of receipts) {
-      // Rotate attempted receipts before provider I/O, including after a lost
-      // retrieval, so an unavailable response never starves later deliveries.
-      await writeDb
-        .update(openaiImageWebhookReceipts)
-        .set({ updatedAt: nowDate() })
-        .where(eq(openaiImageWebhookReceipts.eventId, receipt.eventId));
-      signal.throwIfAborted();
-      const recovered = await settle(
-        set(recoverOpenAiImageReceipt$, receipt, signal),
-        signal,
-      );
-      signal.throwIfAborted();
-      if (!recovered.ok) {
-        L.warn("OpenAI image receipt recovery deferred", {
-          eventId: receipt.eventId,
-        });
-      }
-    }
     const jobs = await writeDb
       .select({ id: builtInGenerationJobs.id })
       .from(builtInGenerationJobs)
@@ -604,14 +523,6 @@ export const reconcileOpenAiImageJobs$ = command(
     for (const { id } of jobs) {
       const job = await set(getBuiltInGenerationWebhookJob$, id, signal);
       if (!job) {
-        continue;
-      }
-      const internal = readBuiltInGenerationRequestInternal(job.request);
-      if (
-        receipts.some((receipt) => {
-          return receipt.responseId === internal.providerJobId;
-        })
-      ) {
         continue;
       }
       const advanced = await settle(
@@ -670,7 +581,7 @@ export const reconcileOpenAiImageJobs$ = command(
         signal.throwIfAborted();
       }
     }
-    return { processed: jobs.length, receipts: receipts.length };
+    return { processed: jobs.length };
   },
 );
 

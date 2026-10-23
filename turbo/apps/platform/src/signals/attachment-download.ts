@@ -8,6 +8,7 @@ import {
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { accept } from "../lib/accept.ts";
+import { resolveEditableHostedSiteDomain } from "../lib/platform-host.ts";
 import { writeHostedPublicationZip } from "../lib/hosted-publication-zip.ts";
 import {
   downloadAttachmentUrl,
@@ -29,6 +30,46 @@ type AttachmentDownload = {
   readonly filename: string;
   readonly url: string;
 };
+
+/** The trusted App owns authenticated downloads reached from a Site's brand bar. */
+export const downloadHostedSite$ = command(
+  async ({ get }, publicSlug: string, signal: AbortSignal) => {
+    const domain = resolveEditableHostedSiteDomain();
+    const hostname = `${publicSlug}.${domain}`;
+    const response = await accept(
+      get(apiClient$)(hostContract).files({
+        params: { publicSlug },
+        query: { hostname },
+        fetchOptions: { signal, cache: "no-store" },
+      }),
+      [200],
+      signal,
+    );
+    const site = response.body;
+    if (site.files.length === 1) {
+      const file = site.files[0]!;
+      await downloadAttachmentUrl(
+        file.downloadUrl,
+        signal,
+        file.path.slice(file.path.lastIndexOf("/") + 1),
+        "native",
+      );
+      return;
+    }
+    const complete = await writePublicationArchive(
+      site,
+      `https://dpl-${site.deploymentId}.${domain}/`,
+      signal,
+    );
+    if (!complete) {
+      toast.error(
+        i18n.t(($) => {
+          return $.artifacts.toasts.downloadFailed;
+        }),
+      );
+    }
+  },
+);
 
 function hostedPublicationUrl(url: string): URL | null {
   if (!isHostedSiteUrl(url)) {
@@ -100,7 +141,8 @@ const hostedPublication$ = command(
 /**
  * Read the publication from the host that already serves it to this viewer.
  * Those responses carry the delivery host's cross-origin grant, while the
- * manifest's storage URLs are signed for server-side reads only.
+ * manifest's storage URLs are signed for server-side reads only. Revocable
+ * Site download URLs are browser-readable and authorize each member separately.
  */
 async function writePublicationArchive(
   site: HostedSiteFilesResponse,
@@ -110,7 +152,13 @@ async function writePublicationArchive(
   const chunks: Uint8Array[] = [];
   const complete = await writeHostedPublicationZip(
     {
-      members: site.files,
+      members: site.files.map((file) => {
+        const url = new URL(file.downloadUrl);
+        const grant =
+          isHostedSiteUrl(file.downloadUrl) &&
+          /^\/\.okou\/download\/[a-f0-9]{48}$/u.test(url.pathname);
+        return { ...file, ...(grant ? { deliveryUrl: file.downloadUrl } : {}) };
+      }),
       baseUrl: resourceUrl,
       write: (chunk) => {
         chunks.push(chunk);

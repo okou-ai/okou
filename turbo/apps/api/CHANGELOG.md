@@ -9,6 +9,20 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.766.6](https://github.com/okou-ai/okou/compare/api-v1.766.5...api-v1.766.6) (2026-10-23)
+
+
+### Bug Fixes
+
+* **billing:** remove built-in generation price markups ([#42517](https://github.com/okou-ai/okou/issues/42517)) ([b0d7399](https://github.com/okou-ai/okou/commit/b0d7399a62e951dfae0e055e465ee5b69742dcc1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 1.358.5
+
 ## [1.766.5](https://github.com/okou-ai/okou/compare/api-v1.766.4...api-v1.766.5) (2026-10-23)
 
 

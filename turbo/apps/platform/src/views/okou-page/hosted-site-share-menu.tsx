@@ -12,6 +12,7 @@ import {
   cn,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
+import { Switch } from "@okouai/ui/components/ui/switch";
 import { resolveEditableHostedSiteDomain } from "../../lib/platform-host.ts";
 import { currentOrgInfo$ } from "../../signals/auth.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -86,6 +87,69 @@ function SiteStatus({
           </span>
         </p>
       </div>
+    </div>
+  );
+}
+
+function HostedSiteBannerSetting({
+  session,
+}: {
+  readonly session: HostedSiteShareSession;
+}) {
+  const { t } = useTranslation();
+  const owner = useLoadable(session.visibility$);
+  const banner = useLoadable(session.banner$);
+  const current = useLastResolved(session.banner$);
+  const [operation, change] = useLoadableSet(session.changeBanner$);
+  const refresh = useSet(session.refreshBanner$);
+  const signal = useGet(session.signal$);
+  if (
+    !signal ||
+    owner.state !== "hasData" ||
+    !owner.data ||
+    (banner.state === "hasData" && !banner.data)
+  ) {
+    return null;
+  }
+  const saving = operation.state === "loading";
+  const failed = banner.state === "hasError";
+  return (
+    <div className="mt-4 border-t border-border pt-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm">
+          {t(($) => {
+            return $.artifacts.siteBanner.label;
+          })}
+        </span>
+        {!current ? (
+          <Skeleton className="h-5 w-9 rounded-full" />
+        ) : (
+          <div className="flex items-center gap-2">
+            {saving && <Loader2 size={14} className="animate-spin" />}
+            <Switch
+              size="compact"
+              aria-label={t(($) => {
+                return $.artifacts.siteBanner.label;
+              })}
+              checked={current?.showBanner === true}
+              disabled={saving || banner.state !== "hasData"}
+              onCheckedChange={(value) => {
+                detach(change(value, signal), Reason.DomCallback);
+              }}
+            />
+          </div>
+        )}
+      </div>
+      {failed && (
+        <ShareRetryRow
+          message={t(($) => {
+            return $.artifacts.siteBanner.loadFailed;
+          })}
+          onRetry={() => {
+            detach(refresh(signal), Reason.DomCallback);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -454,7 +518,10 @@ function HostedSiteShareBody({
     <>
       {!visibilityEnabled && <SiteStatus link={link} loading={loading} />}
       {visibilityEnabled && !editing && (
-        <HostedSitePermissions session={session} />
+        <>
+          <HostedSitePermissions session={session} />
+          <HostedSiteBannerSetting session={session} />
+        </>
       )}
       {editing ? (
         <WebsiteUrlEditor
@@ -498,6 +565,7 @@ function HostedSiteShareSessionMenu({
   const link = useLoadable(session.copyUrl$);
   // Preload permissions alongside the current address before Share opens.
   useLoadable(session.visibility$);
+  useLoadable(session.banner$);
   const signal = useGet(session.signal$);
   const open = useGet(session.open$);
   const setOpen = useSet(session.setOpen$);

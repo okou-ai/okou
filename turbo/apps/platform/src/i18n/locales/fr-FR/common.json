@@ -645,6 +645,11 @@
       "singularTitle": "Artéfact",
       "unavailable": "Cet artéfact n'est plus disponible."
     },
+    "siteBanner": {
+      "label": "Afficher la bannière Okou",
+      "loadFailed": "Impossible de charger les paramètres de la bannière",
+      "updated": "Bannière mise à jour"
+    },
     "siteUrl": {
       "available": "Disponible",
       "cancel": "Annuler",

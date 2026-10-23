@@ -96,7 +96,7 @@ fn gnu_longnames_are_bounded_and_do_not_admit_other_extensions() {
 
     let mut many_paths = fixture_files(MAX_ADMITTED_FILES, 64, true);
     for file in &mut many_paths {
-        file.path = file.path.replace(&"a".repeat(110), &"a".repeat(112));
+        file.path = file.path.replace(&"a".repeat(110), &"a".repeat(113));
     }
     assert!(many_paths.iter().map(|f| f.path.len()).sum::<usize>() > MAX_ADMITTED_PATH_BYTES);
     assert!(

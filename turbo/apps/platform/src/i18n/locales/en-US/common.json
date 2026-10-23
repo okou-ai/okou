@@ -629,6 +629,11 @@
       "singularTitle": "Artifact",
       "unavailable": "This artifact is no longer available."
     },
+    "siteBanner": {
+      "label": "Show Okou banner",
+      "loadFailed": "Unable to load banner settings",
+      "updated": "Banner updated"
+    },
     "siteUrl": {
       "available": "Available",
       "cancel": "Cancel",

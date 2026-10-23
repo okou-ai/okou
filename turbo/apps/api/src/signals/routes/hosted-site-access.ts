@@ -14,6 +14,10 @@ import {
 } from "../services/hosted-site-access.service";
 import { authorizeHostedSiteDownload$ } from "../services/hosted-site-download.service";
 import {
+  getHostedSiteBanner$,
+  updateHostedSiteBanner$,
+} from "../services/hosted-site-banner.service";
+import {
   authorizeHostedSiteSession$,
   exchangeHostedSiteSession$,
   hostedSiteSessionViewer$,
@@ -119,6 +123,52 @@ const access$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body };
 });
 
+const readBanner$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const denied = await set(admission$, signal);
+  if (denied) {
+    return denied;
+  }
+  const body = await set(
+    getHostedSiteBanner$,
+    {
+      ...get(organizationAuthContext$),
+      ...get(pathParamsOf(hostContract.siteBanner)),
+    },
+    signal,
+  );
+  return body
+    ? { status: 200 as const, body }
+    : notFound("Published website not found");
+});
+
+const updateBanner$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const denied = await set(admission$, signal);
+  if (denied) {
+    return denied;
+  }
+  const input = await get(bodyResultOf(hostContract.updateSiteBanner));
+  signal.throwIfAborted();
+  if (!input.ok) {
+    return input.response;
+  }
+  const result = await set(
+    updateHostedSiteBanner$,
+    {
+      ...get(organizationAuthContext$),
+      ...get(pathParamsOf(hostContract.updateSiteBanner)),
+      ...input.data,
+    },
+    signal,
+  );
+  if (result.status === "not_found") {
+    return notFound("Published website not found");
+  }
+  if (result.status === "conflict") {
+    return conflict("Website banner changed; reload before editing");
+  }
+  return { status: 200 as const, body: result.body };
+});
+
 const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
   const body = await set(
@@ -191,6 +241,14 @@ const exchangeSession$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const hostedSiteAccessRoutes: readonly RouteEntry[] = [
+  {
+    route: hostContract.siteBanner,
+    handler: authRoute(ownerAuth, readBanner$),
+  },
+  {
+    route: hostContract.updateSiteBanner,
+    handler: authRoute(ownerAuth, updateBanner$),
+  },
   {
     route: hostContract.sitePreview,
     handler: authRoute({ requiredCapability: "host:read" }, preview$),

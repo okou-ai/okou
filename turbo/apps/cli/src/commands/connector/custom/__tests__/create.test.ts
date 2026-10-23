@@ -13,6 +13,7 @@ import { customConnectorCommand } from "../index";
 
 const CONNECTOR_ID = "33333333-3333-4333-8333-333333333333";
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
+const THREAD_ID = "22222222-2222-4222-8222-222222222222";
 
 function buildOkouToken(capabilities: readonly string[]): string {
   const header = Buffer.from(JSON.stringify({ alg: "HS256" })).toString(
@@ -114,10 +115,13 @@ describe("okou connector custom create", () => {
 
   beforeEach(() => {
     chalk.level = 0;
+    createCustomConnectorCommand.setOptionValue("json", false);
+    createCustomConnectorCommand.setOptionValue("callbackPrompt", undefined);
     tempDir = mkdtempSync(join(tmpdir(), "custom-connector-create-"));
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", buildOkouToken(["connector:write"]));
     vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
+    vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
   });
 
   afterEach(() => {
@@ -231,9 +235,10 @@ describe("okou connector custom create", () => {
     expect(output).not.toContain("oauth-client-secret");
   });
 
-  it("creates an explicit Streamable HTTP MCP definition", async () => {
+  it("creates an explicit Streamable HTTP MCP definition with a connection callback", async () => {
     const definitionPath = writeDefinition(manualMcpDefinition());
     let createBody: unknown;
+    vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_ID);
     server.use(
       http.post(
         "http://localhost:3000/api/custom-connectors",
@@ -270,12 +275,20 @@ describe("okou connector custom create", () => {
       "create",
       "--file",
       definitionPath,
+      "--json",
+      "--callback-prompt",
+      "Verify MCP tools",
     ]);
 
     expect(createBody).toStrictEqual(manualMcpDefinition());
-    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
-      'Custom connector "Acme MCP" created',
+    const output: unknown = JSON.parse(
+      mockConsoleLog.mock.calls.flat().join("\n"),
     );
+    expect(output).toMatchObject({
+      id: CONNECTOR_ID,
+      kind: "mcp",
+      connectUrl: `http://localhost:3000/connectors/_acme-mcp/connect?agentId=${AGENT_ID}&threadId=${THREAD_ID}&callbackPrompt=Verify+MCP+tools`,
+    });
   });
 
   it("rejects files containing credential values", async () => {

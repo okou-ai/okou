@@ -187,14 +187,21 @@ export function ShareCopyButton({
   );
 }
 
-export function ShareRetryRow({ onRetry }: { readonly onRetry: () => void }) {
+export function ShareRetryRow({
+  onRetry,
+  message,
+}: {
+  readonly onRetry: () => void;
+  readonly message?: string;
+}) {
   const { t } = useTranslation();
   return (
     <div className="mt-1.5 flex items-center justify-between gap-3 px-2 py-1">
       <span className="text-xs text-muted-foreground" role="status">
-        {t(($) => {
-          return $.artifacts.sharing.loadFailed;
-        })}
+        {message ??
+          t(($) => {
+            return $.artifacts.sharing.loadFailed;
+          })}
       </span>
       <Button
         size="sm"

@@ -406,6 +406,28 @@ describe("durable OpenAI Responses image generation", () => {
     });
   });
 
+  it("publishes a failed job when the provider submission is interrupted", async () => {
+    const fixture = await createFixture();
+    await fixture.actor.run(async () => {
+      const provider = mockOpenAiImageResponses({
+        submit: () => {
+          return HttpResponse.error();
+        },
+      });
+      const response = await fixture.generate();
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: "OPENAI_IMAGE_SUBMISSION_UNKNOWN" },
+      });
+      const { generationId } = provider.submission();
+      await expect(fixture.status(generationId)).resolves.toMatchObject({
+        generationId,
+        status: "failed",
+        error: { code: "OPENAI_IMAGE_SUBMISSION_UNKNOWN" },
+      });
+    });
+  });
+
   it.each([
     ["invalid_image_file", undefined, "GENERATION_INPUT_MEDIA_INVALID"],
     ["moderation_blocked", "input", "GENERATION_INPUT_SAFETY_REJECTED"],
@@ -456,44 +478,6 @@ describe("durable OpenAI Responses image generation", () => {
         await expect(refresh.json()).resolves.toMatchObject({
           status: "failed",
           error: { code: publicCode },
-        });
-        expect(provider.submissions).toHaveLength(1);
-        expect(provider.retrievals).toStrictEqual([]);
-        await expect(orgCredits(context, fixture.actor)).resolves.toBe(10_000);
-      });
-    },
-  );
-
-  it.each(["network", "server", "malformed-success"] as const)(
-    "does not automatically repeat an uncertain %s submission",
-    async (failure) => {
-      const fixture = await createFixture();
-      await fixture.actor.run(async () => {
-        const provider = mockOpenAiImageResponses({
-          submit: () => {
-            if (failure === "network") {
-              return HttpResponse.error();
-            }
-            return failure === "server"
-              ? HttpResponse.json(
-                  { error: { code: "unavailable" } },
-                  { status: 503 },
-                )
-              : HttpResponse.json({ status: "queued" });
-          },
-        });
-        const response = await fixture.generate();
-        expect(response.status).toBe(202);
-        const generationId = readAcceptedGenerationId(
-          await response.json(),
-          "image",
-          fixture.actor.userId,
-        );
-        await fixture.reconcile();
-        await fixture.reconcile();
-        await expect(fixture.status(generationId)).resolves.toMatchObject({
-          generationId,
-          status: "running",
         });
         expect(provider.submissions).toHaveLength(1);
         expect(provider.retrievals).toStrictEqual([]);
