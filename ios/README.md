@@ -233,9 +233,10 @@ test fingerprints, so the merge group must produce fresh matching evidence.
 The App build uses the system Git provider for locked package resolution and
 reports build timings. Formatting includes both package manifests, sources,
 and tests. Swift packages must match `Package.resolved`; CI checks that it
-remains unchanged. Explicit locked resolution overlaps simulator startup so
-Xcode initialization does not wait for the simulator before it can begin. Cache
-hits still validate current inputs and never replace test execution.
+remains unchanged. Explicit locked resolution finishes before simulator startup
+so both cold system-service initializations do not compete. CI reports dependency,
+simulator, and total preparation durations separately. Cache hits still validate
+current inputs and never replace test execution.
 Standalone package tests run on a separate macOS runner from the App build and
 simulator suite. Both package and App results are required by the gate. App
 build/tests retain a 30-minute limit; package tests and device archive builds
@@ -283,9 +284,9 @@ unknown HTTP origins locally instead of falling through to DNS, while preserving
 the loopback HTTP servers used by attachment integration tests.
 Production services, PR preview provisioning, and deployed end-to-end tests are
 outside this scope. Passing suites do not establish live-server contracts or
-physical-device visual acceptance. CI starts its configured simulator while resolving
-locked dependencies, then waits for system boot readiness before asset and App
-compilation. This keeps cold system-service startup out of asset-tool discovery.
+physical-device visual acceptance. CI resolves locked dependencies before starting
+its configured simulator, then waits for system boot readiness before asset and
+App compilation. This keeps cold system-service startup out of asset-tool discovery.
 When App test execution is required, `build-for-testing` produces the test
 specification and `test-without-building` runs the complete in-process App suite.
 Package suites execute separately. Test results and attachments remain in

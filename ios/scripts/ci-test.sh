@@ -10,7 +10,7 @@ cd "$repo_root"
 build_root="$RUNNER_TEMP/okou-ios-ci"
 mkdir -p "$build_root"
 resolved=ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
-# CI overlaps simulator startup with dependency resolution, then compiles and runs.
+# CI resolves dependencies before simulator startup, then compiles and runs.
 # Prepare/compile/run phases belong to CI; build retains the combined build entry.
 # Package CI has its own runner.
 # With no phase argument, supported manual callers still run every suite.
@@ -72,8 +72,8 @@ export "GIT_CONFIG_VALUE_${git_config_index}=$build_root/package-sources.gitconf
 export GIT_CONFIG_COUNT=$((git_config_index + 1))
 
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == prepare ]]; then
-  # Resolve the locked graph while CoreSimulator boots. This also initializes
-  # Xcode before compilation instead of serializing both cold service startups.
+  # Resolve the locked graph before CI starts CoreSimulator so both cold
+  # initializations do not compete. Compilation still waits for system readiness.
   xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
   cmp "$resolved" "$build_root/Package.resolved.before"
   for repository in "$build_root"/SourcePackages/repositories/*; do
