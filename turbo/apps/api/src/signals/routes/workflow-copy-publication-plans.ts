@@ -1,5 +1,4 @@
 import { StorageVersionIdentityConflictError } from "../services/storage-version-registration.service";
-import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
 import { gmailLabelAppliedEventConfigSchema } from "@okouai/api-contracts/contracts/workflows";
 import {
   workflows,
@@ -33,6 +32,7 @@ import {
   type WorkflowThreadPreparation,
 } from "../services/workflow-user-automation-thread.service";
 import type { PreparedServerSideVolume } from "../services/storage-volume-publication.service";
+import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
 import {
   CopyPreparationConflict,
   copySourcePlans,
