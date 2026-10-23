@@ -1,7 +1,7 @@
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
 import { piResourceProjectionValues } from "./pi-resource-version-index.service";
-import { eq, exists, inArray, sql } from "drizzle-orm";
+import { and, eq, exists, inArray, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
@@ -24,6 +24,7 @@ export function repairVolumeIndexSql(
 export function preparedVolumePublicationPlan(
   volume: PreparedServerSideVolume,
   publishedAt: Date,
+  publicationCondition?: SQL,
 ) {
   if (!volume.piResourceIndex) {
     throw new Error(
@@ -32,14 +33,12 @@ export function preparedVolumePublicationPlan(
   }
   const query = new QueryBuilder();
   const version = volume.version;
-  const retained = query
-    .$with("retained_storage")
-    .as(
-      query
-        .select({ id: storages.id })
-        .from(storages)
-        .where(eq(storages.id, version.storageId)),
-    );
+  const retained = query.$with("retained_storage").as(
+    query
+      .select({ id: storages.id })
+      .from(storages)
+      .where(and(eq(storages.id, version.storageId), publicationCondition)),
+  );
   const registered = query.$with("registered", {
     id: storageVersions.id,
     storageId: storageVersions.storageId,
