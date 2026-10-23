@@ -836,6 +836,11 @@ jobs:
       - name: Check JSONB Contract Usage
         working-directory: turbo/packages/db
         run: pnpm lint:jsonb-contracts
+      - name: Test Thread Predecessor Backfill
+        working-directory: turbo/packages/db
+        env:
+          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
+        run: pnpm test:thread-predecessor-backfill
       - name: Check Migration Immutability
         if: vars.CI_CHECK_IMMUTABLE_MIGRATE != '0'
         run: |

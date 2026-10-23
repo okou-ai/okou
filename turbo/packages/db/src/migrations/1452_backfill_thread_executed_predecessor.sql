@@ -4,6 +4,18 @@
 -- Executions at/after that writer floor are already maintained; leave them intact.
 -- Historical readers stay enabled. Missing/conflicted history stays unresolved.
 -- Each UUID batch commits independently and is safe to revisit after failure.
+-- Keep the tenant-scoped latest execution lookup on one ordered index. Combining
+-- the Thread and organization indexes can repeatedly scan a large organization.
+-- Replace a possibly invalid index left by an interrupted concurrent build.
+SET statement_timeout = '5min';
+--> statement-breakpoint
+DROP INDEX CONCURRENTLY IF EXISTS public.migration_1452_run_thread_owner_executed_idx;
+--> statement-breakpoint
+CREATE INDEX CONCURRENTLY migration_1452_run_thread_owner_executed_idx
+  ON public.agent_runs (chat_thread_id, user_id, org_id,
+    started_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC NULLS LAST)
+  WHERE chat_thread_id IS NOT NULL AND started_at IS NOT NULL;
+--> statement-breakpoint
 SET statement_timeout = '2s';
 --> statement-breakpoint
 -- okou:batch-by-uuid
@@ -78,5 +90,9 @@ WITH batch AS MATERIALIZED (
 )
 -- Advance by inspected Threads, including empty, unresolved and unchanged batches.
 SELECT (SELECT id FROM batch ORDER BY id DESC LIMIT 1) AS next_cursor;
+--> statement-breakpoint
+SET statement_timeout = '5min';
+--> statement-breakpoint
+DROP INDEX CONCURRENTLY IF EXISTS public.migration_1452_run_thread_owner_executed_idx;
 --> statement-breakpoint
 RESET statement_timeout;
