@@ -162,7 +162,8 @@ final class WorkspaceStoreTests: XCTestCase {
 
   func testStartupAppliesArchiveVisibilityBeforeShowingCachedChats() async throws {
     for archivingEnabled in [true, false] {
-      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        UUID().uuidString)
       defer { try? FileManager.default.removeItem(at: directory) }
       let archivedID = "40000000-0000-4000-8000-000000000004"
       let snapshot = ChatHTTPResponse(
@@ -177,7 +178,8 @@ final class WorkspaceStoreTests: XCTestCase {
       let switchesStarted = expectation(description: "Archive visibility is being loaded")
       let releaseSwitches = HTTPResponseGate()
       defer { releaseSwitches.open() }
-      let catchUpStarted = expectation(description: "Cached chats are shown before network catch-up")
+      let catchUpStarted = expectation(
+        description: "Cached chats are shown before network catch-up")
       let releaseCatchUp = HTTPResponseGate()
       defer { releaseCatchUp.open() }
       let holdCatchUp = Mutex(false)
