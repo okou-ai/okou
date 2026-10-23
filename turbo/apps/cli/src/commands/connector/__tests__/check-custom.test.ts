@@ -989,6 +989,34 @@ describe("custom connector URL diagnostics", () => {
     },
   );
 
+  it("reports an unadmitted builtin target without using the current default", async () => {
+    server.use(
+      stubConnectorCatalog([catalogItem({ connectorSlug: "github" })]),
+    );
+    stubDiagnostic({
+      outcome: "target-unavailable",
+      target: { kind: "builtin", connectorSlug: "github" },
+      reason: "not-admitted",
+    });
+
+    await expect(check("--connector", "builtin:github")).rejects.toThrow(
+      "process.exit called",
+    );
+
+    expect(requests).toStrictEqual([
+      {
+        mode: "url",
+        method: "POST",
+        url: REQUEST_URL,
+        target: { kind: "builtin", connectorSlug: "github" },
+      },
+    ]);
+    expect(error.mock.calls.flat().join("\n")).toContain(
+      "Connector github was not admitted to this run",
+    );
+    expect(output()).toBe("");
+  });
+
   it("keeps builtin and custom overlapping owners distinct in deterministic selection commands", async () => {
     stubDiagnostic({
       outcome: "ambiguous",
@@ -1026,7 +1054,7 @@ describe("custom connector URL diagnostics", () => {
         mode: "url",
         method: "POST",
         url: REQUEST_URL,
-        connectorSlug: "server-only",
+        target: { kind: "builtin", connectorSlug: "server-only" },
       },
     ]);
     expect(error.mock.calls.flat().join("\n")).toContain(
@@ -1084,7 +1112,7 @@ describe("custom connector URL diagnostics", () => {
           mode: "url",
           method: "POST",
           url: REQUEST_URL,
-          connectorSlug: CUSTOM_ID,
+          target: { kind: "builtin", connectorSlug: CUSTOM_ID },
         },
       ]);
       expect(error.mock.calls.flat().join("\n")).toContain(

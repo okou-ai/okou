@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  connectorCheckRequestSchema,
+  connectorCheckTargetAwareUrlRequestSchema,
   type ConnectorCheckPolicy,
 } from "@okouai/api-contracts/contracts/connector-check";
 import { HttpResponse, http } from "msw";
@@ -43,10 +43,12 @@ function diagnostics(
     http.post(
       "https://app.okou.ai/api/connectors/diagnostics/check",
       async ({ request }) => {
-        const input = connectorCheckRequestSchema.parse(await request.json());
-        if (input.mode !== "url") throw new Error("Expected URL diagnostic");
-        const isGmail =
-          "connectorSlug" in input && input.connectorSlug === "gmail";
+        const input = connectorCheckTargetAwareUrlRequestSchema.parse(
+          await request.json(),
+        );
+        if (input.target?.kind !== "builtin")
+          throw new Error("Expected builtin target");
+        const isGmail = input.target.connectorSlug === "gmail";
         const base = isGmail
           ? "https://gmail.googleapis.com"
           : "https://slack.com/api";
@@ -54,7 +56,7 @@ function diagnostics(
           outcome: "resolved",
           mode: "url",
           connector: {
-            connectorSlug: isGmail ? "gmail" : "slack",
+            target: input.target,
             label: isGmail ? "Gmail" : "Slack",
             visibility: "available",
             credentialResolution: "network-boundary",
