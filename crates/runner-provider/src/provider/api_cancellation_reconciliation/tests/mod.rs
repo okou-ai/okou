@@ -18,6 +18,7 @@ const FAILURE: &str = "cancellation reconciliation read failed; will retry";
 const DEGRADED: &str = "cancellation reconciliation reads degraded; will retry";
 const RECOVERED: &str = "cancellation reconciliation read recovered";
 
+mod coalescing;
 mod http_status;
 
 struct Request {
@@ -657,50 +658,6 @@ async fn retirement_joins_an_inflight_read_and_cannot_target_replacement() {
     successor.unregister().await;
     controller.shutdown().await;
     assert!(controller.tasks.is_empty());
-}
-
-#[tokio::test(start_paused = true)]
-async fn blocked_gate_does_not_hold_http_capacity_and_hard_coalesces() {
-    let mut server = Server::new().await;
-    let controller = server.controller();
-    let registry = RunCancellationRegistry::new();
-    let blocked_id = RunId::new_v4();
-    let blocked = registry.register(blocked_id).await.unwrap();
-    let gate = blocked.handle().transfer_guard().await;
-    assert!(controller.observe(blocked_id, blocked.handle(), "blocked-token".into()));
-    server
-        .next()
-        .await
-        .mode(blocked_id, Some("cooperative"))
-        .await;
-    let control_id = RunId::new_v4();
-    let control = observe(&controller, &registry, control_id).await;
-    server.next().await.mode(control_id, Some("hard")).await;
-    bounded(control.handle().signals().hard().cancelled()).await;
-    assert!(!blocked.is_cancelled());
-    tokio::time::advance(INTERVAL).await;
-    for _ in 0..2 {
-        let request = server.next().await;
-        let id = if request.text.contains(&blocked_id.to_string()) {
-            blocked_id
-        } else {
-            control_id
-        };
-        request.mode(id, Some("hard")).await;
-    }
-    // A third Run's applied result synchronizes progress while the first gate
-    // remains held; no observer has to await its delivery to issue other reads.
-    let third_id = RunId::new_v4();
-    let third = observe(&controller, &registry, third_id).await;
-    server.next().await.mode(third_id, Some("hard")).await;
-    bounded(third.handle().signals().hard().cancelled()).await;
-    drop(gate);
-    bounded(blocked.handle().signals().hard().cancelled()).await;
-    assert!(!blocked.handle().signals().cooperative_user().is_cancelled());
-    for registration in [&blocked, &control, &third] {
-        registration.unregister().await;
-    }
-    controller.shutdown().await;
 }
 
 #[tokio::test]
