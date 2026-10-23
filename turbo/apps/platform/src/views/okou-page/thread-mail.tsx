@@ -541,7 +541,7 @@ function ThreadMailRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-1 rounded-lg border-b border-border/40 last:border-b-0",
+        "flex items-center gap-1 border-b border-border/40 last:border-b-0",
         selected.has(mail.mailDraftId) && "bg-state-selected",
       )}
     >
