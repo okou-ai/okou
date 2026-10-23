@@ -1905,10 +1905,26 @@ describe("usage pack subscription Stripe lifecycle", () => {
         "pro",
         credits,
       );
+      const existingGrants = await grantRows(fixture);
+      expect(existingGrants).toStrictEqual(
+        credits === 2000
+          ? [
+              {
+                userId: fixture.userId,
+                grantType: "bonus",
+                originalAmount: 100,
+                expiresAt: expect.any(String),
+              },
+            ]
+          : [],
+      );
       const firstUpgrade = await fulfillFirstUsagePackInvoice(fixture);
 
       expect(firstUpgrade.billing).toMatchObject({ tier: "pro", credits });
-      expect(firstUpgrade.grants).toHaveLength(2);
+      expect(firstUpgrade.grants).toHaveLength(existingGrants.length + 2);
+      expect(firstUpgrade.grants).toStrictEqual(
+        expect.arrayContaining(existingGrants),
+      );
 
       await spendToOrgDebt(fixture, -3000);
       const paidPeriod = period(30);
@@ -1930,7 +1946,10 @@ describe("usage pack subscription Stripe lifecycle", () => {
 
       const renewed = await readLifecycleSnapshot(fixture);
       expect(renewed.billing).toMatchObject({ tier: "pro", credits: -3000 });
-      expect(renewed.grants).toHaveLength(4);
+      expect(renewed.grants).toHaveLength(existingGrants.length + 4);
+      expect(renewed.grants).toStrictEqual(
+        expect.arrayContaining(existingGrants),
+      );
     },
   );
 

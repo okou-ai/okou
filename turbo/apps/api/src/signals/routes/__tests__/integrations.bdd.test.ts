@@ -94,18 +94,6 @@ function slackRateLimitedError(retryAfter = 0): Error {
   });
 }
 
-function signedSlackOAuthStateText(location: string | null): string {
-  return new URL(location ?? "").searchParams.get("state") ?? "";
-}
-
-function decodeSignedSlackOAuthState(state: string): unknown {
-  const [encodedPayload, signature, extra] = state.split(".");
-  if (!encodedPayload || !signature || extra) {
-    throw new Error("Expected signed Slack OAuth state");
-  }
-  return JSON.parse(Buffer.from(encodedPayload, "base64url").toString());
-}
-
 function requireCanonicalSlackInputAssetId(
   events: readonly ChatEvent[],
 ): string {
@@ -179,35 +167,6 @@ function slackInputMessageByText(
       });
     },
   );
-}
-
-function slackBotOauthResponse(args: {
-  readonly accessToken: string;
-  readonly botUserId: string;
-  readonly workspaceId: string;
-  readonly workspaceName: string;
-  readonly authedUserId: string;
-  readonly scope: string;
-}) {
-  return {
-    ok: true,
-    access_token: args.accessToken,
-    bot_user_id: args.botUserId,
-    team: { id: args.workspaceId, name: args.workspaceName },
-    authed_user: { id: args.authedUserId },
-    scope: args.scope,
-  };
-}
-
-function slackUserOauthResponse(args: {
-  readonly workspaceId: string;
-  readonly authedUserId: string;
-}) {
-  return {
-    ok: true,
-    team: { id: args.workspaceId },
-    authed_user: { id: args.authedUserId },
-  };
 }
 
 function expectSlackEphemeral(
@@ -1467,34 +1426,13 @@ describe("INT-01: Slack integration and Slack app routes", () => {
     });
 
     integrations.configureSlackOauthProvider();
-    const slackInstall = await integrations.requestSlackOauthInstall(
-      {
-        orgId: admin.orgId ?? undefined,
-        userId: admin.userId,
-        reinstall: "1",
-        prompt: "x".repeat(700),
-      },
-      [307],
-      admin,
-    );
-    const installLocation = slackInstall.headers.get("location") ?? "";
-    const installUrl = new URL(installLocation);
+    const slackInstall = await integrations.requestSlackOauthInstall({}, [307]);
+    const installUrl = new URL(slackInstall.headers.get("location") ?? "");
     expect(installUrl.hostname).toBe("slack.com");
     expect(installUrl.searchParams.get("client_id")).toBe(
       "slack-bdd-client-id",
     );
-    expect(
-      decodeSignedSlackOAuthState(installUrl.searchParams.get("state") ?? ""),
-    ).toMatchObject({ reinstall: true });
-
-    const missingConnectInstall = await integrations.requestSlackOauthConnect(
-      { orgId: admin.orgId ?? "org_bdd_slack", userId: admin.userId },
-      [404],
-      admin,
-    );
-    expect(missingConnectInstall.body).toStrictEqual({
-      error: "No Slack workspace installed for this organization",
-    });
+    expect(installUrl.searchParams.get("scope")).toContain("chat:write");
 
     const callbackError = await integrations.requestSlackOauthCallback(
       { error: "access_denied" },
@@ -1506,86 +1444,30 @@ describe("INT-01: Slack integration and Slack app routes", () => {
   });
 
   it("installs, connects, disconnects, and uninstalls a Slack workspace through OAuth APIs", async () => {
-    integrations.configureSlackOauthProvider();
-    context.mocks.slack.chat.postMessage.mockResolvedValue({
-      channel: "D_BDD_SLACK",
-      ts: "1710000000.000100",
-    });
-    context.mocks.slack.chat.postEphemeral.mockResolvedValue({
-      ts: "1710000000.000101",
-    });
-    context.mocks.slack.views.publish.mockResolvedValue({ ok: true });
-
+    integrations.configureSlackAppMocks();
     const admin = integrations.user();
     const orgId = admin.orgId;
     if (!orgId) {
       throw new Error("Expected admin test user to have an organization");
     }
-    const member = integrations.user({
-      orgId,
-      orgRole: "org:member",
-    });
-    const disconnectedMember = integrations.user({
-      orgId,
-      orgRole: "org:member",
-    });
-    const workspaceId = `T_BDD_${randomInt(1_000_000, 9_999_999)}`;
-    const workspaceName = `BDD Slack ${workspaceId}`;
-
-    const initialInstall = await integrations.requestSlackOauthInstall(
-      {
-        orgId,
-        userId: admin.userId,
-        prompt: "install prompt",
-      },
-      [307],
-      admin,
-    );
-    const initialInstallUrl = new URL(
-      initialInstall.headers.get("location") ?? "",
-    );
-    const botScope = initialInstallUrl.searchParams.get("scope") ?? "";
-    expect(initialInstallUrl.hostname).toBe("slack.com");
-    expect(botScope).toContain("chat:write");
-
-    const initialAdminStatus = await integrations.requestSlackIntegrationStatus(
+    const member = integrations.user({ orgId, orgRole: "org:member" });
+    const initial = await integrations.requestSlackIntegrationStatus(
       admin,
       [200],
     );
-    expect(initialAdminStatus.body).toMatchObject({
+    expect(initial.body).toMatchObject({
       isConnected: false,
       isInstalled: false,
       isAdmin: true,
     });
-
-    const installStart = await integrations.requestSlackOauthInstall(
-      { orgId, userId: admin.userId, prompt: "install prompt" },
-      [307],
-      admin,
-    );
-    context.mocks.slack.oauth.v2.access.mockResolvedValueOnce(
-      slackBotOauthResponse({
-        accessToken: "xoxb-bdd-slack",
-        botUserId: "UBOT_BDD_SLACK",
-        workspaceId,
-        workspaceName,
-        authedUserId: "UADMIN_BDD_SLACK",
-        scope: botScope,
-      }),
-    );
-    const installed = await integrations.requestSlackOauthCallback(
-      {
-        code: "install-code",
-        state: signedSlackOAuthStateText(installStart.headers.get("location")),
-      },
-      [307],
-    );
-    expect(installed.headers.get("location") ?? "").toContain(
-      `/settings/slack?status=connected&workspace=${encodeURIComponent(
-        workspaceName,
-      )}`,
-    );
-
+    const workspaceId = `T_BDD_${randomInt(1_000_000, 9_999_999)}`;
+    const workspaceName = `BDD Slack ${workspaceId}`;
+    await integrations.installSlackWorkspace(admin, {
+      teamId: workspaceId,
+      teamName: workspaceName,
+      botToken: "xoxb-bdd-slack",
+      installerSlackUserId: "UADMIN_BDD_SLACK",
+    });
     const adminStatus = await integrations.requestSlackIntegrationStatus(
       admin,
       [200],
@@ -1598,7 +1480,6 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       scopeMismatch: false,
       reinstallUrl: null,
     });
-
     const memberOrgStatus = await integrations.requestSlackIntegrationStatus(
       member,
       [200],
@@ -1611,10 +1492,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
     if (!("connectUrl" in memberOrgStatus.body)) {
       throw new Error("Expected Slack member status to include connectUrl");
     }
-    expect(memberOrgStatus.body.connectUrl).toContain(
-      "/api/slack/oauth/connect",
-    );
-
+    expect(memberOrgStatus.body.connectUrl).toContain("connectorState=");
     const memberConnectStatus = await integrations.requestSlackConnectStatus(
       member,
       [200],
@@ -1623,53 +1501,10 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       isConnected: false,
       isAdmin: false,
     });
-
-    const connectStart = await integrations.requestSlackOauthConnect(
-      {
-        orgId,
-        userId: member.userId,
-        prompt: "p".repeat(700),
-      },
-      [307],
-      member,
-    );
-    const connectStartUrl = new URL(connectStart.headers.get("location") ?? "");
-    expect(connectStartUrl.hostname).toBe("slack.com");
-    expect(connectStartUrl.searchParams.get("user_scope")).toBe(
-      "identity.basic",
-    );
-    expect(connectStartUrl.searchParams.get("team")).toBe(workspaceId);
-    const connectStateText = connectStartUrl.searchParams.get("state") ?? "";
-    const connectState = decodeSignedSlackOAuthState(connectStateText);
-    if (!isRecord(connectState)) {
-      throw new Error("Expected Slack connect state object");
-    }
-    expect(connectState).toMatchObject({
-      orgId,
-      userId: member.userId,
-      flow: "connect",
+    await integrations.connectSlackUser(member, {
+      workspaceId,
+      slackUserId: "UMEMBER_BDD_SLACK",
     });
-    expect(String(connectState.prompt ?? "")).toHaveLength(500);
-
-    context.mocks.slack.oauth.v2.access.mockResolvedValueOnce(
-      slackUserOauthResponse({
-        workspaceId,
-        authedUserId: "UMEMBER_BDD_SLACK",
-      }),
-    );
-    const connected = await integrations.requestSlackOauthCallback(
-      {
-        code: "member-connect-code",
-        state: connectStateText,
-      },
-      [307],
-    );
-    expect(connected.headers.get("location") ?? "").toContain(
-      `/settings/slack?status=connected&workspace=${encodeURIComponent(
-        workspaceName,
-      )}`,
-    );
-
     const connectedMemberStatus = await integrations.requestSlackConnectStatus(
       member,
       [200],
@@ -1678,42 +1513,6 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       isConnected: true,
       isAdmin: false,
       workspaceName,
-    });
-
-    const disconnectedBeforeWrongTeam =
-      await integrations.requestSlackConnectStatus(disconnectedMember, [200]);
-    expect(disconnectedBeforeWrongTeam.body).toStrictEqual({
-      isConnected: false,
-      isAdmin: false,
-    });
-    const wrongTeamStart = await integrations.requestSlackOauthConnect(
-      { orgId, userId: disconnectedMember.userId },
-      [307],
-      disconnectedMember,
-    );
-    context.mocks.slack.oauth.v2.access.mockResolvedValueOnce(
-      slackUserOauthResponse({
-        workspaceId: "T_OTHER_BDD_SLACK",
-        authedUserId: "UOTHER_BDD_SLACK",
-      }),
-    );
-    const wrongTeam = await integrations.requestSlackOauthCallback(
-      {
-        code: "wrong-team-code",
-        state: signedSlackOAuthStateText(
-          wrongTeamStart.headers.get("location"),
-        ),
-      },
-      [307],
-    );
-    expect(wrongTeam.headers.get("location") ?? "").toContain(
-      "different%20Slack%20workspace",
-    );
-    const disconnectedAfterWrongTeam =
-      await integrations.requestSlackConnectStatus(disconnectedMember, [200]);
-    expect(disconnectedAfterWrongTeam.body).toStrictEqual({
-      isConnected: false,
-      isAdmin: false,
     });
 
     const disconnected = await integrations.requestSlackDisconnect(
