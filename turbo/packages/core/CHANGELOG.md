@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.783.1](https://github.com/okou-ai/okou/compare/core-v8.783.0...core-v8.783.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **app:** prepare authenticated integration oauth callbacks ([#42591](https://github.com/okou-ai/okou/issues/42591)) ([c7f304e](https://github.com/okou-ai/okou/commit/c7f304e86bc9bc0df19a4e8ef202cb1cc860be6c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.1.1
+
 ## [8.783.0](https://github.com/okou-ai/okou/compare/core-v8.782.1...core-v8.783.0) (2026-10-23)
 
 
