@@ -15,10 +15,12 @@ import {
 } from "@okouai/connectors/auth-providers/connectors/github/oauth";
 
 import { requiredAuthContext$ } from "../auth/auth-context";
+import { authRoute } from "../auth/auth-route";
 import { checkOAuthCallbackActor$ } from "../services/oauth-callback-actor";
 import {
-  authenticatedIntegrationOAuthCallback,
   integrationOAuthAppRedirect,
+  integrationOAuthCallbackResponse,
+  setIntegrationOAuthCallbackHeaders$,
 } from "../services/integration-oauth-callback";
 import { queryOf } from "../context/request";
 import { authorization$, request$ } from "../context/hono";
@@ -1268,20 +1270,23 @@ const completeCallbackGithubOauth$ = command(
   },
 );
 
-const callbackGithubJson$ = authenticatedIntegrationOAuthCallback(
-  completeCallbackGithubOauth$,
-  "json",
-);
-const callbackGithubAuthenticated$ = authenticatedIntegrationOAuthCallback(
-  completeCallbackGithubOauth$,
-  "redirect",
+const callbackGithubAuthenticated$ = authRoute(
+  { requireOrganization: true, missingOrganizationStatus: 401 },
+  command(async ({ get, set }, signal: AbortSignal) => {
+    const response = await set(completeCallbackGithubOauth$, signal);
+    return integrationOAuthCallbackResponse(
+      response,
+      get(queryOf(githubOauthContract.setupCallback)).responseMode,
+    );
+  }),
 );
 
 const callbackGithubOauth$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    set(setIntegrationOAuthCallbackHeaders$);
     const query = get(queryOf(githubOauthContract.setupCallback));
     if (query.responseMode === "json") {
-      return await set(callbackGithubJson$, signal);
+      return await set(callbackGithubAuthenticated$, signal);
     }
     const stateResolution = await resolveGithubCallbackState({
       stateString: query.state,

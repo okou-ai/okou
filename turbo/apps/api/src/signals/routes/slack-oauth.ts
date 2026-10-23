@@ -36,10 +36,12 @@ import {
 } from "../services/slack-connector-oauth.service";
 import { SLACK_CONNECTOR_OAUTH_STATE_PREFIX } from "../services/slack-connector-oauth-state";
 import { requiredAuthContext$ } from "../auth/auth-context";
+import { authRoute } from "../auth/auth-route";
 import { checkOAuthCallbackActor$ } from "../services/oauth-callback-actor";
 import {
-  authenticatedIntegrationOAuthCallback,
   integrationOAuthAppRedirect,
+  integrationOAuthCallbackResponse,
+  setIntegrationOAuthCallbackHeaders$,
 } from "../services/integration-oauth-callback";
 import { connectorOAuthStateExpiresAt } from "../../lib/connector-oauth-state";
 import {
@@ -907,19 +909,22 @@ const completeCallbackOauth$ = command(
   },
 );
 
-const callbackJson$ = authenticatedIntegrationOAuthCallback(
-  completeCallbackOauth$,
-  "json",
-);
-const callbackAuthenticated$ = authenticatedIntegrationOAuthCallback(
-  completeCallbackOauth$,
-  "redirect",
+const callbackAuthenticated$ = authRoute(
+  { requireOrganization: true, missingOrganizationStatus: 401 },
+  command(async ({ get, set }, signal: AbortSignal) => {
+    const response = await set(completeCallbackOauth$, signal);
+    return integrationOAuthCallbackResponse(
+      response,
+      get(queryOf(slackOauthContract.callback)).responseMode,
+    );
+  }),
 );
 
 const callbackOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setIntegrationOAuthCallbackHeaders$);
   const query = get(queryOf(slackOauthContract.callback));
   if (query.responseMode === "json") {
-    return await set(callbackJson$, signal);
+    return await set(callbackAuthenticated$, signal);
   }
   const parsed = parseOAuthState(query.state);
   if (

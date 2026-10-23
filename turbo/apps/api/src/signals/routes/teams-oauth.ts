@@ -19,13 +19,15 @@ import { safeJsonParse, tapError } from "../utils";
 import type { RouteEntry } from "../route-entry";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
 import { requiredAuthContext$ } from "../auth/auth-context";
+import { authRoute } from "../auth/auth-route";
 import {
   checkOAuthCallbackActor$,
   checkOAuthEntryActor$,
 } from "../services/oauth-callback-actor";
 import {
-  authenticatedIntegrationOAuthCallback,
   integrationOAuthAppRedirect,
+  integrationOAuthCallbackResponse,
+  setIntegrationOAuthCallbackHeaders$,
 } from "../services/integration-oauth-callback";
 import {
   claimTeamsOAuthState$,
@@ -493,19 +495,22 @@ const completeCallbackOauth$ = command(
   },
 );
 
-const callbackJson$ = authenticatedIntegrationOAuthCallback(
-  completeCallbackOauth$,
-  "json",
-);
-const callbackAuthenticated$ = authenticatedIntegrationOAuthCallback(
-  completeCallbackOauth$,
-  "redirect",
+const callbackAuthenticated$ = authRoute(
+  { requireOrganization: true, missingOrganizationStatus: 401 },
+  command(async ({ get, set }, signal: AbortSignal) => {
+    const response = await set(completeCallbackOauth$, signal);
+    return integrationOAuthCallbackResponse(
+      response,
+      get(queryOf(teamsOauthContract.callback)).responseMode,
+    );
+  }),
 );
 
 const callbackOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setIntegrationOAuthCallbackHeaders$);
   const query = get(queryOf(teamsOauthContract.callback));
   if (query.responseMode === "json") {
-    return await set(callbackJson$, signal);
+    return await set(callbackAuthenticated$, signal);
   }
   if (!query.state?.startsWith("teams-callback.")) {
     return await set(completeCallbackOauth$, signal);

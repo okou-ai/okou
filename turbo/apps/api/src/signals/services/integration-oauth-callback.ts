@@ -1,11 +1,10 @@
-import { command, type Command } from "ccstate";
+import { command } from "ccstate";
 import {
   INTEGRATION_OAUTH_CALLBACK_PATHS,
   type IntegrationOAuthProvider,
 } from "@okouai/core/integration-routes";
 
 import { env } from "../../lib/env";
-import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 
 /** Provider redirects carry no application bearer token. Authenticate in App first. */
@@ -33,28 +32,17 @@ export function integrationOAuthAppRedirect(
   });
 }
 
-/** Construct once at the route boundary; reject missing auth before consuming state. */
-export function authenticatedIntegrationOAuthCallback(
-  handler$: Command<Promise<Response>, [AbortSignal]>,
-  responseMode: "json" | "redirect",
+export const setIntegrationOAuthCallbackHeaders$ = command(({ set }) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  set(setResHeader$, "Referrer-Policy", "no-referrer");
+});
+
+export function integrationOAuthCallbackResponse(
+  response: Response,
+  responseMode: "json" | undefined,
 ) {
-  const authenticated$ = authRoute(
-    { requireOrganization: true, missingOrganizationStatus: 401 },
-    command(async ({ set }, signal: AbortSignal) => {
-      const response = await set(handler$, signal);
-      if (responseMode === "redirect") {
-        return response;
-      }
-      const redirectUrl = response.headers.get("location");
-      if (!redirectUrl) {
-        return response;
-      }
-      return { status: 200 as const, body: { redirectUrl } };
-    }),
-  );
-  return command(async ({ set }, signal: AbortSignal) => {
-    set(setResHeader$, "Cache-Control", "no-store");
-    set(setResHeader$, "Referrer-Policy", "no-referrer");
-    return await set(authenticated$, signal);
-  });
+  const redirectUrl = response.headers.get("location");
+  return responseMode === "json" && redirectUrl
+    ? { status: 200 as const, body: { redirectUrl } }
+    : response;
 }
