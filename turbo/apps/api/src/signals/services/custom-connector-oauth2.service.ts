@@ -97,7 +97,8 @@ import {
   prepareCustomConnectorAutomaticOAuthReauthorization$,
   customConnectorAutomaticOAuthBindingReadPlan,
   customConnectorAutomaticOAuthBindingFromRow,
-  refreshCustomConnectorAutomaticOAuthToken,
+  customDcrBoundClientCondition,
+  customDcrClientFromRegistration,
   retireCustomConnectorDcrRegistrationSql,
   type CustomConnectorAutomaticOAuthBinding,
   type CustomConnectorAutomaticOAuthAuthorization,
@@ -107,6 +108,7 @@ import {
   McpAutomaticOAuthError,
   isAutomaticOAuthInvalidClient,
   isAutomaticOAuthInvalidGrant,
+  refreshMcpAutomaticOAuthToken,
 } from "./mcp-automatic-oauth.service";
 import {
   discoverStaticCustomOAuthUserInfo,
@@ -2299,22 +2301,17 @@ async function refreshAutomaticOAuthAccessToken(
   const { args, connector, connection } = context;
   const db = args.db;
   if (!connection.encryptedRefreshToken) {
-    const reconnectDb = db;
-    const reconnectConnectorId = connection.id;
     const reconnectReason = "missing_refresh_token";
-    const reconnectObservedToken = null;
-    await (async () => {
-      await reconnectDb
-        .update(connectors)
-        .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
-        .where(
-          customConnectorRefreshReconnectCondition(
-            reconnectConnectorId,
-            reconnectObservedToken,
-            CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
-          ),
-        );
-    })();
+    await db
+      .update(connectors)
+      .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
+      .where(
+        customConnectorRefreshReconnectCondition(
+          connection.id,
+          null,
+          CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
+        ),
+      );
     return { kind: "reconnect-required" };
   }
   const binding = await (async () => {
@@ -2331,22 +2328,17 @@ async function refreshAutomaticOAuthAccessToken(
   })();
   signal.throwIfAborted();
   if (!binding) {
-    const reconnectDb = db;
-    const reconnectConnectorId = connection.id;
     const reconnectReason = "authorization_expired_or_revoked";
-    const reconnectObservedToken = connection.encryptedRefreshToken;
-    await (async () => {
-      await reconnectDb
-        .update(connectors)
-        .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
-        .where(
-          customConnectorRefreshReconnectCondition(
-            reconnectConnectorId,
-            reconnectObservedToken,
-            CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
-          ),
-        );
-    })();
+    await db
+      .update(connectors)
+      .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
+      .where(
+        customConnectorRefreshReconnectCondition(
+          connection.id,
+          connection.encryptedRefreshToken,
+          CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
+        ),
+      );
     return { kind: "reconnect-required" };
   }
   if (
@@ -2373,15 +2365,31 @@ async function refreshAutomaticOAuthAccessToken(
     throw new Error("Okou MCP OAuth callback is unavailable");
   }
   const refreshResult = await settle(
-    refreshCustomConnectorAutomaticOAuthToken(
+    refreshMcpAutomaticOAuthToken(
       {
-        db,
+        dcrStore: {
+          async readBoundClient(registrationId) {
+            const [registration] = await db
+              .select()
+              .from(orgCustomConnectorDcrRegistrations)
+              .where(
+                customDcrBoundClientCondition(
+                  registrationId,
+                  binding.customConnectorId,
+                ),
+              )
+              .limit(1);
+            return await customDcrClientFromRegistration(
+              registration,
+              args.featureContext,
+            );
+          },
+        },
         binding,
         endpoint: connector.endpoint,
         redirectUri: okouRedirectUri,
         cimdClientId: okouClientMetadata.client_id,
         refreshToken,
-        featureContext: args.featureContext,
       },
       signal,
     ),
