@@ -44,7 +44,7 @@ pub(super) fn archive_files(files: &[StorageFile]) -> Vec<u8> {
 }
 
 #[tokio::test]
-async fn enlarged_v1_positive_survives_restart_and_full_guest_delivery() {
+async fn production_warming_survives_restart_and_full_guest_delivery() {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().join("host"));
     let mut files = fixture_files(storage_files::MAX_FILES, 2048, true);
@@ -52,31 +52,30 @@ async fn enlarged_v1_positive_survives_restart_and_full_guest_delivery() {
         file.mtime = 1;
         file.content[512..].fill(b'x');
     }
-    use sha2::{Digest, Sha256};
-
     assert_eq!(
         files.iter().map(|f| f.content.len()).sum::<usize>(),
         storage_files::MAX_STORAGE_BYTES
     );
-    assert!(files.iter().map(|f| f.path.len()).sum::<usize>() > MAX_ADMITTED_PATH_BYTES);
-    // Model a later writer independently of this release's archive admission.
-    let entry = disk::paths(&home, "memory-fixture", "v1").0;
-    for file in &files {
-        let path = entry.join("files").join(&file.path);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, &file.content).unwrap();
-    }
-    let index = serde_json::to_vec(&serde_json::json!({
-        "name": "memory-fixture", "version": "v1", "compressed_bytes": MAX_COMPRESSED_BYTES,
-        "files": files.iter().map(|file| serde_json::json!({
-            "path": file.path, "mode": file.mode, "mtime": file.mtime,
-            "size": file.content.len(), "sha256": hex::encode(Sha256::digest(&file.content))
-        })).collect::<Vec<_>>()
-    }))
-    .unwrap();
-    assert!(index.len() > MAX_ADMITTED_INDEX_BYTES);
-    fs::write(entry.join("index.json"), &index).unwrap();
+    assert!(files.iter().map(|f| f.path.len()).sum::<usize>() > 128 * 1024);
+    let archive = archive_files(&files);
+    assert!(archive.len() > 2 * 1024 * 1024);
+    assert!(archive.len() <= MAX_ADMITTED_COMPRESSED_BYTES);
+    let source = home.storage_cache_dir("memory-fixture", "v1");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("archive.tar.gz"), &archive).unwrap();
+    drop(
+        runner_host::lock::try_acquire_or_busy_blocking(&home.storage_lock("memory-fixture", "v1"))
+            .unwrap(),
+    );
     let cache = DecodedCache::new(home.clone());
+    cache
+        .warm_from_archive("memory-fixture", "v1")
+        .await
+        .unwrap();
+    let entry = disk::paths(&home, "memory-fixture", "v1").0;
+    let index = fs::read(entry.join("index.json")).unwrap();
+    assert!(index.len() > 256 * 1024);
+    assert!(index.len() <= MAX_ADMITTED_INDEX_BYTES);
     assert_eq!(
         cache
             .get_ready("memory-fixture", "v1")
@@ -114,6 +113,57 @@ async fn enlarged_v1_positive_survives_restart_and_full_guest_delivery() {
     drop(ready);
     restarted.shutdown().await;
     assert_eq!(restarted.0.memory.available_permits(), CAPACITY);
+}
+
+#[tokio::test]
+async fn retained_previous_policy_rejection_remains_an_optional_skip_after_activation() {
+    let root = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(root.path().to_owned());
+    // This count exceeded the previous 1,024-file producer policy.
+    let files = fixture_files(1025, 64, false);
+    let archive = archive_files(&files);
+    for name in ["retained", "fresh"] {
+        let source = home.storage_cache_dir(name, "v1");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("archive.tar.gz"), &archive).unwrap();
+        drop(
+            runner_host::lock::try_acquire_or_busy_blocking(&home.storage_lock(name, "v1"))
+                .unwrap(),
+        );
+    }
+    use runner_host::paths::short_digest;
+    let rejected = home
+        .storages_dir()
+        .join(short_digest("retained"))
+        .join(format!("decoded-v1-rejected-{}", short_digest("v1")));
+    fs::create_dir_all(&rejected).unwrap();
+    let index = serde_json::to_vec(&serde_json::json!({
+        "name": "retained", "version": "v1", "compressed_bytes": archive.len(), "files": null
+    }))
+    .unwrap();
+    fs::write(rejected.join("index.json"), &index).unwrap();
+    for _ in 0..2 {
+        let cache = DecodedCache::new(home.clone());
+        cache.warm_from_archive("retained", "v1").await.unwrap();
+        assert!(cache.get_ready("retained", "v1").await.unwrap().is_none());
+        cache.warm_from_archive("fresh", "v1").await.unwrap();
+        assert_eq!(
+            cache.get_ready("fresh", "v1").await.unwrap().unwrap().files,
+            files
+        );
+        cache.shutdown().await;
+        assert_eq!(cache.0.memory.available_permits(), CAPACITY);
+        assert_eq!(fs::read(rejected.join("index.json")).unwrap(), index);
+        assert_eq!(
+            fs::read(
+                home.storage_cache_dir("retained", "v1")
+                    .join("archive.tar.gz")
+            )
+            .unwrap(),
+            archive
+        );
+        assert!(!disk::paths(&home, "retained", "v1").0.exists());
+    }
 }
 
 #[test]

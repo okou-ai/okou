@@ -12,15 +12,14 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 mod disk;
 
 const CAPACITY: usize = 64 * 1024 * 1024;
-// Persisted v1 entries cross Runner releases. Deploy prepared readers and finish
-// incompatible owners' active/background work before widening MAX_ADMITTED_*
-// production and selection policy in #42498.
+// Persisted v1 entries cross Runner releases. Activation requires #42504's
+// deployed readers, incompatible owner/work exit and its enforced rollback floor.
 const MAX_COMPRESSED_BYTES: usize = 4 * 1024 * 1024;
-pub(super) const MAX_ADMITTED_FILES: usize = 1024;
-pub(super) const MAX_ADMITTED_STORAGE_BYTES: usize = 4 * 1024 * 1024;
-const MAX_ADMITTED_COMPRESSED_BYTES: usize = 2 * 1024 * 1024;
-pub(super) const MAX_ADMITTED_PATH_BYTES: usize = 128 * 1024;
-pub(super) const MAX_ADMITTED_INDEX_BYTES: usize = 256 * 1024;
+pub(super) const MAX_ADMITTED_FILES: usize = 4096;
+pub(super) const MAX_ADMITTED_STORAGE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_ADMITTED_COMPRESSED_BYTES: usize = 4 * 1024 * 1024;
+pub(super) const MAX_ADMITTED_PATH_BYTES: usize = 512 * 1024;
+pub(super) const MAX_ADMITTED_INDEX_BYTES: usize = 1024 * 1024;
 // 4 MiB source + 8 MiB content + 4 MiB bounded metadata/decoder allowance.
 // The semaphore covers optional cache work, not total Runner process RSS.
 const FILL_RESERVATION: u32 = 16 * 1024 * 1024;
