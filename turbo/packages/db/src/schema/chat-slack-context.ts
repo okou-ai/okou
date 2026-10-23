@@ -35,6 +35,8 @@ export const chatSlackContext = pgTable(
         { onDelete: "cascade" },
       ),
     channelId: text("channel_id"),
+    /** Installation used for this input's replies, distinct from sender identity. */
+    workspaceId: text("workspace_id"),
     messageTs: text("message_ts"),
     /** Bot user ID of the installation that received the message. */
     botUserId: text("bot_user_id"),

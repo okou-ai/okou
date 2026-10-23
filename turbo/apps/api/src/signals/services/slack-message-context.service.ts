@@ -11,6 +11,19 @@ import {
   isSlackConversationWritable,
 } from "../../lib/slack-client";
 import { integrationMessageSendLabels$ } from "./integration-message-context.service";
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { isSlackConversationShared } from "../../lib/slack-client";
+import {
+  slackAccountConnection,
+  slackWorkspaceIdentityEnabled,
+} from "./slack-workspace-identity.service";
+
+const callerIdentity$ = computed((get) => {
+  const auth = get(organizationAuthContext$);
+  return { orgId: auth.orgId, userId: auth.userId };
+});
+const callerAccount$ = slackAccountConnection(callerIdentity$);
+const callerAccountEnabled$ = slackWorkspaceIdentityEnabled(callerIdentity$);
 
 const userMention$ = computed(async (get) => {
   const { runOwner } = await get(integrationMessageSendLabels$);
@@ -73,6 +86,9 @@ export function resolveCurrentUserSlackId(args: {
   readonly orgId: string;
 }): Computed<Promise<string | null>> {
   return computed(async (get): Promise<string | null> => {
+    if (await get(callerAccountEnabled$)) {
+      return (await get(callerAccount$))?.connection.slackUserId ?? null;
+    }
     const db = get(db$);
     const [row] = await db
       .select({ slackUserId: slackOrgConnections.slackUserId })

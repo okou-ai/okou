@@ -1765,6 +1765,156 @@ describe("INT-01: Slack integration and Slack app routes", () => {
 });
 
 describe("INT-01: Slack app deep webhook flows", () => {
+  async function externalSlackIdentityScenario() {
+    const actor = bdd.user();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    integrations.configureSlackAppMocks();
+    integrations.acceptSlackSessionHistoryDownloads();
+    const runnerGroup = runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
+    await bdd.readOnboardingStatus(actor);
+    const slackUserId = uniqueSlackUserId();
+    const home = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: slackUserId,
+    });
+    const entryActor = bdd.user();
+    const entry = await integrations.installSlackWorkspace(entryActor);
+    onTestFinished(async () => {
+      await integrations.requestSlackDisconnect(entryActor, "uninstall", [200]);
+    });
+    await integrations.enableSlackWorkspaceIdentity(actor);
+    context.mocks.slack.users.info.mockResolvedValue({
+      ok: true,
+      user: {
+        id: slackUserId,
+        team_id: home.teamId,
+        real_name: "External Slack user",
+        deleted: false,
+      },
+    });
+    await integrations.requestSlackDisconnect(actor, "uninstall", [200]);
+    context.mocks.slack.users.info.mockResolvedValue({
+      ok: true,
+      user: {
+        id: slackUserId,
+        team_id: home.teamId,
+        real_name: "External Slack user",
+        deleted: false,
+      },
+    });
+    return { actor, entry, home, slackUserId, runnerGroup };
+  }
+
+  it.each(["different workspace", "deleted member", "missing identity"])(
+    "rejects external Slack ingress with a %s",
+    async (failure) => {
+      const { actor, entry, home, slackUserId } =
+        await externalSlackIdentityScenario();
+      context.mocks.slack.users.info.mockResolvedValue({
+        ok: true,
+        ...(failure === "missing identity"
+          ? {}
+          : {
+              user: {
+                id: slackUserId,
+                team_id:
+                  failure === "different workspace"
+                    ? "T_UNCONNECTED_IDENTITY"
+                    : home.teamId,
+                deleted: failure === "deleted member",
+              },
+            }),
+      });
+      await integrations.postSlackEvent(entry.teamId, {
+        type: "app_mention",
+        user: slackUserId,
+        text: "must not run for a different identity",
+        channel: "C_BDD_REJECTED_EXTERNAL_IDENTITY",
+        ts: "6200.000100",
+      });
+      await flushWaitUntilForTest();
+      await expect(listSlackRunLogs(actor)).resolves.toHaveLength(0);
+    },
+  );
+
+  it("routes external Slack mentions to the connected owner without a home bot and preserves status, replies and Stop", async () => {
+    const { actor, entry, slackUserId, runnerGroup } =
+      await externalSlackIdentityScenario();
+    const status = await integrations.requestSlackConnectStatus(actor, [200]);
+    expect(status.body).toMatchObject({ isConnected: true });
+    integrations.clearSlackCallHistory();
+
+    const channelId = "C_BDD_EXTERNAL_IDENTITY";
+    const threadTs = "6100.000100";
+    await integrations.postSlackEvent(entry.teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      text: "use my connected Okou",
+      ts: threadTs,
+      channel: channelId,
+    });
+    const runId = await pollSlackRun(runnerGroup);
+    const claim = await runs.claimRunnerJob(runId);
+    expect((await runs.readRun(actor, runId)).status).toBe("running");
+    expect(claim.prompt).toBe("use my connected Okou");
+    await flushWaitUntilAndAssert(() => {
+      expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
+        "agents.sessions.setStatus",
+        {
+          channel_id: channelId,
+          thread_ts: threadTs,
+          status: "processing",
+        },
+      );
+    });
+    await completeSlackTriggeredRun({
+      runId,
+      sandboxToken: claim.sandboxToken,
+      cliAgentType: "claude-code",
+      assistantText: "External identity reply",
+    });
+    await flushWaitUntilAndAssert(() => {
+      expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel: channelId,
+          thread_ts: threadTs,
+          text: "External identity reply",
+        }),
+      );
+    });
+
+    await integrations.postSlackEvent(entry.teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      text: "stop my next task",
+      ts: "6100.000200",
+      thread_ts: threadTs,
+      channel: channelId,
+    });
+    const nextRunId = await pollSlackRun(runnerGroup);
+    await runs.claimRunnerJob(nextRunId);
+    await integrations.postSlackEvent(entry.teamId, {
+      type: "agent_session_stopped",
+      user: slackUserId,
+      channel: channelId,
+      thread_ts: threadTs,
+      event_ts: "6100.000300",
+      streaming_message_ts: [],
+    });
+    await flushWaitUntilForTest();
+    expect((await runs.readRun(actor, nextRunId)).status).toBe("cancelled");
+    expect(context.mocks.slack.apiCall).toHaveBeenLastCalledWith(
+      "agents.sessions.setStatus",
+      {
+        channel_id: channelId,
+        thread_ts: threadTs,
+        status: "active",
+      },
+    );
+  });
+
   function cleanUpCanonicalSlackScenario(actor: ApiTestUser): void {
     onTestFinished(async () => {
       integrations.configureSlackAppMocks();

@@ -287,6 +287,7 @@ const chatCallbackPayloadSchema = z
     agentId: z.string(),
     slackDelivery: z
       .object({
+        workspaceId: z.string().optional(),
         channelId: z.string(),
         threadTs: z.string(),
         routeThreadTs: z.string().optional(),
@@ -410,6 +411,7 @@ export interface CreateQueuedChatRunInput {
   /** The send asked this input's run to capture network bodies. */
   readonly captureNetworkBodies: boolean;
   readonly slackDelivery?: {
+    readonly workspaceId?: string;
     readonly channelId: string;
     readonly threadTs: string;
     readonly routeThreadTs?: string;
@@ -432,6 +434,7 @@ interface SlackQueuedMessageAdmissionFailure {
   readonly queuedMessage: QueuedUserMessage;
   readonly triggerSource: QueuedUserMessageTriggerSource;
   readonly slackDelivery: {
+    readonly workspaceId?: string;
     readonly channelId: string;
     readonly threadTs: string;
     readonly routeThreadTs?: string;
@@ -844,6 +847,7 @@ async function recordLastEventToComplete(db: Db, runId: string): Promise<void> {
 }
 
 interface SlackDeliveryTarget {
+  readonly workspaceId?: string;
   readonly channelId: string;
   readonly threadTs: string;
   readonly routeThreadTs?: string;
@@ -2921,6 +2925,7 @@ const clearSlackThreadStatusAfterTerminalCallback$ = command(
           chatThreadId: args.chatThreadId,
           channelId: args.slackDelivery.channelId,
           threadTs: args.slackDelivery.threadTs,
+          workspaceId: args.slackDelivery.workspaceId,
           ...(args.slackDelivery.routeThreadTs
             ? { routeThreadTs: args.slackDelivery.routeThreadTs }
             : {}),
@@ -3503,6 +3508,7 @@ const processChatInternalCallback$ = command(
                 chatThreadId: payload.data.threadId,
                 channelId: payload.data.slackDelivery.channelId,
                 threadTs: payload.data.slackDelivery.threadTs,
+                workspaceId: payload.data.slackDelivery.workspaceId,
                 ...(payload.data.slackDelivery.routeThreadTs
                   ? {
                       routeThreadTs: payload.data.slackDelivery.routeThreadTs,

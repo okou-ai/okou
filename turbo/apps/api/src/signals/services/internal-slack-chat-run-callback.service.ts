@@ -9,10 +9,19 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
+import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { agents } from "@okouai/db/schema/agent";
-import { and, countDistinct, eq, isNotNull } from "drizzle-orm";
+import {
+  and,
+  countDistinct,
+  eq,
+  exists,
+  isNotNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import { buildAgentResponseMessage } from "../../lib/slack-blocks";
 import { logger } from "../../lib/log";
 import { command } from "ccstate";
@@ -162,7 +171,8 @@ const loadSlackChatDeliveryContext$ = command(
     const [binding] = await db
       .select({
         slackUserId: slackOrgConnections.slackUserId,
-        workspaceId: slackOrgConnections.slackWorkspaceId,
+        workspaceId: slackOrgInstallations.slackWorkspaceId,
+        installationOrgId: slackOrgInstallations.orgId,
         encryptedBotToken: slackOrgInstallations.encryptedBotToken,
       })
       .from(slackChatThreadRoutes)
@@ -174,7 +184,7 @@ const loadSlackChatDeliveryContext$ = command(
         slackOrgInstallations,
         eq(
           slackOrgInstallations.slackWorkspaceId,
-          slackOrgConnections.slackWorkspaceId,
+          payload.workspaceId ?? slackOrgConnections.slackWorkspaceId,
         ),
       )
       .where(
@@ -187,7 +197,6 @@ const loadSlackChatDeliveryContext$ = command(
           ),
           eq(slackChatThreadRoutes.userId, run.userId),
           eq(slackOrgConnections.userId, run.userId),
-          eq(slackOrgInstallations.orgId, run.orgId),
         ),
       )
       .limit(1);
@@ -215,9 +224,22 @@ const countCanonicalSlackMentioners$ = command(
       )
       .where(
         and(
-          eq(slackOrgConnections.slackWorkspaceId, args.workspaceId),
           eq(slackChatThreadRoutes.channelId, args.channelId),
           eq(slackChatThreadRoutes.threadTs, args.threadTs),
+          or(
+            eq(slackOrgConnections.slackWorkspaceId, args.workspaceId),
+            exists(
+              db
+                .select({ id: slackChatIngress.id })
+                .from(slackChatIngress)
+                .where(
+                  and(
+                    eq(slackChatIngress.routeId, slackChatThreadRoutes.id),
+                    sql`${slackChatIngress.payload}::jsonb ->> 'team_id' = ${args.workspaceId}`,
+                  ),
+                ),
+            ),
+          ),
         ),
       );
     return row?.count ?? 0;
@@ -333,16 +355,24 @@ const deliverClaimedSlackChatCallback$ = command(
           switches: userFeatureSwitches.switches,
         })
         .from(userFeatureSwitches)
-        .where(userFeatureSwitchRowCondition(run.orgId, run.userId)),
+        .where(
+          userFeatureSwitchRowCondition(
+            binding.installationOrgId ?? run.orgId,
+            run.userId,
+          ),
+        ),
     ]);
     signal.throwIfAborted();
     const featureContext = featureSwitchContextFromRows(
-      run.orgId,
+      binding.installationOrgId ?? run.orgId,
       run.userId,
       featureSwitchContextRows0,
     );
     const [botToken, presentation] = await Promise.all([
-      decryptPersistentSecretValue(binding.encryptedBotToken, featureContext),
+      decryptPersistentSecretValue(
+        binding.encryptedBotToken,
+        binding.installationOrgId ? featureContext : {},
+      ),
       set(
         readSlackResponsePresentation$,
         {
@@ -449,6 +479,7 @@ export const deliverSlackChatAdmissionFailure$ = command(
       readonly channelId: string;
       readonly threadTs: string;
       readonly routeThreadTs?: string;
+      readonly workspaceId?: string;
       readonly chatEventId: string;
     },
     signal: AbortSignal,
@@ -470,7 +501,8 @@ export const deliverSlackChatAdmissionFailure$ = command(
       db
         .select({
           slackUserId: slackOrgConnections.slackUserId,
-          workspaceId: slackOrgConnections.slackWorkspaceId,
+          workspaceId: slackOrgInstallations.slackWorkspaceId,
+          installationOrgId: slackOrgInstallations.orgId,
           encryptedBotToken: slackOrgInstallations.encryptedBotToken,
         })
         .from(slackChatThreadRoutes)
@@ -482,7 +514,7 @@ export const deliverSlackChatAdmissionFailure$ = command(
           slackOrgInstallations,
           eq(
             slackOrgInstallations.slackWorkspaceId,
-            slackOrgConnections.slackWorkspaceId,
+            args.workspaceId ?? slackOrgConnections.slackWorkspaceId,
           ),
         )
         .where(
@@ -495,7 +527,6 @@ export const deliverSlackChatAdmissionFailure$ = command(
             ),
             eq(slackChatThreadRoutes.userId, args.userId),
             eq(slackOrgConnections.userId, args.userId),
-            eq(slackOrgInstallations.orgId, args.orgId),
           ),
         )
         .limit(1),
@@ -520,7 +551,12 @@ export const deliverSlackChatAdmissionFailure$ = command(
             switches: userFeatureSwitches.switches,
           })
           .from(userFeatureSwitches)
-          .where(userFeatureSwitchRowCondition(args.orgId, args.userId)),
+          .where(
+            userFeatureSwitchRowCondition(
+              binding.installationOrgId ?? args.orgId,
+              args.userId,
+            ),
+          ),
         db
           .select({ defaultAgentId: orgMetadata.defaultAgentId })
           .from(orgMetadata)
@@ -534,7 +570,7 @@ export const deliverSlackChatAdmissionFailure$ = command(
       ]);
     signal.throwIfAborted();
     const featureContext = featureSwitchContextFromRows(
-      args.orgId,
+      binding.installationOrgId ?? args.orgId,
       args.userId,
       featureSwitchContextRows1,
     );
@@ -551,7 +587,7 @@ export const deliverSlackChatAdmissionFailure$ = command(
     }
     const botToken = await decryptPersistentSecretValue(
       binding.encryptedBotToken,
-      featureContext,
+      binding.installationOrgId ? featureContext : {},
     );
     signal.throwIfAborted();
     await set(postSlackChatMessage$, {

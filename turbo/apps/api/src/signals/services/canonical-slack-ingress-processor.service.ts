@@ -3,6 +3,8 @@ import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { agents } from "@okouai/db/schema/agent";
 import { command } from "ccstate";
 import {
   and,
@@ -195,8 +197,9 @@ function claimedSlackIngressReadPlan(ingressId: string) {
       userId: slackChatThreadRoutes.userId,
       connectionId: slackOrgConnections.id,
       slackUserId: slackOrgConnections.slackUserId,
-      workspaceId: slackOrgConnections.slackWorkspaceId,
-      orgId: slackOrgInstallations.orgId,
+      workspaceId: slackOrgInstallations.slackWorkspaceId,
+      orgId: agents.orgId,
+      installationOrgId: slackOrgInstallations.orgId,
       encryptedBotToken: slackOrgInstallations.encryptedBotToken,
       botUserId: slackOrgInstallations.botUserId,
     },
@@ -206,7 +209,7 @@ function claimedSlackIngressReadPlan(ingressId: string) {
       slackOrgConnections.id,
     ),
     installationJoin: eq(
-      slackOrgConnections.slackWorkspaceId,
+      sql`${slackChatIngress.payload}::jsonb ->> 'team_id'`,
       slackOrgInstallations.slackWorkspaceId,
     ),
     condition: and(
@@ -486,6 +489,7 @@ type ClaimedCanonicalSlackIngress = InferColumnsDataTypes<
 >;
 
 interface CanonicalSlackLaunchContext {
+  readonly workspaceId: string;
   readonly channelId: string;
   readonly messageTs: string;
   readonly botUserId: string;
@@ -502,6 +506,7 @@ interface CanonicalSlackLaunchContext {
 }
 
 function canonicalSlackLaunchContext(args: {
+  readonly workspaceId: string;
   readonly event: SlackAgentEvent;
   readonly routeThreadTs: string;
   readonly botUserId: string;
@@ -516,6 +521,7 @@ function canonicalSlackLaunchContext(args: {
 }): CanonicalSlackLaunchContext {
   const threadTs = slackPhysicalThreadTs(args.event);
   return {
+    workspaceId: args.workspaceId,
     channelId: args.event.channel,
     messageTs: args.event.ts,
     botUserId: args.botUserId,
@@ -711,6 +717,11 @@ const persistClaimedCanonicalSlackIngress$ = command(
         .select(plan.columns)
         .from(slackChatIngress)
         .innerJoin(slackChatThreadRoutes, plan.routeJoin)
+        .innerJoin(
+          chatThreads,
+          eq(chatThreads.id, slackChatThreadRoutes.chatThreadId),
+        )
+        .innerJoin(agents, eq(agents.id, chatThreads.agentId))
         .innerJoin(slackOrgConnections, plan.connectionJoin)
         .innerJoin(slackOrgInstallations, plan.installationJoin)
         .where(plan.condition)
@@ -730,14 +741,14 @@ const persistClaimedCanonicalSlackIngress$ = command(
     const threadTs = slackPhysicalThreadTs(event);
     const featureContext = await set(
       loadUserFeatureSwitchContext$,
-      orgId,
+      ingress.installationOrgId ?? orgId,
       ingress.userId,
       signal,
     );
     signal.throwIfAborted();
     const botToken = await decryptPersistentSecretValue(
       ingress.encryptedBotToken,
-      featureContext,
+      ingress.installationOrgId ? featureContext : {},
     );
     signal.throwIfAborted();
     const client = createSlackClient(botToken);
@@ -788,6 +799,7 @@ const persistClaimedCanonicalSlackIngress$ = command(
         displayContent: enriched.displayContent,
         messagePermalink,
         slackContext: canonicalSlackLaunchContext({
+          workspaceId: ingress.workspaceId,
           event,
           routeThreadTs: ingress.threadTs,
           botUserId: ingress.botUserId,

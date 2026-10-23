@@ -142,6 +142,7 @@ const completeCanonicalUpload$ = command(
 );
 
 interface DirectCompletionArgs {
+  readonly botToken: string;
   readonly body: SlackUploadCompleteBody;
   readonly runId: string | undefined;
   readonly userId: string;
@@ -276,6 +277,7 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   return set(
     completeDirectUpload$,
     {
+      botToken: installation.botToken,
       body,
       runId,
       userId: auth.userId,

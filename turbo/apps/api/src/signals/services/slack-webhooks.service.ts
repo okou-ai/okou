@@ -1,6 +1,9 @@
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
@@ -32,6 +35,13 @@ import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  loadUserFeatureSwitchContext$,
+  userFeatureSwitchOverrides,
+} from "./feature-switches.service";
+import { getMemberRoleAndUpdateCache$ } from "./auth.service";
+import { removeSlackWorkspaceInstallation$ } from "./slack-workspace-identity.service";
 import type { SlackAnyBlock } from "../external/slack-block-kit";
 import {
   createSlackClient,
@@ -40,7 +50,6 @@ import {
 import { onRejection, safeJsonParse, tapError } from "../utils";
 import { processCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
-import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import {
   admitCanonicalSlackChatEvent$,
@@ -629,6 +638,88 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
   },
 );
 
+const resolveSlackAccountRoute$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly installation: SlackInstallation;
+      readonly slackUserId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const candidates = await get(db$)
+      .select({
+        connection: slackOrgConnections,
+        installationOrgId: slackOrgInstallations.orgId,
+      })
+      .from(slackOrgConnections)
+      .leftJoin(
+        slackOrgInstallations,
+        eq(
+          slackOrgInstallations.slackWorkspaceId,
+          slackOrgConnections.slackWorkspaceId,
+        ),
+      )
+      .where(eq(slackOrgConnections.slackUserId, args.slackUserId));
+    signal.throwIfAborted();
+    let identityRouting = false;
+    for (const candidate of candidates) {
+      const candidateOrgId =
+        candidate.connection.orgId ?? candidate.installationOrgId;
+      if (!candidateOrgId) {
+        continue;
+      }
+      const features = await set(
+        loadUserFeatureSwitchContext$,
+        candidateOrgId,
+        candidate.connection.userId,
+        signal,
+      );
+      if (
+        !isFeatureEnabled(FeatureSwitchKey.SlackWorkspaceIdentity, features)
+      ) {
+        continue;
+      }
+      identityRouting = true;
+      const token = await decryptPersistentSecretValue(
+        args.installation.encryptedBotToken,
+        args.installation.orgId ? { orgId: args.installation.orgId } : {},
+      );
+      signal.throwIfAborted();
+      const identity = await createSlackClient(token).fetchUserIdentity(
+        args.slackUserId,
+      );
+      signal.throwIfAborted();
+      if (
+        !identity ||
+        identity.deleted ||
+        identity.isBot ||
+        identity.teamId !== candidate.connection.slackWorkspaceId
+      ) {
+        continue;
+      }
+      const membership = await set(
+        getMemberRoleAndUpdateCache$,
+        candidateOrgId,
+        candidate.connection.userId,
+        signal,
+      );
+      if (membership.kind !== "member") {
+        return { kind: "ignored" } as const;
+      }
+      return {
+        kind: "account",
+        connection: candidate.connection,
+        orgId: candidateOrgId,
+      } as const;
+    }
+    if (identityRouting) {
+      return { kind: "ignored" } as const;
+    }
+    return { kind: "legacy" } as const;
+  },
+);
+
 const resolveSlackAgentRouteAdmission$ = command(
   async (
     { get, set },
@@ -650,16 +741,14 @@ const resolveSlackAgentRouteAdmission$ = command(
       return installation;
     })();
     signal.throwIfAborted();
-    const orgId = installation?.orgId;
-    if (!installation || !orgId) {
+    let orgId = installation?.orgId;
+    if (!installation) {
       return { kind: "ignored" };
     }
     const connectionLookupDb = get(db$);
     const connectionLookupWorkspaceId = args.workspaceId;
     const connectionLookupSlackUserId = args.slackUserId;
-    const connection = await (async (): Promise<
-      SlackConnection | undefined
-    > => {
+    let connection = await (async (): Promise<SlackConnection | undefined> => {
       const [connection] = await connectionLookupDb
         .select()
         .from(slackOrgConnections)
@@ -676,6 +765,21 @@ const resolveSlackAgentRouteAdmission$ = command(
       return connection;
     })();
     signal.throwIfAborted();
+    const accountRoute = await set(
+      resolveSlackAccountRoute$,
+      { installation, slackUserId: args.slackUserId },
+      signal,
+    );
+    if (accountRoute.kind === "ignored") {
+      return { kind: "ignored" };
+    }
+    if (accountRoute.kind === "account") {
+      connection = accountRoute.connection;
+      orgId = accountRoute.orgId;
+    }
+    if (!orgId || (connection?.orgId && connection.orgId !== orgId)) {
+      return { kind: "ignored" };
+    }
     if (!connection) {
       if (!args.isRetry) {
         waitUntil(
@@ -727,14 +831,7 @@ const cleanupWorkspaceInstallation$ = command(
     if (!installation) {
       return false;
     }
-    await db
-      .delete(slackOrgConnections)
-      .where(eq(slackOrgConnections.slackWorkspaceId, workspaceId));
-    signal.throwIfAborted();
-    await db
-      .delete(slackOrgInstallations)
-      .where(eq(slackOrgInstallations.slackWorkspaceId, workspaceId));
-    signal.throwIfAborted();
+    await set(removeSlackWorkspaceInstallation$, workspaceId, signal);
     if (installation.orgId) {
       await set(
         publishSlackAdminSignal$,

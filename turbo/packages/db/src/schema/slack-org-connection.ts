@@ -8,21 +8,32 @@ import {
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { slackOrgInstallations } from "./slack-org-installation";
 
 /**
  * Org-aware Slack connections table.
  * Maps a Slack user to an internal user within a specific workspace.
  * Each Slack user can only be connected once per workspace.
- * orgId is derived from slackOrgInstallations via slackWorkspaceId.
+ * Account-owned connections retain their execution organization independently
+ * of installation. A null orgId identifies a legacy installation-owned link.
  */
 export const slackOrgConnections = pgTable(
   "slack_org_connections",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     slackUserId: varchar("slack_user_id", { length: 255 }).notNull(),
-    slackWorkspaceId: varchar("slack_workspace_id", { length: 255 })
-      .notNull()
+    slackWorkspaceId: varchar("slack_workspace_id", { length: 255 }).notNull(),
+    slackWorkspaceName: text("slack_workspace_name"),
+    orgId: text("org_id"),
+    // Outgoing API writers still create installation-owned links. Preserve
+    // their FK while account-owned links can exist without an installation.
+    legacyInstallationWorkspaceId: varchar("legacy_installation_workspace_id", {
+      length: 255,
+    })
+      .generatedAlwaysAs(
+        sql`CASE WHEN org_id IS NULL THEN slack_workspace_id ELSE NULL END`,
+      )
       .references(() => {
         return slackOrgInstallations.slackWorkspaceId;
       }),

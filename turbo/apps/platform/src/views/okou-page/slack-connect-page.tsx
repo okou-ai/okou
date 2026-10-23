@@ -220,7 +220,7 @@ function SlackOverview({
             ? t(($) => {
                 return $.connectors.providerConnect.slack.reauthorize;
               })
-            : data.isInstalled
+            : data.connectUrl
               ? t(($) => {
                   return $.works.actions.connect;
                 })

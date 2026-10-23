@@ -4,7 +4,9 @@ import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { agents } from "@okouai/db/schema/agent";
 
 import {
   buildSlackSystemPrompt,
@@ -20,6 +22,7 @@ export interface SlackQueuedLaunchMaterial {
   readonly prompt: string;
   readonly appendSystemPrompt: string;
   readonly slackDelivery: {
+    readonly workspaceId?: string;
     readonly channelId: string;
     readonly threadTs: string;
     readonly routeThreadTs?: string;
@@ -33,6 +36,7 @@ export interface SlackQueuedLaunchMaterial {
 type SlackLaunchContextRow = Pick<
   typeof chatSlackContext.$inferSelect,
   | "channelId"
+  | "workspaceId"
   | "botUserId"
   | "conversationContext"
   | "messageText"
@@ -89,6 +93,7 @@ const loadSlackLaunchContext$ = command(
     const [row] = await db
       .select({
         channelId: chatSlackContext.channelId,
+        workspaceId: chatSlackContext.workspaceId,
         botUserId: chatSlackContext.botUserId,
         conversationContext: chatSlackContext.conversationContext,
         messageText: chatSlackContext.messageText,
@@ -136,10 +141,14 @@ const loadSlackLaunchContext$ = command(
         and(
           eq(
             slackOrgInstallations.slackWorkspaceId,
-            slackOrgConnections.slackWorkspaceId,
+            sql`coalesce(${chatSlackContext.workspaceId}, ${slackOrgConnections.slackWorkspaceId})`,
           ),
-          eq(slackOrgInstallations.orgId, args.orgId),
         ),
+      )
+      .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
+      .innerJoin(
+        agents,
+        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
       )
       .where(
         and(
@@ -200,6 +209,7 @@ export const loadSlackQueuedLaunchMaterial$ = command(
         executionContext: context.conversationContext,
       }),
       slackDelivery: {
+        ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
         channelId: context.channelId,
         threadTs: context.threadTs,
         ...(context.routeThreadTs

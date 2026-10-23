@@ -16,6 +16,8 @@ export const slackConnectorOAuthContextSchema = z.object({
   orgId: z.string().min(1),
   userId: z.string().min(1),
   workspaceId: z.string().min(1).optional(),
+  sourceWorkspaceId: z.string().min(1).optional(),
+  accountConnection: z.boolean().optional(),
   slackUserId: z.string().min(1).optional(),
   channelId: z.string().optional(),
   threadTs: z.string().optional(),

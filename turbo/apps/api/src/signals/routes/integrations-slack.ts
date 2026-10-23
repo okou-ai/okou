@@ -41,6 +41,11 @@ import { getOAuthApiOrigin } from "../../lib/oauth-origin";
 import { OFFICIAL_SLACK_APP_NAME } from "../../lib/slack-official-app";
 import type { RouteEntry } from "../route-entry";
 import { bestEffort, settle } from "../utils";
+import {
+  removeSlackWorkspaceInstallation$,
+  slackAccountConnection,
+  slackWorkspaceIdentityEnabled,
+} from "../services/slack-workspace-identity.service";
 
 const slackStatusInput$ = computed((get) => {
   const auth = get(organizationAuthContext$);
@@ -53,6 +58,13 @@ const slackStatusInput$ = computed((get) => {
 });
 
 const slackStatus$ = slackOrgStatus(slackStatusInput$);
+const slackAccountOwner$ = computed((get) => {
+  const auth = get(organizationAuthContext$);
+  return { orgId: auth.orgId, userId: auth.userId };
+});
+const accountConnection$ = slackAccountConnection(slackAccountOwner$);
+const accountConnectionEnabled$ =
+  slackWorkspaceIdentityEnabled(slackAccountOwner$);
 
 const getSlackStatusInner$ = computed(async (get) => {
   const status = await get(slackStatus$);
@@ -70,6 +82,9 @@ const getSlackStatusInner$ = computed(async (get) => {
     isConnected: status.isConnected,
     isInstalled: status.isInstalled,
     isAdmin: status.isAdmin,
+    ...(!status.isInstalled && status.installUrl
+      ? { installUrl: status.installUrl }
+      : {}),
     ...statusFields,
     ...(status.scopeMismatch !== null && {
       scopeMismatch: status.scopeMismatch,
@@ -254,22 +269,11 @@ const uninstallSlackIntegration$ = command(
       signal.throwIfAborted();
     }
 
-    await db
-      .delete(slackOrgConnections)
-      .where(
-        eq(slackOrgConnections.slackWorkspaceId, installation.slackWorkspaceId),
-      );
-    signal.throwIfAborted();
-
-    await db
-      .delete(slackOrgInstallations)
-      .where(
-        eq(
-          slackOrgInstallations.slackWorkspaceId,
-          installation.slackWorkspaceId,
-        ),
-      );
-    signal.throwIfAborted();
+    await set(
+      removeSlackWorkspaceInstallation$,
+      installation.slackWorkspaceId,
+      signal,
+    );
 
     await set(
       publishSlackAdminSignal$,
@@ -305,6 +309,30 @@ const disconnectSlackIntegration$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
+    if (await get(accountConnectionEnabled$)) {
+      signal.throwIfAborted();
+      const account = await get(accountConnection$);
+      signal.throwIfAborted();
+      if (!account) {
+        return contractErrorResponse(
+          404,
+          "No Slack connection found",
+          "NOT_FOUND",
+        );
+      }
+      await db
+        .delete(slackOrgConnections)
+        .where(
+          and(
+            eq(slackOrgConnections.id, account.connection.id),
+            eq(slackOrgConnections.userId, args.userId),
+          ),
+        );
+      signal.throwIfAborted();
+      await publishUserSignal([args.userId], "slack:changed");
+      signal.throwIfAborted();
+      return { status: 200 as const, body: { ok: true } };
+    }
     const [installation] = await db
       .select()
       .from(slackOrgInstallations)

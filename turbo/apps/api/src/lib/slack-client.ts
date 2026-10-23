@@ -214,7 +214,7 @@ export async function isSlackConversationShared(
   token: string,
   slackUserId: string,
   conversationId: string,
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   const types = conversationId.startsWith("D")
     ? "im"

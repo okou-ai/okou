@@ -1300,6 +1300,20 @@ export function createBddIntegrationApi(context: TestContext) {
       );
     },
 
+    async enableSlackWorkspaceIdentity(actor: ApiTestUser): Promise<void> {
+      await accept(
+        setupApp({ context, routes: featureSwitchesRoutes })(
+          featureSwitchesContract,
+        ).update({
+          headers: authenticate(context, routeMocks, actor),
+          body: {
+            switches: { [FeatureSwitchKey.SlackWorkspaceIdentity]: true },
+          },
+        }),
+        [200],
+      );
+    },
+
     async requestSlackEvent(
       body: string,
       headers: SlackSignatureHeaders,

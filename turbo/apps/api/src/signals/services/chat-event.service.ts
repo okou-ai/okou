@@ -100,6 +100,7 @@ type ChatEventDisplayContext =
       readonly wechatContext?: never;
       readonly discordContext?: never;
       readonly slackContext: {
+        readonly workspaceId?: string;
         readonly channelId: string;
         readonly messageTs: string;
         readonly botUserId: string;
@@ -408,6 +409,7 @@ type NewDisplayContext =
     }
   | {
       readonly type: "slack";
+      readonly workspaceId?: string;
       readonly id: string;
       readonly chatThreadId: string;
       readonly channelId: string;
@@ -589,6 +591,7 @@ function newDisplayContext(
       id: eventId,
       chatThreadId: values.chatThreadId,
       channelId: slackContext.channelId,
+      workspaceId: slackContext.workspaceId,
       messageTs: slackContext.messageTs,
       botUserId: slackContext.botUserId,
       conversationContext: slackContext.conversationContext,

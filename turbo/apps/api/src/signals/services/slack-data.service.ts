@@ -17,6 +17,11 @@ import {
   userFeatureSwitchRowCondition,
 } from "./feature-switch-scope";
 import { buildSlackConnectorOAuthStartUrl } from "./slack-connector-oauth-state";
+import { createSlackClient } from "../external/slack-message-client";
+import {
+  slackAccountConnection,
+  slackWorkspaceIdentityEnabled,
+} from "./slack-workspace-identity.service";
 
 export const SLACK_BOT_SCOPES: readonly string[] = [
   "app_mentions:read",
@@ -75,7 +80,7 @@ function buildSlackConnectUrl(args: {
   readonly apiOrigin: string;
   readonly orgId: string;
   readonly userId: string;
-  readonly workspaceId: string;
+  readonly workspaceId?: string;
 }): string | null {
   const clientId = env("SLACK_OAUTH_CLIENT_ID");
   if (!clientId) {
@@ -101,6 +106,105 @@ interface SlackOrgStatusResult {
   readonly reinstallUrl: string | null;
 }
 
+interface SlackStatusArgs {
+  readonly apiOrigin: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly orgRole?: ApiOrgRole;
+}
+
+function slackScopeStatus(
+  args: SlackStatusArgs,
+  installationRow: typeof slackOrgInstallations.$inferSelect,
+): { scopeMismatch: boolean | null; reinstallUrl: string | null } {
+  if (args.orgRole !== "admin") {
+    return { scopeMismatch: null, reinstallUrl: null };
+  }
+  const scopeMismatch = !hasAllBotScopes(installationRow.botScopes);
+  const reinstallUrl = scopeMismatch
+    ? buildSlackInstallUrl({
+        apiOrigin: args.apiOrigin,
+        orgId: args.orgId,
+        userId: args.userId,
+        reinstall: true,
+        workspaceId: installationRow.slackWorkspaceId,
+      })
+    : null;
+  return { scopeMismatch, reinstallUrl };
+}
+
+function slackDefaultAgentName(args$: Computed<SlackStatusArgs>) {
+  return computed(async (get) => {
+    const args = get(args$);
+    const db = get(db$);
+    let defaultAgentName: string | null = null;
+
+    const [orgMeta] = await db
+      .select({ defaultAgentId: orgMetadata.defaultAgentId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, args.orgId))
+      .limit(1);
+
+    if (orgMeta?.defaultAgentId) {
+      const [agent] = await db
+        .select({
+          displayName: agents.displayName,
+          name: agents.name,
+        })
+        .from(agents)
+        .where(eq(agents.id, orgMeta.defaultAgentId))
+        .limit(1);
+      defaultAgentName = agent?.displayName ?? agent?.name ?? null;
+    }
+    return defaultAgentName;
+  });
+}
+
+function slackAccountStatus(
+  args: SlackStatusArgs,
+  account:
+    | {
+        readonly connection: typeof slackOrgConnections.$inferSelect;
+        readonly installation: typeof slackOrgInstallations.$inferSelect | null;
+      }
+    | undefined,
+  installation: typeof slackOrgInstallations.$inferSelect | undefined,
+  defaultAgentName: string | null,
+): SlackOrgStatusResult {
+  const isAdmin = args.orgRole === "admin";
+  const ownInstallation = account?.installation;
+  return {
+    isConnected: Boolean(account),
+    isInstalled: Boolean(account ? ownInstallation : installation),
+    isAdmin,
+    workspaceName:
+      account?.connection.slackWorkspaceName ??
+      ownInstallation?.slackWorkspaceName ??
+      null,
+    defaultAgentName,
+    installUrl:
+      isAdmin && !ownInstallation
+        ? buildSlackInstallUrl({
+            apiOrigin: args.apiOrigin,
+            orgId: args.orgId,
+            userId: args.userId,
+            reinstall: false,
+            workspaceId: account?.connection.slackWorkspaceId,
+          })
+        : null,
+    connectUrl: account
+      ? null
+      : buildSlackConnectUrl({
+          apiOrigin: args.apiOrigin,
+          orgId: args.orgId,
+          userId: args.userId,
+        }),
+    ...(ownInstallation?.orgId === args.orgId
+      ? slackScopeStatus(args, ownInstallation)
+      : { scopeMismatch: null, reinstallUrl: null }),
+  };
+}
+
 export function slackOrgStatus(
   args$: Computed<{
     readonly apiOrigin: string;
@@ -109,6 +213,13 @@ export function slackOrgStatus(
     readonly orgRole?: ApiOrgRole;
   }>,
 ): Computed<Promise<SlackOrgStatusResult>> {
+  const identity$ = computed((get) => {
+    const args = get(args$);
+    return { orgId: args.orgId, userId: args.userId };
+  });
+  const accountEnabled$ = slackWorkspaceIdentityEnabled(identity$);
+  const account$ = slackAccountConnection(identity$);
+  const defaultAgentName$ = slackDefaultAgentName(args$);
   return computed(async (get) => {
     const args = get(args$);
     const db = get(db$);
@@ -120,45 +231,18 @@ export function slackOrgStatus(
       .limit(1);
 
     const isAdmin = args.orgRole === "admin";
-    let defaultAgentName: string | null = null;
-
-    if (installation) {
-      const [orgMeta] = await db
-        .select({ defaultAgentId: orgMetadata.defaultAgentId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, args.orgId))
-        .limit(1);
-
-      if (orgMeta?.defaultAgentId) {
-        const [agent] = await db
-          .select({
-            displayName: agents.displayName,
-            name: agents.name,
-          })
-          .from(agents)
-          .where(eq(agents.id, orgMeta.defaultAgentId))
-          .limit(1);
-        defaultAgentName = agent?.displayName ?? agent?.name ?? null;
-      }
-    }
-
-    function computeScopeFields(
-      installationRow: typeof slackOrgInstallations.$inferSelect,
-    ): { scopeMismatch: boolean | null; reinstallUrl: string | null } {
-      if (!isAdmin) {
-        return { scopeMismatch: null, reinstallUrl: null };
-      }
-      const scopeMismatch = !hasAllBotScopes(installationRow.botScopes);
-      const reinstallUrl = scopeMismatch
-        ? buildSlackInstallUrl({
-            apiOrigin: args.apiOrigin,
-            orgId: args.orgId,
-            userId: args.userId,
-            reinstall: true,
-            workspaceId: installationRow.slackWorkspaceId,
-          })
+    const defaultAgentName =
+      installation || (await get(accountEnabled$))
+        ? await get(defaultAgentName$)
         : null;
-      return { scopeMismatch, reinstallUrl };
+
+    if (await get(accountEnabled$)) {
+      return slackAccountStatus(
+        args,
+        await get(account$),
+        installation,
+        defaultAgentName,
+      );
     }
 
     if (!installation) {
@@ -198,7 +282,7 @@ export function slackOrgStatus(
       .limit(1);
 
     if (!connection) {
-      const scopeFields = computeScopeFields(installation);
+      const scopeFields = slackScopeStatus(args, installation);
       const connectUrl = buildSlackConnectUrl({
         apiOrigin: args.apiOrigin,
         orgId: args.orgId,
@@ -218,7 +302,7 @@ export function slackOrgStatus(
       };
     }
 
-    const scopeFields = computeScopeFields(installation);
+    const scopeFields = slackScopeStatus(args, installation);
 
     return {
       isConnected: true,
@@ -245,6 +329,12 @@ export function slackOrgInstallation(
     readonly workspaceName: string | null;
   } | null>
 > {
+  const identity$ = computed((get) => {
+    const args = get(input$);
+    return { orgId: args.orgId, userId: args.userId ?? "" };
+  });
+  const account$ = slackAccountConnection(identity$);
+  const accountEnabled$ = slackWorkspaceIdentityEnabled(identity$);
   const overrides$ = computed(async (get) => {
     const { orgId, userId } = get(input$);
     if (!userId) {
@@ -273,6 +363,34 @@ export function slackOrgInstallation(
   return computed(async (get) => {
     const args = get(input$);
     const db = get(db$);
+
+    if (args.userId && (await get(accountEnabled$))) {
+      const account = await get(account$);
+      const installation = account?.installation;
+      if (!account || !installation) {
+        return null;
+      }
+      const botToken = await decryptPersistentSecretValue(
+        installation.encryptedBotToken,
+        installation.orgId ? { orgId: installation.orgId } : {},
+      );
+      const member = await createSlackClient(botToken).fetchUserIdentity(
+        account.connection.slackUserId,
+      );
+      if (
+        !member ||
+        member.deleted ||
+        member.isBot ||
+        member.teamId !== account.connection.slackWorkspaceId
+      ) {
+        return null;
+      }
+      return {
+        workspaceId: installation.slackWorkspaceId,
+        botToken,
+        workspaceName: installation.slackWorkspaceName,
+      };
+    }
 
     const [installation] = await db
       .select()
@@ -319,10 +437,32 @@ export function slackUserInstallation(
     return Promise.resolve(get(input$));
   });
   const featureContext$ = createUserFeatureSwitchContext(identity$);
+  const account$ = slackAccountConnection(identity$);
+  const accountEnabled$ = slackWorkspaceIdentityEnabled(identity$);
+  const accountInstallation$ = slackOrgInstallation(input$);
 
   return computed(async (get) => {
     const args = get(input$);
     const db = get(db$);
+
+    if (await get(accountEnabled$)) {
+      const account = await get(account$);
+      if (!account) {
+        return { kind: "not-connected" } as const;
+      }
+      if (!account.installation) {
+        return { kind: "not-installed" } as const;
+      }
+      const installation = await get(accountInstallation$);
+      if (!installation) {
+        return { kind: "not-connected" } as const;
+      }
+      return {
+        kind: "connected",
+        ...installation,
+        slackUserId: account.connection.slackUserId,
+      } as const;
+    }
 
     const [installation] = await db
       .select()

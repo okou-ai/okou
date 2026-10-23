@@ -33,7 +33,7 @@ import {
 } from "./slack-workspace-write-plan";
 
 const SLACK_CONNECTION_WORKSPACE_FK =
-  "slack_org_connections_slack_workspace_id_slack_org_installation";
+  "slack_org_connections_legacy_installation_workspace_id_slack_or";
 
 type SlackWorkspaceConnectionDenial = Extract<
   SlackWorkspaceConnectionResult,
