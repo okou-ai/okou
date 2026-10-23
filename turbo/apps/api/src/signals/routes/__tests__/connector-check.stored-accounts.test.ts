@@ -70,7 +70,7 @@ describe("stored Connector diagnostic account selection", () => {
     });
     expect(missing.body).toMatchObject({
       outcome: "unresolved-dynamic-base",
-      connector: { connectorSlug: "reap" },
+      connector: { target: { kind: "builtin", connectorSlug: "reap" } },
     });
     const customTarget = await check(actor, {
       mode: "url",
@@ -89,7 +89,7 @@ describe("stored Connector diagnostic account selection", () => {
     });
     expect(staticConnector.body).toMatchObject({
       outcome: "resolved",
-      connector: { connectorSlug: "github" },
+      connector: { target: { kind: "builtin", connectorSlug: "github" } },
       run: { status: "not-scoped" },
     });
   });
@@ -137,7 +137,7 @@ describe("stored Connector diagnostic account selection", () => {
         if (baseIndex === index) {
           expect(response.body).toMatchObject({
             outcome: "resolved",
-            connector: { connectorSlug: "reap" },
+            connector: { target: { kind: "builtin", connectorSlug: "reap" } },
             base,
             relativePath: "/users",
             run: { status: "not-scoped" },
