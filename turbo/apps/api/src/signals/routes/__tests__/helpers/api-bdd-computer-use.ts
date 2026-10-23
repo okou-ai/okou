@@ -883,6 +883,23 @@ export function createComputerUseBddApi(
       });
     },
 
+    async requestComputerUseScreenshotUrl(
+      auth: ComputerUseAuth,
+      commandId: string,
+      statuses: readonly (200 | 401 | 403 | 404)[],
+      signal?: AbortSignal,
+    ) {
+      return await run(async () => {
+        return await accept(
+          commandClient(signal).screenshotUrl({
+            headers: authenticate(auth),
+            params: { commandId },
+          }),
+          statuses,
+        );
+      });
+    },
+
     async downloadComputerUseScreenshot(
       auth: ComputerUseAuth,
       commandId: string,

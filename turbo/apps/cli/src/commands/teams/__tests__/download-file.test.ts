@@ -2,7 +2,7 @@
  * Tests for okou teams download-file command.
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -34,13 +34,18 @@ describe("okou teams download-file command", () => {
 
     tmpDir = join(tmpdir(), `teams-download-file-test-${Date.now()}`);
     mkdirSync(tmpDir, { recursive: true });
+    server.use(
+      http.get(`${DOWNLOAD_URL}/url`, () => {
+        return HttpResponse.json({ error: "Not found" }, { status: 404 });
+      }),
+    );
   });
 
   afterEach(() => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("streams file bytes to the provided output path and prints JSON result", async () => {
+  it("streams legacy bytes when the independently deployed API has no URL route", async () => {
     const payload = Buffer.from("hello teams");
     const outPath = join(tmpDir, "result.png");
 
@@ -80,9 +85,110 @@ describe("okou teams download-file command", () => {
     });
   });
 
+  it("downloads directly without sending the Okou credential to the file host", async () => {
+    const outPath = join(tmpDir, "direct.txt");
+    const target = "https://contoso.sharepoint.com/download?sig=single-file";
+    server.use(
+      http.get(`${DOWNLOAD_URL}/url`, ({ request }) => {
+        expect(request.headers.get("authorization")).toBe("Bearer test-token");
+        expect(new URL(request.url).searchParams.get("file_id")).toBe(
+          "teams-direct",
+        );
+        return HttpResponse.json({
+          downloadUrl: target,
+          filename: "direct.txt",
+          contentType: "text/plain",
+          size: 5,
+        });
+      }),
+      http.get(target, ({ request }) => {
+        expect(request.headers.get("authorization")).toBeNull();
+        expect(request.headers.get("cookie")).toBeNull();
+        return new HttpResponse("hello", {
+          headers: { "content-type": "text/plain", "content-length": "5" },
+        });
+      }),
+    );
+    await downloadFileCommand.parseAsync([
+      "node",
+      "cli",
+      "teams-direct",
+      "-o",
+      outPath,
+    ]);
+    expect(readFileSync(outPath, "utf8")).toBe("hello");
+    expect(
+      JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+    ).toMatchObject({ path: outPath, size: 5, mimetype: "text/plain" });
+  });
+
+  it("does not publish an incomplete direct file", async () => {
+    const outPath = join(tmpDir, "incomplete.txt");
+    const target = "https://contoso.sharepoint.com/incomplete";
+    server.use(
+      http.get(`${DOWNLOAD_URL}/url`, () => {
+        return HttpResponse.json({
+          downloadUrl: target,
+          filename: "incomplete.txt",
+          contentType: "text/plain",
+          size: 10,
+        });
+      }),
+      http.get(target, () => {
+        return new HttpResponse("short", {
+          headers: { "content-type": "text/plain", "content-length": "5" },
+        });
+      }),
+    );
+    await expect(
+      downloadFileCommand.parseAsync([
+        "node",
+        "cli",
+        "teams-incomplete",
+        "-o",
+        outPath,
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(existsSync(outPath)).toBe(false);
+    expect(readdirSync(tmpDir)).toStrictEqual([]);
+  });
+
+  it("does not fall back when a scoped attachment is unavailable", async () => {
+    const outPath = join(tmpDir, "denied.txt");
+    server.use(
+      http.get(`${DOWNLOAD_URL}/url`, () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "NOT_FOUND",
+              message: "File unavailable to this run",
+            },
+          },
+          { status: 404 },
+        );
+      }),
+      http.get(DOWNLOAD_URL, () => {
+        throw new Error("Must not bypass URL-route authorization");
+      }),
+    );
+    await expect(
+      downloadFileCommand.parseAsync([
+        "node",
+        "cli",
+        "teams-denied",
+        "-o",
+        outPath,
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(existsSync(outPath)).toBe(false);
+    expect(mockConsoleError).toHaveBeenCalledWith(
+      expect.stringContaining("File unavailable to this run"),
+    );
+  });
+
   it("surfaces API errors", async () => {
     server.use(
-      http.get(DOWNLOAD_URL, () => {
+      http.get(`${DOWNLOAD_URL}/url`, () => {
         return HttpResponse.json(
           {
             error: {

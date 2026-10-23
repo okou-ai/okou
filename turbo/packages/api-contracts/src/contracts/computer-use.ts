@@ -1,5 +1,6 @@
 import { desktopUpgradeRequiredSchema } from "./desktop-updates";
 import { z } from "zod";
+import { fileDownloadUrlSchema } from "./file-download";
 import { authHeadersSchema, initContract } from "./base";
 import { ApiError, apiErrorSchema } from "./errors";
 import {
@@ -612,6 +613,19 @@ export const computerUseCommandContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Download a desktop computer-use command screenshot",
+  },
+  screenshotUrl: {
+    method: "GET",
+    path: "/api/computer-use/commands/:commandId/screenshot/url",
+    headers: authHeadersSchema,
+    pathParams: commandIdPathParamsSchema,
+    responses: {
+      200: fileDownloadUrlSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Resolve a temporary direct URL for a desktop command screenshot",
   },
 });
 

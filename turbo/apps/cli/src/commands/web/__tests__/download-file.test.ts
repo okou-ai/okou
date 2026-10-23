@@ -3,7 +3,14 @@
  * response streaming, and filesystem. Only the HTTP boundary is mocked.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  readFileSync,
+  existsSync,
+  writeFileSync,
+  readdirSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { http, HttpResponse } from "msw";
@@ -14,6 +21,7 @@ import chalk from "chalk";
 
 const API = "http://localhost:3000";
 const DOWNLOAD_URL = `${API}/api/web/download-file`;
+const FILE_URL = `${API}/api/web/file-url`;
 const READ_URL = `${API}/api/artifact-references/:reference/download`;
 const DELIVERY_URL = "https://delivery.example.com/content?signature=temporary";
 const FILE_ID = "00000000-0000-4000-8000-000000000023";
@@ -42,6 +50,12 @@ describe.each([
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
     tmpDir = mkdtempSync(join(tmpdir(), "web-download-test-"));
+    // Older API deployments do not expose direct-download metadata.
+    server.use(
+      http.get(FILE_URL, () => {
+        return HttpResponse.json({ error: "Not found" }, { status: 404 });
+      }),
+    );
   });
 
   afterEach(() => {
@@ -248,6 +262,92 @@ describe.each([
     },
   );
 
+  it("downloads a raw file ID through existing file-url metadata without forwarding credentials", async () => {
+    const outPath = join(tmpDir, "direct.pdf");
+    const payload = Buffer.from("direct PDF bytes");
+    server.use(
+      http.get(FILE_URL, ({ request }) => {
+        expect(new URL(request.url).searchParams.get("file_id")).toBe(FILE_ID);
+        expect(request.headers.get("authorization")).toBe("Bearer test-token");
+        return HttpResponse.json({
+          url: DELIVERY_URL,
+          downloadUrl: DELIVERY_URL,
+          expiresAt: "2026-10-23T15:00:00.000Z",
+          publicUrl: null,
+        });
+      }),
+      http.get("https://delivery.example.com/content", ({ request }) => {
+        expect(request.headers.get("authorization")).toBeNull();
+        return new HttpResponse(payload, {
+          headers: {
+            "content-type": "application/pdf",
+            "content-length": String(payload.length),
+          },
+        });
+      }),
+    );
+    await command.parseAsync([
+      "node",
+      "cli",
+      ...prefix,
+      FILE_ID,
+      "-o",
+      outPath,
+    ]);
+    expect(readFileSync(outPath)).toEqual(payload);
+    expect(JSON.parse(mockConsoleLog.mock.calls.flat().join("\n"))).toEqual({
+      path: outPath,
+      mimetype: "application/pdf",
+      size: payload.length,
+    });
+  });
+
+  it("fails closed when raw file metadata denies access", async () => {
+    const outPath = join(tmpDir, "denied.pdf");
+    server.use(
+      http.get(FILE_URL, () => {
+        return HttpResponse.json(
+          {
+            error: { code: "FORBIDDEN", message: "File access denied" },
+          },
+          { status: 403 },
+        );
+      }),
+    );
+    await expect(
+      command.parseAsync(["node", "cli", ...prefix, FILE_ID, "-o", outPath]),
+    ).rejects.toThrow("process.exit called");
+    expect(existsSync(outPath)).toBe(false);
+    expect(mockConsoleError).toHaveBeenCalledWith(
+      expect.stringContaining("File access denied"),
+    );
+  });
+
+  it("does not publish an incomplete direct download", async () => {
+    const outPath = join(tmpDir, "incomplete.bin");
+    writeFileSync(outPath, "previous complete download");
+    server.use(
+      http.get(FILE_URL, () => {
+        return HttpResponse.json({
+          url: DELIVERY_URL,
+          downloadUrl: DELIVERY_URL,
+          expiresAt: "2026-10-23T15:00:00.000Z",
+          publicUrl: null,
+        });
+      }),
+      http.get("https://delivery.example.com/content", () => {
+        return new HttpResponse("short", {
+          headers: { "content-length": "100" },
+        });
+      }),
+    );
+    await expect(
+      command.parseAsync(["node", "cli", ...prefix, FILE_ID, "-o", outPath]),
+    ).rejects.toThrow("process.exit called");
+    expect(readFileSync(outPath, "utf8")).toBe("previous complete download");
+    expect(readdirSync(tmpDir)).toEqual(["incomplete.bin"]);
+  });
+
   it("derives the default output path when -o is omitted", async () => {
     const payload = Buffer.from("default-path");
     const id = `default-${tmpDir.split("/").at(-1)}`;
@@ -372,12 +472,12 @@ describe.each([
     {
       name: "has no body",
       status: 204,
-      output: "Web download response has no body",
+      output: "File download failed (HTTP 204)",
     },
     {
       name: "fails outside the API",
       status: 503,
-      output: "Failed to download web file (HTTP 503)",
+      output: "File download failed (HTTP 503)",
     },
   ])(
     "fails without creating a file when artifact delivery $name",

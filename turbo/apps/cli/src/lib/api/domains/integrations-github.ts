@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
+  integrationsGithubDownloadFileContract,
   integrationsGithubUploadCompleteContract,
   integrationsGithubUploadInitContract,
   type GithubUploadCompleteBody,
@@ -18,6 +19,7 @@ import {
 } from "../core/client-factory";
 import { getActiveToken } from "../config";
 import { headersWithCliClientHeaders } from "../client-headers";
+import { downloadFileViaUrl } from "../download-file-url";
 
 interface DownloadGithubFileResult {
   path: string;
@@ -60,16 +62,25 @@ export async function downloadGithubFile(
   outPath: string,
   filename?: string,
 ): Promise<DownloadGithubFileResult> {
-  const baseUrl = await getBaseUrl();
-  const token = await getActiveToken();
-  if (!token) {
-    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
-  }
-
-  const url = new URL("/api/integrations/github/download-file", baseUrl);
+  const url = new URL(
+    integrationsGithubDownloadFileContract.fileUrl.path,
+    await getBaseUrl(),
+  );
   url.searchParams.set("url", fileUrl);
   if (filename) {
     url.searchParams.set("filename", filename);
+  }
+  const direct = await downloadFileViaUrl(url, outPath, {
+    maxBytes: 100 * 1024 * 1024,
+  });
+  if (direct) {
+    return direct;
+  }
+  // Keep the binary route for independently deployed older APIs.
+  url.pathname = integrationsGithubDownloadFileContract.download.path;
+  const token = await getActiveToken();
+  if (!token) {
+    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
   }
 
   const headers: Record<string, string> = {

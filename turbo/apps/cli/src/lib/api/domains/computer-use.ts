@@ -1,3 +1,7 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { downloadFileViaUrl } from "../download-file-url";
 import {
   desktopShellContract,
   type DesktopShellRequest,
@@ -159,21 +163,33 @@ export async function createComputerUseAuthorizationRequest(): Promise<ComputerU
   handleError(result, "Failed to create computer-use authorization request");
 }
 
-/**
- * Download a command screenshot through the authenticated API proxy. The bytes
- * never traverse a public URL; the API authorizes by command ownership and
- * streams the object back. Used when the command result carries an
- * object-storage pointer instead of an inline data URL.
- */
+/** Resolve an owned screenshot, then fetch its signed URL without CLI credentials. */
 export async function fetchComputerUseScreenshot(
   commandId: string,
   signal?: AbortSignal,
 ): Promise<{ readonly buffer: Buffer; readonly mimeType: string }> {
+  const endpoint = new URL(
+    `/api/computer-use/commands/${encodeURIComponent(commandId)}/screenshot/url`,
+    await getBaseUrl(),
+  );
+  const directory = await mkdtemp(join(tmpdir(), "okou-screenshot-"));
+  try {
+    const direct = await downloadFileViaUrl(
+      endpoint,
+      join(directory, "screenshot"),
+      {},
+      signal,
+    );
+    if (direct) {
+      return { buffer: await readFile(direct.path), mimeType: direct.mimetype };
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+  // Independently deployed older APIs have only the binary screenshot route.
   const config = await getComputerUseClientConfig();
   const response = await fetch(
-    `${config.baseUrl}/api/computer-use/commands/${encodeURIComponent(
-      commandId,
-    )}/screenshot`,
+    `${config.baseUrl}/api/computer-use/commands/${encodeURIComponent(commandId)}/screenshot`,
     { headers: headersWithCliClientHeaders(config.baseHeaders), signal },
   );
 

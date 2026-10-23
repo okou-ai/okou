@@ -25,6 +25,7 @@ import {
 } from "../core/client-factory";
 import { getActiveToken } from "../config";
 import { headersWithCliClientHeaders } from "../client-headers";
+import { downloadFileViaUrl } from "../download-file-url";
 
 export async function initDiscordFileUpload(
   body: DiscordUploadInitBody,
@@ -84,23 +85,33 @@ function downloadLength(response: Response): number {
   return length;
 }
 
-/** Credentials go only to the API; the server resolves provider attachment URLs. */
+/** Credentials go only to the API, never to the resolved attachment URL. */
 export async function downloadDiscordFile(
   query: DiscordDownloadFileQuery,
   outPath: string,
 ): Promise<DownloadDiscordFileResult> {
   const validated =
     integrationsDiscordDownloadFileContract.download.query.parse(query);
-  const token = await getActiveToken();
-  if (!token) {
-    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
-  }
   const url = new URL(
-    integrationsDiscordDownloadFileContract.download.path,
+    integrationsDiscordDownloadFileContract.fileUrl.path,
     await getBaseUrl(),
   );
   for (const [key, value] of Object.entries(validated)) {
     url.searchParams.set(key, value);
+  }
+  const direct = await downloadFileViaUrl(url, outPath, {
+    maxBytes: MAX_DISCORD_FILE_SIZE_BYTES,
+    matchMetadataContentType: true,
+  });
+  if (direct) {
+    return direct;
+  }
+  // Older API deployments and attachments without MIME metadata still use the
+  // byte route until the independently deployed CLI/API rollout is complete.
+  url.pathname = integrationsDiscordDownloadFileContract.download.path;
+  const token = await getActiveToken();
+  if (!token) {
+    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
   }
   const controller = new AbortController();
   const response = await fetch(url, {

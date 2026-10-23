@@ -2,6 +2,7 @@ import { z } from "zod";
 import { artifactUrlSchema } from "./artifact-references";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { fileDownloadUrlSchema } from "./file-download";
 
 const c = initContract();
 
@@ -503,6 +504,23 @@ const phoneDownloadFileQuerySchema = z.object({
 });
 
 export const integrationsPhoneDownloadFileContract = c.router({
+  fileUrl: {
+    method: "GET",
+    path: "/api/integrations/phone/download-file/url",
+    headers: authHeadersSchema,
+    query: phoneDownloadFileQuerySchema,
+    responses: {
+      200: fileDownloadUrlSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+      413: apiErrorSchema,
+      502: apiErrorSchema,
+    },
+    summary: "Resolve an authorized phone attachment download URL",
+  },
   download: {
     method: "GET",
     path: "/api/integrations/phone/download-file",
@@ -832,6 +850,23 @@ export const integrationsTelegramUploadInitContract = c.router({
  * bot-backed messaging and file access.
  */
 export const integrationsTeamsDownloadFileContract = c.router({
+  fileUrl: {
+    method: "GET",
+    path: "/api/integrations/teams/download-file/url",
+    headers: authHeadersSchema,
+    query: z.object({ file_id: z.string().optional() }),
+    responses: {
+      200: fileDownloadUrlSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+      413: apiErrorSchema,
+      502: apiErrorSchema,
+    },
+    summary: "Resolve an authorized Microsoft Teams file download URL",
+  },
   download: {
     method: "GET",
     path: "/api/integrations/teams/download-file",
@@ -1041,6 +1076,26 @@ export const integrationsTeamsUploadCompleteContract = c.router({
  * gates who may ask the API to reach a GitHub attachment host at all.
  */
 export const integrationsGithubDownloadFileContract = c.router({
+  fileUrl: {
+    method: "GET",
+    path: "/api/integrations/github/download-file/url",
+    headers: authHeadersSchema,
+    query: z.object({
+      url: z.string().url("url must be a GitHub file URL"),
+      filename: z.string().min(1).max(255).optional(),
+    }),
+    responses: {
+      200: fileDownloadUrlSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+      413: apiErrorSchema,
+      502: apiErrorSchema,
+    },
+    summary: "Resolve a GitHub context file download URL",
+  },
   download: {
     method: "GET",
     path: "/api/integrations/github/download-file",

@@ -1041,6 +1041,25 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         },
       ),
     );
+    const direct = await ap.downloadPhoneFileRaw(
+      "clerk-session",
+      completed.body.messageId,
+      true,
+    );
+    expect(direct.status).toBe(200);
+    expect(direct.headers.get("cache-control")).toBe("private, no-store");
+    expect(JSON.parse(direct.text)).toMatchObject({
+      downloadUrl: expect.any(String),
+      filename: "note.txt",
+      contentType: "text/plain",
+      size: 5,
+    });
+    expect(
+      new URL(JSON.parse(direct.text).downloadUrl as string).searchParams.get(
+        "object",
+      ),
+    ).toBe(providerMediaUrl.searchParams.get("object"));
+    expect(mediaFetches).toBe(0);
     const downloaded = await ap.downloadPhoneFileRaw(
       "clerk-session",
       completed.body.messageId,
@@ -1056,6 +1075,13 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       completed.body.messageId,
       [404],
     );
+    const deniedDirect = await ap.downloadPhoneFileRaw(
+      "clerk-session",
+      completed.body.messageId,
+      true,
+    );
+    expect(deniedDirect.status).toBe(404);
+    expect(mediaFetches).toBe(1);
     await integrations.requestPhoneDownloadFile(
       { ...actor, orgId: `org_${randomUUID()}` },
       completed.body.messageId,
@@ -2558,6 +2584,19 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       okouToken: run.okouToken,
     });
     expect(downloads).toBe(1);
+    if (!run.okouToken) {
+      throw new Error("Expected a claim-issued Okou token");
+    }
+    const direct = await ap.downloadPhoneFileRaw(
+      run.okouToken,
+      messageId,
+      true,
+    );
+    expect(direct.status).toBe(409);
+    expect(JSON.parse(direct.text)).toMatchObject({
+      error: { code: "DIRECT_DOWNLOAD_UNAVAILABLE" },
+    });
+    expect(downloads).toBe(1);
     await completeSandboxRun(run.sandboxToken, run.runId, 0);
     await ap.postAgentPhoneInboundMessage({
       channel: "mms",
@@ -2596,6 +2635,54 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     });
     const run = await claimDispatchedRun(runnerGroup);
     expect(run.prompt).toContain("[Phone file] media-only.png (image/png)");
+    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+  });
+
+  it("retains legacy downloads for inbound AgentPhone media even on the known provider URL pattern", async () => {
+    const ap = createAgentPhoneBddApi(context);
+    const { phone, runnerGroup } = await entitledLinkedActor();
+    const mediaUrl =
+      "https://api.agentphone.ai/v1/messages/apmsg_inbound/media";
+    let available = false;
+    let fetches = 0;
+    server.use(
+      http.get(mediaUrl, () => {
+        fetches += 1;
+        return available
+          ? new HttpResponse("incoming bytes", {
+              headers: {
+                "content-type": "application/octet-stream",
+                "content-length": "14",
+              },
+            })
+          : new HttpResponse(null, { status: 503 });
+      }),
+    );
+    const messageId = await ap.postAgentPhoneInboundMessage({
+      channel: "mms",
+      from: phone,
+      body: "inspect inbound media",
+      mediaUrl,
+    });
+    const run = await claimDispatchedRun(runnerGroup);
+    if (!run.okouToken) {
+      throw new Error("Expected a claim-issued Okou token");
+    }
+    available = true;
+    const baseline = fetches;
+    const direct = await ap.downloadPhoneFileRaw(
+      run.okouToken,
+      messageId,
+      true,
+    );
+    expect(direct.status).toBe(409);
+    expect(JSON.parse(direct.text)).toMatchObject({
+      error: { code: "DIRECT_DOWNLOAD_UNAVAILABLE" },
+    });
+    expect(fetches).toBe(baseline);
+    const legacy = await ap.downloadPhoneFileRaw(run.okouToken, messageId);
+    expect(legacy.status).toBe(200);
+    expect(legacy.text).toBe("incoming bytes");
     await completeSandboxRun(run.sandboxToken, run.runId, 0);
   });
 

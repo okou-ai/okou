@@ -144,6 +144,56 @@ describe("okou generate get", () => {
     },
   );
 
+  it("preserves a completed image artifact reference through authorization and direct delivery", async () => {
+    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+    const job = {
+      generationId,
+      type: "image",
+      status: "completed",
+      result: { id: "image-file-id", url: "/artifacts/imagehash1.png" },
+    };
+    server.use(
+      http.get(statusUrl, () => {
+        return HttpResponse.json(job);
+      }),
+      http.get(
+        "http://localhost:3000/api/artifact-references/imagehash1.png/download",
+        ({ request }) => {
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer test-token",
+          );
+          return HttpResponse.json({
+            kind: "file",
+            url: "https://delivery.example.com/generated.png?sig=private",
+            filename: "image.png",
+            contentType: "image/png",
+          });
+        },
+      ),
+      http.get("https://delivery.example.com/generated.png", ({ request }) => {
+        expect(request.headers.get("authorization")).toBeNull();
+        return new HttpResponse("image bytes", {
+          headers: { "content-type": "image/png", "content-length": "11" },
+        });
+      }),
+    );
+    const out = join(dir, "artifact.png");
+    await generateCommand.parseAsync([
+      "node",
+      "okou",
+      "get",
+      generationId,
+      "--json",
+      "--out",
+      out,
+    ]);
+    expect(readFileSync(out, "utf8")).toBe("image bytes");
+    expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
+      ...job,
+      download: { path: out, size: 11 },
+    });
+  });
+
   it("downloads a completed image to the requested path", async () => {
     const job = {
       generationId,
@@ -157,6 +207,9 @@ describe("okou generate get", () => {
     server.use(
       http.get(statusUrl, () => {
         return HttpResponse.json(job);
+      }),
+      http.get("http://localhost:3000/api/web/file-url", () => {
+        return HttpResponse.json({ error: "Not found" }, { status: 404 });
       }),
       http.get("http://localhost:3000/api/web/download-file", ({ request }) => {
         expect(new URL(request.url).searchParams.get("file_id")).toBe(

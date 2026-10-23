@@ -25,6 +25,7 @@ import {
 } from "../core/client-factory";
 import { getActiveToken } from "../config";
 import { headersWithCliClientHeaders } from "../client-headers";
+import { downloadFileViaUrl } from "../download-file-url";
 
 interface DownloadPhoneFileResult {
   path: string;
@@ -99,6 +100,18 @@ export async function downloadPhoneFile(
   outPath: string,
 ): Promise<DownloadPhoneFileResult> {
   const baseUrl = await getBaseUrl();
+  const directUrl = new URL(
+    "/api/integrations/phone/download-file/url",
+    baseUrl,
+  );
+  directUrl.searchParams.set("file_id", fileId);
+  const direct = await downloadFileViaUrl(directUrl, outPath, {
+    maxBytes: 100 * 1024 * 1024,
+  });
+  if (direct) {
+    return direct;
+  }
+
   const token = await getActiveToken();
   if (!token) {
     throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);

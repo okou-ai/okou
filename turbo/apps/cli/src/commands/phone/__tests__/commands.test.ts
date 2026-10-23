@@ -37,6 +37,11 @@ describe("okou phone commands", () => {
     mockConsoleError.mockClear();
     tmpDir = join(tmpdir(), `phone-command-test-${Date.now()}`);
     mkdirSync(tmpDir, { recursive: true });
+    server.use(
+      http.get(`${DOWNLOAD_URL}/url`, () => {
+        return HttpResponse.json({ error: "Not found" }, { status: 404 });
+      }),
+    );
   });
 
   afterEach(() => {
@@ -82,6 +87,77 @@ describe("okou phone commands", () => {
       mimetype: "image/jpeg",
       size: payload.length,
     });
+  });
+
+  it("downloads directly from the provider without the Okou credential", async () => {
+    const outPath = join(tmpDir, "direct.txt");
+    const target = "https://api.agentphone.ai/v1/messages/apmsg_direct/media";
+    server.use(
+      http.get(`${DOWNLOAD_URL}/url`, ({ request }) => {
+        expect(request.headers.get("authorization")).toBe("Bearer test-token");
+        return HttpResponse.json({
+          downloadUrl: target,
+          filename: "direct.txt",
+          contentType: "text/plain",
+          size: 5,
+        });
+      }),
+      http.get(target, ({ request }) => {
+        expect(request.headers.get("authorization")).toBeNull();
+        expect(request.headers.get("cookie")).toBeNull();
+        return HttpResponse.redirect(
+          "https://static.vm0.io/phone/direct.txt",
+          302,
+        );
+      }),
+      http.get("https://static.vm0.io/phone/direct.txt", ({ request }) => {
+        expect(request.headers.get("authorization")).toBeNull();
+        return new HttpResponse("hello", {
+          headers: { "content-type": "text/plain", "content-length": "5" },
+        });
+      }),
+    );
+    await downloadFileCommand.parseAsync([
+      "node",
+      "cli",
+      "apmsg_direct",
+      "-o",
+      outPath,
+    ]);
+    expect(readFileSync(outPath, "utf8")).toBe("hello");
+    expect(
+      JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+    ).toMatchObject({ path: outPath, size: 5, mimetype: "text/plain" });
+  });
+
+  it("retains legacy download for provider attachments without a direct URL", async () => {
+    const outPath = join(tmpDir, "legacy.txt");
+    server.use(
+      http.get(`${DOWNLOAD_URL}/url`, () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "DIRECT_DOWNLOAD_UNAVAILABLE",
+              message: "Direct download unavailable",
+            },
+          },
+          { status: 409 },
+        );
+      }),
+      http.get(DOWNLOAD_URL, () => {
+        return new HttpResponse("legacy", {
+          headers: { "content-type": "text/plain", "content-length": "6" },
+        });
+      }),
+    );
+    await downloadFileCommand.parseAsync([
+      "node",
+      "cli",
+      "apmsg_legacy",
+      "-o",
+      outPath,
+    ]);
+    expect(readFileSync(outPath, "utf8")).toBe("legacy");
   });
 
   it("sends a text message", async () => {

@@ -13,10 +13,12 @@ import {
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
+import { setResHeader$ } from "../context/hono";
 import {
   createComputerUseCommand$,
   getComputerUseCommand$,
   getComputerUseCommandScreenshot$,
+  getComputerUseCommandScreenshotUrl$,
   computerUseAuditEvents,
   listComputerUseHosts$,
 } from "../services/computer-use.service";
@@ -391,6 +393,37 @@ const screenshotGetInner$ = command(
   },
 );
 
+const screenshotUrlParams$ = pathParamsOf(
+  computerUseCommandContract.screenshotUrl,
+);
+const screenshotUrlInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const params = get(screenshotUrlParams$);
+    const hostId =
+      auth.tokenType === "agent" ? auth.computerUseHostId : undefined;
+    if (auth.tokenType === "agent" && !hostId) {
+      return computerUseHostNotAuthorized;
+    }
+    const screenshot = await set(
+      getComputerUseCommandScreenshotUrl$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        commandId: params.commandId,
+        ...(hostId ? { hostId } : {}),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!screenshot) {
+      return notFound("Computer-use command screenshot not found");
+    }
+    set(setResHeader$, "Cache-Control", "private, no-store");
+    return { status: 200 as const, body: screenshot };
+  },
+);
+
 const auditEventsQuery$ = queryOf(computerUseAuditEventsContract.list);
 const auditEventsScope$ = computed((get) => {
   const auth = get(organizationAuthContext$);
@@ -457,6 +490,10 @@ export const computerUseRoutes: readonly RouteEntry[] = [
   {
     route: computerUseCommandContract.getScreenshot,
     handler: authRoute(computerUseCommandAuthOptions, screenshotGetInner$),
+  },
+  {
+    route: computerUseCommandContract.screenshotUrl,
+    handler: authRoute(computerUseCommandAuthOptions, screenshotUrlInner$),
   },
   {
     route: computerUseAuditEventsContract.list,

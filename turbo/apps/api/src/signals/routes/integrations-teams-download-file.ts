@@ -11,7 +11,10 @@ import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { queryOf } from "../context/request";
 import { db$ } from "../external/db";
-import { fetchTeamsFile } from "../external/teams-bot-client";
+import {
+  fetchTeamsFile,
+  resolveTeamsFileDownloadUrl,
+} from "../external/teams-bot-client";
 import {
   teamsFileTokenPayloadSchema,
   type TeamsFileTokenPayload,
@@ -309,6 +312,66 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   return new Response(downloadResponse.body, { status: 200, headers });
 });
 
+const fileUrl$ = command(async ({ get, set }, signal: AbortSignal) => {
+  if (!get(downloadInput$)) {
+    return jsonResponse(400, "file_id is required", "BAD_REQUEST");
+  }
+  const payload = await set(authorizeTeamsDownload$, signal);
+  if (payload instanceof Response) {
+    return payload;
+  }
+  if (!payload.downloadInfo && !isAllowedTeamsDownloadUrl(payload.url)) {
+    return jsonResponse(
+      400,
+      "Only Microsoft Teams file attachment URLs can be downloaded",
+      "BAD_REQUEST",
+    );
+  }
+  const resolved = await resolveTeamsFileDownloadUrl(
+    {
+      tenantId: payload.tenantId,
+      url: payload.url,
+      downloadMode:
+        payload.downloadMode ??
+        (payload.contentType === "reference" ? "graph" : undefined),
+      downloadInfo: payload.downloadInfo,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (resolved.kind === "unavailable") {
+    return jsonResponse(
+      409,
+      "Direct download is unavailable for this Teams attachment",
+      "DIRECT_DOWNLOAD_UNAVAILABLE",
+    );
+  }
+  if (resolved.kind === "teams-error") {
+    return jsonResponse(
+      resolved.status === 404 ? 404 : 502,
+      "Failed to resolve Microsoft Teams file",
+      resolved.status === 404 ? "NOT_FOUND" : "BAD_GATEWAY",
+    );
+  }
+  const filename = sanitizeDownloadFilename(
+    payload.name ?? filenameFromDownloadUrl(payload.url) ?? "teams-file",
+  );
+  return Response.json(
+    {
+      downloadUrl: resolved.downloadUrl,
+      filename,
+      contentType:
+        payload.contentType &&
+        payload.contentType !== "reference" &&
+        payload.contentType !==
+          "application/vnd.microsoft.teams.file.download.info"
+          ? payload.contentType
+          : inferMimetype(filename),
+    },
+    { headers: { "Cache-Control": "private, no-store" } },
+  );
+});
+
 const teamsWriteAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
@@ -316,6 +379,10 @@ const teamsWriteAuth = {
 } as const;
 
 export const integrationsTeamsDownloadFileRoutes: readonly RouteEntry[] = [
+  {
+    route: integrationsTeamsDownloadFileContract.fileUrl,
+    handler: authRoute(teamsWriteAuth, fileUrl$),
+  },
   {
     route: integrationsTeamsDownloadFileContract.download,
     handler: authRoute(teamsWriteAuth, download$),

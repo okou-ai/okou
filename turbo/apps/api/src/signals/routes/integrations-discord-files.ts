@@ -17,6 +17,7 @@ import { discordClient } from "../external/discord-client";
 import {
   DiscordFileFetchError,
   fetchDiscordAttachment,
+  resolveDiscordAttachmentUrl,
 } from "../external/discord-file-fetcher";
 import { requireDiscordRunReadAccess$ } from "../services/discord-access.service";
 import {
@@ -177,7 +178,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body };
 });
 
-const downloadAttempt$ = command(
+const resolveAttachment$ = command(
   async (
     { get, set },
     query: DiscordDownloadFileQuery,
@@ -225,8 +226,9 @@ const downloadAttempt$ = command(
     if (!attachment) {
       return { kind: "response" as const, response: discordUnavailable() };
     }
-    const downloaded = await fetchDiscordAttachment(
-      {
+    return {
+      kind: "attachment" as const,
+      attachment: {
         channelId: query.channelId,
         attachmentId: attachment.id,
         filename: attachment.filename,
@@ -236,6 +238,19 @@ const downloadAttempt$ = command(
           : {}),
         url: attachment.url,
       },
+    };
+  },
+);
+
+const downloadAttempt$ = command(
+  async ({ set }, query: DiscordDownloadFileQuery, signal: AbortSignal) => {
+    const resolved = await set(resolveAttachment$, query, signal);
+    signal.throwIfAborted();
+    if (resolved.kind === "response") {
+      return resolved;
+    }
+    const downloaded = await fetchDiscordAttachment(
+      resolved.attachment,
       signal,
     );
     signal.throwIfAborted();
@@ -293,6 +308,40 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   });
 });
 
+const fileUrl$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const query = get(queryOf(integrationsDiscordDownloadFileContract.fileUrl));
+  const result = await settle(
+    (async () => {
+      const resolved = await set(resolveAttachment$, query, signal);
+      signal.throwIfAborted();
+      if (resolved.kind === "response") {
+        return resolved.response;
+      }
+      const metadata = resolveDiscordAttachmentUrl(resolved.attachment);
+      if (!metadata) {
+        return {
+          status: 409 as const,
+          body: {
+            error: {
+              code: "DIRECT_DOWNLOAD_UNAVAILABLE",
+              message: "Discord attachment requires CDN MIME validation",
+            },
+          },
+        };
+      }
+      return Response.json(metadata, {
+        headers: { "Cache-Control": "private, no-store" },
+      });
+    })(),
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!result.ok) {
+    return downloadFailure(result.error);
+  }
+  return result.value;
+});
+
 const writeAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
@@ -316,5 +365,9 @@ export const integrationsDiscordFileRoutes: readonly RouteEntry[] = [
   {
     route: integrationsDiscordDownloadFileContract.download,
     handler: authRoute(readAuth, download$),
+  },
+  {
+    route: integrationsDiscordDownloadFileContract.fileUrl,
+    handler: authRoute(readAuth, fileUrl$),
   },
 ];

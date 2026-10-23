@@ -21,6 +21,7 @@ import {
 } from "../core/client-factory";
 import { getActiveToken } from "../config";
 import { headersWithCliClientHeaders } from "../client-headers";
+import { downloadFileViaUrl } from "../download-file-url";
 
 export async function sendTeamsMessage(
   body: SendTeamsMessageBody,
@@ -78,6 +79,18 @@ export async function downloadTeamsFile(
   outPath: string,
 ): Promise<DownloadTeamsFileResult> {
   const baseUrl = await getBaseUrl();
+  const directUrl = new URL(
+    "/api/integrations/teams/download-file/url",
+    baseUrl,
+  );
+  directUrl.searchParams.set("file_id", fileId);
+  const direct = await downloadFileViaUrl(directUrl, outPath, {
+    maxBytes: 100 * 1024 * 1024,
+  });
+  if (direct) {
+    return direct;
+  }
+
   const token = await getActiveToken();
   if (!token) {
     throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);

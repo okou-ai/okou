@@ -35,6 +35,12 @@ describe("okou discord download-file", () => {
     vi.stubEnv("OKOU_TOKEN", "test-okou-token");
     directory = mkdtempSync(join(tmpdir(), "discord-download-test-"));
     outPath = join(directory, "download.txt");
+    // Independently deployed old APIs have only the binary endpoint.
+    server.use(
+      http.get(`${DOWNLOAD_URL}/url`, () => {
+        return HttpResponse.json({ error: "Not found" }, { status: 404 });
+      }),
+    );
     for (const option of ["channel", "message", "guildId", "out"]) {
       downloadFileCommand.setOptionValue(option, undefined);
     }
@@ -63,10 +69,11 @@ describe("okou discord download-file", () => {
     ]);
   }
 
-  it("downloads authenticated attachment bytes and prints their actual size", async () => {
+  it("downloads direct attachment bytes without forwarding API credentials", async () => {
     writeFileSync(outPath, "Previous file");
+    const attachmentUrl = `https://cdn.discordapp.com/attachments/${CHANNEL_ID}/${ATTACHMENT_ID}/download.txt?hm=signed`;
     server.use(
-      http.get(DOWNLOAD_URL, ({ request }) => {
+      http.get(`${DOWNLOAD_URL}/url`, ({ request }) => {
         const url = new URL(request.url);
         expect(Object.fromEntries(url.searchParams)).toEqual({
           channelId: CHANNEL_ID,
@@ -77,6 +84,16 @@ describe("okou discord download-file", () => {
         expect(request.headers.get("authorization")).toBe(
           "Bearer test-okou-token",
         );
+        return HttpResponse.json({
+          downloadUrl: attachmentUrl,
+          filename: "download.txt",
+          contentType: "text/plain",
+          size: 18,
+        });
+      }),
+      http.get(attachmentUrl, ({ request }) => {
+        expect(request.headers.get("authorization")).toBeNull();
+        expect(request.headers.get("cookie")).toBeNull();
         return new HttpResponse("Discord attachment", {
           headers: {
             "content-type": "text/plain; charset=utf-8",
@@ -93,6 +110,152 @@ describe("okou discord download-file", () => {
     expect(output).toHaveBeenCalledWith(
       JSON.stringify({ path: outPath, mimetype: "text/plain", size: 18 }),
     );
+  });
+
+  it.each([
+    { status: 403, code: "FORBIDDEN", message: "Discord read access denied" },
+    {
+      status: 404,
+      code: "NOT_FOUND",
+      message: "Discord attachment unavailable",
+    },
+  ])(
+    "does not fall back after metadata access failure $status",
+    async ({ status, code, message }) => {
+      writeFileSync(outPath, "Keep this file");
+      let binaryDownloads = 0;
+      server.use(
+        http.get(`${DOWNLOAD_URL}/url`, () => {
+          return HttpResponse.json({ error: { code, message } }, { status });
+        }),
+        http.get(DOWNLOAD_URL, () => {
+          binaryDownloads += 1;
+          return new HttpResponse("must not download");
+        }),
+      );
+
+      await expect(download()).rejects.toThrow("process.exit called");
+
+      expect(readFileSync(outPath, "utf8")).toBe("Keep this file");
+      expect(errors.mock.calls.flat().join("\n")).toContain(message);
+      expect(binaryDownloads).toBe(0);
+    },
+  );
+
+  it("uses the byte route when direct MIME validation is unavailable", async () => {
+    server.use(
+      http.get(`${DOWNLOAD_URL}/url`, () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "DIRECT_DOWNLOAD_UNAVAILABLE",
+              message: "CDN MIME validation required",
+            },
+          },
+          { status: 409 },
+        );
+      }),
+      http.get(DOWNLOAD_URL, () => {
+        return new HttpResponse("validated", {
+          headers: { "content-type": "text/plain", "content-length": "9" },
+        });
+      }),
+    );
+
+    await download();
+
+    expect(readFileSync(outPath, "utf8")).toBe("validated");
+    expect(output).toHaveBeenCalledWith(
+      JSON.stringify({ path: outPath, mimetype: "text/plain", size: 9 }),
+    );
+  });
+
+  it.each([
+    { size: 5, length: "5", body: "Four" },
+    { size: 3, length: "3", body: "Four" },
+    { size: MAX_DISCORD_FILE_SIZE_BYTES + 1, length: "4", body: "Four" },
+  ])(
+    "preserves the destination when the direct body violates its size contract: %j",
+    async ({ size, length, body }) => {
+      writeFileSync(outPath, "Keep this file");
+      const attachmentUrl = `https://cdn.discordapp.com/attachments/${CHANNEL_ID}/${ATTACHMENT_ID}/download.txt?hm=signed`;
+      server.use(
+        http.get(`${DOWNLOAD_URL}/url`, () => {
+          return HttpResponse.json({
+            downloadUrl: attachmentUrl,
+            filename: "download.txt",
+            contentType: "text/plain",
+            size,
+          });
+        }),
+        http.get(attachmentUrl, () => {
+          return new HttpResponse(body, {
+            headers: { "content-type": "text/plain", "content-length": length },
+          });
+        }),
+      );
+
+      await expect(download()).rejects.toThrow("process.exit called");
+
+      expect(readFileSync(outPath, "utf8")).toBe("Keep this file");
+      expect(readdirSync(directory)).toEqual(["download.txt"]);
+      expect(output).not.toHaveBeenCalled();
+    },
+  );
+
+  it("preserves declared attachment MIME when the CDN returns generic octet-stream", async () => {
+    const attachmentUrl = `https://cdn.discordapp.com/attachments/${CHANNEL_ID}/${ATTACHMENT_ID}/download.txt?hm=signed`;
+    server.use(
+      http.get(`${DOWNLOAD_URL}/url`, () => {
+        return HttpResponse.json({
+          downloadUrl: attachmentUrl,
+          filename: "download.txt",
+          contentType: "text/plain",
+          size: 4,
+        });
+      }),
+      http.get(attachmentUrl, () => {
+        return new HttpResponse("Four", {
+          headers: {
+            "content-type": "application/octet-stream",
+            "content-length": "4",
+          },
+        });
+      }),
+    );
+
+    await download();
+
+    expect(readFileSync(outPath, "utf8")).toBe("Four");
+    expect(output).toHaveBeenCalledWith(
+      JSON.stringify({ path: outPath, mimetype: "text/plain", size: 4 }),
+    );
+  });
+
+  it("rejects CDN MIME conflicting with Discord attachment metadata", async () => {
+    writeFileSync(outPath, "Keep this file");
+    const attachmentUrl = `https://cdn.discordapp.com/attachments/${CHANNEL_ID}/${ATTACHMENT_ID}/download.txt?hm=signed`;
+    server.use(
+      http.get(`${DOWNLOAD_URL}/url`, () => {
+        return HttpResponse.json({
+          downloadUrl: attachmentUrl,
+          filename: "download.txt",
+          contentType: "text/plain",
+          size: 4,
+        });
+      }),
+      http.get(attachmentUrl, () => {
+        return new HttpResponse("Four", {
+          headers: { "content-type": "image/png", "content-length": "4" },
+        });
+      }),
+    );
+
+    await expect(download()).rejects.toThrow("process.exit called");
+
+    expect(readFileSync(outPath, "utf8")).toBe("Keep this file");
+    expect(readdirSync(directory)).toEqual(["download.txt"]);
+    expect(output).not.toHaveBeenCalled();
   });
 
   it("rejects an arbitrary attachment URL without writing a file", async () => {

@@ -90,6 +90,22 @@ function attachmentContentType(
   return contentType;
 }
 
+/** Resolve only metadata that is safe to hand to a credential-free downloader. */
+export function resolveDiscordAttachmentUrl(args: DiscordAttachmentDownload) {
+  validateAttachment(args);
+  // Without provider MIME metadata, the legacy downloader must inspect the CDN
+  // response. Do not infer a trusted type from an attachment's filename.
+  if (args.contentType === undefined) {
+    return null;
+  }
+  return {
+    downloadUrl: args.url,
+    filename: args.filename,
+    contentType: attachmentContentType(args.contentType, null),
+    size: args.size,
+  };
+}
+
 interface DownloadedDiscordAttachment {
   readonly bytes: Uint8Array<ArrayBuffer>;
   readonly contentType: string;

@@ -5,6 +5,8 @@ import {
 } from "./artifact-references";
 import { isUtf8 } from "node:buffer";
 import { createWriteStream, readFileSync, statSync } from "node:fs";
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import { downloadFileFromUrl } from "../download-file-url";
 import { basename, extname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -19,6 +21,7 @@ import {
 import {
   ApiRequestError,
   getBaseUrl,
+  getClientConfig,
   handleError,
 } from "../core/client-factory";
 import { getActiveToken } from "../config";
@@ -243,10 +246,32 @@ async function fetchWebFile(fileId: string): Promise<Response> {
   return response;
 }
 
+async function resolveWebFileDownloadUrl(
+  fileId: string,
+): Promise<string | null> {
+  const metadata = await initClient(
+    webFilesContract,
+    await getClientConfig(),
+  ).fileUrl({ query: { file_id: fileId } });
+  if (metadata.status === 200) return metadata.body.downloadUrl;
+  const body: unknown = metadata.body;
+  if (
+    metadata.status === 404 &&
+    typeof body === "object" &&
+    body !== null &&
+    "error" in body &&
+    body.error === "Not found"
+  ) {
+    return null;
+  }
+  handleError(metadata, "Failed to resolve web file download");
+}
+
 /**
  * Download an authorized artifact or web-uploaded file to a local path.
  * Artifact authorization uses OKOU_TOKEN, but its delivery URL never receives
- * the CLI credential. Raw file IDs retain the authenticated download route.
+ * the CLI credential. Raw file IDs use the existing authenticated file-url
+ * metadata route, retaining the binary route for independently deployed old APIs.
  */
 export async function downloadWebFile(
   fileId: string,
@@ -266,9 +291,29 @@ export async function downloadWebFile(
       entrypoint: join(outPath, "index.html"),
     };
   }
-  const response = artifact
-    ? await fetch(artifact.url)
-    : await fetchWebFile((await webFileReferenceId(fileId)) ?? fileId);
+  if (artifact?.kind === "file") {
+    return downloadFileFromUrl(
+      {
+        downloadUrl: artifact.url,
+        filename: artifact.filename,
+        contentType: artifact.contentType,
+      },
+      outPath,
+    );
+  }
+  const rawFileId = (await webFileReferenceId(fileId)) ?? fileId;
+  const downloadUrl = await resolveWebFileDownloadUrl(rawFileId);
+  if (downloadUrl) {
+    return downloadFileFromUrl(
+      {
+        downloadUrl,
+        filename: basename(outPath),
+        contentType: "application/octet-stream",
+      },
+      outPath,
+    );
+  }
+  const response = await fetchWebFile(rawFileId);
 
   if (!response.ok) {
     let message = `Failed to download web file (HTTP ${response.status})`;
@@ -296,7 +341,6 @@ export async function downloadWebFile(
   const mimetype =
     response.headers.get("x-file-mimetype") ??
     response.headers.get("content-type") ??
-    artifact?.contentType ??
     "application/octet-stream";
 
   // Cast required: Web API ReadableStream and Node.js ReadableStream are

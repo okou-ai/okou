@@ -2,6 +2,7 @@ import { z } from "zod";
 import { artifactUrlSchema } from "./artifact-references";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { fileDownloadUrlSchema } from "./file-download";
 import { discordSnowflakeSchema } from "./integrations-discord-read";
 
 export const MAX_DISCORD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
@@ -140,6 +141,14 @@ export const integrationsDiscordUploadCompleteContract = c.router({
 });
 
 export const integrationsDiscordDownloadFileContract = c.router({
+  fileUrl: {
+    method: "GET",
+    path: "/api/integrations/discord/download-file/url",
+    headers: authHeadersSchema,
+    query: discordDownloadFileQuerySchema,
+    responses: { 200: fileDownloadUrlSchema, ...uploadErrors },
+    summary: "Resolve a fresh authorized Discord attachment download URL",
+  },
   download: {
     method: "GET",
     path: "/api/integrations/discord/download-file",

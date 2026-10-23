@@ -58,7 +58,11 @@ import {
   publishComputerUseCommandsChangedSafely,
   publishComputerUseResultChangedSafely,
 } from "../external/realtime";
-import { downloadS3Buffer$, putS3Object$ } from "../external/s3";
+import {
+  downloadS3Buffer$,
+  putS3Object$,
+  signPresignedGetUrl$,
+} from "../external/s3";
 import { settle } from "../utils";
 import { clerk$ } from "../external/clerk";
 import {
@@ -1425,9 +1429,9 @@ export const getComputerUseCommand$ = command(
   },
 );
 
-export const getComputerUseCommandScreenshot$ = command(
+const getComputerUseCommandScreenshotObject$ = command(
   async (
-    { get, set },
+    { get },
     params: {
       readonly orgId: string;
       readonly userId: string;
@@ -1435,10 +1439,7 @@ export const getComputerUseCommandScreenshot$ = command(
       readonly hostId?: string;
     },
     signal: AbortSignal,
-  ): Promise<{
-    readonly buffer: Buffer;
-    readonly contentType: string;
-  } | null> => {
+  ): Promise<StoredScreenshotPointer | null> => {
     signal.throwIfAborted();
     const [row] = await get(db$)
       .select({
@@ -1463,16 +1464,74 @@ export const getComputerUseCommandScreenshot$ = command(
       return null;
     }
     const screenshot = row.result.screenshot;
-    if (isStoredScreenshotPointer(screenshot)) {
-      const buffer = await set(
-        downloadS3Buffer$,
-        { bucket: screenshot.bucket, key: screenshot.key },
-        signal,
-      );
-      signal.throwIfAborted();
-      return { buffer, contentType: screenshot.mimeType };
+    return isStoredScreenshotPointer(screenshot) ? screenshot : null;
+  },
+);
+
+export const getComputerUseCommandScreenshot$ = command(
+  async (
+    { set },
+    params: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly commandId: string;
+      readonly hostId?: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const screenshot = await set(
+      getComputerUseCommandScreenshotObject$,
+      params,
+      signal,
+    );
+    if (!screenshot) {
+      return null;
     }
-    return null;
+    const buffer = await set(
+      downloadS3Buffer$,
+      { bucket: screenshot.bucket, key: screenshot.key },
+      signal,
+    );
+    signal.throwIfAborted();
+    return { buffer, contentType: screenshot.mimeType };
+  },
+);
+
+export const getComputerUseCommandScreenshotUrl$ = command(
+  async (
+    { set },
+    params: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly commandId: string;
+      readonly hostId?: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const screenshot = await set(
+      getComputerUseCommandScreenshotObject$,
+      params,
+      signal,
+    );
+    if (!screenshot) {
+      return null;
+    }
+    const filename = `screenshot.${extensionForScreenshotMime(screenshot.mimeType)}`;
+    const downloadUrl = await set(signPresignedGetUrl$, {
+      bucket: screenshot.bucket,
+      key: screenshot.key,
+      publicEndpoint: true,
+      filename,
+      signingDate: nowDate(),
+      responseCacheControl: "private, no-store",
+    });
+    signal.throwIfAborted();
+    return {
+      downloadUrl,
+      filename,
+      contentType: screenshot.mimeType,
+      size: screenshot.sizeBytes,
+    };
   },
 );
 

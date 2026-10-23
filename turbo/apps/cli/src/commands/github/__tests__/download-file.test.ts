@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdirSync, rmSync, readFileSync, existsSync } from "fs";
+import {
+  mkdirSync,
+  rmSync,
+  readFileSync,
+  existsSync,
+  writeFileSync,
+  readdirSync,
+  statSync,
+} from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { http, HttpResponse } from "msw";
@@ -30,6 +38,12 @@ describe("okou github download-file command", () => {
     tmpDir = join(tmpdir(), `github-download-file-test-${Date.now()}`);
     mkdirSync(tmpDir, { recursive: true });
     defaultOutPaths = [];
+    // Older API deployments still serve the retained binary download route.
+    server.use(
+      http.get(`${DOWNLOAD_URL}/url`, () => {
+        return HttpResponse.json({ error: "Not found" }, { status: 404 });
+      }),
+    );
   });
 
   afterEach(() => {
@@ -41,17 +55,26 @@ describe("okou github download-file command", () => {
     }
   });
 
-  it("streams file bytes to the provided output path and prints JSON result", async () => {
+  it("downloads direct bytes without forwarding API credentials and prints JSON", async () => {
     const payload = Buffer.from("hello github");
     const outPath = join(tmpDir, "screenshot.png");
     const fileUrl = "https://github.com/user-attachments/assets/abc123";
 
     server.use(
-      http.get(DOWNLOAD_URL, ({ request }) => {
+      http.get(`${DOWNLOAD_URL}/url`, ({ request }) => {
         const url = new URL(request.url);
         expect(url.searchParams.get("url")).toBe(fileUrl);
         expect(url.searchParams.get("filename")).toBe("screenshot.png");
         expect(request.headers.get("authorization")).toBe("Bearer test-token");
+        return HttpResponse.json({
+          downloadUrl: fileUrl,
+          filename: "screenshot.png",
+          contentType: "image/png",
+        });
+      }),
+      http.get(fileUrl, ({ request }) => {
+        expect(request.headers.get("authorization")).toBeNull();
+        expect(request.headers.get("cookie")).toBeNull();
         return new HttpResponse(payload, {
           status: 200,
           headers: {
@@ -83,6 +106,200 @@ describe("okou github download-file command", () => {
       mimetype: "image/png",
       size: payload.length,
     });
+    expect(statSync(outPath).mode & 0o777).toBe(0o600);
+  });
+
+  it("retains provider MIME and actual size when URL metadata cannot infer a type", async () => {
+    const fileUrl =
+      "https://github.com/user-attachments/assets/01234567-89ab-cdef-0123-456789abcdef";
+    const outPath = join(tmpDir, "unknown-attachment");
+    server.use(
+      http.get(`${DOWNLOAD_URL}/url`, () => {
+        return HttpResponse.json({
+          downloadUrl: fileUrl,
+          filename: "github-file",
+          contentType: "application/octet-stream",
+        });
+      }),
+      http.get(fileUrl, () => {
+        return new HttpResponse("png-bytes", {
+          headers: { "content-type": "image/png", "content-length": "9" },
+        });
+      }),
+    );
+
+    await downloadFileCommand.parseAsync([
+      "node",
+      "okou",
+      fileUrl,
+      "-o",
+      outPath,
+    ]);
+
+    expect(readFileSync(outPath, "utf8")).toBe("png-bytes");
+    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(JSON.parse(stdout)).toEqual({
+      path: outPath,
+      mimetype: "image/png",
+      size: 9,
+    });
+  });
+
+  it.each([
+    { status: 403, code: "FORBIDDEN", message: "GitHub read access denied" },
+    {
+      status: 404,
+      code: "NOT_FOUND",
+      message: "GitHub attachment unavailable",
+    },
+    { status: 409, code: "CONFLICT", message: "GitHub download conflict" },
+  ])(
+    "surfaces metadata access failure $status without binary fallback",
+    async ({ status, code, message }) => {
+      const outPath = join(tmpDir, "denied.bin");
+      let binaryDownloads = 0;
+      server.use(
+        http.get(`${DOWNLOAD_URL}/url`, () => {
+          return HttpResponse.json({ error: { code, message } }, { status });
+        }),
+        http.get(DOWNLOAD_URL, () => {
+          binaryDownloads += 1;
+          return new HttpResponse("must not download");
+        }),
+      );
+
+      await expect(
+        downloadFileCommand.parseAsync([
+          "node",
+          "okou",
+          "https://github.com/user-attachments/assets/abc123",
+          "-o",
+          outPath,
+        ]),
+      ).rejects.toThrow("process.exit called");
+
+      expect(mockConsoleError).toHaveBeenCalledWith(
+        expect.stringContaining(message),
+      );
+      expect(existsSync(outPath)).toBe(false);
+      expect(binaryDownloads).toBe(0);
+    },
+  );
+
+  it.each([
+    { metadataSize: 5, length: "5", body: "Four" },
+    { metadataSize: 4, length: "5", body: "Four" },
+  ])(
+    "preserves existing output on incomplete or inconsistent direct body: %j",
+    async ({ metadataSize, length, body }) => {
+      const outPath = join(tmpDir, "keep.txt");
+      writeFileSync(outPath, "Keep this file");
+      const fileUrl = "https://github.com/user-attachments/assets/abc123";
+      server.use(
+        http.get(`${DOWNLOAD_URL}/url`, () => {
+          return HttpResponse.json({
+            downloadUrl: fileUrl,
+            filename: "report.txt",
+            contentType: "text/plain",
+            size: metadataSize,
+          });
+        }),
+        http.get(fileUrl, () => {
+          return new HttpResponse(body, {
+            headers: { "content-type": "text/plain", "content-length": length },
+          });
+        }),
+      );
+
+      await expect(
+        downloadFileCommand.parseAsync([
+          "node",
+          "okou",
+          fileUrl,
+          "-o",
+          outPath,
+        ]),
+      ).rejects.toThrow("process.exit called");
+
+      expect(readFileSync(outPath, "utf8")).toBe("Keep this file");
+      expect(readdirSync(tmpDir)).toEqual(["keep.txt"]);
+      expect(mockConsoleLog).not.toHaveBeenCalled();
+    },
+  );
+
+  it("follows HTTPS CDN redirects without forwarding credentials", async () => {
+    const fileUrl = "https://github.com/user-attachments/assets/abc123";
+    const cdnUrl =
+      "https://objects.githubusercontent.com/signed/report.txt?signature=example";
+    const outPath = join(tmpDir, "redirect.txt");
+    server.use(
+      http.get(`${DOWNLOAD_URL}/url`, () => {
+        return HttpResponse.json({
+          downloadUrl: fileUrl,
+          filename: "report.txt",
+          contentType: "text/plain",
+        });
+      }),
+      http.get(fileUrl, ({ request }) => {
+        expect(request.headers.get("authorization")).toBeNull();
+        expect(request.headers.get("cookie")).toBeNull();
+        return new HttpResponse(null, {
+          status: 302,
+          headers: { location: cdnUrl },
+        });
+      }),
+      http.get(cdnUrl, ({ request }) => {
+        expect(request.headers.get("authorization")).toBeNull();
+        expect(request.headers.get("cookie")).toBeNull();
+        return new HttpResponse("redirected", {
+          headers: { "content-type": "text/plain", "content-length": "10" },
+        });
+      }),
+    );
+
+    await downloadFileCommand.parseAsync([
+      "node",
+      "okou",
+      fileUrl,
+      "-o",
+      outPath,
+    ]);
+
+    expect(readFileSync(outPath, "utf8")).toBe("redirected");
+  });
+
+  it("rejects insecure CDN redirects without replacing the destination", async () => {
+    const fileUrl = "https://github.com/user-attachments/assets/abc123";
+    const outPath = join(tmpDir, "keep.txt");
+    writeFileSync(outPath, "Keep this file");
+    let insecureDownloads = 0;
+    server.use(
+      http.get(`${DOWNLOAD_URL}/url`, () => {
+        return HttpResponse.json({
+          downloadUrl: fileUrl,
+          filename: "report.txt",
+          contentType: "text/plain",
+        });
+      }),
+      http.get(fileUrl, () => {
+        return new HttpResponse(null, {
+          status: 302,
+          headers: { location: "http://cdn.example.test/report.txt" },
+        });
+      }),
+      http.get("http://cdn.example.test/report.txt", () => {
+        insecureDownloads += 1;
+        return new HttpResponse("insecure");
+      }),
+    );
+
+    await expect(
+      downloadFileCommand.parseAsync(["node", "okou", fileUrl, "-o", outPath]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(readFileSync(outPath, "utf8")).toBe("Keep this file");
+    expect(readdirSync(tmpDir)).toEqual(["keep.txt"]);
+    expect(insecureDownloads).toBe(0);
   });
 
   it("sanitizes unsafe filename hints before writing to the default output path", async () => {

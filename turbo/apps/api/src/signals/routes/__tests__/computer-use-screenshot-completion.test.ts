@@ -100,6 +100,61 @@ async function completeAndReadScreenshot(
 }
 
 describe("Computer Use screenshot completion", () => {
+  it("hands off a signed single-object URL after ownership and host authorization while retaining binary reads", async () => {
+    const scenario = createPublicComputerUseScenario(context);
+    return await scenario.run(async () => {
+      const fake = scenario.computerUse.installComputerUseS3Fake();
+      const fixture = await prepareScreenshotCompletion(scenario);
+      await completeAndReadScreenshot(scenario, fixture);
+      // Signing must work without downloading the object through the API.
+      fake.failNextGetObject(
+        new Error("Metadata must not download screenshot bytes"),
+      );
+      const metadata =
+        await scenario.computerUse.requestComputerUseScreenshotUrl(
+          fixture.actor,
+          fixture.commandId,
+          [200],
+        );
+      expect(metadata.body).toMatchObject({
+        filename: "screenshot.png",
+        contentType: "image/png",
+        size: fixture.bytes.length,
+        downloadUrl: expect.stringContaining(
+          encodeURIComponent(`${fixture.commandId}/screenshot.png`),
+        ),
+      });
+      expect(metadata.headers.get("cache-control")).toBe("private, no-store");
+      const sameOrgPeer = scenario.user({ orgId: fixture.actor.orgId });
+      const denied = await scenario.computerUse.requestComputerUseScreenshotUrl(
+        sameOrgPeer,
+        fixture.commandId,
+        [404],
+      );
+      expect(denied.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+      const otherHost = await scenario.computerUse.startComputerUseHost(
+        fixture.actor,
+        { hostName: "Other screenshot host" },
+      );
+      const wrongHost = await scenario.claim(fixture.actor, otherHost.hostId);
+      const hostDenied =
+        await scenario.computerUse.requestComputerUseScreenshotUrl(
+          { bearer: wrongHost.token },
+          fixture.commandId,
+          [404],
+        );
+      expect(hostDenied.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+      const bound = await scenario.claim(fixture.actor, fixture.host.hostId);
+      const allowed =
+        await scenario.computerUse.requestComputerUseScreenshotUrl(
+          { bearer: bound.token },
+          fixture.commandId,
+          [200],
+        );
+      expect(allowed.body).toStrictEqual(metadata.body);
+    });
+  });
+
   it("keeps an upload failure recoverable through ordinary completion", async () => {
     const scenario = createPublicComputerUseScenario(context);
     return await scenario.run(async () => {

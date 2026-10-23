@@ -359,12 +359,22 @@ if (args[0] === "stop") {
           },
         ),
         http.get(
-          "http://localhost:3000/api/web/download-file",
-          ({ request }) => {
+          "http://localhost:3000/api/artifact-references/:reference/download",
+          ({ request, params }) => {
             authorization = request.headers.get("authorization");
-            expect(new URL(request.url).searchParams.get("file_id")).toBe(
-              IMAGE_GENERATION_ID,
-            );
+            expect(params.reference).toBe(reference.split("/").at(-1));
+            return HttpResponse.json({
+              kind: "file",
+              filename: "image.png",
+              contentType: "image/png",
+              url: "https://delivery.example.com/batch-image.png?signature=private",
+            });
+          },
+        ),
+        http.get(
+          "https://delivery.example.com/batch-image.png",
+          ({ request }) => {
+            expect(request.headers.get("authorization")).toBeNull();
             return new HttpResponse("authenticated private image bytes", {
               headers: { "content-type": "image/png" },
             });

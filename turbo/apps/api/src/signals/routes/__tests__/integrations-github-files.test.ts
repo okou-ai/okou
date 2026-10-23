@@ -6,6 +6,7 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
 import {
+  integrationsGithubDownloadFileContract,
   integrationsGithubUploadCompleteContract,
   integrationsGithubUploadInitContract,
 } from "@okouai/api-contracts/contracts/integrations";
@@ -31,7 +32,8 @@ const TEST_APP_ROUTES = Object.freeze([
 ]);
 
 const context = testContext();
-const claimedToken = createClaimedRunCredentials(context).okouToken;
+const credentials = createClaimedRunCredentials(context);
+const claimedToken = credentials.okouToken;
 const mocks = createRouteMocks(context);
 const github = createGithubBddApi(context);
 const bdd = createBddApi(context);
@@ -115,6 +117,114 @@ describe("GitHub file integration routes", () => {
       return { ...run, token };
     });
   }
+
+  it.each([
+    {
+      url: "https://raw.githubusercontent.com/okou-ai/okou/main/report%20final.csv",
+      filename: "report final.csv",
+      contentType: "text/csv",
+    },
+    {
+      url: "https://github.com/user-attachments/assets/01234567-89ab-cdef-0123-456789abcdef",
+      filename: "github-file",
+      contentType: "application/octet-stream",
+    },
+  ])(
+    "returns validated GitHub URL metadata without fetching bytes: $filename",
+    async ({ url, filename, contentType }) => {
+      const fixture = await seedFixture();
+      let providerDownloads = 0;
+      server.use(
+        http.get(url, () => {
+          providerDownloads += 1;
+          return new HttpResponse("not downloaded");
+        }),
+      );
+      const client = setupApp({
+        context,
+        routes: integrationsGithubDownloadFileRoutes,
+      })(integrationsGithubDownloadFileContract);
+
+      const response = await accept(
+        client.fileUrl({
+          query: { url },
+          headers: { authorization: `Bearer ${await claimedToken(fixture)}` },
+        }),
+        [200],
+      );
+
+      expect(response.body).toStrictEqual({
+        downloadUrl: url,
+        filename,
+        contentType,
+      });
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(providerDownloads).toBe(0);
+    },
+  );
+
+  it("preserves signed GitHub URLs while sanitizing filename hints", async () => {
+    const fixture = await seedFixture();
+    const url =
+      "https://private-user-images.githubusercontent.com/123/file?jwt=signed!";
+    const client = setupApp({
+      context,
+      routes: integrationsGithubDownloadFileRoutes,
+    })(integrationsGithubDownloadFileContract);
+
+    const response = await accept(
+      client.fileUrl({
+        query: { url, filename: "../report.pdf" },
+        headers: { authorization: `Bearer ${await claimedToken(fixture)}` },
+      }),
+      [200],
+    );
+
+    expect(response.body).toStrictEqual({
+      downloadUrl: url,
+      filename: ".._report.pdf",
+      contentType: "application/pdf",
+    });
+  });
+
+  it("requires GitHub read capability before returning a download URL", async () => {
+    const fixture = await seedFixture();
+    const { sandboxToken } = await credentials.claim(fixture);
+    const client = setupApp({
+      context,
+      routes: integrationsGithubDownloadFileRoutes,
+    })(integrationsGithubDownloadFileContract);
+
+    const response = await accept(
+      client.fileUrl({
+        query: { url: "https://github.com/user-attachments/assets/abc123" },
+        headers: { authorization: `Bearer ${sandboxToken}` },
+      }),
+      [403],
+    );
+
+    expect(response.body.error.message).toContain("github:read");
+  });
+
+  it("rejects embedded credentials before handing off a GitHub URL", async () => {
+    const fixture = await seedFixture();
+    const client = setupApp({
+      context,
+      routes: integrationsGithubDownloadFileRoutes,
+    })(integrationsGithubDownloadFileContract);
+
+    const response = await accept(
+      client.fileUrl({
+        query: {
+          url: "https://user:secret@github.com/user-attachments/assets/abc123",
+        },
+        headers: { authorization: `Bearer ${await claimedToken(fixture)}` },
+      }),
+      [400],
+    );
+
+    expect(response.body.error.code).toBe("BAD_REQUEST");
+  });
 
   it("streams a GitHub context file from an allowed URL", async () => {
     const fixture = await seedFixture();
