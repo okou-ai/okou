@@ -276,8 +276,9 @@ export function preparedWorkflowThreadValues(
 }
 
 /** Preserve column encoders and omitted defaults in the gated INSERT SELECT. */
-function workflowThreadInsertFromBindingSql(
+export function workflowThreadInsertFromBindingSql(
   thread: ReturnType<typeof preparedWorkflowThreadValues>,
+  onlyThreadId?: string,
 ) {
   const columns = getTableColumns(chatThreads);
   const entries = (Object.keys(thread) as (keyof typeof thread)[]).map(
@@ -293,8 +294,12 @@ function workflowThreadInsertFromBindingSql(
       ? sql`accepted_binding.chat_thread_id`
       : sql.param(value, column);
   });
+  const gate =
+    onlyThreadId === undefined
+      ? sql.empty()
+      : sql`WHERE accepted_binding.chat_thread_id = ${sql.param(onlyThreadId, chatThreads.id)}`;
   return sql`INSERT INTO ${chatThreads} (${sql.join(names, sql`, `)})
-    SELECT ${sql.join(values, sql`, `)} FROM accepted_binding
+    SELECT ${sql.join(values, sql`, `)} FROM accepted_binding ${gate}
     RETURNING id, agent_id`;
 }
 

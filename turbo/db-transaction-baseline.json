@@ -547,11 +547,6 @@
       "owner": "commitWorkflowInput$"
     },
     {
-      "id": "TX-0334",
-      "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
-      "owner": "insertEventAutomation$"
-    },
-    {
       "id": "TX-0335",
       "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
       "owner": "commitWebhookEventAutomation$"

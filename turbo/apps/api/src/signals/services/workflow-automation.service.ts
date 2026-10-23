@@ -1,4 +1,7 @@
-import { workflowAutomationSnapshot } from "./workflow-automation-snapshot";
+import {
+  workflowAutomationSnapshot,
+  workflowAutomationSnapshotColumns,
+} from "./workflow-automation-snapshot";
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import {
   connectorCatalog,
@@ -24,7 +27,7 @@ import { parseRawRows } from "../../lib/db-raw-rows";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import {
-  chatThreadEventInsertSql,
+  chatThreadEventInsertPlan,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
 import { isDeepStrictEqual } from "node:util";
@@ -78,6 +81,10 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { parseScheduledAtTime } from "@okouai/core/timezone";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import {
+  chatThreadEvents,
+  chatThreadEventSequences,
+} from "@okouai/db/schema/chat-thread-event";
 import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
 import { googleCalendarWatchStates } from "@okouai/db/schema/google-calendar-event";
@@ -181,6 +188,7 @@ import {
   type WorkflowThreadPreparation,
   workflowUserAutomationThreadOwnerCondition,
   preparedWorkflowThreadValues,
+  workflowThreadInsertFromBindingSql,
 } from "./workflow-user-automation-thread.service";
 import {
   buildWorkflowWebhookSummaryFields$,
@@ -2075,6 +2083,63 @@ function eventAutomationThreadOwner(args: InsertEventAutomationArgs) {
   };
 }
 
+function eventAutomationThreadBinding(
+  owner: ReturnType<typeof eventAutomationThreadOwner>,
+  values: ReturnType<typeof preparedWorkflowThreadValues>,
+  args: InsertEventAutomationArgs,
+) {
+  return {
+    orgId: owner.orgId,
+    userId: owner.userId,
+    workflowId: owner.workflowId,
+    chatThreadId: values.id,
+    createdAt: args.currentTime,
+    updatedAt: args.currentTime,
+  };
+}
+
+function eventAutomationBindingConflict(
+  values: ReturnType<typeof preparedWorkflowThreadValues>,
+  args: InsertEventAutomationArgs,
+) {
+  return {
+    target: [
+      workflowUserAutomationThreads.orgId,
+      workflowUserAutomationThreads.userId,
+      workflowUserAutomationThreads.workflowId,
+    ],
+    set: {
+      chatThreadId: sql`coalesce(${workflowUserAutomationThreads.chatThreadId}, ${sql.param(values.id, workflowUserAutomationThreads.chatThreadId)})`,
+      updatedAt: args.currentTime,
+    },
+  };
+}
+
+function eventAutomationReturning() {
+  const snapshot = workflowAutomationSnapshotColumns();
+  return {
+    ...workflowAutomationColumns(),
+    observedUpdatedAt: snapshot.observedUpdatedAt.as("observed_updated_at"),
+    observedXmin: snapshot.observedXmin.as("observed_xmin"),
+    chatThreadId: sql`(SELECT chat_thread_id FROM accepted_binding)`
+      .mapWith(workflowUserAutomationThreads.chatThreadId)
+      .as("bound_chat_thread_id"),
+  };
+}
+
+function eventAutomationCalendarWarningWhere(
+  owner: ReturnType<typeof eventAutomationThreadOwner>,
+  eventConnectorId: string,
+  calendarId: string,
+) {
+  return and(
+    eq(googleCalendarWatchStates.orgId, owner.orgId),
+    eq(googleCalendarWatchStates.userId, owner.userId),
+    eq(googleCalendarWatchStates.connectorId, eventConnectorId),
+    eq(googleCalendarWatchStates.calendarId, calendarId),
+  );
+}
+
 /** An account write lost the race with deletion of the referenced account. */
 function isAutomationEventConnectorMissing(error: unknown): boolean {
   return (
@@ -2101,15 +2166,12 @@ const insertEventAutomation$ = command(
     const owner = eventAutomationThreadOwner(args);
     const connectorSlug = eventAutomationConnectorSlug(args.input);
     const inserted = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0334; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        // Publish the selected account, shared thread/created event and
-        // automation together; a failed account FK must roll back the binding.
+      (async () => {
         let eventConnectorId: string | null = null;
         if (connectorSlug !== null) {
           const [selected] = parseRawRows(
             z.object({ connectorId: z.string().nullable() }),
-            await tx.execute(
+            await db.execute(
               workflowAutomationConnectorSelectionSql({
                 ...owner,
                 connectorSlug,
@@ -2124,93 +2186,97 @@ const insertEventAutomation$ = command(
         ) {
           return null;
         }
-        const [binding] = await tx
-          .insert(workflowUserAutomationThreads)
-          .values({
-            orgId: owner.orgId,
-            userId: owner.userId,
-            workflowId: owner.workflowId,
-            createdAt: args.currentTime,
-            updatedAt: args.currentTime,
-          })
-          .onConflictDoUpdate({
-            target: [
-              workflowUserAutomationThreads.orgId,
-              workflowUserAutomationThreads.userId,
-              workflowUserAutomationThreads.workflowId,
-            ],
-            set: { updatedAt: args.currentTime },
-          })
-          .returning({
-            chatThreadId: workflowUserAutomationThreads.chatThreadId,
-          });
-        let chatThreadId = binding?.chatThreadId;
-        if (!chatThreadId) {
-          const values = preparedWorkflowThreadValues(
-            owner,
-            args.threadPreparation,
-            randomUUID(),
-          );
-          await tx.insert(chatThreads).values(values);
-          await tx.execute(
-            chatThreadEventInsertSql(
-              workflowThreadCreatedEventValues(owner, values),
-            ),
-          );
-          const [updated] = await tx
-            .update(workflowUserAutomationThreads)
-            .set({ chatThreadId: values.id, updatedAt: args.currentTime })
-            .where(workflowUserAutomationThreadOwnerCondition(owner))
-            .returning({
-              chatThreadId: workflowUserAutomationThreads.chatThreadId,
-            });
-          if (!updated?.chatThreadId) {
-            throw new Error(
-              "Failed to persist workflow automation chat thread",
-            );
-          }
-          chatThreadId = updated.chatThreadId;
-        }
         if (
           automationCreateInputIsGoogleForms(args.input) &&
           eventConnectorId !== args.input.eventConfig.connectorId
         ) {
           throw new GoogleFormsAccountSelectionChangedError();
         }
-        const [row] = await tx
-          .insert(workflowAutomations)
-          .values(preparedEventAutomationValues(args, eventConnectorId))
-          .returning(workflowAutomationColumns());
-        if (!row) {
-          throw new Error("Failed to create workflow automation");
-        }
-        const calendarId = googleCalendarIdFromAutomationRow(row);
         let warning: GoogleCalendarWatchActionRequiredReason | undefined;
-        if (calendarId !== null && row.eventConnectorId !== null) {
-          const [state] = await tx
+        if (
+          automationCreateInputIsGoogleCalendar(args.input) &&
+          eventConnectorId !== null
+        ) {
+          const calendarId = parseGoogleCalendarEventConfig(
+            args.input.eventType,
+            args.input.eventConfig,
+          ).calendarId;
+          const [state] = await db
             .select({
               reason: googleCalendarWatchStates.actionRequiredReason,
               startedAt: googleCalendarWatchStates.actionRequiredAt,
             })
             .from(googleCalendarWatchStates)
             .where(
-              and(
-                eq(googleCalendarWatchStates.orgId, row.orgId),
-                eq(googleCalendarWatchStates.userId, row.ownerUserId),
-                eq(googleCalendarWatchStates.connectorId, row.eventConnectorId),
-                eq(googleCalendarWatchStates.calendarId, calendarId),
+              eventAutomationCalendarWarningWhere(
+                owner,
+                eventConnectorId,
+                calendarId,
               ),
             )
             .limit(1);
           warning = googleCalendarWarningFromState(state);
         }
-        return createdEventAutomationReceipt(row, chatThreadId, warning);
-      }),
+        const values = preparedWorkflowThreadValues(
+          owner,
+          args.threadPreparation,
+          randomUUID(),
+        );
+        const binding = db.$with("accepted_binding").as(
+          db
+            .insert(workflowUserAutomationThreads)
+            .values(eventAutomationThreadBinding(owner, values, args))
+            .onConflictDoUpdate(eventAutomationBindingConflict(values, args))
+            .returning({
+              chatThreadId: workflowUserAutomationThreads.chatThreadId,
+            }),
+        );
+        const thread = db
+          .$with("inserted_thread", {
+            id: chatThreads.id,
+            agentId: chatThreads.agentId,
+          })
+          .as(workflowThreadInsertFromBindingSql(values, values.id));
+        const event = chatThreadEventInsertPlan(
+          workflowThreadCreatedEventValues(owner, values),
+          {
+            gate: sql`EXISTS (SELECT 1 FROM inserted_thread)`,
+            agentId: sql`(SELECT agent_id FROM inserted_thread)`,
+          },
+        );
+        const reserved = db
+          .$with("reserved", {
+            lastSeqId: chatThreadEventSequences.lastSeqId,
+          })
+          .as(event.reservation);
+        const createdEvent = db
+          .$with("inserted_thread_event", { id: chatThreadEvents.id })
+          .as(event.insertion);
+        const automation = db.$with("inserted_event_automation").as(
+          db
+            .insert(workflowAutomations)
+            .values({
+              ...preparedEventAutomationValues(args, eventConnectorId),
+              workflowId: sql`(SELECT ${sql.param(args.workflowId, workflowAutomations.workflowId)}::uuid
+                FROM accepted_binding
+                CROSS JOIN (SELECT count(*) FROM inserted_thread_event) AS event_completion)`,
+            })
+            .returning(eventAutomationReturning()),
+        );
+        const [row] = await db
+          .with(binding, thread, reserved, createdEvent, automation)
+          .select()
+          .from(automation);
+        if (!row || !row.chatThreadId) {
+          throw new Error("Failed to create workflow automation");
+        }
+        return createdEventAutomationReceipt(row, row.chatThreadId, warning);
+      })(),
     );
     if (inserted.ok) {
       return inserted.value;
     }
-    // The whole transaction has rolled back. The selected account was deleted
+    // The whole publication statement has rolled back. The account was deleted
     // after it was read: report the changed account like an expectation miss.
     if (!isAutomationEventConnectorMissing(inserted.error)) {
       throw inserted.error;
