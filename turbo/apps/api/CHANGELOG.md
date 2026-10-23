@@ -9,6 +9,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.1.1](https://github.com/okou-ai/okou/compare/api-v2.1.0...api-v2.1.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **api:** support kms, stripe and axiom in workers ([#42605](https://github.com/okou-ai/okou/issues/42605)) ([56450ed](https://github.com/okou-ai/okou/commit/56450edb7afbc5368e386113d9855ff03d827b0e))
+
+
+### Refactoring
+
+* **slack:** retire identity-only oauth install and connect ([#42583](https://github.com/okou-ai/okou/issues/42583)) ([ab402e0](https://github.com/okou-ai/okou/commit/ab402e0c626ce072f66715a8ecdb5cca0b848c4c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.1.1
+    * @okouai/core bumped to 8.783.1
+    * @okouai/db bumped to 2.1.1
+    * @okouai/pi-agent-runtime bumped to 1.50.62
+
 ## [2.1.0](https://github.com/okou-ai/okou/compare/api-v2.0.0...api-v2.1.0) (2026-10-23)
 
 

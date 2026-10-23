@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.37](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.36...guest-control-server-v0.24.37) (2026-10-23)
+
+
+### Refactoring
+
+* **guest-control:** encode queued file-write input custody ([#42603](https://github.com/okou-ai/okou/issues/42603)) ([2df0590](https://github.com/okou-ai/okou/commit/2df0590c8208770de7c55680183e20936c07c179))
+
 ## [0.24.36](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.35...guest-control-server-v0.24.36) (2026-10-23)
 
 ## [0.24.35](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.34...guest-control-server-v0.24.35) (2026-10-23)
