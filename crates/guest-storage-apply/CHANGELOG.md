@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.4](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.3...guest-storage-apply-v0.26.4) (2026-10-23)
+
+
+### Performance Improvements
+
+* **runner:** reuse directory descriptors during guest archive extraction ([#42647](https://github.com/okou-ai/okou/issues/42647)) ([704e521](https://github.com/okou-ai/okou/commit/704e521da410fc07165603bc62508360683ce4e5))
+
 ## [0.26.3](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.2...guest-storage-apply-v0.26.3) (2026-10-23)
 
 

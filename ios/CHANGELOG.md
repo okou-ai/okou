@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.10](https://github.com/okou-ai/okou/compare/ios-v0.18.9...ios-v0.18.10) (2026-10-23)
+
+
+### Bug Fixes
+
+* **ios:** load archive visibility before restoring cached chats ([#42633](https://github.com/okou-ai/okou/issues/42633)) ([e451c54](https://github.com/okou-ai/okou/commit/e451c543b44e30b96efc2b63dcddc1362d1d4d50))
+
+
+### CI
+
+* **ios:** resolve dependencies before simulator startup ([#42644](https://github.com/okou-ai/okou/issues/42644)) ([60b1d29](https://github.com/okou-ai/okou/commit/60b1d29b60beee8628618b1b853d9da185c2a5b4))
+
 ## [0.18.9](https://github.com/okou-ai/okou/compare/ios-v0.18.8...ios-v0.18.9) (2026-10-23)
 
 
