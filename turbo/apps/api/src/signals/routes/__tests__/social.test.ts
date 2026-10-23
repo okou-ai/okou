@@ -1209,6 +1209,53 @@ describe("managed SocialKit route", () => {
     },
   );
 
+  it.each([1500, "1,001-5,000 employees"])(
+    "returns LinkedIn company employee counts or ranges as compatible text (%s)",
+    async (employees) => {
+      const actor = createBddApi(context).user();
+      configureProvider();
+      const owner = await fundActorWithSubscription(actor);
+      await owner.run(async () => {
+        // SocialKit documents employees as a numeric LinkedIn-reported count.
+        // Keep the previously accepted employee range representation intact.
+        const company = {
+          url: "https://www.linkedin.com/company/openai/",
+          name: "OpenAI",
+          description: "OpenAI is an AI research and deployment company.",
+          followers: 2_800_000,
+          employees,
+          logo: "https://media.licdn.com/dms/image/company-logo",
+        };
+        server.use(
+          providerHandler("GET", "/linkedin/company", () => {
+            return HttpResponse.json(providerResponse(company));
+          }),
+        );
+        const beforeCredits = await credits(actor);
+        const response = await accept(
+          client()(socialContract).request({
+            headers: authenticate(actor),
+            body: {
+              tool: "linkedin_company",
+              input: { url: company.url },
+            },
+          }),
+          [200],
+        );
+        expect(response.body).toMatchObject({
+          provider: "socialkit",
+          tool: "linkedin_company",
+          result: { ...company, employees: String(employees) },
+          billingQuantity: 1,
+          creditsCharged: SOCIALKIT_REQUEST_CREDITS,
+        });
+        expect(beforeCredits - (await credits(actor))).toBe(
+          SOCIALKIT_REQUEST_CREDITS,
+        );
+      });
+    },
+  );
+
   it("rejects invalid Instagram searches before provider work or billing", async () => {
     const actor = createBddApi(context).user();
     configureProvider();
@@ -3107,7 +3154,7 @@ describe("managed SocialKit route", () => {
         message: "Another social media download is already in progress",
         recovery: {
           downloadId: first.body.downloadId,
-          resumeCommand: `okou social download --resume ${first.body.downloadId}`,
+          resumeCommand: `okou data social download --resume ${first.body.downloadId}`,
         },
       });
       expect(first.body.status).toBe("processing");

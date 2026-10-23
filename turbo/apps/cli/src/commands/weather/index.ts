@@ -801,11 +801,11 @@ export const weatherCommand = new Command()
     "after",
     `
 Examples:
-  Current conditions:  okou weather current --lat 39.9042 --lng 116.4074 --json
-  Hourly forecast:     okou weather forecast hourly --lat 39.9042 --lng 116.4074 --hours 48 --page-size 24 --json
-  Daily forecast:      okou weather forecast daily --lat 39.9042 --lng 116.4074 --days 10 --page-size 10 --json
-  Hourly history:      okou weather history hourly --lat 39.9042 --lng 116.4074 --hours 24 --json
-  Current air quality: okou weather air-quality current --lat 39.9042 --lng 116.4074 --json
+  Current conditions:  okou data weather current --lat 39.9042 --lng 116.4074 --json
+  Hourly forecast:     okou data weather forecast hourly --lat 39.9042 --lng 116.4074 --hours 48 --page-size 24 --json
+  Daily forecast:      okou data weather forecast daily --lat 39.9042 --lng 116.4074 --days 10 --page-size 10 --json
+  Hourly history:      okou data weather history hourly --lat 39.9042 --lng 116.4074 --hours 24 --json
+  Current air quality: okou data weather air-quality current --lat 39.9042 --lng 116.4074 --json
 
 Notes:
   - Authenticates via OKOU_TOKEN (requires weather:read capability) or a CLI token

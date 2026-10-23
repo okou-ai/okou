@@ -1137,7 +1137,7 @@ async function finishCollectionOutput(
         expiresAt: new Date(saved.expiresAt).toISOString(),
         ...(available
           ? {
-              resumeCommand: `okou social resume '${checkpoint.file.path.replaceAll("'", "'\\''")}' --limit ${output.collection.requestedItems} --json`,
+              resumeCommand: `okou data social resume '${checkpoint.file.path.replaceAll("'", "'\\''")}' --limit ${output.collection.requestedItems} --json`,
             }
           : {}),
       },
@@ -1424,7 +1424,7 @@ async function closeCollectionCheckpoint(
 }
 
 function resumeDownloadCommand(downloadId: string): string {
-  return `okou social download --resume ${downloadId}`;
+  return `okou data social download --resume ${downloadId}`;
 }
 
 async function withDownloadInterruption(
@@ -1611,7 +1611,7 @@ Reports public service health, not account access, quota, or balance.
 Overall includes service-wide health even when operations are filtered.
 Missing, invalid, unavailable, or older-than-five-minute observations are unknown.
 Requires authentication, an organization, and social:read for capability tokens.
-Discover supported operations and constraints offline: okou social capabilities [platform] --json
+Discover supported operations and constraints offline: okou data social capabilities [platform] --json
 `,
   )
   .action(
@@ -1999,8 +1999,8 @@ const summarizeCommand = new Command()
     "after",
     `
 Examples:
-  okou social summarize https://youtu.be/<id> --fields '{"audience":"Who this video helps","actionItems":"Practical next steps"}' --json
-  okou social summarize https://youtu.be/<id> --fields-file summary-fields.json --prompt "Focus on small business owners" --json
+  okou data social summarize https://youtu.be/<id> --fields '{"audience":"Who this video helps","actionItems":"Practical next steps"}' --json
+  okou data social summarize https://youtu.be/<id> --fields-file summary-fields.json --prompt "Focus on small business owners" --json
 
 Notes:
   - Supported on Facebook, Instagram, TikTok, and YouTube
@@ -2033,7 +2033,7 @@ function downloadListNextCommand(
   if (!nextCursor) {
     return null;
   }
-  return `okou social downloads --limit ${query.limit} --cursor ${nextCursor}${query.status ? ` --status ${query.status}` : ""} --json`;
+  return `okou data social downloads --limit ${query.limit} --cursor ${nextCursor}${query.status ? ` --status ${query.status}` : ""} --json`;
 }
 
 const downloadsCommand = new Command()
@@ -2090,7 +2090,7 @@ Before using a returned resumeCommand, verify that its task and original target 
           ...(response.downloads.length === 0
             ? {
                 message:
-                  "No downloads found in this page. Omit --cursor or --status to list recent tasks; use okou social download --help to start a new download.",
+                  "No downloads found in this page. Omit --cursor or --status to list recent tasks; use okou data social download --help to start a new download.",
               }
             : {}),
         },
@@ -2125,7 +2125,7 @@ const downloadCommand = new Command()
 Supported public sources: YouTube, TikTok, Instagram, and Facebook. Platform is detected from the URL.
 New requests return a temporary direct download URL, not a durable Okou artifact. The sandbox can download it directly without credential headers; this command only returns the link and does not download the file. Treat the signed URL as sensitive: it grants file access until expiry. Check data.download.expiresAt; a null expiry means unknown, not permanent access.
 MP4 is the default; MP3 and M4A are audio and use audio pricing even when an HD quality is selected. Direct-link delivered formats are provider-reported, not byte-verified; the requested format alone does not prove the file type.
-If creation conflicts with an accessible task, inspect its target before following the recovery ID or resumeCommand. --resume reuses the existing task and may retry link recovery; it does not cancel upstream work or prevent billing. Do not automatically replay a create with unknown effects. Recover a lost task ID with okou social downloads --status active --json.`,
+If creation conflicts with an accessible task, inspect its target before following the recovery ID or resumeCommand. --resume reuses the existing task and may retry link recovery; it does not cancel upstream work or prevent billing. Do not automatically replay a create with unknown effects. Recover a lost task ID with okou data social downloads --status active --json.`,
   )
   .action(async (url: string | undefined, options: DownloadOptions) => {
     await runSocialAction(options.json === true, async () => {
@@ -2255,34 +2255,34 @@ export const socialCommand = new Command()
 Read the relevant subcommand's --help before use for supported inputs, limits, billing, export, and recovery guidance.
 
 Examples:
-  Discover:    okou social capabilities instagram --json
-  Health:      okou social status instagram --json
-  Inspect:     okou social inspect https://www.instagram.com/p/<id>/ --json
-  With views:  okou social inspect https://www.instagram.com/reel/<id>/ --require-views --json
-  Posts:       okou social posts https://www.instagram.com/<user>/ --limit 20 --json
-  Details:     okou social posts https://www.youtube.com/@<channel> --full-details --limit 30 --json
-  Reels:       okou social posts https://www.instagram.com/<user>/ --kind reels --limit 20 --json
-  Search:      okou social search "product launch" --platform tiktok --limit 20 --json
-  Hashtag:     okou social search "#cats" --platform instagram --hashtag --json
-  Comments:    okou social comments https://www.tiktok.com/@<user>/video/<id> --limit 20 --json
-  Checkpoint:  okou social comments https://www.instagram.com/p/<id>/ --limit 20 --checkpoint comments.json --json
-  Continue:    okou social resume comments.json --limit 20 --json
-  Transcript:  okou social transcript https://youtu.be/<id> --json
-  Captions:    okou social transcript https://youtu.be/<id> --format vtt --output captions.vtt
-  Summary:     okou social summarize https://youtu.be/<id> --json
-  Fields:      okou social summarize https://youtu.be/<id> --fields '{"audience":"Who this video helps","actionItems":"Practical next steps"}' --json
-  Fields file: okou social summarize https://youtu.be/<id> --fields-file summary-fields.json --json
-  Research:    okou social search "small business" --platform youtube --limit 20 --select title,url --format csv --output research.csv
-  Save JSON:   okou social inspect https://www.instagram.com/p/<id>/ --output result.json
-  Download:    okou social download https://youtu.be/<id> --max-duration 600 --json
-  MP3 audio:   okou social download https://youtu.be/<id> --max-duration 600 --format mp3 --json
-  Find tasks:  okou social downloads --status active --json
-  Resume:      okou social download --resume <download-id> --json
-  Quote:       okou social comments https://www.facebook.com/<post> --limit 100 --dry-run --json
-  Saved job:   okou social posts https://www.instagram.com/<user>/ --limit 100 --async --json
-  WeChat job:  okou social inspect https://mp.weixin.qq.com/s/<id> --max-credits 50 --json
-  Threads job: okou social search "<handle>" --platform threads --limit 10 --max-credits 50 --json
-  Read job:    okou social jobs get <job-id> --wait --json
+  Discover:    okou data social capabilities instagram --json
+  Health:      okou data social status instagram --json
+  Inspect:     okou data social inspect https://www.instagram.com/p/<id>/ --json
+  With views:  okou data social inspect https://www.instagram.com/reel/<id>/ --require-views --json
+  Posts:       okou data social posts https://www.instagram.com/<user>/ --limit 20 --json
+  Details:     okou data social posts https://www.youtube.com/@<channel> --full-details --limit 30 --json
+  Reels:       okou data social posts https://www.instagram.com/<user>/ --kind reels --limit 20 --json
+  Search:      okou data social search "product launch" --platform tiktok --limit 20 --json
+  Hashtag:     okou data social search "#cats" --platform instagram --hashtag --json
+  Comments:    okou data social comments https://www.tiktok.com/@<user>/video/<id> --limit 20 --json
+  Checkpoint:  okou data social comments https://www.instagram.com/p/<id>/ --limit 20 --checkpoint comments.json --json
+  Continue:    okou data social resume comments.json --limit 20 --json
+  Transcript:  okou data social transcript https://youtu.be/<id> --json
+  Captions:    okou data social transcript https://youtu.be/<id> --format vtt --output captions.vtt
+  Summary:     okou data social summarize https://youtu.be/<id> --json
+  Fields:      okou data social summarize https://youtu.be/<id> --fields '{"audience":"Who this video helps","actionItems":"Practical next steps"}' --json
+  Fields file: okou data social summarize https://youtu.be/<id> --fields-file summary-fields.json --json
+  Research:    okou data social search "small business" --platform youtube --limit 20 --select title,url --format csv --output research.csv
+  Save JSON:   okou data social inspect https://www.instagram.com/p/<id>/ --output result.json
+  Download:    okou data social download https://youtu.be/<id> --max-duration 600 --json
+  MP3 audio:   okou data social download https://youtu.be/<id> --max-duration 600 --format mp3 --json
+  Find tasks:  okou data social downloads --status active --json
+  Resume:      okou data social download --resume <download-id> --json
+  Quote:       okou data social comments https://www.facebook.com/<post> --limit 100 --dry-run --json
+  Saved job:   okou data social posts https://www.instagram.com/<user>/ --limit 100 --async --json
+  WeChat job:  okou data social inspect https://mp.weixin.qq.com/s/<id> --max-credits 50 --json
+  Threads job: okou data social search "<handle>" --platform threads --limit 10 --max-credits 50 --json
+  Read job:    okou data social jobs get <job-id> --wait --json
 
 Notes:
   - URL commands detect LinkedIn, X, Facebook, Instagram, TikTok, and YouTube automatically

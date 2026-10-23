@@ -283,9 +283,9 @@ export const createSocialDataJob$ = command(
     args: SocialAdmissionArgs,
     signal: AbortSignal,
   ): Promise<CreatedResponse | ErrorResponse> => {
-    const early = await set(checkSocialDataAdmission$, args, signal);
-    if (early) {
-      return early;
+    const existing = await set(checkSocialDataAdmission$, args, signal);
+    if (existing) {
+      return existing;
     }
     const db = set(writeDb$);
     const result = await settle(
@@ -368,14 +368,7 @@ export const createSocialDataJob$ = command(
               .where(eq(orgPlanEntitlements.orgId, orgId))
               .limit(1);
             if (!capabilities) {
-              const [org] = await tx
-                .select({ orgId: orgMetadata.orgId })
-                .from(orgMetadata)
-                .where(eq(orgMetadata.orgId, orgId))
-                .limit(1);
-              if (org) {
-                throw new Error(`Missing org plan entitlement for ${orgId}`);
-              }
+              throw new Error(`Missing org plan entitlement for ${orgId}`);
             }
             const access = snapshotAccess(required.row, capabilities, orgId);
             signal.throwIfAborted();
@@ -399,6 +392,12 @@ export const createSocialDataJob$ = command(
             .values(socialAdmissionValues({ ...args, plan, estimate }, budget))
             .returning();
           signal.throwIfAborted();
+          // Publish the financial reservation against the wallet version too,
+          // so concurrent Data Search admission CAS cannot accept an old budget.
+          await tx
+            .update(orgMetadata)
+            .set({ updatedAt: nowDate() })
+            .where(eq(orgMetadata.orgId, orgId));
           return createdSocialDataJob(job);
         });
       })(),

@@ -179,7 +179,7 @@ export function requireCheckpointSupport(intent: SocialIntent): void {
     ?.pagination;
   if (!pagination || pagination.kind === "none") {
     throw new InvalidArgumentError(
-      "This operation has no reviewed continuation support; omit --checkpoint and inspect okou social capabilities",
+      "This operation has no reviewed continuation support; omit --checkpoint and inspect okou data social capabilities",
     );
   }
 }

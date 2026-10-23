@@ -5348,6 +5348,10 @@
       "timing": "修改对之后的运行生效。正在运行和已准备好的任务可能仍沿用原来的设置。",
       "title": "内置工具",
       "tools": {
+        "data-search": {
+          "description": "补充职业资料，研究公司、流量、广告、创作者及其他商业数据。",
+          "name": "高级数据研究"
+        },
         "finance": {
           "description": "查询公司、行情和市场数据。",
           "name": "金融数据"
@@ -6042,18 +6046,10 @@
   "usage": {
     "displayNames": {
       "avatar": "数字人",
-      "finance": "金融",
+      "dataSearch": "数据搜索",
       "imageRecognition": "图像识别",
-      "maps": "地图",
-      "peopleSearch": "人物搜索",
-      "productData": "商品数据",
-      "seo": "SEO",
-      "socialSearch": "社交数据",
       "translation": "翻译",
-      "usage": "用量",
-      "weather": "天气",
-      "webFetch": "网页抓取",
-      "webSearch": "网页搜索"
+      "usage": "用量"
     },
     "kinds": {
       "connector": "连接器",

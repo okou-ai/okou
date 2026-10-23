@@ -37,14 +37,7 @@ function buildCommands(): Command[] {
     new Command("generate"),
     new Command("web"),
     new Command("host"),
-    new Command("maps"),
-    new Command("weather"),
-    new Command("scrape"),
-    new Command("people-search"),
-    new Command("web-search"),
-    new Command("social"),
-    new Command("finance"),
-    new Command("seo"),
+    new Command("data"),
     new Command("banking"),
     new Command("wallet"),
   ];
@@ -253,14 +246,7 @@ describe("registerCommands", () => {
       "phone",
       "browser",
       "host",
-      "maps",
-      "weather",
-      "scrape",
-      "people-search",
-      "web-search",
-      "social",
-      "finance",
-      "seo",
+      "data",
       "banking",
       "wallet",
     ]);
@@ -321,84 +307,24 @@ describe("registerCommands", () => {
     ]);
   });
 
-  it("should show scrape when scrape:read capability is present", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["scrape:read"],
-    });
-    vi.stubEnv("OKOU_TOKEN", token);
-
-    const prog = buildProgram();
-
-    expect(visibleCommandNames(prog)).toContain("scrape");
-  });
-
-  it("should show web-search when web-search:read capability is present", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["web-search:read"],
-    });
-    vi.stubEnv("OKOU_TOKEN", token);
-
-    const prog = buildProgram();
-
-    expect(visibleCommandNames(prog)).toContain("web-search");
-  });
-
-  it("should show social only with social:read capability", () => {
-    const hiddenToken = buildOkouToken({
-      scope: "okou",
-      capabilities: ["web-search:read"],
-    });
-    vi.stubEnv("OKOU_TOKEN", hiddenToken);
-    expect(hiddenCommandNames(buildProgram())).toContain("social");
-
-    const visibleToken = buildOkouToken({
-      scope: "okou",
-      capabilities: ["social:read"],
-    });
-    vi.stubEnv("OKOU_TOKEN", visibleToken);
-    expect(visibleCommandNames(buildProgram())).toContain("social");
-  });
-
-  it("should show finance when finance:read capability is present", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["finance:read"],
-    });
-    vi.stubEnv("OKOU_TOKEN", token);
-
-    const prog = buildProgram();
-
-    expect(visibleCommandNames(prog)).toContain("finance");
-  });
-
-  it("should show seo when seo:read capability is present", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["seo:read"],
-    });
-    vi.stubEnv("OKOU_TOKEN", token);
-
-    const prog = buildProgram();
-
-    expect(visibleCommandNames(prog)).toContain("seo");
-  });
-
-  it("should show people-search only with people-search:read capability", () => {
-    const hiddenToken = buildOkouToken({
-      scope: "okou",
-      capabilities: ["web-search:read"],
-    });
-    vi.stubEnv("OKOU_TOKEN", hiddenToken);
-    expect(hiddenCommandNames(buildProgram())).toContain("people-search");
-
-    const visibleToken = buildOkouToken({
-      scope: "okou",
-      capabilities: ["people-search:read"],
-    });
-    vi.stubEnv("OKOU_TOKEN", visibleToken);
-    expect(visibleCommandNames(buildProgram())).toContain("people-search");
+  it.each([
+    "data-search:read",
+    "data-enrichment:read",
+    "maps:read",
+    "weather:read",
+    "scrape:read",
+    "people-search:read",
+    "web-search:read",
+    "social:read",
+    "commerce:read",
+    "finance:read",
+    "seo:read",
+  ])("shows the data namespace with %s", (capability) => {
+    vi.stubEnv(
+      "OKOU_TOKEN",
+      buildOkouToken({ scope: "okou", capabilities: [capability] }),
+    );
+    expect(visibleCommandNames(buildProgram())).toContain("data");
   });
 
   it("should show credit with either billing read or billing write capability", () => {
@@ -663,19 +589,6 @@ describe("registerCommands", () => {
     expect(visibleCommandNames(prog)).toContain("whoami");
   });
 
-  it("should show maps when maps:read capability is present", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["maps:read"],
-    });
-    vi.stubEnv("OKOU_TOKEN", token);
-
-    const prog = buildProgram();
-
-    expect(visibleCommandNames(prog)).toContain("maps");
-    expect(visibleCommandNames(prog)).toContain("whoami");
-  });
-
   it.each([true, false])(
     "gates notify visibility on notify:write (enabled=%s)",
     (enabled) => {
@@ -691,43 +604,6 @@ describe("registerCommands", () => {
       );
     },
   );
-
-  it("should hide maps when maps:read capability is missing", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["file:write"],
-    });
-    vi.stubEnv("OKOU_TOKEN", token);
-
-    const prog = buildProgram();
-
-    expect(hiddenCommandNames(prog)).toContain("maps");
-  });
-
-  it("should show weather when weather:read capability is present", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["weather:read"],
-    });
-    vi.stubEnv("OKOU_TOKEN", token);
-
-    const prog = buildProgram();
-
-    expect(visibleCommandNames(prog)).toContain("weather");
-    expect(visibleCommandNames(prog)).toContain("whoami");
-  });
-
-  it("should hide weather when weather:read capability is missing", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["file:write"],
-    });
-    vi.stubEnv("OKOU_TOKEN", token);
-
-    const prog = buildProgram();
-
-    expect(hiddenCommandNames(prog)).toContain("weather");
-  });
 
   it("advertises the wallet only with its capability and hides it without that capability", () => {
     for (const capability of ["file:write", "wallet:read", "wallet:write"]) {

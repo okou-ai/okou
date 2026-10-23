@@ -325,7 +325,7 @@ describe("saved Social data jobs", () => {
     expect(body).toEqual({ requestId, maxCredits: 12 });
     expect(JSON.parse(stdout())).toMatchObject({
       jobId: successorId,
-      recoveryCommand: `okou social jobs get ${successorId} --wait --json`,
+      recoveryCommand: `okou data social jobs get ${successorId} --wait --json`,
     });
   });
 
@@ -601,7 +601,7 @@ describe("saved Social data jobs", () => {
     expect(JSON.parse(stdout())).toMatchObject({
       jobId,
       status: "pending",
-      recoveryCommand: `okou social jobs get ${jobId} --wait --json`,
+      recoveryCommand: `okou data social jobs get ${jobId} --wait --json`,
     });
   });
 
@@ -910,7 +910,7 @@ describe("saved Social data jobs", () => {
     ]);
     expect(process.exitCode).toBe(130);
     expect(errors.mock.calls.flat().join("\n")).toContain(
-      `okou social jobs get ${jobId} --wait --json`,
+      `okou data social jobs get ${jobId} --wait --json`,
     );
     expect(stdout()).toBe("");
   });

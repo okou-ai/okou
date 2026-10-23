@@ -674,33 +674,12 @@ test("Review personal credit-usage records by date range", async () => {
   expect(screen.getAllByLabelText("Thread").length).toBeGreaterThan(0);
   expect(requests.ranges).toContain("today");
 
-  await user.hover(screen.getByTestId("usage-kind-segment-other"));
-
+  await user.hover(screen.getByTestId("usage-kind-segment-connector"));
+  await screen.findByText("Connectors - 1,080");
   await waitFor(() => {
-    expect(screen.getAllByText("Web Fetch").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("Maps").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("Web Search").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("People Search").length).toBeGreaterThanOrEqual(
-      1,
+    expect(screen.getByText("Data Search").parentElement).toHaveTextContent(
+      "Data Search1,080",
     );
-    expect(
-      screen.getAllByText("People Search").some((element) => {
-        return element.parentElement?.textContent === "People Search80";
-      }),
-    ).toBeTruthy();
-    expect(
-      screen.getAllByText("Web Search").some((element) => {
-        return element.parentElement?.textContent === "Web Search120";
-      }),
-    ).toBeTruthy();
-    expect(
-      screen.getAllByText("SEO").some((element) => {
-        return element.parentElement?.textContent === "SEO100";
-      }),
-    ).toBeTruthy();
-    expect(screen.getAllByText("Finance").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("Weather").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("Translation").length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText("Firecrawl")).not.toBeInTheDocument();
     expect(screen.queryByText("Google Maps")).not.toBeInTheDocument();
     expect(screen.queryByText("Perplexity")).not.toBeInTheDocument();
@@ -711,6 +690,13 @@ test("Review personal credit-usage records by date range", async () => {
       screen.queryByText("qwen/qwen-2.5-7b-instruct"),
     ).not.toBeInTheDocument();
   });
+
+  await user.unhover(screen.getByTestId("usage-kind-segment-connector"));
+  await user.hover(screen.getByTestId("usage-kind-segment-other"));
+  await screen.findByText("Other - 3");
+  expect(screen.getByText("Translation").parentElement).toHaveTextContent(
+    "Translation3",
+  );
 
   click(screen.getByText("Today"));
   click(await screen.findByText("Last 7 days"));
@@ -765,19 +751,19 @@ test.each(["click", "Enter"])(
   },
 );
 
-test("Merge Social and Product Data into Connectors without changing other credit totals", async () => {
+test("Merge historical data and new enrichment into Connectors without double counting credits", async () => {
   const user = userEvent.setup();
   mockPersonalUsageStory([
     {
       ...usageRow({
         title: "Social platform research",
-        credits: 129,
+        credits: 143,
         runId: "run-social-platform-research",
       }),
       breakdown: [
         {
           kind: "other",
-          credits: 100,
+          credits: 114,
           providers: [
             {
               provider: "monid/x",
@@ -840,6 +826,21 @@ test("Merge Social and Product Data into Connectors without changing other credi
               credits: 7,
               usageKinds: [{ kind: "finance", credits: 7 }],
             },
+            {
+              provider: "google-maps",
+              credits: 5,
+              usageKinds: [{ kind: "maps", credits: 5 }],
+            },
+            {
+              provider: "monid/apollo",
+              credits: 9,
+              usageKinds: [
+                {
+                  kind: "data-search/monid/apollo/provider_cost_usd_micros",
+                  credits: 9,
+                },
+              ],
+            },
           ],
         },
         {
@@ -869,20 +870,19 @@ test("Merge Social and Product Data into Connectors without changing other credi
   ]);
   await openUsageSettings("usage-records");
   await screen.findByText("Social platform research");
-  expect(screen.getAllByText("129").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("143").length).toBeGreaterThanOrEqual(1);
 
   const connectorSegment = screen.getByTestId("usage-kind-segment-connector");
   await user.hover(connectorSegment);
-  const heading = await screen.findByText("Connectors - 104");
+  const heading = await screen.findByText("Connectors - 125");
   const details = heading.parentElement;
   if (!details) {
     throw new Error("Connector usage details not found");
   }
   for (const [label, credits] of [
-    // The X connector stays separate from Social and Product Data.
+    // The X connector stays separate from Data Search.
     ["X", "12"],
-    ["Social Data", "70"],
-    ["Product Data", "19"],
+    ["Data Search", "110"],
     ["Slack", "3"],
   ]) {
     expect(within(details).getByText(label).parentElement).toHaveTextContent(
@@ -899,15 +899,10 @@ test("Merge Social and Product Data into Connectors without changing other credi
 
   await user.unhover(connectorSegment);
   await user.hover(screen.getByTestId("usage-kind-segment-other"));
-  await screen.findByText("Other - 15");
-  for (const [label, credits] of [
-    ["Legacy Data", "8"],
-    ["Finance", "7"],
-  ]) {
-    expect(screen.getByText(label).parentElement).toHaveTextContent(
-      `${label}${credits}`,
-    );
-  }
+  await screen.findByText("Other - 8");
+  expect(screen.getByText("Legacy Data").parentElement).toHaveTextContent(
+    "Legacy Data8",
+  );
 
   await user.unhover(screen.getByTestId("usage-kind-segment-other"));
   await user.hover(screen.getByTestId("usage-kind-segment-model"));

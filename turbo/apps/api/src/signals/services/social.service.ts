@@ -359,6 +359,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function normalizeProviderData(request: SocialKitRequest, data: unknown) {
+  if (
+    request.tool === "linkedin_company" &&
+    isRecord(data) &&
+    typeof data.employees === "number" &&
+    Number.isSafeInteger(data.employees) &&
+    data.employees >= 0
+  ) {
+    // SocialKit reports a count; preserve the public employee-text contract.
+    return { ...data, employees: String(data.employees) };
+  }
+  return data;
+}
+
 function providerResult(
   body: unknown,
   accessKey: string,
@@ -387,7 +401,9 @@ function providerResult(
   if (serialized.includes(accessKey)) {
     return { ok: false };
   }
-  const result = tool.resultSchema.safeParse(body.data);
+  const result = tool.resultSchema.safeParse(
+    normalizeProviderData(request, body.data),
+  );
   if (!result.success) {
     return { ok: false };
   }

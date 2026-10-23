@@ -37,7 +37,7 @@ const responseBody = {
   ],
 } as const;
 
-describe("okou people-search command", () => {
+describe("okou data people search command", () => {
   const mockConsoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
   const mockConsoleError = vi
     .spyOn(console, "error")
@@ -55,8 +55,12 @@ describe("okou people-search command", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-okou-token");
-    peopleSearchCommand.setOptionValue("limit", 5);
-    peopleSearchCommand.setOptionValue("json", undefined);
+    for (const option of peopleSearchCommand.options) {
+      peopleSearchCommand.setOptionValue(
+        option.attributeName(),
+        option.defaultValue,
+      );
+    }
   });
 
   afterEach(() => {
@@ -88,9 +92,11 @@ describe("okou people-search command", () => {
   }
 
   it("documents the default and maximum profile limits", () => {
-    const help = peopleSearchCommand.helpInformation();
+    const help = peopleSearchCommand.helpInformation().replace(/\s+/gu, " ");
 
-    expect(help).toContain("Maximum profiles (1-20)");
+    expect(help).toContain(
+      "Maximum profiles (research: 1-20; prospect: 1-100)",
+    );
     expect(help).toContain("(default: 5)");
   });
 
@@ -163,7 +169,7 @@ describe("okou people-search command", () => {
   });
 
   it.each([
-    ["invalid limit", ["query", "--limit", "21"], "limit must be"],
+    ["invalid limit", ["query", "--limit", "101"], "limit must be"],
     ["empty query", ["   "], "Too small"],
   ])("rejects %s before calling the API", async (_name, args, message) => {
     let apiRequests = 0;

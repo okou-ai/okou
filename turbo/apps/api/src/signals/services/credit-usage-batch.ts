@@ -1,5 +1,6 @@
 import type { CommerceSettlementJob } from "./commerce-job-settlement";
 import type { PreparedSocialSettlement } from "./social-data-settlement-plan";
+import type { PreparedDataSearchSettlement } from "./data-search-settlement-plan";
 import {
   priceUsageEvents,
   type PricedUsageEvent,
@@ -69,25 +70,30 @@ export function requireCompleteUsageClaim(
 }
 
 export function preparedSettlementPrices(
-  args: { readonly orgId: string; readonly social?: unknown },
+  args: {
+    readonly orgId: string;
+    readonly social?: unknown;
+    readonly dataSearchJobId?: string;
+  },
   batch: {
     readonly prices: readonly (typeof usagePricing.$inferSelect)[];
     readonly priced: PricedUsageEvent[];
     readonly freeOfficialRunOwners: ReadonlyMap<string, string>;
     readonly social?: PreparedSocialSettlement;
+    readonly dataSearch?: PreparedDataSearchSettlement;
   },
   events: readonly UsageEventRecord[],
 ) {
-  if (!args.social) {
+  if (!args.social && !args.dataSearchJobId) {
     return batch.priced;
   }
-  const social = batch.social;
-  if (!social) {
-    // socialPlan already rejected a claimed job without a prepared snapshot.
-    throw new Error("Social settlement has no prepared price");
+  const job = args.dataSearchJobId ? batch.dataSearch : batch.social;
+  if (!job) {
+    // The job plan already rejected a job without a prepared snapshot.
+    throw new Error("Job settlement has no prepared price");
   }
   return events.map((record) => {
-    const actor = social.plan.usage?.actor;
+    const actor = job.plan.usage?.actor;
     const free =
       actor?.runId &&
       batch.freeOfficialRunOwners.get(actor.runId) === actor.userId;
@@ -98,7 +104,7 @@ export function preparedSettlementPrices(
           ? ("official_workflow_free" as const)
           : ("standard" as const),
       },
-      grossCredits: social.grossCredits,
+      grossCredits: job.grossCredits,
       billingError: null,
     };
   });
@@ -116,6 +122,7 @@ export function reportCommittedSettlementPricing(
 export interface PreparedUsageBatch {
   readonly commerce: readonly CommerceSettlementJob[];
   readonly social?: PreparedSocialSettlement;
+  readonly dataSearch?: PreparedDataSearchSettlement;
   readonly freeOfficialRunOwners: ReadonlyMap<string, string>;
   readonly events: PendingUsageSnapshot[];
   readonly prices: (typeof usagePricing.$inferSelect)[];

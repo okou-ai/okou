@@ -24,7 +24,7 @@ function financeResponse(operation: string, result: unknown) {
   };
 }
 
-describe("okou finance command", () => {
+describe("okou data finance command", () => {
   const mockConsoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
   const mockConsoleError = vi
     .spyOn(console, "error")

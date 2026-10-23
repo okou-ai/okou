@@ -102,9 +102,9 @@ export const scrapeCommand = new Command()
     "after",
     `
 Examples:
-  Scrape markdown:  okou scrape https://example.com --format markdown
-  Scrape links:     okou scrape https://example.com --format links
-  Enhanced scrape:  okou scrape https://example.com --mode enhanced --json
+  Scrape markdown:  okou data web scrape https://example.com --format markdown
+  Scrape links:     okou data web scrape https://example.com --format links
+  Enhanced scrape:  okou data web scrape https://example.com --mode enhanced --json
 
 Notes:
   - Authenticates via OKOU_TOKEN (requires scrape:read capability) or a CLI token

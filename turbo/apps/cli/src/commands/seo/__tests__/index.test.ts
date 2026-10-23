@@ -25,7 +25,7 @@ function dataForSeoResponse(operation: string, result: unknown) {
   };
 }
 
-describe("okou seo command", () => {
+describe("okou data seo command", () => {
   const mockConsoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
   const mockConsoleError = vi
     .spyOn(console, "error")

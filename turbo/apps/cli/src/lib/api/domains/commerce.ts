@@ -19,7 +19,7 @@ const REQUEST_TIMEOUT_MS = 90_000;
 
 function uncertainSubmission(id: string, cause: unknown): ApiRequestError {
   const error = new ApiRequestError(
-    `The Commerce submission response was not received. Read the saved job with: okou commerce job ${id} --wait --json. Do not submit another paid operation.`,
+    `The Commerce submission response was not received. Read the saved job with: okou data commerce job ${id} --wait --json. Do not submit another paid operation.`,
     "COMMERCE_SUBMISSION_UNCERTAIN",
     503,
   );

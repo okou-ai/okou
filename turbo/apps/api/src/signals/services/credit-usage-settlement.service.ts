@@ -10,8 +10,8 @@ import { priceUsageEvents } from "./credit-usage-pricing";
 import {
   OrgCreditExpirationConflict,
   orgCreditExpirationOutcome as expirationOutcome,
-  orgCreditExpirationOutcomeRow as expirationRow,
-  orgCreditExpirationSql as expirationSql,
+  orgCreditExpirationOutcomeRow as expRow,
+  orgCreditExpirationSql as expSql,
   pendingOrgCreditExpirationQuery,
   requireCompleteOrgCreditExpiration,
 } from "./org-credit-expiration";
@@ -42,6 +42,11 @@ import {
   reportCommittedSettlementPricing,
 } from "./credit-usage-batch";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
+import {
+  dataSearchClaimUnavailable,
+  dataSearchReceiptSql as dataReceiptSql,
+  requireDataSearchSettlement,
+} from "./data-search-settlement-plan";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { receiptQuery } from "./managed-usage-record";
 import {
@@ -70,7 +75,7 @@ import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import {
-  claimUsageWhere,
+  claimUsageWhere as claimWhere,
   settlementObservation,
   emptySettlementReceipt,
   hasNoStandaloneUsage,
@@ -106,6 +111,7 @@ interface UsageSettlementArgs {
   readonly orgId: string;
   readonly idempotencyKeys?: readonly string[];
   readonly social?: SocialSettlementClaim;
+  readonly dataSearchJobId?: string;
   readonly commerceJobId?: string;
 }
 
@@ -122,17 +128,29 @@ function settlementJobPlan(
     | undefined,
   commerceJob: CommerceSettlementJob | undefined,
 ) {
+  const dataSearchJob = args.batch.dataSearch?.job;
   if (
     socialClaimUnavailable(args.social, socialJob) ||
-    commerceClaimUnavailable(args.commerceJobId, commerceJob)
+    commerceClaimUnavailable(args.commerceJobId, commerceJob) ||
+    dataSearchClaimUnavailable(args.dataSearchJobId, dataSearchJob)
   ) {
     return null;
   }
   const social = socialPlan(args.batch.social, socialJob);
+  const jobPlan = args.batch.dataSearch?.plan ?? social;
   return {
-    managed: commercePlan(args.batch.commerce, commerceJob) ?? social.usage,
-    processPending: commerceJob !== undefined || social.processPending,
-    jobScoped: socialJob !== undefined || commerceJob !== undefined,
+    managed: commercePlan(args.batch.commerce, commerceJob) ?? jobPlan.usage,
+    receiptKey: jobPlan.usage?.idempotencyKey,
+    dataJob: dataSearchJob,
+    processPending: commerceJob !== undefined || jobPlan.processPending,
+    jobScoped:
+      socialJob !== undefined ||
+      commerceJob !== undefined ||
+      dataSearchJob !== undefined,
+    socialReceipt:
+      socialJob && args.social
+        ? { job: socialJob, claim: args.social }
+        : undefined,
   };
 }
 
@@ -140,15 +158,23 @@ function noStandaloneEvents(
   events: readonly { readonly id: string }[],
   args: UsageSettlementArgs,
 ) {
-  return hasNoStandaloneUsage(events, args.social) && !args.commerceJobId;
+  return (
+    hasNoStandaloneUsage(events, args.social) &&
+    !args.commerceJobId &&
+    !args.dataSearchJobId
+  );
 }
 
-/** Social jobs create their event identity at commit; their prepared price
+/** Social and Data Search jobs create their event identity at commit; their prepared price
  * and captured policy are applied to the actual claimed event. */
 function batchFinancialPlan(
   args: SettlementBatchArgs,
   events: (typeof usageEvent.$inferSelect)[],
 ) {
+  if (args.dataSearchJobId && events.length === 0) {
+    // Zero-cost/budget jobs and already processed receipts have no debit work.
+    return { ...usageFinancialPlan([], args.at), freeOnly: true };
+  }
   return (
     args.financial ??
     usageFinancialPlan(
@@ -223,9 +249,8 @@ const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
     const { orgId, batch, at } = args;
     const { startedAt, work } = settlementObservation(batch.prices.length);
-    // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: usage publication/claims, credit deductions, debt audit and Social/Commerce receipts must commit together; single-statement alternative: the dependent validated cash plan, receipt CAS and later fresh expiration snapshot require precommit whole-batch rollback.
+    // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: usage publication/claims, credit deductions, debt audit and Social/Commerce/Data Search receipts must commit together; single-statement alternative: the dependent validated cash plan, receipt CAS and later fresh expiration snapshot require precommit whole-batch rollback.
     const result = await set(writeDb$).transaction(async (tx) => {
-      work.lockWaitMs = 0;
       const [job] = args.social
         ? await tx.select().from(socialJobQuery(orgId, args.social))
         : [];
@@ -236,7 +261,7 @@ const commitUsageBatch$ = command(
       if (!plan) {
         return null;
       }
-      const { managed, processPending, jobScoped } = plan;
+      const { managed, processPending, jobScoped, dataJob } = plan;
       if (managed) {
         const runId = managed.actor.runId;
         const [run] = await tx.select().from(runQuery(runId));
@@ -252,12 +277,11 @@ const commitUsageBatch$ = command(
         }
         await tx.execute(managedUsagePublicationSql(managed, run, attribution));
       }
-      const key = managed?.idempotencyKey;
       const events = processPending
         ? await tx
             .update(usageEvent)
             .set({ status: "processed", creditsCharged: 0, processedAt: at })
-            .where(claimUsageWhere(orgId, batch.events, key))
+            .where(claimWhere(orgId, batch.events, managed?.idempotencyKey))
             .returning()
         : [];
       requireCompleteUsageClaim(batch.events.length, events.length, jobScoped);
@@ -271,7 +295,7 @@ const commitUsageBatch$ = command(
       let amount = 0;
       let afterCredits = 0;
       if (freeOnly) {
-        // Free Social/Commerce usage also needs its durable job receipt in this
+        // Free job usage also needs its durable job receipt in this
         // transaction. Standalone free usage can settle above in one statement.
         await tx.execute(settledEventsSql(charges, at));
       } else {
@@ -283,12 +307,8 @@ const commitUsageBatch$ = command(
         if (deduction.sharedCredits > 0) {
           // Cash writers acquire the wallet before grant/expiry-lot locks.
           await tx.select().from(cash.wallet);
-          const outcome = expirationOutcome(
-            parseRows(
-              expirationRow,
-              await tx.execute(expirationSql(orgId, at)),
-            ),
-          );
+          const rows = parseRows(expRow, await tx.execute(expSql(orgId, at)));
+          const outcome = expirationOutcome(rows);
           // A later statement snapshot distinguishes remaining expired lots
           // from a concurrent clear or extension that completed expiration.
           const [remaining] =
@@ -338,16 +358,22 @@ const commitUsageBatch$ = command(
         const { rowCount } = await tx.execute(commerceReceipts.sql);
         requireCommerceSettlement(commerceReceipts.expected, rowCount);
       }
-      if (args.social && job) {
-        const [receipt] = managed
-          ? await tx.select().from(receiptQuery(job.usageIdempotencyKey))
-          : [];
+      const [receipt] = plan.receiptKey
+        ? await tx.select().from(receiptQuery(plan.receiptKey))
+        : [];
+      const socialReceipt = plan.socialReceipt;
+      if (socialReceipt) {
         const settled = await tx
           .update(socialDataJobs)
           .set(socialValues(managed, receipt, at))
-          .where(socialSettledWhere(args.social, job))
+          .where(socialSettledWhere(socialReceipt.claim, socialReceipt.job))
           .returning({ id: socialDataJobs.id });
         requireSocialSettlement(settled.length);
+      }
+      if (dataJob) {
+        const receiptSql = dataReceiptSql(dataJob, managed, receipt, at);
+        const { rowCount } = await tx.execute(receiptSql);
+        requireDataSearchSettlement(rowCount);
       }
       signal.throwIfAborted();
       return settlementReceipt(orgId, priced, { amount, work, afterCredits });
@@ -366,7 +392,7 @@ export const settleOrgUsage$ = command(
   async ({ set }, args: UsageSettlementArgs, signal: AbortSignal) => {
     const batch = await set(prepareUsageSettlementBatch$, args, signal);
     const financial =
-      args.social || args.commerceJobId
+      args.social || args.commerceJobId || args.dataSearchJobId
         ? undefined
         : usageFinancialPlan(batch.priced, nowDate());
     const outcome = await settle(
@@ -394,7 +420,7 @@ export const settleOrgUsage$ = command(
       throw outcome.error;
     }
     const { result, startedAt } = outcome.value;
-    if (result?.work.pendingEvents && !args.social) {
+    if (result?.work.pendingEvents && !args.social && !args.dataSearchJobId) {
       reportCommittedSettlementPricing(args.orgId, batch);
     }
     return result ? completeSettlementReceipt(result, startedAt) : null;

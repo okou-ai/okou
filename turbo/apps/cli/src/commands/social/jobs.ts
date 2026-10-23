@@ -107,8 +107,8 @@ Saved data jobs:
   --stream and --checkpoint are unavailable for saved jobs. --dry-run and --async do not accept export options.
   Synchronous saved jobs support the command's existing export formats.
   Reuse --request-id only with identical inputs to recover a submission without starting another job.
-  Read a saved job with okou social jobs get <job-id> --wait --json; reading does not start another collection.
-  Interrupting the CLI leaves server work running. Cancel explicitly with okou social jobs cancel <job-id>.`,
+  Read a saved job with okou data social jobs get <job-id> --wait --json; reading does not start another collection.
+  Interrupting the CLI leaves server work running. Cancel explicitly with okou data social jobs cancel <job-id>.`,
     );
 }
 
@@ -124,7 +124,7 @@ export function usesSocialJobs(options: SocialJobOptions): boolean {
 function validateOptions(options: SocialJobOptions): void {
   if (options.stream || options.checkpoint !== undefined) {
     throw new InvalidArgumentError(
-      "Saved data jobs do not support --stream or --checkpoint; use okou social jobs get to recover saved results",
+      "Saved data jobs do not support --stream or --checkpoint; use okou data social jobs get to recover saved results",
     );
   }
   if (options.dryRun && (options.async || options.requestId !== undefined)) {
@@ -198,7 +198,7 @@ function printJson(value: unknown, compact: boolean): void {
 }
 
 function recoveryCommand(jobId: string): string {
-  return `okou social jobs get ${jobId} --wait --json`;
+  return `okou data social jobs get ${jobId} --wait --json`;
 }
 
 function terminal(job: SocialDataJobResponse): boolean {

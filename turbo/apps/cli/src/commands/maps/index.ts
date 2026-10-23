@@ -122,10 +122,10 @@ export const mapsCommand = new Command()
     "after",
     `
 Examples:
-  Find nearby places:  okou maps search "quiet coffee shops near Union Square, San Francisco"
-  Plan a route:        okou maps search "How do I get from SFO to Mountain View by transit?"
-  Explicit location:   okou maps search "best espresso near me" --lat 40.7128 --lng -74.0060
-  Localized results:   okou maps search "family restaurants in Paris" --language fr_FR --json
+  Find nearby places:  okou data maps search "quiet coffee shops near Union Square, San Francisco"
+  Plan a route:        okou data maps search "How do I get from SFO to Mountain View by transit?"
+  Explicit location:   okou data maps search "best espresso near me" --lat 40.7128 --lng -74.0060
+  Localized results:   okou data maps search "family restaurants in Paris" --language fr_FR --json
 
 Notes:
   - Authenticates via OKOU_TOKEN (requires maps:read capability) or a CLI token
