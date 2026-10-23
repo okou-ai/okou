@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.409.2](https://github.com/okou-ai/okou/compare/cli-v9.409.1...cli-v9.409.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* authorize native integration cli destinations and files ([#42484](https://github.com/okou-ai/okou/issues/42484)) ([c529d76](https://github.com/okou-ai/okou/commit/c529d761b8218fb72762ad42fe1a2e6af5c217d0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.589.2
+    * @okouai/core bumped to 8.780.2
+    * @okouai/pi-agent-runtime bumped to 1.50.56
+
 ## [9.409.1](https://github.com/okou-ai/okou/compare/cli-v9.409.0...cli-v9.409.1) (2026-10-23)
 
 
