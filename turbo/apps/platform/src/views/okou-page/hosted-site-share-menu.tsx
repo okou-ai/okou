@@ -171,8 +171,8 @@ function HostedSitePermissions({
   const saving = operation.state === "loading";
   const failed = loadable.state === "hasError";
   return (
-    <div className="-mx-2 mt-3">
-      <div className="flex items-center gap-2 px-2 pb-1 text-xs font-medium text-muted-foreground">
+    <>
+      <div className="flex items-center gap-2 px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">
         {t(($) => {
           return $.artifacts.sharing.accessLabel;
         })}
@@ -204,7 +204,7 @@ function HostedSitePermissions({
           )}
         </>
       )}
-    </div>
+    </>
   );
 }
 
@@ -514,44 +514,43 @@ function HostedSiteShareBody({
   const editing = useGet(session.editing$);
   const switches = useGet(featureSwitch$);
   const visibilityEnabled = switches[FeatureSwitchKey.HostedSiteVisibility];
+  const showPermissions = visibilityEnabled && !editing;
   return (
-    <>
+    <div className={showPermissions ? "p-1.5" : "p-4"}>
       {!visibilityEnabled && <SiteStatus link={link} loading={loading} />}
-      {visibilityEnabled && !editing && (
-        <>
-          <HostedSitePermissions session={session} />
-          <HostedSiteBannerSetting session={session} />
-        </>
-      )}
-      {editing ? (
-        <WebsiteUrlEditor
-          session={session}
-          saving={saving}
-          saveFailed={saveFailed}
-          onSave={onSave}
-        />
-      ) : loading ? (
-        // Nothing can be copied or customized until the current address is
-        // known, so the footer holds its place without offering either.
-        <div aria-busy="true" className="mt-4 flex justify-end">
-          <Skeleton className="h-8 w-28 rounded-lg" />
-        </div>
-      ) : (
-        <HostedSiteShareActions
-          session={session}
-          link={link}
-          customizable={
-            switches[FeatureSwitchKey.HostedSiteUrlEditing] &&
-            details.state === "hasData" &&
-            details.data?.isActive === true &&
-            new URL(details.data.url).hostname.endsWith(
-              `.${resolveEditableHostedSiteDomain()}`,
-            )
-          }
-          loadFailed={details.state === "hasError"}
-        />
-      )}
-    </>
+      {showPermissions && <HostedSitePermissions session={session} />}
+      <div className={cn(showPermissions && "px-2")}>
+        {showPermissions && <HostedSiteBannerSetting session={session} />}
+        {editing ? (
+          <WebsiteUrlEditor
+            session={session}
+            saving={saving}
+            saveFailed={saveFailed}
+            onSave={onSave}
+          />
+        ) : loading ? (
+          // Nothing can be copied or customized until the current address is
+          // known, so the footer holds its place without offering either.
+          <div aria-busy="true" className="mt-4 flex justify-end">
+            <Skeleton className="h-8 w-28 rounded-lg" />
+          </div>
+        ) : (
+          <HostedSiteShareActions
+            session={session}
+            link={link}
+            customizable={
+              switches[FeatureSwitchKey.HostedSiteUrlEditing] &&
+              details.state === "hasData" &&
+              details.data?.isActive === true &&
+              new URL(details.data.url).hostname.endsWith(
+                `.${resolveEditableHostedSiteDomain()}`,
+              )
+            }
+            loadFailed={details.state === "hasError"}
+          />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -588,13 +587,12 @@ function HostedSiteShareSessionMenu({
       >
         <Share2 size={iconSize} />
       </PopoverTrigger>
-      {/* A small dialog rather than a menu: there are no list rows to inset,
-          so it keeps the popover's own padding and grows wide enough for a
-          full site address. */}
+      {/* The body matches artifact menu padding for permissions and keeps
+          dialog padding for the URL editor and published address. */}
       <PopoverContent
         align="end"
         aria-label={ariaLabel}
-        className="w-90 max-w-[calc(100vw-2rem)]"
+        className="w-90 max-w-[calc(100vw-2rem)] p-0"
       >
         <HostedSiteShareBody
           session={session}
