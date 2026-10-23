@@ -128,7 +128,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
   });
 
   it.each([true, false])(
-    "uses the active Run's captured image policy when steering templates (disabled: %s)",
+    "keeps active template guidance capability-neutral after image preferences change (initially disabled: %s)",
     async (disabled) => {
       const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
       await setPaidToolDisabled(context, actor, "image-generation", disabled);
@@ -138,6 +138,9 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       });
       const claimed = await claimChatRun(runnerGroup, active.runId);
       await setPaidToolDisabled(context, actor, "image-generation", !disabled);
+      expect(
+        claimed.claim.appendSystemPrompt?.includes("# Built-in image model"),
+      ).toBe(!disabled);
       const template = WEBSITE_TEMPLATE_ITEMS[0];
       if (!template) {
         throw new Error("Expected a website template");
@@ -163,9 +166,11 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       );
       expect(next.input?.eventId).toBe(eventId);
       expect(next.input?.prompt).toContain("okou host");
-      expect(next.input?.prompt.includes("okou generate image-batch")).toBe(
-        !disabled,
+      expect(next.input?.prompt).toContain(
+        "an image tool exposed in the current agent context or an authorized connector",
       );
+      expect(next.input?.prompt).not.toContain("okou generate image-batch");
+      expect(next.input?.prompt).not.toContain("--provider built-in");
       await cancelChatRun(actor, active.runId);
     },
   );

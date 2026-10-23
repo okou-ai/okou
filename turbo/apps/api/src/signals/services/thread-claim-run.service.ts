@@ -3228,7 +3228,6 @@ export function createThreadClaimRunObjects(
         officialWorkflowRun,
         persisted: {
           body,
-          disabledPaidTools: await get(bootstrap.disabledPaidTools$),
           selectedImageModel,
           launchSnapshot,
           officialWorkflowRun,
@@ -4222,7 +4221,6 @@ interface PendingRunArguments {
 /** Explicit run facts persisted with the launch rows. */
 interface PendingRunContext {
   readonly body: CreateRunBody;
-  readonly disabledPaidTools: readonly string[];
   readonly selectedImageModel: ImageModel;
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
@@ -4302,7 +4300,6 @@ function runRecordFromLaunchIdentity(
 }
 
 interface LaunchRunRowsArgs {
-  readonly disabledPaidTools?: readonly string[];
   readonly userId: string;
   readonly orgId: string;
   readonly identity: LaunchRunIdentity;
@@ -4352,8 +4349,6 @@ function launchRunValues(
     storageMounts: args.runStorageMounts ? [...args.runStorageMounts] : null,
     runnerGroup: args.runnerGroup ?? null,
     launchSnapshot: args.launchSnapshot,
-    disabledPaidTools:
-      args.disabledPaidTools === undefined ? null : [...args.disabledPaidTools],
     officialWorkflowProvenance: args.officialWorkflowProvenance ?? null,
     completedAt: args.status === "failed" ? createdAt : null,
     error: args.error ?? null,
@@ -4489,7 +4484,6 @@ function preparedLaunchRowsArgs(args: {
     apiStartTime: args.commit.createArgs.apiStartTime,
     runnerGroup: args.runnerGroup,
     launchSnapshot: args.commit.context.launchSnapshot,
-    disabledPaidTools: args.commit.context.disabledPaidTools,
     officialWorkflowProvenance:
       args.commit.context.officialWorkflowRun?.provenance,
     error: undefined,

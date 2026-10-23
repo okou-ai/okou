@@ -25,12 +25,13 @@ export function resolveThreadGenerationTemplatePrompt(args: {
    * says it is. Required for the same reason as the ids above.
    */
   readonly mountedUserTemplates: readonly MountedUserTemplate[];
-  readonly disabledPaidTools: readonly string[] | undefined;
 }): string {
   const options = {
     mountedUserPresentationTemplateIds: args.mountedUserPresentationTemplateIds,
     mountedUserTemplates: args.mountedUserTemplates,
-    disabledPaidTools: args.disabledPaidTools,
+    // The active Run already owns its tool context. Add template content
+    // without advertising a provider or consulting current preferences.
+    includeManagedImageInstructions: false,
   };
   if (args.explicitTemplates && args.explicitTemplates.length > 0) {
     const built = buildGenerationTemplatesPrompt(

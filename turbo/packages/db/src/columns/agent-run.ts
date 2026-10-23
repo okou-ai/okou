@@ -61,9 +61,6 @@ export function agentRunColumns() {
     // Canonical resolved mounts used by new run writers.
     storageMounts: jsonb("storage_mounts").$type<AgentRunStorageMounts>(),
     launchSnapshot: jsonb("launch_snapshot").$type<AgentRunLaunchSnapshot>(),
-    // Captured managed-tool policy; NULL means an older or failed launch did
-    // not retain it. Never infer historical preferences from current settings.
-    disabledPaidTools: text("disabled_paid_tools").array(),
     // Exact accepted Definition inputs mounted for this Run. Null preserves
     // historical and non-Official producers during the additive rollout.
     officialWorkflowProvenance: jsonb(

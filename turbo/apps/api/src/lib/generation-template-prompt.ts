@@ -114,7 +114,8 @@ type GenerationTemplatePromptResult =
  * leave it empty and lose the guidance rather than point at nothing.
  */
 interface GenerationTemplatePromptOptions {
-  readonly disabledPaidTools?: readonly string[];
+  /** Active template input adds content to an existing tool context. */
+  readonly includeManagedImageInstructions?: boolean;
   readonly mountedUserPresentationTemplateIds?: readonly string[];
   /**
    * The custom templates this run will carry, each with the kind its row says
@@ -134,7 +135,7 @@ export function buildGenerationTemplatePrompt(
     return { status: "resolved", prompt: "" };
   }
   const imageGenerationEnabled =
-    !options.disabledPaidTools?.includes("image-generation");
+    options.includeManagedImageInstructions !== false;
 
   if (generationTemplate.type === "illustration") {
     return buildIllustrationGenerationTemplatePrompt(

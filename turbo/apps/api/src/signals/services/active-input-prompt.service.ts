@@ -129,11 +129,7 @@ export const materializeActiveInputSource$ = command(
     { set },
     db: Db,
     source: ActiveInputSourceRow,
-    auth: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly disabledPaidTools: readonly string[] | undefined;
-    },
+    auth: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
   ): Promise<string | null> => {
     if (
@@ -145,13 +141,6 @@ export const materializeActiveInputSource$ = command(
     }
     if (source.contextType === null) {
       throw new Error("Pending active input is missing its context type");
-    }
-    const templates = projectUserMessage(source.userMessage).templates;
-    // Older active Runs have no retained policy once their queue job is claimed.
-    // Keep template inputs queued until the next Run; remove after pre-capture
-    // API writers, active Runs and rollback targets have drained (#42436).
-    if (templates.length > 0 && auth.disabledPaidTools === undefined) {
-      return null;
     }
     const featureSwitchContext = await set(
       loadUserFeatureSwitchContext$,
@@ -184,7 +173,6 @@ export const materializeActiveInputSource$ = command(
         },
         orgId: auth.orgId,
         userId: auth.userId,
-        disabledPaidTools: auth.disabledPaidTools,
         featureSwitchContext,
       },
       signal,
@@ -192,10 +180,7 @@ export const materializeActiveInputSource$ = command(
   },
 );
 
-function activeInputGenerationTemplates(
-  userMessage: ChatEventUserMessage,
-  disabledPaidTools: readonly string[] | undefined,
-) {
+function activeInputGenerationTemplates(userMessage: ChatEventUserMessage) {
   const projection = projectUserMessage(userMessage);
   return {
     projection,
@@ -209,7 +194,6 @@ function activeInputGenerationTemplates(
       // reason.
       mountedUserPresentationTemplateIds: [],
       mountedUserTemplates: [],
-      disabledPaidTools,
     }),
   };
 }
@@ -329,7 +313,6 @@ const materializeActiveInputPrompt$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly featureSwitchContext: FeatureSwitchContext;
-      readonly disabledPaidTools: readonly string[] | undefined;
     },
     signal: AbortSignal,
   ): Promise<string> => {
@@ -358,10 +341,8 @@ const materializeActiveInputPrompt$ = command(
         `${args.event.contextType} active input is missing launch material`,
       );
     }
-    const { projection, templatePrompt } = activeInputGenerationTemplates(
-      userMessage,
-      args.disabledPaidTools,
-    );
+    const { projection, templatePrompt } =
+      activeInputGenerationTemplates(userMessage);
     const prompt = integration?.prompt ?? projection.agentPrompt;
     const parts = [
       integration?.appendSystemPrompt ?? "",

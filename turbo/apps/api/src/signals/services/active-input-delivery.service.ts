@@ -43,7 +43,6 @@ interface ActiveInputDeliveryScope {
   readonly userId: string;
   readonly orgId: string;
   readonly status: RunStatus;
-  readonly disabledPaidTools: readonly string[] | undefined;
 }
 
 interface ActiveInputRunThread {
@@ -106,7 +105,6 @@ const loadActiveInputDeliveryScope$ = command(
         userId: agentRuns.userId,
         orgId: agentRuns.orgId,
         status: agentRuns.status,
-        disabledPaidTools: agentRuns.disabledPaidTools,
       })
       .from(agentRuns)
       .where(
@@ -126,7 +124,6 @@ const loadActiveInputDeliveryScope$ = command(
       ...row,
       chatThreadId: row.chatThreadId,
       status: runStatusSchema.parse(row.status),
-      disabledPaidTools: row.disabledPaidTools ?? undefined,
     };
   },
 );
@@ -246,17 +243,7 @@ export const loadNextSteerableInput$ = command(
       throw new Error("Pending steerable input disappeared from its thread");
     }
     const prompt = await settle(
-      set(
-        materializeActiveInputSource$,
-        db,
-        source,
-        {
-          orgId: scope.orgId,
-          userId: scope.userId,
-          disabledPaidTools: scope.disabledPaidTools,
-        },
-        signal,
-      ),
+      set(materializeActiveInputSource$, db, source, scope, signal),
       signal,
     );
     if (!prompt.ok) {

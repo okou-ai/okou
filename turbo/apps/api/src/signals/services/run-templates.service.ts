@@ -165,7 +165,8 @@ function buildRunTemplateGuidance(args: {
   const guidance = buildGenerationTemplatesPrompt(templates, {
     mountedUserPresentationTemplateIds: presentations,
     mountedUserTemplates: mounted,
-    disabledPaidTools,
+    includeManagedImageInstructions:
+      !disabledPaidTools.includes("image-generation"),
   });
   if (guidance.status === "invalid") {
     return { error: { code: "BAD_REQUEST", message: guidance.message } };
