@@ -90,18 +90,16 @@ function attachmentContentType(
   return contentType;
 }
 
-/** Resolve only metadata that is safe to hand to a credential-free downloader. */
+/** Resolve an authorized URL; generic MIME metadata requires CDN MIME validation. */
 export function resolveDiscordAttachmentUrl(args: DiscordAttachmentDownload) {
   validateAttachment(args);
-  // Without provider MIME metadata, the legacy downloader must inspect the CDN
-  // response. Do not infer a trusted type from an attachment's filename.
-  if (args.contentType === undefined) {
-    return null;
-  }
   return {
     downloadUrl: args.url,
     filename: args.filename,
-    contentType: attachmentContentType(args.contentType, null),
+    contentType:
+      args.contentType === undefined
+        ? "application/octet-stream"
+        : attachmentContentType(args.contentType, null),
     size: args.size,
   };
 }

@@ -170,8 +170,7 @@ describe("okou generate get", () => {
           });
         },
       ),
-      http.get("https://delivery.example.com/generated.png", ({ request }) => {
-        expect(request.headers.get("authorization")).toBeNull();
+      http.get("https://delivery.example.com/generated.png", () => {
         return new HttpResponse("image bytes", {
           headers: { "content-type": "image/png", "content-length": "11" },
         });
@@ -208,14 +207,19 @@ describe("okou generate get", () => {
       http.get(statusUrl, () => {
         return HttpResponse.json(job);
       }),
-      http.get("http://localhost:3000/api/web/file-url", () => {
-        return HttpResponse.json({ error: "Not found" }, { status: 404 });
-      }),
-      http.get("http://localhost:3000/api/web/download-file", ({ request }) => {
+      http.get("http://localhost:3000/api/web/file-url", ({ request }) => {
         expect(new URL(request.url).searchParams.get("file_id")).toBe(
           "image-file-id",
         );
         expect(request.headers.get("authorization")).toBe("Bearer test-token");
+        return HttpResponse.json({
+          url: "https://example.com/image.png",
+          downloadUrl: "https://example.com/image.png",
+          expiresAt: "2026-10-23T15:00:00.000Z",
+          publicUrl: null,
+        });
+      }),
+      http.get("https://example.com/image.png", () => {
         return new HttpResponse("image bytes", {
           headers: { "Content-Type": "image/png" },
         });

@@ -452,7 +452,6 @@ export function createAgentPhoneBddApi(context: TestContext) {
     async downloadPhoneFileRaw(
       token: string,
       fileId: string,
-      direct = false,
     ): Promise<{
       readonly status: number;
       readonly headers: Headers;
@@ -462,7 +461,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
         signal: context.signal,
         routes: TEST_APP_ROUTES,
       }).request(
-        `/api/integrations/phone/download-file${direct ? "/url" : ""}?file_id=${encodeURIComponent(fileId)}`,
+        `/api/integrations/phone/download-file?file_id=${encodeURIComponent(fileId)}`,
         {
           method: "GET",
           headers: { authorization: `Bearer ${token}` },

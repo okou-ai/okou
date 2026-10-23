@@ -62,7 +62,7 @@ How to read the downloaded file:
 
 Notes:
   - The URL comes from a [GitHub file] block
-  - Streams the GitHub file bytes through Okou directly to disk`,
+  - Downloads the authorized GitHub file directly to disk`,
   )
   .action(
     withErrorHandler(

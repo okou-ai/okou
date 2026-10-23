@@ -23,7 +23,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { integrationsDiscordRoutes } from "../integrations-discord";
 import { userModelPreferenceRoutes } from "../user-model-preference";
-import { webDownloadRoutes } from "../web-download";
+import { webFileUrlRoutes } from "../web-file-url";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -2417,16 +2417,15 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected canonical attachment");
     }
     const downloaded = await accept(
-      setupApp({ context, routes: webDownloadRoutes })(
-        webFilesContract,
-      ).download({
-        headers: { authorization: "Bearer clerk-session" },
-        query: { file_id: attachedFile.fileId },
-      }),
+      setupApp({ context, routes: webFileUrlRoutes })(webFilesContract).fileUrl(
+        {
+          headers: { authorization: "Bearer clerk-session" },
+          query: { file_id: attachedFile.fileId },
+        },
+      ),
       [200],
     );
-    // The HTTP client decodes text/plain assets as text.
-    expect(downloaded.body).toBe("notes");
+    expect(downloaded.body.downloadUrl).toMatch(/^https:\/\//u);
     if (!input?.runId) {
       throw new Error("Expected run with canonical file input");
     }

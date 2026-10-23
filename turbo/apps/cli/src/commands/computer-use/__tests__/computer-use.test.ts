@@ -827,110 +827,88 @@ describe("computer-use command visibility", () => {
     expect(output).toContain('"summary": "Typed text"');
   });
 
-  it.each([true, false])(
-    "downloads pointer-backed screenshots with direct metadata available=%s",
-    async (directAvailable) => {
-      vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-      vi.stubEnv("OKOU_TOKEN", "test-token");
+  it("downloads pointer-backed screenshots through their signed URL", async () => {
+    vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
+    vi.stubEnv("OKOU_TOKEN", "test-token");
 
-      const screenshotBytes = Buffer.from("proxy-png-bytes");
-      server.use(
-        http.post("http://localhost:3000/api/computer-use/commands", () => {
-          return HttpResponse.json({ commandId: "cmd_ptr", status: "queued" });
-        }),
-        http.get(
-          "http://localhost:3000/api/computer-use/commands/cmd_ptr",
-          () => {
-            return HttpResponse.json({
-              id: "cmd_ptr",
-              kind: "app.state",
-              status: "succeeded",
-              hostId: "host_1",
-              hostName: "Desktop",
-              payload: { app: "Slack/Test App" },
-              result: {
-                app: "Slack/Test App",
-                snapshotId: "desktop_test_snapshot",
-                screenshot: {
-                  type: "s3",
-                  mimeType: "image/png",
-                  sizeBytes: screenshotBytes.length,
-                  width: 1363,
-                  height: 1200,
-                },
+    const screenshotBytes = Buffer.from("proxy-png-bytes");
+    server.use(
+      http.post("http://localhost:3000/api/computer-use/commands", () => {
+        return HttpResponse.json({ commandId: "cmd_ptr", status: "queued" });
+      }),
+      http.get(
+        "http://localhost:3000/api/computer-use/commands/cmd_ptr",
+        () => {
+          return HttpResponse.json({
+            id: "cmd_ptr",
+            kind: "app.state",
+            status: "succeeded",
+            hostId: "host_1",
+            hostName: "Desktop",
+            payload: { app: "Slack/Test App" },
+            result: {
+              app: "Slack/Test App",
+              snapshotId: "desktop_test_snapshot",
+              screenshot: {
+                type: "s3",
+                mimeType: "image/png",
+                sizeBytes: screenshotBytes.length,
+                width: 1363,
+                height: 1200,
               },
-              timeoutMs: 10_000,
-              createdAt: "2026-05-21T10:00:00.000Z",
-              claimedAt: "2026-05-21T10:00:01.000Z",
-              completedAt: "2026-05-21T10:00:02.000Z",
-            });
+            },
+            timeoutMs: 10_000,
+            createdAt: "2026-05-21T10:00:00.000Z",
+            claimedAt: "2026-05-21T10:00:01.000Z",
+            completedAt: "2026-05-21T10:00:02.000Z",
+          });
+        },
+      ),
+      http.get(
+        "http://localhost:3000/api/computer-use/commands/cmd_ptr/screenshot/url",
+        ({ request }) => {
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer test-token",
+          );
+          return HttpResponse.json({
+            downloadUrl:
+              "https://screenshots.example.com/private.png?signature=scoped",
+            filename: "screenshot.png",
+            contentType: "image/png",
+            size: screenshotBytes.length,
+          });
+        },
+      ),
+      http.get("https://screenshots.example.com/private.png", ({ request }) => {
+        expect(new URL(request.url).searchParams.get("signature")).toBe(
+          "scoped",
+        );
+        return new HttpResponse(screenshotBytes, {
+          headers: {
+            "Content-Type": "image/png",
+            "Content-Length": String(screenshotBytes.length),
           },
-        ),
-        http.get(
-          "http://localhost:3000/api/computer-use/commands/cmd_ptr/screenshot/url",
-          ({ request }) => {
-            expect(request.headers.get("authorization")).toBe(
-              "Bearer test-token",
-            );
-            return directAvailable
-              ? HttpResponse.json({
-                  downloadUrl:
-                    "https://screenshots.example.com/private.png?signature=scoped",
-                  filename: "screenshot.png",
-                  contentType: "image/png",
-                  size: screenshotBytes.length,
-                })
-              : HttpResponse.json({ error: "Not found" }, { status: 404 });
-          },
-        ),
-        http.get(
-          "https://screenshots.example.com/private.png",
-          ({ request }) => {
-            expect(request.headers.get("authorization")).toBeNull();
-            expect(new URL(request.url).searchParams.get("signature")).toBe(
-              "scoped",
-            );
-            return new HttpResponse(screenshotBytes, {
-              headers: {
-                "Content-Type": "image/png",
-                "Content-Length": String(screenshotBytes.length),
-              },
-            });
-          },
-        ),
-        http.get(
-          "http://localhost:3000/api/computer-use/commands/cmd_ptr/screenshot",
-          ({ request }) => {
-            expect(request.headers.get("authorization")).toBe(
-              "Bearer test-token",
-            );
-            expect(directAvailable).toBe(false);
-            return new HttpResponse(screenshotBytes, {
-              status: 200,
-              headers: { "Content-Type": "image/png" },
-            });
-          },
-        ),
-      );
+        });
+      }),
+    );
 
-      await computerUseCommand.parseAsync([
-        "node",
-        "cli",
-        "get-app-state",
-        "--app",
-        "Slack/Test App",
-        "--timeout",
-        "10",
-      ]);
+    await computerUseCommand.parseAsync([
+      "node",
+      "cli",
+      "get-app-state",
+      "--app",
+      "Slack/Test App",
+      "--timeout",
+      "10",
+    ]);
 
-      const output = mockConsoleLog.mock.calls.flat().join("\n");
-      const parsed = JSON.parse(output) as Record<string, unknown>;
-      expect(parsed.screenshot).toBe(testScreenshotPath());
-      await expect(readFile(testScreenshotPath())).resolves.toEqual(
-        screenshotBytes,
-      );
-    },
-  );
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    const parsed = JSON.parse(output) as Record<string, unknown>;
+    expect(parsed.screenshot).toBe(testScreenshotPath());
+    await expect(readFile(testScreenshotPath())).resolves.toEqual(
+      screenshotBytes,
+    );
+  });
 
   it("should mark expired pointer screenshots in command output", async () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");

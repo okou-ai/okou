@@ -601,19 +601,6 @@ export const computerUseCommandContract = c.router({
     },
     summary: "Get a desktop computer-use command result",
   },
-  getScreenshot: {
-    method: "GET",
-    path: "/api/computer-use/commands/:commandId/screenshot",
-    headers: authHeadersSchema,
-    pathParams: commandIdPathParamsSchema,
-    responses: {
-      200: c.type<Blob>(),
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Download a desktop computer-use command screenshot",
-  },
   screenshotUrl: {
     method: "GET",
     path: "/api/computer-use/commands/:commandId/screenshot/url",

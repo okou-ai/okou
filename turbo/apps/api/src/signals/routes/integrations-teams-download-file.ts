@@ -11,10 +11,7 @@ import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { queryOf } from "../context/request";
 import { db$ } from "../external/db";
-import {
-  fetchTeamsFile,
-  resolveTeamsFileDownloadUrl,
-} from "../external/teams-bot-client";
+import { fetchTeamsFile } from "../external/teams-bot-client";
 import {
   teamsFileTokenPayloadSchema,
   type TeamsFileTokenPayload,
@@ -168,6 +165,43 @@ function resolveFilename(args: {
   );
 }
 
+function downloadHeaders(
+  payload: TeamsFileTokenPayload,
+  response: Response,
+): Headers {
+  const filename = resolveFilename({ payload, response });
+  const redirect = response.status === 302;
+  const payloadContentType =
+    payload.contentType === "reference" ||
+    (redirect &&
+      payload.contentType ===
+        "application/vnd.microsoft.teams.file.download.info")
+      ? null
+      : payload.contentType;
+  const contentType =
+    payloadContentType ??
+    response.headers.get("content-type") ??
+    inferMimetype(filename);
+  const headers = new Headers({
+    "Content-Type": contentType,
+    "X-File-Name": encodeURIComponent(filename),
+    "X-File-Mimetype": contentType,
+  });
+  if (redirect) {
+    headers.set("Location", response.headers.get("location")!);
+    headers.set("Cache-Control", "private, no-store");
+  } else {
+    if (payload.id) {
+      headers.set("X-Teams-Attachment-ID", encodeURIComponent(payload.id));
+    }
+    const contentLength = response.headers.get("content-length");
+    if (contentLength) {
+      headers.set("Content-Length", contentLength);
+    }
+  }
+  return headers;
+}
+
 const authorizeTeamsDownload$ = command(
   async (
     { get, set },
@@ -226,7 +260,7 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (payload instanceof Response) {
     return payload;
   }
-  if (!isAllowedTeamsDownloadUrl(payload.url)) {
+  if (!payload.downloadInfo && !isAllowedTeamsDownloadUrl(payload.url)) {
     return jsonResponse(
       400,
       "Only Microsoft Teams file attachment URLs can be downloaded",
@@ -238,6 +272,8 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
     {
       tenantId: payload.tenantId,
       url: payload.url,
+      downloadInfo: payload.downloadInfo,
+      redirect: "manual",
       downloadMode:
         payload.downloadMode ??
         (payload.contentType === "reference" ? "graph" : undefined),
@@ -247,13 +283,19 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   if (downloadResult.kind === "teams-error") {
     return jsonResponse(
-      502,
+      downloadResult.status === 404 ? 404 : 502,
       "Failed to download Microsoft Teams file",
-      "BAD_GATEWAY",
+      downloadResult.status === 404 ? "NOT_FOUND" : "BAD_GATEWAY",
     );
   }
 
   const downloadResponse = downloadResult.response;
+  if (downloadResponse.status === 302) {
+    return new Response(null, {
+      status: 302,
+      headers: downloadHeaders(payload, downloadResponse),
+    });
+  }
   if (!downloadResponse.ok) {
     const status = downloadResponse.status === 404 ? 404 : 502;
     return jsonResponse(
@@ -292,84 +334,10 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
-  const filename = resolveFilename({ payload, response: downloadResponse });
-  const payloadContentType =
-    payload.contentType === "reference" ? null : payload.contentType;
-  const contentType =
-    payloadContentType ?? responseContentType ?? inferMimetype(filename);
-
-  const headers = new Headers();
-  headers.set("Content-Type", contentType);
-  headers.set("X-File-Name", encodeURIComponent(filename));
-  headers.set("X-File-Mimetype", contentType);
-  if (payload.id) {
-    headers.set("X-Teams-Attachment-ID", encodeURIComponent(payload.id));
-  }
-  if (contentLength) {
-    headers.set("Content-Length", contentLength);
-  }
-
-  return new Response(downloadResponse.body, { status: 200, headers });
-});
-
-const fileUrl$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!get(downloadInput$)) {
-    return jsonResponse(400, "file_id is required", "BAD_REQUEST");
-  }
-  const payload = await set(authorizeTeamsDownload$, signal);
-  if (payload instanceof Response) {
-    return payload;
-  }
-  if (!payload.downloadInfo && !isAllowedTeamsDownloadUrl(payload.url)) {
-    return jsonResponse(
-      400,
-      "Only Microsoft Teams file attachment URLs can be downloaded",
-      "BAD_REQUEST",
-    );
-  }
-  const resolved = await resolveTeamsFileDownloadUrl(
-    {
-      tenantId: payload.tenantId,
-      url: payload.url,
-      downloadMode:
-        payload.downloadMode ??
-        (payload.contentType === "reference" ? "graph" : undefined),
-      downloadInfo: payload.downloadInfo,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (resolved.kind === "unavailable") {
-    return jsonResponse(
-      409,
-      "Direct download is unavailable for this Teams attachment",
-      "DIRECT_DOWNLOAD_UNAVAILABLE",
-    );
-  }
-  if (resolved.kind === "teams-error") {
-    return jsonResponse(
-      resolved.status === 404 ? 404 : 502,
-      "Failed to resolve Microsoft Teams file",
-      resolved.status === 404 ? "NOT_FOUND" : "BAD_GATEWAY",
-    );
-  }
-  const filename = sanitizeDownloadFilename(
-    payload.name ?? filenameFromDownloadUrl(payload.url) ?? "teams-file",
-  );
-  return Response.json(
-    {
-      downloadUrl: resolved.downloadUrl,
-      filename,
-      contentType:
-        payload.contentType &&
-        payload.contentType !== "reference" &&
-        payload.contentType !==
-          "application/vnd.microsoft.teams.file.download.info"
-          ? payload.contentType
-          : inferMimetype(filename),
-    },
-    { headers: { "Cache-Control": "private, no-store" } },
-  );
+  return new Response(downloadResponse.body, {
+    status: 200,
+    headers: downloadHeaders(payload, downloadResponse),
+  });
 });
 
 const teamsWriteAuth = {
@@ -379,10 +347,6 @@ const teamsWriteAuth = {
 } as const;
 
 export const integrationsTeamsDownloadFileRoutes: readonly RouteEntry[] = [
-  {
-    route: integrationsTeamsDownloadFileContract.fileUrl,
-    handler: authRoute(teamsWriteAuth, fileUrl$),
-  },
   {
     route: integrationsTeamsDownloadFileContract.download,
     handler: authRoute(teamsWriteAuth, download$),

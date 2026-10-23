@@ -49,7 +49,7 @@ export function publicArtifactUrl(filename: string): string {
 }
 
 export function privateAttachmentUrl(fileId: string): string {
-  return `http://localhost/api/web/download-file?file_id=${encodeURIComponent(fileId)}`;
+  return `http://localhost/api/web/file-url?file_id=${encodeURIComponent(fileId)}`;
 }
 
 export function artifactFile(

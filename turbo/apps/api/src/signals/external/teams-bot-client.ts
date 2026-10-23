@@ -566,42 +566,12 @@ function isTeamsPreauthenticatedFileUrl(value: string): boolean {
   );
 }
 
-type ResolveTeamsFileUrlResult =
-  | { readonly kind: "ok"; readonly downloadUrl: string }
-  | { readonly kind: "unavailable" }
-  | TeamsApiErrorResult;
-
-/** Resolve metadata only; never follow a Graph redirect with the Graph token. */
-export async function resolveTeamsFileDownloadUrl(
-  args: {
-    readonly tenantId: string;
-    readonly url: string;
-    readonly downloadMode?: "graph";
-    readonly downloadInfo?: true;
-  },
+async function resolveTeamsGraphFileUrl(
+  args: { readonly tenantId: string; readonly url: string },
   signal: AbortSignal,
-): Promise<ResolveTeamsFileUrlResult> {
-  const source = safeUrlParse(args.url);
-  if (
-    !source ||
-    source.protocol !== "https:" ||
-    source.username ||
-    source.password ||
-    source.port
-  ) {
-    return { kind: "unavailable" };
-  }
-  if (args.downloadInfo) {
-    return isTeamsPreauthenticatedFileUrl(args.url)
-      ? { kind: "ok", downloadUrl: args.url }
-      : { kind: "unavailable" };
-  }
-  if (
-    args.downloadMode !== "graph" ||
-    shouldAuthorizeTeamsFileDownload(args.url)
-  ) {
-    return { kind: "unavailable" };
-  }
+): Promise<
+  { readonly kind: "ok"; readonly downloadUrl: string } | TeamsApiErrorResult
+> {
   const accessToken = await fetchTeamsGraphAccessToken(
     { tenantId: args.tenantId },
     signal,
@@ -632,12 +602,9 @@ export async function resolveTeamsFileDownloadUrl(
   ) {
     return { kind: "ok", downloadUrl: location };
   }
-  if (response.status === 200 || response.status === 302) {
-    return { kind: "unavailable" };
-  }
   return teamsApiError(
-    response.status,
-    `Microsoft Graph returned HTTP ${response.status}`,
+    response.ok || response.status === 302 ? 502 : response.status,
+    `Microsoft Graph returned an invalid file redirect (HTTP ${response.status})`,
   );
 }
 
@@ -646,6 +613,8 @@ export async function fetchTeamsFile(
     readonly tenantId: string;
     readonly url: string;
     readonly downloadMode?: "graph";
+    readonly downloadInfo?: true;
+    readonly redirect?: "manual";
   },
   signal: AbortSignal,
 ): Promise<FetchTeamsFileResult> {
@@ -653,25 +622,31 @@ export async function fetchTeamsFile(
     accept: "application/octet-stream",
   };
   let url = args.url;
-
-  if (args.downloadMode === "graph") {
-    const accessToken = await fetchTeamsGraphAccessToken(
-      {
-        tenantId: args.tenantId,
-      },
-      signal,
-    );
-    if (accessToken.kind === "teams-error") {
-      return accessToken;
-    }
-    url = teamsGraphShareContentUrl(args.url);
-    headers.authorization = `Bearer ${accessToken.accessToken}`;
-  } else if (shouldAuthorizeTeamsFileDownload(args.url)) {
+  const botAttachment = shouldAuthorizeTeamsFileDownload(url);
+  if (botAttachment) {
     const accessToken = await fetchTeamsBotAccessToken(signal);
     if (accessToken.kind === "teams-error") {
       return accessToken;
     }
     headers.authorization = `Bearer ${accessToken.accessToken}`;
+  } else if (args.downloadMode === "graph") {
+    const resolved = await resolveTeamsGraphFileUrl(args, signal);
+    if (resolved.kind === "teams-error") {
+      return resolved;
+    }
+    url = resolved.downloadUrl;
+  } else if (args.downloadInfo && !isTeamsPreauthenticatedFileUrl(url)) {
+    return teamsApiError(502, "Invalid Microsoft Teams file download URL");
+  }
+  if (
+    args.redirect === "manual" &&
+    !botAttachment &&
+    (args.downloadInfo || args.downloadMode === "graph")
+  ) {
+    return {
+      kind: "ok",
+      response: new Response(null, { status: 302, headers: { Location: url } }),
+    };
   }
 
   const responseResult = await settle(

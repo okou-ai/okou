@@ -235,7 +235,9 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
 
       expect(telegramBody).toMatchObject({
         chat_id: "-1001234567890",
-        document: "https://attachment-storage.example/download",
+        document: expect.stringContaining(
+          "https://attachment-storage.example/test-private-artifacts/",
+        ),
         caption: "Daily report",
         message_thread_id: 42,
       });

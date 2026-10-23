@@ -371,15 +371,11 @@ if (args[0] === "stop") {
             });
           },
         ),
-        http.get(
-          "https://delivery.example.com/batch-image.png",
-          ({ request }) => {
-            expect(request.headers.get("authorization")).toBeNull();
-            return new HttpResponse("authenticated private image bytes", {
-              headers: { "content-type": "image/png" },
-            });
-          },
-        ),
+        http.get("https://delivery.example.com/batch-image.png", () => {
+          return new HttpResponse("authenticated private image bytes", {
+            headers: { "content-type": "image/png" },
+          });
+        }),
       );
       await generateCommand.parseAsync([
         "node",

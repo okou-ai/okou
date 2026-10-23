@@ -125,7 +125,9 @@ function expectUploadedActivity(
       attachments: [
         {
           contentType: "text/plain",
-          contentUrl: "https://attachment-storage.example/download",
+          contentUrl: expect.stringContaining(
+            "https://attachment-storage.example/test-private-artifacts/",
+          ),
           name: input.filename,
         },
       ],
@@ -270,7 +272,9 @@ describe("Teams installation read ownership", () => {
             attachments: [
               {
                 contentType: "text/plain",
-                contentUrl: "https://attachment-storage.example/download",
+                contentUrl: expect.stringContaining(
+                  "https://attachment-storage.example/test-private-artifacts/",
+                ),
                 name: "notes.txt",
               },
             ],
@@ -278,9 +282,6 @@ describe("Teams installation read ownership", () => {
           },
         },
       ]);
-      expect(initialized.body.fileUrl).not.toBe(
-        "https://attachment-storage.example/download",
-      );
     });
   });
 
@@ -556,9 +557,6 @@ describe("Teams explicit target delivery", () => {
           text: "Explicit attachment",
           filename: "explicit.txt",
         });
-        expect(initialized.body.fileUrl).not.toBe(
-          "https://attachment-storage.example/download",
-        );
       });
     },
   );
@@ -713,9 +711,6 @@ describe("Teams explicit target delivery", () => {
           text: "Reply attachment",
           filename: "reply.txt",
         });
-        expect(initialized.body.fileUrl).not.toBe(
-          "https://attachment-storage.example/download",
-        );
       });
     },
   );

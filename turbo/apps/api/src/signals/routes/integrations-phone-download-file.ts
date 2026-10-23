@@ -39,20 +39,118 @@ function parseContentLength(value: string | null): number | undefined {
   return size;
 }
 
-async function streamPhoneFile(
-  file: {
-    readonly downloadUrl: string;
-    readonly fileName: string;
-    readonly fallbackMimetype: string;
-    readonly fileId: string;
-  },
-  signal: AbortSignal,
-): Promise<Response> {
+function phoneFileRedirect(
+  downloadUrl: string,
+  filename: string,
+  artifact: { readonly size: number; readonly contentType: string } | null,
+): Response {
+  if (artifact && artifact.size > MAX_FILE_SIZE_BYTES) {
+    return jsonResponse(
+      413,
+      "Phone file exceeds maximum size",
+      "PAYLOAD_TOO_LARGE",
+    );
+  }
+  const contentType = artifact?.contentType ?? inferMimetype(filename);
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: downloadUrl,
+      "Cache-Control": "private, no-store",
+      "Content-Type": contentType,
+      "X-File-Name": encodeURIComponent(filename),
+      "X-File-Mimetype": contentType,
+      ...(artifact ? { "X-File-Size": String(artifact.size) } : {}),
+    },
+  });
+}
+
+const download$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const query = get(queryOf(integrationsPhoneDownloadFileContract.download));
+  const db = get(db$);
+  const groupVisibility = db
+    .select({ messageId: agentphoneMessageVisibility.messageId })
+    .from(agentphoneMessageVisibility)
+    .where(
+      and(
+        eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
+        eq(agentphoneMessageVisibility.orgId, auth.orgId),
+        eq(agentphoneMessageVisibility.userId, auth.userId),
+      ),
+    );
+  const [message] = await db
+    .select({
+      mediaUrl: agentphoneMessages.mediaUrl,
+      direction: agentphoneMessages.direction,
+    })
+    .from(agentphoneMessages)
+    .leftJoin(
+      agentphoneUserLinks,
+      eq(agentphoneMessages.agentphoneUserLinkId, agentphoneUserLinks.id),
+    )
+    .where(
+      and(
+        eq(agentphoneMessages.agentphoneMessageId, query.file_id),
+        isNotNull(agentphoneMessages.mediaUrl),
+        or(
+          and(
+            isNull(agentphoneMessages.groupId),
+            eq(agentphoneUserLinks.userId, auth.userId),
+            eq(agentphoneUserLinks.orgId, auth.orgId),
+          ),
+          and(isNotNull(agentphoneMessages.groupId), exists(groupVisibility)),
+        ),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+
+  if (!message?.mediaUrl) {
+    return jsonResponse(404, "Phone file not found", "NOT_FOUND");
+  }
+  const mediaUrl = message.mediaUrl;
+  const reference = await set(resolveArtifactFileReference$, mediaUrl, signal);
+  signal.throwIfAborted();
+  if (reference && !reference.id) {
+    return jsonResponse(404, "Phone file not found", "NOT_FOUND");
+  }
+  const artifact = reference
+    ? await set(
+        uploadedArtifactObject$,
+        {
+          userId: auth.userId,
+          orgId: auth.orgId,
+          id: reference.id,
+        },
+        signal,
+      )
+    : null;
+  signal.throwIfAborted();
+  if (reference && !artifact) {
+    return jsonResponse(404, "Phone file not found", "NOT_FOUND");
+  }
+  const downloadUrl = artifact
+    ? await set(uploadedArtifactFetchUrl$, artifact, signal)
+    : mediaUrl;
+  signal.throwIfAborted();
+  const fileName = artifact
+    ? artifact.filename
+    : agentPhoneFilenameFromMediaUrl(mediaUrl, query.file_id);
+  const fallbackMimetype = inferMimetype(fileName);
+
+  if (
+    artifact ||
+    (message.direction === "outbound" && phoneFileDownloadUrl(mediaUrl))
+  ) {
+    return phoneFileRedirect(downloadUrl, fileName, artifact);
+  }
+
   const downloadResponse = await tapError(
-    fetch(file.downloadUrl, { signal }),
+    fetch(downloadUrl, { signal }),
     (error) => {
       log.warn("AgentPhone file download failed", {
-        fileId: file.fileId,
+        fileId: query.file_id,
         error,
       });
     },
@@ -61,9 +159,10 @@ async function streamPhoneFile(
   if (!downloadResponse) {
     return jsonResponse(502, "Failed to download phone file", "BAD_GATEWAY");
   }
+  signal.throwIfAborted();
   if (!downloadResponse.ok) {
     log.warn("AgentPhone media download failed", {
-      fileId: file.fileId,
+      fileId: query.file_id,
       status: downloadResponse.status,
     });
     return jsonResponse(
@@ -85,144 +184,16 @@ async function streamPhoneFile(
     );
   }
   const contentType =
-    downloadResponse.headers.get("content-type") ?? file.fallbackMimetype;
+    downloadResponse.headers.get("content-type") ?? fallbackMimetype;
   const headers = new Headers();
   headers.set("Content-Type", contentType);
-  headers.set("X-File-Name", encodeURIComponent(file.fileName));
+  headers.set("X-File-Name", encodeURIComponent(fileName));
   headers.set("X-File-Mimetype", contentType);
   if (contentLength) {
     headers.set("Content-Length", contentLength);
   }
   return new Response(downloadResponse.body, { status: 200, headers });
-}
-
-function downloadCommand(direct: boolean) {
-  const query$ = queryOf(
-    direct
-      ? integrationsPhoneDownloadFileContract.fileUrl
-      : integrationsPhoneDownloadFileContract.download,
-  );
-  return command(async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    const query = get(query$);
-    const db = get(db$);
-    const groupVisibility = db
-      .select({ messageId: agentphoneMessageVisibility.messageId })
-      .from(agentphoneMessageVisibility)
-      .where(
-        and(
-          eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
-          eq(agentphoneMessageVisibility.orgId, auth.orgId),
-          eq(agentphoneMessageVisibility.userId, auth.userId),
-        ),
-      );
-    const [message] = await db
-      .select({
-        mediaUrl: agentphoneMessages.mediaUrl,
-        direction: agentphoneMessages.direction,
-      })
-      .from(agentphoneMessages)
-      .leftJoin(
-        agentphoneUserLinks,
-        eq(agentphoneMessages.agentphoneUserLinkId, agentphoneUserLinks.id),
-      )
-      .where(
-        and(
-          eq(agentphoneMessages.agentphoneMessageId, query.file_id),
-          isNotNull(agentphoneMessages.mediaUrl),
-          or(
-            and(
-              isNull(agentphoneMessages.groupId),
-              eq(agentphoneUserLinks.userId, auth.userId),
-              eq(agentphoneUserLinks.orgId, auth.orgId),
-            ),
-            and(isNotNull(agentphoneMessages.groupId), exists(groupVisibility)),
-          ),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (!message?.mediaUrl) {
-      return jsonResponse(404, "Phone file not found", "NOT_FOUND");
-    }
-    const mediaUrl = message.mediaUrl;
-    const reference = await set(
-      resolveArtifactFileReference$,
-      mediaUrl,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (reference && !reference.id) {
-      return jsonResponse(404, "Phone file not found", "NOT_FOUND");
-    }
-    const artifact = reference
-      ? await set(
-          uploadedArtifactObject$,
-          {
-            userId: auth.userId,
-            orgId: auth.orgId,
-            id: reference.id,
-          },
-          signal,
-        )
-      : null;
-    signal.throwIfAborted();
-    if (reference && !artifact) {
-      return jsonResponse(404, "Phone file not found", "NOT_FOUND");
-    }
-    // Anonymous redirect behavior is verified only for outbound provider media.
-    // Inbound and unknown external media retain the authenticated legacy route.
-    const externalDownloadUrl =
-      direct && !artifact
-        ? message.direction === "outbound"
-          ? phoneFileDownloadUrl(mediaUrl)
-          : null
-        : mediaUrl;
-    if (!externalDownloadUrl) {
-      return jsonResponse(
-        409,
-        "Direct download is unavailable for this phone attachment",
-        "DIRECT_DOWNLOAD_UNAVAILABLE",
-      );
-    }
-    const downloadUrl = artifact
-      ? await set(uploadedArtifactFetchUrl$, artifact, signal)
-      : externalDownloadUrl;
-    signal.throwIfAborted();
-    const fileName = artifact
-      ? artifact.filename
-      : agentPhoneFilenameFromMediaUrl(mediaUrl, query.file_id);
-    const fallbackMimetype = inferMimetype(fileName);
-
-    if (direct) {
-      if (artifact && artifact.size > MAX_FILE_SIZE_BYTES) {
-        return jsonResponse(
-          413,
-          "Phone file exceeds maximum size",
-          "PAYLOAD_TOO_LARGE",
-        );
-      }
-      return Response.json(
-        {
-          downloadUrl,
-          filename: fileName,
-          contentType: artifact ? artifact.contentType : fallbackMimetype,
-          ...(artifact ? { size: artifact.size } : {}),
-        },
-        { headers: { "Cache-Control": "private, no-store" } },
-      );
-    }
-
-    return streamPhoneFile(
-      { downloadUrl, fileName, fallbackMimetype, fileId: query.file_id },
-      signal,
-    );
-  });
-}
-
-const download$ = downloadCommand(false);
-const fileUrl$ = downloadCommand(true);
+});
 
 const phoneReadAuth = {
   requireOrganization: true,
@@ -231,10 +202,6 @@ const phoneReadAuth = {
 } as const;
 
 export const integrationsPhoneDownloadFileRoutes: readonly RouteEntry[] = [
-  {
-    route: integrationsPhoneDownloadFileContract.fileUrl,
-    handler: authRoute(phoneReadAuth, fileUrl$),
-  },
   {
     route: integrationsPhoneDownloadFileContract.download,
     handler: authRoute(phoneReadAuth, download$),

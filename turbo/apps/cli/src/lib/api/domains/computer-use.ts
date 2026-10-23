@@ -1,7 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { downloadFileViaUrl } from "../download-file-url";
+import { fetchFileUrl, resolveFileDownloadUrl } from "../download-file-url";
 import {
   desktopShellContract,
   type DesktopShellRequest,
@@ -29,10 +26,7 @@ import {
   handleError,
 } from "../core/client-factory";
 import { getActiveToken } from "../config";
-import {
-  cliClientHeaderApi,
-  headersWithCliClientHeaders,
-} from "../client-headers";
+import { cliClientHeaderApi } from "../client-headers";
 
 function buildHeaders(token?: string): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -172,39 +166,12 @@ export async function fetchComputerUseScreenshot(
     `/api/computer-use/commands/${encodeURIComponent(commandId)}/screenshot/url`,
     await getBaseUrl(),
   );
-  const directory = await mkdtemp(join(tmpdir(), "okou-screenshot-"));
-  try {
-    const direct = await downloadFileViaUrl(
-      endpoint,
-      join(directory, "screenshot"),
-      {},
-      signal,
-    );
-    if (direct) {
-      return { buffer: await readFile(direct.path), mimeType: direct.mimetype };
-    }
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-  // Independently deployed older APIs have only the binary screenshot route.
-  const config = await getComputerUseClientConfig();
-  const response = await fetch(
-    `${config.baseUrl}/api/computer-use/commands/${encodeURIComponent(commandId)}/screenshot`,
-    { headers: headersWithCliClientHeaders(config.baseHeaders), signal },
-  );
-
-  if (!response.ok) {
-    throw new ApiRequestError(
-      "Failed to download computer-use screenshot",
-      "REQUEST_FAILED",
-      response.status,
-    );
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  const mimeType =
-    response.headers.get("content-type") ?? "application/octet-stream";
-  return { buffer: Buffer.from(arrayBuffer), mimeType };
+  const metadata = await resolveFileDownloadUrl(endpoint, signal);
+  const response = await fetchFileUrl(metadata.downloadUrl, signal);
+  return {
+    buffer: Buffer.from(await response.arrayBuffer()),
+    mimeType: response.headers.get("content-type") ?? metadata.contentType,
+  };
 }
 
 export async function createDesktopShellCommand(

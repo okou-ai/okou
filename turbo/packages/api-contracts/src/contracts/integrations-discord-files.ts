@@ -149,18 +149,4 @@ export const integrationsDiscordDownloadFileContract = c.router({
     responses: { 200: fileDownloadUrlSchema, ...uploadErrors },
     summary: "Resolve a fresh authorized Discord attachment download URL",
   },
-  download: {
-    method: "GET",
-    path: "/api/integrations/discord/download-file",
-    headers: authHeadersSchema,
-    query: discordDownloadFileQuerySchema,
-    responses: {
-      200: c.otherResponse({
-        contentType: "application/octet-stream",
-        body: z.unknown(),
-      }),
-      ...uploadErrors,
-    },
-    summary: "Download a Discord attachment after user and bot access checks",
-  },
 });

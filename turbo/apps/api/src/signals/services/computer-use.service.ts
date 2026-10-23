@@ -58,11 +58,7 @@ import {
   publishComputerUseCommandsChangedSafely,
   publishComputerUseResultChangedSafely,
 } from "../external/realtime";
-import {
-  downloadS3Buffer$,
-  putS3Object$,
-  signPresignedGetUrl$,
-} from "../external/s3";
+import { putS3Object$, signPresignedGetUrl$ } from "../external/s3";
 import { settle } from "../utils";
 import { clerk$ } from "../external/clerk";
 import {
@@ -1429,9 +1425,9 @@ export const getComputerUseCommand$ = command(
   },
 );
 
-const getComputerUseCommandScreenshotObject$ = command(
+export const getComputerUseCommandScreenshotUrl$ = command(
   async (
-    { get },
+    { get, set },
     params: {
       readonly orgId: string;
       readonly userId: string;
@@ -1439,7 +1435,7 @@ const getComputerUseCommandScreenshotObject$ = command(
       readonly hostId?: string;
     },
     signal: AbortSignal,
-  ): Promise<StoredScreenshotPointer | null> => {
+  ) => {
     signal.throwIfAborted();
     const [row] = await get(db$)
       .select({
@@ -1464,56 +1460,7 @@ const getComputerUseCommandScreenshotObject$ = command(
       return null;
     }
     const screenshot = row.result.screenshot;
-    return isStoredScreenshotPointer(screenshot) ? screenshot : null;
-  },
-);
-
-export const getComputerUseCommandScreenshot$ = command(
-  async (
-    { set },
-    params: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly commandId: string;
-      readonly hostId?: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    const screenshot = await set(
-      getComputerUseCommandScreenshotObject$,
-      params,
-      signal,
-    );
-    if (!screenshot) {
-      return null;
-    }
-    const buffer = await set(
-      downloadS3Buffer$,
-      { bucket: screenshot.bucket, key: screenshot.key },
-      signal,
-    );
-    signal.throwIfAborted();
-    return { buffer, contentType: screenshot.mimeType };
-  },
-);
-
-export const getComputerUseCommandScreenshotUrl$ = command(
-  async (
-    { set },
-    params: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly commandId: string;
-      readonly hostId?: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    const screenshot = await set(
-      getComputerUseCommandScreenshotObject$,
-      params,
-      signal,
-    );
-    if (!screenshot) {
+    if (!isStoredScreenshotPointer(screenshot)) {
       return null;
     }
     const filename = `screenshot.${extensionForScreenshotMime(screenshot.mimeType)}`;

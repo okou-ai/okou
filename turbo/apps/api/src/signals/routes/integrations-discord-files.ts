@@ -4,7 +4,6 @@ import {
   integrationsDiscordUploadMaterializeContract,
   integrationsDiscordUploadCompleteContract,
   integrationsDiscordDownloadFileContract,
-  type DiscordDownloadFileQuery,
 } from "@okouai/api-contracts/contracts/integrations-discord-files";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 
@@ -16,7 +15,6 @@ import { bodyResultOf, queryOf } from "../context/request";
 import { discordClient } from "../external/discord-client";
 import {
   DiscordFileFetchError,
-  fetchDiscordAttachment,
   resolveDiscordAttachmentUrl,
 } from "../external/discord-file-fetcher";
 import { requireDiscordRunReadAccess$ } from "../services/discord-access.service";
@@ -178,168 +176,80 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body };
 });
 
-const resolveAttachment$ = command(
-  async (
-    { get, set },
-    query: DiscordDownloadFileQuery,
-    signal: AbortSignal,
-  ) => {
-    const auth = get(organizationAuthContext$);
-    const access = await set(
-      requireDiscordRunReadAccess$,
-      {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        channelId: query.channelId,
-        guildId: query.guildId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (access.kind === "denied") {
-      return { kind: "response" as const, response: access.response };
-    }
-    const message = await discordClient.fetchDiscordMessage(
-      {
-        botToken: access.botToken,
-        channelId: query.channelId,
-        messageId: query.messageId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (message.kind !== "ok") {
-      return {
-        kind: "response" as const,
-        response: discordApiFailure(message),
-      };
-    }
-    if (
-      message.data.channel_id !== query.channelId ||
-      message.data.id !== query.messageId
-    ) {
-      return { kind: "response" as const, response: discordUnavailable() };
-    }
-    const attachment = message.data.attachments.find((file) => {
-      return file.id === query.attachmentId;
-    });
-    if (!attachment) {
-      return { kind: "response" as const, response: discordUnavailable() };
-    }
-    return {
-      kind: "attachment" as const,
-      attachment: {
-        channelId: query.channelId,
-        attachmentId: attachment.id,
-        filename: attachment.filename,
-        size: attachment.size,
-        ...(attachment.content_type !== undefined
-          ? { contentType: attachment.content_type }
-          : {}),
-        url: attachment.url,
-      },
-    };
-  },
-);
-
-const downloadAttempt$ = command(
-  async ({ set }, query: DiscordDownloadFileQuery, signal: AbortSignal) => {
-    const resolved = await set(resolveAttachment$, query, signal);
-    signal.throwIfAborted();
-    if (resolved.kind === "response") {
-      return resolved;
-    }
-    const downloaded = await fetchDiscordAttachment(
-      resolved.attachment,
-      signal,
-    );
-    signal.throwIfAborted();
-    return { kind: "file" as const, ...downloaded };
-  },
-);
-
-function downloadFailure(error: unknown) {
-  if (!(error instanceof DiscordFileFetchError)) {
-    throw error;
-  }
-  if (error.code === "too-large") {
-    return createErrorResponse("PAYLOAD_TOO_LARGE", error.message);
-  }
-  if (error.statusCode === 403 || error.statusCode === 404) {
-    return discordUnavailable();
-  }
-  return {
-    status: 502 as const,
-    body: { error: { code: "DISCORD_FILE_ERROR", message: error.message } },
-  };
-}
-
-const download$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const query = get(queryOf(integrationsDiscordDownloadFileContract.download));
-  let result = await settle(set(downloadAttempt$, query, signal), signal);
-  signal.throwIfAborted();
-  if (
-    !result.ok &&
-    result.error instanceof DiscordFileFetchError &&
-    (result.error.statusCode === 403 || result.error.statusCode === 404)
-  ) {
-    // Attachment URLs expire. Resolve the same provider identity once more,
-    // including fresh binding and user/bot access checks, before retrying.
-    result = await settle(set(downloadAttempt$, query, signal), signal);
-    signal.throwIfAborted();
-  }
-  if (!result.ok) {
-    return downloadFailure(result.error);
-  }
-  if (result.value.kind === "response") {
-    return result.value.response;
-  }
-  const file = result.value;
-  return new Response(file.bytes, {
-    headers: {
-      "Content-Type": file.contentType,
-      "Content-Length": String(file.bytes.byteLength),
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
-      "X-File-Name": encodeURIComponent(file.filename),
-      "X-File-Mimetype": file.contentType,
-      "X-Content-Type-Options": "nosniff",
-      "Cache-Control": "private, no-store",
-    },
-  });
-});
-
-const fileUrl$ = command(async ({ get, set }, signal: AbortSignal) => {
+const resolveFileUrl$ = command(async ({ get, set }, signal: AbortSignal) => {
   const query = get(queryOf(integrationsDiscordDownloadFileContract.fileUrl));
-  const result = await settle(
-    (async () => {
-      const resolved = await set(resolveAttachment$, query, signal);
-      signal.throwIfAborted();
-      if (resolved.kind === "response") {
-        return resolved.response;
-      }
-      const metadata = resolveDiscordAttachmentUrl(resolved.attachment);
-      if (!metadata) {
-        return {
-          status: 409 as const,
-          body: {
-            error: {
-              code: "DIRECT_DOWNLOAD_UNAVAILABLE",
-              message: "Discord attachment requires CDN MIME validation",
-            },
-          },
-        };
-      }
-      return Response.json(metadata, {
-        headers: { "Cache-Control": "private, no-store" },
-      });
-    })(),
+  const auth = get(organizationAuthContext$);
+  const access = await set(
+    requireDiscordRunReadAccess$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      channelId: query.channelId,
+      guildId: query.guildId,
+    },
     signal,
   );
   signal.throwIfAborted();
-  if (!result.ok) {
-    return downloadFailure(result.error);
+  if (access.kind === "denied") {
+    return access.response;
   }
-  return result.value;
+  const message = await discordClient.fetchDiscordMessage(
+    {
+      botToken: access.botToken,
+      channelId: query.channelId,
+      messageId: query.messageId,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (message.kind !== "ok") {
+    return discordApiFailure(message);
+  }
+  if (
+    message.data.channel_id !== query.channelId ||
+    message.data.id !== query.messageId
+  ) {
+    return discordUnavailable();
+  }
+  const attachment = message.data.attachments.find((file) => {
+    return file.id === query.attachmentId;
+  });
+  if (!attachment) {
+    return discordUnavailable();
+  }
+  const metadata = resolveDiscordAttachmentUrl({
+    channelId: query.channelId,
+    attachmentId: attachment.id,
+    filename: attachment.filename,
+    size: attachment.size,
+    ...(attachment.content_type !== undefined
+      ? { contentType: attachment.content_type }
+      : {}),
+    url: attachment.url,
+  });
+  return Response.json(metadata, {
+    headers: { "Cache-Control": "private, no-store" },
+  });
+});
+
+const fileUrl$ = command(async ({ set }, signal: AbortSignal) => {
+  const result = await settle(set(resolveFileUrl$, signal), signal);
+  signal.throwIfAborted();
+  if (result.ok) {
+    return result.value;
+  }
+  if (!(result.error instanceof DiscordFileFetchError)) {
+    throw result.error;
+  }
+  if (result.error.code === "too-large") {
+    return createErrorResponse("PAYLOAD_TOO_LARGE", result.error.message);
+  }
+  return {
+    status: 502 as const,
+    body: {
+      error: { code: "DISCORD_FILE_ERROR", message: result.error.message },
+    },
+  };
 });
 
 const writeAuth = {
@@ -361,10 +271,6 @@ export const integrationsDiscordFileRoutes: readonly RouteEntry[] = [
   {
     route: integrationsDiscordUploadCompleteContract.complete,
     handler: authRoute(writeAuth, complete$),
-  },
-  {
-    route: integrationsDiscordDownloadFileContract.download,
-    handler: authRoute(readAuth, download$),
   },
   {
     route: integrationsDiscordDownloadFileContract.fileUrl,
