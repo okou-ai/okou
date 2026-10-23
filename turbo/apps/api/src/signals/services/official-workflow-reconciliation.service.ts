@@ -97,6 +97,7 @@ import { observedWorkflowAutomationCondition } from "./workflow-automation-snaps
 import { notionConfigWithConnectorId } from "./notion-automation-account.service";
 import {
   acceptedCatalogFromRow,
+  OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
   acceptedOfficialWorkflowCatalogReadPlan,
   acceptedOfficialWorkflowRevisionReadPlan,
   type AcceptedOfficialWorkflowCatalog,
@@ -3338,7 +3339,18 @@ const persistDiscardedMaterialization$ = command(
     const identities = officialWorkflowAutomationIdentities;
     const catalog = db
       .$with("discard_catalog_fence")
-      .as(acceptedCatalogLockStatement());
+      .as(
+        db
+          .select({ authority: officialWorkflowCatalogState.authority })
+          .from(officialWorkflowCatalogState)
+          .where(
+            eq(
+              officialWorkflowCatalogState.authority,
+              OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+            ),
+          )
+          .for("share"),
+      );
     // Retain the existing catalog -> automation -> identity lock order. The
     // locked tuples, including a row changed while waiting, own both writes.
     const lockedAutomation = db.$with("discard_locked_automation").as(
