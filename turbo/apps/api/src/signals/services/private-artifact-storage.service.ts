@@ -60,7 +60,7 @@ export function artifactFileReference(
     !origin ||
     !url ||
     url.origin !== new URL(origin).origin ||
-    url.pathname !== "/api/web/download-file" ||
+    url.pathname !== "/api/web/file-url" ||
     url.username ||
     url.password
   ) {

@@ -412,11 +412,12 @@ export async function authorizeSiteRequest(
     // Invalid handles stay rejected on the server until the next login replaces them.
   }
   return {
-    response: hostedSiteRecoveryResponse(
+    response: await beginLogin(
       request,
       env,
-      new Response("Authentication required", { status: 401, headers }),
-      token.success ? "expired" : "authenticate",
+      endpoint,
+      headers,
+      `${url.pathname}${url.search}`,
     ),
   };
 }

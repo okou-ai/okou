@@ -242,6 +242,19 @@ export const browserContract = c.router({
     } as const,
     summary: "Get a chat thread's managed browser",
   },
+  viewerConnection: {
+    method: "GET",
+    path: "/api/chat-threads/:threadId/browser/viewer-connection",
+    headers: authHeadersSchema,
+    pathParams: browserThreadParamsSchema,
+    responses: {
+      200: z.object({
+        cdpUrl: z.url({ protocol: /^wss$/u }),
+      }),
+      ...commonErrorResponses,
+    },
+    summary: "Get a live browser's WebSocket endpoint for its signed-in owner",
+  },
 });
 
 export const browserAuthorizationRequestsContract = c.router({

@@ -2017,7 +2017,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
     });
   });
 
-  it("offloads and proxies screenshots with owner isolation", async () => {
+  it("offloads screenshots and resolves download URLs with owner isolation", async () => {
     const scenario = createScenario();
     const { bdd, api } = scenario;
     return await withNowScopeForTest(() => {
@@ -2081,12 +2081,15 @@ describe("FILE-03 desktop computer-use runtime", () => {
           screenshotBase64,
         );
 
-        const download = await api.downloadComputerUseScreenshot(
+        const download = await api.resolveComputerUseScreenshot(
           actor,
           first.commandId,
         );
-        expect(download.contentType).toBe("image/png");
-        expect(download.bytes.equals(pngBytes)).toBeTruthy();
+        expect(download).toMatchObject({
+          downloadUrl: expect.stringContaining(encodeURIComponent(firstKey)),
+          contentType: "image/png",
+          size: pngBytes.length,
+        });
 
         const peerScreenshot = await api.requestComputerUseScreenshot(
           peer,
@@ -2095,38 +2098,6 @@ describe("FILE-03 desktop computer-use runtime", () => {
         );
         expectApiError(peerScreenshot.body);
         expect(peerScreenshot.body.error.code).toBe("NOT_FOUND");
-
-        const second = await api.createComputerUseReadCommand(actor, {
-          kind: "app.state",
-          app: "Safari",
-        });
-        await api.claimNextComputerUseCommand(host.connection);
-        await api.completeComputerUseCommandWith(
-          host.connection,
-          second.commandId,
-          {
-            status: "succeeded",
-            result: {
-              snapshotId: "snap_bdd_legacy",
-              screenshot: "legacy-inline-screenshot",
-            },
-          },
-        );
-
-        const secondDetail = await api.readComputerUseCommand(
-          actor,
-          second.commandId,
-        );
-        expect(secondDetail.result).toMatchObject({
-          screenshot: "legacy-inline-screenshot",
-        });
-        const legacyScreenshot = await api.requestComputerUseScreenshot(
-          actor,
-          second.commandId,
-          [404],
-        );
-        expectApiError(legacyScreenshot.body);
-        expect(legacyScreenshot.body.error.code).toBe("NOT_FOUND");
       });
     });
   });

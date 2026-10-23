@@ -1,5 +1,12 @@
 import * as React from "react";
-import { ArrowUpRight, Check, Download, Maximize2, Share2 } from "lucide-react";
+import {
+  ArrowUpRight,
+  CircleCheck,
+  CircleX,
+  Download,
+  Maximize2,
+  Share2,
+} from "lucide-react";
 import { cn } from "../../lib/utils";
 import { buttonVariants } from "./button";
 
@@ -69,18 +76,10 @@ export function HostedSiteBannerActions({
       <button
         type="button"
         data-okou-banner-share=""
-        aria-label="Copy link"
-        className={cn(
-          buttonVariants({ variant: "quiet", size: "icon-sm" }),
-          "group",
-        )}
+        aria-label="Share"
+        className={buttonVariants({ variant: "quiet", size: "icon-sm" })}
       >
-        <Share2 size={16} className="group-data-[copied]:hidden" aria-hidden />
-        <Check
-          size={16}
-          className="hidden group-data-[copied]:block"
-          aria-hidden
-        />
+        <Share2 size={16} aria-hidden />
       </button>
       <a
         href={downloadUrl}
@@ -111,7 +110,25 @@ export function HostedSiteBannerActions({
         <span className="hidden sm:inline">Continue with Okou</span>
         <ArrowUpRight size={16} className="sm:hidden" aria-hidden />
       </a>
-      <span role="status" className="sr-only" data-okou-banner-status="" />
+      <span
+        role="status"
+        aria-atomic="true"
+        hidden
+        data-okou-banner-status=""
+        className="group font-family-sans pointer-events-none fixed inset-x-0 top-6 z-50 mx-auto flex w-max max-w-[calc(100vw-2rem)] items-center gap-2 rounded-xl border border-solid border-border bg-popover px-4 py-4 text-sm font-medium text-popover-foreground [box-shadow:0_4px_12px_#0000001a]"
+      >
+        <CircleCheck
+          size={20}
+          aria-hidden
+          className="shrink-0 text-green-600 group-data-[error]:hidden"
+        />
+        <CircleX
+          size={20}
+          aria-hidden
+          className="hidden shrink-0 text-red-500 group-data-[error]:block"
+        />
+        <span data-okou-banner-message="" />
+      </span>
     </div>
   );
 }

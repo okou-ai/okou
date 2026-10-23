@@ -58,7 +58,7 @@ import {
   publishComputerUseCommandsChangedSafely,
   publishComputerUseResultChangedSafely,
 } from "../external/realtime";
-import { downloadS3Buffer$, putS3Object$ } from "../external/s3";
+import { putS3Object$, signPresignedGetUrl$ } from "../external/s3";
 import { settle } from "../utils";
 import { clerk$ } from "../external/clerk";
 import {
@@ -1425,7 +1425,7 @@ export const getComputerUseCommand$ = command(
   },
 );
 
-export const getComputerUseCommandScreenshot$ = command(
+export const getComputerUseCommandScreenshotUrl$ = command(
   async (
     { get, set },
     params: {
@@ -1435,10 +1435,7 @@ export const getComputerUseCommandScreenshot$ = command(
       readonly hostId?: string;
     },
     signal: AbortSignal,
-  ): Promise<{
-    readonly buffer: Buffer;
-    readonly contentType: string;
-  } | null> => {
+  ) => {
     signal.throwIfAborted();
     const [row] = await get(db$)
       .select({
@@ -1463,16 +1460,25 @@ export const getComputerUseCommandScreenshot$ = command(
       return null;
     }
     const screenshot = row.result.screenshot;
-    if (isStoredScreenshotPointer(screenshot)) {
-      const buffer = await set(
-        downloadS3Buffer$,
-        { bucket: screenshot.bucket, key: screenshot.key },
-        signal,
-      );
-      signal.throwIfAborted();
-      return { buffer, contentType: screenshot.mimeType };
+    if (!isStoredScreenshotPointer(screenshot)) {
+      return null;
     }
-    return null;
+    const filename = `screenshot.${extensionForScreenshotMime(screenshot.mimeType)}`;
+    const downloadUrl = await set(signPresignedGetUrl$, {
+      bucket: screenshot.bucket,
+      key: screenshot.key,
+      publicEndpoint: true,
+      filename,
+      signingDate: nowDate(),
+      responseCacheControl: "private, no-store",
+    });
+    signal.throwIfAborted();
+    return {
+      downloadUrl,
+      filename,
+      contentType: screenshot.mimeType,
+      size: screenshot.sizeBytes,
+    };
   },
 );
 

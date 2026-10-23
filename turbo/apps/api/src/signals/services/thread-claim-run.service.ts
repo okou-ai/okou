@@ -45,6 +45,7 @@ import type {
 } from "./thread-model.signals";
 import type {
   FeishuThreadContext,
+  SlackThreadContext,
   TeamsThreadContext,
   TelegramThreadContext,
 } from "./thread-run-context.service";
@@ -372,6 +373,15 @@ function queuedUserMessageAutonomyBudget(
     };
   }
   return childAutonomyBudget(sourceAutonomyBudget);
+}
+
+function queuedSlackDelivery(context: NonNullable<SlackThreadContext>) {
+  return {
+    workspaceId: context.workspaceId ?? undefined,
+    channelId: context.channelId,
+    threadTs: context.threadTs,
+    ...(context.routeThreadTs ? { routeThreadTs: context.routeThreadTs } : {}),
+  };
 }
 
 function queuedFeishuDelivery(context: NonNullable<FeishuThreadContext>) {
@@ -1397,13 +1407,7 @@ export function createThreadClaimRunObjects(
           return {
             triggerSource: "slack",
             delivery: {
-              slackDelivery: {
-                channelId: context.channelId,
-                threadTs: context.threadTs,
-                ...(context.routeThreadTs
-                  ? { routeThreadTs: context.routeThreadTs }
-                  : {}),
-              },
+              slackDelivery: queuedSlackDelivery(context),
             },
           };
         }
@@ -5105,6 +5109,11 @@ function buildStoredExecutionContextDraft(
   return {
     context: {
       environment,
+      // Invocation identity remains in the Run's workflowAutomationId; names
+      // and content are not frozen by this API-only discovery selector.
+      ...(args.resolved.agentId !== null
+        ? { customWorkflowSelection: { agentId: args.resolved.agentId } }
+        : {}),
       platformEnvironment,
       secretValueEnvironmentKeys,
       vars: args.environment.vars ?? null,

@@ -81,6 +81,7 @@ async fn run_in_sandbox_applies_decoded_artifact_before_agent_spawn() {
     );
     artifact.missing_root_policy = Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion);
     ctx.storage_manifest = Some(StorageManifest {
+        workflow_skills: Vec::new(),
         storages: Vec::new(),
         artifacts: vec![artifact],
     });
@@ -178,6 +179,7 @@ async fn run_in_sandbox_starts_deferred_cache_fill_after_agent_spawn() {
     let archive_url = format!("{}/archive.tar.gz", archive_server.url());
     let storage = api_storage("instructions", "/home/user/.codex", "v1", &archive_url);
     ctx.storage_manifest = Some(StorageManifest {
+        workflow_skills: Vec::new(),
         storages: vec![storage],
         artifacts: vec![],
     });
@@ -311,6 +313,7 @@ async fn run_in_sandbox_drops_deferred_cache_fill_when_agent_spawn_fails() {
     let mut archive_server = spawn_storage_archive_server(b"cache-archive").await;
     let archive_url = format!("{}/archive.tar.gz", archive_server.url());
     ctx.storage_manifest = Some(StorageManifest {
+        workflow_skills: Vec::new(),
         storages: vec![api_storage(
             "instructions",
             "/home/user/.codex",
@@ -368,6 +371,7 @@ async fn run_in_sandbox_drops_deferred_cache_fill_when_guest_storage_apply_fails
     let mut archive_server = spawn_storage_archive_server(b"cache-archive").await;
     let archive_url = format!("{}/archive.tar.gz", archive_server.url());
     ctx.storage_manifest = Some(StorageManifest {
+        workflow_skills: Vec::new(),
         storages: vec![api_storage(
             "instructions",
             "/home/user/.codex",
@@ -421,6 +425,7 @@ async fn run_in_sandbox_records_storage_manifest_no_work_timing_without_guest_st
     let sandbox = sandbox_mock::MockSandbox::new("test");
     let mut ctx = minimal_context();
     ctx.storage_manifest = Some(StorageManifest {
+        workflow_skills: Vec::new(),
         storages: vec![api_storage(
             "instructions",
             "/home/user/.codex",
@@ -484,6 +489,7 @@ async fn run_in_sandbox_records_storage_manifest_guest_storage_apply_failure_tim
         let archive_url = format!("{}/archive.tar.gz", archive_server.url());
         let storage = api_storage("ordinary", "/data", "v1", &archive_url);
         ctx.storage_manifest = Some(StorageManifest {
+            workflow_skills: Vec::new(),
             storages: vec![storage],
             artifacts: vec![],
         });
@@ -551,6 +557,7 @@ async fn run_in_sandbox_rejects_non_empty_artifact_without_archive_url() {
     );
     artifact.archive_url = None;
     ctx.storage_manifest = Some(StorageManifest {
+        workflow_skills: Vec::new(),
         storages: vec![],
         artifacts: vec![artifact],
     });

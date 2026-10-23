@@ -1,16 +1,22 @@
-import { command, computed, type Computed } from "ccstate";
+import { command, computed } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { and, eq } from "drizzle-orm";
 
 import { db$ } from "../external/db";
+import { notFound } from "../../lib/error";
 import type { SlackClient } from "../external/slack-message-client";
 import { settle, tapError } from "../utils";
 import {
   isSlackConversationShared,
+  isSlackConversationSharedByMembers,
   isSlackConversationWritable,
 } from "../../lib/slack-client";
 import { integrationMessageSendLabels$ } from "./integration-message-context.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+import { slackAccountOwnerCondition } from "./slack-workspace-identity.service";
 
 const userMention$ = computed(async (get) => {
   const { runOwner } = await get(integrationMessageSendLabels$);
@@ -64,37 +70,6 @@ export const slackMessageSendFooterText$ = computed(
   },
 );
 
-/**
- * Resolve the current user's Slack user ID via the org's Slack installation.
- * Used to expand `user: "me"` recipients in the send-message route.
- */
-export function resolveCurrentUserSlackId(args: {
-  readonly userId: string;
-  readonly orgId: string;
-}): Computed<Promise<string | null>> {
-  return computed(async (get): Promise<string | null> => {
-    const db = get(db$);
-    const [row] = await db
-      .select({ slackUserId: slackOrgConnections.slackUserId })
-      .from(slackOrgConnections)
-      .innerJoin(
-        slackOrgInstallations,
-        eq(
-          slackOrgConnections.slackWorkspaceId,
-          slackOrgInstallations.slackWorkspaceId,
-        ),
-      )
-      .where(
-        and(
-          eq(slackOrgConnections.userId, args.userId),
-          eq(slackOrgInstallations.orgId, args.orgId),
-        ),
-      )
-      .limit(1);
-    return row?.slackUserId ?? null;
-  });
-}
-
 const noUserConnection = Object.freeze({
   status: 404 as const,
   body: Object.freeze({
@@ -106,30 +81,93 @@ const noUserConnection = Object.freeze({
   }),
 });
 
+interface SlackTargetChannelArgs {
+  readonly client: SlackClient;
+  readonly botToken: string;
+  readonly userId: string;
+  readonly orgId: string;
+  readonly workspaceId: string;
+  readonly channel?: string;
+  readonly user?: string;
+  readonly threadTs?: string;
+}
+
+type SlackTargetChannelResult =
+  | { channelId: string }
+  | { status: 400 | 404; body: { error: { code: string; message: string } } };
+
 /**
  * Authorize shared group targets and outbound one-to-one bot DMs separately.
  */
 export const resolveSlackTargetChannel$ = command(
   async (
-    { get },
-    args: {
-      readonly client: SlackClient;
-      readonly botToken: string;
-      readonly userId: string;
-      readonly orgId: string;
-      readonly channel?: string;
-      readonly user?: string;
-      readonly threadTs?: string;
-    },
+    { get, set },
+    args: SlackTargetChannelArgs,
     signal: AbortSignal,
-  ): Promise<
-    | { channelId: string }
-    | { status: 400 | 404; body: { error: { code: string; message: string } } }
-  > => {
-    const connectedUser = await get(
-      resolveCurrentUserSlackId({ userId: args.userId, orgId: args.orgId }),
+  ): Promise<SlackTargetChannelResult> => {
+    // Delivery commands carry their owner explicitly, including delayed sends.
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      args.orgId,
+      args.userId,
+      signal,
     );
-    signal.throwIfAborted();
+    const db = get(db$);
+    let connectedUser: string | null;
+    if (isFeatureEnabled(FeatureSwitchKey.SlackWorkspaceIdentity, features)) {
+      const [row, additional] = await db
+        .select({
+          slackUserId: slackOrgConnections.slackUserId,
+          workspaceId: slackOrgConnections.slackWorkspaceId,
+        })
+        .from(slackOrgConnections)
+        .leftJoin(
+          slackOrgInstallations,
+          eq(
+            slackOrgConnections.slackWorkspaceId,
+            slackOrgInstallations.slackWorkspaceId,
+          ),
+        )
+        .where(slackAccountOwnerCondition(args))
+        .limit(2);
+      signal.throwIfAborted();
+      connectedUser =
+        additional || row?.workspaceId !== args.workspaceId
+          ? null
+          : row.slackUserId;
+      if (connectedUser) {
+        const identity = await args.client.fetchUserIdentity(connectedUser);
+        signal.throwIfAborted();
+        if (
+          !identity ||
+          identity.deleted ||
+          identity.isBot ||
+          identity.teamId !== args.workspaceId
+        ) {
+          connectedUser = null;
+        }
+      }
+    } else {
+      const [row] = await db
+        .select({ slackUserId: slackOrgConnections.slackUserId })
+        .from(slackOrgConnections)
+        .innerJoin(
+          slackOrgInstallations,
+          eq(
+            slackOrgConnections.slackWorkspaceId,
+            slackOrgInstallations.slackWorkspaceId,
+          ),
+        )
+        .where(
+          and(
+            eq(slackOrgConnections.userId, args.userId),
+            eq(slackOrgInstallations.orgId, args.orgId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      connectedUser = row?.slackUserId ?? null;
+    }
     if (!connectedUser) {
       return noUserConnection;
     }
@@ -144,27 +182,58 @@ export const resolveSlackTargetChannel$ = command(
       const dm = await args.client.openDMChannel(recipientId);
       signal.throwIfAborted();
       if (dm.kind === "slack_error") {
-        return {
-          status: 404 as const,
-          body: {
-            error: {
-              message: `Cannot open DM: ${dm.error}`,
-              code: "NOT_FOUND",
-            },
-          },
-        };
+        return notFound(`Cannot open DM: ${dm.error}`);
       }
       channelId = dm.channelId;
     }
+    return await set(
+      authorizeSlackChannel$,
+      {
+        botToken: args.botToken,
+        connectedUser,
+        channelId,
+        recipientId,
+        threadTs: args.threadTs,
+      },
+      signal,
+    );
+  },
+);
+
+/** Source-channel permissions never inherit the ordinary outbound-DM exception. */
+export const authorizeSlackChannel$ = command(
+  async (
+    _context,
+    args: {
+      readonly botToken: string;
+      readonly connectedUser: string;
+      readonly channelId: string;
+      readonly recipientId?: string;
+      readonly threadTs?: string;
+      readonly sourceBotUserId?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<SlackTargetChannelResult> => {
+    const { channelId, connectedUser, recipientId } = args;
     const shared = await settle(
-      channelId.startsWith("D")
-        ? Promise.resolve(true)
-        : isSlackConversationShared(
-            args.botToken,
-            connectedUser,
-            channelId,
+      args.sourceBotUserId
+        ? isSlackConversationSharedByMembers(
+            {
+              token: args.botToken,
+              slackUserId: connectedUser,
+              botUserId: args.sourceBotUserId,
+              channelId,
+            },
             signal,
-          ),
+          )
+        : channelId.startsWith("D")
+          ? Promise.resolve(true)
+          : isSlackConversationShared(
+              args.botToken,
+              connectedUser,
+              channelId,
+              signal,
+            ),
       signal,
     );
     if (!shared.ok) {
@@ -180,16 +249,9 @@ export const resolveSlackTargetChannel$ = command(
       };
     }
     if (!shared.value) {
-      return {
-        status: 404 as const,
-        body: {
-          error: {
-            code: "NOT_FOUND",
-            message:
-              "This Slack conversation is not shared by your connected account and Okou.",
-          },
-        },
-      };
+      return notFound(
+        "This Slack conversation is not shared by your connected account and Okou.",
+      );
     }
     const writable = await settle(
       isSlackConversationWritable(
@@ -217,16 +279,9 @@ export const resolveSlackTargetChannel$ = command(
       };
     }
     if (!writable.value) {
-      return {
-        status: 404,
-        body: {
-          error: {
-            code: "NOT_FOUND",
-            message:
-              "This Slack conversation is not writable by your connected account and Okou.",
-          },
-        },
-      };
+      return notFound(
+        "This Slack conversation is not writable by your connected account and Okou.",
+      );
     }
     return { channelId };
   },

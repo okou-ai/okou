@@ -84,6 +84,42 @@ describe("okou phone commands", () => {
     });
   });
 
+  it("downloads an authorized owned artifact through its signed URL", async () => {
+    const outPath = join(tmpDir, "direct.txt");
+    const target = "https://static.vm0.io/phone/direct.txt";
+    server.use(
+      http.get(DOWNLOAD_URL, ({ request }) => {
+        expect(request.headers.get("authorization")).toBe("Bearer test-token");
+        return new HttpResponse(null, {
+          status: 302,
+          headers: {
+            location: target,
+            "x-file-mimetype": "text/plain",
+            "x-file-size": "5",
+          },
+        });
+      }),
+      http.get(target, () => {
+        return new HttpResponse("hello", {
+          headers: { "content-type": "text/plain", "content-length": "5" },
+        });
+      }),
+    );
+    await downloadFileCommand.parseAsync([
+      "node",
+      "okou",
+      "artifact-id",
+      "-o",
+      outPath,
+    ]);
+    expect(readFileSync(outPath, "utf8")).toBe("hello");
+    expect(JSON.parse(mockConsoleLog.mock.calls.flat().join("\n"))).toEqual({
+      path: outPath,
+      size: 5,
+      mimetype: "text/plain",
+    });
+  });
+
   it("sends a text message", async () => {
     let capturedBody: Record<string, unknown> | undefined;
 

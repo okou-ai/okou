@@ -1,8 +1,6 @@
-import { createWriteStream } from "node:fs";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
+  integrationsGithubDownloadFileContract,
   integrationsGithubUploadCompleteContract,
   integrationsGithubUploadInitContract,
   type GithubUploadCompleteBody,
@@ -11,13 +9,11 @@ import {
   type GithubUploadInitResponse,
 } from "@okouai/api-contracts/contracts/integrations";
 import {
-  ApiRequestError,
   getBaseUrl,
   getClientConfig,
   handleError,
 } from "../core/client-factory";
-import { getActiveToken } from "../config";
-import { headersWithCliClientHeaders } from "../client-headers";
+import { downloadFileViaUrl } from "../download-file-url";
 
 interface DownloadGithubFileResult {
   path: string;
@@ -60,61 +56,18 @@ export async function downloadGithubFile(
   outPath: string,
   filename?: string,
 ): Promise<DownloadGithubFileResult> {
-  const baseUrl = await getBaseUrl();
-  const token = await getActiveToken();
-  if (!token) {
-    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
-  }
-
-  const url = new URL("/api/integrations/github/download-file", baseUrl);
+  const url = new URL(
+    integrationsGithubDownloadFileContract.fileUrl.path,
+    await getBaseUrl(),
+  );
   url.searchParams.set("url", fileUrl);
   if (filename) {
     url.searchParams.set("filename", filename);
   }
-
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-  };
-
-  const response = await fetch(url, {
-    headers: headersWithCliClientHeaders(headers),
+  return downloadFileViaUrl(url, outPath, {
+    maxBytes: 100 * 1024 * 1024,
+    acceptContentType: (contentType) => {
+      return contentType !== "text/html";
+    },
   });
-
-  if (!response.ok) {
-    let message = `Failed to download GitHub file (HTTP ${response.status})`;
-    let code = "UNKNOWN";
-    try {
-      const body = (await response.json()) as {
-        error?: { message?: string; code?: string };
-      };
-      if (body.error?.message) message = body.error.message;
-      if (body.error?.code) code = body.error.code;
-    } catch {
-      // keep generic message when the body is not JSON
-    }
-    throw new ApiRequestError(message, code, response.status);
-  }
-
-  if (!response.body) {
-    throw new ApiRequestError(
-      "GitHub download response has no body",
-      "EMPTY_BODY",
-      502,
-    );
-  }
-
-  const mimetype =
-    response.headers.get("x-file-mimetype") ??
-    response.headers.get("content-type") ??
-    "application/octet-stream";
-
-  await pipeline(
-    Readable.fromWeb(response.body as never),
-    createWriteStream(outPath),
-  );
-
-  const contentLengthHeader = response.headers.get("content-length");
-  const size = contentLengthHeader ? Number(contentLengthHeader) : 0;
-
-  return { path: outPath, mimetype, size };
 }

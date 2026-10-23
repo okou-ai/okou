@@ -2,6 +2,46 @@ use guest_storage_apply::apply_agent_instructions;
 use std::fs;
 
 #[test]
+fn workflow_skill_documents_replace_only_the_document_and_preserve_attachments() {
+    for root in [".claude", ".codex", ".pi/agent"] {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("private-source");
+        let mount = dir.path().join(root).join("skills/custom-workflow");
+        fs::create_dir_all(mount.join("references")).unwrap();
+        fs::write(mount.join("references/keep.md"), "attachment").unwrap();
+        for body in ["---\nname: custom-workflow\n---\n\n正文\n", ""] {
+            fs::write(&source, body).unwrap();
+            assert!(guest_storage_apply::apply_workflow_skill(
+                dir.path(),
+                &mount,
+                &source
+            ));
+            assert_eq!(fs::read(mount.join("SKILL.md")).unwrap(), body.as_bytes());
+            assert_eq!(
+                fs::read_to_string(mount.join("references/keep.md")).unwrap(),
+                "attachment"
+            );
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn workflow_skill_documents_reject_a_symlink_parent() {
+    let home = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let source = home.path().join("source");
+    fs::write(&source, "new").unwrap();
+    std::os::unix::fs::symlink(outside.path(), home.path().join(".codex")).unwrap();
+    assert!(!guest_storage_apply::apply_workflow_skill(
+        home.path(),
+        &home.path().join(".codex/skills/custom-workflow"),
+        &source
+    ));
+    assert!(!outside.path().join("skills").exists());
+}
+
+#[test]
 fn inline_instructions_preserve_bytes_clear_empty_and_keep_unrelated_home_files() {
     for (framework, root, filename, alternate) in [
         ("claude-code", ".claude", "CLAUDE.md", "AGENTS.md"),

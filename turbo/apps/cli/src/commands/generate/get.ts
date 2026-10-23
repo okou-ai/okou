@@ -1,4 +1,6 @@
 import { Command } from "commander";
+import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import { getPlatformOrigin } from "../../lib/platform-url";
 import {
   downloadWebFile,
   getBuiltInGeneration,
@@ -36,7 +38,12 @@ export const getGenerationCommand = new Command()
               "--out requires a completed image job with a file result",
             );
           }
-          download = await downloadWebFile(job.result.id, options.out);
+          const reference =
+            typeof job.result.url === "string" &&
+            parseArtifactReference(job.result.url, await getPlatformOrigin())
+              ? job.result.url
+              : job.result.id;
+          download = await downloadWebFile(reference, options.out);
         }
         if (options.json) {
           console.log(

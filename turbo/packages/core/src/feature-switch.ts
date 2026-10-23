@@ -46,11 +46,11 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.DurableOpenAiImageGeneration]: {
-    maintainer: "ethan@okou.ai",
-    displayName: "Durable OpenAI image generation",
+  [FeatureSwitchKey.SlackWorkspaceIdentity]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Slack workspace identity",
     description:
-      "Use background Responses image jobs with durable recovery. Preview validation only until image-tool accounting is verified.",
+      "Connect your Slack identity independently of bot installation and use it in shared channels.",
     enabled: false,
   },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
@@ -245,6 +245,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.BrowserCdpViewer]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Okou browser viewer",
+    description:
+      "Use Okou's interactive browser viewer in conversations and standalone browser pages",
+    enabled: false,
+  },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",
     description: "Test-only feature switch for flag system validation",
@@ -374,12 +381,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Show the Lab page for viewing feature rollout stages",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Enable Stripe invoice-paid workflow automations with immutable Live-mode OAuth bindings.",
-    enabled: false,
   },
   [FeatureSwitchKey.TestOauthConnector]: {
     maintainer: "liangyou@okou.ai",

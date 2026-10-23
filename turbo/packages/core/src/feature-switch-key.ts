@@ -4,7 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
-  DurableOpenAiImageGeneration = "durableOpenAiImageGeneration",
+  SlackWorkspaceIdentity = "slackWorkspaceIdentity",
   BatchConnectorPermissions = "batchConnectorPermissions",
   JsonTreePreview = "jsonTreePreview",
   HostedSiteVisibility = "hostedSiteVisibility",
@@ -38,7 +38,6 @@ export enum FeatureSwitchKey {
   Banking = "banking",
   LinkWalletApprovalContinuation = "linkWalletApprovalContinuation",
   Lab = "_lab",
-  StripeInvoicePaidWorkflowAutomations = "stripeInvoicePaidWorkflowAutomations",
   TestOauthConnector = "_testOauthConnector",
   FreshdeskConnector = "freshdeskConnector",
   StabilityAiConnector = "stabilityAiConnector",
@@ -70,6 +69,7 @@ export enum FeatureSwitchKey {
   GoogleSlidesConversion = "googleSlidesConversion",
   GoogleDocsSheetsConversion = "googleDocsSheetsConversion",
   BrowserNativeInput = "browserNativeInput",
+  BrowserCdpViewer = "browserCdpViewer",
   AgentSuggestion = "agentSuggestion",
   ProactiveJobs = "proactiveJobs",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",

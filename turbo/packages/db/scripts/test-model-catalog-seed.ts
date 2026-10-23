@@ -163,23 +163,11 @@ function assertRoutes(
         (route.provider_type === "built-in" &&
           route.concrete_provider_type === "openrouter-codex" &&
           route.subscription_type === null &&
-          (((route.model === "auto" || route.model === "okou-1.0") &&
-            route.upstream_model === "@preset/okou-1-0") ||
-            (route.model === "gpt-6-luna" &&
-              route.upstream_model === "openai/gpt-6-luna"))),
+          (route.model === "auto" || route.model === "okou-1.0") &&
+          route.upstream_model === "@preset/okou-1-0"),
       `${route.model}/${route.provider_type}: retired execution route`,
     );
   }
-  assert.ok(
-    routes.some((route) => {
-      return (
-        route.model === "gpt-6-luna" &&
-        route.provider_type === "built-in" &&
-        route.enabled
-      );
-    }),
-    "internal memory needs its enabled independent binding",
-  );
   for (const row of catalog) {
     // Routeless metadata remains for historical names and replacement chains;
     // it no longer grants platform or organization API-key execution.

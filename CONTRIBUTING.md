@@ -13,6 +13,13 @@ The supported Node and pnpm versions are declared in
 [turbo/package.json](turbo/package.json). Install Git hooks with
 `lefthook install` when configuring a new development checkout.
 
+For development outside the container, [.node-version](.node-version) selects
+the default Node.js version. Supported releases are Node.js 22.23.4+, 24.22.1+,
+and 26.12.1+ within those major versions; older, end-of-life, and prerelease
+versions are rejected. `scripts/prepare.sh` checks this before syncing
+credentials or changing the local environment. Restart existing development
+services after upgrading Node.js so they use the patched runtime.
+
 ## Environment
 
 Team members with the required 1Password access can use `scripts/sync-env.sh`.

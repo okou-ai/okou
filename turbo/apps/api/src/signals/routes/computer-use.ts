@@ -13,10 +13,11 @@ import {
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
+import { setResHeader$ } from "../context/hono";
 import {
   createComputerUseCommand$,
   getComputerUseCommand$,
-  getComputerUseCommandScreenshot$,
+  getComputerUseCommandScreenshotUrl$,
   computerUseAuditEvents,
   listComputerUseHosts$,
 } from "../services/computer-use.service";
@@ -352,20 +353,20 @@ const commandGetInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: result };
 });
 
-const screenshotGetParams$ = pathParamsOf(
-  computerUseCommandContract.getScreenshot,
+const screenshotUrlParams$ = pathParamsOf(
+  computerUseCommandContract.screenshotUrl,
 );
-const screenshotGetInner$ = command(
+const screenshotUrlInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const params = get(screenshotGetParams$);
+    const params = get(screenshotUrlParams$);
     const hostId =
       auth.tokenType === "agent" ? auth.computerUseHostId : undefined;
     if (auth.tokenType === "agent" && !hostId) {
       return computerUseHostNotAuthorized;
     }
     const screenshot = await set(
-      getComputerUseCommandScreenshot$,
+      getComputerUseCommandScreenshotUrl$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
@@ -375,19 +376,11 @@ const screenshotGetInner$ = command(
       signal,
     );
     signal.throwIfAborted();
-
     if (!screenshot) {
       return notFound("Computer-use command screenshot not found");
     }
-
-    const headers = new Headers();
-    headers.set("Content-Type", screenshot.contentType);
-    headers.set("Content-Length", String(screenshot.buffer.length));
-    headers.set("Cache-Control", "private, no-store");
-    return new Response(new Uint8Array(screenshot.buffer), {
-      status: 200,
-      headers,
-    });
+    set(setResHeader$, "Cache-Control", "private, no-store");
+    return { status: 200 as const, body: screenshot };
   },
 );
 
@@ -455,8 +448,8 @@ export const computerUseRoutes: readonly RouteEntry[] = [
     handler: authRoute(computerUseCommandAuthOptions, commandGetInner$),
   },
   {
-    route: computerUseCommandContract.getScreenshot,
-    handler: authRoute(computerUseCommandAuthOptions, screenshotGetInner$),
+    route: computerUseCommandContract.screenshotUrl,
+    handler: authRoute(computerUseCommandAuthOptions, screenshotUrlInner$),
   },
   {
     route: computerUseAuditEventsContract.list,

@@ -98,12 +98,6 @@ interface RecordedComputerUseS3Put {
   readonly contentType: string;
 }
 
-interface RecordedComputerUseS3Get {
-  readonly bucket: string;
-  readonly key: string;
-  readonly signal: AbortSignal | undefined;
-}
-
 export interface ComputerUseS3Barrier {
   readonly entered: Promise<{
     readonly signal: AbortSignal | undefined;
@@ -113,14 +107,9 @@ export interface ComputerUseS3Barrier {
 
 export interface ComputerUseS3Fake {
   readonly puts: readonly RecordedComputerUseS3Put[];
-  readonly gets: readonly RecordedComputerUseS3Get[];
   readonly holdNextPutObject: () => ComputerUseS3Barrier;
-  readonly holdNextGetObject: () => ComputerUseS3Barrier;
-  readonly holdNextBody: () => ComputerUseS3Barrier;
   readonly failNextPutObject: (error: unknown) => void;
-  readonly failNextGetObject: (error: unknown) => void;
   readonly failNextDeleteObjects: (error: unknown) => void;
-  readonly failNextBody: (error: unknown) => void;
 }
 
 interface PendingComputerUseS3Barrier {
@@ -189,41 +178,11 @@ function commandInput(command: unknown): Record<string, unknown> {
   return {};
 }
 
-function deleteObjectKeys(input: Record<string, unknown>): string[] {
-  const request = input.Delete;
-  if (
-    typeof request !== "object" ||
-    request === null ||
-    !("Objects" in request) ||
-    !Array.isArray(request.Objects)
-  ) {
-    return [];
-  }
-  const keys: string[] = [];
-  for (const object of request.Objects) {
-    if (
-      typeof object === "object" &&
-      object !== null &&
-      "Key" in object &&
-      typeof object.Key === "string"
-    ) {
-      keys.push(object.Key);
-    }
-  }
-  return keys;
-}
-
 function objectBytes(body: unknown): Buffer {
   if (Buffer.isBuffer(body)) {
     return body;
   }
   return Buffer.from(typeof body === "string" ? body : "");
-}
-
-function bodyStream(buffer: Buffer): AsyncIterable<Uint8Array> {
-  return (async function* stream(): AsyncIterable<Uint8Array> {
-    yield new Uint8Array(buffer);
-  })();
 }
 
 function s3RequestSignal(options: unknown): AbortSignal | undefined {
@@ -276,28 +235,6 @@ async function waitAtS3Barrier(
     pending.gate.resolve(undefined);
   }
   await pending.gate.promise;
-}
-
-function controlledBodyStream(
-  buffer: Buffer,
-  requestSignal: AbortSignal | undefined,
-  contextSignal: AbortSignal,
-  heldBody: PendingComputerUseS3Barrier | undefined,
-  bodyFailure: unknown | undefined,
-): AsyncIterable<Uint8Array> {
-  return (async function* stream(): AsyncIterable<Uint8Array> {
-    const splitAt = Math.max(1, Math.floor(buffer.length / 2));
-    yield new Uint8Array(buffer.subarray(0, splitAt));
-    if (heldBody) {
-      await waitAtS3Barrier(heldBody, requestSignal, contextSignal);
-    }
-    if (bodyFailure !== undefined) {
-      throw bodyFailure;
-    }
-    if (splitAt < buffer.length) {
-      yield new Uint8Array(buffer.subarray(splitAt));
-    }
-  })();
 }
 
 export function createComputerUseBddApi(
@@ -442,49 +379,16 @@ export function createComputerUseBddApi(
       });
     },
     /**
-     * Stateful in-memory S3 fake for screenshot offload and proxy flows.
-     * PutObject stores bytes and records the put, GetObject streams stored
-     * bytes back, and DeleteObjects removes keys.
+     * S3 fake for screenshot offload and retention. Records uploaded bytes
+     * and supports upload barriers and upload/deletion failures.
      * Installed on the vi mock, so the global afterEach mockReset uninstalls
      * it; install inside the test that needs it.
      */
     installComputerUseS3Fake(): ComputerUseS3Fake {
-      const store = new Map<
-        string,
-        { readonly body: Buffer; readonly contentType: string }
-      >();
       const puts: RecordedComputerUseS3Put[] = [];
-      const gets: RecordedComputerUseS3Get[] = [];
       let heldPutObject: PendingComputerUseS3Barrier | undefined;
-      let heldGetObject: PendingComputerUseS3Barrier | undefined;
-      let heldBody: PendingComputerUseS3Barrier | undefined;
       let putObjectFailure: unknown | undefined;
-      let getObjectFailure: unknown | undefined;
       let deleteObjectsFailure: unknown | undefined;
-      let bodyFailure: unknown | undefined;
-
-      const reserveBarrier = (
-        phase: "PutObject" | "GetObject" | "body",
-      ): ComputerUseS3Barrier => {
-        const occupied =
-          phase === "PutObject"
-            ? heldPutObject
-            : phase === "GetObject"
-              ? heldGetObject
-              : heldBody;
-        if (occupied) {
-          throw new Error(`Computer-use S3 ${phase} barrier is already held`);
-        }
-        const created = pendingS3Barrier(context.signal);
-        if (phase === "PutObject") {
-          heldPutObject = created.pending;
-        } else if (phase === "GetObject") {
-          heldGetObject = created.pending;
-        } else {
-          heldBody = created.pending;
-        }
-        return created.barrier;
-      };
 
       context.mocks.s3.send.mockImplementation(
         async (command: unknown, options?: unknown) => {
@@ -511,58 +415,14 @@ export function createComputerUseBddApi(
             const body = objectBytes(input.Body);
             const contentType =
               typeof input.ContentType === "string" ? input.ContentType : "";
-            store.set(`${bucket}/${key}`, { body, contentType });
             puts.push({ bucket, key, body, contentType });
             return {};
-          }
-          if (name === "GetObjectCommand") {
-            const signal = s3RequestSignal(options);
-            gets.push({ bucket, key, signal });
-            const selectedGetObjectBarrier = heldGetObject;
-            heldGetObject = undefined;
-            if (selectedGetObjectBarrier) {
-              await waitAtS3Barrier(
-                selectedGetObjectBarrier,
-                signal,
-                context.signal,
-              );
-            }
-            if (getObjectFailure !== undefined) {
-              const error = getObjectFailure;
-              getObjectFailure = undefined;
-              throw error;
-            }
-            const stored = store.get(`${bucket}/${key}`);
-            if (!stored) {
-              throw new Error(
-                `Computer-use S3 fake has no object ${bucket}/${key}`,
-              );
-            }
-            const selectedBodyBarrier = heldBody;
-            heldBody = undefined;
-            const selectedBodyFailure = bodyFailure;
-            bodyFailure = undefined;
-            return {
-              Body:
-                selectedBodyBarrier || selectedBodyFailure !== undefined
-                  ? controlledBodyStream(
-                      stored.body,
-                      signal,
-                      context.signal,
-                      selectedBodyBarrier,
-                      selectedBodyFailure,
-                    )
-                  : bodyStream(stored.body),
-            };
           }
           if (name === "DeleteObjectsCommand") {
             if (deleteObjectsFailure !== undefined) {
               const error = deleteObjectsFailure;
               deleteObjectsFailure = undefined;
               throw error;
-            }
-            for (const deletedKey of deleteObjectKeys(input)) {
-              store.delete(`${bucket}/${deletedKey}`);
             }
             return {};
           }
@@ -572,27 +432,21 @@ export function createComputerUseBddApi(
 
       return {
         puts,
-        gets,
         holdNextPutObject: () => {
-          return reserveBarrier("PutObject");
-        },
-        holdNextGetObject: () => {
-          return reserveBarrier("GetObject");
-        },
-        holdNextBody: () => {
-          return reserveBarrier("body");
+          if (heldPutObject) {
+            throw new Error(
+              "Computer-use S3 PutObject barrier is already held",
+            );
+          }
+          const created = pendingS3Barrier(context.signal);
+          heldPutObject = created.pending;
+          return created.barrier;
         },
         failNextPutObject: (error) => {
           if (putObjectFailure !== undefined) {
             throw new Error("Computer-use S3 PutObject failure is already set");
           }
           putObjectFailure = error;
-        },
-        failNextGetObject: (error) => {
-          if (getObjectFailure !== undefined) {
-            throw new Error("Computer-use S3 GetObject failure is already set");
-          }
-          getObjectFailure = error;
         },
         failNextDeleteObjects: (error) => {
           if (deleteObjectsFailure !== undefined) {
@@ -601,12 +455,6 @@ export function createComputerUseBddApi(
             );
           }
           deleteObjectsFailure = error;
-        },
-        failNextBody: (error) => {
-          if (bodyFailure !== undefined) {
-            throw new Error("Computer-use S3 body failure is already set");
-          }
-          bodyFailure = error;
         },
       };
     },
@@ -874,7 +722,7 @@ export function createComputerUseBddApi(
     ) {
       return await run(async () => {
         return await accept(
-          commandClient(signal).getScreenshot({
+          commandClient(signal).screenshotUrl({
             headers: authenticate(auth),
             params: { commandId },
           }),
@@ -883,35 +731,22 @@ export function createComputerUseBddApi(
       });
     },
 
-    async downloadComputerUseScreenshot(
+    async resolveComputerUseScreenshot(
       auth: ComputerUseAuth,
       commandId: string,
       signal?: AbortSignal,
-    ): Promise<{
-      readonly contentType: string | null;
-      readonly contentLength: string | null;
-      readonly cacheControl: string | null;
-      readonly contentDisposition: string | null;
-      readonly bytes: Buffer;
-    }> {
+    ) {
       return await run(async () => {
         const response = await accept(
-          commandClient(signal).getScreenshot({
+          commandClient(signal).screenshotUrl({
             headers: authenticate(auth),
             params: { commandId },
           }),
           [200],
         );
-        const body: unknown = response.body;
-        if (!(body instanceof Blob)) {
-          throw new Error("Expected a binary computer-use screenshot body");
-        }
         return {
-          contentType: response.headers.get("content-type"),
-          contentLength: response.headers.get("content-length"),
+          ...response.body,
           cacheControl: response.headers.get("cache-control"),
-          contentDisposition: response.headers.get("content-disposition"),
-          bytes: Buffer.from(await body.arrayBuffer()),
         };
       });
     },

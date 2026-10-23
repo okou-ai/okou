@@ -247,6 +247,19 @@ pub fn build_storage_plan(
     let mut cleanup_paths = Vec::new();
     let mut instruction_cleanups = Vec::new();
     let mut reused_entries = 0;
+    for skill in manifest
+        .workflow_skills
+        .iter()
+        .filter(|skill| skill.attachments.is_none())
+    {
+        if previous.is_some_and(|p| {
+            !p.storages
+                .get(&skill.mount_path)
+                .is_some_and(|f| f.matches(&skill.identity(), skill.version()))
+        }) {
+            cleanup_paths.push(skill.mount_path.clone());
+        }
+    }
 
     let storages = manifest
         .storages
@@ -340,7 +353,13 @@ pub fn build_storage_plan(
             manifest
                 .storages
                 .iter()
-                .map(|entry| entry.mount_path.as_str()),
+                .map(|entry| entry.mount_path.as_str())
+                .chain(
+                    manifest
+                        .workflow_skills
+                        .iter()
+                        .map(|skill| skill.mount_path.as_str()),
+                ),
             &mut cleanup_paths,
             &mut instruction_cleanups,
         );

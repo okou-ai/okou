@@ -2,11 +2,6 @@
   "version": 1,
   "sites": [
     {
-      "id": "TX-0004",
-      "file": "turbo/apps/api/src/scripts/benchmark-run-seed.ts",
-      "owner": "insertBenchmarkRunBatch$"
-    },
-    {
       "id": "TX-0011",
       "file": "turbo/apps/api/src/signals/routes/agents.ts",
       "owner": "updateAgentInner$"
@@ -550,11 +545,6 @@
       "id": "TX-0335",
       "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
       "owner": "commitWebhookEventAutomation$"
-    },
-    {
-      "id": "TX-0336",
-      "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
-      "owner": "createStripeInvoicePaidEventAutomationForWorkflow$"
     },
     {
       "id": "TX-0337",

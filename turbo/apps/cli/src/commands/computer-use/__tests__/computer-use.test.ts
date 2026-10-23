@@ -827,7 +827,7 @@ describe("computer-use command visibility", () => {
     expect(output).toContain('"summary": "Typed text"');
   });
 
-  it("should download pointer-backed screenshots through the API proxy", async () => {
+  it("downloads pointer-backed screenshots through their signed URL", async () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
 
@@ -865,14 +865,31 @@ describe("computer-use command visibility", () => {
         },
       ),
       http.get(
-        "http://localhost:3000/api/computer-use/commands/cmd_ptr/screenshot",
-        () => {
-          return new HttpResponse(screenshotBytes, {
-            status: 200,
-            headers: { "Content-Type": "image/png" },
+        "http://localhost:3000/api/computer-use/commands/cmd_ptr/screenshot/url",
+        ({ request }) => {
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer test-token",
+          );
+          return HttpResponse.json({
+            downloadUrl:
+              "https://screenshots.example.com/private.png?signature=scoped",
+            filename: "screenshot.png",
+            contentType: "image/png",
+            size: screenshotBytes.length,
           });
         },
       ),
+      http.get("https://screenshots.example.com/private.png", ({ request }) => {
+        expect(new URL(request.url).searchParams.get("signature")).toBe(
+          "scoped",
+        );
+        return new HttpResponse(screenshotBytes, {
+          headers: {
+            "Content-Type": "image/png",
+            "Content-Length": String(screenshotBytes.length),
+          },
+        });
+      }),
     );
 
     await computerUseCommand.parseAsync([

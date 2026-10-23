@@ -16,12 +16,11 @@ import { captureConnectorExternalState } from "./public-connector-actor";
 import { createPublicBillingZeroFixture } from "./public-billing-zero-fixture";
 import { purchaseToolCredits } from "./public-tool-actor";
 import { createRouteMocks } from "./route-test";
-import { deleteFeatureSwitchesForUser } from "./feature-switches";
 
 /** A paid member built from ordinary checkout metadata, with case-owned provider work. */
 export async function createPublicImageMember(
   context: TestContext,
-  options: { readonly credits: number; readonly ownsFeatures?: boolean },
+  options: { readonly credits: number },
 ) {
   const actor = createBddApi(context).user({ orgRole: "org:admin" });
   if (!actor.orgId) {
@@ -109,11 +108,6 @@ export async function createPublicImageMember(
         });
       }
       await settle(flushWaitUntilForTest);
-      if (options.ownsFeatures) {
-        await settle(() => {
-          return deleteFeatureSwitchesForUser(context, { ...actor, orgId });
-        });
-      }
       if (errors.length) {
         throw new AggregateError(errors, "Image provider cleanup failed");
       }

@@ -6,7 +6,6 @@ import {
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import {
-  createHmac,
   createSign,
   generateKeyPairSync,
   randomUUID,
@@ -617,14 +616,6 @@ function teamsGraphHistoryHandlers(args: {
 
 function encodeJwtPart(value: unknown): string {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
-}
-
-function legacyTeamsFileId(payload: Readonly<Record<string, unknown>>): string {
-  const encodedPayload = encodeJwtPart(payload);
-  const signature = createHmac("sha256", "a".repeat(64))
-    .update(encodedPayload)
-    .digest("base64url");
-  return `${encodedPayload}.${signature}`;
 }
 
 function signJwt(args: {
@@ -1239,13 +1230,18 @@ function claimedTeamsDownloadFixture() {
   };
 }
 
-function historicalTeamsDownloadProvider(fixture: TeamsConnectFixture) {
+function historicalTeamsDownloadProvider(
+  fixture: TeamsConnectFixture,
+  kind: "downloadInfo" | "graph" | "bot" = "downloadInfo",
+) {
   const rootId = teamsFixtureExternalId(fixture, "download-root");
   const attachmentId = teamsFixtureExternalId(fixture, "historical-attachment");
   const name = "historical note.txt";
   const contents = "Historical Teams attachment bytes.\n";
-  const url = `https://contoso.sharepoint.com/sites/test/${fixture.fixtureId}.txt`;
-  const requests: string[] = [];
+  const url =
+    kind === "bot"
+      ? `https://smba.trafficmanager.net/amer/v3/attachments/${fixture.fixtureId}/views/original`
+      : `https://contoso.sharepoint.com/sites/test/${fixture.fixtureId}.txt`;
   teamsGraphHistoryHandlers({
     fixture,
     channelMessages: [],
@@ -1267,8 +1263,15 @@ function historicalTeamsDownloadProvider(fixture: TeamsConnectFixture) {
             {
               id: attachmentId,
               name,
-              contentType: "application/vnd.microsoft.teams.file.download.info",
-              content: { downloadUrl: url, fileType: "txt" },
+              contentType:
+                kind === "graph"
+                  ? "reference"
+                  : kind === "bot"
+                    ? "text/plain"
+                    : "application/vnd.microsoft.teams.file.download.info",
+              ...(kind === "downloadInfo"
+                ? { content: { downloadUrl: url, fileType: "txt" } }
+                : { contentUrl: url }),
             },
           ],
         },
@@ -1277,7 +1280,11 @@ function historicalTeamsDownloadProvider(fixture: TeamsConnectFixture) {
   });
   server.use(
     http.get(url, ({ request }) => {
-      requests.push(request.url);
+      if (kind === "bot") {
+        expect(request.headers.get("authorization")).toBe(
+          "Bearer teams-access-token",
+        );
+      }
       return new HttpResponse(contents, {
         headers: {
           "Content-Type": "text/plain",
@@ -1286,7 +1293,24 @@ function historicalTeamsDownloadProvider(fixture: TeamsConnectFixture) {
       });
     }),
   );
-  return { rootId, attachmentId, name, contents, url, requests };
+  if (kind === "graph") {
+    server.use(
+      http.get(
+        "https://graph.microsoft.com/v1.0/shares/:shareId/driveItem/content",
+        ({ request }) => {
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer teams-graph-token",
+          );
+          expect(request.redirect).toBe("manual");
+          return new HttpResponse(null, {
+            status: 302,
+            headers: { location: url },
+          });
+        },
+      ),
+    );
+  }
+  return { rootId, attachmentId, name, contents, url };
 }
 
 async function claimHistoricalTeamsDownload(
@@ -1374,86 +1398,85 @@ describe("POST /api/webhooks/teams/bot", () => {
     teamsOutboundHandlers(SERVICE_URL);
   });
 
-  it("downloads an unsigned historical Teams attachment through its claimed Run", async () => {
-    const owned = claimedTeamsDownloadFixture();
-    const provider = historicalTeamsDownloadProvider(owned.fixture);
-    const claim = await claimHistoricalTeamsDownload(owned, provider);
-    const history = promptSection(
-      claim.appendSystemPrompt ?? "",
-      "# Microsoft Teams Thread Context",
-    );
-    expect(history).toContain(`[Teams file] ${provider.name} (text/plain)`);
-    expect(history).toContain(`[Teams attachment ID] ${provider.attachmentId}`);
-    const fileId = history.match(/\[ID\] (\S+)/u)?.[1];
-    const token = claim.platformEnvironment.OKOU_TOKEN;
-    if (!fileId || !token) {
-      throw new Error(
-        "Expected a historical file ID and claim-issued Okou token",
+  it.each(["downloadInfo", "graph", "bot"] as const)(
+    "delivers a historical %s attachment through its claimed Run",
+    async (kind) => {
+      const owned = claimedTeamsDownloadFixture();
+      const provider = historicalTeamsDownloadProvider(owned.fixture, kind);
+      const claim = await claimHistoricalTeamsDownload(owned, provider);
+      const history = promptSection(
+        claim.appendSystemPrompt ?? "",
+        "# Microsoft Teams Thread Context",
       );
-    }
-    expect(fileId).not.toContain(".");
-    const app = createAppWithRoutes({
-      signal: context.signal,
-      routes: integrationsTeamsDownloadFileRoutes,
-    });
-    const headers = { authorization: `Bearer ${token}` };
-    const path = "/api/integrations/teams/download-file";
-    const fetchBaseline = provider.requests.length;
-    await owned.run(async () => {
-      const response = await app.request(
-        `${path}?file_id=${encodeURIComponent(fileId)}`,
-        { headers },
+      expect(history).toContain(`[Teams file] ${provider.name} (text/plain)`);
+      expect(history).toContain(
+        `[Teams attachment ID] ${provider.attachmentId}`,
       );
-      expect(response.status).toBe(200);
-      expect(response.headers.get("Content-Type")).toBe("text/plain");
-      expect(response.headers.get("X-File-Mimetype")).toBe("text/plain");
-      expect(response.headers.get("X-File-Name")).toBe(
-        encodeURIComponent(provider.name),
-      );
-      expect(response.headers.get("X-Teams-Attachment-ID")).toBe(
-        encodeURIComponent(provider.attachmentId),
-      );
-      expect(response.headers.get("Content-Length")).toBe(
-        String(Buffer.byteLength(provider.contents)),
-      );
-      expect(Buffer.from(await response.arrayBuffer())).toStrictEqual(
-        Buffer.from(provider.contents),
-      );
-      expect(provider.requests.slice(fetchBaseline)).toStrictEqual([
-        provider.url,
-      ]);
-    });
-    await owned.run(async () => {
-      const unknown = `teams_file_unknown_${owned.fixture.fixtureId}`;
-      const response = await app.request(`${path}?file_id=${unknown}`, {
-        headers,
+      const fileId = history.match(/\[ID\] (\S+)/u)?.[1];
+      const token = claim.platformEnvironment.OKOU_TOKEN;
+      if (!fileId || !token) {
+        throw new Error(
+          "Expected a historical file ID and claim-issued Okou token",
+        );
+      }
+      const app = createAppWithRoutes({
+        signal: context.signal,
+        routes: integrationsTeamsDownloadFileRoutes,
       });
-      expect(response.status).toBe(404);
-      await expect(response.json()).resolves.toStrictEqual({
-        error: {
-          message: "Microsoft Teams file is unavailable to this run",
-          code: "NOT_FOUND",
-        },
+      const headers = { authorization: `Bearer ${token}` };
+      const path = "/api/integrations/teams/download-file";
+      await owned.run(async () => {
+        const response = await app.request(
+          `${path}?file_id=${encodeURIComponent(fileId)}`,
+          { headers },
+        );
+        expect(response.headers.get("X-File-Mimetype")).toBe("text/plain");
+        expect(response.headers.get("X-File-Name")).toBe(
+          encodeURIComponent(provider.name),
+        );
+        if (kind === "bot") {
+          expect(response.status).toBe(200);
+          await expect(response.text()).resolves.toBe(provider.contents);
+        } else {
+          expect(response.status).toBe(302);
+          expect(response.headers.get("Location")).toBe(provider.url);
+          expect(response.headers.get("Cache-Control")).toBe(
+            "private, no-store",
+          );
+        }
       });
-      expect(provider.requests).toHaveLength(fetchBaseline + 1);
-    });
-    server.use(
-      http.get(
-        `${teamsServiceBaseUrl(owned.fixture.serviceUrl)}/v3/conversations/:conversationId/members/:memberId`,
-        () => {
-          return new HttpResponse(null, { status: 404 });
-        },
-      ),
-    );
-    await owned.run(async () => {
-      const response = await app.request(
-        `${path}?file_id=${encodeURIComponent(fileId)}`,
-        { headers },
-      );
-      expect(response.status).toBe(404);
-      expect(provider.requests).toHaveLength(fetchBaseline + 1);
-    });
-  });
+      if (kind === "downloadInfo") {
+        await owned.run(async () => {
+          const unknown = `teams_file_unknown_${owned.fixture.fixtureId}`;
+          const response = await app.request(`${path}?file_id=${unknown}`, {
+            headers,
+          });
+          expect(response.status).toBe(404);
+          await expect(response.json()).resolves.toStrictEqual({
+            error: {
+              message: "Microsoft Teams file is unavailable to this run",
+              code: "NOT_FOUND",
+            },
+          });
+        });
+        server.use(
+          http.get(
+            `${teamsServiceBaseUrl(owned.fixture.serviceUrl)}/v3/conversations/:conversationId/members/:memberId`,
+            () => {
+              return new HttpResponse(null, { status: 404 });
+            },
+          ),
+        );
+        await owned.run(async () => {
+          const response = await app.request(
+            `${path}?file_id=${encodeURIComponent(fileId)}`,
+            { headers },
+          );
+          expect(response.status).toBe(404);
+        });
+      }
+    },
+  );
 
   it("rejects missing Teams authorization", async () => {
     const fixture = botFixture();
@@ -2199,9 +2222,9 @@ describe("POST /api/webhooks/teams/bot", () => {
 
     const contentUrl = "https://contoso.sharepoint.com/sites/docs/spec.png";
     const fileBytes = Buffer.from("teams file bytes");
-    const expectedShareId = `u!${Buffer.from(contentUrl, "utf8").toString(
-      "base64url",
-    )}`;
+    const expectedShareId = `u!${Buffer.from(contentUrl, "utf8").toString("base64url")}`;
+    const downloadUrl =
+      "https://contoso.sharepoint.com/download/spec.png?tempauth=file";
     server.use(
       http.get(
         "https://graph.microsoft.com/v1.0/shares/:shareId/driveItem/content",
@@ -2210,15 +2233,21 @@ describe("POST /api/webhooks/teams/bot", () => {
           expect(request.headers.get("authorization")).toBe(
             "Bearer teams-graph-token",
           );
-          return new HttpResponse(fileBytes, {
-            status: 200,
-            headers: {
-              "content-type": "image/png",
-              "content-length": String(fileBytes.length),
-            },
+          expect(request.redirect).toBe("manual");
+          return new HttpResponse(null, {
+            status: 302,
+            headers: { location: downloadUrl },
           });
         },
       ),
+      http.get(downloadUrl, () => {
+        return new HttpResponse(fileBytes, {
+          headers: {
+            "content-type": "image/png",
+            "content-length": String(fileBytes.length),
+          },
+        });
+      }),
     );
 
     const uploads = captureIntegrationInputUploads(context);
@@ -2444,20 +2473,9 @@ describe("POST /api/webhooks/teams/bot", () => {
       "https://contoso.sharepoint.com/_layouts/15/download.aspx",
     );
     downloadUrl.searchParams.set("tempauth", "a".repeat(1400));
-    const fileBytes = Buffer.from("teams personal file bytes");
-    let importPending = true;
     server.use(
       http.get(downloadUrl.origin + downloadUrl.pathname, () => {
-        if (importPending) {
-          return new HttpResponse(null, { status: 503 });
-        }
-        return new HttpResponse(fileBytes, {
-          status: 200,
-          headers: {
-            "content-type": "image/png",
-            "content-length": String(fileBytes.length),
-          },
-        });
+        return new HttpResponse(null, { status: 503 });
       }),
     );
 
@@ -2505,7 +2523,6 @@ describe("POST /api/webhooks/teams/bot", () => {
       }),
     ]);
 
-    importPending = false;
     const app = createAppWithRoutes({
       signal: context.signal,
       routes: integrationsTeamsDownloadFileRoutes,
@@ -2525,33 +2542,11 @@ describe("POST /api/webhooks/teams/bot", () => {
       },
     );
 
-    expect(downloadResponse.status).toBe(200);
+    expect(downloadResponse.status).toBe(302);
     expect(downloadResponse.headers.get("x-file-name")).toBe("personal.png");
-    expect(
-      Buffer.from(await downloadResponse.arrayBuffer()).equals(fileBytes),
-    ).toBeTruthy();
-
-    const legacyFileId = legacyTeamsFileId({
-      tenantId: fixture.teamsTenantId,
-      url: downloadUrl.toString(),
-      name: "personal.png",
-      contentType: "image/png",
-    });
-    const legacyDownloadResponse = await app.request(
-      `/api/integrations/teams/download-file?${new URLSearchParams({
-        file_id: legacyFileId,
-      }).toString()}`,
-      {
-        headers: {
-          authorization: `Bearer ${okouToken({
-            userId: fixture.userId,
-            orgId: fixture.orgId,
-            runId: run.id,
-          })}`,
-        },
-      },
+    expect(downloadResponse.headers.get("location")).toBe(
+      downloadUrl.toString(),
     );
-    expect(legacyDownloadResponse.status).toBe(404);
   });
 
   it("preserves non-bot Teams mentions in message text", async () => {

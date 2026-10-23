@@ -1,5 +1,8 @@
 import { command, computed } from "ccstate";
-import { integrationsSlackUploadInitContract } from "@okouai/api-contracts/contracts/integrations";
+import {
+  integrationsSlackUploadInitContract,
+  type SlackUploadInitBody,
+} from "@okouai/api-contracts/contracts/integrations";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -11,7 +14,7 @@ import {
   prepareCanonicalPublishedAsset$,
 } from "../services/canonical-asset.service";
 import { slackUserInstallation } from "../services/slack-data.service";
-import { resolveSlackTargetChannel$ } from "../services/slack-message-context.service";
+import { resolveSlackWriteTarget$ } from "../services/slack-write-access.service";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { isAllowedUploadType } from "../../lib/uploads-constants";
 import type { RouteEntry } from "../route-entry";
@@ -40,6 +43,23 @@ const noInstallation = Object.freeze({
   }),
 });
 
+function canonicalDestination(
+  upload: NonNullable<SlackUploadInitBody["canonical"]>,
+  target: {
+    readonly channelId: string;
+    readonly workspaceId: string;
+    readonly workspaceIdentity: boolean;
+  },
+) {
+  return {
+    channelId: target.channelId,
+    ...(target.workspaceIdentity ? { workspaceId: target.workspaceId } : {}),
+    ...(upload.threadTs ? { threadTs: upload.threadTs } : {}),
+    ...(upload.title ? { title: upload.title } : {}),
+    ...(upload.initialComment ? { initialComment: upload.initialComment } : {}),
+  };
+}
+
 const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
 
@@ -52,15 +72,6 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const body = bodyResult.data;
 
-  const installation = await get(slackInstallation$);
-  signal.throwIfAborted();
-  if (installation.kind !== "connected") {
-    return noInstallation;
-  }
-
-  const client = createSlackClient(installation.botToken, {
-    automaticRetries: false,
-  });
   const runId = "runId" in auth ? auth.runId : undefined;
   if (body.canonical && runId) {
     if (body.length > MAX_SLACK_FILE_SIZE_BYTES) {
@@ -72,10 +83,9 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       return badRequestMessage(`Unsupported file type: ${contentType}`);
     }
     const target = await set(
-      resolveSlackTargetChannel$,
+      resolveSlackWriteTarget$,
       {
-        client,
-        botToken: installation.botToken,
+        runId,
         userId: auth.userId,
         orgId: auth.orgId,
         channel: body.canonical.channel,
@@ -100,16 +110,7 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
           contentType,
           size: body.length,
           checksumSha256: body.canonical.checksumSha256,
-          destination: {
-            channelId: target.channelId,
-            ...(body.canonical.threadTs
-              ? { threadTs: body.canonical.threadTs }
-              : {}),
-            ...(body.canonical.title ? { title: body.canonical.title } : {}),
-            ...(body.canonical.initialComment
-              ? { initialComment: body.canonical.initialComment }
-              : {}),
-          },
+          destination: canonicalDestination(body.canonical, target),
         },
         signal,
       ),
@@ -141,6 +142,15 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     };
   }
 
+  const installation = await get(slackInstallation$);
+  signal.throwIfAborted();
+  if (installation.kind !== "connected") {
+    return noInstallation;
+  }
+
+  const client = createSlackClient(installation.botToken, {
+    automaticRetries: false,
+  });
   const result = await client.getUploadUrlExternal({
     filename: body.filename,
     length: body.length,

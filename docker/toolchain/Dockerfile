@@ -1,5 +1,3 @@
-# (no-op Toolchain release marker refreshed for image publication on 2026-10-08)
-
 # Stage 1: Base toolchain for CI/CD and minimal development
 FROM ubuntu:24.04 AS toolchain
 
@@ -17,9 +15,11 @@ RUN apt-get update && apt-get install -y \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 22
+# Pin the patched runtime so cached package layers cannot retain an older Node.
+ARG NODE_VERSION=22.23.4
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs \
+    && apt-get install -y "nodejs=${NODE_VERSION}-1nodesource1" \
+    && test "$(node --version)" = "v${NODE_VERSION}" \
     && rm -rf /var/lib/apt/lists/*
 
 RUN node --version

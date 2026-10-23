@@ -113,6 +113,10 @@ jobs:
           echo "base-ref=${BASE_REF}" >> "$GITHUB_OUTPUT"
           echo "Base ref: ${BASE_REF}"
 
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.23.4
+
       # Invoke the installed hashing tool directly on warm runs, without npx.
       # The script hash rotates the key whenever its pinned Turbo changes.
       - name: Cache Turbo executable
@@ -336,7 +340,7 @@ jobs:
     name: Prewarm runner dependency cache (${{ matrix.label }})
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
     permissions:
       actions: read
       contents: read
@@ -359,8 +363,8 @@ jobs:
         include: ${{ fromJSON(needs.prepare.outputs.runner-binary-hit-matrix) }}
     env:
       TARGET_TRIPLE: ${{ matrix.target }}
-      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
-      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
       RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.head-sha }}
       GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
       GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json

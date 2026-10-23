@@ -1125,6 +1125,7 @@ export function createBddIntegrationApi(context: TestContext) {
         ok: true,
         user: {
           id: body.slackUserId,
+          team_id: body.workspaceId,
           real_name: "Slack User",
           profile: { email: actor.email },
         },
@@ -1295,6 +1296,23 @@ export function createBddIntegrationApi(context: TestContext) {
         ).update({
           headers: authenticate(context, routeMocks, actor),
           body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
+        }),
+        [200],
+      );
+    },
+
+    async enableSlackWorkspaceIdentity(
+      actor: ApiTestUser,
+      enabled = true,
+    ): Promise<void> {
+      await accept(
+        setupApp({ context, routes: featureSwitchesRoutes })(
+          featureSwitchesContract,
+        ).update({
+          headers: authenticate(context, routeMocks, actor),
+          body: {
+            switches: { [FeatureSwitchKey.SlackWorkspaceIdentity]: enabled },
+          },
         }),
         [200],
       );

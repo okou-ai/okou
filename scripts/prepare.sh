@@ -24,22 +24,36 @@ echo ""
 FAILED=0
 
 # -----------------------------------------------------------------------------
-# 1. Check Node.js version (>= 20)
+# 1. Check the supported Node.js security patch floors before accessing secrets
 # -----------------------------------------------------------------------------
 echo "1. Checking Node.js version..."
 if ! command -v node >/dev/null 2>&1; then
   echo -e "${RED}   Error: Node.js is not installed${NC}"
-  echo "   Install Node.js >= 20 from: https://nodejs.org/"
-  FAILED=1
-else
-  NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
-  if [ "$NODE_VERSION" -lt 20 ]; then
-    echo -e "${RED}   Error: Node.js version must be >= 20 (current: $(node -v))${NC}"
-    FAILED=1
-  else
-    echo -e "${GREEN}   Node.js $(node -v)${NC}"
+  echo "   Install the version in .node-version from: https://nodejs.org/"
+  exit 1
+fi
+
+NODE_VERSION=$(node -v)
+NODE_SUPPORTED=false
+if [[ "$NODE_VERSION" =~ ^v(22|24|26)\.([0-9]+)\.([0-9]+)$ ]]; then
+  NODE_MAJOR=${BASH_REMATCH[1]}
+  NODE_MINOR=${BASH_REMATCH[2]}
+  NODE_PATCH=${BASH_REMATCH[3]}
+  case "$NODE_MAJOR" in
+    22) MIN_MINOR=23; MIN_PATCH=4 ;;
+    24) MIN_MINOR=22; MIN_PATCH=1 ;;
+    26) MIN_MINOR=12; MIN_PATCH=1 ;;
+  esac
+  if (( NODE_MINOR > MIN_MINOR || (NODE_MINOR == MIN_MINOR && NODE_PATCH >= MIN_PATCH) )); then
+    NODE_SUPPORTED=true
   fi
 fi
+if [[ "$NODE_SUPPORTED" != true ]]; then
+  echo -e "${RED}   Error: Node.js requires 22.23.4+, 24.22.1+, or 26.12.1+ within those major versions (current: $NODE_VERSION)${NC}"
+  echo "   Install the version in .node-version before continuing setup."
+  exit 1
+fi
+echo -e "${GREEN}   Node.js $NODE_VERSION${NC}"
 
 # -----------------------------------------------------------------------------
 # 2. Check pnpm

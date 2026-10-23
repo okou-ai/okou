@@ -222,7 +222,6 @@ import { voiceIoPolishRoutes } from "./routes/voice-io-polish";
 import { voiceIoQuotaRoutes } from "./routes/voice-io-quota";
 import { voiceIoTranscribeRoutes } from "./routes/voice-io-transcribe";
 import { weatherRoutes } from "./routes/weather";
-import { webDownloadRoutes } from "./routes/web-download";
 import { webFileUrlRoutes } from "./routes/web-file-url";
 import { webSearchRoutes } from "./routes/web-search";
 
@@ -242,7 +241,7 @@ import { webhooksGoogleFormsRoutes } from "./routes/webhooks-google-forms";
 import { webhooksGoogleWorkspaceEventsRoutes } from "./routes/webhooks-google-workspace-events";
 import { webhooksNotionRoutes } from "./routes/webhooks-notion";
 import { webhooksStripeRoutes } from "./routes/webhooks-stripe";
-import { webhooksStripeAutomationEventsRoutes } from "./routes/webhooks-stripe-automation-events";
+import { webhooksStripeConnectRoutes } from "./routes/webhooks-stripe-connect";
 import { webhooksWorkflowAutomationsRoutes } from "./routes/webhooks-workflow-automations";
 import { welcomeChatThreadRoutes } from "./routes/welcome-chat-threads";
 import { workflowAutomationsRoutes } from "./routes/workflow-automations";
@@ -270,7 +269,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webhooksNotionRoutes,
   ...webhooksWorkflowAutomationsRoutes,
   ...webhooksStripeRoutes,
-  ...webhooksStripeAutomationEventsRoutes,
+  ...webhooksStripeConnectRoutes,
   ...webhooksAgentHealthUsageTelemetryRoutes,
   ...webhooksAgentCompleteRoutes,
   ...webhooksAgentEventsRoutes,
@@ -401,7 +400,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...voiceIoPolishRoutes,
   ...agentSetupPromptRoutes,
   ...voiceIoTranscribeRoutes,
-  ...webDownloadRoutes,
   ...webFileUrlRoutes,
   ...realtimeTokenRoutes,
   ...runDetailRoutes,

@@ -30,7 +30,7 @@ test.each(["artifact-reference", "uploaded-file"] as const)(
     const poster =
       source === "artifact-reference"
         ? artifactReferencePath(POSTER_ID, "poster.jpg")
-        : `https://api.okou.ai/api/web/download-file?file_id=${POSTER_ID}`;
+        : `https://api.okou.ai/api/web/file-url?file_id=${POSTER_ID}`;
     const extension = source === "artifact-reference" ? "bin" : "jpg";
     const originalPoster = `${R2_ORIGIN}/private/poster%20%2B.${extension}?X-Amz-Signature=poster&X-Amz-Security-Token=token%2B%2F%3D`;
     const authorized = context.mocks.deferred<void>();

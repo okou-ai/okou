@@ -230,7 +230,7 @@ it("keeps parallel tab login proofs separate", async () => {
   );
 });
 
-it("sends document requests without a site session to App recovery without issuing credentials", async () => {
+it("starts authorization for document requests without a site session", async () => {
   requireSession();
   const access = await authorizeSiteRequest(
     new Request(`${origin}/report?view=summary`, {
@@ -242,15 +242,16 @@ it("sends document requests without a site session to App recovery without issui
   expect(access.response?.status).toBe(302);
   const location = new URL(access.response!.headers.get("Location")!);
   expect(location.origin).toBe("https://app.okou.ai");
-  expect(location.pathname).toBe("/hosted-site-access");
-  expect(location.searchParams.get("url")).toBe(
-    `${origin}/report?view=summary`,
+  expect(location.pathname).toBe("/hosted-site-authorize");
+  expect(location.searchParams.get("siteId")).toBe(siteId);
+  expect(location.searchParams.get("origin")).toBe(origin);
+  expect(location.searchParams.get("returnTo")).toBe("/report?view=summary");
+  expect(access.response!.headers.getSetCookie()[0]).toMatch(
+    /^__Host-okou-site-login-.*; Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=600$/u,
   );
-  expect(location.searchParams.get("reason")).toBe("authenticate");
-  expect(access.response!.headers.getSetCookie()).toStrictEqual([]);
 });
 
-it("recovers an expired site credential on the App while resource requests remain 401", async () => {
+it("reauthorizes an expired site credential while resource requests remain 401", async () => {
   requireSession();
   const headers = {
     Cookie: `__Host-okou-site-session=okou_site_${"b".repeat(64)}`,
@@ -262,11 +263,9 @@ it("recovers an expired site credential on the App while resource requests remai
     env,
     endpoint,
   );
-  expect(
-    new URL(document.response!.headers.get("Location")!).searchParams.get(
-      "reason",
-    ),
-  ).toBe("expired");
+  const bridge = new URL(document.response!.headers.get("Location")!);
+  expect(bridge.pathname).toBe("/hosted-site-authorize");
+  expect(bridge.searchParams.get("returnTo")).toBe("/report");
   const resource = await authorizeSiteRequest(
     new Request(`${origin}/app.js`, {
       headers: { ...headers, "Sec-Fetch-Dest": "script" },
@@ -276,6 +275,35 @@ it("recovers an expired site credential on the App while resource requests remai
   );
   expect(resource.response?.status).toBe(401);
   expect(resource.response?.headers.has("Location")).toBe(false);
+});
+
+it("shows denied access after the authority rejects an authenticated viewer", async () => {
+  server.use(
+    http.get(endpoint.href, ({ request }) => {
+      return HttpResponse.json(
+        request.headers.get("Authorization") === `Bearer ${token}`
+          ? { allowed: false, decision: "deny" }
+          : { allowed: false, decision: "authenticate" },
+      );
+    }),
+  );
+  const access = await authorizeSiteRequest(
+    new Request(`${origin}/report`, {
+      headers: {
+        Cookie: `__Host-okou-site-session=${token}`,
+        "Sec-Fetch-Dest": "document",
+      },
+    }),
+    env,
+    endpoint,
+  );
+  const location = new URL(access.response!.headers.get("Location")!);
+  expect(location.pathname).toBe("/hosted-site-access");
+  expect(Object.fromEntries(location.searchParams)).toStrictEqual({
+    url: `${origin}/report`,
+    reason: "denied",
+  });
+  expect(access.response?.headers.getSetCookie()).toStrictEqual([]);
 });
 
 it("expired callbacks recover on App without forwarding their code or state", async () => {
@@ -296,6 +324,40 @@ it("expired callbacks recover on App without forwarding their code or state", as
   expect(access.response?.headers.get("Cache-Control")).toBe(
     "private, no-store",
   );
+});
+
+it("an expired code exchange stops at recovery instead of restarting authorization", async () => {
+  const { bridge, pendingCookie } = await login();
+  server.use(
+    http.post(
+      `https://authority.test/api/host/sites/${siteId}/sessions`,
+      () => {
+        return new HttpResponse(null, { status: 401 });
+      },
+    ),
+  );
+  const access = await authorizeSiteRequest(
+    new Request(
+      `${origin}/.okou/auth/callback?code=${"b".repeat(64)}&state=${bridge.searchParams.get("state")}`,
+      {
+        headers: {
+          Cookie: pendingCookie,
+          "Sec-Fetch-Dest": "document",
+        },
+      },
+    ),
+    env,
+    endpoint,
+  );
+  const location = new URL(access.response!.headers.get("Location")!);
+  expect(location.pathname).toBe("/hosted-site-access");
+  expect(Object.fromEntries(location.searchParams)).toStrictEqual({
+    url: `${origin}/report?view=summary`,
+    reason: "expired",
+  });
+  expect(access.response?.headers.getSetCookie()).toStrictEqual([
+    `${pendingCookie.split("=")[0]}=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0`,
+  ]);
 });
 
 it.each([

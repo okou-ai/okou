@@ -443,6 +443,9 @@
       "switchAccountFailed": "계정 전환 화면을 열 수 없습니다. 다시 시도해 주세요.",
       "title": "이 아티팩트를 볼 수 없습니다",
       "tryAgain": "다시 시도",
+      "websiteAuthenticationDescription": "이 웹사이트에 접근할 수 있는 계정으로 로그인하세요.",
+      "websiteAuthenticationSignedInDescription": "계속하여 현재 계정의 접근 권한을 확인하세요.",
+      "websiteAuthenticationTitle": "이 웹사이트 접근 권한 확인",
       "websiteTitle": "이 웹사이트를 볼 수 없습니다",
       "websiteUnavailableDescription": "잠시 후 다시 시도하세요.",
       "websiteUnavailableTitle": "이 웹사이트를 일시적으로 사용할 수 없습니다"
@@ -6730,43 +6733,6 @@
         "time": "시간 ({{timezone}})",
         "updateScheduleAria": "일정 자동화 업데이트"
       },
-      "stripe": {
-        "addAction": "Stripe 자동화 추가",
-        "addAria": "Stripe 인보이스 결제 완료 자동화 추가",
-        "addDescription": "연결된 Stripe Live 계정에서 일치하는 인보이스가 결제되면 이 워크플로를 실행합니다.",
-        "addTitle": "Stripe 자동화 추가",
-        "anyBillingReason": "모든 청구 사유",
-        "billingReason": {
-          "automaticPendingInvoiceItemInvoice": "대기 중 인보이스 항목 자동 청구",
-          "manual": "수동",
-          "quoteAccept": "견적 승인",
-          "subscription": "구독",
-          "subscriptionCreate": "구독 생성",
-          "subscriptionCycle": "구독 주기",
-          "subscriptionThreshold": "구독 임계값",
-          "subscriptionUpdate": "구독 업데이트",
-          "upcoming": "예정"
-        },
-        "billingReasons": "청구 사유",
-        "billingReasonsHint": "아무것도 선택하지 않으면 모든 청구 사유와 일치합니다.",
-        "bindingSummary": "Stripe 계정 {{accountId}} · Live 모드 · {{billingReasons}}",
-        "delivery": "전달",
-        "deliveryStatus": {
-          "delivered": "전달됨",
-          "failed": "실패",
-          "pending": "대기 중",
-          "skipped": "건너뜀"
-        },
-        "deliveryWarning": "최근 최종 전달이 실패했습니다. 다시 시도하기 전에 워크플로 활동을 확인하세요.",
-        "immutableHint": "Stripe 계정과 청구 사유는 고정되어 있습니다. 변경하려면 이 자동화를 삭제하고 다시 만드세요.",
-        "invoicePaidDescription": "일치하는 Stripe 인보이스가 결제되면 실행합니다.",
-        "invoicePaidTitle": "Stripe 인보이스 결제 완료",
-        "lastEvent": "최근 이벤트",
-        "manageConnection": "Stripe 연결 관리",
-        "noDeliveries": "아직 전달 없음",
-        "noMatchingEvents": "아직 일치하는 이벤트 없음",
-        "rule": "일치하는 Stripe 인보이스가 결제될 때"
-      },
       "types": {
         "chat": "채팅",
         "github": "GitHub",
@@ -6775,7 +6741,6 @@
         "googleForms": "Google Forms",
         "googleMeet": "Google Meet",
         "notion": "Notion",
-        "stripe": "Stripe",
         "webhook": "웹후크"
       },
       "webhook": {

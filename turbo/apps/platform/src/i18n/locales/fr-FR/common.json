@@ -457,6 +457,9 @@
       "switchAccountFailed": "Impossible d’ouvrir le sélecteur de compte. Veuillez réessayer.",
       "title": "Vous ne pouvez pas consulter cet artefact",
       "tryAgain": "Réessayer",
+      "websiteAuthenticationDescription": "Connectez-vous avec un compte autorisé à accéder à ce site web.",
+      "websiteAuthenticationSignedInDescription": "Continuez pour vérifier l’accès avec votre compte actuel.",
+      "websiteAuthenticationTitle": "Vérifier l’accès à ce site web",
       "websiteTitle": "Vous ne pouvez pas consulter ce site web",
       "websiteUnavailableDescription": "Réessayez dans un instant.",
       "websiteUnavailableTitle": "Ce site web est temporairement indisponible"
@@ -6832,43 +6835,6 @@
         "time": "Heure ({{timezone}})",
         "updateScheduleAria": "Mettre à jour l’automatisation planifiée"
       },
-      "stripe": {
-        "addAction": "Ajouter l’automatisation Stripe",
-        "addAria": "Ajouter l’automatisation de facture Stripe payée",
-        "addDescription": "Exécutez ce workflow lorsqu’une facture correspondante est payée sur le compte Stripe Live connecté.",
-        "addTitle": "Ajouter une automatisation Stripe",
-        "anyBillingReason": "Tout motif de facturation",
-        "billingReason": {
-          "automaticPendingInvoiceItemInvoice": "Éléments de facture en attente automatiques",
-          "manual": "Manuel",
-          "quoteAccept": "Devis accepté",
-          "subscription": "Abonnement",
-          "subscriptionCreate": "Abonnement créé",
-          "subscriptionCycle": "Cycle d’abonnement",
-          "subscriptionThreshold": "Seuil d’abonnement",
-          "subscriptionUpdate": "Abonnement mis à jour",
-          "upcoming": "À venir"
-        },
-        "billingReasons": "Motifs de facturation",
-        "billingReasonsHint": "Ne sélectionnez rien pour accepter tout motif de facturation.",
-        "bindingSummary": "Compte Stripe {{accountId}} · Mode Live · {{billingReasons}}",
-        "delivery": "Livraison",
-        "deliveryStatus": {
-          "delivered": "Livrée",
-          "failed": "Échouée",
-          "pending": "En attente",
-          "skipped": "Ignorée"
-        },
-        "deliveryWarning": "La dernière livraison terminale a échoué. Consultez l’activité du workflow avant de réessayer.",
-        "immutableHint": "Le compte Stripe et les motifs de facturation sont fixes. Pour les modifier, supprimez cette automatisation et recréez-la.",
-        "invoicePaidDescription": "Exécuter lorsqu’une facture Stripe correspondante est payée.",
-        "invoicePaidTitle": "Facture Stripe payée",
-        "lastEvent": "Dernier événement",
-        "manageConnection": "Gérer la connexion Stripe",
-        "noDeliveries": "Aucune livraison pour le moment",
-        "noMatchingEvents": "Aucun événement correspondant pour le moment",
-        "rule": "Lorsqu’une facture Stripe correspondante est payée"
-      },
       "types": {
         "chat": "Chat",
         "github": "GitHub",
@@ -6877,7 +6843,6 @@
         "googleForms": "Google Forms",
         "googleMeet": "Google Meet",
         "notion": "Notion",
-        "stripe": "Stripe",
         "webhook": "Webhook"
       },
       "webhook": {

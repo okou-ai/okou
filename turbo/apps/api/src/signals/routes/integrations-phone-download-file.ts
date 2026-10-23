@@ -11,6 +11,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { queryOf } from "../context/request";
 import { db$ } from "../external/db";
+import { phoneFileDownloadUrl } from "../external/phone-file-download-url";
 import { agentPhoneFilenameFromMediaUrl } from "../services/agentphone.service";
 import { resolveArtifactFileReference$ } from "../services/private-artifact-storage.service";
 import {
@@ -38,6 +39,32 @@ function parseContentLength(value: string | null): number | undefined {
   return size;
 }
 
+function phoneFileRedirect(
+  downloadUrl: string,
+  filename: string,
+  artifact: { readonly size: number; readonly contentType: string } | null,
+): Response {
+  if (artifact && artifact.size > MAX_FILE_SIZE_BYTES) {
+    return jsonResponse(
+      413,
+      "Phone file exceeds maximum size",
+      "PAYLOAD_TOO_LARGE",
+    );
+  }
+  const contentType = artifact?.contentType ?? inferMimetype(filename);
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: downloadUrl,
+      "Cache-Control": "private, no-store",
+      "Content-Type": contentType,
+      "X-File-Name": encodeURIComponent(filename),
+      "X-File-Mimetype": contentType,
+      ...(artifact ? { "X-File-Size": String(artifact.size) } : {}),
+    },
+  });
+}
+
 const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(integrationsPhoneDownloadFileContract.download));
@@ -53,7 +80,10 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
       ),
     );
   const [message] = await db
-    .select({ mediaUrl: agentphoneMessages.mediaUrl })
+    .select({
+      mediaUrl: agentphoneMessages.mediaUrl,
+      direction: agentphoneMessages.direction,
+    })
     .from(agentphoneMessages)
     .leftJoin(
       agentphoneUserLinks,
@@ -109,6 +139,13 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
     : agentPhoneFilenameFromMediaUrl(mediaUrl, query.file_id);
   const fallbackMimetype = inferMimetype(fileName);
 
+  if (
+    artifact ||
+    (message.direction === "outbound" && phoneFileDownloadUrl(mediaUrl))
+  ) {
+    return phoneFileRedirect(downloadUrl, fileName, artifact);
+  }
+
   const downloadResponse = await tapError(
     fetch(downloadUrl, { signal }),
     (error) => {
@@ -134,7 +171,6 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
       "BAD_GATEWAY",
     );
   }
-
   const contentLength = downloadResponse.headers.get("content-length");
   const contentLengthBytes = parseContentLength(contentLength);
   if (
@@ -147,7 +183,6 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
       "PAYLOAD_TOO_LARGE",
     );
   }
-
   const contentType =
     downloadResponse.headers.get("content-type") ?? fallbackMimetype;
   const headers = new Headers();
@@ -157,7 +192,6 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (contentLength) {
     headers.set("Content-Length", contentLength);
   }
-
   return new Response(downloadResponse.body, { status: 200, headers });
 });
 

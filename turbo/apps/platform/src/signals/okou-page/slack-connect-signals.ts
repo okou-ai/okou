@@ -55,7 +55,9 @@ export const slackConnectStatus$ = computed(
         data.scopeMismatch && data.isAdmin
           ? data.reinstallUrl
           : data.isConnected
-            ? null
+            ? !data.isInstalled
+              ? data.installUrl
+              : null
             : (data.connectUrl ?? data.installUrl);
       const url = action ? new URL(action, window.location.origin) : null;
       const prompt = params.get("prompt");

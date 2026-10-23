@@ -64,8 +64,8 @@ export const captureRunNativeSession$ = command(
     if (
       run.launchSnapshot?.schemaVersion === 5 &&
       framework === "pi" &&
-      sessionId !== (run.chatThreadId ?? run.id) &&
-      !(run.officialWorkflowProvenance && sessionId === run.id)
+      sessionId !==
+        (run.officialWorkflowProvenance ? run.id : (run.chatThreadId ?? run.id))
     ) {
       throw new Error("Pi reported an identity outside its captured launch");
     }

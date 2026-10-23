@@ -112,7 +112,7 @@ import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-con
 import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
 import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
-import { addUserCustomConnector } from "./user-connectors.service";
+import { addUserCustomConnector$ } from "./user-connectors.service";
 
 const L = logger("CustomConnectorService");
 
@@ -3767,8 +3767,7 @@ const authorizeProposalAgent$ = command(
     if (!args.agentId) {
       return undefined;
     }
-    const writeDb = set(writeDb$);
-    const added = await addUserCustomConnector(writeDb, {
+    const added = await set(addUserCustomConnector$, {
       orgId: args.orgId,
       userId: args.userId,
       agentId: args.agentId,

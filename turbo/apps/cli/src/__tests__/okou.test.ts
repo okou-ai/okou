@@ -165,7 +165,7 @@ describe("Okou CLI lazy command loading", () => {
       vi.stubEnv("OKOU_TOKEN", buildOkouToken(capabilities));
       const cli = new Command("okou");
       registerCommands(cli);
-      expect(cli.helpInformation().includes("task|job")).toBe(
+      expect(/^\s+task\b/m.test(cli.helpInformation())).toBe(
         capabilities.length > 0,
       );
     },

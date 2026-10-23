@@ -24,7 +24,6 @@ import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsMultipartRoutes } from "../uploads-multipart";
 import { webFileUrlRoutes } from "../web-file-url";
-import { webDownloadRoutes } from "../web-download";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
@@ -45,7 +44,6 @@ const routes = Object.freeze([
   ...uploadsCompleteRoutes,
   ...uploadsMultipartRoutes,
   ...webFileUrlRoutes,
-  ...webDownloadRoutes,
   ...artifactReferenceRoutes,
   ...artifactCatalogRoutes,
 ]);
@@ -232,13 +230,13 @@ describe("private artifact uploads", () => {
       file: { id: prepared.body.id, url: prepared.body.url, size: 13 },
     });
     const download = await accept(
-      api()(webFilesContract).download({
+      api()(webFilesContract).fileUrl({
         headers,
         query: { file_id: prepared.body.id },
       }),
       [200],
     );
-    expect(download.body).toBe("private bytes");
+    expect(download.body.downloadUrl).toMatch(/^https:\/\//u);
   });
 
   it.each(["missing", "unknown-size"] as const)(
@@ -325,14 +323,6 @@ describe("private artifact uploads", () => {
       [200],
     );
     expect(preview.body.publicUrl).toBeNull();
-    const download = await accept(
-      api()(webFilesContract).download({
-        headers,
-        query: { file_id: prepared.body.id },
-      }),
-      [200],
-    );
-    expect(download.body).toBe("private bytes");
   });
 
   it("keeps organization-less public uploads readable", async () => {
@@ -364,14 +354,6 @@ describe("private artifact uploads", () => {
       [200],
     );
     expect(preview.body.publicUrl).toBe(prepared.body.url);
-    const downloaded = await accept(
-      api()(webFilesContract).download({
-        headers,
-        query: { file_id: prepared.body.id },
-      }),
-      [200],
-    );
-    expect(downloaded.body).toBe("public bytes");
   });
 
   it("previews private bytes uploaded by an older composer without a complete request", async () => {
@@ -423,7 +405,7 @@ describe("private artifact uploads", () => {
     );
   });
 
-  it("returns a stable owner URL, signs only the private bucket, and downloads safely from the API origin", async () => {
+  it("returns stable owner references and signed private download URLs", async () => {
     const prepared = await accept(
       api()(uploadsContract).prepare({
         headers,
@@ -491,16 +473,6 @@ describe("private artifact uploads", () => {
       [200],
     );
     expect(resolved.body.url).toBe(preview.body.url);
-    const downloaded = await accept(
-      api()(webFilesContract).download({ headers, query: { file_id: id } }),
-      [200],
-    );
-    expect(downloaded.body).toBe("private bytes");
-    expect(downloaded.headers.get("content-disposition")).toBe(
-      "attachment; filename*=UTF-8''report.html",
-    );
-    expect(downloaded.headers.get("x-content-type-options")).toBe("nosniff");
-
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://private-r2.example/report.html?signature=two",
     );
@@ -562,10 +534,6 @@ describe("private artifact uploads", () => {
       );
       expect(denied.body.error.code).toBe("NOT_FOUND");
       await accept(
-        api()(webFilesContract).download({ headers, query: { file_id: id } }),
-        [404],
-      );
-      await accept(
         api()(uploadsContract).complete({ headers, body: { id } }),
         [404],
       );
@@ -595,10 +563,6 @@ describe("private artifact uploads", () => {
     });
     await accept(
       api()(webFilesContract).fileUrl({ headers: {}, query: { file_id: id } }),
-      [401],
-    );
-    await accept(
-      api()(webFilesContract).download({ headers: {}, query: { file_id: id } }),
       [401],
     );
   });
