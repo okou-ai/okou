@@ -272,11 +272,13 @@ function serveObjects(objects: ReadonlyMap<string, Buffer>): void {
   });
 }
 
-async function cronClient() {
+async function cronClient({
+  isolatePg = false,
+}: { readonly isolatePg?: boolean } = {}) {
   const app = await setupApp({
     context,
     routes: cronConnectorCatalogRoutes,
-    isolatePg: true,
+    isolatePg,
   });
   return app(cronConnectorCatalogContract);
 }
@@ -287,9 +289,9 @@ function catalogClient() {
   );
 }
 
-async function sync() {
+async function sync(options: { readonly isolatePg?: boolean } = {}) {
   return await accept(
-    (await cronClient()).sync({ headers: cronHeaders }),
+    (await cronClient(options)).sync({ headers: cronHeaders }),
     [200],
   );
 }
@@ -322,7 +324,7 @@ describe("connector catalog v4 preparation", () => {
         },
       });
       serveObjects(initial.objects);
-      expect((await sync()).body.outcome).toBe("accepted");
+      expect((await sync({ isolatePg: true })).body.outcome).toBe("accepted");
       const runs = createRunsApi(context);
       const actor = bdd.user();
       bdd.acceptAgentStorageWrites();
@@ -500,7 +502,7 @@ describe("connector catalog v4 preparation", () => {
     const candidate = release({ label: "Accepted v4", mcpSlug: "notes-mcp" });
     serveObjects(candidate.objects);
     // The response is only the attempt report.
-    expect((await sync()).body).toStrictEqual({
+    expect((await sync({ isolatePg: true })).body).toStrictEqual({
       outcome: "accepted",
       failureCode: null,
     });
@@ -517,7 +519,7 @@ describe("connector catalog v4 preparation", () => {
   it("keeps serving the current pointer across a rejected-source sync", async () => {
     const serving = release({ label: "Serving" });
     serveObjects(serving.objects);
-    expect((await sync()).body).toStrictEqual({
+    expect((await sync({ isolatePg: true })).body).toStrictEqual({
       outcome: "accepted",
       failureCode: null,
     });
@@ -554,7 +556,7 @@ describe("connector catalog v4 preparation", () => {
   it("retains the last accepted v4 snapshot when a later candidate has an invalid protocol", async () => {
     const accepted = release({ label: "Last accepted" });
     serveObjects(accepted.objects);
-    await sync();
+    await sync({ isolatePg: true });
     const invalid = release({
       label: "Rejected candidate",
       mutate(catalog) {
@@ -615,7 +617,9 @@ describe("connector catalog v4 preparation", () => {
     // Storage contains only the pointer and catalog. Both descriptors declare
     // skill:none, so accepting this release requires no skill resource fetch.
     serveObjects(candidate.objects);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    expect((await sync({ isolatePg: true })).body).toMatchObject({
+      outcome: "accepted",
+    });
     expect((await publicCatalog()).body.connectors).toMatchObject([
       { slug: "http-service-mcp", authMethods: [{ grantKind: "manual" }] },
       { slug: "spoken-notes", authMethods: [{ grantKind: "automatic" }] },
@@ -659,7 +663,7 @@ describe("connector catalog v4 preparation", () => {
       },
     });
     serveObjects(candidate.objects);
-    expect((await sync()).body.outcome).toBe("accepted");
+    expect((await sync({ isolatePg: true })).body.outcome).toBe("accepted");
 
     const catalog = await publicCatalog();
     expect(catalog.body.connectors).toStrictEqual(
@@ -721,7 +725,7 @@ describe("connector catalog v4 preparation", () => {
 
   it("does not expose an accepted MCP transport as an executable HTTP permission bundle", async () => {
     serveObjects(release({ mcpSlug: "notes-mcp" }).objects);
-    await sync();
+    await sync({ isolatePg: true });
     const client = setupApp({ context, routes: customConnectorsRoutes })(
       customConnectorsContract,
     );

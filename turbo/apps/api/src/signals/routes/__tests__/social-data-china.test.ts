@@ -58,10 +58,12 @@ function authenticate(actor: ApiTestUser) {
   return { authorization: "Bearer clerk-session" };
 }
 
-async function scenario() {
-  // The production reconciliation cron is explicitly under test. Its global
-  // sweep requires an isolated database. The staff identity is test-owned.
-  const app = await setupApp({ context, routes: ROUTES, isolatePg: true });
+async function scenario({
+  isolatePg = false,
+}: { readonly isolatePg?: boolean } = {}) {
+  // Cron cases opt into isolation for the cross-owner reconciliation sweep
+  // before entitlement setup accesses the database.
+  const app = await setupApp({ context, routes: ROUTES, isolatePg });
   const actor = createBddApi(context).user({
     orgId: createUniqueStaffOrgIdFixture(),
   });
@@ -203,7 +205,7 @@ async function continueAndGet(
 
 describe("Douyin and Weibo Social adapters", () => {
   it("inspects a Douyin profile from the live root user envelope", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       monid(
         "/api/v1/douyin/web/handler_user_profile",
@@ -251,7 +253,7 @@ describe("Douyin and Weibo Social adapters", () => {
   });
 
   it("delivers live root Douyin comments without confusing post and parent IDs", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       monid(
         "/api/v1/douyin/app/v3/fetch_video_comments",
@@ -307,7 +309,7 @@ describe("Douyin and Weibo Social adapters", () => {
   });
 
   it("delivers typed Douyin posts with stable author identity and allowed media", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       const executions = monid(
         "/api/v1/douyin/app/v3/fetch_user_post_videos",
@@ -376,7 +378,7 @@ describe("Douyin and Weibo Social adapters", () => {
   });
 
   it("delivers root Douyin posts across explicit cursor pages", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       const parameters = {
         sec_user_id: { type: "string" },
@@ -463,7 +465,7 @@ describe("Douyin and Weibo Social adapters", () => {
   });
 
   it("keeps Douyin reply post and parent-comment IDs distinct in a root envelope", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       monid(
         "/api/v1/douyin/app/v3/fetch_video_comment_replies",
@@ -520,7 +522,7 @@ describe("Douyin and Weibo Social adapters", () => {
   ] as const)(
     "accepts explicit empty root Douyin $operation with null comments",
     async ({ operation, hasMore }) => {
-      const setup = await scenario();
+      const setup = await scenario({ isolatePg: true });
       await setup.run(async () => {
         const replies = operation === "replies";
         monid(
@@ -566,7 +568,7 @@ describe("Douyin and Weibo Social adapters", () => {
   );
 
   it("does not turn null Douyin replies with a positive total into an empty success", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       monid(
         "/api/v1/douyin/app/v3/fetch_video_comment_replies",
@@ -603,7 +605,7 @@ describe("Douyin and Weibo Social adapters", () => {
   });
 
   it("exposes following initialization as a single billed page, not a completed collection", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       const executions = monid(
         "/api/v1/douyin/web/fetch_user_following_list",
@@ -641,7 +643,7 @@ describe("Douyin and Weibo Social adapters", () => {
   });
 
   it("reports a private Douyin following list as unavailable without charging credits", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       monid(
         "/api/v1/douyin/web/fetch_user_following_list",
@@ -685,7 +687,7 @@ describe("Douyin and Weibo Social adapters", () => {
   });
 
   it("reports other Douyin business failures as source errors without exposing upstream text", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       monid(
         "/api/v1/douyin/web/handler_user_profile",
@@ -712,7 +714,7 @@ describe("Douyin and Weibo Social adapters", () => {
   });
 
   it("searches Douyin accounts without a second profile lookup", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       const executions = monid(
         "/api/v1/douyin/search/fetch_user_search_v2",
@@ -805,7 +807,7 @@ describe("Douyin and Weibo Social adapters", () => {
   });
 
   it("caps Douyin search results and returned count at the requested limit", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       monid(
         "/api/v1/douyin/search/fetch_user_search_v2",
@@ -849,7 +851,7 @@ describe("Douyin and Weibo Social adapters", () => {
   });
 
   it("inspects a Weibo numeric profile using an explicitly typed nullable schema", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       monid(
         "/api/v1/weibo/web_v2/fetch_user_info",
@@ -887,7 +889,7 @@ describe("Douyin and Weibo Social adapters", () => {
   });
 
   it("inspects a Weibo profile from the live root user envelope", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       monid(
         "/api/v1/weibo/web_v2/fetch_user_info",
@@ -931,7 +933,7 @@ describe("Douyin and Weibo Social adapters", () => {
   });
 
   it("continues grouped and direct Weibo timeline feeds despite noMore until feeds are empty", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       const parameters = {
         uid: { type: "string" },
@@ -1117,7 +1119,7 @@ describe("Douyin and Weibo Social adapters", () => {
   });
 
   it("does not invent another Weibo page when the provider repeats the current page", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       monid(
         "/api/v1/weibo/app/fetch_user_timeline",
@@ -1156,7 +1158,7 @@ describe("Douyin and Weibo Social adapters", () => {
   });
 
   it("uses a parent comment rather than post ID for Weibo sub-comments", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       monid(
         "/api/v1/weibo/web_v2/fetch_post_sub_comments",
@@ -1201,7 +1203,7 @@ describe("Douyin and Weibo Social adapters", () => {
   it.each(["comments", "replies"] as const)(
     "continues root Weibo %s with numeric cursors and terminates at numeric zero",
     async (operation) => {
-      const setup = await scenario();
+      const setup = await scenario({ isolatePg: true });
       await setup.run(async () => {
         const replies = operation === "replies";
         const endpoint = replies
@@ -1299,7 +1301,7 @@ describe("Douyin and Weibo Social adapters", () => {
   );
 
   it("searches Weibo realtime posts and preserves string author IDs", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       monid(
         "/api/v1/weibo/web_v2/fetch_realtime_search",
@@ -1388,7 +1390,7 @@ describe("Douyin and Weibo Social adapters", () => {
       location: "queryParams",
     },
   ] as const)("rejects $name", async (testCase) => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       monid(
         testCase.endpoint,
@@ -1469,7 +1471,7 @@ describe("Douyin and Weibo Social adapters", () => {
   });
 
   it("retains source failure instead of accepting a plausible successful payload", async () => {
-    const setup = await scenario();
+    const setup = await scenario({ isolatePg: true });
     await setup.run(async () => {
       monid(
         "/api/v1/weibo/web_v2/fetch_post_comments",
