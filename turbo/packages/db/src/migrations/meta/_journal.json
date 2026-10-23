@@ -2584,6 +2584,13 @@
       "when": 1792704523539,
       "tag": "1447_drop_runner_state_wss_ingress",
       "breakpoints": true
+    },
+    {
+      "idx": 1448,
+      "version": "7",
+      "when": 1792727932489,
+      "tag": "1448_retire_pi_memory_tables",
+      "breakpoints": true
     }
   ]
 }

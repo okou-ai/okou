@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 
 import { validatePiMemoryStage1Cost } from "./test-pi-memory-stage1-cost";
+import { validatePiMemoryRetirement } from "./test-pi-memory-retirement";
 /**
  * Migration Consistency Test - Schema Comparison
  *
@@ -2822,6 +2823,7 @@ async function main(): Promise<void> {
     await validateBillingRunLifecycle(dbUrl1);
     await validatePermanentArtifactThreadCatalog(dbUrl1);
     await validatePiMemoryStage1Cost(dbUrl1);
+    await validatePiMemoryRetirement(dbUrl1);
     await validatePermanentUsagePackPendingSnapshotState(dbUrl1);
     await validatePermanentAgentRunMetadataState(dbUrl1);
     await validatePermanentBuiltInModelKeyState(dbUrl1);
