@@ -3927,19 +3927,25 @@ function activeOfficialAutomationIdentityColumns(
     id: updated.id,
     workflowId: updated.workflowId,
     automationId: updated.id,
-    blueprintKey: sql`${metadata.blueprintKey}`.mapWith(
-      identities.blueprintKey,
-    ),
-    state: sql`'active'`.mapWith(identities.state),
-    retainedParameterBindings: sql`NULL`.mapWith(pgNullDecoder),
-    retainedIntendedEnabled: sql`NULL`.mapWith(pgNullDecoder),
-    retainedAppliedFingerprint: sql`NULL`.mapWith(pgNullDecoder),
-    createdAt: sql`${sql.param(at, identities.createdAt)}`.mapWith(
-      identities.createdAt,
-    ),
-    updatedAt: sql`${sql.param(at, identities.updatedAt)}`.mapWith(
-      identities.updatedAt,
-    ),
+    blueprintKey: sql`${metadata.blueprintKey}`
+      .mapWith(identities.blueprintKey)
+      .as("blueprint_key"),
+    state: sql`'active'`.mapWith(identities.state).as("state"),
+    retainedParameterBindings: sql`NULL`
+      .mapWith(pgNullDecoder)
+      .as("retained_parameter_bindings"),
+    retainedIntendedEnabled: sql`NULL`
+      .mapWith(pgNullDecoder)
+      .as("retained_intended_enabled"),
+    retainedAppliedFingerprint: sql`NULL`
+      .mapWith(pgNullDecoder)
+      .as("retained_applied_fingerprint"),
+    createdAt: sql`${sql.param(at, identities.createdAt)}`
+      .mapWith(identities.createdAt)
+      .as("created_at"),
+    updatedAt: sql`${sql.param(at, identities.updatedAt)}`
+      .mapWith(identities.updatedAt)
+      .as("updated_at"),
   };
 }
 
