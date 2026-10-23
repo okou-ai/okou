@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.26](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.25...sandbox-firecracker-v0.53.26) (2026-10-23)
+
+
+### Refactoring
+
+* **sandbox-firecracker:** share netns release lease retirement ([#42475](https://github.com/okou-ai/okou/issues/42475)) ([33296f6](https://github.com/okou-ai/okou/commit/33296f668e24386ab5615a86bb0859c9ba04b886))
+
 ## [0.53.25](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.24...sandbox-firecracker-v0.53.25) (2026-10-23)
 
 

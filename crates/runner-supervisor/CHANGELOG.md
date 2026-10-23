@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.15](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.14...runner-supervisor-v0.20.15) (2026-10-23)
+
+
+### Bug Fixes
+
+* **runner:** start snapshot warming under supervised ownership ([#42430](https://github.com/okou-ai/okou/issues/42430)) ([9eeb785](https://github.com/okou-ai/okou/commit/9eeb785fc508e7948a905b645e39c8a1cb3a4ddc))
+
 ## [0.20.14](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.13...runner-supervisor-v0.20.14) (2026-10-23)
 
 ## [0.20.13](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.12...runner-supervisor-v0.20.13) (2026-10-22)

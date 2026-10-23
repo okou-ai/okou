@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.409.1](https://github.com/okou-ai/okou/compare/cli-v9.409.0...cli-v9.409.1) (2026-10-23)
+
+
+### Refactoring
+
+* **connectors:** retire unused builtin read projections ([#42437](https://github.com/okou-ai/okou/issues/42437)) ([dfb4154](https://github.com/okou-ai/okou/commit/dfb4154505e4c5c10b9ff329f180a7b68753fc88))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.589.1
+    * @okouai/core bumped to 8.780.1
+    * @okouai/pi-agent-runtime bumped to 1.50.55
+
 ## [9.409.0](https://github.com/okou-ai/okou/compare/cli-v9.408.5...cli-v9.409.0) (2026-10-23)
 
 

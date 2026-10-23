@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.7](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.6...runner-lifecycle-v0.17.7) (2026-10-23)
+
+
+### Bug Fixes
+
+* **runner:** start snapshot warming under supervised ownership ([#42430](https://github.com/okou-ai/okou/issues/42430)) ([9eeb785](https://github.com/okou-ai/okou/commit/9eeb785fc508e7948a905b645e39c8a1cb3a4ddc))
+
 ## [0.17.6](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.5...runner-lifecycle-v0.17.6) (2026-10-23)
 
 ## [0.17.5](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.4...runner-lifecycle-v0.17.5) (2026-10-22)

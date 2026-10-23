@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.780.1](https://github.com/okou-ai/okou/compare/core-v8.780.0...core-v8.780.1) (2026-10-23)
+
+
+### Refactoring
+
+* **connectors:** retire unused builtin read projections ([#42437](https://github.com/okou-ai/okou/issues/42437)) ([dfb4154](https://github.com/okou-ai/okou/commit/dfb4154505e4c5c10b9ff329f180a7b68753fc88))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.589.1
+
 ## [8.780.0](https://github.com/okou-ai/okou/compare/core-v8.779.1...core-v8.780.0) (2026-10-23)
 
 
