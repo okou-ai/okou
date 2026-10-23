@@ -347,7 +347,13 @@ async function prepareScenario() {
       authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
     };
     await accept(client().use({ headers: runHeaders, body: {} }), [200]);
-    return { ...owned, threadId: sent.threadId, runHeaders };
+    return {
+      ...owned,
+      threadId: sent.threadId,
+      runHeaders,
+      providerId,
+      providerSession: providerSession(),
+    };
   });
 }
 describe("Browser action creation", () => {
@@ -395,21 +401,18 @@ describe("Browser action creation", () => {
       if (!deadline) {
         throw new Error("Expected the owner's Browser lease");
       }
-      const provider =
-        context.mocks.browserUseCdp.command.getMockImplementation();
-      if (!provider) {
-        throw new Error("Expected the external CDP responder");
-      }
       const validationStarted = createDeferredPromise<void>(context.signal);
       const releaseValidation = createDeferredPromise<void>(context.signal);
-      context.mocks.browserUseCdp.command.mockImplementation(
-        async (command) => {
-          if (command.method === "DOM.resolveNode") {
+      server.use(
+        http.get(
+          `${PROVIDER_URL}/browsers/${owned.providerId}`,
+          async () => {
             validationStarted.resolve();
             await releaseValidation.promise;
-          }
-          return provider(command);
-        },
+            return HttpResponse.json(owned.providerSession);
+          },
+          { once: true },
+        ),
       );
       const pending = settleIncludingAbort(() => {
         return actions().create({
