@@ -1,7 +1,5 @@
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
-import { PROACTIVE_ACTION_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-action";
-import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   workflowUserAutomationThreads,
@@ -197,10 +195,7 @@ export const synchronizeOfficialWorkflowThread$ = command(
     ) {
       throw new OfficialWorkflowRunAdmissionError();
     }
-    const hidden =
-      thread.definitionName !== PROACTIVE_ACTION_DEFINITION_NAME ||
-      (await set(loadProactiveWorkflowsEligibility$, owner, signal)).jobs
-        .available;
+    const hidden = true;
     const visibilityChanged = thread.hidden !== hidden;
     const modelChanged =
       thread.selectedModel !== AUTO_SELECTED_MODEL ||

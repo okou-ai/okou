@@ -5596,15 +5596,6 @@
         "retryMessage": "No se pudo cargar o actualizar la configuración de Morning Brief. Vuelve a intentarlo para continuar.",
         "title": "Resumen matutino"
       },
-      "proactiveAction": {
-        "description": "Deja que Okou avance cada hora y muestre su trabajo en un Chat. Las sugerencias proactivas se pausan mientras esté activado.",
-        "missingDefaultAgent": "Elige un agente predeterminado disponible para activar las acciones proactivas.",
-        "preparationFailed": "No disponible temporalmente. Okou volverá a intentarlo automáticamente.",
-        "preparing": "Preparando acciones cada hora. Puedes desactivarlas en cualquier momento.",
-        "retry": "Reintentar",
-        "retryMessage": "No se pudieron cargar o actualizar los ajustes de acción proactiva. Vuelve a intentarlo.",
-        "title": "Acción proactiva"
-      },
       "proactiveJobs": {
         "description": "Automatically work on your jobs and notify you when your input is needed or a job is complete.",
         "missingDefaultAgent": "Choose a usable default Agent to work on your jobs.",
@@ -5617,7 +5608,6 @@
       "proactiveSuggestions": {
         "description": "Okou revisa tus fuentes conectadas cada hora y propone próximos pasos útiles en tu página de inicio.",
         "missingDefaultAgent": "Elige un Agent predeterminado disponible para recibir sugerencias proactivas.",
-        "pausedForAction": "En pausa mientras la acción proactiva está activada. Tu preferencia se ha guardado.",
         "preparationFailed": "No disponible temporalmente. Okou volverá a intentarlo automáticamente.",
         "preparing": "Preparando las sugerencias por hora. Puedes desactivarlas en cualquier momento.",
         "retry": "Reintentar",

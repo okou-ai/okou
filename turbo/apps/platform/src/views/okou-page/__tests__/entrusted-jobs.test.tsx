@@ -381,7 +381,6 @@ test("shows Proactive jobs and keeps Suggestions independently enabled", async (
     path: "/agents?settings=preference",
     featureSwitches: {
       [FeatureSwitchKey.ProactiveJobs]: true,
-      [FeatureSwitchKey.ProactiveAction]: true,
       [FeatureSwitchKey.AgentSuggestion]: true,
     },
   });
@@ -393,9 +392,6 @@ test("shows Proactive jobs and keeps Suggestions independently enabled", async (
     expect(jobs).toBeChecked();
     expect(suggestions).toBeChecked();
   });
-  expect(
-    screen.queryByRole("switch", { name: "Proactive action" }),
-  ).not.toBeInTheDocument();
   click(jobs);
   await waitFor(() => {
     expect(jobs).not.toBeChecked();

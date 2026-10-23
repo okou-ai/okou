@@ -3,10 +3,7 @@ import {
   PROACTIVE_SUGGESTIONS_DEFINITION_NAME,
   PROACTIVE_SUGGESTIONS_BLUEPRINT_KEY,
 } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import {
-  PROACTIVE_ACTION_DEFINITION_NAME,
-  PROACTIVE_ACTION_BLUEPRINT_KEY,
-} from "@okouai/api-contracts/contracts/proactive-action";
+import { RETIRED_PROACTIVE_DEFINITION_NAME } from "./proactive-workflow-definitions";
 import {
   PROACTIVE_JOBS_BLUEPRINT_KEY,
   PROACTIVE_JOBS_DEFINITION_NAME,
@@ -103,16 +100,6 @@ Use ordinary connected skills and CLI commands for Gmail, GitHub, and Google Cal
 ${SUGGESTION_CURATION_INSTRUCTION}
 
 Only read context and maintain suggestions. Never send email, notification mail, connector messages, or provider-side updates; never execute the suggested work or change the user's composer. Zero changes is a normal successful outcome. Leave only a concise diagnostic outcome in this background Chat. Do not read application database tables or internal APIs, signed input/output URLs, or callback endpoints.`;
-
-const PROACTIVE_ACTION_INSTRUCTION = `# Proactive Action
-
-This is an hourly opportunity to complete a useful next step for the user.
-
-Use the context already available in this Chat and your ordinary Run instructions to decide whether there is a concrete, justified action to take. Review previous work in this Chat to avoid repeating completed work. Do not invent a goal or assume information you have not read.
-
-When a useful next step is clear, carry it through to a verified result using ordinary skills and available tools. Respect existing permissions and the user's authorization; ask for a missing decision or authorization when the action requires it.
-
-Leave a concise account of the work completed, its result, and any remaining blocker in this Chat, with relevant evidence or artifact links. If there is no useful action supported by the available context, finish without manufacturing work. Do not maintain homepage suggestions as part of this workflow.`;
 
 const MORNING_BRIEF_INSTRUCTION =
   MORNING_BRIEF_CONTEXT_INSTRUCTION + MORNING_BRIEF_DELIVERY_INSTRUCTION;
@@ -236,37 +223,8 @@ export const OFFICIAL_WORKFLOW_SOURCE_CATALOG: OfficialWorkflowSourceCatalog =
         presentation: { category: "productivity" },
       },
       {
-        name: PROACTIVE_ACTION_DEFINITION_NAME,
-        lifecycle: "active",
-        workflow: {
-          displayName: "Proactive action",
-          description:
-            "Take a useful next step every hour and show the work in your Chat.",
-          instruction: PROACTIVE_ACTION_INSTRUCTION,
-          files: [],
-        },
-        blueprints: [
-          {
-            key: PROACTIVE_ACTION_BLUEPRINT_KEY,
-            parameters: [
-              {
-                key: "cron",
-                type: "string",
-                required: true,
-                format: "text",
-                default: "0 * * * *",
-              },
-            ],
-            desiredState: {
-              kind: "schedule",
-              schedule: {
-                type: "cron",
-                cronExpression: { parameter: "cron" },
-                timezone: "UTC",
-              },
-            },
-          },
-        ],
+        name: RETIRED_PROACTIVE_DEFINITION_NAME,
+        lifecycle: "retired",
         presentation: { category: "productivity" },
       },
       morningBriefDefinition("morning-brief", MORNING_BRIEF_INSTRUCTION),
