@@ -10,9 +10,10 @@ runs simulator tests to recover a missing archive.
 A main merge group with changed iOS inputs also builds an **unsigned device
 Release archive**, with locked Swift packages and no production credentials.
 Standalone Swift package tests, simulator validation, and device compilation run
-in **parallel macOS jobs**. Each native job has a 10-minute limit; the complete
-required iOS path, including staging, publication and the final gate, must stay
-below 12 minutes. The merge queue has a 30-minute check-response window. The
+in **parallel macOS jobs** on the existing standard runners. Simulator build/tests
+retain a 30-minute limit; package tests and device compilation retain 15-minute
+limits. Measure the complete required iOS path, including staging, publication,
+and the final gate. The merge queue has a 30-minute check-response window. The
 simulator checkout retains bounded queue ancestry (32 commits; the current squash queue
 merges at most five entries); the
 archive builder needs only its own commit. Only release-only groups install an

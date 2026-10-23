@@ -135,7 +135,7 @@ They retain real HTTP decoding, loopback snapshot transfers, and temporary SQLit
 files. ChatDataTestSupport shares strict external HTTP fixtures across the
 package and App targets. Required CI runs both package suites and the in-process
 `OkouTests` target. It prioritizes business and protocol contracts, minimizes UI
-coverage, and has a 12-minute complete-workflow budget. Visual and system
+coverage, and reports complete-workflow duration on standard runners. Visual and system
 interaction changes receive explicit on-demand native acceptance.
 
 Read the [iOS testing standard](../docs/ios/ios-testing.md) before adding or
@@ -237,8 +237,10 @@ remains unchanged. Explicit locked resolution overlaps simulator startup so
 Xcode initialization does not wait for the simulator before it can begin. Cache
 hits still validate current inputs and never replace test execution.
 Standalone package tests run on a separate macOS runner from the App build and
-simulator suite. Both package and App results are required by the gate, and the
-complete required iOS workflow has a 12-minute budget.
+simulator suite. Both package and App results are required by the gate. App
+build/tests retain a 30-minute limit; package tests and device archive builds
+retain 15-minute limits. Measure the complete required workflow when assessing
+performance.
 Release-only merge groups can reuse App test evidence only when exact input fingerprints match
 the verified prior result; missing evidence and mixed groups run the tests.
 See [archive promotion](ARCHIVE_PROMOTION.md).

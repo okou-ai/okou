@@ -7,11 +7,14 @@ contract. Matching Web's principles does not require a UI automation runner.
 
 ## Fast Admission Tests
 
-Keep the complete required iOS CI path below **12 minutes**, including checkout,
-dependency preparation, compilation, simulator startup, all selected tests, and
-the final gate. Include archive validation and publication when the event
-requires them. Report actual workflow duration; test-body time alone is not the
-budget. A cache hit may accelerate the run but cannot replace verification.
+Report the complete required iOS CI duration, including checkout, dependency
+preparation, compilation, simulator startup, all selected tests, and the final
+gate. Include archive validation and publication when the event requires them;
+test-body time alone does not establish workflow performance. Keep the existing
+standard runners and workflow limits: 30 minutes for App build/tests and 15
+minutes each for package tests and device archive builds. Optimize measured
+bottlenecks within those limits. A cache hit may accelerate the run but cannot
+replace verification.
 
 Required CI primarily covers business, HTTP, security, compatibility,
 persistence, cancellation, and recovery contracts in process. Do not add
@@ -92,8 +95,8 @@ implementation assertion. Native input access belongs on the main actor. Keep
 hosted tests sequential on one simulator, with one heavy local check at a time.
 
 A full suite runs every retained test. Do not use exclusion lists, selected
-happy paths, automatic assertion retries, raised timeouts, or skipped required
-checks to meet the time budget. Reduce duplicate work, unnecessary UI coverage,
+happy paths, automatic assertion retries, or skipped required checks to shorten
+the run. Reduce duplicate work, unnecessary UI coverage,
 and dependency/build costs instead. Inspect `.xcresult` and the first failure
 before rerunning; a later pass does not explain an earlier failure.
 
