@@ -6626,7 +6626,10 @@ function UserMessageAttachments({
   }
 
   return (
-    <div className="mb-2 flex max-w-[85%] flex-col items-end gap-2 self-end">
+    <div
+      data-slot="chat-user-message-attachments"
+      className="mb-2 flex max-w-[85%] flex-col items-end gap-2 self-end"
+    >
       <UserMessageAttachmentRow
         threadId={threadId}
         attachments={attachments.filter(isMediaAttachment)}
@@ -7482,12 +7485,10 @@ function WorkflowUserMessage({
   const workflowBody =
     messageDocumentToDisplayText(event.userMessage)?.trim() ||
     part.automationBrief?.trim();
-  const bubbleClassName =
-    "rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden whitespace-pre-wrap transition-colors duration-150 bg-gray-200 text-foreground";
   const body = workflowBody ? (
-    <div className={bubbleClassName}>
+    <ChatUserMessageBubble className="whitespace-pre-wrap transition-colors duration-150">
       <div className="px-4 py-3">{workflowBody}</div>
-    </div>
+    </ChatUserMessageBubble>
   ) : null;
 
   return (
@@ -7495,7 +7496,7 @@ function WorkflowUserMessage({
       data-role="user"
       data-chat-scroll-anchor-event-id={event.id}
       data-turn-created-at={event.createdAt}
-      className="relative group"
+      className="relative group/user-message"
       ref={turnOnRef}
     >
       <ChatConversationLandingHighlight thread={thread} eventId={event.id} />
@@ -7645,7 +7646,7 @@ function PagedUserMessage({
       data-chat-scroll-anchor-event-id={event.id}
       data-turn-created-at={event.createdAt}
       className={cn(
-        "relative group",
+        "relative group/user-message",
         stackedOnPrevious && CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
       )}
     >

@@ -65,11 +65,14 @@ export const CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS =
 export const CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS =
   "h-7 w-7 rounded-full object-cover object-top @[900px]:h-9 @[900px]:w-9";
 
-// Hide the whole row only for fine hover pointers, and reveal it on hover or
-// keyboard focus. It holds its height while hidden because the stack pull below
-// is measured against it.
-export const CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS =
-  "flex h-7 justify-end gap-1 mt-1 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-within:opacity-100";
+// Only the message's content and controls reveal its actions, not the empty
+// space in its full-width row. Top padding bridges the bubble and buttons while
+// preserving the reserved height that the stack pull below is measured against.
+export const CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS = cn(
+  "flex h-8 justify-end gap-1 pt-1 [@media(hover:hover)_and_(pointer:fine)]:opacity-0",
+  "group-has-[[data-slot=chat-user-message]:hover]/user-message:opacity-100 group-has-[[data-slot=chat-user-message-attachments]:hover]/user-message:opacity-100",
+  "hover:opacity-100 focus-within:opacity-100",
+);
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_ROW_CLASS =
   "pl-1.5 @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:pl-0";
@@ -78,7 +81,7 @@ export const CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS =
   "flex items-center justify-between gap-2";
 
 // Consecutive user messages read as one burst. The copy button already sits
-// `mt-1` below its message, so this pull keeps the gap below it equally tight.
+// 4px below its message, so this pull keeps the gap below it equally tight.
 // It only ever cancels part of that reserved row, which is why the row above
 // has to exist on every user message, in every mode.
 export const CHAT_THREAD_MESSAGE_STACK_PULL_CLASS = "-mt-5";
