@@ -533,15 +533,6 @@ pub mod runners {
         pub mod steerable_inputs {
             /// DTOs for reading the next steerable prompt or run-targeted budget.
             pub mod next {
-                /// Captured Run preferences for active template guidance.
-                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-                #[serde(rename_all = "camelCase")]
-                pub struct Query {
-                    /// Original disabled-tool JSON environment value; never grants permissions.
-                    #[serde(default, skip_serializing_if = "Option::is_none")]
-                    pub disabled_paid_tools: Option<String>,
-                }
-
                 /// Prompt or run-targeted budget the run may steer.
                 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
                 #[serde(rename_all = "camelCase")]

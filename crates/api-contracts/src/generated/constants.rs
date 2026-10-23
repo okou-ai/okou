@@ -92,9 +92,6 @@ pub mod model_provider_env {
 
 /// Paid-tool environment contract constants shared by TypeScript and Rust.
 pub mod paid_tools {
-    /// Captured disabled managed-tool preferences for this Run.
-    pub const DISABLED_PAID_TOOLS_ENV_VAR: &str = "OKOU_DISABLED_PAID_TOOLS";
-
     /// Trusted environment opt-in for Codex-native image generation.
     pub const ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR: &str =
         "OKOU_ENABLE_FRAMEWORK_IMAGE_GENERATION";

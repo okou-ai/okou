@@ -1,10 +1,6 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
-import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
-import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
-import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import {
   STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE,
@@ -19,7 +15,6 @@ import {
   userMessageWithTemplate,
 } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { setPaidToolDisabled } from "./helpers/paid-tools";
 
 /**
  * Steering without delivery IDs: a running sandbox run reads the next
@@ -128,155 +123,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
     ).resolves.toStrictEqual({
       input: { eventId: nextEventId, prompt: "Then summarize the invoice" },
     });
-    await cancelChatRun(actor, active.runId);
-  });
-
-  it.each([true, false])(
-    "filters active templates with captured Run policy after preferences change (initially disabled: %s)",
-    async (disabled) => {
-      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-      await setPaidToolDisabled(context, actor, "image-generation", disabled);
-      const active = await sendChatRun(actor, {
-        agentId,
-        prompt: "Start a run",
-      });
-      const claimed = await claimChatRun(runnerGroup, active.runId);
-      await setPaidToolDisabled(context, actor, "image-generation", !disabled);
-      expect(
-        claimed.claim.appendSystemPrompt?.includes("# Built-in image model"),
-      ).toBe(!disabled);
-      const website = WEBSITE_TEMPLATE_ITEMS[0];
-      const illustration = ILLUSTRATION_TEMPLATE_ITEMS[0];
-      if (!website || !illustration) {
-        throw new Error("Expected registered templates");
-      }
-      const templates: readonly GenerationTemplateRequest[] = [
-        { type: "website", selection: { websiteTemplateId: website.id } },
-        {
-          type: "illustration",
-          selection: { illustrationStyleId: illustration.illustrationStyleId },
-        },
-      ];
-      for (const template of templates) {
-        const eventId = randomUUID();
-        await chat.requestSendEvent(
-          actor,
-          {
-            agentId,
-            threadId: active.threadId,
-            clientEventId: eventId,
-            prompt: "Use this template",
-            userMessage: userMessageWithTemplate("Use this template", template),
-          },
-          [201],
-        );
-        const next = await api.nextSteerableInput(
-          claimed.claim.sandboxToken,
-          active.runId,
-          claimed.claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
-        );
-        expect(next.input?.eventId).toBe(eventId);
-        if (template.type === "illustration") {
-          expect(next.input?.prompt).toContain(
-            `Style: ${illustration.title} (${illustration.illustrationStyleId})`,
-          );
-          expect(next.input?.prompt).toMatch(/- Style description: \S/);
-        } else {
-          expect(next.input?.prompt).toContain("okou host");
-        }
-        const baseline = readFileSync(
-          new URL(
-            `./fixtures/managed-tools-enabled/${template.type}.txt`,
-            import.meta.url,
-          ),
-          "utf8",
-        ).trimEnd();
-        const userPrompt =
-          template.type === "website"
-            ? "Use this template\n\n[Template #1: Website template (website)]"
-            : "Use this template\n\n[Template #1: Illustration template (illustration)]";
-        if (disabled) {
-          expect(next.input?.prompt).not.toContain("okou generate image-batch");
-          expect(next.input?.prompt).not.toContain("--provider built-in");
-          const filtered =
-            template.type === "website"
-              ? baseline
-                  .split("\n")
-                  .filter((line) => {
-                    return !line.startsWith("- Image workflow:");
-                  })
-                  .join("\n")
-              : baseline.slice(0, baseline.indexOf("\n- Style source:"));
-          expect(next.input?.prompt).toBe(`${filtered}\n\n${userPrompt}`);
-        } else {
-          expect(next.input?.prompt).toBe(`${baseline}\n\n${userPrompt}`);
-        }
-        await api.requestDeclareSteeredInputAs(
-          `Bearer ${claimed.claim.sandboxToken}`,
-          active.runId,
-          eventId,
-          [200],
-        );
-      }
-      await cancelChatRun(actor, active.runId);
-    },
-  );
-
-  it("preserves omitted-policy steering and filters malformed policies without changing user text", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    await setPaidToolDisabled(context, actor, "image-generation", true);
-    const active = await sendChatRun(actor, { agentId, prompt: "Start a run" });
-    const claimed = await claimChatRun(runnerGroup, active.runId);
-    const website = WEBSITE_TEMPLATE_ITEMS[0];
-    if (!website) {
-      throw new Error("Expected a website template");
-    }
-    const eventId = randomUUID();
-    const userText =
-      "Keep this user text: okou generate image --provider built-in";
-    await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: active.threadId,
-        clientEventId: eventId,
-        prompt: userText,
-        userMessage: userMessageWithTemplate(userText, {
-          type: "website",
-          selection: { websiteTemplateId: website.id },
-        }),
-      },
-      [201],
-    );
-    const baseline = readFileSync(
-      new URL("./fixtures/managed-tools-enabled/website.txt", import.meta.url),
-      "utf8",
-    ).trimEnd();
-    const filtered = baseline
-      .split("\n")
-      .filter((line) => {
-        return !line.startsWith("- Image workflow:");
-      })
-      .join("\n");
-    for (const [policy, enabled] of [
-      [undefined, true],
-      ["", true],
-      ["[]", true],
-      ['["future-tool"]', true],
-      ["not-json", false],
-      ['{"image-generation":false}', false],
-      ["[1]", false],
-    ] as const) {
-      const result = await api.nextSteerableInput(
-        claimed.claim.sandboxToken,
-        active.runId,
-        policy,
-      );
-      expect(result.input).toStrictEqual({
-        eventId,
-        prompt: `${enabled ? baseline : filtered}\n\n${userText}\n\n[Template #1: Website template (website)]`,
-      });
-    }
     await cancelChatRun(actor, active.runId);
   });
 

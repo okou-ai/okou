@@ -14,7 +14,6 @@ import {
   MODEL_PROVIDER_FIREWALL_CONFIGS,
 } from "../../contracts/model-providers";
 import {
-  DISABLED_PAID_TOOLS_ENV_VAR,
   ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
   ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
 } from "../../contracts/paid-tools";
@@ -205,12 +204,6 @@ function placeholderRustDoc(name: string): readonly string[] {
 }
 
 const expectedBindings = [
-  {
-    rustModulePath: ["paid_tools"],
-    rustConstName: "DISABLED_PAID_TOOLS_ENV_VAR",
-    value: rustString(DISABLED_PAID_TOOLS_ENV_VAR),
-    rustDoc: ["Captured disabled managed-tool preferences for this Run."],
-  },
   {
     rustModulePath: ["paid_tools"],
     rustConstName: "ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR",

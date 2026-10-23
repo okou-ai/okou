@@ -1276,10 +1276,6 @@ export const runnersSteerContract = c.router({
     pathParams: z.object({
       runId: z.uuid(),
     }),
-    query: z.object({
-      /** Captured platform environment value; presentation preference only. */
-      disabledPaidTools: z.string().optional(),
-    }),
     responses: {
       200: runnerNextSteerableInputResponseSchema,
       400: apiErrorSchema,

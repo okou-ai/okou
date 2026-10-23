@@ -858,22 +858,16 @@ export function createRunsApi(context: TestContext) {
         runApp(context)(runnersSteerContract).next({
           headers: authorization === undefined ? {} : { authorization },
           params: { runId },
-          query: {},
         }),
         statuses,
       );
     },
 
-    async nextSteerableInput(
-      sandboxToken: string,
-      runId: string,
-      disabledPaidTools?: string,
-    ) {
+    async nextSteerableInput(sandboxToken: string, runId: string) {
       const response = await accept(
         runApp(context)(runnersSteerContract).next({
           headers: { authorization: `Bearer ${sandboxToken}` },
           params: { runId },
-          query: { disabledPaidTools },
         }),
         [200],
       );

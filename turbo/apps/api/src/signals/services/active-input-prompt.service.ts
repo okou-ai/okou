@@ -129,11 +129,7 @@ export const materializeActiveInputSource$ = command(
     { set },
     db: Db,
     source: ActiveInputSourceRow,
-    auth: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly includeManagedImageInstructions: boolean;
-    },
+    auth: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
   ): Promise<string | null> => {
     if (
@@ -178,24 +174,19 @@ export const materializeActiveInputSource$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         featureSwitchContext,
-        includeManagedImageInstructions: auth.includeManagedImageInstructions,
       },
       signal,
     );
   },
 );
 
-function activeInputGenerationTemplates(
-  userMessage: ChatEventUserMessage,
-  includeManagedImageInstructions: boolean,
-) {
+function activeInputGenerationTemplates(userMessage: ChatEventUserMessage) {
   const projection = projectUserMessage(userMessage);
   return {
     projection,
     templatePrompt: resolveThreadGenerationTemplatePrompt({
       explicit: projection.primaryTemplate,
       explicitTemplates: projection.templates,
-      includeManagedImageInstructions,
       // Steered into a run that is already executing, whose volumes were fixed
       // when it was created. There is no package to point the agent at, so a
       // private template contributes no guidance rather than a dangling path.
@@ -322,7 +313,6 @@ const materializeActiveInputPrompt$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly featureSwitchContext: FeatureSwitchContext;
-      readonly includeManagedImageInstructions: boolean;
     },
     signal: AbortSignal,
   ): Promise<string> => {
@@ -351,10 +341,8 @@ const materializeActiveInputPrompt$ = command(
         `${args.event.contextType} active input is missing launch material`,
       );
     }
-    const { projection, templatePrompt } = activeInputGenerationTemplates(
-      userMessage,
-      args.includeManagedImageInstructions,
-    );
+    const { projection, templatePrompt } =
+      activeInputGenerationTemplates(userMessage);
     const prompt = integration?.prompt ?? projection.agentPrompt;
     const parts = [
       integration?.appendSystemPrompt ?? "",

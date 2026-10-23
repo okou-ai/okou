@@ -207,7 +207,6 @@ fn api_active_input_source(
         run_id,
         "sandbox-token".to_string(),
         notifications.subscribe(run_id),
-        None,
     )
 }
 

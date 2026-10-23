@@ -114,7 +114,6 @@ type GenerationTemplatePromptResult =
  * leave it empty and lose the guidance rather than point at nothing.
  */
 interface GenerationTemplatePromptOptions {
-  /** Active template input adds content to an existing tool context. */
   readonly includeManagedImageInstructions?: boolean;
   readonly mountedUserPresentationTemplateIds?: readonly string[];
   /**
