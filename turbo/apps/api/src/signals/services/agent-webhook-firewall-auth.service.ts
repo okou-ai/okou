@@ -6086,8 +6086,7 @@ const resolveFirewallAuthWithTimings$ = command(
 );
 
 /** Produces credential material only. The route must invoke
- * admitPreparedFirewallAuthResponse$ before returning a successful response.
- * Custom-connector credential preparation retains its separate legacy graph. */
+ * admitPreparedFirewallAuthResponse$ before returning a successful response. */
 export const prepareFirewallAuthResponse$ = command(
   async (
     { set },
