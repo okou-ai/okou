@@ -1,8 +1,7 @@
 import Foundation
+import OkouCore
 import Sentry
 import XCTest
-
-import OkouCore
 
 @MainActor
 final class SentryHTTPCollector {
@@ -68,7 +67,10 @@ final class SentryHTTPCollector {
         dsn: "http://public@127.0.0.1:\(port)/42", version: "0.54.1",
         environment: "integration-test", cacheDirectory: directory.appendingPathComponent("cache"))
     } catch {
-      if process.isRunning { process.terminate(); process.waitUntilExit() }
+      if process.isRunning {
+        process.terminate()
+        process.waitUntilExit()
+      }
       try? FileManager.default.removeItem(at: directory)
       throw error
     }
@@ -76,9 +78,21 @@ final class SentryHTTPCollector {
 
   func events() throws -> [JSONValue] {
     SentrySDK.flush(timeout: 5)
-    return try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-      .filter { $0.pathExtension == "json" }
-      .map { try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: $0)) }
+    return try FileManager.default.contentsOfDirectory(
+      at: directory, includingPropertiesForKeys: nil
+    )
+    .filter { $0.pathExtension == "json" }
+    .map { try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: $0)) }
+  }
+
+  func expectation(eventCount: Int) -> XCTestExpectation {
+    let directory = directory
+    return XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in
+        let files = try? FileManager.default.contentsOfDirectory(
+          at: directory, includingPropertiesForKeys: nil)
+        return files?.filter { $0.pathExtension == "json" }.count == eventCount
+      }, object: nil)
   }
 
   func attachments(for event: JSONValue) throws -> [String: Data] {
@@ -94,7 +108,10 @@ final class SentryHTTPCollector {
 
   func close() throws {
     DesktopTelemetry.close()
-    if process.isRunning { process.terminate(); process.waitUntilExit() }
+    if process.isRunning {
+      process.terminate()
+      process.waitUntilExit()
+    }
     try FileManager.default.removeItem(at: directory)
   }
 }
