@@ -51,6 +51,7 @@ Output:
     {"path":"/tmp/${platform}-file_xxx","mimetype":"application/pdf","size":12345}
 
 Notes:
+  - Requires your connected account to have access to the source message and chat
   - Use the message ID, file key, and type exactly as shown in a [${providerName} file] block
   - Specify --installation when the organization has multiple ${providerName} bots
   - Streams the file bytes directly to disk`,

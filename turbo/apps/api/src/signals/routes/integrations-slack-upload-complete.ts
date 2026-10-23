@@ -66,6 +66,8 @@ interface CanonicalCompletionArgs {
   readonly body: SlackUploadCompleteBody;
   readonly runId: string | undefined;
   readonly userId: string;
+  readonly orgId: string;
+  readonly botToken: string;
   readonly client: SlackClient;
 }
 
@@ -91,6 +93,8 @@ const completeCanonicalUpload$ = command(
         operationId: body.operationId,
         runId,
         userId: args.userId,
+        orgId: args.orgId,
+        botToken: args.botToken,
         fileId: body.fileId,
         ...(body.uploadError ? { uploadError: body.uploadError } : {}),
         client: args.client,
@@ -143,6 +147,7 @@ interface DirectCompletionArgs {
   readonly userId: string;
   readonly orgId: string;
   readonly client: SlackClient;
+  readonly botToken: string;
 }
 
 const completeDirectUpload$ = command(
@@ -152,9 +157,11 @@ const completeDirectUpload$ = command(
       resolveSlackTargetChannel$,
       {
         client,
+        botToken: args.botToken,
         userId: args.userId,
         orgId: args.orgId,
         channel: body.channel,
+        threadTs: body.threadTs,
         user: body.user,
       },
       signal,
@@ -246,7 +253,9 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return noInstallation;
   }
 
-  const client = createSlackClient(installation.botToken);
+  const client = createSlackClient(installation.botToken, {
+    automaticRetries: false,
+  });
   const hasCanonicalIdentity =
     body.canonicalAssetId !== undefined || body.operationId !== undefined;
   if (hasCanonicalIdentity) {
@@ -256,6 +265,8 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         body,
         runId,
         userId: auth.userId,
+        orgId: auth.orgId,
+        botToken: installation.botToken,
         client,
       },
       signal,
@@ -270,6 +281,7 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       userId: auth.userId,
       orgId: auth.orgId,
       client,
+      botToken: installation.botToken,
     },
     signal,
   );

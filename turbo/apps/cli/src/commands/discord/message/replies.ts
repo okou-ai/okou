@@ -17,7 +17,7 @@ export const repliesCommand = new Command()
   )
   .option(
     "--guild-id <id>",
-    "Optional; must match your organization's bound guild",
+    "Optional; must match the destination channel's guild",
   )
   .option(
     "--before <id>",
@@ -37,7 +37,7 @@ Notes:
   - A Discord reply reference is not a native thread. This command never creates a thread.
   - Results are newest first. Each call reads one page and does not include the parent channel's root message.
   - If you already know the native thread ID, use message history --channel-id <thread-id>.
-  - --guild-id is optional; when given, it must match your organization's bound guild.
+  - --guild-id is optional; when given, it must match the destination channel's guild.
   - On rate limits, wait for the returned retry duration before retrying.`,
   )
   .action(

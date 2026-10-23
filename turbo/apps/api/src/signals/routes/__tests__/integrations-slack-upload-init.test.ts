@@ -1,3 +1,4 @@
+import { mockSharedSlackConversations } from "./helpers/slack-conversation-access";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createStore } from "ccstate";
@@ -21,6 +22,7 @@ const LARGE_DIRECT_UPLOAD_BYTES = 100 * 1024 * 1024 + 1;
 
 describe("POST /api/integrations/slack/upload-file/init", () => {
   beforeEach(() => {
+    mockSharedSlackConversations();
     context.mocks.slack.files.getUploadURLExternal.mockResolvedValue({
       ok: true,
       upload_url: "https://files.slack.com/upload/v1/abc",
@@ -28,13 +30,20 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
     });
   });
 
-  async function seedWithInstallation(): Promise<{
+  async function seedWithInstallation(connected = true): Promise<{
     orgId: string;
     userId: string;
   }> {
     const orgId = `org_${randomUUID().slice(0, 8)}`;
     const userId = `user_${randomUUID().slice(0, 8)}`;
-    await slackOrgs.installForOrg({ orgId });
+    const installation = await slackOrgs.installForOrg({ orgId });
+    if (connected) {
+      await slackOrgs.connectMember({
+        orgId,
+        userId,
+        slackWorkspaceId: installation.slackWorkspaceId,
+      });
+    }
     // The OAuth install authenticates its installing admin; restore the
     // member the Okou token authenticates as.
     await store.set(
@@ -68,6 +77,15 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
       });
       scenario.beforeWorkspaceCleanup(() => {
         return slackOrgs.uninstallWorkspace(b.slackWorkspaceId);
+      });
+      if (!first.orgId) {
+        throw new Error("Expected the first actor's organization");
+      }
+      await slackOrgs.connectMember({
+        orgId: first.orgId,
+        userId: member.userId,
+        slackWorkspaceId: a.slackWorkspaceId,
+        run: scenario.run,
       });
       await flushWaitUntilForTest();
       const requests = [
@@ -176,6 +194,25 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
       [403],
     );
     expect(response.body.error.message).toContain("slack:write");
+    expect(
+      context.mocks.slack.files.getUploadURLExternal,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("denies bot upload allocation without the caller's verified Slack binding", async () => {
+    const actor = await seedWithInstallation(false);
+    const response = await accept(
+      setupApp({ context, routes: integrationsSlackUploadInitRoutes })(
+        integrationsSlackUploadInitContract,
+      ).init({
+        headers: {
+          authorization: `Bearer ${await credentials.okouToken(actor)}`,
+        },
+        body: { filename: "private.txt", length: 42 },
+      }),
+      [404],
+    );
+    expect(response.body.error.code).toBe("NOT_FOUND");
     expect(
       context.mocks.slack.files.getUploadURLExternal,
     ).not.toHaveBeenCalled();

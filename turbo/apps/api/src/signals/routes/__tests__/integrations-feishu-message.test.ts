@@ -79,6 +79,7 @@ interface FeishuTestActor extends ApiTestUser {
 async function createOnboardedFeishuInstallation(
   actorOverride?: FeishuTestActor,
   platform: FeishuPlatform = "feishu",
+  connected = true,
 ): Promise<{
   readonly actor: FeishuTestActor;
   readonly agentId: string;
@@ -135,6 +136,9 @@ async function createOnboardedFeishuInstallation(
     [200],
   );
   mockClerkMembership(context, actor, "org:admin");
+  if (connected) {
+    await connectCurrentFeishuUser(actor, platform);
+  }
   return { actor, agentId: agent.agentId, installationId };
 }
 
@@ -145,9 +149,12 @@ function requireTestValue<T>(value: T | null | undefined, message: string): T {
   return value;
 }
 
-async function connectCurrentFeishuUser(actor: FeishuTestActor): Promise<void> {
+async function connectCurrentFeishuUser(
+  actor: FeishuTestActor,
+  platform: FeishuPlatform = "feishu",
+): Promise<void> {
   const statusClient = setupApp({ context, routes: feishuConnectRoutes })(
-    feishuConnectContract,
+    platform === "lark" ? larkConnectContract : feishuConnectContract,
   );
   const status = await accept(
     statusClient.getStatus({
@@ -193,6 +200,42 @@ describe("POST /api/integrations/feishu/message", () => {
       "https://open.larksuite.com",
     ]) {
       server.use(
+        http.get(
+          `${origin}/open-apis/im/v1/messages/:messageId`,
+          ({ params }) => {
+            return HttpResponse.json({
+              code: 0,
+              data: {
+                items: [
+                  { message_id: params.messageId, chat_id: "oc_target_chat" },
+                ],
+              },
+            });
+          },
+        ),
+        http.get(`${origin}/open-apis/im/v1/chats/:chatId`, () => {
+          return HttpResponse.json({
+            code: 0,
+            data: { chat_mode: "group", moderation_permission: "all_members" },
+          });
+        }),
+        http.get(
+          `${origin}/open-apis/im/v1/chats/:chatId/members/is_in_chat`,
+          () => {
+            return HttpResponse.json({ code: 0, data: { is_in_chat: true } });
+          },
+        ),
+        http.get(`${origin}/open-apis/im/v1/chats/:chatId/members`, () => {
+          return HttpResponse.json({
+            code: 0,
+            data: {
+              items: [
+                { member_id: "ou_current_user", member_id_type: "open_id" },
+              ],
+              has_more: false,
+            },
+          });
+        }),
         http.post(
           `${origin}/open-apis/auth/v3/tenant_access_token/internal`,
           () => {
@@ -306,7 +349,6 @@ describe("POST /api/integrations/feishu/message", () => {
 
   it("sends chat, current-user, and threaded reply messages", async () => {
     const { actor, installationId } = await createOnboardedFeishuInstallation();
-    await connectCurrentFeishuUser(actor);
     captured = [];
     const token = await credentials.okouToken(actor);
     const client = setupApp({
@@ -430,6 +472,333 @@ describe("POST /api/integrations/feishu/message", () => {
   });
 
   it.each(["feishu", "lark"] as const)(
+    "denies %s writes and downloads after the user leaves the chat",
+    async (platform) => {
+      const { actor, installationId } = await createOnboardedFeishuInstallation(
+        undefined,
+        platform,
+      );
+      captured = [];
+      const origin = FEISHU_PLATFORMS[platform].apiOrigin;
+      server.use(
+        http.get(`${origin}/open-apis/im/v1/chats/:chatId/members`, () => {
+          return HttpResponse.json({
+            code: 0,
+            data: {
+              items: [
+                { member_id: "ou_someone_else", member_id_type: "open_id" },
+              ],
+              has_more: false,
+            },
+          });
+        }),
+      );
+      const app = createApp({
+        signal: context.signal,
+        routes: TEST_APP_ROUTES,
+      });
+      const headers = {
+        authorization: `Bearer ${await credentials.okouToken(actor)}`,
+        "content-type": "application/json",
+      };
+      for (const target of [
+        { chat: "oc_target_chat" },
+        { replyToMessageId: "om_parent" },
+      ]) {
+        const response = await app.request(
+          `/api/integrations/${platform}/message`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              installationId,
+              ...target,
+              text: "blocked",
+            }),
+          },
+        );
+        expect(response.status).toBe(403);
+      }
+      const query = new URLSearchParams({
+        installation_id: installationId,
+        message_id: "om_parent",
+        file_key: "file_private",
+        type: "file",
+      });
+      const response = await app.request(
+        `/api/integrations/${platform}/download-file?${query}`,
+        { headers },
+      );
+      expect(response.status).toBe(403);
+      expect(captured).toStrictEqual([]);
+    },
+  );
+
+  it.each(["feishu", "lark"] as const)(
+    "allows outbound %s DMs without granting private file access",
+    async (platform) => {
+      const { actor, installationId } = await createOnboardedFeishuInstallation(
+        undefined,
+        platform,
+      );
+      captured = [];
+      const origin = FEISHU_PLATFORMS[platform].apiOrigin;
+      server.use(
+        http.get(`${origin}/open-apis/im/v1/chats/:chatId`, () => {
+          return HttpResponse.json({ code: 0, data: { chat_mode: "p2p" } });
+        }),
+        http.get(`${origin}/open-apis/im/v1/chats/:chatId/members`, () => {
+          return HttpResponse.json({
+            code: 0,
+            data: {
+              items: [{ member_id: "ou_recipient", member_id_type: "open_id" }],
+              has_more: false,
+            },
+          });
+        }),
+      );
+      const app = createApp({
+        signal: context.signal,
+        routes: TEST_APP_ROUTES,
+      });
+      const headers = {
+        authorization: `Bearer ${await credentials.okouToken(actor)}`,
+        "content-type": "application/json",
+      };
+      for (const target of [
+        { user: "ou_recipient" },
+        { chat: "oc_target_chat" },
+        { replyToMessageId: "om_parent" },
+      ]) {
+        const response = await app.request(
+          `/api/integrations/${platform}/message`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              installationId,
+              ...target,
+              text: "Hello recipient",
+            }),
+          },
+        );
+        expect(response.status).toBe(200);
+      }
+      expect(captured[0]).toMatchObject({
+        receiveIdType: "open_id",
+        target: "ou_recipient",
+      });
+      expect(captured).toHaveLength(3);
+      const query = new URLSearchParams({
+        installation_id: installationId,
+        message_id: "om_parent",
+        file_key: "private-file",
+        type: "file",
+      });
+      const denied = await app.request(
+        `/api/integrations/${platform}/download-file?${query}`,
+        { headers },
+      );
+      expect(denied.status).toBe(403);
+    },
+  );
+
+  it("checks every Feishu membership page before allowing a shared chat", async () => {
+    const { actor, installationId } = await createOnboardedFeishuInstallation();
+    captured = [];
+    const pages: (string | null)[] = [];
+    server.use(
+      http.get(
+        "https://open.feishu.cn/open-apis/im/v1/chats/:chatId/members",
+        ({ request }) => {
+          const page = new URL(request.url).searchParams.get("page_token");
+          pages.push(page);
+          return HttpResponse.json({
+            code: 0,
+            data: page
+              ? {
+                  items: [
+                    { member_id: "ou_current_user", member_id_type: "open_id" },
+                  ],
+                  has_more: false,
+                }
+              : { items: [], has_more: true, page_token: "second-page" },
+          });
+        },
+      ),
+    );
+    await accept(
+      setupApp({ context, routes: integrationsFeishuMessageRoutes })(
+        integrationsFeishuMessageContract,
+      ).sendMessage({
+        headers: {
+          authorization: `Bearer ${await credentials.okouToken(actor)}`,
+        },
+        body: { installationId, chat: "oc_target_chat", text: "allowed" },
+      }),
+      [200],
+    );
+    expect(pages).toStrictEqual([null, "second-page"]);
+    expect(captured).toHaveLength(1);
+  });
+
+  it.each(["absent bot", "provider unavailable", "invalid provider data"])(
+    "denies a Feishu write with %s",
+    async (reason) => {
+      const { actor, installationId } =
+        await createOnboardedFeishuInstallation();
+      captured = [];
+      server.use(
+        http.get(
+          "https://open.feishu.cn/open-apis/im/v1/chats/:chatId/members/is_in_chat",
+          () => {
+            if (reason === "provider unavailable") {
+              return new HttpResponse(null, { status: 503 });
+            }
+            return HttpResponse.json({
+              code: 0,
+              data: reason === "absent bot" ? { is_in_chat: false } : {},
+            });
+          },
+        ),
+      );
+      const response = await accept(
+        setupApp({ context, routes: integrationsFeishuMessageRoutes })(
+          integrationsFeishuMessageContract,
+        ).sendMessage({
+          headers: {
+            authorization: `Bearer ${await credentials.okouToken(actor)}`,
+          },
+          body: { installationId, chat: "oc_target_chat", text: "blocked" },
+        }),
+        [403, 502],
+      );
+      expect(response.status).toBe(reason === "absent bot" ? 403 : 502);
+      expect(captured).toStrictEqual([]);
+    },
+  );
+
+  it("requires a verified Feishu identity for raw chat and user IDs", async () => {
+    const { actor, installationId } = await createOnboardedFeishuInstallation(
+      undefined,
+      "feishu",
+      false,
+    );
+    captured = [];
+    const token = await credentials.okouToken(actor);
+    const client = setupApp({
+      context,
+      routes: integrationsFeishuMessageRoutes,
+    })(integrationsFeishuMessageContract);
+    for (const target of [
+      { chat: "oc_target_chat" },
+      { user: "ou_current_user" },
+    ]) {
+      const response = await accept(
+        client.sendMessage({
+          headers: { authorization: `Bearer ${token}` },
+          body: { installationId, ...target, text: "blocked" },
+        }),
+        [403],
+      );
+      expect(response.body.error.code).toBe("FEISHU_ERROR");
+    }
+    expect(captured).toStrictEqual([]);
+  });
+
+  it("does not borrow a bot's posting permission in a restricted Feishu group", async () => {
+    const { actor, installationId } = await createOnboardedFeishuInstallation();
+    captured = [];
+    server.use(
+      http.get("https://open.feishu.cn/open-apis/im/v1/chats/:chatId", () => {
+        return HttpResponse.json({
+          code: 0,
+          data: {
+            chat_mode: "group",
+            moderation_permission: "only_owner",
+            owner_id: "ou_owner",
+            user_manager_id_list: [],
+          },
+        });
+      }),
+    );
+    const response = await accept(
+      setupApp({ context, routes: integrationsFeishuMessageRoutes })(
+        integrationsFeishuMessageContract,
+      ).sendMessage({
+        headers: {
+          authorization: `Bearer ${await credentials.okouToken(actor)}`,
+        },
+        body: { installationId, chat: "oc_target_chat", text: "blocked" },
+      }),
+      [403],
+    );
+    expect(response.body.error.code).toBe("FEISHU_ERROR");
+    expect(captured).toStrictEqual([]);
+  });
+
+  it.each(["owner", "manager", "moderator", "other"] as const)(
+    "checks the Feishu caller's restricted-group role: %s",
+    async (role) => {
+      const { actor, installationId } =
+        await createOnboardedFeishuInstallation();
+      captured = [];
+      server.use(
+        http.get("https://open.feishu.cn/open-apis/im/v1/chats/:chatId", () => {
+          return HttpResponse.json({
+            code: 0,
+            data: {
+              chat_mode: "group",
+              moderation_permission: "moderator_list",
+              owner_id: role === "owner" ? "ou_current_user" : "ou_owner",
+              user_manager_id_list:
+                role === "manager" ? ["ou_current_user"] : [],
+            },
+          });
+        }),
+        http.get(
+          "https://open.feishu.cn/open-apis/im/v1/chats/:chatId/moderation",
+          () => {
+            return HttpResponse.json({
+              code: 0,
+              data: {
+                moderation_setting: "moderator_list",
+                items: [
+                  {
+                    user_id:
+                      role === "moderator"
+                        ? "ou_current_user"
+                        : "ou_someone_else",
+                    user_id_type: "open_id",
+                  },
+                ],
+                has_more: false,
+              },
+            });
+          },
+        ),
+      );
+      const response = await accept(
+        setupApp({ context, routes: integrationsFeishuMessageRoutes })(
+          integrationsFeishuMessageContract,
+        ).sendMessage({
+          headers: {
+            authorization: `Bearer ${await credentials.okouToken(actor)}`,
+          },
+          body: {
+            installationId,
+            chat: "oc_target_chat",
+            text: "role-checked",
+          },
+        }),
+        [200, 403],
+      );
+      expect(response.status).toBe(role === "other" ? 403 : 200);
+      expect(captured).toHaveLength(role === "other" ? 0 : 1);
+    },
+  );
+
+  it.each(["feishu", "lark"] as const)(
     "downloads a resource from a %s message",
     async (platform) => {
       const { actor, installationId } = await createOnboardedFeishuInstallation(
@@ -488,9 +857,16 @@ describe("POST /api/integrations/feishu/message", () => {
     },
   );
 
-  it.each(["feishu", "lark"] as const)(
-    "uploads a stored file and sends it as a %s message",
-    async (platform) => {
+  it.each([
+    ["feishu", false, false],
+    ["lark", false, false],
+    ["feishu", true, false],
+    ["lark", true, false],
+    ["feishu", false, true],
+    ["lark", false, true],
+  ] as const)(
+    "authorizes a stored %s file (membership revoked: %s; other recipient DM: %s)",
+    async (platform, revokeDuringUpload, otherRecipient) => {
       const { actor, agentId, installationId } =
         await createOnboardedFeishuInstallation(undefined, platform);
       await runsApi.grantProEntitlement(actor);
@@ -541,7 +917,27 @@ describe("POST /api/integrations/feishu/message", () => {
       });
       expect(uploaded.status).toBe(200);
 
+      let memberPresent = true;
       server.use(
+        http.get(
+          `${FEISHU_PLATFORMS[platform].apiOrigin}/open-apis/im/v1/chats/:chatId/members`,
+          () => {
+            return HttpResponse.json({
+              code: 0,
+              data: {
+                items: memberPresent
+                  ? [
+                      {
+                        member_id: "ou_current_user",
+                        member_id_type: "open_id",
+                      },
+                    ]
+                  : [],
+                has_more: false,
+              },
+            });
+          },
+        ),
         http.post(
           `${FEISHU_PLATFORMS[platform].apiOrigin}/open-apis/im/v1/files`,
           async ({ request }) => {
@@ -556,6 +952,7 @@ describe("POST /api/integrations/feishu/message", () => {
               throw new Error("Expected Feishu upload to include file bytes");
             }
             await expect(file.text()).resolves.toBe(content.toString());
+            memberPresent = !revokeDuringUpload;
             return HttpResponse.json({
               code: 0,
               data: { file_key: "file_uploaded" },
@@ -578,13 +975,23 @@ describe("POST /api/integrations/feishu/message", () => {
           body: {
             uploadId: initialized.body.uploadId,
             installationId,
-            chat: "oc_file_target",
+            ...(otherRecipient
+              ? { user: "ou_recipient" }
+              : { chat: "oc_file_target" }),
             contentType: "application/pdf",
           },
         }),
-        [200],
+        [200, 403],
       );
 
+      if (revokeDuringUpload) {
+        expect(completed.status).toBe(403);
+        expect(captured).toStrictEqual([]);
+        return;
+      }
+      if (completed.status !== 200) {
+        throw new Error("Expected an authorized Feishu file delivery");
+      }
       expect(completed.body).toMatchObject({
         messageId: "om_1",
         chatId: "oc_feishu_cli",
@@ -600,8 +1007,8 @@ describe("POST /api/integrations/feishu/message", () => {
       expect(captured).toStrictEqual([
         {
           kind: "send",
-          receiveIdType: "chat_id",
-          target: "oc_file_target",
+          receiveIdType: otherRecipient ? "open_id" : "chat_id",
+          target: otherRecipient ? "ou_recipient" : "oc_file_target",
           msgType: "file",
           content: { file_key: "file_uploaded" },
           replyInThread: false,

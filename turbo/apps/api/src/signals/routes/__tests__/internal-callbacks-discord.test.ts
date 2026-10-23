@@ -720,14 +720,24 @@ describe("canonical Discord terminal replies", () => {
     },
   );
 
-  it.each(["binding", "channel"] as const)(
+  it.each(["binding", "channel", "dm-recipient"] as const)(
     "suppresses a final reply after %s revocation without losing canonical completion",
     async (revocation) => {
-      const started = await startDiscordRun();
+      const started = await startDiscordRun(
+        revocation === "dm-recipient" ? { channelType: "dm" } : {},
+      );
       const claim = await claimRun(started.actor, started.runId);
       if (revocation === "binding") {
         await removePublicDiscordBinding(context, started.actor.fixture);
         started.fixture.deleted = true;
+      } else if (revocation === "dm-recipient") {
+        started.provider.channels.set(started.channelId, {
+          id: started.channelId,
+          type: 1,
+          recipients: [
+            { id: uniqueDiscordSnowflake(), username: "another-user" },
+          ],
+        });
       } else {
         started.provider.deniedChannels.add(started.channelId);
       }

@@ -1,4 +1,5 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
+import { mockSharedSlackConversations } from "./helpers/slack-conversation-access";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import {
@@ -4681,6 +4682,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.clearSlackCallHistory();
 
     const channelId = "C_BDD_FAST_FOOTER";
+    mockSharedSlackConversations([channelId]);
     const threadTs = "3999.000100";
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
@@ -5223,7 +5225,7 @@ describe("INT-02: Telegram integration", () => {
           sentMessages.push((await request.json()) as Record<string, unknown>);
           return HttpResponse.json({
             ok: true,
-            result: { message_id: 655, chat: { id: 8_811_224 } },
+            result: { message_id: 655, chat: { id: telegramUserId } },
           });
         },
       ),
@@ -5242,7 +5244,7 @@ describe("INT-02: Telegram integration", () => {
       [200],
     );
 
-    const dmChatId = 8_811_224;
+    const dmChatId = telegramUserId;
     const inbound = await integrations.requestTelegramWebhook(
       botId,
       JSON.stringify({

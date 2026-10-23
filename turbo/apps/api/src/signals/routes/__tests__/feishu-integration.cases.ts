@@ -1572,10 +1572,48 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     expect(result.body.triggerSource).toBe(platform);
   }
 
+  function mockFeishuFileSource(args: {
+    readonly messageId: string;
+    readonly chatId: string;
+    readonly chatMode: "p2p" | "group";
+  }): void {
+    const base = `${provider.apiOrigin}/open-apis/im/v1`;
+    server.use(
+      http.get(`${base}/messages/${args.messageId}`, () => {
+        return HttpResponse.json({
+          code: 0,
+          data: {
+            items: [{ message_id: args.messageId, chat_id: args.chatId }],
+          },
+        });
+      }),
+      http.get(`${base}/chats/${args.chatId}`, () => {
+        return HttpResponse.json({
+          code: 0,
+          data: { chat_mode: args.chatMode },
+        });
+      }),
+      http.get(`${base}/chats/${args.chatId}/members`, () => {
+        return HttpResponse.json({
+          code: 0,
+          data: {
+            items: [{ member_id: "ou_feishu_user", member_id_type: "open_id" }],
+            has_more: false,
+          },
+        });
+      }),
+      http.get(`${base}/chats/${args.chatId}/members/is_in_chat`, () => {
+        return HttpResponse.json({ code: 0, data: { is_in_chat: true } });
+      }),
+    );
+  }
+
   async function expectFeishuResourceDownloads(args: {
     readonly actor: ApiTestUser;
     readonly okouToken: string;
     readonly prompt: string;
+    readonly chatId: string;
+    readonly chatMode: "p2p" | "group";
     readonly resources: readonly {
       readonly messageId: string;
       readonly fileKey: string;
@@ -1593,6 +1631,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       routes: integrationsFeishuFileRoutes,
     });
     for (const [index, resource] of args.resources.entries()) {
+      mockFeishuFileSource({ ...args, messageId: resource.messageId });
       server.use(
         http.get(
           `${provider.apiOrigin}/open-apis/im/v1/messages/${resource.messageId}/resources/${resource.fileKey}`,
@@ -1691,6 +1730,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     findRun,
     removeFeishuInstallation,
     expectRunSource,
+    mockFeishuFileSource,
     expectFeishuResourceDownloads,
     startFeishuDmSession,
   };
@@ -1732,6 +1772,7 @@ export function registerFeishuIntegrationTests(
       findRun,
       removeFeishuInstallation,
       expectRunSource,
+      mockFeishuFileSource,
       expectFeishuResourceDownloads,
       startFeishuDmSession,
     } = createFeishuIntegrationFixture(platform);
@@ -5455,6 +5496,11 @@ export function registerFeishuIntegrationTests(
         );
 
         const fileBytes = Buffer.from("feishu file bytes");
+        mockFeishuFileSource({
+          messageId: "om_file_message",
+          chatId: "oc_feishu_dm",
+          chatMode: "p2p",
+        });
         server.use(
           http.get(
             `${provider.apiOrigin}/open-apis/im/v1/messages/:messageId/resources/:fileKey`,
@@ -5671,6 +5717,8 @@ export function registerFeishuIntegrationTests(
           });
           await expectFeishuResourceDownloads({
             actor,
+            chatId: message.chat_id,
+            chatMode: chatType,
             okouToken: okouTokenFromClaim(claim),
             prompt: claim.prompt,
             resources: [
@@ -5961,6 +6009,8 @@ export function registerFeishuIntegrationTests(
         expect(history).not.toContain("[interactive message]");
         await expectFeishuResourceDownloads({
           actor,
+          chatId: "oc_feishu_dm",
+          chatMode: "p2p",
           okouToken: okouTokenFromClaim(claim),
           prompt: history,
           resources: [
@@ -7031,6 +7081,8 @@ export function registerFeishuIntegrationTests(
         ).toBeLessThan(threadContext.indexOf("topic-context.pdf"));
         await expectFeishuResourceDownloads({
           actor,
+          chatId: "oc_feishu_group",
+          chatMode: "group",
           okouToken: okouTokenFromClaim(groupClaim),
           prompt: history,
           resources: [

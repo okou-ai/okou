@@ -182,12 +182,37 @@ const BOT_FRAMEWORK_TOKEN_URL = `https://login.microsoftonline.com/${TEAMS_APP_T
 const keyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const publicJwk = keyPair.publicKey.export({ format: "jwk" });
 
+function mockTeamsConversationMembership(fixture: TeamsConnectFixture): void {
+  server.use(
+    http.get(
+      `${teamsServiceBaseUrl(fixture.serviceUrl)}/v3/conversations/:conversationId/members/:memberId`,
+      ({ params }) => {
+        if (params.memberId !== fixture.teamsUserId) {
+          return;
+        }
+        if (
+          params.conversationId !== fixture.teamsConversationId &&
+          params.conversationId !== `a:personal-${fixture.teamsUserId}`
+        ) {
+          return new HttpResponse(null, { status: 404 });
+        }
+        return HttpResponse.json({
+          id: fixture.teamsUserId,
+          tenantId: fixture.teamsTenantId,
+        });
+      },
+    ),
+  );
+}
+
 function botFixture(): TeamsConnectFixture {
-  return teamsConnectFixture({
+  const fixture = teamsConnectFixture({
     teamsTenantName: "Tenant One",
     teamsTeamName: "Team One",
     serviceUrl: SERVICE_URL,
   });
+  mockTeamsConversationMembership(fixture);
+  return fixture;
 }
 
 async function trackedBotFixture(): Promise<TeamsConnectFixture> {
@@ -979,6 +1004,7 @@ async function setupConnectedTeamsBotActor(
   const fixture =
     ownedFixture ??
     (await trackTeamsFixture(Promise.resolve(teamsConnectFixture())));
+  mockTeamsConversationMembership(fixture);
   const actor = authOrgApi.user({
     userId: fixture.userId,
     orgId: fixture.orgId,
@@ -1123,6 +1149,7 @@ async function verifyTeamsDownloadRunsTerminal(
 
 function claimedTeamsDownloadFixture() {
   const fixture = teamsConnectFixture();
+  mockTeamsConversationMembership(fixture);
   const actor = authOrgApi.user({
     userId: fixture.userId,
     orgId: fixture.orgId,
@@ -1401,13 +1428,29 @@ describe("POST /api/webhooks/teams/bot", () => {
       const response = await app.request(`${path}?file_id=${unknown}`, {
         headers,
       });
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(404);
       await expect(response.json()).resolves.toStrictEqual({
         error: {
-          message: "Invalid Microsoft Teams file id",
-          code: "BAD_REQUEST",
+          message: "Microsoft Teams file is unavailable to this run",
+          code: "NOT_FOUND",
         },
       });
+      expect(provider.requests).toHaveLength(fetchBaseline + 1);
+    });
+    server.use(
+      http.get(
+        `${teamsServiceBaseUrl(owned.fixture.serviceUrl)}/v3/conversations/:conversationId/members/:memberId`,
+        () => {
+          return new HttpResponse(null, { status: 404 });
+        },
+      ),
+    );
+    await owned.run(async () => {
+      const response = await app.request(
+        `${path}?file_id=${encodeURIComponent(fileId)}`,
+        { headers },
+      );
+      expect(response.status).toBe(404);
       expect(provider.requests).toHaveLength(fetchBaseline + 1);
     });
   });
@@ -2503,11 +2546,12 @@ describe("POST /api/webhooks/teams/bot", () => {
           authorization: `Bearer ${okouToken({
             userId: fixture.userId,
             orgId: fixture.orgId,
+            runId: run.id,
           })}`,
         },
       },
     );
-    expect(legacyDownloadResponse.status).toBe(200);
+    expect(legacyDownloadResponse.status).toBe(404);
   });
 
   it("preserves non-bot Teams mentions in message text", async () => {

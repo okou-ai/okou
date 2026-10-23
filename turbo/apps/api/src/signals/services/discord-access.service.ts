@@ -280,6 +280,7 @@ export const requireDiscordConversationAccess$ = command(
       mode: DiscordAccessMode;
       attachFiles?: boolean;
       createPublicThread?: boolean;
+      allowOtherDmRecipients?: boolean;
     },
     signal: AbortSignal,
   ): Promise<DiscordConversationAccess> => {
@@ -296,6 +297,7 @@ export const requireDiscordConversationAccess$ = command(
         mode: args.mode,
         attachFiles: args.attachFiles,
         createPublicThread: args.createPublicThread,
+        allowOtherDmRecipients: args.allowOtherDmRecipients,
       },
       signal,
     );
@@ -336,8 +338,8 @@ export const requireDiscordConversationAccess$ = command(
  * Reads channel content on a run's behalf: history pages, native thread
  * replies and attachment downloads. Discord gives the bot one DM channel per
  * user, shared by every org that user is bound in, and its messages record no
- * org, so no run token may read DM content. Sends to the sender's own DM use
- * write access and stay available.
+ * org, so no run token may read DM content. Explicit outbound DMs use write
+ * access and stay available.
  */
 export const requireDiscordRunReadAccess$ = command(
   async (

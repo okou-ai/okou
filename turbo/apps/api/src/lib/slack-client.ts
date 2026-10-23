@@ -248,6 +248,181 @@ export async function isSlackConversationShared(
   return false;
 }
 
+const slackPostingRestrictionSchema = z.object({
+  type: z.array(z.string()).optional(),
+  user: z.array(z.string()).optional(),
+  subteam: z.array(z.string()).optional(),
+});
+
+async function hasSlackPostingRole(
+  args: {
+    token: string;
+    slackUserId: string;
+    roles: readonly string[];
+    external: boolean;
+    hostId?: string;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const { roles } = args;
+  if (roles.includes("ra")) {
+    return true;
+  }
+  if (
+    !roles.some((role) => {
+      return ["admin", "owner", "regular"].includes(role);
+    })
+  ) {
+    return false;
+  }
+  const current = z
+    .object({
+      user: z.object({
+        id: z.string(),
+        team_id: z.string().optional(),
+        deleted: z.boolean().optional(),
+        is_admin: z.boolean().optional(),
+        is_owner: z.boolean().optional(),
+        is_restricted: z.boolean().optional(),
+        is_ultra_restricted: z.boolean().optional(),
+      }),
+    })
+    .parse(
+      await callSlackApi<unknown>(
+        args.token,
+        "users.info",
+        { user: args.slackUserId },
+        signal,
+      ),
+    );
+  const user = current.user;
+  if (user.id !== args.slackUserId || user.deleted === true) {
+    return false;
+  }
+  // Slack Connect role grants apply only to the channel's home workspace.
+  if (args.external && (!args.hostId || user.team_id !== args.hostId)) {
+    return false;
+  }
+  return roles.some((role) => {
+    if (role === "admin") {
+      return user.is_admin === true;
+    }
+    if (role === "owner") {
+      return user.is_owner === true;
+    }
+    return (
+      role === "regular" &&
+      user.is_restricted === false &&
+      user.is_ultra_restricted === false
+    );
+  });
+}
+
+function isSlackDmRecipient(
+  channel: { is_im?: boolean; is_mpim?: boolean; user?: string },
+  recipientId: string | undefined,
+): boolean {
+  return (
+    channel.is_im === true &&
+    channel.is_mpim !== true &&
+    Boolean(channel.user) &&
+    (!recipientId || channel.user === recipientId)
+  );
+}
+
+/** Check bot DM recipients and the caller's group posting privileges. */
+export async function isSlackConversationWritable(
+  args: {
+    token: string;
+    slackUserId: string;
+    channelId: string;
+    thread: boolean;
+    recipientId?: string;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const response = z
+    .object({
+      channel: z.object({
+        id: z.string(),
+        is_im: z.boolean().optional(),
+        is_mpim: z.boolean().optional(),
+        user: z.string().optional(),
+        is_archived: z.boolean().optional(),
+        is_read_only: z.boolean().optional(),
+        is_ext_shared: z.boolean().optional(),
+        conversation_host_id: z.string().optional(),
+        properties: z
+          .object({
+            posting_restricted_to: slackPostingRestrictionSchema.optional(),
+            threads_restricted_to: slackPostingRestrictionSchema.optional(),
+          })
+          .optional(),
+      }),
+    })
+    .parse(
+      await callSlackApi<unknown>(
+        args.token,
+        "conversations.info",
+        { channel: args.channelId },
+        signal,
+      ),
+    );
+  const channel = response.channel;
+  if (
+    channel.id !== args.channelId ||
+    channel.is_archived === true ||
+    channel.is_read_only === true
+  ) {
+    return false;
+  }
+  if (args.channelId.startsWith("D")) {
+    return isSlackDmRecipient(channel, args.recipientId);
+  }
+  if (args.recipientId) {
+    return false;
+  }
+  const restriction = args.thread
+    ? (channel.properties?.threads_restricted_to ??
+      channel.properties?.posting_restricted_to)
+    : channel.properties?.posting_restricted_to;
+  if (!restriction) {
+    return true;
+  }
+  if (restriction.user?.includes(args.slackUserId)) {
+    return true;
+  }
+  if (
+    await hasSlackPostingRole(
+      {
+        ...args,
+        roles: restriction.type ?? [],
+        external: channel.is_ext_shared === true,
+        hostId: channel.conversation_host_id,
+      },
+      signal,
+    )
+  ) {
+    return true;
+  }
+  for (const group of restriction.subteam ?? []) {
+    const members = z
+      .object({ users: z.array(z.string()) })
+      .parse(
+        await callSlackApi<unknown>(
+          args.token,
+          "usergroups.users.list",
+          { usergroup: group },
+          signal,
+        ),
+      );
+    if (members.users.includes(args.slackUserId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 interface SlackFileInfo {
   id: string;
   name: string;
@@ -255,6 +430,30 @@ interface SlackFileInfo {
   size: number;
   url_private_download?: string;
   url_private?: string;
+  channels?: string[];
+  groups?: string[];
+  ims?: string[];
+}
+
+/** A bot-visible file is readable only through a conversation shared with its caller. */
+export async function isSlackFileShared(
+  token: string,
+  slackUserId: string,
+  file: SlackFileInfo,
+  signal: AbortSignal,
+): Promise<boolean> {
+  for (const channelId of new Set([
+    ...(file.channels ?? []),
+    ...(file.groups ?? []),
+    ...(file.ims ?? []),
+  ])) {
+    if (
+      await isSlackConversationShared(token, slackUserId, channelId, signal)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 interface FilesInfoResponse {

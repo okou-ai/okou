@@ -106,6 +106,27 @@ describe("okou discord upload-file", () => {
     ]);
   }
 
+  it.each(["me", `user:${CHANNEL_ID}`])(
+    "addresses an uploaded file to DM recipient %s",
+    async (target) => {
+      let body: unknown;
+      server.use(
+        http.post(`${API}/init`, async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json(PUBLISHED);
+        }),
+        http.post(`${API}/materialize`, () => {
+          return HttpResponse.json(DELIVERED);
+        }),
+      );
+      await upload(["--to", target, "--json"]);
+      expect(body).toMatchObject({
+        userId: target === "me" ? "me" : CHANNEL_ID,
+      });
+      expect(body).not.toHaveProperty("channelId");
+    },
+  );
+
   it("publishes canonical bytes before server delivery and returns stable references", async () => {
     let storedContent: string | undefined;
     let published = false;

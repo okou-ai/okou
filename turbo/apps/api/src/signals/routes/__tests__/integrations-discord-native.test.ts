@@ -594,6 +594,86 @@ describe("Discord native authorization and reads", () => {
   });
 
   it.each([
+    { text: "Missing target" },
+    {
+      channelId: "123456789012345678",
+      userId: "223456789012345678",
+      text: "Ambiguous target",
+    },
+  ])("rejects an invalid Discord destination selection: %j", async (body) => {
+    const f = await fixture();
+    await accept(f.write.sendMessage({ headers: f.headers, body }), [400]);
+    expect(f.sentBodies).toHaveLength(0);
+  });
+
+  it.each(["me", "other"] as const)(
+    "opens an outbound DM for %s without enabling private reads",
+    async (recipient) => {
+      const f = await fixture();
+      const recipientId = recipient === "me" ? f.discordUserId : snowflake();
+      const dmId = snowflake();
+      const channel = {
+        id: dmId,
+        type: 1,
+        recipients: [{ id: recipientId, username: "recipient" }],
+      };
+      f.channels.set(dmId, channel);
+      server.use(
+        http.post(`${API}/users/@me/channels`, async ({ request }) => {
+          await expect(request.json()).resolves.toStrictEqual({
+            recipient_id: recipientId,
+          });
+          return HttpResponse.json(channel);
+        }),
+      );
+      const delivered = await accept(
+        f.write.sendMessage({
+          headers: f.headers,
+          body: {
+            userId: recipient === "me" ? "me" : recipientId,
+            text: "Hello recipient",
+          },
+        }),
+        [200],
+      );
+      expect(delivered.body.messages[0]?.channelId).toBe(dmId);
+      await accept(
+        f.read.history({
+          headers: f.headers,
+          query: { channelId: dmId, limit: 50 },
+        }),
+        [recipient === "me" ? 403 : 404],
+      );
+    },
+  );
+
+  it.each(["forbidden", "wrong-recipient"])(
+    "does not send when opening a DM returns %s",
+    async (failure) => {
+      const f = await fixture();
+      server.use(
+        http.post(`${API}/users/@me/channels`, () => {
+          return failure === "forbidden"
+            ? HttpResponse.json({ code: 50_007 }, { status: 403 })
+            : HttpResponse.json({
+                id: f.channelId,
+                type: 1,
+                recipients: [{ id: snowflake(), username: "wrong" }],
+              });
+        }),
+      );
+      await accept(
+        f.write.sendMessage({
+          headers: f.headers,
+          body: { userId: snowflake(), text: "must not send" },
+        }),
+        [404],
+      );
+      expect(f.sentBodies).toHaveLength(0);
+    },
+  );
+
+  it.each([
     "unknown-guild",
     "other-user-dm",
     "group-dm",
@@ -647,7 +727,13 @@ describe("Discord native authorization and reads", () => {
       const response = await accept(history(f), [404]);
       expect(response.body.error.code).toBe("NOT_FOUND");
       expect(response.body).not.toHaveProperty("messages");
-      expect((await accept(send(f), [404])).body.error.code).toBe("NOT_FOUND");
+      if (scenario === "other-user-dm") {
+        await accept(send(f), [200]);
+      } else {
+        expect((await accept(send(f), [404])).body.error.code).toBe(
+          "NOT_FOUND",
+        );
+      }
     },
   );
 

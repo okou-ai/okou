@@ -6,7 +6,6 @@ import {
   integrationsFeishuMessageContract,
   integrationsLarkMessageContract,
 } from "@okouai/api-contracts/contracts/integrations";
-import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -21,6 +20,7 @@ import { writeDb$ } from "../external/db";
 import { deliverFeishuMessage$ } from "../services/feishu-message-delivery.service";
 import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
+import { requireFeishuConversationAccess$ } from "../services/feishu-conversation-access.service";
 
 function apiError(
   status: 400 | 403 | 404 | 502,
@@ -78,32 +78,36 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
-  let userOpenId = body.user;
-  if (userOpenId === "me") {
-    const [connection] = await db
-      .select({ openId: feishuOrgConnections.feishuOpenId })
-      .from(feishuOrgConnections)
-      .where(
-        and(
-          eq(feishuOrgConnections.installationId, installation.id),
-          eq(feishuOrgConnections.userId, auth.userId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!connection) {
-      return apiError(
-        404,
-        "NOT_FOUND",
-        `No ${platformName} connection found for the current user`,
-      );
-    }
-    userOpenId = connection.openId;
-  }
-
   const message: FeishuOutboundMessage = body.card
     ? { msgType: "interactive", content: body.card }
     : { msgType: "text", content: { text: body.text } };
+  const access = await settle(
+    set(
+      requireFeishuConversationAccess$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        installationId: installation.id,
+        user: body.user,
+        chat: body.chat,
+        messageId: body.replyToMessageId,
+        write: true,
+      },
+      signal,
+    ),
+    signal,
+  );
+  if (!access.ok) {
+    if (access.error instanceof FeishuApiError) {
+      return apiError(
+        access.error.routeStatus,
+        "FEISHU_ERROR",
+        access.error.message,
+      );
+    }
+    throw access.error;
+  }
+  const userOpenId = access.value;
   const receiveId = userOpenId ?? body.chat;
   let delivery: Promise<FeishuSentMessage>;
   if (body.replyToMessageId) {

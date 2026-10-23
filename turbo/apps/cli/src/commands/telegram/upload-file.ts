@@ -43,7 +43,10 @@ export const uploadFileCommand = new Command()
   .name("upload-file")
   .description("Upload a file through the official Okou Telegram bot")
   .requiredOption("-f, --file <path>", "Local file path to upload")
-  .requiredOption(TO_OPTION_FLAGS, toOptionDescription("chat ID or @channel"))
+  .requiredOption(
+    TO_OPTION_FLAGS,
+    toOptionDescription("user ID, chat ID or @channel"),
+  )
   .option("-t, --text <text>", "Caption to accompany the file")
   .option("--topic <id>", "Forum topic (message thread) ID")
   .option("--content-type <mime>", "Override inferred content type")
@@ -63,6 +66,9 @@ Output:
     {"integration":"telegram","chatId":"-1001234567890","messages":[{"id":"123","url":null}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."}}
 
 Notes:
+  - Requires your verified account; group targets require access for both you and the bot
+  - You can DM recipients who have started the official bot and have not blocked it
+  - Sending a DM does not grant access to its private history or attachments
   - Uses the official Okou Telegram bot
   - Uploads through Okou storage first, then asks Telegram to fetch the file URL
   - Okou does not apply file type or size restrictions before calling Telegram`,
