@@ -75,7 +75,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
     object: Readonly<Record<string, unknown>>,
   ) {
     const event = { type, data: { object } };
-    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
     await accept(
       setupApp({ context, routes: webhooksStripeRoutes })(
         webhookStripeContract,
@@ -712,7 +714,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
           ],
         },
       });
-      context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(
+      context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
         concurrencyInvoiceEvent,
       );
       await accept(
@@ -2122,7 +2124,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       event.data.object,
     );
-    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
 
     await accept(
       setupApp({ context, routes: webhooksStripeRoutes })(
@@ -2197,7 +2201,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       event.data.object,
     );
-    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
 
     await accept(
       setupApp({ context, routes: webhooksStripeRoutes })(
@@ -2269,7 +2275,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
       webhookStripeContract,
     );
     for (let delivery = 0; delivery < 2; delivery++) {
-      context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+      context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+        event,
+      );
       await accept(
         client.post({
           body: JSON.stringify(event),
@@ -2330,7 +2338,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
           },
         },
       };
-      context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+      context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+        event,
+      );
       await accept(
         client.post({
           body: JSON.stringify(event),
@@ -2464,7 +2474,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
         },
       },
     };
-    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
 
     await accept(
       setupApp({ context, routes: webhooksStripeRoutes })(
@@ -4185,7 +4197,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
           ],
         },
       });
-      context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+      context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+        event,
+      );
 
       await accept(
         setupApp({ context, routes: webhooksStripeRoutes })(
@@ -4269,7 +4283,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
         ],
       },
     });
-    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
 
     await accept(
       setupApp({ context, routes: webhooksStripeRoutes })(
@@ -4513,7 +4529,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
               previous_attributes: { schedule: null },
             },
           };
-          context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(
+          context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
             event,
           );
           await accept(
@@ -4601,7 +4617,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
           previous_attributes: { cancel_at_period_end: false },
         },
       };
-      context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+      context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+        event,
+      );
       await accept(
         webhookClient.post({
           body: JSON.stringify(event),
@@ -5128,7 +5146,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       event.data.object,
     );
-    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
 
     await accept(
       setupApp({ context, routes: webhooksStripeRoutes })(
@@ -5314,7 +5334,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce(
       scheduledItemEvent.data.object,
     );
-    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
       scheduledItemEvent,
     );
     await accept(

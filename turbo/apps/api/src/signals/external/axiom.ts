@@ -468,7 +468,6 @@ async function axiomHttpErrorDetails(
 async function ingestAxiomRequest(
   request: PreparedAxiomIngest,
   timeoutMs: number,
-  redirect: "error" | "manual",
   signal: AbortSignal,
 ): Promise<void> {
   signal.throwIfAborted();
@@ -506,8 +505,9 @@ async function ingestAxiomRequest(
     awaitWithSignal(
       fetch(axiomIngestUrl(dataset), {
         method: "POST",
-        // Neither policy forwards credentials; traces inspect permanent redirects.
-        redirect,
+        // Workers do not support "error". Reject non-2xx below without
+        // forwarding the ingest token or payload to a redirect destination.
+        redirect: "manual",
         headers: {
           accept: "application/json",
           authorization: `Bearer ${token}`,
@@ -604,7 +604,7 @@ export async function ingestAxiomDirect(
   if (!request) {
     return { configured: false };
   }
-  await ingestAxiomRequest(request, timeoutMs, "error", signal);
+  await ingestAxiomRequest(request, timeoutMs, signal);
   return { configured: true };
 }
 
@@ -646,7 +646,6 @@ export async function ingestAxiomTrace(
       ingestAxiomRequest(
         request,
         Math.min(AXIOM_TRACE_ATTEMPT_TIMEOUT_MS, remainingMs()),
-        "manual",
         operationSignal,
       ),
     );

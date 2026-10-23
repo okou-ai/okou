@@ -1053,20 +1053,28 @@ export async function listUndeliveredStripePaidInvoices(
   }
 }
 
-export function constructStripeConnectWebhookEvent(
+export async function constructStripeConnectWebhookEvent(
   rawBody: string,
   signature: string,
   secret: string,
-): unknown {
-  return stripeSdk().webhooks.constructEvent(rawBody, signature, secret);
+): Promise<unknown> {
+  return await stripeSdk().webhooks.constructEventAsync(
+    rawBody,
+    signature,
+    secret,
+  );
 }
 
-export function constructStripeBillingWebhookEvent(
+export async function constructStripeBillingWebhookEvent(
   rawBody: string,
   signature: string,
   secret: string,
-): StripeWebhookEvent {
-  const event = stripeSdk().webhooks.constructEvent(rawBody, signature, secret);
+): Promise<StripeWebhookEvent> {
+  const event = await stripeSdk().webhooks.constructEventAsync(
+    rawBody,
+    signature,
+    secret,
+  );
   const envelope = { id: event.id, type: event.type, created: event.created };
 
   switch (event.type) {

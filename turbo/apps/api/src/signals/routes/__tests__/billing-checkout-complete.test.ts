@@ -276,7 +276,9 @@ describe("POST /api/billing/checkout/complete", () => {
         type: "invoice.paid",
         data: { object: paidInvoice },
       };
-      context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+      context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+        event,
+      );
       await accept(
         setupApp({ context, routes: webhooksStripeRoutes })(
           webhookStripeContract,
