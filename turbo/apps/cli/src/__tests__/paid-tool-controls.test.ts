@@ -11,13 +11,22 @@ import { server } from "../mocks/server";
 import { buildHelpText, registerRequestedCommand } from "../okou";
 
 const managedFamilies = [
-  "web-search",
-  "people-search",
-  "scrape",
-  "finance",
-  "maps",
-  "seo",
-  "social",
+  {
+    tool: "web-search",
+    path: ["web", "search"],
+    example: "okou data web search",
+  },
+  {
+    tool: "people-search",
+    path: ["people", "search"],
+    example: "okou data people search",
+  },
+  { tool: "scrape", path: ["web", "scrape"], example: "okou data web scrape" },
+  { tool: "finance", path: ["finance"], example: "okou data finance" },
+  { tool: "maps", path: ["maps"], example: "okou data maps" },
+  { tool: "seo", path: ["seo"], example: "okou data seo" },
+  { tool: "social", path: ["social"], example: "okou data social" },
+  { tool: "data-search", path: ["company"], example: "okou data capabilities" },
 ] as const;
 
 describe("personal paid-tool controls through the CLI entry point", () => {
@@ -129,7 +138,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
   it.each([
     [["generate"], "generate-help.txt"],
     [["generate", "sprite"], "sprite-help.txt"],
-    [["web-search"], "web-search-help.txt"],
+    [["data", "web", "search"], "web-search-help.txt"],
   ] as const)(
     "preserves pre-filtering help for %s with all tools enabled",
     async (args, fixture) => {
@@ -150,37 +159,42 @@ describe("personal paid-tool controls through the CLI entry point", () => {
   );
 
   it.each(managedFamilies)(
-    "removes disabled %s from help, actions and suggestions",
-    async (tool) => {
+    "removes disabled $tool from help, actions and suggestions",
+    async ({ tool, path, example }) => {
       vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, JSON.stringify([tool]));
       await expect(run(["--help"])).rejects.toMatchObject({
         code: "commander.helpDisplayed",
       });
-      expect(output).not.toContain(tool);
+      expect(output).not.toContain(example);
       expect(output).not.toContain("disabled");
       output = "";
-
-      for (const args of [
-        [tool, "example"],
-        ["help", tool],
-      ]) {
-        await expect(run(args)).rejects.toMatchObject({
-          code: "commander.unknownCommand",
-        });
-        expect(errors).toContain(`unknown command '${tool}'`);
-        expect(output).toBe("");
-        errors = "";
-      }
-      // Commander treats an unknown command followed by --help as root help.
-      await expect(run([tool, "--help"])).rejects.toMatchObject({
-        code: "commander.helpDisplayed",
-      });
-      expect(output).not.toContain(tool);
-      output = "";
-      await expect(run([tool.slice(0, -1)])).rejects.toMatchObject({
+      const parent = path.slice(0, -1);
+      const leaf = path[path.length - 1];
+      if (!leaf) throw new Error("Expected a managed command");
+      await expect(run(["data", ...path, "example"])).rejects.toMatchObject({
         code: "commander.unknownCommand",
       });
-      expect(errors).not.toContain(tool);
+      expect(errors).toContain(`unknown command '${leaf}'`);
+      expect(output).toBe("");
+      errors = "";
+      await expect(
+        run(["data", ...parent, "help", leaf]),
+      ).rejects.toMatchObject({
+        code: "commander.help",
+      });
+      expect(output).not.toMatch(new RegExp(`^\\s+${leaf}(?:[ (]|$)`, "m"));
+      expect(output).not.toContain(example);
+      if (tool === "web-search")
+        expect(output).not.toContain("Search and extract");
+      if (tool === "scrape")
+        expect(output).not.toContain("extract public web sources");
+      output = "";
+      await expect(
+        run(["data", ...parent, leaf.slice(0, -1)]),
+      ).rejects.toMatchObject({
+        code: "commander.unknownCommand",
+      });
+      expect(errors).not.toContain(`'${leaf}'`);
       expect(requests).toEqual([]);
       expect(await readdir(directory)).toEqual([]);
     },
@@ -190,9 +204,84 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     "removes disabled social %s including free helpers and recovery",
     async (operation) => {
       vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["social"]');
-      await expect(run(["social", operation])).rejects.toMatchObject({
+      await expect(run(["data", "social", operation])).rejects.toMatchObject({
         code: "commander.unknownCommand",
       });
+      expect(requests).toEqual([]);
+    },
+  );
+
+  it("keeps research search and independent tools while omitting Data Search adapters", async () => {
+    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["data-search"]');
+    await expect(run(["data", "--help"])).rejects.toMatchObject({
+      code: "commander.helpDisplayed",
+    });
+    expect(output).toContain("weather");
+    expect(output).toContain("commerce");
+    expect(output).toContain("okou data web search");
+    expect(output).not.toContain("capabilities");
+    expect(output).not.toContain("jobs");
+    expect(output).not.toContain("enrich business profiles");
+    output = "";
+    await expect(
+      run(["data", "people", "search", "--help"]),
+    ).rejects.toMatchObject({ code: "commander.helpDisplayed" });
+    expect(output).toContain("Research query");
+    expect(output).not.toContain("prospect");
+    expect(output).not.toContain("--max-credits");
+    await expect(
+      run(["data", "people", "search", "--backend", "prospect", "--dry-run"]),
+    ).rejects.toMatchObject({ code: "commander.unknownOption" });
+    await expect(
+      run([
+        "data",
+        "finance",
+        "company-profile",
+        "--ticker",
+        "AAPL",
+        "--exchange",
+        "NASDAQ",
+        "--dry-run",
+      ]),
+    ).rejects.toMatchObject({ code: "commander.unknownCommand" });
+    expect(requests).toEqual([]);
+  });
+
+  it.each(["discover", "capabilities"])(
+    "filters disabled families from data %s without hiding independent enrichment",
+    async (operation) => {
+      vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["finance","people-search"]');
+      const capabilities = [
+        "finance.company-profile",
+        "people.search",
+        "people.enrich",
+        "company.search",
+      ].map((id) => {
+        return {
+          id,
+          description: id,
+          inputSchema: {},
+          limits: { default: 1, max: 10 },
+          status: "available",
+        };
+      });
+      server.use(
+        http.get("http://localhost:3000/api/data/capabilities", () => {
+          return HttpResponse.json({ capabilities });
+        }),
+      );
+      await run(["data", operation, "--json"]);
+      expect(JSON.parse(output)).toEqual({
+        capabilities: capabilities.slice(2),
+      });
+      output = "";
+      await expect(run(["data", "people", "--help"])).rejects.toMatchObject({
+        code: "commander.helpDisplayed",
+      });
+      expect(output).toContain("enrich");
+      expect(output).toContain("enrich business profiles");
+      expect(output).not.toContain("Research professionals");
+      expect(output).not.toContain("okou data people search");
       expect(requests).toEqual([]);
     },
   );
@@ -306,11 +395,13 @@ describe("personal paid-tool controls through the CLI entry point", () => {
 
   it("does not recommend disabled extraction from enabled web-search help", async () => {
     vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["scrape"]');
-    await expect(run(["web-search", "--help"])).rejects.toMatchObject({
+    await expect(
+      run(["data", "web", "search", "--help"]),
+    ).rejects.toMatchObject({
       code: "commander.helpDisplayed",
     });
-    expect(output).toContain("okou web-search");
-    expect(output).not.toContain("okou scrape");
+    expect(output).toContain("okou data web search");
+    expect(output).not.toContain("okou data web scrape");
     expect(requests).toEqual([]);
   });
 
@@ -352,8 +443,20 @@ describe("personal paid-tool controls through the CLI entry point", () => {
             });
           },
         ),
-        http.get("http://localhost:3000/api/web/download-file", () => {
+        http.get("http://localhost:3000/api/web/file-url", ({ request }) => {
+          expect(new URL(request.url).searchParams.get("file_id")).toBe(
+            "existing-image",
+          );
+          return HttpResponse.json({
+            url: "https://example.com/image.png",
+            downloadUrl: "https://example.com/image.png",
+            expiresAt: "2026-10-23T15:00:00.000Z",
+            publicUrl: null,
+          });
+        }),
+        http.get("https://example.com/image.png", ({ request }) => {
           downloads += 1;
+          expect(request.headers.get("authorization")).toBeNull();
           return new HttpResponse("existing image");
         }),
       );
@@ -375,31 +478,36 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     },
   );
 
-  it.each([undefined, "", "   ", "[]", '["future-tool"]', '["finance"]'])(
-    "permits an enabled operation under policy %s",
-    async (policy) => {
-      vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, policy);
-      let paidRequests = 0;
-      server.use(
-        http.post("http://localhost:3000/api/web-search", () => {
-          paidRequests += 1;
-          return HttpResponse.json({
-            query: "example",
-            limit: 5,
-            provider: "perplexity",
-            billingCategory: "request",
-            billingQuantity: 1,
-            creditsCharged: 5,
-            results: [],
-          });
-        }),
-      );
-      await run(["data", "web", "search", "example", "--json"]);
-      expect(paidRequests).toBe(1);
-      expect(output).toContain('"results":[]');
-      expect(errors).toBe("");
-    },
-  );
+  it.each([
+    undefined,
+    "",
+    "   ",
+    "[]",
+    '["future-tool"]',
+    '["finance"]',
+    '["data-search"]',
+  ])("permits an enabled operation under policy %s", async (policy) => {
+    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, policy);
+    let paidRequests = 0;
+    server.use(
+      http.post("http://localhost:3000/api/web-search", () => {
+        paidRequests += 1;
+        return HttpResponse.json({
+          query: "example",
+          limit: 5,
+          provider: "perplexity",
+          billingCategory: "request",
+          billingQuantity: 1,
+          creditsCharged: 5,
+          results: [],
+        });
+      }),
+    );
+    await run(["data", "web", "search", "example", "--json"]);
+    expect(paidRequests).toBe(1);
+    expect(output).toContain('"results":[]');
+    expect(errors).toBe("");
+  });
 
   it.each(["not-json", "null", "{}", '"web-search"', '["web-search", 1]'])(
     "omits managed capabilities with malformed policy %s",
@@ -408,11 +516,14 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       await expect(run(["--help"])).rejects.toMatchObject({
         code: "commander.helpDisplayed",
       });
-      for (const tool of managedFamilies) expect(output).not.toContain(tool);
+      for (const { example } of managedFamilies)
+        expect(output).not.toContain(example);
       expect(output).not.toContain("--raw-prompt");
       expect(output).toContain("okou generate website");
       output = "";
-      await expect(run(["web-search", "example"])).rejects.toMatchObject({
+      await expect(
+        run(["data", "web", "search", "example"]),
+      ).rejects.toMatchObject({
         code: "commander.unknownCommand",
       });
       await expect(

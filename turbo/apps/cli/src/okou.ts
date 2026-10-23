@@ -449,7 +449,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     name: "data",
     description: "Search and retrieve managed research data",
     load: async () => {
-      return (await import("./commands/data")).dataCommand;
+      return (await import("./commands/data")).createDataCommand();
     },
   },
   {
@@ -595,6 +595,7 @@ function dataExampleIfVisible(
   example: string,
   payload: SandboxTokenPayload | undefined,
 ): string[] {
+  if (!isPaidCommandEnabled(capability.split(":")[0] ?? "")) return [];
   return payload && !payload.capabilities.includes(capability) ? [] : [example];
 }
 

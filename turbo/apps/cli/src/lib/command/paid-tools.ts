@@ -64,10 +64,10 @@ function commandPath(program: Command, command: Command): Command[] {
   return path;
 }
 
-function researchTool(path: Command[]): PaidToolId | undefined {
-  if (path[0]?.name() !== "data") return undefined;
-  const family = path[1]?.name();
-  const operation = path[2]?.name();
+function researchTool(
+  family: string | undefined,
+  operation: string | undefined,
+): PaidToolId | undefined {
   const toolName =
     family === "web" && operation === "search"
       ? "web-search"
@@ -78,6 +78,12 @@ function researchTool(path: Command[]): PaidToolId | undefined {
           : family;
   const tool = paidToolIdSchema.safeParse(toolName);
   return tool.success ? tool.data : undefined;
+}
+
+export function isDataCapabilityEnabled(id: string): boolean {
+  const [family, operation] = id.split(".");
+  const tool = researchTool(family, operation);
+  return isPaidToolEnabled("data-search") && (!tool || isPaidToolEnabled(tool));
 }
 
 function isAdvancedDataAction(path: Command[], action: Command): boolean {
@@ -121,7 +127,10 @@ function paidToolsForAction(
   action: Command,
 ): readonly PaidToolId[] {
   const path = commandPath(program, action);
-  const tool = researchTool(path);
+  const tool =
+    path[0]?.name() === "data"
+      ? researchTool(path[1]?.name(), path[2]?.name())
+      : undefined;
   if (isAdvancedDataAction(path, action)) {
     if (action.opts<{ dryRun?: boolean }>().dryRun) return [];
     return advancedPaidTools(tool);
@@ -129,38 +138,6 @@ function paidToolsForAction(
   if (!tool) return [];
   if (tool === "social" && isFreeSocialAction(path, action)) return [];
   return [tool];
-}
-
-function paidToolsForHelp(path: Command[]): readonly PaidToolId[] {
-  const family = path[0]?.name();
-  if (family === undefined) return AVAILABLE_PAID_TOOL_IDS;
-  if (family === "generate") {
-    const type = path[1]?.name();
-    if (type === undefined) {
-      return ["image-generation"];
-    }
-    const tool = getGenerationPaidTool(type);
-    return tool ? [tool] : [];
-  }
-  if (family === "data" && path.length === 1) {
-    return AVAILABLE_PAID_TOOL_IDS.filter((tool) => {
-      return tool !== "image-generation";
-    });
-  }
-  const tool = researchTool(path);
-  const action = path.at(-1);
-  if (!action) return [];
-  if (action.commands.length > 0) {
-    return [
-      ...new Set(
-        action.commands.flatMap((child) => {
-          return paidToolsForHelp([...path, child]);
-        }),
-      ),
-    ];
-  }
-  if (isAdvancedDataAction(path, action)) return advancedPaidTools(tool);
-  return tool ? [tool] : [];
 }
 
 /** Enforce the run's personal preference before any command action starts. */
