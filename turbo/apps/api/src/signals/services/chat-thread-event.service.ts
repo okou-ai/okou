@@ -94,8 +94,8 @@ function initialThreadEventPlan(
   };
 }
 
-/** Pure statement preparation; the owning command executes and commits it. */
-export function chatThreadEventInsertSql(
+/** Pure writes for a creation owner that publishes other rows in the same statement. */
+export function chatThreadEventInsertPlan(
   args: Omit<ChatThreadEventAppend, "agentId" | "chatThreadId"> & {
     /** Publish a creation and its archive in the same ordered event batch. */
     readonly initiallyArchived?: boolean;
@@ -103,10 +103,8 @@ export function chatThreadEventInsertSql(
     readonly chatThreadId: string | SQL;
   },
   source?: {
-    readonly cte: SQL;
     readonly gate: SQL;
     readonly agentId: SQL;
-    readonly result?: SQL;
   },
 ) {
   const event = initialThreadEventPlan(
@@ -131,17 +129,14 @@ export function chatThreadEventInsertSql(
     typeof args.orgId === "string"
       ? sql`${args.orgId}`
       : sql`(SELECT ${agents.orgId} FROM ${agents} WHERE ${agents.id} = ${agentId}::uuid)`;
-  const beforeReservation = source ? sql`${source.cte},` : sql.empty();
   const reservationInput = source
     ? sql`SELECT ${args.userId}, ${orgId}, ${eventCount} WHERE ${source.gate}`
     : sql`VALUES (${args.userId}, ${orgId}, ${eventCount})`;
-  const reservation = sql`reserved AS (
-      INSERT INTO ${chatThreadEventSequences} (user_id, org_id, last_seq_id)
+  const reservation = sql`INSERT INTO ${chatThreadEventSequences} (user_id, org_id, last_seq_id)
       ${reservationInput}
       ON CONFLICT (user_id, org_id) DO UPDATE
       SET last_seq_id = ${chatThreadEventSequences.lastSeqId} + ${eventCount}
-      RETURNING last_seq_id
-    )`;
+      RETURNING last_seq_id`;
   const insertion = sql`INSERT INTO ${chatThreadEvents} (
       id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
       reassigned_agent_id, title,
@@ -162,6 +157,23 @@ export function chatThreadEventInsertSql(
     FROM reserved ${event.source}
     ON CONFLICT (id) DO NOTHING
     RETURNING id`;
+  return { reservation, insertion };
+}
+
+/** Pure statement preparation; the owning command executes and commits it. */
+export function chatThreadEventInsertSql(
+  args: Parameters<typeof chatThreadEventInsertPlan>[0],
+  source?: {
+    readonly cte: SQL;
+    readonly gate: SQL;
+    readonly agentId: SQL;
+    readonly result?: SQL;
+  },
+) {
+  const plan = chatThreadEventInsertPlan(args, source);
+  const beforeReservation = source ? sql`${source.cte},` : sql.empty();
+  const reservation = sql`reserved AS (${plan.reservation})`;
+  const insertion = plan.insertion;
   if (source?.result !== undefined) {
     return sql`WITH ${beforeReservation} ${reservation}, inserted AS (${insertion}) ${source.result}`;
   }

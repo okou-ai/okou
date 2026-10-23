@@ -3,6 +3,7 @@ import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { randomUUID } from "node:crypto";
 
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -11,6 +12,7 @@ import { mockOptionalEnv } from "../../../lib/env";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { workflowAutomationsRoutes } from "../workflow-automations";
+import { chatThreadRoutes } from "../chat-threads";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -311,6 +313,91 @@ async function expectAutomationSourceAnnotation(
 }
 
 describe("chat-run-finished workflow automations", () => {
+  it("shares one created destination across concurrent creates and rebinds after deletion", async () => {
+    const fixture = await setupChatAutomationFixture();
+    const watched = await chat.createThread(fixture.actor, {
+      agentId: fixture.agentId,
+      model: null,
+    });
+    const create = async () => {
+      return await accept(
+        automationsClient().create({
+          headers: authHeaders(),
+          params: { workflowId: fixture.workflowId },
+          body: {
+            kind: "event",
+            eventType: "chat-run-finished",
+            eventConfig: {
+              provider: "chat",
+              event: "run_finished",
+              chatThreadId: watched.id,
+            },
+          },
+        }),
+        [201],
+      );
+    };
+    const [first, second] = await Promise.all([create(), create()]);
+    const destination = first.body.chatThreadId;
+    if (!destination) {
+      throw new Error("Expected an automation destination");
+    }
+    expect(second.body.chatThreadId).toBe(destination);
+    const listed = await accept(
+      automationsClient().listForChatThread({
+        headers: authHeaders(),
+        params: { threadId: destination },
+      }),
+      [200],
+    );
+    expect(
+      listed.body
+        .map((automation) => {
+          return automation.id;
+        })
+        .sort(),
+    ).toStrictEqual([first.body.id, second.body.id].sort());
+    const lifecycle = setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadsContract,
+    );
+    const beforeDeletion = await accept(
+      lifecycle.events({ headers: authHeaders(), query: {} }),
+      [200],
+    );
+    expect(
+      beforeDeletion.body.events.filter((event) => {
+        return event.kind === "created" && event.chatThreadId === destination;
+      }),
+    ).toHaveLength(1);
+
+    await chat.deleteThread(fixture.actor, destination);
+    for (const id of [first.body.id, second.body.id]) {
+      const stopped = await accept(
+        automationsClient().get({ headers: authHeaders(), params: { id } }),
+        [200],
+      );
+      expect(stopped.body).toMatchObject({
+        enabled: false,
+        chatThreadId: null,
+      });
+    }
+    const rebound = await create();
+    expect(rebound.body.chatThreadId).toBeTruthy();
+    expect(rebound.body.chatThreadId).not.toBe(destination);
+    const afterRebinding = await accept(
+      lifecycle.events({ headers: authHeaders(), query: {} }),
+      [200],
+    );
+    expect(
+      afterRebinding.body.events.filter((event) => {
+        return (
+          event.kind === "created" &&
+          event.chatThreadId === rebound.body.chatThreadId
+        );
+      }),
+    ).toHaveLength(1);
+  });
+
   it("requires the watched chat thread to belong to the automation owner", async () => {
     const fixture = await setupChatAutomationFixture();
 
