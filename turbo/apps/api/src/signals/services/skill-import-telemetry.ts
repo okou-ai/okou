@@ -1,4 +1,4 @@
-import type { WorkflowImportSource } from "@okouai/api-contracts/contracts/workflows";
+import type { WorkflowImportSource } from "@okouai/api-contracts/contracts/workflow-import-source";
 import { nowDate } from "../../lib/time";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import { publishUserSignal } from "../external/realtime";

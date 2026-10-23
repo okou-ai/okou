@@ -6,11 +6,11 @@ import {
 } from "@okouai/api-contracts/contracts/capabilities";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { SKILL_IMPORT_SESSION_TTL_SECONDS } from "@okouai/api-contracts/contracts/skill-import";
+import { SKILL_IMPORT_SESSION_TTL_SECONDS } from "@okouai/api-contracts/contracts/skill-import-session";
 import {
   workflowImportSourceSchema,
   type WorkflowImportSource,
-} from "@okouai/api-contracts/contracts/workflows";
+} from "@okouai/api-contracts/contracts/workflow-import-source";
 import * as z from "zod";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 

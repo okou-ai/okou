@@ -1,5 +1,6 @@
 import { utils as compoundUtils, write as writeCompoundFile } from "cfb";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
+import type { ChatThreadArtifactGoogleDriveSync } from "@okouai/api-contracts/contracts/artifact-google-drive-sync";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { hostRoutes } from "../host";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
@@ -14,7 +15,6 @@ import {
   chatThreadUsageContract,
   type ChatEvent,
   type ChatEventUsagePayload,
-  type ChatThreadArtifactGoogleDriveSync,
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";

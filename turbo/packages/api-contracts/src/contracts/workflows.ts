@@ -5,18 +5,17 @@ import {
   officialWorkflowBlueprintKeySchema,
   officialWorkflowParameterBindingSchema,
 } from "./official-workflow-bindings";
+import { workflowImportSourceSchema } from "./workflow-import-source";
+
+export {
+  workflowImportSourceSchema,
+  type WorkflowImportSource,
+} from "./workflow-import-source";
 
 const c = initContract();
 
 export const workflowVisibilitySchema = z.enum(["public", "private"]);
 export type WorkflowVisibility = z.infer<typeof workflowVisibilitySchema>;
-
-/**
- * The local tool an imported workflow's skill came from. The skill import
- * records it when it creates the workflow; a workflow made in Okou has none.
- */
-export const workflowImportSourceSchema = z.enum(["claudeCode", "codex"]);
-export type WorkflowImportSource = z.infer<typeof workflowImportSourceSchema>;
 
 /**
  * Workflow name (slug) validation regex.

@@ -27,6 +27,32 @@ lookup is separated from streaming and provider construction; catalog data
 remains because the lookup uses it. Its provider models and resolution results
 were compared against the original implementation.
 
+The workflow import-source enum and Drive-sync/recovery schemas also have
+defining modules: `workflow-import-source.ts` and
+`artifact-google-drive-sync.ts`. Authentication imports the enum directly, and
+the artifact catalog imports the Drive schemas directly. The token lifetime
+constant lives in `skill-import-session.ts`; importing it through the full skill
+import contract would otherwise restore the authentication-to-workflows edge.
+Existing public exports remain available and share the same schema instances.
+
+The extraction was measured separately against
+`05ac1b2748f50eee13cfa683a5110f86ef1f7d90`:
+
+| Live export / consumer                    |    Before |     After |
+| ----------------------------------------- | --------: | --------: |
+| `workflowImportSourceSchema`              | 184,064 B |  64,463 B |
+| `chatThreadArtifactGoogleDriveSyncSchema` | 205,951 B |  95,462 B |
+| `SKILL_IMPORT_SESSION_TTL_SECONDS`        | 185,794 B |      59 B |
+| `verifySkillImportToken`                  | 242,598 B | 162,401 B |
+| `artifactCatalogContract`                 | 207,736 B | 164,288 B |
+
+The schema probes still include Zod itself. The complete API is effectively
+unchanged (+1 byte); Core, Integrations and Data each shrink by about 1.7 KB.
+Other retained business paths still require the broad contracts. This confirms
+the smaller import boundary, not a corresponding full-Worker startup gain.
+All five moved initializers and both exported validation JSON Schemas are
+unchanged.
+
 The distinction is executable initialization: `z.object`, `.extend`, enum
 construction, registry construction and provider factories run as JavaScript.
 Even when an unwanted export is eliminated, its module-level initialization may

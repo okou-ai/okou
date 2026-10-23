@@ -13,8 +13,8 @@ import { applyGoogleSlidesTextStyles } from "./google-slides-text-style.service"
 import type {
   ChatThreadArtifactGoogleDriveRecovery,
   ChatThreadArtifactGoogleDriveSync,
-  ChatThreadArtifactRun,
-} from "@okouai/api-contracts/contracts/chat-threads";
+} from "@okouai/api-contracts/contracts/artifact-google-drive-sync";
+import type { ChatThreadArtifactRun } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   isFeatureEnabled,
   type FeatureSwitchContext,
