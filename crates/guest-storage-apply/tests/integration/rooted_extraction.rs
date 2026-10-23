@@ -75,6 +75,52 @@ fn ordinary_files_preserve_metadata_and_extended_names() {
 }
 
 #[test]
+fn regular_slash_entries_preserve_legacy_directory_semantics() {
+    for (format, mut header) in [
+        ("old", tar::Header::new_old()),
+        ("gnu", tar::Header::new_gnu()),
+        ("ustar", tar::Header::new_ustar()),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let mount = dir.path().join("mount");
+        let is_directory = format != "ustar";
+        let contents = if is_directory {
+            b"".as_slice()
+        } else {
+            b"value"
+        };
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_mode(0o755);
+        header.set_mtime(1);
+        header.set_size(contents.len() as u64);
+        // Preserve the raw trailing slash, which Path components normalize away.
+        header.as_mut_bytes()[..5].copy_from_slice(b"node/");
+        header.set_cksum();
+        let mut builder = tar::Builder::new(GzEncoder::new(Vec::new(), Compression::fast()));
+        builder.append(&header, contents).unwrap();
+        if is_directory {
+            append_file(&mut builder, "node/child", b"child", 0o644, 1).unwrap();
+        }
+        append_file(&mut builder, "after", b"after", 0o644, 1).unwrap();
+        let archive = builder.into_inner().unwrap().finish().unwrap();
+
+        assert!(apply(dir.path(), &mount, &archive).unwrap(), "{format}");
+        let node = mount.join("node");
+        assert_eq!(
+            fs::metadata(&node).unwrap().is_dir(),
+            is_directory,
+            "{format}"
+        );
+        if is_directory {
+            assert_eq!(fs::read(node.join("child")).unwrap(), b"child");
+        } else {
+            assert_eq!(fs::read(node).unwrap(), b"value");
+        }
+        assert_eq!(fs::read(mount.join("after")).unwrap(), b"after");
+    }
+}
+
+#[test]
 fn replacement_preserves_hardlinks_and_contained_symlink_parents() {
     let dir = tempfile::tempdir().unwrap();
     let mount = dir.path().join("mount");

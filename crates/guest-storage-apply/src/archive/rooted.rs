@@ -116,6 +116,11 @@ impl<'a> RootedWriter<'a> {
         relative: &Path,
         entry: &mut tar::Entry<'_, R>,
     ) -> io::Result<bool> {
+        // tar treats slash-terminated old/GNU regular entries as directories.
+        // Check raw bytes before Path normalization loses the trailing slash.
+        if entry.header().as_ustar().is_none() && entry.path_bytes().ends_with(b"/") {
+            return Ok(false);
+        }
         // Descriptor-relative syscalls can exceed the full-path limit. Retain
         // the existing path-based behavior rather than accepting new spellings.
         let path_bytes = relative.as_os_str().as_bytes();
