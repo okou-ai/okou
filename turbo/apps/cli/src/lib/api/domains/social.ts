@@ -88,9 +88,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-async function publicSocialDownloadResponse<
-  T extends SocialKitDownloadResponse,
->(response: T): Promise<T> {
+function publicSocialDownloadResponse<T extends SocialKitDownloadResponse>(
+  response: T,
+): T {
   const publicResponse = redactSocialProviderIdentity(response) as T;
   if (!publicResponse.error) {
     return publicResponse;
@@ -241,11 +241,9 @@ export async function listSocialKitDownloads(
   if (result.status === 200) {
     return {
       ...result.body,
-      downloads: await Promise.all(
-        result.body.downloads.map((download) => {
-          return publicSocialDownloadResponse(download);
-        }),
-      ),
+      downloads: result.body.downloads.map((download) => {
+        return publicSocialDownloadResponse(download);
+      }),
     };
   }
   handlePublicSocialError(result, "Okou Social download discovery failed");

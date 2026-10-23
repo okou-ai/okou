@@ -1,4 +1,3 @@
-import { creditPolicyRunId } from "./official-workflow-policy.service";
 import { v5 as uuidv5 } from "uuid";
 
 import {
@@ -14,7 +13,6 @@ import {
   type SocialKitErrorResponse,
 } from "@okouai/api-contracts/contracts/social";
 import { socialKitDownloadJobs } from "@okouai/db/schema/socialkit-download-job";
-import type { LinkLayout } from "@okouai/api-contracts/contracts/link-layout";
 import { command } from "ccstate";
 import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -23,13 +21,6 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import type { AuthContext } from "../../types/auth";
-import {
-  abortMultipartS3Upload,
-  completeMultipartS3Upload,
-  createMultipartS3Upload,
-  uploadMultipartS3Part,
-  type MultipartS3Part,
-} from "../external/s3";
 import { type Db, writeDb$ } from "../external/db";
 import {
   onRejection,
@@ -37,42 +28,25 @@ import {
   safeJsonParse,
   settle,
   settleIncludingAbort,
-  startUntrackedBestEffortCleanup,
 } from "../utils";
-import { allocateArtifactObject$ } from "./artifact-storage.service";
-import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
-import {
-  allocatePrivateArtifact$,
-  completePrivateArtifact$,
-} from "./private-artifact-storage.service";
 import {
   checkManagedCredits$,
   recordManagedUsage$,
   type ManagedUsageErrorResponse,
 } from "./managed-usage.service";
-import { recordWebUploadedFile$ } from "./run-uploaded-files.service";
+import { creditPolicyRunId } from "./official-workflow-policy.service";
 import { validateScrapeTargetUrl } from "./scrape-target-policy";
 import { normalizeSocialKitError } from "./socialkit-error";
 
 const SOCIALKIT_API_BASE = "https://api.socialkit.dev";
 const SOCIALKIT_PROVIDER_TIMEOUT_MS = 240_000;
-const SOCIALKIT_DOWNLOAD_TIMEOUT_MS = 270_000;
 export const SOCIALKIT_RECONCILIATION_TIMEOUT_MS = 280_000;
-const MULTIPART_CLEANUP_TIMEOUT_MS = 10_000;
 const CLAIM_CLEANUP_TIMEOUT_MS = 10_000;
 // SocialKit charges when ready is observed, so durable settlement gets an independent budget.
 const READY_SETTLEMENT_TIMEOUT_MS = 10_000;
 const MAX_PROVIDER_RESPONSE_BYTES = 1024 * 1024;
-const MULTIPART_PART_BYTES = 8 * 1024 * 1024;
-const MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024;
-const MAX_ARTIFACT_FILENAME_STEM_CHARS = 120;
-// ISO base media files can use a generic `ftyp` brand for either audio or
-// video. Buffer enough of a fast-start file to inspect the `moov` track
-// handlers before allocating the immutable artifact key.
-const MEDIA_SNIFF_BYTES = 64 * 1024;
 const MAX_PROVIDER_FAILURE_CODE_CHARS = 128;
 const MAX_PROVIDER_FAILURE_MESSAGE_CHARS = 500;
-const INVALID_ARTIFACT_FILENAME_CHARS = String.raw`<>:"/\|?*`;
 const PROVIDER_FAILURE_CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
 const PROVIDER_FAILURE_URL_PATTERN = /(?:[a-z][a-z0-9+.-]*:\/\/|www\.)/iu;
 const PROVIDER_FAILURE_CREDENTIAL_PATTERN =
@@ -81,21 +55,18 @@ const PROVIDER_FAILURE_STACK_PATTERN =
   /(?:\bat\s+(?:async\s+)?(?:\S+\s+\()?[^()\s]+:\d+:\d+\)?|\bFile\s+"[^"]+",\s+line\s+\d+)/u;
 const RECONCILE_BATCH_SIZE = 2;
 const USAGE_NAMESPACE = "42a65d9f-67d6-4bed-ae87-9f80ce1feb79";
-const ACTIVE_STATUSES = [
-  "processing",
-  "materializing",
-  "artifact_failed",
-] as const;
+const ACTIVE_STATUSES = ["processing", "link_failed"] as const;
 
 type DownloadJob = typeof socialKitDownloadJobs.$inferSelect;
 type DownloadJobError = NonNullable<DownloadJob["error"]>;
+type DownloadLink = NonNullable<SocialKitDownloadResponse["download"]>;
 
 const PROVIDER_DOWNLOAD_FAILED_ERROR = {
   code: "SOCIALKIT_DOWNLOAD_FAILED",
   message: "SocialKit could not prepare the download",
 } satisfies DownloadJobError;
 
-const INVALID_PROVIDER_RESPONSE_ERROR = {
+const INVALID_METADATA_ERROR = {
   code: "SOCIALKIT_INVALID_DOWNLOAD_RESPONSE",
   message: "SocialKit returned invalid download metadata",
 } satisfies DownloadJobError;
@@ -147,6 +118,7 @@ const providerReadySchema = z.object({
   status: z.literal("ready"),
   platform: socialKitDownloadPlatformSchema,
   downloadUrl: z.url().max(8192),
+  expiresIn: z.number().int().positive().max(604_800).optional(),
   durationSeconds: z.number().int().positive(),
   fileSizeMB: providerFileSizeMbSchema,
   creditsCost: z.number().int().positive(),
@@ -178,6 +150,8 @@ const providerThumbnailSchema = z
     );
   });
 
+type ProviderReady = z.infer<typeof providerReadySchema>;
+
 function errorResponse(
   status: 409 | 502 | 503,
   message: string,
@@ -192,47 +166,19 @@ function runId(auth: AuthContext): string | undefined {
     : undefined;
 }
 
-function externalStatus(job: DownloadJob): SocialKitDownloadResponse["status"] {
-  switch (job.status) {
-    case "submitting": {
-      return "queued";
-    }
-    case "processing": {
-      return "processing";
-    }
-    case "materializing": {
-      return "materializing";
-    }
-    case "artifact_failed": {
-      return "artifact_failed";
-    }
-    case "provider_failed": {
-      return "provider_failed";
-    }
-    case "completed": {
-      return "completed";
-    }
-  }
-}
-
 function responseForJob(job: DownloadJob): SocialKitDownloadResponse {
   const billed = job.creditsCharged !== null;
-  // Historical filenames/content types could be request-derived. Do not use
-  // them to reconstruct missing delivery evidence from older JSONB writers.
-  const deliveredFormat = job.artifact?.format ?? null;
-  const hasVideo = deliveredFormat
-    ? deliveredFormat === "mp4"
-    : job.providerResult?.format === "mp4";
   return socialKitDownloadResponseSchema.parse({
     downloadId: job.id,
-    status: externalStatus(job),
+    status: job.status === "submitting" ? "queued" : job.status,
     platform: job.request.platform,
-    quality: job.request.quality,
-    format: job.request.format,
     requested: { quality: job.request.quality, format: job.request.format },
     delivered: {
-      quality: hasVideo ? (job.providerResult?.quality ?? null) : null,
-      format: deliveredFormat,
+      quality:
+        job.providerResult?.format === "mp4"
+          ? job.providerResult.quality
+          : null,
+      format: job.providerResult ? job.providerResult.format : null,
     },
     maxDuration: job.request.maxDuration,
     billingCategory: MANAGED_SOCIALKIT_BILLING_CATEGORY,
@@ -244,7 +190,7 @@ function responseForJob(job: DownloadJob): SocialKitDownloadResponse {
             creditsCharged: job.creditsCharged,
           }
         : null,
-    artifact: job.artifact,
+    download: null,
     error: job.error
       ? {
           code: job.error.code,
@@ -259,7 +205,7 @@ function responseForJob(job: DownloadJob): SocialKitDownloadResponse {
             ? {}
             : { resubmitRetryable: job.error.resubmitRetryable }),
           retryable:
-            (job.status === "processing" || job.status === "artifact_failed") &&
+            (job.status === "processing" || job.status === "link_failed") &&
             (job.error.retryable ?? true),
           billed,
         }
@@ -395,15 +341,9 @@ async function startProviderJob(
 
 type ProviderPollResult =
   | { readonly status: "processing" }
-  | {
-      readonly status: "failed";
-      readonly error: DownloadJobError | null;
-    }
+  | { readonly status: "failed"; readonly error: DownloadJobError | null }
   | { readonly status: "invalid" }
-  | {
-      readonly status: "ready";
-      readonly ready: z.infer<typeof providerReadySchema>;
-    };
+  | { readonly status: "ready"; readonly ready: ProviderReady };
 
 async function pollProviderJob(
   accessKey: string,
@@ -452,415 +392,6 @@ async function pollProviderJob(
     : { status: "invalid" };
 }
 
-interface SniffedMedia {
-  readonly contentType: string;
-  readonly extension: "mp4" | "m4a" | "mp3";
-}
-
-type IsoTrackKind = "audio" | "video";
-type IsoContainerKind = "root" | "moov" | "trak" | "mdia";
-
-interface IsoBox {
-  readonly type: string;
-  readonly payloadStart: number;
-  readonly end: number;
-}
-
-function leadingBytesAre(
-  head: Uint8Array,
-  offset: number,
-  signature: string,
-): boolean {
-  if (head.byteLength < offset + signature.length) {
-    return false;
-  }
-  for (let index = 0; index < signature.length; index += 1) {
-    if (head[offset + index] !== signature.charCodeAt(index)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function readUint32(bytes: Uint8Array, offset: number): number | null {
-  if (offset + 4 > bytes.byteLength) {
-    return null;
-  }
-  return (
-    (bytes[offset]! * 0x01_00_00_00 +
-      bytes[offset + 1]! * 0x01_00_00 +
-      bytes[offset + 2]! * 0x01_00 +
-      bytes[offset + 3]!) >>>
-    0
-  );
-}
-
-function readIsoBox(
-  bytes: Uint8Array,
-  offset: number,
-  parentEnd: number,
-): IsoBox | null {
-  const size = readUint32(bytes, offset);
-  if (size === null || offset + 8 > parentEnd) {
-    return null;
-  }
-  const type = String.fromCharCode(...bytes.subarray(offset + 4, offset + 8));
-  let headerSize = 8;
-  let boxSize = size;
-  if (size === 1) {
-    const high = readUint32(bytes, offset + 8);
-    const low = readUint32(bytes, offset + 12);
-    if (high === null || low === null) {
-      return null;
-    }
-    boxSize = high * 0x01_00_00_00_00 + low;
-    headerSize = 16;
-  } else if (size === 0) {
-    boxSize = parentEnd - offset;
-  }
-  if (
-    !Number.isSafeInteger(boxSize) ||
-    boxSize < headerSize ||
-    offset + boxSize > parentEnd
-  ) {
-    return null;
-  }
-  return {
-    type,
-    payloadStart: offset + headerSize,
-    end: offset + boxSize,
-  };
-}
-
-function isoHandlerTrackKind(
-  bytes: Uint8Array,
-  box: IsoBox,
-): IsoTrackKind | null {
-  const handlerOffset = box.payloadStart + 8;
-  if (handlerOffset + 4 > box.end) {
-    return null;
-  }
-  if (leadingBytesAre(bytes, handlerOffset, "vide")) {
-    return "video";
-  }
-  return leadingBytesAre(bytes, handlerOffset, "soun") ? "audio" : null;
-}
-
-function collectIsoTrackKinds(
-  bytes: Uint8Array,
-  start: number,
-  end: number,
-  container: IsoContainerKind,
-  tracks: Set<IsoTrackKind>,
-): void {
-  let offset = start;
-  while (offset + 8 <= end) {
-    const box = readIsoBox(bytes, offset, end);
-    if (!box) {
-      return;
-    }
-    if (container === "mdia" && box.type === "hdlr") {
-      const track = isoHandlerTrackKind(bytes, box);
-      if (track) {
-        tracks.add(track);
-      }
-    } else {
-      const childContainer =
-        container === "root" && box.type === "moov"
-          ? "moov"
-          : container === "moov" && box.type === "trak"
-            ? "trak"
-            : container === "trak" && box.type === "mdia"
-              ? "mdia"
-              : null;
-      if (childContainer) {
-        collectIsoTrackKinds(
-          bytes,
-          box.payloadStart,
-          box.end,
-          childContainer,
-          tracks,
-        );
-      }
-    }
-    offset = box.end;
-  }
-}
-
-function sniffIsoMedia(head: Uint8Array): SniffedMedia | null {
-  const tracks = new Set<IsoTrackKind>();
-  collectIsoTrackKinds(head, 0, head.byteLength, "root", tracks);
-  if (tracks.has("video")) {
-    return { contentType: "video/mp4", extension: "mp4" };
-  }
-  if (tracks.has("audio")) {
-    return { contentType: "audio/mp4", extension: "m4a" };
-  }
-  return leadingBytesAre(head, 8, "M4A") || leadingBytesAre(head, 8, "M4B")
-    ? { contentType: "audio/mp4", extension: "m4a" }
-    : null;
-}
-
-/**
- * SocialKit echoes back only the format that was requested, and the artifact CDN
- * carries no trustworthy media type, so the container and available track
- * handlers are read from the leading file structure instead. A `format=mp4`
- * request can still resolve to an audio-only file upstream, and filing those
- * bytes as `video/mp4` leaves an artifact that no video consumer can decode.
- * Returns null when the media is unrecognized, which keeps the requested format
- * as the recorded media type.
- */
-function sniffMedia(head: Uint8Array): SniffedMedia | null {
-  if (leadingBytesAre(head, 0, "ID3")) {
-    return { contentType: "audio/mpeg", extension: "mp3" };
-  }
-  if (leadingBytesAre(head, 4, "ftyp")) {
-    return sniffIsoMedia(head);
-  }
-  // MPEG audio frame sync: eleven set bits followed by a non-reserved layer.
-  const sync = head[1];
-  if (
-    head[0] === 0xff &&
-    sync !== undefined &&
-    (sync & 0xe0) === 0xe0 &&
-    (sync & 0x06) !== 0x00
-  ) {
-    return { contentType: "audio/mpeg", extension: "mp3" };
-  }
-  return null;
-}
-
-function concatChunks(chunks: readonly Uint8Array[], size: number): Uint8Array {
-  const result = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return result;
-}
-
-async function fetchSafeSocialKitArtifact(
-  initialUrl: string,
-  signal: AbortSignal,
-): Promise<Response> {
-  let currentUrl = initialUrl;
-  for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
-    const target = validateScrapeTargetUrl(currentUrl);
-    signal.throwIfAborted();
-    if (typeof target === "string" || target.url.protocol !== "https:") {
-      throw new Error("SocialKit returned an unsafe artifact URL");
-    }
-    const response = await fetch(target.url, {
-      redirect: "manual",
-      signal: AbortSignal.any([
-        signal,
-        AbortSignal.timeout(SOCIALKIT_DOWNLOAD_TIMEOUT_MS),
-      ]),
-    });
-    signal.throwIfAborted();
-    if (response.status < 300 || response.status >= 400) {
-      return response;
-    }
-    if (response.body) {
-      startUntrackedBestEffortCleanup(response.body.cancel());
-    }
-    const location = response.headers.get("location");
-    if (!location) {
-      throw new Error("SocialKit artifact redirect is invalid");
-    }
-    currentUrl = new URL(location, target.url).toString();
-  }
-  throw new Error("SocialKit artifact redirected too many times");
-}
-
-interface ArtifactDownload {
-  readonly reader: ReadableStreamDefaultReader<Uint8Array>;
-  // The leading bytes already pulled off the stream to identify the media.
-  // The upload consumes them before draining the rest of the reader.
-  readonly head: Uint8Array;
-  readonly media: SniffedMedia | null;
-}
-
-async function readMediaHead(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-  signal: AbortSignal,
-): Promise<Uint8Array> {
-  const chunks: Uint8Array[] = [];
-  let bufferedBytes = 0;
-  while (bufferedBytes < MEDIA_SNIFF_BYTES) {
-    const next = await reader.read();
-    signal.throwIfAborted();
-    if (next.done) {
-      break;
-    }
-    chunks.push(next.value);
-    bufferedBytes += next.value.byteLength;
-  }
-  return concatChunks(chunks, bufferedBytes);
-}
-
-/**
- * Start the artifact download and read a bounded prefix to identify its media.
- * The filename and content type are decided from this before the artifact object
- * is allocated, and the same open stream then carries the whole body into R2,
- * so the artifact is fetched exactly once.
- *
- * The caller owns the returned reader and must cancel it on every path that
- * does not hand it to `streamDownloadToArtifact$`.
- */
-async function openArtifactDownload(
-  downloadUrl: string,
-  signal: AbortSignal,
-): Promise<ArtifactDownload> {
-  const response = await fetchSafeSocialKitArtifact(downloadUrl, signal);
-  signal.throwIfAborted();
-  if (!response.ok || !response.body) {
-    if (response.body) {
-      startUntrackedBestEffortCleanup(response.body.cancel());
-    }
-    throw new Error("SocialKit artifact download failed");
-  }
-  const declaredSize = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declaredSize) && declaredSize > MAX_DOWNLOAD_BYTES) {
-    startUntrackedBestEffortCleanup(response.body.cancel());
-    throw new Error("SocialKit artifact exceeds the 2 GiB limit");
-  }
-  const reader = response.body.getReader();
-  const head = await onRejection(readMediaHead(reader, signal), () => {
-    startUntrackedBestEffortCleanup(reader.cancel());
-  });
-  return { reader, head, media: sniffMedia(head) };
-}
-
-const streamDownloadToArtifact$ = command(
-  async (
-    { get },
-    args: {
-      readonly download: ArtifactDownload;
-      readonly bucket: string;
-      readonly key: string;
-      readonly contentType: string;
-      readonly metadata: Readonly<Record<string, string>>;
-    },
-    signal: AbortSignal,
-  ): Promise<number> => {
-    const parts: MultipartS3Part[] = [];
-    const { reader } = args.download;
-    let pendingHead: Uint8Array | null =
-      args.download.head.byteLength > 0 ? args.download.head : null;
-    const nextChunk = async (): Promise<Uint8Array | null> => {
-      if (pendingHead) {
-        const chunk = pendingHead;
-        pendingHead = null;
-        return chunk;
-      }
-      const next = await reader.read();
-      signal.throwIfAborted();
-      return next.done ? null : next.value;
-    };
-    let uploadId: string | undefined;
-    let chunks: Uint8Array[] = [];
-    let bufferedBytes = 0;
-    let totalBytes = 0;
-
-    const uploadBuffered = async (): Promise<void> => {
-      if (bufferedBytes === 0) {
-        return;
-      }
-      if (!uploadId) {
-        throw new Error("SocialKit multipart upload was not initialized");
-      }
-      const part = await get(
-        uploadMultipartS3Part(
-          {
-            bucket: args.bucket,
-            key: args.key,
-            uploadId,
-            partNumber: parts.length + 1,
-            body: concatChunks(chunks, bufferedBytes),
-          },
-          signal,
-        ),
-      );
-      signal.throwIfAborted();
-      parts.push(part);
-      chunks = [];
-      bufferedBytes = 0;
-    };
-
-    return await onRejection(
-      (async (): Promise<number> => {
-        uploadId = await get(
-          createMultipartS3Upload(
-            args.bucket,
-            args.key,
-            args.contentType,
-            args.metadata,
-            signal,
-          ),
-        );
-        signal.throwIfAborted();
-        while (true) {
-          const chunk = await nextChunk();
-          if (!chunk) {
-            break;
-          }
-          let offset = 0;
-          while (offset < chunk.byteLength) {
-            const remaining = MULTIPART_PART_BYTES - bufferedBytes;
-            const length = Math.min(remaining, chunk.byteLength - offset);
-            const piece = chunk.subarray(offset, offset + length);
-            chunks.push(piece);
-            bufferedBytes += piece.byteLength;
-            totalBytes += piece.byteLength;
-            if (totalBytes > MAX_DOWNLOAD_BYTES) {
-              throw new Error("SocialKit artifact exceeds the 2 GiB limit");
-            }
-            offset += length;
-            if (bufferedBytes === MULTIPART_PART_BYTES) {
-              await uploadBuffered();
-              signal.throwIfAborted();
-            }
-          }
-        }
-        if (totalBytes === 0) {
-          throw new Error("SocialKit returned an empty artifact");
-        }
-        await uploadBuffered();
-        signal.throwIfAborted();
-        await get(
-          completeMultipartS3Upload(
-            args.bucket,
-            args.key,
-            uploadId,
-            parts,
-            signal,
-          ),
-        );
-        signal.throwIfAborted();
-        reader.releaseLock();
-        return totalBytes;
-      })(),
-      async () => {
-        startUntrackedBestEffortCleanup(reader.cancel());
-        if (uploadId) {
-          await settleIncludingAbort(
-            get(
-              abortMultipartS3Upload(
-                args.bucket,
-                args.key,
-                uploadId,
-                AbortSignal.timeout(MULTIPART_CLEANUP_TIMEOUT_MS),
-              ),
-            ),
-          );
-        }
-      },
-    );
-  },
-);
-
 function usageIdempotencyKey(downloadId: string): string {
   return uuidv5(
     `${downloadId}:${MANAGED_SOCIALKIT_BILLING_CATEGORY}`,
@@ -877,32 +408,21 @@ function providerCreditsPerMinute(media: {
     : 1;
 }
 
-function readyMetadataIsValid(
-  job: DownloadJob,
-  ready: z.infer<typeof providerReadySchema>,
-): boolean {
+function readyMetadataIsValid(job: DownloadJob, ready: ProviderReady): boolean {
   const minutes = Math.ceil(ready.durationSeconds / 60);
   const requestedRate = providerCreditsPerMinute(job.request);
   const deliveredRate =
     job.request.platform === "tiktok"
       ? Math.min(requestedRate, providerCreditsPerMinute(ready))
       : requestedRate;
-  const expectedCredits = minutes * deliveredRate;
-  const maximumCredits =
-    Math.ceil(job.request.maxDuration / 60) * requestedRate;
-  // SocialKit retains legacy account rates for 30 days. Accept only the exact
-  // old or current cost, never arbitrary bounded usage. Remove the old-rate
-  // allowance after the managed account transition AND recoverable legacy jobs
-  // have drained; a paid job's refresh must not reprice its original usage.
-  const validCost =
-    ready.creditsCost === expectedCredits || ready.creditsCost === minutes;
   return !(
     ready.jobId !== job.providerJobId ||
     ready.platform !== job.request.platform ||
     ready.format !== job.request.format ||
     ready.durationSeconds > job.request.maxDuration ||
-    !validCost ||
-    ready.creditsCost > maximumCredits ||
+    ready.creditsCost !== minutes * deliveredRate ||
+    ready.creditsCost >
+      Math.ceil(job.request.maxDuration / 60) * requestedRate ||
     (job.providerResult !== null &&
       (ready.creditsCost !== job.providerResult.creditsCost ||
         ready.durationSeconds !== job.providerResult.durationSeconds))
@@ -929,13 +449,13 @@ async function deferClaimedJob(
   await writeDb
     .update(socialKitDownloadJobs)
     .set({
-      status: billed ? "artifact_failed" : "processing",
+      status: billed ? "link_failed" : "processing",
       error: error ?? {
         code: billed
-          ? "ARTIFACT_MATERIALIZATION_FAILED"
+          ? "SOCIALKIT_DOWNLOAD_LINK_UNAVAILABLE"
           : "SOCIALKIT_RECONCILIATION_FAILED",
         message: billed
-          ? "The artifact could not be materialized"
+          ? "The temporary download link is unavailable"
           : "The SocialKit download could not be reconciled yet",
       },
       retryCount: sql`${socialKitDownloadJobs.retryCount} + 1`,
@@ -1003,7 +523,6 @@ async function startAndPersistProviderJob(
       .where(eq(socialKitDownloadJobs.id, created.id));
     return { failure };
   }
-
   const [processing] = await writeDb
     .update(socialKitDownloadJobs)
     .set({
@@ -1059,7 +578,6 @@ export const createSocialKitDownload$ = command(
     if (creditError) {
       return creditError;
     }
-
     signal.throwIfAborted();
     const writeDb = set(writeDb$);
     const [created] = await writeDb
@@ -1068,7 +586,7 @@ export const createSocialKitDownload$ = command(
         orgId: args.auth.orgId,
         userId: args.auth.userId,
         runId: runId(args.auth),
-        request: { ...args.body, privateArtifacts: true },
+        request: args.body,
       })
       .onConflictDoNothing()
       .returning();
@@ -1080,7 +598,6 @@ export const createSocialKitDownload$ = command(
         "DOWNLOAD_IN_PROGRESS",
       );
     }
-
     const processing = await startAndPersistProviderJob(
       writeDb,
       created,
@@ -1091,7 +608,6 @@ export const createSocialKitDownload$ = command(
     if ("failure" in processing) {
       return processing.failure;
     }
-
     return { status: 202, body: responseForJob(processing.job) };
   },
 );
@@ -1107,18 +623,41 @@ export const getSocialKitDownload$ = command(
     signal: AbortSignal,
   ): Promise<SocialKitDownloadResponse | null> => {
     const writeDb = set(writeDb$);
+    const ownership = and(
+      eq(socialKitDownloadJobs.id, args.downloadId),
+      eq(socialKitDownloadJobs.orgId, args.orgId),
+      eq(socialKitDownloadJobs.userId, args.userId),
+    );
     const [job] = await writeDb
       .select()
       .from(socialKitDownloadJobs)
-      .where(
-        and(
-          eq(socialKitDownloadJobs.id, args.downloadId),
-          eq(socialKitDownloadJobs.orgId, args.orgId),
-          eq(socialKitDownloadJobs.userId, args.userId),
-        ),
-      );
+      .where(ownership);
     signal.throwIfAborted();
-    return job ? responseForJob(job) : null;
+    if (!job) {
+      return null;
+    }
+    if (job.status === "provider_failed" || job.status === "submitting") {
+      return responseForJob(job);
+    }
+    if (job.status === "completed") {
+      return set(refreshSocialKitDownloadLink$, job, signal);
+    }
+    // Reconcile in the foreground and reuse this poll's link instead of polling twice.
+    const reconciled = await set(reconcileSocialKitDownload$, job.id, signal);
+    const [updated] = await writeDb
+      .select()
+      .from(socialKitDownloadJobs)
+      .where(ownership);
+    signal.throwIfAborted();
+    if (!updated) {
+      return null;
+    }
+    if (typeof reconciled === "object" && updated.status === "completed") {
+      return { ...responseForJob(updated), download: reconciled.download };
+    }
+    return updated.status === "completed"
+      ? set(refreshSocialKitDownloadLink$, updated, signal)
+      : responseForJob(updated);
   },
 );
 
@@ -1229,8 +768,6 @@ const claimSocialKitDownload$ = command(
   },
 );
 
-type ProviderReady = z.infer<typeof providerReadySchema>;
-
 function safeProviderResult(ready: ProviderReady) {
   const thumbnail = providerThumbnailSchema.safeParse(ready.thumbnail);
   const downloadUrl = new URL(ready.downloadUrl);
@@ -1254,34 +791,6 @@ function safeProviderResult(ready: ProviderReady) {
       : {}),
     ...(safeThumbnail ? { thumbnail: safeThumbnail } : {}),
   };
-}
-
-function artifactFilename(
-  title: string | undefined,
-  id: string,
-  fileExtension: string,
-): string {
-  const extension = `.${fileExtension}`;
-  const sanitizedTitle = [...(title?.trim() ?? "")]
-    .map((character) => {
-      const codePoint = character.codePointAt(0);
-      return codePoint !== undefined &&
-        (codePoint < 32 ||
-          codePoint === 127 ||
-          INVALID_ARTIFACT_FILENAME_CHARS.includes(character))
-        ? "_"
-        : character;
-    })
-    .join("");
-  const titleWithoutExtension = sanitizedTitle.toLowerCase().endsWith(extension)
-    ? sanitizedTitle.slice(0, -extension.length)
-    : sanitizedTitle;
-  const stem = [...titleWithoutExtension]
-    .slice(0, MAX_ARTIFACT_FILENAME_STEM_CHARS)
-    .join("")
-    .trim()
-    .replace(/[. ]+$/gu, "");
-  return `${stem || `download-${id.slice(0, 8)}`}${extension}`;
 }
 
 const settleSocialKitDownloadUsage$ = command(
@@ -1342,16 +851,15 @@ const persistAndSettleSocialKitDownloadUsage$ = command(
     if (!readyJob) {
       throw new Error("Failed to persist SocialKit ready metadata");
     }
-
     const creditsCharged = await set(
       settleSocialKitDownloadUsage$,
       { job: readyJob, quantity: args.providerResult.creditsCost },
       signal,
     );
-    const [materializing] = await writeDb
+    const [processing] = await writeDb
       .update(socialKitDownloadJobs)
       .set({
-        status: "materializing",
+        status: "processing",
         creditsCharged,
         error: null,
         updatedAt: nowDate(),
@@ -1364,188 +872,89 @@ const persistAndSettleSocialKitDownloadUsage$ = command(
       )
       .returning();
     signal.throwIfAborted();
-    if (!materializing) {
+    if (!processing) {
       throw new Error("Failed to persist SocialKit usage settlement");
     }
-    return materializing;
+    return processing;
   },
 );
 
-interface StoredArtifactObject {
-  readonly key: string;
-  readonly url: string;
-  readonly layout: LinkLayout;
-  readonly sizeBytes: number;
+function directDownloadLink(
+  ready: ProviderReady,
+  accessKey: string,
+): DownloadLink {
+  const target = validateScrapeTargetUrl(ready.downloadUrl);
+  if (typeof target === "string" || target.url.protocol !== "https:") {
+    throw new Error("SocialKit returned an unsafe download link");
+  }
+  const { url } = target;
+  // Only file-scoped URLs from the documented bucket may cross the caller boundary.
+  if (
+    url.hostname !== "socialkit-downloads.s3.amazonaws.com" ||
+    url.port !== "" ||
+    url.hash !== "" ||
+    url.pathname === "/" ||
+    ready.downloadUrl.includes(accessKey) ||
+    ready.downloadUrl.includes(encodeURIComponent(accessKey)) ||
+    decodeURIComponent(url.pathname).includes(accessKey) ||
+    [...url.searchParams].some(([key, value]) => {
+      return (
+        /^(?:access[_-]?key|x-access-key|authorization)$/iu.test(key) ||
+        key.includes(accessKey) ||
+        value.includes(accessKey)
+      );
+    })
+  ) {
+    throw new Error("SocialKit returned an unsafe download link");
+  }
+  return {
+    // Preserve signed bytes; never reconstruct or persist this bearer URL.
+    url: ready.downloadUrl,
+    expiresAt:
+      ready.expiresIn === undefined
+        ? null
+        : new Date(nowDate().getTime() + ready.expiresIn * 1000).toISOString(),
+  };
 }
 
-const DOWNLOAD_CONTENT_TYPES = {
-  mp4: "video/mp4",
-  m4a: "audio/mp4",
-  mp3: "audio/mpeg",
-} satisfies Record<SocialKitDownloadRequest["format"], string>;
-
-const allocateSocialKitArtifact$ = command(
+const refreshSocialKitDownloadLink$ = command(
   async (
-    { set },
-    args: {
-      readonly job: DownloadJob;
-      readonly filename: string;
-      readonly contentType: string;
-    },
+    _,
+    job: DownloadJob,
     signal: AbortSignal,
-  ) => {
-    const identity = {
-      userId: args.job.userId,
-      id: args.job.id,
-      filename: args.filename,
-    };
-    if (args.job.request.privateArtifacts === true) {
-      return await set(
-        allocatePrivateArtifact$,
-        {
-          ...identity,
-          orgId: args.job.orgId,
-          contentType: args.contentType,
-          size: 0,
-          // A download job produces an artifact output, including when it runs
-          // without a run, so its ownership record declares that purpose.
-          purpose: "artifact",
-        },
-        signal,
-      );
-    }
-    const artifact = await set(
-      allocateArtifactObject$,
-      { ...identity, variant: "socialkit" },
-      signal,
-    );
-    return { ...artifact, bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME") };
-  },
-);
-
-const materializeSocialKitArtifact$ = command(
-  async (
-    { set },
-    args: {
-      readonly job: DownloadJob;
-      readonly ready: ProviderReady;
-      readonly providerResult: NonNullable<DownloadJob["providerResult"]>;
-    },
-    signal: AbortSignal,
-  ): Promise<NonNullable<DownloadJob["artifact"]>> => {
-    const download = await openArtifactDownload(args.ready.downloadUrl, signal);
-    const media = download.media;
-    const filename = artifactFilename(
-      args.providerResult.title,
-      args.job.id,
-      media?.extension ?? args.job.request.format,
-    );
-    const contentType =
-      media?.contentType ?? DOWNLOAD_CONTENT_TYPES[args.job.request.format];
-    // The artifact key is derived from the sniffed extension, so the download
-    // must already be open before an object stored by an earlier attempt can be
-    // looked up. Every retry re-polls the provider and gets a fresh
-    // `downloadUrl`, so reopening it on a recovery pass costs one request
-    // rather than depending on a link that has since expired.
-    const stored = await onRejection(
-      (async (): Promise<StoredArtifactObject> => {
-        const existing = await set(
-          uploadedArtifactObject$,
-          {
-            userId: args.job.userId,
-            orgId: args.job.orgId,
-            id: args.job.id,
-            filenameHint: filename,
-            variant: "socialkit",
-          },
-          signal,
-        );
-        if (existing) {
-          // A previous attempt already stored this object, so drop the stream
-          // instead of downloading a body nothing will consume.
-          startUntrackedBestEffortCleanup(download.reader.cancel());
-          return {
-            key: existing.key,
-            url: existing.url,
-            layout: existing.layout,
-            sizeBytes: existing.size,
-          };
+  ): Promise<SocialKitDownloadResponse> => {
+    const accessKey = env("OKOU_SOCIAL_SOCIALKIT_TOKEN");
+    const refreshed = await settle(
+      (async () => {
+        if (!accessKey || !job.providerJobId) {
+          throw new Error("Social download link is unavailable");
         }
-        const location = await set(
-          allocateSocialKitArtifact$,
-          { job: args.job, filename, contentType },
+        const poll = await pollProviderJob(
+          accessKey,
+          job.providerJobId,
           signal,
         );
-        const sizeBytes = await set(
-          streamDownloadToArtifact$,
-          {
-            download,
-            bucket: location.bucket,
-            key: location.key,
-            contentType,
-            metadata: location.metadata,
-          },
-          signal,
-        );
-        return {
-          key: location.key,
-          url: location.url,
-          layout: location.layout,
-          sizeBytes,
-        };
+        if (poll.status !== "ready" || !readyMetadataIsValid(job, poll.ready)) {
+          throw new Error("Social download link is unavailable");
+        }
+        return directDownloadLink(poll.ready, accessKey);
       })(),
-      () => {
-        // `streamDownloadToArtifact$` cancels the reader on its own failures.
-        // This covers the window before it takes ownership, where a rejected
-        // lookup or allocation would otherwise leave the response body open.
-        startUntrackedBestEffortCleanup(download.reader.cancel());
-      },
     );
     signal.throwIfAborted();
-    if (args.job.request.privateArtifacts === true) {
-      await set(
-        completePrivateArtifact$,
-        {
-          id: args.job.id,
-          url: stored.url,
-          contentType,
-          size: stored.sizeBytes,
+    if (!refreshed.ok) {
+      return {
+        ...responseForJob(job),
+        download: null,
+        error: {
+          code: "SOCIALKIT_DOWNLOAD_LINK_UNAVAILABLE",
+          message:
+            "The temporary download link could not be refreshed; query this download again",
+          retryable: true,
+          billed: job.creditsCharged !== null,
         },
-        signal,
-      );
+      };
     }
-    const artifact = {
-      id: args.job.id,
-      url: stored.url,
-      filename,
-      contentType,
-      sizeBytes: stored.sizeBytes,
-      format: media?.extension ?? null,
-    };
-    await set(
-      recordWebUploadedFile$,
-      {
-        runId: args.job.runId ?? undefined,
-        externalId: artifact.id,
-        userId: args.job.userId,
-        orgId: args.job.orgId,
-        filename: artifact.filename,
-        contentType: artifact.contentType,
-        sizeBytes: artifact.sizeBytes,
-        url: artifact.url,
-        s3Key: stored.key,
-        layout: stored.layout,
-        metadata: {
-          provider: "socialkit",
-          providerJobId: args.job.providerJobId,
-          platform: args.job.request.platform,
-          durationSeconds: args.providerResult.durationSeconds,
-          creditsCost: args.providerResult.creditsCost,
-        },
-      },
-      signal,
-    );
-    return artifact;
+    return { ...responseForJob(job), download: refreshed.value };
   },
 );
 
@@ -1554,7 +963,7 @@ const completeReadySocialKitDownload$ = command(
     { set },
     args: { readonly job: DownloadJob; readonly ready: ProviderReady },
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<DownloadLink> => {
     const providerResult =
       args.job.providerResult ?? safeProviderResult(args.ready);
     const settledJob = await set(
@@ -1563,25 +972,26 @@ const completeReadySocialKitDownload$ = command(
       AbortSignal.timeout(READY_SETTLEMENT_TIMEOUT_MS),
     );
     signal.throwIfAborted();
+    const accessKey = env("OKOU_SOCIAL_SOCIALKIT_TOKEN");
+    if (!accessKey) {
+      throw new Error("SocialKit provider is not configured");
+    }
+    const download = directDownloadLink(args.ready, accessKey);
     const writeDb = set(writeDb$);
-    const artifact = await set(
-      materializeSocialKitArtifact$,
-      { job: settledJob, ready: args.ready, providerResult },
-      signal,
-    );
     await writeDb
       .update(socialKitDownloadJobs)
       .set({
         status: "completed",
         providerResult,
         creditsCharged: settledJob.creditsCharged,
-        artifact,
         error: null,
         claimExpiresAt: null,
         updatedAt: nowDate(),
         completedAt: nowDate(),
       })
       .where(eq(socialKitDownloadJobs.id, args.job.id));
+    signal.throwIfAborted();
+    return download;
   },
 );
 
@@ -1628,17 +1038,22 @@ export const reconcileSocialKitDownload$ = command(
     { set },
     downloadId: string,
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ): Promise<boolean | { readonly download: DownloadLink }> => {
     const accessKey = env("OKOU_SOCIAL_SOCIALKIT_TOKEN");
     if (!accessKey) {
       return false;
     }
     let job = await set(claimSocialKitDownload$, downloadId, signal);
-    const providerJobId = job?.providerJobId;
-    if (!job || !providerJobId) {
+    if (!job) {
       return false;
     }
     const writeDb = set(writeDb$);
+    const providerJobId = job.providerJobId;
+    if (!providerJobId) {
+      await recordProviderFailure(writeDb, job, signal, INVALID_METADATA_ERROR);
+      signal.throwIfAborted();
+      return true;
+    }
     if (job.providerResult && job.creditsCharged === null) {
       const recovered = await settle(
         set(
@@ -1666,7 +1081,7 @@ export const reconcileSocialKitDownload$ = command(
       job = recovered.value;
     }
     return await onRejection(
-      (async (): Promise<boolean> => {
+      (async (): Promise<boolean | { readonly download: DownloadLink }> => {
         const poll = await settle(
           pollProviderJob(accessKey, providerJobId, signal),
         );
@@ -1701,22 +1116,15 @@ export const reconcileSocialKitDownload$ = command(
           signal.throwIfAborted();
           return true;
         }
-        if (poll.value.status === "invalid") {
+        if (
+          poll.value.status === "invalid" ||
+          !readyMetadataIsValid(job, poll.value.ready)
+        ) {
           await recordProviderFailure(
             writeDb,
             job,
             signal,
-            INVALID_PROVIDER_RESPONSE_ERROR,
-          );
-          signal.throwIfAborted();
-          return true;
-        }
-        if (!readyMetadataIsValid(job, poll.value.ready)) {
-          await recordProviderFailure(
-            writeDb,
-            job,
-            signal,
-            INVALID_PROVIDER_RESPONSE_ERROR,
+            INVALID_METADATA_ERROR,
           );
           signal.throwIfAborted();
           return true;
@@ -1733,7 +1141,7 @@ export const reconcileSocialKitDownload$ = command(
           await deferClaimedJob(writeDb, job, undefined, signal);
           return true;
         }
-        return true;
+        return { download: completed.value };
       })(),
       async () => {
         if (!signal.aborted) {
