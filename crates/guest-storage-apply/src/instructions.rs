@@ -1,4 +1,5 @@
 use crate::LOG_TAG;
+use crate::cleanup_directory::CleanupDirectory;
 use guest_telemetry::{log_info, log_warn};
 use std::fs;
 use std::io;
@@ -126,17 +127,24 @@ pub(crate) fn cleanup_instruction_files(entries: &[InstructionCleanup]) -> bool 
             return false;
         };
         let mount_path = Path::new(&entry.mount_path);
-        if matches!(
-            lstat_instruction_path_state(mount_path),
-            InstructionPathState::Missing
-        ) {
+        // Preserve the no-op behavior of an empty mount path.
+        if mount_path.as_os_str().is_empty() {
             continue;
         }
-        if !existing_instruction_dir_is_safe(mount_path) {
-            return false;
-        }
+        let directory = match CleanupDirectory::open(mount_path) {
+            Ok(directory) => directory,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) => {
+                log_warn!(
+                    LOG_TAG,
+                    "Failed to open instructions cleanup directory: {e}"
+                );
+                return false;
+            }
+        };
+        // Retain the opened directory through every leaf metadata check and unlink.
         for filename in filenames {
-            if !remove_instruction_file_if_safe(&mount_path.join(filename.as_str())) {
+            if !remove_instruction_file_if_safe(&directory.proc_path().join(filename.as_str())) {
                 return false;
             }
         }

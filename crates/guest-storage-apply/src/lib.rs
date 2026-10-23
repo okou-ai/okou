@@ -51,6 +51,7 @@
 
 mod archive;
 mod cleanup;
+mod cleanup_directory;
 mod connection_observation;
 mod download;
 mod error;
