@@ -8,7 +8,7 @@ import type {
   PiResourceIndexFile,
   PiResourceVersionIndex,
 } from "@okouai/db/jsonb-contracts/pi-resource-version-index";
-import { z } from "zod";
+import * as z from "zod";
 
 import { safeSync } from "../signals/utils";
 import { extractBinaryFilesFromTarGz } from "./tar";

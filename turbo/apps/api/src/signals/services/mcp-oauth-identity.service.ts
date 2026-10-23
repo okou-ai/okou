@@ -6,7 +6,7 @@ import {
   type JSONWebKeySet,
   type JWTPayload,
 } from "jose";
-import { z } from "zod";
+import * as z from "zod";
 
 import { nowDate } from "../../lib/time";
 import { safeJsonParse, safeSync, settle } from "../utils";

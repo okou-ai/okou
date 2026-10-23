@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 import { safeJsonParse } from "../utils";
 import { logger } from "../../lib/log";

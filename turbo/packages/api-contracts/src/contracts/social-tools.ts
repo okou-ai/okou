@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 export const SOCIALKIT_MAX_INPUT_VALUE_CHARS = 4_096;
 export const MANAGED_SOCIALKIT_BILLING_CATEGORY = "request";

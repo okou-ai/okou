@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { z } from "zod";
+import * as z from "zod";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";

@@ -2,7 +2,7 @@ import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { and, asc, eq, or, sql, type SQLWrapper } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 import {
   pgBooleanDecoder,
   pgTextDecoder,

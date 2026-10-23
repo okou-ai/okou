@@ -4,7 +4,7 @@ import {
   type ConnectorAuthMethodId,
   type ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import { z } from "zod";
+import * as z from "zod";
 
 const deviceProviderStateSchema = z
   .object({

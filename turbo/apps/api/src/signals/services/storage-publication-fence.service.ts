@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
 
 import {

@@ -34,7 +34,7 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { userExportEntries } from "@okouai/db/schema/user-export-entry";
-import { z } from "zod";
+import * as z from "zod";
 import {
   nullableDriverValueDecoder,
   pgTextDecoder,

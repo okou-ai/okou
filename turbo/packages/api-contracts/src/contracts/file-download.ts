@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 /** A single-file capability resolved after the API's normal access checks. */
 export const fileDownloadUrlSchema = z.object({

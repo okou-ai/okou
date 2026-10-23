@@ -1,6 +1,6 @@
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { z } from "zod";
+import * as z from "zod";
 import { safeJsonParse } from "../utils";
 
 const log = logger("api:agentphone");

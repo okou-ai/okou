@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 export const CONNECTOR_CATALOG_MAX_RAW_BYTES = 64 * 1024 * 1024;
 export const BUILTIN_FIREWALL_CATALOG_MAX_BYTES = 16 * 1024 * 1024;

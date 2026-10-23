@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import { z } from "zod";
+import * as z from "zod";
 
 import { env } from "../../lib/env";
 import { getSecretKmsClient } from "../../lib/secret-kms-client";

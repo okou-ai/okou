@@ -18,7 +18,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { pgTextDecoder } from "../../lib/db-structured-result";

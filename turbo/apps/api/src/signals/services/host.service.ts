@@ -14,7 +14,7 @@ import {
   type HostedSiteDeploymentsResponse,
   type HostedSitePrepareRequest,
 } from "@okouai/api-contracts/contracts/host";
-import { z } from "zod";
+import * as z from "zod";
 import {
   CURRENT_LINK_LAYOUT,
   hostedSitePointerNamespace,

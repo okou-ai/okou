@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { command } from "ccstate";
-import { z } from "zod";
+import * as z from "zod";
 
 import { connectorOAuthStateExpiresAt } from "../../lib/connector-oauth-state";
 import { safeJsonParse } from "../utils";

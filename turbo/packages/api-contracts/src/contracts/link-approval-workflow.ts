@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { initContract } from "./base";
 
 // Only purchase identity and its original deadline cross the Workflow boundary.

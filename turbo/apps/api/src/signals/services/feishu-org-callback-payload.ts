@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 export const feishuOrgCallbackFileSchema = z.object({
   fileId: z.string().min(1),

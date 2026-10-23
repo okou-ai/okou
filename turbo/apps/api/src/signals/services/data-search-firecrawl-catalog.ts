@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { nowDate } from "../../lib/time";
 
 import type { DataSearchRequest } from "@okouai/api-contracts/contracts/data-search";

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { userMessageDocumentSchema } from "./chat-threads";

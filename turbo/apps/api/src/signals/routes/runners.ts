@@ -62,7 +62,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
 import {
   withPgPoolAcquisitionCapture,

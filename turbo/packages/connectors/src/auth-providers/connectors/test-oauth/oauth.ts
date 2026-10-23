@@ -9,7 +9,7 @@
  * deployed API routes implement these provider URLs.
  */
 
-import { z } from "zod";
+import * as z from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";

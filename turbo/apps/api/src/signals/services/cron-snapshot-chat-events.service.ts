@@ -26,7 +26,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSearchMessageWatermarks } from "@okouai/db/schema/chat-event-search";
 import {

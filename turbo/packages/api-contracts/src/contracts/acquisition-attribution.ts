@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 // Acquisition properties retained for App PostHog events and historical
 // migration tooling. Runtime attribution persistence belongs to Marketing.

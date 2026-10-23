@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 export const VNC_RSA_AES_FIELD_MAX_BYTES = 255;
 export const VNC_RSA_PUBLIC_KEY_MAX_BYTES = 16_384;

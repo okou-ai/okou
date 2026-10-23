@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { chatEventContextTypeSchema, chatEventTypeSchema } from "./chat-events";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 

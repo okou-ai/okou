@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, gt, isNotNull, lte } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";

@@ -5,7 +5,7 @@ import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, asc, eq, getTableColumns, inArray, ne, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { optionalEnv } from "../../lib/env";

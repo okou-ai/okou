@@ -13,7 +13,7 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { command } from "ccstate";
-import { z } from "zod";
+import * as z from "zod";
 import { nowDate } from "../../lib/time";
 import { safeJsonParse, safeUrlParse, tapError } from "../utils";
 import {

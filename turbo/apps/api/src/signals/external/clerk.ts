@@ -8,7 +8,7 @@ import {
 } from "@clerk/backend/errors";
 import { verifyWebhook } from "@clerk/backend/webhooks";
 import { delay } from "signal-timers";
-import { z } from "zod";
+import * as z from "zod";
 import { singleton } from "../../lib/singleton";
 import { env } from "../../lib/env";
 import { safeJsonParse, settle } from "../utils";

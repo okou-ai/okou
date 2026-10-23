@@ -17,7 +17,7 @@ import {
   getTableColumns,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 import { usagePackOverdraftTransferSql } from "@okouai/db/operations/usage-pack-overdraft-transfer";
 import {
   requireUsagePackOverdraftTransfer,

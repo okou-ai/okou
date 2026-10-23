@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import type {
   ComputerUseAuthorizationSource,
   ComputerUseHostListResponse,

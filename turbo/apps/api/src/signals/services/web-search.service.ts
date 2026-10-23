@@ -9,7 +9,7 @@ import {
   type WebSearchResult,
 } from "@okouai/api-contracts/contracts/web-search";
 import { command } from "ccstate";
-import { z } from "zod";
+import * as z from "zod";
 
 import { env } from "../../lib/env";
 import type { AuthContext } from "../../types/auth";

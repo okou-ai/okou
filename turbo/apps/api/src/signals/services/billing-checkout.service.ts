@@ -12,7 +12,7 @@ import type {
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { and, eq, isNull, lte, notExists, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { env } from "../../lib/env";
 import { pgTextDecoder } from "../../lib/db-structured-result";

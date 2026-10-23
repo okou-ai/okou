@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { z } from "zod";
+import * as z from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
 import { safeJsonParse, safeUrlParse, settle } from "../utils";

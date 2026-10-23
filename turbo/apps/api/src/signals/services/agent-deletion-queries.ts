@@ -9,7 +9,7 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { and, asc, eq, gte, inArray, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { safeSqlStateCode } from "../../lib/pg-errors";

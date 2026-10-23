@@ -19,7 +19,7 @@ import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { secrets } from "@okouai/db/schema/secret";
 import { command } from "ccstate";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import {
   connectorOAuthStateExpiresAt,
   generateConnectorOAuthState,

@@ -5,7 +5,7 @@ import {
 } from "@okouai/api-contracts/contracts/social-discovery";
 import { findManagedSocialKitTool } from "@okouai/api-contracts/contracts/social";
 import { command } from "ccstate";
-import { z } from "zod";
+import * as z from "zod";
 
 import { now } from "../../lib/time";
 import { requestSignal$ } from "../context/hono";

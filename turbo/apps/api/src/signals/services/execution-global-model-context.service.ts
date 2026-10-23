@@ -5,7 +5,7 @@ import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { modelRoutes } from "@okouai/db/schema/model-route";
-import { z } from "zod";
+import * as z from "zod";
 import { db$ } from "../external/db";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import {

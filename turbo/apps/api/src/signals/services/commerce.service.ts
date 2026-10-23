@@ -7,7 +7,7 @@ import {
   type CommerceSearchRequest,
 } from "@okouai/api-contracts/contracts/commerce";
 import { command } from "ccstate";
-import { z } from "zod";
+import * as z from "zod";
 
 import { env } from "../../lib/env";
 import type { AuthContext } from "../../types/auth";

@@ -23,7 +23,7 @@ import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";

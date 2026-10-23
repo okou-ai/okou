@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import type { SlidesTextStyle } from "./google-slides-import.service";
 
 const PRESENTATIONS = "https://slides.googleapis.com/v1/presentations";

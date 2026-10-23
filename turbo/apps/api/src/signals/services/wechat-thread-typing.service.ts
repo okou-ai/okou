@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { and, eq, exists, inArray, isNull, notExists, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";

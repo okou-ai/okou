@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import {
   RUN_UPLOADED_FILE_SOURCES,

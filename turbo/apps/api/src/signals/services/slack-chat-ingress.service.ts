@@ -5,7 +5,7 @@ import {
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, exists, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { db$, writeDb$ } from "../external/db";
 import { parseRawRows } from "../../lib/db-raw-rows";

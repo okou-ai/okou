@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { delay } from "signal-timers";
-import { z } from "zod";
+import * as z from "zod";
 
 import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";

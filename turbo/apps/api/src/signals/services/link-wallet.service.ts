@@ -30,7 +30,7 @@ import {
   isNotNull,
   sql,
 } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { now, nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";

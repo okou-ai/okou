@@ -1,4 +1,5 @@
-import { z, type output, type ZodType } from "zod";
+import * as z from "zod";
+import type { output, ZodType } from "zod";
 
 export const pgInt8ToSafeIntegerSchema = z
   .string()

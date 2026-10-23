@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { hostedSites } from "@okouai/db/runtime/hosted-site";
 import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { hostedLinkOrigin } from "../../lib/link-layout";

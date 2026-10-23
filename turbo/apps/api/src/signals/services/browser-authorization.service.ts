@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { browserAuthorizationRequests } from "@okouai/db/schema/browser-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";

@@ -42,7 +42,7 @@ import {
   runUploadedFiles,
   type CanonicalAssetClassification,
 } from "@okouai/db/schema/run-uploaded-file";
-import { z } from "zod";
+import * as z from "zod";
 
 import { canonicalOkouArtifactCatalogUrl } from "../../lib/file-url";
 import {

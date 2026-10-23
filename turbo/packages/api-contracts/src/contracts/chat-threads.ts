@@ -3,7 +3,7 @@ import {
   modelSettingsSchema,
   reasoningEffortSchema,
 } from "./model-reasoning-effort";
-import { z } from "zod";
+import * as z from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { chatEventRowSchema } from "./chat-event-rows";
 import { CHAT_EVENT_TYPES } from "./chat-events";

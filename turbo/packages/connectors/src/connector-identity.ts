@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 const CONNECTOR_SLUG_MAX_LENGTH = 64;
 const CONNECTOR_AUTH_METHOD_ID_MAX_LENGTH = 50;

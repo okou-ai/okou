@@ -2,7 +2,7 @@ import { command, computed } from "ccstate";
 import { integrationsTeamsDownloadFileContract } from "@okouai/api-contracts/contracts/integrations";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { inferMimetype } from "../../lib/mimetype";
 import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";

@@ -35,7 +35,7 @@ import {
 } from "drizzle-orm";
 import { Buffer } from "node:buffer";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { z } from "zod";
+import * as z from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { logger } from "../../lib/log";
 import { isForeignKeyViolation } from "../../lib/pg-errors";

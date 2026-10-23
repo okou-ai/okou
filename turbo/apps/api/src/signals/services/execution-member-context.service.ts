@@ -1,6 +1,6 @@
 import { and, asc, eq, sql, sum } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";

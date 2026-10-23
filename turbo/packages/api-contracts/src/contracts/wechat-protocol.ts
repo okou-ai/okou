@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 const wechatCdnMediaSchema = z.object({
   encrypt_query_param: z.string().optional(),
   aes_key: z.string().optional(),

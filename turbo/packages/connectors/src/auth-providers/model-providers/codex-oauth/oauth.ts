@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { throwOAuthError } from "../../oauth/error";
 import { reportedOAuthScopes } from "../../oauth/scope";
 

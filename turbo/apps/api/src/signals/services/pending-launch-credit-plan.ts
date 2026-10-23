@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { eq, notExists, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";

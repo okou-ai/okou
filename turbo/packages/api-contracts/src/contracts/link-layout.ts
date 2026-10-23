@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 /**
  * Artifact and hosted-site links live in one of two persisted R2/URL layouts.

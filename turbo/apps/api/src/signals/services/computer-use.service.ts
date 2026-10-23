@@ -5,7 +5,7 @@ import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { desktopVersionIsSupported } from "../../lib/desktop-version";
 
 import { command, computed, type Computed } from "ccstate";
-import { z } from "zod";
+import * as z from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { desktopShellAuthorizations } from "@okouai/db/schema/desktop-shell-authorization";
 import { agentRuns } from "@okouai/db/runtime/agent-run";

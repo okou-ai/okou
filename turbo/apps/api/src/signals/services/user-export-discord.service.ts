@@ -17,7 +17,7 @@ import {
   isNull,
   lte,
 } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { command } from "ccstate";
 import { db$ } from "../external/db";

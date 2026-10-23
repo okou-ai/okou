@@ -1,7 +1,7 @@
 /**
  * Canonical IDs for the member's built-in image generation model setting.
  */
-import { z } from "zod";
+import * as z from "zod";
 
 export const IMAGE_MODEL_IDS = [
   "gpt-image-1",

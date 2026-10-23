@@ -1,5 +1,5 @@
 import { automationEventTypeSchema } from "@okouai/api-contracts/contracts/workflows";
-import { z } from "zod";
+import * as z from "zod";
 
 export const workflowAutomationEventTypeSchema = automationEventTypeSchema.or(
   z.enum(["schedule", "manual", "morning-brief-debug"]),

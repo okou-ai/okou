@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
-import { z } from "zod";
+import * as z from "zod";
 import { and, eq, isNull } from "drizzle-orm";
 import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
 import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";

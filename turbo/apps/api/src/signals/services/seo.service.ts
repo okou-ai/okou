@@ -8,7 +8,7 @@ import type {
   SeoSerpRequest,
 } from "@okouai/api-contracts/contracts/seo";
 import { command } from "ccstate";
-import { z } from "zod";
+import * as z from "zod";
 
 import { dataForSeoLabsLocationCode } from "../../lib/dataforseo-labs-locations";
 import { env } from "../../lib/env";

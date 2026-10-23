@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 import { initContract } from "./trpc-contract";

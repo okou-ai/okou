@@ -44,7 +44,7 @@ import {
   usagePackSubscriptions,
 } from "@okouai/db/schema/usage-pack-subscription";
 import { command } from "ccstate";
-import { z } from "zod";
+import * as z from "zod";
 import {
   and,
   asc,

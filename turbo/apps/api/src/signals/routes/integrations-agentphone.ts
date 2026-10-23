@@ -8,7 +8,7 @@ import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { command, computed } from "ccstate";
 import { and, asc, eq, gt, gte, ilike, lte, or } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";

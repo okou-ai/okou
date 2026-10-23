@@ -1,7 +1,7 @@
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 
 // IDs are reusable after deletion; preserve the creation instance's PostgreSQL

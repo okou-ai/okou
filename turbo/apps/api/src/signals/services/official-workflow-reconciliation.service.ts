@@ -44,7 +44,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 
 import { nowDate, timestampWithoutTimeZone } from "../../lib/time";
 import { pgNullDecoder, pgTextDecoder } from "../../lib/db-structured-result";

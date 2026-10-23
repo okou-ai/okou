@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 // Same bounded metadata contract as guest-contracts::oom_evidence. Null means
 // unavailable, including kernels that do not expose a particular field.

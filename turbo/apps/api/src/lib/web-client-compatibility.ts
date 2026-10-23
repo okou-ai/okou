@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 import { APP_VERSION_PATTERN, compareAppVersions } from "./app-version";
 import compatibilityConfig from "./web-client-compatibility.json";

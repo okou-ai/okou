@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
-import { z } from "zod";
+import * as z from "zod";
 
 import type { ConnectorExternalCodeGrantConfig } from "@okouai/connectors/connector-config";
 import type { ConnectorAuthProviderGrantUserInfo } from "../grant-result";

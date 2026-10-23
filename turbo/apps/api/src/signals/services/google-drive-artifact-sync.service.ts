@@ -40,7 +40,7 @@ import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { ZipArchive } from "archiver";
 import { command, computed, type Computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
 import {

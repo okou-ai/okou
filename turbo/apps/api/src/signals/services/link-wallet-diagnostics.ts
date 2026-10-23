@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
+import * as z from "zod";
 
 import { logger } from "../../lib/log";
 import { monotonicNow } from "../../lib/time";

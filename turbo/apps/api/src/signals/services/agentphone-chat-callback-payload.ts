@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 export const agentphoneDeliveryTargetSchema = z.object({
   messageId: z.string().min(1),

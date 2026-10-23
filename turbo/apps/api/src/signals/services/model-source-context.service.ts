@@ -12,7 +12,7 @@ import {
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { computed } from "ccstate";
 import { and, eq, getTableColumns, isNull, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import {
   contextJsonProjection,

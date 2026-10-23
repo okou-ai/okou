@@ -1,5 +1,5 @@
 import { desktopUpgradeRequiredSchema } from "./desktop-updates";
-import { z } from "zod";
+import * as z from "zod";
 import { fileDownloadUrlSchema } from "./file-download";
 import { authHeadersSchema, initContract } from "./base";
 import { ApiError, apiErrorSchema } from "./errors";

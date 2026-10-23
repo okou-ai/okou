@@ -6,7 +6,7 @@ import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/mode
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";

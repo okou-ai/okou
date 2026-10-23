@@ -268,7 +268,7 @@ import {
   type WithSubquery,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import {

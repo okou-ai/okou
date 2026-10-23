@@ -22,7 +22,7 @@ import {
   type OAuthTokens,
   type FetchLike,
 } from "@modelcontextprotocol/client";
-import { z } from "zod";
+import * as z from "zod";
 import { nowDate } from "../../lib/time";
 import { settle } from "../utils";
 import {

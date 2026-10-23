@@ -8,7 +8,7 @@ import { getUserTemplateStorageName } from "@okouai/core/storage-names";
 import { userTemplateDirectory } from "@okouai/core/user-template-selection";
 import type { userTemplates } from "@okouai/db/schema/user-template";
 import { createHash } from "node:crypto";
-import { z } from "zod";
+import * as z from "zod";
 import type { PresentationTemplateVolume } from "./presentation-template-data.service";
 
 export type UserTemplateRow = typeof userTemplates.$inferSelect;

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 /** Row-level event catalog for chat event schema V8. */
 export const CHAT_EVENT_TYPES = [

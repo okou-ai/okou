@@ -2,7 +2,7 @@ import {
   wechatUpdatesSchema,
   wechatMessageSchema,
 } from "@okouai/api-contracts/contracts/wechat-protocol";
-import { z } from "zod";
+import * as z from "zod";
 import { parseWechatJson } from "./wechat-json";
 export const WECHAT_ORIGIN = "https://ilinkai.weixin.qq.com";
 const REQUEST_TIMEOUT_MS = 40_000;

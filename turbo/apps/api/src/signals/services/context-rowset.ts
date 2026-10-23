@@ -4,7 +4,7 @@ import {
   sql,
   type SQLWrapper,
 } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 /** Preserve native numeric precision in JSON; decode only in the consuming node. */
 export function contextJsonProjection(

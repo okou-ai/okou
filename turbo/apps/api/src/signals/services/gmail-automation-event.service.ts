@@ -18,7 +18,7 @@ import { command } from "ccstate";
 import { and, eq, exists, inArray, or, sql } from "drizzle-orm";
 import { OAuth2Client } from "google-auth-library";
 import { Buffer } from "node:buffer";
-import { z } from "zod";
+import * as z from "zod";
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { isForeignKeyViolation } from "../../lib/pg-errors";

@@ -15,7 +15,7 @@ import {
   type SocialKitResponse,
   socialKitResponseSchema,
 } from "@okouai/api-contracts/contracts/social";
-import { z } from "zod";
+import * as z from "zod";
 import { command } from "ccstate";
 
 import { env } from "../../lib/env";

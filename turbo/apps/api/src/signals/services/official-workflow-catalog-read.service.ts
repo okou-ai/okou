@@ -13,7 +13,7 @@ import {
 } from "@okouai/db/schema/official-workflow-catalog";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import { z } from "zod";
+import * as z from "zod";
 import { and, asc, eq } from "drizzle-orm";
 
 import { db$ } from "../external/db";

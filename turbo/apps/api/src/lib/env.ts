@@ -1,5 +1,6 @@
 import { createEnv } from "@t3-oss/env-core";
-import { z, type ZodType } from "zod";
+import * as z from "zod";
+import type { ZodType } from "zod";
 
 import { testOverride } from "./singleton";
 

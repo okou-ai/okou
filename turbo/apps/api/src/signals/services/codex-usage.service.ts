@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 import { now } from "../../lib/time";
 import type { prepareCodexResetCreditExpiryRead } from "./codex-reset-credit-expiry.service";

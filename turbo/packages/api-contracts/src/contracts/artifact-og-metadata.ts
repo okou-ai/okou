@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 /** Shared wire format consumed by the API and both delivery workers. */
 export const artifactOgMetadataSchema = z.discriminatedUnion("available", [

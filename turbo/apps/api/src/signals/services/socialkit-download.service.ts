@@ -16,7 +16,7 @@ import { socialKitDownloadJobs } from "@okouai/db/schema/socialkit-download-job"
 import { command } from "ccstate";
 import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";

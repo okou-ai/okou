@@ -1,7 +1,7 @@
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { writeDb$ } from "../external/db";
 import { command } from "ccstate";

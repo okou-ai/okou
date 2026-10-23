@@ -1,6 +1,6 @@
 import type { SocialDataResult } from "@okouai/api-contracts/contracts/social-data";
 import { isDeepStrictEqual } from "node:util";
-import { z } from "zod";
+import * as z from "zod";
 
 import { env } from "../../lib/env";
 import {

@@ -17,7 +17,7 @@ import {
   BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH,
   BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
-import { z } from "zod";
+import * as z from "zod";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";

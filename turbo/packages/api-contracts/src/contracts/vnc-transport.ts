@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 export const VNC_HOST_MAX_LENGTH = 253;
 export const VNC_CA_BUNDLE_MAX_LENGTH = 65_536;

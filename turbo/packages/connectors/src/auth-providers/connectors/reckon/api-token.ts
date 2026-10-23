@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 import { ProviderHttpError, ProviderResponseError } from "../../provider-error";
 import { parseProviderTokenResponse } from "../../token-response";

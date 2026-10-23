@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 import { throwOAuthError } from "../../oauth/error";
 import type { OAuthRefreshResult } from "../../oauth/types";

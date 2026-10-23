@@ -18,7 +18,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { db$, writeDb$ } from "../external/db";

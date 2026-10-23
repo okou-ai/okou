@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 /**
  * Dependency-leaf runner values shared by browser, worker, and server

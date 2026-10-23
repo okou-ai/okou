@@ -6,7 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/desktop-updates";
 import { DESKTOP_PRODUCT_OKOU } from "@okouai/api-contracts/contracts/client-headers";
 import { delay } from "signal-timers";
-import { z } from "zod";
+import * as z from "zod";
 
 import { logger } from "../../lib/log";
 import { desktopVersionIsSupported } from "../../lib/desktop-version";

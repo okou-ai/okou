@@ -1,6 +1,6 @@
 import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "@okouai/api-contracts/contracts/voice-io-polish";
 import type { VoiceIoTranscribeContext } from "@okouai/api-contracts/contracts/voice-io-transcribe";
-import { z } from "zod";
+import * as z from "zod";
 
 import { safeJsonParse } from "../utils";
 import { generateVertexVoice, VOICE_INPUT_MODEL } from "./vertex-voice";

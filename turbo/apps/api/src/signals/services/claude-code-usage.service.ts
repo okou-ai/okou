@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 import type { SubscriptionUsageMetadata } from "./model-provider-subscription-usage.types";
 

@@ -12,7 +12,7 @@ import {
   type PgTable,
   type PgUpdateSetSource,
 } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 
 import {
   pgInt8ToSafeIntegerSchema,

@@ -4,7 +4,7 @@ import { createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
 
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { feishuEventsContract } from "@okouai/api-contracts/contracts/feishu-events";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";

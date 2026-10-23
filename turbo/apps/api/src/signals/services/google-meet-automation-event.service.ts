@@ -12,7 +12,7 @@ import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { OAuth2Client } from "google-auth-library";
 import { Buffer } from "node:buffer";
-import { z } from "zod";
+import * as z from "zod";
 import { optionalEnv } from "../../lib/env";
 import { now, nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";

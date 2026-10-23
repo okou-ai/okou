@@ -16,7 +16,7 @@ import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { OAuth2Client } from "google-auth-library";
-import { z } from "zod";
+import * as z from "zod";
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { testOverride } from "../../lib/singleton";

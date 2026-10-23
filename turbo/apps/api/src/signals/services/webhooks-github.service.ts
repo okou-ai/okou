@@ -8,7 +8,7 @@ import { githubUserLinks } from "@okouai/db/schema/github-user-link";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { logger } from "../../lib/log";
 import { db$, writeDb$ } from "../external/db";
