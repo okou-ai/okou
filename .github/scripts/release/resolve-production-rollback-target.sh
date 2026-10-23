@@ -102,6 +102,7 @@ readonly SESSION_STORAGE_MOUNT_RUNTIME_PATH=turbo/packages/db/src/runtime/agent-
 readonly SESSION_CONVERSATION_RUNTIME_PATH=.github/rollback-floors/session-conversation-runtime
 readonly WECHAT_WORKFLOWS_ONLY_PATH=.github/rollback-floors/wechat-workflows-only
 readonly CONNECTOR_RESOURCE_SPLIT_PATH=.github/rollback-floors/connector-resource-split
+readonly CONNECTOR_DIAGNOSTIC_TARGETS_PATH=.github/rollback-floors/connector-diagnostic-targets
 readonly RUN_STORAGE_OUTPUT_READER_PATH=.github/rollback-floors/run-storage-output-reader
 readonly GUEST_STORAGE_OUTPUT_COMPLETION_READER_PATH=.github/rollback-floors/guest-storage-output-completion-reader
 readonly DECODED_STORAGE_CAPACITY_READER_PATH=.github/rollback-floors/decoded-storage-capacity-reader
@@ -766,6 +767,21 @@ if ! git merge-base --is-ancestor "$connector_resource_split_commit" origin/main
 fi
 if ! git merge-base --is-ancestor "$connector_resource_split_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Connector resource split: ${connector_resource_split_commit}."
+fi
+
+# Current CLI diagnostics require canonical targets for environment and URL
+# responses. Older APIs cannot serve that reader after an independent rollback.
+if ! connector_diagnostic_targets_commit=$(git show "origin/main:${CONNECTOR_DIAGNOSTIC_TARGETS_PATH}"); then
+  fail "Cannot read the Connector diagnostic targets rollback floor from main."
+fi
+if [[ ! "$connector_diagnostic_targets_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Connector diagnostic targets rollback floor."
+fi
+if ! git merge-base --is-ancestor "$connector_diagnostic_targets_commit" origin/main; then
+  fail "Connector diagnostic targets rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$connector_diagnostic_targets_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates canonical Connector diagnostic targets: ${connector_diagnostic_targets_commit}."
 fi
 
 if ! git merge-base --is-ancestor "$AGENT_INSTRUCTIONS_DB_ONLY_READER_COMMIT" "$TARGET_COMMIT"; then

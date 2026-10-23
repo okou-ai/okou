@@ -2,7 +2,7 @@ import type {
   ConnectorCheckPolicy,
   ConnectorCheckRequest,
   ConnectorCheckRequestBody,
-  ConnectorCheckTargetAwareDiagnosticResult,
+  ConnectorCheckDiagnosticResult,
   ConnectorCheckTargetAwareUrlRequest,
 } from "@okouai/api-contracts/contracts/connector-check";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
@@ -117,7 +117,7 @@ interface StoredConnectorReadPlan {
 }
 
 type ConnectorCheckTargetUnavailableReason = Extract<
-  ConnectorCheckTargetAwareDiagnosticResult,
+  ConnectorCheckDiagnosticResult,
   { readonly outcome: "target-unavailable" }
 >["reason"];
 
@@ -146,7 +146,7 @@ interface ResolveConnectorCheckArgs {
 type ResolveConnectorCheckResult =
   | {
       readonly kind: "ok";
-      readonly diagnostic: ConnectorCheckTargetAwareDiagnosticResult;
+      readonly diagnostic: ConnectorCheckDiagnosticResult;
       readonly awsContextIncomplete?: true;
     }
   | { readonly kind: "not-found" };
@@ -1186,7 +1186,7 @@ function noMatchDiagnostic(
   timeline: ConnectorCheckTimeline,
   catalogContext: ConnectorCheckCatalogContext,
   targetAware: boolean,
-): ConnectorCheckTargetAwareDiagnosticResult {
+): ConnectorCheckDiagnosticResult {
   const selectedConfig = requestedTarget
     ? configs.find((config) => {
         return (
@@ -1227,7 +1227,7 @@ function unresolvedOwnerDiagnostic(
   decision: Extract<FirewallRequestDecision, { readonly kind: "ambiguous" }>,
   configs: readonly ConnectorCheckRoutingConfig[],
   catalogContext: ConnectorCheckCatalogContext,
-): ConnectorCheckTargetAwareDiagnosticResult {
+): ConnectorCheckDiagnosticResult {
   const candidates = decision.candidates.map((candidate) => {
     const config = configs.find((entry) => {
       return connectorRuntimeTargetKey(entry.target) === candidate;
@@ -1266,7 +1266,7 @@ type UrlEnvironmentSelection =
     }
   | {
       readonly kind: "diagnostic";
-      readonly diagnostic: ConnectorCheckTargetAwareDiagnosticResult;
+      readonly diagnostic: ConnectorCheckDiagnosticResult;
     };
 
 function selectUrlEnvironmentNames(args: {
@@ -1358,7 +1358,7 @@ interface ResolvedUrlDiagnosticArgs {
 
 function resolvedUrlDiagnostic(
   args: ResolvedUrlDiagnosticArgs,
-): ConnectorCheckTargetAwareDiagnosticResult {
+): ConnectorCheckDiagnosticResult {
   const { request, parsed, decision, configs, timeline, catalogContext } = args;
   if (decision.kind === "block" && decision.reason === "unsafe_path") {
     return { outcome: "unsafe-input", reason: "unsafe-path" };
@@ -1429,7 +1429,7 @@ function requestedUrlTarget(
 }
 
 interface UrlModeResolution {
-  readonly diagnostic: ConnectorCheckTargetAwareDiagnosticResult;
+  readonly diagnostic: ConnectorCheckDiagnosticResult;
   readonly awsContextIncomplete?: true;
 }
 
@@ -1536,7 +1536,7 @@ function resolveEnvironmentMode(
   request: Extract<ConnectorCheckRequest, { readonly mode: "environment" }>,
   timeline: ConnectorCheckTimeline,
   catalogContext: ConnectorCheckCatalogContext,
-): ConnectorCheckTargetAwareDiagnosticResult {
+): ConnectorCheckDiagnosticResult {
   const connectorSlug = connectorSlugForEnvironmentName(
     catalogContext.snapshot,
     request.environmentName,

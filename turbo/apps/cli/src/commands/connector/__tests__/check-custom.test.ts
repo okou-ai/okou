@@ -5,7 +5,7 @@ import { join } from "node:path";
 import {
   connectorCheckRequestBodySchema,
   type ConnectorCheckRequestBody,
-  type ConnectorCheckTargetAwareDiagnosticResult,
+  type ConnectorCheckDiagnosticResult,
 } from "@okouai/api-contracts/contracts/connector-check";
 import type { ConnectorAccountInspectionResult } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorMcpResponseSchema } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -40,7 +40,7 @@ const TARGET = { kind: "custom", customConnectorId: CUSTOM_ID } as const;
 const REQUEST_URL = "https://api.acme.test/pinned/items";
 
 type ResolvedUrl = Extract<
-  ConnectorCheckTargetAwareDiagnosticResult,
+  ConnectorCheckDiagnosticResult,
   { outcome: "resolved"; mode: "url" }
 >;
 type AvailableAccount = Extract<
@@ -100,16 +100,14 @@ function account(
 describe("custom connector URL diagnostics", () => {
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
   const error = vi.spyOn(console, "error").mockImplementation(() => {});
-  const exit = vi.spyOn(process, "exit").mockImplementation(() => {
+  vi.spyOn(process, "exit").mockImplementation(() => {
     throw new Error("process.exit called");
   });
   const requests: ConnectorCheckRequestBody[] = [];
   let directory = "";
   let contextPath = "";
 
-  function stubDiagnostic(
-    result: ConnectorCheckTargetAwareDiagnosticResult,
-  ): void {
+  function stubDiagnostic(result: ConnectorCheckDiagnosticResult): void {
     server.use(
       http.post(
         `${ORIGIN}/api/connectors/diagnostics/check`,
@@ -1147,31 +1145,5 @@ describe("custom connector URL diagnostics", () => {
     expect(output()).not.toMatch(
       /permission-request|connectorSlug=|review Permissions/,
     );
-  });
-
-  it("rejects a legacy identity in a target-aware response without retrying", async () => {
-    server.use(
-      http.post(
-        `${ORIGIN}/api/connectors/diagnostics/check`,
-        async ({ request }) => {
-          requests.push(
-            connectorCheckRequestBodySchema.parse(await request.json()),
-          );
-          return HttpResponse.json({
-            ...resolvedCustom(),
-            connector: {
-              connectorSlug: "github",
-              label: "GitHub",
-              visibility: "available",
-              credentialResolution: "network-boundary",
-            },
-          });
-        },
-      ),
-    );
-    await expect(check()).rejects.toThrow("process.exit called");
-    expect(requests).toHaveLength(1);
-    expect(output()).toBe("");
-    expect(exit).toHaveBeenCalledWith(1);
   });
 });

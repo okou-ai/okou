@@ -16,6 +16,7 @@ fail() {
 target_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 connector_resource_split_floor=$(<"${repo_root}/.github/rollback-floors/connector-resource-split")
 decoded_storage_reader_floor=$(<"${repo_root}/.github/rollback-floors/decoded-storage-capacity-reader")
+connector_diagnostic_targets_floor=$(<"${repo_root}/.github/rollback-floors/connector-diagnostic-targets")
 
 cat >"${fake_bin}/git" <<'SH'
 #!/usr/bin/env bash
@@ -35,6 +36,12 @@ case "${1:-}" in
         [ "${MOCK_CONNECTOR_RESOURCE_SPLIT_ON_MAIN:-1}" = "1" ]
       else
         [ "${MOCK_CONNECTOR_RESOURCE_SPLIT_TARGET_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "$MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_TARGET_VALID:-1}" = "1" ]
       fi
     elif [ "${3:-}" = "6060606060606060606060606060606060606060" ]; then
       if [ "${4:-}" = "origin/main" ]; then
@@ -276,6 +283,11 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_DECODED_STORAGE_READER_COMMIT-$MOCK_DECODED_STORAGE_READER_FLOOR}"
       exit 0
     fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/connector-diagnostic-targets" ]; then
+      [ "${MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_COMMIT-$MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_FLOOR}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/connector-resource-split" ]; then
       [ "${MOCK_CONNECTOR_RESOURCE_SPLIT_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_CONNECTOR_RESOURCE_SPLIT_COMMIT-$MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR}"
@@ -360,6 +372,7 @@ run_resolver() {
     MOCK_BOUNDARY_LOG="${tmp_dir}/boundaries.log" \
     MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR="$connector_resource_split_floor" \
     MOCK_DECODED_STORAGE_READER_FLOOR="$decoded_storage_reader_floor" \
+    MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_FLOOR="$connector_diagnostic_targets_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
     VERCEL_PROJECT_ID=test-project \
@@ -424,10 +437,28 @@ run_resolver "${tmp_dir}/decoded-reader-exact.output" \
   >"${tmp_dir}/decoded-reader-exact.log"
 [ -s "${tmp_dir}/decoded-reader-exact.output" ] || fail "exact prepared Runner must remain eligible"
 
+for diagnostic_case in \
+  "MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_AVAILABLE=0|Cannot read the Connector diagnostic targets rollback floor from main" \
+  "MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_COMMIT=|Missing or invalid Connector diagnostic targets rollback floor" \
+  "MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_COMMIT=not-a-commit|Missing or invalid Connector diagnostic targets rollback floor" \
+  "MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_ON_MAIN=0|Connector diagnostic targets rollback floor is not on main" \
+  "MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_TARGET_VALID=0|Rollback target predates canonical Connector diagnostic targets"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${diagnostic_case#*|}" \
+    run_resolver "${tmp_dir}/connector-diagnostic-targets.output" "${diagnostic_case%%|*}"
+  [ ! -s "${tmp_dir}/connector-diagnostic-targets.output" ] || fail "incompatible diagnostic API must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Connector diagnostic policy must reject before artifact or host access"
+  fi
+done
+
 # A compatible API target must resolve its independently compatible Runner tag.
 : >"${tmp_dir}/boundaries.log"
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
+grep -Fxq "git show origin/main:.github/rollback-floors/connector-diagnostic-targets" "${tmp_dir}/boundaries.log" || fail "diagnostic floor must come from current main"
+grep -Fxq "git merge-base --is-ancestor ${connector_diagnostic_targets_floor} origin/main" "${tmp_dir}/boundaries.log" || fail "diagnostic floor must name a merged main commit"
+grep -Fxq "git merge-base --is-ancestor ${connector_diagnostic_targets_floor} ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API must return canonical diagnostic targets"
 grep -Fxq "git merge-base --is-ancestor e01702c7d762b5d2a76d557db77ccaf19c4f95c8 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must accept structured-only disk telemetry"
 grep -Fxq "git merge-base --is-ancestor 625c4607ccdcd2d46a5c7227f61419928035e13f bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "${tmp_dir}/boundaries.log" || fail "retained Runner artifact must contain the pair-free disk telemetry writer"
 grep -Fxq "git merge-base --is-ancestor 5757575757575757575757575757575757575757 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "eligible API artifact must satisfy the canonical VNC producer floor"
