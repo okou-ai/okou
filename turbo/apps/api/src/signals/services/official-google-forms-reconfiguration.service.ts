@@ -193,7 +193,7 @@ const commitOfficialFormsReconfiguration$ = command(
       at,
       { gate: admitted, reset },
     );
-    const cursor = db.$with("published_forms_cursor").as(
+    const cursor = db.$with("published_forms_cursor", {}).as(
       cursorStatement ??
         db
           .select({ automationId: updated.id })
