@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.2](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.1...guest-storage-apply-v0.26.2) (2026-10-23)
+
+
+### Refactoring
+
+* **workflows:** prepare attachments outside storage ([#42563](https://github.com/okou-ai/okou/issues/42563)) ([c2d0e48](https://github.com/okou-ai/okou/commit/c2d0e488e938512e55dce8ab199046a7f16d7b1c))
+
 ## [0.26.1](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.0...guest-storage-apply-v0.26.1) (2026-10-23)
 
 ## [0.26.0](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.25.34...guest-storage-apply-v0.26.0) (2026-10-23)

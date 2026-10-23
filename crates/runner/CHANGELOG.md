@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.236.27](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.26...runner-rs-v0.236.27) (2026-10-23)
+
+
+### Bug Fixes
+
+* patch node.js runtimes in ci and development ([#42566](https://github.com/okou-ai/okou/issues/42566)) ([5da8fcf](https://github.com/okou-ai/okou/commit/5da8fcf0443185c0ba3f291e8d7b2b7cab21adde))
+
+
+### Refactoring
+
+* retire unused pi memory model route ([#42575](https://github.com/okou-ai/okou/issues/42575)) ([ce57579](https://github.com/okou-ai/okou/commit/ce57579b30b1460dfe45fbdc6fff8d2694d1e749))
+* **workflows:** prepare attachments outside storage ([#42563](https://github.com/okou-ai/okou/issues/42563)) ([c2d0e48](https://github.com/okou-ai/okou/commit/c2d0e488e938512e55dce8ab199046a7f16d7b1c))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.236.26](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.25...runner-rs-v0.236.26) (2026-10-23)
 
 ### Release Dependencies

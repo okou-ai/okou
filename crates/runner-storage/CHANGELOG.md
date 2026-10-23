@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.4](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.3...runner-storage-v0.6.4) (2026-10-23)
+
+
+### Refactoring
+
+* **workflows:** prepare attachments outside storage ([#42563](https://github.com/okou-ai/okou/issues/42563)) ([c2d0e48](https://github.com/okou-ai/okou/commit/c2d0e488e938512e55dce8ab199046a7f16d7b1c))
+
 ## [0.6.3](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.2...runner-storage-v0.6.3) (2026-10-23)
 
 ## [0.6.2](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.1...runner-storage-v0.6.2) (2026-10-23)

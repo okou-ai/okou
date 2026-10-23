@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.9](https://github.com/okou-ai/okou/compare/runner-types-v0.9.8...runner-types-v0.9.9) (2026-10-23)
+
+
+### Refactoring
+
+* **workflows:** prepare attachments outside storage ([#42563](https://github.com/okou-ai/okou/issues/42563)) ([c2d0e48](https://github.com/okou-ai/okou/commit/c2d0e488e938512e55dce8ab199046a7f16d7b1c))
+
 ## [0.9.8](https://github.com/okou-ai/okou/compare/runner-types-v0.9.7...runner-types-v0.9.8) (2026-10-23)
 
 ## [0.9.7](https://github.com/okou-ai/okou/compare/runner-types-v0.9.6...runner-types-v0.9.7) (2026-10-23)
