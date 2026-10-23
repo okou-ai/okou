@@ -136,6 +136,8 @@ on:
         required: false
       STEAM_WEB_API_KEY:
         required: false
+      STRIPE_AUTOMATION_WEBHOOK_SECRET:
+        required: false
       STRIPE_SECRET_KEY:
         required: false
       STRIPE_WEBHOOK_SECRET:

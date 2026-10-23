@@ -1053,6 +1053,14 @@ export async function listUndeliveredStripePaidInvoices(
   }
 }
 
+export function constructStripeConnectWebhookEvent(
+  rawBody: string,
+  signature: string,
+  secret: string,
+): unknown {
+  return stripeSdk().webhooks.constructEvent(rawBody, signature, secret);
+}
+
 export function constructStripeBillingWebhookEvent(
   rawBody: string,
   signature: string,

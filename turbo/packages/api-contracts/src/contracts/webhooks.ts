@@ -95,6 +95,23 @@ export const webhookStripeContract = c.router({
   },
 });
 
+// Connect account notifications keep their configured URL and signing secret.
+export const webhookStripeConnectContract = c.router({
+  post: {
+    method: "POST",
+    path: "/api/webhooks/stripe-automation-events",
+    body: c.type<string>(),
+    responses: {
+      200: thirdPartyWebhookOkSchema,
+      400: thirdPartyWebhookErrorSchema,
+      401: thirdPartyWebhookErrorSchema,
+      500: thirdPartyWebhookErrorSchema,
+      503: thirdPartyWebhookErrorSchema,
+    },
+    summary: "Handle Stripe Connect account notifications",
+  },
+});
+
 const gmailWebhookResponseSchema = z.object({
   success: z.literal(true),
   watchStates: z.number(),
@@ -1041,6 +1058,7 @@ export type WebhookGoogleCalendarContract =
 export type WebhookGoogleWorkspaceEventsContract =
   typeof webhookGoogleWorkspaceEventsContract;
 export type WebhookStripeContract = typeof webhookStripeContract;
+export type WebhookStripeConnectContract = typeof webhookStripeConnectContract;
 export type WebhookWorkflowAutomationContract =
   typeof webhookWorkflowAutomationContract;
 export type WebhookBuiltInGenerationFalContract =
