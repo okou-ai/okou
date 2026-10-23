@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.7](https://github.com/okou-ai/okou/compare/ios-v0.18.6...ios-v0.18.7) (2026-10-23)
+
+
+### Refactoring
+
+* **db:** retire pi memory tables after api cutover ([#42495](https://github.com/okou-ai/okou/issues/42495)) ([f7e221b](https://github.com/okou-ai/okou/commit/f7e221beddbd012c07790d6da3e2816825ccc205))
+
 ## [0.18.6](https://github.com/okou-ai/okou/compare/ios-v0.18.5...ios-v0.18.6) (2026-10-23)
 
 

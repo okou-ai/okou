@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.7.29](https://github.com/okou-ai/okou/compare/host-worker-v1.7.28...host-worker-v1.7.29) (2026-10-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.589.3
+    * @okouai/core bumped to 8.781.1
+
 ## [1.7.28](https://github.com/okou-ai/okou/compare/host-worker-v1.7.27...host-worker-v1.7.28) (2026-10-23)
 
 
