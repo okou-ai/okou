@@ -1,4 +1,5 @@
 import { command, computed, state } from "ccstate";
+import { createElement } from "react";
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
   googleWorkspaceTarget,
@@ -77,6 +78,23 @@ async function syncArtifactFileToGoogleDrive(
       },
       { count: 1 },
     ),
+    {
+      action: response.body.webViewLink
+        ? createElement(
+            "a",
+            {
+              href: response.body.webViewLink,
+              target: "_blank",
+              rel: "noopener noreferrer",
+              className:
+                "ml-4 shrink-0 underline underline-offset-4 hover:opacity-80",
+            },
+            i18n.t(($) => {
+              return $.artifacts.googleDrive.viewIt;
+            }),
+          )
+        : undefined,
+    },
   );
   return { kind: "uploaded", file: response.body };
 }

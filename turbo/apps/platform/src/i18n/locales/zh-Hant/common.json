@@ -542,7 +542,8 @@
       "upload": "上傳到 Google Drive",
       "uploadDocs": "上傳至 Google 文件",
       "uploadSheets": "上傳至 Google 試算表",
-      "uploadSlides": "上傳到 Google Slides"
+      "uploadSlides": "上傳到 Google Slides",
+      "viewIt": "查看檔案"
     },
     "jsonPreview": {
       "allShown": "已顯示全部項目",

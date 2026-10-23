@@ -542,7 +542,8 @@
       "upload": "Google Drive에 업로드",
       "uploadDocs": "Google Docs에 업로드",
       "uploadSheets": "Google Sheets에 업로드",
-      "uploadSlides": "Google Slides에 업로드"
+      "uploadSlides": "Google Slides에 업로드",
+      "viewIt": "보기"
     },
     "jsonPreview": {
       "allShown": "모든 항목 표시됨",

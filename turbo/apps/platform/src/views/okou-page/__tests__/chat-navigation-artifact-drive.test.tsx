@@ -98,6 +98,7 @@ interface DriveMockOptions {
   readonly agentAuthorized?: boolean;
   readonly waitForSync?: (mode: GoogleDriveUploadMode) => Promise<void>;
   readonly failingMode?: GoogleDriveUploadMode;
+  readonly uploadedWebViewLink?: string | null;
 }
 
 function installDriveMocks(
@@ -358,7 +359,10 @@ function installDriveMocks(
         id: "drive-file-1",
         name: filename,
         mimeType: uploadedMimeType,
-        webViewLink: "https://drive.google.test/file/drive-file-1",
+        webViewLink:
+          options.uploadedWebViewLink === undefined
+            ? "https://drive.google.test/file/drive-file-1"
+            : options.uploadedWebViewLink,
       });
     },
   );
@@ -509,6 +513,63 @@ async function openDriveMessageMenu(actionName = "Connect Google Drive") {
   });
   return { preview, downloadButton };
 }
+
+test.each([
+  {
+    action: "Upload to Google Drive",
+    url: "https://drive.google.test/file/d/original-report/view?usp=drivesdk",
+  },
+  {
+    action: "Upload to Google Docs",
+    url: "https://docs.google.test/document/d/converted-report/edit",
+  },
+])(
+  "Offer a link to the uploaded file after $action",
+  async ({ action, url }) => {
+    mockWideScreen();
+    installDriveMocks(context, "connected", {
+      filename: "report.txt",
+      contentType: "text/plain",
+      selectedAccountReady: true,
+      uploadedWebViewLink: url,
+    });
+    await setupPage({
+      context,
+      path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.GoogleDocsSheetsConversion]: true },
+    });
+
+    await openDriveArtifactMenu(action, "report.txt");
+    click(roleItemNamed("menuitem", action));
+
+    const link = await findNamedLink("View it");
+    expect(link).toHaveAttribute("href", url);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  },
+);
+
+test("Confirm a Drive upload without a link when Drive returns no view URL", async () => {
+  mockWideScreen();
+  installDriveMocks(context, "connected", {
+    selectedAccountReady: true,
+    uploadedWebViewLink: null,
+  });
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+
+  await openDriveArtifactMenu("Upload to Google Drive");
+  click(roleItemNamed("menuitem", "Upload to Google Drive"));
+
+  await expect(
+    screen.findByText("Synced to Google Drive"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("View it")).not.toBeInTheDocument();
+});
 
 test.each(["available", "unavailable"] as const)(
   "Authorize and sync an artifact when unrelated Drive metadata is %s",
