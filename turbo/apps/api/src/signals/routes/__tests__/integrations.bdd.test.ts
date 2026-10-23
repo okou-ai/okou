@@ -1777,6 +1777,58 @@ describe("INT-01: Slack integration and Slack app routes", () => {
 });
 
 describe("INT-01: Slack app deep webhook flows", () => {
+  it("keeps disabled workspace routing when another workspace enables the same Slack user ID", async () => {
+    const actor = bdd.user();
+    const other = bdd.user();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    integrations.configureSlackAppMocks();
+    integrations.acceptSlackSessionHistoryDownloads();
+    runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
+    await bdd.readOnboardingStatus(actor);
+    const slackUserId = uniqueSlackUserId();
+    await integrations.installSlackWorkspace(other, {
+      installerSlackUserId: slackUserId,
+    });
+    await integrations.enableSlackWorkspaceIdentity(other);
+    const entry = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: slackUserId,
+    });
+    await integrations.enableSlackWorkspaceIdentity(actor, false);
+    cleanUpCanonicalSlackScenario(actor);
+    onTestFinished(async () => {
+      await integrations.requestSlackDisconnect(other, "uninstall", [200]);
+    });
+    context.mocks.slack.users.info.mockResolvedValue({
+      ok: true,
+      user: {
+        id: slackUserId,
+        team_id: entry.teamId,
+        deleted: false,
+        is_bot: false,
+      },
+    });
+
+    await integrations.postSlackEvent(entry.teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      text: "use this workspace's existing connection",
+      channel: "C_BDD_DISABLED_WORKSPACE_IDENTITY",
+      ts: "6090.000100",
+    });
+    await flushWaitUntilForTest();
+
+    await expect(listSlackRunLogs(actor)).resolves.toMatchObject([
+      {
+        triggerSource: "slack",
+        prompt: "use this workspace's existing connection",
+      },
+    ]);
+    await expect(listSlackRunLogs(other)).resolves.toHaveLength(0);
+  });
+
   async function externalSlackIdentityScenario(keepHomeBot = false) {
     const actor = bdd.user();
     runs.acceptStorageDownloads();

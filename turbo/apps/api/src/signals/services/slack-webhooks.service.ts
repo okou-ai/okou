@@ -690,7 +690,6 @@ const resolveSlackAccountRoute$ = command(
       )
       .where(eq(slackOrgConnections.slackUserId, args.slackUserId));
     signal.throwIfAborted();
-    let identityRouting = false;
     for (const candidate of candidates) {
       const candidateOrgId =
         candidate.connection.orgId ?? candidate.installationOrgId;
@@ -708,7 +707,6 @@ const resolveSlackAccountRoute$ = command(
       ) {
         continue;
       }
-      identityRouting = true;
       const token = await decryptPersistentSecretValue(
         args.installation.encryptedBotToken,
         args.installation.orgId ? { orgId: args.installation.orgId } : {},
@@ -718,12 +716,11 @@ const resolveSlackAccountRoute$ = command(
         args.slackUserId,
       );
       signal.throwIfAborted();
-      if (
-        !identity ||
-        identity.deleted ||
-        identity.isBot ||
-        identity.teamId !== candidate.connection.slackWorkspaceId
-      ) {
+      if (!identity || identity.deleted || identity.isBot) {
+        return { kind: "ignored" } as const;
+      }
+      if (identity.teamId !== candidate.connection.slackWorkspaceId) {
+        // A shared user ID in another workspace does not opt this sender in.
         continue;
       }
       const membership = await set(
@@ -740,9 +737,6 @@ const resolveSlackAccountRoute$ = command(
         connection: candidate.connection,
         orgId: candidateOrgId,
       } as const;
-    }
-    if (identityRouting) {
-      return { kind: "ignored" } as const;
     }
     return { kind: "legacy" } as const;
   },
