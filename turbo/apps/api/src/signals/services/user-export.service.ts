@@ -27,6 +27,7 @@ import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { generatePresignedGetUrl } from "../external/s3";
 import { nowDate } from "../../lib/time";
+import { settle } from "../utils";
 import {
   pgBooleanDecoder,
   nullableDriverValueDecoder,
@@ -381,11 +382,14 @@ export const startUserExport$ = command(
           .from(active),
       )
       .as("admitted_export_jobs");
-    const [admitted] = await db
-      .with(active, recent, claimed, scheduled)
-      .select()
-      .from(admittedJobs);
-    signal.throwIfAborted();
+    const admission = await settle(
+      db.with(active, recent, claimed, scheduled).select().from(admittedJobs),
+      signal,
+    );
+    if (!admission.ok) {
+      throw admission.error;
+    }
+    const [admitted] = admission.value;
     if (!admitted) {
       return { kind: "rate_limited" };
     }
