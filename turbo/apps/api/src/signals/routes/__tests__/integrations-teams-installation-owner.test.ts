@@ -21,13 +21,26 @@ import type { TeamsConnectFixture } from "./helpers/teams-connect";
 const context = testContext();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-function captureTeamsRequests(serviceUrl: string, conversationId: string) {
+function captureTeamsRequests(
+  installation: TeamsConnectFixture,
+  conversationId: string,
+) {
+  const { serviceUrl, teamsTenantId } = installation;
   const requests: {
     url: string;
     authorization: string | null;
     body: unknown;
   }[] = [];
   server.use(
+    http.get(
+      `${serviceUrl}v3/conversations/:conversationId/members/:memberId`,
+      ({ params }) => {
+        return HttpResponse.json({
+          id: params.memberId,
+          tenantId: teamsTenantId,
+        });
+      },
+    ),
     http.post(`${serviceUrl}v3/conversations`, async ({ request }) => {
       requests.push({
         url: request.url,
@@ -128,10 +141,7 @@ describe("Teams installation read ownership", () => {
       const fixture = await owner.create({ withDefaultAgent: true });
       const installation = fixture.installation;
       const conversationId = `a:personal-${installation.teamsUserId}`;
-      const requests = captureTeamsRequests(
-        installation.serviceUrl,
-        conversationId,
-      );
+      const requests = captureTeamsRequests(installation, conversationId);
       const card = {
         type: "AdaptiveCard" as const,
         version: "1.4",
@@ -187,10 +197,7 @@ describe("Teams installation read ownership", () => {
       const fixture = await owner.create({ withDefaultAgent: true });
       const installation = fixture.installation;
       const conversationId = `a:personal-${installation.teamsUserId}`;
-      const requests = captureTeamsRequests(
-        installation.serviceUrl,
-        conversationId,
-      );
+      const requests = captureTeamsRequests(installation, conversationId);
       installSharedThreadStorage(context);
       const bytes = "Teams upload bytes";
       const initialized = await accept(
@@ -347,14 +354,14 @@ describe("Teams target command ownership", () => {
       expect(response.body).toStrictEqual({
         error: {
           message:
-            "No connected Microsoft Teams user found for this organization",
+            "This Teams conversation is unavailable to your connected account and Okou.",
           code: "NOT_FOUND",
         },
       });
     });
   });
 
-  it("materializes an upload before resolving a disconnected personal recipient", async () => {
+  it("rejects an upload addressed to a disconnected personal recipient", async () => {
     const owner = createPublicTeamsDispatchFixture(context);
     await owner.run(async () => {
       const fixture = await owner.create({ withDefaultAgent: true });
@@ -402,260 +409,314 @@ describe("Teams target command ownership", () => {
       expect(disconnected.body).toStrictEqual({
         error: {
           message:
-            "No connected Microsoft Teams user found for this organization",
+            "This Teams conversation is unavailable to your connected account and Okou.",
           code: "NOT_FOUND",
         },
       });
     });
   });
 
-  it("sends to an explicit Teams user after the authenticated user disconnects", async () => {
-    const owner = createPublicTeamsDispatchFixture(context);
-    await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
-      const installation = fixture.installation;
-      await owner.disconnect(fixture);
-      expectDisconnectedInstallation(
-        await owner.status(fixture),
-        installation.teamsTenantId,
-      );
-      const teamsUserId = `29:explicit-${randomUUID()}`;
-      const conversationId = `a:explicit-${randomUUID()}`;
-      const requests = captureTeamsRequests(
-        installation.serviceUrl,
-        conversationId,
-      );
-      const response = await accept(
-        setupApp({ context, routes: integrationsTeamsMessageRoutes })(
-          integrationsTeamsMessageContract,
-        ).sendMessage({
-          headers,
-          body: { user: teamsUserId, text: "Explicit recipient" },
-        }),
-        [200],
-      );
-      expect(response.body).toStrictEqual({
-        ok: true,
-        activityId: "delivered-activity",
-        conversationId,
-      });
-      expect(requests).toHaveLength(2);
-      expectPersonalConversation(requests[0], installation, teamsUserId);
-      expect(requests[1]).toStrictEqual({
-        url: `${installation.serviceUrl}v3/conversations/${encodeURIComponent(conversationId)}/activities`,
-        authorization: "Bearer teams-token",
-        body: {
-          type: "message",
-          text: "Explicit recipient",
-          textFormat: "markdown",
-          channelData: { tenant: { id: installation.teamsTenantId } },
-        },
-      });
-    });
-  });
-});
-
-describe("Teams explicit target delivery", () => {
-  it("uploads to an explicit Teams user after the authenticated user disconnects", async () => {
-    const owner = createPublicTeamsDispatchFixture(context);
-    await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
-      const installation = fixture.installation;
-      await owner.disconnect(fixture);
-      expectDisconnectedInstallation(
-        await owner.status(fixture),
-        installation.teamsTenantId,
-      );
-      const teamsUserId = `29:explicit-${randomUUID()}`;
-      const conversationId = `a:explicit-${randomUUID()}`;
-      const requests = captureTeamsRequests(
-        installation.serviceUrl,
-        conversationId,
-      );
-      installSharedThreadStorage(context);
-      const bytes = "Explicit Teams upload bytes";
-      const initialized = await accept(
-        setupApp({ context, routes: integrationsTeamsUploadInitRoutes })(
-          integrationsTeamsUploadInitContract,
-        ).init({
-          headers,
-          body: {
-            filename: "explicit.txt",
-            contentType: "text/plain",
-            length: Buffer.byteLength(bytes),
-          },
-        }),
-        [200],
-      );
-      expect(
-        (
-          await fetch(initialized.body.uploadUrl, {
-            method: "PUT",
-            headers: initialized.body.uploadHeaders,
-            body: bytes,
-            signal: context.signal,
-          })
-        ).status,
-      ).toBe(200);
-      const response = await accept(
-        setupApp({ context, routes: integrationsTeamsUploadCompleteRoutes })(
-          integrationsTeamsUploadCompleteContract,
-        ).complete({
-          headers,
-          body: {
-            uploadId: initialized.body.uploadId,
-            user: teamsUserId,
-            text: "Explicit attachment",
-          },
-        }),
-        [200],
-      );
-      expect(response.body).toStrictEqual({
-        activityId: "delivered-activity",
-        conversationId,
-        filename: "explicit.txt",
-        mimetype: "text/plain",
-        size: Buffer.byteLength(bytes),
-        url: initialized.body.fileUrl,
-      });
-      expect(requests).toHaveLength(2);
-      expectPersonalConversation(requests[0], installation, teamsUserId);
-      expectUploadedActivity(requests[1], installation, {
-        conversationId,
-        fileUrl: initialized.body.fileUrl,
-        text: "Explicit attachment",
-        filename: "explicit.txt",
-      });
-      expect(initialized.body.fileUrl).not.toBe(
-        "https://attachment-storage.example/download",
-      );
-    });
-  });
-
-  it("replies to an explicit Teams activity after the authenticated user disconnects", async () => {
-    const owner = createPublicTeamsDispatchFixture(context);
-    await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
-      const installation = fixture.installation;
-      await owner.disconnect(fixture);
-      expectDisconnectedInstallation(
-        await owner.status(fixture),
-        installation.teamsTenantId,
-      );
-      const conversationId = `19:explicit-${randomUUID()}@thread.v2`;
-      const activityId = `activity:${randomUUID()}`;
-      const requests = captureTeamsRequests(installation.serviceUrl, "unused");
-      const card = {
-        type: "AdaptiveCard" as const,
-        version: "1.4",
-        body: [{ type: "TextBlock", text: "Explicit activity card" }],
-      };
-      const response = await accept(
-        setupApp({ context, routes: integrationsTeamsMessageRoutes })(
-          integrationsTeamsMessageContract,
-        ).sendMessage({
-          headers,
-          body: { conversationId, activityId, text: "Explicit reply", card },
-        }),
-        [200],
-      );
-      expect(response.body).toStrictEqual({
-        ok: true,
-        activityId: "delivered-activity",
-        conversationId,
-      });
-      expect(requests).toStrictEqual([
-        {
-          url: `${installation.serviceUrl}v3/conversations/${encodeURIComponent(conversationId)}/activities/${encodeURIComponent(activityId)}`,
+  it.each([true, false])(
+    "authorizes an explicit Teams user when caller connected=%s",
+    async (connected) => {
+      const owner = createPublicTeamsDispatchFixture(context);
+      await owner.run(async () => {
+        const fixture = await owner.create({ withDefaultAgent: true });
+        const installation = fixture.installation;
+        if (!connected) {
+          await owner.disconnect(fixture);
+          expectDisconnectedInstallation(
+            await owner.status(fixture),
+            installation.teamsTenantId,
+          );
+        }
+        const teamsUserId = `29:explicit-${randomUUID()}`;
+        const conversationId = `a:explicit-${randomUUID()}`;
+        const requests = captureTeamsRequests(installation, conversationId);
+        const response = await accept(
+          setupApp({ context, routes: integrationsTeamsMessageRoutes })(
+            integrationsTeamsMessageContract,
+          ).sendMessage({
+            headers,
+            body: { user: teamsUserId, text: "Explicit recipient" },
+          }),
+          [200, 404],
+        );
+        if (!connected) {
+          expect(response.status).toBe(404);
+          expect(response.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+          expect(requests).toStrictEqual([]);
+          return;
+        }
+        expect(response.status).toBe(200);
+        if (response.status !== 200) {
+          throw new Error("Expected authorized Teams delivery");
+        }
+        expect(response.body).toStrictEqual({
+          ok: true,
+          activityId: "delivered-activity",
+          conversationId,
+        });
+        expect(requests).toHaveLength(2);
+        expectPersonalConversation(requests[0], installation, teamsUserId);
+        expect(requests[1]).toStrictEqual({
+          url: `${installation.serviceUrl}v3/conversations/${encodeURIComponent(conversationId)}/activities`,
           authorization: "Bearer teams-token",
           body: {
             type: "message",
-            summary: "Explicit reply",
-            replyToId: activityId,
-            attachments: [
-              {
-                contentType: "application/vnd.microsoft.card.adaptive",
-                content: card,
-              },
-            ],
+            text: "Explicit recipient",
+            textFormat: "markdown",
             channelData: { tenant: { id: installation.teamsTenantId } },
           },
-        },
-      ]);
-    });
-  });
+        });
+      });
+    },
+  );
+});
 
-  it("uploads a reply to an explicit Teams activity after disconnect", async () => {
-    const owner = createPublicTeamsDispatchFixture(context);
-    await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
-      const installation = fixture.installation;
-      await owner.disconnect(fixture);
-      expectDisconnectedInstallation(
-        await owner.status(fixture),
-        installation.teamsTenantId,
-      );
-      const conversationId = `19:explicit-${randomUUID()}@thread.v2`;
-      const activityId = `activity:${randomUUID()}`;
-      const requests = captureTeamsRequests(installation.serviceUrl, "unused");
-      installSharedThreadStorage(context);
-      const bytes = "Explicit Teams reply bytes";
-      const initialized = await accept(
-        setupApp({ context, routes: integrationsTeamsUploadInitRoutes })(
-          integrationsTeamsUploadInitContract,
-        ).init({
-          headers,
-          body: {
-            filename: "reply.txt",
-            contentType: "text/plain",
-            length: Buffer.byteLength(bytes),
-          },
-        }),
-        [200],
-      );
-      expect(
-        (
-          await fetch(initialized.body.uploadUrl, {
-            method: "PUT",
-            headers: initialized.body.uploadHeaders,
-            body: bytes,
-            signal: context.signal,
-          })
-        ).status,
-      ).toBe(200);
-      const response = await accept(
-        setupApp({ context, routes: integrationsTeamsUploadCompleteRoutes })(
-          integrationsTeamsUploadCompleteContract,
-        ).complete({
-          headers,
-          body: {
-            uploadId: initialized.body.uploadId,
-            conversationId,
-            activityId,
-            text: "Reply attachment",
-          },
-        }),
-        [200],
-      );
-      expect(response.body).toStrictEqual({
-        activityId: "delivered-activity",
-        conversationId,
-        filename: "reply.txt",
-        mimetype: "text/plain",
-        size: Buffer.byteLength(bytes),
-        url: initialized.body.fileUrl,
+describe("Teams explicit target delivery", () => {
+  it.each([true, false])(
+    "authorizes an explicit Teams file recipient when caller connected=%s",
+    async (connected) => {
+      const owner = createPublicTeamsDispatchFixture(context);
+      await owner.run(async () => {
+        const fixture = await owner.create({ withDefaultAgent: true });
+        const installation = fixture.installation;
+        if (!connected) {
+          await owner.disconnect(fixture);
+          expectDisconnectedInstallation(
+            await owner.status(fixture),
+            installation.teamsTenantId,
+          );
+        }
+        const teamsUserId = `29:explicit-${randomUUID()}`;
+        const conversationId = `a:explicit-${randomUUID()}`;
+        const requests = captureTeamsRequests(installation, conversationId);
+        installSharedThreadStorage(context);
+        const bytes = "Explicit Teams upload bytes";
+        const initialized = await accept(
+          setupApp({ context, routes: integrationsTeamsUploadInitRoutes })(
+            integrationsTeamsUploadInitContract,
+          ).init({
+            headers,
+            body: {
+              filename: "explicit.txt",
+              contentType: "text/plain",
+              length: Buffer.byteLength(bytes),
+            },
+          }),
+          [200],
+        );
+        expect(
+          (
+            await fetch(initialized.body.uploadUrl, {
+              method: "PUT",
+              headers: initialized.body.uploadHeaders,
+              body: bytes,
+              signal: context.signal,
+            })
+          ).status,
+        ).toBe(200);
+        const response = await accept(
+          setupApp({ context, routes: integrationsTeamsUploadCompleteRoutes })(
+            integrationsTeamsUploadCompleteContract,
+          ).complete({
+            headers,
+            body: {
+              uploadId: initialized.body.uploadId,
+              user: teamsUserId,
+              text: "Explicit attachment",
+            },
+          }),
+          [200, 404],
+        );
+        if (!connected) {
+          expect(response.status).toBe(404);
+          expect(response.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+          expect(requests).toStrictEqual([]);
+          return;
+        }
+        expect(response.status).toBe(200);
+        if (response.status !== 200) {
+          throw new Error("Expected authorized Teams delivery");
+        }
+        expect(response.body).toStrictEqual({
+          activityId: "delivered-activity",
+          conversationId,
+          filename: "explicit.txt",
+          mimetype: "text/plain",
+          size: Buffer.byteLength(bytes),
+          url: initialized.body.fileUrl,
+        });
+        expect(requests).toHaveLength(2);
+        expectPersonalConversation(requests[0], installation, teamsUserId);
+        expectUploadedActivity(requests[1], installation, {
+          conversationId,
+          fileUrl: initialized.body.fileUrl,
+          text: "Explicit attachment",
+          filename: "explicit.txt",
+        });
+        expect(initialized.body.fileUrl).not.toBe(
+          "https://attachment-storage.example/download",
+        );
       });
-      expect(requests).toHaveLength(1);
-      expectUploadedActivity(requests[0], installation, {
-        conversationId,
-        activityId,
-        fileUrl: initialized.body.fileUrl,
-        text: "Reply attachment",
-        filename: "reply.txt",
+    },
+  );
+
+  it.each([true, false])(
+    "authorizes an explicit Teams reply when caller connected=%s",
+    async (connected) => {
+      const owner = createPublicTeamsDispatchFixture(context);
+      await owner.run(async () => {
+        const fixture = await owner.create({ withDefaultAgent: true });
+        const installation = fixture.installation;
+        if (!connected) {
+          await owner.disconnect(fixture);
+          expectDisconnectedInstallation(
+            await owner.status(fixture),
+            installation.teamsTenantId,
+          );
+        }
+        const conversationId = `19:explicit-${randomUUID()}@thread.v2`;
+        const activityId = `activity:${randomUUID()}`;
+        const requests = captureTeamsRequests(installation, "unused");
+        const card = {
+          type: "AdaptiveCard" as const,
+          version: "1.4",
+          body: [{ type: "TextBlock", text: "Explicit activity card" }],
+        };
+        const response = await accept(
+          setupApp({ context, routes: integrationsTeamsMessageRoutes })(
+            integrationsTeamsMessageContract,
+          ).sendMessage({
+            headers,
+            body: { conversationId, activityId, text: "Explicit reply", card },
+          }),
+          [200, 404],
+        );
+        if (!connected) {
+          expect(response.status).toBe(404);
+          expect(response.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+          expect(requests).toStrictEqual([]);
+          return;
+        }
+        expect(response.status).toBe(200);
+        if (response.status !== 200) {
+          throw new Error("Expected authorized Teams delivery");
+        }
+        expect(response.body).toStrictEqual({
+          ok: true,
+          activityId: "delivered-activity",
+          conversationId,
+        });
+        expect(requests).toStrictEqual([
+          {
+            url: `${installation.serviceUrl}v3/conversations/${encodeURIComponent(conversationId)}/activities/${encodeURIComponent(activityId)}`,
+            authorization: "Bearer teams-token",
+            body: {
+              type: "message",
+              summary: "Explicit reply",
+              replyToId: activityId,
+              attachments: [
+                {
+                  contentType: "application/vnd.microsoft.card.adaptive",
+                  content: card,
+                },
+              ],
+              channelData: { tenant: { id: installation.teamsTenantId } },
+            },
+          },
+        ]);
       });
-      expect(initialized.body.fileUrl).not.toBe(
-        "https://attachment-storage.example/download",
-      );
-    });
-  });
+    },
+  );
+
+  it.each([true, false])(
+    "authorizes a Teams reply attachment when caller connected=%s",
+    async (connected) => {
+      const owner = createPublicTeamsDispatchFixture(context);
+      await owner.run(async () => {
+        const fixture = await owner.create({ withDefaultAgent: true });
+        const installation = fixture.installation;
+        if (!connected) {
+          await owner.disconnect(fixture);
+          expectDisconnectedInstallation(
+            await owner.status(fixture),
+            installation.teamsTenantId,
+          );
+        }
+        const conversationId = `19:explicit-${randomUUID()}@thread.v2`;
+        const activityId = `activity:${randomUUID()}`;
+        const requests = captureTeamsRequests(installation, "unused");
+        installSharedThreadStorage(context);
+        const bytes = "Explicit Teams reply bytes";
+        const initialized = await accept(
+          setupApp({ context, routes: integrationsTeamsUploadInitRoutes })(
+            integrationsTeamsUploadInitContract,
+          ).init({
+            headers,
+            body: {
+              filename: "reply.txt",
+              contentType: "text/plain",
+              length: Buffer.byteLength(bytes),
+            },
+          }),
+          [200],
+        );
+        expect(
+          (
+            await fetch(initialized.body.uploadUrl, {
+              method: "PUT",
+              headers: initialized.body.uploadHeaders,
+              body: bytes,
+              signal: context.signal,
+            })
+          ).status,
+        ).toBe(200);
+        const response = await accept(
+          setupApp({ context, routes: integrationsTeamsUploadCompleteRoutes })(
+            integrationsTeamsUploadCompleteContract,
+          ).complete({
+            headers,
+            body: {
+              uploadId: initialized.body.uploadId,
+              conversationId,
+              activityId,
+              text: "Reply attachment",
+            },
+          }),
+          [200, 404],
+        );
+        if (!connected) {
+          expect(response.status).toBe(404);
+          expect(response.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+          expect(requests).toStrictEqual([]);
+          return;
+        }
+        expect(response.status).toBe(200);
+        if (response.status !== 200) {
+          throw new Error("Expected authorized Teams delivery");
+        }
+        expect(response.body).toStrictEqual({
+          activityId: "delivered-activity",
+          conversationId,
+          filename: "reply.txt",
+          mimetype: "text/plain",
+          size: Buffer.byteLength(bytes),
+          url: initialized.body.fileUrl,
+        });
+        expect(requests).toHaveLength(1);
+        expectUploadedActivity(requests[0], installation, {
+          conversationId,
+          activityId,
+          fileUrl: initialized.body.fileUrl,
+          text: "Reply attachment",
+          filename: "reply.txt",
+        });
+        expect(initialized.body.fileUrl).not.toBe(
+          "https://attachment-storage.example/download",
+        );
+      });
+    },
+  );
 });

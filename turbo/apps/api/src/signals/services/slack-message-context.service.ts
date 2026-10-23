@@ -135,13 +135,13 @@ export const resolveSlackTargetChannel$ = command(
     }
     const recipientId = args.user === "me" ? connectedUser : args.user;
     let channelId: string;
-    if (!args.user) {
+    if (!recipientId) {
       if (!args.channel) {
         throw new Error("Slack target requires a channel or user");
       }
       channelId = args.channel;
     } else {
-      const dm = await args.client.openDMChannel(recipientId ?? connectedUser);
+      const dm = await args.client.openDMChannel(recipientId);
       signal.throwIfAborted();
       if (dm.kind === "slack_error") {
         return {

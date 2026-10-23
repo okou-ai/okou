@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { integrationsTelegramUploadInitRoutes } from "../integrations-telegram-upload-init";
 import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
@@ -69,6 +69,8 @@ async function seedSendableContext() {
       },
     },
   );
+  await fixture.onboard();
+  await fixture.link(String(randomInt(100_000_000, 999_999_999)));
   await fixture.run(() => {
     return runsApi.grantProEntitlement(fixture.actor, {
       onExternalStateReady: (restore) => {
@@ -111,6 +113,39 @@ async function seedSendableContext() {
 describe("POST /api/integrations/telegram/upload-file/complete", () => {
   beforeEach(() => {
     mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", "987654:official-upload-token");
+    mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "official_upload_bot");
+    server.use(
+      http.get(
+        "https://api.telegram.org/bot987654:official-upload-token/getChat",
+        () => {
+          return HttpResponse.json({
+            ok: true,
+            result: {
+              id: -1_001_234_567_890,
+              type: "supergroup",
+              permissions: {
+                can_send_messages: true,
+                can_send_documents: true,
+              },
+            },
+          });
+        },
+      ),
+      http.get(
+        "https://api.telegram.org/bot987654:official-upload-token/getChatMember",
+        ({ request }) => {
+          return HttpResponse.json({
+            ok: true,
+            result: {
+              user: {
+                id: Number(new URL(request.url).searchParams.get("user_id")),
+              },
+              status: "member",
+            },
+          });
+        },
+      ),
+    );
     bdd.acceptAgentStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
