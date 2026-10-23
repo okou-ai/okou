@@ -1,5 +1,4 @@
 use std::io;
-use std::sync::Arc;
 use std::time::Duration;
 
 use guest_control_proto::{
@@ -13,6 +12,7 @@ use crate::tests::support::{
     MockGuest, host_from_stream, make_pair, normal_operation_readiness, pending_request_count,
     setup_host_and_mock_guest,
 };
+use crate::{RequestTimeoutError, RequestTimeoutStage};
 
 fn entropy() -> [u8; 256] {
     std::array::from_fn(|index| index as u8)
@@ -183,40 +183,55 @@ async fn guest_state_restore_surfaces_guest_error_and_malformed_result() {
 
 #[tokio::test]
 async fn guest_state_restore_timeout_abandons_connection_for_parking() {
-    let (host_stream, guest_stream) = make_pair();
-    let (request_tx, request_rx) = oneshot::channel();
-    let (release_tx, release_rx) = oneshot::channel();
-    let guest = tokio::spawn(async move {
-        let mut guest = MockGuest::new(guest_stream);
-        guest.complete_handshake().await;
-        let _request = guest.expect_message(MSG_GUEST_STATE_RESTORE).await;
-        request_tx.send(()).unwrap();
-        release_rx.await.unwrap();
-    });
-    let host = Arc::new(host_from_stream(host_stream).await.unwrap());
-    let request_host = Arc::clone(&host);
-    let request = tokio::spawn(async move {
-        request_host
-            .guest_state_restore(
-                1,
-                0,
-                &entropy(),
-                GuestStateRestoreTimezone::None,
-                1,
-                Duration::from_millis(20),
-            )
-            .await
-    });
-    request_rx.await.unwrap();
+    let (host, mut guest) = setup_host_and_mock_guest().await;
+    let entropy = entropy();
+    let timeout = Duration::from_millis(20);
+    tokio::time::pause();
+    let request =
+        host.guest_state_restore(1, 0, &entropy, GuestStateRestoreTimezone::None, 1, timeout);
+    tokio::pin!(request);
+    {
+        let receipt = guest.expect_message(MSG_GUEST_STATE_RESTORE);
+        tokio::pin!(receipt);
+        // A Tokio timeout cannot bound this wait while its clock is frozen.
+        let receipt_started = std::time::Instant::now();
+        loop {
+            tokio::select! {
+                biased;
+                result = &mut request => {
+                    panic!("restore request completed before guest receipt: {result:?}");
+                }
+                _ = &mut receipt => break,
+                // Keep paused time from auto-advancing through real socket I/O.
+                () = tokio::task::yield_now() => {
+                    assert!(
+                        receipt_started.elapsed() < Duration::from_secs(5),
+                        "timed out waiting for the guest to receive the restore request"
+                    );
+                }
+            }
+        }
+    }
 
-    let error = request.await.unwrap().unwrap_err();
+    // Leave the request unpolled during the jump, then resume before cleanup.
+    tokio::time::advance(timeout + Duration::from_millis(1)).await;
+    tokio::time::resume();
+    let error = request.await.unwrap_err();
 
     assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+    let timeout_error = error
+        .get_ref()
+        .unwrap()
+        .downcast_ref::<RequestTimeoutError>()
+        .expect("restore deadline errors must retain their typed timeout stage");
+    assert_eq!(
+        timeout_error.stage(),
+        RequestTimeoutStage::AwaitingTerminalResponse
+    );
+    assert_eq!(timeout_error.timeout(), timeout);
     assert_eq!(pending_request_count(&host), 0);
     assert_eq!(
         normal_operation_readiness(&host),
         NormalOperationReadiness::NotParkable
     );
-    release_tx.send(()).unwrap();
-    guest.await.unwrap();
 }
