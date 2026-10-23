@@ -1,12 +1,10 @@
 import { builtInGenerationResponseSchema } from "@okouai/api-contracts/contracts/built-in-generation";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv } from "../../../../lib/env";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
 import { cronReconcileImageGenerationsRoutes } from "../../cron-reconcile-image-generations";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { createPublicImageMember } from "./public-image-member";
 import { createImageIoTestApp, tokenRequest } from "./public-image-run";
 import { createRouteMocks } from "./route-test";
@@ -30,12 +28,8 @@ export async function createDurableImageFixture(context: TestContext) {
   });
   const actor = await createPublicImageMember(context, {
     credits: 10_000,
-    ownsFeatures: true,
   });
   await actor.run(async () => {
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.DurableOpenAiImageGeneration]: true,
-    });
     createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
     await accept(
       setupApp({ context, routes: userModelPreferenceRoutes })(

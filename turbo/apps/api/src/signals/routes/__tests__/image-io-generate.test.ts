@@ -10,6 +10,7 @@ import {
 import { imageModelIdSchema } from "@okouai/api-contracts/contracts/image-models";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { http, HttpResponse } from "msw";
 
@@ -34,6 +35,7 @@ import { createRouteMocks } from "./helpers/route-test";
 
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createPublicImageMember } from "./helpers/public-image-member";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { chargePublicSeoUsage } from "./helpers/public-seo-charge";
 
 import {
@@ -370,8 +372,14 @@ describe("POST /api/image-io/generate", () => {
   it.each(GPT_IMAGE_2_5_MODELS)(
     "keeps the priced %s Images API path when Responses is disabled",
     async (model) => {
-      const fixture = await publicFundedImageFixture({ credits: 1000 });
+      const fixture = await createPublicImageMember(context, {
+        credits: 1000,
+        ownsFeatures: true,
+      });
       await fixture.run(async () => {
+        await updateFeatureSwitchesForUser(context, fixture, {
+          [FeatureSwitchKey.DurableOpenAiImageGeneration]: false,
+        });
         await useImageModel(fixture, model);
         mocks.clerk.session(fixture.userId, fixture.orgId);
         let providerCalls = 0;
