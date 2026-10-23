@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.782.0](https://github.com/okou-ai/okou/compare/core-v8.781.1...core-v8.782.0) (2026-10-23)
+
+
+### Features
+
+* add configurable branding banners to hosted sites ([#42516](https://github.com/okou-ai/okou/issues/42516)) ([d3a40c7](https://github.com/okou-ai/okou/commit/d3a40c7c422bd9c9ee678e59bb447f81bc927a69))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.590.0
+
 ## [8.781.1](https://github.com/okou-ai/okou/compare/core-v8.781.0...core-v8.781.1) (2026-10-23)
 
 
