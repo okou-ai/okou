@@ -1,5 +1,5 @@
 {
-  "id": "cf7e97b0-2ad1-40e4-b3de-32cf6811ffae",
+  "id": "d7f6d42e-22a7-44d7-9a52-4fb1c370366f",
   "prevId": "fcddb1f2-bfc7-408c-919b-e5b2ddd2ead1",
   "version": "7",
   "dialect": "postgresql",
@@ -25531,8 +25531,8 @@
         }
       },
       "foreignKeys": {
-        "slack_org_connections_legacy_installation_workspace_id_slack_org_installations_slack_workspace_id_fk": {
-          "name": "slack_org_connections_legacy_installation_workspace_id_slack_org_installations_slack_workspace_id_fk",
+        "slack_org_connections_slack_workspace_id_slack_org_installations_slack_workspace_id_fk": {
+          "name": "slack_org_connections_slack_workspace_id_slack_org_installations_slack_workspace_id_fk",
           "tableFrom": "slack_org_connections",
           "tableTo": "slack_org_installations",
           "columnsFrom": [

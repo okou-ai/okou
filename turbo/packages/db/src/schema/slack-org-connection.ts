@@ -7,6 +7,7 @@ import {
   timestamp,
   uniqueIndex,
   index,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { slackOrgInstallations } from "./slack-org-installation";
@@ -30,19 +31,21 @@ export const slackOrgConnections = pgTable(
     // their FK while account-owned links can exist without an installation.
     legacyInstallationWorkspaceId: varchar("legacy_installation_workspace_id", {
       length: 255,
-    })
-      .generatedAlwaysAs(
-        sql`CASE WHEN org_id IS NULL THEN slack_workspace_id ELSE NULL END`,
-      )
-      .references(() => {
-        return slackOrgInstallations.slackWorkspaceId;
-      }),
+    }).generatedAlwaysAs(
+      sql`CASE WHEN org_id IS NULL THEN slack_workspace_id ELSE NULL END`,
+    ),
     userId: text("user_id").notNull(),
     dmWelcomeSent: boolean("dm_welcome_sent").default(false).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {
     return [
+      // Preserve the constraint name expected by draining API error handlers.
+      foreignKey({
+        name: "slack_org_connections_slack_workspace_id_slack_org_installations_slack_workspace_id_fk",
+        columns: [table.legacyInstallationWorkspaceId],
+        foreignColumns: [slackOrgInstallations.slackWorkspaceId],
+      }),
       uniqueIndex("idx_slack_org_connections_user_workspace").on(
         table.slackUserId,
         table.slackWorkspaceId,

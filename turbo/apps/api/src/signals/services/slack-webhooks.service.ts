@@ -5,6 +5,7 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
@@ -566,7 +567,7 @@ const resolveSlackRouteCompose$ = command(
 
 const resolveConnectedSlackAgentRouteAdmission$ = command(
   async (
-    { set },
+    { get, set },
     args: SlackAgentRouteArgs & {
       readonly installation: SlackInstallation;
       readonly connection: SlackConnection;
@@ -592,6 +593,33 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
     );
     signal.throwIfAborted();
     if (existingRoute) {
+      // A pinned thread can retain its organization after the account changes.
+      if (args.connection.orgId) {
+        const [thread] = await get(db$)
+          .select({ orgId: agents.orgId })
+          .from(chatThreads)
+          .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+          .where(
+            and(
+              eq(chatThreads.id, existingRoute.chatThreadId),
+              eq(chatThreads.userId, args.connection.userId),
+            ),
+          )
+          .limit(1);
+        signal.throwIfAborted();
+        if (!thread) {
+          return { kind: "ignored" };
+        }
+        const membership = await set(
+          getMemberRoleAndUpdateCache$,
+          thread.orgId,
+          args.connection.userId,
+          signal,
+        );
+        if (membership.kind !== "member") {
+          return { kind: "ignored" };
+        }
+      }
       return { kind: "canonical", routeId: existingRoute.id };
     }
 

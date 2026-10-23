@@ -1839,6 +1839,76 @@ describe("INT-01: Slack app deep webhook flows", () => {
     },
   );
 
+  it("checks the pinned thread's organization after the Slack account moves to another organization", async () => {
+    const { actor, entry, home, slackUserId, runnerGroup } =
+      await externalSlackIdentityScenario();
+    const channelId = "C_BDD_PINNED_EXTERNAL_ORG";
+    const threadTs = "6300.000100";
+    await integrations.postSlackEvent(entry.teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      text: "establish a pinned thread",
+      channel: channelId,
+      ts: threadTs,
+    });
+    const runId = await pollSlackRun(runnerGroup);
+    const claim = await runs.claimRunnerJob(runId);
+    await completeSlackTriggeredRun({
+      runId,
+      sandboxToken: claim.sandboxToken,
+      cliAgentType: "claude-code",
+      assistantText: "Pinned thread established",
+    });
+    await flushWaitUntilForTest();
+    const movedOrgId = `org_${randomUUID()}`;
+    const movedActor = bdd.user({
+      userId: actor.userId,
+      email: actor.email,
+      orgId: movedOrgId,
+    });
+    await integrations.enableSlackWorkspaceIdentity(movedActor);
+    await integrations.connectSlackUser(movedActor, {
+      workspaceId: home.teamId,
+      slackUserId,
+    });
+    onTestFinished(async () => {
+      await integrations.requestSlackDisconnect(
+        movedActor,
+        "disconnect",
+        [200],
+      );
+    });
+    context.mocks.slack.users.info.mockResolvedValue({
+      ok: true,
+      user: { id: slackUserId, team_id: home.teamId, deleted: false },
+    });
+    await withMockNowForTest(now() + 61_000, async () => {
+      context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [
+            {
+              role: "org:admin",
+              organization: { id: movedOrgId },
+              publicUserData: { userId: actor.userId },
+            },
+          ],
+        },
+      );
+      await integrations.postSlackEvent(entry.teamId, {
+        type: "app_mention",
+        user: slackUserId,
+        text: "must not reuse revoked organization authority",
+        channel: channelId,
+        thread_ts: threadTs,
+        ts: "6300.000200",
+      });
+      await flushWaitUntilForTest();
+      await runs.heartbeatRunner(runnerGroup);
+      const polled = await runs.pollRunner(runnerGroup);
+      expect(polled.body.job).toBeNull();
+    });
+  });
+
   it("routes external Slack mentions to the connected owner without a home bot and preserves status, replies and Stop", async () => {
     const { actor, entry, slackUserId, runnerGroup } =
       await externalSlackIdentityScenario();
