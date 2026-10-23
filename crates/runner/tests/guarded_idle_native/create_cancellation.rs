@@ -64,7 +64,7 @@ impl Probe {
             file.seek(SeekFrom::Start(1024))?;
             let mut block = [0; 1024];
             file.read_exact(&mut block)?;
-            if bytes != 16384 * 1024 * 1024 || block[56..58] != [0x53, 0xef] {
+            if bytes != fixture::IMAGE_BYTES || block[56..58] != [0x53, 0xef] {
                 return Err(io::Error::other(
                     "actual created home lacks original size/ext4 bytes",
                 ));
@@ -260,7 +260,7 @@ pub async fn exercise(
             vcpu: 2,
             memory_mb: 4096,
             rootfs_hash: context.rootfs_hash.clone(),
-            home_disk_mb: 16384,
+            home_disk_mb: fixture::HOME_DISK_MB,
         },
     )]);
     let factories = BTreeMap::from([(fixture::PROFILE.into(), (context.factory.clone(), true))]);

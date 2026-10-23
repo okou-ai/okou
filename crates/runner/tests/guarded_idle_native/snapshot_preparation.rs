@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::evidence::{Artifacts, clocks, compiled_source, file_sha256};
-use super::{TestResult, io};
+use super::{TestResult, fixture, io};
 
 pub(super) const RECORD_FILE: &str = "snapshot-preparation.json";
 const FORMAT: &str = "native-snapshot-preparation-v1";
@@ -29,9 +29,9 @@ struct Profile {
 impl Profile {
     fn native() -> Self {
         Self {
-            vcpu: 2,
-            memory_mib: 4096,
-            home_mib: 16384,
+            vcpu: fixture::PROFILE_DEFINITION.vcpu,
+            memory_mib: fixture::PROFILE_DEFINITION.memory_mb,
+            home_mib: fixture::HOME_DISK_MB,
         }
     }
 }

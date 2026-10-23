@@ -157,6 +157,15 @@ fn native_report_consumer_validates_external_receipts() {
             env!("CARGO_MANIFEST_DIR"),
             "/tests/guarded_idle_native/report_test.py"
         ))
+        .env(
+            "OKOU_TEST_NATIVE_PROFILE",
+            serde_json::json!({
+                "vcpu": fixture::PROFILE_DEFINITION.vcpu,
+                "memory_mib": fixture::PROFILE_DEFINITION.memory_mb,
+                "home_mib": fixture::HOME_DISK_MB,
+            })
+            .to_string(),
+        )
         .output()
         .expect("native report contract tests require Python 3");
     assert!(
@@ -1189,9 +1198,9 @@ async fn prepare_native_terminal_snapshot() -> TestResult<()> {
         kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
         rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
         output_dir,
-        vcpu_count: 2,
-        memory_mb: 4096,
-        home_disk_mb: 16384,
+        vcpu_count: fixture::PROFILE_DEFINITION.vcpu,
+        memory_mb: fixture::PROFILE_DEFINITION.memory_mb,
+        home_disk_mb: fixture::HOME_DISK_MB,
     })
     .await?;
     Ok(())

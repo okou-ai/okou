@@ -25,7 +25,7 @@ impl Fixture {
             output_dir: directory.path().join("snapshot"),
             vcpu_count: 2,
             memory_mb: 4096,
-            home_disk_mb: 16384,
+            home_disk_mb: fixture::HOME_DISK_MB,
         };
         let producer = directory.path().join("producer");
         Ok(Self {
@@ -113,7 +113,7 @@ fn published_record_binds_original_inputs_complete_outputs_and_creator_clocks() 
             "snapshot_id": artifacts.snapshot_id,
             "snapshot_files": artifacts.snapshot_files,
             "snapshot_preparation_sha256": artifacts.snapshot_preparation_sha256,
-            "profile": {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384},
+            "profile": {"vcpu": 2, "memory_mib": 4096, "home_mib": fixture::HOME_DISK_MB},
         }))?,
     )?;
     let result = std::process::Command::new("python3")

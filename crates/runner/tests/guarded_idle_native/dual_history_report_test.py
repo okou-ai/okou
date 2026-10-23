@@ -14,6 +14,7 @@ import uuid
 import batch_replacement_report as replacement
 import batch_replacement_report_test as replacement_test
 import dual_history_report as dual
+import report
 
 
 def session(thread, message):
@@ -48,7 +49,7 @@ class DualHistoryReportTests(unittest.TestCase):
             values = [
                 {"run_id":run,"sandbox_id":old,"backing_generation":backing,"thread_id":thread,
                  "history_hex":original.hex(),"cache_key":key,"reuse_key":reuse,"profile":"vm0/default",
-                 "home_bytes":16*1024**3,"exit_code":1 if nonzero else 0,
+                 "home_bytes":report.NATIVE_HOME_BYTES,"exit_code":1 if nonzero else 0,
                  "final_identity_verified":not nonzero,"allocated":[2,4096,1]},
                 {"run_id":incoming_run,"sandbox_id":new,"backing_generation":new_backing,"thread_id":incoming_thread,
                  "history_hex":incoming.hex(),"cache_key":key,"reuse_key":reuse,"initial_checkout":"LockBusy","lock_owner":"finalizing",

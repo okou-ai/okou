@@ -141,7 +141,7 @@ def validate(directory):
             or not isinstance(home.get("filesystem_uuid"), str) or not re.fullmatch(r"[0-9a-f]{32}", home["filesystem_uuid"])
             or not isinstance(home.get("superblock_sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", home["superblock_sha256"])):
         raise ValueError("retained original home identity/path missing")
-    exact(home, {"path": path, "bytes": 16384*1024**2, "filesystem_uuid": home["filesystem_uuid"],
+    exact(home, {"path": path, "bytes": report.NATIVE_HOME_BYTES, "filesystem_uuid": home["filesystem_uuid"],
           "superblock_sha256": home["superblock_sha256"]}, "retained original home profile changed")
     attempt_run, attempt_sandbox = (later.identifier(sticky.get(key)) for key in
                                   ("promotion_probe_run_id", "promotion_probe_sandbox_id"))

@@ -11,6 +11,8 @@ import stat
 import uuid
 
 PREFIX = "NATIVE_TERMINAL_RECEIPT "
+NATIVE_PROFILE = {"vcpu": 2, "memory_mib": 4096, "home_mib": 24576}
+NATIVE_HOME_BYTES = NATIVE_PROFILE["home_mib"] * 1024**2
 SCOPES = (
     "Batch(Exact)", "Batch(All)", "CallerOwned", "SpeculativeGuestFailure",
     "FinalizingParked", "FinalizingRunning",
@@ -199,7 +201,7 @@ def _load_measurement_inputs(directory, collector):
     hashes.extend(snapshot.values())
     if any(not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value) for value in hashes):
         raise ValueError("invalid native artifact hash")
-    if (expected["profile"] != {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384}
+    if (expected["profile"] != NATIVE_PROFILE
             or any(type(value) is not int for value in expected["profile"].values())
             or expected["required_fixture_tail_bytes"] != 64 * 1024 * 1024):
         raise ValueError("wrong native workload profile")
