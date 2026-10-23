@@ -252,6 +252,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.BrowserCdpViewer]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Okou browser viewer",
+    description:
+      "Use Okou's interactive browser viewer in conversations and standalone browser pages",
+    enabled: false,
+  },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",
     description: "Test-only feature switch for flag system validation",
