@@ -1,14 +1,33 @@
+import ChatData
 import ChatDataTestSupport
 import Foundation
+import Synchronization
 import XCTest
 
 @MainActor
 final class ChatHTTPFixtureTests: XCTestCase {
-  func testUnknownOriginIsRejectedByTheFixtureWithoutDNSFallback() async throws {
-    let fixture = ChatHTTPFixture { _ in
-      XCTFail("An unknown origin must not reach a different fixture's handler")
-      return ChatHTTPResponse(body: "{}")
+  func testReturnedClientKeepsItsExternalFixtureAliveForRequests() async throws {
+    func makeClient() -> APIClient {
+      ChatHTTPFixture { request in
+        XCTAssertEqual(request.url?.path, "/api/fixture-lifetime")
+        return ChatHTTPResponse(body: #"{"value":"Owned by the returned client"}"#)
+      }.client
     }
+    let client = makeClient()
+    let result: [String: String] = try await client.request("/api/fixture-lifetime")
+    XCTAssertEqual(result, ["value": "Owned by the returned client"])
+  }
+
+  func testUnknownOriginIsRejectedByTheFixtureWithoutDNSFallback() async throws {
+    let reports = Mutex<[String]>([])
+    let fixture = ChatHTTPFixture(
+      onUnhandledRequest: { message in
+        reports.withLock { $0.append(message) }
+      },
+      handler: { _ in
+        XCTFail("An unknown origin must not reach a different fixture's handler")
+        return ChatHTTPResponse(body: "{}")
+      })
     for scheme in ["https", "http"] {
       let url = try XCTUnwrap(
         URL(string: "\(scheme)://unregistered-\(UUID().uuidString).example.invalid"))
@@ -18,6 +37,7 @@ final class ChatHTTPFixtureTests: XCTestCase {
       } catch let error as URLError {
         XCTAssertEqual(error.code, .unsupportedURL)
         XCTAssertTrue(error.localizedDescription.contains(url.absoluteString))
+        XCTAssertTrue(reports.withLock { $0.contains { $0.contains(url.absoluteString) } })
       }
     }
   }

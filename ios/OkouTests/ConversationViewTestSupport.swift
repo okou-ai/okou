@@ -34,12 +34,7 @@ func enclosingCell(_ view: UIView) -> UICollectionViewCell? {
 
 @MainActor
 func mountConversationHost<V: View>(_ host: UIHostingController<V>) async throws -> UIWindow {
-  let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-  let window = UIWindow(windowScene: scene)
-  window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-  window.rootViewController = host
-  window.makeKeyAndVisible()
-  host.view.layoutIfNeeded()
+  let window = try await mountNativeHost(host)
   await stableHostingGeometry(host.view)
   return window
 }
@@ -89,6 +84,7 @@ private final class HostingDisplayFrame: NSObject {
 
 @MainActor
 func unmount(_ window: UIWindow) {
+  window.endEditing(true)
   window.isHidden = true
   window.rootViewController = nil
 }

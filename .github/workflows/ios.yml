@@ -76,7 +76,7 @@ jobs:
     needs: detect
     if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
     runs-on: xcode-27
-    timeout-minutes: 15
+    timeout-minutes: 10
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
@@ -122,12 +122,13 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # Reserve source staging, artifact handling and the final gate within the 12-minute budget.
   build-test:
     needs: [detect, prepare-package-sources]
     # Main pushes consume previously built archives in release-please; never rebuild/test.
     if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
     runs-on: xcode-27
-    timeout-minutes: 30
+    timeout-minutes: 10
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
@@ -226,7 +227,7 @@ jobs:
     needs: detect
     if: github.event_name == 'merge_group' && needs.detect.outputs.needed == 'true'
     runs-on: xcode-27
-    timeout-minutes: 15
+    timeout-minutes: 10
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0

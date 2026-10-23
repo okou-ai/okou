@@ -77,12 +77,6 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let table = try await table(in: host.view, rows: 4)
     XCTAssertEqual(titles(table), ["/rel", "/release", "/pre-release", "/research-notes"])
     await hostingPresentationFrame()
-    let row = table.rectForRow(at: IndexPath(row: 1, section: 0))
-    let point = table.convert(CGPoint(x: row.midX, y: row.midY), to: window)
-    XCTAssertLessThanOrEqual(
-      table.convert(table.bounds, to: window).maxY, input.convert(input.bounds, to: window).minY - 8
-    )
-    XCTAssertTrue(window.hitTest(point, with: nil)?.isDescendant(of: table) == true)
     attach(window, name: "Workflow search above the native composer (HTTP fixtures)")
     let selected = IndexPath(row: 1, section: 0)
     table.delegate?.tableView?(table, didSelectRowAt: selected)

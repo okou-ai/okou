@@ -215,13 +215,7 @@ func mentionTable(in view: UIView) -> UITableView? {
 
 @MainActor
 func mountMentionHost<V: View>(_ host: UIHostingController<V>) async throws -> UIWindow {
-  let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-  let window = UIWindow(windowScene: scene)
-  window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-  window.rootViewController = host
-  window.makeKeyAndVisible()
-  host.view.layoutIfNeeded()
-  try await eventually {
+  let window = try await mountNativeHost(host) { window in
     guard let input = mentionInputs(in: host.view).first else { return false }
     return input.window === window && !input.bounds.isEmpty
   }

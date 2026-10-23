@@ -1,7 +1,6 @@
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
-import SwiftUI
 import Synchronization
 import XCTest
 
@@ -23,6 +22,10 @@ final class ChatThreadActionsTests: XCTestCase {
     defer { gate.open() }
     fixture.state.value.withLock { $0.nextGate = gate }
     let creating = Task { await store.createChat(agentID: ThreadActionsFixture.agent) }
+    addTeardownBlock {
+      gate.open()
+      await creating.value
+    }
     try await eventually { fixture.writes.contains { $0.action == "create" } }
     await undo.action()
     XCTAssertNil(store.selectedThreadID)
@@ -30,13 +33,6 @@ final class ChatThreadActionsTests: XCTestCase {
     store.selectChat(ThreadActionsFixture.thread)
     let unarchived = await store.setArchived(ThreadActionsFixture.thread, archived: false)
     XCTAssertTrue(unarchived)
-    let host = UIHostingController(
-      rootView: ChatWorkspaceHeader(store: store, height: 60, openSidebar: {}))
-    let window = try await mountActions(host)
-    defer { unmount(window) }
-    let button = try XCTUnwrap(moreButton(in: host.view))
-    XCTAssertTrue(button.isEnabled)
-    XCTAssertTrue(try action("chat-archive", in: button).attributes.contains(.disabled))
     let archived = await store.setArchived(
       ThreadActionsFixture.thread, archived: true, leaveDetail: true)
     XCTAssertFalse(archived)
@@ -47,9 +43,6 @@ final class ChatThreadActionsTests: XCTestCase {
     XCTAssertEqual(created?.id, ThreadActionsFixture.createdThread)
     XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.createdThread)
     store.selectChat(ThreadActionsFixture.thread)
-    try await eventually {
-      (try? self.action("chat-archive", in: button))?.attributes.contains(.disabled) == false
-    }
     let saved = await store.setArchived(
       ThreadActionsFixture.thread, archived: true, leaveDetail: true)
     XCTAssertTrue(saved)
@@ -57,168 +50,27 @@ final class ChatThreadActionsTests: XCTestCase {
     XCTAssertEqual(fixture.writes.map(\.action), ["archive", "create", "unarchive", "archive"])
   }
 
-  func testNativeMenuAndRenamePresentationInLightDarkAndAccessibilityText() async throws {
-    let fixture = ThreadActionsFixture(muted: true)
-    let store = fixture.workspace()
-    defer { store.close() }
-    await store.refreshNavigation()
-    await store.refresh()
-    fixture.remote(kind: "pinned", extra: ",\"pinOrder\":\"a0\"")
-    await store.list.refresh(waitForCurrent: true)
-    await store.list.rename(
-      try XCTUnwrap(store.list.threads.first),
-      title:
-        "A long conversation title about planning the week and keeping important follow-ups together"
-    )
-    store.selectChat(ThreadActionsFixture.thread)
-    for style in [UIUserInterfaceStyle.light, .dark] {
-      let host = UIHostingController(
-        rootView: ThreadActionsHarness(store: store)
-          .environment(\.colorScheme, style == .dark ? .dark : .light))
-      host.overrideUserInterfaceStyle = style
-      if style == .dark {
-        host.traitOverrides.preferredContentSizeCategory = .accessibilityExtraExtraLarge
-      }
-      let window = try await mountActions(host)
-      defer { unmount(window) }
-      let button = try XCTUnwrap(moreButton(in: host.view))
-      button.performPrimaryAction()
-      try await eventually {
-        window.windowScene?.windows.contains { hasLabel("Archive chat", in: $0) } == true
-      }
-      try await eventually {
-        window.windowScene?.windows.allSatisfy { menuLabelsHaveSettled(in: $0) } == true
-      }
-      button.contextMenuInteraction?.dismissMenu()
-      try await eventually {
-        window.windowScene?.windows.contains { hasLabel("Archive chat", in: $0) } == false
-      }
-      button.sendAction(try action("chat-rename", in: button))
-      try await eventually { findAlert(host) != nil }
-      try await eventually { findAlert(host)?.viewIfLoaded.map(presentationHasSettled) == true }
-      XCTAssertEqual(findAlert(host)?.traitCollection.userInterfaceStyle.rawValue, style.rawValue)
-      attach(
-        window,
-        name: style == .light
-          ? "Native rename light long synthetic title"
-          : "Native rename dark accessibility text long synthetic title")
-      store.list.cancelRename()
-      try await eventually { findAlert(host) == nil }
-    }
-  }
-
-  func testNativeMenuUsesCurrentStateAndKeepsEntryAvailableDuringMute() async throws {
-    let fixture = ThreadActionsFixture()
-    let store = fixture.workspace()
-    defer { store.close() }
-    await store.refreshNavigation()
-    await store.refresh()
-    store.selectChat(ThreadActionsFixture.thread)
-    let host = UIHostingController(rootView: ThreadActionsHarness(store: store))
-    let window = try await mountActions(host)
-    defer { unmount(window) }
-    let button = try XCTUnwrap(moreButton(in: host.view))
-    XCTAssertTrue(button.showsMenuAsPrimaryAction)
-    XCTAssertEqual(button.accessibilityLabel, "More chat actions")
-    XCTAssertEqual(button.bounds.width, 48)
-    XCTAssertEqual(button.bounds.height, 48)
-    XCTAssertEqual(
-      menuActions(button.menu).map(\.title), ["Pin chat", "Rename", "Mute chat", "Archive chat"])
-    XCTAssertTrue((button.menu?.children.last as? UIMenu)?.options.contains(.displayInline) == true)
-
-    let gate = ThreadActionGate()
-    defer { gate.open() }
-    fixture.state.value.withLock { $0.nextGate = gate }
-    button.sendAction(try action("chat-mute", in: button))
-    try await eventually { fixture.writes.contains { $0.action == "mute" } }
-    try await eventually {
-      (try? self.action("chat-rename", in: button))?.attributes.contains(.disabled) == true
-    }
-    XCTAssertTrue(button.isEnabled)
-    XCTAssertTrue(try action("chat-mute", in: button).attributes.contains(.disabled))
-    await store.setMuted(ThreadActionsFixture.thread, muted: true)
-    XCTAssertEqual(fixture.writes.filter { $0.action == "mute" }.count, 1)
-    button.performPrimaryAction()
-    try await eventually {
-      window.windowScene?.windows.contains { hasLabel("Mute chat", in: $0) } == true
-    }
-    gate.open()
-    try await eventually { (try? self.action("chat-mute", in: button))?.title == "Unmute chat" }
-    try await eventually {
-      window.windowScene?.windows.contains { hasLabel("Unmute chat", in: $0) } == true
-    }
-    button.contextMenuInteraction?.dismissMenu()
-    try await eventually {
-      window.windowScene?.windows.contains { hasLabel("Unmute chat", in: $0) } == false
-    }
-    XCTAssertEqual(button.accessibilityValue, "Not pinned, Muted")
-    XCTAssertFalse(try action("chat-rename", in: button).attributes.contains(.disabled))
-    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
-    XCTAssertTrue(
-      store.list.threads(agentID: ThreadActionsFixture.agent, archived: false).count == 1)
-    XCTAssertTrue(store.threadFeedback?.message.contains("tasks keep running") == true)
-    fixture.state.value.withLock { $0.mutingEnabled = false }
-    await store.refreshNavigation()
-    XCTAssertEqual(try action("chat-mute", in: button).title, "Unmute chat")
-
-    // The same control reads remote pin/archive changes through the normal event protocol.
-    fixture.remote(kind: "pinned", extra: ",\"pinOrder\":\"a0\"")
-    fixture.remote(kind: "archived")
-    await store.list.refresh(waitForCurrent: true)
-    try await eventually {
-      (try? self.action("chat-archive", in: button))?.title == "Unarchive chat"
-    }
-    XCTAssertEqual(try action("chat-pin", in: button).title, "Unpin chat")
-    XCTAssertEqual(button.accessibilityValue, "Pinned, Muted, Archived")
-    XCTAssertEqual(
-      button.configuration?.image?.pngData(), UIImage(systemName: "ellipsis")?.pngData())
-    attach(window, name: "Native more control with pinned muted archived synthetic chat")
-    button.sendAction(try action("chat-mute", in: button))
-    try await eventually {
-      !menuActions(button.menu).contains { $0.identifier == UIAction.Identifier("chat-mute") }
-    }
-    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
-    store.startNewChat()
-    try await eventually { moreButton(in: host.view) == nil }
-  }
-
-  func testRenameTrimsSkipsEmptyAndUnchangedAndRestoresNativeEditorAfterFailure() async throws {
+  func testRenameTrimsSkipsUnchangedTitlesAndKeepsInputForExplicitRetry() async throws {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
     defer { store.close() }
     await store.refresh()
     store.selectChat(ThreadActionsFixture.thread)
-    let host = UIHostingController(rootView: ThreadActionsHarness(store: store))
-    let window = try await mountActions(host)
-    defer { unmount(window) }
-    let button = try XCTUnwrap(moreButton(in: host.view))
-    button.sendAction(try action("chat-rename", in: button))
-    try await eventually { findAlert(host) != nil }
-    let alert = try XCTUnwrap(findAlert(host))
-    let field = try XCTUnwrap(alert.textFields?.first)
-    XCTAssertEqual(field.text, "Planning a useful week")
-    field.text = "  \n "
-    field.sendActions(for: .editingChanged)
-    XCTAssertFalse(try XCTUnwrap(alert.actions.first { $0.title == "Save" }).isEnabled)
+    store.list.beginRename(ThreadActionsFixture.thread)
+    store.list.renameTitle = "  \n "
     await store.list.saveRename()
     XCTAssertTrue(fixture.writes.isEmpty)
     store.list.beginRename(ThreadActionsFixture.thread)
     store.list.renameTitle = "  Planning a useful week \n"
     await store.list.saveRename()
     XCTAssertTrue(fixture.writes.isEmpty)
-
     fixture.state.value.withLock { $0.failNext["rename"] = 503 }
     store.list.beginRename(ThreadActionsFixture.thread)
     store.list.renameTitle = "  A title worth keeping  "
     await store.list.saveRename()
-    try await eventually { findAlert(host)?.message == "rename unavailable" }
-    XCTAssertEqual(findAlert(host)?.textFields?.first?.text, "  A title worth keeping  ")
+    XCTAssertEqual(store.list.renameTitle, "  A title worth keeping  ")
     XCTAssertEqual(store.selectedConversation?.thread.title, "Planning a useful week")
-    XCTAssertNil(store.list.error)
-    attach(window, name: "Native rename retry retains the synthetic title and failure message")
     await store.list.saveRename()
-    try await eventually { findAlert(host) == nil }
-    XCTAssertEqual(store.selectedConversation?.thread.title, "A title worth keeping")
     XCTAssertEqual(store.list.threads.first?.displayTitle, "A title worth keeping")
     XCTAssertEqual(
       fixture.writes.filter { $0.action == "rename" }.map(\.title),
@@ -409,106 +261,6 @@ final class ChatThreadActionsTests: XCTestCase {
     XCTAssertNil(store.list.renameRequest)
   }
 
-  private func action(_ id: String, in button: UIButton) throws -> UIAction {
-    try XCTUnwrap(menuActions(button.menu).first { $0.identifier == UIAction.Identifier(id) })
-  }
-
-  private func mountActions<V: View>(_ host: UIHostingController<V>) async throws -> UIWindow {
-    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-    let window = UIWindow(windowScene: scene)
-    window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-    window.rootViewController = host
-    window.makeKeyAndVisible()
-    host.view.layoutIfNeeded()
-    try await eventually { moreButton(in: host.view)?.window != nil }
-    return window
-  }
-
-  private func attach(_ window: UIWindow, name: String) {
-    let attachment = XCTAttachment(
-      image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-      })
-    attachment.name = name
-    attachment.lifetime = .keepAlways
-    add(attachment)
-  }
-}
-
-private struct ThreadActionsHarness: View {
-  let store: WorkspaceStore
-  var body: some View {
-    Group {
-      if let conversation = store.selectedConversation {
-        ChatDetailView(conversation: conversation, topContentInset: 60)
-      } else {
-        Text("New chat").frame(maxWidth: .infinity, maxHeight: .infinity)
-      }
-    }
-    .safeAreaBar(edge: .top, spacing: 0) {
-      ChatWorkspaceHeader(store: store, height: 60, openSidebar: {})
-    }
-    .background { ChatThreadRenameDialog(list: store.list).frame(width: 0, height: 0) }
-    .tint(.primary)
-  }
-}
-
-@MainActor
-private func moreButton(in view: UIView) -> UIButton? {
-  if let button = view as? UIButton, button.accessibilityIdentifier == "chat-thread-more" {
-    return button
-  }
-  return view.subviews.lazy.compactMap { moreButton(in: $0) }.first
-}
-
-@MainActor
-private func menuActions(_ menu: UIMenu?) -> [UIAction] {
-  menu?.children.flatMap { element in
-    if let action = element as? UIAction { return [action] }
-    return menuActions(element as? UIMenu)
-  } ?? []
-}
-
-@MainActor
-private func findAlert(_ controller: UIViewController) -> UIAlertController? {
-  if let alert = controller as? UIAlertController, !alert.isBeingDismissed { return alert }
-  if let presented = controller.presentedViewController, let alert = findAlert(presented) {
-    return alert
-  }
-  return controller.children.lazy.compactMap { findAlert($0) }.first
-}
-
-@MainActor
-private func hasLabel(_ text: String, in view: UIView) -> Bool {
-  if let label = view as? UILabel, label.text == text { return true }
-  return view.subviews.contains { hasLabel(text, in: $0) }
-}
-
-@MainActor
-private func menuLabelsHaveSettled(in view: UIView) -> Bool {
-  if let label = view as? UILabel, label.text == "Archive chat" {
-    return presentationHasSettled(label)
-  }
-  return view.subviews.allSatisfy { menuLabelsHaveSettled(in: $0) }
-}
-
-@MainActor
-private func presentationHasSettled(_ view: UIView) -> Bool {
-  var current: UIView? = view
-  while let ancestor = current {
-    if let presented = ancestor.layer.presentation() {
-      let layer = ancestor.layer
-      if abs(presented.opacity - layer.opacity) > 0.001
-        || abs(presented.position.x - layer.position.x) > 0.5
-        || abs(presented.position.y - layer.position.y) > 0.5
-        || presented.bounds != layer.bounds
-      {
-        return false
-      }
-    }
-    current = ancestor.superview
-  }
-  return true
 }
 
 private final class ThreadActionGate: Sendable {

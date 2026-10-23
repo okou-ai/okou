@@ -223,6 +223,9 @@ private final class ChatLinkFixture: Sendable {
       }
       let path = request.url?.path ?? ""
       switch path {
+      case "/api/run-models", "/api/model-catalog", "/api/user-model-preference",
+        "/api/feature-switches":
+        return try XCTUnwrap(ModelHTTPFixtures.response(path))
       case "/api/workflows/\(Self.workflowID)":
         if let workflow { return try await workflow(request) }
         return ChatHTTPResponse(
@@ -242,6 +245,11 @@ private final class ChatLinkFixture: Sendable {
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
       case "/api/indicators":
         return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+      case "/api/chat-threads/\(Self.sourceID)/metadata":
+        return ChatHTTPResponse(
+          body:
+            "{\"id\":\"\(Self.sourceID)\",\"agentId\":\"\(Self.otherAgentID)\",\"selectedModel\":null,\"modelSettings\":{},\"serviceTier\":null}"
+        )
       case "/api/chat-threads/\(Self.sourceID)/event-snapshot":
         return ChatHTTPResponse(
           status: 404,

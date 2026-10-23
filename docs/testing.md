@@ -17,6 +17,10 @@ changes should not break a test when that contract is preserved.
   idempotency, and existence-leak protection through those endpoints.
 - **CLI:** invoke the command parser and assert output, exit status, or the
   resulting user-accessible files.
+- **iOS:** prioritize in-process business, HTTP, persistence, security, and
+  recovery contracts through real production entry points. Keep required CI
+  below 12 minutes; minimize UI tests and verify appearance and system
+  interaction on demand. See [iOS testing](ios/ios-testing.md).
 - **Desktop, Runner, and addon:** use the production boundary described in the
   matching guide below, including IPC, protocols, and process outcomes.
 
@@ -68,8 +72,9 @@ gone or invent private state to preserve it.
 
 ## Dependencies and Ownership
 
-- Mock external services at their boundary. Use MSW for HTTP rather than
-  replacing `fetch`; return realistic contract responses and fail on unhandled
+- Mock external services at their boundary. JavaScript HTTP tests use MSW
+  rather than replacing `fetch`; native surfaces use the fixture defined by
+  their guide. Return realistic contract responses and fail on unhandled
   requests. Package guides define handler registration and cleanup.
 - Use real internal code, the real database, and real temporary files. A
   relative import in `vi.mock()` is a warning sign, not a substitute for checking
@@ -129,6 +134,7 @@ Read only the guides matching the work:
 | Platform pages           | [App testing](app/app-testing.md)                 |
 | CLI commands             | [CLI testing](cli/cli-testing.md)                 |
 | CLI deployed E2E         | [CLI E2E](cli/cli-e2e-testing.md)                 |
+| iOS                      | [iOS testing](ios/ios-testing.md)                 |
 | Desktop                  | [Desktop testing](desktop/desktop-testing.md)     |
 | Rust                     | [Rust testing](runner/rust-testing.md)            |
 | Python addon             | [Addon testing](runner/mitm-addon-testing.md)     |
@@ -356,6 +362,7 @@ setup and assertion boundaries.
 | API      | [Hono and ts-rest route clients](api/api-testing.md); create and verify state through production endpoints   |
 | Platform | [Page setup](app/app-testing.md); await `setupPage`, act through controls, then assert observable page state |
 | CLI      | [Command parsing](cli/cli-testing.md); assert output, exit status, and user-accessible files                 |
+| iOS      | [Native testing](ios/ios-testing.md); act through production controls and assert observable native results   |
 
 A helper may wrap an API call or page interaction. It must not hide direct DB
 writes, service calls, or store mutation that bypass the external interface.
@@ -363,9 +370,10 @@ Use the owning guide for cases with no externally reachable setup path.
 
 ### External HTTP and Other Mocks
 
-Use MSW for external HTTP. Match real request URLs, headers, bodies, statuses,
-and response schemas. Missing handlers should fail the test. Do not replace
-`fetch` or test an internal service in place of its public route.
+Use the owning surface's external HTTP fixture: MSW for JavaScript and the
+shared native HTTP fixture for iOS. Match real request URLs, headers, bodies,
+statuses, and response schemas. Missing handlers should fail the test. Do not
+replace `fetch` or test an internal service in place of its public route.
 
 API and Platform test contexts own centralized mocks. For Platform, configure
 `context.mocks.api` for a typed contract or `context.mocks.http` where the guide
