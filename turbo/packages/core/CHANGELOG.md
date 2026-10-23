@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.781.0](https://github.com/okou-ai/okou/compare/core-v8.780.2...core-v8.781.0) (2026-10-23)
+
+
+### Features
+
+* **core:** enable proactive jobs for staff ([#42499](https://github.com/okou-ai/okou/issues/42499)) ([77138f7](https://github.com/okou-ai/okou/commit/77138f70f60749f8bc846b7af2b162734f33794f))
+
 ## [8.780.2](https://github.com/okou-ai/okou/compare/core-v8.780.1...core-v8.780.2) (2026-10-23)
 
 
