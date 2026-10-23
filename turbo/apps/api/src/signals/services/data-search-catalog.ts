@@ -327,7 +327,7 @@ export function reviewedDataSearchCapability(
   return capability;
 }
 
-function dataSearchProviderPlan(
+export function prepareDataSearchProviderPlan(
   request: DataSearchRequest,
   sourceRate: number | undefined,
 ): DataSearchProviderPlan {
@@ -382,19 +382,10 @@ function dataSearchProviderPlan(
   };
 }
 
-export function prepareDataSearchProviderPlan(
-  request: DataSearchRequest,
-): DataSearchProviderPlan {
-  return dataSearchProviderPlan(
-    request,
-    env("OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT"),
-  );
-}
-
 export function checkedDataSearchProviderPlan(
   plan: DataSearchProviderPlan,
 ): DataSearchProviderPlan {
-  const checked = dataSearchProviderPlan(
+  const checked = prepareDataSearchProviderPlan(
     plan.request,
     plan.sourceCostUsdMicrosPerCredit,
   );
@@ -408,7 +399,18 @@ export function checkedDataSearchProviderPlan(
   return checked;
 }
 
-export function listDataSearchCapabilities(): DataSearchCapability[] {
+export function dataSearchLedgerProvider(plan: {
+  readonly vendor: "monid" | "firecrawl";
+  readonly provider: string;
+}) {
+  return plan.vendor === "monid"
+    ? `monid/${plan.provider}`
+    : `firecrawl/alexandria/${plan.provider}`;
+}
+
+export function listDataSearchCapabilities(
+  pricedProviders: ReadonlySet<string>,
+): DataSearchCapability[] {
   return capabilities
     .filter((capability) => {
       return !(
@@ -432,7 +434,7 @@ export function listDataSearchCapabilities(): DataSearchCapability[] {
         status:
           capability.vendor === "firecrawl"
             ? env("OKOU_SCRAPE_FIRECRAWL_TOKEN") &&
-              env("OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT")
+              pricedProviders.has(dataSearchLedgerProvider(capability))
               ? "available"
               : "unavailable"
             : env("OKOU_SOCIAL_MONID_API_KEY")

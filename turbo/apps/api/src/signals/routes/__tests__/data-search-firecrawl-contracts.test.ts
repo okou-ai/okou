@@ -57,7 +57,6 @@ async function scenario() {
     "OKOU_SCRAPE_FIRECRAWL_TOKEN",
     "firecrawl-contract-test-not-a-real-token",
   );
-  mockEnv("OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT", 1000);
   return { actor, run: billing.run, data: app(dataSearchContract) };
 }
 
@@ -141,8 +140,31 @@ const cases = Object.freeze<readonly FirecrawlQuoteCase[]>([
 ]);
 
 describe("Data Search free Firecrawl public contract quotes", () => {
+  it("lists Firecrawl capabilities with configured database pricing as available", async () => {
+    const setup = await scenario();
+    await setup.run(async () => {
+      const listed = await accept(
+        setup.data.capabilities({
+          headers: authenticate(setup.actor),
+          query: {},
+        }),
+        [200],
+      );
+      expect(listed.body.capabilities).toStrictEqual(
+        expect.arrayContaining(
+          cases.map(({ capability }) => {
+            return expect.objectContaining({
+              id: capability,
+              status: "available",
+            });
+          }),
+        ),
+      );
+    });
+  });
+
   it.each(cases)(
-    "quotes $capability against its reviewed public guide",
+    "quotes $capability using database pricing and its reviewed public guide",
     async ({ capability, fixture, input, limit, credits, unit }) => {
       const setup = await scenario();
       await setup.run(async () => {

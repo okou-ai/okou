@@ -1,0 +1,2 @@
+ALTER TABLE "usage_pricing" ADD COLUMN "source_cost_usd_micros_per_credit" bigint;--> statement-breakpoint
+ALTER TABLE "usage_pricing" ADD CONSTRAINT "chk_usage_pricing_source_cost_usd_micros_per_credit" CHECK ("usage_pricing"."source_cost_usd_micros_per_credit" IS NULL OR "usage_pricing"."source_cost_usd_micros_per_credit" BETWEEN 1 AND 9007199254740991);

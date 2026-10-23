@@ -12,7 +12,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { and, desc, eq, isNull, isNotNull, lt, or, sql, ne } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -28,6 +28,11 @@ import {
 } from "./data-search-provider";
 import { DataSearchProviderError } from "./data-search-provider-error";
 import { creditsFor } from "./social-data-pricing";
+import {
+  dataSearchLedgerProvider,
+  listDataSearchCapabilities,
+  reviewedDataSearchCapability,
+} from "./data-search-catalog";
 import {
   managedSnapshotPlan,
   managedSnapshotRequirement,
@@ -115,14 +120,6 @@ function replay(job: Job, body: DataSearchCreateRequest) {
         "This request ID belongs to different Data Search inputs.",
       );
 }
-function ledgerProvider(plan: {
-  readonly vendor: "monid" | "firecrawl";
-  readonly provider: string;
-}) {
-  return plan.vendor === "monid"
-    ? `monid/${plan.provider}`
-    : `firecrawl/alexandria/${plan.provider}`;
-}
 function pricingUnavailable() {
   return dataSearchError(
     503,
@@ -138,23 +135,95 @@ function pricingWhere(provider: string) {
   );
 }
 
+function validateAdmissionPrice(
+  args: DataSearchAdmission,
+  price: typeof usagePricing.$inferSelect,
+) {
+  if (
+    args.estimate.plan.vendor === "firecrawl" &&
+    args.estimate.plan.sourceCostUsdMicrosPerCredit !==
+      price.sourceCostUsdMicrosPerCredit
+  ) {
+    throw new DataSearchProviderError(
+      "DATA_SEARCH_PRICING_CHANGED",
+      "Data Search pricing changed. Obtain a fresh quote and retry this request ID.",
+      409,
+    );
+  }
+  const estimated = creditsFor(
+    args.estimate.estimatedCostUsdMicros,
+    price.unitPrice,
+    price.unitSize,
+  );
+  if (estimated > args.body.maxCredits) {
+    throw new DataSearchProviderError(
+      "BUDGET_EXCEEDED",
+      "The estimated cost exceeds maxCredits.",
+      402,
+    );
+  }
+}
+
+export const dataSearchCapabilities$ = computed(async (get) => {
+  const prices = await get(db$)
+    .select({ provider: usagePricing.provider })
+    .from(usagePricing)
+    .where(
+      and(
+        eq(usagePricing.kind, "data-search"),
+        eq(usagePricing.category, "provider_cost_usd_micros"),
+        isNotNull(usagePricing.sourceCostUsdMicrosPerCredit),
+      ),
+    );
+  return listDataSearchCapabilities(
+    new Set(
+      prices.map((price) => {
+        return price.provider;
+      }),
+    ),
+  );
+});
+
+const prepareDataSearchQuote$ = command(
+  async ({ get }, input: DataSearchRequest, signal: AbortSignal) => {
+    const capability = reviewedDataSearchCapability(
+      input.capability,
+      input.input,
+    );
+    const [price] = await get(db$)
+      .select()
+      .from(usagePricing)
+      .where(pricingWhere(dataSearchLedgerProvider(capability)));
+    signal.throwIfAborted();
+    if (!price) {
+      throw new DataSearchProviderError(
+        "PRICING_NOT_CONFIGURED",
+        "Data Search pricing is unavailable.",
+        503,
+      );
+    }
+    const estimate = await quoteDataSearchProvider(
+      input,
+      price.sourceCostUsdMicrosPerCredit ?? undefined,
+      signal,
+    );
+    return { estimate, price };
+  },
+);
+
 export const quoteDataSearch$ = command(
   async (
-    { get },
+    { set },
     args: { readonly auth: Actor; readonly body: DataSearchRequest },
     signal: AbortSignal,
   ) => {
     const result = await settle(
       (async () => {
-        const estimate = await quoteDataSearchProvider(args.body, signal);
-        const [price] = await get(db$)
-          .select()
-          .from(usagePricing)
-          .where(pricingWhere(ledgerProvider(estimate.plan)));
-        signal.throwIfAborted();
-        if (!price) {
-          return pricingUnavailable();
-        }
+        const { estimate, price } = await set(
+          prepareDataSearchQuote$,
+          args.body,
+          signal,
+        );
         const credits = creditsFor(
           estimate.estimatedCostUsdMicros,
           price.unitPrice,
@@ -207,18 +276,7 @@ const reserveDataSearchJob$ = command(
       if (!price) {
         return pricingUnavailable();
       }
-      const estimated = creditsFor(
-        args.estimate.estimatedCostUsdMicros,
-        price.unitPrice,
-        price.unitSize,
-      );
-      if (estimated > args.body.maxCredits) {
-        return dataSearchError(
-          402,
-          "BUDGET_EXCEEDED",
-          "The estimated cost exceeds maxCredits.",
-        );
-      }
+      validateAdmissionPrice(args, price);
       const [validated] = await tx
         .update(orgMetadata)
         .set({ updatedAt: nowDate() })
@@ -330,10 +388,18 @@ export const createDataSearchJob$ = command(
           maxCredits: _maxCredits,
           ...request
         } = args.body;
-        const estimate = await quoteDataSearchProvider(request, signal);
+        const { estimate } = await set(
+          prepareDataSearchQuote$,
+          request,
+          signal,
+        );
         return await set(
           reserveDataSearchJob$,
-          { ...args, estimate, providerName: ledgerProvider(estimate.plan) },
+          {
+            ...args,
+            estimate,
+            providerName: dataSearchLedgerProvider(estimate.plan),
+          },
           signal,
         );
       })(),

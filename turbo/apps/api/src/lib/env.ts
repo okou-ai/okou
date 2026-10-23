@@ -34,12 +34,6 @@ const SCHEMA = {
   GCP_LLM_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
   OKOU_WEATHER_GOOGLE_WEATHER_TOKEN: z.string().min(1).optional(),
   OKOU_SCRAPE_FIRECRAWL_TOKEN: z.string().min(1).optional(),
-  OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT: z.coerce
-    .number()
-    .int()
-    .positive()
-    .max(Number.MAX_SAFE_INTEGER)
-    .optional(),
   OKOU_WEB_SEARCH_PERPLEXITY_TOKEN: z.string().min(1).optional(),
   OKOU_SOCIAL_SOCIALKIT_TOKEN: z.string().min(1).optional(),
   OKOU_SOCIAL_MONID_API_KEY: z.string().min(1).optional(),
