@@ -171,8 +171,10 @@ function slackAccountStatus(
   installation: typeof slackOrgInstallations.$inferSelect | undefined,
   defaultAgentName: string | null,
 ): SlackOrgStatusResult {
-  const isAdmin = args.orgRole === "admin";
   const ownInstallation = account?.installation;
+  const isAdmin =
+    args.orgRole === "admin" &&
+    (!ownInstallation || ownInstallation.orgId === args.orgId);
   return {
     isConnected: Boolean(account),
     isInstalled: Boolean(account ? ownInstallation : installation),

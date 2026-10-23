@@ -9,6 +9,8 @@ import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature
 import {
   integrationsSlackMessageContract,
   integrationsSlackDownloadFileContract,
+  integrationsSlackUploadInitContract,
+  integrationsSlackUploadCompleteContract,
 } from "@okouai/api-contracts/contracts/integrations";
 import { integrationsSlackReadContract } from "@okouai/api-contracts/contracts/integrations-slack-read";
 import { http, HttpResponse } from "msw";
@@ -27,10 +29,13 @@ import { slackOauthRoutes } from "../slack-oauth";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { integrationsSlackMessageRoutes } from "../integrations-slack-message";
 import { integrationsSlackReadRoutes } from "../integrations-slack-read";
+import { integrationsSlackUploadInitRoutes } from "../integrations-slack-upload-init";
+import { integrationsSlackUploadCompleteRoutes } from "../integrations-slack-upload-complete";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
 import { createRouteMocks } from "./helpers/route-test";
 import { readGetStartedStatus } from "./helpers/get-started";
+import { mockSharedSlackConversations } from "./helpers/slack-conversation-access";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -41,6 +46,8 @@ const routes = [
   ...featureSwitchesRoutes,
   ...integrationsSlackMessageRoutes,
   ...integrationsSlackReadRoutes,
+  ...integrationsSlackUploadInitRoutes,
+  ...integrationsSlackUploadCompleteRoutes,
   ...slackOauthRoutes,
   ...slackConnectRoutes,
   ...integrationsSlackRoutes,
@@ -309,6 +316,18 @@ test("switches a legacy workspace connection to a new home identity without reta
   await complete(await startInstall(), current);
   await flushWaitUntilForTest();
   await enableWorkspaceIdentity(current);
+  context.mocks.slack.files.getUploadURLExternal.mockResolvedValue({
+    ok: true,
+    file_id: "F_BEFORE_SWITCH",
+    upload_url: "https://files.slack.com/upload/v1/before-switch",
+  });
+  await accept(
+    clients()(integrationsSlackUploadInitContract).init({
+      headers,
+      body: { filename: "report.txt", length: 42 },
+    }),
+    [200],
+  );
   const next = {
     ...current,
     workspaceId: `T_NEXT_${randomUUID()}`,
@@ -336,6 +355,17 @@ test("switches a legacy workspace connection to a new home identity without reta
     }),
     [404],
   );
+  context.mocks.slack.files.completeUploadExternal.mockClear();
+  await accept(
+    clients()(integrationsSlackUploadCompleteContract).complete({
+      headers,
+      body: { fileId: "F_BEFORE_SWITCH", channel: "C_OLD_BOT" },
+    }),
+    [404],
+  );
+  expect(
+    context.mocks.slack.files.completeUploadExternal,
+  ).not.toHaveBeenCalled();
   await disconnectChat();
 });
 
@@ -351,8 +381,7 @@ test.each([
     await complete(await startInstall(), current);
     await flushWaitUntilForTest();
     await enableWorkspaceIdentity(current);
-    const allowed =
-      visibility === "own file" || visibility === "shared channel";
+    const allowed = visibility === "shared channel";
     server.use(
       http.get("https://slack.com/api/files.info", () => {
         return HttpResponse.json({
@@ -447,6 +476,19 @@ test("connects through an external bot and authorizes only the sender's installe
       deleted: false,
     },
   });
+  await expect(integrationStatus()).resolves.toMatchObject({
+    isConnected: true,
+    isInstalled: true,
+    isAdmin: false,
+  });
+  await accept(
+    clients()(integrationsSlackContract).disconnect({
+      headers,
+      query: { action: "uninstall" },
+    }),
+    [404],
+  );
+  mockSharedSlackConversations(["C_OWN_SHARED"]);
   server.use(
     http.get("https://slack.com/api/users.conversations", ({ request }) => {
       if (
@@ -475,8 +517,48 @@ test("connects through an external bot and authorizes only the sender's installe
       headers,
       body: { channel: "C_BOT_ONLY", text: "not visible to this member" },
     }),
-    [403],
+    [404],
   );
+  context.mocks.slack.conversations.open.mockResolvedValue({
+    ok: true,
+    channel: { id: "D123456" },
+  });
+  await accept(
+    clients()(integrationsSlackMessageContract).sendMessage({
+      headers,
+      body: { user: "U_DM_RECIPIENT", text: "explicit outbound DM" },
+    }),
+    [200],
+  );
+  await accept(
+    clients()(integrationsSlackReadContract).history({
+      headers,
+      query: { channel: "D123456" },
+    }),
+    [404],
+  );
+  server.use(
+    http.get("https://slack.com/api/conversations.info", ({ request }) => {
+      return HttpResponse.json({
+        ok: true,
+        channel: {
+          id: new URL(request.url).searchParams.get("channel"),
+          properties: {
+            posting_restricted_to: { user: ["U_OTHER_ALLOWED"] },
+          },
+        },
+      });
+    }),
+  );
+  context.mocks.slack.chat.postMessage.mockClear();
+  await accept(
+    clients()(integrationsSlackMessageContract).sendMessage({
+      headers,
+      body: { channel: "C_OWN_SHARED", text: "posting is restricted" },
+    }),
+    [404],
+  );
+  expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
   context.mocks.slack.users.info.mockResolvedValue({
     ok: true,
     user: {

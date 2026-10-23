@@ -1125,6 +1125,7 @@ export function createBddIntegrationApi(context: TestContext) {
         ok: true,
         user: {
           id: body.slackUserId,
+          team_id: body.workspaceId,
           real_name: "Slack User",
           profile: { email: actor.email },
         },

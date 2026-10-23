@@ -31,6 +31,20 @@ export function slackWorkspaceIdentityEnabled(
   });
 }
 
+/** Match both explicitly owned accounts and legacy installation-owned links. */
+export function slackAccountOwnerCondition(identity: SlackAccountOwner) {
+  return and(
+    eq(slackOrgConnections.userId, identity.userId),
+    or(
+      eq(slackOrgConnections.orgId, identity.orgId),
+      and(
+        isNull(slackOrgConnections.orgId),
+        eq(slackOrgInstallations.orgId, identity.orgId),
+      ),
+    ),
+  );
+}
+
 /** A verified account selects its own workspace, never the entry bot's workspace. */
 export function slackAccountConnection(
   identity$: Computed<SlackAccountOwner | Promise<SlackAccountOwner>>,
@@ -50,18 +64,7 @@ export function slackAccountConnection(
           slackOrgConnections.slackWorkspaceId,
         ),
       )
-      .where(
-        and(
-          eq(slackOrgConnections.userId, identity.userId),
-          or(
-            eq(slackOrgConnections.orgId, identity.orgId),
-            and(
-              isNull(slackOrgConnections.orgId),
-              eq(slackOrgInstallations.orgId, identity.orgId),
-            ),
-          ),
-        ),
-      )
+      .where(slackAccountOwnerCondition(identity))
       .limit(2);
     // Multiple accounts require an explicit account switch; never pick a token.
     return rows.length === 1 ? rows[0] : undefined;
