@@ -3,7 +3,7 @@ import {
   googleFormsAutomationCursors,
   googleFormsWatchStates,
 } from "@okouai/db/schema/google-forms-event";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import type { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 
 type FormsCursorSource = Pick<
@@ -65,6 +65,10 @@ export function googleFormsCursorPublicationStatement(
   automation: FormsCursorSource & { readonly id: string },
   seedCursor: string | null,
   currentTime: Date,
+  publication?: {
+    readonly gate: SQL;
+    readonly reset: boolean;
+  },
 ) {
   if (
     !automation.enabled ||
@@ -90,9 +94,11 @@ export function googleFormsCursorPublicationStatement(
       AND ${googleFormsWatchStates.userId} = ${automation.ownerUserId}
       AND ${googleFormsWatchStates.connectorId} = ${config.connectorId}::uuid
       AND ${googleFormsWatchStates.formId} = ${config.form.id}
+      ${publication ? sql`AND ${publication.gate}` : sql.empty()}
     ON CONFLICT (automation_id) DO UPDATE
       SET watch_state_id = excluded.watch_state_id,
         updated_at = excluded.updated_at
+        ${publication?.reset ? sql`, last_seen_submitted_time = excluded.last_seen_submitted_time, created_at = excluded.created_at` : sql.empty()}
     RETURNING automation_id
   `;
 }

@@ -287,11 +287,6 @@
       "owner": "commitMorningBriefScheduleSettlement$"
     },
     {
-      "id": "TX-0194",
-      "file": "turbo/apps/api/src/signals/services/official-google-forms-reconfiguration.service.ts",
-      "owner": "commitOfficialFormsReconfiguration$"
-    },
-    {
       "id": "TX-0195",
       "file": "turbo/apps/api/src/signals/services/official-workflow-catalog-sync.service.ts",
       "owner": "activateCandidate$"
