@@ -82,6 +82,7 @@ struct ChatDetailView: View {
       anchor: scrolling.anchor,
       scroll: scrolling.scroll,
       followsBottom: scrolling.followsBottom, sidebar: sidebar,
+      sendTransition: scrolling.sendTransition,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
       refresh: {
         await conversation.refresh()
@@ -194,11 +195,12 @@ struct ChatDetailView: View {
           if history.canStop && !conversation.composer.hasContent {
             await conversation.stop()
           } else {
-            await conversation.send()
+            await scrolling.send()
           }
         }, refresh: { await conversation.refresh() }, modelSelection: conversation.modelSelection,
         mentionSource: mentionSource,
-        workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID
+        workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID,
+        sendTransition: scrolling.sendTransition
       )
       .onGeometryChange(for: CGFloat.self) {
         $0.size.height

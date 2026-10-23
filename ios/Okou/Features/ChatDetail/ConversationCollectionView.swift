@@ -76,6 +76,7 @@ struct ConversationCollectionView<Content: View>: UIViewControllerRepresentable 
   let scroll: ConversationCollectionScroll
   let followsBottom: Bool
   var sidebar: SidebarInteraction?
+  var sendTransition: ConversationSendTransition?
   let phaseChanged: (ScrollPhase) -> Void
   let metricsChanged: (ConversationCollectionMetrics) -> Void
   let refresh: () async -> Void
@@ -176,10 +177,24 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     collection.selfSizingInvalidation = .disabled
     collection.register(UICollectionViewCell.self, forCellWithReuseIdentifier: "message")
     collection.delegate = self
+    source.sendTransition?.attach(collection)
+    source.sendTransition?.didBegin = { [weak self] in
+      guard let self else { return }
+      pendingScroll = nil
+      collection.stopScrollingAndZooming()
+      animatesScroll = false
+      source.phaseChanged(.animating)
+    }
+    source.sendTransition?.didFinish = { [weak self] in
+      guard let self else { return }
+      source.anchor.followBottom()
+      scrollingEnded()
+    }
     updateContentInsets()
     (collection as? ConversationAccessibilityCollection)?.beginsAccessibilityScroll = {
       [weak self] in
       guard let self else { return }
+      source.sendTransition?.cancel()
       pendingScroll = nil
       animatesScroll = true
       source.phaseChanged(.interacting)
@@ -231,12 +246,14 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       publishViewportChange()
     }
     prepareRowsIfNeeded()
+    source.sendTransition?.layoutDidChange()
     publishMetrics()
   }
 
   override func viewSafeAreaInsetsDidChange() {
     super.viewSafeAreaInsetsDidChange()
     publishViewportChange()
+    source.sendTransition?.layoutDidChange()
     publishMetrics()
   }
 
@@ -271,6 +288,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     guard collection.contentInset != insets else { return }
     collection.contentInset = insets
     collection.verticalScrollIndicatorInsets = insets
+    source.sendTransition?.layoutDidChange()
     publishViewportChange()
     publishMetrics()
   }
@@ -278,6 +296,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   func stop() {
     source.sidebar?.detach(self)
     stopped = true
+    source.sendTransition?.cancel()
+    source.sendTransition?.didBegin = nil
+    source.sendTransition?.didFinish = nil
     stopLoading()
     preparation?.cancel()
     preparation = nil
@@ -296,7 +317,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     guard isViewLoaded else { return }
     let enabled = !active
     guard collection.isUserInteractionEnabled != enabled else { return }
-    let wasScrolling = isScrolling
+    let wasScrolling = isScrolling || source.sendTransition?.isActive == true
     // Cancel this touch's transcript pan and block new transcript touches. Keep
     // isScrollEnabled unchanged: UIHostingConfiguration needs its scroll-container
     // layout semantics even when the sidebar is covering a newly mounted detail.
@@ -304,10 +325,12 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     collection.isUserInteractionEnabled = enabled
     collection.panGestureRecognizer.isEnabled = enabled
     if active {
+      source.sendTransition?.cancel()
       collection.stopScrollingAndZooming()
       // A newly mounted detail must still restore its saved position while the
       // sidebar is open. Only interrupted motion relinquishes its correction.
       if wasScrolling {
+        source.phaseChanged(.interacting)
         source.anchor.cancel()
         scrollingEnded()
       }
@@ -467,11 +490,13 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   private var isScrolling: Bool {
+    // A send can accept measured updates and retarget its own animation.
     animatesScroll || collection.isTracking || collection.isDragging || collection.isDecelerating
   }
 
   private func applyPreparedRows() {
     guard let prepared = preparedRows, !isScrolling, !appliesRows else { return }
+    source.sendTransition?.prepareForSnapshot()
     preparedRows = nil
     appliesRows = true
     let rows = prepared.rows
@@ -513,7 +538,11 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         publishMetrics()
         return
       }
-      if let pendingScroll {
+      if source.sendTransition?.isActive == true {
+        let cell = source.sendTransition?.messageID.flatMap { dataSource.indexPath(for: $0) }
+          .flatMap { collection.cellForItem(at: $0) }
+        source.sendTransition?.presentIfReady(in: ids, arrivingView: cell)
+      } else if let pendingScroll {
         self.pendingScroll = nil
         scrollTo(pendingScroll.0, anchor: pendingScroll.1, animated: pendingScroll.2)
       } else if source.followsBottom {
@@ -530,6 +559,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   func scrollTo(_ id: String, anchor: UnitPoint, animated: Bool) {
+    guard source.sendTransition?.isActive != true else { return }
     guard isViewLoaded, let index = dataSource.indexPath(for: id) else {
       pendingScroll = (id, anchor, animated)
       return
@@ -570,12 +600,16 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    source.sendTransition?.cancel()
     pendingScroll = nil
     animatesScroll = false
     source.phaseChanged(.interacting)
   }
 
-  func scrollViewDidScroll(_ scrollView: UIScrollView) { publishMetrics() }
+  func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    source.sendTransition?.preserveOffset()
+    publishMetrics()
+  }
 
   func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
     if decelerate { source.phaseChanged(.decelerating) } else { scrollingEnded() }
@@ -590,7 +624,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     applyObservedHeights()
     publishMetrics()
     DispatchQueue.main.async { [weak self] in
-      guard let self, !stopped else { return }
+      guard let self, !stopped, source.sendTransition?.isActive != true else { return }
       source.phaseChanged(.idle)
     }
   }
@@ -662,9 +696,6 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 
   private func applyObservedHeights() {
     guard !isScrolling, !appliesRows else { return }
-    // A width/font snapshot can still be restoring its anchor when a mounted
-    // Markdown view acquires its final height. Keep that intended position.
-    let position = source.anchor.preservedPosition ?? source.anchor.capture()
     let atBottom =
       source.followsBottom
       || collection.contentSize.height + collection.adjustedContentInset.bottom
@@ -681,6 +712,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       }
     }
     guard !changed.isEmpty else { return }
+    source.sendTransition?.prepareForSnapshot()
+    // Capture the presented position after pausing any send animation.
+    let position = source.anchor.preservedPosition ?? source.anchor.capture()
     appliesRows = true
     var snapshot = dataSource.snapshot()
     snapshot.reconfigureItems(changed)
@@ -693,7 +727,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         publishMetrics()
         return
       }
-      if atBottom {
+      if source.sendTransition?.isActive == true {
+        source.sendTransition?.layoutDidChange()
+      } else if atBottom {
         source.anchor.followBottom()
       } else if let position {
         source.anchor.restore(position)
