@@ -90,7 +90,7 @@ interface UpdateUserCustomConnectorsOptions {
   readonly deferRuntimeWakeupUntilOuterCommit?: boolean;
 }
 
-type AddUserCustomConnectorResult =
+export type AddUserCustomConnectorResult =
   | { readonly status: "added" }
   | { readonly status: "agentNotFound" }
   | {
@@ -755,113 +755,126 @@ async function persistUserCustomConnectors(args: {
   };
 }
 
-export async function updateUserCustomConnectors(
-  db: Db,
-  args: UpdateUserCustomConnectorsArgs,
-  options: UpdateUserCustomConnectorsOptions = {},
-): Promise<UpdateUserCustomConnectorsResult> {
-  const normalized = normalizeCustomConnectorGrantRequest(args);
-  if ("status" in normalized) {
-    return normalized;
-  }
-  const { grants, grantByConnectorId } = normalized;
-  const operation = args.operation ?? "replace";
-  const committed = await persistUserCustomConnectors({
-    db,
-    request: args,
-    grants,
-    grantByConnectorId,
-    operation,
-    readsConnectorCatalog:
-      args.permissionIntent === "exact" &&
-      operation !== "remove" &&
-      grants.some((grant) => {
-        return grant.permissionNames.length > 0;
-      }),
-  });
-  if (
-    committed.result.status === "updated" &&
-    !options.deferRuntimeWakeupUntilOuterCommit
-  ) {
-    const wakeupArgs = {
-      scope: {
+export const updateUserCustomConnectors$ = command(
+  async (
+    { set },
+    args: UpdateUserCustomConnectorsArgs,
+    options: UpdateUserCustomConnectorsOptions = {},
+  ): Promise<UpdateUserCustomConnectorsResult> => {
+    const db = set(writeDb$);
+    const normalized = normalizeCustomConnectorGrantRequest(args);
+    if ("status" in normalized) {
+      return normalized;
+    }
+    const { grants, grantByConnectorId } = normalized;
+    const operation = args.operation ?? "replace";
+    const committed = await persistUserCustomConnectors({
+      db,
+      request: args,
+      grants,
+      grantByConnectorId,
+      operation,
+      readsConnectorCatalog:
+        args.permissionIntent === "exact" &&
+        operation !== "remove" &&
+        grants.some((grant) => {
+          return grant.permissionNames.length > 0;
+        }),
+    });
+    if (
+      committed.result.status === "updated" &&
+      !options.deferRuntimeWakeupUntilOuterCommit
+    ) {
+      const wakeupArgs = {
+        scope: {
+          orgId: args.orgId,
+          userId: args.userId,
+          agentId: args.agentId,
+        },
+        targets: committed.changedConnectorIds.map((customConnectorId) => {
+          return { kind: "custom" as const, customConnectorId };
+        }),
+      };
+      await (async () => {
+        const result = await settle(
+          (async () => {
+            const targets = uniqueConnectorRuntimeTargets(wakeupArgs.targets);
+            if (targets.length === 0) {
+              return;
+            }
+
+            const rows = await db
+              .select({
+                runId: agentRuns.id,
+                runnerGroup: agentRuns.runnerGroup,
+              })
+              .from(agentRuns)
+
+              .where(connectorRuntimeWakeupCondition(wakeupArgs.scope));
+
+            await publishConnectorRuntimeWakeupRows({
+              scope: wakeupArgs.scope,
+              targets,
+              rows,
+            });
+          })(),
+        );
+        if (!result.ok) {
+          reportConnectorRuntimeWakeupDiscoveryFailure({
+            orgId: wakeupArgs.scope.orgId,
+            scopedToUser: wakeupArgs.scope.userId !== undefined,
+            scopedToAgent: wakeupArgs.scope.agentId !== undefined,
+            targetCount: uniqueConnectorRuntimeTargets(wakeupArgs.targets)
+              .length,
+            error: result.error,
+          });
+        }
+      })();
+    }
+    return committed.result;
+  },
+);
+
+export const addUserCustomConnector$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly agentId: string;
+      readonly customConnectorId: string;
+    },
+    options: UpdateUserCustomConnectorsOptions = {},
+  ): Promise<AddUserCustomConnectorResult> => {
+    const result = await set(
+      updateUserCustomConnectors$,
+      {
         orgId: args.orgId,
         userId: args.userId,
         agentId: args.agentId,
+        grants: [
+          {
+            customConnectorId: args.customConnectorId,
+            permissionNames: [],
+          },
+        ],
+        permissionIntent: "preserveExistingOrDefault",
+        operation: "add",
       },
-      targets: committed.changedConnectorIds.map((customConnectorId) => {
-        return { kind: "custom" as const, customConnectorId };
-      }),
-    };
-    await (async () => {
-      const result = await settle(
-        (async () => {
-          const targets = uniqueConnectorRuntimeTargets(wakeupArgs.targets);
-          if (targets.length === 0) {
-            return;
-          }
-
-          const rows = await db
-            .select({ runId: agentRuns.id, runnerGroup: agentRuns.runnerGroup })
-            .from(agentRuns)
-
-            .where(connectorRuntimeWakeupCondition(wakeupArgs.scope));
-
-          await publishConnectorRuntimeWakeupRows({
-            scope: wakeupArgs.scope,
-            targets,
-            rows,
-          });
-        })(),
-      );
-      if (!result.ok) {
-        reportConnectorRuntimeWakeupDiscoveryFailure({
-          orgId: wakeupArgs.scope.orgId,
-          scopedToUser: wakeupArgs.scope.userId !== undefined,
-          scopedToAgent: wakeupArgs.scope.agentId !== undefined,
-          targetCount: uniqueConnectorRuntimeTargets(wakeupArgs.targets).length,
-          error: result.error,
-        });
+      options,
+    );
+    if (result.status === "updated") {
+      if (!options.deferRuntimeWakeupUntilOuterCommit) {
+        await publishUserSignal(
+          [args.userId],
+          "composerAgentConnectorsChanged",
+          {
+            agentId: args.agentId,
+          },
+        );
       }
-    })();
-  }
-  return committed.result;
-}
-
-export async function addUserCustomConnector(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly agentId: string;
-    readonly customConnectorId: string;
-  },
-  options: UpdateUserCustomConnectorsOptions = {},
-): Promise<AddUserCustomConnectorResult> {
-  const result = await updateUserCustomConnectors(
-    db,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      agentId: args.agentId,
-      grants: [
-        {
-          customConnectorId: args.customConnectorId,
-          permissionNames: [],
-        },
-      ],
-      permissionIntent: "preserveExistingOrDefault",
-      operation: "add",
-    },
-    options,
-  );
-  if (result.status === "updated") {
-    if (!options.deferRuntimeWakeupUntilOuterCommit) {
-      await publishUserSignal([args.userId], "composerAgentConnectorsChanged", {
-        agentId: args.agentId,
-      });
+      return { status: "added" };
     }
-    return { status: "added" };
-  }
-  return result;
-}
+    return result;
+  },
+);
