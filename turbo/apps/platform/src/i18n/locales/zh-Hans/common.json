@@ -1927,12 +1927,12 @@
     },
     "documentTitle": "聊天",
     "entrustedJobs": {
-      "archive": "归档 Job",
+      "archive": "归档任务",
       "authorize": "授权",
       "currentGrant": "当前权限：{{scope}} · {{expiry}}",
       "decline": "拒绝",
       "declined": "已拒绝授权",
-      "details": "Job 详情",
+      "details": "任务详情",
       "detailsDescription": "在这里查看进展、回复和交付结果。",
       "duration": "授权有效期",
       "durations": {
@@ -1941,14 +1941,14 @@
         "7d": "7 天",
         "always": "长期"
       },
-      "empty": "这里还没有 Job。需要持续推进时，请明确让 Okou 创建一个 Job。",
+      "empty": "这里还没有任务。把任务交给 Okou，它会持续推进，并在需要你处理或有结果时通知你。",
       "filters": {
         "archived": "已归档",
         "history": "历史",
         "home": "当前"
       },
       "granted": "已保存授权结果",
-      "loading": "正在加载 Jobs",
+      "loading": "正在加载任务",
       "next": "下一页",
       "noExpiry": "长期有效",
       "previous": "上一页",
@@ -2568,7 +2568,7 @@
       "tasks": {
         "document": "文档",
         "image": "图片",
-        "jobs": "Jobs",
+        "jobs": "任务",
         "presentation": "演示文稿",
         "suggestions": "建议",
         "visualization": "可视化",
@@ -5522,13 +5522,13 @@
         "title": "晨报"
       },
       "proactiveJobs": {
-        "description": "自动推进你的 Jobs，在需要你处理或工作完成时提醒你。",
+        "description": "自动推进你的任务，在需要你处理或任务完成时提醒你。",
         "missingDefaultAgent": "请先选择可用的默认 Agent。",
-        "preparationFailed": "Jobs 暂时无法推进；如果工作已暂停，可关闭后重新开启以重试。",
-        "preparing": "正在准备 Jobs，你可以随时关闭。",
+        "preparationFailed": "任务暂时无法推进；如果工作已暂停，可关闭后重新开启以重试。",
+        "preparing": "正在准备任务，你可以随时关闭。",
         "retry": "重试",
-        "retryMessage": "无法读取或更新 Jobs 设置，请重试。",
-        "title": "Proactive jobs"
+        "retryMessage": "无法读取或更新任务设置，请重试。",
+        "title": "自动推进任务"
       },
       "proactiveSuggestions": {
         "description": "让 Okou 每小时检查已连接的信息来源，并在主页推荐有用的下一步行动。",
