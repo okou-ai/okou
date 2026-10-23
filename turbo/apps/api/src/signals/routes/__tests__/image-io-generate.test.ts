@@ -103,29 +103,17 @@ const FAL_NANO_BANANA_2_MEDIA_URL =
 const MOCKUP_IMAGE_URL = "https://example.com/mockup.png";
 const SECOND_MOCKUP_IMAGE_URL = "https://example.com/mockup-2.png";
 const THIRD_MOCKUP_IMAGE_URL = "https://example.com/mockup-3.png";
-const IMAGE_PRICING_MARKUP_MULTIPLIER = 1.2;
-
-const FAL_NANO_BANANA_2_PROVIDER_CREDITS_PER_IMAGE = 80;
-const FAL_NANO_BANANA_2_MARKED_UP_CREDITS_PER_IMAGE = Math.ceil(
-  FAL_NANO_BANANA_2_PROVIDER_CREDITS_PER_IMAGE *
-    IMAGE_PRICING_MARKUP_MULTIPLIER,
-);
-// $0.042 per fixed-1K image, marked up and rounded as the seeded price is.
-const FAL_NANO_BANANA_2_LITE_CREDITS_PER_IMAGE = Math.round(
-  42 * IMAGE_PRICING_MARKUP_MULTIPLIER,
-);
+const FAL_NANO_BANANA_2_CREDITS_PER_IMAGE = 80;
+// $0.042 per fixed-1K image.
+const FAL_NANO_BANANA_2_LITE_CREDITS_PER_IMAGE = 42;
 // $0.04 up to 2,250,000 output pixels, $0.075 above it.
-const FAL_QWEN_IMAGE_3_STANDARD_TIER_CREDITS = Math.round(
-  40 * IMAGE_PRICING_MARKUP_MULTIPLIER,
-);
-const FAL_QWEN_IMAGE_3_HIGH_TIER_CREDITS = Math.round(
-  75 * IMAGE_PRICING_MARKUP_MULTIPLIER,
-);
-const FAL_FLUX_2_PRO_FIRST_MEGAPIXEL_CREDITS = 36;
-const FAL_FLUX_2_PRO_ADDITIONAL_MEGAPIXEL_CREDITS = 18;
-const FAL_IDEOGRAM_4_TURBO_MEGAPIXEL_CREDITS = 9;
+const FAL_QWEN_IMAGE_3_STANDARD_TIER_CREDITS = 40;
+const FAL_QWEN_IMAGE_3_HIGH_TIER_CREDITS = 75;
+const FAL_FLUX_2_PRO_FIRST_MEGAPIXEL_CREDITS = 30;
+const FAL_FLUX_2_PRO_ADDITIONAL_MEGAPIXEL_CREDITS = 15;
+const FAL_IDEOGRAM_4_TURBO_MEGAPIXEL_CREDITS = 7.5;
 
-const FAL_IDEOGRAM_4_QUALITY_MEGAPIXEL_CREDITS = 30;
+const FAL_IDEOGRAM_4_QUALITY_MEGAPIXEL_CREDITS = 25;
 const API_ORIGIN = "https://api.okou.test";
 const WEB_ORIGIN = "https://www.okou.test";
 const GPT_IMAGE_2_5_MODELS = [
@@ -606,11 +594,11 @@ describe("POST /api/image-io/generate", () => {
       );
       expect(statusResponse.status).toBe(200);
       expect(readGenerationResult(await statusResponse.json())).toMatchObject({
-        creditsCharged: 50,
+        creditsCharged: 42,
         billingCategory: "output_image.medium.standard",
       });
       await expect(orgCredits(fixture)).resolves.toBe(
-        fixture.initialCredits - 50,
+        fixture.initialCredits - 42,
       );
     });
   });
@@ -698,11 +686,11 @@ describe("POST /api/image-io/generate", () => {
         generationId,
         status: "completed",
         result: {
-          creditsCharged: 50,
+          creditsCharged: 42,
           billingCategory: "output_image.medium.standard",
         },
       });
-      await expect(orgCredits(fixture)).resolves.toBe(-50);
+      await expect(orgCredits(fixture)).resolves.toBe(-42);
       const usageClient = setupApp({ context, routes: usageRecordRoutes })(
         usageRecordContract,
       );
@@ -712,19 +700,19 @@ describe("POST /api/image-io/generate", () => {
       );
       const usageBody = usage.body;
       expect(usageBody).toMatchObject({
-        totalCredits: fundedBalance + 50,
+        totalCredits: fundedBalance + 42,
         rows: expect.arrayContaining([
           expect.objectContaining({
-            credits: 50,
+            credits: 42,
             breakdown: [
               {
                 kind: "image",
-                credits: 50,
+                credits: 42,
                 providers: [
                   {
                     provider: IMAGE_IO_MODEL,
-                    credits: 50,
-                    usageKinds: [{ kind: "image", credits: 50 }],
+                    credits: 42,
+                    usageKinds: [{ kind: "image", credits: 42 }],
                   },
                 ],
               },
@@ -752,7 +740,7 @@ describe("POST /api/image-io/generate", () => {
 
       await postFalWebhook(app, observedRequestUrl, completion);
       await flushWaitUntilForTest();
-      await expect(orgCredits(fixture)).resolves.toBe(-50);
+      await expect(orgCredits(fixture)).resolves.toBe(-42);
       const replayed = await fixture.request(
         app,
         `/api/built-in-generations/${generationId}`,
@@ -988,10 +976,10 @@ describe("POST /api/image-io/generate", () => {
       const statusBody: unknown = await completed.json();
       expect(statusBody).toMatchObject({ generationId, status: "completed" });
       expect(readGenerationResult(statusBody)).toMatchObject({
-        creditsCharged: 50,
+        creditsCharged: 42,
       });
       await expect(orgCredits(fixture)).resolves.toBe(
-        fixture.initialCredits - 50,
+        fixture.initialCredits - 42,
       );
 
       const replacement = await fixture.request(app, path, request);
@@ -1014,7 +1002,7 @@ describe("POST /api/image-io/generate", () => {
       });
       expect(requestUrls).toHaveLength(4);
       await expect(orgCredits(fixture)).resolves.toBe(
-        fixture.initialCredits - 50,
+        fixture.initialCredits - 42,
       );
     });
   });
@@ -1023,7 +1011,7 @@ describe("POST /api/image-io/generate", () => {
     mockEnv("OKOU_API_BACKEND_URL", API_ORIGIN);
     const fixture = await createFundedImageRun("gpt-image-1", 10_000);
     await fixture.run(async () => {
-      const creditsCharged = 50;
+      const creditsCharged = 42;
       let falCalls = 0;
       let observedAuthorization: string | null = null;
       let observedBody: unknown = null;
@@ -2190,7 +2178,7 @@ describe("POST /api/image-io/generate", () => {
       expect(body).toMatchObject({
         contentType: "image/jpeg",
         size: IMAGE_BYTES.byteLength,
-        creditsCharged: 96,
+        creditsCharged: 80,
         model: "fal-ai/flux-pro/v1.1",
         provider: "fal",
         imageSize: "1536x1024",
@@ -2239,12 +2227,12 @@ describe("POST /api/image-io/generate", () => {
       // The megapixel category/quantity are asserted in the result body above;
       // the single settled charge is observable as the exact balance drop.
       await expect(orgCredits(fixture)).resolves.toBe(
-        fixture.initialCredits - 96,
+        fixture.initialCredits - 80,
       );
     });
   });
 
-  it("generates image-to-image through fal with 20 percent markup pricing", async () => {
+  it("generates image-to-image through fal at standard provider prices", async () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
       await useImageModel(fixture, "fal-ai/flux-pro/v1.1");
@@ -2311,7 +2299,7 @@ describe("POST /api/image-io/generate", () => {
       expect(body).toMatchObject({
         contentType: "image/jpeg",
         size: IMAGE_BYTES.byteLength,
-        creditsCharged: 96,
+        creditsCharged: 80,
         model: "fal-ai/flux-pro/v1.1",
         provider: "fal",
         imageSize: "1536x1024",
@@ -2340,9 +2328,9 @@ describe("POST /api/image-io/generate", () => {
         image_url: MOCKUP_IMAGE_URL,
       });
 
-      // The marked-up charge (2 megapixels at 48/megapixel) is asserted through
+      // The standard charge (2 megapixels at 40/megapixel) is asserted through
       // the result body above and the exact org balance drop.
-      await expect(orgCredits(fixture)).resolves.toBe(1000 - 96);
+      await expect(orgCredits(fixture)).resolves.toBe(1000 - 80);
     });
   });
 
@@ -2689,7 +2677,7 @@ describe("POST /api/image-io/generate", () => {
       );
       expect(statusResponse.status).toBe(200);
       expect(readGenerationResult(await statusResponse.json())).toMatchObject({
-        creditsCharged: FAL_IDEOGRAM_4_TURBO_MEGAPIXEL_CREDITS,
+        creditsCharged: Math.ceil(FAL_IDEOGRAM_4_TURBO_MEGAPIXEL_CREDITS),
         billingCategory: "output_megapixel.turbo",
         sourceImageUrls: [MOCKUP_IMAGE_URL],
       });
@@ -3175,7 +3163,7 @@ describe("POST /api/image-io/generate", () => {
     });
   });
 
-  it("generates Nano Banana 2 images through fal with 20 percent markup pricing", async () => {
+  it("generates Nano Banana 2 images through fal at standard provider prices", async () => {
     const fixture = await publicFundedImageFixture({ credits: 1000 });
     await fixture.run(async () => {
       await useImageModel(fixture, "fal-ai/nano-banana-2");
@@ -3243,7 +3231,7 @@ describe("POST /api/image-io/generate", () => {
       expect(body).toMatchObject({
         contentType: "image/webp",
         size: IMAGE_BYTES.byteLength,
-        creditsCharged: FAL_NANO_BANANA_2_MARKED_UP_CREDITS_PER_IMAGE,
+        creditsCharged: FAL_NANO_BANANA_2_CREDITS_PER_IMAGE,
         model: "fal-ai/nano-banana-2",
         provider: "fal",
         imageSize: "1024x1024",
@@ -3271,10 +3259,10 @@ describe("POST /api/image-io/generate", () => {
         safety_tolerance: "5",
       });
 
-      // The per-image marked-up charge is asserted through the result body
+      // The standard per-image charge is asserted through the result body
       // above and the exact org balance drop.
       await expect(orgCredits(fixture)).resolves.toBe(
-        1000 - FAL_NANO_BANANA_2_MARKED_UP_CREDITS_PER_IMAGE,
+        1000 - FAL_NANO_BANANA_2_CREDITS_PER_IMAGE,
       );
     });
   });
@@ -3345,7 +3333,7 @@ describe("POST /api/image-io/generate", () => {
       const body = readGenerationResult(await statusResponse.json());
       expect(body).toMatchObject({
         contentType: "image/png",
-        creditsCharged: FAL_NANO_BANANA_2_MARKED_UP_CREDITS_PER_IMAGE,
+        creditsCharged: FAL_NANO_BANANA_2_CREDITS_PER_IMAGE,
         model: "fal-ai/nano-banana-2",
         provider: "fal",
         imageSize: "1536x1024",
@@ -3373,7 +3361,7 @@ describe("POST /api/image-io/generate", () => {
         image_urls: sourceImageUrls,
       });
       await expect(orgCredits(fixture)).resolves.toBe(
-        1000 - FAL_NANO_BANANA_2_MARKED_UP_CREDITS_PER_IMAGE,
+        1000 - FAL_NANO_BANANA_2_CREDITS_PER_IMAGE,
       );
     });
   });
