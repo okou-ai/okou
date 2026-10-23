@@ -537,11 +537,6 @@
       "owner": "commitWebhookEventAutomation$"
     },
     {
-      "id": "TX-0337",
-      "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
-      "owner": "persistOfficialAutomationMetadata$"
-    },
-    {
       "id": "TX-0339",
       "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
       "owner": "persistEnabledWorkflowAutomation$"
