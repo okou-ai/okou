@@ -115,6 +115,18 @@ test("Recover committed PCM after a reload during recording", async () => {
 
   context.store.set(resetFirstPage$);
   releasePageDom();
+  const openDatabase = globalThis.indexedDB.open.bind(globalThis.indexedDB);
+  const failedRead = vi
+    .spyOn(globalThis.indexedDB, "open")
+    .mockImplementation((name, version) => {
+      if (name === "okou-voice-drafts") {
+        throw new DOMException(
+          "Storage is temporarily unavailable",
+          "UnknownError",
+        );
+      }
+      return openDatabase(name, version);
+    });
   await setupPage({
     locale: "en-US",
     context: secondContext,
@@ -123,6 +135,12 @@ test("Recover committed PCM after a reload during recording", async () => {
 
   const retryButton = await findEnabledButton("Retry");
   const restoredComposer = owningComposer(retryButton);
+  expect(
+    within(restoredComposer).getByText(
+      "Audio could not be saved. Retry can recover only audio already saved on this device.",
+    ),
+  ).toBeInTheDocument();
+  failedRead.mockRestore();
   expect(queryButton("Stop recording")).toBeNull();
   click(retryButton);
   await findEnabledButton("Voice input", restoredComposer);

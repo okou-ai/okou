@@ -3386,14 +3386,12 @@
     "connectDialog": {
       "connectedAs": "Connesso come {{username}}",
       "device": {
-        "checking": "Verifica dell'approvazione...",
         "connect": "Connetti {{connector}}",
         "description": "Apri la pagina di verifica del provider, quindi inserisci questo codice di verifica per approvare l'accesso.",
         "intro": "Connettiti per ottenere un codice di verifica, quindi utilizzalo nella pagina di verifica del provider per approvare l'accesso.",
         "openPage": "Apri la pagina di verifica",
         "selectOption": "Seleziona {{option}}",
         "starting": "A partire...",
-        "startingConnection": "Avvio connessione...",
         "verificationCode": "Codice di verifica",
         "waiting": "In attesa di approvazione. Tieni aperta questa finestra di dialogo."
       },
@@ -3419,17 +3417,12 @@
       "noMethod": "Nessun metodo di connessione disponibile.",
       "or": "o",
       "progress": {
-        "connecting": "Connessione...",
-        "savingPermissions": "Salvataggio autorizzazioni..."
+        "connecting": "Connessione..."
       },
       "unavailable": {
         "description": "Questo connettore dispone di metodi di connessione disponibili, ma nessuno di essi può ancora essere configurato da questa finestra di dialogo.",
         "title": "Metodi di connessione non disponibili"
       }
-    },
-    "connectionProgress": {
-      "description": "Completa l’autorizzazione se richiesta. Attendi mentre completiamo la configurazione della connessione.",
-      "title": "Connessione del tuo account"
     },
     "custom": {
       "connect": {

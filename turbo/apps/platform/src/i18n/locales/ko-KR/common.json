@@ -3320,14 +3320,12 @@
     "connectDialog": {
       "connectedAs": "{{username}}로 연결됨",
       "device": {
-        "checking": "승인 확인 중...",
         "connect": "{{connector}} 연결",
         "description": "제공자의 인증 페이지를 열고 이 인증 코드를 입력하여 접근 권한을 승인하세요.",
         "intro": "인증 코드를 받으려면 연결하고, 제공자의 인증 페이지에서 사용하여 접근 권한을 승인하세요.",
         "openPage": "인증 페이지 열기",
         "selectOption": "{{option}} 선택",
         "starting": "시작 중...",
-        "startingConnection": "연결 시작 중...",
         "verificationCode": "인증 코드",
         "waiting": "승인 대기 중입니다. 이 대화창을 열어 두세요."
       },
@@ -3353,17 +3351,12 @@
       "noMethod": "사용 가능한 연결 방법이 없습니다.",
       "or": "또는",
       "progress": {
-        "connecting": "연결 중...",
-        "savingPermissions": "권한 저장 중..."
+        "connecting": "연결 중..."
       },
       "unavailable": {
         "description": "이 커넥터는 연결 방법이 있지만, 이 대화창에서는 아직 설정할 수 없습니다.",
         "title": "연결 방법을 사용할 수 없음"
       }
-    },
-    "connectionProgress": {
-      "description": "인증 요청이 표시되면 완료해 주세요. 연결 설정이 완료될 때까지 기다려 주세요.",
-      "title": "계정 연결 중"
     },
     "custom": {
       "connect": {

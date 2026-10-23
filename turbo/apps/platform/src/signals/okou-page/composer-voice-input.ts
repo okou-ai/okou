@@ -348,16 +348,15 @@ function createVoiceActionBindings(
       }
       const signal = AbortSignal.any([owner.signal, parentSignal]);
       signal.throwIfAborted();
-      const current = await get(state$);
-      signal.throwIfAborted();
       const resolvedAction =
         action === "toggle"
           ? get(capture.capture$)
             ? "finish"
-            : current.status === "failed"
+            : (await get(state$)).status === "failed"
               ? "retry"
               : "start"
           : action;
+      signal.throwIfAborted();
       set(invocation$, { action: resolvedAction, owner });
       if (resolvedAction === "start") {
         await set(start$, signal);

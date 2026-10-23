@@ -71,9 +71,6 @@ provide cancellation or resource ownership: keep the appropriate AbortSignal,
 session identity, and teardown at the real owner without introducing an action
 mutex to model request UI.
 
-Historical PRs #42092 and #42119 introduced intermediate shared Promise slots.
-Those action slots are migration targets, not the recommended end state.
-
 ### Collapsing a business session into request loading
 
 Separate a short authorization-start request from the longer approval session.

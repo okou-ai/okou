@@ -3320,14 +3320,12 @@
     "connectDialog": {
       "connectedAs": "已以{{username}}身份连接",
       "device": {
-        "checking": "正在检查授权结果…",
         "connect": "连接{{connector}}",
         "description": "打开服务商的验证页面，然后输入此验证码以授权访问。",
         "intro": "点击连接获取验证码，然后在服务商的验证页面输入它以授权访问。",
         "openPage": "打开验证页面",
         "selectOption": "选择{{option}}",
         "starting": "正在启动…",
-        "startingConnection": "正在发起连接…",
         "verificationCode": "验证码",
         "waiting": "等待授权中，请保持此窗口打开。"
       },
@@ -3353,17 +3351,12 @@
       "noMethod": "暂无可用的连接方式。",
       "or": "或",
       "progress": {
-        "connecting": "正在连接…",
-        "savingPermissions": "正在保存权限…"
+        "connecting": "正在连接…"
       },
       "unavailable": {
         "description": "此连接器有可用的连接方式，但目前都还无法在此窗口中配置。",
         "title": "连接方式不可用"
       }
-    },
-    "connectionProgress": {
-      "description": "如有提示请完成授权。我们正在为你完成连接设置，请稍候。",
-      "title": "正在连接你的账号"
     },
     "custom": {
       "connect": {

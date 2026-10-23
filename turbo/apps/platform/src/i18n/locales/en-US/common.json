@@ -3333,14 +3333,12 @@
     "connectDialog": {
       "connectedAs": "Connected as {{username}}",
       "device": {
-        "checking": "Checking for approval...",
         "connect": "Connect {{connector}}",
         "description": "Open the provider's verification page, then enter this verification code to approve access.",
         "intro": "Connect to get a verification code, then use it on the provider's verification page to approve access.",
         "openPage": "Open verification page",
         "selectOption": "Select {{option}}",
         "starting": "Starting...",
-        "startingConnection": "Starting connection...",
         "verificationCode": "Verification code",
         "waiting": "Waiting for approval. Keep this dialog open."
       },
@@ -3366,17 +3364,12 @@
       "noMethod": "No connection method is available.",
       "or": "or",
       "progress": {
-        "connecting": "Connecting...",
-        "savingPermissions": "Saving permissions..."
+        "connecting": "Connecting..."
       },
       "unavailable": {
         "description": "This connector has available connection methods, but none of them can be configured from this dialog yet.",
         "title": "Connection methods unavailable"
       }
-    },
-    "connectionProgress": {
-      "description": "Complete authorization if prompted. Please wait while we finish setting up your connection.",
-      "title": "Connecting your account"
     },
     "custom": {
       "connect": {
