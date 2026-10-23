@@ -4,7 +4,6 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use guest_contracts::home_mount::{HOME_DRIVE_MOUNT_TIMEOUT_MS, HOME_MOUNT_PATH};
@@ -12,7 +11,7 @@ use guest_control_proto::{
     ExecCapturedOutput, ExecTermination, HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES,
 };
 
-use crate::drain::{BoundedDrainResult, DrainCancellation, drain_bounded_cancellable};
+use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::error::to_io_error;
 use crate::process::{extract_exit_code, kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
@@ -257,8 +256,9 @@ fn run_mount(input: RunMountInput<'_>) -> HomeDriveMountOutput {
     };
 
     let (drain_done_tx, drain_done_rx) = mpsc::channel();
-    let stdout_drain = match spawn_drain(
+    let stdout_drain = match BoundedDrainHandle::spawn(
         stdout,
+        HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES,
         Arc::clone(&drain_cancel),
         drain_done_tx.clone(),
         THREAD_STDOUT,
@@ -274,8 +274,9 @@ fn run_mount(input: RunMountInput<'_>) -> HomeDriveMountOutput {
             );
         }
     };
-    let stderr_drain = match spawn_drain(
+    let stderr_drain = match BoundedDrainHandle::spawn(
         stderr,
+        HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES,
         Arc::clone(&drain_cancel),
         drain_done_tx.clone(),
         THREAD_STDERR,
@@ -349,43 +350,6 @@ fn run_mount(input: RunMountInput<'_>) -> HomeDriveMountOutput {
 fn abort_spawned(child: Child, started: Instant, diagnostic: &str) -> HomeDriveMountOutput {
     kill_and_reap_child(child);
     failed_output(ExecTermination::WaitFailed, started, diagnostic.to_string())
-}
-
-struct DrainHandle {
-    handle: JoinHandle<()>,
-    result_rx: mpsc::Receiver<BoundedDrainResult>,
-}
-
-impl DrainHandle {
-    fn join(self) -> Result<BoundedDrainResult, ()> {
-        if self.handle.join().is_err() {
-            return Err(());
-        }
-        self.result_rx.recv().map_err(|_| ())
-    }
-}
-
-fn spawn_drain(
-    pipe: impl Into<std::os::fd::OwnedFd> + Send + 'static,
-    cancel: Arc<DrainCancellation>,
-    done_tx: mpsc::Sender<()>,
-    thread_name: &'static str,
-) -> io::Result<DrainHandle> {
-    let (result_tx, result_rx) = mpsc::channel();
-    let handle = thread::Builder::new()
-        .name(thread_name.to_string())
-        .spawn(move || {
-            let result = drain_bounded_cancellable(
-                pipe,
-                &cancel,
-                Some(HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES),
-                None,
-                |_, _| true,
-            );
-            let _ = result_tx.send(result);
-            let _ = done_tx.send(());
-        })?;
-    Ok(DrainHandle { handle, result_rx })
 }
 
 fn failed_output(

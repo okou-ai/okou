@@ -12,7 +12,7 @@ use guest_control_proto::{
     GuestStateRestoreTimezone,
 };
 
-use crate::drain::{BoundedDrainResult, DrainCancellation, drain_bounded_cancellable};
+use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::error::to_io_error;
 use crate::log::log;
 use crate::process::{extract_exit_code, kill_and_reap_child, spawn_in_own_process_group};
@@ -302,7 +302,13 @@ fn run_restore(input: RunRestoreInput<'_>) -> GuestStateRestoreOutput {
     };
 
     let (drain_done_tx, drain_done_rx) = mpsc::channel();
-    let stderr_drain = match spawn_stderr(stderr, Arc::clone(&drain_cancel), drain_done_tx) {
+    let stderr_drain = match BoundedDrainHandle::spawn(
+        stderr,
+        GUEST_STATE_RESTORE_OUTPUT_LIMIT_BYTES,
+        Arc::clone(&drain_cancel),
+        drain_done_tx,
+        THREAD_STDERR,
+    ) {
         Ok(drain) => drain,
         Err(error) => {
             drop(stdin);
@@ -385,42 +391,6 @@ fn run_restore(input: RunRestoreInput<'_>) -> GuestStateRestoreOutput {
 fn abort_spawned(child: Child, started: Instant, diagnostic: &str) -> GuestStateRestoreOutput {
     kill_and_reap_child(child);
     failed_output(ExecTermination::WaitFailed, started, diagnostic.to_string())
-}
-
-struct DrainHandle {
-    handle: JoinHandle<()>,
-    result_rx: mpsc::Receiver<BoundedDrainResult>,
-}
-
-impl DrainHandle {
-    fn join(self) -> Result<BoundedDrainResult, ()> {
-        if self.handle.join().is_err() {
-            return Err(());
-        }
-        self.result_rx.recv().map_err(|_| ())
-    }
-}
-
-fn spawn_stderr(
-    pipe: impl Into<std::os::fd::OwnedFd> + Send + 'static,
-    cancel: Arc<DrainCancellation>,
-    done_tx: mpsc::Sender<()>,
-) -> io::Result<DrainHandle> {
-    let (result_tx, result_rx) = mpsc::channel();
-    let handle = thread::Builder::new()
-        .name(THREAD_STDERR.to_string())
-        .spawn(move || {
-            let result = drain_bounded_cancellable(
-                pipe,
-                &cancel,
-                Some(GUEST_STATE_RESTORE_OUTPUT_LIMIT_BYTES),
-                None,
-                |_, _| true,
-            );
-            let _ = result_tx.send(result);
-            let _ = done_tx.send(());
-        })?;
-    Ok(DrainHandle { handle, result_rx })
 }
 
 struct StdinWriter {

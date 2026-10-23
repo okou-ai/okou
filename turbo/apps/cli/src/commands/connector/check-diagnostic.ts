@@ -7,7 +7,7 @@ import {
   isSensitiveAwsDiagnosticQueryKey,
 } from "@okouai/connectors/firewall-expander";
 import type {
-  ConnectorCheckTargetAwareDiagnosticResult,
+  ConnectorCheckDiagnosticResult,
   ConnectorCheckTargetAwareUrlRequest,
 } from "@okouai/api-contracts/contracts/connector-check";
 import type { ConnectorRuntimeTarget } from "@okouai/api-contracts/contracts/runners";
@@ -95,7 +95,7 @@ type ValidatedCheckConnectorOptions = CheckConnectorOptions &
   );
 
 export type ResolvedDiagnostic = Extract<
-  ConnectorCheckTargetAwareDiagnosticResult,
+  ConnectorCheckDiagnosticResult,
   { readonly outcome: "resolved" }
 >;
 export type ResolvedUrlDiagnostic = Extract<
@@ -525,7 +525,7 @@ function requestedEnvironmentName(request: ConnectorDiagnosticRequest): string {
 
 function unsafeInputError(
   reason: Extract<
-    ConnectorCheckTargetAwareDiagnosticResult,
+    ConnectorCheckDiagnosticResult,
     { readonly outcome: "unsafe-input" }
   >["reason"],
 ): Error {
@@ -548,7 +548,7 @@ function unsafeInputError(
 function ambiguousConnectorError(
   request: UrlDiagnosticRequest,
   result: Extract<
-    ConnectorCheckTargetAwareDiagnosticResult,
+    ConnectorCheckDiagnosticResult,
     { readonly outcome: "ambiguous" }
   >,
 ): Error {
@@ -581,7 +581,7 @@ function unknownConnectorError(request: ConnectorDiagnosticRequest): Error {
 
 function noMatchError(
   result: Extract<
-    ConnectorCheckTargetAwareDiagnosticResult,
+    ConnectorCheckDiagnosticResult,
     { readonly outcome: "no-match" }
   >,
 ): Error {
@@ -595,7 +595,7 @@ function noMatchError(
 function connectorMismatchError(
   request: UrlDiagnosticRequest,
   result: Extract<
-    ConnectorCheckTargetAwareDiagnosticResult,
+    ConnectorCheckDiagnosticResult,
     { readonly outcome: "connector-mismatch" }
   >,
 ): Error {
@@ -610,7 +610,7 @@ function connectorMismatchError(
 function environmentNotOwnedError(
   request: ConnectorDiagnosticRequest,
   result: Extract<
-    ConnectorCheckTargetAwareDiagnosticResult,
+    ConnectorCheckDiagnosticResult,
     { readonly outcome: "environment-not-owned" }
   >,
 ): Error {
@@ -623,7 +623,7 @@ function environmentNotOwnedError(
 function environmentNotUsedError(
   request: ConnectorDiagnosticRequest,
   result: Extract<
-    ConnectorCheckTargetAwareDiagnosticResult,
+    ConnectorCheckDiagnosticResult,
     { readonly outcome: "environment-not-used" }
   >,
 ): Error {
@@ -635,7 +635,7 @@ function environmentNotUsedError(
 
 export function resolveConnectorCheckDiagnostic(
   request: ConnectorDiagnosticRequest,
-  result: ConnectorCheckTargetAwareDiagnosticResult,
+  result: ConnectorCheckDiagnosticResult,
 ): ResolvedDiagnostic {
   if (result.outcome === "resolved") {
     return result;
@@ -645,10 +645,7 @@ export function resolveConnectorCheckDiagnostic(
 
 export function connectorCheckDiagnosticError(
   request: ConnectorDiagnosticRequest,
-  result: Exclude<
-    ConnectorCheckTargetAwareDiagnosticResult,
-    ResolvedDiagnostic
-  >,
+  result: Exclude<ConnectorCheckDiagnosticResult, ResolvedDiagnostic>,
 ): Error {
   switch (result.outcome) {
     case "unsafe-input":

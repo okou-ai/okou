@@ -1,3 +1,4 @@
 mod event_delivery_count_overload;
 mod event_delivery_failure_recovery;
+mod event_delivery_oversized;
 mod execute_cli_api_mode;

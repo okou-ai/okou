@@ -150,7 +150,7 @@ fn text_event(framework: Framework, text: &str) -> Value {
 
 fn text_event_at_sequence(framework: Framework, text: &str, sequence: u32) -> Value {
     let mut event = match framework {
-        Framework::Pi => {
+        Framework::ClaudeCode | Framework::Pi => {
             json!({"type":"assistant","message":{"id":"message","role":"assistant","model":"test","usage":{"input_tokens":2},"content":[{"type":"text","text":text}]}})
         }
         _ => {
@@ -235,6 +235,7 @@ fn owned_collaboration_fixture_preserves_canonical_bytes_and_receiver_order() {
 #[tokio::test]
 async fn sender_preserves_normal_bytes_and_accounts_for_exact_citation_envelopes() {
     for (framework, collaboration) in [
+        (Framework::ClaudeCode, false),
         (Framework::Pi, false),
         (Framework::Codex, false),
         (Framework::Codex, true),
@@ -302,7 +303,7 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_citation_envelopes
                     Duration::ZERO,
                 )
                 .unwrap();
-                let runtime = EventDeliveryRuntime::start(http, RUN_ID, 19, transport).unwrap();
+                let runtime = EventDeliveryRuntime::start(http, RUN_ID, transport).unwrap();
                 runtime
                     .sender()
                     .try_send_for_framework(19, event, framework, &SecretMasker::from_raw(""))
@@ -381,7 +382,7 @@ async fn result_citations_are_private_and_masked_before_bounded_delivery() {
             Duration::ZERO,
         )
         .unwrap();
-        let runtime = EventDeliveryRuntime::start(http, RUN_ID, 19, true).unwrap();
+        let runtime = EventDeliveryRuntime::start(http, RUN_ID, true).unwrap();
         runtime
             .sender()
             .try_send_for_framework(
@@ -494,7 +495,7 @@ async fn collaboration_fallback_preserves_structure_beyond_content_discovery_lim
             Duration::ZERO,
         )
         .unwrap();
-        let runtime = EventDeliveryRuntime::start(http, RUN_ID, 19, false).unwrap();
+        let runtime = EventDeliveryRuntime::start(http, RUN_ID, false).unwrap();
         runtime
             .sender()
             .try_send_for_framework(19, event, Framework::Codex, &SecretMasker::from_raw(""))
@@ -507,15 +508,21 @@ async fn collaboration_fallback_preserves_structure_beyond_content_discovery_lim
 }
 
 #[tokio::test]
-async fn impossible_citation_and_protected_core_fail_before_http() {
+async fn irreducible_events_are_skipped_and_later_uploads_advance_across_gaps() {
     let server = MockServer::start_async().await;
     let request = server.mock(|when, then| {
-        when.method(POST);
+        when.method(POST)
+            .path("/api/webhooks/agent/events")
+            .json_body_includes(r#"{"events":[{"sequenceNumber":20}]}"#);
         then.status(200);
     });
     for (framework, mut event) in [
         (Framework::Pi, text_event(Framework::Pi, "text")),
         (Framework::Pi, text_event(Framework::Pi, "text")),
+        (
+            Framework::ClaudeCode,
+            text_event(Framework::ClaudeCode, "text"),
+        ),
         (Framework::Codex, text_event(Framework::Codex, "text")),
         (
             Framework::Codex,
@@ -539,9 +546,10 @@ async fn impossible_citation_and_protected_core_fail_before_http() {
         match i {
             0 => event["memoryCitation"]["entries"][0]["note"] = json!("x".repeat(LIMIT)),
             1 => event["message"]["id"] = json!("x".repeat(LIMIT)),
-            2 => event["item"]["id"] = json!("x".repeat(LIMIT)),
-            3 => event["item"]["receiver_thread_ids"] = json!(["x".repeat(LIMIT)]),
-            4 => {
+            2 => event["message"]["id"] = json!("x".repeat(LIMIT)),
+            3 => event["item"]["id"] = json!("x".repeat(LIMIT)),
+            4 => event["item"]["receiver_thread_ids"] = json!(["x".repeat(LIMIT)]),
+            5 => {
                 event["item"]["agents_states"] =
                     json!({"x".repeat(LIMIT): {"status": "errored", "message": "text"}})
             }
@@ -557,15 +565,37 @@ async fn impossible_citation_and_protected_core_fail_before_http() {
             Duration::ZERO,
         )
         .unwrap();
-        let runtime = EventDeliveryRuntime::start(http, RUN_ID, 19, true).unwrap();
-        let error = runtime
+        let runtime = EventDeliveryRuntime::start(http, RUN_ID, true).unwrap();
+        runtime
             .sender()
             .try_send_for_framework(19, event.take(), framework, &SecretMasker::from_raw(""))
-            .unwrap_err();
-        assert!(error.to_string().contains("serialized event budget"));
-        assert!(runtime.finish().await.unwrap().last_acknowledged_sequence == Some(18));
+            .unwrap();
+        runtime
+            .sender()
+            .try_send_for_framework(
+                20,
+                text_event_at_sequence(framework, "later output", 20),
+                framework,
+                &SecretMasker::from_raw(""),
+            )
+            .unwrap();
+        // A discarded tail must not be reported as successfully uploaded.
+        let mut tail = text_event_at_sequence(framework, "tail", 21);
+        match framework {
+            Framework::ClaudeCode | Framework::Pi => {
+                tail["message"]["id"] = json!("x".repeat(LIMIT));
+            }
+            Framework::Codex => tail["item"]["id"] = json!("x".repeat(LIMIT)),
+        }
+        runtime
+            .sender()
+            .try_send_for_framework(21, tail, framework, &SecretMasker::from_raw(""))
+            .unwrap();
+        let report = runtime.finish().await.unwrap();
+        assert_eq!(report.last_acknowledged_sequence, Some(20));
+        assert!(report.diagnostic.is_none());
     }
-    request.assert_calls_async(0).await;
+    request.assert_calls_async(7).await;
 }
 
 #[tokio::test]
@@ -592,7 +622,7 @@ async fn reduced_http_failure_still_breaks_acknowledgement_and_retries_identical
         Duration::ZERO,
     )
     .unwrap();
-    let runtime = EventDeliveryRuntime::start(http, RUN_ID, 19, true).unwrap();
+    let runtime = EventDeliveryRuntime::start(http, RUN_ID, true).unwrap();
     runtime
         .sender()
         .try_send_for_framework(
@@ -603,7 +633,7 @@ async fn reduced_http_failure_still_breaks_acknowledgement_and_retries_identical
         )
         .unwrap();
     let report = runtime.finish().await.unwrap();
-    assert_eq!(report.last_acknowledged_sequence, Some(18));
+    assert_eq!(report.last_acknowledged_sequence, None);
     assert!(report.diagnostic.is_some());
     assert!(request.calls_async().await > 1);
     let requests = seen.lock().unwrap();
@@ -660,7 +690,7 @@ async fn delivery_request_log_names_the_delivered_record_type() {
             Duration::ZERO,
         )
         .unwrap();
-        let runtime = EventDeliveryRuntime::start(http, RUN_ID, sequence, false).unwrap();
+        let runtime = EventDeliveryRuntime::start(http, RUN_ID, false).unwrap();
         runtime
             .sender()
             .try_send_for_framework(

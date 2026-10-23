@@ -2649,13 +2649,13 @@ mod tests {
     fn oom_killed_agent_reports_the_termination_reason_over_captured_stderr() {
         let error = agent_failure_error(
             true,
-            "{\"type\":\"pi_memory_recall_outcome\",\"status\":\"miss\"} Killed".to_string(),
+            "{\"type\":\"pi_preparation_timing\",\"phase\":\"model_runtime\"} Killed".to_string(),
             Some("guest error file".to_string()),
             EXIT_SIGKILL,
         );
 
         assert_eq!(error, GUEST_MEMORY_OOM_KILLED_ERROR);
-        assert!(!error.contains("pi_memory_recall_outcome"));
+        assert!(!error.contains("pi_preparation_timing"));
     }
 
     #[test]

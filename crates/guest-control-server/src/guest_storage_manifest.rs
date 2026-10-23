@@ -16,7 +16,7 @@ use guest_control_proto::{
 use crate::contained_command::{
     CommandStdio, ContainedChild as Child, ContainedCommand as Command, ContainedCommandExt,
 };
-use crate::drain::{BoundedDrainResult, DrainCancellation, drain_bounded_cancellable};
+use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::error::to_io_error;
 use crate::log::log;
 use crate::process::{extract_exit_code, kill_and_reap_child};
@@ -446,8 +446,9 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
     };
 
     let (drain_done_tx, drain_done_rx) = mpsc::channel();
-    let stdout_drain = match spawn_drain(
+    let stdout_drain = match BoundedDrainHandle::spawn(
         stdout,
+        GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES,
         Arc::clone(&drain_cancel),
         drain_done_tx.clone(),
         THREAD_STDOUT,
@@ -469,8 +470,9 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
             );
         }
     };
-    let stderr_drain = match spawn_drain(
+    let stderr_drain = match BoundedDrainHandle::spawn(
         stderr,
+        GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES,
         Arc::clone(&drain_cancel),
         drain_done_tx.clone(),
         THREAD_STDERR,
@@ -630,43 +632,6 @@ fn append_cleanup_failure(diagnostic: String, error: Option<&ProcessContainmentE
     } else {
         format!("{diagnostic}; failed to clean storage helper process containment: {error}")
     }
-}
-
-struct DrainHandle {
-    handle: JoinHandle<()>,
-    result_rx: mpsc::Receiver<BoundedDrainResult>,
-}
-
-impl DrainHandle {
-    fn join(self) -> Result<BoundedDrainResult, ()> {
-        if self.handle.join().is_err() {
-            return Err(());
-        }
-        self.result_rx.recv().map_err(|_| ())
-    }
-}
-
-fn spawn_drain(
-    pipe: impl Into<std::os::fd::OwnedFd> + Send + 'static,
-    cancel: Arc<DrainCancellation>,
-    done_tx: mpsc::Sender<()>,
-    thread_name: &'static str,
-) -> io::Result<DrainHandle> {
-    let (result_tx, result_rx) = mpsc::channel();
-    let handle = thread::Builder::new()
-        .name(thread_name.to_string())
-        .spawn(move || {
-            let result = drain_bounded_cancellable(
-                pipe,
-                &cancel,
-                Some(GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES),
-                None,
-                |_, _| true,
-            );
-            let _ = result_tx.send(result);
-            let _ = done_tx.send(());
-        })?;
-    Ok(DrainHandle { handle, result_rx })
 }
 
 struct StdinWriter {

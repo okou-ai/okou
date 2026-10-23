@@ -1,5 +1,4 @@
-//! Terminal event delivery must select recovery without replacing a primary
-//! CLI result.
+//! Event delivery warnings preserve successful finalization and genuine CLI failures.
 
 use crate::common;
 
@@ -18,62 +17,45 @@ const PRIMARY_CLI_ERROR: &str = "mock codex primary failure";
 struct EventFailureRun {
     process_exit_code: Option<i32>,
     stderr: String,
-    error_message: String,
-    diagnostic: FailureDiagnostic,
+    error_message: Option<String>,
+    diagnostic: Option<FailureDiagnostic>,
 }
 
 #[tokio::test]
-async fn successful_cli_with_exhausted_event_delivery_uses_recovery_finalization()
+async fn successful_cli_with_exhausted_event_delivery_completes_successfully()
 -> Result<(), Box<dyn std::error::Error>> {
     let run = run_event_failure_case("event-delivery-failure-recovery", 0, 500).await?;
 
     assert_eq!(
         run.process_exit_code,
-        Some(1),
+        Some(0),
         "guest-agent stderr:\n{}",
         run.stderr
     );
-    assert!(
-        run.stderr
-            .contains("Attempting best-effort recovery finalization")
-    );
-    assert!(run.stderr.contains("Recovery finalization created"));
-    assert!(!run.stderr.contains("▷ Finalization"));
-    assert_eq!(
-        run.diagnostic.failure_class,
-        FailureClass::EventUploadFailed
-    );
-    assert_eq!(run.diagnostic.cli_exit_code, Some(0));
-    assert_http_error_event_delivery(&run.diagnostic, 500, 3)?;
-    assert_failed_batch_message(&run)?;
+    assert!(run.stderr.contains("▷ Finalization"));
+    assert!(run.stderr.contains("Discarding event batch"));
+    assert!(run.stderr.contains("retaining CLI outcome"));
+    assert!(run.diagnostic.is_none());
+    assert!(run.error_message.is_none());
 
     Ok(())
 }
 
 #[tokio::test]
-async fn successful_cli_with_nonretryable_event_rejection_reports_failed_batch()
+async fn successful_cli_with_nonretryable_event_rejection_completes_successfully()
 -> Result<(), Box<dyn std::error::Error>> {
     let run = run_event_failure_case("event-delivery-nonretryable-recovery", 0, 400).await?;
 
     assert_eq!(
         run.process_exit_code,
-        Some(1),
+        Some(0),
         "guest-agent stderr:\n{}",
         run.stderr
     );
-    assert!(
-        run.stderr
-            .contains("Attempting best-effort recovery finalization")
-    );
-    assert!(run.stderr.contains("Recovery finalization created"));
-    assert!(!run.stderr.contains("▷ Finalization"));
-    assert_eq!(
-        run.diagnostic.failure_class,
-        FailureClass::EventUploadFailed
-    );
-    assert_eq!(run.diagnostic.cli_exit_code, Some(0));
-    assert_http_error_event_delivery(&run.diagnostic, 400, 1)?;
-    assert_failed_batch_message(&run)?;
+    assert!(run.stderr.contains("▷ Finalization"));
+    assert!(run.stderr.contains("Discarding event batch"));
+    assert!(run.diagnostic.is_none());
+    assert!(run.error_message.is_none());
 
     Ok(())
 }
@@ -90,10 +72,14 @@ async fn nonzero_cli_remains_primary_when_event_delivery_also_fails()
         run.stderr
     );
     assert!(run.stderr.contains(PRIMARY_CLI_ERROR));
-    assert_eq!(run.error_message, PRIMARY_CLI_ERROR);
-    assert_eq!(run.diagnostic.failure_class, FailureClass::CliNonzero);
-    assert_eq!(run.diagnostic.cli_exit_code, Some(1));
-    assert_http_error_event_delivery(&run.diagnostic, 500, 3)?;
+    assert_eq!(run.error_message.as_deref(), Some(PRIMARY_CLI_ERROR));
+    let diagnostic = run
+        .diagnostic
+        .as_ref()
+        .ok_or("CLI failure omitted diagnostic")?;
+    assert_eq!(diagnostic.failure_class, FailureClass::CliNonzero);
+    assert_eq!(diagnostic.cli_exit_code, Some(1));
+    assert_http_error_event_delivery(diagnostic, 500, 3)?;
 
     Ok(())
 }
@@ -145,14 +131,14 @@ async fn run_event_failure_case(
             .method(POST)
             .path("/api/webhooks/agent/complete")
             .json_body_includes(format!(
-                r#"{{"exitCode":1,"completion":{{"cliAgentSessionId":"{THREAD_ID}"}}}}"#
+                r#"{{"exitCode":{cli_exit_code},"completion":{{"cliAgentSessionId":"{THREAD_ID}"}}}}"#
             ));
         if cli_exit_code != 0 {
             when.json_body_includes(json!({"error": PRIMARY_CLI_ERROR}).to_string());
         }
         then.status(200)
             .header("Content-Type", "application/json")
-            .json_body(json!({"success": true, "status": "failed"}));
+            .json_body(json!({"success": true, "status": if cli_exit_code == 0 { "completed" } else { "failed" }}));
     });
 
     let output = common::command_output_with_timeout(
@@ -204,49 +190,27 @@ async fn run_event_failure_case(
     complete.assert_calls_async(1).await;
 
     let paths = guest_agent::paths::GuestPaths::from_runtime_dir(runtime_dir.clone());
-    let diagnostic: FailureDiagnostic =
-        serde_json::from_slice(&std::fs::read(paths.failure_diagnostic_file())?)?;
-    let event_delivery = diagnostic
-        .event_delivery
-        .as_ref()
-        .ok_or_else(|| io::Error::other("failure omitted event delivery details"))?;
+    let diagnostic: Option<FailureDiagnostic> =
+        if std::path::Path::new(paths.failure_diagnostic_file()).exists() {
+            Some(serde_json::from_slice(&std::fs::read(
+                paths.failure_diagnostic_file(),
+            )?)?)
+        } else {
+            None
+        };
     let attempts_per_batch = if http_status == 400 { 1 } else { 3 };
-    events
-        .assert_calls_async(usize::try_from(event_delivery.failed_batches)? * attempts_per_batch)
-        .await;
-    assert!(
-        !runtime_dir.join("event-error").exists(),
-        "structured failure propagation must not recreate the boolean event flag"
-    );
+    assert!(events.calls_async().await >= attempts_per_batch);
 
     Ok(EventFailureRun {
         process_exit_code: output.status.code(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        error_message: std::fs::read_to_string(paths.finalization_error_file())?,
+        error_message: if std::path::Path::new(paths.finalization_error_file()).exists() {
+            Some(std::fs::read_to_string(paths.finalization_error_file())?)
+        } else {
+            None
+        },
         diagnostic,
     })
-}
-
-fn assert_failed_batch_message(run: &EventFailureRun) -> Result<(), Box<dyn std::error::Error>> {
-    let event_delivery = run
-        .diagnostic
-        .event_delivery
-        .as_ref()
-        .ok_or_else(|| io::Error::other("failure omitted event delivery details"))?;
-    assert!(event_delivery.last_acknowledged_sequence.is_none());
-    assert!(event_delivery.drain_timeout.is_none());
-    let failed_batch = event_delivery
-        .first_failed_batch
-        .as_ref()
-        .ok_or_else(|| io::Error::other("failure omitted first failed batch"))?;
-    assert_eq!(
-        run.error_message,
-        format!(
-            "Event delivery failed after acknowledged sequence none: batch {}-{} failed",
-            failed_batch.first_sequence, failed_batch.last_sequence
-        )
-    );
-    Ok(())
 }
 
 fn assert_http_error_event_delivery(

@@ -1748,7 +1748,6 @@ function customOAuthConnectionTarget(
 }
 
 interface StoreCustomConnectorOAuth2ConnectionArgs {
-  readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
   readonly connectorId: string;
@@ -1770,122 +1769,130 @@ interface StoreCustomConnectorOAuth2ConnectionArgs {
   };
 }
 
-export async function storeCustomConnectorOAuth2Connection(
-  args: StoreCustomConnectorOAuth2ConnectionArgs,
-  signal: AbortSignal,
-): Promise<
-  | { readonly kind: "stored"; readonly connectionId: string }
-  | { readonly kind: "missing" | "ambiguous" | "sibling-disabled" }
-> {
-  const encrypted = await encryptTokenValues(args);
-  signal.throwIfAborted();
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0141; new non-billing transactions are prohibited.
-  return await args.db.transaction(async (tx) => {
-    const [insertedWallet] = await tx
-      .insert(orgMetadataCanonicalWrites)
-      .values({ orgId: args.orgId })
-      .onConflictDoNothing()
-      .returning({ orgId: orgMetadata.orgId });
-    await tx.select().from(memberRewardWalletQuery(args.orgId));
-    if (insertedWallet) {
-      await tx
-        .insert(orgPlanEntitlements)
-        .values(slackRewardWalletEntitlement(args.orgId))
-        .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
-    }
-    const credentialContractDb = tx;
-    const contractRef = {
-      orgId: args.orgId,
-      connectorId: args.connectorId,
-      storageVersion: args.storageVersion,
-      authMode: args.automaticOAuthBinding
-        ? ("automatic" as const)
-        : ("oauth" as const),
-    };
-    const contract = await (async () => {
-      const plan = customConnectorOAuth2CredentialContractReadPlan(contractRef);
-      const rows = await credentialContractDb
-        .select(plan.columns)
-        .from(plan.from)
-        .leftJoin(plan.join.table, plan.join.on)
-        .where(plan.where)
-        .for("update", { of: plan.from })
-        .limit(1);
-      return customConnectorOAuth2CredentialContractFromRows(rows, contractRef);
-    })();
+export const storeCustomConnectorOAuth2Connection$ = command(
+  async function storeCustomConnectorOAuth2Connection(
+    { set },
+    args: StoreCustomConnectorOAuth2ConnectionArgs,
+    signal: AbortSignal,
+  ): Promise<
+    | { readonly kind: "stored"; readonly connectionId: string }
+    | { readonly kind: "missing" | "ambiguous" | "sibling-disabled" }
+  > {
+    const db = set(writeDb$);
+    const encrypted = await encryptTokenValues(args);
     signal.throwIfAborted();
-    const resolution = await resolveConnectorConnectionMutation(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      target: { kind: "custom", customConnectorId: args.connectorId },
-      mutation: args.account,
-      allowSiblings: !isIntegrationManagedCustomConnectorProviderAdapter(
-        contract.providerAdapter,
-      ),
-    });
-    signal.throwIfAborted();
-    if (resolution.kind !== "ready") {
-      return resolution;
-    }
-    const connectionDb = tx;
-    const connectionArgs: CustomConnectorReplacementArgs = {
-      orgId: args.orgId,
-      userId: args.userId,
-      authMethod: "oauth",
-      storageVersion: args.storageVersion,
-      tokenExpiresAt: args.token.expiresAt,
-      target: customOAuthConnectionTarget(args.connectorId, args.token),
-      resolution: resolution.mutation,
-      insertConnectionId: args.insertConnectionId,
-      writeCredentials: async ({ db, connectorId }) => {
-        await db.insert(secrets).values(
-          connectionTokenRows({
-            ...args,
-            connectionId: connectorId,
-            encrypted,
-          }),
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0141; new non-billing transactions are prohibited.
+    return await db.transaction(async (tx) => {
+      const [insertedWallet] = await tx
+        .insert(orgMetadataCanonicalWrites)
+        .values({ orgId: args.orgId })
+        .onConflictDoNothing()
+        .returning({ orgId: orgMetadata.orgId });
+      await tx.select().from(memberRewardWalletQuery(args.orgId));
+      if (insertedWallet) {
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(slackRewardWalletEntitlement(args.orgId))
+          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+      }
+      const credentialContractDb = tx;
+      const contractRef = {
+        orgId: args.orgId,
+        connectorId: args.connectorId,
+        storageVersion: args.storageVersion,
+        authMode: args.automaticOAuthBinding
+          ? ("automatic" as const)
+          : ("oauth" as const),
+      };
+      const contract = await (async () => {
+        const plan =
+          customConnectorOAuth2CredentialContractReadPlan(contractRef);
+        const rows = await credentialContractDb
+          .select(plan.columns)
+          .from(plan.from)
+          .leftJoin(plan.join.table, plan.join.on)
+          .where(plan.where)
+          .for("update", { of: plan.from })
+          .limit(1);
+        return customConnectorOAuth2CredentialContractFromRows(
+          rows,
+          contractRef,
         );
-        await db
-          .delete(customConnectorAccountOauthBindings)
-          .where(
-            eq(
-              customConnectorAccountOauthBindings.connectorAccountId,
-              connectorId,
-            ),
+      })();
+      signal.throwIfAborted();
+      const resolution = await resolveConnectorConnectionMutation(tx, {
+        orgId: args.orgId,
+        userId: args.userId,
+        target: { kind: "custom", customConnectorId: args.connectorId },
+        mutation: args.account,
+        allowSiblings: !isIntegrationManagedCustomConnectorProviderAdapter(
+          contract.providerAdapter,
+        ),
+      });
+      signal.throwIfAborted();
+      if (resolution.kind !== "ready") {
+        return resolution;
+      }
+      const connectionDb = tx;
+      const connectionArgs: CustomConnectorReplacementArgs = {
+        orgId: args.orgId,
+        userId: args.userId,
+        authMethod: "oauth",
+        storageVersion: args.storageVersion,
+        tokenExpiresAt: args.token.expiresAt,
+        target: customOAuthConnectionTarget(args.connectorId, args.token),
+        resolution: resolution.mutation,
+        insertConnectionId: args.insertConnectionId,
+        writeCredentials: async ({ db, connectorId }) => {
+          await db.insert(secrets).values(
+            connectionTokenRows({
+              ...args,
+              connectionId: connectorId,
+              encrypted,
+            }),
           );
-        if (args.automaticOAuthBinding) {
-          await db.insert(customConnectorAccountOauthBindings).values({
-            connectorAccountId: connectorId,
-            customConnectorId: args.connectorId,
-            ...args.automaticOAuthBinding,
-          });
-        }
-      },
-    };
-    const connectionSignal = signal;
-    const connection = await (async () => {
-      return connectorConnectionWrittenRow(
-        await replaceConnectorConnectionOutcome(
-          connectionDb,
-          connectionArgs,
-          connectionSignal,
+          await db
+            .delete(customConnectorAccountOauthBindings)
+            .where(
+              eq(
+                customConnectorAccountOauthBindings.connectorAccountId,
+                connectorId,
+              ),
+            );
+          if (args.automaticOAuthBinding) {
+            await db.insert(customConnectorAccountOauthBindings).values({
+              connectorAccountId: connectorId,
+              customConnectorId: args.connectorId,
+              ...args.automaticOAuthBinding,
+            });
+          }
+        },
+      };
+      const connectionSignal = signal;
+      const connection = await (async () => {
+        return connectorConnectionWrittenRow(
+          await replaceConnectorConnectionOutcome(
+            connectionDb,
+            connectionArgs,
+            connectionSignal,
+          ),
+        );
+      })();
+      await tx.execute(
+        completedGetStartedQuestSql(
+          {
+            orgId: args.orgId,
+            userId: args.userId,
+            questKey: "connector",
+            sourceKey: CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY,
+          },
+          nowDate(),
         ),
       );
-    })();
-    await tx.execute(
-      completedGetStartedQuestSql(
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          questKey: "connector",
-          sourceKey: CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY,
-        },
-        nowDate(),
-      ),
-    );
-    return { kind: "stored", connectionId: connection.id };
-  });
-}
+      return { kind: "stored", connectionId: connection.id };
+    });
+  },
+);
 
 interface StoredConnection {
   readonly id: string;

@@ -153,14 +153,14 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn pi_memory_phase2_terminal_lines_survive_stderr_collection() {
-        let fixtures: Vec<serde_json::Value> = serde_json::from_str(include_str!(concat!(
+    async fn terminal_error_lines_survive_stderr_collection() {
+        let fixtures: Vec<String> = serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../fixtures/pi-memory-phase2-terminal.json"
+            "/../../fixtures/cli-terminal-stderr.json"
         )))
         .unwrap();
         for fixture in fixtures {
-            let stderr = fixture["stderr"].as_str().unwrap();
+            let stderr = fixture.as_str();
             assert!(stderr.len() < CLI_STDERR_RESULT_MAX_LINE_BYTES);
             for suffix in ["\n", ""] {
                 let wire = format!("{stderr}{suffix}");

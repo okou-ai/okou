@@ -79,7 +79,7 @@ function connectorIdentity(
   overrides: Partial<ConnectorIdentity> = {},
 ): ConnectorIdentity {
   return {
-    connectorSlug: "github",
+    target: { kind: "builtin", connectorSlug: "github" },
     label: "GitHub",
     visibility: "available",
     credentialResolution: "network-boundary",
@@ -180,7 +180,6 @@ function stubDiagnostic(
   onRequest?: (body: unknown) => void,
   baseUrl = API_BASE_URL,
   awsContextHeader?: string,
-  identityFormat: "legacy" | "target" = "legacy",
 ): void {
   if (result.outcome === "unknown-connector") {
     server.use(
@@ -190,12 +189,15 @@ function stubDiagnostic(
       ),
     );
   }
-  if ("connector" in result) {
+  if ("connector" in result && result.connector.target.kind === "builtin") {
     server.use(
       stubConnectorCatalog(
         [
-          catalogItem(result.connector),
-          ...(result.connector.connectorSlug === "slack"
+          catalogItem({
+            connectorSlug: result.connector.target.connectorSlug,
+            label: result.connector.label,
+          }),
+          ...(result.connector.target.connectorSlug === "slack"
             ? []
             : [catalogItem({ connectorSlug: "slack", label: "Slack" })]),
         ],
@@ -215,37 +217,7 @@ function stubDiagnostic(
             };
       const body: unknown = await request.json();
       onRequest?.(body);
-      const parsed = connectorCheckRequestBodySchema.parse(body);
-      if (
-        identityFormat === "target" ||
-        "includeCustomConnectors" in parsed ||
-        "target" in parsed
-      ) {
-        if ("connector" in result) {
-          const { connectorSlug, ...identity } = result.connector;
-          return HttpResponse.json(
-            {
-              ...result,
-              connector: {
-                ...identity,
-                target: { kind: "builtin", connectorSlug },
-              },
-            },
-            responseInit,
-          );
-        }
-        if (result.outcome === "ambiguous") {
-          return HttpResponse.json(
-            {
-              ...result,
-              candidates: result.candidates.map(({ connectorSlug, label }) => {
-                return { target: { kind: "builtin", connectorSlug }, label };
-              }),
-            },
-            responseInit,
-          );
-        }
-      }
+      connectorCheckRequestBodySchema.parse(body);
       return HttpResponse.json(result, responseInit);
     }),
   );
@@ -563,7 +535,7 @@ describe("okou connector check command", () => {
   describe("JSON output", () => {
     it("preserves AWS selectors in the diagnostic request and retry command", async () => {
       const awsIdentity = connectorIdentity({
-        connectorSlug: "aws",
+        target: { kind: "builtin", connectorSlug: "aws" },
         label: "AWS",
       });
       let diagnosticRequest: unknown;
@@ -640,7 +612,10 @@ describe("okou connector check command", () => {
     it("keeps an incomplete AWS diagnostic but omits the broad unknown grant action", async () => {
       stubDiagnostic(
         resolvedUrl({
-          connector: connectorIdentity({ connectorSlug: "aws", label: "AWS" }),
+          connector: connectorIdentity({
+            target: { kind: "builtin", connectorSlug: "aws" },
+            label: "AWS",
+          }),
           method: "POST",
           base: "https://sts.us-west-2.amazonaws.com",
           relativePath: "/",
@@ -771,79 +746,69 @@ describe("okou connector check command", () => {
       expect(getOutput()).not.toContain("\u001b[");
     });
 
-    it.each(["legacy", "target"] as const)(
-      "keeps current JSON identity and status with %s environment identity",
-      async (identityFormat) => {
-        const target = { kind: "builtin", connectorSlug: "github" } as const;
-        const account = connectorAccount(target, {
-          id: "00000000-0000-4000-8000-000000000003",
-          connectionStatus: "reconnect-required",
-          reconnectReason: "configuration_invalid",
-        });
-        const sibling = connectorAccount(target, { isDefault: false });
-        server.use(
-          http.get(
-            `${API_BASE_URL}/api/connector-accounts/connections`,
-            ({ request }) => {
-              const cursor = new URL(request.url).searchParams.get("cursor");
-              return HttpResponse.json({
-                connections: cursor ? [account] : [sibling],
-                defaultConnection: account,
-                nextCursor: cursor ? null : "next-account-page",
-              });
-            },
-          ),
-        );
-        vi.stubEnv("OKOU_AGENT_ID", "");
-        stubDiagnostic(
-          resolvedEnvironment({
-            run: { status: "not-scoped" },
-            permission: { outcome: "unavailable", basis: "not-run-scoped" },
-          }),
-          undefined,
-          API_BASE_URL,
-          undefined,
-          identityFormat,
-        );
-        await checkConnectorCommand.parseAsync([
-          "node",
-          "cli",
-          "--env-name",
-          "GH_TOKEN",
-          "--check-permission",
-          "contents:read",
-          "--json",
-        ]);
-        const json: unknown = JSON.parse(getOutput());
-        expect(json).toMatchObject({
-          context: "current",
-          account: null,
-          authorization: null,
-          managedStatus: null,
-          accountSummary: {
-            accountCount: 2,
-            attentionCount: 1,
-            defaultConnection: {
-              id: account.id,
-              connectionStatus: "reconnect-required",
-              reconnectReason: "configuration_invalid",
-            },
+    it("keeps current JSON identity and status with canonical environment identity", async () => {
+      const target = { kind: "builtin", connectorSlug: "github" } as const;
+      const account = connectorAccount(target, {
+        id: "00000000-0000-4000-8000-000000000003",
+        connectionStatus: "reconnect-required",
+        reconnectReason: "configuration_invalid",
+      });
+      const sibling = connectorAccount(target, { isDefault: false });
+      server.use(
+        http.get(
+          `${API_BASE_URL}/api/connector-accounts/connections`,
+          ({ request }) => {
+            const cursor = new URL(request.url).searchParams.get("cursor");
+            return HttpResponse.json({
+              connections: cursor ? [account] : [sibling],
+              defaultConnection: account,
+              nextCursor: cursor ? null : "next-account-page",
+            });
           },
-          memberStatus: "reconnect-required",
-          diagnostic: {
-            connector: {
-              target,
-            },
-            run: { status: "not-scoped" },
-            permission: { outcome: "unavailable", basis: "not-run-scoped" },
+        ),
+      );
+      vi.stubEnv("OKOU_AGENT_ID", "");
+      stubDiagnostic(
+        resolvedEnvironment({
+          run: { status: "not-scoped" },
+          permission: { outcome: "unavailable", basis: "not-run-scoped" },
+        }),
+      );
+      await checkConnectorCommand.parseAsync([
+        "node",
+        "cli",
+        "--env-name",
+        "GH_TOKEN",
+        "--check-permission",
+        "contents:read",
+        "--json",
+      ]);
+      const json: unknown = JSON.parse(getOutput());
+      expect(json).toMatchObject({
+        context: "current",
+        account: null,
+        authorization: null,
+        managedStatus: null,
+        accountSummary: {
+          accountCount: 2,
+          attentionCount: 1,
+          defaultConnection: {
+            id: account.id,
+            connectionStatus: "reconnect-required",
+            reconnectReason: "configuration_invalid",
           },
-        });
-        expect(json).toHaveProperty(
-          "accountSummary.defaultConnection",
-          account,
-        );
-      },
-    );
+        },
+        memberStatus: "reconnect-required",
+        diagnostic: {
+          connector: {
+            target,
+          },
+          run: { status: "not-scoped" },
+          permission: { outcome: "unavailable", basis: "not-run-scoped" },
+        },
+      });
+      expect(json).toHaveProperty("accountSummary.defaultConnection", account);
+    });
 
     it.each([
       { outcome: "run-context-unavailable" },
@@ -953,7 +918,7 @@ describe("okou connector check command", () => {
       stubDiagnostic(
         resolvedUrl({
           connector: connectorIdentity({
-            connectorSlug: "server-only",
+            target: { kind: "builtin", connectorSlug: "server-only" },
             label: "Server Only",
           }),
           environmentNames: ["SERVER_ONLY_TOKEN"],
@@ -1022,49 +987,43 @@ describe("okou connector check command", () => {
       expect(getErrorOutput()).not.toContain("sensitive-password");
     });
 
-    it.each(["legacy", "target"] as const)(
-      "keeps explicit environment permission checks with %s identity",
-      async (identityFormat) => {
-        let capturedBody: unknown;
-        stubDiagnostic(
-          resolvedEnvironment({
-            permission: { outcome: "deny", basis: "deny-list" },
-          }),
-          (body) => {
-            capturedBody = body;
-          },
-          API_BASE_URL,
-          undefined,
-          identityFormat,
-        );
-        stubResolvedDependencies();
+    it("keeps explicit environment permission checks with canonical identity", async () => {
+      let capturedBody: unknown;
+      stubDiagnostic(
+        resolvedEnvironment({
+          permission: { outcome: "deny", basis: "deny-list" },
+        }),
+        (body) => {
+          capturedBody = body;
+        },
+      );
+      stubResolvedDependencies();
 
-        await checkConnectorCommand.parseAsync([
-          "node",
-          "cli",
-          "--env-name",
-          "GH_TOKEN",
-          "--check-permission",
-          "contents:write",
-        ]);
+      await checkConnectorCommand.parseAsync([
+        "node",
+        "cli",
+        "--env-name",
+        "GH_TOKEN",
+        "--check-permission",
+        "contents:write",
+      ]);
 
-        expect(capturedBody).toStrictEqual({
-          mode: "environment",
-          environmentName: "GH_TOKEN",
-          permission: "contents:write",
-        } satisfies ConnectorCheckRequestBody);
-        expect(getOutput()).toContain(
-          'Checking permission: "contents:write" for the GitHub connector.',
-        );
-        expect(getOutput()).toContain(
-          'Result: "contents:write" is in the deny list — denied.',
-        );
-        expect(getOutput()).toContain(
-          "Diagnose the failed request with okou connector check --url <FAILED_URL> --method <METHOD>",
-        );
-        expect(getOutput()).not.toContain("--callback-prompt");
-      },
-    );
+      expect(capturedBody).toStrictEqual({
+        mode: "environment",
+        environmentName: "GH_TOKEN",
+        permission: "contents:write",
+      } satisfies ConnectorCheckRequestBody);
+      expect(getOutput()).toContain(
+        'Checking permission: "contents:write" for the GitHub connector.',
+      );
+      expect(getOutput()).toContain(
+        'Result: "contents:write" is in the deny list — denied.',
+      );
+      expect(getOutput()).toContain(
+        "Diagnose the failed request with okou connector check --url <FAILED_URL> --method <METHOD>",
+      );
+      expect(getOutput()).not.toContain("--callback-prompt");
+    });
 
     it("requires a URL diagnostic before printing a callback permission command", async () => {
       vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
@@ -1292,7 +1251,7 @@ describe("okou connector check command", () => {
   describe("resolved identities and local responsibilities", () => {
     it("uses a server-only connector slug for local presence, connection, and authorization checks", async () => {
       const serverOnlyIdentity = connectorIdentity({
-        connectorSlug: "server-only",
+        target: { kind: "builtin", connectorSlug: "server-only" },
         label: "Server Only Connector",
       });
       let connectorCalls = 0;
@@ -1467,7 +1426,7 @@ describe("okou connector check command", () => {
         stubDiagnostic(
           resolvedEnvironment({
             connector: connectorIdentity({
-              connectorSlug: "openai",
+              target: { kind: "builtin", connectorSlug: "openai" },
               label: "OpenAI",
             }),
             environmentName: "OPENAI_API_KEY",
@@ -1874,7 +1833,7 @@ describe("okou connector check command", () => {
       stubDiagnostic({
         outcome: "unresolved-dynamic-base",
         connector: connectorIdentity({
-          connectorSlug: "reap",
+          target: { kind: "builtin", connectorSlug: "reap" },
           label: "Reap",
         }),
       });
@@ -2108,7 +2067,7 @@ describe("okou connector check command", () => {
       stubDiagnostic(
         resolvedUrl({
           connector: connectorIdentity({
-            connectorSlug: "aws",
+            target: { kind: "builtin", connectorSlug: "aws" },
             label: "AWS",
           }),
           method: "POST",
@@ -2264,7 +2223,7 @@ describe("okou connector check command", () => {
         result: {
           outcome: "unresolved-dynamic-base",
           connector: connectorIdentity({
-            connectorSlug: "reap",
+            target: { kind: "builtin", connectorSlug: "reap" },
             label: "Reap",
           }),
         },
@@ -2295,8 +2254,11 @@ describe("okou connector check command", () => {
       stubDiagnostic({
         outcome: "ambiguous",
         candidates: [
-          { connectorSlug: "zeta", label: "Zeta" },
-          { connectorSlug: "alpha", label: "Alpha" },
+          { target: { kind: "builtin", connectorSlug: "zeta" }, label: "Zeta" },
+          {
+            target: { kind: "builtin", connectorSlug: "alpha" },
+            label: "Alpha",
+          },
         ],
       });
 

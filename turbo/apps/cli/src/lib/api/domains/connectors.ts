@@ -30,11 +30,8 @@ import {
   CONNECTOR_CHECK_AWS_CONTEXT_HEADER,
   CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
   connectorCheckContract,
-  connectorCheckDiagnosticResultSchema,
-  connectorCheckTargetAwareDiagnosticResultSchema,
   type ConnectorCheckDiagnosticResult,
   type ConnectorCheckRequestBody,
-  type ConnectorCheckTargetAwareDiagnosticResult,
   type ConnectorCheckTargetAwareUrlRequest,
 } from "@okouai/api-contracts/contracts/connector-check";
 import {
@@ -244,32 +241,8 @@ export async function getConnectorCatalogPermissions(
   );
 }
 
-function normalizeBuiltinDiagnostic(
-  diagnostic: ConnectorCheckDiagnosticResult,
-): ConnectorCheckTargetAwareDiagnosticResult {
-  if ("connector" in diagnostic) {
-    const { connectorSlug, ...identity } = diagnostic.connector;
-    return {
-      ...diagnostic,
-      connector: {
-        ...identity,
-        target: { kind: "builtin", connectorSlug },
-      },
-    };
-  }
-  if (diagnostic.outcome === "ambiguous") {
-    return {
-      ...diagnostic,
-      candidates: diagnostic.candidates.map(({ connectorSlug, label }) => {
-        return { target: { kind: "builtin", connectorSlug }, label };
-      }),
-    };
-  }
-  return diagnostic;
-}
-
 export interface ConnectorCheckWithContext {
-  readonly diagnostic: ConnectorCheckTargetAwareDiagnosticResult;
+  readonly diagnostic: ConnectorCheckDiagnosticResult;
   readonly awsContextIncomplete: boolean;
 }
 
@@ -289,24 +262,8 @@ export async function diagnoseConnectorCheckWithContext(
   const result = await client.check({ body: request });
 
   if (result.status === 200) {
-    let diagnostic: ConnectorCheckTargetAwareDiagnosticResult;
-    if (request.mode === "environment") {
-      const canonical =
-        connectorCheckTargetAwareDiagnosticResultSchema.safeParse(result.body);
-      // API and installed CLI releases overlap. Remove the legacy environment
-      // reader in #42489 after canonical API serving/drain/rollback qualification.
-      diagnostic = canonical.success
-        ? canonical.data
-        : normalizeBuiltinDiagnostic(
-            connectorCheckDiagnosticResultSchema.parse(result.body),
-          );
-    } else {
-      diagnostic = connectorCheckTargetAwareDiagnosticResultSchema.parse(
-        result.body,
-      );
-    }
     return {
-      diagnostic,
+      diagnostic: result.body,
       awsContextIncomplete:
         result.headers.get(CONNECTOR_CHECK_AWS_CONTEXT_HEADER) ===
         CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
@@ -318,7 +275,7 @@ export async function diagnoseConnectorCheckWithContext(
 
 export async function diagnoseConnectorCheck(
   request: ConnectorDiagnosticRequest,
-): Promise<ConnectorCheckTargetAwareDiagnosticResult> {
+): Promise<ConnectorCheckDiagnosticResult> {
   return (await diagnoseConnectorCheckWithContext(request)).diagnostic;
 }
 

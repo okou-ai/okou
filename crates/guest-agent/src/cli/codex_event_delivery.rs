@@ -2,7 +2,6 @@
 use super::bounded_event_delivery::{
     ContentPolicy, DELIVERY_NOTICE, PathSegment, json_string_bytes,
 };
-use crate::error::AgentError;
 use serde_json::{Value, json};
 
 pub(super) fn labels(event: &Value) -> (&'static str, &'static str) {
@@ -95,7 +94,7 @@ fn field_category(path: &[PathSegment], item_type: Option<&str>) -> &'static str
     }
 }
 
-pub(super) fn minimum_event(mut event: Value, omitted_image: bool) -> Result<Value, AgentError> {
+pub(super) fn minimum_event(mut event: Value, omitted_image: bool) -> Option<Value> {
     for path in [
         "/message",
         "/error/message",
@@ -106,14 +105,9 @@ pub(super) fn minimum_event(mut event: Value, omitted_image: bool) -> Result<Val
             *text = json!(DELIVERY_NOTICE);
         }
     }
-    let fields = event
-        .as_object_mut()
-        .ok_or_else(|| AgentError::Execution("normalized Codex event is not an object".into()))?;
+    let fields = event.as_object_mut()?;
     if fields.get("type").and_then(Value::as_str) == Some("turn.plan.updated") {
-        let plan = fields
-            .get("plan")
-            .and_then(Value::as_array)
-            .ok_or_else(|| AgentError::Execution("Codex delivery plan is not an array".into()))?;
+        let plan = fields.get("plan").and_then(Value::as_array)?;
         let status = if plan
             .iter()
             .all(|step| step.get("status").and_then(Value::as_str) == Some("completed"))
@@ -184,7 +178,7 @@ pub(super) fn minimum_event(mut event: Value, omitted_image: bool) -> Result<Val
             _ => {}
         }
     }
-    Ok(event)
+    Some(event)
 }
 
 fn minimize_text(value: &mut Value) {

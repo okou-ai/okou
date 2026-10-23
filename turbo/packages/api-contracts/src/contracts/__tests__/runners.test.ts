@@ -14,10 +14,6 @@ import {
   heartbeatBodySchema,
   heldHomeStateSchema,
   jobSchema,
-  PI_MEMORY_SUMMARY_MAX_BYTES,
-  PI_MEMORY_SUMMARY_MAX_TOKENS,
-  PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS,
-  piMemoryRecallSelectionSchema,
   piModelConfigSchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
@@ -1876,85 +1872,6 @@ describe("runner Claude tool list contracts", () => {
     ).toBe(true);
     expect(
       executionContextSchema.shape.tools.safeParse(["Bash,Read"]).success,
-    ).toBe(true);
-  });
-});
-
-describe("Pi memory recall selection contract", () => {
-  const summary = "# Working memory\n\nKeep repository-native checks.";
-  const readySelection = {
-    status: "ready" as const,
-    memoryStorageId: "memory-storage",
-    storageVersionId: "storage-version-a",
-    content: summary,
-    sourceHash: "a".repeat(64),
-    sourceSize: Buffer.byteLength(summary, "utf8"),
-    tokenCount: 12,
-  };
-
-  it("bounds the full-source token count by the 64 KiB source limit", () => {
-    // A source within the byte ceiling can never exceed one token per byte.
-    expect(PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS).toBe(
-      PI_MEMORY_SUMMARY_MAX_BYTES,
-    );
-    expect(PI_MEMORY_SUMMARY_MAX_TOKENS).toBe(2500);
-
-    for (const tokenCount of [
-      1,
-      PI_MEMORY_SUMMARY_MAX_TOKENS,
-      2943,
-      PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS,
-    ]) {
-      expect(
-        piMemoryRecallSelectionSchema.safeParse({
-          ...readySelection,
-          tokenCount,
-        }).success,
-      ).toBe(true);
-    }
-  });
-
-  it("rejects impossible and non-source token counts", () => {
-    for (const tokenCount of [
-      0,
-      -1,
-      1.5,
-      PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS + 1,
-    ]) {
-      expect(
-        piMemoryRecallSelectionSchema.safeParse({
-          ...readySelection,
-          tokenCount,
-        }).success,
-      ).toBe(false);
-    }
-  });
-
-  it("keeps the remaining full-source fields required", () => {
-    expect(
-      piMemoryRecallSelectionSchema.safeParse({
-        ...readySelection,
-        content: "x".repeat(PI_MEMORY_SUMMARY_MAX_BYTES + 1),
-      }).success,
-    ).toBe(false);
-    expect(
-      piMemoryRecallSelectionSchema.safeParse({
-        ...readySelection,
-        sourceSize: PI_MEMORY_SUMMARY_MAX_BYTES + 1,
-      }).success,
-    ).toBe(false);
-    expect(
-      piMemoryRecallSelectionSchema.safeParse({
-        ...readySelection,
-        sourceHash: "zz",
-      }).success,
-    ).toBe(false);
-    expect(
-      piMemoryRecallSelectionSchema.safeParse({
-        status: "no-content",
-        memoryStorageId: "memory-storage",
-        storageVersionId: "storage-version-a",
-      }).success,
     ).toBe(true);
   });
 });

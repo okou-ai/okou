@@ -1,5 +1,5 @@
-//! A failed multi-event request freezes the contiguous watermark at its first
-//! sequence while later batches continue.
+//! A failed multi-event request leaves a gap while later successes advance the
+//! completion watermark.
 
 use guest_agent_tests as common;
 
@@ -44,6 +44,8 @@ async fn failed_batch_retries_three_times_and_later_batches_continue()
     )?;
     let agent_log_file = runtime.paths.agent_log_file().to_string();
     let _run_files = common::RunFilesGuard::new_for_paths(&runtime.paths);
+    let system_log_file = tmp.path().join("system.log");
+    let _system_log = common::SystemLogOverrideGuard::set(&system_log_file);
 
     let execution = tokio::spawn(async move {
         common::execute_cli_for_runtime(
@@ -61,11 +63,14 @@ async fn failed_batch_retries_three_times_and_later_batches_continue()
         Duration::from_secs(5),
     )
     .await?;
+    common::wait_for_file_contains(
+        &system_log_file,
+        "Event delivery drain started:",
+        Duration::from_secs(5),
+    )
+    .await?;
     let first_sequences = common::event_request_sequences(&first_request.request)?;
-    let expected_watermark = first_sequences
-        .last()
-        .copied()
-        .ok_or_else(|| io::Error::other("first request contained no events"))?;
+    let expected_watermark = (TOTAL_EVENTS - 1) as u32;
     first_request.respond(200)?;
 
     let failed_request = server.next_request(Duration::from_secs(5)).await?;

@@ -1,4 +1,4 @@
-import type { ConnectorCheckTargetAwareDiagnosticResult } from "@okouai/api-contracts/contracts/connector-check";
+import type { ConnectorCheckDiagnosticResult } from "@okouai/api-contracts/contracts/connector-check";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   customConnectorManagedStatusSchema,
@@ -268,7 +268,7 @@ function checkConnectionActions(
 
 export async function printConnectorCheckJson(
   request: ConnectorDiagnosticRequest,
-  diagnostic: ConnectorCheckTargetAwareDiagnosticResult,
+  diagnostic: ConnectorCheckDiagnosticResult,
   awsContextIncomplete: boolean,
 ): Promise<void> {
   const runBound = isRunBoundConnectorContext();
