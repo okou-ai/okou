@@ -63,11 +63,11 @@ describe("Okou Harness base system prompt", () => {
   it("omits a tool without a snippet from the available tools section", () => {
     const prompt = buildOkouHarnessSystemPrompt([
       READ_TOOL,
-      { name: "memories_search", guidelines: ["Search frozen memory first."] },
+      { name: "custom_report", guidelines: ["Report only verified results."] },
     ]);
 
-    expect(prompt).not.toContain("- memories_search:");
-    expect(prompt).toContain("- Search frozen memory first.");
+    expect(prompt).not.toContain("- custom_report:");
+    expect(prompt).toContain("- Report only verified results.");
   });
 
   it("reports an empty tool list rather than an empty section", () => {

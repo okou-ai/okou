@@ -309,12 +309,11 @@ new document under `docs/`. Inventory-item progress and test-declaration or
 parameter-branch changes are different measures; neither endpoint removal nor
 helper renaming establishes compliance by itself.
 
-A genuine shared-library protocol can have its own boundary. For example,
-`piMemoryPhase2SelectionDigest` is exported by `@okouai/pi-agent-runtime/api`
-and consumed by both API maintenance and runtime filesystem code. Its owning
-package tests the fixed byte-encoding vectors without an API database, worker
-or private fixture. This does not authorize relocating API service tests or
-privately constructed business scenarios into a library package.
+A genuine shared-library protocol can have its own boundary. For example, a
+citation-envelope parser shared by CLI output projection and API readers can
+test fixed byte-encoding vectors in its owning package without an API database,
+worker or private fixture. This does not authorize relocating API service tests
+or privately constructed business scenarios into a library package.
 
 ### Infrastructure and External Providers
 

@@ -2463,18 +2463,18 @@ fn cli_observed_exit_is_attached_without_changing_failure_reason() {
 }
 
 #[test]
-fn pi_memory_phase2_terminal_diagnostics_survive_guest_error_persistence() {
+fn cli_terminal_diagnostics_survive_guest_error_persistence() {
     let _system_log_state_guard = crate::lock_system_log_test_state();
     let tmp = tempfile::tempdir().unwrap();
     let system_log_path = tmp.path().join("system.log");
     let _system_log_guard = SystemLogOverrideGuard::set(&system_log_path);
-    let fixtures: Vec<Value> = serde_json::from_str(include_str!(concat!(
+    let fixtures: Vec<String> = serde_json::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../fixtures/pi-memory-phase2-terminal.json"
+        "/../../fixtures/cli-terminal-stderr.json"
     )))
     .unwrap();
     for fixture in fixtures {
-        let stderr = fixture["stderr"].as_str().unwrap();
+        let stderr = fixture.as_str();
         let failure = cli_failure_message(1, &[stderr.to_owned()], None);
         assert_eq!(failure.message, stderr);
         assert_eq!(failure.source, FailureDetailSource::Stderr);
@@ -2505,40 +2505,39 @@ fn pi_memory_phase2_terminal_diagnostics_survive_guest_error_persistence() {
     }
 }
 
-const PI_MEMORY_RECALL_DIAGNOSTIC_LINE: &str = concat!(
-    r#"{"type":"pi_memory_recall_outcome","runId":"run-1","mode":"sandbox","#,
-    r#""status":"miss","parity":"frozen-no-content","reason":"frozen-no-content","#,
-    r#""injectedTokenCount":0}"#
+const PI_PREPARATION_DIAGNOSTIC_LINE: &str = concat!(
+    r#"{"type":"pi_preparation_timing","phase":"model_runtime","#,
+    r#""durationMs":1,"outcome":"success"}"#
 );
 
 #[test]
-fn cli_failure_message_reports_the_termination_line_without_memory_diagnostics() {
+fn cli_failure_message_reports_the_termination_line_without_preparation_diagnostics() {
     let _system_log_state_guard = crate::lock_system_log_test_state();
     let tmp = tempfile::tempdir().unwrap();
     let system_log_path = tmp.path().join("system.log");
     let _system_log_guard = SystemLogOverrideGuard::set(&system_log_path);
 
     let stderr_lines = vec![
-        PI_MEMORY_RECALL_DIAGNOSTIC_LINE.to_string(),
+        PI_PREPARATION_DIAGNOSTIC_LINE.to_string(),
         "Killed".to_string(),
     ];
     let msg = cli_failure_message(137, &stderr_lines, None);
 
     assert_eq!(msg.source, FailureDetailSource::Stderr);
     assert_eq!(msg.message, "Killed");
-    assert!(!msg.message.contains("pi_memory_recall_outcome"));
+    assert!(!msg.message.contains("pi_preparation_timing"));
 
     let system_log = std::fs::read_to_string(&system_log_path).unwrap();
     assert!(
-        system_log.contains("pi_memory_recall_outcome"),
+        system_log.contains("pi_preparation_timing"),
         "the structured diagnostic must stay in the guest log"
     );
 }
 
 #[test]
-fn cli_failure_message_keeps_a_real_error_alongside_memory_diagnostics() {
+fn cli_failure_message_keeps_a_real_error_alongside_preparation_diagnostics() {
     let stderr_lines = vec![
-        PI_MEMORY_RECALL_DIAGNOSTIC_LINE.to_string(),
+        PI_PREPARATION_DIAGNOSTIC_LINE.to_string(),
         "TypeError: cannot read properties of undefined".to_string(),
     ];
     let msg = cli_failure_message(1, &stderr_lines, None);
@@ -2551,15 +2550,15 @@ fn cli_failure_message_keeps_a_real_error_alongside_memory_diagnostics() {
 }
 
 #[test]
-fn cli_failure_message_falls_back_when_only_memory_diagnostics_remain() {
+fn cli_failure_message_falls_back_when_only_preparation_diagnostics_remain() {
     let _system_log_state_guard = crate::lock_system_log_test_state();
     let tmp = tempfile::tempdir().unwrap();
     let system_log_path = tmp.path().join("system.log");
     let _system_log_guard = SystemLogOverrideGuard::set(&system_log_path);
 
     let stderr_lines = vec![
-        PI_MEMORY_RECALL_DIAGNOSTIC_LINE.to_string(),
-        r#"{"type":"pi_memory_tool_source_use","runId":"run-1","sessionId":"s-1"}"#.to_string(),
+        PI_PREPARATION_DIAGNOSTIC_LINE.to_string(),
+        r#"{"type":"pi_preparation_timing","phase":"session_services","durationMs":2,"outcome":"success"}"#.to_string(),
     ];
     let msg = cli_failure_message(137, &stderr_lines, None);
 
@@ -2567,7 +2566,7 @@ fn cli_failure_message_falls_back_when_only_memory_diagnostics_remain() {
     assert_eq!(msg.message, "Agent exited with code 137");
 
     let system_log = std::fs::read_to_string(&system_log_path).unwrap();
-    assert!(system_log.contains("pi_memory_tool_source_use"));
+    assert!(system_log.contains("session_services"));
 }
 
 #[test]
@@ -2577,8 +2576,8 @@ fn cli_failure_message_preserves_agent_output_that_is_not_a_known_diagnostic() {
         r#"{"error":"boom"}"#,
         r#"{"type":42}"#,
         "{not json}",
-        r#"["pi_memory_recall_outcome"]"#,
-        r#"prefix {"type":"pi_memory_recall_outcome"}"#,
+        r#"["pi_preparation_timing"]"#,
+        r#"prefix {"type":"pi_preparation_timing"}"#,
     ] {
         let stderr_lines = vec![line.to_string()];
         let msg = cli_failure_message(1, &stderr_lines, None);
@@ -2596,7 +2595,7 @@ fn cli_failure_message_preserves_agent_output_that_is_not_a_known_diagnostic() {
 fn cli_failure_message_keeps_an_incomplete_diagnostic_envelope_visible() {
     // A cut-off envelope is no longer parseable. It must stay visible rather
     // than silently removing the only failure detail the user would see.
-    let incomplete = r#"{"type":"pi_memory_recall_outcome","runId":"run-1""#;
+    let incomplete = r#"{"type":"pi_preparation_timing","phase":"model_runtime""#;
     let stderr_lines = vec![incomplete.to_string()];
     let msg = cli_failure_message(137, &stderr_lines, None);
 
@@ -2607,7 +2606,7 @@ fn cli_failure_message_keeps_an_incomplete_diagnostic_envelope_visible() {
 #[test]
 fn cli_failure_message_drops_a_long_diagnostic_envelope_before_display_truncation() {
     let long_diagnostic = format!(
-        r#"{{"type":"pi_memory_recall_outcome","runId":"{}"}}"#,
+        r#"{{"type":"pi_preparation_timing","phase":"{}"}}"#,
         "x".repeat(MAX_LOGGED_CLI_STDERR_LINE_BYTES)
     );
     let stderr_lines = vec![long_diagnostic, "Killed".to_string()];
