@@ -80,7 +80,11 @@ import { command } from "ccstate";
 import {
   and,
   asc,
+  count,
   eq,
+  gte,
+  exists,
+  notExists,
   getTableColumns,
   inArray,
   isNotNull,
@@ -88,8 +92,12 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
-import { pgNullDecoder, pgTextDecoder } from "../../lib/db-structured-result";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import {
+  pgBooleanDecoder,
+  pgNullDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
@@ -6261,6 +6269,188 @@ function enabledAutomationCommitResult(
     : { status: "ok", row };
 }
 
+function enabledAutomationEntitlementPlan(orgId: string, isWebhook: boolean) {
+  const query = new QueryBuilder();
+  const entitlement = query.$with("enable_entitlement").as(
+    query
+      .select({
+        allowed: orgPlanEntitlements.workflowWebhookTriggerAllowed,
+        restricted: orgPlanEntitlements.restrictedBuiltInModels,
+      })
+      .from(orgPlanEntitlements)
+      .where(and(eq(orgPlanEntitlements.orgId, orgId), sql`${isWebhook}`))
+      .limit(1)
+      .for("update"),
+  );
+  const entitlementRows = query.select().from(entitlement);
+  const missingEntitlementOrg = query
+    .$with("enable_missing_entitlement_org")
+    .as(
+      query
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(
+          and(
+            sql`${isWebhook}`,
+            eq(orgMetadata.orgId, orgId),
+            notExists(entitlementRows),
+          ),
+        )
+        .limit(1)
+        .for("update"),
+    );
+  const eligible = isWebhook
+    ? exists(
+        query
+          .select()
+          .from(entitlement)
+          .where(
+            and(
+              eq(entitlement.allowed, true),
+              isNotNull(entitlement.restricted),
+            ),
+          ),
+      )
+    : sql`true`;
+  const outcome = query
+    .select({
+      eligible: sql`${eligible}`.mapWith(pgBooleanDecoder).as("eligible"),
+      missingEntitlement:
+        sql`${exists(query.select().from(missingEntitlementOrg))}`
+          .mapWith(pgBooleanDecoder)
+          .as("missing_entitlement"),
+      invalidRestriction:
+        sql`${exists(query.select().from(entitlement).where(isNull(entitlement.restricted)))}`
+          .mapWith(pgBooleanDecoder)
+          .as("invalid_restriction"),
+    })
+    .from(sql`(SELECT 1) AS enable_result_seed`)
+    .as("enable_outcome");
+  return { entitlement, missingEntitlementOrg, eligible, outcome };
+}
+
+function enabledAutomationPublicationResult(
+  automation: AutomationRow,
+  orgId: string,
+  outcome:
+    | {
+        readonly eligible: boolean;
+        readonly missingEntitlement: boolean;
+        readonly invalidRestriction: boolean;
+      }
+    | undefined,
+  row: AutomationRow | null | undefined,
+): PersistEnabledWorkflowAutomationResult {
+  if (!outcome) {
+    throw new Error("Missing automation enable result");
+  }
+  // These invariant outcomes gate every mutation in the statement.
+  if (outcome.missingEntitlement) {
+    throw new Error("Missing org plan entitlement for " + orgId);
+  }
+  if (outcome.invalidRestriction) {
+    throw new Error(
+      `Unexpected NULL restricted_built_in_models for org plan entitlement ${orgId}`,
+    );
+  }
+  return outcome.eligible
+    ? enabledAutomationCommitResult(automation, row ?? undefined)
+    : { status: "team-required" };
+}
+
+const commitEnabledWorkflowAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly automation: AutomationRow;
+      readonly orgId: string;
+      readonly now: Date;
+    },
+    publication: {
+      readonly values: ReturnType<typeof enabledWorkflowAutomationValues>;
+      readonly isWebhook: boolean;
+      readonly resetsFormsCursor: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<PersistEnabledWorkflowAutomationResult> => {
+    const db = set(writeDb$);
+    const { values, isWebhook, resetsFormsCursor } = publication;
+    const { entitlement, missingEntitlementOrg, eligible, outcome } =
+      enabledAutomationEntitlementPlan(args.orgId, isWebhook);
+    // Each mutation consumes its predecessor before taking the next lock.
+    const resetCursor = db.$with("enable_reset_forms_cursor").as(
+      db
+        .delete(googleFormsAutomationCursors)
+        .where(
+          and(
+            eq(googleFormsAutomationCursors.automationId, args.automation.id),
+            sql`${resetsFormsCursor}`,
+            eligible,
+          ),
+        )
+        .returning({
+          automationId: googleFormsAutomationCursors.automationId,
+        }),
+    );
+    const columns = workflowAutomationColumns();
+    const enabled = db.$with("enabled_automation").as(
+      db
+        .update(workflowAutomations)
+        .set(values)
+        .where(
+          and(
+            officialAutomationLifecycleCondition(args.automation),
+            eligible,
+            gte(db.select({ count: count() }).from(resetCursor), 0),
+          ),
+        )
+        .returning({
+          ...columns,
+          observedUpdatedAt: columns.observedUpdatedAt.as(
+            "observed_updated_at",
+          ),
+          observedXmin: columns.observedXmin.as("observed_xmin"),
+        }),
+    );
+    const clearedWebhook = db.$with("enable_cleared_webhook").as(
+      db
+        .update(workflowWebhookAutomations)
+        .set({ disabledReason: null, updatedAt: args.now })
+        .where(
+          and(
+            sql`${isWebhook}`,
+            inArray(
+              workflowWebhookAutomations.automationId,
+              db.select({ id: enabled.id }).from(enabled),
+            ),
+          ),
+        )
+        .returning({
+          automationId: workflowWebhookAutomations.automationId,
+        }),
+    );
+    const [result] = await db
+      .with(
+        entitlement,
+        missingEntitlementOrg,
+        resetCursor,
+        enabled,
+        clearedWebhook,
+      )
+      .select()
+      .from(outcome)
+      .leftJoin(enabled, sql`true`)
+      .where(gte(db.select({ count: count() }).from(clearedWebhook), 0));
+    signal.throwIfAborted();
+    return enabledAutomationPublicationResult(
+      args.automation,
+      args.orgId,
+      result?.enable_outcome,
+      result?.enabled_automation,
+    );
+  },
+);
+
 const persistEnabledWorkflowAutomation$ = command(
   async (
     { set },
@@ -6293,69 +6483,11 @@ const persistEnabledWorkflowAutomation$ = command(
       PersistEnabledWorkflowAutomationResult | AutomationRow[]
     >(
       isWebhook || resetsFormsCursor
-        ? // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0339; new non-billing transactions are prohibited.
-          db.transaction(
-            async (tx): Promise<PersistEnabledWorkflowAutomationResult> => {
-              // Publish the webhook tier decision/configuration or Forms cursor reset
-              // atomically with the enabled automation. All provider preparation is complete.
-              if (isWebhook) {
-                const [lockedCapabilities] = await tx
-                  .select(webhookTierCapabilityColumns())
-                  .from(orgPlanEntitlements)
-                  .where(eq(orgPlanEntitlements.orgId, args.orgId))
-                  .limit(1)
-                  .for("update");
-                signal.throwIfAborted();
-                if (!lockedCapabilities) {
-                  const [org] = await tx
-                    .select({ orgId: orgMetadata.orgId })
-                    .from(orgMetadata)
-                    .where(eq(orgMetadata.orgId, args.orgId))
-                    .limit(1)
-                    .for("update");
-                  signal.throwIfAborted();
-                  if (org) {
-                    throw new Error(
-                      "Missing org plan entitlement for " + args.orgId,
-                    );
-                  }
-                }
-                const tierEligible = lockedCapabilities
-                  ? orgPlanCapabilitiesFromRow(lockedCapabilities, args.orgId)
-                      .workflowWebhookAutomationAllowed
-                  : false;
-                if (!tierEligible) {
-                  return { status: "team-required" };
-                }
-              }
-              if (resetsFormsCursor) {
-                await tx
-                  .delete(googleFormsAutomationCursors)
-                  .where(
-                    eq(
-                      googleFormsAutomationCursors.automationId,
-                      args.automation.id,
-                    ),
-                  );
-              }
-              const [enabledRow] = await tx
-                .update(workflowAutomations)
-                .set(values)
-                .where(officialAutomationLifecycleCondition(args.automation))
-                .returning(workflowAutomationColumns());
-              if (enabledRow && isWebhook) {
-                await tx
-                  .update(workflowWebhookAutomations)
-                  .set({ disabledReason: null, updatedAt: args.now })
-                  .where(
-                    eq(
-                      workflowWebhookAutomations.automationId,
-                      args.automation.id,
-                    ),
-                  );
-              }
-              return enabledAutomationCommitResult(args.automation, enabledRow);
-            },
+        ? set(
+            commitEnabledWorkflowAutomation$,
+            args,
+            { values, isWebhook, resetsFormsCursor },
+            signal,
           )
         : db
             .update(workflowAutomations)
