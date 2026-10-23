@@ -260,9 +260,17 @@ describe("Custom connector authentication modes", () => {
     "creates and reads a %s connector without changing endpoint queries",
     async (mode) => {
       const api = clients();
+      const skillMarkdown =
+        mode === "oauth" ? "Use the connected account to search." : null;
+      if (mode === "oauth") {
+        context.mocks.s3.send.mockResolvedValue({});
+      }
       const endpoint = `https://${randomUUID()}.mcp.example.test/server?hl=en&tag=one&tag=two&empty=&encoded=a%20b&literal=a+b&slash=%2f`;
       const created = await accept(
-        api.collection.create({ headers, body: definition(mode, endpoint) }),
+        api.collection.create({
+          headers,
+          body: { ...definition(mode, endpoint), skillMarkdown },
+        }),
         [201],
       );
       const read = await accept(
@@ -274,6 +282,7 @@ describe("Custom connector authentication modes", () => {
         kind: "mcp",
         endpoint,
         authMode: mode,
+        skillMarkdown,
       });
       if (mode === "oauth") {
         expect(read.body).toHaveProperty("oauthConfig", oauthConfig);
