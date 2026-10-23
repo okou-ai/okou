@@ -1,3 +1,4 @@
+import ChatDataTestSupport
 import ChatDomain
 import SwiftUI
 import Synchronization
@@ -7,6 +8,89 @@ import XCTest
 
 @MainActor
 final class ConversationOpeningTests: XCTestCase {
+  func testLocalMessageHidesInitialLoadingBeforeServerHistoryArrives() async throws {
+    let gate = OpeningHistoryGate()
+    addTeardownBlock { await gate.release() }
+    let fixture = ConversationHistoryFixture(
+      rows: [],
+      snapshot: { _ in
+        await gate.wait()
+        return ChatHTTPResponse(
+          status: 404,
+          body: "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
+      },
+      send: { _ in
+        ChatHTTPResponse(body: "{\"threadId\":\"\(ConversationHistoryFixture.threadID)\"}")
+      })
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+    let window = UIWindow(windowScene: scene)
+    window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+    window.rootViewController = host
+    window.makeKeyAndVisible()
+    defer { unmount(window) }
+    try await eventually { self.loadingIndicators(in: host.view).filter(\.isAnimating).count == 1 }
+
+    let input = try XCTUnwrap(composerInput(in: host.view))
+    input.becomeFirstResponder()
+    try await eventually { input.isFirstResponder }
+    input.insertText("My first message")
+    try await eventually { conversation.composer.hasContent }
+    await conversation.send()
+    try await eventually { !markers(in: host.view).isEmpty }
+    XCTAssertEqual(conversation.visibleMessages.first?.text, "My first message")
+    XCTAssertNil(conversation.history, "The server response is still held at the HTTP boundary")
+    XCTAssertTrue(self.loadingIndicators(in: host.view).allSatisfy { $0.isHidden })
+
+    await gate.release()
+    try await eventually { !conversation.isLoading }
+    XCTAssertTrue(self.loadingIndicators(in: host.view).allSatisfy { $0.isHidden })
+  }
+
+  func testInitialHistoryAndFirstMessageLayoutShareOneIndicator() async throws {
+    let delay = LoadingDelay()
+    let list = try mount(
+      [], cache: ConversationMeasurementCache(),
+      markdown: MessageMarkdownCache(baseURL: URL(string: "https://app.example.invalid")!),
+      isLoadingHistory: true, showsFooter: true, sleep: { _ in await delay.sleep() })
+    defer {
+      delay.resume()
+      list.close()
+    }
+    try await eventually { delay.isWaiting && list.itemCount == 1 }
+    delay.resume()
+    try await eventually { list.loading.isAnimating }
+
+    let message = ChatMessage(
+      id: "first-answer", role: .assistant, text: "Ready to read.", createdAt: .distantPast,
+      isQueued: false, isError: false)
+    list.update([message], false)
+    XCTAssertTrue(list.loading.isAnimating, "The indicator stays through first-message layout")
+    try await eventually { list.displaysMessage(message.id) }
+    XCTAssertTrue(list.loading.isHidden)
+  }
+
+  func testSettledEmptyHistoryStopsTheIndicatorWithoutChangingRows() async throws {
+    let delay = LoadingDelay()
+    let list = try mount(
+      [], cache: ConversationMeasurementCache(),
+      markdown: MessageMarkdownCache(baseURL: URL(string: "https://app.example.invalid")!),
+      isLoadingHistory: true, showsFooter: true, sleep: { _ in await delay.sleep() })
+    defer {
+      delay.resume()
+      list.close()
+    }
+    try await eventually { delay.isWaiting && list.itemCount == 1 }
+    delay.resume()
+    try await eventually { list.loading.isAnimating }
+
+    list.update([], false)
+    XCTAssertEqual(list.itemCount, 1)
+    XCTAssertTrue(list.loading.isHidden)
+  }
+
   func testCompletedRowsStayVisibleWhenCancelledLoadingDelayResumes() async throws {
     let delay = LoadingDelay()
     let message = ChatMessage(
@@ -15,6 +99,7 @@ final class ConversationOpeningTests: XCTestCase {
     let list = try mount(
       [message], cache: ConversationMeasurementCache(),
       markdown: MessageMarkdownCache(baseURL: URL(string: "https://app.example.invalid")!),
+      isLoadingHistory: true,
       sleep: { _ in await delay.sleep() })
     defer {
       delay.resume()
@@ -98,20 +183,27 @@ final class ConversationOpeningTests: XCTestCase {
   private func mount(
     _ messages: [ChatMessage], cache: ConversationMeasurementCache, markdown: MessageMarkdownCache,
     width: CGFloat = 390, category: UIContentSizeCategory = .large,
+    isLoadingHistory: Bool = false, showsFooter: Bool = false,
     sleep: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) throws -> MountedOpeningList {
-    let rows = messages.map {
-      ConversationCollectionRow.message(
-        $0, showsAvatar: false, topSpacing: 0, pendingRetry: nil, isSending: false)
+    let anchor = ConversationScrollAnchor()
+    let scroll = ConversationCollectionScroll()
+    let source = { (messages: [ChatMessage], isLoadingHistory: Bool) in
+      var rows = messages.map {
+        ConversationCollectionRow.message(
+          $0, showsAvatar: false, topSpacing: 0, pendingRetry: nil, isSending: false)
+      }
+      if showsFooter { rows.append(.footer(ChatHistory.empty.executionState)) }
+      return ConversationCollectionView(
+        rows: rows, markdown: markdown, measurements: cache, anchor: anchor,
+        scroll: scroll, followsBottom: false, isLoadingHistory: isLoadingHistory,
+        phaseChanged: { _ in }, metricsChanged: { _ in }, refresh: {},
+        content: { row, _ in
+          Text(row.message?.text ?? "").padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        })
     }
-    let source = ConversationCollectionView(
-      rows: rows, markdown: markdown, measurements: cache, anchor: ConversationScrollAnchor(),
-      scroll: ConversationCollectionScroll(), followsBottom: false,
-      phaseChanged: { _ in }, metricsChanged: { _ in }, refresh: {},
-      content: { row, _ in
-        Text(row.message?.text ?? "").padding(12).frame(maxWidth: .infinity, alignment: .leading)
-      })
-    let controller = ConversationCollectionController(source: source, sleep: sleep)
+    let controller = ConversationCollectionController(
+      source: source(messages, isLoadingHistory), sleep: sleep)
     controller.traitOverrides.preferredContentSizeCategory = category
     let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
     let window = UIWindow(windowScene: scene)
@@ -125,7 +217,34 @@ final class ConversationOpeningTests: XCTestCase {
     let loading = try XCTUnwrap(
       controller.view.subviews.compactMap { $0 as? UIActivityIndicatorView }.first)
     return MountedOpeningList(
-      window: window, collection: collection, loading: loading, stop: { controller.stop() })
+      window: window, collection: collection, loading: loading,
+      update: { controller.update(source($0, $1)) }, stop: { controller.stop() })
+  }
+
+  private func loadingIndicators(in view: UIView) -> [UIActivityIndicatorView] {
+    if let indicator = view as? UIActivityIndicatorView { return [indicator] }
+    return view.subviews.flatMap { loadingIndicators(in: $0) }
+  }
+
+  private func composerInput(in view: UIView) -> ComposerTextView? {
+    if let input = view as? ComposerTextView { return input }
+    return view.subviews.lazy.compactMap { composerInput(in: $0) }.first
+  }
+}
+
+private actor OpeningHistoryGate {
+  private var waiting: [CheckedContinuation<Void, Never>] = []
+  private var released = false
+
+  func wait() async {
+    guard !released else { return }
+    await withCheckedContinuation { waiting.append($0) }
+  }
+
+  func release() {
+    released = true
+    for continuation in waiting { continuation.resume() }
+    waiting.removeAll()
   }
 }
 
@@ -157,10 +276,17 @@ private struct MountedOpeningList {
   let window: UIWindow
   let collection: UICollectionView
   let loading: UIActivityIndicatorView
+  let update: ([ChatMessage], Bool) -> Void
   let stop: () -> Void
 
   var itemCount: Int {
     collection.numberOfSections == 0 ? 0 : collection.numberOfItems(inSection: 0)
+  }
+
+  func displaysMessage(_ id: String) -> Bool {
+    guard let source = collection.dataSource as? UICollectionViewDiffableDataSource<Int, String>
+    else { return false }
+    return collection.indexPathsForVisibleItems.contains { source.itemIdentifier(for: $0) == id }
   }
 
   func close() {

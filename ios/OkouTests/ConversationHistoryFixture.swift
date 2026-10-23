@@ -20,7 +20,8 @@ final class ConversationHistoryFixture: Sendable {
 
   init(
     rows initial: [String], fileOrigin: URL? = nil,
-    usage: ChatHTTPFixture.Handler? = nil, artifactResources: ChatHTTPFixture.Handler? = nil
+    usage: ChatHTTPFixture.Handler? = nil, artifactResources: ChatHTTPFixture.Handler? = nil,
+    snapshot: ChatHTTPFixture.Handler? = nil, send: ChatHTTPFixture.Handler? = nil
   ) {
     let rows = HistoryRows(initial)
     self.rows = rows
@@ -50,6 +51,7 @@ final class ConversationHistoryFixture: Sendable {
             "{\"url\":\"\(fileOrigin)/\(id)\",\"downloadUrl\":\"\(fileOrigin)/\(id)\",\"previewImageUrl\":null}"
         )
       case path + "/event-snapshot":
+        if let snapshot { return try await snapshot(request) }
         return ChatHTTPResponse(
           status: 404,
           body:
@@ -76,6 +78,7 @@ final class ConversationHistoryFixture: Sendable {
             "{\"id\":\"\(Self.threadID)\",\"agentId\":\"\(Self.agentID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
         )
       case "/api/chat/events":
+        if let send { return try await send(request) }
         return ChatHTTPResponse(
           status: 503, body: "{\"error\":{\"message\":\"Delivery unavailable\"}}")
       default: throw URLError(.unsupportedURL)

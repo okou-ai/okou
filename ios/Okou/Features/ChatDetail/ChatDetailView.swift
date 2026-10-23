@@ -83,6 +83,7 @@ struct ChatDetailView: View {
       scroll: scrolling.scroll,
       followsBottom: scrolling.followsBottom, sidebar: sidebar,
       sendTransition: scrolling.sendTransition,
+      isLoadingHistory: conversation.isLoading && conversation.history == nil,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
       refresh: {
         await conversation.refresh()
@@ -209,11 +210,6 @@ struct ChatDetailView: View {
       }
     }
     .task(id: thread.id) { await conversation.refresh() }
-    .overlay {
-      if conversation.isLoading && conversation.history == nil {
-        ConversationLoadingView()
-      }
-    }
   }
 
   @ViewBuilder

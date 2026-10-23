@@ -120,9 +120,10 @@ stays outside the per-thread foreground lock, and publication skips a batch whos
 starting cursor has been overtaken by a foreground read. Closing the workspace or
 receiving memory pressure cancels warming. Ordinary warming failures leave the
 normal cache-first open path available; a force-upgrade response blocks the scope.
-Data and native-layout loading indicators reveal only after 100 ms, matching the
-web transcript's short-wait policy. Cache-ready rows commit without another
-asynchronous measurement pass.
+One native loading indicator covers initial history loading and layout preparation
+while no message content is displayed. It reveals only after 100 ms and disappears
+as soon as message content, including a local pending message, is displayed.
+Cache-ready rows commit without another asynchronous measurement pass.
 
 Network decoding, event replay, and SQLite access belong to their existing
 service/storage actors. Markdown parsing now runs serially on a separate actor.
