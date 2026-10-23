@@ -220,14 +220,12 @@ async fn dns_startup_rebuilds_runtime_after_port_race() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let runtime_provider = DnsStartupRecordingProvider::new(Arc::clone(&events));
     let (mut mitm, _mitm_crash_rx) = crate::proxy::MitmProxy::noop();
-    let mut memory_prefetch = crate::prefetch::MemoryPrefetchTasks::empty();
 
     let (mut runtime, dns_handle, kmsg_handle) = start_runtime_with_dns(
         DnsStartupResources {
             runtime_provider: &runtime_provider,
             mitm: &mut mitm,
             kmsg_handle: crate::kmsg_log::KmsgHandle::noop(),
-            memory_prefetch: &mut memory_prefetch,
             network_log_manager: NetworkLogManager::new(),
             host_cpu_placement: test_host_cpu_placement(),
         },
@@ -282,8 +280,6 @@ async fn dns_startup_rebuilds_runtime_after_port_race() {
     runtime.shutdown().await;
     kmsg_handle.stop().await.unwrap();
     mitm.kill_now().await.unwrap();
-    memory_prefetch.cancel();
-    memory_prefetch.drain().await;
 }
 
 #[tokio::test]
@@ -291,14 +287,12 @@ async fn dns_startup_stops_after_three_port_races() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let runtime_provider = DnsStartupRecordingProvider::new(Arc::clone(&events));
     let (mut mitm, _mitm_crash_rx) = crate::proxy::MitmProxy::noop();
-    let mut memory_prefetch = crate::prefetch::MemoryPrefetchTasks::empty();
 
     let error = match start_runtime_with_dns(
         DnsStartupResources {
             runtime_provider: &runtime_provider,
             mitm: &mut mitm,
             kmsg_handle: crate::kmsg_log::KmsgHandle::noop(),
-            memory_prefetch: &mut memory_prefetch,
             network_log_manager: NetworkLogManager::new(),
             host_cpu_placement: test_host_cpu_placement(),
         },
@@ -375,22 +369,11 @@ async fn non_port_dns_failure_cleans_owned_startup_resources_without_retry() {
         crate::kmsg_log::KmsgHandle::from_test_child(kmsg_child, NetworkLogManager::new())
             .expect("create test kmsg handle");
 
-    let prefetch_cancel = CancellationToken::new();
-    let task_cancel = prefetch_cancel.clone();
-    let (cancelled_tx, cancelled_rx) = tokio::sync::oneshot::channel();
-    let prefetch_handle = tokio::spawn(async move {
-        task_cancel.cancelled().await;
-        let _ = cancelled_tx.send(());
-    });
-    let mut memory_prefetch =
-        crate::prefetch::MemoryPrefetchTasks::from_test_handle(prefetch_cancel, prefetch_handle);
-
     let error = match start_runtime_with_dns(
         DnsStartupResources {
             runtime_provider: &runtime_provider,
             mitm: &mut mitm,
             kmsg_handle,
-            memory_prefetch: &mut memory_prefetch,
             network_log_manager: NetworkLogManager::new(),
             host_cpu_placement: test_host_cpu_placement(),
         },
@@ -408,10 +391,6 @@ async fn non_port_dns_failure_cleans_owned_startup_resources_without_retry() {
         3,
         "non-port DNS failure should not be retried"
     );
-    cancelled_rx
-        .await
-        .expect("prefetch task should observe cancellation");
-    assert_eq!(memory_prefetch.task_count(), 0);
     assert_ne!(
         runner_host::process::read_process_stat(mitm_pid)
             .await
@@ -434,22 +413,12 @@ async fn dns_interface_failure_retains_port_until_runtime_shutdown() {
     let mut runtime_provider = DnsStartupRecordingProvider::new(Arc::clone(&events));
     runtime_provider.failure = Some(DnsStartupTestFailure::MissingInterfacePattern);
     let (mut mitm, _mitm_crash_rx) = crate::proxy::MitmProxy::noop();
-    let prefetch_cancel = CancellationToken::new();
-    let task_cancel = prefetch_cancel.clone();
-    let (cancelled_tx, cancelled_rx) = tokio::sync::oneshot::channel();
-    let prefetch_handle = tokio::spawn(async move {
-        task_cancel.cancelled().await;
-        let _ = cancelled_tx.send(());
-    });
-    let mut memory_prefetch =
-        crate::prefetch::MemoryPrefetchTasks::from_test_handle(prefetch_cancel, prefetch_handle);
 
     let error = match start_runtime_with_dns(
         DnsStartupResources {
             runtime_provider: &runtime_provider,
             mitm: &mut mitm,
             kmsg_handle: crate::kmsg_log::KmsgHandle::noop(),
-            memory_prefetch: &mut memory_prefetch,
             network_log_manager: NetworkLogManager::new(),
             host_cpu_placement: test_host_cpu_placement(),
         },
@@ -467,8 +436,6 @@ async fn dns_interface_failure_retains_port_until_runtime_shutdown() {
         RunnerError::Internal(message)
             if message == "sandbox runtime did not provide DNS interface pattern"
     ));
-    cancelled_rx.await.expect("prefetch should be cancelled");
-    assert_eq!(memory_prefetch.task_count(), 0);
     let events = events.lock().unwrap_or_else(|e| e.into_inner());
     assert!(matches!(
         events.as_slice(),
@@ -486,13 +453,6 @@ async fn dns_readiness_failure_reaps_dns_before_runtime_shutdown() {
     let mut runtime_provider = DnsStartupRecordingProvider::new(Arc::clone(&events));
     runtime_provider.failure = Some(DnsStartupTestFailure::Readiness);
     let (mut mitm, _mitm_crash_rx) = crate::proxy::MitmProxy::noop();
-    let prefetch_cancel = CancellationToken::new();
-    let task_cancel = prefetch_cancel.clone();
-    let prefetch_handle = tokio::spawn(async move { task_cancel.cancelled().await });
-    let mut memory_prefetch = crate::prefetch::MemoryPrefetchTasks::from_test_handle(
-        prefetch_cancel.clone(),
-        prefetch_handle,
-    );
 
     let mut command = tokio::process::Command::new("sleep");
     command
@@ -520,7 +480,6 @@ async fn dns_readiness_failure_reaps_dns_before_runtime_shutdown() {
                 runtime_provider: &runtime_provider,
                 mitm: &mut mitm,
                 kmsg_handle: crate::kmsg_log::KmsgHandle::noop(),
-                memory_prefetch: &mut memory_prefetch,
                 network_log_manager: NetworkLogManager::new(),
                 host_cpu_placement: test_host_cpu_placement(),
             },
@@ -545,7 +504,6 @@ async fn dns_readiness_failure_reaps_dns_before_runtime_shutdown() {
         .await
         .expect("readiness failure should start DNS cleanup");
 
-        assert!(prefetch_cancel.is_cancelled());
         assert!(matches!(
             callback_dropped.try_recv(),
             Err(tokio::sync::oneshot::error::TryRecvError::Empty)
@@ -575,7 +533,6 @@ async fn dns_readiness_failure_reaps_dns_before_runtime_shutdown() {
         callback_dropped.try_recv(),
         Err(tokio::sync::oneshot::error::TryRecvError::Closed)
     ));
-    assert_eq!(memory_prefetch.task_count(), 0);
     assert_ne!(
         runner_host::process::read_process_stat(dns_pid)
             .await
@@ -648,15 +605,6 @@ done
         .expect("proxy child stat should be readable after readiness")
         .starttime;
     mitm.set_child_for_test(ignore_term_child);
-    let prefetch_cancel = CancellationToken::new();
-    let task_cancel = prefetch_cancel.clone();
-    let (cancelled_tx, cancelled_rx) = tokio::sync::oneshot::channel();
-    let handle = tokio::spawn(async move {
-        task_cancel.cancelled().await;
-        let _ = cancelled_tx.send(());
-    });
-    let mut memory_prefetch =
-        crate::prefetch::MemoryPrefetchTasks::from_test_handle(prefetch_cancel, handle);
     let metadata = crate::live_runner_instances::LiveRunnerInstanceMetadata {
         config_path: dir.path().join("runner.yaml"),
         base_dir: dir.path().join("base"),
@@ -675,7 +623,6 @@ done
                 mitm: &mut mitm,
                 kmsg_handle: crate::kmsg_log::KmsgHandle::noop(),
                 dns_handle: crate::dns::DnsProxy::noop(),
-                memory_prefetch: &mut memory_prefetch,
                 status: &status,
             },
         ),
@@ -694,11 +641,6 @@ done
     assert_eq!(provider_shutdowns.load(Ordering::SeqCst), 1);
     assert_eq!(runtime_shutdowns.load(Ordering::SeqCst), 1);
     assert_eq!(factory_creates.load(Ordering::SeqCst), 0);
-    tokio::time::timeout(Duration::from_secs(5), cancelled_rx)
-        .await
-        .expect("prefetch task should observe cleanup cancellation")
-        .expect("prefetch task should report cancellation");
-    assert_eq!(memory_prefetch.task_count(), 0);
     let proxy_child_still_exists = matches!(
         runner_host::process::read_process_stat(proxy_child_pid).await,
         Some(stat) if stat.starttime == proxy_child_starttime

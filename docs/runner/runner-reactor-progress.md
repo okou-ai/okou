@@ -12,6 +12,13 @@ prune binding, provider readiness, factory startup/rollback and ready publicatio
 order. The root's image/base-dir locks and live registry span the full call.
 Moving source ownership does not change the progress or cleanup rules below.
 
+Snapshot warming begins after fallible root setup and live-instance publication,
+immediately before the concrete Reactor handoff. Before then, root owns only
+validated candidates and limits. Supervisor's startup owner cancels and joins
+accepted File reads on every later startup failure; normal teardown joins the
+same owner before dependent resources and the root's image/base locks are
+released. A cancellation request or dropped handle alone is not an IO join.
+
 ## A retained future is not an independent task
 
 Keeping a future outside `tokio::select!` preserves its progress when another

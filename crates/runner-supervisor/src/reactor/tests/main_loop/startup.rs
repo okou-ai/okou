@@ -101,6 +101,16 @@ async fn assert_early_startup_failure_drains_and_joins(failure: EarlyStartupFail
         }
     }
 
+    struct ReleaseReaderOnDrop(Option<std::sync::mpsc::Sender<()>>);
+
+    impl Drop for ReleaseReaderOnDrop {
+        fn drop(&mut self) {
+            if let Some(release) = self.0.take() {
+                let _ = release.send(());
+            }
+        }
+    }
+
     let runtime_shutdowns = Arc::new(AtomicUsize::new(0));
     let factory_creates = Arc::new(AtomicUsize::new(0));
     let runtime =
@@ -138,23 +148,45 @@ async fn assert_early_startup_failure_drains_and_joins(failure: EarlyStartupFail
         handler_task: Some(SignalHandlerTask::new(handler_task)),
     });
 
-    let prefetch_cancel = CancellationToken::new();
-    let task_cancel = prefetch_cancel.clone();
-    let (cancelled_tx, cancelled_rx) = tokio::sync::oneshot::channel();
-    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-    let prefetch_task = tokio::spawn(async move {
-        task_cancel.cancelled().await;
-        cancelled_tx.send(()).unwrap();
-        release_rx.await.unwrap();
-    });
+    let memory_path = env._temp_dir.path().join("startup-memory.bin");
+    let original_bytes = vec![37; 2 * 1024 * 1024 + 17];
+    tokio::fs::write(&memory_path, &original_bytes)
+        .await
+        .unwrap();
+    let (read_tx, read_rx) = tokio::sync::oneshot::channel();
+    let read_tx = Mutex::new(Some(read_tx));
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let release_rx = Mutex::new(release_rx);
+    let release_reader = ReleaseReaderOnDrop(Some(release_tx));
     config.shutdown.memory_prefetch =
-        prefetch::MemoryPrefetchTasks::from_test_handle(prefetch_cancel, prefetch_task);
+        prefetch::MemoryPrefetchTasks::spawn_with_read_checkpoint_for_test(
+            [prefetch::MemoryPrefetchCandidate {
+                path: memory_path.clone(),
+                memory_mb: 3,
+            }],
+            3,
+            Arc::new(move |bytes| {
+                if let Some(read_tx) = read_tx.lock().unwrap().take() {
+                    let _ = read_tx.send(bytes);
+                }
+                release_rx
+                    .lock()
+                    .unwrap()
+                    .recv()
+                    .map_err(std::io::Error::other)
+            }),
+        );
+    let prefetch_cancel = config.shutdown.memory_prefetch.cancellation_for_test();
+    let consumed = tokio::time::timeout(Duration::from_secs(5), read_rx)
+        .await
+        .expect("startup reader should consume actual File bytes")
+        .unwrap();
+    assert!(consumed > 0, "accepted reader must hold actual File IO");
     let run_handle = tokio::spawn(run(config));
 
-    tokio::time::timeout(Duration::from_secs(5), cancelled_rx)
+    tokio::time::timeout(Duration::from_secs(5), prefetch_cancel.cancelled())
         .await
-        .expect("startup failure should cancel prefetch")
-        .unwrap();
+        .expect("startup failure should cancel prefetch");
     assert!(!run_handle.is_finished(), "startup must join prefetch");
     assert_eq!(runtime_shutdowns.load(Ordering::SeqCst), 0);
     assert!(dropped.try_acquire().is_err());
@@ -165,7 +197,7 @@ async fn assert_early_startup_failure_drains_and_joins(failure: EarlyStartupFail
         );
     }
 
-    release_tx.send(()).unwrap();
+    drop(release_reader);
     let error = tokio::time::timeout(Duration::from_secs(5), run_handle)
         .await
         .expect("startup should return after prefetch drains")
@@ -175,6 +207,7 @@ async fn assert_early_startup_failure_drains_and_joins(failure: EarlyStartupFail
     assert_eq!(factory_creates.load(Ordering::SeqCst), 0);
     assert_eq!(env.handle.startup_readiness_calls(), 0);
     assert_eq!(env.handle.discover_started_count(), 0);
+    assert_eq!(tokio::fs::read(memory_path).await.unwrap(), original_bytes);
     let _permit = dropped
         .try_acquire()
         .expect("startup must join the aborted signal handler");
