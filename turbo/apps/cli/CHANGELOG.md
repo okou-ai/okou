@@ -1,5 +1,57 @@
 # Changelog
 
+## [9.410.0](https://github.com/okou-ai/okou/compare/cli-v9.409.4...cli-v9.410.0) (2026-10-23)
+
+
+### Features
+
+* add configurable branding banners to hosted sites ([#42516](https://github.com/okou-ai/okou/issues/42516)) ([d3a40c7](https://github.com/okou-ai/okou/commit/d3a40c7c422bd9c9ee678e59bb447f81bc927a69))
+
+
+### Bug Fixes
+
+* **cli:** expose custom connector connection card links ([#42531](https://github.com/okou-ai/okou/issues/42531)) ([eb79f8b](https://github.com/okou-ai/okou/commit/eb79f8b55b81c676c2b07808b2b056d4215eceb9))
+
+
+### Refactoring
+
+* **api:** remove openai image webhook recovery ([#42514](https://github.com/okou-ai/okou/issues/42514)) ([f8e2c47](https://github.com/okou-ai/okou/commit/f8e2c477521f7ef1e0bd59f0580869f58cf654fa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.590.0
+    * @okouai/core bumped to 8.782.0
+    * @okouai/pi-agent-runtime bumped to 1.50.59
+
+## [9.409.4](https://github.com/okou-ai/okou/compare/cli-v9.409.3...cli-v9.409.4) (2026-10-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.589.3
+    * @okouai/core bumped to 8.781.1
+    * @okouai/pi-agent-runtime bumped to 1.50.58
+
+## [9.409.3](https://github.com/okou-ai/okou/compare/cli-v9.409.2...cli-v9.409.3) (2026-10-23)
+
+
+### Refactoring
+
+* **cli:** prepare canonical connector diagnostic readers ([#42490](https://github.com/okou-ai/okou/issues/42490)) ([4da5df2](https://github.com/okou-ai/okou/commit/4da5df24ca472ceb49f9694485cac0b78a5a152a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.781.0
+    * @okouai/pi-agent-runtime bumped to 1.50.57
+
 ## [9.409.2](https://github.com/okou-ai/okou/compare/cli-v9.409.1...cli-v9.409.2) (2026-10-23)
 
 

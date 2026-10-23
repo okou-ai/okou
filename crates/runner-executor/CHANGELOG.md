@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.15.19](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.18...runner-executor-v0.15.19) (2026-10-23)
+
+## [0.15.18](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.17...runner-executor-v0.15.18) (2026-10-23)
+
+
+### Documentation
+
+* **rust:** clarify process-local pre-spawn admission ([#42524](https://github.com/okou-ai/okou/issues/42524)) ([906dc38](https://github.com/okou-ai/okou/commit/906dc3820ed7ed9a90e11ceb36b73f78a9800da2))
+
+## [0.15.17](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.16...runner-executor-v0.15.17) (2026-10-23)
+
+## [0.15.16](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.15...runner-executor-v0.15.16) (2026-10-23)
+
 ## [0.15.15](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.14...runner-executor-v0.15.15) (2026-10-23)
 
 ## [0.15.14](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.13...runner-executor-v0.15.14) (2026-10-23)

@@ -345,6 +345,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
       directory: directory)
     let workspace = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
+    workspace.setForeground(true)
     await workspace.refreshNavigation()
     let host = UIHostingController(rootView: WorkflowNewChatHost(workspace: workspace))
     let window = try await mountMentionHost(host)

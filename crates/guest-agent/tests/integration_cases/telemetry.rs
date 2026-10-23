@@ -1189,28 +1189,34 @@ async fn urgent_oom_bypasses_log_backlog_and_keeps_live_positions() {
 }
 
 #[tokio::test]
-async fn urgent_oom_retries_transient_failure_and_retains_unacknowledged_old_receiver_payload() {
-    for acknowledges in [true, false] {
+async fn urgent_oom_retries_until_acknowledged_and_retains_evidence() {
+    let evidence = oom_fixture().unwrap();
+    let expected_evidence = serde_json::to_value(&evidence).unwrap();
+    for (case, first_status, acknowledgement_attempt, expected_calls) in [
+        ("transient failure then acknowledgement", 503, Some(2), 2),
+        ("transient failure without acknowledgement", 503, None, 2),
+        ("success then acknowledgement", 200, Some(2), 2),
+        ("immediate acknowledgement", 200, Some(1), 1),
+    ] {
         let api = SharedApiMock::new().await;
         let server = api.server();
         let files = ExplicitTelemetryFiles::new("urgent-retry").unwrap();
-        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let requests = calls.clone();
+        let request_bodies = Arc::new(Mutex::new(Vec::new()));
+        let requests = Arc::clone(&request_bodies);
         let upload = server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
-                .body_includes("oomEvidence");
-            then.respond_with(move |_| {
-                let attempt = requests.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                let body = if attempt > 0 && acknowledges {
-                    r#"{"success":true,"id":"retry","oomEvidenceVersion":1}"#
-                } else {
-                    r#"{"success":true,"id":"retry"}"#
+            when.method(POST).path("/api/webhooks/agent/telemetry");
+            then.respond_with(move |request| {
+                let attempt = {
+                    let mut bodies = requests.lock().unwrap();
+                    bodies.push(request.body_vec());
+                    bodies.len()
                 };
-                json_http_response(
-                    if attempt == 0 { 503 } else { 200 },
-                    serde_json::from_str(body).unwrap(),
-                )
+                let body = if acknowledgement_attempt.is_some_and(|first| attempt >= first) {
+                    serde_json::json!({"success":true,"id":"retry","oomEvidenceVersion":1})
+                } else {
+                    serde_json::json!({"success":true,"id":"retry"})
+                };
+                json_http_response(if attempt == 1 { first_status } else { 200 }, body)
             });
         });
         let telemetry = guest_agent::telemetry::Telemetry::spawn_for_paths(
@@ -1219,22 +1225,37 @@ async fn urgent_oom_retries_transient_failure_and_retains_unacknowledged_old_rec
             Arc::new(SecretMasker::from_raw("")),
             http_client!(),
         );
-        telemetry.incident_reporter().record(oom_fixture().unwrap());
+        telemetry.incident_reporter().record(evidence.clone());
         telemetry
             .flush(guest_agent::telemetry::UploadMode::Live)
             .await
             .unwrap();
-        telemetry.incident_reporter().record(oom_fixture().unwrap());
-        telemetry.shutdown().await;
-        upload.assert_calls_async(2).await;
-        assert!(
-            std::fs::metadata(format!(
-                "{}.oom-evidence.json",
-                files.paths.metrics_log_file()
-            ))
-            .unwrap()
-            .len()
-                > 0
+        telemetry.incident_reporter().record(evidence.clone());
+        telemetry.final_flush_and_shutdown().await.unwrap();
+
+        {
+            let bodies = request_bodies.lock().unwrap();
+            assert_eq!(bodies.len(), expected_calls, "{case}");
+            for body in bodies.iter() {
+                let body: serde_json::Value = serde_json::from_slice(body).unwrap();
+                assert_eq!(
+                    body.get("runId").and_then(|id| id.as_str()),
+                    Some("retry"),
+                    "{case}"
+                );
+                assert_eq!(body.get("oomEvidence"), Some(&expected_evidence), "{case}");
+            }
+        }
+        upload.assert_calls_async(expected_calls).await;
+        let retained = std::fs::read(format!(
+            "{}.oom-evidence.json",
+            files.paths.metrics_log_file()
+        ))
+        .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&retained).unwrap(),
+            expected_evidence,
+            "{case}"
         );
         upload.delete_async().await;
     }

@@ -15,6 +15,7 @@ fail() {
 
 target_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 connector_resource_split_floor=$(<"${repo_root}/.github/rollback-floors/connector-resource-split")
+decoded_storage_reader_floor=$(<"${repo_root}/.github/rollback-floors/decoded-storage-capacity-reader")
 
 cat >"${fake_bin}/git" <<'SH'
 #!/usr/bin/env bash
@@ -23,7 +24,13 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "$MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR" ]; then
+    if [ "${3:-}" = "${MOCK_DECODED_STORAGE_READER_COMMIT-$MOCK_DECODED_STORAGE_READER_FLOOR}" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_DECODED_STORAGE_READER_ON_MAIN:-1}" = "1" ]
+      elif [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+        [ "${MOCK_DECODED_STORAGE_READER_RUNNER_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "$MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_CONNECTOR_RESOURCE_SPLIT_ON_MAIN:-1}" = "1" ]
       else
@@ -264,6 +271,11 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/decoded-storage-capacity-reader" ]; then
+      [ "${MOCK_DECODED_STORAGE_READER_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_DECODED_STORAGE_READER_COMMIT-$MOCK_DECODED_STORAGE_READER_FLOOR}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/connector-resource-split" ]; then
       [ "${MOCK_CONNECTOR_RESOURCE_SPLIT_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_CONNECTOR_RESOURCE_SPLIT_COMMIT-$MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR}"
@@ -347,6 +359,7 @@ run_resolver() {
     METAL_USER=ci \
     MOCK_BOUNDARY_LOG="${tmp_dir}/boundaries.log" \
     MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR="$connector_resource_split_floor" \
+    MOCK_DECODED_STORAGE_READER_FLOOR="$decoded_storage_reader_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
     VERCEL_PROJECT_ID=test-project \
@@ -380,6 +393,36 @@ for connector_case in \
     fail "Connector resource split policy must reject before artifact or host access"
   fi
 done
+
+# Missing policy must fail before any provider or host access.
+for decoded_reader_case in \
+  "MOCK_DECODED_STORAGE_READER_AVAILABLE=0|Cannot read the decoded storage capacity reader rollback floor from main" \
+  "MOCK_DECODED_STORAGE_READER_COMMIT=|Missing or invalid decoded storage capacity reader rollback floor" \
+  "MOCK_DECODED_STORAGE_READER_COMMIT=invalid|Missing or invalid decoded storage capacity reader rollback floor" \
+  "MOCK_DECODED_STORAGE_READER_ON_MAIN=0|Decoded storage capacity reader rollback floor is not on main"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${decoded_reader_case#*|}" \
+    run_resolver "${tmp_dir}/decoded-reader-policy.output" "${decoded_reader_case%%|*}"
+  [ ! -s "${tmp_dir}/decoded-reader-policy.output" ] || fail "invalid decoded reader policy must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid decoded reader policy must fail before provider or host access"
+  fi
+done
+
+# A compatible API does not make an independently selected old Runner safe.
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates the decoded storage capacity reader" \
+  run_resolver "${tmp_dir}/decoded-reader-runner.output" MOCK_DECODED_STORAGE_READER_RUNNER_VALID=0
+[ ! -s "${tmp_dir}/decoded-reader-runner.output" ] || fail "incompatible decoded reader must not publish outputs"
+if grep -Eq '^ssh |releases/tags/' "${tmp_dir}/boundaries.log"; then
+  fail "incompatible decoded reader must fail before Runner artifact or host access"
+fi
+
+# The exact prepared Runner remains a valid rollback; activation is not the floor.
+run_resolver "${tmp_dir}/decoded-reader-exact.output" \
+  MOCK_DECODED_STORAGE_READER_COMMIT=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+  >"${tmp_dir}/decoded-reader-exact.log"
+[ -s "${tmp_dir}/decoded-reader-exact.output" ] || fail "exact prepared Runner must remain eligible"
 
 # A compatible API target must resolve its independently compatible Runner tag.
 : >"${tmp_dir}/boundaries.log"
@@ -1661,15 +1704,8 @@ ruby - \
   api_release_steps = release.fetch("promote-api-production").fetch("steps")
   before = api_release_steps.index { |step| step["id"] == "production-migrations" }
   deploy = api_release_steps.index { |step| step["id"] == "deploy" }
-  drain = api_release_steps.index { |step| step["name"] == "Drain outgoing API before Pi memory contraction" }
-  contract = api_release_steps.index { |step| step["name"] == "Contract Pi memory storage after API drain" }
-  unless before && deploy && drain && contract && before < deploy && deploy < drain && drain < contract
-    raise "Pi memory contraction must follow API deployment and outgoing invocation drain"
-  end
-  raise "outgoing API must receive its full 300-second drain" unless api_release_steps[drain].fetch("run") == "sleep 300"
-  expected_deferred_gate = "${{ steps.production-migrations.outputs.deferred_migration != \x27\x27 }}"
-  unless [drain, contract].all? { |index| api_release_steps[index].fetch("if") == expected_deferred_gate }
-    raise "post-promotion contraction must run only for a deferred migration"
+  unless before && deploy && before < deploy
+    raise "production migrations must finish before API deployment"
   end
 
   artifact_upload_step = turbo.fetch("deploy-app").fetch("steps").find { |step| step["name"] == "Upload canonical app artifact" }

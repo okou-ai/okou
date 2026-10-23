@@ -1,7 +1,6 @@
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { proactiveActionContract } from "@okouai/api-contracts/contracts/proactive-action";
 import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
 import type {
   ProactivePreference,
@@ -71,11 +70,7 @@ const readProactivePreference$ = command(
             ? "enabled"
             : "preparing",
       unavailableReason:
-        kind === "suggestions" && eligibility.action.active
-          ? "proactive-action-enabled"
-          : eligibility.agentId === null
-            ? "missing-default-agent"
-            : null,
+        eligibility.agentId === null ? "missing-default-agent" : null,
     };
   },
 );
@@ -84,11 +79,7 @@ function createProactivePreferenceRoutes(
   kind: ProactiveWorkflowKind,
 ): readonly RouteEntry[] {
   const contract =
-    kind === "jobs"
-      ? proactiveJobsContract
-      : kind === "action"
-        ? proactiveActionContract
-        : proactiveSuggestionsContract;
+    kind === "jobs" ? proactiveJobsContract : proactiveSuggestionsContract;
   const preferenceRoute$ = command(
     async ({ get, set }, update: boolean, signal: AbortSignal) => {
       const auth = get(organizationAuthContext$);
@@ -100,8 +91,8 @@ function createProactivePreferenceRoutes(
       );
       if (!eligibility[kind].available) {
         return resourceUnavailable(
-          kind === "action" || kind === "jobs"
-            ? "Proactive Action is not enabled."
+          kind === "jobs"
+            ? "Proactive Jobs is not enabled."
             : "Agent Suggestion is not enabled.",
         );
       }
@@ -112,8 +103,8 @@ function createProactivePreferenceRoutes(
           return body.response;
         }
         const choice =
-          kind === "action" || kind === "jobs"
-            ? { proactiveActionEnabled: body.data.enabled }
+          kind === "jobs"
+            ? { proactiveJobsEnabled: body.data.enabled }
             : { proactiveSuggestionsEnabled: body.data.enabled };
         await set(writeDb$)
           .insert(orgMembersMetadata)
@@ -168,5 +159,4 @@ function createProactivePreferenceRoutes(
 
 export const proactiveSuggestionsRoutes =
   createProactivePreferenceRoutes("suggestions");
-export const proactiveActionRoutes = createProactivePreferenceRoutes("action");
 export const proactiveJobsRoutes = createProactivePreferenceRoutes("jobs");

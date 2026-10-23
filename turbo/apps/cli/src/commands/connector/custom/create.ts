@@ -10,8 +10,12 @@ import { decodeSandboxTokenPayload } from "../../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import { getOkouAgentId } from "../../../lib/okou-env";
 import {
+  CALLBACK_PROMPT_GUIDANCE,
+  CALLBACK_PROMPT_MAX_LENGTH,
   connectorActionUrl,
+  finalizeActionUrl,
   printCallbackActionUrlExample,
+  printCallbackTurnInstruction,
 } from "../action-url";
 import { getPlatformOrigin } from "../../../lib/platform-url";
 import { createCustomConnectorDefinitionFileSchema } from "./definition";
@@ -19,6 +23,7 @@ import { createCustomConnectorDefinitionFileSchema } from "./definition";
 interface CreateOptions {
   readonly file: string;
   readonly json?: boolean;
+  readonly callbackPrompt?: string;
 }
 
 function requireCustomConnectorWriteCapability(): void {
@@ -30,12 +35,20 @@ function requireCustomConnectorWriteCapability(): void {
   }
 }
 
-async function printCreateResult(
+function printCreateResult(
   connector: CustomConnectorResponse,
-  json: boolean,
-): Promise<void> {
-  if (json) {
-    console.log(JSON.stringify(customConnectorMetadata(connector), null, 2));
+  options: CreateOptions,
+  connectUrl: string,
+  agentId: string | undefined,
+): void {
+  if (options.json) {
+    console.log(
+      JSON.stringify(
+        { ...customConnectorMetadata(connector), connectUrl },
+        null,
+        2,
+      ),
+    );
     return;
   }
 
@@ -47,15 +60,14 @@ async function printCreateResult(
   console.log(chalk.dim(`  Authentication: ${connector.authMode}`));
   console.log(chalk.dim("  Status:         awaiting connection"));
   console.log();
-  const agentId = getOkouAgentId()?.trim() || undefined;
-  const origin = await getPlatformOrigin();
-  const url = connectorActionUrl({
-    origin,
-    path: `/connectors/${connector.slug}/connect`,
-    ...(agentId ? { agentId } : {}),
-  });
-  console.log(`Connect it at: [Connect ${connector.displayName}](${url})`);
-  printCallbackActionUrlExample(url, agentId);
+  console.log(
+    `Connect it at: [Connect ${connector.displayName}](${connectUrl})`,
+  );
+  if (options.callbackPrompt !== undefined) {
+    printCallbackTurnInstruction();
+  } else {
+    printCallbackActionUrlExample(connectUrl, agentId);
+  }
 }
 
 export const createCustomConnectorCommand = new Command()
@@ -65,7 +77,11 @@ export const createCustomConnectorCommand = new Command()
     "-f, --file <path|->",
     "JSON connector definition file, or '-' for stdin",
   )
-  .option("--json", "Print the created connector as JSON")
+  .option("--json", "Print the created connector and connectUrl as JSON")
+  .option(
+    "--callback-prompt <prompt>",
+    `Start the next web chat round with this prompt after connection (max ${CALLBACK_PROMPT_MAX_LENGTH} characters)`,
+  )
   .addHelpText(
     "after",
     `
@@ -100,8 +116,14 @@ Agent workflow:
      the Connectors page, including the client ID and client secret. Never ask
      for an end-user access token or refresh token.
   4. Write a temporary JSON definition, run this command, then remove the file.
-  5. Share the emitted Connect link so the user can finish the separate
-     account connection flow, including for none and automatic modes.
+  5. Return the emitted Connect link (connectUrl in JSON) verbatim, including
+     all query parameters. In the current web chat it renders a connection
+     card for this connector. Do not replace it with the Connectors list URL.
+     The user finishes the separate account connection flow, including for
+     none and automatic modes.
+  6. When this connection is the only access action needed, add --callback-prompt
+     with a brief task and next step. Share connectUrl and end the turn; Okou
+     continues after the user completes the connection and Agent authorization.
 
 No-auth HTTP connector example:
   {
@@ -206,6 +228,7 @@ the MCP example. Set authMode: "oauth".
 Examples:
   okou connector custom create --file ./connector.json
   okou connector custom create --file ./connector.json --json
+  okou connector custom create --file ./connector.json --json --callback-prompt "Verify the newly connected MCP tools"
 
 Notes:
   - This command only creates the connector definition; it does not store a
@@ -216,6 +239,8 @@ Notes:
   - In the current web chat, a callback link example is printed when the action
     targets the current Agent. Use it only for a single connector/permission
     action, keeping the callback prompt free of secrets.
+  - --callback-prompt requires the current web chat and Agent context.
+    ${CALLBACK_PROMPT_GUIDANCE}
   - OAuth app client secrets are definition-time configuration, matching UI
     creation, and should be kept in a temporary file that is never committed.
   - Requires an organization admin.`,
@@ -227,7 +252,20 @@ Notes:
         options.file,
         createCustomConnectorDefinitionFileSchema,
       );
+      const agentId = getOkouAgentId()?.trim() || undefined;
+      const actionUrl = new URL(
+        connectorActionUrl({
+          origin: await getPlatformOrigin(),
+          path: "/connectors",
+          agentId,
+        }),
+      );
+      // Validate the callback before creating a definition that needs connection.
+      const connectUrl = new URL(
+        finalizeActionUrl(actionUrl, options.callbackPrompt, agentId),
+      );
       const connector = await createCustomConnector(definition);
-      await printCreateResult(connector, options.json ?? false);
+      connectUrl.pathname = `/connectors/${connector.slug}/connect`;
+      printCreateResult(connector, options, connectUrl.toString(), agentId);
     }),
   );

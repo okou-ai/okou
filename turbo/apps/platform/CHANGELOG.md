@@ -12,6 +12,46 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1057.0](https://github.com/okou-ai/okou/compare/app-v0.1056.5...app-v0.1057.0) (2026-10-23)
+
+
+### Features
+
+* add configurable branding banners to hosted sites ([#42516](https://github.com/okou-ai/okou/issues/42516)) ([d3a40c7](https://github.com/okou-ai/okou/commit/d3a40c7c422bd9c9ee678e59bb447f81bc927a69))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.590.0
+    * @okouai/core bumped to 8.782.0
+    * @okouai/ui bumped to 1.18.0
+
+## [0.1056.5](https://github.com/okou-ai/okou/compare/app-v0.1056.4...app-v0.1056.5) (2026-10-23)
+
+
+### Refactoring
+
+* retire proactive action ([#42515](https://github.com/okou-ai/okou/issues/42515)) ([8246bdc](https://github.com/okou-ai/okou/commit/8246bdc3e5e19309dac24dc68d846648afaa79e5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.589.3
+    * @okouai/core bumped to 8.781.1
+
+## [0.1056.4](https://github.com/okou-ai/okou/compare/app-v0.1056.3...app-v0.1056.4) (2026-10-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.781.0
+
 ## [0.1056.3](https://github.com/okou-ai/okou/compare/app-v0.1056.2...app-v0.1056.3) (2026-10-23)
 
 

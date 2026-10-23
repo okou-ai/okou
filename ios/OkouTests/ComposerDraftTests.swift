@@ -295,15 +295,15 @@ final class ComposerDraftTests: XCTestCase {
     let storage = server.storage()
     let composer = server.composer(storage: storage)
     await composer.synchronize()
-    server.state.value.withLock { $0.offline = true }
+    server.state.value.withLock { $0.networkError = .notConnectedToInternet }
     composer.text = "Local offline draft"
     await composer.synchronize()
-    XCTAssertNotNil(composer.error)
+    XCTAssertNil(composer.error)
     composer.close()
     let reopened = server.composer(storage: storage)
     defer { reopened.close() }
     XCTAssertEqual(reopened.text, "Local offline draft")
-    server.state.value.withLock { $0.offline = false }
+    server.state.value.withLock { $0.networkError = nil }
     await reopened.synchronize()
     XCTAssertEqual(
       server.state.value.withLock { $0.remote.draftUserMessage?.text }, "Local offline draft")
@@ -322,16 +322,101 @@ final class ComposerDraftTests: XCTestCase {
     let storage = server.storage()
     let composer = server.composer(storage: storage)
     await composer.synchronize()
-    server.state.value.withLock { $0.offline = true }
+    server.state.value.withLock { $0.networkError = .notConnectedToInternet }
     composer.clear()
     await composer.synchronize()
     composer.close()
     let reopened = server.composer(storage: storage)
     defer { reopened.close() }
     XCTAssertEqual(reopened.text, "")
-    server.state.value.withLock { $0.offline = false }
+    server.state.value.withLock { $0.networkError = nil }
     await reopened.synchronize()
     XCTAssertEqual(server.state.value.withLock { $0.remote }, ComposerDraft())
+  }
+
+  func testTransientNetworkFailuresKeepDeviceDraftsAvailableForLaterSynchronization() async throws {
+    for failure in [URLError.Code.timedOut, .cancelled, .networkConnectionLost] {
+      let server = DraftServer()
+      let storage = server.storage()
+      let composer = server.composer(storage: storage)
+      composer.text = "Keep this device draft"
+      server.state.value.withLock { $0.networkError = failure }
+      await composer.synchronize()
+      XCTAssertNil(composer.error)
+      XCTAssertTrue(composer.canSend)
+      composer.close()
+
+      let reopened = server.composer(storage: storage)
+      defer { reopened.close() }
+      XCTAssertEqual(reopened.text, "Keep this device draft")
+      server.state.value.withLock { $0.networkError = nil }
+      await reopened.synchronize()
+      XCTAssertEqual(
+        server.state.value.withLock { $0.remote.draftUserMessage?.text }, "Keep this device draft")
+    }
+  }
+
+  func testHTTPRejectionsRemainVisibleAndRecoverOnExplicitRetry() async {
+    for status in [403, 500] {
+      let server = DraftServer()
+      let composer = server.composer()
+      defer { composer.close() }
+      composer.text = "Retain the rejected draft"
+      server.state.value.withLock {
+        $0.rejection = ChatHTTPResponse(
+          status: status, body: "{\"error\":{\"message\":\"Draft rejected\"}}")
+      }
+      await composer.synchronize()
+      XCTAssertTrue(composer.error?.contains("Draft rejected") == true)
+      XCTAssertEqual(composer.text, "Retain the rejected draft")
+      server.state.value.withLock { $0.rejection = nil }
+      await composer.synchronize()
+      XCTAssertNil(composer.error)
+      XCTAssertEqual(
+        server.state.value.withLock { $0.remote.draftUserMessage?.text },
+        "Retain the rejected draft")
+    }
+  }
+
+  func testBackgroundCancellationPreservesEditsAndResumesWithoutTheOldResponse() async throws {
+    let gate = DraftGate()
+    let started = expectation(description: "Draft hydration started before backgrounding")
+    let count = DraftReadCount()
+    let server = DraftServer(onRead: {
+      let index = count.value.withLock {
+        $0 += 1
+        return $0
+      }
+      if index == 1 {
+        started.fulfill()
+        await gate.wait()
+      }
+    })
+    let storage = server.storage()
+    let composer = server.composer(storage: storage)
+    defer {
+      composer.close()
+      gate.open()
+    }
+    let opening = Task { await composer.synchronize() }
+    await fulfillment(of: [started], timeout: 2)
+    composer.setForeground(false)
+    composer.text = "Edit retained while synchronization is paused"
+    await composer.synchronize()
+    XCTAssertEqual(server.state.value.withLock { $0.remote }, ComposerDraft())
+
+    composer.setForeground(true)
+    await composer.synchronize()
+    gate.open()
+    await opening.value
+    XCTAssertNil(composer.error)
+    XCTAssertEqual(
+      server.state.value.withLock { $0.remote.draftUserMessage?.text },
+      "Edit retained while synchronization is paused")
+    composer.close()
+    let reopened = server.composer(storage: storage)
+    defer { reopened.close() }
+    XCTAssertEqual(reopened.text, "Edit retained while synchronization is paused")
   }
 
   func testUnreadableDeviceDraftIsNotReplacedByAnEmptyDefault() async throws {
@@ -579,7 +664,8 @@ private func richDraft() throws -> ComposerDraft {
 private final class DraftServer: Sendable {
   struct State: Sendable {
     var remote = ComposerDraft()
-    var offline = false
+    var networkError: URLError.Code?
+    var rejection: ChatHTTPResponse?
     var missingFile = false
     var paths: [String] = []
     var writes = 0
@@ -597,11 +683,12 @@ private final class DraftServer: Sendable {
     try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     http = ChatHTTPFixture { request in
       let path = request.url!.path
-      let offline = state.value.withLock { value in
+      let failure = state.value.withLock { value in
         value.paths.append(request.httpMethod! + " " + path)
-        return value.offline
+        return value.networkError
       }
-      if offline { throw URLError(.notConnectedToInternet) }
+      if let failure { throw URLError(failure) }
+      if let rejection = state.value.withLock({ $0.rejection }) { return rejection }
       if path == "/api/web/file-url" {
         return ChatHTTPResponse(
           status: state.value.withLock { $0.missingFile } ? 404 : 200, body: "{}")

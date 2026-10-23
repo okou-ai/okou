@@ -140,7 +140,7 @@ test.each(["completed", "failed"] as const)(
         }
       }
       const finalId = await settleGeneration(outcome);
-      const chargedCredits = outcome === "completed" ? 50 : 0;
+      const chargedCredits = outcome === "completed" ? 42 : 0;
       await flushWaitUntilForTest();
       // Clients receive these same public result snapshots through realtime.
       // Validate all fifty terminal outcomes and their charge behavior.
@@ -166,7 +166,7 @@ test.each(["completed", "failed"] as const)(
         });
         if (expectedStatus === "completed") {
           expect(readGenerationResult(completed)).toMatchObject({
-            creditsCharged: 50,
+            creditsCharged: 42,
           });
         } else {
           expect(completed.error).toMatchObject({
@@ -191,7 +191,7 @@ test.each(["completed", "failed"] as const)(
       });
       if (outcome === "completed") {
         expect(readGenerationResult(finalResult)).toMatchObject({
-          creditsCharged: 50,
+          creditsCharged: 42,
         });
       } else {
         expect(finalResult.error).toMatchObject({

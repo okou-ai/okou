@@ -1,14 +1,16 @@
 {
   "name": "@okouai/host-worker",
-  "version": "1.7.27",
+  "version": "1.8.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "check-types": "tsc --noEmit",
-    "lint": "oxlint && eslint . --max-warnings 0",
+    "check-types": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",
+    "lint": "pnpm lint:banner && oxlint && eslint . --max-warnings 0",
     "deploy": "wrangler deploy --env=\"\"",
     "deploy:production": "wrangler deploy --env=\"\"",
-    "deploy:test": "wrangler deploy --env test"
+    "deploy:test": "wrangler deploy --env test",
+    "build:banner": "tsx scripts/build-banner.ts",
+    "lint:banner": "tsx scripts/build-banner.ts --check"
   },
   "devDependencies": {
     "@okouai/eslint-config": "workspace:*",
@@ -18,11 +20,22 @@
     "msw": "^2.13.2",
     "oxlint": "^1.75.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "wrangler": "^4.129.0"
+    "wrangler": "^4.129.0",
+    "@tailwindcss/postcss": "^4.3.3",
+    "postcss": "8.5.25",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "esbuild": "0.28.2",
+    "tsx": "^4.21.0",
+    "@types/node": "^24.13.4"
   },
   "dependencies": {
+    "entities": "7.0.1",
     "@okouai/api-contracts": "workspace:*",
     "@okouai/core": "workspace:*",
-    "zod": "^4.5.4"
+    "zod": "^4.5.4",
+    "@okouai/ui": "workspace:*",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
   }
 }

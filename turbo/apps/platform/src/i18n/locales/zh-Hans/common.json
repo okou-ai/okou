@@ -628,6 +628,11 @@
       "singularTitle": "成果",
       "unavailable": "这个成果已不再可用。"
     },
+    "siteBanner": {
+      "label": "显示 Okou 横幅",
+      "loadFailed": "无法加载横幅设置",
+      "updated": "横幅已更新"
+    },
     "siteUrl": {
       "available": "可以使用",
       "cancel": "取消",
@@ -5520,15 +5525,6 @@
         "retryMessage": "晨报设置无法加载或更新，请重试以继续。",
         "title": "晨报"
       },
-      "proactiveAction": {
-        "description": "让 Okou 每小时自动推进下一步，并在对话中展示工作结果。启用后暂停主动建议。",
-        "missingDefaultAgent": "选择一个可用的默认智能体以启用主动行动。",
-        "preparationFailed": "暂时无法运行，Okou 会自动重试。",
-        "preparing": "正在准备每小时的主动行动。你可以随时关闭。",
-        "retry": "重试",
-        "retryMessage": "无法加载或更新主动行动设置，请重试。",
-        "title": "主动行动"
-      },
       "proactiveJobs": {
         "description": "自动推进你的 Jobs，在需要你处理或工作完成时提醒你。",
         "missingDefaultAgent": "请先选择可用的默认 Agent。",
@@ -5541,7 +5537,6 @@
       "proactiveSuggestions": {
         "description": "让 Okou 每小时检查已连接的信息来源，并在主页推荐有用的下一步行动。",
         "missingDefaultAgent": "请选择可用的默认 Agent 以接收主动建议。",
-        "pausedForAction": "主动行动已开启，主动建议暂时停止。你的设置已保留。",
         "preparationFailed": "暂时无法运行，Okou 会自动重试。",
         "preparing": "正在准备每小时建议，你可以随时关闭。",
         "retry": "重试",

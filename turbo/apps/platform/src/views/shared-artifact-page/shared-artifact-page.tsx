@@ -1,3 +1,4 @@
+import { ArtifactBanner } from "@okouai/ui/components/ui/artifact-banner";
 import {
   PreserveScrollAnchor,
   Button,
@@ -332,32 +333,24 @@ export function SharedArtifactPage({
         ref={mountRef}
         className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground"
       >
-        <header
+        <ArtifactBanner
           hidden={fullscreen}
-          className={cn(
-            "relative z-10 h-14 shrink-0 items-center gap-3 border-b border-border/70 bg-background px-3 sm:gap-4 sm:px-6",
-            fullscreen ? "hidden" : "flex",
-          )}
-        >
-          <a
-            href="/"
-            aria-label={BRAND_NAME}
-            className="shrink-0 text-foreground hover:opacity-70 focus:not-focus-visible:outline-none"
-          >
-            <ProductBrandMark size="small" />
-          </a>
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-medium">{title}</h1>
-            {artifact !== null && (
-              <p className="truncate text-xs text-muted-foreground">
+          title={title}
+          homeUrl="/"
+          brandName={BRAND_NAME}
+          brandMark={<ProductBrandMark size="small" />}
+          subtitle={
+            artifact !== null ? (
+              <>
                 {artifactFallbackSubtitle(
                   artifact.preview.kind,
                   artifact.filename,
                 )}
                 <ArtifactVisibilityLabel artifact={artifact} />
-              </p>
-            )}
-          </div>
+              </>
+            ) : undefined
+          }
+        >
           {artifact !== null ? (
             <ArtifactViewerActions artifact={artifact} viewer={viewer} />
           ) : (
@@ -374,7 +367,7 @@ export function SharedArtifactPage({
               )}
             </a>
           )}
-        </header>
+        </ArtifactBanner>
         <main
           ref={containerRef}
           // This element is the one handed to requestFullscreen, so it paints

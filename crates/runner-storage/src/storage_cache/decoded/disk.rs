@@ -18,7 +18,7 @@ use std::path::{Component, Path, PathBuf};
 #[cfg(test)]
 mod tests;
 
-const INDEX_LIMIT: usize = 256 * 1024;
+const INDEX_LIMIT: usize = 1024 * 1024;
 
 struct IndexWriter(Vec<u8>);
 
@@ -26,13 +26,13 @@ impl IndexWriter {
     fn new() -> Self {
         // Preallocate the fixed envelope: incremental Vec growth could otherwise
         // double a non-power-of-two capacity beyond the index limit.
-        Self(Vec::with_capacity(INDEX_LIMIT))
+        Self(Vec::with_capacity(MAX_ADMITTED_INDEX_BYTES))
     }
 }
 
 impl Write for IndexWriter {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        if bytes.len() > INDEX_LIMIT.saturating_sub(self.0.len()) {
+        if bytes.len() > MAX_ADMITTED_INDEX_BYTES.saturating_sub(self.0.len()) {
             return Err(invalid("decoded cache index too large"));
         }
         self.0.extend_from_slice(bytes);
@@ -258,6 +258,7 @@ pub(super) fn read_with_budget(
 pub(super) struct ReadFiles {
     pub(super) files: Vec<StorageFile>,
     pub(super) compressed_bytes: usize,
+    pub(super) index_bytes: usize,
 }
 
 enum LookupOutcome {
@@ -415,8 +416,10 @@ fn read_locked_entry(
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(LookupOutcome::Miss),
         Err(error) => return Err(error),
     };
-    let index: Index = serde_json::from_slice(&read_file(&root, "index.json", INDEX_LIMIT)?)
-        .map_err(io::Error::other)?;
+    let encoded_index = read_file(&root, "index.json", INDEX_LIMIT)?;
+    let index_bytes = encoded_index.len();
+    let index: Index = serde_json::from_slice(&encoded_index).map_err(io::Error::other)?;
+    drop(encoded_index);
     let index_kind = if index.files.is_some() {
         EntryKind::Positive
     } else {
@@ -496,6 +499,7 @@ fn read_locked_entry(
     Ok(LookupOutcome::Ready(ReadFiles {
         files,
         compressed_bytes: index.compressed_bytes,
+        index_bytes,
     }))
 }
 
@@ -599,6 +603,40 @@ pub(super) fn retire_archive(
     }
 }
 
+pub(super) fn encode_index(
+    name: &str,
+    version: &str,
+    compressed_bytes: usize,
+    files: Option<&[StorageFile]>,
+) -> io::Result<Vec<u8>> {
+    let metadata = files.map(|files| {
+        files
+            .iter()
+            .map(|file| FileInfo {
+                path: file.path.clone(),
+                mode: file.mode,
+                mtime: file.mtime,
+                size: file.content.len(),
+                sha256: hex::encode(Sha256::digest(&file.content)),
+            })
+            .collect()
+    });
+    let mut writer = IndexWriter::new();
+    serde_json::to_writer(
+        &mut writer,
+        &Index {
+            name: name.to_owned(),
+            version: version.to_owned(),
+            compressed_bytes,
+            files: metadata,
+        },
+    )
+    .map_err(|error| {
+        io::Error::new(error.io_error_kind().unwrap_or(io::ErrorKind::Other), error)
+    })?;
+    Ok(writer.0)
+}
+
 pub(super) fn publish(
     home: &HomePaths,
     name: &str,
@@ -640,36 +678,14 @@ pub(super) fn publish(
     let operation = (|| {
         if let Some(files) = files {
             storage_files::validate_files(files)?;
+            if files.iter().map(|file| file.path.len()).sum::<usize>() > MAX_ADMITTED_PATH_BYTES {
+                return Err(invalid("decoded cache paths exceed publication admission"));
+            }
             if !admitted_paths(files) {
                 return Err(invalid("decoded cache directory limit exceeded"));
             }
         }
-        let metadata = files.map(|files| {
-            files
-                .iter()
-                .map(|file| FileInfo {
-                    path: file.path.clone(),
-                    mode: file.mode,
-                    mtime: file.mtime,
-                    size: file.content.len(),
-                    sha256: hex::encode(Sha256::digest(&file.content)),
-                })
-                .collect()
-        });
-        let mut writer = IndexWriter::new();
-        serde_json::to_writer(
-            &mut writer,
-            &Index {
-                name: name.to_owned(),
-                version: version.to_owned(),
-                compressed_bytes,
-                files: metadata,
-            },
-        )
-        .map_err(|error| {
-            io::Error::new(error.io_error_kind().unwrap_or(io::ErrorKind::Other), error)
-        })?;
-        let index = writer.0;
+        let index = encode_index(name, version, compressed_bytes, files)?;
         if let Some(files) = files {
             for file in files {
                 check_cancel(cancel)?;

@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.6.2](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.1...runner-storage-v0.6.2) (2026-10-23)
+
+
+### Performance Improvements
+
+* **storage:** activate wider decoded memory capacity ([#42525](https://github.com/okou-ai/okou/issues/42525)) ([c543b80](https://github.com/okou-ai/okou/commit/c543b801f746ba86764ed825ae177960e1bd3fcd))
+
+## [0.6.1](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.0...runner-storage-v0.6.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **runner:** join accepted fresh archive work during teardown ([#42501](https://github.com/okou-ai/okou/issues/42501)) ([41fea75](https://github.com/okou-ai/okou/commit/41fea75afe9f758e58738a82065b3f9fedf39db2))
+
+## [0.6.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.31...runner-storage-v0.6.0) (2026-10-23)
+
+
+### Features
+
+* **storage:** prepare wider decoded memory readers ([#42504](https://github.com/okou-ai/okou/issues/42504)) ([9fbbccc](https://github.com/okou-ai/okou/commit/9fbbccc221bd19847e65b6e5622ba639fba596fc))
+
 ## [0.5.31](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.30...runner-storage-v0.5.31) (2026-10-23)
 
 ## [0.5.30](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.29...runner-storage-v0.5.30) (2026-10-22)

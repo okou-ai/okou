@@ -129,6 +129,89 @@ async fn shutdown_drains_memory_prefetch_before_stopped() {
     wait_status_mode(&status_path, "stopped", Duration::from_secs(5)).await;
 }
 
+#[tokio::test]
+async fn shutdown_joins_accepted_fresh_archive_before_stopped() {
+    use tokio::io::AsyncReadExt;
+
+    let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    let admission = config.exec_config.fresh_archive_delivery.clone();
+    let status_path = env._temp_dir.path().join("status.json");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (requested_tx, requested_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            request.push(socket.read_u8().await.unwrap());
+        }
+        assert!(request.starts_with(b"GET "));
+        requested_tx.send(()).unwrap();
+        release_rx.await.unwrap();
+    });
+    let manifest = runner_types::storage_manifest::StorageManifest {
+        storages: vec![runner_types::storage_manifest::StorageEntry {
+            name: "shutdown-archive".into(),
+            mount_path: "/mnt/archive".into(),
+            vas_storage_name: "shutdown-archive".into(),
+            vas_version_id: "v1".into(),
+            archive_url: format!("http://{address}/archive.tar.gz"),
+            archive_size: Some(32),
+        }],
+        artifacts: Vec::new(),
+    };
+    let mut plan = runner_storage::storage_plan::build_storage_plan(&manifest, None).unwrap();
+    let mut telemetry = crate::telemetry::JobTelemetry::new(
+        config.exec_config.http.clone(),
+        RunId::new_v4(),
+        "test".into(),
+        None,
+    );
+    let delivery = crate::storage_cache::prepare_fresh_archive_delivery(
+        &mut plan,
+        &config.exec_config.home,
+        &admission,
+        &CancellationToken::new(),
+        &mut telemetry,
+        None,
+    )
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), requested_rx)
+        .await
+        .expect("fresh archive fetch must be accepted before teardown")
+        .unwrap();
+    let run_handle = tokio::spawn(run(config));
+    wait_discover_entered(&env, Duration::from_secs(5)).await;
+    env.drain();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !admission.is_closed_for_test() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("real reactor teardown must close fresh archive admission");
+    assert!(
+        !run_handle.is_finished(),
+        "accepted fetch still owns shutdown"
+    );
+    let status: serde_json::Value =
+        serde_json::from_str(&tokio::fs::read_to_string(&status_path).await.unwrap()).unwrap();
+    assert_ne!(status["mode"], "stopped");
+
+    drop(delivery);
+    release_tx.send(()).unwrap();
+    server.await.unwrap();
+    assert_run_exits_within(
+        run_handle,
+        Duration::from_secs(5),
+        "shutdown must finish after original archive ownership retires",
+    )
+    .await;
+    wait_status_mode(&status_path, "stopped", Duration::from_secs(5)).await;
+}
+
 #[derive(Clone, Copy)]
 enum NetworkLogTestComponent {
     Kmsg,

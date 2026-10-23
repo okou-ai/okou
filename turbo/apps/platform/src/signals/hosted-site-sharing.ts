@@ -23,6 +23,7 @@ import {
 import { createShareLinkCopy } from "./share-link-copy.ts";
 import { recordHostedSiteVisibilityChange$ } from "./hosted-site-visibility-changes.ts";
 import { onRef, resetSignal, settle } from "./utils.ts";
+import { createHostedSiteBannerSignals } from "./hosted-site-banner.ts";
 
 type SiteUrl = z.infer<typeof hostedSiteUrlSchema>;
 type Validation = "unchanged" | "invalid" | "available" | "taken";
@@ -302,6 +303,7 @@ function createHostedSiteShareSession(sourceUrl: string) {
   const open$ = state(false);
   const editor = createSiteUrlEditorSignals(details$, saved$);
   const visibility = createSiteVisibilitySignals(sourceUrl);
+  const banner = createHostedSiteBannerSignals(visibility.visibility$);
   const linkCopy = createShareLinkCopy();
   const changeVisibility$ = command(
     ({ set }, choice: Visibility, signal: AbortSignal) => {
@@ -332,6 +334,7 @@ function createHostedSiteShareSession(sourceUrl: string) {
     details$,
     copyUrl$,
     ...visibility,
+    ...banner,
     changeVisibility$,
     open$,
     ...editor,

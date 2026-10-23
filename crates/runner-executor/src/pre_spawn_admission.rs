@@ -1,9 +1,12 @@
 //! Process-local weighted admission for fresh pre-spawn work.
 //!
-//! Production has one Runner in `mode=running` accepting new jobs per host; older versions only
-//! drain work claimed before cutover. Keeping this gate process-local matches that ownership and
-//! avoids host lock files, polling, and cross-process fairness machinery. Exact reuse bypasses the
-//! gate, and post-spawn execution releases its permit so steady-state capacity is unchanged.
+//! This gate bounds weighted fresh pre-spawn work within one Runner process. Promotion starts the
+//! new Runner in `mode=running` before draining older services, so versions can accept jobs through
+//! independent gates during that overlap. Failed drains can prolong the overlap; admission is not
+//! coordinated across processes.
+//!
+//! Exact reuse bypasses the gate, and post-spawn execution releases its permit so steady-state
+//! capacity is unchanged.
 
 use std::sync::{Arc, Mutex, MutexGuard};
 

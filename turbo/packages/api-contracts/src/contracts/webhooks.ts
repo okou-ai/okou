@@ -281,21 +281,6 @@ export const webhookWorkflowAutomationContract = c.router({
   },
 });
 
-export const webhookOpenaiImagesContract = c.router({
-  post: {
-    method: "POST",
-    path: "/api/webhooks/openai/images",
-    body: c.type<string>(),
-    responses: {
-      200: thirdPartyWebhookOkSchema,
-      400: thirdPartyWebhookErrorSchema,
-      401: thirdPartyWebhookErrorSchema,
-      503: thirdPartyWebhookErrorSchema,
-    },
-    summary: "Receive OpenAI image response terminal events",
-  },
-});
-
 export const webhookBuiltInGenerationFalContract = c.router({
   post: {
     method: "POST",

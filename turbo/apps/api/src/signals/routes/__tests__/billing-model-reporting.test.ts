@@ -226,25 +226,25 @@ describe("Billing model reporting", () => {
         },
         {
           kind: "image",
-          credits: 26,
+          credits: 22,
           providers: [
             {
               provider: "gpt-image-1",
-              credits: 26,
-              usageKinds: [{ kind: "image", credits: 26 }],
+              credits: 22,
+              usageKinds: [{ kind: "image", credits: 22 }],
             },
           ],
         },
       ];
-      expect(raw.record.totalCredits, JSON.stringify(raw)).toBe(36);
+      expect(raw.record.totalCredits, JSON.stringify(raw)).toBe(32);
       expect(raw.record.rows[0]).toMatchObject({
         threadId: run.threadId,
         tokens: 10_000,
-        credits: 36,
+        credits: 32,
         breakdown: expectedBreakdown,
       });
       expect(raw.members.members[0]).toMatchObject({
-        creditsCharged: 36,
+        creditsCharged: 32,
         outputTokens: 10_000,
         breakdown: expectedBreakdown,
       });
@@ -254,13 +254,13 @@ describe("Billing model reporting", () => {
           runId: run.runId,
           usage: {
             version: 1,
-            totalCredits: 36,
+            totalCredits: 32,
             settledAt: new Date(completedAt).toISOString(),
             breakdown: [
               {
                 kind: "image",
-                credits: 26,
-                providers: [{ provider: "gpt-image-1", credits: 26 }],
+                credits: 22,
+                providers: [{ provider: "gpt-image-1", credits: 22 }],
               },
               {
                 kind: "model",

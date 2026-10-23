@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.20.19](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.18...runner-supervisor-v0.20.19) (2026-10-23)
+
+## [0.20.18](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.17...runner-supervisor-v0.20.18) (2026-10-23)
+
+## [0.20.17](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.16...runner-supervisor-v0.20.17) (2026-10-23)
+
+
+### Bug Fixes
+
+* **runner:** join accepted fresh archive work during teardown ([#42501](https://github.com/okou-ai/okou/issues/42501)) ([41fea75](https://github.com/okou-ai/okou/commit/41fea75afe9f758e58738a82065b3f9fedf39db2))
+
+## [0.20.16](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.15...runner-supervisor-v0.20.16) (2026-10-23)
+
 ## [0.20.15](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.14...runner-supervisor-v0.20.15) (2026-10-23)
 
 

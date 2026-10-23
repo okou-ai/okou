@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.8.0](https://github.com/okou-ai/okou/compare/host-worker-v1.7.29...host-worker-v1.8.0) (2026-10-23)
+
+
+### Features
+
+* add configurable branding banners to hosted sites ([#42516](https://github.com/okou-ai/okou/issues/42516)) ([d3a40c7](https://github.com/okou-ai/okou/commit/d3a40c7c422bd9c9ee678e59bb447f81bc927a69))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.590.0
+    * @okouai/core bumped to 8.782.0
+    * @okouai/ui bumped to 1.18.0
+
+## [1.7.29](https://github.com/okou-ai/okou/compare/host-worker-v1.7.28...host-worker-v1.7.29) (2026-10-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.589.3
+    * @okouai/core bumped to 8.781.1
+
+## [1.7.28](https://github.com/okou-ai/okou/compare/host-worker-v1.7.27...host-worker-v1.7.28) (2026-10-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.781.0
+
 ## [1.7.27](https://github.com/okou-ai/okou/compare/host-worker-v1.7.26...host-worker-v1.7.27) (2026-10-23)
 
 

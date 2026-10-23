@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/okou-ai/okou/compare/runner-rpc-client-v0.5.1...runner-rpc-client-v0.5.2) (2026-10-23)
+
+
+### Refactoring
+
+* **runner-rpc-client:** share terminal response classification ([#42529](https://github.com/okou-ai/okou/issues/42529)) ([54ee1b4](https://github.com/okou-ai/okou/commit/54ee1b4a997d2621ebaeab871727c228362343ee))
+
 ## [0.5.1](https://github.com/okou-ai/okou/compare/runner-rpc-client-v0.5.0...runner-rpc-client-v0.5.1) (2026-10-20)
 
 

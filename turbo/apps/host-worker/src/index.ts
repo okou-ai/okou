@@ -36,6 +36,8 @@ import {
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import type { ArtifactOgTarget } from "@okouai/api-contracts/contracts/artifact-og";
 import { withArtifactOg } from "./artifact-og";
+import { standaloneSiteDocument, withSiteBanner } from "./site-banner";
+import type { HostedSiteAccessDecision } from "@okouai/api-contracts/contracts/hosted-site-access";
 
 interface R2ObjectBody {
   readonly size: number;
@@ -827,6 +829,10 @@ async function serveLegacyHostedSite(
       : notFoundResponse();
   }
   let authHeaders = new Headers();
+  let presentation: Extract<
+    HostedSiteAccessDecision,
+    { allowed: true }
+  >["presentation"];
   if (env.HOSTED_SITE_API_ORIGIN) {
     let authorization = await authorizeHostedSiteDelivery(
       request,
@@ -849,6 +855,7 @@ async function serveLegacyHostedSite(
     }
     if (authorization.response) return authorization.response;
     authHeaders = authorization.headers;
+    presentation = authorization.presentation;
   }
   const { pointer, layout } = resolved;
   const manifest = await readJson<HostedSiteManifest>(
@@ -870,10 +877,15 @@ async function serveLegacyHostedSite(
     response.headers.set("Cache-Control", PRIVATE_NO_STORE_CACHE_CONTROL);
   }
   return withSiteAuthHeaders(
-    await withArtifactOg(request, response, env.ARTIFACT_OG_API_ORIGIN, {
-      kind: "host",
-      id: manifest.deploymentId,
-    }),
+    await withSiteBanner(
+      request,
+      await withArtifactOg(request, response, env.ARTIFACT_OG_API_ORIGIN, {
+        kind: "host",
+        id: manifest.deploymentId,
+      }),
+      presentation,
+      env.HOSTED_SITE_AUTH_URL,
+    ),
     authHeaders,
   );
 }
@@ -951,6 +963,8 @@ async function authorizeHostedSiteDelivery(
     prefix: pointer.prefix,
     manifestKey: pointer.manifestKey,
   }).toString();
+  if (layout === "current" && standaloneSiteDocument(request))
+    url.searchParams.set("presentation", "banner");
   return authorizeSiteRequest(request, env, url);
 }
 

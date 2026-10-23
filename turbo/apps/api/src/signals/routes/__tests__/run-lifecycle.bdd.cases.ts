@@ -13806,7 +13806,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }
           expectedCredits.set(
             owner.actor.userId,
-            128 + maps.body.creditsCharged,
+            108 + maps.body.creditsCharged,
           );
         }
 
@@ -13893,31 +13893,31 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(row.breakdown).toStrictEqual([
             {
               kind: "image",
-              credits: 128,
+              credits: 108,
               providers: [
                 {
                   provider: "fal-ai/nano-banana-2",
-                  credits: 96,
-                  usageKinds: [{ kind: "image", credits: 96 }],
+                  credits: 80,
+                  usageKinds: [{ kind: "image", credits: 80 }],
                 },
                 {
                   provider: "gpt-image-1",
-                  credits: 32,
-                  usageKinds: [{ kind: "image", credits: 32 }],
+                  credits: 28,
+                  usageKinds: [{ kind: "image", credits: 28 }],
                 },
               ],
             },
             {
               kind: "other",
-              credits: credits - 128,
+              credits: credits - 108,
               providers: [
                 {
                   provider: "google-maps-grounding",
-                  credits: credits - 128,
+                  credits: credits - 108,
                   usageKinds: [
                     {
                       kind: "maps",
-                      credits: credits - 128,
+                      credits: credits - 108,
                     },
                   ],
                 },
