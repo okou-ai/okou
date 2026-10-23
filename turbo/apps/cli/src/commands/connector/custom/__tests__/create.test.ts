@@ -7,12 +7,16 @@ import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { server } from "../../../../mocks/server";
-import { customConnector } from "../../../__tests__/helpers/custom-connectors";
+import {
+  customConnector,
+  customMcpConnector,
+} from "../../../__tests__/helpers/custom-connectors";
 import { createCustomConnectorCommand } from "../create";
 import { customConnectorCommand } from "../index";
 
 const CONNECTOR_ID = "33333333-3333-4333-8333-333333333333";
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
+const THREAD_ID = "22222222-2222-4222-8222-222222222222";
 
 function buildOkouToken(capabilities: readonly string[]): string {
   const header = Buffer.from(JSON.stringify({ alg: "HS256" })).toString(
@@ -114,10 +118,13 @@ describe("okou connector custom create", () => {
 
   beforeEach(() => {
     chalk.level = 0;
+    createCustomConnectorCommand.setOptionValue("json", false);
+    createCustomConnectorCommand.setOptionValue("callbackPrompt", undefined);
     tempDir = mkdtempSync(join(tmpdir(), "custom-connector-create-"));
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", buildOkouToken(["connector:write"]));
     vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
+    vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
   });
 
   afterEach(() => {
@@ -168,6 +175,144 @@ describe("okou connector custom create", () => {
     expect(output).toContain(
       `Connect it at: [Connect Acme API](http://localhost:3000/connectors/_acme-search/connect?agentId=${AGENT_ID})`,
     );
+  });
+
+  it.each([
+    { name: "without a callback", callbackPrompt: undefined },
+    {
+      name: "with a callback scoped to the current chat",
+      callbackPrompt: "Verify MCP tools ✓",
+    },
+  ])(
+    "prints an automatic MCP connection URL as JSON $name",
+    async ({ callbackPrompt }) => {
+      const definition = {
+        ...manualMcpDefinition(),
+        fields: [],
+        headerInjections: [],
+        authMode: "automatic",
+      } as const;
+      const definitionPath = writeDefinition(definition);
+      const created = customMcpConnector({
+        ...definition,
+        id: CONNECTOR_ID,
+        fields: [],
+        headerInjections: [],
+        queryInjections: [],
+      });
+      server.use(
+        http.post("http://localhost:3000/api/custom-connectors", () => {
+          return HttpResponse.json(created, { status: 201 });
+        }),
+      );
+      vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_ID);
+
+      await customConnectorCommand.parseAsync([
+        "node",
+        "okou",
+        "create",
+        "--file",
+        definitionPath,
+        "--json",
+        ...(callbackPrompt ? ["--callback-prompt", callbackPrompt] : []),
+      ]);
+
+      const output: unknown = JSON.parse(
+        mockConsoleLog.mock.calls.flat().join("\n"),
+      );
+      const expectedUrl = new URL(
+        `http://localhost:3000/connectors/${created.slug}/connect`,
+      );
+      expectedUrl.searchParams.set("agentId", AGENT_ID);
+      if (callbackPrompt) {
+        expectedUrl.searchParams.set("threadId", THREAD_ID);
+        expectedUrl.searchParams.set("callbackPrompt", callbackPrompt);
+      }
+      expect(output).toMatchObject({
+        id: CONNECTOR_ID,
+        slug: created.slug,
+        kind: "mcp",
+        displayName: "Acme MCP",
+        authMode: "automatic",
+        endpoint: definition.endpoint,
+        connectUrl: expectedUrl.toString(),
+      });
+    },
+  );
+
+  it("prints a finalized connection callback URL without a placeholder", async () => {
+    const definitionPath = writeDefinition(manualDefinition());
+    const created = customConnector({
+      id: CONNECTOR_ID,
+      displayName: "Acme API",
+    });
+    server.use(
+      http.post("http://localhost:3000/api/custom-connectors", () => {
+        return HttpResponse.json(created, { status: 201 });
+      }),
+    );
+    vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_ID);
+    const callbackPrompt = "Verify the connected account";
+
+    await customConnectorCommand.parseAsync([
+      "node",
+      "okou",
+      "create",
+      "--file",
+      definitionPath,
+      "--callback-prompt",
+      callbackPrompt,
+    ]);
+
+    const expectedUrl = new URL(
+      `http://localhost:3000/connectors/${created.slug}/connect`,
+    );
+    expectedUrl.searchParams.set("agentId", AGENT_ID);
+    expectedUrl.searchParams.set("threadId", THREAD_ID);
+    expectedUrl.searchParams.set("callbackPrompt", callbackPrompt);
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain(
+      `Connect it at: [Connect Acme API](${expectedUrl.toString()})`,
+    );
+    expect(output).not.toContain("SOMETHING_AGENT_WANT_TO_BE_CALLBACK");
+  });
+
+  it("rejects a callback outside web chat before creating the definition", async () => {
+    const definitionPath = writeDefinition(manualDefinition());
+    const createRequest = vi.fn(() => {
+      return HttpResponse.json(customConnector(), { status: 201 });
+    });
+    server.use(
+      http.post("http://localhost:3000/api/custom-connectors", createRequest),
+    );
+    const mockConsoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const mockExit = vi.spyOn(process, "exit").mockImplementation(() => {
+      return undefined as never;
+    });
+
+    try {
+      await customConnectorCommand.parseAsync([
+        "node",
+        "okou",
+        "create",
+        "--file",
+        definitionPath,
+        "--callback-prompt",
+        "Verify the connected account",
+      ]);
+
+      expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+        "--callback-prompt can only target the current web chat thread and agent",
+      );
+      expect(mockExit).toHaveBeenCalledWith(1);
+      expect(createRequest).not.toHaveBeenCalled();
+      expect(mockConsoleLog).not.toHaveBeenCalled();
+    } finally {
+      mockConsoleError.mockRestore();
+      mockExit.mockRestore();
+    }
   });
 
   it("creates only an OAuth definition and leaves authorization to Connect", async () => {
