@@ -198,7 +198,8 @@ const commitOfficialFormsReconfiguration$ = command(
         db
           .select({ automationId: updated.id })
           .from(updated)
-          .where(sql`false`),
+          .where(sql`false`)
+          .getSQL(),
     );
     // Reset an old interval even when its new watch is absent. A successful
     // upsert already replaced the interval, so these writes never share a row.
