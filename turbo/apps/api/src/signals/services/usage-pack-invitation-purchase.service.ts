@@ -2433,7 +2433,7 @@ const activateAcceptedPurchase$ = command(
     }
     const claimedUserId = purchase.acceptedUserId;
     const claimedAllocationId = purchase.allocationId;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0281; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: the accepted invitation receipt, purchased/bonus grants, refund payment identity and allocation activation must roll back together on a later financial rejection; single-statement alternative: gated CTEs cannot roll back earlier grant writes when a later immutable payment-identity or allocation activation predicate returns no row.
     await db.transaction(async (tx) => {
       // A real business transition arbitrates this delivery, not an org key
       // or an empty write. Grants and allocation activation share its commit;
