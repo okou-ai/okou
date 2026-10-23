@@ -62,11 +62,6 @@
       "owner": "restoreSubscription$"
     },
     {
-      "id": "TX-0066",
-      "file": "turbo/apps/api/src/signals/services/browser-user-actions.service.ts",
-      "owner": "persistBrowserUserAction"
-    },
-    {
       "id": "TX-0073",
       "file": "turbo/apps/api/src/signals/services/browser.service.ts",
       "owner": "claimExpiredInactiveBrowser$"
