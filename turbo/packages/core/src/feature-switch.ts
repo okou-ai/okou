@@ -188,6 +188,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Automatically advance explicitly entrusted Jobs and show their progress and Results.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.BuiltinDocumentTemplates]: {
     maintainer: "bingjie@okou.ai",
