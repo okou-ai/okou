@@ -3,6 +3,7 @@ import ChatDataTestSupport
 import ChatDomain
 import SwiftUI
 import Synchronization
+import Vision
 import XCTest
 
 @testable import Okou
@@ -429,37 +430,56 @@ final class ConnectorActionTests: XCTestCase {
     store.cancel()
     try await eventually { host.presentedViewController == nil }
   }
-  func testNativeCardInDarkChineseWithLargeText() async throws {
+  func testNativeCardButtonLabelsRemainReadableWithAppTintInLightAndDarkModes() async throws {
     let fixture = ChatHTTPFixture { request in try XCTUnwrap(F.response(request)) }
     let store = store(fixture)
     defer { store.close() }
-    let action = try descriptor(fixture, reconnect: true)
-    await store.refresh(action)
-    let host = UIHostingController(
-      rootView:
-        ScrollView {
-          VStack(alignment: .leading, spacing: 20) {
-            Text("连接 Slack 后继续对话").font(.title2)
-            ConnectorActionCard(action: action, store: store, loadsState: false)
-            Text("普通消息和链接保持可选择、可复制。").textSelection(.enabled)
-          }.padding(20)
-        }.environment(\.locale, Locale(identifier: "zh-Hans"))
-        .environment(\.dynamicTypeSize, .accessibility1)
-        .preferredColorScheme(.dark))
-    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-    let window = UIWindow(windowScene: scene)
-    window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-    window.rootViewController = host
-    window.makeKeyAndVisible()
-    defer { unmount(window) }
-    host.view.layoutIfNeeded()
-    let attachment = XCTAttachment(
-      image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-      })
-    attachment.name = "Connector card dark Chinese accessibility text"
-    attachment.lifetime = .keepAlways
-    add(attachment)
+    for colorScheme in [ColorScheme.light, .dark] {
+      for reconnect in [true, false] {
+        let action = try descriptor(fixture, reconnect: reconnect)
+        await store.refresh(action)
+        let host = UIHostingController(
+          rootView:
+            ScrollView {
+              VStack(alignment: .leading, spacing: 20) {
+                Text("连接 Slack 后继续对话").font(.title2)
+                ConnectorActionCard(action: action, store: store, loadsState: false)
+                Text("普通消息和链接保持可选择、可复制。").textSelection(.enabled)
+              }.padding(20)
+            }.environment(\.locale, Locale(identifier: "zh-Hans"))
+            .environment(\.dynamicTypeSize, .accessibility1)
+            .tint(Color.primary)
+            .preferredColorScheme(colorScheme))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { unmount(window) }
+        host.view.layoutIfNeeded()
+        await hostingPresentationFrame()
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+          window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let expected = reconnect ? "Reconnect" : "Connected"
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "Connector card \(colorScheme) \(expected) Chinese accessibility text"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let captured = try XCTUnwrap(image.cgImage)
+        let labels = try await Task.detached {
+          let request = VNRecognizeTextRequest()
+          request.recognitionLevel = .fast
+          request.recognitionLanguages = ["en-US"]
+          request.usesLanguageCorrection = false
+          try VNImageRequestHandler(cgImage: captured).perform([request])
+          return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        }.value
+        XCTAssertTrue(
+          labels.contains(expected),
+          "Expected visible \(expected) button in \(colorScheme) mode; recognized: \(labels)")
+      }
+    }
   }
 
 }

@@ -30,9 +30,13 @@ struct ConnectorActionCard: View {
           .foregroundStyle(.secondary).lineLimit(2)
         Spacer(minLength: 0)
         HStack {
-          Button(button(status)) { store.activate(action) }
-            .buttonStyle(.borderedProminent)
-            .disabled(complete(status) || store.active != nil)
+          Button {
+            store.activate(action)
+          } label: {
+            Text(button(status)).foregroundStyle(Color(uiColor: .systemBackground))
+          }
+          .buttonStyle(.borderedProminent)
+          .disabled(complete(status) || store.active != nil)
           if complete(status) { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
         }
       }
