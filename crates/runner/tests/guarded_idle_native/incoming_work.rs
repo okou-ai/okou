@@ -269,7 +269,7 @@ async fn aged(
             vcpu: 2,
             memory_mb: 4096,
             rootfs_hash: context.rootfs_hash.clone(),
-            home_disk_mb: 16384,
+            home_disk_mb: fixture::HOME_DISK_MB,
         },
     )]);
     let factories = BTreeMap::from([(fixture::PROFILE.into(), (context.factory.clone(), true))]);

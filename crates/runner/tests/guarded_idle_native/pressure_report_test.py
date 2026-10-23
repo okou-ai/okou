@@ -42,7 +42,7 @@ class PressureReportTests(unittest.TestCase):
             "snapshot_files": {name: "f"*64 for name in (
                 "snapshot.bin", "memory.bin", "cow.img", "cow.img.bitmap", ".snapshot-complete")},
             "policy_sha256": hashlib.sha256(raw_policy.encode()).hexdigest(),
-            "profile": {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384},
+            "profile": dict(report.NATIVE_PROFILE),
             "required_fixture_tail_bytes": 64*1024**2,
         }
         prepare_snapshot_record(self.root, self.artifacts)

@@ -77,7 +77,7 @@ def validate(directory):
             raise ValueError("actual ext4 superblock bytes/hash mismatch")
         created_ids.add(path.parent.name)
         ordered([events[0]["monotonic_ns"],created.get("held_ns"),events[1]["monotonic_ns"]])
-        startup.exact(created,{"home_path":str(path),"home_bytes":16384*1024**2,"ext4_magic":"53ef",
+        startup.exact(created,{"home_path":str(path),"home_bytes":report.NATIVE_HOME_BYTES,"ext4_magic":"53ef",
             "superblock_hex":created["superblock_hex"],"superblock_sha256":created["superblock_sha256"],"held_ns":created["held_ns"]},"actual formatted home shape changed")
         actual = accepted.get("samples")
         reads.samples(actual, events[0]["monotonic_ns"],events[1]["monotonic_ns"],policy)

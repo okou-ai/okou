@@ -37,7 +37,7 @@ class ClaimProducerReportTests(unittest.TestCase):
         (seed/"guarded-idle-payload").write_bytes(self.payload)
         image = self.root/"retained-home.ext4"
         with image.open("wb") as stream:
-            stream.truncate(16384*1024**2)
+            stream.truncate(report.NATIVE_HOME_BYTES)
         subprocess.run(["/usr/sbin/mke2fs", "-q", "-F", "-t", "ext4", "-O", "^has_journal",
                         "-d", str(self.root/"seed"), str(image)], check=True, capture_output=True)
         with image.open("rb") as stream:

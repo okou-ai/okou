@@ -8,7 +8,7 @@ use sandbox::SandboxBackingProcess;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{TestResult, io};
+use super::{TestResult, fixture, io};
 
 mod artifact_digest;
 
@@ -96,7 +96,11 @@ impl Artifacts {
             "snapshot_files": self.snapshot_files,
             "snapshot_preparation_sha256": self.snapshot_preparation_sha256,
             "policy_sha256": self.policy_sha256,
-            "profile": {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384},
+            "profile": {
+                "vcpu": fixture::PROFILE_DEFINITION.vcpu,
+                "memory_mib": fixture::PROFILE_DEFINITION.memory_mb,
+                "home_mib": fixture::HOME_DISK_MB,
+            },
             "required_fixture_tail_bytes": TAIL_BYTES,
         })
     }

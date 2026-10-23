@@ -49,7 +49,7 @@ class ReturnedGuestTests(unittest.TestCase):
             block = bytearray(1024)
             block[56:58], block[104:120] = b"\x53\xef", uuid.uuid4().bytes
             path = f"/owned/workspaces/{sandbox_id}/home.ext4"
-            home = {"path": path, "bytes": 16384*1024**2, "ext4_magic": "53ef",
+            home = {"path": path, "bytes": report.NATIVE_HOME_BYTES, "ext4_magic": "53ef",
                     "filesystem_uuid": block[104:120].hex(), "superblock_hex": block.hex(),
                     "superblock_sha256": hashlib.sha256(block).hexdigest()}
             created = {"sandbox_id": sandbox_id, "returned_ns": clock(450), "home": home}

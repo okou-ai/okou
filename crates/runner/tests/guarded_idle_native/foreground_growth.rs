@@ -134,7 +134,7 @@ pub async fn prepare(request: Request) -> TestResult<Completion> {
                     },
                     device_rate_limits: None,
                     home_drive: Some(sandbox::HomeDriveConfig {
-                        size_mb: 16384,
+                        size_mb: fixture::HOME_DISK_MB,
                         seed_image: None,
                         space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
                     }),
