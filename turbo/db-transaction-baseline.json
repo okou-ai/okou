@@ -342,11 +342,6 @@
       "owner": "commitPreparedVolumeUpload$"
     },
     {
-      "id": "TX-0254",
-      "file": "turbo/apps/api/src/signals/services/storage-write.service.ts",
-      "owner": "commitVerifiedStorageVersion$"
-    },
-    {
       "id": "TX-0261",
       "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
       "owner": "createThreadClaimRunObjects/commitQueueHeadRejection$"
