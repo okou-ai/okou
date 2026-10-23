@@ -448,7 +448,7 @@ final class ConnectorActionTests: XCTestCase {
               }.padding(20)
             }.environment(\.locale, Locale(identifier: "zh-Hans"))
             .environment(\.dynamicTypeSize, .accessibility1)
-            .tint(Color.primary)
+            .modifier(OkouAppearance())
             .preferredColorScheme(colorScheme))
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
         let window = UIWindow(windowScene: scene)

@@ -158,7 +158,9 @@ struct ChatModelPickerView: View {
                 )
               ) {
                 Label("Fast mode", systemImage: "bolt.fill")
-              }.accessibilityIdentifier("chat-model-fast")
+              }
+              .tint(.green)
+              .accessibilityIdentifier("chat-model-fast")
               if let multiplier = configuration.catalog.fastMultiplier(selection.selection.model),
                 configuration.row(for: selection.selection)?.memberEffective.runtimeProviderType
                   == "codex-oauth-token"

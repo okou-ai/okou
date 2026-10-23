@@ -29,7 +29,7 @@ struct OkouApp: App {
           Color.clear
         }
       }
-      .tint(Color.primary)
+      .modifier(OkouAppearance())
       .task { await authentication?.start() }
       .onOpenURL { url in Task { await authentication?.handleURL(url) } }
     }
