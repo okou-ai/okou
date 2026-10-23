@@ -2017,7 +2017,9 @@ const persistCustomConnectorCreate$ = command(
             db
               .select(
                 customConnectorOAuthCreateSource(
-                  sql`${created.id}`,
+                  sql`${created.id}`.mapWith(
+                    orgCustomConnectorOauthConfigs.connectorId,
+                  ),
                   args.orgId,
                   oauth.config,
                   oauth.secret,
