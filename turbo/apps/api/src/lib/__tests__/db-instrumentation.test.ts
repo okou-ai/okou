@@ -212,10 +212,10 @@ function createPgTestResources() {
     }
   }
 
-  function track<T>(work: Promise<T>): Promise<T> {
+  function ownPendingWork(work: Promise<unknown>): void {
     pending.add(work);
-    // Observe rejection immediately, but return the original outcome to the
-    // test. Cleanup joins abandoned work without masking its primary failure.
+    // Observe rejection immediately. Cleanup joins abandoned work without
+    // masking the original outcome returned to the test by track().
     void work.then(
       () => {
         pending.delete(work);
@@ -224,6 +224,10 @@ function createPgTestResources() {
         pending.delete(work);
       },
     );
+  }
+
+  function track<T>(work: Promise<T>): Promise<T> {
+    ownPendingWork(work);
     return work;
   }
 
@@ -368,9 +372,7 @@ function createPgTestResources() {
       database() {
         throw new Error("Use the test-owned pg pool");
       },
-      waitUntil(work) {
-        track(work);
-      },
+      waitUntil: ownPendingWork,
       observeHttp() {},
       traceQuery(name, sql, execute) {
         return runtimeTracer.startActiveSpan(
