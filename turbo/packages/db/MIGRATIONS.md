@@ -213,16 +213,6 @@ are enforced by the integration ingress tests.
   and Official binding invariants on both replayed and freshly generated
   schemas.
 
-- `scripts/test-pi-memory-retirement.ts` exercises the final Pi-only table
-  contraction through the production migrator. It protects shared native memory,
-  history, versions, citations and settled billing; verifies one blob retain is
-  released per candidate; and proves active leases, callbacks, late usage,
-  accounting corruption and external dependencies prevent contraction without
-  advancing the journal. It also exercises pre-promotion deferral and ordinary
-  later migrations after the contraction. The production release applies this
-  contraction only after API traffic cutover and the outgoing 300-second request
-  bound; the main-owned rollback floor excludes APIs that still use the tables.
-
 - `scripts/test-run-checkpoint-retirement.ts` replays the generic checkpoint
   contraction against populated historical data and preserves Runs/results,
   native continuation, blob references, Storage versions/lineage and memory

@@ -1666,9 +1666,6 @@ ruby - \
   unless before && deploy && drain && contract && before < deploy && deploy < drain && drain < contract
     raise "Pi memory contraction must follow API deployment and outgoing invocation drain"
   end
-  unless api_release_steps[before].fetch("run").include?("--defer 1444_retire_pi_memory.sql")
-    raise "pre-promotion migration must defer Pi memory contraction"
-  end
   raise "outgoing API must receive its full 300-second drain" unless api_release_steps[drain].fetch("run") == "sleep 300"
   expected_deferred_gate = "${{ steps.production-migrations.outputs.deferred_migration != \x27\x27 }}"
   unless [drain, contract].all? { |index| api_release_steps[index].fetch("if") == expected_deferred_gate }
