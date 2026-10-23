@@ -96,6 +96,33 @@ final class UserMessageRenderingTests: XCTestCase {
     XCTAssertTrue(unlinked.runs.allSatisfy { $0.link == nil })
   }
 
+  func testSentReferencesRemainReadableWhenTheAppAppearanceChanges() async throws {
+    let fixture = ConversationHistoryFixture(rows: [
+      row(
+        1,
+        parts: """
+          [{"type":"text","text":"Ask "},{"type":"agent","agentId":"\(ConversationHistoryFixture.agentID)","nameSnapshot":"Release Scout"}]
+          """)
+    ])
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    await conversation.refresh()
+    let host = UIHostingController(
+      rootView: ChatDetailView(conversation: conversation).modifier(OkouAppearance()))
+    let window = try await mountConversationHost(host)
+    defer { unmount(window) }
+    for style in [UIUserInterfaceStyle.light, .dark, .light] {
+      window.overrideUserInterfaceStyle = style
+      await stableHostingGeometry(host.view)
+      let image = await captureAppearance(window, name: "Sent reference \(style)")
+      let captured = try XCTUnwrap(image.cgImage)
+      let bounds = try await recognizedTextBounds("Release Scout", in: captured)
+      let contrast = try renderedContrast(captured, in: bounds.insetBy(dx: 1, dy: 1))
+      XCTAssertGreaterThanOrEqual(
+        contrast, 4.5, "The sent reference is hard to read in \(style): \(contrast):1")
+    }
+  }
+
   func testNativeTranscriptKeepsStructuredOnlyRowsAndItsPositionAfterRefresh() async throws {
     let fixture = ConversationHistoryFixture(rows: [
       row(
@@ -137,7 +164,8 @@ final class UserMessageRenderingTests: XCTestCase {
     XCTAssertEqual(conversation.messages.count, 6)
     conversation.rememberReadingPosition(
       ConversationReadingPosition(messageID: ConversationHistoryFixture.id(1), offset: 0))
-    let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
+    let host = UIHostingController(
+      rootView: ChatDetailView(conversation: conversation).modifier(OkouAppearance()))
     let window = try await mountConversationHost(host)
     defer { unmount(window) }
     let collection = try XCTUnwrap(
