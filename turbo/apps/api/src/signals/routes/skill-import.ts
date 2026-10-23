@@ -15,7 +15,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { randomUUID } from "node:crypto";
 import { command, computed } from "ccstate";
-import { and, asc, count, eq, gte, isNull, or } from "drizzle-orm";
+import { and, asc, count, eq, isNull, or } from "drizzle-orm";
 
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { badRequestMessage, notFound } from "../../lib/error";
@@ -381,10 +381,7 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       and(
         eq(workflows.agentId, session.agentId),
         eq(workflows.createdBy, session.userId),
-        session.sessionId
-          ? eq(workflows.importSessionId, session.sessionId)
-          : // Previously issued tokens remain usable for their original 24h TTL.
-            gte(workflows.createdAt, new Date(session.issuedAtSeconds * 1000)),
+        eq(workflows.importSessionId, session.sessionId),
         isNull(workflows.officialDefinitionName),
       ),
     );

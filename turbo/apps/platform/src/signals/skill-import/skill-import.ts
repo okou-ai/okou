@@ -40,13 +40,6 @@ export function createSkillImportSignals(options: SkillImportOptions) {
       }),
       [200],
     );
-    if (!result.body.sessionId) {
-      // An old API cannot read session-attributed results. Never present its
-      // legacy prompt as a tracked session during propagation or rollback.
-      throw new Error(
-        "This API does not support session-attributed skill imports",
-      );
-    }
     return {
       id: result.body.sessionId,
       expiresAt: Date.parse(result.body.expiresAt),

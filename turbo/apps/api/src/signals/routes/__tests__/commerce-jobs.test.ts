@@ -967,4 +967,119 @@ describe("Commerce async jobs", () => {
       beforeUsage.totalCredits,
     );
   });
+
+  it("rejects generic scrape URLs, mismatched marketplaces and unbounded search input before provider access", async () => {
+    const user = createBddApi(context).user();
+    configureProvider();
+    let calls = 0;
+    server.use(
+      http.post(`${BASE}/:operation/task_post`, () => {
+        calls += 1;
+        return HttpResponse.json(
+          providerResponse(randomUUID(), 20_100, 0, null),
+        );
+      }),
+    );
+    const commerce = client()(commerceContract);
+    for (const target of [
+      "https://example.com/dp/B085RFFC9Q",
+      "https://www.amazon.com/s?k=coffee",
+      "https://amazon.com.evil.test/dp/B085RFFC9Q",
+    ]) {
+      await accept(
+        commerce.inspect({ headers: authenticate(user), body: { target } }),
+        [400],
+      );
+    }
+    await accept(
+      commerce.inspect({
+        headers: authenticate(user),
+        body: {
+          target: "https://amazon.co.uk/dp/B085RFFC9Q",
+          marketplace: "amazon.com",
+        },
+      }),
+      [400],
+    );
+    await accept(
+      commerce.search({
+        headers: authenticate(user),
+        body: { query: "https://amazon.com/dp/B085RFFC9Q" },
+      }),
+      [400],
+    );
+    await accept(
+      commerce.search({
+        headers: authenticate(user),
+        body: { query: "coffee", limit: 49 },
+      }),
+      [400],
+    );
+    expect(calls).toBe(0);
+  });
+
+  it("normalizes a bare ASIN and applies an explicit marketplace", async () => {
+    const user = await fundedActor();
+    configureProvider();
+    const providerId = randomUUID();
+    const submissions: unknown[] = [];
+    server.use(
+      http.post(`${BASE}/asin/task_post`, async ({ request }) => {
+        submissions.push(await request.json());
+        return HttpResponse.json(providerResponse(providerId, 20_100, 0, null));
+      }),
+    );
+    const created = await accept(
+      client()(commerceContract).inspect({
+        headers: authenticate(user),
+        body: { target: "b085rffc9q", marketplace: "amazon.de" },
+      }),
+      [202],
+    );
+    expect(created.body).toMatchObject({
+      operation: "inspect",
+      marketplace: "amazon.de",
+    });
+    expect(submissions).toStrictEqual([
+      [
+        {
+          asin: "B085RFFC9Q",
+          se_domain: "amazon.de",
+          location_code: 2276,
+          language_code: "de_DE",
+          priority: 2,
+          tag: created.body.id,
+        },
+      ],
+    ]);
+  });
+
+  it("completes a billable empty search when DataForSEO reports no results", async () => {
+    const user = await fundedActor();
+    configureProvider();
+    const providerId = randomUUID();
+    const empty = providerResponse(providerId, 40_102, 0, null);
+    empty.tasks_error = 1;
+    server.use(
+      http.post(`${BASE}/products/task_post`, () => {
+        return HttpResponse.json(
+          providerResponse(providerId, 20_100, 0.0024, null),
+        );
+      }),
+      http.get(`${BASE}/products/task_get/advanced/${providerId}`, () => {
+        return HttpResponse.json(empty);
+      }),
+    );
+    const created = await accept(
+      client()(commerceContract).search({
+        headers: authenticate(user),
+        body: { query: "no matching product" },
+      }),
+      [202],
+    );
+    const completed = await completeJob(user, created.body);
+    expect(completed.result.result.items).toStrictEqual([]);
+    expect(completed.result.billingQuantity).toBe(2400);
+    expect(completed.result.creditsCharged).toBeGreaterThan(0);
+  });
 });

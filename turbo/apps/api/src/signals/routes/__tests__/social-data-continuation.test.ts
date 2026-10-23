@@ -474,7 +474,7 @@ describe("Social data explicit page continuation", () => {
     });
   });
 
-  it("keeps expanded pages opt-in for old lists and recovers owned results", async () => {
+  it("lists expanded pages and recovers owned results", async () => {
     const setup = await scenario();
     await setup.run(async () => {
       const provider = douyinPages([
@@ -482,18 +482,10 @@ describe("Social data explicit page continuation", () => {
       ]);
       const root = await create(setup);
       const saved = await completed(setup, root.body.jobId);
-      const oldList = await accept(
-        setup.social.list({
-          headers: authenticate(setup.actor),
-          query: { limit: 20 },
-        }),
-        [200],
-      );
-      expect(oldList.body.jobs).toStrictEqual([]);
       const expandedList = await accept(
         setup.social.list({
           headers: authenticate(setup.actor),
-          query: { limit: 20, includeExpanded: "true" },
+          query: { limit: 20 },
         }),
         [200],
       );
@@ -536,7 +528,7 @@ describe("Social data explicit page continuation", () => {
       const recoveredList = await accept(
         setup.social.list({
           headers: authenticate(setup.actor),
-          query: { limit: 20, includeExpanded: "true" },
+          query: { limit: 20 },
         }),
         [200],
       );
@@ -544,7 +536,7 @@ describe("Social data explicit page continuation", () => {
       const otherList = await accept(
         setup.social.list({
           headers: authenticate(other),
-          query: { limit: 20, includeExpanded: "true" },
+          query: { limit: 20 },
         }),
         [200],
       );
@@ -689,7 +681,7 @@ describe("Social data explicit page continuation", () => {
       const listed = await accept(
         setup.social.list({
           headers: authenticate(setup.actor),
-          query: { includeExpanded: "true" },
+          query: {},
         }),
         [200],
       );
@@ -719,7 +711,7 @@ describe("Social data explicit page continuation", () => {
       const listed = await accept(
         setup.social.list({
           headers: authenticate(setup.actor),
-          query: { includeExpanded: "true" },
+          query: {},
         }),
         [200],
       );

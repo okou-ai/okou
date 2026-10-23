@@ -366,7 +366,6 @@ export function createSocialJobsCommand(runAction: RunAction): Command {
           const query = socialDataListQuerySchema.safeParse({
             limit: options.limit,
             cursor: options.cursor,
-            includeExpanded: "true",
           });
           if (!query.success) {
             throw new InvalidArgumentError("--limit must be between 1 and 100");
