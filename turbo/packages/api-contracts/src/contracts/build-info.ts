@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { initContract } from "./base";
+import { initContract } from "./trpc-contract";
 
 const c = initContract();
 

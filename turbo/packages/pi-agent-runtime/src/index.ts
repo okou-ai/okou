@@ -1,4 +1,4 @@
-import { isPiAgentModelSupported as isPiAgentModelSupportedImpl } from "./model";
+import { isPiAgentModelSupported as isPiAgentModelSupportedImpl } from "./model-catalog";
 import type { PiAgentModelConfig } from "./types";
 
 /** Whether Pi's provider catalog knows this model. */

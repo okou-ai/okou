@@ -9,7 +9,8 @@ import { isRetryableAssistantError } from "@earendil-works/pi-ai/utils/retry";
 import { piModelConfigSchema } from "@okouai/api-contracts/contracts/runners";
 import { materializePiAgentModelConfig } from "./credential";
 
-import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
+import { piAgentStreamForConfig } from "./model";
+import { resolvePiAgentModel } from "./model-catalog";
 
 const CODEX_ROUTE = {
   provider: "openai-codex",

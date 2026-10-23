@@ -40,7 +40,7 @@ import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-model
 import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
 import type { AppRoute } from "@okouai/api-contracts/contracts/trpc-contract";
 import * as z from "zod";
-import { requestValidationError } from "@okouai/api-contracts/contracts/errors";
+import { requestValidationError } from "@okouai/api-contracts/contracts/request-validation-error";
 import { onRejection, settleIncludingAbort } from "../utils";
 
 interface McpChatAccess {

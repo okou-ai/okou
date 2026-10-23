@@ -2,7 +2,7 @@ import { trace } from "@opentelemetry/api";
 import { createHash } from "node:crypto";
 import { posix } from "node:path";
 
-import { parseSkillFrontmatter } from "@okouai/core";
+import { parseSkillFrontmatter } from "@okouai/core/skill-frontmatter";
 import type {
   PiDiscoveryText,
   PiResourceIndexFile,

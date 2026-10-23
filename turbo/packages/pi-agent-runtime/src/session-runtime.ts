@@ -15,7 +15,7 @@ import {
   type SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import type { PiPreheatedResourceSnapshot } from "./api-types";
-import { resolvePiAgentModel } from "./model";
+import { resolvePiAgentModel } from "./model-catalog";
 import {
   buildOkouHarnessSystemPrompt,
   type OkouHarnessToolPrompt,

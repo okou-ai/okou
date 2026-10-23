@@ -362,37 +362,44 @@ test("trusted closed-PR cleanup shares the API preview lock without database cre
   assert.match(cleanupJobs["cleanup-database"], /action: "cleanup"/);
 });
 
-test("actual gate shell propagates API job failure and cancellation, retaining allowed skips", () => {
+test("actual gate shell requires selected native Worker tests and retains deployment skips", () => {
   assert.match(gate, /^    if: always\(\)/m);
   assert.ok(dependencies(gate).includes("deploy-api"));
+  assert.ok(dependencies(gate).includes("test-api-worker-domains"));
+  const nativeTests = turboJobs["test-api-worker-domains"];
+  assert.doesNotMatch(nativeTests, /^\s+continue-on-error: true/m);
   const script = field(gate, "run", 8);
   const envKeys = [...gate.matchAll(/^          (\w+): /gm)].map(
     ([, key]) => key,
   );
   for (const event of ["pull_request", "merge_group", "push"]) {
-    for (const [result, expectedStatus] of [
-      ["success", 0],
-      ["failure", 1],
-      ["cancelled", 1],
-      ["skipped", 0],
-    ]) {
-      const data = context(event);
-      data.needs["deploy-api"].result = result;
-      data.needs["detect-release"].outputs.skip = "false";
-      const env = Object.fromEntries(
-        envKeys.map((key) => [key, render(field(gate, key, 10), data)]),
-      );
-      const output = spawnSync("bash", ["-eu", "-c", render(script, data)], {
-        encoding: "utf8",
-        env: { ...process.env, ...env },
-      });
-      assert.equal(
-        output.status,
-        expectedStatus,
-        `${event}/${result}\n${output.stdout}\n${output.stderr}`,
-      );
-      if (expectedStatus !== 0)
-        assert.match(output.stdout, /::error::deploy-api:/);
+    for (const job of ["deploy-api", "test-api-worker-domains"]) {
+      for (const [result, expectedStatus] of [
+        ["success", 0],
+        ["failure", 1],
+        ["cancelled", 1],
+        ["skipped", job === "deploy-api" || event === "push" ? 0 : 1],
+      ]) {
+        const data = context(event);
+        data.needs[job].result = result;
+        data.needs["detect-release"].outputs.skip = "false";
+        data.needs["detect-turbo-ts-checks"].outputs["turbo-ts-checks-needed"] =
+          "true";
+        const env = Object.fromEntries(
+          envKeys.map((key) => [key, render(field(gate, key, 10), data)]),
+        );
+        const output = spawnSync("bash", ["-eu", "-c", render(script, data)], {
+          encoding: "utf8",
+          env: { ...process.env, ...env },
+        });
+        assert.equal(
+          output.status,
+          expectedStatus,
+          `${event}/${job}/${result}\n${output.stdout}\n${output.stderr}`,
+        );
+        if (expectedStatus !== 0)
+          assert.ok(output.stdout.includes(`::error::${job}:`));
+      }
     }
   }
 });
