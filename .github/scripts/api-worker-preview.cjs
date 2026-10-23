@@ -234,11 +234,38 @@ function ownedDestination(destinations, worker, kind) {
   return destination;
 }
 
+async function telemetryDestinations(cf) {
+  const route = "/workers/observability/destinations";
+  const destinations = [];
+  const slugs = new Set();
+  // The account inventory is paginated. Stop only on a short page, and order by
+  // creation so updating a destination does not move it between pages.
+  for (let page = 1; page <= 20; page += 1) {
+    const entries = await cf(
+      "GET",
+      `${route}?page=${page}&perPage=50&orderBy=created&order=asc`,
+    );
+    if (!Array.isArray(entries) || entries.length > 50)
+      throw new Error("Invalid telemetry destination inventory");
+    for (const entry of entries) {
+      if (typeof entry?.slug !== "string" || !entry.slug)
+        throw new Error("Invalid telemetry destination inventory");
+      // Repeated pages or shifting inventory cannot establish ownership safely.
+      if (slugs.has(entry.slug))
+        throw new Error("Telemetry destination inventory did not advance");
+      slugs.add(entry.slug);
+      destinations.push(entry);
+    }
+    if (entries.length < 50) return destinations;
+  }
+  throw new Error(
+    "Telemetry destination inventory exceeded the inspection limit",
+  );
+}
+
 async function previewTelemetry(cf, worker, runtime) {
   const route = "/workers/observability/destinations";
-  const destinations = await cf("GET", route);
-  if (!Array.isArray(destinations))
-    throw new Error("Invalid telemetry destination inventory");
+  const destinations = await telemetryDestinations(cf);
   if (
     runtime &&
     (runtime.ENV !== "preview" ||
@@ -288,9 +315,7 @@ async function previewTelemetry(cf, worker, runtime) {
     }
     // Mutation response schemas need not include script attachments. Confirm
     // the recorded resource through inventory before enabling the runtime path.
-    const confirmed = await cf("GET", route);
-    if (!Array.isArray(confirmed))
-      throw new Error("Invalid telemetry destination inventory");
+    const confirmed = await telemetryDestinations(cf);
     const owned = ownedDestination(confirmed, worker, kind);
     if (!owned || owned.enabled !== true)
       throw new Error("Native preview telemetry export was not confirmed");

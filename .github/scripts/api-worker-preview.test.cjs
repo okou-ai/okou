@@ -67,6 +67,19 @@ function destination(kind, worker = "okou-api-preview-pr-123") {
   };
 }
 
+function destinationPage(incoming, destinations) {
+  const params = new URL(incoming.url).searchParams;
+  assert.equal(params.get("perPage"), "50");
+  assert.equal(params.get("orderBy"), "created");
+  assert.equal(params.get("order"), "asc");
+  const page = Number(params.get("page"));
+  assert.ok(Number.isInteger(page) && page >= 1);
+  return HttpResponse.json({
+    success: true,
+    result: destinations.slice((page - 1) * 50, page * 50),
+  });
+}
+
 test("Worker consumes the exact prepared shared branch through a direct GET-only connection", async () => {
   const branch = {
     id: "br-shared-preview",
@@ -141,7 +154,7 @@ function operationEnvironment(t, values) {
   });
 }
 
-test("closed-PR cleanup deletes only owned Worker, Hyperdrive and exports without Neon credentials", async (t) => {
+test("closed-PR cleanup finds owned exports beyond the first page without Neon credentials", async (t) => {
   operationEnvironment(t, {
     JOB_REF: "pr-123",
     CLOUDFLARE_ACCOUNT_ID: "a".repeat(32),
@@ -160,15 +173,15 @@ test("closed-PR cleanup deletes only owned Worker, Hyperdrive and exports withou
         result: [{ name: "okou-api-preview-pr-123", id: "b".repeat(32) }],
       }),
     ),
-    http.get(`${cfBase}${telemetryRoute}`, () =>
-      HttpResponse.json({
-        success: true,
-        result: [
-          destination("logs"),
-          destination("traces"),
-          destination("logs", "okou-api-preview-pr-456"),
-        ],
-      }),
+    http.get(`${cfBase}${telemetryRoute}`, ({ request: incoming }) =>
+      destinationPage(incoming, [
+        ...Array.from({ length: 50 }, (_, i) =>
+          destination("logs", `okou-api-preview-pr-${1000 + i}`),
+        ),
+        destination("logs"),
+        destination("traces"),
+        destination("logs", "okou-api-preview-pr-456"),
+      ]),
     ),
     ...[
       `${cfBase}/workers/scripts/okou-api-preview-pr-123`,
@@ -271,7 +284,12 @@ test("downstream deployment binds the existing branch and runs only build and Wo
     name: "okou-api-preview-pr-123",
     caching: { disabled: true },
   };
-  const destinations = [destination("traces")];
+  const destinations = [
+    ...Array.from({ length: 50 }, (_, i) =>
+      destination("logs", `okou-api-preview-pr-${1000 + i}`),
+    ),
+    destination("traces"),
+  ];
   server.use(
     http.get(`${cfBase}/workers/subdomain`, () =>
       HttpResponse.json({
@@ -279,8 +297,8 @@ test("downstream deployment binds the existing branch and runs only build and Wo
         result: { subdomain: "test-account" },
       }),
     ),
-    http.get(`${cfBase}${telemetryRoute}`, () =>
-      HttpResponse.json({ success: true, result: destinations }),
+    http.get(`${cfBase}${telemetryRoute}`, ({ request: incoming }) =>
+      destinationPage(incoming, destinations),
     ),
     ...["logs", "traces"].map((kind) => {
       const handler = kind === "logs" ? http.post : http.patch;
@@ -440,6 +458,64 @@ test("native telemetry cannot adopt another Worker's destination", async () => {
       /ownership was not confirmed/,
     );
   }
+});
+
+test("repeated destination pages stop before provisioning or deleting exports", async () => {
+  let reads = 0;
+  server.use(
+    http.get(`${cfBase}${telemetryRoute}`, () => {
+      reads += 1;
+      return HttpResponse.json({
+        success: true,
+        result: [
+          destination("logs"),
+          ...Array.from({ length: 49 }, (_, i) =>
+            destination("logs", `okou-api-preview-pr-${1000 + i}`),
+          ),
+        ],
+      });
+    }),
+  );
+  // Even finding the target does not permit mutation with incomplete inventory.
+  for (const runtime of [
+    undefined,
+    {
+      ENV: "preview",
+      AXIOM_DATASET_SUFFIX: "dev",
+      AXIOM_TOKEN_TELEMETRY: "test-token",
+    },
+  ]) {
+    await assert.rejects(
+      previewTelemetry(cloudflare, "okou-api-preview-pr-123", runtime),
+      /inventory did not advance/,
+    );
+  }
+  assert.equal(reads, 4);
+});
+
+test("an inventory that never ends is bounded and cannot create exports", async () => {
+  let reads = 0;
+  server.use(
+    http.get(`${cfBase}${telemetryRoute}`, ({ request: incoming }) => {
+      reads += 1;
+      const page = Number(new URL(incoming.url).searchParams.get("page"));
+      return HttpResponse.json({
+        success: true,
+        result: Array.from({ length: 50 }, (_, i) =>
+          destination("logs", `okou-api-preview-pr-${page * 50 + i}`),
+        ),
+      });
+    }),
+  );
+  await assert.rejects(
+    previewTelemetry(cloudflare, "okou-api-preview-pr-123", {
+      ENV: "preview",
+      AXIOM_DATASET_SUFFIX: "dev",
+      AXIOM_TOKEN_TELEMETRY: "test-token",
+    }),
+    /inventory exceeded the inspection limit/,
+  );
+  assert.equal(reads, 20);
 });
 
 test("native export rejection is visible and cannot silently enable telemetry", async () => {
