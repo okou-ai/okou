@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ArrowUpRight, Download, Maximize2, Share2 } from "lucide-react";
+import { ArrowUpRight, Check, Download, Maximize2, Share2 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { buttonVariants } from "./button";
 
@@ -70,16 +70,22 @@ export function HostedSiteBannerActions({
         type="button"
         data-okou-banner-share=""
         aria-label="Copy link"
-        title="Copy link"
-        className={buttonVariants({ variant: "quiet", size: "icon-sm" })}
+        className={cn(
+          buttonVariants({ variant: "quiet", size: "icon-sm" }),
+          "group",
+        )}
       >
-        <Share2 size={16} aria-hidden />
+        <Share2 size={16} className="group-data-[copied]:hidden" aria-hidden />
+        <Check
+          size={16}
+          className="hidden group-data-[copied]:block"
+          aria-hidden
+        />
       </button>
       <a
         href={downloadUrl}
         referrerPolicy="no-referrer"
         aria-label="Download"
-        title="Download"
         className={buttonVariants({ variant: "quiet", size: "icon-sm" })}
       >
         <Download size={16} aria-hidden />
@@ -88,7 +94,6 @@ export function HostedSiteBannerActions({
         type="button"
         data-okou-banner-fullscreen=""
         aria-label="Enter fullscreen"
-        title="Enter fullscreen"
         className={buttonVariants({ variant: "quiet", size: "icon-sm" })}
       >
         <Maximize2 size={16} aria-hidden />

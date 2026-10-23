@@ -18,7 +18,8 @@ share?.addEventListener("click", () => {
   return navigator.clipboard.writeText(siteUrl).then(
     () => {
       if (status) status.textContent = "Link copied";
-      share.title = "Link copied";
+      share.dataset.copied = "";
+      share.setAttribute("aria-label", "Link copied");
     },
     () => {
       if (status) status.textContent = "Could not copy link";

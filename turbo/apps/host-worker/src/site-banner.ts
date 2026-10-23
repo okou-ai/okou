@@ -34,7 +34,6 @@ export async function withSiteBanner(
 ): Promise<Response> {
   if (
     !presentation?.showBanner ||
-    !authUrl ||
     !standaloneSiteDocument(request) ||
     response.status !== 200 ||
     !response.headers
@@ -51,6 +50,7 @@ export async function withSiteBanner(
   // A presentation feature must leave other document encodings intact.
   if (encoding && !["identity", "gzip", "deflate"].includes(encoding))
     return response;
+  if (!authUrl) throw new Error("Site banner App origin is not configured");
   const home = new URL("/", authUrl);
   if (home.protocol !== "https:" || home.origin === new URL(request.url).origin)
     throw new Error("Invalid Site banner App origin");

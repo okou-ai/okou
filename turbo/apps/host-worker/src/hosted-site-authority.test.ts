@@ -209,6 +209,31 @@ it("decorates authorized standalone HTML with a shared banner and a credential-f
   expect(response.headers.get("Cache-Control")).toBe("private, no-store");
 });
 
+it("requires the trusted App origin when authorized HTML requests an enabled banner", async () => {
+  server.use(
+    http.get(endpoint, () => {
+      return HttpResponse.json({
+        allowed: true,
+        decision: "allow",
+        presentation: {
+          showBanner: true,
+          title: "Report",
+          siteUrl: "https://demo.okou.app/",
+        },
+      });
+    }),
+  );
+  const response = await fetchWorker(
+    new Request("https://demo.okou.app/", {
+      headers: { Accept: "text/html" },
+    }),
+    environment(),
+  );
+  expect(response.status).toBe(503);
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(await response.text()).toBe("Artifact unavailable");
+});
+
 it.each([
   { path: "/", destination: "document", showBanner: false },
   { path: "/", destination: "iframe", showBanner: true },
