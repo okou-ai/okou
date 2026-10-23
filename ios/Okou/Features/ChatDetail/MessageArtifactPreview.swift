@@ -93,7 +93,12 @@ struct MessageArtifactPreview: View {
       } description: {
         Text(error)
       } actions: {
-        Button("Retry") { viewer.retry() }.buttonStyle(.borderedProminent)
+        Button {
+          viewer.retry()
+        } label: {
+          Text("Retry").foregroundStyle(Color(uiColor: .systemBackground))
+        }
+        .buttonStyle(.borderedProminent)
       }
     } else if let url = preview.contentURL {
       VStack(spacing: 0) {

@@ -111,7 +111,12 @@ struct MessageAttachmentPreview: View {
             Text(ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file))
               .foregroundStyle(.secondary)
             if QLPreviewController.canPreview(file.url as NSURL) {
-              Button("Open preview") { quickLookURL = file.url }.buttonStyle(.borderedProminent)
+              Button {
+                quickLookURL = file.url
+              } label: {
+                Text("Open preview").foregroundStyle(Color(uiColor: .systemBackground))
+              }
+              .buttonStyle(.borderedProminent)
             } else {
               Text(
                 "Preview is unavailable for this file type. Share it or save it to Files to open it in another app."
@@ -126,8 +131,12 @@ struct MessageAttachmentPreview: View {
             Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundStyle(
               .secondary)
             Text(error).multilineTextAlignment(.center)
-            Button("Retry download") { viewer.open(preview.attachment) }.buttonStyle(
-              .borderedProminent)
+            Button {
+              viewer.open(preview.attachment)
+            } label: {
+              Text("Retry download").foregroundStyle(Color(uiColor: .systemBackground))
+            }
+            .buttonStyle(.borderedProminent)
           } else {
             ProgressView("Downloading attachment…")
             Text(preview.attachment.filename).font(.subheadline)
