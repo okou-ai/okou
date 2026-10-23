@@ -67,10 +67,9 @@ pub(crate) struct BoundedDrainResult {
     pub(crate) stream_truncated: bool,
 }
 
-/// Pairs a bounded capture thread with its result and joins before collection.
+/// Owns a bounded capture thread and collects its result after joining.
 pub(crate) struct BoundedDrainHandle {
-    handle: JoinHandle<()>,
-    result_rx: mpsc::Receiver<BoundedDrainResult>,
+    handle: JoinHandle<BoundedDrainResult>,
 }
 
 impl BoundedDrainHandle {
@@ -81,7 +80,6 @@ impl BoundedDrainHandle {
         done_tx: mpsc::Sender<()>,
         thread_name: &'static str,
     ) -> io::Result<Self> {
-        let (result_tx, result_rx) = mpsc::channel();
         let handle = thread::Builder::new()
             .name(thread_name.to_string())
             .spawn(move || {
@@ -92,17 +90,14 @@ impl BoundedDrainHandle {
                     None,
                     |_, _| true,
                 );
-                let _ = result_tx.send(result);
                 let _ = done_tx.send(());
+                result
             })?;
-        Ok(Self { handle, result_rx })
+        Ok(Self { handle })
     }
 
     pub(crate) fn join(self) -> Result<BoundedDrainResult, ()> {
-        if self.handle.join().is_err() {
-            return Err(());
-        }
-        self.result_rx.recv().map_err(|_| ())
+        self.handle.join().map_err(|_| ())
     }
 }
 
