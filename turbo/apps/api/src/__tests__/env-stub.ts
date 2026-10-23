@@ -22,11 +22,15 @@ export function stubTestWebUrlEnvironment(webUrl: string | undefined): void {
 }
 
 /** AWS SDK runtime inputs are scoped separately from the application's env. */
-export function stubTestAwsKmsEnvironment(): () => void {
+export function stubTestAwsKmsEnvironment(
+  configSource: "process" | "application" = "process",
+): () => void {
   const values = {
-    AWS_REGION: "us-west-2",
-    AWS_ACCESS_KEY_ID: "kms-http-test-access-key",
-    AWS_SECRET_ACCESS_KEY: "kms-http-test-secret-key",
+    AWS_REGION: configSource === "process" ? "us-west-2" : undefined,
+    AWS_ACCESS_KEY_ID:
+      configSource === "process" ? "kms-http-test-access-key" : undefined,
+    AWS_SECRET_ACCESS_KEY:
+      configSource === "process" ? "kms-http-test-secret-key" : undefined,
     AWS_SESSION_TOKEN: undefined,
     AWS_CREDENTIAL_EXPIRATION: undefined,
     AWS_CREDENTIAL_SCOPE: undefined,
