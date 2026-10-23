@@ -304,6 +304,19 @@ test("The embedded Okou viewer owns its shortcuts while the conversation keeps i
   const address = await screen.findByDisplayValue("https://example.com");
   expect(address).toBeEnabled();
 
+  click(screen.getByLabelText("Browser menu"));
+  const menu = await screen.findByRole("menu");
+  const continuousSync = queryAllByRoleFast("menuitemradio", menu).find(
+    (item) => {
+      return item.textContent?.trim() === "Sync continuously";
+    },
+  );
+  expect(continuousSync).toHaveAttribute("aria-checked", "true");
+  click(screen.getByLabelText("Browser menu"));
+  await waitFor(() => {
+    expect(continuousSync).not.toBeInTheDocument();
+  });
+
   fireEvent.keyDown(address, {
     key: "f",
     code: "KeyF",
