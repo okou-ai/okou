@@ -42,10 +42,12 @@ export function connectorAccount(
 export function stubConnectorAccounts(
   accounts: readonly ConnectorAccountConnection[],
   origin = "http://localhost:3000",
+  onRequest?: () => void,
 ) {
   return http.get(
     `${origin}/api/connector-accounts/connections`,
     ({ request }) => {
+      onRequest?.();
       const query = connectorAccountListQuerySchema.parse(
         Object.fromEntries(new URL(request.url).searchParams),
       );

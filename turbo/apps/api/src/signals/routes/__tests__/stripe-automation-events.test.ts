@@ -5,7 +5,6 @@ import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -44,7 +43,7 @@ interface Scenario {
   readonly workflowId: string;
   readonly automationId: string;
   readonly chatThreadId: string;
-  readonly connector: BuiltinConnectorResponse;
+  readonly connector: ConnectorAccountConnection;
   readonly runnerGroup: string;
 }
 
@@ -62,7 +61,7 @@ async function connectStripeOAuth(
   actor: ApiTestUser,
   accountId: string,
   livemode = true,
-): Promise<BuiltinConnectorResponse> {
+): Promise<ConnectorAccountConnection> {
   mockStripeConnectorOAuth({ accountId, livemode });
   const started = await connectors.startOauth(actor, "stripe", "oauth");
   const state = new URL(started.authorizationUrl).searchParams.get("state");
@@ -73,7 +72,7 @@ async function connectStripeOAuth(
     code: `stripe-workflow-${randomUUID()}`,
     state,
   });
-  return await connectors.readConnectorBySlug(actor, "stripe");
+  return await connectors.readDefaultBuiltinAccount(actor, "stripe");
 }
 
 async function setupScenario(
@@ -794,7 +793,7 @@ describe("Stripe automation event webhook", () => {
       await expect(dropped.text()).resolves.toBe("OK");
     }
     await expect(
-      connectors.readConnectorBySlug(actor, "stripe"),
+      connectors.readDefaultBuiltinAccount(actor, "stripe"),
     ).resolves.toStrictEqual(connected);
   });
 
@@ -832,7 +831,7 @@ describe("Stripe automation event webhook", () => {
       code: `github-deauthorization-${randomUUID()}`,
       state: githubState,
     });
-    const github = await connectors.readConnectorBySlug(
+    const github = await connectors.readDefaultBuiltinAccount(
       unaffected.actor,
       "github",
     );
@@ -852,7 +851,7 @@ describe("Stripe automation event webhook", () => {
     await postStripeAutomationEvent(deauthorization);
     for (const owner of [affected, sharedOwner]) {
       await expect(
-        connectors.readConnectorBySlug(owner.actor, "stripe"),
+        connectors.readDefaultBuiltinAccount(owner.actor, "stripe"),
       ).resolves.toMatchObject({
         connectionStatus: "reconnect-required",
         reconnectReason: "authorization_expired_or_revoked",
@@ -865,7 +864,7 @@ describe("Stripe automation event webhook", () => {
     await postStripeAutomationEvent(deauthorization);
     for (const owner of [affected, sharedOwner]) {
       await expect(
-        connectors.readConnectorBySlug(owner.actor, "stripe"),
+        connectors.readDefaultBuiltinAccount(owner.actor, "stripe"),
       ).resolves.toMatchObject({
         connectionStatus: "reconnect-required",
         reconnectReason: "authorization_expired_or_revoked",
@@ -897,10 +896,10 @@ describe("Stripe automation event webhook", () => {
       }),
     );
     await expect(
-      connectors.readConnectorBySlug(unaffected.actor, "stripe"),
+      connectors.readDefaultBuiltinAccount(unaffected.actor, "stripe"),
     ).resolves.toStrictEqual(unaffected.connector);
     await expect(
-      connectors.readConnectorBySlug(unaffected.actor, "github"),
+      connectors.readDefaultBuiltinAccount(unaffected.actor, "github"),
     ).resolves.toStrictEqual(github);
   });
 });

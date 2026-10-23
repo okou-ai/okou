@@ -19,7 +19,6 @@ import {
   connectorCredentialReconnectReasonSchema,
   type BuiltinConnectorListResponse,
   type BuiltinConnectorResponse,
-  type ConnectorProvidedBinding,
   type ConnectorCredentialReconnectReason,
   type ScopeDiffResponse,
 } from "@okouai/api-contracts/contracts/connector-schemas";
@@ -103,11 +102,10 @@ import {
   loadAcceptedConnectorCatalogSnapshot,
 } from "./connector-catalog-external-reader.service";
 import { isConnectorCatalogUnavailableError } from "./connector-catalog-reader.service";
-import {
-  getConnectorRuntimeConnector,
-  type ConnectorRuntimeMethod,
-  type ConnectorRuntimeLookup,
-  type ConnectorRuntimeSelection,
+import type {
+  ConnectorRuntimeMethod,
+  ConnectorRuntimeLookup,
+  ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import {
   connectorCatalogCurrentWhere,
@@ -744,13 +742,6 @@ export function builtinConnectorList(args: {
             });
             return connector === null ? [] : [{ ...connector, storedRow: row }];
           });
-    const connectorProvidedBindings =
-      snapshot === null
-        ? []
-        : builtinConnectorProvidedBindingsForStoredConnectors(
-            storedConnectors,
-            snapshot,
-          );
     const markers =
       storedConnectors.length > 0
         ? await get(markers$)
@@ -764,67 +755,9 @@ export function builtinConnectorList(args: {
           markers,
         );
       }),
-      connectorProvidedBindings,
     };
   });
 }
-
-function builtinConnectorProvidedBindingsForStoredConnectors(
-  storedConnectors: readonly BuiltinConnectorWithRuntimeMethod[],
-  snapshot: ConnectorRuntimeLookup,
-): ConnectorProvidedBinding[] {
-  const provided: ConnectorProvidedBinding[] = [];
-  for (const connector of storedConnectors) {
-    if (
-      connector.response.connectionStatus !== "connected" ||
-      getConnectorRuntimeConnector(snapshot, connector.response.slug)
-        ?.catalogConnector.mcp !== undefined
-    ) {
-      continue;
-    }
-    const metadata = connectorAuthMethodRuntimeMetadata(
-      connector.runtimeMethod.method,
-    );
-    for (const { envName, optional, source } of metadata.runtimeBindings) {
-      switch (source.kind) {
-        case "connector-secret": {
-          provided.push({
-            connectorSlug: connector.response.slug,
-            authMethod: connector.response.authMethod,
-            namespace: "secrets",
-            name: envName,
-            optional,
-            source,
-          });
-          break;
-        }
-        case "connector-variable": {
-          provided.push({
-            connectorSlug: connector.response.slug,
-            authMethod: connector.response.authMethod,
-            namespace: "vars",
-            name: envName,
-            optional,
-            source,
-          });
-          break;
-        }
-        case "platform-secret": {
-          break;
-        }
-      }
-    }
-  }
-  return provided;
-}
-type StoredBuiltinConnectorSelection =
-  | {
-      readonly kind: "default";
-    }
-  | {
-      readonly kind: "exact";
-      readonly connectorId: string;
-    };
 
 function storedBuiltinConnectorColumns() {
   return {
@@ -845,93 +778,6 @@ function storedBuiltinConnectorColumns() {
     createdAt: connectors.createdAt,
     updatedAt: connectors.updatedAt,
   };
-}
-
-interface BuiltinConnectorBySlugScope {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly connectorSlug: string;
-}
-
-export function builtinConnectorBySlug(
-  scope$: Computed<BuiltinConnectorBySlugScope>,
-): Computed<Promise<BuiltinConnectorResponse | null>> {
-  const catalog$ = computed(async (get) => {
-    const args = get(scope$);
-    const plan = connectorRuntimeSlugSelectionReadPlan({
-      connectorSlugs: [args.connectorSlug],
-    });
-    const rows = await get(db$)
-      .select(plan.columns)
-      .from(connectorCatalog)
-      .leftJoin(connectorCatalogEntries, plan.join)
-      .where(connectorCatalogCurrentWhere());
-    return connectorRuntimeSlugSelectionFromRows(plan.selection, rows);
-  });
-  const snapshot$ = computed(async (get) => {
-    const result = await settle(get(catalog$));
-    if (result.ok) {
-      return result.value;
-    }
-    if (!isConnectorCatalogUnavailableError(result.error)) {
-      throw result.error;
-    }
-    log.warn(
-      "Connector catalog unavailable while resolving stored connectors",
-      {
-        error: result.error,
-      },
-    );
-    return null;
-  });
-
-  const row$ = computed(async (get) => {
-    const args = get(scope$);
-    const snapshot = await get(snapshot$);
-    if (snapshot === null) {
-      return null;
-    }
-    const [row] = await get(db$)
-      .select(storedBuiltinConnectorColumns())
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          eq(connectors.connectorSlug, args.connectorSlug),
-          eq(connectors.isDefault, true),
-        ),
-      )
-      .limit(1);
-    return row ?? null;
-  });
-  const markerScope$ = computed(async (get) => {
-    const row = await get(row$);
-    return row ? { ...get(scope$), connectionIds: [row.id] } : null;
-  });
-  const markers$ = connectorAccountFieldMarkers(markerScope$);
-  return computed(async (get): Promise<BuiltinConnectorResponse | null> => {
-    const args = get(scope$);
-    const snapshot = await get(snapshot$);
-    const row = await get(row$);
-    if (!row || snapshot === null) {
-      return null;
-    }
-    const connector = storedBuiltinConnectorRowWithRuntimeMethod({
-      connectorSlug: args.connectorSlug,
-      now: nowDate(),
-      row,
-      snapshot,
-    });
-    return connector
-      ? builtinConnectorAccountResponse(
-          connector,
-          row,
-          snapshot,
-          await get(markers$),
-        )
-      : null;
-  });
 }
 
 /** Completed-session reads use runtime values and must stop before authorization on abort. */
@@ -3116,7 +2962,7 @@ interface BuiltinConnectorScopeDiffScope {
   readonly orgId: string;
   readonly userId: string;
   readonly connectorSlug: string;
-  readonly selection: StoredBuiltinConnectorSelection;
+  readonly connectorId: string;
 }
 
 export function builtinConnectorScopeDiff(
@@ -3167,9 +3013,7 @@ export function builtinConnectorScopeDiff(
             eq(connectors.orgId, args.orgId),
             eq(connectors.userId, args.userId),
             eq(connectors.connectorSlug, args.connectorSlug),
-            args.selection.kind === "exact"
-              ? eq(connectors.id, args.selection.connectorId)
-              : eq(connectors.isDefault, true),
+            eq(connectors.id, args.connectorId),
           ),
         )
         .limit(1);

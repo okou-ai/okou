@@ -172,29 +172,13 @@ describe("connector client response contracts", () => {
     expect(builtinConnectorResponseSchema.parse(connector)).toStrictEqual(
       connector,
     );
-    const emptyInventory = { connectors: [], connectorProvidedBindings: [] };
+    const emptyInventory = { connectors: [] };
     expect(
       builtinConnectorListResponseSchema.parse(emptyInventory),
     ).toStrictEqual(emptyInventory);
     expect(
-      builtinConnectorListResponseSchema.parse({
-        connectors: [connector],
-        connectorProvidedBindings: [
-          {
-            connectorSlug: "github",
-            authMethod: "oauth",
-            namespace: "secrets",
-            name: "GITHUB_TOKEN",
-            optional: false,
-            source: { kind: "connector-secret", name: "accessToken" },
-          },
-        ],
-      }),
-    ).toMatchObject({
-      connectorProvidedBindings: [
-        { connectorSlug: "github", name: "GITHUB_TOKEN" },
-      ],
-    });
+      builtinConnectorListResponseSchema.parse({ connectors: [connector] }),
+    ).toStrictEqual({ connectors: [connector] });
     expect(
       builtinConnectorOauthDeviceAuthSessionStartResponseSchema.parse({
         sessionId: "00000000-0000-4000-a000-000000000003",

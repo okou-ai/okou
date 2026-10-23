@@ -225,7 +225,7 @@ describe("Builtin external-code claimed completion", () => {
       );
       await expectAccounts(actor, expected);
       await expect(
-        connectors.readConnectorBySlug(actor, "aws"),
+        connectors.readDefaultBuiltinAccount(actor, "aws"),
       ).resolves.toMatchObject({ id: defaultAccount.connectionId });
     });
   });

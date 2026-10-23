@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
+import type {
+  ConnectorAccountConnection,
+  ConnectorAccountMutationIntent,
+} from "@okouai/api-contracts/contracts/connector-accounts";
 import { webhookStripeAutomationEventsContract } from "@okouai/api-contracts/contracts/webhooks";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -45,7 +47,7 @@ interface StripeOAuthOptions {
 
 interface ConnectedStripeOAuth {
   readonly code: string;
-  readonly connector: BuiltinConnectorResponse;
+  readonly connector: ConnectorAccountConnection;
   readonly provider: ReturnType<typeof mockStripeConnectorOAuth>;
 }
 
@@ -156,7 +158,7 @@ async function connectStripeOAuth(
   }
   const code = options.code ?? `stripe-oauth-${randomUUID()}`;
   await connectors.completeOauthCallback("stripe", { code, state });
-  const connector = await connectors.readConnectorBySlug(actor, "stripe");
+  const connector = await connectors.readDefaultBuiltinAccount(actor, "stripe");
   return { code, connector, provider };
 }
 
@@ -242,7 +244,7 @@ describe("Stripe invoice-paid workflow automation readiness", () => {
       code: "stripe-live-storage-v3-code",
     });
     expect(connected.connector).toMatchObject({
-      slug: "stripe",
+      target: { kind: "builtin", connectorSlug: "stripe" },
       authMethod: "oauth",
       externalId: STRIPE_ACCOUNT_ID,
       connectionStatus: "connected",
@@ -256,27 +258,6 @@ describe("Stripe invoice-paid workflow automation readiness", () => {
     expect(connected.provider.accountAuthorizationHeaders).toStrictEqual([
       "Bearer stripe-live-storage-v3-token",
     ]);
-
-    const listedConnectors = await connectors.listBuiltinConnectors(
-      scenario.actor,
-    );
-    expect(listedConnectors.connectorProvidedBindings).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "stripe",
-        authMethod: "oauth",
-        namespace: "secrets",
-        name: "STRIPE_TOKEN",
-        source: {
-          kind: "connector-secret",
-          name: "STRIPE_ACCESS_TOKEN",
-        },
-      }),
-    );
-    expect(
-      listedConnectors.connectorProvidedBindings.some((binding) => {
-        return binding.name === "STRIPE_LIVEMODE";
-      }),
-    ).toBeFalsy();
 
     const created = await accept(
       createStripeAutomationRequest(scenario),
@@ -603,7 +584,7 @@ describe("Stripe invoice-paid workflow automation readiness", () => {
       [200],
     );
     await expect(
-      connectors.readConnectorBySlug(scenario.actor, "stripe"),
+      connectors.readDefaultBuiltinAccount(scenario.actor, "stripe"),
     ).resolves.toMatchObject({
       connectionStatus: "reconnect-required",
       reconnectReason: "authorization_expired_or_revoked",

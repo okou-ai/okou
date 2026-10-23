@@ -119,7 +119,7 @@ describe("Builtin device-auth owned-session reads", () => {
     const completed = await completeSession(actor, session);
     expect(completed.account.authMethod).toBe("oauth");
     await expect(
-      connectorsApi.readConnectorBySlug(actor, "test-oauth-device"),
+      connectorsApi.readDefaultBuiltinAccount(actor, "test-oauth-device"),
     ).resolves.toMatchObject({ id: completed.connectionId });
 
     for (const candidate of rejectionCases) {

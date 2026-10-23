@@ -661,7 +661,7 @@ describe("okou workflow automations", () => {
   ): Promise<string> {
     mockGmailConnectorOAuth({ email, ...oauth });
     await wf.connectConnector(scenario.actor, "gmail");
-    const connector = await connectorsApi.readConnectorBySlug(
+    const connector = await connectorsApi.readDefaultBuiltinAccount(
       scenario.actor,
       "gmail",
     );
@@ -683,7 +683,7 @@ describe("okou workflow automations", () => {
   ): Promise<string> {
     mockGoogleCalendarConnectorOAuth(options);
     await wf.connectConnector(scenario.actor, "google-calendar");
-    const connector = await connectorsApi.readConnectorBySlug(
+    const connector = await connectorsApi.readDefaultBuiltinAccount(
       scenario.actor,
       "google-calendar",
     );
@@ -700,7 +700,7 @@ describe("okou workflow automations", () => {
   ): Promise<string> {
     mockGoogleFormsConnectorOAuth();
     await wf.connectConnector(scenario.actor, "google-forms");
-    const connector = await connectorsApi.readConnectorBySlug(
+    const connector = await connectorsApi.readDefaultBuiltinAccount(
       scenario.actor,
       "google-forms",
     );
@@ -715,7 +715,7 @@ describe("okou workflow automations", () => {
   async function connectNotion(scenario: AutomationScenario): Promise<string> {
     mockNotionConnectorOAuth();
     await wf.connectConnector(scenario.actor, "notion");
-    const connector = await connectorsApi.readConnectorBySlug(
+    const connector = await connectorsApi.readDefaultBuiltinAccount(
       scenario.actor,
       "notion",
     );

@@ -755,7 +755,7 @@ describe("POST /api/webhooks/gmail", () => {
 
     const { actor, workflowId } = await setupFixture();
     await connectGmail(actor, uniqueGmailEmail(), "gmail-label-account-one");
-    const initialConnection = await connectorsApi.readConnectorBySlug(
+    const initialConnection = await connectorsApi.readDefaultBuiltinAccount(
       actor,
       "gmail",
     );
@@ -903,7 +903,7 @@ describe("POST /api/webhooks/gmail", () => {
 
     const { actor, workflowId } = await setupFixture();
     await connectGmail(actor, gmailEmail, "gmail-account-one");
-    const initialConnection = await connectorsApi.readConnectorBySlug(
+    const initialConnection = await connectorsApi.readDefaultBuiltinAccount(
       actor,
       "gmail",
     );
@@ -926,7 +926,7 @@ describe("POST /api/webhooks/gmail", () => {
       intent: "reconnect",
       connectionId: initialConnection.id,
     });
-    const sameAccountConnection = await connectorsApi.readConnectorBySlug(
+    const sameAccountConnection = await connectorsApi.readDefaultBuiltinAccount(
       actor,
       "gmail",
     );

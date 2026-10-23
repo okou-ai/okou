@@ -2,7 +2,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   CONNECTOR_CHECK_AWS_CONTEXT_HEADER,
@@ -147,27 +146,29 @@ function resolvedUrl(
   };
 }
 
-function connectorResponse(
+function builtinAccount(
   connectorSlug: string,
-  connectionStatus: BuiltinConnectorResponse["connectionStatus"] = "connected",
-): BuiltinConnectorResponse {
-  return {
-    id: "00000000-0000-4000-8000-000000000002",
-    slug: connectorSlug,
-    authMethod: "oauth",
-    externalId: "external-1",
-    externalUsername: "user",
-    externalEmail: "user@example.com",
-    oauthScopes: ["repo"],
-    connectionStatus,
-    reconnectReason:
-      connectionStatus === "reconnect-required"
-        ? "authorization_expired_or_revoked"
-        : null,
-    tokenExpiresAt: null,
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-  };
+  connectionStatus: ConnectorAccountConnection["connectionStatus"] = "connected",
+): ConnectorAccountConnection {
+  return connectorAccount(
+    { kind: "builtin", connectorSlug },
+    {
+      id: "00000000-0000-4000-8000-000000000002",
+      authMethod: "oauth",
+      externalId: "external-1",
+      externalUsername: "user",
+      externalEmail: "user@example.com",
+      oauthScopes: ["repo"],
+      connectionStatus,
+      reconnectReason:
+        connectionStatus === "reconnect-required"
+          ? "authorization_expired_or_revoked"
+          : null,
+      tokenExpiresAt: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    },
+  );
 }
 
 function diagnosticEndpoint(baseUrl = API_BASE_URL): string {
@@ -245,23 +246,18 @@ function stubDiagnostic(
   );
 }
 
-function stubConnector(
+function stubDefaultBuiltinAccount(
   connectorSlug: string,
-  response: BuiltinConnectorResponse | null = connectorResponse(connectorSlug),
+  response: ConnectorAccountConnection | null = builtinAccount(connectorSlug),
   onRequest?: () => void,
   baseUrl = API_BASE_URL,
 ): void {
   server.use(
-    http.get(`${baseUrl}/api/connectors/${connectorSlug}`, () => {
-      onRequest?.();
-      if (response === null) {
-        return HttpResponse.json(
-          { error: { message: "Not found", code: "NOT_FOUND" } },
-          { status: 404 },
-        );
-      }
-      return HttpResponse.json(response);
-    }),
+    stubConnectorAccounts(
+      response === null ? [] : [response],
+      baseUrl,
+      onRequest,
+    ),
   );
 }
 
@@ -283,16 +279,16 @@ function stubAgentConnectors(
 function stubResolvedDependencies(
   connectorSlug = "github",
   options: {
-    readonly connector?: BuiltinConnectorResponse | null;
+    readonly connector?: ConnectorAccountConnection | null;
     readonly enabledConnectorSlugs?: string[];
     readonly baseUrl?: string;
   } = {},
 ): void {
   const baseUrl = options.baseUrl ?? API_BASE_URL;
-  stubConnector(
+  stubDefaultBuiltinAccount(
     connectorSlug,
     options.connector === undefined
-      ? connectorResponse(connectorSlug)
+      ? builtinAccount(connectorSlug)
       : options.connector,
     undefined,
     baseUrl,
@@ -317,7 +313,7 @@ describe("okou connector check command", () => {
 
   function setRunAccount(
     connectorSlug: string,
-    connectionStatus: BuiltinConnectorResponse["connectionStatus"] | null,
+    connectionStatus: ConnectorAccountConnection["connectionStatus"] | null,
     options: {
       readonly connectionId?: string;
       readonly label?: string;
@@ -412,7 +408,6 @@ describe("okou connector check command", () => {
       vi.stubEnv("OKOU_AGENT_ID", "");
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
       stubDiagnostic(resolvedEnvironment({ run: { status: "not-scoped" } }));
-      stubConnector("github", null);
     });
 
     it.each([
@@ -799,7 +794,6 @@ describe("okou connector check command", () => {
           permission: { outcome: "unavailable", basis: "not-run-scoped" },
         }),
       );
-      stubConnector("github");
       await checkConnectorCommand.parseAsync([
         "node",
         "cli",
@@ -1294,9 +1288,13 @@ describe("okou connector check command", () => {
           },
         }),
       );
-      stubConnector("server-only", connectorResponse("server-only"), () => {
-        connectorCalls += 1;
-      });
+      stubDefaultBuiltinAccount(
+        "server-only",
+        builtinAccount("server-only"),
+        () => {
+          connectorCalls += 1;
+        },
+      );
       stubAgentConnectors(["server-only"], () => {
         authorizationCalls += 1;
       });
@@ -1369,14 +1367,14 @@ describe("okou connector check command", () => {
       {
         name: "expired",
         identity: connectorIdentity(),
-        connector: connectorResponse("github", "reconnect-required"),
+        connector: builtinAccount("github", "reconnect-required"),
         enabledConnectorSlugs: ["github"],
         expected: "needs to be reconnected",
       },
       {
         name: "connected but unauthorized",
         identity: connectorIdentity(),
-        connector: connectorResponse("github"),
+        connector: builtinAccount("github"),
         enabledConnectorSlugs: [] as string[],
         expected: "not authorized for this agent",
       },
@@ -1409,7 +1407,7 @@ describe("okou connector check command", () => {
         configurationReason: "configuration_invalid",
       });
       stubDiagnostic(resolvedEnvironment());
-      stubConnector("github", connectorResponse("github"), () => {
+      stubDefaultBuiltinAccount("github", builtinAccount("github"), () => {
         defaultAccountRequests += 1;
       });
       stubAgentConnectors(["github"]);
@@ -1527,9 +1525,9 @@ describe("okou connector check command", () => {
         label: "Run account B",
       });
       stubDiagnostic(resolvedEnvironment());
-      stubConnector(
+      stubDefaultBuiltinAccount(
         "github",
-        connectorResponse("github", "reconnect-required"),
+        builtinAccount("github", "reconnect-required"),
         () => {
           defaultAccountRequests += 1;
         },
@@ -1640,7 +1638,6 @@ describe("okou connector check command", () => {
           API_BASE_URL,
         ),
       );
-      stubConnector("github", connectorResponse("github"));
 
       await checkConnectorCommand.parseAsync([
         "node",
@@ -2334,7 +2331,7 @@ describe("okou connector check command", () => {
             return HttpResponse.json(body, { status });
           }),
         );
-        stubConnector("github", connectorResponse("github"), () => {
+        stubDefaultBuiltinAccount("github", builtinAccount("github"), () => {
           secondaryCalls += 1;
         });
         stubAgentConnectors(["github"], () => {

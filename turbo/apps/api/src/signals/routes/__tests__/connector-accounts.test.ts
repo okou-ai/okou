@@ -9,7 +9,6 @@ import {
 import {
   builtinConnectorManualGrantContract,
   builtinConnectorNoAuthGrantContract,
-  builtinConnectorsBySlugContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
   customConnectorByIdContract,
@@ -66,10 +65,6 @@ function accountClient() {
 
 function connectorClient() {
   return setupApp({ context, routes })(builtinConnectorManualGrantContract);
-}
-
-function connectorProjectionClient() {
-  return setupApp({ context, routes })(builtinConnectorsBySlugContract);
 }
 
 function customConnectorClient() {
@@ -1259,15 +1254,6 @@ describe("connector account lifecycle routes", () => {
       explicitSelectionCount: 0,
       hasSibling: true,
     });
-
-    const legacyProjection = await accept(
-      connectorProjectionClient().get({
-        headers: authHeaders(),
-        params: { connectorSlug: "openai" },
-      }),
-      [200],
-    );
-    expect(legacyProjection.body.id).toBe(second.body.connectionId);
 
     const impact = await accept(
       accountClient().deletionImpact({

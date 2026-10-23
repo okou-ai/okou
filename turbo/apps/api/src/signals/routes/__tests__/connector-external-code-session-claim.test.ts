@@ -148,7 +148,7 @@ async function expectReplay(
 }
 
 async function expectDefault(actor: ApiTestUser, connectionId: string) {
-  const account = await connectors.readConnectorBySlug(actor, "aws");
+  const account = await connectors.readDefaultBuiltinAccount(actor, "aws");
   expect(account.id).toBe(connectionId);
 }
 

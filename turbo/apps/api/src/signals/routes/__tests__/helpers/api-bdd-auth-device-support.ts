@@ -1,6 +1,8 @@
-import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import {
+  connectorAccountsContract,
+  type ConnectorAccountConnection,
+} from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { builtinConnectorsBySlugContract } from "@okouai/api-contracts/contracts/connectors";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import {
   personalModelProvidersByTypeContract,
@@ -12,7 +14,7 @@ import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-pr
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import type { RouteEntry } from "../../../route-entry";
-import { builtinConnectorsRoutes } from "../../connectors";
+import { connectorAccountRoutes } from "../../connector-accounts";
 import { featureSwitchesRoutes } from "../../feature-switches";
 import { meModelProvidersDeleteRoutes } from "../../me-model-providers-delete";
 import { meModelProviderAccountRoutes } from "../../me-model-provider-accounts";
@@ -26,7 +28,7 @@ interface AuthHeaders {
 }
 
 const authDeviceSupportRoutes: readonly RouteEntry[] = [
-  ...builtinConnectorsRoutes,
+  ...connectorAccountRoutes,
   ...featureSwitchesRoutes,
   ...meModelProviderAccountRoutes,
   ...meModelProvidersDeleteRoutes,
@@ -213,18 +215,22 @@ export function createAuthDeviceSupportApi(context: TestContext) {
       return response.body.switches;
     },
 
-    async readConnectorBySlug(
+    async readDefaultBuiltinAccount(
       actor: ApiTestUser,
       connectorSlug: ConnectorSlug,
-    ): Promise<BuiltinConnectorResponse> {
+    ): Promise<ConnectorAccountConnection> {
       const response = await accept(
-        authDeviceSupportApp(context)(builtinConnectorsBySlugContract).get({
-          params: { connectorSlug },
+        authDeviceSupportApp(context)(connectorAccountsContract).connections({
+          query: { kind: "builtin", connectorSlug },
           headers: authenticate(context, actor),
         }),
         [200],
       );
-      return response.body;
+      const account = response.body.defaultConnection;
+      if (!account) {
+        throw new Error("Expected a saved default connector account");
+      }
+      return account;
     },
   };
 }
