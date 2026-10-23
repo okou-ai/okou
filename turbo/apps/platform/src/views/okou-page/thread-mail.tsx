@@ -316,27 +316,28 @@ function ThreadMailSelection({
   readonly thread: ChatPanelSignals;
 }) {
   const { t } = useTranslation();
-  const filtered = useLastLoadable(thread.mail.filtered$);
+  const filtered = useLastLoadable(thread.mail.filteredDrafts$);
   const selected = useGet(thread.mail.selected$);
   const pending = useGet(thread.mail.pending$);
   const selectAll = useSet(thread.mail.selectAll$);
   const signal = useGet(pageSignal$);
   const rows = filtered.state === "hasData" ? filtered.data : [];
-  const allSelected =
-    rows.length > 0 &&
-    rows.every((mail) => {
-      return selected.has(mail.mailDraftId);
-    });
+  const allSelected = rows.every((mail) => {
+    return selected.has(mail.mailDraftId);
+  });
   const someSelected = rows.some((mail) => {
     return selected.has(mail.mailDraftId);
   });
+  if (rows.length === 0) {
+    return null;
+  }
   return (
     <div className="flex shrink-0 items-center gap-3 border-b border-border/60 px-4 py-3">
       <Checkbox
         id={`mail-select-all-${thread.threadId}`}
         checked={allSelected}
         indeterminate={someSelected && !allSelected}
-        disabled={pending !== null || rows.length === 0}
+        disabled={pending !== null}
         onCheckedChange={(checked) => {
           detach(selectAll(checked, signal), Reason.DomCallback);
         }}
@@ -369,10 +370,13 @@ function ThreadMailRows({ thread }: { readonly thread: ChatPanelSignals }) {
   const refresh = useSet(thread.mail.refresh$);
   const listRef = useSet(thread.mail.listRef$);
   const rows = filtered.state === "hasData" ? filtered.data : [];
+  const showSelection = rows.some((mail) => {
+    return mail.status === "draft";
+  });
   return (
     <div
       ref={filtered.state === "hasData" ? listRef : undefined}
-      className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+      className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3"
     >
       {filtered.state === "hasError" ? (
         <div
@@ -405,7 +409,12 @@ function ThreadMailRows({ thread }: { readonly thread: ChatPanelSignals }) {
       ) : (
         rows.map((mail) => {
           return (
-            <ThreadMailRow key={mail.mailDraftId} thread={thread} mail={mail} />
+            <ThreadMailRow
+              key={mail.mailDraftId}
+              thread={thread}
+              mail={mail}
+              showSelection={showSelection}
+            />
           );
         })
       )}
@@ -427,10 +436,10 @@ function ThreadMailRowsSkeleton() {
           <div
             key={row}
             aria-hidden="true"
-            className="flex items-center gap-3 border-b border-border/40 px-4 last:border-b-0"
+            className="flex items-center gap-1 border-b border-border/40 last:border-b-0"
           >
-            <Skeleton className="h-4 w-4 shrink-0 rounded-md" />
-            <div className="flex min-w-0 flex-1 items-center gap-2 px-4 py-4">
+            <Skeleton className="ml-2 h-4 w-4 shrink-0 rounded-md" />
+            <div className="flex min-w-0 flex-1 items-center gap-3 px-2 py-3">
               <div className="min-w-0 flex-1 space-y-1">
                 <Skeleton className="h-5 w-3/4" />
                 <Skeleton className="h-4 w-1/2" />
@@ -448,12 +457,17 @@ function ThreadMailRowsSkeleton() {
 function ThreadMailFooter({ thread }: { readonly thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const drafts = useLastLoadable(thread.mail.selectedDrafts$);
+  const filteredDrafts = useLastLoadable(thread.mail.filteredDrafts$);
   const pending = useGet(thread.mail.pending$);
   const result = useGet(thread.mail.result$);
   const prepare = useSet(thread.mail.prepare$);
   const signal = useGet(pageSignal$);
   const draftCount = drafts.state === "hasData" ? drafts.data.length : 0;
-  if (draftCount === 0) {
+  if (
+    draftCount === 0 ||
+    filteredDrafts.state !== "hasData" ||
+    filteredDrafts.data.length === 0
+  ) {
     return null;
   }
   const disabled = pending !== null;
@@ -509,9 +523,11 @@ function ThreadMailFooter({ thread }: { readonly thread: ChatPanelSignals }) {
 function ThreadMailRow({
   thread,
   mail,
+  showSelection,
 }: {
   readonly thread: ChatPanelSignals;
   readonly mail: ThreadMailSummary;
+  readonly showSelection: boolean;
 }) {
   const { t } = useTranslation();
   const selected = useGet(thread.mail.selected$);
@@ -525,23 +541,29 @@ function ThreadMailRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 border-b border-border/40 px-4 last:border-b-0",
+        "flex items-center gap-1 rounded-lg border-b border-border/40 last:border-b-0",
         selected.has(mail.mailDraftId) && "bg-state-selected",
       )}
     >
-      <Checkbox
-        checked={selected.has(mail.mailDraftId)}
-        disabled={pending !== null}
-        aria-label={t(
-          ($) => {
-            return $.chat.mail.manager.selectEmail;
-          },
-          { subject },
-        )}
-        onCheckedChange={(checked) => {
-          select(mail.mailDraftId, checked);
-        }}
-      />
+      {showSelection &&
+        (mail.status === "draft" ? (
+          <Checkbox
+            className="ml-2"
+            checked={selected.has(mail.mailDraftId)}
+            disabled={pending !== null}
+            aria-label={t(
+              ($) => {
+                return $.chat.mail.manager.selectEmail;
+              },
+              { subject },
+            )}
+            onCheckedChange={(checked) => {
+              select(mail.mailDraftId, checked);
+            }}
+          />
+        ) : (
+          <span aria-hidden="true" className="ml-2 h-4 w-4 shrink-0" />
+        ))}
       <ThreadMailLink
         thread={thread}
         destination={{
@@ -552,7 +574,7 @@ function ThreadMailRow({
         disabled={pending !== null}
         className={cn(
           buttonVariants({ variant: "quiet" }),
-          "h-auto min-w-0 flex-1 justify-start rounded-none py-4 text-left",
+          "h-auto min-w-0 flex-1 justify-start gap-3 rounded-lg px-2 py-3 text-left",
         )}
         aria-label={t(
           ($) => {
@@ -567,7 +589,7 @@ function ThreadMailRow({
             {mail.from}
           </p>
         </div>
-        <span className="rounded-md bg-muted px-2 py-1 text-xs font-normal text-muted-foreground">
+        <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-xs font-normal text-muted-foreground">
           {mail.status === "sent"
             ? t(($) => {
                 return $.chat.mail.manager.sent;
