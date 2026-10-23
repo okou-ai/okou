@@ -1,5 +1,31 @@
 # Changelog
 
+## [10.0.0](https://github.com/okou-ai/okou/compare/cli-v9.410.0...cli-v10.0.0) (2026-10-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **social:** Social downloads now return temporary direct links only. Remove artifact delivery, multipart media transfer, legacy response fields and the dedicated artifact column.
+
+### Bug Fixes
+
+* clarify background job execution ownership ([#42543](https://github.com/okou-ai/okou/issues/42543)) ([d9d77ca](https://github.com/okou-ai/okou/commit/d9d77cadca40ee84c77169d5b15c16b423f2eb73))
+
+
+### Refactoring
+
+* **connector:** retire legacy diagnostic responses ([#42533](https://github.com/okou-ai/okou/issues/42533)) ([1f7d802](https://github.com/okou-ai/okou/commit/1f7d802bfc784353bb9c22e18330175b007ac919))
+* **social:** replace media artifact pipeline with direct download links ([#42520](https://github.com/okou-ai/okou/issues/42520)) ([0c84485](https://github.com/okou-ai/okou/commit/0c844853810a37c21caeb77730a98c23e82a60e7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.0.0
+    * @okouai/core bumped to 8.782.1
+    * @okouai/pi-agent-runtime bumped to 1.50.60
+
 ## [9.410.0](https://github.com/okou-ai/okou/compare/cli-v9.409.4...cli-v9.410.0) (2026-10-23)
 
 

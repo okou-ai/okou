@@ -23,6 +23,7 @@ observePiCliEntryImports();
 
 interface CommandDefinition {
   name: string;
+  aliases?: readonly string[];
   description: string;
   load: () => Promise<Command>;
 }
@@ -86,27 +87,32 @@ const COMMAND_CAPABILITY_MAP: Record<
   artifact: ["artifact:read", "artifact:write", "file:read"],
   presentation: null,
   "presentation-template": "presentation-template:write",
-  maps: "maps:read",
-  weather: "weather:read",
-  scrape: "scrape:read",
-  "people-search": "people-search:read",
-  "web-search": "web-search:read",
-  social: "social:read",
-  commerce: "commerce:read",
-  finance: "finance:read",
-  seo: "seo:read",
+  data: [
+    "data-search:read",
+    "data-enrichment:read",
+    "maps:read",
+    "weather:read",
+    "scrape:read",
+    "people-search:read",
+    "web-search:read",
+    "social:read",
+    "commerce:read",
+    "finance:read",
+    "seo:read",
+  ],
   banking: "banking:read",
   suggestion: ["suggestion:read", "suggestion:write"],
-  job: ["job:read", "job:write"],
+  task: ["job:read", "job:write"],
   wallet: ["wallet:read", "wallet:write"],
 };
 
-const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "suggestion", "job"]);
+const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "suggestion", "task"]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
-    name: "job",
-    description: "Delegate and inspect background Okou Jobs",
+    name: "task",
+    aliases: ["job"],
+    description: "Delegate and inspect background Okou Tasks",
     load: async () => {
       return (await import("./commands/job/index")).jobCommand;
     },
@@ -438,67 +444,10 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     },
   },
   {
-    name: "maps",
-    description: "Search places and routes with Google Maps grounding",
+    name: "data",
+    description: "Search and retrieve managed research data",
     load: async () => {
-      return (await import("./commands/maps")).mapsCommand;
-    },
-  },
-  {
-    name: "weather",
-    description: "Use managed Okou weather services",
-    load: async () => {
-      return (await import("./commands/weather")).weatherCommand;
-    },
-  },
-  {
-    name: "scrape",
-    description: "Scrape public web pages through managed Okou scrape",
-    load: async () => {
-      return (await import("./commands/scrape")).scrapeCommand;
-    },
-  },
-  {
-    name: "people-search",
-    description: "Find professionals through managed Okou people search",
-    load: async () => {
-      return (await import("./commands/people-search")).peopleSearchCommand;
-    },
-  },
-  {
-    name: "web-search",
-    description: "Search the public web through managed Okou web search",
-    load: async () => {
-      return (await import("./commands/web-search")).webSearchCommand;
-    },
-  },
-  {
-    name: "social",
-    description: "Retrieve public social data through managed Okou services",
-    load: async () => {
-      return (await import("./commands/social")).socialCommand;
-    },
-  },
-  {
-    name: "commerce",
-    description:
-      "Retrieve public Amazon product data through managed Okou Commerce",
-    load: async () => {
-      return (await import("./commands/commerce")).commerceCommand;
-    },
-  },
-  {
-    name: "finance",
-    description: "Query financial instruments through managed Okou finance",
-    load: async () => {
-      return (await import("./commands/finance")).financeCommand;
-    },
-  },
-  {
-    name: "seo",
-    description: "Query managed SEO data through DataForSEO",
-    load: async () => {
-      return (await import("./commands/seo")).seoCommand;
+      return (await import("./commands/data")).dataCommand;
     },
   },
   {
@@ -518,13 +467,17 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
 ];
 
 const COMMAND_DEFINITION_BY_NAME = new Map(
-  COMMAND_DEFINITIONS.map((definition) => {
-    return [definition.name, definition];
+  COMMAND_DEFINITIONS.flatMap((definition) => {
+    return [definition.name, ...(definition.aliases ?? [])].map((name) => {
+      return [name, definition] as const;
+    });
   }),
 );
 
 function createCommandStub(definition: CommandDefinition): Command {
-  return new Command(definition.name).description(definition.description);
+  return new Command(definition.name)
+    .aliases([...(definition.aliases ?? [])])
+    .description(definition.description);
 }
 
 function buildDefaultCommands(): Command[] {
@@ -637,6 +590,14 @@ function commandExampleIfVisible(
   return shouldHideCommand(name, payload) ? [] : [example];
 }
 
+function dataExampleIfVisible(
+  capability: string,
+  example: string,
+  payload: SandboxTokenPayload | undefined,
+): string[] {
+  return payload && !payload.capabilities.includes(capability) ? [] : [example];
+}
+
 export function buildHelpText(
   payload: SandboxTokenPayload | undefined = decodeSandboxTokenPayload(),
 ): string {
@@ -726,44 +687,44 @@ export function buildHelpText(
       "  Artifact visibility?   okou artifact --help",
       payload,
     ),
-    ...commandExampleIfVisible(
-      "maps",
-      '  Search maps?          okou maps search "coffee near Union Square" --json',
+    ...dataExampleIfVisible(
+      "maps:read",
+      '  Search maps?          okou data maps search "coffee near Union Square" --json',
       payload,
     ),
-    ...commandExampleIfVisible(
-      "weather",
-      "  Check weather?        okou weather current --lat 39.9042 --lng 116.4074 --json",
+    ...dataExampleIfVisible(
+      "weather:read",
+      "  Check weather?        okou data weather current --lat 39.9042 --lng 116.4074 --json",
       payload,
     ),
-    ...commandExampleIfVisible(
-      "scrape",
-      "  Scrape a web page?    okou scrape https://example.com --json",
+    ...dataExampleIfVisible(
+      "scrape:read",
+      "  Scrape a web page?    okou data web scrape https://example.com --json",
       payload,
     ),
-    ...commandExampleIfVisible(
-      "web-search",
-      '  Search the public web? okou web-search "latest news" --json',
+    ...dataExampleIfVisible(
+      "web-search:read",
+      '  Search the public web? okou data web search "latest news" --json',
       payload,
     ),
-    ...commandExampleIfVisible(
-      "social",
-      "  Analyze social data?   okou social transcript https://youtu.be/dQw4w9WgXcQ --json",
+    ...dataExampleIfVisible(
+      "social:read",
+      "  Analyze social data?   okou data social transcript https://youtu.be/dQw4w9WgXcQ --json",
       payload,
     ),
-    ...commandExampleIfVisible(
-      "finance",
-      "  Get a market quote?   okou finance quote AAPL --json",
+    ...dataExampleIfVisible(
+      "finance:read",
+      "  Get a market quote?   okou data finance quote AAPL --json",
       payload,
     ),
-    ...commandExampleIfVisible(
-      "seo",
-      '  Research SEO data?    okou seo serp "technical seo" --json',
+    ...dataExampleIfVisible(
+      "seo:read",
+      '  Research SEO data?    okou data seo serp "technical seo" --json',
       payload,
     ),
-    ...commandExampleIfVisible(
-      "people-search",
-      '  Find a professional?   okou people-search "platform engineering leaders" --json',
+    ...dataExampleIfVisible(
+      "people-search:read",
+      '  Find a professional?   okou data people search "platform engineering leaders" --json',
       payload,
     ),
     ...commandExampleIfVisible(

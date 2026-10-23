@@ -371,7 +371,7 @@ test("Explain a member's model credit usage", async () => {
   expect(screen.queryByText("openai/gpt-5.6-sol")).not.toBeInTheDocument();
 });
 
-test("Team usage groups Social and Product Data while conserving non-model credits", async () => {
+test("Team usage groups historical data and new enrichment while conserving non-model credits", async () => {
   const user = userEvent.setup();
   mockUsageStory();
   context.mocks.api(usageMembersContract.get, ({ respond }) => {
@@ -388,23 +388,28 @@ test("Team usage groups Social and Product Data while conserving non-model credi
           outputTokens: 3000,
           cacheReadInputTokens: 0,
           cacheCreationInputTokens: 0,
-          creditsCharged: 70,
+          creditsCharged: 84,
           breakdown: [
             {
               kind: "connector",
-              credits: 10,
+              credits: 14,
               providers: [
                 {
                   provider: "dataforseo",
                   credits: 3,
                   usageKinds: [{ kind: "commerce", credits: 3 }],
                 },
+                {
+                  provider: "monid/apollo",
+                  credits: 4,
+                  usageKinds: [{ kind: "data-search", credits: 4 }],
+                },
                 { provider: "slack", credits: 7, usageKinds: [] },
               ],
             },
             {
               kind: "other",
-              credits: 50,
+              credits: 60,
               providers: [
                 {
                   provider: "monid/dy",
@@ -432,6 +437,26 @@ test("Team usage groups Social and Product Data while conserving non-model credi
                   credits: 14,
                   usageKinds: [{ kind: "legacy-data", credits: 14 }],
                 },
+                {
+                  provider: "apidojo",
+                  credits: 2,
+                  usageKinds: [{ kind: "finance", credits: 2 }],
+                },
+                {
+                  provider: "google-maps",
+                  credits: 3,
+                  usageKinds: [{ kind: "maps", credits: 3 }],
+                },
+                {
+                  provider: "monid/apollo",
+                  credits: 5,
+                  usageKinds: [
+                    {
+                      kind: "data-search/monid/apollo/provider_cost_usd_micros",
+                      credits: 5,
+                    },
+                  ],
+                },
               ],
             },
             {
@@ -450,20 +475,19 @@ test("Team usage groups Social and Product Data while conserving non-model credi
   await openCreditUsage();
   selectTeamUsage();
   await screen.findByText("Alice Admin");
-  expect(screen.getAllByText("70").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("84").length).toBeGreaterThanOrEqual(1);
 
   const connectorSegment = screen.getByTestId(
     "member-usage-kind-test-user-123-connector",
   );
   await user.hover(connectorSegment);
-  const heading = await screen.findByText("Connectors - 46");
+  const heading = await screen.findByText("Connectors - 60");
   const details = heading.parentElement;
   if (!details) {
     throw new Error("Member connector usage details not found");
   }
   for (const [label, credits] of [
-    ["Social Data", "12"],
-    ["Product Data", "27"],
+    ["Data Search", "53"],
     ["Slack", "7"],
   ]) {
     expect(within(details).getByText(label).parentElement).toHaveTextContent(

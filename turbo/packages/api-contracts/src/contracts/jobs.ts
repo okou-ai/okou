@@ -173,13 +173,13 @@ export const jobsContract = c.router({
       }),
       ...errors,
     },
-    summary: "List explicitly entrusted Jobs",
+    summary: "List explicitly entrusted Tasks",
   },
   get: {
     method: "GET",
     path: "/api/jobs/:id",
     ...resource,
-    summary: "Read a Job and its stored inputs and Results",
+    summary: "Read a Task and its stored inputs and Results",
   },
   create: {
     method: "POST",
@@ -187,21 +187,21 @@ export const jobsContract = c.router({
     headers: authHeadersSchema,
     body: jobCreateSchema,
     responses: { 200: jobSchema, ...errors },
-    summary: "Create an explicitly delegated Job",
+    summary: "Create an explicitly delegated Task",
   },
   update: {
     method: "PATCH",
     path: "/api/jobs/:id",
     ...resource,
     body: jobUpdateSchema,
-    summary: "Conditionally update Job progress and publish a Result",
+    summary: "Conditionally update Task progress and publish a Result",
   },
   input: {
     method: "POST",
     path: "/api/jobs/:id/inputs",
     ...resource,
     body: jobInputCreateSchema,
-    summary: "Save user input for the next Job evaluation",
+    summary: "Save user input for the next Task evaluation",
   },
   viewed: {
     method: "POST",
@@ -215,6 +215,6 @@ export const jobsContract = c.router({
     path: "/api/jobs/:id/archive",
     ...resource,
     body: z.object({}),
-    summary: "Archive a Job and stop its advancement",
+    summary: "Archive a Task and stop its advancement",
   },
 });

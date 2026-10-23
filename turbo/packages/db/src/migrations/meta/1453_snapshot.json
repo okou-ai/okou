@@ -1,5 +1,5 @@
 {
-  "id": "df194bd5-7085-4c4d-8619-4ed2eb20832a",
+  "id": "d2d0da12-061f-485b-bea5-e5f8a1da4caf",
   "prevId": "6bef91b5-2371-4fd0-9eb5-b4c799f3862c",
   "version": "7",
   "dialect": "postgresql",
@@ -7644,12 +7644,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "message_ts": {
           "name": "message_ts",
           "type": "text",
@@ -12314,6 +12308,314 @@
         "chk_custom_connector_account_oauth_binding_registration": {
           "name": "chk_custom_connector_account_oauth_binding_registration",
           "value": "(\n          (\n            \"custom_connector_account_oauth_bindings\".\"registration_method\" = 'cimd'\n            AND \"custom_connector_account_oauth_bindings\".\"dcr_registration_id\" IS NULL\n            AND \"custom_connector_account_oauth_bindings\".\"token_endpoint_auth_method\" = 'none'\n          ) OR (\n            \"custom_connector_account_oauth_bindings\".\"registration_method\" = 'dcr'\n            AND \"custom_connector_account_oauth_bindings\".\"dcr_registration_id\" IS NOT NULL\n          )\n        )"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.data_search_jobs": {
+      "name": "data_search_jobs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "billing_run_id": {
+          "name": "billing_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capability": {
+          "name": "capability",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request": {
+          "name": "request",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "plan": {
+          "name": "plan",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "provider_name": {
+          "name": "provider_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_endpoint": {
+          "name": "provider_endpoint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "upstream_run_id": {
+          "name": "upstream_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "result": {
+          "name": "result",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error": {
+          "name": "error",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "estimated_cost_usd_micros": {
+          "name": "estimated_cost_usd_micros",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actual_cost_usd_micros": {
+          "name": "actual_cost_usd_micros",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unit_price": {
+          "name": "unit_price",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_size": {
+          "name": "unit_size",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "max_credits": {
+          "name": "max_credits",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reserved_credits": {
+          "name": "reserved_credits",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "credits_charged": {
+          "name": "credits_charged",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "usage_idempotency_key": {
+          "name": "usage_idempotency_key",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stop_requested_at": {
+          "name": "stop_requested_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stop_submitted_at": {
+          "name": "stop_submitted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "uq_data_search_jobs_request": {
+          "name": "uq_data_search_jobs_request",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "request_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_data_search_jobs_usage": {
+          "name": "uq_data_search_jobs_usage",
+          "columns": [
+            {
+              "expression": "usage_idempotency_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_data_search_jobs_upstream": {
+          "name": "uq_data_search_jobs_upstream",
+          "columns": [
+            {
+              "expression": "provider_name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "upstream_run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_data_search_jobs_owner": {
+          "name": "idx_data_search_jobs_owner",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_data_search_jobs_reserved": {
+          "name": "idx_data_search_jobs_reserved",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"data_search_jobs\".\"credits_charged\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "data_search_jobs_status_check": {
+          "name": "data_search_jobs_status_check",
+          "value": "\"data_search_jobs\".\"status\" IN ('pending','running','completed','failed','cancelled','unknown')"
+        },
+        "data_search_jobs_amounts_check": {
+          "name": "data_search_jobs_amounts_check",
+          "value": "\"data_search_jobs\".\"estimated_cost_usd_micros\" >= 0 AND \"data_search_jobs\".\"actual_cost_usd_micros\" >= 0 AND \"data_search_jobs\".\"unit_price\" >= 0 AND \"data_search_jobs\".\"unit_size\" > 0 AND \"data_search_jobs\".\"max_credits\" >= 0 AND \"data_search_jobs\".\"reserved_credits\" >= 0 AND \"data_search_jobs\".\"reserved_credits\" <= \"data_search_jobs\".\"max_credits\" AND \"data_search_jobs\".\"credits_charged\" >= 0 AND \"data_search_jobs\".\"credits_charged\" <= \"data_search_jobs\".\"max_credits\""
         }
       },
       "isRLSEnabled": false
@@ -25428,28 +25730,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "slack_workspace_name": {
-          "name": "slack_workspace_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "legacy_installation_workspace_id": {
-          "name": "legacy_installation_workspace_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false,
-          "generated": {
-            "as": "CASE WHEN org_id IS NULL THEN slack_workspace_id ELSE NULL END",
-            "type": "stored"
-          }
-        },
         "user_id": {
           "name": "user_id",
           "type": "text",
@@ -25536,7 +25816,7 @@
           "tableFrom": "slack_org_connections",
           "tableTo": "slack_org_installations",
           "columnsFrom": [
-            "legacy_installation_workspace_id"
+            "slack_workspace_id"
           ],
           "columnsTo": [
             "slack_workspace_id"

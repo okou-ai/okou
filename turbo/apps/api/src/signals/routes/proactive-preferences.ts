@@ -92,7 +92,7 @@ function createProactivePreferenceRoutes(
       if (!eligibility[kind].available) {
         return resourceUnavailable(
           kind === "jobs"
-            ? "Proactive Jobs is not enabled."
+            ? "Proactive Tasks is not enabled."
             : "Agent Suggestion is not enabled.",
         );
       }

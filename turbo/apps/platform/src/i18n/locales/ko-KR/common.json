@@ -1927,12 +1927,12 @@
     },
     "documentTitle": "채팅",
     "entrustedJobs": {
-      "archive": "Archive job",
+      "archive": "Archive task",
       "authorize": "Authorize",
       "currentGrant": "Current access: {{scope}} · {{expiry}}",
       "decline": "Decline",
       "declined": "Authorization declined",
-      "details": "Job details",
+      "details": "Task details",
       "detailsDescription": "Review progress, reply, or view the result here.",
       "duration": "Allow access for",
       "durations": {
@@ -1941,14 +1941,14 @@
         "7d": "7 days",
         "always": "Always"
       },
-      "empty": "No jobs in this view. Ask Okou to create a Job when you want it to keep working on something.",
+      "empty": "No tasks in this view. Give Okou a task. It keeps working and comes back when it needs your input or has a result.",
       "filters": {
         "archived": "Archived",
         "history": "History",
         "home": "Current"
       },
       "granted": "Authorization saved",
-      "loading": "Loading Jobs",
+      "loading": "Loading Tasks",
       "next": "Next",
       "noExpiry": "No expiry",
       "previous": "Previous",
@@ -2568,7 +2568,7 @@
       "tasks": {
         "document": "문서",
         "image": "이미지",
-        "jobs": "Jobs",
+        "jobs": "Tasks",
         "presentation": "슬라이드",
         "suggestions": "제안",
         "visualization": "시각화",
@@ -5348,6 +5348,10 @@
       "timing": "변경 사항은 이후 실행에 적용됩니다. 실행 중이거나 이미 준비된 작업은 이전 설정을 유지할 수 있습니다.",
       "title": "기본 제공 도구",
       "tools": {
+        "data-search": {
+          "description": "직업 프로필을 보강하고 기업, 트래픽, 광고, 크리에이터 등 비즈니스 데이터를 조사합니다.",
+          "name": "고급 데이터 조사"
+        },
         "finance": {
           "description": "기업, 시세, 시장 데이터를 조회하세요.",
           "name": "금융 데이터"
@@ -5522,13 +5526,13 @@
         "title": "모닝 브리프"
       },
       "proactiveJobs": {
-        "description": "Automatically work on your jobs and notify you when your input is needed or a job is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your jobs.",
-        "preparationFailed": "Jobs could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your jobs. You can turn this off at any time.",
+        "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
+        "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
+        "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
+        "preparing": "Preparing your tasks. You can turn this off at any time.",
         "retry": "Retry",
-        "retryMessage": "Job settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive jobs"
+        "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
+        "title": "Proactive tasks"
       },
       "proactiveSuggestions": {
         "description": "Okou가 매시간 연결된 소스를 확인하고 홈에서 유용한 다음 행동을 제안합니다.",
@@ -6042,18 +6046,10 @@
   "usage": {
     "displayNames": {
       "avatar": "아바타",
-      "finance": "금융",
+      "dataSearch": "데이터 검색",
       "imageRecognition": "이미지 인식",
-      "maps": "지도",
-      "peopleSearch": "사람 검색",
-      "productData": "상품 데이터",
-      "seo": "SEO",
-      "socialSearch": "소셜 데이터",
       "translation": "번역",
-      "usage": "사용량",
-      "weather": "날씨",
-      "webFetch": "웹 가져오기",
-      "webSearch": "웹 검색"
+      "usage": "사용량"
     },
     "kinds": {
       "connector": "커넥터",

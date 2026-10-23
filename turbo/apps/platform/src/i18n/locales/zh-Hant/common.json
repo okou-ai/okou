@@ -1927,12 +1927,12 @@
     },
     "documentTitle": "聊天",
     "entrustedJobs": {
-      "archive": "Archive job",
+      "archive": "封存任務",
       "authorize": "Authorize",
       "currentGrant": "Current access: {{scope}} · {{expiry}}",
       "decline": "Decline",
       "declined": "Authorization declined",
-      "details": "Job details",
+      "details": "任務詳情",
       "detailsDescription": "Review progress, reply, or view the result here.",
       "duration": "Allow access for",
       "durations": {
@@ -1941,14 +1941,14 @@
         "7d": "7 days",
         "always": "Always"
       },
-      "empty": "No jobs in this view. Ask Okou to create a Job when you want it to keep working on something.",
+      "empty": "這裡還沒有任務。把任務交給 Okou，它會持續推進，並在需要你協助或有結果時通知你。",
       "filters": {
         "archived": "Archived",
         "history": "History",
         "home": "Current"
       },
       "granted": "Authorization saved",
-      "loading": "Loading Jobs",
+      "loading": "正在載入任務",
       "next": "Next",
       "noExpiry": "No expiry",
       "previous": "Previous",
@@ -2568,7 +2568,7 @@
       "tasks": {
         "document": "文件",
         "image": "圖片",
-        "jobs": "Jobs",
+        "jobs": "任務",
         "presentation": "簡報",
         "suggestions": "建議",
         "visualization": "視覺化",
@@ -5348,6 +5348,10 @@
       "timing": "修改對之後的執行生效。正在執行和已準備好的任務可能仍沿用原來的設定。",
       "title": "內建工具",
       "tools": {
+        "data-search": {
+          "description": "補充職業資料，研究公司、流量、廣告、創作者及其他商業資料。",
+          "name": "進階資料研究"
+        },
         "finance": {
           "description": "查詢公司、行情和市場資料。",
           "name": "金融資料"
@@ -5522,13 +5526,13 @@
         "title": "晨報"
       },
       "proactiveJobs": {
-        "description": "Automatically work on your jobs and notify you when your input is needed or a job is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your jobs.",
-        "preparationFailed": "Jobs could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your jobs. You can turn this off at any time.",
-        "retry": "Retry",
-        "retryMessage": "Job settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive jobs"
+        "description": "自動推進你的任務，在需要你協助或任務完成時通知你。",
+        "missingDefaultAgent": "請先選擇可用的預設 Agent。",
+        "preparationFailed": "任務暫時無法推進；如果工作已暫停，可關閉後重新開啟以重試。",
+        "preparing": "正在準備任務，你可以隨時關閉。",
+        "retry": "重試",
+        "retryMessage": "無法讀取或更新任務設定，請重試。",
+        "title": "自動推進任務"
       },
       "proactiveSuggestions": {
         "description": "讓 Okou 每小時檢查已連接的資訊來源，並在首頁推薦實用的下一步行動。",
@@ -6042,18 +6046,10 @@
   "usage": {
     "displayNames": {
       "avatar": "數字人",
-      "finance": "金融",
+      "dataSearch": "資料搜尋",
       "imageRecognition": "影像識別",
-      "maps": "地圖",
-      "peopleSearch": "人物搜尋",
-      "productData": "商品資料",
-      "seo": "SEO",
-      "socialSearch": "社群資料",
       "translation": "翻譯",
-      "usage": "用量",
-      "weather": "天氣",
-      "webFetch": "網頁抓取",
-      "webSearch": "網頁搜尋"
+      "usage": "用量"
     },
     "kinds": {
       "connector": "連接器",

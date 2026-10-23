@@ -46,6 +46,8 @@ export const CAPABILITIES = [
   "people-search:read",
   "web-search:read",
   "social:read",
+  "data-search:read",
+  "data-enrichment:read",
   "finance:read",
   "seo:read",
   "commerce:read",
@@ -84,8 +86,8 @@ export interface CapabilityMeta {
  * will produce a TypeScript compile error.
  */
 export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
-  "job:read": { group: "Jobs", label: "Read your entrusted jobs" },
-  "job:write": { group: "Jobs", label: "Advance your entrusted jobs" },
+  "job:read": { group: "Tasks", label: "Read your entrusted tasks" },
+  "job:write": { group: "Tasks", label: "Advance your entrusted tasks" },
   "computer-use:shell:write": {
     group: "Computer Use",
     label: "Use interactive shells on your authorized computer",
@@ -227,6 +229,14 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
   "web-search:read": {
     group: "Web Search",
     label: "Use managed web search",
+  },
+  "data-search:read": {
+    group: "Data Search",
+    label: "Search reviewed business data sources",
+  },
+  "data-enrichment:read": {
+    group: "Data Search",
+    label: "Enrich public professional profiles and work emails",
   },
   "social:read": {
     group: "Social",

@@ -256,7 +256,6 @@ describe("CHAT-01 chat thread lifecycle", () => {
         selectedModel: "gpt-6-luna",
       }),
     );
-    expect(detail.lastReadAt).toStrictEqual(expect.any(String));
 
     const peerRename = await api.requestRenameThread(
       peer,

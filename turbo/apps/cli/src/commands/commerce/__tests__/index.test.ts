@@ -120,7 +120,7 @@ describe("managed Commerce commands", () => {
           search: { maxResults: 48, maxPages: 1 },
           jobs: {
             providerPriority: 2,
-            get: "okou commerce job <id> [--wait] --json",
+            get: "okou data commerce job <id> [--wait] --json",
           },
           billing: { mode: "asynchronous" },
           export: { formats: ["json", "csv"] },
@@ -340,7 +340,7 @@ describe("managed Commerce commands", () => {
       id: jobId,
       status: "pending",
       result: null,
-      recoveryCommand: `okou commerce job ${jobId} --wait --json`,
+      recoveryCommand: `okou data commerce job ${jobId} --wait --json`,
     });
   });
 
@@ -505,7 +505,7 @@ describe("managed Commerce commands", () => {
       error: {
         code: "COMMERCE_SUBMISSION_UNCERTAIN",
         message: expect.stringContaining(
-          `okou commerce job ${requestId} --wait --json`,
+          `okou data commerce job ${requestId} --wait --json`,
         ),
       },
     });
@@ -542,7 +542,7 @@ describe("managed Commerce commands", () => {
         code: "COMMERCE_SUBMISSION_UNCERTAIN",
         retryable: false,
         message: expect.stringContaining(
-          `Read it with: okou commerce job ${jobId}`,
+          `Read it with: okou data commerce job ${jobId}`,
         ),
       },
     });
@@ -601,7 +601,7 @@ describe("managed Commerce commands", () => {
       error: {
         code: "COMMERCE_JOB_READ_FAILED",
         message: expect.stringContaining(
-          `okou commerce job ${jobId} --wait --json`,
+          `okou data commerce job ${jobId} --wait --json`,
         ),
       },
     });
@@ -630,7 +630,7 @@ describe("managed Commerce commands", () => {
     expect(JSON.parse(stderr.mock.calls.flat().join("\n"))).toMatchObject({
       status: "interrupted",
       jobId,
-      recoveryCommand: `okou commerce job ${jobId} --wait --json`,
+      recoveryCommand: `okou data commerce job ${jobId} --wait --json`,
     });
   });
 

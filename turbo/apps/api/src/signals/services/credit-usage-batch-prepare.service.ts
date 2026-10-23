@@ -9,6 +9,10 @@ import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
+import {
+  dataSearchJobQuery,
+  prepareDataSearchSettlement,
+} from "./data-search-settlement-plan";
 import { command } from "ccstate";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
@@ -27,7 +31,7 @@ import {
 
 function settlementRunIds(
   events: readonly PendingUsageSnapshot[],
-  socialRunId: string | null | undefined,
+  jobRunId: string | null | undefined,
   commerce: readonly CommerceSettlementJob[],
 ) {
   return [
@@ -35,7 +39,7 @@ function settlementRunIds(
       ...events.flatMap(({ event }) => {
         return event.billingRunId ? [event.billingRunId] : [];
       }),
-      ...(socialRunId ? [socialRunId] : []),
+      ...(jobRunId ? [jobRunId] : []),
       ...commerce.flatMap((job) => {
         return job.runId ? [job.runId] : [];
       }),
@@ -43,17 +47,52 @@ function settlementRunIds(
   ];
 }
 
+interface PrepareUsageSettlementArgs {
+  readonly orgId: string;
+  readonly idempotencyKeys?: readonly string[];
+  readonly social?: SocialSettlementClaim;
+  readonly dataSearchJobId?: string;
+  readonly commerceJobId?: string;
+}
+
+function settlementUsageKeys(
+  args: PrepareUsageSettlementArgs,
+  socialKey: string | undefined,
+  dataSearchKey: string | undefined,
+  commerce: readonly CommerceSettlementJob[],
+) {
+  if (args.commerceJobId) {
+    return commerce.map((row) => {
+      return row.usageIdempotencyKey;
+    });
+  }
+  if (args.social) {
+    return socialKey ? [socialKey] : [];
+  }
+  if (args.dataSearchJobId) {
+    return dataSearchKey ? [dataSearchKey] : [];
+  }
+  return args.idempotencyKeys ?? [];
+}
+
+function settlementUsageRecords(
+  events: readonly PendingUsageSnapshot[],
+  freeOfficialRunOwners: ReadonlyMap<string, string>,
+) {
+  return events.map(({ event }) => {
+    return {
+      ...event,
+      creditChargePolicy:
+        event.billingRunId &&
+        freeOfficialRunOwners.get(event.billingRunId) === event.userId
+          ? ("official_workflow_free" as const)
+          : ("standard" as const),
+    };
+  });
+}
+
 export const prepareUsageSettlementBatch$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly idempotencyKeys?: readonly string[];
-      readonly social?: SocialSettlementClaim;
-      readonly commerceJobId?: string;
-    },
-    signal: AbortSignal,
-  ) => {
+  async ({ set }, args: PrepareUsageSettlementArgs, signal: AbortSignal) => {
     const db = set(writeDb$);
     const [job] = args.social
       ? await db
@@ -65,19 +104,22 @@ export const prepareUsageSettlementBatch$ = command(
           .limit(1)
       : [];
     signal.throwIfAborted();
+    const [dataSearchJob] = args.dataSearchJobId
+      ? await db
+          .select()
+          .from(dataSearchJobQuery(args.orgId, args.dataSearchJobId))
+      : [];
+    signal.throwIfAborted();
     const commerce = args.commerceJobId
       ? await db.select().from(commerceJobQuery(args.orgId, args.commerceJobId))
       : [];
     signal.throwIfAborted();
-    const keys = args.commerceJobId
-      ? commerce.map((row) => {
-          return row.usageIdempotencyKey;
-        })
-      : args.social
-        ? job
-          ? [job.usageIdempotencyKey]
-          : []
-        : (args.idempotencyKeys ?? []);
+    const keys = settlementUsageKeys(
+      args,
+      job?.usageIdempotencyKey,
+      dataSearchJob?.usageIdempotencyKey,
+      commerce,
+    );
     if (keys.length > USAGE_SETTLEMENT_BATCH_SIZE) {
       throw new Error("Usage settlement batch exceeds its event bound");
     }
@@ -89,7 +131,9 @@ export const prepareUsageSettlementBatch$ = command(
       .where(
         and(
           eq(usageEvent.orgId, args.orgId),
-          args.social ? undefined : eq(usageEvent.status, "pending"),
+          args.social || args.dataSearchJobId
+            ? undefined
+            : eq(usageEvent.status, "pending"),
           inArray(usageEvent.idempotencyKey, keys),
         ),
       )
@@ -106,7 +150,12 @@ export const prepareUsageSettlementBatch$ = command(
       .map(({ event }) => {
         return event.idempotencyKey;
       });
-    if (!args.social && !args.commerceJobId && commerceKeys.length > 0) {
+    if (
+      !args.social &&
+      !args.dataSearchJobId &&
+      !args.commerceJobId &&
+      commerceKeys.length > 0
+    ) {
       commerce.push(
         ...(await db
           .select()
@@ -123,7 +172,11 @@ export const prepareUsageSettlementBatch$ = command(
       .from(usagePricing)
       .where(settlementPricingCondition(pricingKeys));
     signal.throwIfAborted();
-    const runIds = settlementRunIds(events, job?.billingRunId, commerce);
+    const runIds = settlementRunIds(
+      events,
+      job?.billingRunId ?? dataSearchJob?.billingRunId,
+      commerce,
+    );
     const freeRuns =
       runIds.length === 0
         ? []
@@ -149,22 +202,15 @@ export const prepareUsageSettlementBatch$ = command(
         return [run.runId, run.userId];
       }),
     );
-    const records = events.map(({ event }) => {
-      return {
-        ...event,
-        creditChargePolicy:
-          event.billingRunId &&
-          freeOfficialRunOwners.get(event.billingRunId) === event.userId
-            ? ("official_workflow_free" as const)
-            : ("standard" as const),
-      };
-    });
+    const records = settlementUsageRecords(events, freeOfficialRunOwners);
     const priced = priceUsageEvents(records, prices, args.orgId, false);
     const social = prepareSocialSettlement(job);
+    const dataSearch = prepareDataSearchSettlement(dataSearchJob);
     return {
       events,
       freeOfficialRunOwners,
       social,
+      dataSearch,
       commerce,
       prices,
       records,

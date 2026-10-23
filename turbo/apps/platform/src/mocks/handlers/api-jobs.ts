@@ -18,7 +18,7 @@ function refresh(job: Job): Job {
       !job.viewedResultIds.includes(job.work.currentResultId),
   };
 }
-const missing = { error: { code: "NOT_FOUND", message: "Job not found" } };
+const missing = { error: { code: "NOT_FOUND", message: "Task not found" } };
 export const apiJobsHandlers = [
   mockApi(jobsContract.list, ({ query, respond }) => {
     const items = [...jobs.values()]
@@ -97,7 +97,7 @@ export const apiJobsHandlers = [
         JSON.stringify(body.expected)
     ) {
       return respond(409, {
-        error: { code: "CONFLICT", message: "Read the current Job" },
+        error: { code: "CONFLICT", message: "Read the current Task" },
       });
     }
     const updated = refresh({
@@ -124,7 +124,7 @@ export const apiJobsHandlers = [
     }
     if (job.status === "archived") {
       return respond(409, {
-        error: { code: "CONFLICT", message: "This Job is archived" },
+        error: { code: "CONFLICT", message: "This Task is archived" },
       });
     }
     const updated = refresh({

@@ -804,6 +804,16 @@ assert_env_absent_value "$production_api_env_file" "doppler-stripe-billing-webho
 assert_env_absent_value "$production_api_env_file" "doppler-stripe-automation-webhook-secret"
 assert_preview_job_ref_absent "$production_api_env_file"
 
+# Forward the explicitly configured conversion rate in both API environments.
+for firecrawl_environment in preview production; do
+  firecrawl_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$firecrawl_dir")
+  firecrawl_vars='{"OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT":"2500"}'
+  run_action "$(build_doppler_secrets_json)" "$firecrawl_dir" api "$firecrawl_environment" canonical "$firecrawl_vars" > /dev/null
+  firecrawl_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${firecrawl_dir}/github-output")"
+  assert_env_value "$firecrawl_env_file" OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT "2500"
+done
+
 for kms_secret in PREVIEW_KMS_KEY_ID PREVIEW_KMS_ACCESS_KEY_ID PREVIEW_KMS_SECRET_ACCESS_KEY; do
   missing_kms_dir="$(mktemp -d)"
   TEMP_DIRS+=("$missing_kms_dir")

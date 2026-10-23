@@ -254,6 +254,7 @@
     "src/signals/services/pi-resource-version-index.service.ts",
     "src/signals/services/run-admission.service.ts",
     "src/signals/services/social-data-settlement-plan.ts",
+    "src/signals/services/data-search-settlement-plan.ts",
     "src/signals/services/storage-index.service.ts",
     "src/signals/services/storage-version-registration.service.ts",
     "src/signals/services/storage-volume-publication-sql.ts",

@@ -1965,12 +1965,12 @@
     },
     "documentTitle": "Discussion",
     "entrustedJobs": {
-      "archive": "Archive job",
+      "archive": "Archive task",
       "authorize": "Authorize",
       "currentGrant": "Current access: {{scope}} · {{expiry}}",
       "decline": "Decline",
       "declined": "Authorization declined",
-      "details": "Job details",
+      "details": "Task details",
       "detailsDescription": "Review progress, reply, or view the result here.",
       "duration": "Allow access for",
       "durations": {
@@ -1979,14 +1979,14 @@
         "7d": "7 days",
         "always": "Always"
       },
-      "empty": "No jobs in this view. Ask Okou to create a Job when you want it to keep working on something.",
+      "empty": "No tasks in this view. Give Okou a task. It keeps working and comes back when it needs your input or has a result.",
       "filters": {
         "archived": "Archived",
         "history": "History",
         "home": "Current"
       },
       "granted": "Authorization saved",
-      "loading": "Loading Jobs",
+      "loading": "Loading Tasks",
       "next": "Next",
       "noExpiry": "No expiry",
       "previous": "Previous",
@@ -2625,7 +2625,7 @@
       "tasks": {
         "document": "Document",
         "image": "Image",
-        "jobs": "Jobs",
+        "jobs": "Tasks",
         "presentation": "Diapositives",
         "suggestions": "Suggestions",
         "visualization": "Visualisation",
@@ -5427,6 +5427,10 @@
       "timing": "Les modifications s’appliquent aux prochaines exécutions. Les tâches en cours ou déjà préparées peuvent conserver leurs anciens paramètres.",
       "title": "Outils intégrés",
       "tools": {
+        "data-search": {
+          "description": "Enrichissez les profils professionnels et étudiez les entreprises, le trafic, les publicités, les créateurs et d’autres données commerciales.",
+          "name": "Recherche de données avancée"
+        },
         "finance": {
           "description": "Consultez les entreprises, les cours et les données de marché.",
           "name": "Données financières"
@@ -5602,13 +5606,13 @@
         "title": "Résumé du matin"
       },
       "proactiveJobs": {
-        "description": "Automatically work on your jobs and notify you when your input is needed or a job is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your jobs.",
-        "preparationFailed": "Jobs could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your jobs. You can turn this off at any time.",
+        "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
+        "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
+        "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
+        "preparing": "Preparing your tasks. You can turn this off at any time.",
         "retry": "Retry",
-        "retryMessage": "Job settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive jobs"
+        "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
+        "title": "Proactive tasks"
       },
       "proactiveSuggestions": {
         "description": "Okou consulte vos sources connectées chaque heure et propose des actions utiles sur votre page d’accueil.",
@@ -6131,18 +6135,10 @@
   "usage": {
     "displayNames": {
       "avatar": "Avatar",
-      "finance": "Finance",
+      "dataSearch": "Recherche de données",
       "imageRecognition": "Reconnaissance d'images",
-      "maps": "Cartes",
-      "peopleSearch": "Recherche de personnes",
-      "productData": "Données produits",
-      "seo": "SEO",
-      "socialSearch": "Données des réseaux sociaux",
       "translation": "Traduction",
-      "usage": "Utilisation",
-      "weather": "Météo",
-      "webFetch": "Récupération Web",
-      "webSearch": "Recherche Web"
+      "usage": "Utilisation"
     },
     "kinds": {
       "connector": "Connecteurs",

@@ -13,7 +13,7 @@ import {
 import { server } from "../../../mocks/server";
 import { scrapeCommand } from "../index";
 
-describe("okou scrape command", () => {
+describe("okou data web scrape command", () => {
   const mockConsoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
   const mockConsoleError = vi
     .spyOn(console, "error")

@@ -230,6 +230,99 @@ describe("Social data jobs", () => {
     });
   });
 
+  it.each([
+    {
+      body: {
+        platform: "threads",
+        operation: "inspect",
+        url: "https://www.threads.net/@instagram",
+        limit: 1,
+      },
+      endpoint: "/api/v1/threads/web/search_profiles",
+      location: "queryParams",
+      properties: { query: { type: "string" } },
+    },
+    {
+      body: {
+        platform: "wechat",
+        operation: "search",
+        query: "business productivity",
+        limit: 1,
+      },
+      endpoint: "/api/v1/wechat_search/v2/fetch_search",
+      location: "body",
+      properties: {
+        keyword: { type: "string" },
+        business_type: { type: "string" },
+        raw: { type: "boolean" },
+      },
+    },
+    {
+      body: {
+        platform: "xiaohongshu",
+        operation: "search",
+        query: "business productivity",
+        limit: 1,
+      },
+      endpoint: "/api/v1/xiaohongshu/app_v2/search_notes",
+      location: "queryParams",
+      properties: {
+        keyword: { type: "string" },
+        page: { type: "number" },
+        sort_type: { type: "string" },
+        note_type: { type: "string" },
+      },
+    },
+  ] as const satisfies readonly {
+    readonly body: SocialDataRequest;
+    readonly endpoint: string;
+    readonly location: "body" | "queryParams";
+    readonly properties: Readonly<Record<string, { readonly type: string }>>;
+  }[])(
+    "quotes seeded $body.platform costs without executing or charging",
+    async ({ body, endpoint, location, properties }) => {
+      const actor = await seedActor();
+      await actor.run(async () => {
+        const observed = source();
+        server.use(
+          http.post("https://api.monid.ai/v1/inspect", async ({ request }) => {
+            await expect(request.json()).resolves.toStrictEqual({
+              provider: "tikhub",
+              endpoint,
+            });
+            return HttpResponse.json({
+              provider: "tikhub",
+              endpoint,
+              input: { [location]: { type: "object", properties } },
+              price: {
+                type: "PER_CALL",
+                amount: { value: 0.001, currency: "USD" },
+              },
+            });
+          }),
+        );
+        const beforeCredits = await credits(actor);
+        const quoted = await accept(
+          client()(socialDataContract).quote({
+            headers: authenticate(actor),
+            body,
+          }),
+          [200],
+        );
+        expect(quoted.body).toMatchObject({
+          platform: body.platform,
+          operation: body.operation,
+          estimatedCredits: 2,
+          maxCredits: 2,
+          quantity: 1,
+          unit: "request",
+        });
+        expect(observed.runRequests).toBe(0);
+        await expect(credits(actor)).resolves.toBe(beforeCredits);
+      });
+    },
+  );
+
   it("rejects unsupported new-platform targets before execution", async () => {
     const actor = await seedActor();
     await actor.run(async () => {

@@ -30,7 +30,7 @@ describe("managed SocialKit contract", () => {
         recovery: {
           downloadId: "6bdc3449-41ef-4624-a525-45bce09c67f0",
           resumeCommand:
-            "okou social download --resume 6bdc3449-41ef-4624-a525-45bce09c67f0",
+            "okou data social download --resume 6bdc3449-41ef-4624-a525-45bce09c67f0",
         },
       },
     };

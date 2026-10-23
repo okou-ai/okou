@@ -1934,12 +1934,12 @@
     },
     "documentTitle": "Chat",
     "entrustedJobs": {
-      "archive": "Archive job",
+      "archive": "Archive task",
       "authorize": "Authorize",
       "currentGrant": "Current access: {{scope}} · {{expiry}}",
       "decline": "Decline",
       "declined": "Authorization declined",
-      "details": "Job details",
+      "details": "Task details",
       "detailsDescription": "Review progress, reply, or view the result here.",
       "duration": "Allow access for",
       "durations": {
@@ -1948,14 +1948,14 @@
         "7d": "7 days",
         "always": "Always"
       },
-      "empty": "No jobs in this view. Ask Okou to create a Job when you want it to keep working on something.",
+      "empty": "No tasks in this view. Give Okou a task. It keeps working and comes back when it needs your input or has a result.",
       "filters": {
         "archived": "Archived",
         "history": "History",
         "home": "Current"
       },
       "granted": "Authorization saved",
-      "loading": "Loading Jobs",
+      "loading": "Loading Tasks",
       "next": "Next",
       "noExpiry": "No expiry",
       "previous": "Previous",
@@ -2579,7 +2579,7 @@
       "tasks": {
         "document": "Document",
         "image": "Image",
-        "jobs": "Jobs",
+        "jobs": "Tasks",
         "presentation": "Presentation",
         "suggestions": "Suggestions",
         "visualization": "Visualization",
@@ -5363,6 +5363,10 @@
       "timing": "Changes apply to future runs. Tasks already running or prepared may keep their previous settings.",
       "title": "Built-in tools",
       "tools": {
+        "data-search": {
+          "description": "Enrich professional profiles and research companies, traffic, ads, creators, and other business data.",
+          "name": "Advanced data research"
+        },
         "finance": {
           "description": "Look up companies, quotes, and market data.",
           "name": "Financial data"
@@ -5537,13 +5541,13 @@
         "title": "Morning brief"
       },
       "proactiveJobs": {
-        "description": "Automatically work on your jobs and notify you when your input is needed or a job is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your jobs.",
-        "preparationFailed": "Jobs could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your jobs. You can turn this off at any time.",
+        "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
+        "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
+        "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
+        "preparing": "Preparing your tasks. You can turn this off at any time.",
         "retry": "Retry",
-        "retryMessage": "Job settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive jobs"
+        "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
+        "title": "Proactive tasks"
       },
       "proactiveSuggestions": {
         "description": "Let Okou check your connected sources every hour and suggest useful next steps on your home page.",
@@ -6061,18 +6065,10 @@
   "usage": {
     "displayNames": {
       "avatar": "Avatar",
-      "finance": "Finance",
+      "dataSearch": "Data Search",
       "imageRecognition": "Image Recognition",
-      "maps": "Maps",
-      "peopleSearch": "People Search",
-      "productData": "Product Data",
-      "seo": "SEO",
-      "socialSearch": "Social Data",
       "translation": "Translation",
-      "usage": "Usage",
-      "weather": "Weather",
-      "webFetch": "Web Fetch",
-      "webSearch": "Web Search"
+      "usage": "Usage"
     },
     "kinds": {
       "connector": "Connectors",

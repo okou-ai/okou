@@ -107,7 +107,7 @@ const capabilities = new Command("capabilities")
               jobs: {
                 submit:
                   "search and inspect wait by default; --async returns a job receipt",
-                get: "okou commerce job <id> [--wait] --json",
+                get: "okou data commerce job <id> [--wait] --json",
                 providerPriority: 2,
                 note: "Polling reads the existing job; it never submits another paid operation. Interrupting the CLI leaves server work running.",
               },
@@ -212,14 +212,14 @@ export const commerceCommand = new Command("commerce")
 Read the relevant subcommand's --help before use.
 
 Examples:
-  okou commerce capabilities amazon --json
-  okou commerce inspect https://www.amazon.com/dp/B0D1XD1ZV3 --platform amazon --json
-  okou commerce search "standing desk" --platform amazon --marketplace amazon.co.uk --limit 20 --json
-  okou commerce search "standing desk" --platform amazon --select title,price --format csv --output products.csv
+  okou data commerce capabilities amazon --json
+  okou data commerce inspect https://www.amazon.com/dp/B0D1XD1ZV3 --platform amazon --json
+  okou data commerce search "standing desk" --platform amazon --marketplace amazon.co.uk --limit 20 --json
+  okou data commerce search "standing desk" --platform amazon --select title,price --format csv --output products.csv
 
 Submissions create asynchronous jobs using provider priority 2 and may consume credits; there is no free quote or caller-enforced --max-credits cap.
 Search and inspect poll the saved job by default and print the final result. --async prints a job receipt without waiting and cannot be combined with export options.
-Read or resume waiting with okou commerce job <id> --wait --json; this never submits another paid operation.
+Read or resume waiting with okou data commerce job <id> --wait --json; this never submits another paid operation.
 Interrupting the CLI leaves server work running. Do not resubmit an uncertain submission; no automatic paid retries.
 One bounded request only: no automatic pagination or download support.
 Inspect preserves the product URL's marketplace; an explicit conflicting --marketplace fails locally.

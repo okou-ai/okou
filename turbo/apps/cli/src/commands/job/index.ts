@@ -16,17 +16,17 @@ import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 
 const JOB_HANDOFF_HELP = `Execution handoff:
-  Jobs are saved delegations executed asynchronously by Okou's background Jobs loop.
-  The loop advances saved work when Jobs is enabled; if background execution is paused, Jobs remain saved.
-  In the creating chat, successful create is the handoff: confirm the Job ID and end the turn.
+  Tasks are saved delegations executed asynchronously by Okou's background Tasks loop.
+  The loop advances saved work when background execution is enabled; if background execution is paused, Tasks remain saved.
+  In the creating chat, successful create is the handoff: confirm the Task ID and end the turn.
   Do not also perform the objective, mark it completed, start another worker/workflow, or poll for completion.
   Creation and status active do not prove that work is running or complete.
-  Read saved progress and Results later with okou job get <id> --json.`;
+  Read saved progress and Results later with okou task get <id> --json.`;
 
 async function inputFile(path: string): Promise<unknown> {
   const info = await stat(path);
   if (!info.isFile() || info.size > 262144)
-    throw new Error("Job input must be a JSON file of at most 262144 bytes.");
+    throw new Error("Task input must be a JSON file of at most 262144 bytes.");
   return JSON.parse(await readFile(path, "utf8"));
 }
 function jsonError(error: unknown, options: { readonly json?: boolean }) {
@@ -35,7 +35,7 @@ function jsonError(error: unknown, options: { readonly json?: boolean }) {
     JSON.stringify({
       error: {
         code: error instanceof ApiRequestError ? error.code : "INVALID_INPUT",
-        message: error instanceof Error ? error.message : "Job command failed",
+        message: error instanceof Error ? error.message : "Task command failed",
       },
     }),
   );
@@ -43,34 +43,35 @@ function jsonError(error: unknown, options: { readonly json?: boolean }) {
 }
 const jobId = z.uuid().toLowerCase();
 export function createJobCommand() {
-  const job = new Command("job")
+  const job = new Command("task")
+    .alias("job")
     .description(
-      "Delegate explicitly entrusted work to Okou's background Jobs loop",
+      "Delegate explicitly entrusted work to Okou's background Tasks loop",
     )
     .addHelpText(
       "after",
       `
-Create Jobs only when the user explicitly asks to entrust work as an Okou Job.
-Ordinary chat tasks and Suggestions do not automatically become Jobs.
+Create Tasks only when the user explicitly asks to entrust work as an Okou Task.
+Ordinary chat requests and Suggestions do not automatically become Tasks.
 
 ${JOB_HANDOFF_HELP}
 
 Usage:
-  1. Put a stable UUID, title and self-contained objective in job.json.
+  1. Put a stable UUID, title and self-contained objective in task.json.
      Include the authorized scope, delivery target, necessary inputs and completion criteria.
-     Background runs use saved Job details rather than inheriting the creating chat.
-  2. Run okou job create --file job.json --json, confirm the saved ID, and end the creating turn.
-  3. When the user asks for status, read okou job get <id> --json and report the saved state.
+     Background runs use saved Task details rather than inheriting the creating chat.
+  2. Run okou task create --file task.json --json, confirm the saved ID, and end the creating turn.
+  3. When the user asks for status, read okou task get <id> --json and report the saved state.
 
 Background executor:
-  The Proactive jobs run uses list --runnable, get, ordinary tools, and update to do the work.
+  The Proactive tasks run uses list --runnable, get, ordinary tools, and update to do the work.
   update persists inspected progress and verified Results; it does not start a worker.
-  User replies and permission responses belong to Job details.
+  User replies and permission responses belong to Task details.
 `,
     );
   job
     .command("list")
-    .description("List your Jobs; follow nextAfter to read every page")
+    .description("List your Tasks; follow nextAfter to read every page")
     .option(
       "--filter <filter>",
       "home, history, archived, runnable, or all",
@@ -78,7 +79,7 @@ Background executor:
     )
     .option(
       "--runnable",
-      "Include active work and unprocessed input on waiting or completed Jobs",
+      "Include active work and unprocessed input on waiting or completed Tasks",
     )
     .option("--after <id>", "Continue after the returned nextAfter identity")
     .option("--limit <count>", "Page size from 1 to 100", "50")
@@ -106,11 +107,11 @@ Background executor:
               );
             if (result.jobs.length === 0)
               console.log(
-                "No Jobs in this view. Create a Job only when the user explicitly delegates it: okou job create --file job.json",
+                "No Tasks in this view. Create a Task only when the user explicitly delegates it: okou task create --file task.json",
               );
             if (result.nextAfter)
               console.log(
-                `Next page: okou job list --filter ${query.filter} --after ${result.nextAfter}`,
+                `Next page: okou task list --filter ${query.filter} --after ${result.nextAfter}`,
               );
           }
         },
@@ -163,7 +164,7 @@ ${JOB_HANDOFF_HELP}
 
 Retries:
   Reuse the same UUID and exact creation file after an uncertain response.
-  A new UUID creates a separate Job and can duplicate the work.
+  A new UUID creates a separate Task and can duplicate the work.
 `,
     )
     .action(
@@ -175,7 +176,7 @@ Retries:
           console.log(
             options.json
               ? JSON.stringify(result)
-              : `Job saved: ${result.id}\nStatus: ${result.status}\nBackground execution is managed by the Jobs loop when enabled.\nIn the creating chat, confirm this ID and end the turn; do not also perform the objective.\nLater status: okou job get ${result.id} --json`,
+              : `Task saved: ${result.id}\nStatus: ${result.status}\nBackground execution is managed by the Tasks loop when enabled.\nIn the creating chat, confirm this ID and end the turn; do not also perform the objective.\nLater status: okou task get ${result.id} --json`,
           );
         },
         jsonError,
@@ -194,7 +195,7 @@ Retries:
     .addHelpText(
       "after",
       `
-Use this from the background Jobs executor after reading the current Job.
+Use this from the background Tasks executor after reading the current Task.
 Copy its inspected status and work into expected and preserve unchanged work fields.
 Completion requires a verified Result and matching work.currentResultId in the same update.
 On a conflict, read current state before deciding; never blindly repeat an external action.
@@ -214,7 +215,7 @@ The creating chat hands off after create rather than doing the work and completi
           console.log(
             options.json
               ? JSON.stringify(result)
-              : `Job ${result.id}: ${result.status}\nInspect: okou job get ${result.id} --json`,
+              : `Task ${result.id}: ${result.status}\nInspect: okou task get ${result.id} --json`,
           );
         },
         (error, _id, options) => {

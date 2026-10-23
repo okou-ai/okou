@@ -1,0 +1,76 @@
+{
+  "_review": {
+    "sourceUrl": "https://www.firecrawl.dev/alexandria/agents/providers/web-archive-org/openapi.json",
+    "reviewedAt": "2026-10-22",
+    "sourceFile": "web-archive-org-openapi.json",
+    "sourceSha256": "15f004923d57a2359387d08dba8f87de7f81b51d446f9a7773a5d75bb037c960"
+  },
+  "x-firecrawl-credit-cost": {
+    "min": 5,
+    "max": 5
+  },
+  "x-firecrawl-capabilities": [
+    {
+      "key": "captures/history",
+      "credits_per_call": 5
+    }
+  ],
+  "paths": {
+    "/v2/scrape": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["alexandria"],
+                "properties": {
+                  "alexandria": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "required": ["provider", "capability", "options"],
+                        "properties": {
+                          "provider": {
+                            "type": "string",
+                            "const": "web-archive-org"
+                          },
+                          "capability": {
+                            "type": "string",
+                            "const": "captures/history"
+                          },
+                          "options": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "date": {
+                                "type": "string",
+                                "description": "Pattern: ^[0-9]{8}$.",
+                                "example": "<date>"
+                              },
+                              "limit": {
+                                "type": "number",
+                                "description": "limit",
+                                "example": 5
+                              },
+                              "url": {
+                                "type": "string",
+                                "description": "url",
+                                "example": "<url>"
+                              }
+                            },
+                            "required": ["url"]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

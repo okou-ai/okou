@@ -731,7 +731,7 @@ export const listSocialKitDownloads$ = command(
           resumeCommand:
             job.status === "provider_failed"
               ? null
-              : `okou social download --resume ${job.id}`,
+              : `okou data social download --resume ${job.id}`,
         };
       }),
       nextCursor: rows.length > limit && last ? last.id : null,

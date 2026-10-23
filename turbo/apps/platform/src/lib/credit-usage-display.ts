@@ -30,9 +30,9 @@ const USAGE_DISPLAY_NAMES = {
       return $.usage.displayNames.avatar;
     });
   },
-  finance(): string {
+  dataSearch(): string {
     return i18n.t(($) => {
-      return $.usage.displayNames.finance;
+      return $.usage.displayNames.dataSearch;
     });
   },
   imageRecognition(): string {
@@ -40,64 +40,31 @@ const USAGE_DISPLAY_NAMES = {
       return $.usage.displayNames.imageRecognition;
     });
   },
-  maps(): string {
-    return i18n.t(($) => {
-      return $.usage.displayNames.maps;
-    });
-  },
-  peopleSearch(): string {
-    return i18n.t(($) => {
-      return $.usage.displayNames.peopleSearch;
-    });
-  },
-  productData(): string {
-    return i18n.t(($) => {
-      return $.usage.displayNames.productData;
-    });
-  },
-  seo(): string {
-    return i18n.t(($) => {
-      return $.usage.displayNames.seo;
-    });
-  },
-  socialSearch(): string {
-    return i18n.t(($) => {
-      return $.usage.displayNames.socialSearch;
-    });
-  },
   translation(): string {
     return i18n.t(($) => {
       return $.usage.displayNames.translation;
     });
   },
-  weather(): string {
-    return i18n.t(($) => {
-      return $.usage.displayNames.weather;
-    });
-  },
-  webFetch(): string {
-    return i18n.t(($) => {
-      return $.usage.displayNames.webFetch;
-    });
-  },
-  webSearch(): string {
-    return i18n.t(($) => {
-      return $.usage.displayNames.webSearch;
-    });
-  },
 } as const;
+
+// Both row grouping and segment transfers use this set. Reporting retains the
+// original ledger kinds in Other; only the display combines them in Connectors.
+const DATA_SEARCH_USAGE_KINDS: ReadonlySet<string> = new Set([
+  "finance",
+  "maps",
+  "weather",
+  "seo",
+  "social",
+  "commerce",
+  "scrape",
+  "web-search",
+  "people-search",
+  "data-search",
+]);
 
 const MANAGED_USAGE_KIND_DISPLAY_NAMES: Readonly<Record<string, () => string>> =
   {
-    scrape: USAGE_DISPLAY_NAMES.webFetch,
-    maps: USAGE_DISPLAY_NAMES.maps,
-    "web-search": USAGE_DISPLAY_NAMES.webSearch,
-    "people-search": USAGE_DISPLAY_NAMES.peopleSearch,
-    seo: USAGE_DISPLAY_NAMES.seo,
-    social: USAGE_DISPLAY_NAMES.socialSearch,
-    commerce: USAGE_DISPLAY_NAMES.productData,
-    finance: USAGE_DISPLAY_NAMES.finance,
-    weather: USAGE_DISPLAY_NAMES.weather,
+    "data-search": USAGE_DISPLAY_NAMES.dataSearch,
     "image-recognition": USAGE_DISPLAY_NAMES.imageRecognition,
     translation: USAGE_DISPLAY_NAMES.translation,
   };
@@ -203,12 +170,15 @@ function usageKindBase(kind: string): string {
 
 /**
  * Managed capabilities are one product surface regardless of which vendor
- * served the request, so their rows merge on the kind alone. The stored
- * provider identity (for example "socialkit" or "monid/instagram") stays
- * untouched; only this presentation layer collapses it.
+ * served the request. All data kinds share one row; other capabilities merge
+ * on their own kind. Stored kinds and provider identities (for example
+ * "socialkit" or "monid/instagram") remain untouched.
  */
 function managedUsageRowKey(kind: string): string | null {
   const baseKind = usageKindBase(kind);
+  if (DATA_SEARCH_USAGE_KINDS.has(baseKind)) {
+    return "data-search";
+  }
   return Object.hasOwn(MANAGED_USAGE_KIND_DISPLAY_NAMES, baseKind)
     ? baseKind
     : null;
@@ -220,7 +190,8 @@ function getCreditUsageDisplayName(
   catalog: UsageModelCatalog | undefined,
 ): string {
   const baseKind = usageKindBase(kind);
-  const managedKindDisplayName = MANAGED_USAGE_KIND_DISPLAY_NAMES[baseKind];
+  const managedKindDisplayName =
+    MANAGED_USAGE_KIND_DISPLAY_NAMES[managedUsageRowKey(kind) ?? baseKind];
   if (managedKindDisplayName) {
     return managedKindDisplayName();
   }
@@ -326,12 +297,11 @@ export function buildCreditUsageDisplaySegments(
           : [{ kind: source.kind, credits: provider.credits }];
       for (const usageKind of usageKinds) {
         const entry = { ...usageKind, provider: provider.provider };
-        // Social and commerce are managed capabilities: all their providers
-        // contribute to Connectors even when reported in the raw Other bucket.
+        // Move each data entry exactly once, subtracting the same amount from
+        // Other that is added to Connectors; already-classified entries stay put.
         const baseKind = usageKindBase(usageKind.kind);
         const target =
-          source.kind === "other" &&
-          (baseKind === "social" || baseKind === "commerce")
+          source.kind === "other" && DATA_SEARCH_USAGE_KINDS.has(baseKind)
             ? getSegment("connector")
             : segment;
         if (target !== segment) {

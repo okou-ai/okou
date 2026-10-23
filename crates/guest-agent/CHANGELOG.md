@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.108.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.108.3...guest-agent-v0.108.4) (2026-10-23)
+
+
+### Bug Fixes
+
+* **guest-agent:** make event delivery best effort ([#42518](https://github.com/okou-ai/okou/issues/42518)) ([fd4ea82](https://github.com/okou-ai/okou/commit/fd4ea829931a39280cd8af7865af87f9aacca8c1))
+
+
+### Refactoring
+
+* remove remaining retired pi memory contracts ([#42544](https://github.com/okou-ai/okou/issues/42544)) ([f61b214](https://github.com/okou-ai/okou/commit/f61b21485c8c369277aaa5ea89296879d838e1c6))
+
 ## [0.108.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.108.2...guest-agent-v0.108.3) (2026-10-23)
 
 

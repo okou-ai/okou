@@ -64,7 +64,10 @@ export async function createSocialDataJob(
   } catch (error) {
     throw new SocialDataRecoveryError(
       `The job submission response was not received. Check saved jobs, or repeat the original command with --request-id ${body.requestId} to recover the same submission. Do not use a new request ID.`,
-      { requestId: body.requestId, command: "okou social jobs list --json" },
+      {
+        requestId: body.requestId,
+        command: "okou data social jobs list --json",
+      },
       { cause: error },
     );
   }
@@ -108,7 +111,10 @@ export async function continueSocialDataJob(
   } catch (error) {
     throw new SocialDataRecoveryError(
       `The next-page submission response was not received. Repeat the same continuation with --request-id ${body.requestId}; do not use a new request ID.`,
-      { requestId: body.requestId, command: "okou social jobs list --json" },
+      {
+        requestId: body.requestId,
+        command: "okou data social jobs list --json",
+      },
       { cause: error },
     );
   }

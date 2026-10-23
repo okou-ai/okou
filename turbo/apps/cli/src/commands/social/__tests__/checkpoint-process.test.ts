@@ -68,6 +68,7 @@ function invoke(args: string[], failPage = false) {
           compiled.entry,
           join(directory, "requests.jsonl"),
           failPage ? "1" : "0",
+          "data",
           "social",
           ...args,
         ],

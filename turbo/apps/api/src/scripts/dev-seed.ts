@@ -610,12 +610,34 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   ...usageGroup("social", "socialkit", [
     [MANAGED_SOCIALKIT_BILLING_CATEGORY, usd(0.003), 1],
   ]),
-  ...usageGroup("social", "monid/douyin", [
+  ...[
+    "similarweb",
+    "upspring",
+    "firecrawl-trends",
+    "oriane",
+    "web-archive-org",
+    "affiliate-com",
+    "play-google-com",
+    "particle",
+    "fiscal-ai",
+  ].flatMap((provider) => {
+    return usageGroup("data-search", `firecrawl/alexandria/${provider}`, [
+      ["provider_cost_usd_micros", 1250, 1_000_000],
+    ]);
+  }),
+  ...usageGroup("data-search", "monid/apollo", [
     ["provider_cost_usd_micros", 1250, 1_000_000],
   ]),
-  ...usageGroup("social", "monid/weibo", [
+  ...usageGroup("data-search", "monid/hunterio", [
     ["provider_cost_usd_micros", 1250, 1_000_000],
   ]),
+  ...["xiaohongshu", "threads", "wechat", "douyin", "weibo"].flatMap(
+    (platform) => {
+      return usageGroup("social", `monid/${platform}`, [
+        ["provider_cost_usd_micros", 1250, 1_000_000],
+      ]);
+    },
+  ),
   ...usageGroup("commerce", "dataforseo", [
     ["provider_cost_usd_micros", 1250, 1_000_000],
   ]),

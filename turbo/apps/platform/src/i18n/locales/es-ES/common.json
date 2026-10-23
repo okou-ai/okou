@@ -1965,12 +1965,12 @@
     },
     "documentTitle": "Chat",
     "entrustedJobs": {
-      "archive": "Archive job",
+      "archive": "Archive task",
       "authorize": "Authorize",
       "currentGrant": "Current access: {{scope}} · {{expiry}}",
       "decline": "Decline",
       "declined": "Authorization declined",
-      "details": "Job details",
+      "details": "Task details",
       "detailsDescription": "Review progress, reply, or view the result here.",
       "duration": "Allow access for",
       "durations": {
@@ -1979,14 +1979,14 @@
         "7d": "7 days",
         "always": "Always"
       },
-      "empty": "No jobs in this view. Ask Okou to create a Job when you want it to keep working on something.",
+      "empty": "No tasks in this view. Give Okou a task. It keeps working and comes back when it needs your input or has a result.",
       "filters": {
         "archived": "Archived",
         "history": "History",
         "home": "Current"
       },
       "granted": "Authorization saved",
-      "loading": "Loading Jobs",
+      "loading": "Loading Tasks",
       "next": "Next",
       "noExpiry": "No expiry",
       "previous": "Previous",
@@ -2625,7 +2625,7 @@
       "tasks": {
         "document": "Documento",
         "image": "Imagen",
-        "jobs": "Jobs",
+        "jobs": "Tasks",
         "presentation": "Diapositivas",
         "suggestions": "Sugerencias",
         "visualization": "Visualización",
@@ -5427,6 +5427,10 @@
       "timing": "Los cambios se aplican a las próximas ejecuciones. Las tareas en curso o ya preparadas pueden mantener los ajustes anteriores.",
       "title": "Herramientas integradas",
       "tools": {
+        "data-search": {
+          "description": "Enriquece perfiles profesionales e investiga empresas, tráfico, anuncios, creadores y otros datos empresariales.",
+          "name": "Investigación avanzada de datos"
+        },
         "finance": {
           "description": "Consulta empresas, cotizaciones y datos del mercado.",
           "name": "Datos financieros"
@@ -5602,13 +5606,13 @@
         "title": "Resumen matutino"
       },
       "proactiveJobs": {
-        "description": "Automatically work on your jobs and notify you when your input is needed or a job is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your jobs.",
-        "preparationFailed": "Jobs could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your jobs. You can turn this off at any time.",
+        "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
+        "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
+        "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
+        "preparing": "Preparing your tasks. You can turn this off at any time.",
         "retry": "Retry",
-        "retryMessage": "Job settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive jobs"
+        "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
+        "title": "Proactive tasks"
       },
       "proactiveSuggestions": {
         "description": "Okou revisa tus fuentes conectadas cada hora y propone próximos pasos útiles en tu página de inicio.",
@@ -6131,18 +6135,10 @@
   "usage": {
     "displayNames": {
       "avatar": "Avatar",
-      "finance": "Finanzas",
+      "dataSearch": "Búsqueda de datos",
       "imageRecognition": "Reconocimiento de imágenes",
-      "maps": "Mapas",
-      "peopleSearch": "Búsqueda de personas",
-      "productData": "Datos de productos",
-      "seo": "SEO",
-      "socialSearch": "Datos de redes sociales",
       "translation": "Traducción",
-      "usage": "Uso",
-      "weather": "Tiempo",
-      "webFetch": "Búsqueda web",
-      "webSearch": "Búsqueda web"
+      "usage": "Uso"
     },
     "kinds": {
       "connector": "Conectores",

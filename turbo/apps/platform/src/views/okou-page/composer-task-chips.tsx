@@ -730,7 +730,9 @@ function ComposerTaskTabs({
   const { t } = useTranslation();
   const browseTask = useSet(signals.taskChips.browseTask$);
   const selectTask = useSet(signals.taskChips.selectTask$);
-  const hasSuggestions = tasks.includes("suggestions");
+  // Jobs and Suggestions can each add an entry to the six creation tasks.
+  const compact = tasks.length > 6;
+  const crowded = tasks.length > 7;
   const labels = t(
     ($) => {
       return $.chat.taskChips.tasks;
@@ -758,7 +760,8 @@ function ComposerTaskTabs({
       <TabsList
         className={cn(
           "mx-auto h-auto flex-wrap gap-2 bg-transparent p-0",
-          hasSuggestions && "gap-1",
+          compact && "gap-1",
+          crowded && "gap-0.5",
         )}
       >
         {tasks.map((task) => {
@@ -774,7 +777,11 @@ function ComposerTaskTabs({
                 <Button
                   type="button"
                   variant="outline"
-                  className={cn(TASK_CHIP, hasSuggestions && "gap-1 px-2")}
+                  className={cn(
+                    TASK_CHIP,
+                    compact && "gap-1 px-2",
+                    crowded && "gap-0.5 px-1",
+                  )}
                 />
               }
             >

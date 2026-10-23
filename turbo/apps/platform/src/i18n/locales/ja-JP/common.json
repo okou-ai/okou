@@ -1927,12 +1927,12 @@
     },
     "documentTitle": "チャット",
     "entrustedJobs": {
-      "archive": "Archive job",
+      "archive": "Archive task",
       "authorize": "Authorize",
       "currentGrant": "Current access: {{scope}} · {{expiry}}",
       "decline": "Decline",
       "declined": "Authorization declined",
-      "details": "Job details",
+      "details": "Task details",
       "detailsDescription": "Review progress, reply, or view the result here.",
       "duration": "Allow access for",
       "durations": {
@@ -1941,14 +1941,14 @@
         "7d": "7 days",
         "always": "Always"
       },
-      "empty": "No jobs in this view. Ask Okou to create a Job when you want it to keep working on something.",
+      "empty": "No tasks in this view. Give Okou a task. It keeps working and comes back when it needs your input or has a result.",
       "filters": {
         "archived": "Archived",
         "history": "History",
         "home": "Current"
       },
       "granted": "Authorization saved",
-      "loading": "Loading Jobs",
+      "loading": "Loading Tasks",
       "next": "Next",
       "noExpiry": "No expiry",
       "previous": "Previous",
@@ -2568,7 +2568,7 @@
       "tasks": {
         "document": "ドキュメント",
         "image": "画像",
-        "jobs": "Jobs",
+        "jobs": "Tasks",
         "presentation": "スライド",
         "suggestions": "提案",
         "visualization": "可視化",
@@ -5348,6 +5348,10 @@
       "timing": "変更は今後の実行に適用されます。実行中または準備済みのタスクには以前の設定が適用される場合があります。",
       "title": "組み込みツール",
       "tools": {
+        "data-search": {
+          "description": "職業プロフィールを補完し、企業、トラフィック、広告、クリエイターなどのビジネスデータを調査します。",
+          "name": "高度なデータ調査"
+        },
         "finance": {
           "description": "企業、株価、市場データを調べます。",
           "name": "金融データ"
@@ -5522,13 +5526,13 @@
         "title": "モーニングブリーフ"
       },
       "proactiveJobs": {
-        "description": "Automatically work on your jobs and notify you when your input is needed or a job is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your jobs.",
-        "preparationFailed": "Jobs could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your jobs. You can turn this off at any time.",
+        "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
+        "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
+        "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
+        "preparing": "Preparing your tasks. You can turn this off at any time.",
         "retry": "Retry",
-        "retryMessage": "Job settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive jobs"
+        "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
+        "title": "Proactive tasks"
       },
       "proactiveSuggestions": {
         "description": "Okou が接続済みの情報源を毎時間確認し、役立つ次のアクションをホームに提案します。",
@@ -6042,18 +6046,10 @@
   "usage": {
     "displayNames": {
       "avatar": "アバター",
-      "finance": "金融",
+      "dataSearch": "データ検索",
       "imageRecognition": "画像認識",
-      "maps": "地図",
-      "peopleSearch": "人物検索",
-      "productData": "商品データ",
-      "seo": "SEO",
-      "socialSearch": "ソーシャルデータ",
       "translation": "翻訳",
-      "usage": "使用量",
-      "weather": "天気",
-      "webFetch": "ウェブフェッチ",
-      "webSearch": "ウェブ検索"
+      "usage": "使用量"
     },
     "kinds": {
       "connector": "コネクター",

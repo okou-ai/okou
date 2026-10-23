@@ -18,7 +18,7 @@ export const proactiveJobsContract = c.router({
     path: "/api/preferences/proactive-jobs",
     headers: authHeadersSchema,
     responses: { 200: proactivePreferenceSchema, ...errors },
-    summary: "Read your Proactive jobs preference",
+    summary: "Read your Proactive tasks preference",
   },
   update: {
     method: "PUT",
@@ -26,6 +26,6 @@ export const proactiveJobsContract = c.router({
     headers: authHeadersSchema,
     body: z.object({ enabled: z.boolean() }),
     responses: { 200: proactivePreferenceSchema, ...errors },
-    summary: "Update your Proactive jobs preference",
+    summary: "Update your Proactive tasks preference",
   },
 });
