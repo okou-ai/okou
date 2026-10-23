@@ -9,6 +9,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.1.3](https://github.com/okou-ai/okou/compare/api-v2.1.2...api-v2.1.3) (2026-10-23)
+
+
+### Bug Fixes
+
+* hide disabled managed tools in prompts and cli ([#42440](https://github.com/okou-ai/okou/issues/42440)) ([33b35f9](https://github.com/okou-ai/okou/commit/33b35f94cb80e9ad361d36b732250587f04bc79b))
+
+
+### Refactoring
+
+* **api:** attach official automation metadata atomically ([#42616](https://github.com/okou-ai/okou/issues/42616)) ([c2b46c2](https://github.com/okou-ai/okou/commit/c2b46c2af4755fe51070eefecd9528032b6bd106))
+* **api:** delete custom connector selections atomically ([#42625](https://github.com/okou-ai/okou/issues/42625)) ([3daaff7](https://github.com/okou-ai/okou/commit/3daaff7418e5e9328285b9d6c27397aa4b0faaae))
+* **api:** own custom automatic oauth authorization client reads ([#42614](https://github.com/okou-ai/okou/issues/42614)) ([1352f11](https://github.com/okou-ai/okou/commit/1352f116f2df2941f26efee14f5f089b8e0239cd))
+* **api:** publish custom connector creation atomically ([#42632](https://github.com/okou-ai/okou/issues/42632)) ([24aceeb](https://github.com/okou-ai/okou/commit/24aceeb494c81526e365b849b7bc1cd47493f28c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.783.2
+    * @okouai/db bumped to 2.1.2
+    * @okouai/pi-agent-runtime bumped to 1.50.63
+
 ## [2.1.2](https://github.com/okou-ai/okou/compare/api-v2.1.1...api-v2.1.2) (2026-10-23)
 
 

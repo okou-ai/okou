@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.18.9](https://github.com/okou-ai/okou/compare/ios-v0.18.8...ios-v0.18.9) (2026-10-23)
+
+
+### Bug Fixes
+
+* **ios:** keep prominent button labels readable in dark mode ([#42618](https://github.com/okou-ai/okou/issues/42618)) ([e55d825](https://github.com/okou-ai/okou/commit/e55d8250e5c363a84c1cdf653f2abd546e28ed59))
+* **ios:** preserve native control contrast across appearances ([#42628](https://github.com/okou-ai/okou/issues/42628)) ([99e3042](https://github.com/okou-ai/okou/commit/99e3042fcade73bcd5ae1ffd4cdab2c35ef62a48))
+* **ios:** unify empty conversation loading indicators ([#42622](https://github.com/okou-ai/okou/issues/42622)) ([077748b](https://github.com/okou-ai/okou/commit/077748b591cb74c1157e1ed67f914033009d561b))
+
 ## [0.18.8](https://github.com/okou-ai/okou/compare/ios-v0.18.7...ios-v0.18.8) (2026-10-23)
 
 

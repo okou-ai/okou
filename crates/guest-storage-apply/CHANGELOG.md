@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.3](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.2...guest-storage-apply-v0.26.3) (2026-10-23)
+
+
+### Bug Fixes
+
+* **rust:** anchor instruction cleanup to no-follow directories ([#42590](https://github.com/okou-ai/okou/issues/42590)) ([f7780ea](https://github.com/okou-ai/okou/commit/f7780ea798a48829df0ef6b1cfdf7258257ea715))
+
 ## [0.26.2](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.1...guest-storage-apply-v0.26.2) (2026-10-23)
 
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## [10.0.3](https://github.com/okou-ai/okou/compare/cli-v10.0.2...cli-v10.0.3) (2026-10-23)
+
+
+### Bug Fixes
+
+* hide disabled managed tools in prompts and cli ([#42440](https://github.com/okou-ai/okou/issues/42440)) ([33b35f9](https://github.com/okou-ai/okou/commit/33b35f94cb80e9ad361d36b732250587f04bc79b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.783.2
+    * @okouai/pi-agent-runtime bumped to 1.50.63
+
 ## [10.0.2](https://github.com/okou-ai/okou/compare/cli-v10.0.1...cli-v10.0.2) (2026-10-23)
 
 

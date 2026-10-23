@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.5](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.4...runner-storage-v0.6.5) (2026-10-23)
+
+
+### Bug Fixes
+
+* **runner-storage:** retain background-fill shutdown joins ([#42623](https://github.com/okou-ai/okou/issues/42623)) ([da7e2a5](https://github.com/okou-ai/okou/commit/da7e2a5ada0a4874719b9be13715a70f4bc98424))
+
+
+### Refactoring
+
+* **runner-storage:** retire decoded preparation selection bridge ([#42593](https://github.com/okou-ai/okou/issues/42593)) ([8be62d8](https://github.com/okou-ai/okou/commit/8be62d8fb6f2af70192a7e305a62b0e4c3e57b8e))
+* **runner:** retire named instruction fingerprint compatibility ([#42626](https://github.com/okou-ai/okou/issues/42626)) ([364daef](https://github.com/okou-ai/okou/commit/364daef72931549bf823f05dfd2636d8d052032d))
+
 ## [0.6.4](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.3...runner-storage-v0.6.4) (2026-10-23)
 
 
