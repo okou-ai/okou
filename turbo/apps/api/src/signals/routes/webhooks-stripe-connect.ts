@@ -6,7 +6,7 @@ import { request$ } from "../context/hono";
 import { constructStripeConnectWebhookEvent } from "../external/stripe-client";
 import type { RouteEntry } from "../route-entry";
 import { dispatchStripeConnectorEvent$ } from "../services/stripe-connector-event.service";
-import { safeSync, settle } from "../utils";
+import { settle } from "../utils";
 
 function jsonError(message: string, status: 400 | 401 | 500 | 503): Response {
   return Response.json({ error: message }, { status });
@@ -26,19 +26,16 @@ const postStripeConnectEvent$ = command(
     }
     const rawBody = await request.text();
     signal.throwIfAborted();
-    const constructed = safeSync(() => {
-      return constructStripeConnectWebhookEvent(
-        rawBody,
-        signature,
-        webhookSecret,
-      );
-    });
+    const constructed = await settle(
+      constructStripeConnectWebhookEvent(rawBody, signature, webhookSecret),
+      signal,
+    );
     signal.throwIfAborted();
-    if ("error" in constructed) {
+    if (!constructed.ok) {
       return jsonError("Invalid webhook signature", 401);
     }
     const dispatched = await settle(
-      set(dispatchStripeConnectorEvent$, constructed.ok, signal),
+      set(dispatchStripeConnectorEvent$, constructed.value, signal),
       signal,
     );
     if (!dispatched.ok) {

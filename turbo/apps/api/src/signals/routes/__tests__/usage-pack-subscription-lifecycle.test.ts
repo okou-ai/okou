@@ -306,7 +306,7 @@ async function postStripeEvent(
   event: object,
   expectedStatus: 200 | 500,
 ): Promise<void> {
-  context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+  context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(event);
   const response = await createApp({
     signal: context.signal,
     routes: webhooksStripeRoutes,

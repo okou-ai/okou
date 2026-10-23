@@ -113,9 +113,9 @@ beforeEach(() => {
   mockOptionalEnv("STRIPE_OAUTH_CLIENT_SECRET", "sk_test_connect");
   mockOptionalEnv("STRIPE_AUTOMATION_WEBHOOK_SECRET", WEBHOOK_SECRET);
   const verifier = stripeVerifier();
-  context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+  context.mocks.stripe.webhooks.constructEventAsync.mockImplementation(
     (rawBody, signature, secret) => {
-      return verifier.webhooks.constructEvent(
+      return verifier.webhooks.constructEventAsync(
         z.string().parse(rawBody),
         z.string().parse(signature),
         z.string().parse(secret),

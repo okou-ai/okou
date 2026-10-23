@@ -798,7 +798,9 @@ describe("legacy subscription usage pack migration", () => {
       created: currentSecond(),
       data: { object: invoice },
     };
-    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
     await accept(
       setupApp({ context, routes: webhooksStripeRoutes })(
         webhookStripeContract,
@@ -1329,7 +1331,7 @@ describe("usage pack allocation management", () => {
         if (lifecycle) {
           lifecycle.expectStripeEvent(event);
         } else {
-          context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(
+          context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
             event,
           );
         }
@@ -2849,7 +2851,9 @@ describe("usage pack allocation management", () => {
         },
       },
     };
-    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
 
     await accept(
       setupApp({ context, routes: webhooksStripeRoutes })(

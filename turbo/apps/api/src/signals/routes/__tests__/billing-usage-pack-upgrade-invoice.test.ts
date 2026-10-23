@@ -208,7 +208,7 @@ test.each([
           };
         }
         const sdk = new ActualStripeSDK("sk_test_fixture_signature_only");
-        context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+        context.mocks.stripe.webhooks.constructEventAsync.mockImplementation(
           (body, signature, secret) => {
             return sdk.webhooks.constructEvent(
               String(body),
