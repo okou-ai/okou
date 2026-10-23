@@ -45,19 +45,13 @@ const browserUseLiveUrlSchema = z.url().refine((value) => {
   return new URL(value).origin === "https://live.browser-use.com";
 });
 
-function isBrowserUseHostname(hostname: string): boolean {
-  return (
-    hostname === "browser-use.com" || hostname.endsWith(".browser-use.com")
-  );
-}
-
-const browserUseCdpUrlSchema = z.url().refine((value) => {
-  const url = new URL(value);
-  return url.protocol === "https:" && isBrowserUseHostname(url.hostname);
+const browserUseCdpUrlSchema = z.url({
+  protocol: /^(https|wss)$/u,
+  hostname: /(^|\.)browser-use\.com$/u,
 });
-const browserUseCdpWebSocketUrlSchema = z.url().refine((value) => {
-  const url = new URL(value);
-  return url.protocol === "wss:" && isBrowserUseHostname(url.hostname);
+const browserUseCdpWebSocketUrlSchema = z.url({
+  protocol: /^wss$/u,
+  hostname: /(^|\.)browser-use\.com$/u,
 });
 const browserUseCdpVersionSchema = z.object({
   webSocketDebuggerUrl: z.string().min(1),
@@ -243,6 +237,10 @@ async function browserUseCdpWebSocketUrl(
   cdpUrl: string,
   signal: AbortSignal,
 ): Promise<string> {
+  const endpoint = browserUseCdpUrlSchema.parse(cdpUrl);
+  if (new URL(endpoint).protocol === "wss:") {
+    return endpoint;
+  }
   const response = await fetch(browserUseCdpVersionUrl(cdpUrl), { signal });
   const text = await readBoundedResponseText(
     response,
@@ -255,6 +253,47 @@ async function browserUseCdpWebSocketUrl(
     reportInput: true,
   });
   return browserUseCdpWebSocketUrlSchema.parse(version.webSocketDebuggerUrl);
+}
+
+export async function resolveBrowserUseViewerConnection(
+  cdpUrl: string,
+  liveUrl: string | null,
+  signal: AbortSignal,
+): Promise<string> {
+  signal.throwIfAborted();
+  // The provider's own viewer accepts either a WSS endpoint or an HTTPS
+  // discovery URL in this parameter. Reuse a resolved WSS endpoint directly.
+  const liveEndpoint = liveUrl
+    ? new URL(liveUrl).searchParams.get("wss")
+    : null;
+  const directWebSocket =
+    browserUseCdpWebSocketUrlSchema.safeParse(liveEndpoint);
+  if (directWebSocket.success) {
+    return directWebSocket.data;
+  }
+  const decoded = liveEndpoint
+    ? safeSync(() => {
+        return decodeURIComponent(liveEndpoint);
+      })
+    : null;
+  const webSocket = browserUseCdpWebSocketUrlSchema.safeParse(
+    decoded && "ok" in decoded ? decoded.ok : liveEndpoint,
+  );
+  if (webSocket.success) {
+    return webSocket.data;
+  }
+  const result = await settle(
+    browserUseCdpWebSocketUrl(cdpUrl, browserUseCdpSignal(signal)),
+  );
+  signal.throwIfAborted();
+  if (!result.ok) {
+    throw new BrowserUseProviderError(
+      502,
+      "BROWSER_USE_DISCOVERY_ERROR",
+      "Managed browser provider could not connect the viewer",
+    );
+  }
+  return result.value;
 }
 
 async function waitForBrowserUseCdpSocketEvent(

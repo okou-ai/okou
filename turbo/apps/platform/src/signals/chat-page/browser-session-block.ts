@@ -4,6 +4,7 @@ import {
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
 import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   command,
   computed,
@@ -17,6 +18,7 @@ import { formatAppNumber } from "../../i18n/format.ts";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
 import { onRef, setLoop, withCleanup } from "../utils.ts";
 import {
@@ -39,6 +41,12 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   readonly screenshotImageLoad: ImageLoadSignals;
   readonly session$: Computed<Promise<BrowserSession | null>>;
   readonly panelSession$: Computed<Promise<BrowserSession | null>>;
+  readonly viewerConnection$: Computed<
+    Promise<{
+      readonly liveUrl: string;
+      readonly cdpUrl: string;
+    } | null>
+  >;
   readonly startOperation$: Computed<Promise<void> | null>;
   readonly fitWindowOperation$: Computed<Promise<void> | null>;
   readonly reload$: Command<void, []>;
@@ -438,6 +446,25 @@ export function createBrowserSessionSignals(
     });
   });
 
+  const viewerConnection$ = computed(async (get) => {
+    if (!get(featureSwitch$)[FeatureSwitchKey.BrowserCdpViewer]) {
+      return null;
+    }
+    const session = await get(session$);
+    if (session?.status !== "active" || !session.liveUrl) {
+      return null;
+    }
+    const response = await accept(
+      get(apiClient$)(browserContract).viewerConnection({
+        params: { threadId: descriptor.threadId },
+      }),
+      [200, 409],
+    );
+    return response.status === 200
+      ? { cdpUrl: response.body.cdpUrl, liveUrl: session.liveUrl }
+      : null;
+  });
+
   const browserFitDom = createBrowserFitDomSignals();
   const { fitWindowOperation$, fitViewport$ } = createFitWindowSignals(
     descriptor,
@@ -502,6 +529,7 @@ export function createBrowserSessionSignals(
     screenshotImageLoad,
     session$,
     panelSession$: session$,
+    viewerConnection$,
     ...startSignals,
     ...closeSignals,
     fitWindowOperation$,

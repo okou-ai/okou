@@ -3,6 +3,7 @@ import {
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
 import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -12,6 +13,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { mockBrowserCdp } from "../../../__tests__/browser-cdp-fixture.ts";
 
 const context = testContext();
 const THREAD_ID = "11111111-1111-4111-8111-111111111111";
@@ -71,6 +73,11 @@ test("An accessible conversation without a browser can start one", async () => {
 test("An active browser shows a private live viewer", async () => {
   const activeSession = browserSession();
   let leaseCount = 0;
+  let connectionCount = 0;
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    connectionCount += 1;
+    return respond(200, { cdpUrl: "wss://cdp.browser-use.com/test" });
+  });
   mockBrowserSession(activeSession);
   context.mocks.api(browserContract.leaseByThread, ({ params, respond }) => {
     if (params.threadId === THREAD_ID) {
@@ -90,6 +97,53 @@ test("An active browser shows a private live viewer", async () => {
   await waitFor(() => {
     expect(leaseCount).toBeGreaterThan(0);
   });
+  expect(connectionCount).toBe(0);
+});
+
+test("The viewer switch replaces the provider iframe with the interactive Okou viewer", async () => {
+  const activeSession = browserSession();
+  const cdpUrl = "wss://cdp.browser-use.com/test";
+  mockBrowserSession(activeSession);
+  mockBrowserCdp(context, cdpUrl);
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, { cdpUrl });
+  });
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, { browser: activeSession });
+  });
+
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.BrowserCdpViewer]: true },
+  });
+
+  await expect(
+    screen.findByRole("region", { name: "Remote browser viewer" }),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    screen.findByDisplayValue("https://example.com"),
+  ).resolves.toBeEnabled();
+  expect(screen.getByLabelText("New tab")).toBeInTheDocument();
+  expect(screen.queryByTitle("Live browser: booking")).not.toBeInTheDocument();
+});
+
+test("A reclaimed connection shows an unavailable state without opening the provider iframe", async () => {
+  mockBrowserSession(browserSession());
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(409, {
+      error: { code: "BROWSER_NOT_LIVE", message: "Browser is no longer live" },
+    });
+  });
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.BrowserCdpViewer]: true },
+  });
+  await expect(
+    screen.findByText("Browser unavailable"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByTitle("Live browser: booking")).not.toBeInTheDocument();
 });
 
 test("An inaccessible conversation has no browser page", async () => {

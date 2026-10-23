@@ -39,6 +39,14 @@ export function setupGlobalShortcut(
     onDomEventFn((e: KeyboardEvent) => {
       if (
         e.defaultPrevented ||
+        // The embedded browser owns its keyboard, including shortcuts that
+        // the host normally handles inside editable controls.
+        e.composedPath().some((node) => {
+          return (
+            node instanceof HTMLElement &&
+            node.dataset.browserSessionCdpViewer !== undefined
+          );
+        }) ||
         hasOpenDialog(doc) ||
         options.shouldHandleEvent?.(e) === false
       ) {

@@ -70,6 +70,7 @@ export enum FeatureSwitchKey {
   GoogleSlidesConversion = "googleSlidesConversion",
   GoogleDocsSheetsConversion = "googleDocsSheetsConversion",
   BrowserNativeInput = "browserNativeInput",
+  BrowserCdpViewer = "browserCdpViewer",
   AgentSuggestion = "agentSuggestion",
   ProactiveJobs = "proactiveJobs",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
