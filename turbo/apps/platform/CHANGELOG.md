@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1056.1](https://github.com/okou-ai/okou/compare/app-v0.1056.0...app-v0.1056.1) (2026-10-23)
+
+
+### Performance Improvements
+
+* reduce sidebar menu and jobs fixture work ([#42462](https://github.com/okou-ai/okou/issues/42462)) ([284b4fd](https://github.com/okou-ai/okou/commit/284b4fd8d25ffde4908a7f94f0689daf3d6261dd))
+
 ## [0.1056.0](https://github.com/okou-ai/okou/compare/app-v0.1055.1...app-v0.1056.0) (2026-10-23)
 
 

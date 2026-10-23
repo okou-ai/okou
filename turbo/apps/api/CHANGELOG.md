@@ -9,6 +9,18 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.766.1](https://github.com/okou-ai/okou/compare/api-v1.766.0...api-v1.766.1) (2026-10-23)
+
+
+### Refactoring
+
+* **api:** own shared personal subscription refresh queries ([#42473](https://github.com/okou-ai/okou/issues/42473)) ([cd6865a](https://github.com/okou-ai/okou/commit/cd6865acb9417775e56f9881d841d9240859c73c))
+
+
+### Performance Improvements
+
+* reduce sidebar menu and jobs fixture work ([#42462](https://github.com/okou-ai/okou/issues/42462)) ([284b4fd](https://github.com/okou-ai/okou/commit/284b4fd8d25ffde4908a7f94f0689daf3d6261dd))
+
 ## [1.766.0](https://github.com/okou-ai/okou/compare/api-v1.765.2...api-v1.766.0) (2026-10-23)
 
 
