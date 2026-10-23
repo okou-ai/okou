@@ -443,6 +443,9 @@
       "switchAccountFailed": "Could not open the account switcher. Please try again.",
       "title": "You can’t view this artifact",
       "tryAgain": "Try again",
+      "websiteAuthenticationDescription": "Sign in with an account that can access this website.",
+      "websiteAuthenticationSignedInDescription": "Continue to verify access with your current account.",
+      "websiteAuthenticationTitle": "Verify access to this website",
       "websiteTitle": "You can’t view this website",
       "websiteUnavailableDescription": "Try again in a moment.",
       "websiteUnavailableTitle": "This website is temporarily unavailable"

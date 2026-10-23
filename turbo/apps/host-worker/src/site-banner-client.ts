@@ -7,33 +7,49 @@ const fullscreen = root?.querySelector<HTMLButtonElement>(
   "[data-okou-banner-fullscreen]",
 );
 const status = root?.querySelector<HTMLElement>("[data-okou-banner-status]");
+const message = root?.querySelector<HTMLElement>("[data-okou-banner-message]");
+let notificationTimer: ReturnType<typeof setTimeout> | undefined;
+
+function notify(text: string, error = false) {
+  if (!status || !message) return;
+  clearTimeout(notificationTimer);
+  status.toggleAttribute("data-error", error);
+  message.textContent = text;
+  status.hidden = false;
+  notificationTimer = setTimeout(() => {
+    status.hidden = true;
+  }, 3000);
+}
+
+window.addEventListener("pagehide", () => {
+  clearTimeout(notificationTimer);
+  if (status) status.hidden = true;
+});
 
 share?.addEventListener("click", () => {
   const siteUrl = banner?.dataset.siteUrl;
   if (!siteUrl) return;
   if (!navigator.clipboard) {
-    if (status) status.textContent = "Could not copy link";
+    notify("Could not copy link", true);
     return;
   }
   return navigator.clipboard.writeText(siteUrl).then(
     () => {
-      if (status) status.textContent = "Link copied";
-      share.dataset.copied = "";
-      share.setAttribute("aria-label", "Link copied");
+      notify("Link copied");
     },
     () => {
-      if (status) status.textContent = "Could not copy link";
+      notify("Could not copy link", true);
     },
   );
 });
 
 fullscreen?.addEventListener("click", () => {
   if (typeof document.documentElement.requestFullscreen !== "function") {
-    if (status) status.textContent = "Fullscreen is unavailable";
+    notify("Fullscreen is unavailable", true);
     return;
   }
   return document.documentElement.requestFullscreen().catch(() => {
-    if (status) status.textContent = "Fullscreen is unavailable";
+    notify("Fullscreen is unavailable", true);
   });
 });
 

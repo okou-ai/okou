@@ -31,10 +31,26 @@ test("signed-out website visitors can sign in without being forced away from the
     auth: null,
   });
   expect(
-    screen.getByRole("heading", { name: "You can’t view this website" }),
+    screen.getByRole("heading", { name: "Verify access to this website" }),
   ).toBeInTheDocument();
+  expect(
+    screen.getByText("Sign in with an account that can access this website."),
+  ).toBeInTheDocument();
+  expect(document.title).toBe("Verify access to this website | Okou");
   expect(action("link", "Sign in")).toHaveAttribute("href", restart);
   expect(action("link", "Back to Okou")).toHaveAttribute("href", "/");
+});
+
+test("an incomplete authorization can be retried without claiming the signed-in visitor was denied", async () => {
+  await setupPage({ context, host: "app.okou.ai", path: path("authenticate") });
+  expect(
+    screen.getByRole("heading", { name: "Verify access to this website" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText("Continue to verify access with your current account."),
+  ).toBeInTheDocument();
+  expect(action("link", "Continue")).toHaveAttribute("href", restart);
+  expect(action("button", "Switch account")).toBeEnabled();
 });
 
 test("expired website sessions offer a fresh authorization for the original path", async () => {
@@ -42,6 +58,7 @@ test("expired website sessions offer a fresh authorization for the original path
   expect(
     screen.getByRole("heading", { name: "Verify your access again" }),
   ).toBeInTheDocument();
+  expect(document.title).toBe("Verify your access again | Okou");
   expect(action("link", "Continue")).toHaveAttribute("href", restart);
   expect(action("button", "Switch account")).toBeEnabled();
 });
@@ -51,6 +68,7 @@ test("a denied website uses the artifact recovery actions", async () => {
   expect(
     screen.getByRole("heading", { name: "You can’t view this website" }),
   ).toBeInTheDocument();
+  expect(document.title).toBe("You can’t view this website | Okou");
   expect(action("button", "Switch account")).toBeEnabled();
   expect(action("link", "Try again")).toHaveAttribute("href", restart);
   expect(
@@ -65,6 +83,7 @@ test("dependency failures remain retryable without claiming an access denial", a
       name: "This website is temporarily unavailable",
     }),
   ).toBeInTheDocument();
+  expect(document.title).toBe("This website is temporarily unavailable | Okou");
   expect(action("link", "Try again")).toHaveAttribute("href", site);
 });
 
