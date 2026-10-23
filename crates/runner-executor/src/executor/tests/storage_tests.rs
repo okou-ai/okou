@@ -20,6 +20,44 @@ fn empty_manifest() -> Manifest {
 }
 
 #[tokio::test]
+async fn workflow_documents_use_private_transport_and_propagate_helper_failure() {
+    let sandbox = MockSandbox::new("test");
+    let mut context = minimal_context();
+    let workflow_id = uuid::Uuid::new_v4();
+    for body in ["Unicode 正文\n'$(never execute)'", ""] {
+        context.storage_manifest = Some(
+            serde_json::from_value(serde_json::json!({
+                "storageMounts": [],
+                "workflowSkills": [{
+                    "workflowId": workflow_id,
+                    "mountPath": "/home/user/.codex/skills/custom-workflow",
+                    "skillMd": body,
+                    "attachments": null
+                }]
+            }))
+            .unwrap(),
+        );
+        super::super::storage::apply_workflow_skill_documents(&sandbox, &context)
+            .await
+            .unwrap();
+        let writes = sandbox.private_write_files_calls();
+        let last = &writes.last().unwrap().files[0];
+        assert_eq!(last.content, body.as_bytes());
+        assert!(last.path.ends_with(&format!("/workflow-{workflow_id}")));
+        let calls = sandbox.exec_calls();
+        let command = &calls.last().unwrap().cmd;
+        assert!(command.contains(" --skill /home/user/.codex/skills/custom-workflow "));
+        assert!(!command.contains("never execute"));
+    }
+    sandbox.push_exec_result(Ok(ExecResult::new(1, Vec::new(), Vec::new())));
+    assert!(
+        super::super::storage::apply_workflow_skill_documents(&sandbox, &context)
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
 async fn inline_instructions_are_optional_and_use_private_file_transport() {
     let sandbox = MockSandbox::new("test");
     let mut context = minimal_context();

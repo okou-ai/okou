@@ -121,6 +121,18 @@ impl StorageFingerprints {
                         ),
                     )
                 })
+                .chain(
+                    manifest
+                        .workflow_skills
+                        .iter()
+                        .filter(|skill| skill.attachments.is_none())
+                        .map(|skill| {
+                            (
+                                skill.mount_path.clone(),
+                                StorageFingerprint::new(skill.identity(), skill.version()),
+                            )
+                        }),
+                )
                 .collect(),
             artifacts: manifest
                 .artifacts

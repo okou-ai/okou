@@ -32,6 +32,7 @@ fn artifact(mount_path: &str, name: &str, version: &str, empty: bool) -> Artifac
 
 fn manifest(storages: Vec<StorageEntry>, artifacts: Vec<ArtifactEntry>) -> StorageManifest {
     StorageManifest {
+        workflow_skills: Vec::new(),
         storages,
         artifacts,
     }

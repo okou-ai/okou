@@ -9,6 +9,82 @@ use serde::Deserialize;
 pub struct StorageManifest {
     pub storages: Vec<StorageEntry>,
     pub artifacts: Vec<ArtifactEntry>,
+    /// Claim-selected documents; attachments use the ordinary read-only cache.
+    pub workflow_skills: Vec<WorkflowSkillDocument>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkflowSkillDocument {
+    pub workflow_id: uuid::Uuid,
+    pub mount_path: String,
+    pub skill_md: String,
+    #[serde(deserialize_with = "required_nullable_archive")]
+    pub attachments: Option<WorkflowSkillArchive>,
+}
+
+fn required_nullable_archive<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<WorkflowSkillArchive>, D::Error> {
+    Option::<WorkflowSkillArchive>::deserialize(deserializer)
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkflowSkillArchive {
+    pub archive_url: String,
+    pub archive_size: u64,
+    pub archive_sha256: String,
+}
+
+impl WorkflowSkillDocument {
+    pub fn identity(&self) -> String {
+        format!("workflow:{}", self.workflow_id)
+    }
+    pub fn version(&self) -> &str {
+        self.attachments
+            .as_ref()
+            .map_or("empty", |a| a.archive_sha256.as_str())
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        let name = [
+            "/home/user/.claude/skills/",
+            "/home/user/.codex/skills/",
+            "/home/user/.pi/agent/skills/",
+        ]
+        .iter()
+        .find_map(|prefix| self.mount_path.strip_prefix(prefix))
+        .ok_or("Workflow skill path is outside a framework skill directory")?;
+        if name.len() < 2
+            || name.len() > 64
+            || !name
+                .bytes()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+            || name.starts_with('-')
+            || name.ends_with('-')
+        {
+            return Err("Invalid Workflow skill name".into());
+        }
+        if let Some(archive) = &self.attachments {
+            let url = url::Url::parse(&archive.archive_url)
+                .map_err(|_| "Invalid Workflow attachment URL")?;
+            if url.scheme() != "https"
+                || url.host_str().is_none()
+                || !url.username().is_empty()
+                || url.password().is_some()
+                || archive.archive_size == 0
+                || archive.archive_sha256.len() != 64
+                || !archive
+                    .archive_sha256
+                    .bytes()
+                    .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+            {
+                return Err("Invalid Workflow attachment archive".into());
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -37,6 +113,8 @@ pub struct ArtifactEntry {
 #[serde(rename_all = "camelCase")]
 struct CanonicalStorageManifest {
     storage_mounts: Vec<StorageMountEntry>,
+    #[serde(default)]
+    workflow_skills: Vec<WorkflowSkillDocument>,
 }
 
 impl<'de> Deserialize<'de> for StorageManifest {
@@ -45,7 +123,34 @@ impl<'de> Deserialize<'de> for StorageManifest {
         D: serde::Deserializer<'de>,
     {
         let canonical = CanonicalStorageManifest::deserialize(deserializer)?;
-        normalize_storage_mounts(canonical.storage_mounts).map_err(serde::de::Error::custom)
+        let mut manifest =
+            normalize_storage_mounts(canonical.storage_mounts).map_err(serde::de::Error::custom)?;
+        let mut paths: HashSet<String> = manifest
+            .storages
+            .iter()
+            .map(|s| s.mount_path.clone())
+            .chain(manifest.artifacts.iter().map(|a| a.mount_path.clone()))
+            .collect();
+        for skill in &canonical.workflow_skills {
+            skill.validate().map_err(serde::de::Error::custom)?;
+            if !paths.insert(skill.mount_path.clone()) {
+                return Err(serde::de::Error::custom(
+                    "Duplicate Workflow skill mount path",
+                ));
+            }
+            if let Some(archive) = &skill.attachments {
+                manifest.storages.push(StorageEntry {
+                    name: skill.identity(),
+                    mount_path: skill.mount_path.clone(),
+                    vas_storage_name: skill.identity(),
+                    vas_version_id: skill.version().to_owned(),
+                    archive_url: archive.archive_url.clone(),
+                    archive_size: Some(archive.archive_size),
+                });
+            }
+        }
+        manifest.workflow_skills = canonical.workflow_skills;
+        Ok(manifest)
     }
 }
 
@@ -103,6 +208,7 @@ fn normalize_storage_mounts(
     Ok(StorageManifest {
         storages,
         artifacts,
+        workflow_skills: Vec::new(),
     })
 }
 
@@ -117,4 +223,33 @@ fn validate_unique_mount_paths(storage_mounts: &[StorageMountEntry]) -> Result<(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod workflow_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn claim_documents_select_readonly_archives_and_empty_directory_identity() {
+        let workflow_id = uuid::Uuid::new_v4();
+        let manifest: StorageManifest = serde_json::from_value(json!({
+            "storageMounts": [], "workflowSkills": [
+                {"workflowId":workflow_id,"mountPath":"/home/user/.codex/skills/with-files","skillMd":"body","attachments":{"archiveUrl":"https://objects.example/archive.tar.gz","archiveSize":100,"archiveSha256":"a".repeat(64)}},
+                {"workflowId":uuid::Uuid::new_v4(),"mountPath":"/home/user/.codex/skills/no-files","skillMd":"empty","attachments":null}
+            ]
+        })).unwrap();
+        assert_eq!(manifest.storages.len(), 1);
+        assert!(manifest.artifacts.is_empty());
+        assert_eq!(
+            manifest.storages[0].vas_storage_name,
+            format!("workflow:{workflow_id}")
+        );
+        let fingerprints =
+            crate::storage_fingerprints::StorageFingerprints::from_manifest(&manifest);
+        assert!(
+            fingerprints.storages["/home/user/.codex/skills/no-files"].vas_version_id()
+                == Some("empty")
+        );
+    }
 }

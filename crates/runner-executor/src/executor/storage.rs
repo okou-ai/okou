@@ -23,6 +23,48 @@ use runner_types::types::ExecutionContext;
 const STORAGE_MANIFEST_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_RECORDED_STORAGE_BATCHES: usize = 16;
 
+pub(super) async fn apply_workflow_skill_documents(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+) -> RunnerResult<()> {
+    let Some(manifest) = &context.storage_manifest else {
+        return Ok(());
+    };
+    let runtime_dir = guest_runtime_dir(context.run_id)?;
+    for skill in &manifest.workflow_skills {
+        let source = format!("{runtime_dir}/workflow-{}", skill.workflow_id);
+        sandbox
+            .write_private_files(&[sandbox::WriteFileEntry {
+                path: &source,
+                content: skill.skill_md.as_bytes(),
+            }])
+            .await?;
+        let command = format!("{STORAGE_APPLY_PATH} --skill {} {source}", skill.mount_path);
+        let run_id = context.run_id.to_string();
+        let env = guest_storage_apply_env(&run_id, &runtime_dir);
+        let result = sandbox
+            .exec_with_diagnostic_label(
+                &ExecRequest {
+                    cmd: &command,
+                    timeout: DEFAULT_EXEC_TIMEOUT,
+                    env: &env,
+                    sudo: false,
+                    expected_exit_codes: &[],
+                    stdin_bytes: None,
+                    output_limits: EXEC_OUTPUT_LIMIT_64_KIB,
+                },
+                "workflow-skill",
+            )
+            .await?;
+        if !helper_exec_succeeded(&result) {
+            return Err(RunnerError::Internal(
+                "required Workflow skill document write failed".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub(super) async fn apply_agent_instructions(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,

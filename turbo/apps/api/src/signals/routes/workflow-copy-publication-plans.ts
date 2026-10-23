@@ -1,4 +1,5 @@
 import { StorageVersionIdentityConflictError } from "../services/storage-version-registration.service";
+import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
 import { gmailLabelAppliedEventConfigSchema } from "@okouai/api-contracts/contracts/workflows";
 import {
   workflows,
@@ -57,6 +58,7 @@ export type CopyWorkflowDatabaseResult =
     };
 
 export interface WorkflowCopyPublicationArgs extends WorkflowCopyInput {
+  readonly attachments: WorkflowAttachments;
   readonly targetWorkflowId: string;
   readonly threadPreparation: WorkflowThreadPreparation;
   readonly currentTime: Date;
@@ -92,6 +94,7 @@ export function workflowCopyRowValues(
     name: args.sourceWorkflow.name,
     visibility: "private",
     instruction: args.sourceWorkflow.instruction,
+    attachments: args.attachments,
     ownerUserId: args.userId,
     displayName: args.sourceWorkflow.displayName,
     description: args.sourceWorkflow.description,
