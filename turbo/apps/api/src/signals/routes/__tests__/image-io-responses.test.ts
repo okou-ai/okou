@@ -463,42 +463,4 @@ describe("durable OpenAI Responses image generation", () => {
       });
     },
   );
-
-  it.each(["network", "server", "malformed-success"] as const)(
-    "does not automatically repeat an uncertain %s submission",
-    async (failure) => {
-      const fixture = await createFixture();
-      await fixture.actor.run(async () => {
-        const provider = mockOpenAiImageResponses({
-          submit: () => {
-            if (failure === "network") {
-              return HttpResponse.error();
-            }
-            return failure === "server"
-              ? HttpResponse.json(
-                  { error: { code: "unavailable" } },
-                  { status: 503 },
-                )
-              : HttpResponse.json({ status: "queued" });
-          },
-        });
-        const response = await fixture.generate();
-        expect(response.status).toBe(202);
-        const generationId = readAcceptedGenerationId(
-          await response.json(),
-          "image",
-          fixture.actor.userId,
-        );
-        await fixture.reconcile();
-        await fixture.reconcile();
-        await expect(fixture.status(generationId)).resolves.toMatchObject({
-          generationId,
-          status: "running",
-        });
-        expect(provider.submissions).toHaveLength(1);
-        expect(provider.retrievals).toStrictEqual([]);
-        await expect(orgCredits(context, fixture.actor)).resolves.toBe(10_000);
-      });
-    },
-  );
 });

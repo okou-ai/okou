@@ -717,7 +717,7 @@ export const cronReconcileImageGenerationsContract = c.router({
     path: "/api/cron/reconcile-image-generations",
     headers: authHeadersSchema,
     responses: {
-      200: z.object({ processed: z.number(), receipts: z.number() }),
+      200: z.object({ processed: z.number() }),
       401: apiErrorSchema,
     },
     summary: "Advance a bounded batch of durable OpenAI image responses",

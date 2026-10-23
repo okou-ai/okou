@@ -27,7 +27,6 @@ const SCHEMA = {
   SECRETS_KMS_KEY_ID: z.string().min(1).optional(),
   OFFICIAL_RUNNER_SECRET: z.string().length(64),
   OPENAI_API_KEY: z.string().min(1),
-  OPENAI_IMAGE_WEBHOOK_SECRET: z.string().min(1).optional(),
   FAL_KEY: z.string().min(1).optional(),
   // Validated together at the Google LLM operation boundary.
   GCP_LLM_PROJECT_ID: z.string().optional(),
