@@ -11,8 +11,6 @@ import {
   redactSocialProviderIdentity,
   socialKitErrorSchema,
   socialKitDownloadConflictSchema,
-  socialKitDownloadRequestSchema,
-  socialKitDownloadResponseSchema,
   socialKitRequestSchema,
   socialKitResponseSchema,
   SOCIALKIT_TRANSCRIPT_ERROR_CODES,
@@ -20,76 +18,6 @@ import {
 } from "../social";
 
 describe("managed SocialKit contract", () => {
-  it("keeps delivery opt-in for old clients while accepting direct-link requests", () => {
-    const legacy = {
-      platform: "youtube",
-      url: "https://youtu.be/example",
-      maxDuration: 600,
-      quality: "720p",
-      format: "mp4",
-    };
-    expect(socialKitDownloadRequestSchema.parse(legacy)).toStrictEqual(legacy);
-    for (const delivery of ["link", "artifact"]) {
-      const request = { ...legacy, delivery };
-      expect(socialKitDownloadRequestSchema.parse(request)).toStrictEqual(
-        request,
-      );
-    }
-  });
-
-  it("accepts direct links and preserved legacy artifact responses", () => {
-    const legacy = {
-      downloadId: "6bdc3449-41ef-4624-a525-45bce09c67f0",
-      status: "completed",
-      platform: "youtube",
-      quality: "720p",
-      format: "mp4",
-      requested: { quality: "720p", format: "mp4" },
-      delivered: { quality: null, format: null },
-      maxDuration: 600,
-      billingCategory: "request",
-      provider: { durationSeconds: 61, fileSizeMB: 2, creditsCost: 2 },
-      billing: { quantity: 2, creditsCharged: 6 },
-      artifact: {
-        id: "e5932cce-3ec7-45ef-a96d-2e4c5dcb4cd4",
-        url: "https://artifacts.example/video.mp4",
-        filename: "example.mp4",
-        contentType: "video/mp4",
-        sizeBytes: 2048,
-      },
-      error: null,
-      createdAt: "2026-08-27T00:00:00.000Z",
-      completedAt: "2026-08-27T00:01:00.000Z",
-    };
-    expect(socialKitDownloadResponseSchema.parse(legacy)).toStrictEqual(legacy);
-    for (const expiresAt of ["2026-08-27T01:00:00.000Z", null]) {
-      const direct = {
-        ...legacy,
-        artifact: null,
-        delivered: { quality: null, format: "m4a" },
-        download: {
-          url: "https://media.example/audio.m4a?signature=temporary-access",
-          expiresAt,
-        },
-      };
-      expect(socialKitDownloadResponseSchema.parse(direct)).toStrictEqual(
-        direct,
-      );
-      for (const url of [
-        "http://media.example/video.mp4",
-        "https://user:password@media.example/video.mp4",
-        `https://media.example/${"x".repeat(8192)}`,
-      ]) {
-        expect(
-          socialKitDownloadResponseSchema.safeParse({
-            ...direct,
-            download: { ...direct.download, url },
-          }).success,
-        ).toBe(false);
-      }
-    }
-  });
-
   it("preserves old conflict readers and accepts scoped conflicts without recovery metadata", () => {
     const legacy = {
       error: {

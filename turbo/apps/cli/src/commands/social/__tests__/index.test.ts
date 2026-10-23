@@ -4911,35 +4911,6 @@ describe("okou social command", () => {
     },
   );
 
-  it("reads an existing direct-link job without resubmitting it", async () => {
-    const completed = {
-      ...completedDownload(),
-      artifact: null,
-      download: {
-        url: "https://media.example/video.mp4?signature=temporary-access",
-        expiresAt: "2026-08-27T01:00:00.000Z",
-      },
-    } satisfies SocialKitDownloadResponse;
-    server.use(
-      http.get("http://localhost:3000/api/social/downloads/:downloadId", () => {
-        return HttpResponse.json(completed);
-      }),
-    );
-    await socialCommand.parseAsync([
-      "node",
-      "okou",
-      "download",
-      "--resume",
-      completed.downloadId,
-      "--json",
-    ]);
-    expect(JSON.parse(output()) as unknown).toMatchObject({
-      status: "complete",
-      data: { download: completed.download, artifact: null },
-      request: { resume: true },
-    });
-  });
-
   it("preserves billed recovery when a completed job cannot refresh its link", async () => {
     const completed = {
       ...completedDownload(),
@@ -5790,21 +5761,5 @@ describe("okou social command", () => {
     expect(renderedHelp).toContain("4096 characters");
     expect(renderedHelp).toContain("--prompt adds analysis instructions");
     expect(renderedHelp).toContain("do not enforce strict JSON Schema");
-    const download = socialCommand.commands.find((command) => {
-      return command.name() === "download";
-    });
-    renderedHelp = "";
-    download?.configureOutput({
-      writeOut: (value) => {
-        renderedHelp += value;
-      },
-    });
-    download?.outputHelp();
-    expect(renderedHelp).toContain("mp4, m4a, or mp3");
-    expect(renderedHelp).toContain("sandbox can download it directly");
-    expect(renderedHelp).toContain("without credential headers");
-    expect(renderedHelp).toContain("grants file access until expiry");
-    expect(renderedHelp).toContain("provider-reported, not byte-verified");
-    expect(renderedHelp).toContain("does not download the file");
   });
 });

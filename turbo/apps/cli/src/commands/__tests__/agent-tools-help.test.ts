@@ -107,7 +107,7 @@ describe("agent-facing operational CLI help", () => {
     expect(upload).toContain("inspect the destination first");
   });
 
-  it("documents Social discovery, export recovery, and durable download receipts", async () => {
+  it("documents Social discovery, export recovery, and temporary download links", async () => {
     const root = await helpFor(socialCommand);
     expect(root).toContain("relevant subcommand's --help before use");
     expect(root).toContain("capabilities is offline");
@@ -148,7 +148,11 @@ describe("agent-facing operational CLI help", () => {
 
     const download = await helpFor(socialCommand, ["download"]);
     expect(download).toContain("audio pricing");
-    expect(download).toContain("delivered format and artifact MIME");
+    expect(download).toContain("temporary direct download URL");
+    expect(download).toContain("without credential headers");
+    expect(download).toContain("grants file access until expiry");
+    expect(download).toContain("provider-reported, not byte-verified");
+    expect(download).toContain("does not download the file");
     expect(download).toContain(
       "does not cancel upstream work or prevent billing",
     );
