@@ -59,8 +59,8 @@
       "project": ["src/**/*.ts", "*.config.{ts,mjs}"]
     },
     "apps/host-worker": {
-      "entry": ["src/index.ts"],
-      "project": ["src/**/*.ts", "*.config.mjs"],
+      "entry": ["src/index.ts", "src/site-banner-client.ts"],
+      "project": ["src/**/*.ts", "*.config.mjs", "scripts/**/*.ts"],
       "ignoreDependencies": ["eslint", "oxlint", "wrangler"],
       "ignoreBinaries": ["eslint", "oxlint", "wrangler"]
     },

@@ -39,7 +39,8 @@ function environment(
   readFile?: () => Promise<void>,
   segment: "okou" | "vm0" = "okou",
   registered = false,
-  html = "<p>ok</p>",
+  html: string | Uint8Array<ArrayBuffer> = "<p>ok</p>",
+  encoding?: string,
 ): Env {
   const pointerRoot = segment === "okou" ? "sites/brands/okou" : "sites";
   const storedPrefix = `${pointerRoot}/publications/${deploymentId}`;
@@ -56,7 +57,7 @@ function environment(
   };
   const manifest = {
     version: 1,
-    immutableContent: true,
+    ...(encoding === undefined ? { immutableContent: true } : {}),
     publicBrand: segment,
     publicSlug: "demo",
     siteId,
@@ -86,7 +87,7 @@ function environment(
       },
     },
   };
-  const objects = new Map([
+  const objects = new Map<string, string | Uint8Array<ArrayBuffer>>([
     [`${pointerRoot}/demo/active.json`, JSON.stringify(pointer)],
     [
       `${pointerRoot}/deployments/${deploymentId}.json`,
@@ -136,7 +137,9 @@ function environment(
           size: body.length,
           body: stream,
           httpEtag: '"hosted"',
-          writeHttpMetadata: () => {},
+          writeHttpMetadata: (headers) => {
+            if (encoding) headers.set("Content-Encoding", encoding);
+          },
         };
       },
     },
@@ -153,6 +156,186 @@ it("fails closed when the authority omits its access decision", async () => {
     (await fetchWorker(new Request("https://demo.okou.app/"), environment()))
       .status,
   ).toBe(503);
+});
+
+it("decorates authorized standalone HTML with a shared banner and a credential-free App CTA", async () => {
+  server.use(
+    http.get(endpoint, ({ request }) => {
+      expect(new URL(request.url).searchParams.get("presentation")).toBe(
+        "banner",
+      );
+      return HttpResponse.json({
+        allowed: true,
+        decision: "allow",
+        presentation: {
+          showBanner: true,
+          title: 'Weekly <report> "Q4"',
+          siteUrl: "https://demo.okou.app/",
+        },
+      });
+    }),
+  );
+  const env = {
+    ...environment(
+      true,
+      undefined,
+      "okou",
+      true,
+      "<!doctype html><html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'self'; worker-src 'none'\"></head><body><h1>Original report</h1><script src=\"/report-12345678.js\"></script></body></html>",
+    ),
+    HOSTED_SITE_AUTH_URL: "https://app.okou.ai/hosted-site-authorize",
+  };
+  const response = await fetchWorker(
+    new Request("https://demo.okou.app/?private_parameter=secret", {
+      headers: { "Sec-Fetch-Dest": "document" },
+    }),
+    env,
+  );
+  expect(response.status).toBe(200);
+  const html = await response.text();
+  expect(html).toContain('shadowrootmode="open"');
+  expect(html).toContain("Weekly &lt;report&gt; &quot;Q4&quot;");
+  expect(html).toContain("Continue with Okou");
+  expect(html).toContain(
+    'href="https://app.okou.ai/artifacts?downloadSite=demo"',
+  );
+  expect(html).toContain("<h1>Original report</h1>");
+  expect(html).toContain('<script src="/report-12345678.js"></script>');
+  expect(html).not.toContain("private_parameter");
+  expect(html).not.toContain("unsafe-inline");
+  expect(html).toContain("nonce-");
+  expect(response.headers.get("Content-Length")).toBeNull();
+  expect(response.headers.get("ETag")).toBeNull();
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+});
+
+it.each([
+  { path: "/", destination: "document", showBanner: false },
+  { path: "/", destination: "iframe", showBanner: true },
+  { path: "/style-12345678.css", destination: "style", showBanner: true },
+])(
+  "does not inject disabled banners, iframe previews or assets: $path/$destination/$showBanner",
+  async ({ path, destination, showBanner }) => {
+    server.use(
+      http.get(endpoint, () => {
+        return HttpResponse.json({
+          allowed: true,
+          decision: "allow",
+          presentation: {
+            showBanner,
+            title: "Report",
+            siteUrl: "https://demo.okou.app/",
+          },
+        });
+      }),
+    );
+    const response = await fetchWorker(
+      new Request(`https://demo.okou.app${path}`, {
+        headers: { "Sec-Fetch-Dest": destination },
+      }),
+      {
+        ...environment(),
+        HOSTED_SITE_AUTH_URL: "https://app.okou.ai/hosted-site-authorize",
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.text()).not.toContain("okou-site-banner");
+  },
+);
+
+it("fetches the latest banner preference on refresh without republishing", async () => {
+  let showBanner = true;
+  server.use(
+    http.get(endpoint, () => {
+      return HttpResponse.json({
+        allowed: true,
+        decision: "allow",
+        presentation: {
+          showBanner,
+          title: "Report",
+          siteUrl: "https://demo.okou.app/",
+        },
+      });
+    }),
+  );
+  const env = {
+    ...environment(),
+    HOSTED_SITE_AUTH_URL: "https://app.okou.ai/hosted-site-authorize",
+  };
+  const request = () => {
+    return new Request("https://demo.okou.app/", {
+      headers: { Accept: "text/html" },
+    });
+  };
+  expect(await (await fetchWorker(request(), env)).text()).toContain(
+    'id="okou-site-banner"',
+  );
+  showBanner = false;
+  expect(await (await fetchWorker(request(), env)).text()).toBe("<p>ok</p>");
+});
+
+it("preserves publisher inline scripts and styles already permitted by CSP", async () => {
+  server.use(
+    http.get(endpoint, () => {
+      return HttpResponse.json({
+        allowed: true,
+        decision: "allow",
+        presentation: {
+          showBanner: true,
+          title: "Report",
+          siteUrl: "https://demo.okou.app/",
+        },
+      });
+    }),
+  );
+  const source =
+    "<!doctype html><html><head><meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'unsafe-inline'; style-src 'unsafe-inline'\"><style>body{color:teal}</style></head><body><script>window.publisherReady=true</script></body></html>";
+  const response = await fetchWorker(
+    new Request("https://demo.okou.app/", { headers: { Accept: "text/html" } }),
+    {
+      ...environment(true, undefined, "okou", true, source),
+      HOSTED_SITE_AUTH_URL: "https://app.okou.ai/hosted-site-authorize",
+    },
+  );
+  const html = await response.text();
+  expect(response.status).toBe(200);
+  expect(html).toContain('id="okou-site-banner"');
+  expect(html).not.toContain("script-src-elem");
+  expect(html).not.toContain("style-src-elem");
+  expect(html).toContain("<style>body{color:teal}</style>");
+  expect(html).toContain("<script>window.publisherReady=true</script>");
+});
+
+it("keeps an unsupported compressed document readable without rewriting its bytes", async () => {
+  server.use(
+    http.get(endpoint, () => {
+      return HttpResponse.json({
+        allowed: true,
+        decision: "allow",
+        presentation: {
+          showBanner: true,
+          title: "Report",
+          siteUrl: "https://demo.okou.app/",
+        },
+      });
+    }),
+  );
+  // A Brotli-encoded HTML document from the external storage boundary.
+  const body = new Uint8Array([
+    27, 25, 0, 248, 141, 148, 171, 171, 83, 205, 227, 51, 132, 38, 99, 218, 222,
+    114, 16, 66, 106, 73, 64, 136, 169, 231, 204, 238, 78, 244,
+  ]);
+  const env = {
+    ...environment(true, undefined, "okou", true, body, "br"),
+    HOSTED_SITE_AUTH_URL: "https://app.okou.ai/hosted-site-authorize",
+  };
+  const response = await fetchWorker(
+    new Request("https://demo.okou.app/", { headers: { Accept: "text/html" } }),
+    env,
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Content-Encoding")).toBe("br");
+  expect(new Uint8Array(await response.arrayBuffer())).toStrictEqual(body);
 });
 
 it("fails closed without a configured authority", async () => {

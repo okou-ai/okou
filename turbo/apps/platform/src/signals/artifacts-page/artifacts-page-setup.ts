@@ -1,9 +1,11 @@
 import { command } from "ccstate";
+import { hostedSitePublicSlugSchema } from "@okouai/api-contracts/contracts/host";
 import { createElement } from "react";
 import { i18n } from "../../i18n/index.ts";
 
 import { ArtifactCatalogPage } from "../../views/artifacts-page/artifact-catalog-page.tsx";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
+import { downloadHostedSite$ } from "../attachment-download.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import { closeLightboxImmediately$ } from "../okou-page/attachment-chips.ts";
@@ -63,6 +65,12 @@ export const setupArtifactsPage$ = command(
     }
     if (scrollToArtifactId) {
       await set(loadThroughArtifactCatalog$, scrollToArtifactId, signal);
+    }
+    const downloadSite = hostedSitePublicSlugSchema.safeParse(
+      routeSearchParams.get("downloadSite"),
+    );
+    if (downloadSite.success) {
+      await set(downloadHostedSite$, downloadSite.data, signal);
     }
   },
 );

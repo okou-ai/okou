@@ -250,6 +250,182 @@ async function publish() {
   };
 }
 
+test("site banners default on for the owner cohort and persist independently of visibility and redeployment", async () => {
+  const { owner, api, input, prepared, request } = await publish();
+  const delivery = {
+    ...request,
+    query: { ...request.query, presentation: "banner" as const },
+  };
+  await enable(owner);
+  const initial = await accept(
+    client(owner).siteBanner({ headers, params: { siteId: prepared.siteId } }),
+    [200],
+  );
+  expect(initial.body).toStrictEqual({
+    siteId: prepared.siteId,
+    showBanner: true,
+    revision: null,
+  });
+  const shown = (await accept(client().deliveryAuthorization(delivery), [200]))
+    .body;
+  expect(shown).toMatchObject({
+    allowed: true,
+    presentation: {
+      showBanner: true,
+      siteUrl: `https://${prepared.publicSlug}.okou.app/`,
+    },
+  });
+  const hidden = await accept(
+    client(owner).updateSiteBanner({
+      headers,
+      params: { siteId: prepared.siteId },
+      body: { showBanner: false, expectedRevision: null },
+    }),
+    [200],
+  );
+  expect(hidden.body.showBanner).toBeFalsy();
+  expect(hidden.body.revision).not.toBeNull();
+  await accept(
+    client(owner).updateSiteBanner({
+      headers,
+      params: { siteId: prepared.siteId },
+      body: { showBanner: true, expectedRevision: null },
+    }),
+    [409],
+  );
+  const policy = await accept(
+    client(owner).siteVisibility({
+      headers,
+      params: { siteId: prepared.siteId },
+    }),
+    [200],
+  );
+  expect(policy.body).toMatchObject({ visibility: "public", revision: null });
+  for (const alias of [prepared.publicSlug, `dpl-${prepared.deploymentId}`]) {
+    const result = (
+      await accept(
+        client().deliveryAuthorization({
+          ...delivery,
+          query: { ...delivery.query, alias },
+        }),
+        [200],
+      )
+    ).body;
+    expect(result).toMatchObject({
+      allowed: true,
+      presentation: { showBanner: false },
+    });
+  }
+  const redeployed = await api.prepareHostedSite(owner, input);
+  await api.completeHostedSite(owner, redeployed.deploymentId);
+  expect(
+    (
+      await accept(
+        client(owner).siteBanner({
+          headers,
+          params: { siteId: prepared.siteId },
+        }),
+        [200],
+      )
+    ).body,
+  ).toStrictEqual(hidden.body);
+});
+
+test("banner management requires ownership and its switch without revealing restricted metadata", async () => {
+  const { owner, prepared, request } = await publish();
+  const params = { siteId: prepared.siteId };
+  await accept(client(owner).siteBanner({ headers, params }), [403]);
+  await accept(
+    client(owner).updateSiteBanner({
+      headers,
+      params,
+      body: { showBanner: false, expectedRevision: null },
+    }),
+    [403],
+  );
+  await enable(owner);
+  const other = createBddApi(context).user({ orgId: owner.orgId });
+  await enable(other);
+  await accept(client(other).siteBanner({ headers, params }), [404]);
+  await accept(
+    client(other).updateSiteBanner({
+      headers,
+      params,
+      body: { showBanner: false, expectedRevision: null },
+    }),
+    [404],
+  );
+  await accept(
+    client(owner).updateSiteVisibility({
+      headers,
+      params,
+      body: { visibility: "private", expectedRevision: null },
+    }),
+    [200],
+  );
+  const denied = (
+    await accept(
+      client().deliveryAuthorization({
+        ...request,
+        query: { ...request.query, presentation: "banner" },
+      }),
+      [200],
+    )
+  ).body;
+  expect(denied).toStrictEqual({ allowed: false, decision: "authenticate" });
+  await enable(owner, false);
+  expect(
+    (await accept(client().deliveryAuthorization(request), [200])).body
+      .decision,
+  ).toBe("authenticate");
+});
+
+test("the owner's switch controls anonymous banner presentation and preserves the saved preference", async () => {
+  const { owner, prepared, request } = await publish();
+  const delivery = {
+    ...request,
+    query: { ...request.query, presentation: "banner" as const },
+  };
+  const disabled = (
+    await accept(client().deliveryAuthorization(delivery), [200])
+  ).body;
+  expect(disabled).toMatchObject({
+    allowed: true,
+    presentation: { showBanner: false },
+  });
+  await enable(owner);
+  const initial = (
+    await accept(
+      client(owner).siteBanner({
+        headers,
+        params: { siteId: prepared.siteId },
+      }),
+      [200],
+    )
+  ).body;
+  await accept(
+    client(owner).updateSiteBanner({
+      headers,
+      params: { siteId: prepared.siteId },
+      body: { showBanner: false, expectedRevision: initial.revision },
+    }),
+    [200],
+  );
+  await enable(owner, false);
+  await enable(owner);
+  expect(
+    (
+      await accept(
+        client(owner).siteBanner({
+          headers,
+          params: { siteId: prepared.siteId },
+        }),
+        [200],
+      )
+    ).body.showBanner,
+  ).toBeFalsy();
+});
+
 async function authorizeBrowser(
   user: ApiTestUser,
   siteId: string,

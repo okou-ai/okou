@@ -39,6 +39,8 @@ export function hostedSiteColumns() {
     chatThreadId: uuid("chat_thread_id"),
     publicSlug: varchar("public_slug", { length: 96 }).notNull(),
     activeDeploymentId: uuid("active_deployment_id"),
+    showBanner: boolean("show_banner").notNull().default(true),
+    bannerRevision: uuid("banner_revision"),
     createdFromRunId: text("created_from_run_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

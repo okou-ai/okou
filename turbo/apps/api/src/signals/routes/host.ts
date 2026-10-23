@@ -1,5 +1,6 @@
 import { hostedSiteAccessRoutes } from "./hosted-site-access";
 import { hostedSiteSessionViewer$ } from "../services/hosted-site-sessions.service";
+import { hostedSitePresentation$ } from "../services/hosted-site-banner.service";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { command } from "ccstate";
@@ -139,6 +140,17 @@ const deliveryAuthorization$ = command(
           signal,
         );
       }
+    }
+    if (body.allowed && args.presentation === "banner") {
+      const presentation = await set(
+        hostedSitePresentation$,
+        args.siteId,
+        signal,
+      );
+      return {
+        status: 200 as const,
+        body: { ...body, ...(presentation ? { presentation } : {}) },
+      };
     }
     return { status: 200 as const, body };
   },

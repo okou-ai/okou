@@ -140,6 +140,9 @@ test("published sites customize their address in Share and copy the saved URL wi
   await openSite();
   await openShare();
   expect(queryAllByRoleFast("radio")).toHaveLength(0);
+  expect(
+    screen.queryByRole("switch", { name: "Show Okou banner" }),
+  ).not.toBeInTheDocument();
   await waitFor(() => {
     expect(queryButtonByName("Customize URL")).toBeDefined();
   });
@@ -421,6 +424,110 @@ test("Public Site previews continue rendering the anonymous URL with visibility 
 });
 
 type SiteVisibilityStatus = z.infer<typeof hostedSiteVisibilityStatusSchema>;
+
+test("unavailable banner settings can be retried without claiming that the banner is hidden", async () => {
+  mockSiteAlias();
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, { siteId, visibility: "public", revision: null });
+  });
+  let unavailable = true;
+  context.mocks.api(hostContract.siteBanner, ({ respond }) => {
+    return unavailable
+      ? respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Banner settings unavailable",
+          },
+        })
+      : respond(200, { siteId, showBanner: true, revision: null });
+  });
+  await openSite({ visibility: true, urlEditing: false });
+  await openShare();
+  await screen.findByText("Unable to load banner settings");
+  expect(
+    screen.queryByRole("switch", { name: "Show Okou banner" }),
+  ).not.toBeInTheDocument();
+  unavailable = false;
+  click(getButtonByName("Retry"));
+  await expect(
+    screen.findByRole("switch", { name: "Show Okou banner" }),
+  ).resolves.toBeChecked();
+});
+
+test.each([false, true])(
+  "owners hide the default banner from the Site share settings (sidebar: %s)",
+  async (sidebar) => {
+    mockSiteAlias();
+    const visibility: SiteVisibilityStatus = {
+      siteId,
+      visibility: "public",
+      revision: null,
+    };
+    context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+      return respond(200, visibility);
+    });
+    let banner = { siteId, showBanner: true, revision: null as string | null };
+    context.mocks.api(hostContract.siteBanner, ({ respond }) => {
+      return respond(200, banner);
+    });
+    context.mocks.api(hostContract.updateSiteBanner, ({ body, respond }) => {
+      expect(body.expectedRevision).toBe(banner.revision);
+      banner = {
+        siteId,
+        showBanner: body.showBanner,
+        revision: crypto.randomUUID(),
+      };
+      return respond(200, banner);
+    });
+    await openSite({ visibility: true, urlEditing: false, sidebar });
+    await openShare(sidebar ? "Share artifact" : "Share");
+    const toggle = await screen.findByRole("switch", {
+      name: "Show Okou banner",
+    });
+    expect(toggle).toBeChecked();
+    click(toggle);
+    await waitFor(() => {
+      return expect(toggle).not.toBeChecked();
+    });
+    await screen.findByText("Banner updated");
+    await expectPermission("Anyone with the link");
+    click(toggle);
+    await waitFor(() => {
+      return expect(toggle).toBeChecked();
+    });
+  },
+);
+
+test("a stale banner edit reloads the saved preference instead of overwriting it", async () => {
+  mockSiteAlias();
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, { siteId, visibility: "public", revision: null });
+  });
+  let banner = { siteId, showBanner: true, revision: null as string | null };
+  context.mocks.api(hostContract.siteBanner, ({ respond }) => {
+    return respond(200, banner);
+  });
+  context.mocks.api(hostContract.updateSiteBanner, ({ respond }) => {
+    banner = { siteId, showBanner: true, revision: crypto.randomUUID() };
+    return respond(409, {
+      error: {
+        code: "CONFLICT",
+        message: "Website banner changed; reload before editing",
+      },
+    });
+  });
+  await openSite({ visibility: true, urlEditing: false });
+  await openShare();
+  const toggle = await screen.findByRole("switch", {
+    name: "Show Okou banner",
+  });
+  click(toggle);
+  await screen.findByText("Website banner changed; reload before editing");
+  await waitFor(() => {
+    return expect(toggle).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(toggle).toBeChecked();
+});
 
 function mockSiteAlias() {
   context.mocks.api(hostContract.resolveAlias, ({ respond }) => {

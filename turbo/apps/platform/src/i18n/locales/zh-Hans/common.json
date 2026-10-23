@@ -628,6 +628,11 @@
       "singularTitle": "成果",
       "unavailable": "这个成果已不再可用。"
     },
+    "siteBanner": {
+      "label": "显示 Okou 横幅",
+      "loadFailed": "无法加载横幅设置",
+      "updated": "横幅已更新"
+    },
     "siteUrl": {
       "available": "可以使用",
       "cancel": "取消",
