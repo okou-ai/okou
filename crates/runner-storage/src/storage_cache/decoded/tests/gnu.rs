@@ -94,14 +94,11 @@ fn gnu_longnames_are_bounded_and_do_not_admit_other_extensions() {
             .is_none()
     );
 
-    let mut many_paths = fixture_files(storage_files::MAX_FILES, 64, true);
+    let mut many_paths = fixture_files(MAX_ADMITTED_FILES, 64, true);
     for file in &mut many_paths {
         file.path = file.path.replace(&"a".repeat(110), &"a".repeat(112));
     }
-    assert!(
-        many_paths.iter().map(|f| f.path.len()).sum::<usize>()
-            > storage_files::MAX_TOTAL_PATH_BYTES
-    );
+    assert!(many_paths.iter().map(|f| f.path.len()).sum::<usize>() > MAX_ADMITTED_PATH_BYTES);
     assert!(
         decode(&archive_files(&many_paths), &cancel)
             .unwrap()

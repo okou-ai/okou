@@ -47,10 +47,18 @@ pub(super) fn archive_files(files: &[StorageFile]) -> Vec<u8> {
 async fn enlarged_v1_positive_survives_restart_and_full_guest_delivery() {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().join("host"));
-    let files = fixture_files(768, 3400, true);
+    let mut files = fixture_files(storage_files::MAX_FILES, 2048, true);
+    for file in &mut files {
+        file.mtime = 1;
+        file.content[512..].fill(b'x');
+    }
     use sha2::{Digest, Sha256};
 
-    assert!(files.iter().map(|f| f.content.len()).sum::<usize>() > 2 * 1024 * 1024);
+    assert_eq!(
+        files.iter().map(|f| f.content.len()).sum::<usize>(),
+        storage_files::MAX_STORAGE_BYTES
+    );
+    assert!(files.iter().map(|f| f.path.len()).sum::<usize>() > MAX_ADMITTED_PATH_BYTES);
     // Model a later writer independently of this release's archive admission.
     let entry = disk::paths(&home, "memory-fixture", "v1").0;
     for file in &files {
@@ -66,6 +74,7 @@ async fn enlarged_v1_positive_survives_restart_and_full_guest_delivery() {
         })).collect::<Vec<_>>()
     }))
     .unwrap();
+    assert!(index.len() > MAX_ADMITTED_INDEX_BYTES);
     fs::write(entry.join("index.json"), &index).unwrap();
     let cache = DecodedCache::new(home.clone());
     assert_eq!(
@@ -362,7 +371,11 @@ async fn retained_large_hits_exhaust_optional_budget_without_leaking_permits() {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());
     let cancel = CancellationToken::new();
-    let files = fixture_files(16, storage_files::MAX_FILE_BYTES, false);
+    let files = fixture_files(
+        storage_files::MAX_STORAGE_BYTES / storage_files::MAX_FILE_BYTES,
+        storage_files::MAX_FILE_BYTES,
+        false,
+    );
     disk::publish(
         &home,
         "large",
@@ -383,7 +396,7 @@ async fn retained_large_hits_exhaust_optional_budget_without_leaking_permits() {
     .unwrap();
     let cache = DecodedCache::new(home);
     let mut held = Vec::new();
-    for _ in 0..=CAPACITY / storage_files::MAX_STORAGE_BYTES {
+    for _ in 0..=CAPACITY / files.iter().map(|file| file.content.len()).sum::<usize>() {
         let Some(ready) = cache.get_ready("large", "v1").await.unwrap() else {
             break;
         };

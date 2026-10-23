@@ -9,15 +9,15 @@ use std::path::{Component, Path};
 /// Maximum encoded files payload, including metadata.
 pub const MAX_PAYLOAD_BYTES: usize = 15 * 1024 * 1024;
 /// Maximum files in one admitted storage.
-pub const MAX_FILES: usize = 1024;
+pub const MAX_FILES: usize = 4096;
 /// Maximum bytes in one file.
 pub const MAX_FILE_BYTES: usize = 256 * 1024;
 /// Maximum relative path length in bytes.
 pub const MAX_PATH_BYTES: usize = 4096;
-/// Preserve the original 32-file worst-case path envelope independently of count.
-pub const MAX_TOTAL_PATH_BYTES: usize = 128 * 1024;
+/// Maximum combined relative-path bytes in one admitted storage.
+pub const MAX_TOTAL_PATH_BYTES: usize = 512 * 1024;
 /// Maximum decoded content bytes in one storage.
-pub const MAX_STORAGE_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_STORAGE_BYTES: usize = 8 * 1024 * 1024;
 /// Maximum mount groups in one operation.
 pub const MAX_MOUNTS: usize = 1024;
 /// Retain the original 32-files-per-mount whole-input allocation envelope.
@@ -635,12 +635,15 @@ mod tests {
                 content: Vec::new(),
             })
             .collect();
-        let mounts: Vec<_> = (0..33).map(|index| format!("/mount-{index}")).collect();
+        let fitting_groups = MAX_TOTAL_FILES / MAX_FILES;
+        let mounts: Vec<_> = (0..=fitting_groups)
+            .map(|index| format!("/mount-{index}"))
+            .collect();
         let groups: Vec<_> = mounts
             .iter()
             .map(|mount| (mount.as_str(), files.as_slice()))
             .collect();
-        let encoded = encode(&groups[..32]).unwrap();
+        let encoded = encode(&groups[..fitting_groups]).unwrap();
         assert_eq!(
             decode(&encoded)
                 .unwrap()
@@ -658,7 +661,7 @@ mod tests {
 
     #[test]
     fn decoding_enforces_each_groups_content_and_path_envelopes() {
-        let mut files: Vec<_> = (0..16)
+        let mut files: Vec<_> = (0..MAX_STORAGE_BYTES / MAX_FILE_BYTES)
             .map(|index| StorageFile {
                 path: format!("file-{index}"),
                 mode: 0o640,
