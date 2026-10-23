@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ConnectorAuthMethodId } from "@okouai/api-contracts/contracts/connector-identity";
 import { builtinConnectorOauthStartResponseSchema } from "@okouai/api-contracts/contracts/connector-schemas";
 import { http, HttpResponse, type JsonBodyType } from "msw";
@@ -7,11 +8,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { createApp } from "../../../app-factory";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { clearMockNow } from "../../../lib/time";
 import { API_TEST_CONNECTOR_CATALOG } from "../../../test-fixtures/connector-catalog";
+import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { builtinConnectorsRoutes } from "../connectors";
 import { createRouteMocks } from "./helpers/route-test";
@@ -1359,8 +1362,8 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
     const startBody = builtinConnectorOauthStartResponseSchema.parse(
       await response.json(),
     );
+    const connectionId = z.uuid().parse(startBody.connectionId);
     const authorizationUrl = new URL(startBody.authorizationUrl);
-    expect(startBody.connectionId).toBeTruthy();
     expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
       "https://airtable.com/oauth2/v1/authorize",
     );
@@ -1395,13 +1398,20 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
     expect(tokenBodies).toHaveLength(1);
     expect(tokenBodies[0]?.get("redirect_uri")).toBe(redirectUri);
     expect(tokenBodies[0]?.get("code_verifier")).toMatch(/^[A-Za-z0-9_-]+$/u);
-    const connected = await app.request(
-      `${API_ORIGIN}/api/connectors/airtable`,
-      { headers: authHeaders() },
+    const connected = await accept(
+      setupApp({ context, routes: connectorAccountRoutes })(
+        connectorAccountsContract,
+      ).connection({
+        params: { connectionId },
+        query: { kind: "builtin", connectorSlug: "airtable" },
+        headers: authHeaders(),
+      }),
+      [200],
     );
-    expect(connected.status).toBe(200);
-    await expect(connected.json()).resolves.toMatchObject({
-      id: startBody.connectionId,
+    expect(connected.body).toMatchObject({
+      id: connectionId,
+      target: { kind: "builtin", connectorSlug: "airtable" },
+      connectionStatus: "connected",
     });
   });
 
