@@ -128,7 +128,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Chat resources",
     description:
       "Show a responsive panel of outputs and links from the current chat.",
-    enabled: false,
+    enabled: true,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ThreadEmailManager]: {
