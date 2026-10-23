@@ -292,11 +292,6 @@
       "owner": "activateCandidate$"
     },
     {
-      "id": "TX-0196",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-installation.service.ts",
-      "owner": "activateInstallation$"
-    },
-    {
       "id": "TX-0197",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "persistReconfigurationPatch$"
