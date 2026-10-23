@@ -23,6 +23,7 @@ struct ConnectorActionCard: View {
         Text(error).font(.caption).foregroundStyle(.secondary).lineLimit(2)
         Button("Retry") { Task { await store.refresh(action) } }.buttonStyle(.bordered)
       case .ready(let status):
+        let disabled = complete(status) || store.active != nil
         Label(status.label, systemImage: "link").font(.headline).lineLimit(1)
         Text(status.account?.label ?? "Connect an account for this Agent")
           .font(.subheadline).lineLimit(1).textSelection(.enabled)
@@ -33,10 +34,11 @@ struct ConnectorActionCard: View {
           Button {
             store.activate(action)
           } label: {
-            Text(button(status)).foregroundStyle(Color(uiColor: .systemBackground))
+            Text(button(status))
+              .foregroundStyle(disabled ? Color.secondary : Color(uiColor: .systemBackground))
           }
           .buttonStyle(.borderedProminent)
-          .disabled(complete(status) || store.active != nil)
+          .disabled(disabled)
           if complete(status) { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
         }
       }
