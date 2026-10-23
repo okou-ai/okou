@@ -1,3 +1,8 @@
+import {
+  callbackAuthenticationModes,
+  callbackBrowserHeaders,
+  callbackNeedsSignIn,
+} from "./helpers/oauth-callback-auth";
 import { randomUUID } from "node:crypto";
 
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -235,6 +240,7 @@ async function complete(
   return location(
     await accept(
       clients()(slackOauthContract).callback({
+        extraHeaders: headers,
         query: { state: parameter(authorization, "state"), code: randomUUID() },
       }),
       [307],
@@ -711,6 +717,7 @@ test("installation grants bot and user scopes and connects the OAuth account", a
 
   const replay = await accept(
     clients()(slackOauthContract).callback({
+      extraHeaders: headers,
       query: { state: parameter(authorization, "state"), code: "replay" },
     }),
     [307],
@@ -1157,6 +1164,7 @@ test("slack success and denial retain the verified conversation context for the 
   const denied = location(
     await accept(
       clients()(slackOauthContract).callback({
+        extraHeaders: headers,
         query: {
           state: parameter(authorization, "state"),
           error: "access_denied",
@@ -1190,3 +1198,92 @@ test("slack success and denial retain the verified conversation context for the 
     isConnected: true,
   });
 });
+
+test.each(callbackAuthenticationModes)(
+  "protects the Slack connector callback actor (%s)",
+  async (mode) => {
+    const current = actor();
+    const authorization = await startInstall();
+    const query = {
+      state: parameter(authorization, "state"),
+      code: "provider-result",
+    };
+    const victimWorkspace = `T_${randomUUID()}`;
+    const victimUser = `U_${randomUUID()}`;
+    context.mocks.slack.oauth.v2.access.mockResolvedValueOnce({
+      ok: true,
+      team: { id: victimWorkspace, name: "Provider workspace" },
+      access_token: "xoxb-test",
+      bot_user_id: "B_TEST",
+      scope: parameter(authorization, "scope"),
+      authed_user: {
+        id: victimUser,
+        access_token: "xoxp-test",
+        scope: parameter(authorization, "user_scope"),
+      },
+    });
+    context.mocks.slack.users.info.mockResolvedValue({
+      ok: true,
+      user: {
+        id: victimUser,
+        real_name: "Provider user",
+        profile: { email: "provider@example.test" },
+      },
+    });
+    const browserHeaders = callbackBrowserHeaders(context, mode, current);
+    const browser = await accept(
+      clients()(slackOauthContract).callback({
+        query,
+        extraHeaders: browserHeaders.cookie
+          ? { cookie: browserHeaders.cookie }
+          : {},
+      }),
+      [307],
+    );
+    expect(location(browser).searchParams.get("integration")).toBe("slack");
+    authenticate(current);
+    await expect(integrationStatus()).resolves.toMatchObject({
+      isInstalled: false,
+      isConnected: false,
+    });
+    const completion = await accept(
+      clients()(slackOauthContract).callback({
+        query: { ...query, responseMode: "json" },
+        extraHeaders: callbackBrowserHeaders(context, mode, current),
+      }),
+      [200, 401],
+    );
+    expect(completion.status).toBe(callbackNeedsSignIn(mode) ? 401 : 200);
+    if (completion.status === 200) {
+      const target = new URL(completion.body.redirectUrl);
+      if (mode === "matching-cookie") {
+        expect(target.searchParams.get("status")).toBe("connected");
+      } else {
+        expect(target.searchParams.get("error")).toContain(
+          "active account or organization changed",
+        );
+      }
+    }
+    authenticate(current);
+    if (mode === "matching-cookie") {
+      await expect(accounts()).resolves.toStrictEqual([
+        expect.objectContaining({ externalId: victimUser }),
+      ]);
+    } else {
+      await expect(accounts()).resolves.toStrictEqual([]);
+    }
+    if (callbackNeedsSignIn(mode)) {
+      const resumed = await accept(
+        clients()(slackOauthContract).callback({
+          query,
+          extraHeaders: headers,
+        }),
+        [307],
+      );
+      expect(location(resumed).searchParams.get("status")).toBe("connected");
+      await expect(accounts()).resolves.toStrictEqual([
+        expect.objectContaining({ externalId: victimUser }),
+      ]);
+    }
+  },
+);

@@ -75,6 +75,7 @@ describe("GET /api/integrations/slack", () => {
     });
     await accept(
       oauthClient.callback({
+        extraHeaders: { authorization: "Bearer clerk-session" },
         query: { code: `code-${args.slackWorkspaceId}`, state },
       }),
       [307],

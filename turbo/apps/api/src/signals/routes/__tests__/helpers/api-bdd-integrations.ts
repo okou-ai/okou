@@ -689,6 +689,7 @@ export function createBddIntegrationApi(context: TestContext) {
       query: GithubAppSetupCallbackQuery,
       statuses: readonly 307[],
       baseUrl = "https://api.okou.ai",
+      actor: ApiTestUser | null = null,
     ) {
       const client = setupApp({
         baseUrl,
@@ -698,6 +699,7 @@ export function createBddIntegrationApi(context: TestContext) {
       return await accept(
         client.setupCallback({
           query,
+          extraHeaders: extraHeaders(authenticate(context, routeMocks, actor)),
         }),
         statuses,
       );
@@ -1449,11 +1451,18 @@ export function createBddIntegrationApi(context: TestContext) {
         readonly state?: string;
       },
       statuses: readonly (307 | 400 | 503)[],
+      actor: ApiTestUser | null = null,
     ) {
       const client = setupApp({ context, routes: slackOauthRoutes })(
         slackOauthContract,
       );
-      return await accept(client.callback({ query }), statuses);
+      return await accept(
+        client.callback({
+          query,
+          extraHeaders: extraHeaders(authenticate(context, routeMocks, actor)),
+        }),
+        statuses,
+      );
     },
 
     async requestListTelegramIntegrations(

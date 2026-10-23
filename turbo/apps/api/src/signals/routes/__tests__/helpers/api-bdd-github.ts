@@ -360,6 +360,7 @@ export function createGithubBddApi(context: TestContext) {
   async function finishInstallationCallback(
     callback: RawRouteResponse,
     args: {
+      readonly actor: ApiTestUser;
       readonly installationId: string;
       readonly githubUserId: string;
       readonly organizationId?: string;
@@ -370,6 +371,7 @@ export function createGithubBddApi(context: TestContext) {
       if (replayUrl.pathname === "/api/github/app/setup/callback") {
         callback = await requestSetupCallback(replayUrl.search.slice(1), {
           origin: replayUrl.origin,
+          auth: args.actor,
         });
       }
     }
@@ -393,6 +395,7 @@ export function createGithubBddApi(context: TestContext) {
         {
           origin: new URL(authorization.searchParams.get("redirect_uri")!)
             .origin,
+          auth: args.actor,
         },
       );
     }
@@ -547,8 +550,10 @@ export function createGithubBddApi(context: TestContext) {
       }).toString();
       let callback = await requestSetupCallback(callbackQuery, {
         origin: "https://api.okou.ai",
+        auth: actor,
       });
       callback = await finishInstallationCallback(callback, {
+        actor,
         installationId: remoteInstallationId,
         githubUserId: targetId,
         organizationId: options.targetType === "User" ? undefined : targetId,

@@ -6341,6 +6341,8 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
         state: signedState,
       },
       [307],
+      "https://api.okou.ai",
+      admin,
     );
     expect(requestSetup.headers.get("location") ?? "").toContain(
       "permission%20to%20install%20this%20GitHub%20App",
@@ -6361,6 +6363,8 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
           state: missingIdState,
         },
         [307],
+        "https://api.okou.ai",
+        admin,
       );
     expect(missingInstallation.headers.get("location") ?? "").toContain(
       "Missing%20installation%20ID%20from%20GitHub",
