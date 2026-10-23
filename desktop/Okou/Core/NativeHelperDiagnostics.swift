@@ -1,6 +1,51 @@
 import CryptoKit
 import Foundation
 
+struct NativeHelperTermination: Sendable {
+  let status: Int32
+  let reason: String
+
+  init(_ process: Process) {
+    status = process.terminationStatus
+    switch process.terminationReason {
+    case .exit: reason = "exit"
+    case .uncaughtSignal: reason = "uncaught_signal"
+    @unknown default: reason = "unknown"
+    }
+  }
+}
+
+// Keep diagnostic labels independent of arbitrary helper request names and payloads.
+enum NativeHelperOperation: String, Sendable {
+  case permissionsState = "permissions.state"
+  case requestAccessibility = "permissions.request_accessibility"
+  case requestScreenRecording = "permissions.request_screen_recording"
+  case probeAutomation = "permissions.probe_automation"
+  case listApps = "apps.list"
+  case appState = "app.state"
+  case openApp = "app.open"
+  case click = "element.click"
+  case clickPoint = "element.click_point"
+  case scroll = "element.scroll"
+  case setValue = "element.set_value"
+  case performAction = "element.perform_action"
+  case typeText = "keyboard.type_text"
+  case pressKey = "keyboard.press_key"
+  case unknown
+}
+
+struct NativeHelperRequestDiagnostics: Sendable {
+  let operation: NativeHelperOperation
+  let timeout: TimeInterval
+  let started: ContinuousClock.Instant
+
+  init(_ request: JSONValue, timeout: TimeInterval) {
+    operation = NativeHelperOperation(rawValue: request["kind"].string ?? "") ?? .unknown
+    self.timeout = timeout
+    started = .now
+  }
+}
+
 struct NativeHelperReadFragment: Sendable {
   let sequence: Int
   let streamOffset: Int

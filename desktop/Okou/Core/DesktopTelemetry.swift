@@ -34,8 +34,10 @@ public enum DesktopTelemetry {
   }
 
   static func captureHelperFailure(
-    _ reason: NativeHelperFailure, pendingRequests: Int, stderrBytes: Int,
-    responseBytes: Int? = nil, exitStatus: Int32? = nil,
+    _ reason: NativeHelperFailure, purpose: NativeProcess.Purpose, generation: Int,
+    pendingRequests: Int, stderrBytes: Int,
+    responseBytes: Int? = nil, termination: NativeHelperTermination? = nil,
+    request: NativeHelperRequestDiagnostics? = nil,
     attachments: NativeHelperDiagnostics? = nil
   ) {
     let event = Event(level: .error)
@@ -43,11 +45,20 @@ public enum DesktopTelemetry {
     event.fingerprint = ["desktop-native-helper", reason.rawValue]
     event.tags = ["nativeHelperFailure": reason.rawValue]
     var diagnostics: [String: Any] = [
+      "purpose": purpose.rawValue, "generation": generation,
       "pendingRequests": pendingRequests, "stderrBytes": stderrBytes,
       "stderrSaturated": stderrBytes == 65_536,
     ]
     if let responseBytes { diagnostics["responseBytes"] = responseBytes }
-    if let exitStatus { diagnostics["exitStatus"] = exitStatus }
+    if let termination {
+      diagnostics["exitStatus"] = termination.status
+      diagnostics["terminationReason"] = termination.reason
+    }
+    if let request {
+      diagnostics["operation"] = request.operation.rawValue
+      diagnostics["timeoutMs"] = request.timeout * 1000
+      diagnostics["elapsedMs"] = request.started.duration(to: .now).seconds * 1000
+    }
     if reason == .invalidJSON || reason == .missingRequestID {
       diagnostics["diagnosticAttachments"] = attachments == nil ? "rate_limited" : "included"
     }

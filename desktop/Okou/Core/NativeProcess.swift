@@ -19,9 +19,20 @@ private final class NativeHelperStandardError: @unchecked Sendable {
 }
 
 public actor NativeProcess {
+  public enum Purpose: String, Sendable {
+    case computerUse = "computer_use"
+    case browserAutomationProbe = "browser_automation_probe"
+  }
+
+  private struct PendingRequest {
+    let continuation: CheckedContinuation<JSONValue, Error>
+    let diagnostics: NativeHelperRequestDiagnostics
+  }
+
   private let logger = Logger(subsystem: "ai.okou.desktop", category: "computer-use-helper")
   private let executable: URL
   private let environment: [String: String]
+  private let purpose: Purpose
   private var process: Process?
   private var input: FileHandle?
   private var output: FileHandle?
@@ -39,19 +50,22 @@ public actor NativeProcess {
   private var diagnosticWindowStart = ContinuousClock.now
   private var diagnosticsInWindow = 0
   private var sequence = 0
-  private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
+  private var pending: [Int: PendingRequest] = [:]
   private var generation = 0
   private var outputClosed = false
-  private var exitStatus: Int32?
+  private var termination: NativeHelperTermination?
 
-  public init(executable: URL, environment: [String: String] = [:]) {
+  public init(
+    executable: URL, environment: [String: String] = [:], purpose: Purpose = .computerUse
+  ) {
     self.executable = executable
     self.environment = environment
+    self.purpose = purpose
   }
   private func start() throws {
     if process?.isRunning == true { return }
     if let process {
-      reportFailure(.unexpectedExit, exitStatus: process.terminationStatus)
+      reportFailure(.unexpectedExit, termination: NativeHelperTermination(process))
       stop(error: DesktopFailure("accessibility_unavailable", "Native helper exited"))
     }
     generation += 1
@@ -80,8 +94,8 @@ public actor NativeProcess {
       if data.isEmpty { handle.readabilityHandler = nil }
     }
     child.terminationHandler = { child in
-      let status = child.terminationStatus
-      Task { await self.exited(generation: current, status: status) }
+      let termination = NativeHelperTermination(child)
+      Task { await self.exited(generation: current, termination: termination) }
     }
     do { try child.run() } catch {
       reportFailure(.launch)
@@ -104,7 +118,9 @@ public actor NativeProcess {
     data.append(10)
     return try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
-        pending[id] = continuation
+        pending[id] = PendingRequest(
+          continuation: continuation,
+          diagnostics: NativeHelperRequestDiagnostics(values, timeout: timeout))
         do { try input?.write(contentsOf: data) } catch {
           reportFailure(.write)
           stop(error: DesktopFailure("accessibility_unavailable", "Native helper write failed"))
@@ -141,11 +157,12 @@ public actor NativeProcess {
   private func consume(_ data: Data, sequence: Int, generation current: Int) {
     if data.isEmpty {
       outputClosed = true
-      if let exitStatus { exited(generation: current, status: exitStatus) }
+      if let termination { exited(generation: current, termination: termination) }
       return
     }
     readFragments.append(
-      NativeHelperReadFragment(sequence: sequence, streamOffset: receivedBytes, byteCount: data.count))
+      NativeHelperReadFragment(
+        sequence: sequence, streamOffset: receivedBytes, byteCount: data.count))
     receivedBytes += data.count
     if readFragments.count > NativeHelperDiagnostics.maximumReadFragments {
       omittedReadsThrough = readFragments.removeFirst().endOffset
@@ -187,7 +204,7 @@ public actor NativeProcess {
       }
       readFragments.removeAll { $0.endOffset <= responseStart }
       timeouts.removeValue(forKey: responseId)?.cancel()
-      pending.removeValue(forKey: responseId)?.resume(returning: response)
+      pending.removeValue(forKey: responseId)?.continuation.resume(returning: response)
     }
     buffer.append(data[start...])
   }
@@ -207,7 +224,8 @@ public actor NativeProcess {
     if diagnosticsInWindow < 3 {
       diagnosticsInWindow += 1
       attachments = NativeHelperDiagnostics(
-        response: response, reason: failure, generation: generation, pendingIDs: pending.keys.sorted(),
+        response: response, reason: failure, generation: generation,
+        pendingIDs: pending.keys.sorted(),
         responseStart: responseStart, reads: readFragments, omittedThrough: omittedReadsThrough,
         decoderError: decoderError, decodeDurationMs: decodeDurationMs)
     }
@@ -218,8 +236,8 @@ public actor NativeProcess {
         "\(message) Reconnect Computer Use; do not replay the failed action automatically."))
   }
   private func expire(_ id: Int) {
-    guard pending[id] != nil else { return }
-    reportFailure(.timeout)
+    guard let request = pending[id] else { return }
+    reportFailure(.timeout, request: request.diagnostics)
     stop(
       error: DesktopFailure(
         "command_timeout",
@@ -227,21 +245,24 @@ public actor NativeProcess {
       ))
   }
   private func cancel(_ id: Int) { if pending[id] != nil { stop(error: CancellationError()) } }
-  private func exited(generation current: Int, status: Int32) {
+  private func exited(generation current: Int, termination: NativeHelperTermination) {
     guard current == generation else { return }
-    exitStatus = status
+    self.termination = termination
     // A process can exit before its final stdout callbacks reach the actor.
     guard outputClosed else { return }
-    reportFailure(.unexpectedExit, exitStatus: status)
+    reportFailure(.unexpectedExit, termination: termination)
     stop(error: DesktopFailure("accessibility_unavailable", "Native helper exited"))
   }
   private func reportFailure(
-    _ reason: NativeHelperFailure, responseBytes: Int? = nil, exitStatus: Int32? = nil,
+    _ reason: NativeHelperFailure, responseBytes: Int? = nil,
+    termination: NativeHelperTermination? = nil, request: NativeHelperRequestDiagnostics? = nil,
     attachments: NativeHelperDiagnostics? = nil
   ) {
     DesktopTelemetry.captureHelperFailure(
-      reason, pendingRequests: pending.count, stderrBytes: standardError.count,
-      responseBytes: responseBytes, exitStatus: exitStatus, attachments: attachments)
+      reason, purpose: purpose, generation: generation,
+      pendingRequests: pending.count, stderrBytes: standardError.count,
+      responseBytes: responseBytes, termination: termination, request: request,
+      attachments: attachments)
   }
   public func stop() { stop(error: CancellationError()) }
   private func stop(error: Error) {
@@ -268,11 +289,11 @@ public actor NativeProcess {
     responseStart = 0
     omittedReadsThrough = 0
     outputClosed = false
-    exitStatus = nil
+    termination = nil
     for timeout in timeouts.values { timeout.cancel() }
     timeouts.removeAll()
     let requests = pending
     pending.removeAll()
-    for request in requests.values { request.resume(throwing: error) }
+    for request in requests.values { request.continuation.resume(throwing: error) }
   }
 }
