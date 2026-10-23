@@ -8,6 +8,8 @@ use runner_host::test_fixtures::ignored_child::{
 use super::super::{MEMORY_PREFETCH_CHUNK_BYTES, MemoryPrefetchCandidate};
 use super::*;
 
+mod bounds;
+
 const FIFO_CHILD_PATH_ENV: &str = "OKOU_STARTUP_PREFETCH_FIFO_CHILD_PATH";
 
 #[tokio::test]
@@ -130,7 +132,7 @@ async fn cancellation_after_external_open_is_observed_and_joined_child() {
 
 #[tokio::test]
 async fn non_startup_owners_cannot_supply_startup_success() {
-    let mut owner = MemoryPrefetchTasks::spawn_with([], 0, NonZeroUsize::MIN, |_, _| {});
+    let mut owner = MemoryPrefetchTasks::spawn_with([], 0, NonZeroUsize::MIN, |_, _, _| {});
     owner.drain().await;
     assert!(owner.startup_snapshot().is_err());
 }
