@@ -2647,6 +2647,13 @@
       "when": 1792746868531,
       "tag": "1456_prepare_workflow_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 1457,
+      "version": "7",
+      "when": 1792748631313,
+      "tag": "1457_migrate_presentation_templates_to_user_templates",
+      "breakpoints": true
     }
   ]
 }
