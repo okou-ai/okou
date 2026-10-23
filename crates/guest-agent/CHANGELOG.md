@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.108.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.108.2...guest-agent-v0.108.3) (2026-10-23)
+
+
+### Bug Fixes
+
+* **guest-agent:** close pi stdin after observed steer acknowledgements ([#42527](https://github.com/okou-ai/okou/issues/42527)) ([2d7822a](https://github.com/okou-ai/okou/commit/2d7822ab992ba134e561d57b00a055ca6ac01d9d))
+
 ## [0.108.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.108.1...guest-agent-v0.108.2) (2026-10-23)
 
 ## [0.108.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.108.0...guest-agent-v0.108.1) (2026-10-23)
