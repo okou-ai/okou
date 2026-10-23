@@ -615,6 +615,20 @@ describe("Proactive jobs", () => {
 
   it("admits one hidden tick, sleeps while waiting, wakes on a reply, and waits five minutes after completion", async () => {
     const f = await entrustedJob();
+    const pausedSuggestions = await accept(
+      setupApp({ context, routes: proactiveSuggestionsRoutes })(
+        proactiveSuggestionsContract,
+      ).update({
+        headers: authHeaders(f.actor),
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    expect(pausedSuggestions.body).toMatchObject({
+      enabled: false,
+      status: "paused",
+      unavailableReason: null,
+    });
     const firstSchedule = await readJobAutomation(f.actor, f.automationId);
     expect(firstSchedule.nextRunAt).toBe(new Date(now()).toISOString());
     await Promise.all([executeAutomationCron(), executeAutomationCron()]);
