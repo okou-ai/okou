@@ -302,7 +302,7 @@ describe("thread email manager", () => {
       "aria-pressed",
       "true",
     );
-    await within(list).findByLabelText("Select email: Proposal 12");
+    await link("Open email: Proposal 12", list);
     expect(
       within(list).queryByLabelText("Select email: Proposal 1"),
     ).not.toBeInTheDocument();
@@ -312,7 +312,7 @@ describe("thread email manager", () => {
     });
   });
 
-  it("selects every filtered email and shows draft actions only while drafts are selected", async () => {
+  it("selects only filtered drafts and shows their bulk actions", async () => {
     installMails();
     await openChat();
     const list = await openList();
@@ -327,12 +327,14 @@ describe("thread email manager", () => {
       within(list).getByRole("checkbox", { name: "Select all" }),
     ).toHaveAttribute("aria-checked", "mixed");
     click(within(list).getByRole("checkbox", { name: "Select all" }));
-    await within(list).findByText("12 selected");
+    await within(list).findByText("2 selected");
     await expect(button("Send", list)).resolves.toBeEnabled();
     await expect(button("Delete", list)).resolves.toBeEnabled();
     expect(
-      within(list).getByLabelText("Select email: Proposal 12"),
+      within(list).getByLabelText("Select email: Proposal 2"),
     ).toHaveAttribute("aria-checked", "true");
+    expect(within(list).getAllByRole("checkbox")).toHaveLength(3);
+    await link("Open email: Proposal 12", list);
     click(within(list).getByRole("checkbox", { name: "Select all" }));
     await within(list).findByText("0 selected");
     await waitFor(() => {
@@ -343,8 +345,8 @@ describe("thread email manager", () => {
       ).not.toBeInTheDocument();
     });
     click(await button("Sent", list));
-    click(within(list).getByRole("checkbox", { name: "Select all" }));
-    await within(list).findByText("10 selected");
+    await link("Open email: Proposal 12", list);
+    expect(within(list).queryByRole("checkbox")).not.toBeInTheDocument();
     expect(within(list).queryByText("Send")).not.toBeInTheDocument();
     expect(within(list).queryByText("Delete")).not.toBeInTheDocument();
     expect(
@@ -476,7 +478,8 @@ describe("thread email manager", () => {
       "aria-pressed",
       "true",
     );
-    await within(restored).findByText("1 selected");
+    await link("Open email: Proposal 12", restored);
+    expect(within(restored).queryByText("Send")).not.toBeInTheDocument();
     act(() => {
       window.history.forward();
     });
@@ -484,7 +487,13 @@ describe("thread email manager", () => {
     expect(new URLSearchParams(window.location.search).get("mailId")).toBe(
       id(12),
     );
-    await link("Back to emails");
+    click(await link("Back to emails"));
+    const returned = await screen.findByRole("dialog", { name: "Emails" });
+    click(await button("Drafts", returned));
+    await within(returned).findByText("1 selected");
+    expect(
+      within(returned).getByLabelText("Select email: Proposal 1"),
+    ).toHaveAttribute("aria-checked", "true");
   });
 
   it("leaves modified email-link activation to the browser", async () => {
@@ -680,14 +689,14 @@ describe("thread email manager", () => {
       name: "Send selected drafts?",
     });
     click(await button("Send", retry));
-    await within(list).findByText("10 selected");
-    expect(fixture.sent).toStrictEqual([id(1), id(2)]);
     await waitFor(() => {
       expect(within(list).queryByText("Send")).not.toBeInTheDocument();
+      expect(within(list).queryByRole("checkbox")).not.toBeInTheDocument();
     });
+    expect(fixture.sent).toStrictEqual([id(1), id(2)]);
   });
 
-  it("confirms bulk deletion of drafts and keeps all selected sent emails", async () => {
+  it("confirms bulk deletion of drafts and keeps sent emails available", async () => {
     const fixture = installMails();
     await openChat();
     const list = await openList();
@@ -703,9 +712,18 @@ describe("thread email manager", () => {
       name: "Delete selected drafts?",
     });
     click(await button("Delete", second));
-    await within(list).findByText("10 selected");
+    await waitFor(() => {
+      expect(
+        queryAllByRoleFast("link", list).some((element) => {
+          return (
+            element.getAttribute("aria-label") === "Open email: Proposal 1"
+          );
+        }),
+      ).toBeFalsy();
+    });
     expect(fixture.deleted).toStrictEqual([id(1), id(2)]);
     expect(fixture.mails.get(id(12))?.status).toBe("sent");
+    await link("Open email: Proposal 12", list);
     await waitFor(() => {
       expect(within(list).queryByText("Delete")).not.toBeInTheDocument();
     });
