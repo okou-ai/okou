@@ -778,17 +778,21 @@ impl NetnsPoolState {
         }
     }
 
+    fn retire_release_lease(&mut self, lease: &mut Option<NetnsLease>) -> Option<NetnsInfo> {
+        let lease = lease.take()?;
+        self.in_flight.remove(lease.name());
+        self.non_reusable.remove(lease.name());
+        Some(lease.into_info())
+    }
+
     fn commit_release_requeue(
         &mut self,
         lease: &mut Option<NetnsLease>,
         plan: &ReleasePlan,
     ) -> NetnsReleaseOutcome {
-        let Some(lease) = lease.take() else {
+        let Some(ns) = self.retire_release_lease(lease) else {
             return NetnsReleaseOutcome::InvalidLease("validated netns lease disappeared".into());
         };
-        self.in_flight.remove(lease.name());
-        self.non_reusable.remove(lease.name());
-        let ns = lease.into_info();
 
         let kind = plan.kind;
         let target_queue = self.target_queue_mut(kind);
@@ -809,12 +813,9 @@ impl NetnsPoolState {
         _plan: &ReleasePlan,
         delete: NamespaceDeleteOutcome,
     ) -> NetnsReleaseOutcome {
-        let Some(lease) = lease.take() else {
+        let Some(ns) = self.retire_release_lease(lease) else {
             return NetnsReleaseOutcome::InvalidLease("validated netns lease disappeared".into());
         };
-        self.in_flight.remove(lease.name());
-        self.non_reusable.remove(lease.name());
-        let ns = lease.into_info();
         match delete {
             NamespaceDeleteOutcome::Deleted => {
                 info!(name = %ns.name, "namespace lease deleted instead of requeued");
