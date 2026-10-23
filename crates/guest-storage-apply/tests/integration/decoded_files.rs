@@ -154,7 +154,7 @@ fn over_budget_groups_are_rejected_before_guest_cleanup() {
     };
     for (files, extra) in [
         (
-            (0..16)
+            (0..storage_files::MAX_STORAGE_BYTES / storage_files::MAX_FILE_BYTES)
                 .map(|i| make(format!("file-{i}"), vec![0; storage_files::MAX_FILE_BYTES]))
                 .collect::<Vec<_>>(),
             make("overflow".into(), vec![0]),

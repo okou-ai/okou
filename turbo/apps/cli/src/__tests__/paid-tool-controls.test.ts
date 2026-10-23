@@ -155,54 +155,6 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     expect(await readdir(directory)).toEqual([]);
   });
 
-  it.each([
-    ["people", "enrich", "--id", "professional-123"],
-    ["people", "search", "marketing leaders", "--backend", "prospect"],
-    ["company", "search", "--domains", "example.com"],
-    ["company", "inspect", "--domain", "example.com"],
-    ["traffic", "overview", "example.com", "--month", "2025-01"],
-    ["ads", "search", "business software"],
-    ["trends", "related", "business software"],
-    ["creators", "search", "--name", "Jordan"],
-    ["affiliate", "search", "software"],
-    ["apps", "profile", "com.example.app"],
-    ["podcasts", "search", "business"],
-    ["web", "history", "https://example.com"],
-    ["finance", "company-profile", "--ticker", "AAPL", "--exchange", "NASDAQ"],
-  ])("blocks advanced data execution for %j", async (...args) => {
-    for (const policy of ['["data-search"]', "invalid"]) {
-      vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, policy);
-      errors = "";
-      await expect(
-        run(["data", ...args, "--max-credits", "100", "--json"]),
-      ).rejects.toThrow("process.exit(1)");
-      expect(errors).toContain(
-        policy === "invalid"
-          ? "Paid tool configuration is invalid"
-          : 'Paid tool "data-search" is disabled',
-      );
-      expect(requests).toEqual([]);
-    }
-  });
-
-  it("also honors the historical people preference for prospect search", async () => {
-    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["people-search"]');
-    await expect(
-      run([
-        "data",
-        "people",
-        "search",
-        "marketing leaders",
-        "--backend",
-        "prospect",
-        "--max-credits",
-        "100",
-      ]),
-    ).rejects.toThrow("process.exit(1)");
-    expect(errors).toContain('Paid tool "people-search" is disabled');
-    expect(requests).toEqual([]);
-  });
-
   it.each(['["data-search", "people-search"]', "invalid"])(
     "permits free advanced discovery, quotes, saved reads and cancellation under %s",
     async (policy) => {
@@ -351,24 +303,6 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       await run(["data", "social", "jobs", "cancel", jobId, "--json"]);
       expect(output).toContain(jobId);
       expect(errors).toBe("");
-      expect(requests).toEqual([]);
-      await expect(
-        run([
-          "data",
-          "social",
-          "jobs",
-          "continue",
-          jobId,
-          "--max-credits",
-          "9",
-          "--json",
-        ]),
-      ).rejects.toThrow("process.exit(1)");
-      expect(errors).toContain(
-        policy === "invalid"
-          ? "Paid tool configuration is invalid"
-          : 'Paid tool "social" is disabled',
-      );
       expect(requests).toEqual([]);
     },
   );

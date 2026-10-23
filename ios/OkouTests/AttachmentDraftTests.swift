@@ -208,6 +208,7 @@ final class AttachmentDraftTests: XCTestCase {
     let store = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { store.close() }
+    store.setForeground(true)
     XCTAssertNil(store.selectedAgentID)
     store.newChatDraft = "First message before navigation finishes"
     await store.sendNewChat()
@@ -244,6 +245,7 @@ final class AttachmentDraftTests: XCTestCase {
       let reopened = fixture.conversation(storage: storage)
       XCTAssertEqual(reopened.draft, "")
       XCTAssertEqual(reopened.pending.first?.id, original.id)
+      await reopened.composer.synchronize()
       await reopened.refresh()
       XCTAssertEqual(fixture.state.value.withLock { $0.messages.count }, 1)
       if acceptedBeforeFailure {

@@ -139,7 +139,7 @@ test("Paid tools toggles save inverted enabled state and can re-enable a tool", 
 test("Advanced data research saves independently from historical research preferences", async () => {
   const updates: { toolId: string; disabled: boolean }[] = [];
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools: ["data-search", "people-search"] });
+    return respond(200, { disabledTools: [] });
   });
   context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
     updates.push({ toolId: params.toolId, disabled: body.disabled });
@@ -148,14 +148,22 @@ test("Advanced data research saves independently from historical research prefer
   await openPaidTools();
   const advanced = await readySwitch("Advanced data research");
   const people = await readySwitch("People search");
-  expect(advanced).not.toBeChecked();
-  expect(people).not.toBeChecked();
+  expect(advanced).toBeChecked();
+  expect(people).toBeChecked();
   click(advanced);
   await waitFor(() => {
-    return expect(advanced).toBeChecked();
+    expect(updates).toStrictEqual([{ toolId: "data-search", disabled: true }]);
   });
-  expect(people).not.toBeChecked();
-  expect(updates).toStrictEqual([{ toolId: "data-search", disabled: false }]);
+  await readySwitch("Advanced data research");
+  click(advanced);
+  await waitFor(() => {
+    expect(advanced).toBeChecked();
+  });
+  expect(people).toBeChecked();
+  expect(updates).toStrictEqual([
+    { toolId: "data-search", disabled: true },
+    { toolId: "data-search", disabled: false },
+  ]);
 });
 
 test("A failed load shows no assumed enabled tools and can be retried", async () => {

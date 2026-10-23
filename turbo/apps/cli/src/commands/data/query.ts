@@ -33,7 +33,7 @@ export interface DataProspectOptions extends SocialExportOptions {
   readonly maxCredits?: number;
   readonly async?: boolean;
   readonly requestId?: string;
-  readonly waitSeconds?: number;
+  readonly waitSeconds: number;
   readonly titles?: string[];
   readonly locations?: string[];
   readonly seniorities?: string[];
@@ -309,13 +309,13 @@ function definedInput(
 }
 
 export async function runDataProspect(
-  query: string,
+  query: string | undefined,
   options: DataProspectOptions,
 ): Promise<void> {
   await executeDataSearch(
     "people.search",
     definedInput([
-      ["query", query.trim() || undefined],
+      ["query", query?.trim() || undefined],
       ["titles", options.titles],
       ["locations", options.locations],
       ["seniorities", options.seniorities],
@@ -471,7 +471,7 @@ async function executeDataSearch(
         await writeJob(
           options.async
             ? job
-            : await waitForJob(job, options.waitSeconds ?? 60, signal),
+            : await waitForJob(job, options.waitSeconds, signal),
           write,
         );
       });
@@ -538,44 +538,46 @@ export function registerDataSearchCommands(dataCommand: Command): void {
     );
   addJobOptions(enrich, false);
   enrich.action(
-    withErrorHandler(async (options: DataQueryOptions) => {
-      const workEmail = options.fields?.includes("work-email") === true;
-      if (
-        workEmail &&
-        !(
-          options.domain &&
-          (options.name || (options.firstName && options.lastName))
-        )
-      ) {
-        throw new InvalidArgumentError(
-          "--fields work-email requires --domain and either --name or both --first-name and --last-name",
+    withErrorHandler(
+      async (options: DataQueryOptions & { fields: string[] }) => {
+        const workEmail = options.fields.includes("work-email");
+        if (
+          workEmail &&
+          !(
+            options.domain &&
+            (options.name || (options.firstName && options.lastName))
+          )
+        ) {
+          throw new InvalidArgumentError(
+            "--fields work-email requires --domain and either --name or both --first-name and --last-name",
+          );
+        }
+        if (
+          !workEmail &&
+          !options.id &&
+          !options.linkedinUrl &&
+          !(options.name && options.domain)
+        ) {
+          throw new InvalidArgumentError(
+            "Provide --id, --linkedin-url, or both --name and --domain",
+          );
+        }
+        await executeDataSearch(
+          "people.enrich",
+          definedInput([
+            ["id", options.id],
+            ["linkedinUrl", options.linkedinUrl],
+            ["name", options.name],
+            ["firstName", options.firstName],
+            ["lastName", options.lastName],
+            ["domain", options.domain],
+            ["fields", options.fields],
+          ]),
+          options,
+          1,
         );
-      }
-      if (
-        !workEmail &&
-        !options.id &&
-        !options.linkedinUrl &&
-        !(options.name && options.domain)
-      ) {
-        throw new InvalidArgumentError(
-          "Provide --id, --linkedin-url, or both --name and --domain",
-        );
-      }
-      await executeDataSearch(
-        "people.enrich",
-        definedInput([
-          ["id", options.id],
-          ["linkedinUrl", options.linkedinUrl],
-          ["name", options.name],
-          ["firstName", options.firstName],
-          ["lastName", options.lastName],
-          ["domain", options.domain],
-          ["fields", options.fields ?? ["profile"]],
-        ]),
-        options,
-        1,
-      );
-    }),
+      },
+    ),
   );
 
   const company = group(
@@ -715,7 +717,7 @@ function registerJobs(dataCommand: Command): void {
             await withJobInterruption(async (signal) => {
               await writeJob(
                 options.wait
-                  ? await waitForJob(job, options.waitSeconds ?? 60, signal)
+                  ? await waitForJob(job, options.waitSeconds, signal)
                   : job,
                 write,
               );

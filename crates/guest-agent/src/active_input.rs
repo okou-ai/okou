@@ -104,6 +104,7 @@ enum PromptUserContent {
 #[derive(Debug)]
 struct PendingInput {
     state: PendingState,
+    backend_acknowledged: bool,
     text: String,
 }
 
@@ -137,6 +138,12 @@ impl Default for ActiveInputState {
 }
 
 impl ActiveInputState {
+    fn has_pending_for_result(&self) -> bool {
+        self.pending_by_uuid
+            .values()
+            .any(|input| !input.backend_acknowledged)
+    }
+
     fn insert_pending(&mut self, uuid: String, input: PendingInput) {
         self.pending_uuid_order.push_back(uuid.clone());
         self.pending_by_uuid.insert(uuid, input);
@@ -553,6 +560,7 @@ impl ActiveInputController {
             uuid.clone(),
             PendingInput {
                 state: PendingState::Accepted,
+                backend_acknowledged: false,
                 text,
             },
         );
@@ -581,6 +589,20 @@ impl ActiveInputController {
                     diagnostic: ACTIVE_INPUT_CLOSED_DIAGNOSTIC,
                 }
             }
+        }
+    }
+
+    /// Records a successful RPC ACK before a following result is processed.
+    ///
+    /// The writer still owns response validation, acceptance and declarations.
+    /// This observation only lets result-time closure account for a response
+    /// already read from stdout even when the writer has not consumed it yet.
+    pub(crate) fn mark_backend_acknowledged(&self, uuid: &str) {
+        let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(input) = state.pending_by_uuid.get_mut(uuid)
+            && matches!(input.state, PendingState::Writing)
+        {
+            input.backend_acknowledged = true;
         }
     }
 
@@ -727,6 +749,9 @@ impl ActiveInputController {
     /// input to observe or clear, or the runtime was already closing or closed.
     ///
     /// This is a result-time idle check, not an unconditional terminal close.
+    /// A successful RPC ACK already observed on stdout resolves that frame for
+    /// this check even if the writer has not yet consumed the response. Queued
+    /// and unacknowledged frames still prevent closure.
     pub fn close_for_result_if_idle(&self) -> bool {
         if !self.is_enabled() {
             return true;
@@ -735,7 +760,7 @@ impl ActiveInputController {
         let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
         let had_observed_result = state.observed_result;
         state.observed_result = true;
-        if !state.pending_by_uuid.is_empty() {
+        if state.has_pending_for_result() {
             if !had_observed_result {
                 return false;
             }
@@ -745,7 +770,7 @@ impl ActiveInputController {
             if !state.remove_oldest_pending_if_delivered() {
                 return false;
             }
-            if !state.pending_by_uuid.is_empty() {
+            if state.has_pending_for_result() {
                 return false;
             }
         }

@@ -156,10 +156,6 @@ import * as browserSessionSchema from "./schema/browser-session";
 import * as presentationTemplateSchema from "./schema/presentation-template";
 import * as userTemplateSchema from "./schema/user-template";
 import * as piResourceVersionIndexSchema from "./schema/pi-resource-version-index";
-import * as memorySummaryProjectionSchema from "./schema/memory-summary-projection";
-import * as piMemoryStage1CandidateSchema from "./schema/pi-memory-stage1-candidate";
-import * as piMemoryPhase2JobSchema from "./schema/pi-memory-phase2-job";
-import * as piMemoryPublicationProvenanceSchema from "./schema/pi-memory-publication-provenance";
 import * as sshConnectionSchema from "./runtime/ssh-connection";
 import * as sshCredentialSchema from "./schema/ssh-credential";
 import * as vncCredentialSchema from "./schema/vnc-credential";
@@ -326,10 +322,6 @@ export const schema = {
   ...presentationTemplateSchema,
   ...userTemplateSchema,
   ...piResourceVersionIndexSchema,
-  ...memorySummaryProjectionSchema,
-  ...piMemoryStage1CandidateSchema,
-  ...piMemoryPhase2JobSchema,
-  ...piMemoryPublicationProvenanceSchema,
   ...sshConnectionSchema,
   ...sshCredentialSchema,
   ...vncCredentialSchema,

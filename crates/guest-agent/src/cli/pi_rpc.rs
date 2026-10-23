@@ -58,6 +58,12 @@
 //! steered declaration. A failed or interrupted command marks the input failed
 //! and enters the abort/error path.
 //!
+//! The stdout projection records successful steer ACK observation for the
+//! matching writer-owned frame before processing a following `agent_settled`.
+//! Result-time closure can therefore account for that ACK without depending on
+//! when the writer consumes it. The writer retains acceptance and declaration
+//! ownership; queued or unacknowledged frames still block closure.
+//!
 //! Normal response waits reject an unexpected ID, unexpected command,
 //! unsuccessful response, or a closed response channel. Abort is different in
 //! one respect: it ignores unrelated response IDs while waiting for its own
@@ -215,7 +221,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::pi_memory_citation::{CitationParser, CitationProjection, project_segments};
 use super::pi_session_output::{PiSessionOutputSender, SESSION_OUTPUT_DELTA_MAX_BYTES};
-use crate::active_input::{ActiveInputFrame, ActiveInputWriter};
+use crate::active_input::{ActiveInputController, ActiveInputFrame, ActiveInputWriter};
 use crate::error::AgentError;
 use crate::masker::{SecretMasker, StreamingSecretMasker};
 use crate::upstream_error_text::project_model_error_text;
@@ -526,6 +532,7 @@ pub(super) struct PiRpcProjection<'a> {
     assistant_stream: Option<PiAssistantStream<'a>>,
     pending_retry: Option<PiRetryAttempt>,
     terminal_error: bool,
+    active_input: Option<ActiveInputController>,
 }
 
 impl<'a> PiRpcProjection<'a> {
@@ -540,7 +547,13 @@ impl<'a> PiRpcProjection<'a> {
             assistant_stream: None,
             pending_retry: None,
             terminal_error: false,
+            active_input: None,
         }
+    }
+
+    pub(super) fn with_active_input(mut self, controller: ActiveInputController) -> Self {
+        self.active_input = Some(controller);
+        self
     }
 
     pub(super) fn with_session_output(
@@ -648,7 +661,17 @@ impl<'a> PiRpcProjection<'a> {
         } else {
             None
         };
+        let steer_ack = (command == Some("steer")
+            && response.get("success").and_then(Value::as_bool) == Some(true))
+        .then(|| response.get("id").and_then(Value::as_str))
+        .flatten()
+        .map(str::to_owned);
         responses.try_send(response, record_bytes)?;
+        if let Some(controller) = &self.active_input
+            && let Some(id) = steer_ack
+        {
+            controller.mark_backend_acknowledged(&id);
+        }
         Ok(projected)
     }
 
@@ -2528,21 +2551,92 @@ mod tests {
 
     #[tokio::test]
     async fn writer_declares_active_input_only_after_successful_steer_ack() {
-        tokio::time::timeout(Duration::from_secs(5), assert_steer_ack_outcome(true))
-            .await
-            .expect("successful steer should finish promptly");
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            assert_steer_ack_outcome(SteerAckCase::Accepted),
+        )
+        .await
+        .expect("successful steer should finish promptly");
     }
 
     #[tokio::test]
     async fn writer_rejects_active_input_after_failed_steer_ack() {
-        tokio::time::timeout(Duration::from_secs(5), assert_steer_ack_outcome(false))
-            .await
-            .expect("rejected steer should finish promptly");
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            assert_steer_ack_outcome(SteerAckCase::Rejected),
+        )
+        .await
+        .expect("rejected steer should finish promptly");
     }
 
-    async fn assert_steer_ack_outcome(success: bool) {
+    #[tokio::test]
+    async fn settlement_closes_stdin_before_writer_consumes_steer_ack() {
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            assert_steer_ack_outcome(SteerAckCase::SettledBeforeWriter),
+        )
+        .await
+        .expect("settlement should close stdin without waiting for writer scheduling");
+    }
+
+    #[tokio::test]
+    async fn settlement_closes_stdin_after_writer_consumes_steer_ack() {
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            assert_steer_ack_outcome(SteerAckCase::SettledAfterWriter),
+        )
+        .await
+        .expect("settlement should close stdin after writer consumption");
+    }
+
+    #[tokio::test]
+    async fn settlement_preserves_queued_input_after_observed_steer_ack() {
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            assert_steer_ack_outcome(SteerAckCase::QueuedFollowUp),
+        )
+        .await
+        .expect("queued follow-up should reach its own settlement");
+    }
+
+    #[tokio::test]
+    async fn old_settlement_does_not_close_input_accepted_before_late_ack() {
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            assert_steer_ack_outcome(SteerAckCase::InputAfterSettlement),
+        )
+        .await
+        .expect("a later input must outlive the old settlement");
+    }
+
+    #[derive(Clone, Copy)]
+    enum SteerAckCase {
+        Accepted,
+        Rejected,
+        SettledBeforeWriter,
+        SettledAfterWriter,
+        QueuedFollowUp,
+        InputAfterSettlement,
+    }
+
+    fn project_settlement(projection: &mut PiRpcProjection<'_>, responses: &PiRpcResponseSender) {
+        let result = projection
+            .project(json!({"type": "agent_settled"}), responses, 0)
+            .expect("settlement should project")
+            .expect("settlement should emit a terminal result");
+        assert_eq!(result["type"], "result");
+        assert_eq!(result["subtype"], "success");
+    }
+
+    async fn assert_steer_ack_outcome(case: SteerAckCase) {
+        let success = !matches!(case, SteerAckCase::Rejected);
+        let has_follow_up = matches!(
+            case,
+            SteerAckCase::QueuedFollowUp | SteerAckCase::InputAfterSettlement
+        );
         let server = MockServer::start();
         let event_id = "11111111-1111-4111-8111-111111111111";
+        let follow_up_id = "22222222-2222-4222-8222-222222222222";
         let steered = server.mock(|when, then| {
             when.method(POST)
                 .path(format!(
@@ -2550,6 +2644,14 @@ mod tests {
                 ))
                 .header("Authorization", "Bearer test-token")
                 .header("Content-Type", "application/json")
+                .json_body(json!({}));
+            then.status(200).json_body(json!({"outcome": "steered"}));
+        });
+        let follow_up_steered = server.mock(|when, then| {
+            when.method(POST)
+                .path(format!(
+                    "/api/runners/runs/run/steerable-inputs/{follow_up_id}/steered"
+                ))
                 .json_body(json!({}));
             then.status(200).json_body(json!({"outcome": "steered"}));
         });
@@ -2567,6 +2669,8 @@ mod tests {
                 .expect("declaration HTTP client should build");
         let active_input = ActiveInputRuntime::new_enabled("run", "initial prompt", http);
         let controller = active_input.controller();
+        let mut projection =
+            PiRpcProjection::new("run", "session").with_active_input(controller.clone());
         let payload =
             guest_contracts::active_input::encode_active_input(event_id, "steer this turn")
                 .expect("active input should encode");
@@ -2631,18 +2735,36 @@ mod tests {
         assert_eq!(steer["message"], "steer this turn");
         assert!(steer.get("streamingBehavior").is_none());
 
-        // The child has received the complete command. Closing future input
-        // makes a writer that bypasses the ACK finish on its next poll.
-        controller.close_terminal();
+        if matches!(case, SteerAckCase::Accepted) {
+            // Closing future input makes a writer that bypasses the ACK
+            // finish on its next poll.
+            controller.close_terminal();
+        } else if matches!(case, SteerAckCase::InputAfterSettlement) {
+            project_settlement(&mut projection, &response_tx);
+            assert!(
+                !controller.close_for_result_if_idle(),
+                "an unread ACK cannot resolve the pending steer"
+            );
+        }
         assert!(
             futures_util::poll!(&mut writer).is_pending(),
             "a completed steer write must still wait for its ACK"
         );
         steered.assert_calls(0);
 
+        let follow_up_payload =
+            guest_contracts::active_input::encode_active_input(follow_up_id, "next turn")
+                .expect("follow-up should encode");
+        if has_follow_up {
+            assert_eq!(
+                controller.handle_control_payload(&follow_up_payload),
+                ActiveInputControlOutcome::Accepted
+            );
+        }
+
         let rejection = "Agent is settling after cancellation";
-        response_tx
-            .try_send(
+        projection
+            .project(
                 json!({
                     "id": event_id,
                     "type": "response",
@@ -2650,9 +2772,59 @@ mod tests {
                     "success": success,
                     "error": if success { Value::Null } else { json!(rejection) },
                 }),
+                &response_tx,
                 1,
             )
             .expect("steer response should route");
+
+        if matches!(case, SteerAckCase::Rejected) {
+            project_settlement(&mut projection, &response_tx);
+            assert!(
+                !controller.close_for_result_if_idle(),
+                "a failed ACK must not authorize post-result cleanup"
+            );
+        }
+        if matches!(case, SteerAckCase::SettledAfterWriter) {
+            assert!(
+                futures_util::poll!(&mut writer).is_pending(),
+                "the writer must stay open before settlement"
+            );
+        } else {
+            steered.assert_calls(0);
+        }
+        if has_follow_up {
+            if matches!(case, SteerAckCase::QueuedFollowUp) {
+                project_settlement(&mut projection, &response_tx);
+                assert!(
+                    !controller.close_for_result_if_idle(),
+                    "a queued follow-up must block the previous settlement"
+                );
+            }
+            let follow_up = next_command(&mut writer, &mut stdout).await;
+            assert_eq!(follow_up["id"], follow_up_id);
+            assert_eq!(follow_up["type"], "steer");
+            assert_eq!(follow_up["message"], "next turn");
+            projection
+                .project(
+                    json!({
+                        "id": follow_up_id, "type": "response", "command": "steer", "success": true,
+                    }),
+                    &response_tx,
+                    1,
+                )
+                .expect("follow-up ACK should route");
+            assert!(
+                futures_util::poll!(&mut writer).is_pending(),
+                "an old result must not close the later input after ACK consumption"
+            );
+        }
+        if !matches!(case, SteerAckCase::Accepted | SteerAckCase::Rejected) {
+            project_settlement(&mut projection, &response_tx);
+            assert!(
+                controller.close_for_result_if_idle(),
+                "settlement must close input regardless of ACK consumption order"
+            );
+        }
 
         let result = writer.await;
         if success {
@@ -2669,6 +2841,7 @@ mod tests {
             .await
             .expect("steered declarations should finalize");
         steered.assert_calls(usize::from(success));
+        follow_up_steered.assert_calls(usize::from(has_follow_up));
         if success {
             assert_eq!(
                 controller.handle_control_payload(&payload),
@@ -2682,6 +2855,12 @@ mod tests {
                     if diagnostic == "active input delivery previously failed"
             ));
         }
+        let mut trailing = String::new();
+        assert_eq!(
+            stdout.read_line(&mut trailing).await.expect("cat EOF"),
+            0,
+            "writer completion must close stdin: {trailing}"
+        );
         assert!(child.wait().await.expect("cat should exit").success());
     }
 }

@@ -176,13 +176,11 @@ export const quoteDataSearch$ = command(
 
 const reserveDataSearchJob$ = command(
   async ({ set }, args: DataSearchAdmission, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    const { estimate, providerName } = args;
-    // Billing atomicity: admitting a job reserves credit capacity against the exact
-    // wallet version observed. A competing admission/debit rejects this snapshot;
-    // no provider operation has started, and no retry is hidden from the caller.
+    // Validate the wallet before reading capacity so READ COMMITTED observes
+    // grant-only settlement, which leaves wallet xmin unchanged. This normal
+    // update owns admission through reservation commit.
     // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: job reservation and wallet version validation must commit together; single-statement alternative: entitlement, expired-credit and member-grant validation need a dependent snapshot with whole-reservation rollback on a changed wallet.
-    return await db.transaction(async (tx) => {
+    return await set(writeDb$).transaction(async (tx) => {
       const [wallet] = await tx
         .select({
           xmin: sql`${orgMetadata}.xmin::text`.mapWith(pgTextDecoder),
@@ -202,7 +200,7 @@ const reserveDataSearchJob$ = command(
       const [price] = await tx
         .select()
         .from(usagePricing)
-        .where(pricingWhere(providerName));
+        .where(pricingWhere(args.providerName));
       if (!price) {
         return dataSearchError(
           503,
@@ -211,7 +209,7 @@ const reserveDataSearchJob$ = command(
         );
       }
       const estimated = creditsFor(
-        estimate.estimatedCostUsdMicros,
+        args.estimate.estimatedCostUsdMicros,
         price.unitPrice,
         price.unitSize,
       );
@@ -222,6 +220,17 @@ const reserveDataSearchJob$ = command(
           "The estimated cost exceeds maxCredits.",
         );
       }
+      const [validated] = await tx
+        .update(orgMetadata)
+        .set({ updatedAt: nowDate() })
+        .where(
+          and(
+            eq(orgMetadata.orgId, args.auth.orgId),
+            sql`${orgMetadata}.xmin::text = ${wallet.xmin}`,
+          ),
+        )
+        .returning({ orgId: orgMetadata.orgId });
+      requireAdmissionValue(validated);
       const reservations = dataReservationPlan(args.auth.orgId);
       const socialReservations = socialReservationPlan(args.auth.orgId);
       const [reservation] = await tx
@@ -232,7 +241,10 @@ const reserveDataSearchJob$ = command(
         .select(socialReservations.columns)
         .from(socialDataJobs)
         .where(socialReservations.where);
-      if ((reservation?.jobs ?? 0) >= 100) {
+      if (!reservation || !socialReservation) {
+        throw new Error("Data Search reservation aggregate is missing");
+      }
+      if (reservation.jobs >= 100) {
         return dataSearchError(
           429,
           "DATA_SEARCH_CAPACITY",
@@ -243,7 +255,7 @@ const reserveDataSearchJob$ = command(
         const creditArgs = dataAdmissionCreditArgs(
           args,
           price,
-          (reservation?.credits ?? 0) + (socialReservation?.credits ?? 0),
+          reservation.credits + socialReservation.credits,
         );
         const snapshotPlan = managedSnapshotPlan(creditArgs);
         const [snapshot] = await tx
@@ -291,17 +303,6 @@ const reserveDataSearchJob$ = command(
         .onConflictDoNothing({ target: dataRequestConflictTarget() })
         .returning();
       const inserted = requireAdmissionValue(job);
-      const [validated] = await tx
-        .update(orgMetadata)
-        .set({ updatedAt: nowDate() })
-        .where(
-          and(
-            eq(orgMetadata.orgId, args.auth.orgId),
-            sql`${orgMetadata}.xmin::text = ${wallet.xmin}`,
-          ),
-        )
-        .returning({ orgId: orgMetadata.orgId });
-      requireAdmissionValue(validated);
       signal.throwIfAborted();
       return { status: 202 as const, body: publicJob(inserted) };
     });
@@ -382,19 +383,18 @@ const saveDataSearchOutcome$ = command(
         status: outcome.state,
         result: outcome.data ?? job.result,
         actualCostUsdMicros: finished && cost !== undefined ? cost : null,
-        error: outcome.errorCode
-          ? {
-              code: outcome.errorCode,
-              message:
-                outcome.errorMessage ??
-                "The source operation did not complete.",
-            }
-          : finished && cost === undefined
+        error:
+          outcome.errorCode !== undefined
             ? {
-                code: "DATA_SEARCH_SETTLEMENT_PENDING",
-                message: "Awaiting a confirmed source cost receipt.",
+                code: outcome.errorCode,
+                message: outcome.errorMessage,
               }
-            : null,
+            : finished && cost === undefined
+              ? {
+                  code: "DATA_SEARCH_SETTLEMENT_PENDING",
+                  message: "Awaiting a confirmed source cost receipt.",
+                }
+              : null,
         updatedAt: nowDate(),
       })
       .where(
@@ -708,12 +708,19 @@ export const listDataSearchJobs$ = command(
       .limit(args.query.limit + 1);
     signal.throwIfAborted();
     const jobs = rows.slice(0, args.query.limit);
+    let nextCursor: string | null = null;
+    if (rows.length > args.query.limit) {
+      const lastJob = jobs.at(-1);
+      if (!lastJob) {
+        throw new Error("Data Search next page has no cursor job");
+      }
+      nextCursor = lastJob.id;
+    }
     return {
       status: 200 as const,
       body: {
         jobs: jobs.map(publicJob),
-        nextCursor:
-          rows.length > args.query.limit ? (jobs.at(-1)?.id ?? null) : null,
+        nextCursor,
       },
     };
   },
@@ -764,7 +771,8 @@ export const cancelDataSearchJob$ = command(
 );
 export const reconcileDataSearchJobs$ = command(
   async ({ set }, signal: AbortSignal) => {
-    const jobs = await set(writeDb$)
+    const db = set(writeDb$);
+    const jobs = await db
       .select({ id: dataSearchJobs.id })
       .from(dataSearchJobs)
       .where(
@@ -783,29 +791,47 @@ export const reconcileDataSearchJobs$ = command(
       .limit(2);
     signal.throwIfAborted();
     for (const job of jobs) {
-      await set(advanceDataSearchJob$, job.id, signal);
+      // Rotate every attempted job, including an unconfirmed submission that
+      // cannot advance yet, so the global bounded batch remains fair.
+      await db
+        .update(dataSearchJobs)
+        .set({ updatedAt: nowDate() })
+        .where(
+          and(
+            eq(dataSearchJobs.id, job.id),
+            isNull(dataSearchJobs.creditsCharged),
+          ),
+        );
       signal.throwIfAborted();
+      const advanced = await settle(
+        set(advanceDataSearchJob$, job.id, signal),
+        signal,
+      );
+      if (!advanced.ok) {
+        if (!(advanced.error instanceof DataSearchProviderError)) {
+          throw advanced.error;
+        }
+        // A failed source read is visible on its job. Keep its reservation and
+        // receipt unchanged while allowing healthy sibling jobs to reconcile.
+        await db
+          .update(dataSearchJobs)
+          .set({
+            error: {
+              code: advanced.error.code,
+              message: advanced.error.message,
+            },
+            updatedAt: nowDate(),
+          })
+          .where(
+            and(
+              eq(dataSearchJobs.id, job.id),
+              isNull(dataSearchJobs.creditsCharged),
+              isNull(dataSearchJobs.actualCostUsdMicros),
+            ),
+          );
+        signal.throwIfAborted();
+      }
     }
     return jobs.length;
-  },
-);
-export const rejectDataSearchContinuation$ = command(
-  async (
-    { get },
-    args: { readonly auth: Actor; readonly jobId: string },
-    signal: AbortSignal,
-  ) => {
-    const [job] = await get(db$)
-      .select({ id: dataSearchJobs.id })
-      .from(dataSearchJobs)
-      .where(ownerWhere(args.auth, args.jobId));
-    signal.throwIfAborted();
-    return job
-      ? dataSearchError(
-          422,
-          "DATA_SEARCH_CONTINUATION_UNSUPPORTED",
-          "This source has no trusted saved continuation cursor. No operation was started.",
-        )
-      : dataSearchError(404, "NOT_FOUND", "Data Search job not found.");
   },
 );

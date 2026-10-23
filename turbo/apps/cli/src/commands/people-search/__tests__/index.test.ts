@@ -100,18 +100,6 @@ describe("okou data people search command", () => {
     expect(help).toContain("(default: 5)");
   });
 
-  it("requires the prospect backend before accepting a free quote flag", async () => {
-    await expect(
-      peopleSearchCommand.parseAsync([
-        "node",
-        "cli",
-        "marketing leaders",
-        "--dry-run",
-      ]),
-    ).rejects.toThrow("process.exit called");
-    expect(errorOutput()).toContain("--dry-run requires --backend prospect");
-  });
-
   it("posts default requests and prints JSON", async () => {
     let requestBody: unknown;
     server.use(

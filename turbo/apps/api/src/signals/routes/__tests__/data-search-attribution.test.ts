@@ -9,7 +9,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { billingStatusRoutes } from "../billing-status";
 import { chatThreadUsageRoutes } from "../chat-threads-usage";
@@ -52,13 +51,7 @@ function delayedProfile() {
             output: {
               person: { id: "profile-attribution", name: "Alex Jones" },
             },
-            billing: {
-              actualCost: {
-                value: 26_000,
-                currency: "USD",
-                unit: "MICRO_DOLLAR",
-              },
-            },
+            cost: { value: 0.026, currency: "USD" },
           }
         : {}),
     };
@@ -106,10 +99,10 @@ function delayedProfile() {
 }
 
 describe("Data Search delayed receipt attribution", () => {
-  it("bills the completed creation Run once when a later user read settles its paid job", async () => {
+  it("bills the completed creation Run once when concurrent user reads settle its paid job", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
-    const actor = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
+    const actor = bdd.user();
     const billing = createPublicBillingScenario(context);
     let restoreSetup: (() => void) | undefined;
     billing.releaseBeforeDrain(() => {
@@ -244,10 +237,9 @@ describe("Data Search delayed receipt attribution", () => {
       expect((await usage(origin)).body.runs).toStrictEqual([]);
       // A subsequent real Run cannot become the owner of the delayed debit.
       const later = await claimRun();
-      expect(later.runId).not.toBe(origin.runId);
       await complete(later);
       provider.complete();
-      await readJob();
+      await Promise.all([readJob(), readJob(), readJob()]);
       await flushWaitUntilForTest();
       const settled = await readJob();
       expect(settled.body).toMatchObject({

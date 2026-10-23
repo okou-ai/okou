@@ -327,9 +327,9 @@ export function reviewedDataSearchCapability(
   return capability;
 }
 
-export function prepareDataSearchProviderPlan(
+function dataSearchProviderPlan(
   request: DataSearchRequest,
-  savedSourceRate?: number,
+  sourceRate: number | undefined,
 ): DataSearchProviderPlan {
   const capability = reviewedDataSearchCapability(
     request.capability,
@@ -358,10 +358,6 @@ export function prepareDataSearchProviderPlan(
     );
   }
   const checkedRequest = { ...request, limit };
-  const sourceRate =
-    capability.vendor === "firecrawl"
-      ? (savedSourceRate ?? env("OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT"))
-      : undefined;
   if (
     capability.vendor === "firecrawl" &&
     (!sourceRate || !Number.isSafeInteger(sourceRate) || sourceRate < 1)
@@ -380,16 +376,25 @@ export function prepareDataSearchProviderPlan(
     input: capability.input(checkedRequest),
     limit,
     request: checkedRequest,
-    ...(sourceRate === undefined
+    ...(capability.vendor === "monid"
       ? {}
       : { sourceCostUsdMicrosPerCredit: sourceRate }),
   };
 }
 
+export function prepareDataSearchProviderPlan(
+  request: DataSearchRequest,
+): DataSearchProviderPlan {
+  return dataSearchProviderPlan(
+    request,
+    env("OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT"),
+  );
+}
+
 export function checkedDataSearchProviderPlan(
   plan: DataSearchProviderPlan,
 ): DataSearchProviderPlan {
-  const checked = prepareDataSearchProviderPlan(
+  const checked = dataSearchProviderPlan(
     plan.request,
     plan.sourceCostUsdMicrosPerCredit,
   );

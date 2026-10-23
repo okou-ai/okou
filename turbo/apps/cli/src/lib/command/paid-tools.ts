@@ -11,12 +11,6 @@ import { getPlatformOrigin } from "../platform-url";
 import { withErrorHandler } from "./with-error-handler";
 
 const installedPrograms = new WeakSet<Command>();
-const paidToolForwarders = new WeakSet<Command>();
-
-/** Forwarding aliases enforce policy at their canonical action, not twice. */
-export function markPaidToolForwarder(command: Command): void {
-  paidToolForwarders.add(command);
-}
 const disabledToolsSchema = z.array(z.string());
 
 function readPolicy(): ReadonlySet<string> | null {
@@ -70,13 +64,10 @@ function commandPath(program: Command, command: Command): Command[] {
   return path;
 }
 
-function researchToolPath(path: Command[]): {
-  tool: PaidToolId | undefined;
-  operation: string | undefined;
-} {
-  const canonicalPath = path[0]?.name() === "data" ? path.slice(1) : path;
-  const family = canonicalPath[0]?.name();
-  const operation = canonicalPath[1]?.name();
+function researchTool(path: Command[]): PaidToolId | undefined {
+  if (path[0]?.name() !== "data") return undefined;
+  const family = path[1]?.name();
+  const operation = path[2]?.name();
   const toolName =
     family === "web" && operation === "search"
       ? "web-search"
@@ -86,16 +77,13 @@ function researchToolPath(path: Command[]): {
           ? "people-search"
           : family;
   const tool = paidToolIdSchema.safeParse(toolName);
-  return { tool: tool.success ? tool.data : undefined, operation };
+  return tool.success ? tool.data : undefined;
 }
 
 function isAdvancedDataAction(path: Command[], action: Command): boolean {
   if (path[0]?.name() !== "data") return false;
   const family = path[1]?.name();
   const operation = path[2]?.name();
-  if (family === "jobs") {
-    return operation === "create" || operation === "continue";
-  }
   if (family === "social") return false;
   if (family === "people" && operation === "search") {
     return action.opts<{ backend?: string }>().backend === "prospect";
@@ -116,9 +104,8 @@ function advancedPaidTools(
 }
 
 function isFreeSocialAction(path: Command[], action: Command): boolean {
-  const canonicalPath = path[0]?.name() === "data" ? path.slice(1) : path;
-  const operation = canonicalPath[1]?.name();
-  const jobOperation = canonicalPath[2]?.name();
+  const operation = path[2]?.name();
+  const jobOperation = path[3]?.name();
   return Boolean(
     action.opts<{ dryRun?: boolean }>().dryRun ||
     (operation === "jobs" &&
@@ -133,9 +120,8 @@ function paidToolsForAction(
   program: Command,
   action: Command,
 ): readonly PaidToolId[] {
-  if (paidToolForwarders.has(action)) return [];
   const path = commandPath(program, action);
-  const { tool } = researchToolPath(path);
+  const tool = researchTool(path);
   if (isAdvancedDataAction(path, action)) {
     if (action.opts<{ dryRun?: boolean }>().dryRun) return [];
     return advancedPaidTools(tool);
@@ -161,7 +147,7 @@ function paidToolsForHelp(path: Command[]): readonly PaidToolId[] {
       return tool !== "image-generation";
     });
   }
-  const { tool } = researchToolPath(path);
+  const tool = researchTool(path);
   const action = path.at(-1);
   if (!action) return [];
   if (action.commands.length > 0) {

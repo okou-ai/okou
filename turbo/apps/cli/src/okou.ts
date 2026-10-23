@@ -107,19 +107,6 @@ const COMMAND_CAPABILITY_MAP: Record<
 
 const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "suggestion", "job"]);
 
-// Hidden rollout aliases for older API-generated prompts; remove after 2026-11-21.
-const LEGACY_DATA_PATHS: Readonly<Record<string, readonly string[]>> = {
-  "web-search": ["web", "search"],
-  scrape: ["web", "scrape"],
-  "people-search": ["people", "search"],
-  social: ["social"],
-  finance: ["finance"],
-  maps: ["maps"],
-  weather: ["weather"],
-  seo: ["seo"],
-  commerce: ["commerce"],
-};
-
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
     name: "job",
@@ -461,17 +448,6 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       return (await import("./commands/data")).dataCommand;
     },
   },
-  ...Object.entries(LEGACY_DATA_PATHS).map(([name, canonicalPath]) => {
-    return {
-      name,
-      description: `Use okou data ${canonicalPath.join(" ")}`,
-      load: async () => {
-        const { createLegacyDataCommand } =
-          await import("./commands/data/legacy");
-        return createLegacyDataCommand(name, canonicalPath);
-      },
-    };
-  }),
   {
     name: "wallet",
     description: "Connect Link and request purchase approval",
@@ -506,7 +482,7 @@ function shouldHideCommand(
   name: string,
   payload: SandboxTokenPayload | undefined,
 ): boolean {
-  if (name.startsWith("__") || name in LEGACY_DATA_PATHS) return true;
+  if (name.startsWith("__")) return true;
   if (name === "subagent") return !isPiSession();
   if (!payload) return RUN_ONLY_COMMANDS.has(name);
   const requiredCap = COMMAND_CAPABILITY_MAP[name];

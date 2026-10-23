@@ -1247,7 +1247,8 @@ async fn execute_cli_inner(
         .flatten();
     let mut pi_rpc_projection = pi_rpc_execution.then(|| {
         let projection =
-            pi_rpc::PiRpcProjection::new(runtime.run_id.as_ref(), runtime.pi_session_id.as_ref());
+            pi_rpc::PiRpcProjection::new(runtime.run_id.as_ref(), runtime.pi_session_id.as_ref())
+                .with_active_input(active_input_controller.clone());
         match pi_session_output {
             Some(output) => projection.with_session_output(output, masker),
             None => projection,

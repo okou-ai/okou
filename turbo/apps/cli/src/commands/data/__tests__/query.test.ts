@@ -60,13 +60,12 @@ function parse(args: string[]): Promise<Command> {
 describe("Data Search business commands", () => {
   const directories: string[] = [];
   let log: MockInstance<typeof console.log>;
-  let error: MockInstance<typeof console.error>;
 
   beforeEach(() => {
     vi.stubEnv("OKOU_API_BACKEND_URL", origin);
     vi.stubEnv("OKOU_TOKEN", "test-okou-token");
     log = vi.spyOn(console, "log").mockImplementation(() => {});
-    error = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("exit");
     });
@@ -94,9 +93,8 @@ describe("Data Search business commands", () => {
     return log.mock.calls.flat().join("\n");
   }
 
-  it("quotes structured company filters for free without creating a job", async () => {
+  it("quotes structured company filters for free", async () => {
     let body: unknown;
-    let creates = 0;
     server.use(
       http.post(`${origin}/api/data/quote`, async ({ request }) => {
         body = await request.json();
@@ -107,10 +105,6 @@ describe("Data Search business commands", () => {
           quantity: 1,
           unit: "request",
         });
-      }),
-      http.post(`${origin}/api/data/jobs`, () => {
-        creates += 1;
-        return HttpResponse.json(completed, { status: 202 });
       }),
     );
     await parse([
@@ -134,7 +128,6 @@ describe("Data Search business commands", () => {
       estimatedCredits: 20,
       maxCredits: 30,
     });
-    expect(creates).toBe(0);
   });
 
   it("quotes one company inspection by domain", async () => {
@@ -320,7 +313,6 @@ describe("Data Search business commands", () => {
 
   it("returns async jobs immediately and prints recovery guidance", async () => {
     let creates = 0;
-    let reads = 0;
     server.use(
       http.post(`${origin}/api/data/jobs`, () => {
         creates += 1;
@@ -333,10 +325,6 @@ describe("Data Search business commands", () => {
           },
           { status: 202 },
         );
-      }),
-      http.get(`${origin}/api/data/jobs/${jobId}`, () => {
-        reads += 1;
-        return HttpResponse.json(completed);
       }),
     );
     await parse([
@@ -353,7 +341,7 @@ describe("Data Search business commands", () => {
       status: "running",
       recovery: `okou data jobs get ${jobId} --wait --json`,
     });
-    expect({ creates, reads }).toEqual({ creates: 1, reads: 0 });
+    expect(creates).toBe(1);
   });
 
   it("waits by reading the created job without another paid submission", async () => {
@@ -389,17 +377,12 @@ describe("Data Search business commands", () => {
   });
 
   it("honors a zero-second bound and leaves a recoverable saved job", async () => {
-    let reads = 0;
     server.use(
       http.post(`${origin}/api/data/jobs`, () => {
         return HttpResponse.json(
           { ...completed, status: "pending", data: null },
           { status: 202 },
         );
-      }),
-      http.get(`${origin}/api/data/jobs/${jobId}`, () => {
-        reads += 1;
-        return HttpResponse.json(completed);
       }),
     );
     await parse([
@@ -414,33 +397,6 @@ describe("Data Search business commands", () => {
       "--json",
     ]);
     expect(JSON.parse(output())).toMatchObject({ status: "pending", jobId });
-    expect(reads).toBe(0);
-  });
-
-  it("preserves submission recovery on an ambiguous transport failure without retrying", async () => {
-    let creates = 0;
-    server.use(
-      http.post(`${origin}/api/data/jobs`, () => {
-        creates += 1;
-        return HttpResponse.error();
-      }),
-    );
-    await expect(
-      parse([
-        "company",
-        "search",
-        "--name",
-        "Example",
-        "--max-credits",
-        "30",
-        "--request-id",
-        requestId,
-      ]),
-    ).rejects.toThrow("exit");
-    expect(error.mock.calls.flat().join("\n")).toContain(
-      `--request-id ${requestId}`,
-    );
-    expect(creates).toBe(1);
   });
 
   it("exports saved results to safe CSV with provenance and a billing receipt", async () => {

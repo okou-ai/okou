@@ -146,23 +146,4 @@ export const dataSearchContract = c.router({
     responses: { 200: dataSearchJobResponseSchema, ...errors },
     summary: "Cancel a Data Search job without promising a refund",
   },
-  quoteContinuation: {
-    method: "POST",
-    path: "/api/data/jobs/:jobId/continue/quote",
-    headers: authHeadersSchema,
-    pathParams: jobParams,
-    body: z.object({}).strict(),
-    responses: { 200: dataSearchQuoteResponseSchema, ...errors },
-    summary:
-      "Reject continuation unless a trusted source cursor is available (422)",
-  },
-  continue: {
-    method: "POST",
-    path: "/api/data/jobs/:jobId/continue",
-    headers: authHeadersSchema,
-    pathParams: jobParams,
-    body: z.object({ requestId: z.uuid(), maxCredits: safeInteger }).strict(),
-    responses: { 202: dataSearchJobResponseSchema, ...errors },
-    summary: "Continue only with a trusted saved source cursor; otherwise 422",
-  },
 });

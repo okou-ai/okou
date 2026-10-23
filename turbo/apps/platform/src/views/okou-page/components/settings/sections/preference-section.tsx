@@ -12,7 +12,7 @@ import { TimezoneSettings } from "../timezone-settings.tsx";
 import { MorningBriefSettings } from "../morning-brief-settings.tsx";
 import {
   ProactiveSuggestionsSettings,
-  ProactiveActionSettings,
+  ProactiveJobsSettings,
 } from "../proactive-settings.tsx";
 import { EmailSubscriptionSettings } from "../email-subscription-settings.tsx";
 import { SettingsSectionHeading } from "../settings-section-heading.tsx";
@@ -120,7 +120,7 @@ export function PreferenceSection() {
           <EmailSubscriptionSettings />
           <MorningBriefSettings />
           <ProactiveSuggestionsSettings />
-          <ProactiveActionSettings />
+          <ProactiveJobsSettings />
         </div>
       </section>
 

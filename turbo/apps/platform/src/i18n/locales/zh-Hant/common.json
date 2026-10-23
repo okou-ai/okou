@@ -5520,15 +5520,6 @@
         "retryMessage": "晨報設定無法載入或更新，請重試以繼續。",
         "title": "晨報"
       },
-      "proactiveAction": {
-        "description": "讓 Okou 每小時自動推進下一步，並在對話中展示工作結果。啟用後暫停主動建議。",
-        "missingDefaultAgent": "選擇一個可用的預設智能體以啟用主動行動。",
-        "preparationFailed": "暫時無法執行，Okou 會自動重試。",
-        "preparing": "正在準備每小時的主動行動。你可以隨時關閉。",
-        "retry": "重試",
-        "retryMessage": "無法載入或更新主動行動設定，請重試。",
-        "title": "主動行動"
-      },
       "proactiveJobs": {
         "description": "Automatically work on your jobs and notify you when your input is needed or a job is complete.",
         "missingDefaultAgent": "Choose a usable default Agent to work on your jobs.",
@@ -5541,7 +5532,6 @@
       "proactiveSuggestions": {
         "description": "讓 Okou 每小時檢查已連接的資訊來源，並在首頁推薦實用的下一步行動。",
         "missingDefaultAgent": "請選擇可用的預設 Agent 以接收主動建議。",
-        "pausedForAction": "主動行動已開啟，主動建議暫時停止。你的設定已保留。",
         "preparationFailed": "暫時無法執行，Okou 會自動重試。",
         "preparing": "正在準備每小時建議，你可以隨時關閉。",
         "retry": "重試",

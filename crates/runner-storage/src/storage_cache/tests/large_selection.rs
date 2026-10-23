@@ -2,22 +2,35 @@ use super::*;
 use guest_contracts::storage_files::StorageFile;
 use sha2::{Digest, Sha256};
 
-fn seed_later_writer(home: &HomePaths, name: &str, count: usize, bytes: usize) {
-    let entry = home
-        .storages_dir()
-        .join(short_digest(name))
-        .join(format!("decoded-v1-{}", short_digest("v1")));
-    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());
-    let mut tar = tar::Builder::new(encoder);
-    let files = (0..count)
+fn later_files(count: usize, bytes: usize) -> Vec<StorageFile> {
+    (0..count)
         .map(|index| StorageFile {
             path: format!("file-{index}"),
             mode: 0o640,
             mtime: 1,
             content: vec![b'x'; bytes],
         })
-        .collect::<Vec<_>>();
-    for file in &files {
+        .collect()
+}
+
+fn seed_later_writer(home: &HomePaths, name: &str, count: usize, bytes: usize) {
+    let files = later_files(count, bytes);
+    seed_later_files(home, name, &files, flate2::Compression::none());
+}
+
+fn seed_later_files(
+    home: &HomePaths,
+    name: &str,
+    files: &[StorageFile],
+    compression: flate2::Compression,
+) {
+    let entry = home
+        .storages_dir()
+        .join(short_digest(name))
+        .join(format!("decoded-v1-{}", short_digest("v1")));
+    let encoder = flate2::write::GzEncoder::new(Vec::new(), compression);
+    let mut tar = tar::Builder::new(encoder);
+    for file in files {
         let mut header = tar::Header::new_gnu();
         header.set_size(file.content.len() as u64);
         header.set_mode(file.mode);
@@ -30,7 +43,7 @@ fn seed_later_writer(home: &HomePaths, name: &str, count: usize, bytes: usize) {
         std::fs::write(path, &file.content).unwrap();
     }
     let archive = tar.into_inner().unwrap().finish().unwrap();
-    assert!(archive.len() <= 2 * 1024 * 1024);
+    assert!(archive.len() <= 4 * 1024 * 1024);
     let index = serde_json::to_vec(&serde_json::json!({
         "name": name, "version": "v1", "compressed_bytes": archive.len(),
         "files": files.iter().map(|file| serde_json::json!({
@@ -45,13 +58,104 @@ fn seed_later_writer(home: &HomePaths, name: &str, count: usize, bytes: usize) {
 }
 
 #[tokio::test]
+async fn activated_policy_selects_newly_admitted_v1_entries() {
+    let root = tempfile::tempdir().unwrap();
+    let home = home_at(&root);
+    let cache = decoded::DecodedCache::new(home.clone());
+    let mut content = later_files(17, 256 * 1024);
+    for (index, file) in content.iter_mut().enumerate() {
+        let mut state = index as u64 + 1;
+        for byte in &mut file.content[..64 * 1024] {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            *byte = state as u8;
+        }
+    }
+    let mut paths = later_files(768, 1);
+    for (index, file) in paths.iter_mut().enumerate() {
+        file.path = format!("{index:04}-{}", "a".repeat(170));
+    }
+    let mut index_files = later_files(512, 1);
+    for (index, file) in index_files.iter_mut().enumerate() {
+        file.path = format!("{index:04}{}", "\"".repeat(250));
+    }
+    let uncompressed = flate2::Compression::none();
+    for (name, files, compression) in [
+        ("retained", later_files(1024, 1), uncompressed),
+        ("expanded-count", later_files(1025, 1), uncompressed),
+        ("expanded-content", content, flate2::Compression::fast()),
+        ("expanded-gzip", later_files(16, 128 * 1024), uncompressed),
+        ("expanded-paths", paths, uncompressed),
+        ("expanded-index", index_files, uncompressed),
+    ] {
+        seed_later_files(&home, name, &files, compression);
+        let ready = cache.get_ready(name, "v1").await.unwrap().unwrap();
+        assert_eq!(ready.files, files);
+        drop(ready);
+        for fresh in [false, true] {
+            let mut plan = plan_from_entries(
+                vec![storage_entry(
+                    "/mnt/storage".into(),
+                    "https://storage.example/retained".into(),
+                    name,
+                    "v1",
+                )],
+                vec![artifact_entry(
+                    "/mnt/artifact".into(),
+                    "https://storage.example/retained".into(),
+                    name,
+                    "v1",
+                )],
+                None,
+            );
+            let mut telemetry = new_telemetry();
+            let mut delivery = if fresh {
+                Some(
+                    prepare_fresh_archive_delivery(
+                        &mut plan,
+                        &home,
+                        &FreshArchiveDeliveryAdmission::new(),
+                        &CancellationToken::new(),
+                        &mut telemetry,
+                        Some(&cache),
+                    )
+                    .await
+                    .unwrap(),
+                )
+            } else {
+                None
+            };
+            let deferred = populate_cache_with_fresh_delivery(
+                &mut plan,
+                &MockSandbox::new("prepared-reader"),
+                &home,
+                &mut telemetry,
+                delivery.as_mut(),
+                Some(&cache),
+            )
+            .await
+            .unwrap();
+            assert_eq!(plan.decoded_mount_count(), 2);
+            for (_, ready) in plan.take_decoded() {
+                assert_eq!(ready.files, files);
+            }
+            drop(deferred);
+        }
+    }
+    cache.shutdown().await;
+}
+
+#[tokio::test]
 async fn alias_group_retains_archive_delivery_when_decoded_files_do_not_fit() {
     let root = tempfile::tempdir().unwrap();
     let home = home_at(&root);
-    seed_later_writer(&home, "name", guest_contracts::storage_files::MAX_FILES, 1);
+    let files = later_files(decoded::MAX_ADMITTED_FILES, 1);
+    seed_later_files(&home, "name", &files, flate2::Compression::fast());
     let cache = decoded::DecodedCache::new(home.clone());
     let ready = cache.get_ready("name", "v1").await.unwrap().unwrap();
-    for count in [32, 33] {
+    let fitting_groups = guest_contracts::storage_files::MAX_TOTAL_FILES / files.len();
+    for count in [fitting_groups, fitting_groups + 1] {
         let entries = (0..count)
             .map(|index| {
                 storage_entry(
@@ -85,9 +189,9 @@ async fn alias_group_retains_archive_delivery_when_decoded_files_do_not_fit() {
         };
         assert_eq!(
             reuse_decoded(&mut plan, &group, Some(Arc::clone(&ready))).unwrap(),
-            count == 32
+            count == fitting_groups
         );
-        if count == 32 {
+        if count == fitting_groups {
             assert_eq!(
                 plan.decoded_file_count(),
                 guest_contracts::storage_files::MAX_TOTAL_FILES
@@ -179,12 +283,13 @@ async fn preparation_selects_valid_larger_v1_positives_within_the_active_policy(
 async fn positive_corruption_is_not_replaced_by_archive_delivery() {
     let root = tempfile::tempdir().unwrap();
     let home = home_at(&root);
-    seed_later_writer(&home, "corrupt", 33, 64);
+    let count = decoded::MAX_ADMITTED_FILES / 2;
+    seed_later_writer(&home, "corrupt", count, 64);
     let file = home
         .storages_dir()
         .join(short_digest("corrupt"))
         .join(format!("decoded-v1-{}", short_digest("v1")))
-        .join("files/file-32");
+        .join(format!("files/file-{}", count - 1));
     std::fs::write(file, vec![b'z'; 64]).unwrap();
     let cache = decoded::DecodedCache::new(home.clone());
     let mut plan = plan_from_entries(

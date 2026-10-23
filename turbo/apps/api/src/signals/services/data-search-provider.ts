@@ -25,17 +25,18 @@ export interface DataSearchProviderQuote {
   readonly quantity: number;
   readonly unit: "request" | "result" | "metric" | "channel";
 }
-export interface DataSearchProviderRun {
+export type DataSearchProviderRun = {
   readonly upstreamRunId?: string;
   readonly state:
     "pending" | "running" | "completed" | "failed" | "cancelled" | "unknown";
   readonly data?: { items: DataSearchJsonValue[] };
   readonly actualCostUsdMicros?: number;
-  readonly errorCode?: string;
-  readonly errorMessage?: string;
   readonly requiresActionUrl?: string;
   readonly stoppable?: boolean;
-}
+} & (
+  | { readonly errorCode: string; readonly errorMessage: string }
+  | { readonly errorCode?: never; readonly errorMessage?: never }
+);
 const MONID = "https://api.monid.ai/v1";
 const FIRECRAWL = "https://api.firecrawl.dev/v2";
 const amountSchema = z.object({
@@ -87,10 +88,8 @@ function key(vendor: DataSearchProviderPlan["vendor"]): string {
   );
   return value || unavailable();
 }
-function firecrawlRate(plan?: DataSearchProviderPlan): number {
-  const value =
-    plan?.sourceCostUsdMicrosPerCredit ??
-    env("OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT");
+function firecrawlRate(plan: DataSearchProviderPlan): number {
+  const value = plan.sourceCostUsdMicrosPerCredit;
   if (!value) {
     throw new DataSearchProviderError(
       "DATA_SEARCH_PRICING_UNAVAILABLE",
@@ -140,20 +139,22 @@ function amount(value: unknown, microOnly = false): number {
     ? safeCost(parsed.data.value)
     : usdToMicros(parsed.data.value);
 }
-function settledCost(run: z.infer<typeof runSchema>): number | undefined {
-  const direct =
-    run.cost === undefined || run.cost === null ? undefined : amount(run.cost);
-  const billing =
-    run.billing?.actualCost === undefined || run.billing.actualCost === null
-      ? undefined
-      : amount(run.billing.actualCost, true);
-  if (direct !== undefined && billing !== undefined && direct !== billing) {
-    throw new DataSearchProviderError(
-      "DATA_SEARCH_INVALID_BILLING",
-      "The data source returned inconsistent settlement amounts.",
-    );
+type MonidReceiptSource =
+  | { readonly kind: "submission" }
+  | { readonly kind: "saved-run"; readonly runId: string };
+
+function settledCost(
+  run: z.infer<typeof runSchema>,
+  source: MonidReceiptSource,
+): number | undefined {
+  // Current Monid contracts use different fields by endpoint:
+  // POST /run -> billing.actualCost (MICRO_DOLLAR); GET /runs/:id -> cost.
+  const cost =
+    source.kind === "submission" ? run.billing?.actualCost : run.cost;
+  if (cost === undefined || cost === null) {
+    return undefined;
   }
-  return direct ?? billing;
+  return amount(cost, source.kind === "submission");
 }
 
 async function request(
@@ -338,48 +339,34 @@ function reviewedFirecrawlCreditCeiling(
   raw: unknown,
   expectedUnitCredits: number,
 ): number {
+  const credits = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+  const billing = z.object({ maxCredits: credits });
   const price = z
-    .object({
-      credits_per_unit: z
-        .number()
-        .int()
-        .nonnegative()
-        .max(Number.MAX_SAFE_INTEGER)
-        .optional(),
-      credits_per_call: z
-        .number()
-        .int()
-        .nonnegative()
-        .max(Number.MAX_SAFE_INTEGER)
-        .optional(),
-      billing: z
-        .object({
-          maxCredits: z
-            .number()
-            .int()
-            .nonnegative()
-            .max(Number.MAX_SAFE_INTEGER),
-        })
-        .optional(),
-    })
+    .union([
+      z.object({
+        credits_per_call: credits,
+        credits_per_unit: z.never().optional(),
+        billing: billing.optional(),
+      }),
+      z.object({
+        credits_per_unit: credits,
+        credits_per_call: z.never().optional(),
+        billing,
+      }),
+    ])
     .safeParse(raw);
   if (price.success) {
-    const {
-      credits_per_unit: perUnit,
-      credits_per_call: perCall,
-      billing,
-    } = price.data;
-    const exactlyOnePrice = (perUnit === undefined) !== (perCall === undefined);
-    const ceiling = perCall ?? billing?.maxCredits;
-    if (
-      exactlyOnePrice &&
-      (perCall ?? perUnit) === expectedUnitCredits &&
-      ceiling !== undefined &&
-      (perCall === undefined ||
-        billing === undefined ||
-        billing.maxCredits === perCall)
-    ) {
-      return ceiling;
+    const terms = price.data;
+    if (terms.credits_per_call !== undefined) {
+      if (
+        terms.credits_per_call === expectedUnitCredits &&
+        (terms.billing === undefined ||
+          terms.billing.maxCredits === terms.credits_per_call)
+      ) {
+        return terms.credits_per_call;
+      }
+    } else if (terms.credits_per_unit === expectedUnitCredits) {
+      return terms.billing.maxCredits;
     }
   }
   throw new DataSearchProviderError(
@@ -502,14 +489,14 @@ export function quoteDataSearchProvider(
 async function normalizeMonid(
   plan: DataSearchProviderPlan,
   raw: unknown,
-  expectedId?: string,
+  source: MonidReceiptSource,
 ): Promise<DataSearchProviderRun> {
   const parsed = runSchema.safeParse(raw);
   if (
     !parsed.success ||
     parsed.data.provider !== plan.provider ||
     parsed.data.endpoint !== plan.endpoint ||
-    (expectedId !== undefined && parsed.data.runId !== expectedId)
+    (source.kind === "saved-run" && parsed.data.runId !== source.runId)
   ) {
     return invalidResponse();
   }
@@ -521,7 +508,7 @@ async function normalizeMonid(
   if (run.status === "RUNNING" || run.status === "STOPPING") {
     return { ...base, state: "running" };
   }
-  const actualCostUsdMicros = settledCost(run);
+  const actualCostUsdMicros = settledCost(run, source);
   if (run.status === "STOPPED") {
     return { ...base, state: "cancelled", actualCostUsdMicros };
   }
@@ -650,7 +637,7 @@ export async function startDataSearchProvider(
   }
   key(checked.vendor);
   if (checked.vendor === "firecrawl") {
-    firecrawlRate();
+    firecrawlRate(checked);
   }
   signal.throwIfAborted();
   const started = await settleIncludingAbort(
@@ -692,7 +679,7 @@ export async function startDataSearchProvider(
   }
   const normalized = await settleIncludingAbort(
     checked.vendor === "monid"
-      ? normalizeMonid(checked, started.value.body)
+      ? normalizeMonid(checked, started.value.body, { kind: "submission" })
       : normalizeFirecrawl(checked, started.value.body),
   );
   if (!normalized.ok) {
@@ -729,13 +716,7 @@ export async function readDataSearchProvider(
 ): Promise<DataSearchProviderRun> {
   const checked = checkedDataSearchProviderPlan(plan);
   if (checked.vendor === "firecrawl") {
-    return {
-      state: "unknown",
-      stoppable: false,
-      errorCode: "DATA_SEARCH_STATUS_UNAVAILABLE",
-      errorMessage:
-        "This synchronous data source cannot recover an uncertain response. Do not repeat the paid request.",
-    };
+    throw new Error("A synchronous data source cannot have a saved run ID");
   }
   if (!runIdSchema.safeParse(runId).success) {
     return invalidResponse();
@@ -749,7 +730,7 @@ export async function readDataSearchProvider(
   if (response.status !== 200) {
     return unavailable();
   }
-  return normalizeMonid(checked, response.body, runId);
+  return normalizeMonid(checked, response.body, { kind: "saved-run", runId });
 }
 export async function stopDataSearchProvider(
   plan: DataSearchProviderPlan,
@@ -758,13 +739,7 @@ export async function stopDataSearchProvider(
 ): Promise<DataSearchProviderRun> {
   const checked = checkedDataSearchProviderPlan(plan);
   if (checked.vendor === "firecrawl") {
-    return {
-      state: "unknown",
-      stoppable: false,
-      errorCode: "DATA_SEARCH_NOT_STOPPABLE",
-      errorMessage:
-        "This synchronous data source cannot be cancelled; no refund is promised.",
-    };
+    throw new Error("A synchronous data source cannot have a saved run ID");
   }
   if (!runIdSchema.safeParse(runId).success) {
     return invalidResponse();

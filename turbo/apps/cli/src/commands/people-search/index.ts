@@ -108,7 +108,7 @@ export const peopleSearchCommand = new Command()
         command: Command,
       ) => {
         if (usesDataProspect(options)) {
-          await runDataProspect(query ?? "", options);
+          await runDataProspect(query, options);
           return;
         }
         for (const option of command.options) {

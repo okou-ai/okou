@@ -158,7 +158,6 @@ import { modelCatalogRoutes } from "./routes/model-catalog";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
 import {
   proactiveSuggestionsRoutes,
-  proactiveActionRoutes,
   proactiveJobsRoutes,
 } from "./routes/proactive-preferences";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
@@ -428,7 +427,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
   ...proactiveSuggestionsRoutes,
-  ...proactiveActionRoutes,
   ...proactiveJobsRoutes,
   ...emailSubscriptionRoutes,
   ...notificationsRoutes,

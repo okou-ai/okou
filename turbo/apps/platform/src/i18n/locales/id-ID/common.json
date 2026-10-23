@@ -5520,15 +5520,6 @@
         "retryMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui. Coba lagi untuk melanjutkan.",
         "title": "Brief Pagi"
       },
-      "proactiveAction": {
-        "description": "Biarkan Okou melanjutkan langkah berikutnya setiap jam dan menampilkan hasilnya di Chat. Saran proaktif dijeda selama fitur ini aktif.",
-        "missingDefaultAgent": "Pilih agen default yang tersedia untuk mengaktifkan tindakan proaktif.",
-        "preparationFailed": "Untuk sementara tidak tersedia. Okou akan mencoba lagi secara otomatis.",
-        "preparing": "Menyiapkan tindakan setiap jam. Anda dapat menonaktifkannya kapan saja.",
-        "retry": "Coba lagi",
-        "retryMessage": "Pengaturan tindakan proaktif tidak dapat dimuat atau diperbarui. Coba lagi.",
-        "title": "Tindakan proaktif"
-      },
       "proactiveJobs": {
         "description": "Automatically work on your jobs and notify you when your input is needed or a job is complete.",
         "missingDefaultAgent": "Choose a usable default Agent to work on your jobs.",
@@ -5541,7 +5532,6 @@
       "proactiveSuggestions": {
         "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
         "missingDefaultAgent": "Pilih Agent default yang tersedia untuk menerima saran proaktif.",
-        "pausedForAction": "Dijeda selama tindakan proaktif aktif. Preferensi Anda tersimpan.",
         "preparationFailed": "Untuk sementara tidak tersedia. Okou akan mencoba lagi secara otomatis.",
         "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",
         "retry": "Coba lagi",

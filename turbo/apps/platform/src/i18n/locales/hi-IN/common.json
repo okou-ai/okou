@@ -5537,15 +5537,6 @@
         "retryMessage": "Morning Brief सेटिंग लोड या अपडेट नहीं हो सकीं। जारी रखने के लिए फिर से कोशिश करें।",
         "title": "सुबह की संक्षिप्त जानकारी"
       },
-      "proactiveAction": {
-        "description": "Okou को हर घंटे अगला कदम उठाने दें और Chat में उसका काम देखें। यह चालू रहने पर सक्रिय सुझाव रोक दिए जाते हैं।",
-        "missingDefaultAgent": "सक्रिय कार्रवाइयाँ चालू करने के लिए उपलब्ध डिफ़ॉल्ट एजेंट चुनें।",
-        "preparationFailed": "अभी उपलब्ध नहीं है। Okou अपने आप फिर से कोशिश करेगा।",
-        "preparing": "हर घंटे की कार्रवाइयाँ तैयार की जा रही हैं। आप इन्हें कभी भी बंद कर सकते हैं।",
-        "retry": "फिर कोशिश करें",
-        "retryMessage": "सक्रिय कार्रवाई की सेटिंग लोड या अपडेट नहीं हो सकीं। फिर कोशिश करें।",
-        "title": "सक्रिय कार्रवाई"
-      },
       "proactiveJobs": {
         "description": "Automatically work on your jobs and notify you when your input is needed or a job is complete.",
         "missingDefaultAgent": "Choose a usable default Agent to work on your jobs.",
@@ -5558,7 +5549,6 @@
       "proactiveSuggestions": {
         "description": "Okou हर घंटे आपके जुड़े स्रोतों की जाँच करता है और होम पेज पर उपयोगी अगले कदम सुझाता है।",
         "missingDefaultAgent": "सक्रिय सुझाव पाने के लिए उपलब्ध डिफ़ॉल्ट Agent चुनें।",
-        "pausedForAction": "सक्रिय कार्रवाई चालू होने पर सुझाव रुके हुए हैं। आपकी पसंद सुरक्षित है।",
         "preparationFailed": "अभी उपलब्ध नहीं है। Okou अपने आप फिर से कोशिश करेगा।",
         "preparing": "हर घंटे के सुझाव तैयार किए जा रहे हैं। आप इन्हें कभी भी बंद कर सकते हैं।",
         "retry": "फिर कोशिश करें",

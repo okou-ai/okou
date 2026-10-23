@@ -180,7 +180,6 @@ final class ConversationStore {
 
   func refresh(waitForCurrent: Bool = false) async {
     guard !closed, !needsUpgrade, !Task.isCancelled else { return }
-    composer.requestSync()
     if let refreshTask {
       refreshAgain = true
       if waitForCurrent { await refreshTask.value }
@@ -484,6 +483,7 @@ final class ConversationStore {
   func setDetailVisible(_ visible: Bool, owner: UUID) {
     if visible {
       detailOwner = owner
+      composer.requestSync()
     } else {
       // A previous view can disappear after its replacement has already appeared.
       guard detailOwner == owner else { return }

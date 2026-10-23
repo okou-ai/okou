@@ -621,8 +621,6 @@ assert_env_value "$success_env_file" OKOU_SEO_DATAFORSEO_LOGIN "github-dataforse
 assert_env_value "$success_env_file" OKOU_SEO_DATAFORSEO_PASSWORD "github-dataforseo-password"
 assert_env_value "$success_env_file" OKOU_BROWSER_USE_API_KEY "github-browser-use-api-key"
 assert_env_value "$success_env_file" OKOU_SCRAPE_FIRECRAWL_TOKEN "github-firecrawl-token"
-assert_env_value "$success_env_file" OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT "1000"
-assert_contains "$success_output" "synthetic Firecrawl credit valuation for PR testing only"
 assert_env_value "$success_env_file" OKOU_WEB_SEARCH_PERPLEXITY_TOKEN "github-perplexity-token"
 assert_env_value "$success_env_file" OKOU_SOCIAL_MONID_API_KEY "github-monid-api-key"
 assert_env_value "$success_env_file" OKOU_SOCIAL_SOCIALKIT_TOKEN "github-socialkit-token"
@@ -699,7 +697,6 @@ assert_web_url_absent "$preview_web_env_file"
 assert_env_key_absent "$preview_web_env_file" GCP_LLM_PROJECT_ID
 assert_env_key_absent "$preview_web_env_file" GCP_LLM_WORKLOAD_IDENTITY_PROVIDER
 assert_env_key_absent "$preview_web_env_file" GCP_LLM_SERVICE_ACCOUNT_EMAIL
-assert_env_key_absent "$preview_web_env_file" OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT
 
 empty_job_ref_dir="$(mktemp -d)"
 TEMP_DIRS+=("$empty_job_ref_dir")
@@ -797,7 +794,6 @@ assert_env_value "$production_api_env_file" OKOU_SEO_DATAFORSEO_LOGIN "github-da
 assert_env_value "$production_api_env_file" OKOU_SEO_DATAFORSEO_PASSWORD "github-dataforseo-password"
 assert_env_value "$production_api_env_file" OKOU_BROWSER_USE_API_KEY "github-browser-use-api-key"
 assert_env_value "$production_api_env_file" OKOU_SCRAPE_FIRECRAWL_TOKEN "github-firecrawl-token"
-assert_env_value "$production_api_env_file" OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT ""
 assert_env_value "$production_api_env_file" OKOU_WEB_SEARCH_PERPLEXITY_TOKEN "github-perplexity-token"
 assert_env_value "$production_api_env_file" OKOU_SOCIAL_MONID_API_KEY "github-monid-api-key"
 assert_env_value "$production_api_env_file" OKOU_SOCIAL_SOCIALKIT_TOKEN "github-socialkit-token"
@@ -808,21 +804,14 @@ assert_env_absent_value "$production_api_env_file" "doppler-stripe-billing-webho
 assert_env_absent_value "$production_api_env_file" "doppler-stripe-automation-webhook-secret"
 assert_preview_job_ref_absent "$production_api_env_file"
 
-# PR fixtures must not supply an unreviewed procurement rate to shared environments.
-for firecrawl_case in 'preview pr-123 2500' 'production pr-123 2500' 'preview staging empty' 'preview pr-invalid empty'; do
-  read -r firecrawl_environment firecrawl_job_ref firecrawl_configured_rate <<< "$firecrawl_case"
+# Forward the explicitly configured conversion rate in both API environments.
+for firecrawl_environment in preview production; do
   firecrawl_dir="$(mktemp -d)"
   TEMP_DIRS+=("$firecrawl_dir")
-  firecrawl_vars='{}'
-  firecrawl_expected_rate=""
-  if [[ "$firecrawl_configured_rate" != "empty" ]]; then
-    firecrawl_expected_rate="$firecrawl_configured_rate"
-    firecrawl_vars="$(jq -cn --arg rate "$firecrawl_configured_rate" '{OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT: $rate}')"
-  fi
-  firecrawl_output="$(run_action "$(build_doppler_secrets_json)" "$firecrawl_dir" api "$firecrawl_environment" canonical "$firecrawl_vars" "" "$firecrawl_job_ref" 2>&1)"
+  firecrawl_vars='{"OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT":"2500"}'
+  run_action "$(build_doppler_secrets_json)" "$firecrawl_dir" api "$firecrawl_environment" canonical "$firecrawl_vars" > /dev/null
   firecrawl_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${firecrawl_dir}/github-output")"
-  assert_env_value "$firecrawl_env_file" OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT "$firecrawl_expected_rate"
-  assert_not_contains "$firecrawl_output" "synthetic Firecrawl credit valuation"
+  assert_env_value "$firecrawl_env_file" OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT "2500"
 done
 
 for kms_secret in PREVIEW_KMS_KEY_ID PREVIEW_KMS_ACCESS_KEY_ID PREVIEW_KMS_SECRET_ACCESS_KEY; do

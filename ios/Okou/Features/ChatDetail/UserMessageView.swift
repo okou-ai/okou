@@ -113,7 +113,7 @@ struct UserMessageInlineText: View {
     types: NSTextCheckingResult.CheckingType.link.rawValue)
 
   var body: some View {
-    Text(content).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+    Text(content).textSelection(.enabled)
   }
 
   var content: AttributedString {

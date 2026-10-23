@@ -1,6 +1,6 @@
 import { dataSearchJobs } from "@okouai/db/schema/data-search-job";
 import { usageEvent } from "@okouai/db/schema/usage-event";
-import { and, eq, getTableColumns, isNull, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { UsageSettlementSnapshotConflict } from "./credit-usage-batch";
@@ -28,14 +28,10 @@ export function dataSearchJobQuery(orgId: string, jobId: string) {
 }
 
 function dataSearchSettledWhere(job: Job & { readonly xmin: string }) {
-  return (
-    and(
-      eq(dataSearchJobs.id, job.id),
-      eq(dataSearchJobs.orgId, job.orgId),
-      isNull(dataSearchJobs.creditsCharged),
-      sql`${dataSearchJobs}.xmin::text = ${job.xmin}`,
-    ) ?? sql`false`
-  );
+  return sql`${dataSearchJobs.id} = ${job.id}
+    AND ${dataSearchJobs.orgId} = ${job.orgId}
+    AND ${dataSearchJobs.creditsCharged} IS NULL
+    AND ${dataSearchJobs}.xmin::text = ${job.xmin}`;
 }
 
 export function requireDataSearchSettlement(

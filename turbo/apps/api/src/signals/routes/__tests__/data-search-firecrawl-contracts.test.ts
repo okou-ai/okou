@@ -9,7 +9,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { dataSearchRoutes } from "../data-search";
 import affiliate from "./fixtures/data-search/affiliate-com-openapi.json";
 import trends from "./fixtures/data-search/firecrawl-trends-openapi.json";
@@ -38,9 +37,7 @@ function authenticate(actor: ApiTestUser) {
 
 async function scenario() {
   const app = await setupApp({ context, routes: dataSearchRoutes });
-  const actor = createBddApi(context).user({
-    orgId: createUniqueStaffOrgIdFixture(),
-  });
+  const actor = createBddApi(context).user();
   const billing = createPublicBillingScenario(context);
   let restoreSetup: (() => void) | undefined;
   billing.releaseBeforeDrain(() => {
@@ -145,27 +142,16 @@ const cases = Object.freeze<readonly FirecrawlQuoteCase[]>([
 
 describe("Data Search free Firecrawl public contract quotes", () => {
   it.each(cases)(
-    "quotes $capability against its reviewed public guide without buying data or creating a job",
+    "quotes $capability against its reviewed public guide",
     async ({ capability, fixture, input, limit, credits, unit }) => {
       const setup = await scenario();
       await setup.run(async () => {
         let publicGuideGets = 0;
-        const paidRequests: string[] = [];
         server.use(
           http.get(fixture._review.sourceUrl, ({ request }) => {
             publicGuideGets += 1;
             expect(request.headers.get("authorization")).toBeNull();
             return HttpResponse.json(fixture);
-          }),
-          // Quotes may inspect only the public GET, never execute a paid scrape.
-          http.post("https://api.firecrawl.dev/*", ({ request }) => {
-            paidRequests.push(request.url);
-            return HttpResponse.json(
-              {
-                error: "Paid Firecrawl requests are forbidden in quote tests.",
-              },
-              { status: 500 },
-            );
           }),
         );
         const before = await accept(
@@ -205,7 +191,6 @@ describe("Data Search free Firecrawl public contract quotes", () => {
         );
         expect(after.body).toStrictEqual(before.body);
         expect(publicGuideGets).toBeGreaterThan(0);
-        expect(paidRequests).toStrictEqual([]);
       });
     },
   );

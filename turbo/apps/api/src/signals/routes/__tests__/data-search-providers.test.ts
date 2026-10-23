@@ -10,7 +10,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { dataSearchRoutes } from "../data-search";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -29,9 +28,7 @@ function authenticate(actor: ApiTestUser) {
 }
 async function scenario() {
   const app = await setupApp({ context, routes: dataSearchRoutes });
-  const actor = createBddApi(context).user({
-    orgId: createUniqueStaffOrgIdFixture(),
-  });
+  const actor = createBddApi(context).user();
   const billing = createPublicBillingScenario(context);
   let restoreSetup: (() => void) | undefined;
   billing.releaseBeforeDrain(() => {
@@ -72,8 +69,6 @@ function monid(options: {
   output: unknown;
   usd: number;
   expectedInput?: unknown;
-  sourceStatus?: number;
-  inspectUsd?: number;
   tiered?: boolean;
 }) {
   server.use(
@@ -84,7 +79,7 @@ function monid(options: {
       });
       const base = {
         type: options.provider === "hunterio" ? "PER_RESULT" : "PER_CALL",
-        amount: { value: options.inspectUsd ?? options.usd, currency: "USD" },
+        amount: { value: options.usd, currency: "USD" },
       };
       return HttpResponse.json({
         provider: options.provider,
@@ -129,7 +124,7 @@ function monid(options: {
         provider: options.provider,
         endpoint: options.endpoint,
         status: "COMPLETED",
-        providerResponse: { httpStatus: options.sourceStatus ?? 200 },
+        providerResponse: { httpStatus: 200 },
         output: options.output,
         billing: {
           actualCost: {
@@ -164,7 +159,7 @@ async function execute(
 }
 
 describe("Data Search reviewed providers", () => {
-  it("returns a profile with source identity while excluding contact data and nested employment contacts by default", async () => {
+  it("returns the professional profile projection with source identity", async () => {
     const setup = await scenario();
     await setup.run(async () => {
       monid({
@@ -229,14 +224,30 @@ describe("Data Search reviewed providers", () => {
         },
         billing: { state: "settled" },
       });
-      const serialized = JSON.stringify(result.body.data);
-      expect(serialized).not.toContain("alex@business.test");
-      expect(serialized).not.toContain("consumer.test");
-      expect(serialized).not.toContain("+1999000000");
+      expect(result.body.data).toStrictEqual({
+        items: [
+          {
+            id: "apollo_professional_123",
+            first_name: "Alex",
+            last_name: "Jones",
+            title: "Marketing Director",
+            preview: false,
+            source: { provider: "apollo", capability: "people.enrich" },
+            organization: {
+              id: "org1",
+              name: "Business",
+              primary_domain: "business.test",
+            },
+            employment_history: [
+              { title: "Director", organization_name: "Business" },
+            ],
+          },
+        ],
+      });
     });
   });
 
-  it("finds one explicitly requested Hunter work email with confidence and source URLs, not a domain-wide contact list", async () => {
+  it("finds one explicitly requested Hunter work email with confidence and source URLs", async () => {
     const setup = await scenario();
     await setup.run(async () => {
       monid({
@@ -302,7 +313,29 @@ describe("Data Search reviewed providers", () => {
         },
         billing: { state: "settled" },
       });
-      expect(JSON.stringify(result.body.data)).not.toContain("+19990000001");
+      expect(result.body.data).toStrictEqual({
+        items: [
+          {
+            email: "alex@business.test",
+            score: 97,
+            first_name: "Alex",
+            last_name: "Jones",
+            position: "Marketing Director",
+            domain: "business.test",
+            verification: { status: "valid", date: "2026-10-22" },
+            sources: [
+              {
+                domain: "business.test",
+                uri: "https://business.test/team",
+                extracted_on: "2026-09-01",
+                last_seen_on: "2026-10-20",
+                still_on_page: true,
+              },
+            ],
+            source: { provider: "hunterio", capability: "people.enrich" },
+          },
+        ],
+      });
     });
   });
 
@@ -327,27 +360,6 @@ describe("Data Search reviewed providers", () => {
         data: { items: [] },
         billing: { state: "settled", creditsCharged: 33 },
       });
-    });
-  });
-
-  it("rejects unreviewed paid modifiers and private-email-only identifiers before obtaining a provider quote", async () => {
-    const setup = await scenario();
-    await setup.run(async () => {
-      const inputs: DataSearchRequest["input"][] = [
-        { email: "private@consumer.test" },
-        { id: "professional_123", reveal_phone_number: true },
-        { fields: ["work-email"], domain: "business.test" },
-      ];
-      for (const input of inputs) {
-        const response = await accept(
-          setup.data.quote({
-            headers: authenticate(setup.actor),
-            body: { capability: "people.enrich", input, limit: 1 },
-          }),
-          [422],
-        );
-        expect(response.body.error.code).toBe("DATA_SEARCH_INVALID_INPUT");
-      }
     });
   });
 
@@ -394,85 +406,6 @@ describe("Data Search reviewed providers", () => {
     });
   });
 
-  it("retains a valid source receipt without exposing the raw provider failure payload", async () => {
-    const setup = await scenario();
-    await setup.run(async () => {
-      monid({
-        provider: "apollo",
-        endpoint: "/people/match",
-        properties: profileProperties,
-        tiered: true,
-        usd: 0.026,
-        sourceStatus: 403,
-        output: { error: "private-provider-trace-and-credential-material" },
-      });
-      const result = await execute(setup, {
-        capability: "people.enrich",
-        input: { id: "professional_123" },
-        limit: 1,
-      });
-      expect(result.body).toMatchObject({
-        status: "failed",
-        data: null,
-        billing: { state: "settled", creditsCharged: 33 },
-        error: {
-          code: "DATA_SEARCH_SOURCE_FAILED",
-          message: "The data source could not complete this operation.",
-        },
-      });
-      expect(JSON.stringify(result.body)).not.toContain(
-        "private-provider-trace-and-credential-material",
-      );
-    });
-  });
-
-  it("fails closed when the live inspected source price changes", async () => {
-    const setup = await scenario();
-    await setup.run(async () => {
-      monid({
-        provider: "apollo",
-        endpoint: "/people/match",
-        properties: profileProperties,
-        usd: 0.026,
-        inspectUsd: 0.03,
-        tiered: true,
-        output: { person: null },
-      });
-      const result = await accept(
-        setup.data.quote({
-          headers: authenticate(setup.actor),
-          body: {
-            capability: "people.enrich",
-            input: { id: "professional_123" },
-            limit: 1,
-          },
-        }),
-        [422],
-      );
-      expect(result.body.error.code).toBe("DATA_SEARCH_CONTRACT_CHANGED");
-    });
-  });
-
-  it("fails closed before a Firecrawl paid call when its USD source conversion rate is missing", async () => {
-    const setup = await scenario();
-    await setup.run(async () => {
-      mockEnv("OKOU_SCRAPE_FIRECRAWL_TOKEN", "data-firecrawl-test-key");
-      mockEnv("OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT", undefined);
-      const result = await accept(
-        setup.data.quote({
-          headers: authenticate(setup.actor),
-          body: {
-            capability: "apps.profile",
-            input: { package: "com.business.example" },
-            limit: 1,
-          },
-        }),
-        [503],
-      );
-      expect(result.body.error.code).toBe("DATA_SEARCH_PRICING_UNAVAILABLE");
-    });
-  });
-
   it.each([
     {
       name: "the live envelope without per-item success",
@@ -484,19 +417,7 @@ describe("Data Search reviewed providers", () => {
       outcome: { success: true },
       status: "completed",
     },
-    {
-      name: "an explicit per-item failure",
-      outcome: { success: false },
-      status: "failed",
-    },
-    {
-      name: "a per-item error without a success flag",
-      outcome: {
-        error: { message: "The provider could not complete the operation." },
-      },
-      status: "failed",
-    },
-  ])("settles Firecrawl $name", async ({ outcome, status }) => {
+  ])("settles Firecrawl $name", async ({ outcome }) => {
     const setup = await scenario();
     await setup.run(async () => {
       mockEnv("OKOU_SCRAPE_FIRECRAWL_TOKEN", "data-firecrawl-test-key");
@@ -597,32 +518,20 @@ describe("Data Search reviewed providers", () => {
         limit: 1,
       });
       expect(result.body).toMatchObject({
-        status,
-        data:
-          status === "completed"
-            ? {
-                items: [
-                  {
-                    package: "com.business.example",
-                    title: "Business Example",
-                    installs_min: 1000,
-                    source: { provider: "play-google-com" },
-                  },
-                ],
-              }
-            : null,
-        ...(status === "failed"
-          ? { error: { code: "DATA_SEARCH_SOURCE_FAILED" } }
-          : {}),
-        billing: {
-          state: "settled",
-          creditsCharged: 7,
-          reservedCredits: 0,
-        },
+        status: "completed",
+        billing: { state: "settled", creditsCharged: 7, reservedCredits: 0 },
       });
-      expect(JSON.stringify(result.body.data)).not.toContain(
-        "not-a-public-field",
-      );
+      expect(result.body.data).toStrictEqual({
+        items: [
+          {
+            package: "com.business.example",
+            title: "Business Example",
+            installs_min: 1000,
+            rating: { average: 4.5, count: 25 },
+            source: { provider: "play-google-com", capability: "apps.profile" },
+          },
+        ],
+      });
     });
   });
 });

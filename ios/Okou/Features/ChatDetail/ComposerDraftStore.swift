@@ -187,8 +187,24 @@ final class ComposerDraftStore {
       && !attachments.items.contains { if case .uploading = $0.state { true } else { false } }
   }
   func requestSync() {
-    guard !closed, !Task.isCancelled, syncTask == nil else { return }
+    guard !closed, isForeground, !Task.isCancelled, syncTask == nil else { return }
     Task { [weak self] in await self?.synchronize() }
+  }
+
+  func setForeground(_ active: Bool) {
+    guard !closed, isForeground != active else { return }
+    isForeground = active
+    if active {
+      // Resume pending writes, including clears owned by a different cached composer.
+      if dirty { requestSync() }
+    } else {
+      persist()
+      debounceTask?.cancel()
+      // A cancelled task can finish after the next foreground sync has started.
+      syncGeneration = UUID()
+      syncTask?.cancel()
+      syncTask = nil
+    }
   }
   private let target: ChatDraftTarget
   private let repository: ChatDraftRepository?
@@ -201,6 +217,8 @@ final class ComposerDraftStore {
   private var revision = 0
   private var applying = false
   private var closed = false
+  private var isForeground = true
+  private var syncGeneration = UUID()
   private var debounceTask: Task<Void, Never>?
   private var syncTask: Task<Void, Never>?
 
@@ -269,6 +287,7 @@ final class ComposerDraftStore {
     if hasContent { cleared = false }
     persist()
     debounceTask?.cancel()
+    guard isForeground else { return }
     debounceTask = Task { [weak self] in
       do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
       await self?.synchronize()
@@ -290,14 +309,17 @@ final class ComposerDraftStore {
   }
 
   func synchronize() async {
-    guard !closed, !Task.isCancelled, !localReadFailed, let repository else { return }
+    guard !closed, isForeground, !Task.isCancelled, !localReadFailed, let repository else { return }
     if let syncTask {
       await syncTask.value
       return
     }
+    let generation = syncGeneration
     let task = Task { [weak self] in
       guard let self else { return }
-      defer { syncTask = nil }
+      defer {
+        if syncGeneration == generation { syncTask = nil }
+      }
       repeat {
         let startedRevision = revision
         do {
@@ -439,7 +461,17 @@ final class ComposerDraftStore {
   }
 
   private func report(_ failure: Error) {
-    syncError = "Draft sync unavailable. " + failure.localizedDescription
     didFail(failure)
+    if let transport = failure as? URLError {
+      switch transport.code {
+      case .cancelled, .timedOut, .notConnectedToInternet, .networkConnectionLost,
+        .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
+        return
+      default: break
+      }
+    }
+    let status = (failure as? APIClientError)?.statusCode
+    guard status != 401, status != 426 else { return }
+    syncError = "Draft sync unavailable. " + failure.localizedDescription
   }
 }

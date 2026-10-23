@@ -332,7 +332,7 @@ describe("Official Workflow catalog release boundary", () => {
     });
   });
 
-  it("accepts the deployed catalog over a released Connector Doctor and republishes it without rewrites", async () => {
+  it("accepts the deployed catalog over retired definitions and republishes it without rewrites", async () => {
     const s3 = installVolumeS3Fixture();
     const historicalBlueprint: OfficialWorkflowBlueprint = {
       key: "weekly-check",
@@ -350,6 +350,7 @@ describe("Official Workflow catalog release boundary", () => {
         activeDefinition("connector-doctor", {
           blueprints: [historicalBlueprint],
         }),
+        activeDefinition("proactive-action"),
       ]),
     );
     expect(released.body).toMatchObject({
