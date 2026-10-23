@@ -376,6 +376,12 @@ test("publishes an owned ZIP while isolating peers and preserving replay", async
   const replay = await status(fixture, owner);
   expect(replay.job?.downloadUrl).toBe(ready.job?.downloadUrl);
   archive(fixture, replay.job?.downloadUrl);
+  authenticate(owner);
+  const limited = await accept(
+    fixture.app(userExportContract).post({ headers }),
+    [429],
+  );
+  expect(limited.body.error.code).toBe("RATE_LIMITED");
 });
 
 test("withholds publication after membership withdrawal and re-enters the completed multipart result", async () => {

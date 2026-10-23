@@ -1,7 +1,16 @@
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
-import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  exists,
+  gt,
+  inArray,
+  notExists,
+  sql,
+} from "drizzle-orm";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { backgroundJobDatabaseNow } from "./background-job.service";
 import type {
@@ -19,6 +28,10 @@ import { findClerkUser } from "../external/clerk-users";
 import { generatePresignedGetUrl } from "../external/s3";
 import { nowDate } from "../../lib/time";
 import { settle } from "../utils";
+import {
+  pgBooleanDecoder,
+  nullableDriverValueDecoder,
+} from "../../lib/db-structured-result";
 import { buildFromAddress } from "./email-common.service";
 
 const RATE_LIMIT_MS = 24 * 60 * 60 * 1000;
@@ -42,8 +55,6 @@ type StartUserExportResult =
       readonly shouldExecute: boolean;
     }
   | { readonly kind: "rate_limited" };
-
-class UserExportCooldownError extends Error {}
 
 interface ClerkEmailAddress {
   readonly id: string;
@@ -199,6 +210,87 @@ export function userExportStatus(userId: string) {
   });
 }
 
+function exportJobAdmissionValues(
+  args: StartUserExportArgs,
+  jobId: string,
+  at: Date,
+) {
+  return {
+    id: sql`${jobId}::uuid`.mapWith(exportJobs.id).as("id"),
+    userId: sql`${args.userId}`.mapWith(exportJobs.userId).as("user_id"),
+    orgId: sql`${args.orgId}`.mapWith(exportJobs.orgId).as("org_id"),
+    status: sql`'pending'`.mapWith(exportJobs.status).as("status"),
+    executionMode: sql`'durable-v1'`
+      .mapWith(exportJobs.executionMode)
+      .as("execution_mode"),
+    s3Key: sql`null::text`
+      .mapWith(nullableDriverValueDecoder(exportJobs.s3Key))
+      .as("s3_key"),
+    artifactUrls: sql`null::jsonb`
+      .mapWith(nullableDriverValueDecoder(exportJobs.artifactUrls))
+      .as("artifact_urls"),
+    error: sql`null::text`
+      .mapWith(nullableDriverValueDecoder(exportJobs.error))
+      .as("error"),
+    expiresAt: sql`null::timestamp`
+      .mapWith(nullableDriverValueDecoder(exportJobs.expiresAt))
+      .as("expires_at"),
+    createdAt: sql`${sql.param(at, exportJobs.createdAt)}::timestamp`
+      .mapWith(exportJobs.createdAt)
+      .as("created_at"),
+    completedAt: sql`null::timestamp`
+      .mapWith(nullableDriverValueDecoder(exportJobs.completedAt))
+      .as("completed_at"),
+  };
+}
+
+function exportBackgroundJobValues(args: StartUserExportArgs) {
+  return {
+    id: sql`claimed_export_job.id`.mapWith(backgroundJobs.id).as("id"),
+    kind: sql`'user-export'`.mapWith(backgroundJobs.kind).as("kind"),
+    handlerVersion: sql`1`
+      .mapWith(backgroundJobs.handlerVersion)
+      .as("handler_version"),
+    userId: sql`${sql.param(args.userId, backgroundJobs.userId)}::text`
+      .mapWith(backgroundJobs.userId)
+      .as("user_id"),
+    orgId: sql`${sql.param(args.orgId, backgroundJobs.orgId)}::text`
+      .mapWith(backgroundJobs.orgId)
+      .as("org_id"),
+    input: sql`${sql.param({}, backgroundJobs.input)}::jsonb`
+      .mapWith(backgroundJobs.input)
+      .as("input"),
+    checkpoint: sql`${sql.param({}, backgroundJobs.checkpoint)}::jsonb`
+      .mapWith(backgroundJobs.checkpoint)
+      .as("checkpoint"),
+    status: sql`'pending'`.mapWith(backgroundJobs.status).as("status"),
+    availableAt: sql`${backgroundJobDatabaseNow}`
+      .mapWith(backgroundJobs.availableAt)
+      .as("available_at"),
+    leaseId: sql`null::uuid`
+      .mapWith(nullableDriverValueDecoder(backgroundJobs.leaseId))
+      .as("lease_id"),
+    leaseExpiresAt: sql`null::timestamp`
+      .mapWith(nullableDriverValueDecoder(backgroundJobs.leaseExpiresAt))
+      .as("lease_expires_at"),
+    failureCount: sql`0`
+      .mapWith(backgroundJobs.failureCount)
+      .as("failure_count"),
+    lastError: sql`null::text`
+      .mapWith(nullableDriverValueDecoder(backgroundJobs.lastError))
+      .as("last_error"),
+    createdAt: sql`${backgroundJobDatabaseNow}`
+      .mapWith(backgroundJobs.createdAt)
+      .as("created_at"),
+    updatedAt: sql`${backgroundJobDatabaseNow}`
+      .mapWith(backgroundJobs.updatedAt)
+      .as("updated_at"),
+    completedAt: sql`null::timestamp`
+      .mapWith(nullableDriverValueDecoder(backgroundJobs.completedAt))
+      .as("completed_at"),
+  };
+}
+
 export const startUserExport$ = command(
   async (
     { set },
@@ -207,88 +299,106 @@ export const startUserExport$ = command(
   ): Promise<StartUserExportResult> => {
     const db = set(writeDb$);
     signal.throwIfAborted();
-    const result = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0313; new non-billing transactions are prohibited.
-      db.transaction(async (tx): Promise<StartUserExportResult> => {
-        const jobId = randomUUID();
-        // Claim before checking cooldown so a concurrently completed job cannot
-        // disappear between the check and admission. A no-op conflict update
-        // returns the locked active owner directly, without a second-read gap.
-        const [claimed] = await tx
-          .insert(exportJobs)
-          .values({
-            id: jobId,
-            userId: args.userId,
-            orgId: args.orgId,
-            status: "pending",
-            executionMode: "durable-v1",
-            createdAt: nowDate(),
-          })
-          .onConflictDoUpdate({
-            target: exportJobs.userId,
-            targetWhere: sql`${exportJobs.status} IN ('pending', 'running')`,
-            set: { id: sql`${exportJobs.id}` },
-          })
-          .returning({ id: exportJobs.id, status: exportJobs.status });
-        signal.throwIfAborted();
-        if (!claimed) {
-          throw new Error("Failed to claim export job");
-        }
-        if (claimed.id !== jobId) {
-          return {
-            kind: "accepted",
-            jobId: claimed.id,
-            status: activeExportJobStatus(claimed.status),
-            shouldExecute: false,
-          };
-        }
-        const [recent] = await tx
-          .select({ id: exportJobs.id })
-          .from(exportJobs)
-          .where(
-            and(
-              eq(exportJobs.userId, args.userId),
-              eq(exportJobs.status, "completed"),
-              gt(
-                exportJobs.completedAt,
-                new Date(nowDate().getTime() - RATE_LIMIT_MS),
+    const jobId = randomUUID();
+    const at = nowDate();
+    const active = db.$with("active_export_job").as(
+      db
+        .select({ id: exportJobs.id, status: exportJobs.status })
+        .from(exportJobs)
+        .where(
+          and(
+            eq(exportJobs.userId, args.userId),
+            inArray(exportJobs.status, ["pending", "running"]),
+          ),
+        )
+        .limit(1),
+    );
+    const recent = db.$with("recent_export_job").as(
+      db
+        .select({ id: exportJobs.id })
+        .from(exportJobs)
+        .where(
+          and(
+            eq(exportJobs.userId, args.userId),
+            eq(exportJobs.status, "completed"),
+            gt(exportJobs.completedAt, new Date(at.getTime() - RATE_LIMIT_MS)),
+          ),
+        )
+        .limit(1),
+    );
+    const claimed = db.$with("claimed_export_job").as(
+      db
+        .insert(exportJobs)
+        .select(
+          db
+            .select(exportJobAdmissionValues(args, jobId, at))
+            .from(sql`(select 1) as export_admission`)
+            .where(
+              and(
+                notExists(db.select().from(active)),
+                notExists(db.select().from(recent)),
               ),
             ),
-          )
-          .limit(1);
-        signal.throwIfAborted();
-        if (recent) {
-          // Roll back the claim; a rejected request must not leave an active job.
-          throw new UserExportCooldownError("Export cooldown has not expired");
-        }
-        await tx.insert(backgroundJobs).values({
-          id: jobId,
-          kind: "user-export",
-          handlerVersion: 1,
-          userId: args.userId,
-          orgId: args.orgId,
-          input: {},
-          availableAt: backgroundJobDatabaseNow,
-          createdAt: backgroundJobDatabaseNow,
-          updatedAt: backgroundJobDatabaseNow,
-        });
-        signal.throwIfAborted();
-        return {
-          kind: "accepted",
-          jobId,
-          status: "pending",
-          shouldExecute: true,
-        };
-      }),
+        )
+        .onConflictDoUpdate({
+          target: exportJobs.userId,
+          targetWhere: sql`${exportJobs.status} IN ('pending', 'running')`,
+          set: { id: sql`${exportJobs.id}` },
+        })
+        .returning({ id: exportJobs.id, status: exportJobs.status }),
+    );
+    const scheduled = db.$with("scheduled_export_job").as(
+      db
+        .insert(backgroundJobs)
+        .select(
+          db
+            .select(exportBackgroundJobValues(args))
+            .from(claimed)
+            .where(eq(claimed.id, jobId)),
+        )
+        .returning({ id: backgroundJobs.id }),
+    );
+    // Cooldown and already-active ownership use this statement's snapshot.
+    // The unique index also returns an active owner that wins after that snapshot.
+    // A completion during that wait is considered by the next request.
+    const admittedJobs = db
+      .select({
+        id: claimed.id,
+        status: claimed.status,
+        shouldExecute: exists(db.select().from(scheduled))
+          .mapWith(pgBooleanDecoder)
+          .as("should_execute"),
+      })
+      .from(claimed)
+      .unionAll(
+        db
+          .select({
+            id: active.id,
+            status: active.status,
+            shouldExecute: sql`false`
+              .mapWith(pgBooleanDecoder)
+              .as("should_execute"),
+          })
+          .from(active),
+      )
+      .as("admitted_export_jobs");
+    const admission = await settle(
+      db.with(active, recent, claimed, scheduled).select().from(admittedJobs),
       signal,
     );
-    if (result.ok) {
-      return result.value;
+    if (!admission.ok) {
+      throw admission.error;
     }
-    if (result.error instanceof UserExportCooldownError) {
+    const [admitted] = admission.value;
+    if (!admitted) {
       return { kind: "rate_limited" };
     }
-    throw result.error;
+    return {
+      kind: "accepted",
+      jobId: admitted.id,
+      status: activeExportJobStatus(admitted.status),
+      shouldExecute: admitted.shouldExecute,
+    };
   },
 );
 
