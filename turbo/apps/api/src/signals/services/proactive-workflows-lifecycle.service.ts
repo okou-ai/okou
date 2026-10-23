@@ -26,7 +26,10 @@ import {
   loadProactiveWorkflowsEligibility$,
   type ProactiveWorkflowOwner,
 } from "./proactive-workflows-eligibility.service";
-import { PROACTIVE_WORKFLOW_DEFINITIONS } from "./proactive-workflow-definitions";
+import {
+  PROACTIVE_WORKFLOW_DEFINITIONS,
+  RETIRED_PROACTIVE_DEFINITION_NAME,
+} from "./proactive-workflow-definitions";
 import {
   readAcceptedOfficialWorkflowCatalog$,
   readAcceptedOfficialWorkflowRevision$,
@@ -51,13 +54,11 @@ export function proactiveWorkflowOwnerEnabledSql(
   owner: ProactiveWorkflowOwner,
   agentId: string,
   kind: ProactiveWorkflowKind,
-  actionAvailable: boolean,
 ) {
   const preference =
-    kind === "action" || kind === "jobs"
+    kind === "jobs"
       ? sql`preference.proactive_action_enabled = true`
-      : sql`preference.proactive_suggestions_enabled = true
-          AND (${!actionAvailable} OR preference.proactive_action_enabled IS DISTINCT FROM true)`;
+      : sql`preference.proactive_suggestions_enabled = true`;
   return sql`EXISTS (
     SELECT 1 FROM org_members_metadata AS preference
     JOIN org_metadata AS organization ON organization.org_id = preference.org_id
@@ -146,12 +147,12 @@ const disableInactiveProactiveWorkflows$ = command(
         and(
           eq(workflows.orgId, owner.orgId),
           eq(workflows.ownerUserId, owner.userId),
-          inArray(
-            workflows.officialDefinitionName,
-            Object.values(PROACTIVE_WORKFLOW_DEFINITIONS).map((item) => {
+          inArray(workflows.officialDefinitionName, [
+            ...Object.values(PROACTIVE_WORKFLOW_DEFINITIONS).map((item) => {
               return item.name;
             }),
-          ),
+            RETIRED_PROACTIVE_DEFINITION_NAME,
+          ]),
           eligible && agentId !== null
             ? or(
                 ne(workflows.agentId, agentId),
@@ -197,7 +198,7 @@ const synchronizeProactiveJobThreads$ = command(
           eq(workflows.orgId, owner.orgId),
           eq(workflows.ownerUserId, owner.userId),
           inArray(workflows.officialDefinitionName, [
-            PROACTIVE_WORKFLOW_DEFINITIONS.action.name,
+            RETIRED_PROACTIVE_DEFINITION_NAME,
             PROACTIVE_WORKFLOW_DEFINITIONS.jobs.name,
           ]),
         ),
@@ -269,7 +270,7 @@ export const ensureProactiveWorkflows$ = command(
           official_definition_name, official_installation_state, created_by, updated_by, created_at, updated_at)
         SELECT ${owner.orgId}, ${eligibility.agentId}::uuid, ${owner.userId}, ${definition.name}, 'private', NULL, NULL, NULL,
           ${definition.name}, 'installed', ${owner.userId}, ${owner.userId}, ${at}, ${at}
-        WHERE ${proactiveWorkflowOwnerEnabledSql(owner, eligibility.agentId, kind, eligibility.action.available && !eligibility.jobs.available)}
+        WHERE ${proactiveWorkflowOwnerEnabledSql(owner, eligibility.agentId, kind)}
           AND EXISTS (SELECT 1 FROM official_workflow_catalog_state WHERE accepted_release_id = ${catalog.releaseId})
         ON CONFLICT (org_id, agent_id, owner_user_id, official_definition_name) WHERE official_definition_name IS NOT NULL
         DO UPDATE SET updated_at = EXCLUDED.updated_at
@@ -308,12 +309,7 @@ export const ensureProactiveWorkflows$ = command(
             eq(workflowAutomations.workflowId, installed.id),
             eq(workflowAutomations.officialBlueprintKey, blueprint.key),
             eq(workflowAutomations.officialIntendedEnabled, false),
-            proactiveWorkflowOwnerEnabledSql(
-              owner,
-              eligibility.agentId,
-              kind,
-              eligibility.action.available && !eligibility.jobs.available,
-            ),
+            proactiveWorkflowOwnerEnabledSql(owner, eligibility.agentId, kind),
           ),
         );
       signal.throwIfAborted();
@@ -338,10 +334,10 @@ export const reconcileProactiveWorkflows$ = command(
         .from(orgMembersMetadata)
         .where(
           and(
-            sql`(${orgMembersMetadata.proactiveSuggestionsEnabled} = true OR ${orgMembersMetadata.proactiveActionEnabled} = true OR EXISTS (
+            sql`(${orgMembersMetadata.proactiveSuggestionsEnabled} = true OR ${orgMembersMetadata.proactiveJobsEnabled} = true OR EXISTS (
               SELECT 1 FROM workflows AS proactive_workflow WHERE proactive_workflow.org_id = ${orgMembersMetadata.orgId}
                 AND proactive_workflow.owner_user_id = ${orgMembersMetadata.userId}
-                AND proactive_workflow.official_definition_name IN (${PROACTIVE_WORKFLOW_DEFINITIONS.suggestions.name}, ${PROACTIVE_WORKFLOW_DEFINITIONS.action.name}, ${PROACTIVE_WORKFLOW_DEFINITIONS.jobs.name})
+                AND proactive_workflow.official_definition_name IN (${PROACTIVE_WORKFLOW_DEFINITIONS.suggestions.name}, ${RETIRED_PROACTIVE_DEFINITION_NAME}, ${PROACTIVE_WORKFLOW_DEFINITIONS.jobs.name})
             ))`,
             sql`(('x' || substr(encode(sha256(convert_to(${orgMembersMetadata.orgId} || '/' || ${orgMembersMetadata.userId}, 'UTF8')), 'hex'), 1, 8))::bit(32)::bigint % 60) = ${minute}`,
             cursor

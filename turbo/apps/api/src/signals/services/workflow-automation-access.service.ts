@@ -9,6 +9,7 @@ import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
 import {
   PROACTIVE_WORKFLOW_DEFINITIONS,
+  RETIRED_PROACTIVE_DEFINITION_NAME,
   proactiveWorkflowKind,
 } from "./proactive-workflow-definitions";
 import { userJobs } from "@okouai/db/schema/user-job";
@@ -27,6 +28,22 @@ function canReadAgent(
   userId: string,
 ): boolean {
   return agent.visibility === "public" || agent.owner === userId;
+}
+
+function proactiveRunDefinitionCondition(
+  kind: keyof typeof PROACTIVE_WORKFLOW_DEFINITIONS,
+  jobsAvailable: boolean,
+) {
+  const definitions = jobsAvailable
+    ? [PROACTIVE_WORKFLOW_DEFINITIONS[kind]]
+    : Object.values(PROACTIVE_WORKFLOW_DEFINITIONS);
+  return or(
+    ...[...definitions, { name: RETIRED_PROACTIVE_DEFINITION_NAME }].map(
+      (definition) => {
+        return sql`${agentRuns.officialWorkflowProvenance} @> ${JSON.stringify({ definitions: [{ name: definition.name }] })}::jsonb`;
+      },
+    ),
+  );
 }
 
 export const workflowAutomationCanFire$ = command(
@@ -90,9 +107,14 @@ export const workflowAutomationCanFire$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    const proactiveKind = proactiveWorkflowKind(
-      visible?.definitionName ?? null,
-    );
+    if (
+      !visible ||
+      visible.definitionName === RETIRED_PROACTIVE_DEFINITION_NAME ||
+      !canReadAgent(visible, automation.ownerUserId)
+    ) {
+      return false;
+    }
+    const proactiveKind = proactiveWorkflowKind(visible.definitionName);
     if (proactiveKind !== null) {
       const eligibility = await set(
         loadProactiveWorkflowsEligibility$,
@@ -136,16 +158,9 @@ export const workflowAutomationCanFire$ = command(
             eq(activeAgentRuns.userId, automation.ownerUserId),
             inArray(agentRuns.status, ["pending", "running"]),
             sql`${agentRuns.workflowAutomationId} IS DISTINCT FROM ${automation.id}::uuid`,
-            or(
-              ...(eligibility.jobs.available
-                ? [
-                    PROACTIVE_WORKFLOW_DEFINITIONS[proactiveKind],
-                    PROACTIVE_WORKFLOW_DEFINITIONS.action,
-                  ]
-                : Object.values(PROACTIVE_WORKFLOW_DEFINITIONS)
-              ).map((definition) => {
-                return sql`${agentRuns.officialWorkflowProvenance} @> ${JSON.stringify({ definitions: [{ name: definition.name }] })}::jsonb`;
-              }),
+            proactiveRunDefinitionCondition(
+              proactiveKind,
+              eligibility.jobs.available,
             ),
           ),
         )
@@ -155,8 +170,6 @@ export const workflowAutomationCanFire$ = command(
         return false;
       }
     }
-    return (
-      visible !== undefined && canReadAgent(visible, automation.ownerUserId)
-    );
+    return true;
   },
 );

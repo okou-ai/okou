@@ -1,6 +1,4 @@
 import { OfficialWorkflowRunAdmissionError } from "./official-workflow-run.service";
-import { PROACTIVE_ACTION_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-action";
-import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
 import {
   isMorningBriefDefinitionName,
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
@@ -109,10 +107,7 @@ const officialWorkflowThreadPresentation$ = command(
     }
     return {
       title,
-      hidden:
-        args.definitionName !== PROACTIVE_ACTION_DEFINITION_NAME ||
-        (await set(loadProactiveWorkflowsEligibility$, args, signal)).jobs
-          .available,
+      hidden: true,
     };
   },
 );
