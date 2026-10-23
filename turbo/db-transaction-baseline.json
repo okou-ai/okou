@@ -252,11 +252,6 @@
       "owner": "deleteHostedSite$"
     },
     {
-      "id": "TX-0172",
-      "file": "turbo/apps/api/src/signals/services/integration-chat-queue.service.ts",
-      "owner": "enqueueIntegrationChatInput$"
-    },
-    {
       "id": "TX-0176",
       "file": "turbo/apps/api/src/signals/services/mail-notification.service.ts",
       "owner": "commitMailNotification$"
