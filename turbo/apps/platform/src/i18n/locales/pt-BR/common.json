@@ -645,6 +645,11 @@
       "singularTitle": "Artefato",
       "unavailable": "Este artefato não está mais disponível."
     },
+    "siteBanner": {
+      "label": "Mostrar banner do Okou",
+      "loadFailed": "Não foi possível carregar as configurações do banner",
+      "updated": "Banner atualizado"
+    },
     "siteUrl": {
       "available": "Disponível",
       "cancel": "Cancelar",

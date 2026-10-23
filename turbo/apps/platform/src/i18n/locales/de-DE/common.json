@@ -629,6 +629,11 @@
       "singularTitle": "Artefakt",
       "unavailable": "Dieses Artefakt ist nicht mehr verfügbar."
     },
+    "siteBanner": {
+      "label": "Okou-Banner anzeigen",
+      "loadFailed": "Bannereinstellungen konnten nicht geladen werden",
+      "updated": "Banner aktualisiert"
+    },
     "siteUrl": {
       "available": "Verfügbar",
       "cancel": "Abbrechen",

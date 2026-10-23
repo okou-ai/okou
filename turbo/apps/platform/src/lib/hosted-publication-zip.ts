@@ -16,6 +16,8 @@ import { fetchResource } from "./resource-fetch.ts";
 export interface HostedPublicationMember {
   readonly path: string;
   readonly contentType: string;
+  /** An API-authorized, revocable Site download address, when required. */
+  readonly deliveryUrl?: string;
 }
 
 /** Media types whose bytes are already compressed by their own container. */
@@ -49,7 +51,7 @@ async function pushMember(
   signal: AbortSignal,
 ): Promise<void> {
   const response = await fetchResource(
-    new URL(args.member.path, args.baseUrl),
+    args.member.deliveryUrl ?? new URL(args.member.path, args.baseUrl),
     { cache: "reload", mode: "cors" },
     signal,
   );
