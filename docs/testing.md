@@ -18,9 +18,9 @@ changes should not break a test when that contract is preserved.
 - **CLI:** invoke the command parser and assert output, exit status, or the
   resulting user-accessible files.
 - **iOS:** prioritize in-process business, HTTP, persistence, security, and
-  recovery contracts through real production entry points. Keep required CI
-  below 12 minutes; minimize UI tests and verify appearance and system
-  interaction on demand. See [iOS testing](ios/ios-testing.md).
+  recovery contracts through real production entry points. Minimize UI tests,
+  measure complete CI duration, and verify appearance and system interaction
+  on demand. See [iOS testing](ios/ios-testing.md).
 - **Desktop, Runner, and addon:** use the production boundary described in the
   matching guide below, including IPC, protocols, and process outcomes.
 
