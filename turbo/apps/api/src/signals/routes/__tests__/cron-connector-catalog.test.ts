@@ -1435,6 +1435,7 @@ describe("connector catalog valid lifecycle", () => {
       context.mocks.s3.send.mockResolvedValue({ Contents: [] });
       if (created.runId) {
         await runs.requestCancelRun(actor, created.runId, [200, 404]);
+        await flushWaitUntilForTest();
       }
       await connectorsApi.deleteCustomConnector(actor, custom.id);
       await bdd.deleteAgent(actor, agent.agentId);
