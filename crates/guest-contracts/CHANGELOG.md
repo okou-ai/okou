@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.11...guest-contracts-v0.27.0) (2026-10-23)
+
+
+### Features
+
+* **storage:** prepare wider decoded memory readers ([#42504](https://github.com/okou-ai/okou/issues/42504)) ([9fbbccc](https://github.com/okou-ai/okou/commit/9fbbccc221bd19847e65b6e5622ba639fba596fc))
+
 ## [0.26.11](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.10...guest-contracts-v0.26.11) (2026-10-23)
 
 ## [0.26.10](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.9...guest-contracts-v0.26.10) (2026-10-22)

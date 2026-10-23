@@ -60,10 +60,10 @@ use reqwest::Client;
 use sandbox::{Sandbox, WriteFileEntry};
 use tokio::fs;
 use tokio::io::AsyncReadExt as _;
-use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, TryAcquireError, mpsc, oneshot};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
-use tokio_util::task::TaskTracker;
+use tokio_util::task::{TaskTracker, task_tracker::TaskTrackerToken};
 use tracing::{info, warn};
 
 use crate::archive_connection_attempt::{
@@ -319,10 +319,13 @@ impl FreshDeliveryScanSummary {
 /// Clones also share one lazy same-origin HTTP pool with at most eight idle
 /// sockets and a 30-second idle timeout. Origin replacement releases the cached
 /// client; admitted fetches can retain its old pool until their owned tasks end.
+/// Runner teardown must call [`Self::shutdown`] after stopping job producers to
+/// join accepted bodies, including publications detached by a lost job owner.
 #[derive(Clone)]
 pub struct FreshArchiveDeliveryAdmission {
     permits: Arc<Semaphore>,
     http: Arc<Mutex<Option<FreshArchiveHttpClient>>>,
+    accepted: TaskTracker,
 }
 
 struct FreshArchiveHttpClient {
@@ -330,12 +333,55 @@ struct FreshArchiveHttpClient {
     client: Client,
 }
 
+struct FreshArchivePermit {
+    capacity: OwnedSemaphorePermit,
+    completion: TaskTrackerToken,
+}
+
+impl FreshArchivePermit {
+    fn split(&mut self, count: usize) -> Option<Self> {
+        Some(Self {
+            capacity: self.capacity.split(count)?,
+            completion: self.completion.clone(),
+        })
+    }
+}
+
 impl FreshArchiveDeliveryAdmission {
     pub fn new() -> Self {
         Self {
             permits: Arc::new(Semaphore::new(FRESH_DELIVERY_RUNNER_LIMIT)),
             http: Arc::new(Mutex::new(None)),
+            accepted: TaskTracker::new(),
         }
+    }
+
+    fn try_reserve(&self, count: u32) -> Result<FreshArchivePermit, TryAcquireError> {
+        // Register before admission: shutdown closes the semaphore before it
+        // waits. A registration racing that close either retains accepted work
+        // or fails admission and cannot start archive IO after the join.
+        let completion = self.accepted.token();
+        let capacity = Arc::clone(&self.permits).try_acquire_many_owned(count)?;
+        Ok(FreshArchivePermit {
+            capacity,
+            completion,
+        })
+    }
+
+    /// Close further admission and join all previously accepted archive bodies.
+    ///
+    /// Call after jobs/producers have stopped. This does not cancel atomic
+    /// publication: a lost per-job owner still retains its original completion
+    /// witness until the publication and retained body actually retire.
+    pub async fn shutdown(&self) {
+        self.permits.close();
+        self.accepted.close();
+        self.accepted.wait().await;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn is_closed_for_test(&self) -> bool {
+        self.permits.is_closed()
     }
 
     fn client_for_archive(&self, archive_url: &str) -> RunnerResult<Client> {
@@ -1206,7 +1252,7 @@ struct FreshArchiveDownloaded {
     bytes: Bytes,
     size_source: FreshArchiveSizeSource,
     writer: nix::fcntl::Flock<std::fs::File>,
-    permit: OwnedSemaphorePermit,
+    permit: FreshArchivePermit,
 }
 
 #[derive(Clone, Copy)]
@@ -1273,7 +1319,7 @@ struct FreshArchivePublicationTaskResult {
 
 struct FreshArchivePublished {
     bytes: Bytes,
-    permit: OwnedSemaphorePermit,
+    permit: FreshArchivePermit,
 }
 
 struct FreshArchiveResolved {
@@ -1293,7 +1339,8 @@ struct FreshArchiveResolved {
 /// [`Self::cancel_and_drain`] before abandoning or replacing that plan.
 /// Implicit `Drop` is not equivalent cleanup: it aborts fetches but detaches
 /// already-started publication so an atomic fsync/rename transaction is not
-/// cancelled midway.
+/// cancelled midway. The shared admission retains those accepted bodies for
+/// [`FreshArchiveDeliveryAdmission::shutdown`] to join at Runner teardown.
 pub struct FreshArchiveDelivery {
     cancel: CancellationToken,
     phase_records: FreshArchivePhaseRecords,
@@ -1680,7 +1727,7 @@ struct GuestStageBatch {
 struct FreshGuestStageEntry {
     group: CacheTargetGroup,
     write: GuestStageWrite,
-    permit: OwnedSemaphorePermit,
+    permit: FreshArchivePermit,
 }
 
 #[derive(Default)]
@@ -2851,7 +2898,7 @@ async fn classify_fresh_archives(
                 expanded.push(index);
                 continue;
             }
-            let permit = match Arc::clone(&admission.permits).try_acquire_owned() {
+            let permit = match admission.try_reserve(1) {
                 Ok(permit) => permit,
                 Err(_) => {
                     scan_summary.runner_wide = true;
@@ -2886,20 +2933,19 @@ async fn classify_fresh_archives(
 
         // This nonblocking reservation is all-or-none across simultaneous runs.
         // Keep it bounded by the remaining cumulative per-run allowance.
-        let mut permits =
-            match Arc::clone(&admission.permits).try_acquire_many_owned(expanded.len() as u32) {
-                Ok(permits) => permits,
-                Err(_) => {
-                    scan_summary.runner_wide = true;
-                    metrics.record(
-                        STORAGE_CACHE_FRESH_DELIVERY_CAPACITY,
-                        Duration::ZERO,
-                        true,
-                        Some("runner-wide"),
-                    );
-                    return Ok(());
-                }
-            };
+        let mut permits = match admission.try_reserve(expanded.len() as u32) {
+            Ok(permits) => permits,
+            Err(_) => {
+                scan_summary.runner_wide = true;
+                metrics.record(
+                    STORAGE_CACHE_FRESH_DELIVERY_CAPACITY,
+                    Duration::ZERO,
+                    true,
+                    Some("runner-wide"),
+                );
+                return Ok(());
+            }
+        };
         let mut claims = Vec::new();
         for index in expanded {
             let group = groups.get(index).ok_or_else(|| {
@@ -3012,7 +3058,7 @@ impl FreshArchiveRequests {
         &mut self,
         group: &CacheTargetGroup,
         writer: nix::fcntl::Flock<std::fs::File>,
-        permit: OwnedSemaphorePermit,
+        permit: FreshArchivePermit,
         admission: &FreshArchiveDeliveryAdmission,
         cancel: &CancellationToken,
         metrics: &mut CacheProcessMetrics,
@@ -4371,6 +4417,7 @@ mod tests {
     mod cache_publication;
     mod decoded_observation;
     mod fresh_staging;
+    mod fresh_teardown;
     mod group_failures;
     mod http_reuse;
     mod large_selection;
@@ -6284,6 +6331,8 @@ mod tests {
 
     #[tokio::test]
     async fn fresh_delivery_cancellation_drains_started_publication() {
+        let admission = FreshArchiveDeliveryAdmission::new();
+        let permit = admission.try_reserve(1).unwrap();
         let mut telemetry = new_telemetry();
         let plan = fresh_storage_plan(
             "https://storage.example/publication.tar.gz".to_string(),
@@ -6323,7 +6372,7 @@ mod tests {
                 group,
                 result: Ok(FreshArchivePublished {
                     bytes: Bytes::from_static(b"complete"),
-                    permit: Arc::new(Semaphore::new(1)).try_acquire_owned().unwrap(),
+                    permit,
                 }),
             }
         });
@@ -6347,6 +6396,7 @@ mod tests {
             STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION,
             1,
         );
+        admission.shutdown().await;
     }
 
     #[tokio::test]

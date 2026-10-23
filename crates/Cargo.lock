@@ -335,9 +335,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-s3"
-version = "1.154.0"
+version = "1.155.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "910c6e60689f021154dc701ad219035066fb94decce71ee72ff0f06e90df4067"
+checksum = "5a542f0e9261b9ce56708d591a62062079fa3c58a362ffbf49a2e48a4f6ced16"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
@@ -371,9 +371,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sigv4"
-version = "1.6.2"
+version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a3ccec0607ae3839cd76830df5ed62468ac1330acdb3dc4ec0502404113d2b6"
+checksum = "9d3d48355cb86b15ccbb38b8bc6b87500c824ee4ed8cbc10a961b435242b5e16"
 dependencies = [
  "aws-credential-types",
  "aws-smithy-eventstream",
@@ -1063,7 +1063,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "claude-mock"
-version = "0.22.63"
+version = "0.22.64"
 dependencies = [
  "api-contracts",
  "guest-contracts",
@@ -1117,7 +1117,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.12.20"
+version = "0.12.21"
 dependencies = [
  "chrono",
  "clap",
@@ -1325,9 +1325,9 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.3"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03bb0e1cc970d482d121d9a1744999169b69a07470b3d644a7894e53fcaf4574"
+checksum = "12218662ccac37d9714f2191252553d67585b97df8c839cbe49e0bde278dc865"
 dependencies = [
  "cmov",
  "subtle",
@@ -2013,7 +2013,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.108.1"
+version = "0.108.2"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2051,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.47"
+version = "0.1.49"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2077,7 +2077,7 @@ dependencies = [
 
 [[package]]
 name = "guest-contracts"
-version = "0.26.11"
+version = "0.27.0"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2091,7 +2091,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.23.43"
+version = "0.23.44"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -2110,7 +2110,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-proto"
-version = "0.22.31"
+version = "0.22.32"
 dependencies = [
  "guest-contracts",
  "proptest",
@@ -2118,7 +2118,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.33"
+version = "0.24.34"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -2135,7 +2135,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.98"
+version = "0.12.99"
 dependencies = [
  "crc32fast",
  "guest-contracts",
@@ -2155,7 +2155,7 @@ dependencies = [
 
 [[package]]
 name = "guest-home-mount"
-version = "0.2.31"
+version = "0.2.32"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -2167,7 +2167,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.19"
+version = "0.20.20"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -2187,7 +2187,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.25.34"
+version = "0.26.0"
 dependencies = [
  "flate2",
  "guest-contracts",
@@ -2206,7 +2206,7 @@ dependencies = [
 
 [[package]]
 name = "guest-task-exec"
-version = "0.2.28"
+version = "0.2.29"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -2216,7 +2216,7 @@ dependencies = [
 
 [[package]]
 name = "guest-telemetry"
-version = "0.3.161"
+version = "0.3.162"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -2228,7 +2228,7 @@ dependencies = [
 
 [[package]]
 name = "guest-tool-exec"
-version = "0.3.26"
+version = "0.3.27"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -2240,7 +2240,7 @@ dependencies = [
 
 [[package]]
 name = "guest-write-file"
-version = "0.1.245"
+version = "0.1.246"
 dependencies = [
  "crc32fast",
  "guest-contracts",
@@ -2576,9 +2576,9 @@ dependencies = [
 
 [[package]]
 name = "icu_collections"
-version = "2.3.0"
+version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa68d21081c4a05d5a901a1c62add574c77048b6a1c67be3b50ce0b60d4ca513"
+checksum = "fe090a42a0d3140fed8c63263ed1fecc02422cb2f4bfe55cd8de2de1b8e105dd"
 dependencies = [
  "displaydoc",
  "potential_utf",
@@ -2590,9 +2590,9 @@ dependencies = [
 
 [[package]]
 name = "icu_locale_core"
-version = "2.3.0"
+version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d56e28588da92eee5c3201a6eff33fabdd49b62269c8938d4ff050ce4d900deb"
+checksum = "25d29b57c17c6528d0dc4c2141cfa2d08200465acb537a3909c8b9b8a4a984c0"
 dependencies = [
  "displaydoc",
  "litemap",
@@ -2603,9 +2603,9 @@ dependencies = [
 
 [[package]]
 name = "icu_normalizer"
-version = "2.3.0"
+version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12f9cf5f235641ed274641dd81c3f28d870e276763d0797aeeab72317b1c646f"
+checksum = "404a3b8c486f205c87fe7f23ab6894d84a4ad76d6e4671ae1981ba7def87c599"
 dependencies = [
  "icu_collections",
  "icu_normalizer_data",
@@ -2617,15 +2617,15 @@ dependencies = [
 
 [[package]]
 name = "icu_normalizer_data"
-version = "2.3.0"
+version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1563da1ed3e0b3bf3d74c9b85917ac9c56464d2f57242270c09c9e752f8021a0"
+checksum = "20f0088bfb7441f7a37fa0c9e20cb1e9cba1cac6b9ce8cd2a6dc44294f8e8cbc"
 
 [[package]]
 name = "icu_properties"
-version = "2.3.0"
+version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e7ca276ad3145661a65914e6daf131ca5120cd3dcee8f8f3214b8875184a148"
+checksum = "2ea83d991c56158f7cf898bf86436c1dfe7c07ee82fe88951f2695c9f37a379f"
 dependencies = [
  "displaydoc",
  "icu_collections",
@@ -2638,15 +2638,15 @@ dependencies = [
 
 [[package]]
 name = "icu_properties_data"
-version = "2.3.0"
+version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e590f038c1464a96894fd6d10127e90a8be4509f56ff7ecef851b15cee0b7caa"
+checksum = "b98f29af82d02b163fe50161388350e743bb3107cc8e8c2f7314cb505faddfcf"
 
 [[package]]
 name = "icu_provider"
-version = "2.3.1"
+version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d27bbb9d3abbefac45d55f647c9de1d44aafcd1186eb91879afef17c396c3e73"
+checksum = "413099315636c588ee8f011190b329b971a09a8fae9d157e01dcae8379468514"
 dependencies = [
  "displaydoc",
  "icu_locale_core",
@@ -3601,7 +3601,7 @@ dependencies = [
 
 [[package]]
 name = "process-control-ipc"
-version = "0.5.28"
+version = "0.5.29"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -4044,7 +4044,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.236.21"
+version = "0.236.23"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4117,7 +4117,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.15.15"
+version = "0.15.17"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4165,7 +4165,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.9.27"
+version = "0.9.28"
 dependencies = [
  "chrono",
  "futures-util",
@@ -4189,7 +4189,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.17.7"
+version = "0.17.9"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4220,7 +4220,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.2.74"
+version = "0.2.75"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4251,7 +4251,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.11.7"
+version = "0.11.8"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4291,7 +4291,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.29.20"
+version = "0.29.21"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4392,7 +4392,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.5.31"
+version = "0.6.1"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4434,7 +4434,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.20.15"
+version = "0.20.17"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4471,7 +4471,7 @@ dependencies = [
 
 [[package]]
 name = "runner-types"
-version = "0.9.6"
+version = "0.9.7"
 dependencies = [
  "api-contracts",
  "guest-contracts",
@@ -4755,7 +4755,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.26"
+version = "0.53.27"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4793,7 +4793,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.17.14"
+version = "0.17.15"
 dependencies = [
  "async-trait",
  "crc32fast",
@@ -5574,9 +5574,9 @@ dependencies = [
 
 [[package]]
 name = "tinystr"
-version = "0.8.4"
+version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1e27c91459209c2986af3dcf603a5a74a4368754ce37414f59acc971167f643"
+checksum = "abc840c238154d58f9e86b2792261edfde565a17696e1cda1a449de27979801a"
 dependencies = [
  "displaydoc",
  "zerovec",
@@ -6858,9 +6858,9 @@ dependencies = [
 
 [[package]]
 name = "yoke"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "709fe23a0424b6a435d82152b1bd3fdfb0833487d5fa90d05d42762a9891fef5"
+checksum = "417ef3fcf6c300b7dbd25c85531a746931c02ad536f3cf4786ed1e88223340b3"
 dependencies = [
  "stable_deref_trait",
  "yoke-derive",
@@ -6953,9 +6953,9 @@ dependencies = [
 
 [[package]]
 name = "zerovec"
-version = "0.11.8"
+version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb0464e17806c1d976d5cba29399c7f08e516e279e2ba493f63123b5fca67dd8"
+checksum = "f58a2799cfe9a1670c7ea8edbd52ef8edb93cb37a7f83bf31ba9e35d9dae6a40"
 dependencies = [
  "yoke",
  "zerofrom",
@@ -6964,9 +6964,9 @@ dependencies = [
 
 [[package]]
 name = "zerovec-derive"
-version = "0.11.6"
+version = "0.11.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34df6fc39dbd26ddc9c10e6a2984476e13acce22e64e4487636ef494369225da"
+checksum = "c3743ddbf47738d929cd1ae2e199d40d0162979dfe31aef8ae646d2bf00bf97a"
 dependencies = [
  "proc-macro2",
  "quote",

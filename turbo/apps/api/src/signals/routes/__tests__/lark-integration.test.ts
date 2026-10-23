@@ -23,6 +23,7 @@ import { server } from "../../../mocks/server";
 import { feishuConnectRoutes } from "../feishu-connect";
 import { feishuEventsRoutes } from "../feishu-events";
 import { feishuOauthRoutes } from "../feishu-oauth";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
 import { integrationsFeishuMessageRoutes } from "../integrations-feishu-message";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
@@ -351,6 +352,11 @@ describe("Lark integration", () => {
       `${feishuOauthContract.callback.path}?${new URLSearchParams({ state, code: "lark-message-code", responseMode: "json" })}`,
     );
     expect(connected.status).toBe(200);
+    // Finish the OAuth welcome before observing the explicit message send.
+    await flushWaitUntilForTest();
+    const messagesBeforeSend = larkRequests.filter((value) => {
+      return value === "message";
+    }).length;
     server.use(
       http.get(
         "https://open.larksuite.com/open-apis/im/v1/chats/oc_lark",
@@ -411,7 +417,7 @@ describe("Lark integration", () => {
       larkRequests.filter((value) => {
         return value === "message";
       }),
-    ).toHaveLength(1);
+    ).toHaveLength(messagesBeforeSend + 1);
     await accept(
       setupApp({ context, routes: integrationsFeishuMessageRoutes })(
         integrationsFeishuMessageContract,
@@ -436,7 +442,7 @@ describe("Lark integration", () => {
       larkRequests.filter((value) => {
         return value === "message";
       }),
-    ).toHaveLength(1);
+    ).toHaveLength(messagesBeforeSend + 1);
   });
   describe("with an installed Lark app", () => {
     it("answers an incoming Lark message with a Lark account-connect card", async () => {

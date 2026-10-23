@@ -71,7 +71,6 @@ export enum FeatureSwitchKey {
   GoogleDocsSheetsConversion = "googleDocsSheetsConversion",
   BrowserNativeInput = "browserNativeInput",
   AgentSuggestion = "agentSuggestion",
-  ProactiveAction = "proactiveAction",
   ProactiveJobs = "proactiveJobs",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
   SlashActions = "slashActions",
