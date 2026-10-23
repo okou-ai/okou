@@ -188,6 +188,7 @@ function readArchiveFiles(
   const bytes = gunzipSync(archive, { maxOutputLength: 32 * 1024 * 1024 });
   const files: WorkflowAttachmentFile[] = [];
   const paths = new Set<string>();
+  const materialized = new Map<string, Buffer>();
   let failure: unknown;
   const parser = new Parser({
     strict: true,
@@ -198,7 +199,7 @@ function readArchiveFiles(
       }
       const path = workflowAttachmentPath(entry.path);
       if (
-        paths.has(path) ||
+        (paths.has(path) && !legacy) ||
         !["File", "OldFile", "ContiguousFile"].includes(entry.type)
       ) {
         failure = new Error("Ambiguous or nonregular Workflow archive entry");
@@ -211,8 +212,16 @@ function readArchiveFiles(
         chunks.push(chunk);
       });
       entry.on("end", () => {
-        if (path !== "SKILL.md")
-          files.push({ path, content: Buffer.concat(chunks) });
+        const content = Buffer.concat(chunks);
+        const previous = materialized.get(path);
+        // The legacy encoder archives its final filesystem once per raw input
+        // path. Supported aliases/duplicates therefore repeat identical bytes.
+        if (previous !== undefined && !previous.equals(content)) {
+          failure = new Error("Ambiguous duplicate Workflow archive entry");
+        } else if (previous === undefined) {
+          materialized.set(path, content);
+          if (path !== "SKILL.md") files.push({ path, content });
+        }
       });
     },
   });

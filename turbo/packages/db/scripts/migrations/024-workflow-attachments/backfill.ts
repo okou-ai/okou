@@ -13,6 +13,7 @@ import {
   readLegacyWorkflowAttachments,
   workflowAttachmentHash,
   workflowAttachmentMetadata,
+  workflowAttachmentPath,
   verifyWorkflowAttachmentBundle,
 } from "@okouai/core/workflow-attachment-bundle";
 import { workflowAttachmentsSchema } from "@okouai/api-contracts/contracts/workflow-attachments";
@@ -25,6 +26,7 @@ const rowSchema = z.object({
   visibility: z.enum(["private", "public"]),
   updatedAt: z.string(),
   instructionHash: z.string(),
+  attachments: workflowAttachmentsSchema.nullable(),
   storageId: z.uuid().nullable(),
   versionId: z.string().nullable(),
   s3Key: z.string().nullable(),
@@ -136,57 +138,77 @@ async function main(): Promise<void> {
     const archive = await readObject(`${source.s3Key}/archive.tar.gz`);
     const files = readLegacyWorkflowAttachments(archive);
     const metadata = workflowAttachmentMetadata(files);
-    const expected = manifest.files
-      .filter((file) => {
-        return file.path.replace(/^\.\//u, "") !== "SKILL.md";
-      })
-      .map((file) => {
-        return {
-          path: file.path.replace(/^\.\//u, ""),
-          size: file.size,
-          sha256: file.hash,
-        };
-      })
-      .sort((a, b) => {
-        return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
-      });
-    if (JSON.stringify(metadata) !== JSON.stringify(expected))
+    const expected = new Map<
+      string,
+      { path: string; size: number; sha256: string }
+    >();
+    // Match the legacy writer's raw-path/hash ordering before normalized paths
+    // materialize onto its final filesystem, including supported duplicates.
+    for (const file of [...manifest.files].sort((a, b) => {
+      if (a.path !== b.path) return a.path < b.path ? -1 : 1;
+      return a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0;
+    })) {
+      const path = workflowAttachmentPath(file.path);
+      if (path !== "SKILL.md")
+        expected.set(path, { path, size: file.size, sha256: file.hash });
+    }
+    const effective = [...expected.values()].sort((a, b) => {
+      return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+    });
+    if (JSON.stringify(metadata) !== JSON.stringify(effective))
       throw new SourceChanged();
     return { files, metadata, archiveSha256: workflowAttachmentHash(archive) };
   };
-  const audit = async () => {
-    const rows = z
-      .array(
-        z.object({
-          id: z.uuid(),
-          orgId: z.string(),
-          attachments: workflowAttachmentsSchema.nullable(),
-          instructionHash: z.string(),
-        }),
+  const readRows = async () => {
+    return z.array(rowSchema).parse(
+      await db`
+      SELECT w.id, w.org_id AS "orgId", w.agent_id AS "agentId", w.owner_user_id AS "ownerUserId",
+        w.visibility, w.updated_at::text AS "updatedAt", w.attachments,
+        encode(sha256(convert_to(jsonb_build_array(w.instruction)::text, 'UTF8')), 'hex') AS "instructionHash",
+        s.id AS "storageId", s.head_version_id AS "versionId", v.s3_key AS "s3Key",
+        EXISTS (SELECT 1 FROM storage_publication_tokens p WHERE p.org_id = w.org_id AND p.publication_key = 'workflow:' || w.id::text) AS pending
+      FROM workflows w LEFT JOIN storages s ON s.org_id = w.org_id AND s.user_id = '__org__' AND s.name = 'custom-skill@' || w.id::text
+      LEFT JOIN storage_versions v ON v.id = s.head_version_id AND v.storage_id = s.id
+      WHERE w.official_definition_name IS NULL
+        AND (${workflowId}::uuid IS NULL OR w.id = ${workflowId}::uuid)
+        AND (${after}::uuid IS NULL OR w.id > ${after}::uuid)
+      ORDER BY w.id LIMIT ${limit}`,
+    );
+  };
+  const matchesSource = (
+    source: Source,
+    metadata: ReturnType<typeof workflowAttachmentMetadata>,
+  ) => {
+    if (source.attachments === null) return false;
+    if (source.attachments.kind === "empty") return metadata.length === 0;
+    if (
+      !source.attachments.objectKey.startsWith(
+        `workflow-attachments/${source.orgId}/${source.id}/`,
       )
-      .parse(
-        await db`
-      SELECT id, org_id AS "orgId", attachments, encode(sha256(convert_to(jsonb_build_array(instruction)::text, 'UTF8')), 'hex') AS "instructionHash"
-      FROM workflows WHERE official_definition_name IS NULL AND (${workflowId}::uuid IS NULL OR id = ${workflowId}::uuid) AND (${after}::uuid IS NULL OR id > ${after}::uuid) ORDER BY id LIMIT ${limit}`,
+    ) {
+      throw new SourceChanged();
+    }
+    return (
+      JSON.stringify(source.attachments.files) === JSON.stringify(metadata)
+    );
+  };
+  const verifyCurrentPackage = async (source: Source) => {
+    if (source.attachments?.kind === "bundle") {
+      verifyWorkflowAttachmentBundle(
+        await readObject(source.attachments.objectKey),
+        source.attachments,
       );
+    }
+  };
+  const audit = async () => {
+    const rows = await readRows();
     let verified = 0;
     const attention: { workflowId: string; classification: string }[] = [];
     for (const row of rows) {
       try {
-        if (row.attachments === null) throw new SourceUnavailable();
-        if (row.attachments.kind === "bundle") {
-          if (
-            !row.attachments.objectKey.startsWith(
-              `workflow-attachments/${row.orgId}/${row.id}/`,
-            )
-          ) {
-            throw new SourceChanged();
-          }
-          verifyWorkflowAttachmentBundle(
-            await readObject(row.attachments.objectKey),
-            row.attachments,
-          );
-        }
+        const source = await readSource(row);
+        if (!matchesSource(row, source.metadata)) throw new SourceChanged();
+        await verifyCurrentPackage(row);
         verified++;
       } catch (error) {
         attention.push({
@@ -216,25 +238,18 @@ async function main(): Promise<void> {
     if (attention.length) process.exitCode = 2;
   };
   const dryRun = async () => {
-    const rows = z.array(rowSchema).parse(
-      await db`
-      SELECT w.id, w.org_id AS "orgId", w.agent_id AS "agentId", w.owner_user_id AS "ownerUserId",
-        w.visibility, w.updated_at::text AS "updatedAt",
-        encode(sha256(convert_to(jsonb_build_array(w.instruction)::text, 'UTF8')), 'hex') AS "instructionHash",
-        s.id AS "storageId", s.head_version_id AS "versionId", v.s3_key AS "s3Key",
-        EXISTS (SELECT 1 FROM storage_publication_tokens p WHERE p.org_id = w.org_id AND p.publication_key = 'workflow:' || w.id::text) AS pending
-      FROM workflows w LEFT JOIN storages s ON s.org_id = w.org_id AND s.user_id = '__org__' AND s.name = 'custom-skill@' || w.id::text
-      LEFT JOIN storage_versions v ON v.id = s.head_version_id AND v.storage_id = s.id
-      WHERE w.official_definition_name IS NULL AND w.attachments IS NULL
-        AND (${workflowId}::uuid IS NULL OR w.id = ${workflowId}::uuid)
-        AND (${after}::uuid IS NULL OR w.id > ${after}::uuid)
-      ORDER BY w.id LIMIT ${limit}`,
-    );
+    const rows = await readRows();
+    let alreadyCurrent = 0;
     const ready: z.infer<typeof readySchema>[] = [];
     const blocked: { workflowId: string; classification: string }[] = [];
     for (const source of rows) {
       try {
         const prepared = await readSource(source);
+        if (matchesSource(source, prepared.metadata)) {
+          await verifyCurrentPackage(source);
+          alreadyCurrent++;
+          continue;
+        }
         ready.push({
           source,
           archiveSha256: prepared.archiveSha256,
@@ -247,7 +262,13 @@ async function main(): Promise<void> {
         });
       }
     }
-    const plan = { schemaVersion: 1 as const, rows: ready };
+    const plan = {
+      schemaVersion: 1 as const,
+      rows: ready,
+      baseline: rows.map((row) => {
+        return { workflowId: row.id, instructionHash: row.instructionHash };
+      }),
+    };
     const encoded = JSON.stringify(plan, null, 2) + "\n";
     if (values.output)
       await writeFile(values.output, encoded, { mode: 0o600, flag: "wx" });
@@ -256,6 +277,7 @@ async function main(): Promise<void> {
         mode: "dry-run",
         candidates: rows.length,
         ready: ready.length,
+        alreadyCurrent,
         empty: ready.filter((row) => {
           return row.files.length === 0;
         }).length,
@@ -300,13 +322,16 @@ async function main(): Promise<void> {
             }),
           );
         }
-        // NULL CAS owns conversion. A current dual writer atomically sets the
-        // descriptor with HEAD; waiting behind it rechecks the changed row.
+        // Compare the captured descriptor as well as owner/content/HEAD. A
+        // non-NULL descriptor can be stale after an outgoing old-API write;
+        // supported dual writers publish it atomically with Storage HEAD.
         const changed = await db`
           UPDATE workflows w SET attachments = ${db.json(bundle.descriptor)}
           WHERE w.id = ${source.id}::uuid AND w.org_id = ${source.orgId} AND w.agent_id = ${source.agentId}::uuid
             AND w.owner_user_id = ${source.ownerUserId} AND w.visibility = ${source.visibility}
-            AND w.official_definition_name IS NULL AND w.attachments IS NULL AND w.updated_at::text = ${source.updatedAt}::text
+            AND w.official_definition_name IS NULL
+            AND w.attachments IS NOT DISTINCT FROM ${source.attachments === null ? null : db.json(source.attachments)}::jsonb
+            AND w.updated_at::text = ${source.updatedAt}::text
             AND encode(sha256(convert_to(jsonb_build_array(w.instruction)::text, 'UTF8')), 'hex') = ${source.instructionHash}
             AND EXISTS (SELECT 1 FROM storages s JOIN storage_versions v ON v.storage_id = s.id AND v.id = s.head_version_id WHERE s.id = ${source.storageId}::uuid AND s.org_id = w.org_id AND s.name = 'custom-skill@' || w.id::text AND s.head_version_id = ${source.versionId} AND v.s3_key = ${source.s3Key})
             AND NOT EXISTS (SELECT 1 FROM storage_publication_tokens p WHERE p.org_id = w.org_id AND p.publication_key = 'workflow:' || w.id::text)

@@ -9,8 +9,10 @@ legacy sources require investigation rather than conversion to empty.
 Run from `turbo/packages/db` with Node and the locked workspace dependencies.
 `DATABASE_URL=postgresql://... pnpm test:workflow-attachments` verifies the
 actual CLI against disposable local PostgreSQL and a local S3 fixture. The
-fixture requires a local database and keeps its credentials in a temporary
-private file; it does not access production.
+fixture requires a local database (or the migration suite's owned PostgreSQL
+service database) and keeps credentials in a temporary private file. The same
+CLI regression runs inside `test:migration-consistency` against its disposable
+replayed database; it does not access production.
 Set `DATABASE_URL_FILE` to a private local file containing the temporary database
 URL. Supply `R2_ENDPOINT`, `R2_USER_STORAGES_BUCKET_NAME`, `R2_ACCESS_KEY_ID`, and
 `R2_SECRET_ACCESS_KEY` securely in the environment; never paste credentials into
@@ -34,11 +36,20 @@ node --import tsx scripts/migrations/024-workflow-attachments/backfill.ts \
   --expect-plan-sha256 <reviewed-plan-sha256>
 ```
 
-The first command performs no provider/database writes. Review its counts and
-blocked identities. An apply rereads and verifies each exact immutable source,
-uploads before publication, and converts only a still-unconverted row with the
-same owner, visibility, instruction hash, timestamp, HEAD, and no pending
-publication. Changed rows are skipped. An uncertain write stops the batch;
+The first command performs no provider/database writes. It scans all ordinary
+Workflows, including non-NULL descriptors: an outgoing old API may have changed
+the legacy package after a new API populated that descriptor. It compares the
+current legacy files with the descriptor, verifies matching new packages, and
+plans conversion or reconciliation only when needed. Review its counts and
+blocked identities; `alreadyCurrent` means the files and package were verified.
+The private plan captures instruction-hash baselines for the whole page.
+Legacy normalized/duplicate paths follow the published encoder's canonical
+filesystem; differing duplicate archive bytes remain an anomaly.
+
+An apply rereads and verifies each exact immutable source, uploads before
+publication, and updates only a row with the same captured descriptor, owner,
+visibility, instruction hash, timestamp, HEAD, and no pending publication.
+Changed rows are skipped. An uncertain write stops the batch;
 retain its uploaded object and reconcile authoritative state before continuing.
 The operator does not retry uncertain mutations or delete candidate objects.
 
@@ -55,8 +66,12 @@ node --import tsx scripts/migrations/024-workflow-attachments/backfill.ts \
 ```
 
 Repeat using `--after` through the full ordinary-Workflow inventory. Audit is
-read-only: it validates descriptors and every referenced package's archive and
-per-file hashes, and reports global ordinary/unconverted counts. Compare all
+read-only: it compares every descriptor with its current legacy HEAD, verifies
+every referenced package's archive and per-file hashes, and reports global
+ordinary/unconverted counts. A valid package with stale files fails acceptance.
+Run it after all apply commands finish; every page must pass parity checks.
+This parity audit belongs to Stage 1 while legacy publication is active; it is
+not the post-activation audit once Stage 2 starts new-only writes. Compare all
 plan instruction hashes with the audit receipts, classifying legitimate user
 edits, creation and deletion separately. Require zero unresolved candidates and
 zero unconverted ordinary Workflows before activation. Do not claim a production
