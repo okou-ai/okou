@@ -171,7 +171,6 @@ const AGENTPHONE_API_BASE_URL = "https://api.agentphone.test";
 const AGENTPHONE_AGENT_ID = "agt-bdd-agentphone";
 const AGENTPHONE_PHONE_NUMBER = "+19039853128";
 const SLACK_SIGNING_SECRET = "slack-bdd-signing-secret";
-const SLACK_APP_BOT_SCOPES = "chat:write,im:write,users:read";
 
 export function agentPhoneBddWebhookSecret(): string {
   return ["agentphone", "bdd", "webhook", "secret"].join("-");
@@ -590,11 +589,15 @@ export function createBddIntegrationApi(context: TestContext) {
       return accept(client.install({ query }), [307]);
     });
     const authorization = new URL(started.headers.get("location") ?? "");
+    const botScopes = authorization.searchParams.get("scope");
+    if (!botScopes) {
+      throw new Error("Expected Slack bot OAuth scopes");
+    }
     const userScopes = authorization.searchParams.get("user_scope");
     if (actor && !userScopes) {
       throw new Error("Expected a combined Slack installation grant");
     }
-    return { client, started, userScopes };
+    return { client, started, botScopes, userScopes };
   }
 
   return {
@@ -1033,16 +1036,18 @@ export function createBddIntegrationApi(context: TestContext) {
       if (actor) {
         authenticate(context, routeMocks, actor);
       }
+      const {
+        client,
+        started,
+        botScopes: requestedBotScopes,
+        userScopes,
+      } = await startSlackInstallation(actor, run);
       const botScopes =
         options.botScopes === undefined
-          ? SLACK_APP_BOT_SCOPES
+          ? requestedBotScopes
           : options.botScopes;
-      const { client, started, userScopes } = await startSlackInstallation(
-        actor,
-        run,
-      );
       const grantedBotScopes =
-        actor && botScopes === null ? SLACK_APP_BOT_SCOPES : botScopes;
+        actor && botScopes === null ? requestedBotScopes : botScopes;
       const exchange = {
         ok: true,
         access_token: options.botToken ?? `xoxb-bdd-${teamId}`,
