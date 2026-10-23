@@ -46,6 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.SlackWorkspaceIdentity]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Slack workspace identity",
+    description:
+      "Connect your Slack identity independently of bot installation and use it in shared channels.",
+    enabled: false,
+  },
   [FeatureSwitchKey.DurableOpenAiImageGeneration]: {
     maintainer: "ethan@okou.ai",
     displayName: "Durable OpenAI image generation",
@@ -244,6 +251,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Create native web forms that apply user-provided values to exact managed Browser controls",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.BrowserCdpViewer]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Okou browser viewer",
+    description:
+      "Use Okou's interactive browser viewer in conversations and standalone browser pages",
+    enabled: false,
   },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",

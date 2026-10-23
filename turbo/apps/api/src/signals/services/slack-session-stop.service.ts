@@ -8,7 +8,16 @@ import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { command } from "ccstate";
-import { and, eq, inArray, isNull, notExists, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  exists,
+  inArray,
+  isNull,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
@@ -299,7 +308,8 @@ export const stopSlackSession$ = command(
         chatThreadId: slackChatThreadRoutes.chatThreadId,
         userId: slackChatThreadRoutes.userId,
         slackUserId: slackOrgConnections.slackUserId,
-        orgId: slackOrgInstallations.orgId,
+        orgId: agents.orgId,
+        installationOrgId: slackOrgInstallations.orgId,
         encryptedBotToken: slackOrgInstallations.encryptedBotToken,
       })
       .from(slackChatThreadRoutes)
@@ -309,10 +319,7 @@ export const stopSlackSession$ = command(
       )
       .innerJoin(
         slackOrgInstallations,
-        eq(
-          slackOrgInstallations.slackWorkspaceId,
-          slackOrgConnections.slackWorkspaceId,
-        ),
+        eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId),
       )
       .innerJoin(
         chatThreads,
@@ -323,8 +330,20 @@ export const stopSlackSession$ = command(
         and(
           eq(slackOrgConnections.userId, slackChatThreadRoutes.userId),
           eq(chatThreads.userId, slackChatThreadRoutes.userId),
-          eq(agents.orgId, slackOrgInstallations.orgId),
-          eq(slackOrgConnections.slackWorkspaceId, args.workspaceId),
+          or(
+            eq(slackOrgConnections.slackWorkspaceId, args.workspaceId),
+            exists(
+              db
+                .select({ id: slackChatIngress.id })
+                .from(slackChatIngress)
+                .where(
+                  and(
+                    eq(slackChatIngress.routeId, slackChatThreadRoutes.id),
+                    sql`${slackChatIngress.payload}::jsonb ->> 'team_id' = ${args.workspaceId}`,
+                  ),
+                ),
+            ),
+          ),
           eq(slackChatThreadRoutes.channelId, event.channel),
           or(
             eq(slackChatThreadRoutes.threadTs, event.thread_ts),
@@ -349,7 +368,7 @@ export const stopSlackSession$ = command(
         event,
         routes: actorRoutes,
         userId: actorBinding.userId,
-        orgId: binding.orgId,
+        orgId: actorBinding.orgId,
       };
       const inputsStopped = await set(stopSlackSessionInputs$, scope, signal);
       signal.throwIfAborted();
@@ -368,6 +387,7 @@ export const stopSlackSession$ = command(
         channelId: event.channel,
         threadTs: event.thread_ts,
         routeThreadTs: binding.routeThreadTs,
+        workspaceId: args.workspaceId,
       },
       signal,
     );
@@ -383,7 +403,7 @@ export const stopSlackSession$ = command(
         {
           event,
           userId: binding.userId,
-          orgId: binding.orgId,
+          orgId: binding.installationOrgId ?? binding.orgId,
           encryptedBotToken: binding.encryptedBotToken,
           text: stopped
             ? "Your tasks have stopped. Other tasks in this thread are still running."

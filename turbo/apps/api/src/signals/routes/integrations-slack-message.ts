@@ -1,41 +1,14 @@
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import { integrationsSlackMessageContract } from "@okouai/api-contracts/contracts/integrations";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import type { SlackAnyBlock } from "../external/slack-block-kit";
-import { createSlackClient } from "../external/slack-message-client";
-import { slackOrgInstallation } from "../services/slack-data.service";
-import {
-  resolveSlackTargetChannel$,
-  slackMessageSendFooterText$,
-} from "../services/slack-message-context.service";
+import { slackMessageSendFooterText$ } from "../services/slack-message-context.service";
+import { resolveSlackWriteTarget$ } from "../services/slack-write-access.service";
 import { buildFooterBlocks } from "../../lib/slack-blocks";
 import type { RouteEntry } from "../route-entry";
-
-const slackInstallationInput$ = computed(
-  (
-    get,
-  ): {
-    readonly orgId: string;
-    readonly userId: string;
-  } => {
-    const auth = get(organizationAuthContext$);
-    return { orgId: auth.orgId, userId: auth.userId };
-  },
-);
-const slackInstallation$ = slackOrgInstallation(slackInstallationInput$);
-
-const noInstallation = Object.freeze({
-  status: 404 as const,
-  body: Object.freeze({
-    error: Object.freeze({
-      message: "No Slack installation found for this organization",
-      code: "NOT_FOUND",
-    }),
-  }),
-});
 
 const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -48,24 +21,10 @@ const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const body = bodyResult.data;
 
-  const installation = await get(slackInstallation$);
-  signal.throwIfAborted();
-  if (!installation) {
-    return noInstallation;
-  }
-
-  const client = createSlackClient(installation.botToken, {
-    automaticRetries: false,
-  });
-
-  const footerText = await get(slackMessageSendFooterText$);
-  signal.throwIfAborted();
-
   const target = await set(
-    resolveSlackTargetChannel$,
+    resolveSlackWriteTarget$,
     {
-      client,
-      botToken: installation.botToken,
+      runId: "runId" in auth ? auth.runId : undefined,
       userId: auth.userId,
       orgId: auth.orgId,
       channel: body.channel,
@@ -78,6 +37,8 @@ const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return target;
   }
   const targetChannel = target.channelId;
+  const footerText = await get(slackMessageSendFooterText$);
+  signal.throwIfAborted();
 
   let finalBlocks = body.blocks as SlackAnyBlock[] | undefined;
   if (footerText) {
@@ -94,10 +55,14 @@ const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     }
   }
 
-  const result = await client.postMessage(targetChannel, body.text ?? "", {
-    threadTs: body.threadTs,
-    blocks: finalBlocks,
-  });
+  const result = await target.client.postMessage(
+    targetChannel,
+    body.text ?? "",
+    {
+      threadTs: body.threadTs,
+      blocks: finalBlocks,
+    },
+  );
   signal.throwIfAborted();
   if (result.kind === "slack_error") {
     return {

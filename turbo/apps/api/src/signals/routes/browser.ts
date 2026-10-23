@@ -1,15 +1,19 @@
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
+import { setResHeader$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
 import {
   createBrowser$,
   closeBrowserForThread$,
   getCurrentBrowser$,
   getBrowser$,
+  getBrowserViewerConnection$,
   leaseCurrentBrowser$,
   leaseBrowserByThread$,
   openBrowserForThread$,
@@ -17,6 +21,7 @@ import {
   useBrowser$,
   type BrowserServiceError,
 } from "../services/browser.service";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 
 function errorResponse(error: BrowserServiceError) {
   return {
@@ -242,6 +247,44 @@ const getBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     : { status: 200 as const, body: { browser: result.value } };
 });
 
+const viewerConnectionParams$ = pathParamsOf(browserContract.viewerConnection);
+const viewerConnectionInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "no-store");
+    const auth = get(organizationAuthContext$);
+    const featureContext = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!isFeatureEnabled(FeatureSwitchKey.BrowserCdpViewer, featureContext)) {
+      return {
+        status: 403 as const,
+        body: {
+          error: {
+            code: "FORBIDDEN",
+            message: "Okou browser viewer is not enabled",
+          },
+        },
+      };
+    }
+    const result = await set(
+      getBrowserViewerConnection$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        chatThreadId: get(viewerConnectionParams$).threadId,
+      },
+      signal,
+    );
+    return result.kind === "error"
+      ? errorResponse(result)
+      : { status: 200 as const, body: result.value };
+  },
+);
+
 const browserReadAuth = Object.freeze({
   requireOrganization: true,
   missingOrganizationStatus: 401 as const,
@@ -308,5 +351,16 @@ export const browserRoutes: readonly RouteEntry[] = [
   {
     route: browserContract.get,
     handler: authRoute(browserReadAuth, getBrowserInner$),
+  },
+  {
+    route: browserContract.viewerConnection,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        accept: ["session"],
+      },
+      viewerConnectionInner$,
+    ),
   },
 ];

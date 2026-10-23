@@ -29,7 +29,6 @@ import { builtInGenerationRoutes } from "../built-in-generation";
 import { imageIoGenerateRoutes } from "../image-io-generate";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webFileUrlRoutes } from "../web-file-url";
-import { webDownloadRoutes } from "../web-download";
 import { webhooksBuiltInGenerationRoutes } from "../webhooks-built-in-generations";
 
 import { createRouteMocks } from "./helpers/route-test";
@@ -56,7 +55,6 @@ async function createFixture() {
       ...builtInGenerationRoutes,
       ...webhooksBuiltInGenerationRoutes,
       ...webFileUrlRoutes,
-      ...webDownloadRoutes,
     ],
   });
   return { actor, api, run: actor.run };
@@ -293,23 +291,6 @@ describe("managed artifact privacy", () => {
         expect(
           context.mocks.s3.getSignedUrl.mock.calls.at(-1)?.[2],
         ).toMatchObject({ expiresIn: 172_800 });
-        const downloaded = await fixture.run(() => {
-          return accept(
-            fixture
-              .api(webFilesContract)
-              .download({ headers, query: { file_id: result.id } }),
-            [200],
-          );
-        });
-        expect(downloaded.body).toBeInstanceOf(Blob);
-        if (!(downloaded.body instanceof Blob)) {
-          throw new Error("Expected image download");
-        }
-        await fixture.run(() => {
-          return expect(downloaded.body.text()).resolves.toBe(
-            imageBytes.toString(),
-          );
-        });
         for (const [userId, orgId] of [
           [`user_${randomUUID()}`, fixture.actor.orgId],
           [fixture.actor.userId, `org_${randomUUID()}`],
@@ -334,14 +315,6 @@ describe("managed artifact privacy", () => {
               [404],
             );
           });
-          await fixture.run(() => {
-            return accept(
-              fixture
-                .api(webFilesContract)
-                .download({ headers, query: { file_id: result.id } }),
-              [404],
-            );
-          });
         }
         context.mocks.clerk.authenticateRequest.mockResolvedValue({
           isAuthenticated: false,
@@ -350,7 +323,7 @@ describe("managed artifact privacy", () => {
           return accept(
             fixture
               .api(webFilesContract)
-              .download({ headers: {}, query: { file_id: result.id } }),
+              .fileUrl({ headers: {}, query: { file_id: result.id } }),
             [401],
           );
         });

@@ -1,3 +1,4 @@
+import { fetchFileUrl, resolveFileDownloadUrl } from "../download-file-url";
 import {
   desktopShellContract,
   type DesktopShellRequest,
@@ -25,10 +26,7 @@ import {
   handleError,
 } from "../core/client-factory";
 import { getActiveToken } from "../config";
-import {
-  cliClientHeaderApi,
-  headersWithCliClientHeaders,
-} from "../client-headers";
+import { cliClientHeaderApi } from "../client-headers";
 
 function buildHeaders(token?: string): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -159,36 +157,21 @@ export async function createComputerUseAuthorizationRequest(): Promise<ComputerU
   handleError(result, "Failed to create computer-use authorization request");
 }
 
-/**
- * Download a command screenshot through the authenticated API proxy. The bytes
- * never traverse a public URL; the API authorizes by command ownership and
- * streams the object back. Used when the command result carries an
- * object-storage pointer instead of an inline data URL.
- */
+/** Resolve an owned screenshot, then fetch its signed URL without CLI credentials. */
 export async function fetchComputerUseScreenshot(
   commandId: string,
   signal?: AbortSignal,
 ): Promise<{ readonly buffer: Buffer; readonly mimeType: string }> {
-  const config = await getComputerUseClientConfig();
-  const response = await fetch(
-    `${config.baseUrl}/api/computer-use/commands/${encodeURIComponent(
-      commandId,
-    )}/screenshot`,
-    { headers: headersWithCliClientHeaders(config.baseHeaders), signal },
+  const endpoint = new URL(
+    `/api/computer-use/commands/${encodeURIComponent(commandId)}/screenshot/url`,
+    await getBaseUrl(),
   );
-
-  if (!response.ok) {
-    throw new ApiRequestError(
-      "Failed to download computer-use screenshot",
-      "REQUEST_FAILED",
-      response.status,
-    );
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  const mimeType =
-    response.headers.get("content-type") ?? "application/octet-stream";
-  return { buffer: Buffer.from(arrayBuffer), mimeType };
+  const metadata = await resolveFileDownloadUrl(endpoint, signal);
+  const response = await fetchFileUrl(metadata.downloadUrl, signal);
+  return {
+    buffer: Buffer.from(await response.arrayBuffer()),
+    mimeType: response.headers.get("content-type") ?? metadata.contentType,
+  };
 }
 
 export async function createDesktopShellCommand(

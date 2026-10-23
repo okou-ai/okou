@@ -561,128 +561,40 @@ async function requestRawSlackDownloadFile(
 export function createBddIntegrationApi(context: TestContext) {
   const routeMocks = createRouteMocks(context);
 
-  async function connectSlackUser(
-    actor: ApiTestUser,
-    body: SlackConnectBody,
-    options: {
-      readonly run?: <T>(operation: () => Promise<T>) => Promise<T>;
-    } = {},
-  ): Promise<void> {
-    const run =
-      options.run ??
-      (<T>(operation: () => Promise<T>) => {
-        return operation();
-      });
+  async function startSlackInstallation(
+    actor: ApiTestUser | null,
+    run: <T>(operation: () => Promise<T>) => Promise<T>,
+  ) {
     const clients = setupApp({
       context,
-      routes: [...slackConnectRoutes, ...slackOauthRoutes],
+      routes: [...integrationsSlackRoutes, ...slackOauthRoutes],
     });
-    const pending = await run(() => {
-      return accept(
-        clients(slackConnectContract).connect({
-          headers: authenticate(context, routeMocks, actor),
-          body: { ...body, requestUserScopes: true },
-        }),
-        [202],
-      );
+    const client = clients(slackOauthContract);
+    let query: SlackOauthInstallQuery = {};
+    if (actor) {
+      const status = await run(() => {
+        return accept(
+          clients(integrationsSlackContract).getStatus({
+            headers: authHeaders(actor),
+          }),
+          [200],
+        );
+      });
+      const entry = status.body.installUrl ?? status.body.reinstallUrl;
+      if (!entry) {
+        throw new Error("Expected a public Slack installation link");
+      }
+      query = Object.fromEntries(new URL(entry).searchParams);
+    }
+    const started = await run(() => {
+      return accept(client.install({ query }), [307]);
     });
-    const entry = new URL(pending.body.authorizationUrl);
-    const authorization = await run(() => {
-      return accept(
-        clients(slackOauthContract).connect({
-          query: Object.fromEntries(entry.searchParams),
-        }),
-        [307],
-      );
-    });
-    const location = authorization.headers.get("location");
-    if (!location) {
-      throw new Error("Expected a Slack OAuth authorization URL");
+    const authorization = new URL(started.headers.get("location") ?? "");
+    const userScopes = authorization.searchParams.get("user_scope");
+    if (actor && !userScopes) {
+      throw new Error("Expected a combined Slack installation grant");
     }
-    const authorizationUrl = new URL(location);
-    const userScopes = authorizationUrl.searchParams.get("user_scope");
-    if (!userScopes) {
-      throw new Error("Expected Slack user OAuth scopes");
-    }
-    const code = `bdd-connect-${randomUUID()}`;
-    const exchange = {
-      ok: true,
-      team: {
-        id: body.workspaceId,
-        name: `BDD Slack App ${body.workspaceId}`,
-      },
-      authed_user: {
-        id: body.slackUserId,
-        access_token: `xoxp-bdd-${body.slackUserId}`,
-        scope: userScopes,
-      },
-    };
-    const userInfo = {
-      ok: true,
-      user: {
-        id: body.slackUserId,
-        real_name: "Slack User",
-        profile: { email: actor.email },
-      },
-    };
-    if (options.run) {
-      let exchanged = false;
-      context.mocks.slack.oauth.v2.access.mockImplementation(
-        (...args: unknown[]) => {
-          const request = args[0];
-          if (
-            exchanged ||
-            typeof request !== "object" ||
-            request === null ||
-            !("code" in request) ||
-            request.code !== code
-          ) {
-            throw new Error("Unexpected Slack member exchange");
-          }
-          exchanged = true;
-          return Promise.resolve(exchange);
-        },
-      );
-      let inspected = false;
-      context.mocks.slack.users.info.mockImplementation(
-        (...args: unknown[]) => {
-          const request = args[0];
-          if (
-            inspected ||
-            typeof request !== "object" ||
-            request === null ||
-            !("user" in request) ||
-            request.user !== body.slackUserId
-          ) {
-            throw new Error("Unexpected Slack member lookup");
-          }
-          inspected = true;
-          return Promise.resolve(userInfo);
-        },
-      );
-    } else {
-      context.mocks.slack.oauth.v2.access.mockResolvedValueOnce(exchange);
-      context.mocks.slack.users.info.mockResolvedValueOnce(userInfo);
-    }
-    const completed = await run(() => {
-      return accept(
-        clients(slackOauthContract).callback({
-          extraHeaders: extraHeaders(authHeaders(actor)),
-          query: {
-            code,
-            state: slackOauthStateFromRedirect(location),
-          },
-        }),
-        [307],
-      );
-    });
-    const completedLocation = completed.headers.get("location");
-    if (
-      !completedLocation ||
-      new URL(completedLocation).searchParams.get("status") !== "connected"
-    ) {
-      throw new Error(`Slack connection failed: ${completedLocation}`);
-    }
+    return { client, started, userScopes };
   }
 
   return {
@@ -1125,12 +1037,12 @@ export function createBddIntegrationApi(context: TestContext) {
         options.botScopes === undefined
           ? SLACK_APP_BOT_SCOPES
           : options.botScopes;
-      const client = setupApp({ context, routes: slackOauthRoutes })(
-        slackOauthContract,
+      const { client, started, userScopes } = await startSlackInstallation(
+        actor,
+        run,
       );
-      const started = await run(() => {
-        return accept(client.install({ query: {} }), [307]);
-      });
+      const grantedBotScopes =
+        actor && botScopes === null ? SLACK_APP_BOT_SCOPES : botScopes;
       const exchange = {
         ok: true,
         access_token: options.botToken ?? `xoxb-bdd-${teamId}`,
@@ -1139,9 +1051,28 @@ export function createBddIntegrationApi(context: TestContext) {
           id: teamId,
           name: options.teamName ?? `BDD Slack App ${teamId}`,
         },
-        authed_user: { id: installerSlackUserId },
-        ...(botScopes === null ? {} : { scope: botScopes }),
+        authed_user: {
+          id: installerSlackUserId,
+          ...(actor
+            ? {
+                access_token: `xoxp-bdd-${installerSlackUserId}`,
+                scope: userScopes,
+              }
+            : {}),
+        },
+        ...(grantedBotScopes === null ? {} : { scope: grantedBotScopes }),
       };
+      if (actor) {
+        context.mocks.slack.users.info.mockResolvedValueOnce({
+          ok: true,
+          user: {
+            id: installerSlackUserId,
+            team_id: teamId,
+            real_name: "Slack Installer",
+            profile: { email: actor.email },
+          },
+        });
+      }
       if (options.run) {
         let consumed = false;
         context.mocks.slack.oauth.v2.access.mockImplementation(
@@ -1177,17 +1108,157 @@ export function createBddIntegrationApi(context: TestContext) {
           [307],
         );
       });
-      if (actor) {
-        await connectSlackUser(
-          actor,
-          { workspaceId: teamId, slackUserId: installerSlackUserId },
-          { run: options.run },
-        );
+      if (actor && botScopes === null) {
+        // Bot-only reauthorization can legitimately omit its scope metadata.
+        const anonymous = await run(() => {
+          return accept(client.install({ query: {} }), [307]);
+        });
+        context.mocks.slack.oauth.v2.access.mockResolvedValueOnce({
+          ...exchange,
+          authed_user: { id: installerSlackUserId },
+          scope: undefined,
+        });
+        await run(() => {
+          return accept(
+            client.callback({
+              query: {
+                code: `bdd-reinstall-${teamId}`,
+                state: slackOauthStateFromRedirect(
+                  anonymous.headers.get("location"),
+                ),
+              },
+            }),
+            [307],
+          );
+        });
       }
       return { teamId, botUserId, installerSlackUserId };
     },
 
-    connectSlackUser,
+    async connectSlackUser(
+      actor: ApiTestUser,
+      body: SlackConnectBody,
+      options: {
+        readonly run?: <T>(operation: () => Promise<T>) => Promise<T>;
+      } = {},
+    ): Promise<void> {
+      const run =
+        options.run ??
+        (<T>(operation: () => Promise<T>) => {
+          return operation();
+        });
+      const clients = setupApp({
+        context,
+        routes: [...slackConnectRoutes, ...slackOauthRoutes],
+      });
+      const pending = await run(() => {
+        return accept(
+          clients(slackConnectContract).connect({
+            headers: authenticate(context, routeMocks, actor),
+            body: { ...body, requestUserScopes: true },
+          }),
+          [202],
+        );
+      });
+      const entry = new URL(pending.body.authorizationUrl);
+      const authorization = await run(() => {
+        return accept(
+          clients(slackOauthContract).connect({
+            query: Object.fromEntries(entry.searchParams),
+          }),
+          [307],
+        );
+      });
+      const location = authorization.headers.get("location");
+      if (!location) {
+        throw new Error("Expected a Slack OAuth authorization URL");
+      }
+      const authorizationUrl = new URL(location);
+      const userScopes = authorizationUrl.searchParams.get("user_scope");
+      if (!userScopes) {
+        throw new Error("Expected Slack user OAuth scopes");
+      }
+      const code = `bdd-connect-${randomUUID()}`;
+      const exchange = {
+        ok: true,
+        team: {
+          id: body.workspaceId,
+          name: `BDD Slack App ${body.workspaceId}`,
+        },
+        authed_user: {
+          id: body.slackUserId,
+          access_token: `xoxp-bdd-${body.slackUserId}`,
+          scope: userScopes,
+        },
+      };
+      const userInfo = {
+        ok: true,
+        user: {
+          id: body.slackUserId,
+          team_id: body.workspaceId,
+          real_name: "Slack User",
+          profile: { email: actor.email },
+        },
+      };
+      if (options.run) {
+        let exchanged = false;
+        context.mocks.slack.oauth.v2.access.mockImplementation(
+          (...args: unknown[]) => {
+            const request = args[0];
+            if (
+              exchanged ||
+              typeof request !== "object" ||
+              request === null ||
+              !("code" in request) ||
+              request.code !== code
+            ) {
+              throw new Error("Unexpected Slack member exchange");
+            }
+            exchanged = true;
+            return Promise.resolve(exchange);
+          },
+        );
+        let inspected = false;
+        context.mocks.slack.users.info.mockImplementation(
+          (...args: unknown[]) => {
+            const request = args[0];
+            if (
+              inspected ||
+              typeof request !== "object" ||
+              request === null ||
+              !("user" in request) ||
+              request.user !== body.slackUserId
+            ) {
+              throw new Error("Unexpected Slack member lookup");
+            }
+            inspected = true;
+            return Promise.resolve(userInfo);
+          },
+        );
+      } else {
+        context.mocks.slack.oauth.v2.access.mockResolvedValueOnce(exchange);
+        context.mocks.slack.users.info.mockResolvedValueOnce(userInfo);
+      }
+      const completed = await run(() => {
+        return accept(
+          clients(slackOauthContract).callback({
+            extraHeaders: extraHeaders(authHeaders(actor)),
+            query: {
+              code,
+              state: slackOauthStateFromRedirect(location),
+            },
+          }),
+          [307],
+        );
+      });
+      const completedLocation = completed.headers.get("location");
+      if (
+        !completedLocation ||
+        new URL(completedLocation).searchParams.get("status") !== "connected"
+      ) {
+        throw new Error(`Slack connection failed: ${completedLocation}`);
+      }
+    },
 
     async postSlackEvent(
       teamId: string,
@@ -1296,6 +1367,23 @@ export function createBddIntegrationApi(context: TestContext) {
         ).update({
           headers: authenticate(context, routeMocks, actor),
           body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
+        }),
+        [200],
+      );
+    },
+
+    async enableSlackWorkspaceIdentity(
+      actor: ApiTestUser,
+      enabled = true,
+    ): Promise<void> {
+      await accept(
+        setupApp({ context, routes: featureSwitchesRoutes })(
+          featureSwitchesContract,
+        ).update({
+          headers: authenticate(context, routeMocks, actor),
+          body: {
+            switches: { [FeatureSwitchKey.SlackWorkspaceIdentity]: enabled },
+          },
         }),
         [200],
       );

@@ -403,6 +403,11 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       },
     },
     browser: {
+      webSocket: (
+        respond: (data: string, url: string) => string | null,
+      ): void => {
+        mockBrowserWebSocket(getSignal(), respond);
+      },
       url: (url: string, options: BrowserUrlOptions = {}): void => {
         if (originalBrowserUrl === null) {
           originalBrowserUrl = window.location.href;
@@ -1484,6 +1489,64 @@ function mockImageDimensions(
   return { createdUrls, revokedUrls };
 }
 
+function mockBrowserWebSocket(
+  signal: AbortSignal,
+  respond: (data: string, url: string) => string | null,
+): void {
+  const sockets = new Set<TestWebSocket>();
+  class TestWebSocket extends EventTarget {
+    static readonly CONNECTING = 0;
+    static readonly OPEN = 1;
+    static readonly CLOSING = 2;
+    static readonly CLOSED = 3;
+    readyState = TestWebSocket.CONNECTING;
+
+    constructor(readonly url: string) {
+      super();
+      sockets.add(this);
+      queueMicrotask(() => {
+        if (this.readyState !== TestWebSocket.CONNECTING) {
+          return;
+        }
+        this.readyState = TestWebSocket.OPEN;
+        this.dispatchEvent(new Event("open"));
+      });
+    }
+
+    send(data: string): void {
+      const response = respond(data, this.url);
+      if (response === null) {
+        return;
+      }
+      queueMicrotask(() => {
+        if (this.readyState === TestWebSocket.OPEN) {
+          this.dispatchEvent(new MessageEvent("message", { data: response }));
+        }
+      });
+    }
+
+    close(): void {
+      if (this.readyState === TestWebSocket.CLOSED) {
+        return;
+      }
+      this.readyState = TestWebSocket.CLOSED;
+      sockets.delete(this);
+      this.dispatchEvent(new Event("close"));
+    }
+  }
+  const descriptor = defineWindowProperty(
+    globalThis,
+    "WebSocket",
+    TestWebSocket,
+  );
+  restoreOnAbort(signal, () => {
+    for (const socket of sockets) {
+      socket.close();
+    }
+    restoreWindowProperty(globalThis, "WebSocket", descriptor);
+  });
+}
+
 function mockCanvasRendering(signal: AbortSignal): CanvasRenderingMock {
   const clipCircles: CanvasClipCircle[] = [];
   const imageDraws: CanvasImageDraw[] = [];
@@ -1509,6 +1572,7 @@ function mockCanvasRendering(signal: AbortSignal): CanvasRenderingMock {
     },
     arcTo() {},
     beginPath() {},
+    clearRect() {},
     clip() {},
     closePath() {},
     drawImage(

@@ -118,11 +118,17 @@ describe("Computer Use command retention", () => {
         });
         expect(audit.auditEvents.length).toBeGreaterThan(0);
       }
-      const screenshot = await computerUse.downloadComputerUseScreenshot(
+      const screenshot = await computerUse.resolveComputerUseScreenshot(
         actor,
         screenshotId,
       );
-      expect(screenshot.bytes).toStrictEqual(bytes);
+      expect(screenshot).toMatchObject({
+        downloadUrl: expect.stringContaining(
+          encodeURIComponent(`${screenshotId}/screenshot.png`),
+        ),
+        contentType: "image/png",
+        size: bytes.length,
+      });
 
       mockNow(COMPLETED_AT + RETENTION_MS);
       await scenario.cleanup();
@@ -211,11 +217,16 @@ describe("Computer Use command retention", () => {
         created.commandId,
       );
       expect(retained.result?.appState).toBe("recoverable private window text");
-      const screenshot = await computerUse.downloadComputerUseScreenshot(
+      const screenshot = await computerUse.resolveComputerUseScreenshot(
         actor,
         created.commandId,
       );
-      expect(screenshot.bytes.toString()).toBe("recoverable screenshot");
+      expect(screenshot).toMatchObject({
+        downloadUrl: expect.stringContaining(
+          encodeURIComponent(`${created.commandId}/screenshot.png`),
+        ),
+        size: Buffer.byteLength("recoverable screenshot"),
+      });
       const audit = await computerUse.listComputerUseAuditEvents(actor, {
         commandId: created.commandId,
       });

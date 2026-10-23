@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import { getPlatformOrigin } from "../../lib/platform-url";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -12,8 +14,11 @@ export async function generatedImageAsset(
   assetId: string,
   directory: string,
 ): Promise<string> {
-  const fileId = await webFileReferenceId(result.url);
-  if (!fileId) {
+  const artifact = parseArtifactReference(
+    result.url,
+    await getPlatformOrigin(),
+  );
+  if (!artifact && !(await webFileReferenceId(result.url))) {
     return result.embedUrl ?? result.url;
   }
   const assetsDirectory = join(directory, "assets");
@@ -21,7 +26,7 @@ export async function generatedImageAsset(
   const relativePath = `assets/image-${assetId}.webp`;
   const sourcePath = join(assetsDirectory, `image-${assetId}.source`);
   try {
-    await downloadWebFile(fileId, sourcePath);
+    await downloadWebFile(result.url, sourcePath);
     // Preserve pixel dimensions and transparency while replacing public CDN
     // image resizing with a bundled, optimized WebP. No network input to ffmpeg.
     await executeFile("ffmpeg", [

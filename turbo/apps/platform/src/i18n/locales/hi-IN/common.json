@@ -443,6 +443,9 @@
       "switchAccountFailed": "खाता बदलने की विंडो नहीं खुल सकी। कृपया फिर से कोशिश करें।",
       "title": "आप यह आर्टिफ़ैक्ट नहीं देख सकते",
       "tryAgain": "फिर से कोशिश करें",
+      "websiteAuthenticationDescription": "ऐसे खाते से साइन इन करें जिसे इस वेबसाइट का ऐक्सेस है।",
+      "websiteAuthenticationSignedInDescription": "अपने मौजूदा खाते से ऐक्सेस की पुष्टि करने के लिए जारी रखें।",
+      "websiteAuthenticationTitle": "इस वेबसाइट के ऐक्सेस की पुष्टि करें",
       "websiteTitle": "आप यह वेबसाइट नहीं देख सकते",
       "websiteUnavailableDescription": "थोड़ी देर में फिर प्रयास करें।",
       "websiteUnavailableTitle": "यह वेबसाइट अस्थायी रूप से उपलब्ध नहीं है"

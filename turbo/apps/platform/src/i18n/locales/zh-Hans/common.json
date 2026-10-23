@@ -443,6 +443,9 @@
       "switchAccountFailed": "无法打开账号切换器，请重试。",
       "title": "你没有权限查看这个成果",
       "tryAgain": "重试",
+      "websiteAuthenticationDescription": "请使用有权访问此网站的账号登录。",
+      "websiteAuthenticationSignedInDescription": "继续以当前账号验证访问权限。",
+      "websiteAuthenticationTitle": "验证此网站的访问权限",
       "websiteTitle": "你无法查看此网站",
       "websiteUnavailableDescription": "请稍后重试。",
       "websiteUnavailableTitle": "此网站暂时不可用"

@@ -30,7 +30,7 @@ import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
-import { webDownloadRoutes } from "../web-download";
+import { webFileUrlRoutes } from "../web-file-url";
 import {
   createBddApi,
   expectApiError,
@@ -3286,7 +3286,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       context,
       routes: chatThreadsArtifactsSyncRoutes,
     })(artifactGoogleDriveContract);
-    const files = setupApp({ context, routes: webDownloadRoutes })(
+    const files = setupApp({ context, routes: webFileUrlRoutes })(
       webFilesContract,
     );
     return {
@@ -3318,13 +3318,14 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       sourceBytes: () => {
         return owned.run(async () => {
           const download = await accept(
-            files.download({
+            files.fileUrl({
               headers: authHeaders(actor),
               query: { file_id: prepared.id },
             }),
             [200],
           );
-          return Buffer.from(await download.body.arrayBuffer());
+          const content = await fetch(download.body.downloadUrl);
+          return Buffer.from(await content.arrayBuffer());
         });
       },
     };

@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { CdpViewer } from "cdp-viewer";
+import { browserUse } from "cdp-viewer/extensions/browser-use";
 import {
   RectangleHorizontal,
   AppWindow,
@@ -11,6 +13,7 @@ import {
   BROWSER_SCREEN_WIDTH,
 } from "@okouai/api-contracts/contracts/browser";
 import { Button, cn } from "@okouai/ui";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 
@@ -19,6 +22,8 @@ import {
   type BrowserSessionSignals,
 } from "../../signals/chat-page/browser-session-block.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { theme$ } from "../../signals/theme.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
@@ -122,6 +127,41 @@ export function BrowserSessionUnavailable() {
         })}
       />
     </PanelFrame>
+  );
+}
+
+function BrowserCdpViewer({
+  signals,
+  liveUrl,
+}: {
+  readonly signals: BrowserSessionSignals;
+  readonly liveUrl: string;
+}) {
+  const connection = useLastLoadable(signals.viewerConnection$);
+  const theme = useGet(theme$);
+  if (connection.state === "loading") {
+    return <BrowserSessionLoading />;
+  }
+  if (connection.state === "hasError" || !connection.data) {
+    return <BrowserSessionUnavailable />;
+  }
+  // Keep the stream during lease refreshes, but never reuse an endpoint from a
+  // previous provider instance while its replacement connection is loading.
+  if (connection.data.liveUrl !== liveUrl) {
+    return <BrowserSessionLoading />;
+  }
+  return (
+    <div data-browser-session-cdp-viewer className="flex min-h-0 flex-1">
+      <CdpViewer
+        cdpUrl={connection.data.cdpUrl}
+        interactive
+        windowSizeSync="live"
+        extensions={[browserUse()]}
+        colorScheme={theme}
+        className="w-full flex-1"
+        style={{ height: "100%", minHeight: 0 }}
+      />
+    </div>
   );
 }
 
@@ -304,6 +344,8 @@ export function BrowserSessionPanel({
 }: BrowserSessionPanelProps) {
   const { t } = useTranslation();
   const sessionLoadable = useLastLoadable(signals.panelSession$);
+  const cdpViewerEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.BrowserCdpViewer];
   const keepAliveRef = useSet(signals.keepAliveRef$);
   const start = useSet(signals.start$);
   const startOperation = useLoadable(signals.startOperation$);
@@ -355,7 +397,9 @@ export function BrowserSessionPanel({
 
   return (
     <PanelFrame panelRef={keepAliveRef}>
-      {containLiveFrame ? (
+      {cdpViewerEnabled ? (
+        <BrowserCdpViewer signals={signals} liveUrl={liveUrl} />
+      ) : containLiveFrame ? (
         <ContainedLiveBrowserViewport
           signals={signals}
           browserAspectRatio={browserAspectRatio}

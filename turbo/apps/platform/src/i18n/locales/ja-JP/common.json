@@ -443,6 +443,9 @@
       "switchAccountFailed": "アカウント切り替え画面を開けませんでした。もう一度お試しください。",
       "title": "このアーティファクトを表示できません",
       "tryAgain": "再試行",
+      "websiteAuthenticationDescription": "このウェブサイトにアクセスできるアカウントでログインしてください。",
+      "websiteAuthenticationSignedInDescription": "現在のアカウントでアクセス権を確認するには、続行してください。",
+      "websiteAuthenticationTitle": "このウェブサイトへのアクセス権を確認",
       "websiteTitle": "このウェブサイトは表示できません",
       "websiteUnavailableDescription": "しばらくしてからもう一度お試しください。",
       "websiteUnavailableTitle": "このウェブサイトは一時的に利用できません"

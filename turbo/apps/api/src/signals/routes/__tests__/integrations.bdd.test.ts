@@ -7,12 +7,24 @@ import {
   expectIntegrationInputPreview,
 } from "./helpers/integration-input-assets";
 import { createHmac, randomInt, randomUUID } from "node:crypto";
+import {
+  integrationsSlackUploadInitContract,
+  integrationsSlackUploadMaterializeContract,
+  integrationsSlackUploadCompleteContract,
+} from "@okouai/api-contracts/contracts/integrations";
+import { integrationsSlackReadContract } from "@okouai/api-contracts/contracts/integrations-slack-read";
+import { integrationsSlackReadRoutes } from "../integrations-slack-read";
+import { integrationsSlackUploadInitRoutes } from "../integrations-slack-upload-init";
+import { integrationsSlackUploadMaterializeRoutes } from "../integrations-slack-upload-materialize";
+import { integrationsSlackUploadCompleteRoutes } from "../integrations-slack-upload-complete";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it, beforeEach } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
@@ -1564,6 +1576,699 @@ describe("INT-01: Slack integration and Slack app routes", () => {
 });
 
 describe("INT-01: Slack app deep webhook flows", () => {
+  it("keeps disabled workspace routing when another workspace enables the same Slack user ID", async () => {
+    const actor = bdd.user();
+    const other = bdd.user();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    integrations.configureSlackAppMocks();
+    integrations.acceptSlackSessionHistoryDownloads();
+    runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
+    await bdd.readOnboardingStatus(actor);
+    const slackUserId = uniqueSlackUserId();
+    await integrations.installSlackWorkspace(other, {
+      installerSlackUserId: slackUserId,
+    });
+    await integrations.enableSlackWorkspaceIdentity(other);
+    const entry = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: slackUserId,
+    });
+    await integrations.enableSlackWorkspaceIdentity(actor, false);
+    cleanUpCanonicalSlackScenario(actor);
+    onTestFinished(async () => {
+      await integrations.requestSlackDisconnect(other, "uninstall", [200]);
+    });
+    context.mocks.slack.users.info.mockResolvedValue({
+      ok: true,
+      user: {
+        id: slackUserId,
+        team_id: entry.teamId,
+        deleted: false,
+        is_bot: false,
+      },
+    });
+
+    await integrations.postSlackEvent(entry.teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      text: "use this workspace's existing connection",
+      channel: "C_BDD_DISABLED_WORKSPACE_IDENTITY",
+      ts: "6090.000100",
+    });
+    await flushWaitUntilForTest();
+
+    await expect(listSlackRunLogs(actor)).resolves.toMatchObject([
+      {
+        triggerSource: "slack",
+        prompt: "use this workspace's existing connection",
+      },
+    ]);
+    await expect(listSlackRunLogs(other)).resolves.toHaveLength(0);
+  });
+
+  async function externalSlackIdentityScenario(keepHomeBot = false) {
+    const actor = bdd.user();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    integrations.configureSlackAppMocks();
+    integrations.acceptSlackSessionHistoryDownloads();
+    const runnerGroup = runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await integrations.configureNativeSubscriptionModels(actor);
+    await bdd.readOnboardingStatus(actor);
+    const slackUserId = uniqueSlackUserId();
+    const home = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: slackUserId,
+    });
+    const entryActor = bdd.user();
+    const entry = await integrations.installSlackWorkspace(entryActor);
+    onTestFinished(async () => {
+      await integrations.requestSlackDisconnect(entryActor, "uninstall", [200]);
+    });
+    await integrations.enableSlackWorkspaceIdentity(actor);
+    context.mocks.slack.users.info.mockResolvedValue({
+      ok: true,
+      user: {
+        id: slackUserId,
+        team_id: home.teamId,
+        real_name: "External Slack user",
+        deleted: false,
+      },
+    });
+    if (!keepHomeBot) {
+      await integrations.requestSlackDisconnect(actor, "uninstall", [200]);
+    }
+    await integrations.requestSlackConnectStatus(actor, [200]);
+    context.mocks.slack.users.info.mockResolvedValue({
+      ok: true,
+      user: {
+        id: slackUserId,
+        team_id: home.teamId,
+        real_name: "External Slack user",
+        deleted: false,
+      },
+    });
+    return { actor, entry, home, slackUserId, runnerGroup };
+  }
+
+  async function claimedExternalSlackRun(keepHomeBot = true) {
+    const scenario = await externalSlackIdentityScenario(keepHomeBot);
+    const channel = "CEXTERNAL";
+    const threadTs = "6500.000100";
+    await integrations.postSlackEvent(scenario.entry.teamId, {
+      type: "app_mention",
+      user: scenario.slackUserId,
+      text: "read my workspace and share the result here",
+      channel,
+      ts: threadTs,
+    });
+    const runId = await pollSlackRun(scenario.runnerGroup);
+    const claim = await runs.claimRunnerJob(runId);
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected the actual Slack-triggered Run token");
+    }
+    onTestFinished(async () => {
+      integrations.configureSlackAppMocks();
+      await runs.requestCancelRun(scenario.actor, runId, [200, 400]);
+      await flushWaitUntilForTest();
+      await integrations.requestSlackDisconnect(
+        scenario.actor,
+        "uninstall",
+        [200, 404],
+      );
+    });
+    mockClerkMembership(
+      context,
+      scenario.actor,
+      scenario.actor.orgRole ?? "org:admin",
+    );
+    return { ...scenario, channel, threadTs, runId, claim, token };
+  }
+
+  function allowExternalSlackChannels(
+    scenario: Awaited<ReturnType<typeof claimedExternalSlackRun>>,
+  ) {
+    mockSharedSlackConversations([scenario.channel, "CORGAMESSAGES"]);
+    server.use(
+      http.get("https://slack.com/api/conversations.members", ({ request }) => {
+        expect(request.headers.get("authorization")).toBe(
+          `Bearer xoxb-bdd-${scenario.entry.teamId}`,
+        );
+        expect(new URL(request.url).searchParams.get("channel")).toBe(
+          scenario.channel,
+        );
+        const cursor = new URL(request.url).searchParams.get("cursor");
+        return HttpResponse.json({
+          ok: true,
+          members: cursor ? [scenario.entry.botUserId] : [scenario.slackUserId],
+          response_metadata: { next_cursor: cursor ? "" : "source-bot-page" },
+        });
+      }),
+      http.get("https://slack.com/api/users.conversations", ({ request }) => {
+        const token = request.headers.get("authorization");
+        const channels =
+          token === `Bearer xoxb-bdd-${scenario.home.teamId}`
+            ? ["CORGAMESSAGES"]
+            : token === `Bearer xoxb-bdd-${scenario.entry.teamId}`
+              ? [scenario.channel]
+              : [];
+        return HttpResponse.json({
+          ok: true,
+          channels: channels.map((id) => {
+            return { id };
+          }),
+          response_metadata: {},
+        });
+      }),
+    );
+  }
+
+  it("reads Org A with its organization bot and sends into the external input channel with Org B's bot", async () => {
+    const scenario = await claimedExternalSlackRun();
+    allowExternalSlackChannels(scenario);
+    server.use(
+      http.get("https://slack.com/api/conversations.history", ({ request }) => {
+        expect(request.headers.get("authorization")).toBe(
+          `Bearer xoxb-bdd-${scenario.home.teamId}`,
+        );
+        expect(new URL(request.url).searchParams.get("channel")).toBe(
+          "CORGAMESSAGES",
+        );
+        return HttpResponse.json({
+          ok: true,
+          messages: [
+            { type: "message", ts: "6400.000100", text: "Org A meeting notes" },
+          ],
+          has_more: false,
+        });
+      }),
+    );
+    const client = setupApp({ context, routes: integrationsSlackReadRoutes })(
+      integrationsSlackReadContract,
+    );
+    const headers = { authorization: `Bearer ${scenario.token}` };
+    const read = await accept(
+      client.history({ headers, query: { channel: "CORGAMESSAGES" } }),
+      [200],
+    );
+    expect(read.body.messages).toMatchObject([{ text: "Org A meeting notes" }]);
+    await accept(
+      client.history({ headers, query: { channel: "CEXTERNAL" } }),
+      [404],
+    );
+    context.mocks.slack.chat.postMessage.mockResolvedValue({
+      ok: true,
+      ts: "6500.000200",
+      channel: scenario.channel,
+    });
+    const sent = await integrations.requestSendSlackMessageAsRun(
+      scenario.token,
+      {
+        channel: scenario.channel,
+        text: read.body.messages[0]?.text,
+      },
+      [200],
+    );
+    expect(sent.body).toMatchObject({ channel: scenario.channel });
+    expect(context.mocks.slack.createClient).toHaveBeenLastCalledWith(
+      `xoxb-bdd-${scenario.entry.teamId}`,
+      expect.anything(),
+    );
+    expect(context.mocks.slack.chat.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        channel: scenario.channel,
+        text: "Org A meeting notes",
+      }),
+    );
+    expect((await runs.readRun(scenario.actor, scenario.runId)).status).toBe(
+      "running",
+    );
+  });
+
+  it("limits a Run without its organization bot to the exact external input channel", async () => {
+    const scenario = await claimedExternalSlackRun(false);
+    allowExternalSlackChannels(scenario);
+    context.mocks.slack.chat.postMessage.mockResolvedValue({
+      ok: true,
+      ts: "6500.000200",
+      channel: scenario.channel,
+    });
+    await integrations.requestSendSlackMessageAsRun(
+      scenario.token,
+      {
+        channel: scenario.channel,
+        threadTs: scenario.threadTs,
+        text: "reply in C",
+      },
+      [200],
+    );
+    context.mocks.slack.chat.postMessage.mockClear();
+    context.mocks.slack.conversations.open.mockClear();
+    for (const target of [
+      { channel: "COTHERENTRY" },
+      { user: "U_OTHER_MEMBER" },
+      { user: "me" },
+    ]) {
+      await integrations.requestSendSlackMessageAsRun(
+        scenario.token,
+        { ...target, text: "outside this input channel" },
+        [404],
+      );
+    }
+    await integrations.requestSendSlackMessage(
+      scenario.actor,
+      { channel: scenario.channel, text: "session has no input authority" },
+      [404],
+    );
+    await accept(
+      setupApp({ context, routes: integrationsSlackReadRoutes })(
+        integrationsSlackReadContract,
+      ).history({
+        headers: { authorization: `Bearer ${scenario.token}` },
+        query: { channel: "CORGAMESSAGES" },
+      }),
+      [404],
+    );
+    expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
+    expect(context.mocks.slack.conversations.open).not.toHaveBeenCalled();
+  });
+
+  it("does not inherit a historical or pending Slack input in a Web-triggered Run", async () => {
+    const scenario = await claimedExternalSlackRun(false);
+    allowExternalSlackChannels(scenario);
+    const thread = await ownedThreadWhere(
+      scenario.actor,
+      launchedBy(scenario.runId),
+    );
+    await completeSlackTriggeredRun({
+      runId: scenario.runId,
+      sandboxToken: scenario.claim.sandboxToken,
+      cliAgentType: "claude-code",
+      assistantText: "finished initial mention",
+    });
+    const web = await chat.sendAndLaunch(scenario.actor, {
+      agentId: thread.agentId,
+      threadId: thread.chatThreadId,
+      prompt: "continue from Web",
+    });
+    await runs.heartbeatRunner(scenario.runnerGroup);
+    const claim = await runs.claimRunnerJob(web.runId);
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected the Web Run's actual token");
+    }
+    onTestFinished(async () => {
+      await runs.requestCancelRun(scenario.actor, web.runId, [200, 400]);
+      await flushWaitUntilForTest();
+    });
+    mockClerkMembership(
+      context,
+      scenario.actor,
+      scenario.actor.orgRole ?? "org:admin",
+    );
+    await integrations.requestSendSlackMessageAsRun(
+      token,
+      { channel: scenario.channel, text: "history does not grant access" },
+      [404],
+    );
+    await integrations.postSlackEvent(scenario.entry.teamId, {
+      type: "app_mention",
+      user: scenario.slackUserId,
+      text: "pending Slack message",
+      channel: scenario.channel,
+      thread_ts: scenario.threadTs,
+      ts: "6500.000300",
+    });
+    await flushWaitUntilForTest();
+    mockClerkMembership(
+      context,
+      scenario.actor,
+      scenario.actor.orgRole ?? "org:admin",
+    );
+    const denied = await integrations.requestSendSlackMessageAsRun(
+      token,
+      {
+        channel: scenario.channel,
+        text: "pending input does not grant access",
+      },
+      [404],
+    );
+    expect(denied.status).toBe(404);
+  });
+
+  it.each([
+    "left channel",
+    "posting restricted",
+    "deleted identity",
+    "switch disabled",
+  ])("revokes external input-channel writes when %s", async (reason) => {
+    const scenario = await claimedExternalSlackRun();
+    allowExternalSlackChannels(scenario);
+    if (reason === "left channel") {
+      server.use(
+        http.get("https://slack.com/api/conversations.members", () => {
+          return HttpResponse.json({
+            ok: true,
+            members: [scenario.entry.botUserId],
+          });
+        }),
+      );
+    } else if (reason === "posting restricted") {
+      server.use(
+        http.get("https://slack.com/api/conversations.info", () => {
+          return HttpResponse.json({
+            ok: true,
+            channel: { id: scenario.channel, is_read_only: true },
+          });
+        }),
+      );
+    } else if (reason === "deleted identity") {
+      context.mocks.slack.users.info.mockResolvedValue({
+        ok: true,
+        user: {
+          id: scenario.slackUserId,
+          team_id: scenario.home.teamId,
+          deleted: true,
+        },
+      });
+    } else {
+      await integrations.enableSlackWorkspaceIdentity(scenario.actor, false);
+    }
+    context.mocks.slack.chat.postMessage.mockClear();
+    await integrations.requestSendSlackMessageAsRun(
+      scenario.token,
+      { channel: scenario.channel, text: "must remain within current access" },
+      [404],
+    );
+    expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
+  });
+
+  it("keeps canonical external uploads bound to their Run, entry bot and persisted channel", async () => {
+    const scenario = await claimedExternalSlackRun(false);
+    allowExternalSlackChannels(scenario);
+    const headers = { authorization: `Bearer ${scenario.token}` };
+    const clients = setupApp({
+      context,
+      routes: [
+        ...integrationsSlackUploadInitRoutes,
+        ...integrationsSlackUploadMaterializeRoutes,
+        ...integrationsSlackUploadCompleteRoutes,
+      ],
+    });
+    const objectStore = chatCallbacks.acceptChatObjectStorage();
+    const operationId = randomUUID();
+    const initialized = await accept(
+      clients(integrationsSlackUploadInitContract).init({
+        headers,
+        body: {
+          filename: "report.csv",
+          length: 42,
+          canonical: {
+            operationId,
+            contentType: "text/csv",
+            checksumSha256: "a".repeat(64),
+            channel: scenario.channel,
+          },
+        },
+      }),
+      [200],
+    );
+    if (!("kind" in initialized.body)) {
+      throw new Error("Expected a canonical Slack upload");
+    }
+    const assetId = initialized.body.assetId;
+    objectStore.addObject({
+      bucket: "test-private-artifacts",
+      key: `private-artifacts/${assetId}/report.csv`,
+      size: 42,
+      body: Buffer.alloc(42, "a"),
+      metadata: { "artifact-id": assetId },
+    });
+    context.mocks.slack.files.getUploadURLExternal.mockResolvedValue({
+      ok: true,
+      file_id: "F_EXTERNAL_OUTPUT",
+      upload_url: "https://files.slack.com/upload/v1/external-output",
+    });
+    const materialize = { headers, body: { assetId, operationId } };
+    const prepared = await accept(
+      clients(integrationsSlackUploadMaterializeContract).materialize(
+        materialize,
+      ),
+      [200],
+    );
+    expect(prepared.body.delivery.status).toBe("pending");
+    expect(context.mocks.slack.createClient).toHaveBeenLastCalledWith(
+      `xoxb-bdd-${scenario.entry.teamId}`,
+      expect.anything(),
+    );
+    context.mocks.slack.files.completeUploadExternal.mockResolvedValue({
+      ok: true,
+    });
+    context.mocks.slack.files.info.mockResolvedValue({
+      ok: true,
+      file: {
+        id: "F_EXTERNAL_OUTPUT",
+        permalink: "https://slack.example/files/F_EXTERNAL_OUTPUT",
+      },
+    });
+    const completion = {
+      headers,
+      body: {
+        canonicalAssetId: assetId,
+        operationId,
+        fileId: "F_EXTERNAL_OUTPUT",
+        channel: "COTHERENTRY",
+      },
+    };
+    server.use(
+      http.get("https://slack.com/api/conversations.members", () => {
+        return HttpResponse.json({
+          ok: true,
+          members: [scenario.entry.botUserId],
+        });
+      }),
+    );
+    const denied = await accept(
+      clients(integrationsSlackUploadCompleteContract).complete(completion),
+      [200],
+    );
+    expect(denied.body).toMatchObject({
+      channel: scenario.channel,
+      deliveryStatus: "failed",
+    });
+    expect(
+      context.mocks.slack.files.completeUploadExternal,
+    ).not.toHaveBeenCalled();
+    allowExternalSlackChannels(scenario);
+    const delivered = await accept(
+      clients(integrationsSlackUploadCompleteContract).complete(completion),
+      [200],
+    );
+    expect(delivered.body).toMatchObject({
+      channel: scenario.channel,
+      deliveryStatus: "delivered",
+    });
+    expect(
+      context.mocks.slack.files.completeUploadExternal,
+    ).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ channel_id: scenario.channel }),
+    );
+    await integrations.requestSlackDisconnect(
+      scenario.actor,
+      "disconnect",
+      [200],
+    );
+    const receipt = await accept(
+      clients(integrationsSlackUploadCompleteContract).complete(completion),
+      [200],
+    );
+    expect(receipt.body).toStrictEqual(delivered.body);
+    expect(
+      context.mocks.slack.files.completeUploadExternal,
+    ).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["different workspace", "deleted member", "missing identity"])(
+    "rejects external Slack ingress with a %s",
+    async (failure) => {
+      const { actor, entry, home, slackUserId } =
+        await externalSlackIdentityScenario();
+      context.mocks.slack.users.info.mockResolvedValue({
+        ok: true,
+        ...(failure === "missing identity"
+          ? {}
+          : {
+              user: {
+                id: slackUserId,
+                team_id:
+                  failure === "different workspace"
+                    ? "T_UNCONNECTED_IDENTITY"
+                    : home.teamId,
+                deleted: failure === "deleted member",
+              },
+            }),
+      });
+      await integrations.postSlackEvent(entry.teamId, {
+        type: "app_mention",
+        user: slackUserId,
+        text: "must not run for a different identity",
+        channel: "C_BDD_REJECTED_EXTERNAL_IDENTITY",
+        ts: "6200.000100",
+      });
+      await flushWaitUntilForTest();
+      await expect(listSlackRunLogs(actor)).resolves.toHaveLength(0);
+    },
+  );
+
+  it("checks the pinned thread's organization after the Slack account moves to another organization", async () => {
+    const { actor, entry, home, slackUserId, runnerGroup } =
+      await externalSlackIdentityScenario();
+    const channelId = "C_BDD_PINNED_EXTERNAL_ORG";
+    const threadTs = "6300.000100";
+    await integrations.postSlackEvent(entry.teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      text: "establish a pinned thread",
+      channel: channelId,
+      ts: threadTs,
+    });
+    const runId = await pollSlackRun(runnerGroup);
+    const claim = await runs.claimRunnerJob(runId);
+    await completeSlackTriggeredRun({
+      runId,
+      sandboxToken: claim.sandboxToken,
+      cliAgentType: "claude-code",
+      assistantText: "Pinned thread established",
+    });
+    await flushWaitUntilForTest();
+    const movedOrgId = `org_${randomUUID()}`;
+    const movedActor = bdd.user({
+      userId: actor.userId,
+      email: actor.email,
+      orgId: movedOrgId,
+    });
+    await integrations.enableSlackWorkspaceIdentity(movedActor);
+    await integrations.connectSlackUser(movedActor, {
+      workspaceId: home.teamId,
+      slackUserId,
+    });
+    onTestFinished(async () => {
+      await integrations.requestSlackDisconnect(
+        movedActor,
+        "disconnect",
+        [200],
+      );
+    });
+    context.mocks.slack.users.info.mockResolvedValue({
+      ok: true,
+      user: { id: slackUserId, team_id: home.teamId, deleted: false },
+    });
+    await withMockNowForTest(now() + 61_000, async () => {
+      context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [
+            {
+              role: "org:admin",
+              organization: { id: movedOrgId },
+              publicUserData: { userId: actor.userId },
+            },
+          ],
+        },
+      );
+      await integrations.postSlackEvent(entry.teamId, {
+        type: "app_mention",
+        user: slackUserId,
+        text: "must not reuse revoked organization authority",
+        channel: channelId,
+        thread_ts: threadTs,
+        ts: "6300.000200",
+      });
+      await flushWaitUntilForTest();
+      await runs.heartbeatRunner(runnerGroup);
+      const polled = await runs.pollRunner(runnerGroup);
+      expect(polled.body.job).toBeNull();
+    });
+  });
+
+  it("routes external Slack mentions to the connected owner without a home bot and preserves status, replies and Stop", async () => {
+    const { actor, entry, slackUserId, runnerGroup } =
+      await externalSlackIdentityScenario();
+    const status = await integrations.requestSlackConnectStatus(actor, [200]);
+    expect(status.body).toMatchObject({ isConnected: true });
+    integrations.clearSlackCallHistory();
+
+    const channelId = "C_BDD_EXTERNAL_IDENTITY";
+    const threadTs = "6100.000100";
+    await integrations.postSlackEvent(entry.teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      text: "use my connected Okou",
+      ts: threadTs,
+      channel: channelId,
+    });
+    const runId = await pollSlackRun(runnerGroup);
+    const claim = await runs.claimRunnerJob(runId);
+    expect((await runs.readRun(actor, runId)).status).toBe("running");
+    expect(claim.prompt).toBe("use my connected Okou");
+    await flushWaitUntilAndAssert(() => {
+      expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
+        "agents.sessions.setStatus",
+        {
+          channel_id: channelId,
+          thread_ts: threadTs,
+          status: "processing",
+        },
+      );
+    });
+    await completeSlackTriggeredRun({
+      runId,
+      sandboxToken: claim.sandboxToken,
+      cliAgentType: "claude-code",
+      assistantText: "External identity reply",
+    });
+    await flushWaitUntilAndAssert(() => {
+      expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel: channelId,
+          thread_ts: threadTs,
+          text: "External identity reply",
+        }),
+      );
+    });
+
+    await integrations.postSlackEvent(entry.teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      text: "stop my next task",
+      ts: "6100.000200",
+      thread_ts: threadTs,
+      channel: channelId,
+    });
+    const nextRunId = await pollSlackRun(runnerGroup);
+    await runs.claimRunnerJob(nextRunId);
+    await integrations.postSlackEvent(entry.teamId, {
+      type: "agent_session_stopped",
+      user: slackUserId,
+      channel: channelId,
+      thread_ts: threadTs,
+      event_ts: "6100.000300",
+      streaming_message_ts: [],
+    });
+    await flushWaitUntilForTest();
+    expect((await runs.readRun(actor, nextRunId)).status).toBe("cancelled");
+    expect(context.mocks.slack.apiCall).toHaveBeenLastCalledWith(
+      "agents.sessions.setStatus",
+      {
+        channel_id: channelId,
+        thread_ts: threadTs,
+        status: "active",
+      },
+    );
+  });
+
   function cleanUpCanonicalSlackScenario(actor: ApiTestUser): void {
     onTestFinished(async () => {
       integrations.configureSlackAppMocks();

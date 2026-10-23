@@ -66,6 +66,7 @@ import {
   getBrowserUseSession,
   listBrowserUseTabUrls,
   resizeBrowserUseSession,
+  resolveBrowserUseViewerConnection,
   restoreBrowserUseTabUrls,
   stopBrowserUseSession,
   stopBrowserUseSessionForCleanup,
@@ -2567,8 +2568,8 @@ export const openBrowserForThread$ = command(
     if (connection.kind === "error") {
       return connection;
     }
-    // The viewer only learns the live view; the CDP endpoint stays inside
-    // the agent runtime.
+    // Keep lifecycle responses compatible with existing clients. The gated
+    // first-party viewer obtains CDP through its session-only endpoint.
     return {
       kind: "ok",
       value: {
@@ -2835,6 +2836,60 @@ export const getBrowser$ = command(
         screen,
       }),
     };
+  },
+);
+
+export const getBrowserViewerConnection$ = command(
+  async (
+    { set },
+    access: BrowserSessionAccess,
+    signal: AbortSignal,
+  ): Promise<BrowserServiceResult<{ readonly cdpUrl: string }>> => {
+    const browser = await set(loadOwnedBrowser$, access);
+    signal.throwIfAborted();
+    if (!browser) {
+      return notFound();
+    }
+    const accessError = await set(browserSessionAccessError$, browser, access);
+    signal.throwIfAborted();
+    if (accessError) {
+      return accessError;
+    }
+    const instance =
+      browser.status === "active"
+        ? await set(loadActiveInstance$, browser.chatThreadId)
+        : null;
+    signal.throwIfAborted();
+    if (!instance) {
+      return conflict(
+        "This managed browser is no longer live",
+        "BROWSER_NOT_LIVE",
+      );
+    }
+    const provider = await providerCall(
+      getBrowserUseSession(instance.providerSessionId, signal),
+    );
+    signal.throwIfAborted();
+    if (provider.kind === "error") {
+      return provider;
+    }
+    if (provider.value.status !== "active" || !provider.value.cdpUrl) {
+      return conflict(
+        "This managed browser is no longer live",
+        "BROWSER_NOT_LIVE",
+      );
+    }
+    const connection = await providerCall(
+      resolveBrowserUseViewerConnection(
+        provider.value.cdpUrl,
+        provider.value.liveUrl,
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    return connection.kind === "error"
+      ? connection
+      : { kind: "ok", value: { cdpUrl: connection.value } };
   },
 );
 

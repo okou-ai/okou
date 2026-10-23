@@ -248,6 +248,49 @@ export async function isSlackConversationShared(
   return false;
 }
 
+/** Verify only the input conversation, including external Slack Connect users. */
+export async function isSlackConversationSharedByMembers(
+  args: {
+    readonly token: string;
+    readonly slackUserId: string;
+    readonly botUserId: string;
+    readonly channelId: string;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  let cursor: string | undefined;
+  let userPresent = false;
+  let botPresent = false;
+  do {
+    const page = z
+      .object({
+        members: z.array(z.string()),
+        response_metadata: z
+          .object({ next_cursor: z.string().optional() })
+          .optional(),
+      })
+      .parse(
+        await callSlackApi<unknown>(
+          args.token,
+          "conversations.members",
+          {
+            channel: args.channelId,
+            limit: 200,
+            cursor,
+          },
+          signal,
+        ),
+      );
+    userPresent ||= page.members.includes(args.slackUserId);
+    botPresent ||= page.members.includes(args.botUserId);
+    if (userPresent && botPresent) {
+      return true;
+    }
+    cursor = page.response_metadata?.next_cursor || undefined;
+  } while (cursor);
+  return false;
+}
+
 const slackPostingRestrictionSchema = z.object({
   type: z.array(z.string()).optional(),
   user: z.array(z.string()).optional(),

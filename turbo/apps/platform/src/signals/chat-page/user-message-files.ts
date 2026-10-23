@@ -8,7 +8,7 @@ type UserMessageFileAttachment = Omit<RestorableAttachment, "url"> & {
 };
 
 export function canonicalUserMessageFileUrl(fileId: string): string {
-  const url = new URL("/api/web/download-file", resolveApiBase());
+  const url = new URL("/api/web/file-url", resolveApiBase());
   url.searchParams.set("file_id", fileId);
   appendCapturedPreviewBypassToUrl(url);
   return url.toString();

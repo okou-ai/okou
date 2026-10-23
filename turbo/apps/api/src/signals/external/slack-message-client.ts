@@ -58,6 +58,9 @@ export interface SlackFileInfo {
 
 export interface SlackUserInfo {
   readonly id: string;
+  readonly teamId?: string;
+  readonly deleted?: boolean;
+  readonly isBot?: boolean;
   readonly name?: string;
   readonly email?: string;
   readonly timezone?: string;
@@ -173,6 +176,9 @@ export interface SlackClient {
   }) => Promise<CompleteUploadResult>;
   readonly getFileInfo: (fileId: string) => Promise<GetFileInfoResult>;
   readonly createUserInfoResolver: () => SlackUserInfoResolver;
+  readonly fetchUserIdentity: (
+    userId: string,
+  ) => Promise<SlackUserInfo | undefined>;
   readonly fetchUserInfoMap: (
     userIds: readonly string[],
     resolver?: SlackUserInfoResolver,
@@ -375,16 +381,40 @@ async function readSlackConversation<T>(
   return result.value;
 }
 
+function hasSlackUserIdentity(
+  user: { id?: string; team_id?: string },
+  userId: string,
+): boolean {
+  return user.id === userId && Boolean(user.team_id);
+}
+
+function isSlackUserUnavailable(error: unknown): boolean {
+  return ["user_not_found", "user_not_visible"].includes(
+    slackMessageClientFailure(error)?.code ?? "",
+  );
+}
+
 async function fetchSlackUserInfo(
   client: WebClient,
   userId: string,
+  requireIdentity = false,
 ): Promise<SlackUserInfo | undefined> {
-  const result = await client.users.info({ user: userId });
+  const lookup = await settle(client.users.info({ user: userId }));
+  if (!lookup.ok) {
+    if (isSlackUserUnavailable(lookup.error)) {
+      return undefined;
+    }
+    throw lookup.error;
+  }
+  const result = lookup.value;
   if (!result.ok || !result.user) {
     return undefined;
   }
 
   const user = result.user;
+  if (requireIdentity && !hasSlackUserIdentity(user, userId)) {
+    return undefined;
+  }
   const name =
     user.profile?.display_name ||
     user.profile?.real_name ||
@@ -395,6 +425,9 @@ async function fetchSlackUserInfo(
 
   return {
     id: userId,
+    teamId: user.team_id,
+    deleted: user.deleted,
+    isBot: user.is_bot,
     name: name || undefined,
     email: email || undefined,
     timezone: timezone || undefined,
@@ -758,6 +791,9 @@ export function createSlackClient(
     },
     createUserInfoResolver: () => {
       return buildUserInfoResolver(web);
+    },
+    fetchUserIdentity: (userId) => {
+      return fetchSlackUserInfo(web, userId, true);
     },
     fetchUserInfoMap: (userIds, resolver) => {
       return fetchUserInfoMap(web, userIds, resolver);

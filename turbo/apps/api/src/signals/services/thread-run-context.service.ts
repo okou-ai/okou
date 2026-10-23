@@ -1,5 +1,5 @@
 import { computed, type Computed } from "ccstate";
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   isFeatureEnabled,
   type FeatureSwitchContext,
@@ -42,6 +42,7 @@ type PickedThreadInputEventNode = Computed<
 type SlackLaunchContextRow = Pick<
   typeof chatSlackContext.$inferSelect,
   | "channelId"
+  | "workspaceId"
   | "botUserId"
   | "conversationContext"
   | "messageText"
@@ -315,6 +316,7 @@ export function createSlackThreadContext(
     const [row] = await db
       .select({
         channelId: chatSlackContext.channelId,
+        workspaceId: chatSlackContext.workspaceId,
         botUserId: chatSlackContext.botUserId,
         conversationContext: chatSlackContext.conversationContext,
         messageText: chatSlackContext.messageText,
@@ -362,10 +364,14 @@ export function createSlackThreadContext(
         and(
           eq(
             slackOrgInstallations.slackWorkspaceId,
-            slackOrgConnections.slackWorkspaceId,
+            sql`coalesce(${chatSlackContext.workspaceId}, ${slackOrgConnections.slackWorkspaceId})`,
           ),
-          eq(slackOrgInstallations.orgId, orgId),
         ),
+      )
+      .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
+      .innerJoin(
+        agents,
+        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, orgId)),
       )
       .where(
         and(

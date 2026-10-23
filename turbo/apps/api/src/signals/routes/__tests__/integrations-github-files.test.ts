@@ -6,13 +6,13 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
 import {
+  integrationsGithubDownloadFileContract,
   integrationsGithubUploadCompleteContract,
   integrationsGithubUploadInitContract,
 } from "@okouai/api-contracts/contracts/integrations";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createApp } from "../../../app-factory";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { integrationsGithubDownloadFileRoutes } from "../integrations-github-download-file";
@@ -24,14 +24,9 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { createRouteMocks } from "./helpers/route-test";
 
-const TEST_APP_ROUTES = Object.freeze([
-  ...integrationsGithubDownloadFileRoutes,
-  ...integrationsGithubUploadCompleteRoutes,
-  ...integrationsGithubUploadInitRoutes,
-]);
-
 const context = testContext();
-const claimedToken = createClaimedRunCredentials(context).okouToken;
+const credentials = createClaimedRunCredentials(context);
+const claimedToken = credentials.okouToken;
 const mocks = createRouteMocks(context);
 const github = createGithubBddApi(context);
 const bdd = createBddApi(context);
@@ -116,101 +111,64 @@ describe("GitHub file integration routes", () => {
     });
   }
 
-  it("streams a GitHub context file from an allowed URL", async () => {
+  it.each([
+    {
+      url: "https://raw.githubusercontent.com/okou-ai/okou/main/report%20final.csv",
+      filename: "report final.csv",
+      contentType: "text/csv",
+    },
+    {
+      url: "https://github.com/user-attachments/assets/01234567-89ab-cdef-0123-456789abcdef",
+      filename: "github-file",
+      contentType: "application/octet-stream",
+    },
+  ])(
+    "returns GitHub attachment download metadata: $filename",
+    async ({ url, filename, contentType }) => {
+      const fixture = await seedFixture();
+      const client = setupApp({
+        context,
+        routes: integrationsGithubDownloadFileRoutes,
+      })(integrationsGithubDownloadFileContract);
+
+      const response = await accept(
+        client.fileUrl({
+          query: { url },
+          headers: { authorization: `Bearer ${await claimedToken(fixture)}` },
+        }),
+        [200],
+      );
+
+      expect(response.body).toStrictEqual({
+        downloadUrl: url,
+        filename,
+        contentType,
+      });
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+    },
+  );
+
+  it("preserves signed GitHub URLs while sanitizing filename hints", async () => {
     const fixture = await seedFixture();
-    const fileUrl = "https://github.com/user-attachments/assets/abc123";
-    server.use(
-      http.get(fileUrl, ({ request }) => {
-        expect(request.headers.get("authorization")).toBeNull();
-        expect(request.headers.get("accept")).toBe("application/octet-stream");
-        return new HttpResponse("png-bytes", {
-          status: 200,
-          headers: {
-            "content-type": "image/png",
-            "content-length": "9",
-          },
-        });
+    const url =
+      "https://private-user-images.githubusercontent.com/123/file?jwt=signed!";
+    const client = setupApp({
+      context,
+      routes: integrationsGithubDownloadFileRoutes,
+    })(integrationsGithubDownloadFileContract);
+
+    const response = await accept(
+      client.fileUrl({
+        query: { url, filename: "../report.pdf" },
+        headers: { authorization: `Bearer ${await claimedToken(fixture)}` },
       }),
+      [200],
     );
 
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const query = new URLSearchParams({
-      url: fileUrl,
-      filename: "screenshot.png",
-    });
-    const response = await app.request(
-      `/api/integrations/github/download-file?${query.toString()}`,
-      {
-        method: "GET",
-        headers: {
-          authorization: `Bearer ${await claimedToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
-        },
-      },
-    );
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toBe("image/png");
-    expect(response.headers.get("x-file-name")).toBe("screenshot.png");
-    expect(response.headers.get("x-file-mimetype")).toBe("image/png");
-    await expect(response.text()).resolves.toBe("png-bytes");
-  });
-
-  it("uses the GitHub URL filename when no filename hint is provided", async () => {
-    const fixture = await seedFixture();
-    const fileUrl =
-      "https://raw.githubusercontent.com/okou-ai/okou/main/github-file.png";
-    server.use(
-      http.get(fileUrl, ({ request }) => {
-        expect(request.headers.get("authorization")).toBeNull();
-        expect(request.headers.get("accept")).toBe("application/octet-stream");
-        return new HttpResponse("artifact-bytes", {
-          status: 200,
-          headers: {
-            "content-type": "image/png",
-            "content-length": "14",
-          },
-        });
-      }),
-    );
-
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const query = new URLSearchParams({ url: fileUrl });
-    const response = await app.request(
-      `/api/integrations/github/download-file?${query.toString()}`,
-      {
-        method: "GET",
-        headers: {
-          authorization: `Bearer ${await claimedToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
-        },
-      },
-    );
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toBe("image/png");
-    expect(response.headers.get("x-file-name")).toBe("github-file.png");
-    await expect(response.text()).resolves.toBe("artifact-bytes");
-  });
-
-  it("rejects non-GitHub file URLs", async () => {
-    const fixture = await seedFixture();
-
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const query = new URLSearchParams({
-      url: "https://example.com/file.png",
-    });
-    const response = await app.request(
-      `/api/integrations/github/download-file?${query.toString()}`,
-      {
-        method: "GET",
-        headers: {
-          authorization: `Bearer ${await claimedToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
-        },
-      },
-    );
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toMatchObject({
-      error: { code: "BAD_REQUEST" },
+    expect(response.body).toStrictEqual({
+      downloadUrl: url,
+      filename: ".._report.pdf",
+      contentType: "application/pdf",
     });
   });
 

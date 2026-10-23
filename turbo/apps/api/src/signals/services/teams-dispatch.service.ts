@@ -137,6 +137,7 @@ type TeamsPromptFile = Omit<ChatTeamsMessageFile, "inCurrentMessage"> & {
 interface TeamsAttachmentDownload {
   readonly url: string;
   readonly mode: "graph" | undefined;
+  readonly downloadInfo?: true;
 }
 
 interface TeamsPromptContext {
@@ -304,7 +305,13 @@ function teamsAttachmentDownloadUrl(
 ): TeamsAttachmentDownload | null {
   const directUrl = stringRecordValue(attachment.content, "downloadUrl");
   if (directUrl) {
-    return { url: directUrl, mode: undefined };
+    return {
+      url: directUrl,
+      mode: undefined,
+      ...(attachment.contentType === TEAMS_FILE_DOWNLOAD_INFO_CONTENT_TYPE
+        ? { downloadInfo: true as const }
+        : {}),
+    };
   }
   if (!attachment.contentUrl) {
     return null;
@@ -371,6 +378,7 @@ function teamsPromptFile(
     tenantId: activity.tenantId,
     url: download.url,
     downloadMode: download.mode,
+    downloadInfo: download.downloadInfo,
     id: attachment.id ?? undefined,
     name,
     contentType,
@@ -404,7 +412,13 @@ function teamsGraphAttachmentDownloadUrl(
   const content = graphAttachmentContent(attachment);
   const directUrl = stringRecordValue(content, "downloadUrl");
   if (directUrl) {
-    return { url: directUrl, mode: undefined };
+    return {
+      url: directUrl,
+      mode: undefined,
+      ...(attachment.contentType === TEAMS_FILE_DOWNLOAD_INFO_CONTENT_TYPE
+        ? { downloadInfo: true as const }
+        : {}),
+    };
   }
   const contentUrl =
     attachment.contentUrl ?? stringRecordValue(content, "contentUrl");
@@ -465,6 +479,7 @@ function teamsGraphPromptFile(
     tenantId,
     url: download.url,
     downloadMode: download.mode,
+    downloadInfo: download.downloadInfo,
     id: attachment.id ?? undefined,
     name,
     contentType,

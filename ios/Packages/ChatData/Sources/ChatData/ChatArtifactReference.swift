@@ -29,7 +29,7 @@ public enum ChatArtifactReference {
       return ChatArtifact(
         source: .reference(reference, fragment: url.fragment ?? ""), filename: reference)
     }
-    if sameOrigin(url, apiURL), path == "/api/web/download-file",
+    if sameOrigin(url, apiURL), path == "/api/web/file-url",
       let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
       let id = components.queryItems?.first(where: { $0.name == "file_id" })?.value, !id.isEmpty
     {

@@ -89,14 +89,19 @@ async function completeAndReadScreenshot(
     width: 1440,
     height: 900,
   });
-  const content = await scenario.computerUse.downloadComputerUseScreenshot(
+  const content = await scenario.computerUse.resolveComputerUseScreenshot(
     fixture.actor,
     fixture.commandId,
   );
-  expect(content.bytes.equals(fixture.bytes)).toBeTruthy();
-  expect(content.contentType).toBe("image/png");
-  expect(content.contentLength).toBe(String(fixture.bytes.length));
-  expect(content.cacheControl).toBe("private, no-store");
+  expect(content).toMatchObject({
+    downloadUrl: expect.stringContaining(
+      encodeURIComponent(`${fixture.commandId}/screenshot.png`),
+    ),
+    filename: "screenshot.png",
+    contentType: "image/png",
+    size: fixture.bytes.length,
+    cacheControl: "private, no-store",
+  });
 }
 
 describe("Computer Use screenshot completion", () => {

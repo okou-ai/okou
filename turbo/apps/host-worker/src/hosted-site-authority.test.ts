@@ -894,10 +894,15 @@ it.each(["disabled", "unavailable"])(
   },
 );
 
-it("handles a real alias's authorization callback before reading hosted HTML", async () => {
+it("authorizes a private Site before showing its HTML on the first visit", async () => {
+  const token = `okou_site_${"a".repeat(64)}`;
   server.use(
-    http.get(endpoint, () => {
-      return HttpResponse.json({ allowed: false, decision: "authenticate" });
+    http.get(endpoint, ({ request }) => {
+      return HttpResponse.json(
+        request.headers.get("Authorization") === `Bearer ${token}`
+          ? { allowed: true, decision: "allow" }
+          : { allowed: false, decision: "authenticate" },
+      );
     }),
   );
   const env = {
@@ -909,24 +914,16 @@ it("handles a real alias's authorization callback before reading hosted HTML", a
     env,
   );
   expect(initial.status).toBe(302);
-  expect(new URL(initial.headers.get("Location")!).pathname).toBe(
-    "/hosted-site-access",
-  );
-  const resumed = await fetchWorker(
-    new Request("https://demo.okou.app/.okou/auth/start?returnTo=%2F", {
-      headers: { Accept: "text/html" },
-    }),
-    env,
-  );
-  const bridge = new URL(resumed.headers.get("Location")!);
+  const bridge = new URL(initial.headers.get("Location")!);
+  expect(bridge.pathname).toBe("/hosted-site-authorize");
   expect(bridge.searchParams.get("siteId")).toBe(siteId);
-  const pending = resumed.headers.getSetCookie()[0]!.split(";")[0]!;
+  const pending = initial.headers.getSetCookie()[0]!.split(";")[0]!;
   server.use(
     http.post(
       `https://authority.test/api/host/sites/${siteId}/sessions`,
       () => {
         return HttpResponse.json({
-          sessionToken: `okou_site_${"a".repeat(64)}`,
+          sessionToken: token,
           expiresAt: new Date(Date.now() + 3600_000).toISOString(),
         });
       },
@@ -945,4 +942,15 @@ it("handles a real alias's authorization callback before reading hosted HTML", a
     "__Host-okou-site-session=",
   );
   expect(await response.text()).toBe("");
+  const document = await fetchWorker(
+    new Request("https://demo.okou.app/", {
+      headers: {
+        Cookie: `__Host-okou-site-session=${token}`,
+        "Sec-Fetch-Dest": "document",
+      },
+    }),
+    env,
+  );
+  expect(document.status).toBe(200);
+  expect(await document.text()).toBe("<p>ok</p>");
 });

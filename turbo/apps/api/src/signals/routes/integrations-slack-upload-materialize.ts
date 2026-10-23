@@ -1,37 +1,12 @@
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import { integrationsSlackUploadMaterializeContract } from "@okouai/api-contracts/contracts/integrations";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { createSlackClient } from "../external/slack-message-client";
 import { materializeCanonicalPublishedAsset$ } from "../services/canonical-asset.service";
 import { prepareCanonicalSlackDelivery$ } from "../services/canonical-slack-asset-delivery.service";
-import { slackOrgInstallation } from "../services/slack-data.service";
 import type { RouteEntry } from "../route-entry";
-
-const slackInstallationInput$ = computed(
-  (
-    get,
-  ): {
-    readonly orgId: string;
-    readonly userId: string;
-  } => {
-    const auth = get(organizationAuthContext$);
-    return { orgId: auth.orgId, userId: auth.userId };
-  },
-);
-const slackInstallation$ = slackOrgInstallation(slackInstallationInput$);
-
-const noInstallation = Object.freeze({
-  status: 404 as const,
-  body: Object.freeze({
-    error: Object.freeze({
-      message: "No Slack installation found for this organization",
-      code: "NOT_FOUND",
-    }),
-  }),
-});
 
 const materializeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -55,12 +30,6 @@ const materializeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   if (!bodyResult.ok) {
     return bodyResult.response;
-  }
-
-  const installation = await get(slackInstallation$);
-  signal.throwIfAborted();
-  if (!installation) {
-    return noInstallation;
   }
 
   const materialized = await set(
@@ -94,11 +63,7 @@ const materializeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       operationId: bodyResult.data.operationId,
       runId,
       userId: auth.userId,
-      client: createSlackClient(installation.botToken, {
-        automaticRetries: false,
-      }),
       orgId: auth.orgId,
-      botToken: installation.botToken,
     },
     signal,
   );

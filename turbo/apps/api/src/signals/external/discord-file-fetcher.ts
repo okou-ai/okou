@@ -90,6 +90,20 @@ function attachmentContentType(
   return contentType;
 }
 
+/** Resolve an authorized URL; generic MIME metadata requires CDN MIME validation. */
+export function resolveDiscordAttachmentUrl(args: DiscordAttachmentDownload) {
+  validateAttachment(args);
+  return {
+    downloadUrl: args.url,
+    filename: args.filename,
+    contentType:
+      args.contentType === undefined
+        ? "application/octet-stream"
+        : attachmentContentType(args.contentType, null),
+    size: args.size,
+  };
+}
+
 interface DownloadedDiscordAttachment {
   readonly bytes: Uint8Array<ArrayBuffer>;
   readonly contentType: string;

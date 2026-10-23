@@ -1,6 +1,6 @@
 {
-  "sourceCommit": "e76cb73d85434d46e815735cf42bd553a2cd538f",
-  "method": "existing acyclic partition extended with dependency-free base-layer additions; generated, do not hand-classify packages",
+  "sourceCommit": "c65b6bf584305f5f06e89c7e66efaedecee5177b",
+  "method": "existing acyclic partition extended from resolved production dependency layers; generated, do not hand-classify packages",
   "packages": {
     "@axiomhq/js": 3,
     "@base-ui/react": 2,
@@ -53,6 +53,7 @@
     "boolbase": 1,
     "ccstate": 1,
     "ccstate-react": 2,
+    "cdp-viewer": 3,
     "character-entities-legacy": 1,
     "character-reference-invalid": 1,
     "class-variance-authority": 1,

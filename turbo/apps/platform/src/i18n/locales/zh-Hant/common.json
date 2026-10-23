@@ -443,6 +443,9 @@
       "switchAccountFailed": "無法開啟帳號切換器，請重試。",
       "title": "你沒有權限檢視這個成果",
       "tryAgain": "重試",
+      "websiteAuthenticationDescription": "請使用有權存取此網站的帳號登入。",
+      "websiteAuthenticationSignedInDescription": "繼續以目前帳號驗證存取權限。",
+      "websiteAuthenticationTitle": "驗證此網站的存取權限",
       "websiteTitle": "你無法查看此網站",
       "websiteUnavailableDescription": "請稍後再試。",
       "websiteUnavailableTitle": "此網站暫時無法使用"

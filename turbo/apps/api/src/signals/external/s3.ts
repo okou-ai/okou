@@ -654,21 +654,6 @@ const getS3Object$ = command(
   },
 );
 
-/** Read an object under its caller's cancellation with the shared body contract. */
-export const downloadS3Buffer$ = command(
-  async (
-    { set },
-    args: {
-      readonly bucket: string;
-      readonly key: string;
-    },
-    signal: AbortSignal,
-  ): Promise<Buffer> => {
-    const response = await set(getS3Object$, args, signal);
-    return await readS3ObjectBody(response, args.key, {}, signal);
-  },
-);
-
 /** Fixed reader retaining SDK failure and body validation/cancellation order. */
 export const downloadS3BufferWithMaxBytes$ = command(
   async (

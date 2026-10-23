@@ -20,7 +20,6 @@ import { integrationsTeamsUploadInitRoutes } from "../integrations-teams-upload-
 import { integrationsTelegramUploadInitRoutes } from "../integrations-telegram-upload-init";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { webFileUrlRoutes } from "../web-file-url";
-import { webDownloadRoutes } from "../web-download";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -90,11 +89,7 @@ test.each(integrations)(
     ).toBe(200);
     const api = setupApp({
       context,
-      routes: [
-        ...uploadsCompleteRoutes,
-        ...webFileUrlRoutes,
-        ...webDownloadRoutes,
-      ],
+      routes: [...uploadsCompleteRoutes, ...webFileUrlRoutes],
     });
     const completed = await accept(
       api(uploadsContract).complete({ headers, body: { id: uploadId } }),
@@ -113,11 +108,6 @@ test.each(integrations)(
         Bucket: "test-private-artifacts",
       },
     });
-    const downloaded = await accept(
-      api(webFilesContract).download({ headers, query: { file_id: uploadId } }),
-      [200],
-    );
-    expect(downloaded.body).toBe("upload bytes");
     createRouteMocks(context).clerk.session(actor.userId, "another-org");
     await accept(
       api(webFilesContract).fileUrl({

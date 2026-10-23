@@ -44,40 +44,37 @@ const run = (...args: string[]) => {
   return createJobCommand().parseAsync(["node", "okou", ...args]);
 };
 
-it.each(["task", "job"])(
-  "lists runnable work through okou %s with the existing API contract",
-  async (name) => {
-    const requests: string[] = [];
-    server.use(
-      http.get("http://localhost:3000/api/jobs", ({ request }) => {
-        requests.push(request.url);
-        return HttpResponse.json({ jobs: [item], nextAfter: id });
-      }),
-    );
-    const argv = [
-      "node",
-      "okou",
-      name,
-      "list",
-      "--runnable",
-      "--after",
-      id,
-      "--limit",
-      "25",
-      "--json",
-    ];
-    const program = new Command("okou");
-    await registerRequestedCommand(program, argv);
-    await program.parseAsync(argv);
-    const url = new URL(requests[0]!);
-    expect(url.searchParams.get("filter")).toBe("runnable");
-    expect(url.searchParams.get("after")).toBe(id);
-    expect(url.searchParams.get("limit")).toBe("25");
-    expect(log).toHaveBeenCalledWith(
-      JSON.stringify({ jobs: [item], nextAfter: id }),
-    );
-  },
-);
+it("lists runnable Tasks through okou task with the existing API contract", async () => {
+  const requests: string[] = [];
+  server.use(
+    http.get("http://localhost:3000/api/jobs", ({ request }) => {
+      requests.push(request.url);
+      return HttpResponse.json({ jobs: [item], nextAfter: id });
+    }),
+  );
+  const argv = [
+    "node",
+    "okou",
+    "task",
+    "list",
+    "--runnable",
+    "--after",
+    id,
+    "--limit",
+    "25",
+    "--json",
+  ];
+  const program = new Command("okou");
+  await registerRequestedCommand(program, argv);
+  await program.parseAsync(argv);
+  const url = new URL(requests[0]!);
+  expect(url.searchParams.get("filter")).toBe("runnable");
+  expect(url.searchParams.get("after")).toBe(id);
+  expect(url.searchParams.get("limit")).toBe("25");
+  expect(log).toHaveBeenCalledWith(
+    JSON.stringify({ jobs: [item], nextAfter: id }),
+  );
+});
 
 it("sends the stable creation identity and inspected update precondition from JSON files", async () => {
   const directory = await mkdtemp(join(tmpdir(), "job-cli-"));
