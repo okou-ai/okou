@@ -443,6 +443,9 @@
       "switchAccountFailed": "Tidak dapat membuka pemilih akun. Silakan coba lagi.",
       "title": "Anda tidak dapat melihat artefak ini",
       "tryAgain": "Coba lagi",
+      "websiteAuthenticationDescription": "Masuk dengan akun yang memiliki akses ke situs web ini.",
+      "websiteAuthenticationSignedInDescription": "Lanjutkan untuk memverifikasi akses dengan akun Anda saat ini.",
+      "websiteAuthenticationTitle": "Verifikasi akses ke situs web ini",
       "websiteTitle": "Anda tidak dapat melihat situs web ini",
       "websiteUnavailableDescription": "Coba lagi sebentar lagi.",
       "websiteUnavailableTitle": "Situs web ini sementara tidak tersedia"

@@ -443,6 +443,9 @@
       "switchAccountFailed": "계정 전환 화면을 열 수 없습니다. 다시 시도해 주세요.",
       "title": "이 아티팩트를 볼 수 없습니다",
       "tryAgain": "다시 시도",
+      "websiteAuthenticationDescription": "이 웹사이트에 접근할 수 있는 계정으로 로그인하세요.",
+      "websiteAuthenticationSignedInDescription": "계속하여 현재 계정의 접근 권한을 확인하세요.",
+      "websiteAuthenticationTitle": "이 웹사이트 접근 권한 확인",
       "websiteTitle": "이 웹사이트를 볼 수 없습니다",
       "websiteUnavailableDescription": "잠시 후 다시 시도하세요.",
       "websiteUnavailableTitle": "이 웹사이트를 일시적으로 사용할 수 없습니다"

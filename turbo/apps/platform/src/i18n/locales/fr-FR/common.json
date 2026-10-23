@@ -457,6 +457,9 @@
       "switchAccountFailed": "Impossible d’ouvrir le sélecteur de compte. Veuillez réessayer.",
       "title": "Vous ne pouvez pas consulter cet artefact",
       "tryAgain": "Réessayer",
+      "websiteAuthenticationDescription": "Connectez-vous avec un compte autorisé à accéder à ce site web.",
+      "websiteAuthenticationSignedInDescription": "Continuez pour vérifier l’accès avec votre compte actuel.",
+      "websiteAuthenticationTitle": "Vérifier l’accès à ce site web",
       "websiteTitle": "Vous ne pouvez pas consulter ce site web",
       "websiteUnavailableDescription": "Réessayez dans un instant.",
       "websiteUnavailableTitle": "Ce site web est temporairement indisponible"

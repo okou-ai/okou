@@ -4,7 +4,10 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { ArrowLeft, ArrowRightLeft, LogIn } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { HostedSiteAccessReason } from "@okouai/api-contracts/contracts/hosted-site-access";
-import { hostedSiteSignInUrl } from "../../lib/hosted-site-access.ts";
+import {
+  hostedSiteAccessTitle,
+  hostedSiteSignInUrl,
+} from "../../lib/hosted-site-access.ts";
 import { currentUserInfo$ } from "../../signals/auth.ts";
 import { BRAND_NAME } from "../../signals/branding.ts";
 import { openClerkAddAccount$ } from "../../signals/clerk-add-account.ts";
@@ -25,34 +28,31 @@ export function HostedSiteAccessCard({
   const user = useLastResolved(currentUserInfo$);
   const pageSignal = useGet(pageSignal$);
   const [switching, switchAccount] = useLoadableSet(openClerkAddAccount$);
-  const title =
-    reason === "expired"
-      ? t(($) => {
-          return $.artifacts.access.sessionExpiredTitle;
-        })
-      : reason === "unavailable"
+  const title = hostedSiteAccessTitle(reason);
+  const description =
+    reason === "authenticate"
+      ? user
         ? t(($) => {
-            return $.artifacts.access.websiteUnavailableTitle;
+            return $.artifacts.access.websiteAuthenticationSignedInDescription;
           })
         : t(($) => {
-            return $.artifacts.access.websiteTitle;
-          });
-  const description =
-    reason === "expired"
-      ? t(($) => {
-          return $.artifacts.access.sessionExpiredDescription;
-        })
-      : reason === "unavailable"
-        ? t(($) => {
-            return $.artifacts.access.websiteUnavailableDescription;
+            return $.artifacts.access.websiteAuthenticationDescription;
           })
-        : user
+      : reason === "expired"
+        ? t(($) => {
+            return $.artifacts.access.sessionExpiredDescription;
+          })
+        : reason === "unavailable"
           ? t(($) => {
-              return $.artifacts.access.signedInDescription;
+              return $.artifacts.access.websiteUnavailableDescription;
             })
-          : t(($) => {
-              return $.artifacts.access.description;
-            });
+          : user
+            ? t(($) => {
+                return $.artifacts.access.signedInDescription;
+              })
+            : t(($) => {
+                return $.artifacts.access.description;
+              });
   return (
     <div className="h-full overflow-y-auto">
       <ResourceAccessCard

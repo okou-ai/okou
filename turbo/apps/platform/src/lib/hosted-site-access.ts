@@ -6,6 +6,32 @@ import {
 } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { resolveEditableHostedSiteDomain } from "./platform-host.ts";
 import { ApiError } from "./api-error.ts";
+import { i18n } from "../i18n/index.ts";
+
+export function hostedSiteAccessTitle(reason: HostedSiteAccessReason): string {
+  switch (reason) {
+    case "authenticate": {
+      return i18n.t(($) => {
+        return $.artifacts.access.websiteAuthenticationTitle;
+      });
+    }
+    case "expired": {
+      return i18n.t(($) => {
+        return $.artifacts.access.sessionExpiredTitle;
+      });
+    }
+    case "unavailable": {
+      return i18n.t(($) => {
+        return $.artifacts.access.websiteUnavailableTitle;
+      });
+    }
+    case "denied": {
+      return i18n.t(($) => {
+        return $.artifacts.access.websiteTitle;
+      });
+    }
+  }
+}
 
 export function hostedSiteRecoveryReason(
   error: unknown,

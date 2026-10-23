@@ -443,6 +443,9 @@
       "switchAccountFailed": "Die Kontoauswahl konnte nicht geöffnet werden. Bitte versuche es erneut.",
       "title": "Du kannst dieses Artefakt nicht ansehen",
       "tryAgain": "Erneut versuchen",
+      "websiteAuthenticationDescription": "Melde dich mit einem Konto an, das auf diese Website zugreifen kann.",
+      "websiteAuthenticationSignedInDescription": "Fahre fort, um den Zugriff mit deinem aktuellen Konto zu prüfen.",
+      "websiteAuthenticationTitle": "Zugriff auf diese Website prüfen",
       "websiteTitle": "Du kannst diese Website nicht ansehen",
       "websiteUnavailableDescription": "Versuche es gleich noch einmal.",
       "websiteUnavailableTitle": "Diese Website ist vorübergehend nicht verfügbar"
