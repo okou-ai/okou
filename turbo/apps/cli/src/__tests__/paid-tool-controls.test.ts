@@ -182,7 +182,16 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       ).rejects.toMatchObject({
         code: "commander.help",
       });
-      expect(output).not.toMatch(new RegExp(`^\\s+${leaf}(?:[ (]|$)`, "m"));
+      const listsDisabledCommand = output.split("\n").some((line) => {
+        const entry = line.trimStart();
+        return (
+          entry !== line &&
+          (entry.trimEnd() === leaf ||
+            entry.startsWith(`${leaf} `) ||
+            entry.startsWith(`${leaf}(`))
+        );
+      });
+      expect(listsDisabledCommand).toBe(false);
       expect(output).not.toContain(example);
       if (tool === "web-search")
         expect(output).not.toContain("Search and extract");
