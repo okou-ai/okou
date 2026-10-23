@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.35](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.34...guest-control-server-v0.24.35) (2026-10-23)
+
+
+### Refactoring
+
+* **guest-control:** share fixed-helper capture drain ownership ([#42545](https://github.com/okou-ai/okou/issues/42545)) ([b27b5a9](https://github.com/okou-ai/okou/commit/b27b5a94444fe33afbfa8932c906694328e71b21))
+
 ## [0.24.34](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.33...guest-control-server-v0.24.34) (2026-10-23)
 
 ## [0.24.33](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.32...guest-control-server-v0.24.33) (2026-10-23)

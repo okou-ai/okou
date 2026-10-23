@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.0...guest-contracts-v0.27.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **guest-agent:** make event delivery best effort ([#42518](https://github.com/okou-ai/okou/issues/42518)) ([fd4ea82](https://github.com/okou-ai/okou/commit/fd4ea829931a39280cd8af7865af87f9aacca8c1))
+
 ## [0.27.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.11...guest-contracts-v0.27.0) (2026-10-23)
 
 
