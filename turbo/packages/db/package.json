@@ -66,6 +66,7 @@
     "billing:pi-memory-stage1": "tsx scripts/pi-memory-stage1-cost.ts",
     "test:pi-memory-stage1-cost": "tsx scripts/test-pi-memory-stage1-cost.ts",
     "test:migration-smoke-diagnostics": "tsx scripts/test-migration-smoke-diagnostics.ts",
+    "test:thread-predecessor-backfill": "tsx scripts/test-thread-predecessor-backfill.ts",
     "test:pi-memory-retirement": "tsx scripts/test-pi-memory-retirement.ts",
     "test:workflow-attachments": "node --import tsx scripts/migrations/024-workflow-attachments/test-backfill.ts"
   },
