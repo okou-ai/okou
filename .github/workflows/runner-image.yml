@@ -19,8 +19,7 @@ jobs:
     name: Cancel superseded merge-group CI
     if: github.event_name == 'merge_group'
     runs-on: ubuntu-latest
-    # Checkout, plus the script's 180s discovery ceiling and its 420s
-    # terminal-state barrier, so the job never dies before the barrier it owns.
+    # Bound discovery and cancellation API calls; old runs are not polled afterward.
     timeout-minutes: 12
     permissions:
       actions: write
@@ -29,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Cancel and await older runs for the queued PR
+      - name: Cancel older runs for the queued PR
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}

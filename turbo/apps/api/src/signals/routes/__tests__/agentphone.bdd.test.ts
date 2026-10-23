@@ -967,6 +967,15 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       body: "proactive hello",
     });
 
+    const sentCount = sends.messages.length;
+    const rejectedSender = await integrations.requestSendPhoneMessage(
+      actor,
+      { agentphoneAgentId: "another-users-phone-agent", text: "blocked" },
+      [404],
+    );
+    expect(rejectedSender.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+    expect(sends.messages).toHaveLength(sentCount);
+
     const init = await integrations.requestPhoneUploadInit(
       actor,
       { filename: "note.txt", contentType: "text/plain", length: 5 },

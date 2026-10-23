@@ -165,10 +165,10 @@ describe("external-code owned-session read", () => {
       },
     });
     expectNoSecrets(completed, [session.sessionToken]);
-    const readBack = await connectors.readConnectorBySlug(actor, "aws");
+    const readBack = await connectors.readDefaultBuiltinAccount(actor, "aws");
     expect(readBack).toMatchObject({
       id: completed.connectionId,
-      slug: "aws",
+      target: { kind: "builtin", connectorSlug: "aws" },
       authMethod: "cli",
     });
 

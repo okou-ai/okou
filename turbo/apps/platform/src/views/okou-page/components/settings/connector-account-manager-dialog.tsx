@@ -4,7 +4,6 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { EllipsisVertical, Search } from "lucide-react";
 import {
-  connectorAccountSetupIsComplete,
   connectorAccountExternalIdentity,
   type ConnectorAccountConnection,
   type ConnectorAccountTarget,
@@ -82,8 +81,7 @@ function AccountStatus({ account }: { account: ConnectorAccountConnection }) {
   const { t } = useTranslation();
   const needsReconnect = account.connectionStatus === "reconnect-required";
   const needsScopeReview = account.scopeMismatch === true;
-  const needsSetup = !connectorAccountSetupIsComplete(account);
-  const needsAttention = needsReconnect || needsScopeReview || needsSetup;
+  const needsAttention = needsReconnect || needsScopeReview;
   return (
     <span className="flex min-w-0 items-center gap-2">
       <span
@@ -100,21 +98,25 @@ function AccountStatus({ account }: { account: ConnectorAccountConnection }) {
             : "text-muted-foreground",
         )}
       >
-        {needsReconnect
+        {account.reconnectReason === "configuration_invalid"
           ? t(($) => {
-              return $.connectors.accounts.reconnectRequired;
+              return $.connectors.accounts.setupUnavailable;
             })
-          : needsScopeReview
+          : account.reconnectReason === "configuration_incomplete"
             ? t(($) => {
-                return $.connectors.card.updatePermissions;
+                return $.connectors.accounts.setupIncomplete;
               })
-            : needsSetup
+            : needsReconnect
               ? t(($) => {
-                  return $.connectors.accounts.setupIncomplete;
+                  return $.connectors.accounts.reconnectRequired;
                 })
-              : t(($) => {
-                  return $.connectors.accounts.connected;
-                })}
+              : needsScopeReview
+                ? t(($) => {
+                    return $.connectors.card.updatePermissions;
+                  })
+                : t(($) => {
+                    return $.connectors.accounts.connected;
+                  })}
       </span>
     </span>
   );

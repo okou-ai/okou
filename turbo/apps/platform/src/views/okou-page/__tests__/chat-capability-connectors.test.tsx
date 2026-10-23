@@ -545,7 +545,11 @@ describe("with an active banking grant", () => {
   });
 });
 
-test.each(["connected", "reconnect-required", "incomplete"] as const)(
+test.each([
+  "connected",
+  "reconnect-required",
+  "configuration_incomplete",
+] as const)(
   "Read a canonical custom default only on action activation (%s)",
   async (status) => {
     const sends: CapturedChatSend[] = [];
@@ -577,8 +581,11 @@ test.each(["connected", "reconnect-required", "incomplete"] as const)(
         });
         const account = customConnectorAccount(connector.id, {
           connectionStatus:
-            status === "reconnect-required" ? status : "connected",
-          setupStatus: status === "incomplete" ? status : "complete",
+            status === "connected" ? status : "reconnect-required",
+          reconnectReason:
+            status === "configuration_incomplete" ? status : null,
+          missingRequiredFields:
+            status === "configuration_incomplete" ? ["apiSecret"] : [],
         });
         return respond(200, {
           connections: [account],
@@ -652,9 +659,12 @@ async function attemptCustomMcpConnection(
           ? {
               ...account,
               connectionStatus: connected ? "connected" : "reconnect-required",
-              reconnectReason: connected ? null : account.reconnectReason,
-              setupStatus:
-                writeAttempted && !complete ? "incomplete" : "complete",
+              reconnectReason:
+                writeAttempted && !complete
+                  ? "configuration_incomplete"
+                  : connected
+                    ? null
+                    : account.reconnectReason,
               missingRequiredFields:
                 writeAttempted && !complete ? ["apiSecret"] : [],
               configuredFieldKeys: connected ? ["apiSecret"] : [],
@@ -833,7 +843,6 @@ test("Authorize a healthy canonical builtin only after reading its target defaul
         target: { kind: "builtin" as const, connectorSlug: slug },
         displayName: null,
         isDefault: true,
-        setupStatus: "complete" as const,
         scopeMismatch: false,
         missingRequiredFields: [],
         configuredFieldKeys: [],
@@ -1083,7 +1092,6 @@ test("Reconnect an expired connector before resuming the task", async () => {
             })
           : originalConnection,
       ],
-      connectorProvidedBindings: [],
     });
   });
   context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {

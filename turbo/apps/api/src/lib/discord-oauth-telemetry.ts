@@ -25,9 +25,9 @@ export function isDiscordOauthTelemetryUrl(value: string): boolean {
 }
 
 /** Drop sensitive SDK events before transport, not merely after safe error formatting. */
-export function filterDiscordOauthSentryEvent(
-  event: ErrorEvent,
-): ErrorEvent | null {
+export function filterDiscordOauthSentryEvent<
+  T extends Pick<ErrorEvent, "request">,
+>(event: T): T | null {
   if (event.request?.url && isDiscordOauthTelemetryUrl(event.request.url)) {
     return null;
   }
@@ -35,9 +35,9 @@ export function filterDiscordOauthSentryEvent(
 }
 
 /** SDK HTTP breadcrumbs can contain full outgoing/callback URLs. Never retain them. */
-export function filterDiscordOauthSentryBreadcrumb(
-  breadcrumb: Breadcrumb,
-): Breadcrumb | null {
+export function filterDiscordOauthSentryBreadcrumb<
+  T extends Pick<Breadcrumb, "data">,
+>(breadcrumb: T): T | null {
   if (
     breadcrumb.data &&
     Object.values(breadcrumb.data).some((value) => {

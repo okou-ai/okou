@@ -112,6 +112,7 @@ import {
 } from "./mcp-oauth-identity.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 import {
+  customConnectorOAuthStartFromRow,
   customConnectorOAuthConnectionReadPlan,
   customConnectorOAuthConnectionTokenReadPlan,
   customConnectorRefreshReconnectCondition,
@@ -874,80 +875,85 @@ const prepareAutomaticOAuthStart$ = command(
   },
 );
 
-async function persistCustomConnectorOAuthStart(
-  context: {
-    readonly db: Db;
-    readonly connector: CustomConnectorRow;
-    readonly args: StartCustomConnectorOAuth2Args;
-    readonly prepared: PreparedOAuthStart;
-  },
-  signal: AbortSignal,
-) {
-  const { db, connector, args, prepared } = context;
-  const expiresAt = connectorOAuthStateExpiresAt();
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0138; new non-billing transactions are prohibited.
-  const result = await db.transaction(async (tx) => {
-    const credentialContractDb = tx;
-    const contractRef = {
-      orgId: args.orgId,
-      connectorId: connector.id,
-      storageVersion: connector.storageVersion,
-      authMode: prepared.authMode,
-    };
-    await (async () => {
-      const plan = customConnectorOAuth2CredentialContractReadPlan(contractRef);
-      const rows = await credentialContractDb
-        .select(plan.columns)
-        .from(plan.from)
-        .leftJoin(plan.join.table, plan.join.on)
-        .where(plan.where)
-        .for("update", { of: plan.from })
-        .limit(1);
-      return customConnectorOAuth2CredentialContractFromRows(rows, contractRef);
-    })();
-    const resolution = await resolveConnectorConnectionMutation(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      target: { kind: "custom", customConnectorId: connector.id },
-      mutation: args.account,
-      allowSiblings: !isIntegrationManagedCustomConnector(connector),
-    });
-    if (resolution.kind !== "ready") {
-      return resolution;
-    }
-    const [oauthState] = await tx
-      .insert(connectorOauthStates)
-      .values({
-        state: prepared.state,
-        customConnectorId: connector.id,
-        storageVersion: connector.storageVersion,
-        authMethod: "oauth",
-        userId: args.userId,
-        orgId: args.orgId,
-        agentId: args.agentId,
-        authorizeAgent: args.agentId !== undefined,
-        redirectUri: prepared.redirectUri,
-        authorizationUrl: prepared.authorizationUrl,
-        oauthRequestedScopes: prepared.oauthRequestedScopes,
-        codeVerifier: prepared.codeVerifier,
-        oauthContext: JSON.stringify(prepared.context),
-        accountMutation: args.account,
-        expiresAt,
-      })
-      .returning({ id: connectorOauthStates.id });
-    if (!oauthState) {
-      throw new Error("Failed to create connector OAuth state");
-    }
-    return {
-      kind: "ready" as const,
-      oauthAttemptId: oauthState.id,
-      connectionId: args.account.intent === "add" ? oauthState.id : null,
-      expiresAt,
-    };
-  });
-  signal.throwIfAborted();
-  return result;
+interface CustomConnectorOAuthStartPersistenceArgs {
+  readonly connector: CustomConnectorRow;
+  readonly args: StartCustomConnectorOAuth2Args;
+  readonly prepared: PreparedOAuthStart;
 }
+
+const persistCustomConnectorOAuthStart$ = command(
+  async function persistCustomConnectorOAuthStart(
+    { set },
+    context: CustomConnectorOAuthStartPersistenceArgs,
+    signal: AbortSignal,
+  ) {
+    const db = set(writeDb$);
+    const { connector, args, prepared } = context;
+    const expiresAt = connectorOAuthStateExpiresAt();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0138; new non-billing transactions are prohibited.
+    const result = await db.transaction(async (tx) => {
+      const credentialContractDb = tx;
+      const contractRef = {
+        orgId: args.orgId,
+        connectorId: connector.id,
+        storageVersion: connector.storageVersion,
+        authMode: prepared.authMode,
+      };
+      await (async () => {
+        const plan =
+          customConnectorOAuth2CredentialContractReadPlan(contractRef);
+        const rows = await credentialContractDb
+          .select(plan.columns)
+          .from(plan.from)
+          .leftJoin(plan.join.table, plan.join.on)
+          .where(plan.where)
+          .for("update", { of: plan.from })
+          .limit(1);
+        return customConnectorOAuth2CredentialContractFromRows(
+          rows,
+          contractRef,
+        );
+      })();
+      const resolution = await resolveConnectorConnectionMutation(tx, {
+        orgId: args.orgId,
+        userId: args.userId,
+        target: { kind: "custom", customConnectorId: connector.id },
+        mutation: args.account,
+        allowSiblings: !isIntegrationManagedCustomConnector(connector),
+      });
+      if (resolution.kind !== "ready") {
+        return resolution;
+      }
+      const [oauthState] = await tx
+        .insert(connectorOauthStates)
+        .values({
+          state: prepared.state,
+          customConnectorId: connector.id,
+          storageVersion: connector.storageVersion,
+          authMethod: "oauth",
+          userId: args.userId,
+          orgId: args.orgId,
+          agentId: args.agentId,
+          authorizeAgent: args.agentId !== undefined,
+          redirectUri: prepared.redirectUri,
+          authorizationUrl: prepared.authorizationUrl,
+          oauthRequestedScopes: prepared.oauthRequestedScopes,
+          codeVerifier: prepared.codeVerifier,
+          oauthContext: JSON.stringify(prepared.context),
+          accountMutation: args.account,
+          expiresAt,
+        })
+        .returning({ id: connectorOauthStates.id });
+      return customConnectorOAuthStartFromRow(
+        oauthState,
+        args.account,
+        expiresAt,
+      );
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
 
 function automaticNoAuthAgentAuthorizationFailure(
   authorization: Awaited<ReturnType<typeof addUserCustomConnector>>,
@@ -1236,9 +1242,9 @@ export const startCustomConnectorOAuth2$ = command(
     } else {
       throw new Error("OAuth connector mode changed during authorization");
     }
-    const mutationStart = await persistCustomConnectorOAuthStart(
+    const mutationStart = await set(
+      persistCustomConnectorOAuthStart$,
       {
-        db: set(writeDb$),
         connector,
         args,
         prepared,
@@ -1325,7 +1331,7 @@ function automaticOAuthReauthorizationStartValues(
   >,
   redirectUri: string,
   state: string,
-): Omit<Parameters<typeof persistCustomConnectorOAuthStart>[0], "db"> {
+): CustomConnectorOAuthStartPersistenceArgs {
   return {
     connector,
     args: {
@@ -1460,17 +1466,15 @@ export const startCustomConnectorAutomaticOAuthReauthorization$ = command(
       return automaticOAuthReauthorizationFailure(preparedResult.error);
     }
     const prepared = preparedResult.value;
-    const persisted = await persistCustomConnectorOAuthStart(
-      {
-        db,
-        ...automaticOAuthReauthorizationStartValues(
-          args,
-          connector,
-          prepared,
-          redirectUri,
-          state,
-        ),
-      },
+    const persisted = await set(
+      persistCustomConnectorOAuthStart$,
+      automaticOAuthReauthorizationStartValues(
+        args,
+        connector,
+        prepared,
+        redirectUri,
+        state,
+      ),
       signal,
     );
     if (persisted.kind !== "ready") {

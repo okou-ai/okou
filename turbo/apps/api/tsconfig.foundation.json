@@ -22,6 +22,7 @@
     "src/lib/db.ts",
     "src/lib/marketing-metadata.ts",
     "src/lib/pg-errors.ts",
+    "src/lib/request-runtime.ts",
     "src/lib/sql-span-name.ts",
     "src/lib/time.ts",
     "src/signals/context/wait-until.ts",

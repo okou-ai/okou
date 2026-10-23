@@ -2,12 +2,16 @@ import { command } from "ccstate";
 import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, eq, sql } from "drizzle-orm";
+import { and, count, eq, gte, sql } from "drizzle-orm";
 import {
   usagePackAllocationChanges,
   usagePackSubscriptions,
 } from "@okouai/db/schema/usage-pack-subscription";
-import { pgTextDecoder } from "../../lib/db-structured-result";
+import {
+  pgIntegerDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
+import { safeSqlStateCode } from "../../lib/pg-errors";
 
 import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
@@ -102,8 +106,6 @@ interface PreparedDowngrade {
   readonly scheduleId: string | null;
   readonly cancelAtPeriodEnd: boolean;
 }
-
-class DowngradePublicationConflict extends Error {}
 
 interface DowngradeOrg {
   readonly tier: string;
@@ -611,101 +613,171 @@ const downgradeSnapshot$ = command(
   },
 );
 
-const publishDowngrade$ = command(
-  async (
-    { set },
-    args: DowngradeArgs & {
-      readonly snapshot: DowngradeSnapshot;
-      readonly prepared: PreparedDowngrade;
+type DowngradePublicationArgs = DowngradeArgs & {
+  readonly snapshot: DowngradeSnapshot;
+  readonly prepared: PreparedDowngrade;
+};
+
+function downgradePublicationWritePlan(
+  args: DowngradePublicationArgs,
+  at: Date,
+) {
+  const { org, concurrency, usagePack } = args.snapshot;
+  const { prepared } = args;
+  const removal = args.usagePackRemoval;
+  const superseded = supersededConcurrencyChanges(
+    concurrency ?? null,
+    prepared.effectiveDate,
+  );
+  return {
+    orgValues: {
+      cancelAtPeriodEnd: prepared.cancelAtPeriodEnd,
+      pendingSubscriptionScheduleId: prepared.scheduleId,
+      pendingSubscriptionTargetTier: args.targetTier,
+      pendingSubscriptionChangeAt: prepared.effectiveDate,
+      currentPeriodEnd: prepared.effectiveDate,
+      updatedAt: at,
     },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    const db = set(writeDb$);
-    const { org, concurrency, usagePack } = args.snapshot;
-    const { prepared } = args;
-    const removal = args.usagePackRemoval;
-    const superseded = supersededConcurrencyChanges(
-      concurrency ?? null,
-      prepared.effectiveDate,
-    );
-    const at = nowDate();
-    const publication = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0063; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        // Stripe has applied the schedule; record it as main did. Debits and
-        // webhooks rewrite these rows, so no row-version guard applies here.
-        await tx
-          .update(orgMetadata)
-          .set({
-            cancelAtPeriodEnd: prepared.cancelAtPeriodEnd,
-            pendingSubscriptionScheduleId: prepared.scheduleId,
-            pendingSubscriptionTargetTier: args.targetTier,
-            pendingSubscriptionChangeAt: prepared.effectiveDate,
-            currentPeriodEnd: prepared.effectiveDate,
-            updatedAt: at,
-          })
-          .where(eq(orgMetadata.orgId, args.orgId));
-        if (concurrency && (superseded.cancel || superseded.scheduled)) {
-          await tx
-            .update(orgConcurrencySubscriptions)
-            .set({
+    concurrency:
+      concurrency && (superseded.cancel || superseded.scheduled)
+        ? {
+            values: {
               ...(superseded.cancel ? { cancelAtPeriodEnd: false } : {}),
               ...(superseded.scheduled
                 ? { scheduledSlots: null, scheduledChangeAt: null }
                 : {}),
               updatedAt: concurrencySubscriptionUpdatedAt(at),
-            })
-            .where(
-              and(
-                eq(orgConcurrencySubscriptions.orgId, args.orgId),
-                eq(
-                  orgConcurrencySubscriptions.stripeSubscriptionId,
-                  org.stripeSubscriptionId,
-                ),
+            },
+            condition: and(
+              eq(orgConcurrencySubscriptions.orgId, args.orgId),
+              eq(
+                orgConcurrencySubscriptions.stripeSubscriptionId,
+                org.stripeSubscriptionId,
               ),
-            );
-        }
-        if (removal && usagePack) {
-          const [canceled] = await tx
-            .update(usagePackSubscriptions)
-            .set({
-              cancelAtPeriodEnd: true,
-              updatedAt: at,
-            })
-            .where(
-              and(
-                eq(usagePackSubscriptions.id, removal.usagePackSubscriptionId),
-                sql`${usagePackSubscriptions}::text = ${usagePack.subscriptionSnapshot}`,
-                sql`${usagePackSubscriptions}.xmin::text = ${usagePack.subscriptionRowVersion}`,
-              ),
-            )
-            .returning({ id: usagePackSubscriptions.id });
-          const [scheduled] = await tx
-            .update(usagePackAllocationChanges)
-            .set({
-              status: "scheduled",
-              stripeScheduleId: null,
-              effectiveAt: prepared.effectiveDate,
-              updatedAt: at,
-            })
-            .where(
-              and(
-                eq(usagePackAllocationChanges.id, removal.allocationChangeId),
-                sql`${usagePackAllocationChanges}::text = ${usagePack.changeSnapshot}`,
-                sql`${usagePackAllocationChanges}.xmin::text = ${usagePack.changeRowVersion}`,
-              ),
-            )
-            .returning({ id: usagePackAllocationChanges.id });
-          if (!canceled || !scheduled) {
-            throw new DowngradePublicationConflict();
+            ),
           }
-        }
-      }),
+        : null,
+    usagePack:
+      removal && usagePack
+        ? {
+            subscriptionCondition: and(
+              eq(usagePackSubscriptions.id, removal.usagePackSubscriptionId),
+              sql`${usagePackSubscriptions}::text = ${usagePack.subscriptionSnapshot}`,
+              sql`${usagePackSubscriptions}.xmin::text = ${usagePack.subscriptionRowVersion}`,
+            ),
+            changeCondition: and(
+              eq(usagePackAllocationChanges.id, removal.allocationChangeId),
+              sql`${usagePackAllocationChanges}::text = ${usagePack.changeSnapshot}`,
+              sql`${usagePackAllocationChanges}.xmin::text = ${usagePack.changeRowVersion}`,
+            ),
+          }
+        : null,
+  };
+}
+
+const publishDowngrade$ = command(
+  async (
+    { set },
+    args: DowngradePublicationArgs,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const at = nowDate();
+    const plan = downgradePublicationWritePlan(args, at);
+    // Stripe has applied the schedule; debits and webhooks can rewrite this
+    // organization row, so its publication remains unguarded by row version.
+    const orgPublication = db
+      .$with("downgrade_org_publication")
+      .as(
+        db
+          .update(orgMetadata)
+          .set(plan.orgValues)
+          .where(eq(orgMetadata.orgId, args.orgId))
+          .returning({ orgId: orgMetadata.orgId }),
+      );
+    const concurrencyPublication = plan.concurrency
+      ? db.$with("downgrade_concurrency_publication").as(
+          db
+            .update(orgConcurrencySubscriptions)
+            .set(plan.concurrency.values)
+            .where(
+              and(
+                plan.concurrency.condition,
+                gte(db.select({ count: count() }).from(orgPublication), 0),
+              ),
+            )
+            .returning({ orgId: orgConcurrencySubscriptions.orgId }),
+        )
+      : null;
+    const preceding = concurrencyPublication ?? orgPublication;
+    const publications = concurrencyPublication
+      ? [orgPublication, concurrencyPublication]
+      : [orgPublication];
+    const canceled = plan.usagePack
+      ? db.$with("downgrade_canceled_usage_pack").as(
+          db
+            .update(usagePackSubscriptions)
+            .set({ cancelAtPeriodEnd: true, updatedAt: at })
+            .where(
+              and(
+                plan.usagePack.subscriptionCondition,
+                gte(db.select({ count: count() }).from(preceding), 0),
+              ),
+            )
+            .returning({ id: usagePackSubscriptions.id }),
+        )
+      : null;
+    const scheduled =
+      canceled && plan.usagePack
+        ? db.$with("downgrade_scheduled_removal").as(
+            db
+              .update(usagePackAllocationChanges)
+              .set({
+                status: "scheduled",
+                stripeScheduleId: null,
+                effectiveAt: args.prepared.effectiveDate,
+                updatedAt: at,
+              })
+              .where(
+                and(
+                  plan.usagePack.changeCondition,
+                  gte(db.select({ count: count() }).from(canceled), 0),
+                ),
+              )
+              .returning({ id: usagePackAllocationChanges.id }),
+          )
+        : null;
+    // Keep a nonempty result even when either guarded update returns zero.
+    // Each update is PK-bound, so a total of two requires both to succeed.
+    // This statement's sole division then rolls back every publication write.
+    const carrier = sql`(VALUES (1)) AS downgrade_publication`;
+    const publication = await settle(
+      canceled && scheduled
+        ? db
+            .with(...publications, canceled, scheduled)
+            .select({
+              complete: sql`1 / CASE WHEN ${eq(
+                sql`${db.select({ count: count() }).from(canceled)} + ${db
+                  .select({ count: count() })
+                  .from(scheduled)}`,
+                2,
+              )} THEN 1 ELSE 0 END`.mapWith(pgIntegerDecoder),
+            })
+            .from(carrier)
+        : db
+            .with(...publications)
+            .select({
+              complete: sql`CASE WHEN ${gte(
+                db.select({ count: count() }).from(preceding),
+                0,
+              )} THEN 1 ELSE 0 END`.mapWith(pgIntegerDecoder),
+            })
+            .from(carrier),
       signal,
     );
     signal.throwIfAborted();
     if (!publication.ok) {
-      if (publication.error instanceof DowngradePublicationConflict) {
+      if (safeSqlStateCode(publication.error) === "22012") {
         return false;
       }
       throw publication.error;

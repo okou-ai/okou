@@ -10,7 +10,7 @@ export const historyCommand = new Command()
   .requiredOption("--channel-id <id>", "Channel or native thread ID")
   .option(
     "--guild-id <id>",
-    "Optional; must match your organization's bound guild",
+    "Optional; must match the destination channel's guild",
   )
   .option(
     "--before <id>",
@@ -28,7 +28,7 @@ Examples:
 Notes:
   - Requires discord:read and access for both your verified Discord user and Okou.
   - Bot DM history is not readable: every organization connected to your Discord account shares that one DM.
-  - --guild-id is optional; when given, it must match your organization's bound guild.
+  - --guild-id is optional; when given, it must match the destination channel's guild.
   - Results are newest first. Each call reads one page; native threads are not expanded.
   - To read a message's native thread, use message replies --channel-id <parent-channel-id> --message-id <root-message-id>.
   - A Discord reply reference is not a native thread.

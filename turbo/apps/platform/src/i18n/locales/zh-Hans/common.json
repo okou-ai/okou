@@ -542,7 +542,8 @@
       "upload": "上传到 Google Drive",
       "uploadDocs": "上传到 Google 文档",
       "uploadSheets": "上传到 Google 表格",
-      "uploadSlides": "上传到 Google Slides"
+      "uploadSlides": "上传到 Google Slides",
+      "viewIt": "查看文件"
     },
     "jsonPreview": {
       "allShown": "已显示全部项目",

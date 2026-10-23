@@ -16,7 +16,10 @@ import { parsePositiveInteger, resolveTelegramChatId } from "./target";
 export const sendCommand = new Command()
   .name("send")
   .description("Send a message through the official Okou Telegram bot")
-  .requiredOption(TO_OPTION_FLAGS, toOptionDescription("chat ID or @channel"))
+  .requiredOption(
+    TO_OPTION_FLAGS,
+    toOptionDescription("user ID, chat ID or @channel"),
+  )
   .option("-t, --text <message>", "Message text (or pipe it on stdin)")
   .option("--reply-to <message-id>", "Message ID to reply to")
   .option("--topic <id>", "Forum topic (message thread) ID")
@@ -29,8 +32,12 @@ Examples:
   Reply to message:    okou telegram message send --to -1001234567890 --reply-to 42 -t "reply"
   Forum topic message: okou telegram message send --to -1001234567890 --topic 7 -t "topic update"
   DM yourself:         okou telegram message send --to me -t "Hello!"
+  DM a recipient:      okou telegram message send --to user:123456789 -t "Hello!"
 
 Notes:
+  - Requires your verified account; group targets require access for both you and the bot
+  - You can DM recipients who have started the official bot and have not blocked it
+  - Sending a DM does not grant access to its private history or attachments
   - Message text can be provided with --text or piped on stdin
   - Sends through the official Okou Telegram bot
   - --to me requires your Telegram account to be linked to the official Okou bot`,

@@ -54,7 +54,9 @@ const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return noInstallation;
   }
 
-  const client = createSlackClient(installation.botToken);
+  const client = createSlackClient(installation.botToken, {
+    automaticRetries: false,
+  });
 
   const footerText = await get(slackMessageSendFooterText$);
   signal.throwIfAborted();
@@ -63,9 +65,11 @@ const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     resolveSlackTargetChannel$,
     {
       client,
+      botToken: installation.botToken,
       userId: auth.userId,
       orgId: auth.orgId,
       channel: body.channel,
+      threadTs: body.threadTs,
       user: body.user,
     },
     signal,

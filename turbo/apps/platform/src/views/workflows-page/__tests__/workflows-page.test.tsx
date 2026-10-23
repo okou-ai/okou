@@ -1335,7 +1335,6 @@ function googleCalendarAccount(args: {
     oauthScopes: [],
     scopeMismatch: false,
     connectionStatus: args.status ?? "connected",
-    setupStatus: "complete",
     missingRequiredFields: [],
     configuredFieldKeys: [],
     reconnectReason:

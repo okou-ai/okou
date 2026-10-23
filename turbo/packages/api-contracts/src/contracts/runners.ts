@@ -166,22 +166,13 @@ export const runnerClaimCapabilitiesSchema = z
 
 /**
  * Versions of the Okou CLI bundled into a Runner and installed into its rootfs.
- * Advertised on claim for attribution. The optional digest is accepted only
- * until Runners built before bundled-only Pi execution and their rollback
- * builds have drained. It no longer participates in CLI selection.
+ * Advertised on claim for attribution.
  */
 export const runnerInstalledVersionsSchema = z
   .object({
     cli: releaseVersionSchema,
     piAgentRuntime: releaseVersionSchema,
     piSdk: z.string().min(1).max(64),
-    piSessionConstructionDigest: z
-      .string()
-      .regex(
-        /^[a-f0-9]{64}$/,
-        "Session construction digests are 64 lowercase hex",
-      )
-      .optional(),
   })
   .strict()
   .readonly();

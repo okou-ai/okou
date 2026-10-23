@@ -1,6 +1,7 @@
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import {
   DISABLED_PAID_TOOLS_ENV_VAR,
+  ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
   ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
 } from "@okouai/api-contracts/contracts/paid-tools";
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
@@ -161,8 +162,8 @@ export function createPlatformEnvironmentSignals(
 
 /**
  * Paid-tool switches: the tools the user disabled, and whether a framework's
- * native web search replaces Okou web search. That needs Claude Code or Codex
- * outside Pi, billed to the user's own key or subscription.
+ * native tools replace managed tools outside Pi, billed to the user's own key
+ * or subscription. Web search supports Claude Code and Codex; images use Codex.
  */
 export function createPaidToolEnvironmentSignals(
   bootstrap: AgentRunContextSignals,
@@ -185,18 +186,27 @@ export function createPaidToolEnvironmentSignals(
     if (isEnvironmentError(selection)) {
       return selection;
     }
-    const frameworkWebSearch =
+    const allowFrameworkTools =
       !selection.piExecution &&
-      disabledTools.includes("web-search") &&
-      (framework === "claude-code" || framework === "codex") &&
       (modelProvider === null ||
         !isBuiltInModelProviderType(modelProvider.type));
+    const frameworkWebSearch =
+      allowFrameworkTools &&
+      disabledTools.includes("web-search") &&
+      (framework === "claude-code" || framework === "codex");
+    const frameworkImageGeneration =
+      allowFrameworkTools &&
+      disabledTools.includes("image-generation") &&
+      framework === "codex";
     return {
       ...emptyEnvironment(),
       platformEnvironment: {
         [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(disabledTools),
         ...(frameworkWebSearch
           ? { [ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR]: "true" }
+          : {}),
+        ...(frameworkImageGeneration
+          ? { [ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR]: "true" }
           : {}),
       },
     };

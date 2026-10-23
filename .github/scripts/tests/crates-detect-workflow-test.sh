@@ -31,6 +31,7 @@ jq -e '
     "coverage-needed": "${{ steps.detect.outputs.coverage-needed }}",
     "native-kerberos-needed": "${{ steps.detect.outputs.native-kerberos-needed }}",
     "native-gssapi-peer-needed": "${{ steps.detect.outputs.native-gssapi-peer-needed }}",
+    "guest-home-cleanup-needed": "${{ steps.detect.outputs.guest-home-cleanup-needed }}",
     "mitm-addon-test-inputs-changed": "${{ steps.detect.outputs.mitm-addon-test-inputs-changed }}",
     "mitm-addon-pricing-seed-changed": "${{ steps.detect.outputs.mitm-addon-pricing-seed-changed }}",
     "runner-firewall-contract-inputs-changed": "${{ steps.detect.outputs.runner-firewall-contract-inputs-changed }}",

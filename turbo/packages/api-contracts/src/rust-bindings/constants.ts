@@ -3,6 +3,10 @@ import {
   MODEL_PROVIDER_FIREWALL_CONFIGS,
 } from "../contracts/model-providers";
 import {
+  ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
+  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+} from "../contracts/paid-tools";
+import {
   CLIENT_REQUEST_ID_HEADER,
   CLIENT_SESSION_ID_HEADER,
   CLIENT_TYPE_APP,
@@ -116,6 +120,7 @@ const modelProviderEnvPlaceholderModule = [
 ] as const;
 const clientHeadersModule = ["client", "headers"] as const;
 const clientTypesModule = ["client", "types"] as const;
+const paidToolsModule = ["paid_tools"] as const;
 const runnerPathsModule = ["runners", "paths"] as const;
 const storagesModule = ["storages"] as const;
 
@@ -169,6 +174,12 @@ export const rustConstantModuleDocs = [
     rustModulePath: clientTypesModule,
     rustDoc: [
       "Client type values used to identify platform API request originators.",
+    ],
+  },
+  {
+    rustModulePath: paidToolsModule,
+    rustDoc: [
+      "Paid-tool environment contract constants shared by TypeScript and Rust.",
     ],
   },
   {
@@ -308,6 +319,18 @@ export const rustConstantBindings = [
     rustConstName: "CLIENT_TYPE_RUNNER",
     value: rustString(CLIENT_TYPE_RUNNER),
     rustDoc: ["Client type value for the runner."],
+  },
+  {
+    rustModulePath: paidToolsModule,
+    rustConstName: "ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR",
+    value: rustString(ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR),
+    rustDoc: ["Trusted environment opt-in for Codex-native image generation."],
+  },
+  {
+    rustModulePath: paidToolsModule,
+    rustConstName: "ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR",
+    value: rustString(ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR),
+    rustDoc: ["Trusted environment opt-in for framework-native Web Search."],
   },
   {
     rustModulePath: ["runners"],

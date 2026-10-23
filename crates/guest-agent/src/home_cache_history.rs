@@ -77,7 +77,7 @@ pub(crate) fn capture(
     current_runtime: &Path,
     retained_runtime: Option<&Path>,
     generation: &str,
-) -> io::Result<Option<HomeCacheHistoryProofBinding>> {
+) -> CapturedHistoryProof {
     capture_at_path(current_runtime, retained_runtime, generation, &proof_path())
 }
 
@@ -86,7 +86,7 @@ fn capture_at_path(
     retained_runtime: Option<&Path>,
     generation: &str,
     path: &Path,
-) -> io::Result<Option<HomeCacheHistoryProofBinding>> {
+) -> CapturedHistoryProof {
     let current =
         guest_contracts::runtime_paths::final_session_history_identity_file(current_runtime);
     // Retained metadata is considered only when the current run produced none,
@@ -114,29 +114,48 @@ fn capture_at_path(
         let bytes = proof.to_json_vec().ok()?;
         Some((proof, bytes))
     });
-    let Some((proof, bytes)) = candidate else {
-        clear_at_path(path)?;
-        return Ok(None);
-    };
-    // write_private opens parents and the file descriptor-relatively, rejects
-    // symlinks/nonregular entries, and enforces private owner permissions.
-    guest_contracts::runtime_paths::write_private(path, &bytes)?;
-    let binding = HomeCacheHistoryProofBinding {
-        proof,
-        sha256: hex::encode(Sha256::digest(&bytes)),
-    };
-    // Readback catches partial writes or a changed named entry before cleanup.
-    let actual = guest_contracts::runtime_paths::read_private_bounded(
-        path,
-        HOME_CACHE_HISTORY_PROOF_MAX_BYTES,
-    )?;
-    if actual.as_deref() != Some(bytes.as_slice()) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "history proof readback failed",
-        ));
+    CapturedHistoryProof {
+        path: path.to_owned(),
+        candidate,
     }
-    Ok(Some(binding))
+}
+
+/// Finalized facts captured before runtime cleanup, without requiring home writes.
+pub(crate) struct CapturedHistoryProof {
+    path: PathBuf,
+    candidate: Option<(HomeCacheHistoryProof, Vec<u8>)>,
+}
+
+impl CapturedHistoryProof {
+    /// An unusable home must not retain an older generation's surviving proof.
+    pub(crate) fn discard(self) -> io::Result<()> {
+        clear_at_path(&self.path)
+    }
+
+    /// Persist only after managed cleanup and any home-space reclamation finish.
+    pub(crate) fn persist(self) -> io::Result<Option<HomeCacheHistoryProofBinding>> {
+        let Some((proof, bytes)) = self.candidate else {
+            clear_at_path(&self.path)?;
+            return Ok(None);
+        };
+        // Descriptor-relative private writes reject symlinks/nonregular entries.
+        guest_contracts::runtime_paths::write_private(&self.path, &bytes)?;
+        let binding = HomeCacheHistoryProofBinding {
+            proof,
+            sha256: hex::encode(Sha256::digest(&bytes)),
+        };
+        let actual = guest_contracts::runtime_paths::read_private_bounded(
+            &self.path,
+            HOME_CACHE_HISTORY_PROOF_MAX_BYTES,
+        )?;
+        if actual.as_deref() != Some(bytes.as_slice()) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "history proof readback failed",
+            ));
+        }
+        Ok(Some(binding))
+    }
 }
 
 fn clear_at_path(path: &Path) -> io::Result<()> {
@@ -235,6 +254,7 @@ mod tests {
                 "74b68da0-6e0a-4adc-a68e-65a04c4885c4",
                 &proof_path,
             )
+            .persist()
             .unwrap()
             .unwrap();
             let request = HomeCacheHistoryVerifyRequest {
@@ -274,6 +294,7 @@ mod tests {
                     "74b68da0-6e0a-4adc-a68e-65a04c4885c4",
                     &proof_path
                 )
+                .persist()
                 .unwrap()
                 .is_none()
             );
@@ -314,6 +335,7 @@ mod tests {
             "74b68da0-6e0a-4adc-a68e-65a04c4885c4",
             &proof_path,
         )
+        .persist()
         .unwrap()
         .unwrap();
         let mut request = HomeCacheHistoryVerifyRequest {
@@ -352,6 +374,7 @@ mod tests {
                 "74b68da0-6e0a-4adc-a68e-65a04c4885c4",
                 &proof_path
             )
+            .persist()
             .unwrap()
             .is_none()
         );

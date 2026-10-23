@@ -84,7 +84,7 @@ export function runMcpConnector(
     endpoint: "https://mcp.example.test/server",
     runtimeAvailable: true,
     connectionStatus: "connected",
-    setupStatus: "complete",
+    reconnectReason: null,
     missingRequiredFields: [],
     configuredFieldKeys: [],
     ...overrides,

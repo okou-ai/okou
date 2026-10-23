@@ -3,8 +3,6 @@ import { randomUUID } from "node:crypto";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   builtinConnectorManualGrantContract,
-  builtinConnectorScopeDiffContract,
-  builtinConnectorsBySlugContract,
   builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { afterEach } from "vitest";
@@ -141,16 +139,9 @@ describe("GET /api/connectors", () => {
         connectionStatus: "connected",
       }),
     );
-    expect(response.body.connectorProvidedBindings).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "gitlab",
-        namespace: "secrets",
-        name: "GITLAB_TOKEN",
-      }),
-    );
   });
 
-  it("lists HTTP and MCP accounts but exposes sandbox bindings only for HTTP connectors", async () => {
+  it("lists HTTP and MCP accounts", async () => {
     const fixture = seedAuthenticatedFixture();
     seededFixtures.push(fixture);
     await connectGitlab(fixture);
@@ -177,18 +168,6 @@ describe("GET /api/connectors", () => {
         return connector.slug;
       }),
     ).toStrictEqual(expect.arrayContaining(["gitlab", "manual-mcp"]));
-    expect(listed.body.connectorProvidedBindings).toStrictEqual([
-      expect.objectContaining({
-        connectorSlug: "gitlab",
-        namespace: "vars",
-        name: "GITLAB_HOST",
-      }),
-      expect.objectContaining({
-        connectorSlug: "gitlab",
-        namespace: "secrets",
-        name: "GITLAB_TOKEN",
-      }),
-    ]);
   });
 
   it("projects the selected default account and removes it after public disconnect", async () => {
@@ -238,7 +217,7 @@ describe("GET /api/connectors", () => {
       expect(projected.connectors).toHaveLength(1);
       await expect(
         own(() => {
-          return connectors.readConnectorBySlug(actor, "gitlab");
+          return connectors.readDefaultBuiltinAccount(actor, "gitlab");
         }),
       ).resolves.toMatchObject({ id: second.id });
       for (const account of [first, second]) {
@@ -260,20 +239,15 @@ describe("GET /api/connectors", () => {
       });
       expect(response.body).toStrictEqual({
         connectors: [],
-        connectorProvidedBindings: [],
       });
-      const detail = await own(() => {
-        return accept(
-          setupApp({ context, routes: builtinConnectorsRoutes })(
-            builtinConnectorsBySlugContract,
-          ).get({
-            params: { connectorSlug: "gitlab" },
-            headers: authHeaders(),
-          }),
-          [404],
+      const accountsAfterDelete = await own(() => {
+        return connectors.requestBuiltinConnectorAccounts(
+          actor,
+          "gitlab",
+          [200],
         );
       });
-      expect(detail.body.error.code).toBe("NOT_FOUND");
+      expect(accountsAfterDelete.body.defaultConnection).toBeNull();
     });
   });
 
@@ -313,18 +287,6 @@ describe("GET /api/connectors", () => {
         slug: "gitlab",
         authMethod: "api-token",
         connectionStatus: "connected",
-      }),
-    ]);
-    expect(available.body.connectorProvidedBindings).toStrictEqual([
-      expect.objectContaining({
-        connectorSlug: "gitlab",
-        namespace: "vars",
-        name: "GITLAB_HOST",
-      }),
-      expect.objectContaining({
-        connectorSlug: "gitlab",
-        namespace: "secrets",
-        name: "GITLAB_TOKEN",
       }),
     ]);
     mockOptionalEnv("BOX_OAUTH_CLIENT_ID", undefined);
@@ -367,15 +329,6 @@ describe("GET /api/connectors", () => {
     });
 
     // Scope reads compute compatibility from the current entry.
-    const connectorScopeDiff = await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorScopeDiffContract,
-      ).getScopeDiff({
-        headers: authHeaders(),
-        params: { connectorSlug: "gitlab" },
-      }),
-      [200],
-    );
     const scopeDiff = await accept(
       accountClient.scopeDiff({
         headers: authHeaders(),
@@ -390,7 +343,6 @@ describe("GET /api/connectors", () => {
       currentScopes: [],
       storedScopes: [],
     };
-    expect(connectorScopeDiff.body).toStrictEqual(emptyScopeDiff);
     expect(scopeDiff.body).toStrictEqual(emptyScopeDiff);
 
     const selection = { target, connectionId: account.id };
@@ -412,7 +364,6 @@ describe("GET /api/connectors", () => {
         externalEmail: account.externalEmail,
         connectionStatus: account.connectionStatus,
         reconnectReason: account.reconnectReason,
-        setupStatus: "complete",
         missingRequiredFields: [],
         configuredFieldKeys: ["accessToken", "host"],
       },

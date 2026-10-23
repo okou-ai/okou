@@ -17,8 +17,6 @@ import {
   builtinConnectorOauthStartResponseSchema,
   connectorCompletedOperationResponseSchema,
   builtinConnectorListResponseSchema,
-  builtinConnectorResponseSchema,
-  scopeDiffResponseSchema,
 } from "./connector-schemas";
 
 const c = initContract();
@@ -38,45 +36,6 @@ export const builtinConnectorsMainContract = c.router({
       500: apiErrorSchema,
     },
     summary: "List the current user's connector connections",
-  },
-});
-
-/**
- * Contract for GET /api/connectors/:connectorSlug
- */
-export const builtinConnectorsBySlugContract = c.router({
-  get: {
-    method: "GET",
-    path: "/api/connectors/:connectorSlug",
-    headers: authHeadersSchema,
-    pathParams: z.object({ connectorSlug: connectorSlugSchema }),
-    responses: {
-      200: builtinConnectorResponseSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Get connector by slug",
-  },
-});
-
-/**
- * Contract for GET /api/connectors/:connectorSlug/scope-diff
- * App-layer endpoint (direct service call, no proxy)
- */
-export const builtinConnectorScopeDiffContract = c.router({
-  getScopeDiff: {
-    method: "GET",
-    path: "/api/connectors/:connectorSlug/scope-diff",
-    headers: authHeadersSchema,
-    pathParams: z.object({ connectorSlug: connectorSlugSchema }),
-    responses: {
-      200: scopeDiffResponseSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Get scope diff for a connector",
   },
 });
 
@@ -371,10 +330,6 @@ export const builtinConnectorsSearchContract = c.router({
 
 export type BuiltinConnectorsMainContract =
   typeof builtinConnectorsMainContract;
-export type BuiltinConnectorsBySlugContract =
-  typeof builtinConnectorsBySlugContract;
-export type BuiltinConnectorScopeDiffContract =
-  typeof builtinConnectorScopeDiffContract;
 export type BuiltinConnectorManualGrantContract =
   typeof builtinConnectorManualGrantContract;
 export type BuiltinConnectorNoAuthGrantContract =

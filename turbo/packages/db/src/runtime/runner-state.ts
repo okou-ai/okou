@@ -1,6 +1,6 @@
 import { index, pgTable } from "drizzle-orm/pg-core";
 import { runnerStateColumns } from "../columns/runner-state";
-// Application mapping excludes retired ingress storage retained by the schema.
+// Shared by runtime consumers and the migration-owned schema export.
 export const runnerState = pgTable(
   "runner_state",
   runnerStateColumns(),

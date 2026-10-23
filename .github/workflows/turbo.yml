@@ -1185,11 +1185,13 @@ jobs:
           files: turbo/junit.xml
           report_type: test_results
 
-  # Deploy API application with preview database and E2E bootstrap data
+  # Deploy both API targets with one toolchain and prepared preview database.
   deploy-api:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     concurrency:
+      # Worker resource cleanup shares this identity. Parent PR cancellation
+      # still takes precedence; later runs reconcile the same preview resources.
       group: deploy-api-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
     container:
@@ -1419,6 +1421,46 @@ jobs:
           header: api-preview
           message: |
             API preview: ${{ steps.api-alias.outputs.url || steps.api-deploy.outputs.url }}
+
+      # Reuse the captured source, installed toolchain and resolved API env.
+      # These steps extend deploy-api, so E2E waits for both API deployments.
+      - name: Check Worker deployment contracts and secret handling
+        if: >-
+          (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        run: |
+          node --test .github/scripts/api-worker-workflow.test.cjs .github/scripts/api-worker-preview.test.cjs
+          pnpm --dir turbo/apps/api test:worker-build
+
+      - name: Build and deploy API Worker using the shared preview database
+        if: >-
+          (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        env:
+          JOB_REF: ${{ needs.prepare.outputs.job-ref }}
+          API_ENV_FILE: ${{ steps.api-deploy-env.outputs.file }}
+          # Resolve the existing preview/<ref> branch; deploy-api owns DB setup.
+          EXPECTED_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+          CF_API_TRACES_DESTINATION: ${{ vars.CF_API_TRACES_DESTINATION }}
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/api-worker-preview.cjs deploy
+
+      - name: Remove temporary API runtime environments
+        if: always()
+        env:
+          API_ENV_FILE: ${{ steps.api-deploy-env.outputs.file }}
+          API_SEED_ENV_FILE: ${{ steps.api-seed-env.outputs.file }}
+        run: |
+          set -euo pipefail
+          for file in "${API_ENV_FILE:-}" "${API_SEED_ENV_FILE:-}"; do
+            if [[ -n "$file" ]]; then
+              rm -f -- "$file"
+            fi
+          done
 
   # Build the canonical app artifact independently of Vercel, publish its
   # immutable resources to R2, and upload the small application shell with a

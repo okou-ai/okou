@@ -35,6 +35,7 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   DISABLED_PAID_TOOLS_ENV_VAR,
+  ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
   ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
 } from "@okouai/api-contracts/contracts/paid-tools";
 import type {
@@ -5036,6 +5037,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         api.acceptTelemetryIngest();
         const runnerGroup = api.configureRunnerGroup();
         await api.grantProEntitlement(actor);
+        await setPaidToolDisabled(context, actor, "image-generation", true);
         const agent = await bdd.createAgent(actor, {
           displayName: "BDD managed key agent",
           visibility: "private",
@@ -5061,8 +5063,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
         ).toContain("model-provider:openrouter-codex");
         expect(claim.encryptedSecrets).toStrictEqual(expect.any(String));
+        expect(claim.platformEnvironment).not.toHaveProperty(
+          ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
+        );
 
         const runRead = await api.readRun(actor, run.runId);
+        expect(runRead.source).toMatchObject({ providerType: "built-in" });
         const threadEvents = await chat.listThreadEvents(actor, run.threadId);
         const logs = await createRunReadsApi(context).requestListLogs(
           actor,
@@ -5097,6 +5103,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             return api.updateUserModelPreference(actor, selectedModel);
           });
 
+        await setPaidToolDisabled(context, actor, "image-generation", true);
         preparePiSandboxClaim();
 
         const sent = await chat.sendAndLaunch(actor, {
@@ -5118,6 +5125,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         // The personal Codex route launches a Pi turn rather than a native job.
         expect(claim.cliAgentType).toBe("pi");
+        expect(claim.platformEnvironment).not.toHaveProperty(
+          ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
+        );
         expect(claim.piModelConfig).toMatchObject({
           provider: "openai-codex",
           model: selectedModel,
@@ -8144,7 +8154,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.objectContaining({
             isDefault: true,
             connectionStatus: "connected",
-            setupStatus: "complete",
           }),
         );
 
@@ -8169,7 +8178,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.objectContaining({
             isDefault: true,
             connectionStatus: "reconnect-required",
-            setupStatus: "complete",
             reconnectReason: "credential_expired",
           }),
         );
@@ -8395,7 +8403,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.objectContaining({
             isDefault: true,
             connectionStatus: "reconnect-required",
-            setupStatus: "complete",
           }),
         );
         expect(provider.tokenBodies).toHaveLength(2);
@@ -8470,7 +8477,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.objectContaining({
             isDefault: true,
             connectionStatus: "connected",
-            setupStatus: "complete",
             missingRequiredFields: [],
             oauthScopes: ["read", "refreshed"],
           }),
@@ -8685,7 +8691,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.objectContaining({
             isDefault: true,
             connectionStatus: "reconnect-required",
-            setupStatus: "complete",
           }),
         );
 
@@ -9312,7 +9317,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.objectContaining({
             id: sourceId,
             connectionStatus: "connected",
-            setupStatus: "complete",
           }),
         );
         await own(() => {
@@ -9903,7 +9907,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.objectContaining({
             isDefault: true,
             connectionStatus: "reconnect-required",
-            setupStatus: "invalid",
+            reconnectReason: "configuration_invalid",
             configuredFieldKeys: [],
             missingRequiredFields: ["replacement_key"],
           }),
@@ -9983,7 +9987,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             id: connectionId,
             isDefault: true,
             connectionStatus: "connected",
-            setupStatus: "complete",
             configuredFieldKeys: ["replacement_key"],
             missingRequiredFields: [],
           }),
@@ -11483,6 +11486,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(
           claim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
         ).toBe("true");
+        expect(claim.platformEnvironment).not.toHaveProperty(
+          ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
+        );
         expect(claim.environment).not.toHaveProperty(
           DISABLED_PAID_TOOLS_ENV_VAR,
         );
@@ -11547,6 +11553,72 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           codexSubscription.runId,
           codexSubscriptionClaim.sandboxToken,
         );
+      });
+
+      it("snapshots native Codex image preferences independently from Web Search", async () => {
+        const api = createRunsApi(context);
+        const { actor, agentId, runnerGroup } = await entitledRunActor(
+          {},
+          NATIVE_RUNNER_ROUTE,
+        );
+        await createBddIntegrationApi(
+          context,
+        ).configureNativeSubscriptionModels(actor);
+        await setPaidToolDisabled(context, actor, "image-generation", true);
+
+        const queued = await api.createThreadRun(actor, {
+          agentId,
+          prompt: "use native Codex images with managed web search",
+          model: "gpt-6-astra",
+        });
+        await setPaidToolDisabled(context, actor, "image-generation", false);
+        await setPaidToolDisabled(context, actor, "web-search", true);
+        await api.heartbeatRunner(runnerGroup);
+        const claim = await api.claimRunnerJob(queued.runId);
+        expect(claim.cliAgentType).toBe("codex");
+        expect(
+          claim.platformEnvironment[ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR],
+        ).toBe("true");
+        expect(claim.platformEnvironment).not.toHaveProperty(
+          ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+        );
+        expect(claim.environment).not.toHaveProperty(
+          ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
+        );
+        await api.requestCancelRun(actor, queued.runId, [200]);
+        await finishCancelledRun(queued.runId, claim.sandboxToken);
+
+        const managedImages = await api.createThreadRun(actor, {
+          agentId,
+          prompt: "use managed images with native web search",
+          model: "gpt-6-astra",
+        });
+        const managedClaim = await api.claimRunnerJob(managedImages.runId);
+        expect(managedClaim.platformEnvironment).not.toHaveProperty(
+          ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
+        );
+        expect(
+          managedClaim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
+        ).toBe("true");
+        await api.requestCancelRun(actor, managedImages.runId, [200]);
+        await finishCancelledRun(
+          managedImages.runId,
+          managedClaim.sandboxToken,
+        );
+
+        await setPaidToolDisabled(context, actor, "image-generation", true);
+        const nativeTools = await api.createThreadRun(actor, {
+          agentId,
+          prompt: "use native images and web search",
+          model: "gpt-6-astra",
+        });
+        const nativeClaim = await api.claimRunnerJob(nativeTools.runId);
+        expect(nativeClaim.platformEnvironment).toMatchObject({
+          [ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR]: "true",
+          [ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR]: "true",
+        });
+        await api.requestCancelRun(actor, nativeTools.runId, [200]);
+        await finishCancelledRun(nativeTools.runId, nativeClaim.sandboxToken);
       });
 
       it("uses the executing member's paid tool preferences for a shared agent", async () => {

@@ -11,6 +11,11 @@ use super::*;
 pub type PrefetchReadCheckpoint = Arc<dyn Fn(u64) -> io::Result<()> + Send + Sync>;
 
 impl MemoryPrefetchTasks {
+    /// Observe cancellation of the real reader owner across a runtime handoff.
+    pub fn cancellation_for_test(&self) -> CancellationToken {
+        self.cancel.clone()
+    }
+
     /// The production startup coordinator and File loop, with a fixture checkpoint.
     pub fn spawn_with_read_checkpoint_for_test(
         candidates: impl IntoIterator<Item = MemoryPrefetchCandidate>,

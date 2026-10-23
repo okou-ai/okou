@@ -1,7 +1,4 @@
-import type {
-  ConnectorCheckRequestBody,
-  ConnectorCheckTargetAwareDiagnosticResult,
-} from "@okouai/api-contracts/contracts/connector-check";
+import type { ConnectorCheckTargetAwareDiagnosticResult } from "@okouai/api-contracts/contracts/connector-check";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   customConnectorManagedStatusSchema,
@@ -13,7 +10,10 @@ import {
   getAgentCustomConnectorGrants,
   getAgentUserBuiltinConnectors,
 } from "../../lib/api/domains/agents";
-import { getCustomConnector } from "../../lib/api/domains/connectors";
+import {
+  getCustomConnector,
+  type ConnectorDiagnosticRequest,
+} from "../../lib/api/domains/connectors";
 import { getOkouAgentId } from "../../lib/okou-env";
 import { getPlatformOrigin } from "../../lib/platform-url";
 import {
@@ -56,7 +56,7 @@ type CheckAction =
   | { readonly kind: "guidance"; readonly message: string };
 
 function diagnosticContextGuidance(
-  request: ConnectorCheckRequestBody,
+  request: ConnectorDiagnosticRequest,
 ): string[] {
   return request.mode === "url" && request.aws !== undefined
     ? [
@@ -66,7 +66,7 @@ function diagnosticContextGuidance(
 }
 
 function permissionActions(
-  request: ConnectorCheckRequestBody,
+  request: ConnectorDiagnosticRequest,
   diagnostic: ResolvedDiagnostic,
   origin: string,
   agentId: string | undefined,
@@ -143,7 +143,9 @@ function permissionActions(
   });
 }
 
-function environmentPermissionName(request: ConnectorCheckRequestBody): string {
+function environmentPermissionName(
+  request: ConnectorDiagnosticRequest,
+): string {
   if (request.mode !== "environment" || request.permission === undefined) {
     throw new Error(
       "Connector diagnostic returned a permission outcome without a requested permission.",
@@ -265,7 +267,7 @@ function checkConnectionActions(
 }
 
 export async function printConnectorCheckJson(
-  request: ConnectorCheckRequestBody,
+  request: ConnectorDiagnosticRequest,
   diagnostic: ConnectorCheckTargetAwareDiagnosticResult,
   awsContextIncomplete: boolean,
 ): Promise<void> {

@@ -4,7 +4,10 @@ import { and, eq } from "drizzle-orm";
 import { command, computed, type Computed } from "ccstate";
 
 import { db$ } from "../external/db";
-import { createTeamsPersonalConversation } from "../external/teams-bot-client";
+import {
+  createTeamsPersonalConversation,
+  checkTeamsConversationMember,
+} from "../external/teams-bot-client";
 
 interface TeamsInstallation {
   readonly teamsTenantId: string;
@@ -58,25 +61,14 @@ export function teamsErrorResponse(result: {
   );
 }
 
-type ConnectedTeamsUser =
-  | {
-      readonly kind: "ok";
-      readonly teamsUserId: string;
-      readonly teamsUserDisplayName: string | null;
-    }
-  | { readonly kind: "not_found" };
-
-/**
- * Resolve a Teams delivery target. A `conversationId` is used as-is; a `user`
- * (Teams user ID, or `"me"` for the caller's connected Teams user) is resolved
- * to the bot's personal conversation with that user.
- */
+/** Resolve shared conversations or explicitly addressed outbound bot DMs. */
 export const resolveTeamsMessageTarget$ = command(
   async (
     { get },
     args: {
       readonly installation: TeamsInstallation;
       readonly userId: string;
+      readonly mode?: "read" | "write";
       readonly body: {
         readonly conversationId?: string;
         readonly user?: string;
@@ -85,98 +77,86 @@ export const resolveTeamsMessageTarget$ = command(
     },
     signal: AbortSignal,
   ): Promise<TeamsMessageTarget | ReturnType<typeof routeError>> => {
-    if (args.body.conversationId) {
-      return {
-        conversationId: args.body.conversationId,
-        activityId: args.body.activityId,
-      };
-    }
-
-    if (!args.installation.botId) {
-      return routeError(
-        404,
-        "Microsoft Teams installation has no bot identity yet. Send a message to the Teams bot first.",
-        "NOT_FOUND",
-      );
-    }
-    if (!args.installation.serviceUrl) {
-      return routeError(
-        404,
-        "Microsoft Teams installation has no service URL yet. Send a message to the Teams bot first.",
-        "NOT_FOUND",
-      );
-    }
-    if (!args.body.user) {
-      return routeError(400, "Teams user ID is required", "BAD_REQUEST");
-    }
-
-    let targetUser: ConnectedTeamsUser;
-    if (args.body.user === "me") {
-      const db = get(db$);
-      const tenantId = args.installation.teamsTenantId;
-      const userId = args.userId;
-      targetUser = await (async (): Promise<ConnectedTeamsUser> => {
-        const [connection] = await db
-          .select({
-            teamsUserId: teamsOrgConnections.teamsUserId,
-            teamsUserDisplayName: teamsOrgConnections.teamsUserDisplayName,
-          })
-          .from(teamsOrgConnections)
-          .where(
-            and(
-              eq(teamsOrgConnections.teamsTenantId, tenantId),
-              eq(teamsOrgConnections.userId, userId),
-            ),
-          )
-          .limit(1);
-
-        if (!connection?.teamsUserId) {
-          return { kind: "not_found" };
-        }
-
-        return {
-          kind: "ok",
-          teamsUserId: connection.teamsUserId,
-          teamsUserDisplayName: connection.teamsUserDisplayName,
-        };
-      })();
-    } else {
-      targetUser = {
-        kind: "ok",
-        teamsUserId: args.body.user,
-        teamsUserDisplayName: null,
-      };
-    }
+    const [connection] = await get(db$)
+      .select({
+        teamsUserId: teamsOrgConnections.teamsUserId,
+        teamsUserDisplayName: teamsOrgConnections.teamsUserDisplayName,
+      })
+      .from(teamsOrgConnections)
+      .where(
+        and(
+          eq(
+            teamsOrgConnections.teamsTenantId,
+            args.installation.teamsTenantId,
+          ),
+          eq(teamsOrgConnections.userId, args.userId),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
-
-    if (targetUser.kind === "not_found") {
+    if (!connection?.teamsUserId || !args.installation.serviceUrl) {
       return routeError(
         404,
-        "No connected Microsoft Teams user found for this organization",
+        "This Teams conversation is unavailable to your connected account and Okou.",
         "NOT_FOUND",
       );
     }
-
-    const conversation = await createTeamsPersonalConversation(
+    let conversationId = args.body.conversationId;
+    let memberId = connection.teamsUserId;
+    if (!conversationId) {
+      if (
+        !args.installation.botId ||
+        !args.body.user ||
+        (args.mode === "read" &&
+          args.body.user !== "me" &&
+          args.body.user !== connection.teamsUserId)
+      ) {
+        return routeError(
+          404,
+          "This Teams conversation is unavailable to your connected account and Okou.",
+          "NOT_FOUND",
+        );
+      }
+      memberId =
+        args.body.user === "me" ? connection.teamsUserId : args.body.user;
+      const conversation = await createTeamsPersonalConversation(
+        {
+          serviceUrl: args.installation.serviceUrl,
+          tenantId: args.installation.teamsTenantId,
+          botId: args.installation.botId,
+          botName: args.installation.botName,
+          teamsUserId: memberId,
+          teamsUserDisplayName:
+            memberId === connection.teamsUserId
+              ? connection.teamsUserDisplayName
+              : null,
+        },
+        signal,
+      );
+      if (conversation.kind === "teams-error") {
+        return teamsErrorResponse(conversation);
+      }
+      conversationId = conversation.conversationId;
+    }
+    const membership = await checkTeamsConversationMember(
       {
         serviceUrl: args.installation.serviceUrl,
         tenantId: args.installation.teamsTenantId,
-        botId: args.installation.botId,
-        botName: args.installation.botName,
-        teamsUserId: targetUser.teamsUserId,
-        teamsUserDisplayName: targetUser.teamsUserDisplayName,
+        conversationId,
+        teamsUserId: memberId,
       },
       signal,
     );
-    signal.throwIfAborted();
-
-    if (conversation.kind === "teams-error") {
-      return teamsErrorResponse(conversation);
+    if (membership.kind === "teams-error") {
+      return teamsErrorResponse(membership);
     }
-
-    return {
-      conversationId: conversation.conversationId,
-      activityId: undefined,
-    };
+    if (membership.kind === "denied") {
+      return routeError(
+        404,
+        "This Teams conversation is unavailable to your connected account and Okou.",
+        "NOT_FOUND",
+      );
+    }
+    return { conversationId, activityId: args.body.activityId };
   },
 );

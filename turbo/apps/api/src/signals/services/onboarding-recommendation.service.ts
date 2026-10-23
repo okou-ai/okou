@@ -556,10 +556,7 @@ function completeOnboardingSources(
   const completeIds = new Set(
     accounts
       .filter((account) => {
-        return (
-          account.connectionStatus === "connected" &&
-          account.setupStatus === "complete"
-        );
+        return account.connectionStatus === "connected";
       })
       .map((account) => {
         return account.id;

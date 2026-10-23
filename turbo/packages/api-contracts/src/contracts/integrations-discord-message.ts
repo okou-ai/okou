@@ -8,21 +8,26 @@ import {
 
 const c = initContract();
 
-export const sendDiscordMessageBodySchema = z.object({
-  guildId: discordSnowflakeSchema.optional(),
-  channelId: discordSnowflakeSchema,
-  replyToMessageId: discordSnowflakeSchema.optional(),
-  text: z
-    .string()
-    .min(1)
-    .max(20_000)
-    .refine(
-      (value) => {
-        return value.trim().length > 0;
-      },
-      { message: "Message text must not be blank" },
-    ),
-});
+export const sendDiscordMessageBodySchema = z
+  .object({
+    guildId: discordSnowflakeSchema.optional(),
+    channelId: discordSnowflakeSchema.optional(),
+    userId: z.union([z.literal("me"), discordSnowflakeSchema]).optional(),
+    replyToMessageId: discordSnowflakeSchema.optional(),
+    text: z
+      .string()
+      .min(1)
+      .max(20_000)
+      .refine(
+        (value) => {
+          return value.trim().length > 0;
+        },
+        { message: "Message text must not be blank" },
+      ),
+  })
+  .refine((body) => {
+    return (body.channelId === undefined) !== (body.userId === undefined);
+  }, "Provide exactly one of channelId or userId");
 
 export const discordSentMessageSchema = z.object({
   id: discordSnowflakeSchema,

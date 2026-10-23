@@ -405,7 +405,7 @@ type ChatThreadMenuProps = {
   touch?: boolean;
 };
 
-function ChatThreadMenu({
+function ChatThreadMenuTrigger({
   signals,
   rowIndex,
   touch = false,
@@ -413,102 +413,126 @@ function ChatThreadMenu({
   const { t } = useTranslation();
   const isPinned = useGet(signals.pinned$);
   const indicatorState = useLastResolved(signals.indicatorState$) ?? null;
-  const requestDelete = useSet(signals.requestDelete$);
 
   const showStateIndicator = indicatorState !== null;
   const showPinIndicator = isPinned && indicatorState === null;
   const hasRestingIndicator = showStateIndicator || showPinIndicator;
 
   return (
+    <DropdownMenuTrigger
+      render={
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-2xs"
+          className={`group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${touch ? "min-h-11 min-w-11" : ""} ${
+            hasRestingIndicator
+              ? ""
+              : "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100"
+          } ${CHAT_THREAD_ROW_ICON_CLASS}`}
+          aria-label={t(($) => {
+            return $.chat.sidebar.openChatMenu;
+          })}
+          data-testid="chat-thread-menu-trigger"
+          data-pinned={isPinned ? "true" : "false"}
+        />
+      }
+    >
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span
+              data-testid={
+                showPinIndicator ? "chat-thread-pinned-indicator" : undefined
+              }
+              className="flex items-center justify-center"
+            >
+              {hasRestingIndicator ? (
+                <>
+                  <span
+                    aria-hidden="true"
+                    data-testid="chat-thread-state-indicator"
+                    className="flex items-center justify-center md:group-hover:hidden group-focus-visible/thread-menu:hidden md:group-data-[popup-open]/thread-menu:hidden"
+                  >
+                    {showStateIndicator ? (
+                      <SessionStateIndicator
+                        signals={signals}
+                        rowIndex={rowIndex}
+                      />
+                    ) : (
+                      <Pin size={17} className="opacity-70" />
+                    )}
+                  </span>
+                  <Ellipsis
+                    size={17}
+                    className="hidden opacity-70 md:group-hover:block group-focus-visible/thread-menu:block md:group-data-[popup-open]/thread-menu:block"
+                  />
+                </>
+              ) : (
+                <Ellipsis size={17} className="opacity-70" />
+              )}
+            </span>
+          }
+        />
+        <TooltipContent side="bottom">
+          <p className="text-xs">
+            {t(($) => {
+              return $.chat.actions.more;
+            })}
+          </p>
+        </TooltipContent>
+      </Tooltip>
+    </DropdownMenuTrigger>
+  );
+}
+
+function ChatThreadMenuItems({
+  signals,
+}: Pick<ChatThreadMenuProps, "signals">) {
+  const { t } = useTranslation();
+  const requestDelete = useSet(signals.requestDelete$);
+
+  return (
+    <>
+      <ChatThreadPinMenuItems signals={signals} />
+      <ChatThreadMarkUnreadMenuItem signals={signals} />
+      <ChatThreadMuteMenuItem signals={signals} />
+      <ChatThreadArchiveMenuSection signals={signals} />
+      <ChatThreadRenameMenuItem signals={signals} />
+      <DropdownMenuItem
+        onClick={() => {
+          requestDelete();
+        }}
+        className="text-destructive focus:text-destructive"
+      >
+        <Trash size={16} className="mr-2" />
+        {t(($) => {
+          return $.chat.sidebar.delete;
+        })}
+      </DropdownMenuItem>
+    </>
+  );
+}
+
+function ChatThreadMenu({
+  signals,
+  rowIndex,
+  touch = false,
+}: ChatThreadMenuProps) {
+  return (
     <TooltipProvider delay={200}>
       <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-2xs"
-              className={`group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${touch ? "min-h-11 min-w-11" : ""} ${
-                hasRestingIndicator
-                  ? ""
-                  : "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100"
-              } ${CHAT_THREAD_ROW_ICON_CLASS}`}
-              aria-label={t(($) => {
-                return $.chat.sidebar.openChatMenu;
-              })}
-              data-testid="chat-thread-menu-trigger"
-              data-pinned={isPinned ? "true" : "false"}
-            />
-          }
-        >
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span
-                  data-testid={
-                    showPinIndicator
-                      ? "chat-thread-pinned-indicator"
-                      : undefined
-                  }
-                  className="flex items-center justify-center"
-                >
-                  {hasRestingIndicator ? (
-                    <>
-                      <span
-                        aria-hidden="true"
-                        data-testid="chat-thread-state-indicator"
-                        className="flex items-center justify-center md:group-hover:hidden group-focus-visible/thread-menu:hidden md:group-data-[popup-open]/thread-menu:hidden"
-                      >
-                        {showStateIndicator ? (
-                          <SessionStateIndicator
-                            signals={signals}
-                            rowIndex={rowIndex}
-                          />
-                        ) : (
-                          <Pin size={17} className="opacity-70" />
-                        )}
-                      </span>
-                      <Ellipsis
-                        size={17}
-                        className="hidden opacity-70 md:group-hover:block group-focus-visible/thread-menu:block md:group-data-[popup-open]/thread-menu:block"
-                      />
-                    </>
-                  ) : (
-                    <Ellipsis size={17} className="opacity-70" />
-                  )}
-                </span>
-              }
-            />
-            <TooltipContent side="bottom">
-              <p className="text-xs">
-                {t(($) => {
-                  return $.chat.actions.more;
-                })}
-              </p>
-            </TooltipContent>
-          </Tooltip>
-        </DropdownMenuTrigger>
+        <ChatThreadMenuTrigger
+          signals={signals}
+          rowIndex={rowIndex}
+          touch={touch}
+        />
         <DropdownMenuContent
           align="end"
           className={chatThreadMenuContentClassName(touch)}
           data-chat-thread-menu-thread-id={signals.threadId}
         >
-          <ChatThreadPinMenuItems signals={signals} />
-          <ChatThreadMarkUnreadMenuItem signals={signals} />
-          <ChatThreadMuteMenuItem signals={signals} />
-          <ChatThreadArchiveMenuSection signals={signals} />
-          <ChatThreadRenameMenuItem signals={signals} />
-          <DropdownMenuItem
-            onClick={() => {
-              requestDelete();
-            }}
-            className="text-destructive focus:text-destructive"
-          >
-            <Trash size={16} className="mr-2" />
-            {t(($) => {
-              return $.chat.sidebar.delete;
-            })}
-          </DropdownMenuItem>
+          <ChatThreadMenuItems signals={signals} />
         </DropdownMenuContent>
       </DropdownMenu>
     </TooltipProvider>

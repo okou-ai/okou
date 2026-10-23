@@ -495,7 +495,11 @@ test("An agent can grant access through a healthy configured default", async () 
   ]);
 });
 
-test.each(["connected", "reconnect-required", "incomplete"] as const)(
+test.each([
+  "connected",
+  "reconnect-required",
+  "configuration_incomplete",
+] as const)(
   "Check a canonical custom default only when granting access (%s)",
   async (status) => {
     const connector = acmeConnectorFixture();
@@ -521,8 +525,11 @@ test.each(["connected", "reconnect-required", "incomplete"] as const)(
         });
         const account = customConnectorAccount(connector.id, {
           connectionStatus:
-            status === "reconnect-required" ? status : "connected",
-          setupStatus: status === "incomplete" ? status : "complete",
+            status === "connected" ? status : "reconnect-required",
+          reconnectReason:
+            status === "configuration_incomplete" ? status : null,
+          missingRequiredFields:
+            status === "configuration_incomplete" ? ["secret"] : [],
         });
         return respond(200, {
           connections: [account],

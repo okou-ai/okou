@@ -101,7 +101,6 @@ export function catalogConnectorFixture(
       externalEmail: null,
       reconnectReason: null,
       connectionStatus: "connected",
-      setupStatus: "complete",
       scopeMismatch: false,
       tokenExpiresAt: null,
     },
@@ -167,7 +166,6 @@ function customConnectorBase() {
     account: {
       id: "30000000-0000-4000-8000-000000000001",
       updatedAt: NOW,
-      setupStatus: "complete" as const,
       configuredFieldKeys: [],
     },
     createdAt: NOW,

@@ -192,7 +192,7 @@ describe("Builtin external-code session expiration", () => {
       await expectExpiredSession(actor, reconnect);
       await expectAccounts(actor, expected);
       await expect(
-        connectors.readConnectorBySlug(actor, "aws"),
+        connectors.readDefaultBuiltinAccount(actor, "aws"),
       ).resolves.toMatchObject({
         id: defaultAccount.connectionId,
       });
@@ -212,7 +212,7 @@ describe("Builtin external-code session expiration", () => {
       });
       await expectAccounts(actor, expected);
       await expect(
-        connectors.readConnectorBySlug(actor, "aws"),
+        connectors.readDefaultBuiltinAccount(actor, "aws"),
       ).resolves.toMatchObject({
         id: defaultAccount.connectionId,
       });

@@ -114,6 +114,7 @@ def context(event, changed, ci, guest, ably, coverage=None):
               "needs.detect.outputs.ably-subscriber-changed": str(ably).lower(),
               "needs.detect.outputs.native-kerberos-needed": "false",
               "needs.detect.outputs.native-gssapi-peer-needed": "false",
+              "needs.detect.outputs.guest-home-cleanup-needed": "false",
               "needs.detect.outputs.runner-firewall-contract-inputs-changed": "false",
               "needs.detect.outputs.metal-job-ref": "",
               "needs.detect.outputs.crates-runner-consumer-needed": "false",

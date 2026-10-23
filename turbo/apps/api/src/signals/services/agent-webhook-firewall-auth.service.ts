@@ -98,7 +98,7 @@ import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import { safeSync, settle, settleIncludingAbort, tapError } from "../utils";
 import { resolveBuiltinConnectorAutomaticMcpCredential } from "./builtin-connector-automatic-oauth.service";
@@ -235,7 +235,7 @@ interface FirewallAuthResolutionContext {
 }
 
 type PersonalSubscriptionCredentialReadArgs =
-  PersonalSubscriptionCredentialScope & { readonly db: Db };
+  PersonalSubscriptionCredentialScope;
 
 /** Request-scoped subscription credential reads. One firewall request decrypts
  * a bundle once; a refresh in the same request clears it so the rotated bundle
@@ -245,10 +245,12 @@ type SubscriptionBundleReads = Map<
   Promise<PersonalSubscriptionCredentialBundle>
 >;
 
-function readSubscriptionBundle(
+const readSubscriptionBundle$ = command(function readSubscriptionBundle(
+  { get },
   reads: SubscriptionBundleReads | undefined,
   args: PersonalSubscriptionCredentialReadArgs,
 ): Promise<PersonalSubscriptionCredentialBundle> {
+  const db = get(db$);
   if (!reads) {
     const uncachedCredentialReadArgs = args;
     return (async () => {
@@ -263,7 +265,7 @@ function readSubscriptionBundle(
         const ciphertextPlan = personalSubscriptionAccountCiphertextsReadPlan(
           uncachedCiphertextReadArgs,
         );
-        const ciphertextRows = await uncachedCiphertextReadArgs.db
+        const ciphertextRows = await db
           .select(ciphertextPlan.columns)
           .from(ciphertextPlan.from)
           .leftJoin(ciphertextPlan.join.table, ciphertextPlan.join.on)
@@ -299,7 +301,7 @@ function readSubscriptionBundle(
       const ciphertextPlan = personalSubscriptionAccountCiphertextsReadPlan(
         cachedCiphertextReadArgs,
       );
-      const ciphertextRows = await cachedCiphertextReadArgs.db
+      const ciphertextRows = await db
         .select(ciphertextPlan.columns)
         .from(ciphertextPlan.from)
         .leftJoin(ciphertextPlan.join.table, ciphertextPlan.join.on)
@@ -318,7 +320,7 @@ function readSubscriptionBundle(
   })();
   reads.set(key, read);
   return read;
-}
+});
 
 interface PreparedCustomFirewallAuth {
   readonly kind: "custom";
@@ -601,7 +603,6 @@ export const resolveBillableFirewallCacheExpiry$ = command(
 interface SecretTokenLookupArgs {
   readonly runId?: string;
   readonly subscriptionBundles?: SubscriptionBundleReads;
-  readonly db: Db;
   readonly accessSourceKey: string;
   readonly orgId: string;
   readonly userId: string;
@@ -766,7 +767,6 @@ function refreshFailedResult(
 }
 
 interface RefreshExpiredTokensArgs {
-  readonly db: Db;
   readonly subscriptionBundles: SubscriptionBundleReads;
   readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly auth: SandboxAuth;
@@ -785,7 +785,6 @@ interface RefreshExpiredTokensArgs {
 }
 
 interface RefreshBatchContext {
-  readonly db: Db;
   readonly subscriptionBundles: SubscriptionBundleReads;
   readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly auth: SandboxAuth;
@@ -1123,24 +1122,26 @@ function isExpiredAwsSigninRefreshState(
   );
 }
 
-async function getSecretValue(args: {
-  readonly runId?: string;
-  readonly connectorAccess?: BuiltinConnectorCredentialAccess;
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly name: string;
-  readonly type: SecretType;
-  readonly sourceId?: string;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}): Promise<string | null> {
+const getSecretValue$ = command(async function getSecretValue(
+  { get },
+  args: {
+    readonly runId?: string;
+    readonly connectorAccess?: BuiltinConnectorCredentialAccess;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly name: string;
+    readonly type: SecretType;
+    readonly sourceId?: string;
+    readonly featureSwitchContext: FeatureSwitchContext;
+  },
+): Promise<string | null> {
+  const db = get(db$);
   if (args.type === "connector") {
     if (args.connectorAccess === undefined) {
       return null;
     }
     const builtinSecretReadArgs = {
       access: args.connectorAccess,
-      db: args.db,
       names: [args.name],
       featureSwitchContext: args.featureSwitchContext,
     };
@@ -1150,7 +1151,7 @@ async function getSecretValue(args: {
       }
       // Keep multi-secret credentials (for example AWS SigV4) on one statement
       // snapshot so a same-method replacement cannot combine two stored states.
-      const rows = await builtinSecretReadArgs.db
+      const rows = await db
         .select({
           name: secretsTable.name,
           encryptedValue: secretsTable.encryptedValue,
@@ -1184,7 +1185,7 @@ async function getSecretValue(args: {
   if (!args.sourceId) {
     return null;
   }
-  const [row] = await args.db
+  const [row] = await db
     .select({ encryptedValue: modelProviderAccountSecrets.encryptedValue })
     .from(modelProviderAccountSecrets)
     .innerJoin(
@@ -1210,19 +1211,22 @@ async function getSecretValue(args: {
         args.featureSwitchContext,
       )
     : null;
-}
+});
 
-async function getVariableValue(args: {
-  readonly connectorAccess?: BuiltinConnectorCredentialAccess;
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly name: string;
-}): Promise<string | null> {
+const getVariableValue$ = command(async function getVariableValue(
+  { get },
+  args: {
+    readonly connectorAccess?: BuiltinConnectorCredentialAccess;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly name: string;
+  },
+): Promise<string | null> {
+  const db = get(db$);
   if (args.connectorAccess === undefined) {
     return null;
   }
-  const [row] = await args.db
+  const [row] = await db
     .select({ value: variablesTable.value })
     .from(variablesTable)
     .where(
@@ -1237,7 +1241,7 @@ async function getVariableValue(args: {
     )
     .limit(1);
   return row?.value ?? null;
-}
+});
 
 function providerSecretScope(
   sourceId: string,
@@ -1345,12 +1349,14 @@ function runtimeOutputSecretsForSource(args: {
   );
 }
 
-async function getCurrentAccessSecrets(
+const getCurrentAccessSecrets$ = command(async function getCurrentAccessSecrets(
+  { get, set },
   args: SecretTokenLookupArgs & {
     readonly accessEnvVars: readonly string[];
     readonly metadata: SecretConnectorMetadata;
   },
 ): Promise<Record<string, string | null>> {
+  const db = get(db$);
   const runtimeOutputSecrets = runtimeOutputSecretsForSource({
     accessSourceKey: args.accessSourceKey,
     metadata: args.metadata,
@@ -1370,7 +1376,6 @@ async function getCurrentAccessSecrets(
     if (access) {
       const builtinSecretReadArgs = {
         access,
-        db: args.db,
         names: secretNames,
         featureSwitchContext: args.featureSwitchContext,
       };
@@ -1380,7 +1385,7 @@ async function getCurrentAccessSecrets(
         }
         // Keep multi-secret credentials (for example AWS SigV4) on one statement
         // snapshot so a same-method replacement cannot combine two stored states.
-        const rows = await builtinSecretReadArgs.db
+        const rows = await db
           .select({
             name: secretsTable.name,
             encryptedValue: secretsTable.encryptedValue,
@@ -1416,15 +1421,18 @@ async function getCurrentAccessSecrets(
     if (!isPersonalSubscriptionProviderType(type) || !args.sourceId) {
       throw new Error("Expected an exact personal subscription account");
     }
-    const bundle = await readSubscriptionBundle(args.subscriptionBundles, {
-      db: args.db,
-      orgId: args.orgId,
-      userId: secretUserId,
-      type,
-      sourceId: args.sourceId,
-      runId: args.runId,
-      featureSwitchContext: args.featureSwitchContext,
-    });
+    const bundle = await set(
+      readSubscriptionBundle$,
+      args.subscriptionBundles,
+      {
+        orgId: args.orgId,
+        userId: secretUserId,
+        type,
+        sourceId: args.sourceId,
+        runId: args.runId,
+        featureSwitchContext: args.featureSwitchContext,
+      },
+    );
     values = bundle?.values ?? new Map();
   }
   return Object.fromEntries(
@@ -1432,101 +1440,106 @@ async function getCurrentAccessSecrets(
       return [envName, values.get(secretName) ?? null];
     }),
   );
-}
+});
 
-async function loadBuiltinConnectorAccessStates(
-  db: Db,
-  orgId: string,
-  userId: string,
-  requests: readonly ConnectorAccountResolutionRequest[],
-  snapshot: ConnectorRuntimeAuthSelection,
-): Promise<Map<string, BuiltinConnectorAccessState>> {
-  const result = new Map<string, BuiltinConnectorAccessState>();
-  if (requests.length === 0) {
-    return result;
-  }
-
-  const plan = connectorAccountResolutionReadPlan({
-    orgId,
-    userId,
-    requests,
-  });
-  const [exactRows, defaultRows] = await Promise.all([
-    plan.exactWhere
-      ? db.select(plan.columns).from(connectors).where(plan.exactWhere)
-      : [],
-    plan.defaultWhere
-      ? db.select(plan.columns).from(connectors).where(plan.defaultWhere)
-      : [],
-  ]);
-  const accountResolutions = connectorAccountResolutionsFromRows({
-    requests: plan.requests,
-    exactRows,
-    defaultRows,
-  });
-  const connectorIds = requests.flatMap((request) => {
-    const resolution = accountResolutions.get(
-      connectorAccountTargetKey(request.target),
-    );
-    return resolution?.kind === "resolved"
-      ? [resolution.account.connectorId]
-      : [];
-  });
-  if (connectorIds.length === 0) {
-    return result;
-  }
-
-  const rows = await db
-    .select({
-      connectorId: connectors.id,
-      connectorSlug: sql`${connectors.connectorSlug}`
-        .mapWith(pgTextDecoder)
-        .as("connector_slug"),
-      authMethod: connectors.authMethod,
-      storageVersion: connectors.storageVersion,
-      tokenExpiresAt: connectors.tokenExpiresAt,
-      needsReconnect: connectors.needsReconnect,
-    })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.orgId, orgId),
-        eq(connectors.userId, userId),
-        isNotNull(connectors.connectorSlug),
-        inArray(connectors.id, connectorIds),
-      ),
-    );
-
-  for (const row of rows) {
-    const accessResult = resolveBuiltinConnectorCredentialAccess({
-      snapshot,
-      stored: {
-        authMethodId: row.authMethod,
-        connectorId: row.connectorId,
-        connectorSlug: row.connectorSlug,
-        orgId,
-        storageVersion: row.storageVersion,
-        userId,
-      },
-    });
-    if (accessResult.kind !== "ok") {
-      continue;
+const loadBuiltinConnectorAccessStates$ = command(
+  async function loadBuiltinConnectorAccessStates(
+    { get },
+    orgId: string,
+    userId: string,
+    requests: readonly ConnectorAccountResolutionRequest[],
+    snapshot: ConnectorRuntimeAuthSelection,
+  ): Promise<Map<string, BuiltinConnectorAccessState>> {
+    const db = get(db$);
+    const result = new Map<string, BuiltinConnectorAccessState>();
+    if (requests.length === 0) {
+      return result;
     }
-    const { access } = accessResult;
-    const runtimeMethod = access.runtimeMethod;
-    result.set(row.connectorSlug, {
-      access,
-      connectorId: row.connectorId,
-      authMethod: runtimeMethod.authMethodId,
-      storageVersion: access.storageVersion,
-      runtimeMethod,
-      accessMetadata: connectorAuthMethodAccessMetadata(runtimeMethod.method),
-      runtimeMetadata: connectorAuthMethodRuntimeMetadata(runtimeMethod.method),
-      ...refreshSourceStateFromRow(row),
+
+    const plan = connectorAccountResolutionReadPlan({
+      orgId,
+      userId,
+      requests,
     });
-  }
-  return result;
-}
+    const [exactRows, defaultRows] = await Promise.all([
+      plan.exactWhere
+        ? db.select(plan.columns).from(connectors).where(plan.exactWhere)
+        : [],
+      plan.defaultWhere
+        ? db.select(plan.columns).from(connectors).where(plan.defaultWhere)
+        : [],
+    ]);
+    const accountResolutions = connectorAccountResolutionsFromRows({
+      requests: plan.requests,
+      exactRows,
+      defaultRows,
+    });
+    const connectorIds = requests.flatMap((request) => {
+      const resolution = accountResolutions.get(
+        connectorAccountTargetKey(request.target),
+      );
+      return resolution?.kind === "resolved"
+        ? [resolution.account.connectorId]
+        : [];
+    });
+    if (connectorIds.length === 0) {
+      return result;
+    }
+
+    const rows = await db
+      .select({
+        connectorId: connectors.id,
+        connectorSlug: sql`${connectors.connectorSlug}`
+          .mapWith(pgTextDecoder)
+          .as("connector_slug"),
+        authMethod: connectors.authMethod,
+        storageVersion: connectors.storageVersion,
+        tokenExpiresAt: connectors.tokenExpiresAt,
+        needsReconnect: connectors.needsReconnect,
+      })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.orgId, orgId),
+          eq(connectors.userId, userId),
+          isNotNull(connectors.connectorSlug),
+          inArray(connectors.id, connectorIds),
+        ),
+      );
+
+    for (const row of rows) {
+      const accessResult = resolveBuiltinConnectorCredentialAccess({
+        snapshot,
+        stored: {
+          authMethodId: row.authMethod,
+          connectorId: row.connectorId,
+          connectorSlug: row.connectorSlug,
+          orgId,
+          storageVersion: row.storageVersion,
+          userId,
+        },
+      });
+      if (accessResult.kind !== "ok") {
+        continue;
+      }
+      const { access } = accessResult;
+      const runtimeMethod = access.runtimeMethod;
+      result.set(row.connectorSlug, {
+        access,
+        connectorId: row.connectorId,
+        authMethod: runtimeMethod.authMethodId,
+        storageVersion: access.storageVersion,
+        runtimeMethod,
+        accessMetadata: connectorAuthMethodAccessMetadata(runtimeMethod.method),
+        runtimeMetadata: connectorAuthMethodRuntimeMetadata(
+          runtimeMethod.method,
+        ),
+        ...refreshSourceStateFromRow(row),
+      });
+    }
+    return result;
+  },
+);
 
 interface ModelProviderSourceLookup {
   readonly providerKey: string;
@@ -1644,18 +1657,21 @@ function connectorSlugsForAccessSources(args: {
   });
 }
 
-async function loadAccessSourceStates(args: {
-  readonly db: Db;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly accessSourceKeys: readonly string[];
-  readonly metadataByAccessSource: Map<string, SecretConnectorMetadata>;
-  readonly connectorAccessBySlug: ReadonlyMap<
-    string,
-    BuiltinConnectorAccessState
-  >;
-}): Promise<Map<string, RefreshSourceState>> {
+const loadAccessSourceStates$ = command(async function loadAccessSourceStates(
+  { get },
+  args: {
+    readonly featureSwitchContext: FeatureSwitchContext;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly accessSourceKeys: readonly string[];
+    readonly metadataByAccessSource: Map<string, SecretConnectorMetadata>;
+    readonly connectorAccessBySlug: ReadonlyMap<
+      string,
+      BuiltinConnectorAccessState
+    >;
+  },
+): Promise<Map<string, RefreshSourceState>> {
+  const db = get(db$);
   const connectorSlugs = connectorSlugsForAccessSources({
     accessSourceKeys: args.accessSourceKeys,
     metadataByAccessSource: args.metadataByAccessSource,
@@ -1679,7 +1695,6 @@ async function loadAccessSourceStates(args: {
 
   const modelStateArgs = {
     featureSwitchContext: args.featureSwitchContext,
-    db: args.db,
     orgId: args.orgId,
     userId: args.userId,
     providerKeys,
@@ -1703,7 +1718,7 @@ async function loadAccessSourceStates(args: {
     });
     const exactEntries = await Promise.all(
       sourceLookups.map(async (lookup) => {
-        const [row] = await modelStateArgs.db
+        const [row] = await db
           .select({
             tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
             needsReconnect: modelProviderAccounts.needsReconnect,
@@ -1735,47 +1750,50 @@ async function loadAccessSourceStates(args: {
     merged.set(providerKey, state);
   }
   return merged;
-}
+});
 
-async function loadCurrentSourceStateSnapshot(args: {
-  readonly db: Db;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly accessSourceKeys: readonly string[];
-  readonly metadataByAccessSource: Map<string, SecretConnectorMetadata>;
-}): Promise<SourceStateSnapshot> {
-  const connectorSlugs = connectorSlugsForAccessSources({
-    accessSourceKeys: args.accessSourceKeys,
-    metadataByAccessSource: args.metadataByAccessSource,
-  });
-  const connectorAccessBySlug = await loadBuiltinConnectorAccessStates(
-    args.db,
-    args.orgId,
-    args.userId,
-    builtinConnectorAccountRequestsForMetadata({
-      connectorSlugs,
-      metadataByAccessSource: args.metadataByAccessSource,
-    }),
-    args.connectorCatalogSnapshot,
-  );
-  return {
-    connectorAccessBySlug,
-    sourceStateMap: await loadAccessSourceStates({
-      featureSwitchContext: args.featureSwitchContext,
-      db: args.db,
-      orgId: args.orgId,
-      userId: args.userId,
+const loadCurrentSourceStateSnapshot$ = command(
+  async function loadCurrentSourceStateSnapshot(
+    { set },
+    args: {
+      readonly featureSwitchContext: FeatureSwitchContext;
+      readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly accessSourceKeys: readonly string[];
+      readonly metadataByAccessSource: Map<string, SecretConnectorMetadata>;
+    },
+  ): Promise<SourceStateSnapshot> {
+    const connectorSlugs = connectorSlugsForAccessSources({
       accessSourceKeys: args.accessSourceKeys,
       metadataByAccessSource: args.metadataByAccessSource,
+    });
+    const connectorAccessBySlug = await set(
+      loadBuiltinConnectorAccessStates$,
+      args.orgId,
+      args.userId,
+      builtinConnectorAccountRequestsForMetadata({
+        connectorSlugs,
+        metadataByAccessSource: args.metadataByAccessSource,
+      }),
+      args.connectorCatalogSnapshot,
+    );
+    return {
       connectorAccessBySlug,
-    }),
-  };
-}
+      sourceStateMap: await set(loadAccessSourceStates$, {
+        featureSwitchContext: args.featureSwitchContext,
+        orgId: args.orgId,
+        userId: args.userId,
+        accessSourceKeys: args.accessSourceKeys,
+        metadataByAccessSource: args.metadataByAccessSource,
+        connectorAccessBySlug,
+      }),
+    };
+  },
+);
 
 function prepareRefreshTokenContext(
-  args: Omit<RefreshAccessTokenArgs, "db">,
+  args: RefreshAccessTokenArgs,
 ): PrepareRefreshTokenContextResult {
   const metadata = resolveRefreshMetadata(args.accessSourceKey, {
     sourceType: args.sourceType,
@@ -2004,11 +2022,12 @@ function shouldUseCurrentAccess(args: {
   return false;
 }
 
-async function loadRefreshState(
-  db: Db,
+const loadRefreshState$ = command(async function loadRefreshState(
+  { get, set },
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
 ): Promise<RefreshState | null> {
+  const db = get(db$);
   const row =
     args.sourceType === "model-provider"
       ? await (async (): Promise<RefreshStateRow | null> => {
@@ -2086,9 +2105,8 @@ async function loadRefreshState(
     : undefined;
   const outputValues: Record<string, string | null> = {};
   for (const secretName of requiredRuntimeOutputSecretNames(context)) {
-    outputValues[secretName] = await getSecretValue({
+    outputValues[secretName] = await set(getSecretValue$, {
       connectorAccess,
-      db,
       orgId: args.orgId,
       userId: context.secretUserId,
       name: secretName,
@@ -2103,9 +2121,8 @@ async function loadRefreshState(
   for (const [inputName, inputSource] of Object.entries(context.inputSources)) {
     inputValues[inputName] =
       inputSource.kind === "secret"
-        ? await getSecretValue({
+        ? await set(getSecretValue$, {
             connectorAccess,
-            db,
             orgId: args.orgId,
             userId: context.secretUserId,
             name: inputSource.name,
@@ -2114,9 +2131,8 @@ async function loadRefreshState(
             runId: args.runId,
             featureSwitchContext: args.featureSwitchContext,
           })
-        : await getVariableValue({
+        : await set(getVariableValue$, {
             connectorAccess,
-            db,
             orgId: args.orgId,
             userId: context.secretUserId,
             name: inputSource.name,
@@ -2134,143 +2150,147 @@ async function loadRefreshState(
     lastRefreshErrorCode: row.lastRefreshErrorCode,
     reconnectReason: row.reconnectReason,
   };
-}
+});
 
-async function persistRefreshOutputValues(
-  args: RefreshAccessTokenArgs,
-  prepared: PreparedRefreshTokenContext,
-  context: RefreshTokenContext,
-  outputs: readonly ValidatedRefreshOutput[],
-): Promise<Map<string, string>> {
-  const returnedSecretValues = new Map<string, string>();
-  for (const { target, value } of outputs) {
-    switch (target.kind) {
-      case "secret": {
-        if (prepared.sourceType === "model-provider") {
-          const db = args.db;
-          const secretWrite = {
-            orgId: args.orgId,
-            userId: context.secretUserId,
-            name: target.name,
-            value,
-            sourceId: args.sourceId,
-            runId: args.runId,
-            featureSwitchContext: args.featureSwitchContext,
-          };
-          await (async (): Promise<void> => {
-            const encryptedValue = await encryptStoredSecretValue(
-              secretWrite.value,
-              secretWrite.featureSwitchContext,
-            );
-            if (secretWrite.sourceId) {
-              const [account] = await db
-                .select({ id: modelProviderAccounts.id })
-                .from(modelProviderAccounts)
-                .where(providerSecretScope(secretWrite.sourceId, secretWrite))
-                .limit(1);
-              if (!account) {
+const persistRefreshOutputValues$ = command(
+  async function persistRefreshOutputValues(
+    { set },
+    args: RefreshAccessTokenArgs,
+    prepared: PreparedRefreshTokenContext,
+    context: RefreshTokenContext,
+    outputs: readonly ValidatedRefreshOutput[],
+  ): Promise<Map<string, string>> {
+    const db = set(writeDb$);
+    const returnedSecretValues = new Map<string, string>();
+    for (const { target, value } of outputs) {
+      switch (target.kind) {
+        case "secret": {
+          if (prepared.sourceType === "model-provider") {
+            const secretWrite = {
+              orgId: args.orgId,
+              userId: context.secretUserId,
+              name: target.name,
+              value,
+              sourceId: args.sourceId,
+              runId: args.runId,
+              featureSwitchContext: args.featureSwitchContext,
+            };
+            await (async (): Promise<void> => {
+              const encryptedValue = await encryptStoredSecretValue(
+                secretWrite.value,
+                secretWrite.featureSwitchContext,
+              );
+              if (secretWrite.sourceId) {
+                const [account] = await db
+                  .select({ id: modelProviderAccounts.id })
+                  .from(modelProviderAccounts)
+                  .where(providerSecretScope(secretWrite.sourceId, secretWrite))
+                  .limit(1);
+                if (!account) {
+                  return;
+                }
+                await db
+                  .insert(modelProviderAccountSecrets)
+                  .values({
+                    modelProviderAccountId: secretWrite.sourceId,
+                    name: secretWrite.name,
+                    encryptedValue,
+                    description: `Personal model provider account secret: ${secretWrite.name}`,
+                  })
+                  .onConflictDoUpdate({
+                    target: [
+                      modelProviderAccountSecrets.modelProviderAccountId,
+                      modelProviderAccountSecrets.name,
+                    ],
+                    set: {
+                      encryptedValue,
+                      updatedAt: nowDate(),
+                    },
+                  });
                 return;
               }
-              await db
-                .insert(modelProviderAccountSecrets)
-                .values({
-                  modelProviderAccountId: secretWrite.sourceId,
-                  name: secretWrite.name,
-                  encryptedValue,
-                  description: `Personal model provider account secret: ${secretWrite.name}`,
-                })
-                .onConflictDoUpdate({
-                  target: [
-                    modelProviderAccountSecrets.modelProviderAccountId,
-                    modelProviderAccountSecrets.name,
-                  ],
-                  set: {
-                    encryptedValue,
-                    updatedAt: nowDate(),
-                  },
-                });
-              return;
-            }
-            throw new Error(
-              "Personal subscription refresh requires an account identity",
+              throw new Error(
+                "Personal subscription refresh requires an account identity",
+              );
+            })();
+          } else {
+            const encryptedValue = await encryptStoredSecretValue(
+              value,
+              args.featureSwitchContext,
             );
-          })();
-        } else {
-          const encryptedValue = await encryptStoredSecretValue(
-            value,
-            args.featureSwitchContext,
-          );
-          const db = args.db;
+            const credential = {
+              connectorId: prepared.connectorId,
+              storage: prepared.runtimeMethod.method.storage,
+              orgId: args.orgId,
+              userId: context.secretUserId,
+              name: target.name,
+              encryptedValue,
+              description: `Connector secret: ${target.name}`,
+            };
+            const write = connectorOwnedSecretWrite(credential);
+            const [row] = await db
+              .insert(secretsTable)
+              .values(write.values)
+              .onConflictDoUpdate(write.conflict)
+              .returning({ id: secretsTable.id });
+            if (!row) {
+              throw new Error(
+                `Connector secret ${credential.name} is owned by another row`,
+              );
+            }
+          }
+          returnedSecretValues.set(target.name, value);
+          break;
+        }
+        case "connector-variable": {
+          if (prepared.sourceType !== "connector") {
+            throw new Error(
+              "Model provider refresh cannot write connector variables",
+            );
+          }
           const credential = {
             connectorId: prepared.connectorId,
             storage: prepared.runtimeMethod.method.storage,
             orgId: args.orgId,
             userId: context.secretUserId,
             name: target.name,
-            encryptedValue,
-            description: `Connector secret: ${target.name}`,
+            value,
+            description: null,
+            updatedDescription: null,
           };
-          const write = connectorOwnedSecretWrite(credential);
+          const write = connectorOwnedVariableWrite(credential);
           const [row] = await db
-            .insert(secretsTable)
+            .insert(variablesTable)
             .values(write.values)
             .onConflictDoUpdate(write.conflict)
-            .returning({ id: secretsTable.id });
+            .returning({ id: variablesTable.id });
           if (!row) {
             throw new Error(
-              `Connector secret ${credential.name} is owned by another row`,
+              `Connector variable ${credential.name} is owned by another row`,
             );
           }
+          break;
         }
-        returnedSecretValues.set(target.name, value);
-        break;
-      }
-      case "connector-variable": {
-        if (prepared.sourceType !== "connector") {
-          throw new Error(
-            "Model provider refresh cannot write connector variables",
-          );
-        }
-        const db = args.db;
-        const credential = {
-          connectorId: prepared.connectorId,
-          storage: prepared.runtimeMethod.method.storage,
-          orgId: args.orgId,
-          userId: context.secretUserId,
-          name: target.name,
-          value,
-          description: null,
-          updatedDescription: null,
-        };
-        const write = connectorOwnedVariableWrite(credential);
-        const [row] = await db
-          .insert(variablesTable)
-          .values(write.values)
-          .onConflictDoUpdate(write.conflict)
-          .returning({ id: variablesTable.id });
-        if (!row) {
-          throw new Error(
-            `Connector variable ${credential.name} is owned by another row`,
-          );
-        }
-        break;
       }
     }
-  }
-  return returnedSecretValues;
-}
+    return returnedSecretValues;
+  },
+);
 
-async function markRefreshSuccess(
+const markRefreshSuccess$ = command(async function markRefreshSuccess(
+  { set },
   args: RefreshAccessTokenArgs,
   prepared: PreparedRefreshTokenContext,
-  context: RefreshTokenContext,
   outputs: readonly ValidatedRefreshOutput[],
   refresh: {
     readonly expiresIn?: number;
     readonly scopes?: readonly string[];
   },
 ): Promise<Record<string, string>> {
-  const returnedSecretValues = await persistRefreshOutputValues(
+  const db = set(writeDb$);
+  const { context } = prepared;
+  const returnedSecretValues = await set(
+    persistRefreshOutputValues$,
     args,
     prepared,
     context,
@@ -2283,7 +2303,7 @@ async function markRefreshSuccess(
   );
   if (prepared.sourceType === "model-provider") {
     if (args.sourceId) {
-      await args.db
+      await db
         .update(modelProviderAccounts)
         .set({
           tokenExpiresAt: expiresAt,
@@ -2305,7 +2325,7 @@ async function markRefreshSuccess(
     );
   }
 
-  await args.db
+  await db
     .update(connectors)
     .set({
       ...(refresh.scopes === undefined
@@ -2326,9 +2346,10 @@ async function markRefreshSuccess(
       ),
     );
   return Object.fromEntries(returnedSecretValues);
-}
+});
 
-async function markRefreshFailure(
+const markRefreshFailure$ = command(async function markRefreshFailure(
+  { set },
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
   failure: {
@@ -2337,6 +2358,7 @@ async function markRefreshFailure(
     readonly connectorReconnectReason: ConnectorCredentialReconnectReason | null;
   },
 ): Promise<void> {
+  const db = set(writeDb$);
   const { errorCode, failureReason, connectorReconnectReason } = failure;
   // A transient outage changed no credential or authority.
   if (failureReason === "upstream_provider") {
@@ -2349,7 +2371,7 @@ async function markRefreshFailure(
       updatedAt: sql`clock_timestamp()`,
     };
     if (args.sourceId) {
-      await args.db
+      await db
         .update(modelProviderAccounts)
         .set(updates)
         .where(
@@ -2372,7 +2394,7 @@ async function markRefreshFailure(
   if (connectorId === undefined) {
     return;
   }
-  await args.db
+  await db
     .update(connectors)
     .set({
       needsReconnect: true,
@@ -2387,15 +2409,14 @@ async function markRefreshFailure(
         eq(connectors.connectorSlug, connectorSlug),
       ),
     );
-}
+});
 
 // Refresh-failure diagnostics follow one rule: a `reconnect_required` outcome
 // is already visible as persisted reconnect state, so it writes no log. An
 // `upstream_provider` outcome is logged only after bounded recovery finishes,
 // as an error for Google Sheets and a warning for other sources.
-async function markAndReturnRefreshFailure(
+function refreshFailureUpdate(
   args: RefreshAccessTokenArgs,
-  context: RefreshTokenContext,
   retry: {
     readonly error: unknown;
     readonly attempted: boolean;
@@ -2403,7 +2424,11 @@ async function markAndReturnRefreshFailure(
     readonly firstProviderStatus: number | null;
   },
   signal: AbortSignal,
-): Promise<RefreshAccessTokenResult> {
+): {
+  readonly errorCode: string | null;
+  readonly failureReason: FirewallAuthFailureReason | undefined;
+  readonly connectorReconnectReason: ConnectorCredentialReconnectReason | null;
+} {
   const { error } = retry;
   const connectorAccess = args.connectorAccessBySlug.get(args.accessSourceKey);
   if (
@@ -2414,12 +2439,11 @@ async function markAndReturnRefreshFailure(
     error.status === 401 &&
     error.providerErrorCode === "TOKEN_EXPIRED"
   ) {
-    await markRefreshFailure(args, context, {
+    return {
       errorCode: "invalid_grant",
       failureReason: "reconnect_required",
       connectorReconnectReason: "credential_expired",
-    });
-    return refreshFailedResult("reconnect_required");
+    };
   }
   const { errorCode, failureReason } = classifyRefreshFailure(error, signal);
   if (failureReason === "upstream_provider") {
@@ -2440,15 +2464,14 @@ async function markAndReturnRefreshFailure(
       firstProviderStatus: retry.firstProviderStatus,
     });
   }
-  await markRefreshFailure(args, context, {
+  return {
     errorCode,
     failureReason,
     connectorReconnectReason: connectorReconnectReasonFromRefreshFailure(
       error,
       failureReason,
     ),
-  });
-  return refreshFailedResult(failureReason);
+  };
 }
 
 function refreshPreparedAccessToken(
@@ -2648,106 +2671,114 @@ function validateRefreshResultOutputs(args: {
   return { ok: true, outputs };
 }
 
-async function refreshStoredAccessToken(args: {
-  readonly refreshArgs: RefreshAccessTokenArgs;
-  readonly prepared: PreparedRefreshTokenContext;
-}): Promise<RefreshAccessTokenResult> {
-  const state = currentPreparedRefreshState({
-    refreshArgs: args.refreshArgs,
-    prepared: args.prepared,
-    state: await loadRefreshState(
-      args.refreshArgs.db,
-      args.refreshArgs,
-      args.prepared.context,
-    ),
-  });
-  if (!state) {
-    return sourceMissingResult();
-  }
-
-  if (
-    isTerminalCodexRefreshState(args.prepared, state) ||
-    isExpiredAwsSigninRefreshState(args.prepared, state)
-  ) {
-    return refreshFailedResult("reconnect_required");
-  }
-
-  if (
-    shouldUseCurrentAccess({
+const refreshStoredAccessToken$ = command(
+  async function refreshStoredAccessToken(
+    { set },
+    args: {
+      readonly refreshArgs: RefreshAccessTokenArgs;
+      readonly prepared: PreparedRefreshTokenContext;
+    },
+  ): Promise<RefreshAccessTokenResult> {
+    const state = currentPreparedRefreshState({
       refreshArgs: args.refreshArgs,
-      context: args.prepared.context,
-      state,
-    })
-  ) {
-    return currentRefreshAccessResult({
-      accessSourceKey: args.refreshArgs.accessSourceKey,
-      context: args.prepared.context,
+      prepared: args.prepared,
+      state: await set(
+        loadRefreshState$,
+        args.refreshArgs,
+        args.prepared.context,
+      ),
+    });
+    if (!state) {
+      return sourceMissingResult();
+    }
+
+    if (
+      isTerminalCodexRefreshState(args.prepared, state) ||
+      isExpiredAwsSigninRefreshState(args.prepared, state)
+    ) {
+      return refreshFailedResult("reconnect_required");
+    }
+
+    if (
+      shouldUseCurrentAccess({
+        refreshArgs: args.refreshArgs,
+        context: args.prepared.context,
+        state,
+      })
+    ) {
+      return currentRefreshAccessResult({
+        accessSourceKey: args.refreshArgs.accessSourceKey,
+        context: args.prepared.context,
+        state,
+      });
+    }
+
+    if (missingRefreshInputNames(state).length > 0) {
+      const missingRefreshArgs = args.refreshArgs;
+      const missingRefreshContext = args.prepared.context;
+      return (async (): Promise<RefreshAccessTokenResult> => {
+        await set(
+          markRefreshFailure$,
+          missingRefreshArgs,
+          missingRefreshContext,
+          {
+            errorCode: null,
+            failureReason: "reconnect_required",
+            connectorReconnectReason: null,
+          },
+        );
+        return refreshTokenMissingResult();
+      })();
+    }
+
+    return set(refreshPreparedStoredAccessToken$, {
+      refreshArgs: args.refreshArgs,
+      prepared: args.prepared,
       state,
     });
-  }
+  },
+);
 
-  if (missingRefreshInputNames(state).length > 0) {
-    const missingRefreshArgs = args.refreshArgs;
-    const missingRefreshContext = args.prepared.context;
-    return (async (): Promise<RefreshAccessTokenResult> => {
-      await markRefreshFailure(missingRefreshArgs, missingRefreshContext, {
-        errorCode: null,
-        failureReason: "reconnect_required",
-        connectorReconnectReason: null,
-      });
-      return refreshTokenMissingResult();
-    })();
-  }
-
-  return refreshPreparedStoredAccessToken({
-    refreshArgs: args.refreshArgs,
-    prepared: args.prepared,
-    state,
-  });
-}
-
-async function refreshPreparedStoredAccessToken(args: {
-  readonly refreshArgs: RefreshAccessTokenArgs;
-  readonly prepared: PreparedRefreshTokenContext;
-  readonly state: RefreshState;
-}): Promise<RefreshAccessTokenResult> {
-  const { refreshArgs, prepared, state } = args;
-
-  const refreshSignal = firewallAuthRefreshTimeoutSignal();
-  const inputs = refreshInputsFromState({
-    accessSourceKey: refreshArgs.accessSourceKey,
-    state,
-  });
-  const isGoogleSheetsRefresh =
-    refreshArgs.sourceType === "connector" &&
-    refreshArgs.accessSourceKey === "google-sheets";
+async function refreshPreparedAccessTokenWithRecovery(
+  args: {
+    readonly sourceType: StorageSecretSource;
+    readonly accessSourceKey: string;
+    readonly isGoogleSheetsRefresh: boolean;
+    readonly prepared: PreparedRefreshTokenContext;
+    readonly inputs: Readonly<Record<string, string>>;
+  },
+  signal: AbortSignal,
+) {
   let maxAttempts = 1;
-  if (isGoogleSheetsRefresh) {
+  if (args.isGoogleSheetsRefresh) {
     maxAttempts = 3;
   } else if (
-    refreshArgs.sourceType === "connector" &&
-    refreshArgs.accessSourceKey === "gmail"
+    args.sourceType === "connector" &&
+    args.accessSourceKey === "gmail"
   ) {
     maxAttempts = 2;
   }
   let attemptCount = 1;
   let firstProviderStatus: number | null = null;
   let refreshResult = await settle(
-    refreshPreparedAccessToken({ prepared, inputs }, refreshSignal),
+    refreshPreparedAccessToken(
+      { prepared: args.prepared, inputs: args.inputs },
+      signal,
+    ),
   );
   while (
     !refreshResult.ok &&
     attemptCount < maxAttempts &&
-    !refreshSignal.aborted &&
+    !signal.aborted &&
     (isRetryableOAuthRefreshResponse(refreshResult.error) ||
-      (isGoogleSheetsRefresh && isFetchNetworkError(refreshResult.error)))
+      (args.isGoogleSheetsRefresh && isFetchNetworkError(refreshResult.error)))
   ) {
     if (attemptCount === 1 && isOAuthProviderHttpError(refreshResult.error)) {
       firstProviderStatus = refreshResult.error.status;
     }
     const retryDelay = await settleIncludingAbort(async () => {
-      await delay(250 * attemptCount, { signal: refreshSignal });
-      refreshSignal.throwIfAborted();
+      await delay(250 * attemptCount, { signal: signal });
+      signal.throwIfAborted();
     });
     if (!retryDelay.ok) {
       refreshResult = retryDelay;
@@ -2755,112 +2786,160 @@ async function refreshPreparedStoredAccessToken(args: {
     }
     attemptCount += 1;
     refreshResult = await settle(
-      refreshPreparedAccessToken({ prepared, inputs }, refreshSignal),
+      refreshPreparedAccessToken(
+        { prepared: args.prepared, inputs: args.inputs },
+        signal,
+      ),
     );
   }
   const retryAttempted = attemptCount > 1;
-  if (!refreshResult.ok) {
-    return markAndReturnRefreshFailure(
-      refreshArgs,
-      prepared.context,
-      {
-        error: refreshResult.error,
-        attempted: retryAttempted,
-        attemptCount,
-        firstProviderStatus,
-      },
-      refreshSignal,
-    );
-  }
+  return { refreshResult, retryAttempted, attemptCount, firstProviderStatus };
+}
 
-  const outputValidation = validateRefreshResultOutputs({
-    accessSourceKey: refreshArgs.accessSourceKey,
-    context: prepared.context,
-    result: refreshResult.value,
-  });
-  if (!outputValidation.ok) {
-    const logFailure = isGoogleSheetsRefresh ? L.error : L.warn;
-    logFailure(`${refreshArgs.accessSourceKey} token refresh output invalid`, {
+const refreshPreparedStoredAccessToken$ = command(
+  async function refreshPreparedStoredAccessToken(
+    { set },
+    args: {
+      readonly refreshArgs: RefreshAccessTokenArgs;
+      readonly prepared: PreparedRefreshTokenContext;
+      readonly state: RefreshState;
+    },
+  ): Promise<RefreshAccessTokenResult> {
+    const { refreshArgs, prepared, state } = args;
+
+    const refreshSignal = firewallAuthRefreshTimeoutSignal();
+    const inputs = refreshInputsFromState({
       accessSourceKey: refreshArgs.accessSourceKey,
-      orgId: refreshArgs.orgId,
-      userId: refreshArgs.userId,
-      errorCode: null,
-      failureReason: "upstream_provider",
-      errorKind: "provider_response",
-      providerStatus: null,
-      retryAttempted,
-      attemptCount,
+      state,
     });
-    await markRefreshFailure(refreshArgs, prepared.context, {
-      errorCode: null,
-      failureReason: "upstream_provider",
-      connectorReconnectReason: null,
-    });
-    return refreshFailedResult("upstream_provider");
-  }
+    const isGoogleSheetsRefresh =
+      refreshArgs.sourceType === "connector" &&
+      refreshArgs.accessSourceKey === "google-sheets";
+    const { refreshResult, retryAttempted, attemptCount, firstProviderStatus } =
+      await refreshPreparedAccessTokenWithRecovery(
+        {
+          sourceType: refreshArgs.sourceType,
+          accessSourceKey: refreshArgs.accessSourceKey,
+          isGoogleSheetsRefresh,
+          prepared,
+          inputs,
+        },
+        refreshSignal,
+      );
+    if (!refreshResult.ok) {
+      const failure = refreshFailureUpdate(
+        refreshArgs,
+        {
+          error: refreshResult.error,
+          attempted: retryAttempted,
+          attemptCount,
+          firstProviderStatus,
+        },
+        refreshSignal,
+      );
+      await set(markRefreshFailure$, refreshArgs, prepared.context, failure);
+      return refreshFailedResult(failure.failureReason);
+    }
 
-  const returnedSecretValues = await markRefreshSuccess(
-    refreshArgs,
-    prepared,
-    prepared.context,
-    outputValidation.outputs,
-    refreshResult.value,
-  );
-  if (retryAttempted && refreshArgs.accessSourceKey === "gmail") {
-    L.info("gmail token refresh recovered", {
-      accessSourceKey: "gmail",
-      orgId: refreshArgs.orgId,
-      userId: refreshArgs.userId,
-      firstProviderStatus,
-      retryAttempted: true,
+    const outputValidation = validateRefreshResultOutputs({
+      accessSourceKey: refreshArgs.accessSourceKey,
+      context: prepared.context,
+      result: refreshResult.value,
     });
-  }
-  const refreshedSecrets = runtimeSecretsFromRefreshResult({
-    accessSourceKey: refreshArgs.accessSourceKey,
-    context: prepared.context,
-    returnedSecretValues,
-  });
-  Object.assign(
-    refreshArgs.connectorSecrets,
-    returnedSecretValues,
-    refreshedSecrets,
-  );
-  L.debug(`${refreshArgs.accessSourceKey} access token refreshed successfully`);
-  return {
-    ok: true,
-    status: "refreshed",
-    secrets: refreshedSecrets,
-  };
-}
+    if (!outputValidation.ok) {
+      const logFailure = isGoogleSheetsRefresh ? L.error : L.warn;
+      logFailure(
+        `${refreshArgs.accessSourceKey} token refresh output invalid`,
+        {
+          accessSourceKey: refreshArgs.accessSourceKey,
+          orgId: refreshArgs.orgId,
+          userId: refreshArgs.userId,
+          errorCode: null,
+          failureReason: "upstream_provider",
+          errorKind: "provider_response",
+          providerStatus: null,
+          retryAttempted,
+          attemptCount,
+        },
+      );
+      await set(markRefreshFailure$, refreshArgs, prepared.context, {
+        errorCode: null,
+        failureReason: "upstream_provider",
+        connectorReconnectReason: null,
+      });
+      return refreshFailedResult("upstream_provider");
+    }
 
-async function refreshAccessTokenForSource(
-  args: RefreshAccessTokenArgs,
-): Promise<RefreshAccessTokenResult> {
-  const preparation = prepareRefreshTokenContext(args);
-  if (!preparation.ok) {
-    return preparation.reason === "refresh-token-missing"
-      ? refreshTokenMissingResult()
-      : { ok: false, reason: preparation.reason };
-  }
-  const { prepared } = preparation;
-  // Ordinary refresh with plain writes: concurrent refreshes resolve by
-  // last-writer-wins, and a lost one-use refresh token requires reconnect.
-  const result = await refreshStoredAccessToken({
-    refreshArgs: args,
-    prepared,
-  });
-  // The reconnect projection is local metadata published after the refresh.
-  if (
-    prepared.sourceType === "model-provider" &&
-    ((result.ok && result.status === "refreshed") ||
-      (!result.ok && result.failureReason === "reconnect_required"))
-  ) {
-    await publishPersonalModelProvidersChangedSafely(
-      prepared.context.secretUserId,
+    const returnedSecretValues = await set(
+      markRefreshSuccess$,
+      refreshArgs,
+      prepared,
+      outputValidation.outputs,
+      refreshResult.value,
     );
-  }
-  return result;
-}
+    if (retryAttempted && refreshArgs.accessSourceKey === "gmail") {
+      L.info("gmail token refresh recovered", {
+        accessSourceKey: "gmail",
+        orgId: refreshArgs.orgId,
+        userId: refreshArgs.userId,
+        firstProviderStatus,
+        retryAttempted: true,
+      });
+    }
+    const refreshedSecrets = runtimeSecretsFromRefreshResult({
+      accessSourceKey: refreshArgs.accessSourceKey,
+      context: prepared.context,
+      returnedSecretValues,
+    });
+    Object.assign(
+      refreshArgs.connectorSecrets,
+      returnedSecretValues,
+      refreshedSecrets,
+    );
+    L.debug(
+      `${refreshArgs.accessSourceKey} access token refreshed successfully`,
+    );
+    return {
+      ok: true,
+      status: "refreshed",
+      secrets: refreshedSecrets,
+    };
+  },
+);
+
+// Refresh owns its provider timeout and completes credential publication before
+// callers observe cancellation. Keep that lifetime independent of their signal.
+const refreshAccessTokenForSource$ = command(
+  async function refreshAccessTokenForSource(
+    { set },
+    args: RefreshAccessTokenArgs,
+  ): Promise<RefreshAccessTokenResult> {
+    const preparation = prepareRefreshTokenContext(args);
+    if (!preparation.ok) {
+      return preparation.reason === "refresh-token-missing"
+        ? refreshTokenMissingResult()
+        : { ok: false, reason: preparation.reason };
+    }
+    const { prepared } = preparation;
+    // Ordinary refresh with plain writes: concurrent refreshes resolve by
+    // last-writer-wins, and a lost one-use refresh token requires reconnect.
+    const result = await set(refreshStoredAccessToken$, {
+      refreshArgs: args,
+      prepared,
+    });
+    // The reconnect projection is local metadata published after the refresh.
+    if (
+      prepared.sourceType === "model-provider" &&
+      ((result.ok && result.status === "refreshed") ||
+        (!result.ok && result.failureReason === "reconnect_required"))
+    ) {
+      await publishPersonalModelProvidersChangedSafely(
+        prepared.context.secretUserId,
+      );
+    }
+    return result;
+  },
+);
 
 function buildMetadataByAccessSource(
   refreshable: Map<string, string>,
@@ -3131,58 +3210,62 @@ function storedConnectorRuntimeSecretLookups(args: {
   });
 }
 
-async function getModelProviderRuntimeSecretValue(args: {
-  readonly runId?: string;
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly providerType: ModelProviderType;
-  readonly secretName: string;
-  readonly sourceId: string;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}): Promise<string | null> {
-  if (!isPersonalSubscriptionProviderType(args.providerType)) {
-    return null;
-  }
-  const runtimeCredentialReadArgs = {
-    ...args,
-    type: args.providerType,
-  };
-  const bundle = await (async () => {
-    if (!runtimeCredentialReadArgs.sourceId) {
+const getModelProviderRuntimeSecretValue$ = command(
+  async function getModelProviderRuntimeSecretValue(
+    { get },
+    args: {
+      readonly runId?: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly providerType: ModelProviderType;
+      readonly secretName: string;
+      readonly sourceId: string;
+      readonly featureSwitchContext: FeatureSwitchContext;
+    },
+  ): Promise<string | null> {
+    const db = get(db$);
+    if (!isPersonalSubscriptionProviderType(args.providerType)) {
       return null;
     }
-    const runtimeCiphertextReadArgs = {
-      ...runtimeCredentialReadArgs,
-      sourceId: runtimeCredentialReadArgs.sourceId,
+    const runtimeCredentialReadArgs = {
+      ...args,
+      type: args.providerType,
     };
-    const credentialCiphertexts = await (async () => {
-      const ciphertextPlan = personalSubscriptionAccountCiphertextsReadPlan(
-        runtimeCiphertextReadArgs,
-      );
-      const ciphertextRows = await runtimeCiphertextReadArgs.db
-        .select(ciphertextPlan.columns)
-        .from(ciphertextPlan.from)
-        .leftJoin(ciphertextPlan.join.table, ciphertextPlan.join.on)
-        .where(ciphertextPlan.where);
-      return personalSubscriptionAccountCiphertextsFromRows(ciphertextRows);
+    const bundle = await (async () => {
+      if (!runtimeCredentialReadArgs.sourceId) {
+        return null;
+      }
+      const runtimeCiphertextReadArgs = {
+        ...runtimeCredentialReadArgs,
+        sourceId: runtimeCredentialReadArgs.sourceId,
+      };
+      const credentialCiphertexts = await (async () => {
+        const ciphertextPlan = personalSubscriptionAccountCiphertextsReadPlan(
+          runtimeCiphertextReadArgs,
+        );
+        const ciphertextRows = await db
+          .select(ciphertextPlan.columns)
+          .from(ciphertextPlan.from)
+          .leftJoin(ciphertextPlan.join.table, ciphertextPlan.join.on)
+          .where(ciphertextPlan.where);
+        return personalSubscriptionAccountCiphertextsFromRows(ciphertextRows);
+      })();
+      return credentialCiphertexts
+        ? {
+            account: credentialCiphertexts.account,
+            values: await personalSubscriptionCredentialValues(
+              credentialCiphertexts.secrets,
+              runtimeCredentialReadArgs.featureSwitchContext,
+            ),
+          }
+        : null;
     })();
-    return credentialCiphertexts
-      ? {
-          account: credentialCiphertexts.account,
-          values: await personalSubscriptionCredentialValues(
-            credentialCiphertexts.secrets,
-            runtimeCredentialReadArgs.featureSwitchContext,
-          ),
-        }
-      : null;
-  })();
-  return bundle?.values.get(args.secretName) ?? null;
-}
+    return bundle?.values.get(args.secretName) ?? null;
+  },
+);
 
 interface ModelProviderRuntimeSecretForApiArgs {
   readonly runId?: string;
-  readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
   readonly key: string;
@@ -3232,7 +3315,7 @@ function modelProviderRuntimeReconnectState(
 }
 
 function resolveModelProviderRuntimeSecretLookup(
-  args: Omit<ModelProviderRuntimeSecretForApiArgs, "db">,
+  args: ModelProviderRuntimeSecretForApiArgs,
 ): ResolvedModelProviderRuntimeSecretLookup | null {
   const metadata = resolveRefreshMetadata(args.providerKey, args.metadata);
   if (metadata.sourceType !== "model-provider") {
@@ -3261,167 +3344,186 @@ function resolveModelProviderRuntimeSecretLookup(
   };
 }
 
-async function readModelProviderRuntimeSecretForApi(
-  args: ModelProviderRuntimeSecretForApiArgs,
-  lookup: ResolvedModelProviderRuntimeSecretLookup,
-): Promise<string | null> {
-  return await getModelProviderRuntimeSecretValue({
-    db: args.db,
-    orgId: args.orgId,
-    userId: lookup.userId,
-    providerType: lookup.providerType,
-    secretName: lookup.secretName,
-    sourceId: lookup.sourceId,
-    runId: args.runId,
-    featureSwitchContext: args.featureSwitchContext,
-  });
-}
-
-async function unavailableModelProviderRuntimeSecretForApi(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly runId?: string;
-    readonly lookup: ResolvedModelProviderRuntimeSecretLookup;
+const readModelProviderRuntimeSecretForApi$ = command(
+  async function readModelProviderRuntimeSecretForApi(
+    { set },
+    args: ModelProviderRuntimeSecretForApiArgs,
+    lookup: ResolvedModelProviderRuntimeSecretLookup,
+  ): Promise<string | null> {
+    return await set(getModelProviderRuntimeSecretValue$, {
+      orgId: args.orgId,
+      userId: lookup.userId,
+      providerType: lookup.providerType,
+      secretName: lookup.secretName,
+      sourceId: lookup.sourceId,
+      runId: args.runId,
+      featureSwitchContext: args.featureSwitchContext,
+    });
   },
-  signal: AbortSignal,
-): Promise<CurrentModelProviderRuntimeSecretForApiResult> {
-  const state =
-    await (async (): Promise<ModelProviderRuntimeRefreshState | null> => {
-      const [row] = await args.db
-        .select({
-          tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
-          needsReconnect: modelProviderAccounts.needsReconnect,
-          lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
-        })
-        .from(modelProviderAccounts)
-        .where(
-          and(
-            eq(modelProviderAccounts.id, args.lookup.sourceId),
-            personalSubscriptionAccountAccessCondition(args.runId),
-            eq(modelProviderAccounts.orgId, args.orgId),
-            eq(modelProviderAccounts.userId, args.lookup.userId),
-            eq(modelProviderAccounts.type, args.lookup.providerType),
-          ),
-        )
-        .limit(1);
-      return row ?? null;
-    })();
-  signal.throwIfAborted();
-  return {
-    status: "unavailable",
-    reconnectState: modelProviderRuntimeReconnectState(state),
-  };
-}
+);
 
-async function resolveCurrentModelProviderRuntimeSecretForApi(
-  args: ModelProviderRuntimeSecretForApiArgs,
-  signal: AbortSignal,
-): Promise<CurrentModelProviderRuntimeSecretForApiResult> {
-  const lookup = resolveModelProviderRuntimeSecretLookup(args);
-  if (!lookup) {
-    return { status: "unavailable", reconnectState: null };
-  }
-
-  const refreshMetadata = getModelProviderRefreshMetadata(args.providerKey);
-  if (!refreshMetadata?.refreshableSecrets.includes(lookup.secretName)) {
-    const value = await readModelProviderRuntimeSecretForApi(args, lookup);
-    signal.throwIfAborted();
-    return value === null
-      ? await unavailableModelProviderRuntimeSecretForApi(
-          { db: args.db, orgId: args.orgId, runId: args.runId, lookup },
-          signal,
-        )
-      : { status: "available", value };
-  }
-
-  const refreshStateArgs = {
-    db: args.db,
-    orgId: args.orgId,
-    runId: args.runId,
-    lookup,
-  };
-  const initialState =
-    await (async (): Promise<ModelProviderRuntimeRefreshState | null> => {
-      const [row] = await refreshStateArgs.db
-        .select({
-          tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
-          needsReconnect: modelProviderAccounts.needsReconnect,
-          lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
-        })
-        .from(modelProviderAccounts)
-        .where(
-          and(
-            eq(modelProviderAccounts.id, refreshStateArgs.lookup.sourceId),
-            personalSubscriptionAccountAccessCondition(refreshStateArgs.runId),
-            eq(modelProviderAccounts.orgId, refreshStateArgs.orgId),
-            eq(modelProviderAccounts.userId, refreshStateArgs.lookup.userId),
-            eq(
-              modelProviderAccounts.type,
-              refreshStateArgs.lookup.providerType,
+const unavailableModelProviderRuntimeSecretForApi$ = command(
+  async function unavailableModelProviderRuntimeSecretForApi(
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly runId?: string;
+      readonly lookup: ResolvedModelProviderRuntimeSecretLookup;
+    },
+    signal: AbortSignal,
+  ): Promise<CurrentModelProviderRuntimeSecretForApiResult> {
+    const db = get(db$);
+    const state =
+      await (async (): Promise<ModelProviderRuntimeRefreshState | null> => {
+        const [row] = await db
+          .select({
+            tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
+            needsReconnect: modelProviderAccounts.needsReconnect,
+            lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
+          })
+          .from(modelProviderAccounts)
+          .where(
+            and(
+              eq(modelProviderAccounts.id, args.lookup.sourceId),
+              personalSubscriptionAccountAccessCondition(args.runId),
+              eq(modelProviderAccounts.orgId, args.orgId),
+              eq(modelProviderAccounts.userId, args.lookup.userId),
+              eq(modelProviderAccounts.type, args.lookup.providerType),
             ),
-          ),
-        )
-        .limit(1);
-      return row ?? null;
-    })();
-  signal.throwIfAborted();
-  if (!initialState) {
-    return { status: "unavailable", reconnectState: null };
-  }
-  if (
-    args.providerKey === "codex-oauth-token" &&
-    initialState.needsReconnect &&
-    isTerminalChatgptRefreshErrorCode(initialState.lastRefreshErrorCode)
-  ) {
+          )
+          .limit(1);
+        return row ?? null;
+      })();
+    signal.throwIfAborted();
     return {
       status: "unavailable",
-      reconnectState: modelProviderRuntimeReconnectState(initialState),
+      reconnectState: modelProviderRuntimeReconnectState(state),
     };
-  }
-  if (
-    !initialState.needsReconnect &&
-    !tokenExpiresAtNeedsRefresh(initialState.tokenExpiresAt)
-  ) {
-    const value = await readModelProviderRuntimeSecretForApi(args, lookup);
+  },
+);
+
+const resolveCurrentModelProviderRuntimeSecretForApi$ = command(
+  async function resolveCurrentModelProviderRuntimeSecretForApi(
+    { get, set },
+    args: ModelProviderRuntimeSecretForApiArgs,
+    signal: AbortSignal,
+  ): Promise<CurrentModelProviderRuntimeSecretForApiResult> {
+    const db = get(db$);
+    const lookup = resolveModelProviderRuntimeSecretLookup(args);
+    if (!lookup) {
+      return { status: "unavailable", reconnectState: null };
+    }
+
+    const refreshMetadata = getModelProviderRefreshMetadata(args.providerKey);
+    if (!refreshMetadata?.refreshableSecrets.includes(lookup.secretName)) {
+      const value = await set(
+        readModelProviderRuntimeSecretForApi$,
+        args,
+        lookup,
+      );
+      signal.throwIfAborted();
+      return value === null
+        ? await set(
+            unavailableModelProviderRuntimeSecretForApi$,
+            { orgId: args.orgId, runId: args.runId, lookup },
+            signal,
+          )
+        : { status: "available", value };
+    }
+
+    const refreshStateArgs = {
+      orgId: args.orgId,
+      runId: args.runId,
+      lookup,
+    };
+    const initialState =
+      await (async (): Promise<ModelProviderRuntimeRefreshState | null> => {
+        const [row] = await db
+          .select({
+            tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
+            needsReconnect: modelProviderAccounts.needsReconnect,
+            lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
+          })
+          .from(modelProviderAccounts)
+          .where(
+            and(
+              eq(modelProviderAccounts.id, refreshStateArgs.lookup.sourceId),
+              personalSubscriptionAccountAccessCondition(
+                refreshStateArgs.runId,
+              ),
+              eq(modelProviderAccounts.orgId, refreshStateArgs.orgId),
+              eq(modelProviderAccounts.userId, refreshStateArgs.lookup.userId),
+              eq(
+                modelProviderAccounts.type,
+                refreshStateArgs.lookup.providerType,
+              ),
+            ),
+          )
+          .limit(1);
+        return row ?? null;
+      })();
     signal.throwIfAborted();
-    if (value !== null) {
+    if (!initialState) {
+      return { status: "unavailable", reconnectState: null };
+    }
+    if (
+      args.providerKey === "codex-oauth-token" &&
+      initialState.needsReconnect &&
+      isTerminalChatgptRefreshErrorCode(initialState.lastRefreshErrorCode)
+    ) {
+      return {
+        status: "unavailable",
+        reconnectState: modelProviderRuntimeReconnectState(initialState),
+      };
+    }
+    if (
+      !initialState.needsReconnect &&
+      !tokenExpiresAtNeedsRefresh(initialState.tokenExpiresAt)
+    ) {
+      const value = await set(
+        readModelProviderRuntimeSecretForApi$,
+        args,
+        lookup,
+      );
+      signal.throwIfAborted();
+      if (value !== null) {
+        return { status: "available", value };
+      }
+    }
+
+    const refreshResult = await set(refreshAccessTokenForSource$, {
+      accessSourceKey: args.providerKey,
+      orgId: args.orgId,
+      userId: args.userId,
+      sourceType: "model-provider",
+      sourceUserId: lookup.metadata.sourceUserId,
+      sourceId: lookup.sourceId,
+      runId: args.runId,
+      metadataKey: lookup.metadata.metadataKey,
+      connectorSecrets: {},
+      accessEnvVars: [args.key],
+      forceRefresh: false,
+      connectorAccessBySlug: new Map<string, BuiltinConnectorAccessState>(),
+      featureSwitchContext: args.featureSwitchContext,
+    });
+    signal.throwIfAborted();
+    if (refreshResult.ok) {
+      const value = refreshResult.secrets[args.key];
+      if (value === undefined) {
+        throw new Error(
+          `${args.providerKey} refresh did not resolve API runtime secret ${args.key}`,
+        );
+      }
       return { status: "available", value };
     }
-  }
 
-  const refreshResult = await refreshAccessTokenForSource({
-    db: args.db,
-    accessSourceKey: args.providerKey,
-    orgId: args.orgId,
-    userId: args.userId,
-    sourceType: "model-provider",
-    sourceUserId: lookup.metadata.sourceUserId,
-    sourceId: lookup.sourceId,
-    runId: args.runId,
-    metadataKey: lookup.metadata.metadataKey,
-    connectorSecrets: {},
-    accessEnvVars: [args.key],
-    forceRefresh: false,
-    connectorAccessBySlug: new Map<string, BuiltinConnectorAccessState>(),
-    featureSwitchContext: args.featureSwitchContext,
-  });
-  signal.throwIfAborted();
-  if (refreshResult.ok) {
-    const value = refreshResult.secrets[args.key];
-    if (value === undefined) {
-      throw new Error(
-        `${args.providerKey} refresh did not resolve API runtime secret ${args.key}`,
-      );
-    }
-    return { status: "available", value };
-  }
-
-  return await unavailableModelProviderRuntimeSecretForApi(
-    { db: args.db, orgId: args.orgId, runId: args.runId, lookup },
-    signal,
-  );
-}
+    return await set(
+      unavailableModelProviderRuntimeSecretForApi$,
+      { orgId: args.orgId, runId: args.runId, lookup },
+      signal,
+    );
+  },
+);
 
 function syncPlatformRuntimeSecrets(args: {
   readonly secrets: Record<string, string>;
@@ -3466,128 +3568,135 @@ function syncPlatformRuntimeSecrets(args: {
   }
 }
 
-async function syncFirewallRuntimeSecrets(args: {
-  readonly db: Db;
-  readonly auth: SandboxAuth;
-  readonly body: FirewallAuthBody;
-  readonly orgId: string;
-  readonly secrets: Record<string, string>;
-  readonly referencedKeys: Set<string>;
-  readonly connectorAccessBySlug: ReadonlyMap<
-    string,
-    BuiltinConnectorAccessState
-  >;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly subscriptionBundles: SubscriptionBundleReads;
-}): Promise<void> {
-  const storedRuntimeSyncArgs = {
-    db: args.db,
-    orgId: args.orgId,
-    userId: args.auth.userId,
-    secrets: args.secrets,
-    secretConnectorMap: args.body.secretConnectorMap,
-    secretConnectorMetadataMap: args.body.secretConnectorMetadataMap,
-    referencedKeys: args.referencedKeys,
-    connectorAccessBySlug: args.connectorAccessBySlug,
-    featureSwitchContext: args.featureSwitchContext,
-  };
-  await (async (): Promise<void> => {
-    if (!storedRuntimeSyncArgs.secretConnectorMap) {
-      return;
-    }
-
-    const lookups = storedConnectorRuntimeSecretLookups({
-      secretConnectorMap: storedRuntimeSyncArgs.secretConnectorMap,
-      secretConnectorMetadataMap:
-        storedRuntimeSyncArgs.secretConnectorMetadataMap,
-      referencedKeys: storedRuntimeSyncArgs.referencedKeys,
-      connectorAccessBySlug: storedRuntimeSyncArgs.connectorAccessBySlug,
-    });
-
-    if (lookups.length === 0) {
-      return;
-    }
-
-    const namesByConnectorId = new Map<
-      string,
-      {
-        readonly access: BuiltinConnectorCredentialAccess;
-        readonly names: Set<string>;
+const syncFirewallRuntimeSecrets$ = command(
+  async function syncFirewallRuntimeSecrets(
+    { get, set },
+    args: {
+      readonly auth: SandboxAuth;
+      readonly body: FirewallAuthBody;
+      readonly orgId: string;
+      readonly secrets: Record<string, string>;
+      readonly referencedKeys: Set<string>;
+      readonly connectorAccessBySlug: ReadonlyMap<
+        string,
+        BuiltinConnectorAccessState
+      >;
+      readonly featureSwitchContext: FeatureSwitchContext;
+      readonly subscriptionBundles: SubscriptionBundleReads;
+    },
+  ): Promise<void> {
+    const db = get(db$);
+    const storedRuntimeSyncArgs = {
+      orgId: args.orgId,
+      userId: args.auth.userId,
+      secrets: args.secrets,
+      secretConnectorMap: args.body.secretConnectorMap,
+      secretConnectorMetadataMap: args.body.secretConnectorMetadataMap,
+      referencedKeys: args.referencedKeys,
+      connectorAccessBySlug: args.connectorAccessBySlug,
+      featureSwitchContext: args.featureSwitchContext,
+    };
+    await (async (): Promise<void> => {
+      if (!storedRuntimeSyncArgs.secretConnectorMap) {
+        return;
       }
-    >();
-    for (const lookup of lookups) {
-      const existing = namesByConnectorId.get(lookup.access.connectorId);
-      if (existing) {
-        existing.names.add(lookup.secretName);
-      } else {
-        namesByConnectorId.set(lookup.access.connectorId, {
-          access: lookup.access,
-          names: new Set([lookup.secretName]),
-        });
+
+      const lookups = storedConnectorRuntimeSecretLookups({
+        secretConnectorMap: storedRuntimeSyncArgs.secretConnectorMap,
+        secretConnectorMetadataMap:
+          storedRuntimeSyncArgs.secretConnectorMetadataMap,
+        referencedKeys: storedRuntimeSyncArgs.referencedKeys,
+        connectorAccessBySlug: storedRuntimeSyncArgs.connectorAccessBySlug,
+      });
+
+      if (lookups.length === 0) {
+        return;
       }
-    }
-    const rows = await storedRuntimeSyncArgs.db
-      .select({
-        name: secretsTable.name,
-        encryptedValue: secretsTable.encryptedValue,
-      })
-      .from(secretsTable)
-      .where(
-        builtinConnectorCredentialSecretReadCondition({
-          groups: [...namesByConnectorId.values()].map((group) => {
-            return { access: group.access, names: [...group.names] };
+
+      const namesByConnectorId = new Map<
+        string,
+        {
+          readonly access: BuiltinConnectorCredentialAccess;
+          readonly names: Set<string>;
+        }
+      >();
+      for (const lookup of lookups) {
+        const existing = namesByConnectorId.get(lookup.access.connectorId);
+        if (existing) {
+          existing.names.add(lookup.secretName);
+        } else {
+          namesByConnectorId.set(lookup.access.connectorId, {
+            access: lookup.access,
+            names: new Set([lookup.secretName]),
+          });
+        }
+      }
+      const rows = await db
+        .select({
+          name: secretsTable.name,
+          encryptedValue: secretsTable.encryptedValue,
+        })
+        .from(secretsTable)
+        .where(
+          builtinConnectorCredentialSecretReadCondition({
+            groups: [...namesByConnectorId.values()].map((group) => {
+              return { access: group.access, names: [...group.names] };
+            }),
           }),
-        }),
-      );
+        );
 
-    const valuesByName = new Map<string, string>();
-    for (const row of rows) {
-      valuesByName.set(
-        row.name,
-        await decryptStoredSecretValue(
-          row.encryptedValue,
-          storedRuntimeSyncArgs.featureSwitchContext,
-        ),
-      );
-    }
-
-    for (const { key, secretName } of lookups) {
-      const value = valuesByName.get(secretName);
-      if (value === undefined) {
-        delete storedRuntimeSyncArgs.secrets[key];
-      } else {
-        storedRuntimeSyncArgs.secrets[key] = value;
+      const valuesByName = new Map<string, string>();
+      for (const row of rows) {
+        valuesByName.set(
+          row.name,
+          await decryptStoredSecretValue(
+            row.encryptedValue,
+            storedRuntimeSyncArgs.featureSwitchContext,
+          ),
+        );
       }
-    }
-  })();
-  const runtimeSyncArgs = {
-    db: args.db,
-    runId: args.auth.runId,
-    subscriptionBundles: args.subscriptionBundles,
-    orgId: args.orgId,
-    userId: args.auth.userId,
-    secrets: args.secrets,
-    secretConnectorMap: args.body.secretConnectorMap,
-    secretConnectorMetadataMap: args.body.secretConnectorMetadataMap,
-    referencedKeys: args.referencedKeys,
-    featureSwitchContext: args.featureSwitchContext,
-  };
-  await (async (): Promise<void> => {
-    if (!runtimeSyncArgs.secretConnectorMap) {
-      return;
-    }
 
-    // Resolve ancillary subscription keys together; refresh owns reconnect errors.
-    await syncPersonalSubscriptionRuntimeBundles(runtimeSyncArgs, false);
-  })();
-  syncPlatformRuntimeSecrets({
-    secrets: args.secrets,
-    secretConnectorMap: args.body.secretConnectorMap,
-    secretConnectorMetadataMap: args.body.secretConnectorMetadataMap,
-    referencedKeys: args.referencedKeys,
-    connectorAccessBySlug: args.connectorAccessBySlug,
-  });
-}
+      for (const { key, secretName } of lookups) {
+        const value = valuesByName.get(secretName);
+        if (value === undefined) {
+          delete storedRuntimeSyncArgs.secrets[key];
+        } else {
+          storedRuntimeSyncArgs.secrets[key] = value;
+        }
+      }
+    })();
+    const runtimeSyncArgs = {
+      runId: args.auth.runId,
+      subscriptionBundles: args.subscriptionBundles,
+      orgId: args.orgId,
+      userId: args.auth.userId,
+      secrets: args.secrets,
+      secretConnectorMap: args.body.secretConnectorMap,
+      secretConnectorMetadataMap: args.body.secretConnectorMetadataMap,
+      referencedKeys: args.referencedKeys,
+      featureSwitchContext: args.featureSwitchContext,
+    };
+    await (async (): Promise<void> => {
+      if (!runtimeSyncArgs.secretConnectorMap) {
+        return;
+      }
+
+      // Resolve ancillary subscription keys together; refresh owns reconnect errors.
+      await set(
+        syncPersonalSubscriptionRuntimeBundles$,
+        runtimeSyncArgs,
+        false,
+      );
+    })();
+    syncPlatformRuntimeSecrets({
+      secrets: args.secrets,
+      secretConnectorMap: args.body.secretConnectorMap,
+      secretConnectorMetadataMap: args.body.secretConnectorMetadataMap,
+      referencedKeys: args.referencedKeys,
+      connectorAccessBySlug: args.connectorAccessBySlug,
+    });
+  },
+);
 
 function canResolveMissingAccessSecret(args: {
   readonly key: string;
@@ -4000,189 +4109,195 @@ function bindMatchedBuiltinMcpSecrets(args: {
   return { ...args.body, secretConnectorMap, secretConnectorMetadataMap };
 }
 
-async function prepareFirewallConnectorBindings(args: {
-  readonly db: Db;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
-  readonly auth: SandboxAuth;
-  readonly body: FirewallAuthBody;
-  readonly orgId: string;
-  readonly referenced: ReferencedAuthKeys;
-}): Promise<
-  | {
-      readonly ok: true;
+const prepareFirewallConnectorBindings$ = command(
+  async function prepareFirewallConnectorBindings(
+    { set },
+    args: {
+      readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
+      readonly auth: SandboxAuth;
       readonly body: FirewallAuthBody;
-      readonly connectorAccessBySlug: ReadonlyMap<
-        string,
-        BuiltinConnectorAccessState
-      >;
-    }
-  | { readonly ok: false; readonly response: ResolveFirewallAuthResult }
-> {
-  const referenced = args.referenced;
-  const matchedConnectorSlug = args.body.matchedFirewall?.connectorSlug;
-  const connectorAccessBySlug = await loadBuiltinConnectorAccessStates(
-    args.db,
-    args.orgId,
-    args.auth.userId,
-    builtinConnectorAccountRequestsForFirewall({
-      body: args.body,
-      referencedSecretKeys: referenced.secrets,
-    }),
-    args.connectorCatalogSnapshot,
-  );
-  if (
-    matchedConnectorSlug !== undefined &&
-    !connectorAccessBySlug.has(matchedConnectorSlug)
-  ) {
-    return { ok: false, response: connectorNotConfigured() };
-  }
-  if (
-    matchedConnectorSlug !== undefined &&
-    args.connectorCatalogSnapshot.connectors.get(matchedConnectorSlug)
-      ?.catalogConnector.mcp !== undefined
-  ) {
-    const matchedAccess = connectorAccessBySlug.get(matchedConnectorSlug);
+      readonly orgId: string;
+      readonly referenced: ReferencedAuthKeys;
+    },
+  ): Promise<
+    | {
+        readonly ok: true;
+        readonly body: FirewallAuthBody;
+        readonly connectorAccessBySlug: ReadonlyMap<
+          string,
+          BuiltinConnectorAccessState
+        >;
+      }
+    | { readonly ok: false; readonly response: ResolveFirewallAuthResult }
+  > {
+    const referenced = args.referenced;
+    const matchedConnectorSlug = args.body.matchedFirewall?.connectorSlug;
+    const connectorAccessBySlug = await set(
+      loadBuiltinConnectorAccessStates$,
+      args.orgId,
+      args.auth.userId,
+      builtinConnectorAccountRequestsForFirewall({
+        body: args.body,
+        referencedSecretKeys: referenced.secrets,
+      }),
+      args.connectorCatalogSnapshot,
+    );
     if (
-      matchedAccess &&
-      connectorAccessCredentialStatus(
-        matchedAccess,
-        Math.floor(nowDate().getTime() / 1000),
-      ) === "reconnect-required"
+      matchedConnectorSlug !== undefined &&
+      !connectorAccessBySlug.has(matchedConnectorSlug)
     ) {
+      return { ok: false, response: connectorNotConfigured() };
+    }
+    if (
+      matchedConnectorSlug !== undefined &&
+      args.connectorCatalogSnapshot.connectors.get(matchedConnectorSlug)
+        ?.catalogConnector.mcp !== undefined
+    ) {
+      const matchedAccess = connectorAccessBySlug.get(matchedConnectorSlug);
+      if (
+        matchedAccess &&
+        connectorAccessCredentialStatus(
+          matchedAccess,
+          Math.floor(nowDate().getTime() / 1000),
+        ) === "reconnect-required"
+      ) {
+        return {
+          ok: false,
+          response: connectorReconnectRequired([matchedConnectorSlug]),
+        };
+      }
+    }
+    const body = bindMatchedBuiltinMcpSecrets({
+      body: args.body,
+      connectorCatalogSnapshot: args.connectorCatalogSnapshot,
+      connectorAccessBySlug,
+      referencedSecretKeys: referenced.secrets,
+    });
+    if (!body) {
+      return { ok: false, response: connectorNotConfigured() };
+    }
+    if (
+      body.secretConnectorMap &&
+      hasForbiddenModelProviderOwner(
+        args.auth,
+        body.secretConnectorMap,
+        body.secretConnectorMetadataMap,
+        referenced.secrets,
+      )
+    ) {
+      return { ok: false, response: forbiddenModelProviderOwner() };
+    }
+    return { ok: true, body, connectorAccessBySlug };
+  },
+);
+
+const prepareFirewallAuthResolutionContext$ = command(
+  async function prepareFirewallAuthResolutionContext(
+    { set },
+    args: {
+      readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
+      readonly auth: SandboxAuth;
+      readonly body: FirewallAuthBody;
+      readonly orgId: string;
+      readonly featureSwitchContext: FeatureSwitchContext;
+      readonly secrets: Record<string, string>;
+      readonly referenced: ReferencedAuthKeys;
+    },
+  ): Promise<
+    | { readonly ok: true; readonly context: FirewallAuthResolutionContext }
+    | { readonly ok: false; readonly response: ResolveFirewallAuthResult }
+  > {
+    const referenced = args.referenced;
+    const vars = args.body.vars ?? {};
+    const matchedConnectorSlug = args.body.matchedFirewall?.connectorSlug;
+    const bindings = await set(prepareFirewallConnectorBindings$, args);
+    if (!bindings.ok) {
+      return bindings;
+    }
+    const { body, connectorAccessBySlug } = bindings;
+    const subscriptionBundles: SubscriptionBundleReads = new Map();
+    const modelProviderRefreshable = referencedModelProviderAccessMap({
+      secretConnectorMap: body.secretConnectorMap,
+      secretConnectorMetadataMap: body.secretConnectorMetadataMap,
+      referencedKeys: referenced.secrets,
+    });
+    const modelProviderSourceStateByProviderKey =
+      modelProviderRefreshable.size === 0
+        ? new Map<string, RefreshSourceState>()
+        : await set(loadAccessSourceStates$, {
+            featureSwitchContext: args.featureSwitchContext,
+            orgId: args.orgId,
+            userId: args.auth.userId,
+            accessSourceKeys: [...new Set(modelProviderRefreshable.values())],
+            metadataByAccessSource: buildMetadataByAccessSource(
+              modelProviderRefreshable,
+              body.secretConnectorMetadataMap,
+            ),
+            connectorAccessBySlug,
+          });
+    if (
+      hasUnavailableAccessSource({
+        secretConnectorMap: body.secretConnectorMap,
+        secretConnectorMetadataMap: body.secretConnectorMetadataMap,
+        referencedKeys: referenced.secrets,
+        connectorAccessBySlug,
+        modelProviderSourceStateByProviderKey,
+      })
+    ) {
+      return { ok: false, response: connectorNotConfigured() };
+    }
+    const reconnectRequiredConnectorSlugs =
+      connectorSlugsWithReconnectRequiredStatus({
+        secretConnectorMap: body.secretConnectorMap,
+        secretConnectorMetadataMap: body.secretConnectorMetadataMap,
+        referencedKeys: referenced.secrets,
+        connectorAccessBySlug,
+      });
+    if (reconnectRequiredConnectorSlugs.length > 0) {
       return {
         ok: false,
-        response: connectorReconnectRequired([matchedConnectorSlug]),
+        response: connectorReconnectRequired(reconnectRequiredConnectorSlugs),
       };
     }
-  }
-  const body = bindMatchedBuiltinMcpSecrets({
-    body: args.body,
-    connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-    connectorAccessBySlug,
-    referencedSecretKeys: referenced.secrets,
-  });
-  if (!body) {
-    return { ok: false, response: connectorNotConfigured() };
-  }
-  if (
-    body.secretConnectorMap &&
-    hasForbiddenModelProviderOwner(
-      args.auth,
-      body.secretConnectorMap,
-      body.secretConnectorMetadataMap,
-      referenced.secrets,
-    )
-  ) {
-    return { ok: false, response: forbiddenModelProviderOwner() };
-  }
-  return { ok: true, body, connectorAccessBySlug };
-}
-
-async function prepareFirewallAuthResolutionContext(args: {
-  readonly db: Db;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
-  readonly auth: SandboxAuth;
-  readonly body: FirewallAuthBody;
-  readonly orgId: string;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly secrets: Record<string, string>;
-  readonly referenced: ReferencedAuthKeys;
-}): Promise<
-  | { readonly ok: true; readonly context: FirewallAuthResolutionContext }
-  | { readonly ok: false; readonly response: ResolveFirewallAuthResult }
-> {
-  const referenced = args.referenced;
-  const vars = args.body.vars ?? {};
-  const matchedConnectorSlug = args.body.matchedFirewall?.connectorSlug;
-  const bindings = await prepareFirewallConnectorBindings(args);
-  if (!bindings.ok) {
-    return bindings;
-  }
-  const { body, connectorAccessBySlug } = bindings;
-  const subscriptionBundles: SubscriptionBundleReads = new Map();
-  const modelProviderRefreshable = referencedModelProviderAccessMap({
-    secretConnectorMap: body.secretConnectorMap,
-    secretConnectorMetadataMap: body.secretConnectorMetadataMap,
-    referencedKeys: referenced.secrets,
-  });
-  const modelProviderSourceStateByProviderKey =
-    modelProviderRefreshable.size === 0
-      ? new Map<string, RefreshSourceState>()
-      : await loadAccessSourceStates({
-          featureSwitchContext: args.featureSwitchContext,
-          db: args.db,
-          orgId: args.orgId,
-          userId: args.auth.userId,
-          accessSourceKeys: [...new Set(modelProviderRefreshable.values())],
-          metadataByAccessSource: buildMetadataByAccessSource(
-            modelProviderRefreshable,
-            body.secretConnectorMetadataMap,
-          ),
-          connectorAccessBySlug,
-        });
-  if (
-    hasUnavailableAccessSource({
-      secretConnectorMap: body.secretConnectorMap,
-      secretConnectorMetadataMap: body.secretConnectorMetadataMap,
+    await set(syncFirewallRuntimeSecrets$, {
+      auth: args.auth,
+      body,
+      orgId: args.orgId,
+      secrets: args.secrets,
       referencedKeys: referenced.secrets,
       connectorAccessBySlug,
-      modelProviderSourceStateByProviderKey,
-    })
-  ) {
-    return { ok: false, response: connectorNotConfigured() };
-  }
-  const reconnectRequiredConnectorSlugs =
-    connectorSlugsWithReconnectRequiredStatus({
+      featureSwitchContext: args.featureSwitchContext,
+      subscriptionBundles,
+    });
+    const hasMissingSecrets = hasMissingUnresolvableSecrets({
+      secrets: args.secrets,
+      referencedKeys: referenced.secrets,
       secretConnectorMap: body.secretConnectorMap,
       secretConnectorMetadataMap: body.secretConnectorMetadataMap,
-      referencedKeys: referenced.secrets,
       connectorAccessBySlug,
     });
-  if (reconnectRequiredConnectorSlugs.length > 0) {
-    return {
-      ok: false,
-      response: connectorReconnectRequired(reconnectRequiredConnectorSlugs),
-    };
-  }
-  await syncFirewallRuntimeSecrets({
-    db: args.db,
-    auth: args.auth,
-    body,
-    orgId: args.orgId,
-    secrets: args.secrets,
-    referencedKeys: referenced.secrets,
-    connectorAccessBySlug,
-    featureSwitchContext: args.featureSwitchContext,
-    subscriptionBundles,
-  });
-  const hasMissingSecrets = hasMissingUnresolvableSecrets({
-    secrets: args.secrets,
-    referencedKeys: referenced.secrets,
-    secretConnectorMap: body.secretConnectorMap,
-    secretConnectorMetadataMap: body.secretConnectorMetadataMap,
-    connectorAccessBySlug,
-  });
-  const hasMissingVars = hasMissingFirewallVariables({
-    vars,
-    referencedVariableKeys: referenced.vars,
-    matchedConnectorSlug,
-    connectorAccessBySlug,
-  });
-  if (hasMissingSecrets || hasMissingVars) {
-    return { ok: false, response: connectorNotConfigured() };
-  }
-
-  return {
-    ok: true,
-    context: {
-      body,
-      referenced,
+    const hasMissingVars = hasMissingFirewallVariables({
       vars,
+      referencedVariableKeys: referenced.vars,
+      matchedConnectorSlug,
       connectorAccessBySlug,
-      subscriptionBundles,
-    },
-  };
-}
+    });
+    if (hasMissingSecrets || hasMissingVars) {
+      return { ok: false, response: connectorNotConfigured() };
+    }
+
+    return {
+      ok: true,
+      context: {
+        body,
+        referenced,
+        vars,
+        connectorAccessBySlug,
+        subscriptionBundles,
+      },
+    };
+  },
+);
 
 function matchedVariableReadPlan(
   runtimeMetadata: ConnectorAuthMethodRuntimeMetadata,
@@ -4335,35 +4450,38 @@ export const admitPreparedFirewallAuthResponse$ = command(
   },
 );
 
-async function decryptFirewallAuthSecrets(
-  db: Db,
-  auth: SandboxAuth,
-  orgId: string,
-  encryptedSecrets: string,
-): Promise<{
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly secrets: Record<string, string> | null;
-}> {
-  const featureSwitchContextRows0 = await db
-    .select({
-      userId: userFeatureSwitches.userId,
-      switches: userFeatureSwitches.switches,
-    })
-    .from(userFeatureSwitches)
-    .where(userFeatureSwitchRowCondition(orgId, auth.userId));
-  const featureSwitchContext = featureSwitchContextFromRows(
-    orgId,
-    auth.userId,
-    featureSwitchContextRows0,
-  );
-  const secrets = await tapError(
-    decryptPersistentSecretsMap(encryptedSecrets, featureSwitchContext),
-  );
-  return {
-    featureSwitchContext,
-    secrets: secrets ?? null,
-  };
-}
+const decryptFirewallAuthSecrets$ = command(
+  async function decryptFirewallAuthSecrets(
+    { get },
+    auth: SandboxAuth,
+    orgId: string,
+    encryptedSecrets: string,
+  ): Promise<{
+    readonly featureSwitchContext: FeatureSwitchContext;
+    readonly secrets: Record<string, string> | null;
+  }> {
+    const db = get(db$);
+    const featureSwitchContextRows0 = await db
+      .select({
+        userId: userFeatureSwitches.userId,
+        switches: userFeatureSwitches.switches,
+      })
+      .from(userFeatureSwitches)
+      .where(userFeatureSwitchRowCondition(orgId, auth.userId));
+    const featureSwitchContext = featureSwitchContextFromRows(
+      orgId,
+      auth.userId,
+      featureSwitchContextRows0,
+    );
+    const secrets = await tapError(
+      decryptPersistentSecretsMap(encryptedSecrets, featureSwitchContext),
+    );
+    return {
+      featureSwitchContext,
+      secrets: secrets ?? null,
+    };
+  },
+);
 
 function accessSourceKeysNeedingRefresh(args: {
   readonly accessSourceKeys: readonly string[];
@@ -4398,7 +4516,8 @@ function buildEnvVarsByAccessSource(
   return envVarsByAccessSource;
 }
 
-async function refreshSelectedTokens(
+const refreshSelectedTokens$ = command(async function refreshSelectedTokens(
+  { set },
   context: RefreshBatchContext,
   accessSourceKeys: readonly string[],
 ): Promise<readonly RefreshExecutionResult[]> {
@@ -4414,8 +4533,7 @@ async function refreshSelectedTokens(
       if (metadata.sourceType === "platform-secret") {
         throw new Error("Platform secrets are not refreshable");
       }
-      const refreshResult = await refreshAccessTokenForSource({
-        db: context.db,
+      const refreshResult = await set(refreshAccessTokenForSource$, {
         accessSourceKey,
         orgId: context.orgId,
         userId: context.userId,
@@ -4453,9 +4571,10 @@ async function refreshSelectedTokens(
       return { accessSourceKey, status: refreshResult.status };
     }),
   );
-}
+});
 
-async function syncSkippedTokens(
+const syncSkippedTokens$ = command(async function syncSkippedTokens(
+  { set },
   context: RefreshBatchContext,
   skippedAccessSourceKeys: readonly string[],
   sourceStateMap: Map<string, RefreshSourceState>,
@@ -4487,8 +4606,7 @@ async function syncSkippedTokens(
       }
       return {
         accessSourceKey,
-        tokens: await getCurrentAccessSecrets({
-          db: context.db,
+        tokens: await set(getCurrentAccessSecrets$, {
           accessSourceKey,
           orgId: context.orgId,
           userId: context.userId,
@@ -4555,7 +4673,7 @@ async function syncSkippedTokens(
     Object.assign(context.secrets, tokens);
   }
   return results;
-}
+});
 
 function summarizeRefreshResults(
   refreshResults: readonly RefreshExecutionResult[],
@@ -4661,7 +4779,8 @@ function unusableRefreshLifetimeResults(
   return results;
 }
 
-async function refreshExpiredTokens(
+const refreshExpiredTokens$ = command(async function refreshExpiredTokens(
+  { set },
   args: RefreshExpiredTokensArgs,
 ): Promise<RefreshResult> {
   const refreshable = buildRefreshableMap(
@@ -4683,9 +4802,8 @@ async function refreshExpiredTokens(
     accessSourceKeys,
     metadataByAccessSource,
   });
-  const sourceStateMap = await loadAccessSourceStates({
+  const sourceStateMap = await set(loadAccessSourceStates$, {
     featureSwitchContext: args.featureSwitchContext,
-    db: args.db,
     orgId: args.orgId,
     userId: args.auth.userId,
     accessSourceKeys,
@@ -4700,7 +4818,6 @@ async function refreshExpiredTokens(
   const envVarsByAccessSource = buildEnvVarsByAccessSource(refreshable);
 
   const context = {
-    db: args.db,
     subscriptionBundles: args.subscriptionBundles,
     connectorCatalogSnapshot: args.connectorCatalogSnapshot,
     auth: args.auth,
@@ -4713,7 +4830,8 @@ async function refreshExpiredTokens(
     envVarsByAccessSource,
     featureSwitchContext: args.featureSwitchContext,
   } satisfies RefreshBatchContext;
-  const selectedRefreshResults = await refreshSelectedTokens(
+  const selectedRefreshResults = await set(
+    refreshSelectedTokens$,
     context,
     toRefresh,
   );
@@ -4723,16 +4841,16 @@ async function refreshExpiredTokens(
   const skippedStateSnapshot =
     skippedAccessSourceKeys.length === 0
       ? { connectorAccessBySlug: context.connectorAccessBySlug, sourceStateMap }
-      : await loadCurrentSourceStateSnapshot({
+      : await set(loadCurrentSourceStateSnapshot$, {
           featureSwitchContext: args.featureSwitchContext,
-          db: args.db,
           connectorCatalogSnapshot: args.connectorCatalogSnapshot,
           orgId: args.orgId,
           userId: args.auth.userId,
           accessSourceKeys: skippedAccessSourceKeys,
           metadataByAccessSource,
         });
-  const skippedResults = await syncSkippedTokens(
+  const skippedResults = await set(
+    syncSkippedTokens$,
     {
       ...context,
       connectorAccessBySlug: skippedStateSnapshot.connectorAccessBySlug,
@@ -4748,8 +4866,8 @@ async function refreshExpiredTokens(
   const finalConnectorAccessBySlug = hasCurrentOrRefreshed
     ? new Map([
         ...args.connectorAccessBySlug,
-        ...(await loadBuiltinConnectorAccessStates(
-          args.db,
+        ...(await set(
+          loadBuiltinConnectorAccessStates$,
           args.orgId,
           args.auth.userId,
           builtinConnectorAccountRequestsForMetadata({
@@ -4761,9 +4879,8 @@ async function refreshExpiredTokens(
       ])
     : args.connectorAccessBySlug;
   const finalSourceStateMap = hasCurrentOrRefreshed
-    ? await loadAccessSourceStates({
+    ? await set(loadAccessSourceStates$, {
         featureSwitchContext: args.featureSwitchContext,
-        db: args.db,
         orgId: args.orgId,
         userId: args.auth.userId,
         accessSourceKeys,
@@ -4791,7 +4908,7 @@ async function refreshExpiredTokens(
       envVarsByAccessSource,
     ),
   };
-}
+});
 
 function collectReferencedKeys(
   authHeaders: Record<string, string>,
@@ -5511,25 +5628,10 @@ function requestedAutomaticMcpCatalogAuth(args: {
     : "mismatch";
 }
 
-/**
- * Every slug this request can resolve is the matched firewall or an access
- * source named by the secret map; only the matched slug needs firewall rules.
- */
-async function prepareNonCustomFirewallAuth(args: {
-  readonly db: Db;
-  readonly auth: SandboxAuth;
-  readonly body: FirewallAuthBody;
-  readonly orgId: string;
-  readonly referenced: ReferencedAuthKeys;
-}): Promise<
-  FirewallAuthPreparation<
-    | PreparedNonCustomFirewallAuth
-    | PreparedBuiltinConnectorAutomaticFirewallAuth
-  >
-> {
-  const connectorSlug = args.body.matchedFirewall?.connectorSlug;
-  const { db, body } = args;
-  const connectorCatalogSnapshot = await (async () => {
+const readFirewallConnectorCatalog$ = command(
+  async ({ get }, body: FirewallAuthBody) => {
+    const db = get(db$);
+
     const firewallSlug = body.matchedFirewall?.connectorSlug;
     const catalogPlan = connectorRuntimeAuthSelectionReadPlan({
       connectorSlugs: Object.values(body.secretConnectorMap ?? {}),
@@ -5544,108 +5646,137 @@ async function prepareNonCustomFirewallAuth(args: {
       catalogPlan.requestedConnectorSlugs,
       catalogPlan.firewallConnectorSlugs,
     );
-  })();
-  const requestedAutomaticMcpAuth = requestedAutomaticMcpCatalogAuth({
-    snapshot: connectorCatalogSnapshot,
-    body: args.body,
-  });
-  // Account deletion or reconnect must end cached MCP credential authorization,
-  // including static credentials whose provider token has no expiry. Start
-  // the lease before reading the account so slow resolution cannot extend it.
-  const builtinMcpExpiresAt =
-    connectorSlug !== undefined &&
-    connectorCatalogSnapshot.connectors.get(connectorSlug)?.catalogConnector
-      .mcp !== undefined
-      ? Math.floor(nowDate().getTime() / 1000) + BUILTIN_MCP_AUTH_LEASE_SECONDS
-      : null;
-  if (
-    connectorSlug !== undefined &&
-    builtinMcpExpiresAt !== null &&
-    requestedAutomaticMcpAuth !== null
-  ) {
-    const sourceId = args.body.matchedFirewall?.sourceId;
-    if (sourceId === undefined) {
-      return { ok: false, response: connectorNotConfigured() };
-    }
-    const [account] = await args.db
-      .select({
-        id: connectors.id,
-        authMethod: connectors.authMethod,
-      })
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.id, sourceId),
-          eq(connectors.connectorSlug, connectorSlug),
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.auth.userId),
-        ),
-      )
-      .limit(1);
+  },
+);
+
+/**
+ * Every slug this request can resolve is the matched firewall or an access
+ * source named by the secret map; only the matched slug needs firewall rules.
+ */
+const prepareNonCustomFirewallAuth$ = command(
+  async function prepareNonCustomFirewallAuth(
+    { get, set },
+    args: {
+      readonly auth: SandboxAuth;
+      readonly body: FirewallAuthBody;
+      readonly orgId: string;
+      readonly referenced: ReferencedAuthKeys;
+    },
+  ): Promise<
+    FirewallAuthPreparation<
+      | PreparedNonCustomFirewallAuth
+      | PreparedBuiltinConnectorAutomaticFirewallAuth
+    >
+  > {
+    const db = get(db$);
+    const connectorSlug = args.body.matchedFirewall?.connectorSlug;
+    const { body } = args;
+    const connectorCatalogSnapshot = await set(
+      readFirewallConnectorCatalog$,
+      body,
+    );
+    const requestedAutomaticMcpAuth = requestedAutomaticMcpCatalogAuth({
+      snapshot: connectorCatalogSnapshot,
+      body: args.body,
+    });
+    // Account deletion or reconnect must end cached MCP credential authorization,
+    // including static credentials whose provider token has no expiry. Start
+    // the lease before reading the account so slow resolution cannot extend it.
+    const builtinMcpExpiresAt =
+      connectorSlug !== undefined &&
+      connectorCatalogSnapshot.connectors.get(connectorSlug)?.catalogConnector
+        .mcp !== undefined
+        ? Math.floor(nowDate().getTime() / 1000) +
+          BUILTIN_MCP_AUTH_LEASE_SECONDS
+        : null;
     if (
-      account &&
-      connectorCatalogSnapshot.connectors
-        .get(connectorSlug)
-        ?.methods.get(account.authMethod)?.method.grant.kind === "automatic"
+      connectorSlug !== undefined &&
+      builtinMcpExpiresAt !== null &&
+      requestedAutomaticMcpAuth !== null
     ) {
-      if (requestedAutomaticMcpAuth === "mismatch") {
+      const sourceId = args.body.matchedFirewall?.sourceId;
+      if (sourceId === undefined) {
         return { ok: false, response: connectorNotConfigured() };
       }
+      const [account] = await db
+        .select({
+          id: connectors.id,
+          authMethod: connectors.authMethod,
+        })
+        .from(connectors)
+        .where(
+          and(
+            eq(connectors.id, sourceId),
+            eq(connectors.connectorSlug, connectorSlug),
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.auth.userId),
+          ),
+        )
+        .limit(1);
+      if (
+        account &&
+        connectorCatalogSnapshot.connectors
+          .get(connectorSlug)
+          ?.methods.get(account.authMethod)?.method.grant.kind === "automatic"
+      ) {
+        if (requestedAutomaticMcpAuth === "mismatch") {
+          return { ok: false, response: connectorNotConfigured() };
+        }
+        return {
+          ok: true,
+          prepared: {
+            kind: "connector-automatic",
+            catalogAuth: requestedAutomaticMcpAuth,
+            connectorSlug,
+            connectorId: account.id,
+            authMethodId: account.authMethod,
+            expiresAt: builtinMcpExpiresAt,
+          },
+        };
+      }
+    }
+    const decrypted = await set(
+      decryptFirewallAuthSecrets$,
+      args.auth,
+      args.orgId,
+      args.body.encryptedSecrets,
+    );
+    if (!decrypted.secrets) {
       return {
-        ok: true,
-        prepared: {
-          kind: "connector-automatic",
-          catalogAuth: requestedAutomaticMcpAuth,
-          connectorSlug,
-          connectorId: account.id,
-          authMethodId: account.authMethod,
-          expiresAt: builtinMcpExpiresAt,
-        },
+        ok: false,
+        response: badRequestMessage("Failed to decrypt secrets"),
       };
     }
-  }
-  const decrypted = await decryptFirewallAuthSecrets(
-    args.db,
-    args.auth,
-    args.orgId,
-    args.body.encryptedSecrets,
-  );
-  if (!decrypted.secrets) {
-    return {
-      ok: false,
-      response: badRequestMessage("Failed to decrypt secrets"),
-    };
-  }
-  const prepared = await prepareFirewallAuthResolutionContext({
-    db: args.db,
-    connectorCatalogSnapshot,
-    auth: args.auth,
-    body: args.body,
-    orgId: args.orgId,
-    featureSwitchContext: decrypted.featureSwitchContext,
-    secrets: decrypted.secrets,
-    referenced: args.referenced,
-  });
-  if (!prepared.ok) {
-    return { ok: false, response: prepared.response };
-  }
-  return {
-    ok: true,
-    prepared: {
-      kind: "non-custom",
-      builtinMcpExpiresAt:
-        connectorSlug !== undefined &&
-        prepared.context.connectorAccessBySlug.get(connectorSlug)?.runtimeMethod
-          .method.grant.kind !== "none"
-          ? builtinMcpExpiresAt
-          : null,
+    const prepared = await set(prepareFirewallAuthResolutionContext$, {
       connectorCatalogSnapshot,
+      auth: args.auth,
+      body: args.body,
+      orgId: args.orgId,
       featureSwitchContext: decrypted.featureSwitchContext,
       secrets: decrypted.secrets,
-      context: prepared.context,
-    },
-  };
-}
+      referenced: args.referenced,
+    });
+    if (!prepared.ok) {
+      return { ok: false, response: prepared.response };
+    }
+    return {
+      ok: true,
+      prepared: {
+        kind: "non-custom",
+        builtinMcpExpiresAt:
+          connectorSlug !== undefined &&
+          prepared.context.connectorAccessBySlug.get(connectorSlug)
+            ?.runtimeMethod.method.grant.kind !== "none"
+            ? builtinMcpExpiresAt
+            : null,
+        connectorCatalogSnapshot,
+        featureSwitchContext: decrypted.featureSwitchContext,
+        secrets: decrypted.secrets,
+        context: prepared.context,
+      },
+    };
+  },
+);
 
 async function resolveCustomFirewallAuthMaterial(args: {
   readonly db: Db;
@@ -5697,81 +5828,14 @@ async function resolveCustomFirewallAuthMaterial(args: {
   };
 }
 
-async function resolveNonCustomFirewallAuthMaterial(args: {
-  readonly db: Db;
-  readonly auth: SandboxAuth;
-  readonly body: FirewallAuthBody;
-  readonly prepared: PreparedNonCustomFirewallAuth;
-}): Promise<FirewallAuthMaterialResolution> {
-  const { connectorAccessBySlug, referenced } = args.prepared.context;
-  let expiresAt = args.prepared.builtinMcpExpiresAt;
-  let refreshedConnectors: readonly string[] = [];
-  let refreshedSecrets: readonly string[] = [];
-  let failedConnectors: readonly string[] = [];
-  let unavailableConnectors: readonly string[] = [];
-  let failureReason: FirewallAuthFailureReason | undefined;
+const readMatchedFirewallVariables$ = command(
+  async (
+    { get },
+    variableBody: FirewallAuthBody,
+    variableContext: FirewallAuthResolutionContext,
+  ): Promise<Record<string, string> | undefined> => {
+    const variableDb = get(db$);
 
-  if (args.body.secretConnectorMap) {
-    const result = await refreshExpiredTokens({
-      db: args.db,
-      subscriptionBundles: args.prepared.context.subscriptionBundles,
-      connectorCatalogSnapshot: args.prepared.connectorCatalogSnapshot,
-      auth: args.auth,
-      secrets: args.prepared.secrets,
-      secretConnectorMap: args.body.secretConnectorMap,
-      secretConnectorMetadataMap: args.body.secretConnectorMetadataMap,
-      referencedKeys: referenced.secrets,
-      connectorAccessBySlug,
-      orgId: args.auth.orgId,
-      featureSwitchContext: args.prepared.featureSwitchContext,
-      forceRefresh: args.body.forceRefresh ?? false,
-    });
-    expiresAt = mergeExpiresAt(expiresAt, result.expiresAt ?? undefined);
-    refreshedConnectors = result.refreshedConnectors;
-    refreshedSecrets = result.refreshedSecrets;
-    failedConnectors = result.failedConnectors;
-    unavailableConnectors = result.unavailableConnectors;
-    failureReason = result.failureReason;
-  }
-
-  if (unavailableConnectors.length > 0) {
-    return { ok: false, response: connectorNotConfigured() };
-  }
-  if (failedConnectors.length > 0) {
-    return {
-      ok: false,
-      response: tokenRefreshFailed(failedConnectors, failureReason),
-    };
-  }
-  const currentSubscriptionExpiry =
-    await syncPersonalSubscriptionRuntimeBundles({
-      db: args.db,
-      subscriptionBundles: args.prepared.context.subscriptionBundles,
-      orgId: args.auth.orgId,
-      userId: args.auth.userId,
-      runId: args.auth.runId,
-      secrets: args.prepared.secrets,
-      secretConnectorMap: args.body.secretConnectorMap,
-      secretConnectorMetadataMap: args.body.secretConnectorMetadataMap,
-      referencedKeys: referenced.secrets,
-      featureSwitchContext: args.prepared.featureSwitchContext,
-    });
-  expiresAt = mergeExpiresAt(expiresAt, currentSubscriptionExpiry ?? undefined);
-  const missingSecretsResponse = missingResolvedSecretsResponse({
-    secrets: args.prepared.secrets,
-    referencedKeys: referenced.secrets,
-    failure: {
-      kind: "token-access-resolution",
-      secretConnectorMap: args.body.secretConnectorMap,
-    },
-  });
-  if (missingSecretsResponse) {
-    return { ok: false, response: missingSecretsResponse };
-  }
-  const variableDb = args.db;
-  const variableBody = args.body;
-  const variableContext = args.prepared.context;
-  const vars = await (async (): Promise<Record<string, string> | undefined> => {
     const matchedFirewall = variableBody.matchedFirewall;
     if (matchedFirewall?.connectorSlug === undefined) {
       return variableBody.vars ?? {};
@@ -5790,7 +5854,10 @@ async function resolveNonCustomFirewallAuthMaterial(args: {
       storageNames.length === 0
         ? []
         : await variableDb
-            .select({ name: variablesTable.name, value: variablesTable.value })
+            .select({
+              name: variablesTable.name,
+              value: variablesTable.value,
+            })
             .from(variablesTable)
             .where(
               builtinConnectorCredentialVariableReadCondition({
@@ -5808,25 +5875,110 @@ async function resolveNonCustomFirewallAuthMaterial(args: {
       matchedFirewall,
       referencedBindings,
     );
-  })();
-  if (vars === undefined) {
-    return { ok: false, response: connectorNotConfigured() };
-  }
-  return {
-    ok: true,
-    material: {
-      secrets: args.prepared.secrets,
-      vars,
+  },
+);
+
+const resolveNonCustomFirewallAuthMaterial$ = command(
+  async function resolveNonCustomFirewallAuthMaterial(
+    { set },
+    args: {
+      readonly auth: SandboxAuth;
+      readonly body: FirewallAuthBody;
+      readonly prepared: PreparedNonCustomFirewallAuth;
+    },
+  ): Promise<FirewallAuthMaterialResolution> {
+    const { connectorAccessBySlug, referenced } = args.prepared.context;
+    let expiresAt = args.prepared.builtinMcpExpiresAt;
+    let refreshedConnectors: readonly string[] = [];
+    let refreshedSecrets: readonly string[] = [];
+    let failedConnectors: readonly string[] = [];
+    let unavailableConnectors: readonly string[] = [];
+    let failureReason: FirewallAuthFailureReason | undefined;
+
+    if (args.body.secretConnectorMap) {
+      const result = await set(refreshExpiredTokens$, {
+        subscriptionBundles: args.prepared.context.subscriptionBundles,
+        connectorCatalogSnapshot: args.prepared.connectorCatalogSnapshot,
+        auth: args.auth,
+        secrets: args.prepared.secrets,
+        secretConnectorMap: args.body.secretConnectorMap,
+        secretConnectorMetadataMap: args.body.secretConnectorMetadataMap,
+        referencedKeys: referenced.secrets,
+        connectorAccessBySlug,
+        orgId: args.auth.orgId,
+        featureSwitchContext: args.prepared.featureSwitchContext,
+        forceRefresh: args.body.forceRefresh ?? false,
+      });
+      expiresAt = mergeExpiresAt(expiresAt, result.expiresAt ?? undefined);
+      refreshedConnectors = result.refreshedConnectors;
+      refreshedSecrets = result.refreshedSecrets;
+      failedConnectors = result.failedConnectors;
+      unavailableConnectors = result.unavailableConnectors;
+      failureReason = result.failureReason;
+    }
+
+    if (unavailableConnectors.length > 0) {
+      return { ok: false, response: connectorNotConfigured() };
+    }
+    if (failedConnectors.length > 0) {
+      return {
+        ok: false,
+        response: tokenRefreshFailed(failedConnectors, failureReason),
+      };
+    }
+    const currentSubscriptionExpiry = await set(
+      syncPersonalSubscriptionRuntimeBundles$,
+      {
+        subscriptionBundles: args.prepared.context.subscriptionBundles,
+        orgId: args.auth.orgId,
+        userId: args.auth.userId,
+        runId: args.auth.runId,
+        secrets: args.prepared.secrets,
+        secretConnectorMap: args.body.secretConnectorMap,
+        secretConnectorMetadataMap: args.body.secretConnectorMetadataMap,
+        referencedKeys: referenced.secrets,
+        featureSwitchContext: args.prepared.featureSwitchContext,
+      },
+    );
+    expiresAt = mergeExpiresAt(
       expiresAt,
-      refreshedConnectors,
-      refreshedSecrets,
-      missingSecretFailure: {
+      currentSubscriptionExpiry ?? undefined,
+    );
+    const missingSecretsResponse = missingResolvedSecretsResponse({
+      secrets: args.prepared.secrets,
+      referencedKeys: referenced.secrets,
+      failure: {
         kind: "token-access-resolution",
         secretConnectorMap: args.body.secretConnectorMap,
       },
-    },
-  };
-}
+    });
+    if (missingSecretsResponse) {
+      return { ok: false, response: missingSecretsResponse };
+    }
+    const vars = await set(
+      readMatchedFirewallVariables$,
+      args.body,
+      args.prepared.context,
+    );
+    if (vars === undefined) {
+      return { ok: false, response: connectorNotConfigured() };
+    }
+    return {
+      ok: true,
+      material: {
+        secrets: args.prepared.secrets,
+        vars,
+        expiresAt,
+        refreshedConnectors,
+        refreshedSecrets,
+        missingSecretFailure: {
+          kind: "token-access-resolution",
+          secretConnectorMap: args.body.secretConnectorMap,
+        },
+      },
+    };
+  },
+);
 
 const resolveFirewallAuthMaterial$ = command(
   async (
@@ -5932,8 +6084,7 @@ const resolveFirewallAuthMaterial$ = command(
       signal.throwIfAborted();
       return resolution;
     }
-    const resolution = await resolveNonCustomFirewallAuthMaterial({
-      db,
+    const resolution = await set(resolveNonCustomFirewallAuthMaterial$, {
       auth: args.auth,
       body: args.prepared.context.body,
       prepared: args.prepared,
@@ -6016,93 +6167,95 @@ function matchedConnectorSourceConflicts(args: {
   });
 }
 
-async function prepareFirewallAuthRequest(
-  db: Db,
-  auth: SandboxAuth,
-  body: FirewallAuthBody,
-  billableCacheExpiry: BillableFirewallCacheExpiry,
-): Promise<PreparedFirewallAuthRequest> {
-  const matchedFirewall = body.matchedFirewall;
-  const customConnectorId = matchedFirewall?.customConnectorId;
-  const run = await (async (): Promise<FirewallAuthRun | undefined> => {
-    const [run] = await db
-      .select({ orgId: agentRuns.orgId, status: agentRuns.status })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.id, auth.runId),
-          eq(agentRuns.orgId, auth.orgId),
-          eq(agentRuns.userId, auth.userId),
-        ),
-      )
-      .limit(1);
-    return run;
-  })();
-  if (!run) {
-    L.warn(`[${auth.runId}] Run not found for firewall auth`);
-    return { ok: false, response: badRequestMessage("Run not found") };
-  }
-  if (!firewallAuthRunIsActive(run.status)) {
-    return { ok: false, response: forbiddenTerminalRun() };
-  }
-  const orgId = run.orgId;
-  const referenced = collectReferencedKeys(
-    body.authHeaders,
-    body.authBase,
-    body.authQuery,
-    body.authAwsSigv4,
-  );
-  if (
-    matchedConnectorSourceConflicts({
-      body,
-      referencedSecretKeys: referenced.secrets,
-    })
-  ) {
-    return {
-      ok: false,
-      response: badRequestMessage(
-        "Matched connector source does not match secret metadata",
-      ),
-    };
-  }
-  let preparation: FirewallAuthPreparation<PreparedFirewallAuth>;
-  if (customConnectorId) {
-    const sourceId = matchedFirewall.sourceId;
-    if (sourceId === undefined) {
-      return { ok: false, response: connectorNotConfigured() };
+const prepareFirewallAuthRequest$ = command(
+  async function prepareFirewallAuthRequest(
+    { get, set },
+    auth: SandboxAuth,
+    body: FirewallAuthBody,
+    billableCacheExpiry: BillableFirewallCacheExpiry,
+  ): Promise<PreparedFirewallAuthRequest> {
+    const db = get(db$);
+    const matchedFirewall = body.matchedFirewall;
+    const customConnectorId = matchedFirewall?.customConnectorId;
+    const run = await (async (): Promise<FirewallAuthRun | undefined> => {
+      const [run] = await db
+        .select({ orgId: agentRuns.orgId, status: agentRuns.status })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, auth.runId),
+            eq(agentRuns.orgId, auth.orgId),
+            eq(agentRuns.userId, auth.userId),
+          ),
+        )
+        .limit(1);
+      return run;
+    })();
+    if (!run) {
+      L.warn(`[${auth.runId}] Run not found for firewall auth`);
+      return { ok: false, response: badRequestMessage("Run not found") };
     }
-    preparation = await prepareCurrentCustomConnectorFirewallAuth({
-      db,
-      auth,
-      body,
-      orgId,
+    if (!firewallAuthRunIsActive(run.status)) {
+      return { ok: false, response: forbiddenTerminalRun() };
+    }
+    const orgId = run.orgId;
+    const referenced = collectReferencedKeys(
+      body.authHeaders,
+      body.authBase,
+      body.authQuery,
+      body.authAwsSigv4,
+    );
+    if (
+      matchedConnectorSourceConflicts({
+        body,
+        referencedSecretKeys: referenced.secrets,
+      })
+    ) {
+      return {
+        ok: false,
+        response: badRequestMessage(
+          "Matched connector source does not match secret metadata",
+        ),
+      };
+    }
+    let preparation: FirewallAuthPreparation<PreparedFirewallAuth>;
+    if (customConnectorId) {
+      const sourceId = matchedFirewall.sourceId;
+      if (sourceId === undefined) {
+        return { ok: false, response: connectorNotConfigured() };
+      }
+      preparation = await prepareCurrentCustomConnectorFirewallAuth({
+        db: set(writeDb$),
+        auth,
+        body,
+        orgId,
+        referenced,
+        customConnectorId,
+        sourceId,
+        routingVariables: matchedFirewall.routingVariables,
+      });
+    } else {
+      preparation = await set(prepareNonCustomFirewallAuth$, {
+        auth,
+        body,
+        orgId,
+        referenced,
+      });
+    }
+    if (!preparation.ok) {
+      return { ok: false, response: preparation.response };
+    }
+    if ("status" in billableCacheExpiry) {
+      return { ok: false, response: billableCacheExpiry };
+    }
+    return {
+      ok: true,
       referenced,
-      customConnectorId,
-      sourceId,
-      routingVariables: matchedFirewall.routingVariables,
-    });
-  } else {
-    preparation = await prepareNonCustomFirewallAuth({
-      db,
-      auth,
-      body,
-      orgId,
-      referenced,
-    });
-  }
-  if (!preparation.ok) {
-    return { ok: false, response: preparation.response };
-  }
-  if ("status" in billableCacheExpiry) {
-    return { ok: false, response: billableCacheExpiry };
-  }
-  return {
-    ok: true,
-    referenced,
-    prepared: preparation.prepared,
-    billableExpiresAt: billableCacheExpiry.expiresAt,
-  };
-}
+      prepared: preparation.prepared,
+      billableExpiresAt: billableCacheExpiry.expiresAt,
+    };
+  },
+);
 
 const resolveFirewallAuthWithTimings$ = command(
   async (
@@ -6120,7 +6273,7 @@ const resolveFirewallAuthWithTimings$ = command(
     const preparation = await measureFirewallAuthStage(
       timingRecords,
       "firewall_auth_prepare",
-      prepareFirewallAuthRequest(db, auth, body, billableCacheExpiry),
+      set(prepareFirewallAuthRequest$, auth, body, billableCacheExpiry),
       (result) => {
         return result.ok;
       },
@@ -6180,7 +6333,7 @@ const resolveFirewallAuthWithTimings$ = command(
 
 /** Produces credential material only. The route must invoke
  * admitPreparedFirewallAuthResponse$ before returning a successful response.
- * Legacy credential preparation still has its separate Db-aware graph. */
+ * Custom-connector credential preparation retains its separate legacy graph. */
 export const prepareFirewallAuthResponse$ = command(
   async (
     { set },
@@ -6203,7 +6356,6 @@ export const prepareFirewallAuthResponse$ = command(
 function personalSubscriptionRuntimeGroups(args: {
   readonly runId?: string;
   readonly subscriptionBundles?: SubscriptionBundleReads;
-  readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
   readonly secrets: Record<string, string>;
@@ -6262,163 +6414,173 @@ function personalSubscriptionRuntimeGroups(args: {
   return groups.values();
 }
 
-async function syncPersonalSubscriptionRuntimeBundles(
-  args: {
-    readonly runId?: string;
-    readonly subscriptionBundles?: SubscriptionBundleReads;
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly secrets: Record<string, string>;
-    readonly secretConnectorMap: Record<string, string> | undefined;
-    readonly secretConnectorMetadataMap:
-      Record<string, SecretConnectorMetadata> | undefined;
-    readonly referencedKeys: Set<string>;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
-  rejectReconnect = true,
-): Promise<number | null> {
-  let expiresAt: number | null = null;
-  for (const group of personalSubscriptionRuntimeGroups(args)) {
-    const bundle = await readSubscriptionBundle(args.subscriptionBundles, {
-      db: args.db,
-      orgId: args.orgId,
-      userId: group.userId,
-      type: group.type,
-      sourceId: group.sourceId,
-      runId: args.runId,
-      featureSwitchContext: args.featureSwitchContext,
-    });
-    expiresAt = mergeExpiresAt(
-      expiresAt,
-      bundle?.account.tokenExpiresAt
-        ? Math.floor(bundle.account.tokenExpiresAt.getTime() / 1000)
-        : undefined,
-    );
-    for (const output of group.outputs) {
-      const value = bundle?.values.get(output.name);
-      if (
-        value?.trim() &&
-        (!rejectReconnect || !bundle?.account.needsReconnect)
-      ) {
-        args.secrets[output.key] = value;
-      } else {
-        delete args.secrets[output.key];
+const syncPersonalSubscriptionRuntimeBundles$ = command(
+  async function syncPersonalSubscriptionRuntimeBundles(
+    { set },
+    args: {
+      readonly runId?: string;
+      readonly subscriptionBundles?: SubscriptionBundleReads;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly secrets: Record<string, string>;
+      readonly secretConnectorMap: Record<string, string> | undefined;
+      readonly secretConnectorMetadataMap:
+        Record<string, SecretConnectorMetadata> | undefined;
+      readonly referencedKeys: Set<string>;
+      readonly featureSwitchContext: FeatureSwitchContext;
+    },
+    rejectReconnect = true,
+  ): Promise<number | null> {
+    let expiresAt: number | null = null;
+    for (const group of personalSubscriptionRuntimeGroups(args)) {
+      const bundle = await set(
+        readSubscriptionBundle$,
+        args.subscriptionBundles,
+        {
+          orgId: args.orgId,
+          userId: group.userId,
+          type: group.type,
+          sourceId: group.sourceId,
+          runId: args.runId,
+          featureSwitchContext: args.featureSwitchContext,
+        },
+      );
+      expiresAt = mergeExpiresAt(
+        expiresAt,
+        bundle?.account.tokenExpiresAt
+          ? Math.floor(bundle.account.tokenExpiresAt.getTime() / 1000)
+          : undefined,
+      );
+      for (const output of group.outputs) {
+        const value = bundle?.values.get(output.name);
+        if (
+          value?.trim() &&
+          (!rejectReconnect || !bundle?.account.needsReconnect)
+        ) {
+          args.secrets[output.key] = value;
+        } else {
+          delete args.secrets[output.key];
+        }
       }
     }
-  }
-  return expiresAt;
-}
+    return expiresAt;
+  },
+);
 
 /** Refresh once, then read token, account ID and ancillary credentials together.
  * Management and Pi callers must not pair separate secret reads across writes. */
-export async function resolveCurrentPersonalSubscriptionBundleForApi(
-  args: ModelProviderRuntimeSecretForApiArgs,
-  signal: AbortSignal,
-) {
-  if (!args.metadata.sourceId) {
-    return { status: "unavailable" as const, reconnectState: null };
-  }
-  const lookup = resolveModelProviderRuntimeSecretLookup(args);
-  if (!lookup || !isPersonalSubscriptionProviderType(lookup.providerType)) {
-    throw new Error("Expected a personal subscription credential lookup");
-  }
-  const bundleArgs = {
-    db: args.db,
-    orgId: args.orgId,
-    userId: lookup.userId,
-    type: lookup.providerType,
-    sourceId: lookup.sourceId,
-    runId: args.runId,
-    featureSwitchContext: args.featureSwitchContext,
-  };
-  const initialCredentialReadArgs = bundleArgs;
-  const initial = await (async () => {
-    if (!initialCredentialReadArgs.sourceId) {
-      return null;
-    }
-    const initialCiphertextReadArgs = {
-      ...initialCredentialReadArgs,
-      sourceId: initialCredentialReadArgs.sourceId,
-    };
-    const credentialCiphertexts = await (async () => {
-      const ciphertextPlan = personalSubscriptionAccountCiphertextsReadPlan(
-        initialCiphertextReadArgs,
-      );
-      const ciphertextRows = await initialCiphertextReadArgs.db
-        .select(ciphertextPlan.columns)
-        .from(ciphertextPlan.from)
-        .leftJoin(ciphertextPlan.join.table, ciphertextPlan.join.on)
-        .where(ciphertextPlan.where);
-      return personalSubscriptionAccountCiphertextsFromRows(ciphertextRows);
-    })();
-    return credentialCiphertexts
-      ? {
-          account: credentialCiphertexts.account,
-          values: await personalSubscriptionCredentialValues(
-            credentialCiphertexts.secrets,
-            initialCredentialReadArgs.featureSwitchContext,
-          ),
-        }
-      : null;
-  })();
-  signal.throwIfAborted();
-  const refreshMetadata = getModelProviderRefreshMetadata(args.providerKey);
-  if (
-    initial &&
-    !initial.account.needsReconnect &&
-    initial.values.get(lookup.secretName)?.trim() &&
-    (!refreshMetadata?.refreshableSecrets.includes(lookup.secretName) ||
-      !tokenExpiresAtNeedsRefresh(initial.account.tokenExpiresAt))
+export const resolveCurrentPersonalSubscriptionBundleForApi$ = command(
+  async function resolveCurrentPersonalSubscriptionBundleForApi(
+    { get, set },
+    args: ModelProviderRuntimeSecretForApiArgs,
+    signal: AbortSignal,
   ) {
-    return { status: "available" as const, values: initial.values };
-  }
-  const current = await resolveCurrentModelProviderRuntimeSecretForApi(
-    args,
-    signal,
-  );
-  if (current.status === "unavailable") {
-    return current;
-  }
-  const refreshedCredentialReadArgs = bundleArgs;
-  const bundle = await (async () => {
-    if (!refreshedCredentialReadArgs.sourceId) {
-      return null;
+    const db = get(db$);
+    if (!args.metadata.sourceId) {
+      return { status: "unavailable" as const, reconnectState: null };
     }
-    const refreshedCiphertextReadArgs = {
-      ...refreshedCredentialReadArgs,
-      sourceId: refreshedCredentialReadArgs.sourceId,
+    const lookup = resolveModelProviderRuntimeSecretLookup(args);
+    if (!lookup || !isPersonalSubscriptionProviderType(lookup.providerType)) {
+      throw new Error("Expected a personal subscription credential lookup");
+    }
+    const bundleArgs = {
+      orgId: args.orgId,
+      userId: lookup.userId,
+      type: lookup.providerType,
+      sourceId: lookup.sourceId,
+      runId: args.runId,
+      featureSwitchContext: args.featureSwitchContext,
     };
-    const credentialCiphertexts = await (async () => {
-      const ciphertextPlan = personalSubscriptionAccountCiphertextsReadPlan(
-        refreshedCiphertextReadArgs,
-      );
-      const ciphertextRows = await refreshedCiphertextReadArgs.db
-        .select(ciphertextPlan.columns)
-        .from(ciphertextPlan.from)
-        .leftJoin(ciphertextPlan.join.table, ciphertextPlan.join.on)
-        .where(ciphertextPlan.where);
-      return personalSubscriptionAccountCiphertextsFromRows(ciphertextRows);
-    })();
-    return credentialCiphertexts
-      ? {
-          account: credentialCiphertexts.account,
-          values: await personalSubscriptionCredentialValues(
-            credentialCiphertexts.secrets,
-            refreshedCredentialReadArgs.featureSwitchContext,
-          ),
-        }
-      : null;
-  })();
-  return bundle && !bundle.account.needsReconnect
-    ? { status: "available" as const, values: bundle.values }
-    : {
-        status: "unavailable" as const,
-        reconnectState: bundle
-          ? {
-              needsReconnect: bundle.account.needsReconnect,
-              lastRefreshErrorCode: bundle.account.lastRefreshErrorCode,
-            }
-          : null,
+    const initialCredentialReadArgs = bundleArgs;
+    const initial = await (async () => {
+      if (!initialCredentialReadArgs.sourceId) {
+        return null;
+      }
+      const initialCiphertextReadArgs = {
+        ...initialCredentialReadArgs,
+        sourceId: initialCredentialReadArgs.sourceId,
       };
-}
+      const credentialCiphertexts = await (async () => {
+        const ciphertextPlan = personalSubscriptionAccountCiphertextsReadPlan(
+          initialCiphertextReadArgs,
+        );
+        const ciphertextRows = await db
+          .select(ciphertextPlan.columns)
+          .from(ciphertextPlan.from)
+          .leftJoin(ciphertextPlan.join.table, ciphertextPlan.join.on)
+          .where(ciphertextPlan.where);
+        return personalSubscriptionAccountCiphertextsFromRows(ciphertextRows);
+      })();
+      return credentialCiphertexts
+        ? {
+            account: credentialCiphertexts.account,
+            values: await personalSubscriptionCredentialValues(
+              credentialCiphertexts.secrets,
+              initialCredentialReadArgs.featureSwitchContext,
+            ),
+          }
+        : null;
+    })();
+    signal.throwIfAborted();
+    const refreshMetadata = getModelProviderRefreshMetadata(args.providerKey);
+    if (
+      initial &&
+      !initial.account.needsReconnect &&
+      initial.values.get(lookup.secretName)?.trim() &&
+      (!refreshMetadata?.refreshableSecrets.includes(lookup.secretName) ||
+        !tokenExpiresAtNeedsRefresh(initial.account.tokenExpiresAt))
+    ) {
+      return { status: "available" as const, values: initial.values };
+    }
+    const current = await set(
+      resolveCurrentModelProviderRuntimeSecretForApi$,
+      args,
+      signal,
+    );
+    if (current.status === "unavailable") {
+      return current;
+    }
+    const refreshedCredentialReadArgs = bundleArgs;
+    const bundle = await (async () => {
+      if (!refreshedCredentialReadArgs.sourceId) {
+        return null;
+      }
+      const refreshedCiphertextReadArgs = {
+        ...refreshedCredentialReadArgs,
+        sourceId: refreshedCredentialReadArgs.sourceId,
+      };
+      const credentialCiphertexts = await (async () => {
+        const ciphertextPlan = personalSubscriptionAccountCiphertextsReadPlan(
+          refreshedCiphertextReadArgs,
+        );
+        const ciphertextRows = await db
+          .select(ciphertextPlan.columns)
+          .from(ciphertextPlan.from)
+          .leftJoin(ciphertextPlan.join.table, ciphertextPlan.join.on)
+          .where(ciphertextPlan.where);
+        return personalSubscriptionAccountCiphertextsFromRows(ciphertextRows);
+      })();
+      return credentialCiphertexts
+        ? {
+            account: credentialCiphertexts.account,
+            values: await personalSubscriptionCredentialValues(
+              credentialCiphertexts.secrets,
+              refreshedCredentialReadArgs.featureSwitchContext,
+            ),
+          }
+        : null;
+    })();
+    signal.throwIfAborted();
+    return bundle && !bundle.account.needsReconnect
+      ? { status: "available" as const, values: bundle.values }
+      : {
+          status: "unavailable" as const,
+          reconnectState: bundle
+            ? {
+                needsReconnect: bundle.account.needsReconnect,
+                lastRefreshErrorCode: bundle.account.lastRefreshErrorCode,
+              }
+            : null,
+        };
+  },
+);

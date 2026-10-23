@@ -9,10 +9,7 @@ import {
   getOfficialTelegramBotConfig,
   isOfficialTelegramBotId,
 } from "../external/telegram-official";
-import {
-  currentUserTelegramChatId,
-  telegramAccountNotLinked,
-} from "../services/telegram-data.service";
+import { requireTelegramConversationAccess$ } from "../services/telegram-access.service";
 import { telegramMessageSendFooterText } from "../services/telegram-footer.service";
 import { buildTelegramResponse } from "../../lib/telegram-format";
 import type { RouteEntry } from "../route-entry";
@@ -27,7 +24,7 @@ const botNotFound = Object.freeze({
   }),
 });
 
-const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
+const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const authRunId =
     "runId" in auth && typeof auth.runId === "string" ? auth.runId : undefined;
@@ -48,21 +45,6 @@ const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
     return botNotFound;
   }
 
-  let chatId = body.chatId;
-  if (chatId === "me") {
-    const resolved = await get(
-      currentUserTelegramChatId({
-        orgId: auth.orgId,
-        userId: auth.userId,
-      }),
-    );
-    signal.throwIfAborted();
-    if (!resolved) {
-      return telegramAccountNotLinked;
-    }
-    chatId = resolved;
-  }
-
   const footerText = await get(
     telegramMessageSendFooterText({
       authRunId,
@@ -72,6 +54,21 @@ const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
   signal.throwIfAborted();
 
   const text = buildTelegramResponse(body.text, footerText);
+
+  const access = await set(
+    requireTelegramConversationAccess$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      chatId: body.chatId,
+      mode: "message",
+    },
+    signal,
+  );
+  if (access.kind === "denied") {
+    return access.response;
+  }
+  const chatId = access.chatId;
 
   const result = await sendMessage(botToken, chatId, text, {
     replyToMessageId: body.replyToMessageId,

@@ -217,7 +217,6 @@ export function mockArtifactConversation(
   context.mocks.api(builtinConnectorsMainContract.list, ({ respond }) => {
     return respond(200, {
       connectors: [],
-      connectorProvidedBindings: [],
     });
   });
   context.mocks.api(connectorCatalogContract.status, ({ respond }) => {

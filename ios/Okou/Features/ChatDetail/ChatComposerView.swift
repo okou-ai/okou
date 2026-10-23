@@ -20,6 +20,7 @@ struct ChatComposerView: View {
   var mentionSource: ComposerMentionSource? = nil
   var workflowSource: ComposerWorkflowSource? = nil
   var agentID: String? = nil
+  var sendTransition: ConversationSendTransition? = nil
 
   @State private var isFocused = false
   @State private var showsPhotos = false
@@ -181,7 +182,7 @@ struct ChatComposerView: View {
             ChatModelPickerButton(selection: modelSelection)
           }
           Button {
-            if !showsStop {
+            if !showsStop && sendTransition == nil {
               draftState?.editor.dismissKeyboard()
               isFocused = false
             }
@@ -217,7 +218,9 @@ struct ChatComposerView: View {
         .padding(.trailing, 7)
         .padding(.bottom, expandsInput ? 8 : 0)
       }
-      .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: isFocused)
+      .animation(
+        reduceMotion ? nil : sendTransition?.composerAnimation ?? .easeInOut(duration: 0.22),
+        value: isFocused)
     }
     .padding(.horizontal, 16)
     .padding(.top, 8)

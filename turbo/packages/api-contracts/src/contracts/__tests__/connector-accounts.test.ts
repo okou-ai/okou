@@ -248,7 +248,6 @@ describe("connector account contracts", () => {
       externalEmail: null,
       oauthScopes: ["repo"],
       connectionStatus: "connected" as const,
-      setupStatus: "complete" as const,
       missingRequiredFields: [],
       configuredFieldKeys: [],
       reconnectReason: null,

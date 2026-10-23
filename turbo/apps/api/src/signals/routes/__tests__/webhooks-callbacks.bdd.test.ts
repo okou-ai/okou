@@ -6438,7 +6438,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
         expect.objectContaining({
           isDefault: true,
           connectionStatus: "connected",
-          setupStatus: "complete",
         }),
       );
       await expect(

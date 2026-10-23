@@ -4047,9 +4047,8 @@ const failExpiredPendingSubscriptionChange$ = command(
   ): Promise<void> {
     const db = set(writeDb$);
     const completedAt = nowDate();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0293; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      await tx
+    const failed = db.$with("failed_subscription_change").as(
+      db
         .update(usagePackSubscriptionChanges)
         .set({
           status: "failed",
@@ -4057,17 +4056,27 @@ const failExpiredPendingSubscriptionChange$ = command(
           completedAt,
           updatedAt: completedAt,
         })
-        .where(eq(usagePackSubscriptionChanges.id, root.id));
-      await tx
-        .update(usagePackAllocationChanges)
-        .set({
-          status: "failed",
-          failureReason: "pending_update_expired",
-          completedAt,
-          updatedAt: completedAt,
-        })
-        .where(eq(usagePackAllocationChanges.subscriptionChangeId, root.id));
-    });
+        .where(eq(usagePackSubscriptionChanges.id, root.id))
+        .returning({ id: usagePackSubscriptionChanges.id }),
+    );
+    // Preview publication creates the root and every child atomically; their
+    // membership never changes. Consume the root update before child locks,
+    // including when it returns no row, without gating the original child write.
+    await db
+      .with(failed)
+      .update(usagePackAllocationChanges)
+      .set({
+        status: "failed",
+        failureReason: "pending_update_expired",
+        completedAt,
+        updatedAt: completedAt,
+      })
+      .where(
+        and(
+          eq(usagePackAllocationChanges.subscriptionChangeId, root.id),
+          sql`(${db.select({ count: count() }).from(failed)}) >= 0`,
+        ),
+      );
   },
 );
 

@@ -2,12 +2,9 @@ import { z } from "zod";
 import { artifactUrlSchema } from "./artifact-references";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { discordSnowflakeSchema } from "./integrations-discord-read";
 
 export const MAX_DISCORD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-
-const discordIdSchema = z
-  .string()
-  .regex(/^[1-9]\d{0,19}$/u, "Expected a Discord snowflake ID");
 
 export const discordFilenameSchema = z
   .string()
@@ -22,16 +19,21 @@ export const discordFilenameSchema = z
     );
   }, "Filename must not contain path separators or control characters");
 
-const discordUploadInitBodySchema = z.object({
-  filename: discordFilenameSchema,
-  length: z.number().int().positive().max(MAX_DISCORD_FILE_SIZE_BYTES),
-  contentType: z.string().min(1).max(255),
-  checksumSha256: z.string().regex(/^[a-f0-9]{64}$/u),
-  operationId: z.uuid(),
-  channelId: discordIdSchema,
-  guildId: discordIdSchema.optional(),
-  comment: z.string().max(2000).optional(),
-});
+const discordUploadInitBodySchema = z
+  .object({
+    filename: discordFilenameSchema,
+    length: z.number().int().positive().max(MAX_DISCORD_FILE_SIZE_BYTES),
+    contentType: z.string().min(1).max(255),
+    checksumSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+    operationId: z.uuid(),
+    channelId: discordSnowflakeSchema.optional(),
+    userId: z.union([z.literal("me"), discordSnowflakeSchema]).optional(),
+    guildId: discordSnowflakeSchema.optional(),
+    comment: z.string().max(2000).optional(),
+  })
+  .refine((body) => {
+    return (body.channelId === undefined) !== (body.userId === undefined);
+  }, "Provide exactly one of channelId or userId");
 
 const discordUploadInitResponseSchema = z.object({
   assetId: z.uuid(),
@@ -55,9 +57,9 @@ const discordUploadResponseSchema = z.object({
     z.object({ status: z.literal("pending") }),
     z.object({
       status: z.literal("delivered"),
-      channelId: discordIdSchema,
-      messageId: discordIdSchema,
-      attachmentId: discordIdSchema,
+      channelId: discordSnowflakeSchema,
+      messageId: discordSnowflakeSchema,
+      attachmentId: discordSnowflakeSchema,
       permalink: z.url(),
     }),
     z.object({
@@ -69,10 +71,10 @@ const discordUploadResponseSchema = z.object({
 });
 
 const discordDownloadFileQuerySchema = z.object({
-  guildId: discordIdSchema.optional(),
-  channelId: discordIdSchema,
-  messageId: discordIdSchema,
-  attachmentId: discordIdSchema,
+  guildId: discordSnowflakeSchema.optional(),
+  channelId: discordSnowflakeSchema,
+  messageId: discordSnowflakeSchema,
+  attachmentId: discordSnowflakeSchema,
 });
 
 export type DiscordUploadInitBody = z.infer<typeof discordUploadInitBodySchema>;

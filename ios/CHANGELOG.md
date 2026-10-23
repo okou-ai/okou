@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.18.5](https://github.com/okou-ai/okou/compare/ios-v0.18.4...ios-v0.18.5) (2026-10-23)
+
+
+### Bug Fixes
+
+* **ios:** coordinate message insertion with keyboard dismissal ([#42423](https://github.com/okou-ai/okou/issues/42423)) ([0f20af9](https://github.com/okou-ai/okou/commit/0f20af95c933bd5262e33d317c75a10ea3c708be))
+* **ios:** prevent stale chat loaders and archive evidence races ([#42413](https://github.com/okou-ai/okou/issues/42413)) ([d556bff](https://github.com/okou-ai/okou/commit/d556bff069a762a7b5b082c2eeba56f6023d4c4d))
+* **ios:** stabilize native ui prerequisites and trim smoke checks ([#42407](https://github.com/okou-ai/okou/issues/42407)) ([84d3c28](https://github.com/okou-ai/okou/commit/84d3c28b38d8f7630f87861e399c3e8c97fb317c))
+
+
+### Refactoring
+
+* **connector:** activate canonical account status ([#42333](https://github.com/okou-ai/okou/issues/42333)) ([dc3fba8](https://github.com/okou-ai/okou/commit/dc3fba8d008ee10e4d65b9485a9fca63431face3))
+
 ## [0.18.4](https://github.com/okou-ai/okou/compare/ios-v0.18.3...ios-v0.18.4) (2026-10-22)
 
 

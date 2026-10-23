@@ -43,6 +43,7 @@ function fixture(t) {
     "tsconfig.core.json",
     "tsconfig.routes.json",
     "tsconfig.bootstrap.json",
+    "tsconfig.worker.json",
     "tsconfig.tests.json",
     "tsconfig.bootstrap-wiring.json",
   ]) {
@@ -74,8 +75,16 @@ function fixture(t) {
   ]) {
     write(root, file, "export {};\n");
   }
-  for (const file of ["src/index.ts", "src/server.ts"]) {
+  for (const file of ["src/index.ts", "src/server.ts", "src/worker.ts"]) {
     write(root, file, 'import "./production-bootstrap";\n');
+  }
+  for (const file of [
+    "src/worker-runtime.d.ts",
+    "src/__tests__/worker-lifecycle.test.ts",
+    "src/worker-unsupported-pg-native.ts",
+    "src/worker-unsupported-react-email.ts",
+  ]) {
+    write(root, file, "export {};\n");
   }
   write(root, "src/production-bootstrap.ts", 'import "./signals/route";\n');
   write(root, "src/signals/route.ts", "export {};\n");
@@ -474,6 +483,53 @@ test("canonical parse errors and missing or duplicate explicit roots fail prepar
   rejected(run(root, "prepare-typecheck-tests.mjs"), /expected/);
 });
 
+test("Worker roots are isolated from Node programs and production bootstrap accepts only the Worker entry", (t) => {
+  const root = fixture(t);
+  prepare(root);
+  accepted(guard(root));
+  const worker = config(root, "tsconfig.worker.json");
+  assert.deepEqual(worker.options.types, ["node", "vitest/globals"]);
+  assert.equal(worker.options.disableSourceOfProjectReferenceRedirect, true);
+  assert.deepEqual(worker.options.paths["@cloudflare/workers-types"], [
+    "./node_modules/@cloudflare/workers-types/index.ts",
+  ]);
+  assert.equal(worker.fileNames.length, 5);
+  for (const name of [
+    "tsconfig.foundation.json",
+    "tsconfig.admission.json",
+    "tsconfig.core.json",
+    "tsconfig.routes.json",
+    "tsconfig.bootstrap.json",
+  ]) {
+    const nodeProject = config(root, name);
+    assert.notEqual(
+      nodeProject.options.tsBuildInfoFile,
+      worker.options.tsBuildInfoFile,
+    );
+    assert.ok(
+      worker.fileNames.every((file) => {
+        return !nodeProject.fileNames.includes(file);
+      }),
+    );
+  }
+  write(root, "src/lib/example.ts", 'import "../production-bootstrap";\n');
+  rejected(
+    guard(root),
+    /Unexpected import boundary for src\/production-bootstrap/,
+  );
+  write(root, "src/lib/example.ts", "export {};\n");
+  changeConfig(root, "tsconfig.worker.json", (value) => {
+    value.include = value.include.filter((file) => {
+      return file !== "src/worker.ts";
+    });
+  });
+  rejected(guard(root), /missing baseline roots/);
+  changeConfig(root, "tsconfig.worker.json", (value) => {
+    value.include.push("src/worker.ts", "src/lib/example.ts");
+  });
+  rejected(guard(root), /must belong to exactly one Program/);
+});
+
 test("production ownership includes JSON and rejects uncovered or overlapping inputs", (t) => {
   const root = fixture(t);
   prepare(root);
@@ -583,6 +639,7 @@ if (args.includes(process.env.TYPECHECK_FIXTURE_FAIL)) process.exit(17);
     "tsconfig.core.json",
     "tsconfig.routes.json",
     "tsconfig.bootstrap.json",
+    "tsconfig.worker.json",
     ".typecheck/tsconfig.tests-0.json",
     ".typecheck/tsconfig.tests-1.json",
     ".typecheck/tsconfig.tests-2.json",
@@ -625,6 +682,15 @@ if (args.includes(process.env.TYPECHECK_FIXTURE_FAIL)) process.exit(17);
   ]);
   assert.match(admissionFailure.stdout, /Type check phase: admission/);
   assert.doesNotMatch(admissionFailure.stdout, /Type check phase: core/);
+  rmSync(join(root, "commands.jsonl"));
+  const workerFailure = invoke("all", "tsconfig.worker.json");
+  assert.equal(workerFailure.status, 17, workerFailure.stderr);
+  assert.equal(projects().at(-1), "tsconfig.worker.json");
+  assert.doesNotMatch(workerFailure.stdout, /Type check phase: tests-0/);
+  rmSync(join(root, "commands.jsonl"));
+  const workerOnly = invoke("worker");
+  assert.equal(workerOnly.status, 0, workerOnly.stderr);
+  assert.deepEqual(projects(), ["tsconfig.worker.json"]);
   rmSync(join(root, "commands.jsonl"));
   const tests = invoke("tests");
   assert.equal(tests.status, 0, tests.stderr);

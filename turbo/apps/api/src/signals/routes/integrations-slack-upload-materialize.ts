@@ -94,7 +94,11 @@ const materializeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       operationId: bodyResult.data.operationId,
       runId,
       userId: auth.userId,
-      client: createSlackClient(installation.botToken),
+      client: createSlackClient(installation.botToken, {
+        automaticRetries: false,
+      }),
+      orgId: auth.orgId,
+      botToken: installation.botToken,
     },
     signal,
   );

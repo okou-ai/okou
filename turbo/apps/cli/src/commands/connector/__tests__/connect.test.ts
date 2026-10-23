@@ -30,27 +30,7 @@ import {
 
 const DEFAULT_CONNECTION_ID = "11111111-1111-4111-8111-111111111111";
 const SIBLING_CONNECTION_ID = "22222222-2222-4222-8222-222222222222";
-
-function connectorResponse(
-  connectorSlug: string,
-  authMethod = "api-token",
-  id = "00000000-0000-4000-8000-000000000001",
-) {
-  return {
-    id,
-    slug: connectorSlug,
-    authMethod,
-    externalId: null,
-    externalUsername: null,
-    externalEmail: null,
-    oauthScopes: null,
-    connectionStatus: "connected",
-    reconnectReason: null,
-    tokenExpiresAt: null,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  };
-}
+const CREATED_CONNECTION_ID = "00000000-0000-4000-8000-000000000001";
 
 describe("okou connector connect command", () => {
   const mockExit = vi.spyOn(process, "exit").mockImplementation((() => {
@@ -96,21 +76,13 @@ describe("okou connector connect command", () => {
     async (selector) => {
       let receivedBody: unknown;
       server.use(
-        http.get("http://localhost:3000/api/connectors/:connectorSlug", () => {
-          return HttpResponse.json(
-            {
-              error: { message: "Connector not found", code: "NOT_FOUND" },
-            },
-            { status: 404 },
-          );
-        }),
         http.post(
           "http://localhost:3000/api/connectors/:connectorSlug/manual-grant",
           async ({ params, request }) => {
             expect(params.connectorSlug).toBe("test-subdomain");
             receivedBody = await request.json();
             return HttpResponse.json({
-              connectionId: connectorResponse(String(params.connectorSlug)).id,
+              connectionId: CREATED_CONNECTION_ID,
             });
           },
         ),
@@ -202,28 +174,12 @@ describe("okou connector connect command", () => {
           });
         },
       ),
-      http.get(
-        "http://localhost:3000/api/connectors/:connectorSlug",
-        ({ params }) => {
-          return HttpResponse.json(
-            connectorResponse(
-              String(params.connectorSlug),
-              "api-token",
-              DEFAULT_CONNECTION_ID,
-            ),
-          );
-        },
-      ),
       http.post(
         "http://localhost:3000/api/connectors/:connectorSlug/manual-grant",
-        async ({ params, request }) => {
+        async ({ request }) => {
           receivedBody = await request.json();
           return HttpResponse.json({
-            connectionId: connectorResponse(
-              String(params.connectorSlug),
-              "api-token",
-              DEFAULT_CONNECTION_ID,
-            ).id,
+            connectionId: DEFAULT_CONNECTION_ID,
           });
         },
       ),
@@ -307,20 +263,23 @@ describe("okou connector connect command", () => {
     let defaultReadCount = 0;
     let receivedBody: unknown;
     server.use(
-      http.get("http://localhost:3000/api/connectors/:connectorSlug", () => {
-        defaultReadCount += 1;
-        return HttpResponse.json(connectorResponse("openai"));
-      }),
+      http.get(
+        "http://localhost:3000/api/connector-accounts/connections",
+        () => {
+          defaultReadCount += 1;
+          return HttpResponse.json({
+            connections: [],
+            defaultConnection: null,
+            nextCursor: null,
+          });
+        },
+      ),
       http.post(
         "http://localhost:3000/api/connectors/:connectorSlug/manual-grant",
         async ({ request }) => {
           receivedBody = await request.json();
           return HttpResponse.json({
-            connectionId: connectorResponse(
-              "openai",
-              "api-token",
-              SIBLING_CONNECTION_ID,
-            ).id,
+            connectionId: SIBLING_CONNECTION_ID,
           });
         },
       ),
@@ -352,10 +311,10 @@ describe("okou connector connect command", () => {
     server.use(
       http.post(
         "http://localhost:3000/api/connectors/:connectorSlug/manual-grant",
-        async ({ params, request }) => {
+        async ({ request }) => {
           receivedBody = await request.json();
           return HttpResponse.json({
-            connectionId: connectorResponse(String(params.connectorSlug)).id,
+            connectionId: CREATED_CONNECTION_ID,
           });
         },
       ),
@@ -402,7 +361,7 @@ describe("okou connector connect command", () => {
           receivedType = String(params.connectorSlug);
           receivedBody = await request.json();
           return HttpResponse.json({
-            connectionId: connectorResponse(connectorSlug, authMethod).id,
+            connectionId: CREATED_CONNECTION_ID,
           });
         },
       ),
@@ -456,87 +415,10 @@ describe("okou connector connect command", () => {
         id: connectionId,
         target: { kind: "builtin", connectorSlug: "openai" },
         connectionStatus: "connected",
-        setupStatus: "complete",
       },
     });
     expect(output).not.toContain("secret-must-not-appear");
   });
-
-  it.each([
-    {
-      setupStatus: undefined,
-      connectionStatus: "connected",
-      reconnectReason: null,
-      ready: true,
-    },
-    {
-      setupStatus: "incomplete",
-      connectionStatus: "connected",
-      reconnectReason: null,
-      ready: false,
-    },
-    {
-      setupStatus: "invalid",
-      connectionStatus: "connected",
-      reconnectReason: null,
-      ready: false,
-    },
-    {
-      setupStatus: undefined,
-      connectionStatus: "reconnect-required",
-      reconnectReason: "configuration_incomplete",
-      ready: false,
-    },
-    {
-      setupStatus: undefined,
-      connectionStatus: "reconnect-required",
-      reconnectReason: "configuration_invalid",
-      ready: false,
-    },
-  ] as const)(
-    "confirms exact builtin readiness across API formats: %j",
-    async ({ setupStatus, connectionStatus, reconnectReason, ready }) => {
-      server.use(
-        http.post(
-          "http://localhost:3000/api/connectors/:connectorSlug/manual-grant",
-          () => {
-            return HttpResponse.json({ connectionId: DEFAULT_CONNECTION_ID });
-          },
-        ),
-        stubConnectorAccountDetails({
-          authMethod: "api-token",
-          setupStatus,
-          connectionStatus,
-          reconnectReason,
-        }),
-      );
-      const result = connectCommand.parseAsync([
-        "node",
-        "cli",
-        "openai",
-        "--add",
-        "--value",
-        "apiKey=secret-input",
-        "--json",
-      ]);
-      if (ready) {
-        await result;
-        const output = mockConsoleLog.mock.calls.flat().join("\n");
-        expect(JSON.parse(output)).toMatchObject({
-          connectionId: DEFAULT_CONNECTION_ID,
-          account: { id: DEFAULT_CONNECTION_ID, connectionStatus: "connected" },
-        });
-        expect(output).not.toContain("secret-input");
-      } else {
-        await expect(result).rejects.toThrow("process.exit called");
-        expect(mockExit).toHaveBeenCalledWith(1);
-        expect(mockConsoleLog).not.toHaveBeenCalled();
-        expect(mockConsoleError.mock.calls.flat().join("\n")).not.toContain(
-          "secret-input",
-        );
-      }
-    },
-  );
 
   it("renders canonical builtin completion from its exact verified account", async () => {
     const account = connectorAccount(
@@ -664,7 +546,6 @@ describe("okou connector connect command", () => {
         id: connectionId,
         target: { kind: "custom", customConnectorId: connector.id },
         connectionStatus: "connected",
-        setupStatus: "complete",
       },
     });
     expect(output).not.toContain("secret-must-not-appear");
@@ -715,7 +596,6 @@ describe("okou connector connect command", () => {
         id: DEFAULT_CONNECTION_ID,
         target: { kind: "custom", customConnectorId: connector.id },
         connectionStatus: "connected",
-        setupStatus: "complete",
       },
     });
     expect(output).not.toContain("secret-must-not-appear");
@@ -800,7 +680,7 @@ describe("okou connector connect command", () => {
         () => {
           requestCalled = true;
           return HttpResponse.json({
-            connectionId: connectorResponse("openai").id,
+            connectionId: CREATED_CONNECTION_ID,
           });
         },
       ),
@@ -831,7 +711,7 @@ describe("okou connector connect command", () => {
         () => {
           requestCalled = true;
           return HttpResponse.json({
-            connectionId: connectorResponse("openai").id,
+            connectionId: CREATED_CONNECTION_ID,
           });
         },
       ),
@@ -863,7 +743,7 @@ describe("okou connector connect command", () => {
         () => {
           requestCalled = true;
           return HttpResponse.json({
-            connectionId: connectorResponse("openai").id,
+            connectionId: CREATED_CONNECTION_ID,
           });
         },
       ),
@@ -893,7 +773,7 @@ describe("okou connector connect command", () => {
         () => {
           requestCalled = true;
           return HttpResponse.json({
-            connectionId: connectorResponse("openai").id,
+            connectionId: CREATED_CONNECTION_ID,
           });
         },
       ),
@@ -923,7 +803,7 @@ describe("okou connector connect command", () => {
         () => {
           requestCalled = true;
           return HttpResponse.json({
-            connectionId: connectorResponse("openai").id,
+            connectionId: CREATED_CONNECTION_ID,
           });
         },
       ),
@@ -952,7 +832,7 @@ describe("okou connector connect command", () => {
         () => {
           requestCalled = true;
           return HttpResponse.json({
-            connectionId: connectorResponse("github").id,
+            connectionId: CREATED_CONNECTION_ID,
           });
         },
       ),
@@ -987,7 +867,7 @@ describe("okou connector connect command", () => {
         () => {
           requestCalled = true;
           return HttpResponse.json({
-            connectionId: connectorResponse("stripe").id,
+            connectionId: CREATED_CONNECTION_ID,
           });
         },
       ),

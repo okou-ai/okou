@@ -3267,7 +3267,7 @@ const commitUsagePackFulfillment$ = command(
     const prepared = fulfillmentPreparedWrites(args);
     const orgId = args.context.subscription.orgId;
     await set(expireFirstPaidUpgradeDebt$, orgId, signal);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0305; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: invoice grants/refund sources, receipt and subscription/allocation/organization/count publication must roll back together on a later financial rejection; single-statement alternative: one CTE snapshot cannot preserve fresh receipt/allocation reads after subscription-lock waits or later whole-invoice grant/count rejection.
     await db.transaction(async (tx) => {
       // Duplicate invoice deliveries queue on the root rows below and then see
       // the committed receipt; the receipt primary key and the grant

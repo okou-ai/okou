@@ -299,7 +299,10 @@ describe("CLI credentials acquired through normal user flows", () => {
       refreshToken: "test-oauth-refresh-token",
       expiresIn: -60,
     });
-    const oauthState = await support.readConnectorBySlug(actor, "test-oauth");
+    const oauthState = await support.readDefaultBuiltinAccount(
+      actor,
+      "test-oauth",
+    );
     expect(oauthState).toMatchObject({
       authMethod: "oauth",
       externalUsername: "e2e-test-oauth",

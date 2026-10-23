@@ -25,7 +25,6 @@ function connectorAccount(
   overrides: Partial<ConnectorAccountConnection> = {},
 ): ConnectorAccountConnection {
   return {
-    setupStatus: "complete",
     missingRequiredFields: [],
     configuredFieldKeys: [],
     id: FIRST_CONNECTION_ID,
@@ -100,7 +99,7 @@ describe("okou connector account list command", () => {
   });
 
   it.each(["builtin", "custom"] as const)(
-    "distinguishes connection and setup facts in %s account inventory",
+    "explains configuration attention in %s account inventory",
     async (kind) => {
       const custom = customConnector({
         fields: [
@@ -122,7 +121,8 @@ describe("okou connector account list command", () => {
       const selector =
         kind === "builtin" ? "acme-cloud" : `custom:${CUSTOM_CONNECTOR_ID}`;
       const setup = {
-        setupStatus: "incomplete" as const,
+        connectionStatus: "reconnect-required" as const,
+        reconnectReason: "configuration_incomplete" as const,
         missingRequiredFields: ["projectId", "region"],
         configuredFieldKeys: ["apiKey"],
       };
@@ -164,7 +164,8 @@ describe("okou connector account list command", () => {
             id: SECOND_CONNECTION_ID,
             displayName: "Ready",
             isDefault: false,
-            setupStatus: "complete",
+            connectionStatus: "connected",
+            reconnectReason: null,
             missingRequiredFields: [],
             configuredFieldKeys: ["apiKey", "projectId", "region"],
           }),
@@ -175,7 +176,7 @@ describe("okou connector account list command", () => {
 
       const lines = mockConsoleLog.mock.calls.flat().map(String);
       expect(lines.join("\n")).toMatch(
-        /CONNECTION\s{2,}SETUP\s{2,}MISSING FIELDS/,
+        /CONNECTION\s{2,}RECONNECT REASON\s{2,}MISSING FIELDS/,
       );
       expect(
         lines
@@ -187,8 +188,8 @@ describe("okou connector account list command", () => {
       ).toStrictEqual([
         "Needs setup",
         "yes",
-        "connected",
-        "incomplete",
+        "reconnect-required",
+        "configuration_incomplete",
         "projectId, region",
         authMethod,
         FIRST_CONNECTION_ID,
@@ -204,7 +205,7 @@ describe("okou connector account list command", () => {
         "Ready",
         "-",
         "connected",
-        "complete",
+        "-",
         "-",
         authMethod,
         SECOND_CONNECTION_ID,
@@ -225,14 +226,12 @@ describe("okou connector account list command", () => {
           {
             connectionId: FIRST_CONNECTION_ID,
             isDefault: true,
-            connectionStatus: "connected",
             ...setup,
           },
           {
             connectionId: SECOND_CONNECTION_ID,
             isDefault: false,
             connectionStatus: "connected",
-            setupStatus: "complete",
             missingRequiredFields: [],
             configuredFieldKeys: ["apiKey", "projectId", "region"],
           },
@@ -606,7 +605,6 @@ describe("okou connector account list command", () => {
           isDefault: true,
           authMethod: "oauth",
           connectionStatus: "connected",
-          setupStatus: "complete",
           missingRequiredFields: [],
           configuredFieldKeys: [],
           reconnectReason: null,

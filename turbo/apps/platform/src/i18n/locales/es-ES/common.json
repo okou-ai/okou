@@ -559,7 +559,8 @@
       "upload": "Subir a Google Drive",
       "uploadDocs": "Subir a Google Docs",
       "uploadSheets": "Subir a Google Sheets",
-      "uploadSlides": "Subir a Google Slides"
+      "uploadSlides": "Subir a Google Slides",
+      "viewIt": "Ver archivo"
     },
     "jsonPreview": {
       "allShown": "Todos los elementos mostrados",

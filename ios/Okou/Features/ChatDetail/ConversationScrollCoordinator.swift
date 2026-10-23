@@ -11,6 +11,7 @@ final class ConversationScrollCoordinator {
 
   let anchor = ConversationScrollAnchor()
   let scroll = ConversationCollectionScroll()
+  let sendTransition = ConversationSendTransition()
   private let conversation: ConversationStore
   private var intent = Intent.latest(resetWindow: false)
   private var hasPositionedHistory = false
@@ -21,6 +22,7 @@ final class ConversationScrollCoordinator {
   @ObservationIgnored private var isActive = false
   @ObservationIgnored private var requestGeneration = UUID()
   @ObservationIgnored private var expansionTask: Task<Void, Never>?
+  @ObservationIgnored private var localSendMessageID: String?
 
   init(conversation: ConversationStore) { self.conversation = conversation }
 
@@ -30,7 +32,8 @@ final class ConversationScrollCoordinator {
   }
 
   var showsBottomButton: Bool {
-    hasPositionedHistory && isAwayFromBottom && !conversation.visibleMessages.isEmpty
+    hasPositionedHistory && isAwayFromBottom && !sendTransition.isActive
+      && !conversation.visibleMessages.isEmpty
   }
 
   private var isScrolling: Bool { phase != .idle }
@@ -63,10 +66,26 @@ final class ConversationScrollCoordinator {
     anchor.revealRow = nil
     anchor.viewportDidChange = nil
     anchor.cancel()
+    sendTransition.cancel()
+    localSendMessageID = nil
+  }
+
+  func send() async { await conversation.send(willSend: prepareSend) }
+
+  func prepareSend(messageID: String) {
+    guard isActive else { return }
+    invalidateRequests()
+    intent = .latest(resetWindow: false)
+    hasPositionedHistory = true
+    localSendMessageID = messageID
+    anchor.cancel()
+    conversation.rememberReadingPosition(nil)
+    sendTransition.begin(messageID: messageID, reduceMotion: reduceMotion)
   }
 
   func jumpToLatest() {
     guard isActive else { return }
+    cancelSendTransition()
     invalidateRequests()
     intent = .latest(resetWindow: true)
     anchor.cancel()
@@ -76,6 +95,7 @@ final class ConversationScrollCoordinator {
 
   func reveal(_ position: ConversationReadingPosition) {
     guard isActive else { return }
+    cancelSendTransition()
     invalidateRequests()
     intent = .history
     anchor.cancel()
@@ -86,6 +106,7 @@ final class ConversationScrollCoordinator {
 
   func toggleWorkHistory(_ sectionID: String) {
     guard isActive else { return }
+    cancelSendTransition()
     invalidateRequests()
     intent = .history
     // Keep the tapped control at the same offset while its native child rows change.
@@ -99,6 +120,9 @@ final class ConversationScrollCoordinator {
   /// Called by the view's cancellable task when the latest displayed message changes.
   func latestMessageChanged() async {
     guard isActive, !conversation.visibleMessages.isEmpty else { return }
+    guard !sendTransition.isActive,
+      conversation.visibleMessages.last?.id != localSendMessageID
+    else { return }
     let generation = requestGeneration
     if !hasPositionedHistory, let position = conversation.readingPosition {
       intent = .history
@@ -139,7 +163,7 @@ final class ConversationScrollCoordinator {
   }
 
   func executionStateChanged() {
-    if isActive, hasPositionedHistory, followsBottom { positionAtBottom() }
+    if isActive, hasPositionedHistory, followsBottom, !isScrolling { positionAtBottom() }
   }
 
   func phaseChanged(_ phase: ScrollPhase) {
@@ -173,7 +197,9 @@ final class ConversationScrollCoordinator {
     anchor.layoutDidChange()
     if hasPositionedHistory, !followsBottom, !isScrolling { saveReadingPosition() }
     if resetsWindowAtBottom, !metrics.isAwayFromBottom, !isScrolling { reachedBottom() }
-    if hasPositionedHistory, followsBottom, metrics.isAwayFromBottom, metrics.height != oldHeight {
+    if hasPositionedHistory, followsBottom, !isScrolling, metrics.isAwayFromBottom,
+      metrics.height != oldHeight
+    {
       positionAtBottom()
     }
   }
@@ -197,7 +223,7 @@ final class ConversationScrollCoordinator {
   }
 
   private func viewportChanged() {
-    guard isActive, hasPositionedHistory else { return }
+    guard isActive, hasPositionedHistory, !isScrolling else { return }
     if followsBottom {
       anchor.followBottom()
     } else if let position = conversation.readingPosition {
@@ -228,6 +254,13 @@ final class ConversationScrollCoordinator {
     requestGeneration = UUID()
     expansionTask?.cancel()
     expansionTask = nil
+  }
+
+  private func cancelSendTransition() {
+    guard sendTransition.isActive else { return }
+    sendTransition.cancel()
+    phase = .idle
+    anchor.isScrolling = false
   }
 
   private func canContinue(_ generation: UUID) -> Bool {

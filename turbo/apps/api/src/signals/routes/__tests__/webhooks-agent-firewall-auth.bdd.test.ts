@@ -350,7 +350,7 @@ async function exactSecretConnectorSources(
         ? {
             sourceType: "connector" as const,
             sourceId: (
-              await connectors.readConnectorBySlug(actor, connectorSlug)
+              await connectors.readDefaultBuiltinAccount(actor, connectorSlug)
             ).id,
           }
         : { sourceType: "platform-secret" as const };
@@ -1507,7 +1507,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
           expect.objectContaining({
             id: account.id,
             connectionStatus: connectionStatusAfterFailure,
-            setupStatus: "complete",
           }),
         );
         expect(
@@ -1664,7 +1663,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
         );
         automaticConnectionId = receipt.body.connectionId;
         expect(
-          (await connectors.readConnectorBySlug(owner, catalog.slug))
+          (await connectors.readDefaultBuiltinAccount(owner, catalog.slug))
             .oauthScopes,
         ).toBeNull();
       },
@@ -1709,7 +1708,10 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       state,
     });
 
-    const connected = await connectors.readConnectorBySlug(actor, "test-oauth");
+    const connected = await connectors.readDefaultBuiltinAccount(
+      actor,
+      "test-oauth",
+    );
     expect(connected.oauthScopes).toStrictEqual(["read", "provider-added"]);
     expect(connected.connectionStatus).toBe("connected");
     const connectorSources = await exactSecretConnectorSources(actor, {
@@ -1746,14 +1748,14 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     });
     const narrowed = await forceRefresh("initial-scoped-access");
     expect(narrowed.headers.Authorization).toBe("Bearer narrow-scoped-access");
-    const narrowedConnector = await connectors.readConnectorBySlug(
+    const narrowedConnector = await connectors.readDefaultBuiltinAccount(
       actor,
       "test-oauth",
     );
     expect(narrowedConnector.oauthScopes).toStrictEqual(["provider-added"]);
     expect(narrowedConnector.connectionStatus).toBe("connected");
     await expect(
-      connectors.readScopeDiff(actor, "test-oauth"),
+      connectors.readDefaultBuiltinScopeDiff(actor, "test-oauth"),
     ).resolves.toStrictEqual({
       addedScopes: [],
       removedScopes: [],
@@ -1769,7 +1771,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       });
     });
     await forceRefresh("narrow-scoped-access");
-    const preservedConnector = await connectors.readConnectorBySlug(
+    const preservedConnector = await connectors.readDefaultBuiltinAccount(
       actor,
       "test-oauth",
     );
@@ -1802,7 +1804,8 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       }),
     ).toStrictEqual(["authorization_code", "refresh_token"]);
     expect(
-      (await connectors.readConnectorBySlug(actor, catalog.slug)).oauthScopes,
+      (await connectors.readDefaultBuiltinAccount(actor, catalog.slug))
+        .oauthScopes,
     ).toBeNull();
   });
 
@@ -2137,7 +2140,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     await connectorsApi.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.TestOauthConnector]: true,
     });
-    const connector = await connectorsApi.readConnectorBySlug(
+    const connector = await connectorsApi.readDefaultBuiltinAccount(
       actor,
       "test-oauth",
     );
@@ -2467,7 +2470,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       );
       const connector = await createConnectorBddApi(
         context,
-      ).readConnectorBySlug(actor, "google-sheets");
+      ).readDefaultBuiltinAccount(actor, "google-sheets");
       expect(connector.connectionStatus).toBe("connected");
 
       server.use(
@@ -2514,7 +2517,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       expect(attempts).toBe(transientFailures + 1);
       const connector = await createConnectorBddApi(
         context,
-      ).readConnectorBySlug(actor, "google-sheets");
+      ).readDefaultBuiltinAccount(actor, "google-sheets");
       expect(connector.connectionStatus).toBe("reconnect-required");
     },
   );
@@ -2679,7 +2682,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     await connectorsApi.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.TestOauthConnector]: true,
     });
-    const connector = await connectorsApi.readConnectorBySlug(
+    const connector = await connectorsApi.readDefaultBuiltinAccount(
       actor,
       "test-oauth",
     );

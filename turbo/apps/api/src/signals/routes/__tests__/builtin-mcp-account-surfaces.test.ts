@@ -4,8 +4,6 @@ import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connec
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   builtinConnectorNoAuthGrantContract,
-  builtinConnectorScopeDiffContract,
-  builtinConnectorsBySlugContract,
   builtinConnectorsMainContract,
   builtinConnectorsSearchContract,
 } from "@okouai/api-contracts/contracts/connectors";
@@ -152,64 +150,41 @@ describe("builtin MCP account surfaces", () => {
     expect(list.body.connectors).toMatchObject([
       { slug: target.connectorSlug, connectionStatus: "connected" },
     ]);
-    const [
-      connections,
-      account,
-      scopeDiff,
-      impact,
-      inspection,
-      detail,
-      defaultScopeDiff,
-    ] = await Promise.all([
-      accept(accounts().connections({ headers, query: target }), [200]),
-      accept(
-        accounts().connection({
-          headers,
-          params: { connectionId },
-          query: target,
-        }),
-        [200],
-      ),
-      accept(
-        accounts().scopeDiff({
-          headers,
-          params: { connectionId },
-          query: { connectorSlug: target.connectorSlug },
-        }),
-        [200],
-      ),
-      accept(
-        accounts().deletionImpact({
-          headers,
-          params: { connectionId },
-          query: target,
-        }),
-        [200],
-      ),
-      accept(
-        accounts().inspect({
-          headers,
-          body: { selections: [{ target, connectionId }] },
-        }),
-        [200],
-      ),
-      accept(
-        setupApp({ context, routes })(builtinConnectorsBySlugContract).get({
-          headers,
-          params: { connectorSlug: target.connectorSlug },
-        }),
-        [200],
-      ),
-      accept(
-        setupApp({ context, routes })(
-          builtinConnectorScopeDiffContract,
-        ).getScopeDiff({
-          headers,
-          params: { connectorSlug: target.connectorSlug },
-        }),
-        [200],
-      ),
-    ]);
+    const [connections, account, scopeDiff, impact, inspection] =
+      await Promise.all([
+        accept(accounts().connections({ headers, query: target }), [200]),
+        accept(
+          accounts().connection({
+            headers,
+            params: { connectionId },
+            query: target,
+          }),
+          [200],
+        ),
+        accept(
+          accounts().scopeDiff({
+            headers,
+            params: { connectionId },
+            query: { connectorSlug: target.connectorSlug },
+          }),
+          [200],
+        ),
+        accept(
+          accounts().deletionImpact({
+            headers,
+            params: { connectionId },
+            query: target,
+          }),
+          [200],
+        ),
+        accept(
+          accounts().inspect({
+            headers,
+            body: { selections: [{ target, connectionId }] },
+          }),
+          [200],
+        ),
+      ]);
     expect(connections.body.connections).toMatchObject([
       { id: connectionId, target },
     ]);
@@ -229,11 +204,6 @@ describe("builtin MCP account surfaces", () => {
     expect(inspection.body.results).toMatchObject([
       { kind: "available", connectionId, target },
     ]);
-    expect(detail.body).toMatchObject({ slug: target.connectorSlug });
-    expect(defaultScopeDiff.body).toMatchObject({
-      addedScopes: [],
-      removedScopes: [],
-    });
     await accept(
       accounts().setDefault({
         headers,

@@ -382,7 +382,10 @@ describe("CONN-02: external-code session lifecycle", () => {
     expectNoVisibleSecret(complete, "aws-login-refresh-token");
     expectNoVisibleSecret(complete, "aws-session-token");
 
-    const readBack = await connectorsApi.readConnectorBySlug(actor, "aws");
+    const readBack = await connectorsApi.readDefaultBuiltinAccount(
+      actor,
+      "aws",
+    );
     expect(readBack.id).toBe(complete.connectionId);
     expect(readBack.connectionStatus).toBe("connected");
 
@@ -392,30 +395,6 @@ describe("CONN-02: external-code session lifecycle", () => {
         return connector.slug === "aws";
       })?.id,
     ).toBe(complete.connectionId);
-    for (const name of [
-      "AWS_ACCESS_KEY_ID",
-      "AWS_SECRET_ACCESS_KEY",
-      "AWS_SESSION_TOKEN",
-    ]) {
-      expect(listed.connectorProvidedBindings).toContainEqual(
-        expect.objectContaining({
-          connectorSlug: "aws",
-          authMethod: "cli",
-          namespace: "secrets",
-          name,
-        }),
-      );
-    }
-    for (const name of ["AWS_REGION", "AWS_DEFAULT_REGION"]) {
-      expect(listed.connectorProvidedBindings).toContainEqual(
-        expect.objectContaining({
-          connectorSlug: "aws",
-          authMethod: "cli",
-          namespace: "vars",
-          name,
-        }),
-      );
-    }
 
     const replay = await connectorsApi.completeExternalCode(actor, "aws", {
       sessionId: session.sessionId,
@@ -451,13 +430,12 @@ describe("CONN-02: external-code session lifecycle", () => {
     expect(rejectedReconnect.body.error.message).toBe(
       "Connector account not found",
     );
-    const afterDelete = await connectorsApi.requestReadConnectorBySlug(
+    const afterDelete = await connectorsApi.requestBuiltinConnectorAccounts(
       actor,
       "aws",
-      [404],
+      [200],
     );
-    expectApiError(afterDelete.body);
-    expect(afterDelete.body.error.code).toBe("NOT_FOUND");
+    expect(afterDelete.body.defaultConnection).toBeNull();
   });
 
   it("replays the exact non-default account added by an external-code session", async () => {
@@ -607,7 +585,10 @@ describe("CONN-02: external-code session lifecycle", () => {
     });
     expect(provider.tokenRequests).toHaveLength(2);
 
-    const readBack = await connectorsApi.readConnectorBySlug(actor, "aws");
+    const readBack = await connectorsApi.readDefaultBuiltinAccount(
+      actor,
+      "aws",
+    );
     expect(readBack.id).toBe(retried.connectionId);
 
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "aws");
@@ -732,24 +713,6 @@ describe("CONN-02: external-code session lifecycle", () => {
     expectNoVisibleSecret(complete, "bdd-nintendo-session-token");
     expectNoVisibleSecret(complete, "bdd-nintendo-access-token");
 
-    const listed = await connectorsApi.listBuiltinConnectors(actor);
-    expect(listed.connectorProvidedBindings).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "nintendo-store",
-        authMethod: "api",
-        namespace: "secrets",
-        name: "NINTENDO_STORE_TOKEN",
-      }),
-    );
-    expect(listed.connectorProvidedBindings).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "nintendo-store",
-        authMethod: "api",
-        namespace: "vars",
-        name: "NINTENDO_STORE_LOCALE",
-      }),
-    );
-
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(
       actor,
       "nintendo-store",
@@ -846,35 +809,6 @@ describe("CONN-02: external-code session lifecycle", () => {
       NINTENDO_SWITCH_PARENTAL_CONTROLS_UNLOCK_CODE,
     );
 
-    const listed = await connectorsApi.listBuiltinConnectors(actor);
-    for (const name of [
-      "NINTENDO_SWITCH_PARENTAL_CONTROLS_TOKEN",
-      "NINTENDO_SWITCH_PARENTAL_CONTROLS_ACCOUNT_TOKEN",
-      "NINTENDO_SWITCH_PARENTAL_CONTROLS_SMART_DEVICE_ID",
-    ]) {
-      expect(listed.connectorProvidedBindings).toContainEqual(
-        expect.objectContaining({
-          connectorSlug: "nintendo-switch-parental-controls",
-          authMethod: "api",
-          namespace: "secrets",
-          name,
-        }),
-      );
-    }
-    for (const name of [
-      "NINTENDO_SWITCH_PARENTAL_CONTROLS_LANGUAGE",
-      "NINTENDO_SWITCH_PARENTAL_CONTROLS_DEVICE_CATALOG",
-    ]) {
-      expect(listed.connectorProvidedBindings).toContainEqual(
-        expect.objectContaining({
-          connectorSlug: "nintendo-switch-parental-controls",
-          authMethod: "api",
-          namespace: "vars",
-          name,
-        }),
-      );
-    }
-
     const replacementSession = await connectorsApi.startExternalCode(
       actor,
       "nintendo-switch-parental-controls",
@@ -937,13 +871,12 @@ describe("CONN-02: external-code session lifecycle", () => {
       { smartDeviceId: provider.federatedSmartDeviceIds[0] },
       { smartDeviceId: provider.federatedSmartDeviceIds[1] },
     ]);
-    const afterDelete = await connectorsApi.requestReadConnectorBySlug(
+    const afterDelete = await connectorsApi.requestBuiltinConnectorAccounts(
       actor,
       "nintendo-switch-parental-controls",
-      [404],
+      [200],
     );
-    expectApiError(afterDelete.body);
-    expect(afterDelete.body.error.code).toBe("NOT_FOUND");
+    expect(afterDelete.body.defaultConnection).toBeNull();
     await connectorsApi.deleteFeatureSwitches(actor);
   });
 
@@ -1124,12 +1057,8 @@ describe("CONN-02: external-code session lifecycle", () => {
     expect(terminal.body.error.message).toContain("STS");
     expect(provider.tokenRequests).toHaveLength(1);
 
-    const nothingPersisted = await connectorsApi.requestReadConnectorBySlug(
-      actor,
-      "aws",
-      [404],
-    );
-    expectApiError(nothingPersisted.body);
-    expect(nothingPersisted.body.error.code).toBe("NOT_FOUND");
+    const nothingPersisted =
+      await connectorsApi.requestBuiltinConnectorAccounts(actor, "aws", [200]);
+    expect(nothingPersisted.body.defaultConnection).toBeNull();
   });
 });

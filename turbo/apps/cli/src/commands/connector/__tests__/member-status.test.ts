@@ -144,16 +144,20 @@ describe("current-member connector status", () => {
           ...reader,
           state: "incomplete",
           changes: {
-            setupStatus: "incomplete",
+            connectionStatus: "reconnect-required",
+            reconnectReason: "configuration_incomplete",
             missingRequiredFields: ["apiKey"],
           },
-          expected: "setup-required",
+          expected: "reconnect-required",
         },
         {
           ...reader,
           state: "invalid",
-          changes: { setupStatus: "invalid" },
-          expected: "setup-required",
+          changes: {
+            connectionStatus: "reconnect-required",
+            reconnectReason: "configuration_invalid",
+          },
+          expected: "reconnect-required",
         },
       ] satisfies readonly (typeof reader & {
         state: string;
@@ -207,7 +211,8 @@ describe("current-member connector status", () => {
       });
       const sibling = connectorAccount(target, {
         isDefault: false,
-        setupStatus: "incomplete",
+        connectionStatus: "reconnect-required",
+        reconnectReason: "configuration_incomplete",
         missingRequiredFields: ["apiKey"],
       });
       server.use(

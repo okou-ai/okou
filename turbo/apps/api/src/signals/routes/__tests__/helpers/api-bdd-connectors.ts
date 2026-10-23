@@ -9,7 +9,6 @@ import type {
   BuiltinConnectorOauthDeviceAuthSessionPollResponse,
   BuiltinConnectorOauthDeviceAuthSessionStartResponse,
   BuiltinConnectorOauthStartResponse,
-  BuiltinConnectorResponse,
   ScopeDiffResponse,
 } from "@okouai/api-contracts/contracts/connector-schemas";
 import type {
@@ -50,8 +49,6 @@ import {
   builtinConnectorExternalCodeSessionContract,
   builtinConnectorOauthDeviceAuthSessionContract,
   builtinConnectorOauthStartContract,
-  builtinConnectorScopeDiffContract,
-  builtinConnectorsBySlugContract,
   builtinConnectorsMainContract,
   builtinConnectorsSearchContract,
   type BuiltinConnectorSearchResponse,
@@ -2091,34 +2088,40 @@ export function createConnectorBddApi(context: TestContext) {
       return response.body;
     },
 
-    async requestReadConnectorBySlug(
+    async requestBuiltinConnectorAccounts<
+      TStatus extends 200 | 401 | 403 | 404,
+    >(
       actor: ApiTestUser | null,
       connectorSlug: ConnectorSlug,
-      statuses: readonly (200 | 401 | 403 | 404)[],
+      statuses: readonly TStatus[],
     ) {
-      const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorsBySlugContract,
+      const client = setupApp({ context, routes: connectorAccountRoutes })(
+        connectorAccountsContract,
       );
       return await accept(
-        client.get({
-          params: { connectorSlug },
+        client.connections({
+          query: { kind: "builtin", connectorSlug },
           headers: authenticate(actor),
         }),
         statuses,
       );
     },
 
-    async readConnectorBySlug(
+    async readDefaultBuiltinAccount(
       actor: ApiTestUser,
       connectorSlug: ConnectorSlug,
-    ): Promise<BuiltinConnectorResponse> {
-      const response = await api.requestReadConnectorBySlug(
+    ): Promise<ConnectorAccountConnection> {
+      const response = await api.requestBuiltinConnectorAccounts(
         actor,
         connectorSlug,
         [200],
       );
       expectStatus(response, 200);
-      return response.body;
+      const account = response.body.defaultConnection;
+      if (!account) {
+        throw new Error("Expected a saved default connector account");
+      }
+      return account;
     },
 
     async deleteDefaultBuiltinConnectorAccount(
@@ -2241,28 +2244,36 @@ export function createConnectorBddApi(context: TestContext) {
       return response.body.connections;
     },
 
-    async requestScopeDiff(
+    async requestBuiltinAccountScopeDiff<TStatus extends 200 | 401 | 403 | 404>(
       actor: ApiTestUser | null,
       connectorSlug: ConnectorSlug,
-      statuses: readonly (200 | 401 | 403 | 404)[],
+      connectionId: string,
+      statuses: readonly TStatus[],
     ) {
-      const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorScopeDiffContract,
+      const client = setupApp({ context, routes: connectorAccountRoutes })(
+        connectorAccountsContract,
       );
       return await accept(
-        client.getScopeDiff({
-          params: { connectorSlug },
+        client.scopeDiff({
+          params: { connectionId },
+          query: { connectorSlug },
           headers: authenticate(actor),
         }),
         statuses,
       );
     },
 
-    async readScopeDiff(
+    async readDefaultBuiltinScopeDiff(
       actor: ApiTestUser,
       connectorSlug: ConnectorSlug,
     ): Promise<ScopeDiffResponse> {
-      const response = await api.requestScopeDiff(actor, connectorSlug, [200]);
+      const account = await api.readDefaultBuiltinAccount(actor, connectorSlug);
+      const response = await api.requestBuiltinAccountScopeDiff(
+        actor,
+        connectorSlug,
+        account.id,
+        [200],
+      );
       expectStatus(response, 200);
       return response.body;
     },
@@ -2307,7 +2318,7 @@ export function createConnectorBddApi(context: TestContext) {
         agentId?: string,
         account?: ConnectorAccountMutationIntent,
       ]
-    ): Promise<BuiltinConnectorResponse> {
+    ): Promise<ConnectorAccountConnection> {
       const [agentId, account = { intent: "add" }] = options;
       const response = await api.requestManualGrant(
         actor,
@@ -2322,7 +2333,7 @@ export function createConnectorBddApi(context: TestContext) {
         connectorSlug,
         response.body.connectionId,
       );
-      return { ...accountMetadata, slug: connectorSlug };
+      return accountMetadata;
     },
 
     async requestOauthStart(

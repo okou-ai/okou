@@ -496,30 +496,41 @@ describe("Proactive jobs", () => {
   };
   async function schedule(actor: ApiTestUser) {
     const listed = await accept(
-      workflowCollectionClient().list({
+      setupApp({
+        context,
+        routes: workflowAutomationsRoutes.filter(({ route }) => {
+          return route === workflowAutomationsContract.listWorkspace;
+        }),
+      })(workflowAutomationsContract).listWorkspace({
         headers: authHeaders(actor),
-        query: {},
       }),
       [200],
     );
-    const installation = listed.body.find((item) => {
-      return item.official?.definitionName === "proactive-jobs";
+    const installed = listed.body.find(({ workflow }) => {
+      return workflow.official?.definitionName === "proactive-jobs";
     });
-    if (!installation) {
+    if (!installed) {
       throw new Error("Expected a Jobs installation");
     }
-    const detail = await accept(
-      workflowClient().get({
+    return {
+      installation: installed.workflow,
+      automation: installed.automation,
+    };
+  }
+  async function readJobAutomation(actor: ApiTestUser, automationId: string) {
+    const response = await accept(
+      setupApp({
+        context,
+        routes: workflowAutomationsRoutes.filter(({ route }) => {
+          return route === workflowAutomationsContract.get;
+        }),
+      })(workflowAutomationsContract).get({
         headers: authHeaders(actor),
-        params: { workflowId: installation.id },
+        params: { id: automationId },
       }),
       [200],
     );
-    const automation = detail.body.automations[0];
-    if (!automation) {
-      throw new Error("Expected a Jobs loop");
-    }
-    return { installation: detail.body, automation };
+    return response.body;
   }
   async function entrustedJob() {
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
@@ -574,7 +585,7 @@ describe("Proactive jobs", () => {
     await runs.grantProEntitlement(actor);
     await selectPersonalDefaultModel(actor);
     await runs.heartbeatRunner(runnerGroup);
-    const delegated = await runs.createThreadRun(actor, {
+    const delegated = await chat.sendAndLaunch(actor, {
       agentId: installed.installation.agentId,
       model: "claude-fable-5-1",
       prompt: "Create an Okou Job to research prospects",
@@ -599,16 +610,16 @@ describe("Proactive jobs", () => {
       [200],
     );
     await flushWaitUntilForTest();
-    return { actor, job, runnerGroup };
+    return { actor, job, runnerGroup, automationId: installed.automation.id };
   }
 
   it("admits one hidden tick, sleeps while waiting, wakes on a reply, and waits five minutes after completion", async () => {
     const f = await entrustedJob();
-    const firstSchedule = (await schedule(f.actor)).automation;
+    const firstSchedule = await readJobAutomation(f.actor, f.automationId);
     expect(firstSchedule.nextRunAt).toBe(new Date(now()).toISOString());
     await Promise.all([executeAutomationCron(), executeAutomationCron()]);
     await flushWaitUntilForTest();
-    const inFlight = (await schedule(f.actor)).automation;
+    const inFlight = await readJobAutomation(f.actor, f.automationId);
     if (!inFlight.chatThreadId) {
       throw new Error("Expected a hidden Jobs thread");
     }
@@ -657,7 +668,9 @@ describe("Proactive jobs", () => {
       [200],
     );
     await flushWaitUntilForTest();
-    expect((await schedule(f.actor)).automation.nextRunAt).toBeNull();
+    expect(
+      (await readJobAutomation(f.actor, f.automationId)).nextRunAt,
+    ).toBeNull();
     mockNow(now() + 60_000);
     await executeAutomationCron();
     await flushWaitUntilForTest();
@@ -679,7 +692,7 @@ describe("Proactive jobs", () => {
       )
     ).body;
     expect(response.status).toBe("waiting_decision");
-    const awake = (await schedule(f.actor)).automation;
+    const awake = await readJobAutomation(f.actor, f.automationId);
     expect(awake.nextRunAt).toBe(new Date(now()).toISOString());
     await runs.heartbeatRunner(f.runnerGroup);
     const second = await fireOfficialSchedule(f.actor, awake);
@@ -711,7 +724,7 @@ describe("Proactive jobs", () => {
       [200],
     );
     await flushWaitUntilForTest();
-    expect((await schedule(f.actor)).automation.nextRunAt).toBe(
+    expect((await readJobAutomation(f.actor, f.automationId)).nextRunAt).toBe(
       new Date(completedAt + 300_000).toISOString(),
     );
     await accept(

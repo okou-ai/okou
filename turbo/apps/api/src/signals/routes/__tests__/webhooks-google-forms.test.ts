@@ -368,7 +368,10 @@ async function setupGoogleFormsAutomation() {
   mocks.clerk.session(actor.userId, actor.orgId, "org:member");
   mockGoogleFormsConnectorOAuth();
   await workflows.connectConnector(actor, "google-forms");
-  const connector = await connectors.readConnectorBySlug(actor, "google-forms");
+  const connector = await connectors.readDefaultBuiltinAccount(
+    actor,
+    "google-forms",
+  );
   mocks.clerk.session(actor.userId, actor.orgId, "org:member");
 
   const created = await accept(
@@ -1026,7 +1029,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       }
       await runs.heartbeatRunner(RUNNER_GROUP);
       const claim = await runs.claimRunnerJob(runId);
-      const connection = await connectors.readConnectorBySlug(
+      const connection = await connectors.readDefaultBuiltinAccount(
         actor,
         "google-forms",
       );
@@ -1082,7 +1085,7 @@ describe("Google Forms Pub/Sub webhook", () => {
               body: { dispatched: 0 },
             });
             await expect(
-              connectors.readConnectorBySlug(actor, "google-forms"),
+              connectors.readDefaultBuiltinAccount(actor, "google-forms"),
             ).resolves.toMatchObject({ connectionStatus: "connected" });
           }
           return HttpResponse.json({
@@ -1114,7 +1117,7 @@ describe("Google Forms Pub/Sub webhook", () => {
         headers: { Authorization: "Bearer forms-refresh-success" },
       });
       await expect(
-        connectors.readConnectorBySlug(actor, "google-forms"),
+        connectors.readDefaultBuiltinAccount(actor, "google-forms"),
       ).resolves.toMatchObject({ connectionStatus: "connected" });
     },
   );
@@ -1160,7 +1163,7 @@ describe("Google Forms Pub/Sub webhook", () => {
 
     expect(refreshCalls).toBe(1);
     await expect(
-      connectors.readConnectorBySlug(actor, "google-forms"),
+      connectors.readDefaultBuiltinAccount(actor, "google-forms"),
     ).resolves.toMatchObject({
       connectionStatus: "reconnect-required",
       reconnectReason: "authorization_expired_or_revoked",
@@ -1324,7 +1327,7 @@ describe("Google Forms Pub/Sub webhook", () => {
     mocks.clerk.session(actor.userId, actor.orgId, "org:member");
     mockGoogleFormsConnectorOAuth();
     await workflows.connectConnector(actor, "google-forms");
-    const firstConnector = await connectors.readConnectorBySlug(
+    const firstConnector = await connectors.readDefaultBuiltinAccount(
       actor,
       "google-forms",
     );

@@ -1,5 +1,61 @@
 # Changelog
 
+## [9.409.2](https://github.com/okou-ai/okou/compare/cli-v9.409.1...cli-v9.409.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* authorize native integration cli destinations and files ([#42484](https://github.com/okou-ai/okou/issues/42484)) ([c529d76](https://github.com/okou-ai/okou/commit/c529d761b8218fb72762ad42fe1a2e6af5c217d0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.589.2
+    * @okouai/core bumped to 8.780.2
+    * @okouai/pi-agent-runtime bumped to 1.50.56
+
+## [9.409.1](https://github.com/okou-ai/okou/compare/cli-v9.409.0...cli-v9.409.1) (2026-10-23)
+
+
+### Refactoring
+
+* **connectors:** retire unused builtin read projections ([#42437](https://github.com/okou-ai/okou/issues/42437)) ([dfb4154](https://github.com/okou-ai/okou/commit/dfb4154505e4c5c10b9ff329f180a7b68753fc88))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.589.1
+    * @okouai/core bumped to 8.780.1
+    * @okouai/pi-agent-runtime bumped to 1.50.55
+
+## [9.409.0](https://github.com/okou-ai/okou/compare/cli-v9.408.5...cli-v9.409.0) (2026-10-23)
+
+
+### Features
+
+* add durable image generation jobs and cli status queries ([#42352](https://github.com/okou-ai/okou/issues/42352)) ([328c79f](https://github.com/okou-ai/okou/commit/328c79f29a81e44e454ff155cd2416e78ea7860d))
+* add durable jobs and a proactive jobs loop ([#42404](https://github.com/okou-ai/okou/issues/42404)) ([c02f4b1](https://github.com/okou-ai/okou/commit/c02f4b14d603747e65b0ffb046dd10f3d0ade017))
+
+
+### Refactoring
+
+* **connector:** activate canonical account status ([#42333](https://github.com/okou-ai/okou/issues/42333)) ([dc3fba8](https://github.com/okou-ai/okou/commit/dc3fba8d008ee10e4d65b9485a9fca63431face3))
+* remove expired deployment compatibility ([#42452](https://github.com/okou-ai/okou/issues/42452)) ([0d44b73](https://github.com/okou-ai/okou/commit/0d44b73e5e311bc6fe0acc20cb4b782a05d6d486))
+* remove retired pi memory storage and compatibility ([#42397](https://github.com/okou-ai/okou/issues/42397)) ([3f7e13b](https://github.com/okou-ai/okou/commit/3f7e13b76f0ea1d4ac1ff39a1f240a7af19dc1ad))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.589.0
+    * @okouai/core bumped to 8.780.0
+    * @okouai/pi-agent-runtime bumped to 1.50.54
+
 ## [9.408.5](https://github.com/okou-ai/okou/compare/cli-v9.408.4...cli-v9.408.5) (2026-10-22)
 
 

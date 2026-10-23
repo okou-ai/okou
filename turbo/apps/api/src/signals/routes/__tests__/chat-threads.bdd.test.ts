@@ -2183,7 +2183,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       code: "drive-ok",
       state: stateFromAuthorizationUrl(start.authorizationUrl),
     });
-    const connected = await connectorsApi.readConnectorBySlug(
+    const connected = await connectorsApi.readDefaultBuiltinAccount(
       actor,
       "google-drive",
     );
@@ -2412,7 +2412,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     }
     expect(transientRefresh.refreshBodies).toHaveLength(2);
     await expect(
-      connectorsApi.readConnectorBySlug(actor, "google-drive"),
+      connectorsApi.readDefaultBuiltinAccount(actor, "google-drive"),
     ).resolves.toMatchObject({ connectionStatus: "connected" });
 
     // A terminal failure is persisted and immediately becomes disconnected.
@@ -2427,7 +2427,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       recovery: { action: "reconnect", connectionId: connected.id },
     });
     await expect(
-      connectorsApi.readConnectorBySlug(actor, "google-drive"),
+      connectorsApi.readDefaultBuiltinAccount(actor, "google-drive"),
     ).resolves.toMatchObject({
       connectionStatus: "reconnect-required",
       reconnectReason: "authorization_expired_or_revoked",
@@ -2454,7 +2454,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       state: stateFromAuthorizationUrl(reconnectStart.authorizationUrl),
     });
     await expect(
-      connectorsApi.readConnectorBySlug(actor, "google-drive"),
+      connectorsApi.readDefaultBuiltinAccount(actor, "google-drive"),
     ).resolves.toMatchObject({
       connectionStatus: "connected",
       reconnectReason: null,
@@ -2510,7 +2510,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     expect(sessionExpiredRefresh.refreshBodies).toHaveLength(1);
     await expect(
-      connectorsApi.readConnectorBySlug(actor, "google-drive"),
+      connectorsApi.readDefaultBuiltinAccount(actor, "google-drive"),
     ).resolves.toMatchObject({
       connectionStatus: "reconnect-required",
       reconnectReason: "provider_session_expired",
@@ -2541,7 +2541,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     expect(unknownSubtypeRefresh.refreshBodies).toHaveLength(1);
     await expect(
-      connectorsApi.readConnectorBySlug(actor, "google-drive"),
+      connectorsApi.readDefaultBuiltinAccount(actor, "google-drive"),
     ).resolves.toMatchObject({
       connectionStatus: "reconnect-required",
       reconnectReason: null,

@@ -164,7 +164,6 @@ describe("okou whoami command", () => {
       const connectionStatus = fixture.connectionStatus ?? "connected";
       return [
         {
-          setupStatus: "complete",
           missingRequiredFields: [],
           configuredFieldKeys: [],
           kind: "available" as const,
@@ -493,7 +492,6 @@ describe("okou whoami command", () => {
                 updatedAt: "2025-01-01T00:00:00Z",
               },
             ],
-            connectorProvidedBindings: [],
           });
         }),
       );
@@ -555,7 +553,6 @@ describe("okou whoami command", () => {
                 updatedAt: "2025-01-01T00:00:00Z",
               },
             ],
-            connectorProvidedBindings: [],
           });
         }),
       );
@@ -678,7 +675,6 @@ describe("okou whoami command", () => {
           ownerDefaultRequests += 1;
           return HttpResponse.json({
             connectors: [],
-            connectorProvidedBindings: [],
           });
         }),
       );
@@ -712,7 +708,6 @@ describe("okou whoami command", () => {
           ownerDefaultRequests += 1;
           return HttpResponse.json({
             connectors: [],
-            connectorProvidedBindings: [],
           });
         }),
       );
@@ -851,7 +846,6 @@ describe("okou whoami command", () => {
           ownerDefaultRequests += 1;
           return HttpResponse.json({
             connectors: [],
-            connectorProvidedBindings: [],
           });
         }),
         mockUserPermissionGrantsHandler([
@@ -1319,7 +1313,6 @@ describe("okou whoami command", () => {
     ): void {
       const accounts: AvailableConnectorAccount[] = [
         {
-          setupStatus: "complete",
           missingRequiredFields: [],
           configuredFieldKeys: [],
           kind: "available",
@@ -1335,7 +1328,6 @@ describe("okou whoami command", () => {
         },
         ...definitions.map((definition, index): AvailableConnectorAccount => {
           return {
-            setupStatus: "complete",
             missingRequiredFields: [],
             configuredFieldKeys: [],
             kind: "available",

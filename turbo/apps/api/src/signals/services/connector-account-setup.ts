@@ -1,4 +1,7 @@
-import type { connectorAccountSetupSchema } from "@okouai/api-contracts/contracts/connector-accounts";
+import type {
+  ConnectorAccountConnection,
+  connectorAccountFieldMetadataSchema,
+} from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorFieldSchema } from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
@@ -37,6 +40,41 @@ interface AccountSetupInput extends AccountSetupContract {
   readonly definitionFields: unknown;
 }
 
+type ConnectorAccountSetup = z.infer<
+  typeof connectorAccountFieldMetadataSchema
+> & {
+  readonly reconnectReason:
+    "configuration_incomplete" | "configuration_invalid" | null;
+};
+
+/** Configuration attention is derived; it never changes stored credential state. */
+export function connectorAccountStatus(
+  credential: Pick<
+    ConnectorAccountConnection,
+    "connectionStatus" | "reconnectReason"
+  >,
+  setup: ConnectorAccountSetup,
+): Pick<
+  ConnectorAccountConnection,
+  | "connectionStatus"
+  | "reconnectReason"
+  | "missingRequiredFields"
+  | "configuredFieldKeys"
+> {
+  return {
+    ...setup,
+    connectionStatus:
+      credential.connectionStatus === "connected" &&
+      setup.reconnectReason === null
+        ? "connected"
+        : "reconnect-required",
+    reconnectReason:
+      setup.reconnectReason === "configuration_invalid"
+        ? setup.reconnectReason
+        : (credential.reconnectReason ?? setup.reconnectReason),
+  };
+}
+
 export function connectorAccountSetupMarkerKey(
   account: AccountSetupContract,
 ): string {
@@ -53,7 +91,7 @@ export function connectorAccountSetup(
   account: AccountSetupInput,
   snapshot: ConnectorRuntimeAuthLookup | null,
   present: ReadonlySet<string>,
-): z.infer<typeof connectorAccountSetupSchema> {
+): ConnectorAccountSetup {
   let fields: readonly {
     readonly key: string;
     readonly privateName: string;
@@ -152,11 +190,11 @@ export function connectorAccountSetup(
     })
     .sort();
   return {
-    setupStatus: !valid
-      ? "invalid"
+    reconnectReason: !valid
+      ? "configuration_invalid"
       : missingRequiredFields.length > 0
-        ? "incomplete"
-        : "complete",
+        ? "configuration_incomplete"
+        : null,
     missingRequiredFields,
     configuredFieldKeys,
   };

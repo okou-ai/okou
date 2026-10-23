@@ -35,6 +35,7 @@ import {
   requestHasPreviewAutomationBypassHeaderOrCookie,
   VERCEL_PROTECTION_BYPASS_HEADER,
 } from "./lib/preview-automation-bypass";
+import { currentRequestRuntime } from "./lib/request-runtime";
 import { monotonicNow, now } from "./lib/time";
 import { isSupportedWebClientVersion } from "./lib/web-client-compatibility";
 import {
@@ -650,6 +651,16 @@ export function createAppWithRoutes({
   // code/state and Telegram carries identity/proof, including on invalid input.
   // Exclude BEFORE span creation; their path/status Axiom logs remain below.
   app.use("*", (context, next) => {
+    const runtime = currentRequestRuntime();
+    if (runtime) {
+      return next().finally(() => {
+        runtime.observeHttp(
+          context.req.method,
+          requestRouteTemplate(context) ?? "unmatched",
+          context.res.status,
+        );
+      });
+    }
     return context.req.path.replace(/\/$/u, "") ===
       DISCORD_OAUTH_CALLBACK_PATH || isTelegramAuthTelemetryUrl(context.req.url)
       ? next()

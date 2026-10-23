@@ -1,5 +1,4 @@
 import {
-  connectorAccountSetupIsComplete,
   type ConnectorAccountConnection,
   type ConnectorAccountTarget,
   builtinConnectorAccountFacts,
@@ -23,7 +22,6 @@ type MemberConnectionStatus =
   | "not-connected"
   | "default-required"
   | "reconnect-required"
-  | "setup-required"
   | "account-review-required"
   | "connected";
 
@@ -52,10 +50,7 @@ function memberAccountSummary(
     target,
     accountCount: accounts.connections.length,
     attentionCount: accounts.connections.filter((account) => {
-      return (
-        account.connectionStatus === "reconnect-required" ||
-        !connectorAccountSetupIsComplete(account)
-      );
+      return account.connectionStatus === "reconnect-required";
     }).length,
     defaultConnection: accounts.defaultConnection,
   };
@@ -74,7 +69,6 @@ function memberAccountStatus(
   if (account.connectionStatus === "reconnect-required") {
     return "reconnect-required";
   }
-  if (!connectorAccountSetupIsComplete(account)) return "setup-required";
   return "connected";
 }
 
@@ -153,12 +147,16 @@ export function memberConnectorStatusText(facts: MemberConnectorFacts): string {
       return "not connected";
     case "default-required":
       return "default account required";
-    case "reconnect-required":
+    case "reconnect-required": {
+      const account = facts.accountSummary?.defaultConnection;
+      if (account?.reconnectReason === "configuration_invalid") {
+        return "configuration invalid";
+      }
+      if (account?.reconnectReason === "configuration_incomplete") {
+        return `missing ${account.missingRequiredFields.join(", ")}`;
+      }
       return "reconnect needed";
-    case "setup-required":
-      return facts.accountSummary?.defaultConnection?.setupStatus === "invalid"
-        ? "setup invalid"
-        : `missing ${facts.accountSummary?.defaultConnection?.missingRequiredFields.join(", ") ?? "configuration"}`;
+    }
     case "account-review-required":
       return "account review required";
     case "connected":

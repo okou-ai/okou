@@ -20,10 +20,7 @@ import {
   uploadedArtifactFetchUrl$,
 } from "../services/uploaded-artifact.service";
 import { recordTelegramUploadedFile$ } from "../services/run-uploaded-files.service";
-import {
-  currentUserTelegramChatId,
-  telegramAccountNotLinked,
-} from "../services/telegram-data.service";
+import { requireTelegramConversationAccess$ } from "../services/telegram-access.service";
 import type { RouteEntry } from "../route-entry";
 
 const botNotFound = Object.freeze({
@@ -120,14 +117,13 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return botNotFound;
   }
 
-  let chatId = body.chatId;
-  if (chatId === "me") {
-    const resolved = await get(currentUserTelegramChatId({ orgId, userId }));
-    signal.throwIfAborted();
-    if (!resolved) {
-      return telegramAccountNotLinked;
-    }
-    chatId = resolved;
+  const initialAccess = await set(
+    requireTelegramConversationAccess$,
+    { orgId, userId, chatId: body.chatId, mode: "document" },
+    signal,
+  );
+  if (initialAccess.kind === "denied") {
+    return initialAccess.response;
   }
 
   const s3Object = await set(
@@ -143,6 +139,15 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const fetchUrl = await set(uploadedArtifactFetchUrl$, s3Object, signal);
   signal.throwIfAborted();
+  const access = await set(
+    requireTelegramConversationAccess$,
+    { orgId, userId, chatId: body.chatId, mode: "document" },
+    signal,
+  );
+  if (access.kind === "denied") {
+    return access.response;
+  }
+  const chatId = access.chatId;
   const result = await sendDocument(botToken, chatId, fetchUrl, {
     caption: body.caption,
     messageThreadId: body.messageThreadId,

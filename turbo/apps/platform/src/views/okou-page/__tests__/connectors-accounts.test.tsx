@@ -73,7 +73,6 @@ function builtinAccount(args: {
     oauthScopes: [],
     scopeMismatch: args.scopeMismatch ?? false,
     connectionStatus: args.status ?? "connected",
-    setupStatus: "complete",
     missingRequiredFields: [],
     configuredFieldKeys: [],
     reconnectReason:
@@ -103,7 +102,6 @@ test("Keep the exact account and current reconnect UI when future setup metadata
       externalUsername: "work-user",
       status: "reconnect-required",
     }),
-    setupStatus: "complete" as const,
     missingRequiredFields: [],
     configuredFieldKeys: ["accessToken"],
   };

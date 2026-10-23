@@ -8,9 +8,10 @@ import {
 } from "@okouai/connectors/firewall-expander";
 import type {
   ConnectorCheckTargetAwareDiagnosticResult,
-  ConnectorCheckRequestBody,
+  ConnectorCheckTargetAwareUrlRequest,
 } from "@okouai/api-contracts/contracts/connector-check";
 import type { ConnectorRuntimeTarget } from "@okouai/api-contracts/contracts/runners";
+import type { ConnectorDiagnosticRequest } from "../../lib/api/domains/connectors";
 import { isComputerUsePermissionTarget } from "./computer-use-guidance";
 import { customConnectorIdFromSelector } from "./custom-connector-guidance";
 
@@ -105,10 +106,7 @@ export type ResolvedEnvironmentDiagnostic = Extract<
   ResolvedDiagnostic,
   { readonly mode: "environment" }
 >;
-export type UrlDiagnosticRequest = Extract<
-  ConnectorCheckRequestBody,
-  { readonly mode: "url" }
->;
+export type UrlDiagnosticRequest = ConnectorCheckTargetAwareUrlRequest;
 
 function stripUrlQueryAndFragment(url: string): string {
   const queryIndex = url.indexOf("?");
@@ -455,7 +453,12 @@ export function buildConnectorUrlDiagnosticRequest(args: {
     customConnectorId !== undefined
       ? { target: { kind: "custom" as const, customConnectorId } }
       : args.connector !== undefined
-        ? { connectorSlug: args.connector }
+        ? {
+            target: {
+              kind: "builtin" as const,
+              connectorSlug: args.connector,
+            },
+          }
         : { includeCustomConnectors: true as const };
   return {
     mode: "url",
@@ -472,7 +475,7 @@ export function buildConnectorUrlDiagnosticRequest(args: {
 export function buildDiagnosticRequest(
   opts: ValidatedCheckConnectorOptions,
   method: string,
-): ConnectorCheckRequestBody {
+): ConnectorDiagnosticRequest {
   if (opts.url !== undefined) {
     return buildConnectorUrlDiagnosticRequest({
       method,
@@ -501,7 +504,7 @@ export function buildDiagnosticRequest(
 }
 
 export function requireUrlRequest(
-  request: ConnectorCheckRequestBody,
+  request: ConnectorDiagnosticRequest,
 ): UrlDiagnosticRequest {
   if (request.mode !== "url") {
     throw new Error(
@@ -511,7 +514,7 @@ export function requireUrlRequest(
   return request;
 }
 
-function requestedEnvironmentName(request: ConnectorCheckRequestBody): string {
+function requestedEnvironmentName(request: ConnectorDiagnosticRequest): string {
   if (request.environmentName === undefined) {
     throw new Error(
       "Connector diagnostic returned an environment outcome without an environment name.",
@@ -566,14 +569,11 @@ function ambiguousConnectorError(
   );
 }
 
-function unknownConnectorError(request: ConnectorCheckRequestBody): Error {
-  if (
-    request.mode === "url" &&
-    "connectorSlug" in request &&
-    request.connectorSlug !== undefined
-  ) {
+function unknownConnectorError(request: ConnectorDiagnosticRequest): Error {
+  if (request.mode === "url" && request.target?.kind === "builtin") {
+    const connectorSlug = request.target.connectorSlug;
     return new Error(
-      `Unknown connector slug: ${request.connectorSlug}\nRun: okou connector search ${shellQuoteArg(request.connectorSlug)}`,
+      `Unknown connector slug: ${connectorSlug}\nRun: okou connector search ${shellQuoteArg(connectorSlug)}`,
     );
   }
   return new Error("The requested connector is unknown.");
@@ -599,18 +599,16 @@ function connectorMismatchError(
     { readonly outcome: "connector-mismatch" }
   >,
 ): Error {
-  const requestedSlug =
-    "target" in request && request.target
-      ? connectorSelector(request.target)
-      : (("connectorSlug" in request ? request.connectorSlug : undefined) ??
-        "the requested connector");
+  const requestedSlug = request.target
+    ? connectorSelector(request.target)
+    : "the requested connector";
   return new Error(
     `Connector ${requestedSlug} does not own ${request.method} ${request.url}; the matching connector is ${connectorSelector(result.connector.target)}\nRun: ${connectorSelectionCommand(request, connectorSelector(result.connector.target))}`,
   );
 }
 
 function environmentNotOwnedError(
-  request: ConnectorCheckRequestBody,
+  request: ConnectorDiagnosticRequest,
   result: Extract<
     ConnectorCheckTargetAwareDiagnosticResult,
     { readonly outcome: "environment-not-owned" }
@@ -623,7 +621,7 @@ function environmentNotOwnedError(
 }
 
 function environmentNotUsedError(
-  request: ConnectorCheckRequestBody,
+  request: ConnectorDiagnosticRequest,
   result: Extract<
     ConnectorCheckTargetAwareDiagnosticResult,
     { readonly outcome: "environment-not-used" }
@@ -636,7 +634,7 @@ function environmentNotUsedError(
 }
 
 export function resolveConnectorCheckDiagnostic(
-  request: ConnectorCheckRequestBody,
+  request: ConnectorDiagnosticRequest,
   result: ConnectorCheckTargetAwareDiagnosticResult,
 ): ResolvedDiagnostic {
   if (result.outcome === "resolved") {
@@ -646,7 +644,7 @@ export function resolveConnectorCheckDiagnostic(
 }
 
 export function connectorCheckDiagnosticError(
-  request: ConnectorCheckRequestBody,
+  request: ConnectorDiagnosticRequest,
   result: Exclude<
     ConnectorCheckTargetAwareDiagnosticResult,
     ResolvedDiagnostic
@@ -713,20 +711,15 @@ export function connectorPermissionRequestCommand(
 }
 
 export function connectorCheckRetryCommand(
-  request: ConnectorCheckRequestBody,
+  request: ConnectorDiagnosticRequest,
 ): string {
   const args: string[] = [];
   if (request.mode === "url") {
     args.push(`--url ${shellQuoteArg(request.url)}`);
-    if ("target" in request && request.target) {
+    if (request.target) {
       args.push(
         `--connector ${shellQuoteArg(connectorSelector(request.target))}`,
       );
-    } else if (
-      "connectorSlug" in request &&
-      request.connectorSlug !== undefined
-    ) {
-      args.push(`--connector ${shellQuoteArg(request.connectorSlug)}`);
     }
     if (request.environmentName !== undefined) {
       args.push(`--env-name ${shellQuoteArg(request.environmentName)}`);
@@ -745,7 +738,7 @@ export function connectorCheckRetryCommand(
 }
 
 export function printDiagnosticSummary(
-  request: ConnectorCheckRequestBody,
+  request: ConnectorDiagnosticRequest,
   result: ResolvedDiagnostic,
 ): void {
   if (result.mode === "url") {

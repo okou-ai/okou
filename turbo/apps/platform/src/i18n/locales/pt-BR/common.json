@@ -559,7 +559,8 @@
       "upload": "Enviar para o Google Drive",
       "uploadDocs": "Enviar para o Google Docs",
       "uploadSheets": "Enviar para o Google Sheets",
-      "uploadSlides": "Enviar para o Google Slides"
+      "uploadSlides": "Enviar para o Google Slides",
+      "viewIt": "Ver arquivo"
     },
     "jsonPreview": {
       "allShown": "Todos os itens exibidos",

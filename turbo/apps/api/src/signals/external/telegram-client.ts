@@ -1,4 +1,5 @@
 import { optionalEnv } from "../../lib/env";
+import { z } from "zod";
 
 const DEFAULT_TELEGRAM_API_BASE = "https://api.telegram.org/bot";
 
@@ -106,6 +107,99 @@ export async function getFile(
     readonly result: TelegramFile;
   }>(token, "getFile", { file_id: fileId }, signal);
   return result.result;
+}
+
+const telegramChatAccessSchema = z.object({
+  id: z.number().int(),
+  type: z.enum(["private", "group", "supergroup", "channel"]),
+  permissions: z
+    .object({
+      can_send_messages: z.boolean().optional(),
+      can_send_documents: z.boolean().optional(),
+    })
+    .optional(),
+});
+const telegramMemberAccessSchema = z.object({
+  user: z.object({ id: z.number().int() }),
+  status: z.enum([
+    "creator",
+    "administrator",
+    "member",
+    "restricted",
+    "left",
+    "kicked",
+  ]),
+  is_member: z.boolean().optional(),
+  can_post_messages: z.boolean().optional(),
+  can_send_messages: z.boolean().optional(),
+  can_send_documents: z.boolean().optional(),
+});
+
+/** Resolve aliases before authorizing both principals against the actual chat. */
+export async function checkTelegramConversationAccess(
+  args: {
+    token: string;
+    chatId: string;
+    userId: string;
+    botId: string;
+    mode: "read" | "message" | "document";
+  },
+  signal: AbortSignal,
+): Promise<string | null> {
+  const response = await callTelegramApi<{ result: unknown }>(
+    args.token,
+    "getChat",
+    { chat_id: args.chatId },
+    signal,
+  );
+  const chat = telegramChatAccessSchema.parse(response.result);
+  const chatId = String(chat.id);
+  if (!args.chatId.startsWith("@") && args.chatId !== chatId) {
+    return null;
+  }
+  if (chat.type === "private") {
+    // Outbound DMs follow Telegram's bot reachability rules. They confer no
+    // authority to read the recipient's private conversation or attachments.
+    return args.mode === "read" && chatId !== args.userId ? null : chatId;
+  }
+  const members = await Promise.all(
+    [args.userId, args.botId].map(async (userId) => {
+      const result = await callTelegramApi<{ result: unknown }>(
+        args.token,
+        "getChatMember",
+        { chat_id: chatId, user_id: userId },
+        signal,
+      );
+      const member = telegramMemberAccessSchema.parse(result.result);
+      if (
+        String(member.user.id) !== userId ||
+        member.status === "left" ||
+        member.status === "kicked" ||
+        (member.status === "restricted" && member.is_member !== true)
+      ) {
+        return false;
+      }
+      if (args.mode === "read") {
+        return true;
+      }
+      if (chat.type === "channel") {
+        return (
+          member.status === "creator" ||
+          (member.status === "administrator" &&
+            member.can_post_messages === true)
+        );
+      }
+      if (member.status === "creator" || member.status === "administrator") {
+        return true;
+      }
+      const permissions =
+        member.status === "restricted" ? member : chat.permissions;
+      return args.mode === "document"
+        ? permissions?.can_send_documents === true
+        : permissions?.can_send_messages === true;
+    }),
+  );
+  return members.every(Boolean) ? chatId : null;
 }
 
 export function buildFileDownloadUrl(token: string, filePath: string): string {

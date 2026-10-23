@@ -62,7 +62,6 @@ function connectedAccount(
     externalEmail: null,
     oauthScopes: [],
     connectionStatus: "connected",
-    setupStatus: "complete",
     missingRequiredFields: [],
     configuredFieldKeys: [],
     reconnectReason: null,

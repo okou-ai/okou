@@ -31,7 +31,10 @@ import {
   completeCanonicalDiscordDelivery$,
   materializeCanonicalDiscordAsset$,
 } from "../services/canonical-discord-asset-delivery.service";
-import { requireDiscordOutputAccess$ } from "../services/discord-output-destination.service";
+import {
+  requireDiscordOutputAccess$,
+  resolveDiscordOutputChannel$,
+} from "../services/discord-output-destination.service";
 import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
 
@@ -45,15 +48,29 @@ const init$ = command(async ({ get, set }, signal: AbortSignal) => {
     return parsed.response;
   }
   const body = parsed.data;
+  const destination = await set(
+    resolveDiscordOutputChannel$,
+    {
+      ...auth,
+      channelId: body.channelId,
+      recipientId: body.userId,
+      guildId: body.guildId,
+    },
+    signal,
+  );
+  if (destination.kind === "denied") {
+    return destination.response;
+  }
   const access = await set(
     requireDiscordOutputAccess$,
     {
       orgId: auth.orgId,
       userId: auth.userId,
-      channelId: body.channelId,
+      channelId: destination.channelId,
       guildId: body.guildId,
       createThread: false,
       attachFiles: true,
+      allowOtherDmRecipients: true,
     },
     signal,
   );
@@ -85,7 +102,7 @@ const init$ = command(async ({ get, set }, signal: AbortSignal) => {
           provider: "discord",
           connectionId: access.binding.connectionId,
           guildId: access.binding.guildId,
-          channelId: body.channelId,
+          channelId: destination.channelId,
           ...(body.comment !== undefined ? { comment: body.comment } : {}),
         },
       },

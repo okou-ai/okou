@@ -136,7 +136,6 @@ const inspectInner$ = computed(async (get) => {
           externalEmail: account.externalEmail,
           connectionStatus: account.connectionStatus,
           reconnectReason: account.reconnectReason,
-          setupStatus: account.setupStatus,
           missingRequiredFields: account.missingRequiredFields,
           configuredFieldKeys: account.configuredFieldKeys,
         };
@@ -208,7 +207,7 @@ const scopeDiffScope$ = computed((get) => {
     orgId: auth.orgId,
     userId: auth.userId,
     connectorSlug: query.connectorSlug,
-    selection: { kind: "exact" as const, connectorId: params.connectionId },
+    connectorId: params.connectionId,
   };
 });
 const scopeDiff$ = builtinConnectorScopeDiff(scopeDiffScope$);

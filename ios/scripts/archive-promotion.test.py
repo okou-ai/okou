@@ -49,6 +49,10 @@ run_id = route.split('/runs/')[1].split('/')[0]
 record = records[run_id]
 if '/jobs?' in route:
     print(json.dumps([{'jobs': record['jobs']}]))
+    if 'nextJobs' in record:
+        record['jobs'] = record.pop('nextJobs')
+        with open(os.environ['GITHUB_RECORDS'], 'w') as output:
+            json.dump(records, output)
 else:
     print(json.dumps(record['run']))
 """
@@ -465,6 +469,34 @@ class PromotionTest(unittest.TestCase):
         )
         self.commit()
         self.assertEqual(self.cli("release-only", "--base", self.base), "false")
+
+    def test_publication_waits_for_pending_builder_results(self):
+        record = self.records["123"]
+        record["nextJobs"] = json.loads(json.dumps(record["jobs"]))
+        for job in record["jobs"]:
+            job["status"] = "in_progress"
+            job["conclusion"] = None
+        self.save_records()
+        self.cli("publish", self.work)
+        self.assertTrue(self.ready().is_file())
+        target = self.consume_work()
+        self.cli("consume", target, "--wait-seconds", 0)
+        self.assertTrue(
+            (
+                target / "Original.xcarchive/Products/Applications/Okou.app/Okou"
+            ).is_file()
+        )
+
+    def test_pending_builder_that_fails_cannot_publish(self):
+        record = self.records["123"]
+        record["nextJobs"] = json.loads(json.dumps(record["jobs"]))
+        record["nextJobs"][2]["conclusion"] = "failure"
+        for job in record["jobs"]:
+            job["status"] = "in_progress"
+            job["conclusion"] = None
+        self.save_records()
+        self.cli("publish", self.work, error="did not pass")
+        self.assertFalse(self.ready().exists())
 
     def test_failed_or_non_merge_group_tests_cannot_publish(self):
         self.records["123"]["jobs"][0]["steps"][0]["conclusion"] = "failure"

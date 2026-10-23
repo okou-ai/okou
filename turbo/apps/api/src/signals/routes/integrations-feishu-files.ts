@@ -19,7 +19,6 @@ import {
   type FeishuUploadCompleteBody,
 } from "@okouai/api-contracts/contracts/integrations";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 
@@ -61,6 +60,7 @@ import { recordFeishuUploadedFile$ } from "../services/run-uploaded-files.servic
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 import { safeUriComponentDecode, settle } from "../utils";
+import { requireFeishuConversationAccess$ } from "../services/feishu-conversation-access.service";
 
 const DOWNLOAD_MAX_BYTES = 100 * 1024 * 1024;
 const FEISHU_FILE_ID_PREFIX = "feishu_file_";
@@ -277,36 +277,39 @@ function uploadMetadata(args: {
   };
 }
 
-const resolveUserOpenId$ = command(
+const authorizeFileDelivery$ = command(
   async (
-    { get },
+    { get, set },
     args: {
-      readonly installationId: string;
-      readonly userId: string;
-      readonly requestedOpenId: string | undefined;
+      orgId: string;
+      userId: string;
+      installationId: string;
+      body: FeishuUploadCompleteBody;
     },
     signal: AbortSignal,
-  ): Promise<
-    | { readonly kind: "resolved"; readonly openId: string | undefined }
-    | { readonly kind: "not_found" }
-  > => {
-    if (args.requestedOpenId !== "me") {
-      return { kind: "resolved", openId: args.requestedOpenId };
-    }
-    const [connection] = await get(db$)
-      .select({ openId: feishuOrgConnections.feishuOpenId })
-      .from(feishuOrgConnections)
-      .where(
-        and(
-          eq(feishuOrgConnections.installationId, args.installationId),
-          eq(feishuOrgConnections.userId, args.userId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    return connection
-      ? { kind: "resolved", openId: connection.openId }
-      : { kind: "not_found" };
+  ) => {
+    const access = await settle(
+      set(
+        requireFeishuConversationAccess$,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          installationId: args.installationId,
+          user: args.body.user,
+          chat: args.body.chat,
+          messageId: args.body.replyToMessageId,
+          write: true,
+        },
+        signal,
+      ),
+      signal,
+    );
+    return access.ok
+      ? { kind: "allowed" as const, userOpenId: access.value }
+      : {
+          kind: "denied" as const,
+          response: feishuApiError(access.error, get(feishuRequestPlatform$)),
+        };
   },
 );
 
@@ -381,6 +384,23 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
+  const access = await settle(
+    set(
+      requireFeishuConversationAccess$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        installationId: installation.id,
+        messageId: target.messageId,
+        write: false,
+      },
+      signal,
+    ),
+    signal,
+  );
+  if (!access.ok) {
+    return feishuApiError(access.error, get(feishuRequestPlatform$));
+  }
   const downloaded = await settle(
     set(
       downloadFeishuMessageResource$,
@@ -597,21 +617,15 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
-  const user = await set(
-    resolveUserOpenId$,
-    {
-      installationId: installation.id,
-      userId: auth.userId,
-      requestedOpenId: body.user,
-    },
-    signal,
-  );
-  if (user.kind === "not_found") {
-    return apiError(
-      404,
-      "NOT_FOUND",
-      `No ${FEISHU_PLATFORMS[get(feishuRequestPlatform$)].name} connection found for the current user`,
-    );
+  const accessArgs = {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    installationId: installation.id,
+    body,
+  };
+  const access = await set(authorizeFileDelivery$, accessArgs, signal);
+  if (access.kind === "denied") {
+    return access.response;
   }
 
   const object = await set(
@@ -644,10 +658,15 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
     return feishuApiError(uploaded.error, get(feishuRequestPlatform$));
   }
 
+  // Uploading may outlive a membership or binding change.
+  const deliveryAccess = await set(authorizeFileDelivery$, accessArgs, signal);
+  if (deliveryAccess.kind === "denied") {
+    return deliveryAccess.response;
+  }
   const deliveryInput = uploadedFileDelivery({
     installationId: installation.id,
     body,
-    userOpenId: user.openId,
+    userOpenId: deliveryAccess.userOpenId,
     fileKey: uploaded.value,
   });
   const delivery = deliveryInput

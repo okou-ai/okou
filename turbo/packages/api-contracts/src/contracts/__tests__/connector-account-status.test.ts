@@ -22,6 +22,7 @@ function payloads(target: ConnectorAccountTarget, setup: object) {
     externalUsername: "work-user",
     externalEmail: null,
     connectionStatus: "connected",
+    reconnectReason: null,
     ...setup,
   };
   const account = {
@@ -29,7 +30,6 @@ function payloads(target: ConnectorAccountTarget, setup: object) {
     target,
     isDefault: true,
     oauthScopes: [],
-    reconnectReason: null,
     tokenExpiresAt: null,
     createdAt: "2026-10-19T00:00:00.000Z",
     updatedAt: "2026-10-19T00:00:00.000Z",
@@ -42,7 +42,6 @@ function payloads(target: ConnectorAccountTarget, setup: object) {
       kind: "available",
       connectionId,
       target,
-      reconnectReason: null,
     },
     mcp: {
       target,
@@ -53,33 +52,31 @@ function payloads(target: ConnectorAccountTarget, setup: object) {
       endpoint: "https://mcp.example.test/server",
       runtimeAvailable: true,
       connectionStatus: "connected",
+      reconnectReason: null,
       ...setup,
     },
   };
 }
 
-describe.each(targets)("$kind account setup", (target) => {
+describe.each(targets)("$kind account status", (target) => {
   it.each([
     {
       missingRequiredFields: [],
       configuredFieldKeys: ["token"],
     },
     {
-      setupStatus: "complete",
-      missingRequiredFields: [],
-      configuredFieldKeys: ["token"],
-    },
-    {
-      setupStatus: "incomplete",
+      connectionStatus: "reconnect-required",
+      reconnectReason: "configuration_incomplete",
       missingRequiredFields: ["token"],
       configuredFieldKeys: [],
     },
     {
-      setupStatus: "invalid",
+      connectionStatus: "reconnect-required",
+      reconnectReason: "configuration_invalid",
       missingRequiredFields: [],
       configuredFieldKeys: ["token"],
     },
-  ])("preserves canonical setup metadata: %j", (setup) => {
+  ])("preserves canonical account status and field metadata: %j", (setup) => {
     const { account, inspection, mcp } = payloads(target, setup);
     expect(
       connectorAccountsContract.connections.responses[200].parse({
@@ -115,36 +112,5 @@ describe.each(targets)("$kind account setup", (target) => {
         connectors: [admitted],
       }),
     ).toStrictEqual({ connectors: [admitted] });
-  });
-
-  it.each([
-    "configuration_incomplete",
-    "configuration_invalid",
-    "account_unavailable",
-  ])("reads the upcoming %s account reason without legacy setup", (reason) => {
-    const { account, inspection } = payloads(target, {
-      missingRequiredFields: [],
-      configuredFieldKeys: [],
-    });
-    const canonicalAccount = {
-      ...account,
-      connectionStatus: "reconnect-required",
-      reconnectReason: reason,
-    };
-    expect(
-      connectorAccountsContract.connection.responses[200].parse(
-        canonicalAccount,
-      ),
-    ).toStrictEqual(canonicalAccount);
-    const canonicalInspection = {
-      ...inspection,
-      connectionStatus: "reconnect-required",
-      reconnectReason: reason,
-    };
-    expect(
-      connectorAccountsContract.inspect.responses[200].parse({
-        results: [canonicalInspection],
-      }),
-    ).toStrictEqual({ results: [canonicalInspection] });
   });
 });

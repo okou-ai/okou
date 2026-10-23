@@ -27,7 +27,6 @@ import {
   builtinConnectorManualGrantContract,
   builtinConnectorNoAuthGrantContract,
   builtinConnectorOauthDeviceAuthSessionContract,
-  builtinConnectorScopeDiffContract,
   builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
@@ -194,7 +193,6 @@ function mockAccountForConnector(
     externalEmail: connector.externalEmail,
     oauthScopes: connector.oauthScopes,
     connectionStatus: connector.connectionStatus,
-    setupStatus: "complete",
     missingRequiredFields: [],
     configuredFieldKeys: [],
     reconnectReason: connector.reconnectReason,
@@ -422,7 +420,6 @@ export const apiConnectorsHandlers = [
   mockApi(builtinConnectorsMainContract.list, ({ respond }) => {
     return respond(200, {
       connectors: mockConnectors,
-      connectorProvidedBindings: [],
     });
   }),
 
@@ -672,21 +669,6 @@ export const apiConnectorsHandlers = [
       }
       upsertMockConnector(connector);
       return respond(200, { connectionId: connector.id });
-    },
-  ),
-
-  mockApi(
-    builtinConnectorScopeDiffContract.getScopeDiff,
-    ({ params, respond }) => {
-      const connector = mockConnectors.find((candidate) => {
-        return candidate.slug === params.connectorSlug;
-      });
-      const diff = connector ? mockConnectorScopeDiff(connector) : null;
-      return diff
-        ? respond(200, diff)
-        : respond(404, {
-            error: { message: "Connector not found", code: "NOT_FOUND" },
-          });
     },
   ),
 

@@ -3,6 +3,7 @@ import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { and, desc, eq } from "drizzle-orm";
 import { command } from "ccstate";
+import { optionalEnv } from "../../lib/env";
 import {
   integrationsPhoneUploadCompleteContract,
   type PhoneUploadCompleteBody,
@@ -133,6 +134,12 @@ function outboundPhoneFileValues(args: PhoneFileDelivery) {
   };
 }
 
+const phoneNotConnected = routeError(
+  404,
+  "No phone is connected to this Okou account",
+  "NOT_FOUND",
+);
+
 const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const runId =
@@ -163,7 +170,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
 
   const db = get(db$);
-  const [link] = await db
+  const [userLink] = await db
     .select()
     .from(agentphoneUserLinks)
     .where(
@@ -174,37 +181,35 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     )
     .limit(1);
   signal.throwIfAborted();
-  const userLink = link ?? null;
   if (!userLink) {
-    return routeError(
-      404,
-      "No phone is connected to this Okou account",
-      "NOT_FOUND",
-    );
+    return phoneNotConnected;
   }
   const phoneHandle = userLink.phoneHandle;
   const userChannel = agentPhoneChannelForLinkedHandle(phoneHandle);
 
-  const agentRows = body.agentphoneAgentId
-    ? Promise.resolve([])
-    : db
-        .select({ agentphoneAgentId: agentphoneMessages.agentphoneAgentId })
-        .from(agentphoneMessages)
-        .where(
-          and(
-            eq(agentphoneMessages.agentphoneUserLinkId, userLink.id),
-            eq(
-              agentphoneMessages.phoneHandle,
-              normalizeAgentPhoneHandle(phoneHandle, userChannel),
-            ),
-          ),
-        )
-        .orderBy(desc(agentphoneMessages.createdAt))
-        .limit(1);
-  const [message] = await agentRows;
+  const [message] = await db
+    .select({ agentphoneAgentId: agentphoneMessages.agentphoneAgentId })
+    .from(agentphoneMessages)
+    .where(
+      and(
+        eq(agentphoneMessages.agentphoneUserLinkId, userLink.id),
+        body.agentphoneAgentId
+          ? eq(agentphoneMessages.agentphoneAgentId, body.agentphoneAgentId)
+          : undefined,
+        eq(
+          agentphoneMessages.phoneHandle,
+          normalizeAgentPhoneHandle(phoneHandle, userChannel),
+        ),
+      ),
+    )
+    .orderBy(desc(agentphoneMessages.createdAt))
+    .limit(1);
   signal.throwIfAborted();
   const agentphoneAgentId =
-    body.agentphoneAgentId || (message?.agentphoneAgentId ?? null);
+    body.agentphoneAgentId &&
+    body.agentphoneAgentId === optionalEnv("AGENTPHONE_AGENT_ID")
+      ? body.agentphoneAgentId
+      : (message?.agentphoneAgentId ?? null);
   if (!agentphoneAgentId) {
     return routeError(404, "Phone agent not found", "NOT_FOUND");
   }

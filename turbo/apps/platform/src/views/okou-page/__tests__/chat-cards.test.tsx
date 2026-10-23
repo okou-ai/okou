@@ -164,7 +164,6 @@ function mockExactReconnectAccount(
         externalEmail: null,
         oauthScopes: options?.accountAuthMethod === "oauth" ? [] : null,
         connectionStatus: exactReconnectCompleted ? "connected" : accountStatus,
-        setupStatus: "complete",
         missingRequiredFields: [],
         configuredFieldKeys: ["apiToken"],
         reconnectReason:
@@ -1179,7 +1178,6 @@ test("A connector account switch shows its connector icon from that connector's 
     connectorAccountsContract.connection,
     ({ params, respond }) => {
       return respond(200, {
-        setupStatus: "complete",
         missingRequiredFields: [],
         configuredFieldKeys: [],
         id: params.connectionId,

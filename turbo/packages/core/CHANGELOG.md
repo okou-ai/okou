@@ -1,5 +1,48 @@
 # Changelog
 
+## [8.780.2](https://github.com/okou-ai/okou/compare/core-v8.780.1...core-v8.780.2) (2026-10-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.589.2
+
+## [8.780.1](https://github.com/okou-ai/okou/compare/core-v8.780.0...core-v8.780.1) (2026-10-23)
+
+
+### Refactoring
+
+* **connectors:** retire unused builtin read projections ([#42437](https://github.com/okou-ai/okou/issues/42437)) ([dfb4154](https://github.com/okou-ai/okou/commit/dfb4154505e4c5c10b9ff329f180a7b68753fc88))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.589.1
+
+## [8.780.0](https://github.com/okou-ai/okou/compare/core-v8.779.1...core-v8.780.0) (2026-10-23)
+
+
+### Features
+
+* add durable image generation jobs and cli status queries ([#42352](https://github.com/okou-ai/okou/issues/42352)) ([328c79f](https://github.com/okou-ai/okou/commit/328c79f29a81e44e454ff155cd2416e78ea7860d))
+* add durable jobs and a proactive jobs loop ([#42404](https://github.com/okou-ai/okou/issues/42404)) ([c02f4b1](https://github.com/okou-ai/okou/commit/c02f4b14d603747e65b0ffb046dd10f3d0ade017))
+
+
+### Refactoring
+
+* **api:** remove sharp from image delivery ([#42379](https://github.com/okou-ai/okou/issues/42379)) ([34515b9](https://github.com/okou-ai/okou/commit/34515b93ce5500ddb352b3a4f4b7f4ec4d92e537))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.589.0
+
 ## [8.779.1](https://github.com/okou-ai/okou/compare/core-v8.779.0...core-v8.779.1) (2026-10-22)
 
 

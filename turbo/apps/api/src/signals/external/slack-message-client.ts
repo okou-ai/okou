@@ -192,15 +192,21 @@ function resolveSlackApiUrl(): string | undefined {
   return optionalEnv("SLACK_API_URL");
 }
 
-function buildWebClient(token: string): WebClient {
+function buildWebClient(token: string, automaticRetries = true): WebClient {
   const slackApiUrl = resolveSlackApiUrl();
   if (!slackApiUrl) {
-    return new WebClient(token);
+    return new WebClient(
+      token,
+      automaticRetries
+        ? undefined
+        : { retryConfig: { retries: 0 }, rejectRateLimitedCalls: true },
+    );
   }
 
   return new WebClient(token, {
     slackApiUrl,
-    retryConfig: { retries: 1 },
+    retryConfig: { retries: automaticRetries ? 1 : 0 },
+    rejectRateLimitedCalls: !automaticRetries,
     timeout: 5000,
   });
 }
@@ -713,8 +719,11 @@ async function fetchChannelMessages(
   return [...((result.messages ?? []) as SlackConversationMessage[])].reverse();
 }
 
-export function createSlackClient(token: string): SlackClient {
-  const web = buildWebClient(token);
+export function createSlackClient(
+  token: string,
+  options?: { automaticRetries: boolean },
+): SlackClient {
+  const web = buildWebClient(token, options?.automaticRetries);
 
   return {
     openDMChannel: (userId) => {

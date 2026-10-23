@@ -54,6 +54,9 @@ Examples:
   Upload a file:    okou phone upload-file -f /tmp/report.pdf
   With a caption:   okou phone upload-file -f /tmp/photo.jpg -t "Here it is"
 
+Notes:
+  - --as selects the official bot or an agent already used in your linked conversation
+
 Output:
   Prints "✓ File uploaded" with the message ID, destination number, and file URL.
   With --json, prints one JSON object:

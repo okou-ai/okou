@@ -1,4 +1,3 @@
-import { connectorAccountSetupIsComplete } from "@okouai/api-contracts/contracts/connector-accounts";
 import { Command, Option } from "commander";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorRuntimeTarget } from "@okouai/api-contracts/contracts/runners";
@@ -76,7 +75,6 @@ interface BuiltinDiagContext extends DiagContext {
 type ConnectorConfigurationStatus = {
   readonly isConnected: boolean;
   readonly needsReconnect: boolean;
-  readonly isSetupComplete: boolean;
 } & (
   | {
       readonly runAccount: RunConnectorAccountLookup;
@@ -174,8 +172,8 @@ function printRunConnectionStatus(
   }
   console.log(`Account used by this run: ${runAccount.label}`);
   console.log(`Connection ID: ${runAccount.connectionId}`);
-  if (runAccount.metadata.setupStatus !== undefined) {
-    console.log(`Setup status: ${runAccount.metadata.setupStatus}`);
+  if (runAccount.metadata.reconnectReason) {
+    console.log(`Reconnect reason: ${runAccount.metadata.reconnectReason}`);
   }
   if (runAccount.metadata.missingRequiredFields.length > 0) {
     console.log(
@@ -192,17 +190,6 @@ function printRunConnectionStatus(
     console.log(`Reconnect it at: [Reconnect ${ctx.label}](${url})`);
     printCallbackActionUrlExample(url, ctx.agentId);
     console.log("After reconnecting, start a new run.");
-  } else if (!connectorAccountSetupIsComplete(runAccount.metadata)) {
-    const url = connectorActionUrl({
-      origin: ctx.platformOrigin,
-      path: "/connectors",
-      agentId: ctx.agentId,
-    });
-    console.log(
-      "The account selected for this run requires configuration review.",
-    );
-    console.log(`Review it at: [Manage ${ctx.label} accounts](${url})`);
-    console.log("After updating the account, start a new run.");
   } else {
     console.log(`The ${ctx.label} connector is connected and active.`);
   }
@@ -311,7 +298,6 @@ function checkEnvironmentNames(ctx: DiagContext): void {
 async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
   readonly isConnected: boolean;
   readonly needsReconnect: boolean;
-  readonly isSetupComplete: boolean;
   readonly hasPermission: boolean;
 }> {
   console.log("## Step 2: Connector configuration");
@@ -332,9 +318,6 @@ async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
           }
           return {
             isConnected: runAccount.state === "available",
-            isSetupComplete:
-              runAccount.state === "available" &&
-              connectorAccountSetupIsComplete(runAccount.metadata),
             needsReconnect:
               runAccount.state === "available" &&
               runAccount.metadata.connectionStatus === "reconnect-required",
@@ -351,9 +334,6 @@ async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
               facts.memberStatus === "connected" ||
               facts.memberStatus === "reconnect-required",
             needsReconnect: facts.memberStatus === "reconnect-required",
-            isSetupComplete: connectorAccountSetupIsComplete(
-              facts.accountSummary?.defaultConnection,
-            ),
             runAccount: null,
             memberFacts: facts,
           } satisfies ConnectorConfigurationStatus;
@@ -373,7 +353,6 @@ async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
   return {
     isConnected: configuration.isConnected,
     needsReconnect: configuration.needsReconnect,
-    isSetupComplete: configuration.isSetupComplete,
     hasPermission,
   };
 }
@@ -872,7 +851,6 @@ Permission recovery:
       } else if (
         status?.isConnected &&
         !status.needsReconnect &&
-        status.isSetupComplete &&
         status.hasPermission
       ) {
         console.log(

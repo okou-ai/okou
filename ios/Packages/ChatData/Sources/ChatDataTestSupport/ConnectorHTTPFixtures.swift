@@ -11,15 +11,16 @@ public enum ConnectorHTTPFixtures {
     {"id":"\(threadID)","agentId":"\(agentID)","cloudBrowserEnabled":false,"computerUseHostId":null}
     """
   public static func account(
-    id: String = accountID, custom: Bool = false, connected: Bool = true, setup: Bool = true,
-    isDefault: Bool = true
+    id: String = accountID, custom: Bool = false, connected: Bool = true,
+    reconnectReason: String? = nil, isDefault: Bool = true
   ) -> String {
     let target =
       custom
       ? "{\"kind\":\"custom\",\"customConnectorId\":\"\(customID)\"}"
       : "{\"kind\":\"builtin\",\"connectorSlug\":\"slack\"}"
+    let reason = reconnectReason.map { "\"\($0)\"" } ?? "null"
     return """
-      {"id":"\(id)","target":\(target),"authMethod":"oauth","displayName":"Work account","isDefault":\(isDefault),"externalEmail":"work@example.invalid","externalUsername":null,"externalId":null,"oauthScopes":null,"connectionStatus":"\(connected ? "connected" : "reconnect-required")","reconnectReason":null,"tokenExpiresAt":null,"missingRequiredFields":[],"configuredFieldKeys":[],"createdAt":"2026-10-21T00:00:00Z","updatedAt":"2026-10-21T00:00:00Z"\(setup ? ",\"setupStatus\":\"complete\"" : "")}
+      {"id":"\(id)","target":\(target),"authMethod":"oauth","displayName":"Work account","isDefault":\(isDefault),"externalEmail":"work@example.invalid","externalUsername":null,"externalId":null,"oauthScopes":null,"connectionStatus":"\(connected ? "connected" : "reconnect-required")","reconnectReason":\(reason),"tokenExpiresAt":null,"missingRequiredFields":[],"configuredFieldKeys":[],"createdAt":"2026-10-21T00:00:00Z","updatedAt":"2026-10-21T00:00:00Z"}
       """
   }
   public static func catalog(grantKind: String = "none") -> String {

@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.236.21](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.20...runner-rs-v0.236.21) (2026-10-23)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.236.20](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.19...runner-rs-v0.236.20) (2026-10-23)
+
+
+### Bug Fixes
+
+* **runner:** start snapshot warming under supervised ownership ([#42430](https://github.com/okou-ai/okou/issues/42430)) ([9eeb785](https://github.com/okou-ai/okou/commit/9eeb785fc508e7948a905b645e39c8a1cb3a4ddc))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.236.19](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.18...runner-rs-v0.236.19) (2026-10-23)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.236.18](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.17...runner-rs-v0.236.18) (2026-10-22)
 
 

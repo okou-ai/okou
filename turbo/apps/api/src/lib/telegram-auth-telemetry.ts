@@ -16,18 +16,18 @@ export function isTelegramAuthTelemetryUrl(value: string): boolean {
 }
 
 /** Drop the whole callback event: proof can also occur in request/error data. */
-export function filterTelegramAuthSentryEvent(
-  event: ErrorEvent,
-): ErrorEvent | null {
+export function filterTelegramAuthSentryEvent<
+  T extends Pick<ErrorEvent, "request">,
+>(event: T): T | null {
   return event.request?.url && isTelegramAuthTelemetryUrl(event.request.url)
     ? null
     : event;
 }
 
 /** Do not let callback HTTP breadcrumbs escape on a later unrelated event. */
-export function filterTelegramAuthSentryBreadcrumb(
-  breadcrumb: Breadcrumb,
-): Breadcrumb | null {
+export function filterTelegramAuthSentryBreadcrumb<
+  T extends Pick<Breadcrumb, "data">,
+>(breadcrumb: T): T | null {
   return breadcrumb.data &&
     Object.values(breadcrumb.data).some((value) => {
       return typeof value === "string" && isTelegramAuthTelemetryUrl(value);

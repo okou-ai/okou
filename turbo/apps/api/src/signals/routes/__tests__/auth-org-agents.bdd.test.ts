@@ -950,7 +950,6 @@ describe("AGENT-01 and AGENT-02", () => {
     ).resolves.toStrictEqual([
       expect.objectContaining({
         connectionStatus: "connected",
-        setupStatus: "complete",
       }),
     ]);
     expect(JSON.stringify(builtinConnectorList)).not.toContain(

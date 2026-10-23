@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "1.357.2",
+  "version": "1.358.2",
   "private": true,
   "type": "module",
   "exports": {
@@ -65,8 +65,7 @@
     "billing:attribution": "tsx scripts/billing-attribution.ts",
     "billing:pi-memory-stage1": "tsx scripts/pi-memory-stage1-cost.ts",
     "test:pi-memory-stage1-cost": "tsx scripts/test-pi-memory-stage1-cost.ts",
-    "test:migration-smoke-diagnostics": "tsx scripts/test-migration-smoke-diagnostics.ts",
-    "test:pi-memory-retirement": "tsx scripts/test-pi-memory-retirement.ts"
+    "test:migration-smoke-diagnostics": "tsx scripts/test-migration-smoke-diagnostics.ts"
   },
   "dependencies": {
     "@okouai/api-contracts": "workspace:*",

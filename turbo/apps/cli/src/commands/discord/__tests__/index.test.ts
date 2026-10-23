@@ -265,6 +265,33 @@ describe("okou discord", () => {
     expect(printed).toContain(`${before}  ${secondUrl}`);
   });
 
+  it.each(["me", `user:${message.author.id}`])(
+    "addresses a bot DM with --to %s",
+    async (target) => {
+      let body: unknown;
+      server.use(
+        http.post(`${baseUrl}/message`, async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json({
+            messages: [{ id: messageId, channelId, url: messageUrl }],
+          });
+        }),
+      );
+      await runDiscordCommand([
+        "message",
+        "send",
+        "--to",
+        target,
+        "--text",
+        "Hello recipient",
+      ]);
+      expect(body).toStrictEqual({
+        userId: target === "me" ? "me" : message.author.id,
+        text: "Hello recipient",
+      });
+    },
+  );
+
   it("sends an exact reply reference without changing the destination", async () => {
     let body: unknown;
     server.use(

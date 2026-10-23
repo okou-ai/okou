@@ -542,7 +542,8 @@
       "upload": "Google Drive にアップロード",
       "uploadDocs": "Google ドキュメントにアップロード",
       "uploadSheets": "Google スプレッドシートにアップロード",
-      "uploadSlides": "Google Slides にアップロード"
+      "uploadSlides": "Google Slides にアップロード",
+      "viewIt": "開く"
     },
     "jsonPreview": {
       "allShown": "すべての項目を表示済み",

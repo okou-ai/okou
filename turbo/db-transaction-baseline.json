@@ -77,11 +77,6 @@
       "owner": "syncFileArtifact$"
     },
     {
-      "id": "TX-0063",
-      "file": "turbo/apps/api/src/signals/services/billing-downgrade.service.ts",
-      "owner": "publishDowngrade$"
-    },
-    {
       "id": "TX-0064",
       "file": "turbo/apps/api/src/signals/services/billing-restore.service.ts",
       "owner": "restoreSubscription$"
@@ -90,11 +85,6 @@
       "id": "TX-0066",
       "file": "turbo/apps/api/src/signals/services/browser-user-actions.service.ts",
       "owner": "persistBrowserUserAction"
-    },
-    {
-      "id": "TX-0069",
-      "file": "turbo/apps/api/src/signals/services/browser.service.ts",
-      "owner": "claimStartedProviderInstance$"
     },
     {
       "id": "TX-0073",
@@ -175,26 +165,6 @@
       "id": "TX-0119",
       "file": "turbo/apps/api/src/signals/services/connector-data.service.ts",
       "owner": "upsertBuiltinConnectorTokenConnection$"
-    },
-    {
-      "id": "TX-0124",
-      "file": "turbo/apps/api/src/signals/services/cron-billing-entitlements.service.ts",
-      "owner": "refreshRecoveredBillingCandidate"
-    },
-    {
-      "id": "TX-0125",
-      "file": "turbo/apps/api/src/signals/services/cron-billing-entitlements.service.ts",
-      "owner": "refreshPaymentFailedPaidThroughCandidate"
-    },
-    {
-      "id": "TX-0126",
-      "file": "turbo/apps/api/src/signals/services/cron-billing-entitlements.service.ts",
-      "owner": "downgradePaymentFailedBillingCandidate"
-    },
-    {
-      "id": "TX-0127",
-      "file": "turbo/apps/api/src/signals/services/cron-billing-entitlements.service.ts",
-      "owner": "reconcileAtomGrantCandidate"
     },
     {
       "id": "TX-0128",
@@ -507,11 +477,6 @@
       "owner": "persistDeferredSubscriptionChangeSchedule"
     },
     {
-      "id": "TX-0293",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
-      "owner": "failExpiredPendingSubscriptionChange"
-    },
-    {
       "id": "TX-0298",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
       "owner": "materializeUsagePackSnapshot$"
@@ -530,11 +495,6 @@
       "id": "TX-0304",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
       "owner": "commitUsagePackPlanActivation$"
-    },
-    {
-      "id": "TX-0305",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
-      "owner": "commitUsagePackFulfillment$"
     },
     {
       "id": "TX-0306",
@@ -577,19 +537,9 @@
       "owner": "publishAtomPlanInvoice$"
     },
     {
-      "id": "TX-0327",
-      "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
-      "owner": "publishConcurrencyInvoice$"
-    },
-    {
       "id": "TX-0329",
       "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
       "owner": "publishLegacyPlanSubscription$"
-    },
-    {
-      "id": "TX-0330",
-      "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
-      "owner": "handleSubscriptionScheduleReleased"
     },
     {
       "id": "TX-0332",

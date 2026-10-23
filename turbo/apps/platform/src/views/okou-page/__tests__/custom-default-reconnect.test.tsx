@@ -143,7 +143,6 @@ test.each([1, 2])(
           account: {
             id: account.id,
             missingRequiredFields: [],
-            setupStatus: "complete",
           },
         });
         return respond(200, { ...connector, connectionId: account.id });
@@ -189,7 +188,6 @@ test("Reconnect the current default when a healthy sibling exists", async () => 
       id: defaultConnectionId,
       missingRequiredFields: [],
       configuredFieldKeys: ["secret"],
-      setupStatus: "complete",
     },
   });
   const account = customConnectorAccount(connector.id, {
@@ -318,7 +316,6 @@ function installOAuthFlow(state: PreflightState, complete = false) {
           account: {
             id: account.id,
             missingRequiredFields: [],
-            setupStatus: "complete",
           },
         });
       }

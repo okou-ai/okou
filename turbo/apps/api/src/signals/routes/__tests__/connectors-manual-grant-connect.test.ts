@@ -9,7 +9,6 @@ import {
 import {
   builtinConnectorManualGrantContract,
   builtinConnectorNoAuthGrantContract,
-  builtinConnectorsBySlugContract,
   builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
@@ -147,15 +146,20 @@ async function readConnector(
   connectorSlug: (typeof CONNECTOR_SLUGS_TO_CLEAN_UP)[number],
 ) {
   mocks.clerk.session(fixture.userId, fixture.orgId);
-  return await accept(
-    setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsBySlugContract,
-    ).get({
-      params: { connectorSlug },
+  const response = await accept(
+    setupApp({ context, routes: connectorAccountRoutes })(
+      connectorAccountsContract,
+    ).connections({
+      query: { kind: "builtin", connectorSlug },
       headers: authHeaders(),
     }),
     [200],
   );
+  const account = response.body.defaultConnection;
+  if (!account) {
+    throw new Error("Expected a saved default connector account");
+  }
+  return account;
 }
 
 describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
@@ -318,8 +322,8 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
 
     expect(response.body).toStrictEqual({ connectionId: expect.any(String) });
     const stored = await readConnector(fixture, "openai");
-    expect(stored.body).toMatchObject({
-      slug: "openai",
+    expect(stored).toMatchObject({
+      target: { kind: "builtin", connectorSlug: "openai" },
       authMethod: "api-token",
       connectionStatus: "connected",
     });
@@ -450,7 +454,7 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
     expect(wrongTarget.body.error.message).toBe("Connector account not found");
 
     const stored = await readConnector(fixture, "openai");
-    expect(stored.body.id).toBe(added.body.connectionId);
+    expect(stored.id).toBe(added.body.connectionId);
   });
 
   it("allows concurrent first-account adds", async () => {
@@ -505,51 +509,14 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
 
     expect(response.body).toStrictEqual({ connectionId: expect.any(String) });
     const stored = await readConnector(fixture, "test-subdomain");
-    expect(stored.body.authMethod).toBe("api-token");
+    expect(stored.authMethod).toBe("api-token");
 
-    expect(stored.body).toMatchObject({
+    expect(stored).toMatchObject({
       id: response.body.connectionId,
       connectionStatus: "connected",
     });
     const actor = createBddApi(context).user(fixture);
-    const connectorsApi = createConnectorBddApi(context);
-    expect(
-      (await connectorsApi.listBuiltinConnectors(actor))
-        .connectorProvidedBindings,
-    ).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "test-subdomain",
-        authMethod: "api-token",
-        name: "SUBDOMAIN_TEST_API_TOKEN",
-        source: { kind: "connector-secret", name: "SUBDOMAIN_TEST_API_TOKEN" },
-      }),
-    );
-    expect(
-      (await connectorsApi.listBuiltinConnectors(actor))
-        .connectorProvidedBindings,
-    ).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "test-subdomain",
-        authMethod: "api-token",
-        name: "SUBDOMAIN_TEST_EMAIL",
-        source: { kind: "connector-variable", name: "SUBDOMAIN_TEST_EMAIL" },
-      }),
-    );
-    expect(
-      (await connectorsApi.listBuiltinConnectors(actor))
-        .connectorProvidedBindings,
-    ).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "test-subdomain",
-        authMethod: "api-token",
-        name: "SUBDOMAIN_TEST_SUBDOMAIN",
-        source: {
-          kind: "connector-variable",
-          name: "SUBDOMAIN_TEST_SUBDOMAIN",
-        },
-      }),
-    );
-    expect(JSON.stringify(stored.body)).not.toContain("test-subdomain-token");
+    expect(JSON.stringify(stored)).not.toContain("test-subdomain-token");
     await withConnectorRuntime(
       context,
       actor,
@@ -601,17 +568,6 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
     await expect(
       connectorsApi.listBuiltinConnectorAccounts(actor, "test-subdomain"),
     ).resolves.toStrictEqual([]);
-    await connectorsApi.requestReadConnectorBySlug(
-      actor,
-      "test-subdomain",
-      [404],
-    );
-    expect(
-      (await connectorsApi.listBuiltinConnectors(actor))
-        .connectorProvidedBindings,
-    ).not.toContainEqual(
-      expect.objectContaining({ connectorSlug: "test-subdomain" }),
-    );
   });
 
   it("normalizes a full URL host field for manual grant connectors", async () => {
@@ -638,7 +594,7 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
 
     expect(response.body).toStrictEqual({ connectionId: expect.any(String) });
     const stored = await readConnector(fixture, "insforge");
-    expect(stored.body.authMethod).toBe("api-token");
+    expect(stored.authMethod).toBe("api-token");
   });
 
   it("connects Lark app credentials through the API", async () => {
@@ -665,7 +621,7 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
 
     expect(response.body).toStrictEqual({ connectionId: expect.any(String) });
     const stored = await readConnector(fixture, "lark");
-    expect(stored.body.connectionStatus).toBe("connected");
+    expect(stored.connectionStatus).toBe("connected");
   });
 
   it("reconnects Lark manual grant state through the API", async () => {
@@ -706,7 +662,7 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
     );
 
     const stored = await readConnector(fixture, "lark");
-    expect(stored.body).toMatchObject({
+    expect(stored).toMatchObject({
       authMethod: "api-token",
       connectionStatus: "connected",
       reconnectReason: null,
@@ -757,7 +713,7 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
     );
 
     const getResponse = await readConnector(fixture, "test-oauth");
-    expect(getResponse.body.authMethod).toBe("api-token");
+    expect(getResponse.authMethod).toBe("api-token");
   });
 
   it("replaces GitLab manual grant when optional fields are omitted", async () => {
@@ -795,8 +751,8 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
     );
 
     const stored = await readConnector(fixture, "gitlab");
-    expect(stored.body).toMatchObject({
-      slug: "gitlab",
+    expect(stored).toMatchObject({
+      target: { kind: "builtin", connectorSlug: "gitlab" },
       authMethod: "api-token",
       connectionStatus: "connected",
     });

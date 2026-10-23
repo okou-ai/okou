@@ -9,7 +9,6 @@ import {
 import {
   builtinConnectorManualGrantContract,
   builtinConnectorNoAuthGrantContract,
-  builtinConnectorsBySlugContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
   customConnectorByIdContract,
@@ -66,10 +65,6 @@ function accountClient() {
 
 function connectorClient() {
   return setupApp({ context, routes })(builtinConnectorManualGrantContract);
-}
-
-function connectorProjectionClient() {
-  return setupApp({ context, routes })(builtinConnectorsBySlugContract);
 }
 
 function customConnectorClient() {
@@ -306,7 +301,6 @@ describe("connector account lifecycle routes", () => {
     expect(response.body.defaultConnection).toMatchObject({
       target: { kind: "custom", customConnectorId: definition.id },
       connectionStatus: "connected",
-      setupStatus: "complete",
       missingRequiredFields: [],
       configuredFieldKeys: [],
     });
@@ -331,7 +325,6 @@ describe("connector account lifecycle routes", () => {
     expect(sibling).toMatchObject({
       isDefault: false,
       connectionStatus: "connected",
-      setupStatus: "complete",
       configuredFieldKeys: [],
     });
     if (!sibling) {
@@ -388,7 +381,6 @@ describe("connector account lifecycle routes", () => {
       id: sibling.id,
       isDefault: false,
       connectionStatus: "connected",
-      setupStatus: "complete",
       missingRequiredFields: [],
       configuredFieldKeys: [],
     });
@@ -491,7 +483,6 @@ describe("connector account lifecycle routes", () => {
       id: healthy.body.connectionId,
       isDefault: false,
       connectionStatus: "connected",
-      setupStatus: "complete",
       missingRequiredFields: [],
       configuredFieldKeys: ["api_key", "region"],
     });
@@ -514,7 +505,8 @@ describe("connector account lifecycle routes", () => {
     expect(stale.body).toMatchObject({
       id: defaultAccount.body.connectionId,
       isDefault: true,
-      setupStatus: "invalid",
+      connectionStatus: "reconnect-required",
+      reconnectReason: "configuration_invalid",
       configuredFieldKeys: [],
       missingRequiredFields: ["api_key", "region"],
     });
@@ -544,7 +536,8 @@ describe("connector account lifecycle routes", () => {
       id: defaultAccount.body.connectionId,
       target,
       isDefault: true,
-      setupStatus: "invalid",
+      connectionStatus: "reconnect-required",
+      reconnectReason: "configuration_invalid",
     });
     expect(after.body.connections).toHaveLength(2);
     expect(after.body.connections).toContainEqual(
@@ -552,7 +545,6 @@ describe("connector account lifecycle routes", () => {
         id: healthy.body.connectionId,
         target,
         isDefault: false,
-        setupStatus: "complete",
         missingRequiredFields: [],
         configuredFieldKeys: ["api_key", "region"],
       }),
@@ -598,7 +590,6 @@ describe("connector account lifecycle routes", () => {
       externalEmail: null,
       connectionStatus: "connected",
       reconnectReason: null,
-      setupStatus: "complete",
       missingRequiredFields: [],
       configuredFieldKeys: ["apiKey"],
     };
@@ -793,7 +784,6 @@ describe("connector account lifecycle routes", () => {
         );
         expect(account.body).toMatchObject({
           connectionStatus: "connected",
-          setupStatus: "complete",
         });
         expect(connected.body.connectionId).toStrictEqual(expect.any(String));
         if (!connected.body.connectionId) {
@@ -1264,15 +1254,6 @@ describe("connector account lifecycle routes", () => {
       explicitSelectionCount: 0,
       hasSibling: true,
     });
-
-    const legacyProjection = await accept(
-      connectorProjectionClient().get({
-        headers: authHeaders(),
-        params: { connectorSlug: "openai" },
-      }),
-      [200],
-    );
-    expect(legacyProjection.body.id).toBe(second.body.connectionId);
 
     const impact = await accept(
       accountClient().deletionImpact({
@@ -2049,7 +2030,6 @@ describe("connector account lifecycle routes", () => {
           isDefault: true,
           connectionStatus: "connected",
           reconnectReason: null,
-          setupStatus: "complete",
           missingRequiredFields: [],
           configuredFieldKeys: [],
         },
@@ -2168,7 +2148,6 @@ describe("connector account lifecycle routes", () => {
         );
         expect(completedAccount.body).toMatchObject({
           connectionStatus: "connected",
-          setupStatus: "complete",
           configuredFieldKeys: ["secret"],
           missingRequiredFields: [],
         });
@@ -2278,7 +2257,6 @@ describe("connector account lifecycle routes", () => {
           externalEmail: null,
           connectionStatus: "connected",
           reconnectReason: null,
-          setupStatus: "complete",
           missingRequiredFields: [],
           configuredFieldKeys: ["secret"],
         },

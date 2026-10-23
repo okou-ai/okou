@@ -12,6 +12,73 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1056.3](https://github.com/okou-ai/okou/compare/app-v0.1056.2...app-v0.1056.3) (2026-10-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.589.2
+    * @okouai/core bumped to 8.780.2
+
+## [0.1056.2](https://github.com/okou-ai/okou/compare/app-v0.1056.1...app-v0.1056.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* **app:** add a view link to google drive sync confirmation ([#42477](https://github.com/okou-ai/okou/issues/42477)) ([14d3662](https://github.com/okou-ai/okou/commit/14d3662ed39fd8bd299cde890db7bfbc7b180472))
+
+
+### Refactoring
+
+* **connectors:** retire unused builtin read projections ([#42437](https://github.com/okou-ai/okou/issues/42437)) ([dfb4154](https://github.com/okou-ai/okou/commit/dfb4154505e4c5c10b9ff329f180a7b68753fc88))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.589.1
+    * @okouai/core bumped to 8.780.1
+
+## [0.1056.1](https://github.com/okou-ai/okou/compare/app-v0.1056.0...app-v0.1056.1) (2026-10-23)
+
+
+### Performance Improvements
+
+* reduce sidebar menu and jobs fixture work ([#42462](https://github.com/okou-ai/okou/issues/42462)) ([284b4fd](https://github.com/okou-ai/okou/commit/284b4fd8d25ffde4908a7f94f0689daf3d6261dd))
+
+## [0.1056.0](https://github.com/okou-ai/okou/compare/app-v0.1055.1...app-v0.1056.0) (2026-10-23)
+
+
+### Features
+
+* add durable jobs and a proactive jobs loop ([#42404](https://github.com/okou-ai/okou/issues/42404)) ([c02f4b1](https://github.com/okou-ai/okou/commit/c02f4b14d603747e65b0ffb046dd10f3d0ade017))
+
+
+### Bug Fixes
+
+* **platform:** derive thread email navigation from urls ([#42386](https://github.com/okou-ai/okou/issues/42386)) ([743b6ca](https://github.com/okou-ai/okou/commit/743b6caa112288e9d925e0048ea8d1b1a9584bd6))
+
+
+### Refactoring
+
+* **connector:** activate canonical account status ([#42333](https://github.com/okou-ai/okou/issues/42333)) ([dc3fba8](https://github.com/okou-ai/okou/commit/dc3fba8d008ee10e4d65b9485a9fca63431face3))
+
+
+### Performance Improvements
+
+* reduce resource tooltip and workflow fixture work ([#42429](https://github.com/okou-ai/okou/issues/42429)) ([d6eb8c0](https://github.com/okou-ai/okou/commit/d6eb8c0251e68a4755cbe29dd5f1d34d90468773))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.589.0
+    * @okouai/core bumped to 8.780.0
+
 ## [0.1055.1](https://github.com/okou-ai/okou/compare/app-v0.1055.0...app-v0.1055.1) (2026-10-22)
 
 

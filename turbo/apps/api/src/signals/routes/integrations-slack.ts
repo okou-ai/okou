@@ -16,11 +16,15 @@ import { authRoute } from "../auth/auth-route";
 import { queryOf } from "../context/request";
 import { request$ } from "../context/hono";
 import {
-  slackOrgInstallation,
   slackOrgStatus,
+  slackUserInstallation,
 } from "../services/slack-data.service";
 import { publishSlackAdminSignal$ } from "../services/slack-connect.service";
-import { getFileInfo, isSlackApiClientError } from "../../lib/slack-client";
+import {
+  getFileInfo,
+  isSlackApiClientError,
+  isSlackFileShared,
+} from "../../lib/slack-client";
 import {
   fetchSlackFile,
   isSlackFileFetchError,
@@ -482,96 +486,131 @@ const slackDownloadInstallationInput$ = computed(
     return { orgId: auth.orgId, userId: auth.userId };
   },
 );
-const slackDownloadInstallation$ = slackOrgInstallation(
+const slackDownloadInstallation$ = slackUserInstallation(
   slackDownloadInstallationInput$,
 );
 
-const getSlackDownloadFileInner$ = computed(async (get) => {
-  get(organizationAuthContext$);
-  const query = get(queryOf(integrationsSlackDownloadFileContract.download));
-  const fileId = query.file_id;
+const getSlackDownloadFileInner$ = command(
+  async ({ get }, signal: AbortSignal) => {
+    get(organizationAuthContext$);
+    const query = get(queryOf(integrationsSlackDownloadFileContract.download));
+    const fileId = query.file_id;
 
-  if (!fileId) {
-    return jsonErrorResponse(
-      400,
-      "file_id query parameter is required",
-      "BAD_REQUEST",
-    );
-  }
-
-  const installation = await get(slackDownloadInstallation$);
-  if (!installation) {
-    return jsonErrorResponse(
-      404,
-      "No Slack installation found for this org",
-      "NOT_FOUND",
-    );
-  }
-
-  const fileInfoResult = await settle(
-    getFileInfo(installation.botToken, fileId),
-  );
-  if (!fileInfoResult.ok) {
-    const response = slackApiErrorResponse(fileInfoResult.error);
-    if (response) {
-      return response;
+    if (!fileId) {
+      return jsonErrorResponse(
+        400,
+        "file_id query parameter is required",
+        "BAD_REQUEST",
+      );
     }
-    throw fileInfoResult.error;
-  }
-  const fileInfo = fileInfoResult.value;
 
-  const downloadUrl = fileInfo.url_private_download ?? fileInfo.url_private;
-  if (!downloadUrl) {
-    return jsonErrorResponse(
-      404,
-      "File does not have a downloadable URL",
-      "NOT_FOUND",
-    );
-  }
-
-  if (fileInfo.size > MAX_SLACK_FILE_SIZE_BYTES) {
-    return jsonErrorResponse(
-      413,
-      `File exceeds maximum size of ${MAX_SLACK_FILE_SIZE_BYTES} bytes`,
-      "PAYLOAD_TOO_LARGE",
-    );
-  }
-
-  const fileResponseResult = await settle(
-    fetchSlackFile(downloadUrl, installation.botToken),
-  );
-  if (!fileResponseResult.ok) {
-    const response = slackFileFetchErrorResponse(fileResponseResult.error);
-    if (response) {
-      return response;
+    const installation = await get(slackDownloadInstallation$);
+    signal.throwIfAborted();
+    if (installation.kind !== "connected") {
+      return jsonErrorResponse(
+        404,
+        "No Slack installation found for this org",
+        "NOT_FOUND",
+      );
     }
-    throw fileResponseResult.error;
-  }
-  const fileResponse = fileResponseResult.value;
 
-  const responseContentType = fileResponse.headers.get("content-type") ?? "";
-  if (responseContentType.includes("text/html")) {
-    return jsonErrorResponse(
-      502,
-      "Slack returned an unexpected response (likely expired token)",
-      "BAD_GATEWAY",
+    const fileInfoResult = await settle(
+      getFileInfo(installation.botToken, fileId, signal),
+      signal,
     );
-  }
+    if (!fileInfoResult.ok) {
+      const response = slackApiErrorResponse(fileInfoResult.error);
+      if (response) {
+        return response;
+      }
+      throw fileInfoResult.error;
+    }
+    const fileInfo = fileInfoResult.value;
+    if (fileInfo.id !== fileId) {
+      return jsonErrorResponse(
+        404,
+        "Slack file is unavailable to your connected account",
+        "NOT_FOUND",
+      );
+    }
+    const access = await settle(
+      isSlackFileShared(
+        installation.botToken,
+        installation.slackUserId,
+        fileInfo,
+        signal,
+      ),
+      signal,
+    );
+    if (!access.ok) {
+      const response = slackApiErrorResponse(access.error);
+      if (response) {
+        return response;
+      }
+      throw access.error;
+    }
+    if (!access.value) {
+      return jsonErrorResponse(
+        404,
+        "Slack file is unavailable to your connected account",
+        "NOT_FOUND",
+      );
+    }
 
-  const headers = new Headers();
-  const contentLength = fileResponse.headers.get("content-length");
-  const contentType =
-    fileInfo.mimetype || responseContentType || "application/octet-stream";
+    const downloadUrl = fileInfo.url_private_download ?? fileInfo.url_private;
+    if (!downloadUrl) {
+      return jsonErrorResponse(
+        404,
+        "File does not have a downloadable URL",
+        "NOT_FOUND",
+      );
+    }
 
-  headers.set("Content-Type", contentType);
-  headers.set("X-File-Name", encodeURIComponent(fileInfo.name ?? fileId));
-  headers.set("X-File-Mimetype", contentType);
-  if (contentLength) {
-    headers.set("Content-Length", contentLength);
-  }
+    if (fileInfo.size > MAX_SLACK_FILE_SIZE_BYTES) {
+      return jsonErrorResponse(
+        413,
+        `File exceeds maximum size of ${MAX_SLACK_FILE_SIZE_BYTES} bytes`,
+        "PAYLOAD_TOO_LARGE",
+      );
+    }
 
-  return new Response(fileResponse.body, { status: 200, headers });
-});
+    const fileResponseResult = await settle(
+      fetchSlackFile(downloadUrl, installation.botToken, signal),
+      signal,
+    );
+    if (!fileResponseResult.ok) {
+      const response = slackFileFetchErrorResponse(fileResponseResult.error);
+      if (response) {
+        return response;
+      }
+      throw fileResponseResult.error;
+    }
+    const fileResponse = fileResponseResult.value;
+
+    const responseContentType = fileResponse.headers.get("content-type") ?? "";
+    if (responseContentType.includes("text/html")) {
+      return jsonErrorResponse(
+        502,
+        "Slack returned an unexpected response (likely expired token)",
+        "BAD_GATEWAY",
+      );
+    }
+
+    const headers = new Headers();
+    const contentLength = fileResponse.headers.get("content-length");
+    const contentType =
+      fileInfo.mimetype || responseContentType || "application/octet-stream";
+
+    headers.set("Content-Type", contentType);
+    headers.set("X-File-Name", encodeURIComponent(fileInfo.name ?? fileId));
+    headers.set("X-File-Mimetype", contentType);
+    if (contentLength) {
+      headers.set("Content-Length", contentLength);
+    }
+
+    return new Response(fileResponse.body, { status: 200, headers });
+  },
+);
 
 const slackReadAuth = {
   requireOrganization: true,
@@ -580,7 +619,7 @@ const slackReadAuth = {
 
 const slackDownloadAuth = {
   ...slackReadAuth,
-  requiredCapability: "slack:write",
+  requiredCapability: "slack:read",
 } as const;
 
 export const integrationsSlackRoutes: readonly RouteEntry[] = [

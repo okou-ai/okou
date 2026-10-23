@@ -115,6 +115,9 @@
 //! Its rootfs `before`/`after` and post-cleanup `home` values are
 //! [`FilesystemCapacity`](guest_contracts::reuse_preparation::FilesystemCapacity) records, and
 //! `removedEntries` reports the number of unprotected direct children removed.
+//! A home below its byte or inode reserve also gets one fixed npm/pip cache
+//! reclamation attempt before the report. Healthy homes retain package caches;
+//! current/retained runtimes and ordinary user files remain protected.
 //! Helper failures are written to stderr and use these stable exit codes:
 //!
 //! - [`REUSE_PREPARATION_EXIT_SUCCESS`](guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_SUCCESS)
@@ -151,7 +154,12 @@
 //! containment, no-follow, mount and identity checks before mutation. Once required
 //! finalization, identity and log readers finish, it removes all completed runtime
 //! children (including current/retained anchors) and managed Codex auth. It does not
-//! delete ordinary user files, framework histories/catalogs or package caches.
+//! delete ordinary user files or framework histories/catalogs. After managed
+//! cleanup, a below-reserve home gets one fixed npm/pip cache reclamation attempt,
+//! shared with idle preparation. Healthy homes retain package caches. History
+//! facts are captured in memory before runtime deletion and their proof is
+//! persisted only when reclaimed home capacity permits publication; final
+//! capacity includes proof writes. The existing helper deadline bounds cleanup.
 //! Unlike idle preparation, Runner does not apply a rootfs-reserve gate to its
 //! report. Failure rejects optional publication; successful deletion is not a
 //! forensic block-erasure guarantee. Runner invokes it from
@@ -174,6 +182,8 @@
 //! replacement, once, after measured improvement leaves the retry reserve. It
 //! never replays process start or user execution. This is guest filesystem
 //! recovery; host/cache-image GC has separate ownership.
+//! Idle and terminal reuse preparation also invoke the same home-cache deletion
+//! primitive once under home pressure, within their final fenced helper exec.
 //!
 //! ## `cleanup-codex-session`
 //!

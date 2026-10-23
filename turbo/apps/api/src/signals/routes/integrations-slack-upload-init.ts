@@ -10,7 +10,7 @@ import {
   CanonicalPublicationConflictError,
   prepareCanonicalPublishedAsset$,
 } from "../services/canonical-asset.service";
-import { slackOrgInstallation } from "../services/slack-data.service";
+import { slackUserInstallation } from "../services/slack-data.service";
 import { resolveSlackTargetChannel$ } from "../services/slack-message-context.service";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { isAllowedUploadType } from "../../lib/uploads-constants";
@@ -28,13 +28,13 @@ const slackInstallationInput$ = computed(
     return { orgId: auth.orgId, userId: auth.userId };
   },
 );
-const slackInstallation$ = slackOrgInstallation(slackInstallationInput$);
+const slackInstallation$ = slackUserInstallation(slackInstallationInput$);
 
 const noInstallation = Object.freeze({
   status: 404 as const,
   body: Object.freeze({
     error: Object.freeze({
-      message: "No Slack installation found for this organization",
+      message: "No connected Slack account found for this organization",
       code: "NOT_FOUND",
     }),
   }),
@@ -54,11 +54,13 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const installation = await get(slackInstallation$);
   signal.throwIfAborted();
-  if (!installation) {
+  if (installation.kind !== "connected") {
     return noInstallation;
   }
 
-  const client = createSlackClient(installation.botToken);
+  const client = createSlackClient(installation.botToken, {
+    automaticRetries: false,
+  });
   const runId = "runId" in auth ? auth.runId : undefined;
   if (body.canonical && runId) {
     if (body.length > MAX_SLACK_FILE_SIZE_BYTES) {
@@ -73,9 +75,11 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       resolveSlackTargetChannel$,
       {
         client,
+        botToken: installation.botToken,
         userId: auth.userId,
         orgId: auth.orgId,
         channel: body.canonical.channel,
+        threadTs: body.canonical.threadTs,
         user: body.canonical.user,
       },
       signal,

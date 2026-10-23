@@ -54,6 +54,7 @@ function teamsFixture(): TeamsConnectFixture {
 function mockOutgoingTeams(
   fixture: TeamsConnectFixture,
   captured: CapturedTeamsActivity,
+  recipientId = fixture.teamsUserId,
 ): {
   readonly activityId: string;
   readonly dmConversationId: string;
@@ -64,6 +65,17 @@ function mockOutgoingTeams(
     "teams-dm-conversation",
   )}`;
   server.use(
+    http.get(
+      "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/members/:memberId",
+      ({ params }) => {
+        return String(params.memberId) === recipientId
+          ? HttpResponse.json({
+              id: recipientId,
+              tenantId: fixture.teamsTenantId,
+            })
+          : new HttpResponse(null, { status: 404 });
+      },
+    ),
     http.post(BOT_FRAMEWORK_TOKEN_URL, async ({ request }) => {
       const form = await request.formData();
       expect(form.get("scope")).toBe("https://api.botframework.com/.default");
@@ -192,68 +204,117 @@ describe("Microsoft Teams integration CLI routes", () => {
     });
   });
 
-  it("sends a Teams DM with an Adaptive Card through the installed bot", async () => {
-    const fixture = teamsFixture();
-    fixtures.push(fixture);
-    await seedConnectedTeams(fixture);
-    const captured: CapturedTeamsActivity = {};
-    const outgoing = mockOutgoingTeams(fixture, captured);
-
-    const client = setupApp({
-      context,
-      routes: integrationsTeamsMessageRoutes,
-    })(integrationsTeamsMessageContract);
-    const response = await accept(
-      client.sendMessage({
-        body: {
-          user: "me",
-          text: "Pick a workflow",
-          card: {
-            type: "AdaptiveCard",
-            version: "1.4",
-            body: [
-              {
-                type: "TextBlock",
-                text: "Pick a workflow",
-                wrap: true,
-              },
-            ],
+  it.each(["missing member", "different tenant"])(
+    "denies Teams delivery for a %s",
+    async (scenario) => {
+      const fixture = teamsFixture();
+      fixtures.push(fixture);
+      await seedConnectedTeams(fixture);
+      const captured: CapturedTeamsActivity = {};
+      mockOutgoingTeams(fixture, captured);
+      server.use(
+        http.get(
+          "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/members/:memberId",
+          () => {
+            return scenario === "missing member"
+              ? new HttpResponse(null, { status: 404 })
+              : HttpResponse.json({
+                  id: fixture.teamsUserId,
+                  tenantId: "another-tenant",
+                });
           },
-        },
-        headers: {
-          authorization: `Bearer ${await credentials.okouToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
-        },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      ok: true,
-      activityId: outgoing.activityId,
-      conversationId: outgoing.dmConversationId,
-    });
-    expect(captured.conversationBody).toMatchObject({
-      bot: { id: fixture.teamsBotId, name: "Nova" },
-      members: [{ id: fixture.teamsUserId, name: "Ada Lovelace" }],
-      isGroup: false,
-      channelData: { tenant: { id: fixture.teamsTenantId } },
-    });
-    expect(captured.conversationId).toBe(outgoing.dmConversationId);
-    expect(captured.body).toMatchObject({
-      type: "message",
-      summary: "Pick a workflow",
-      attachments: [
-        {
-          contentType: "application/vnd.microsoft.card.adaptive",
-          content: {
-            type: "AdaptiveCard",
-            version: "1.4",
+        ),
+      );
+      const response = await accept(
+        setupApp({ context, routes: integrationsTeamsMessageRoutes })(
+          integrationsTeamsMessageContract,
+        ).sendMessage({
+          headers: {
+            authorization: `Bearer ${await credentials.okouToken(fixture)}`,
           },
-        },
-      ],
-      channelData: { tenant: { id: fixture.teamsTenantId } },
-    });
-  });
+          body: {
+            conversationId: fixture.teamsConversationId,
+            text: "blocked",
+          },
+        }),
+        [404],
+      );
+      expect(response.body.error.code).toBe("NOT_FOUND");
+      expect(captured.body).toBeUndefined();
+    },
+  );
+
+  it.each(["me", "29:other-recipient"])(
+    "delivers to Teams recipient %s: Adaptive Card",
+    async (target) => {
+      const fixture = teamsFixture();
+      fixtures.push(fixture);
+      await seedConnectedTeams(fixture);
+      const captured: CapturedTeamsActivity = {};
+      const recipientId = target === "me" ? fixture.teamsUserId : target;
+      const outgoing = mockOutgoingTeams(fixture, captured, recipientId);
+
+      const client = setupApp({
+        context,
+        routes: integrationsTeamsMessageRoutes,
+      })(integrationsTeamsMessageContract);
+      const response = await accept(
+        client.sendMessage({
+          body: {
+            user: target,
+            text: "Pick a workflow",
+            card: {
+              type: "AdaptiveCard",
+              version: "1.4",
+              body: [
+                {
+                  type: "TextBlock",
+                  text: "Pick a workflow",
+                  wrap: true,
+                },
+              ],
+            },
+          },
+          headers: {
+            authorization: `Bearer ${await credentials.okouToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
+          },
+        }),
+        [200],
+      );
+
+      expect(response.body).toStrictEqual({
+        ok: true,
+        activityId: outgoing.activityId,
+        conversationId: outgoing.dmConversationId,
+      });
+      expect(captured.conversationBody).toMatchObject({
+        bot: { id: fixture.teamsBotId, name: "Nova" },
+        members: [
+          {
+            id: recipientId,
+            ...(target === "me" ? { name: "Ada Lovelace" } : {}),
+          },
+        ],
+        isGroup: false,
+        channelData: { tenant: { id: fixture.teamsTenantId } },
+      });
+      expect(captured.conversationId).toBe(outgoing.dmConversationId);
+      expect(captured.body).toMatchObject({
+        type: "message",
+        summary: "Pick a workflow",
+        attachments: [
+          {
+            contentType: "application/vnd.microsoft.card.adaptive",
+            content: {
+              type: "AdaptiveCard",
+              version: "1.4",
+            },
+          },
+        ],
+        channelData: { tenant: { id: fixture.teamsTenantId } },
+      });
+    },
+  );
 
   it("sends an uploaded file URL as a Teams attachment", async () => {
     const fixture = teamsFixture();
@@ -312,60 +373,69 @@ describe("Microsoft Teams integration CLI routes", () => {
     });
   });
 
-  it("sends an uploaded file to the current user's personal conversation", async () => {
-    const fixture = teamsFixture();
-    fixtures.push(fixture);
-    await seedConnectedTeams(fixture);
-    const captured: CapturedTeamsActivity = {};
-    const outgoing = mockOutgoingTeams(fixture, captured);
+  it.each(["me", "29:other-recipient"])(
+    "delivers to Teams recipient %s: file",
+    async (target) => {
+      const fixture = teamsFixture();
+      fixtures.push(fixture);
+      await seedConnectedTeams(fixture);
+      const captured: CapturedTeamsActivity = {};
+      const recipientId = target === "me" ? fixture.teamsUserId : target;
+      const outgoing = mockOutgoingTeams(fixture, captured, recipientId);
 
-    const uploadId = randomUUID();
-    mocks.s3.listObjects([
-      {
-        bucket: "test-user-artifacts",
-        key: `artifacts/${fixture.userId}/${uploadId}/report.pdf`,
-        size: 1234,
-      },
-    ]);
-
-    const client = setupApp({
-      context,
-      routes: integrationsTeamsUploadCompleteRoutes,
-    })(integrationsTeamsUploadCompleteContract);
-    const response = await accept(
-      client.complete({
-        body: {
-          uploadId,
-          user: "me",
-          contentType: "application/pdf",
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toMatchObject({
-      activityId: outgoing.activityId,
-      conversationId: outgoing.dmConversationId,
-      filename: "report.pdf",
-    });
-    expect(captured.conversationBody).toMatchObject({
-      bot: { id: fixture.teamsBotId, name: "Nova" },
-      members: [{ id: fixture.teamsUserId, name: "Ada Lovelace" }],
-      isGroup: false,
-      channelData: { tenant: { id: fixture.teamsTenantId } },
-    });
-    expect(captured.conversationId).toBe(outgoing.dmConversationId);
-    expect(captured.body).toMatchObject({
-      type: "message",
-      attachments: [
+      const uploadId = randomUUID();
+      mocks.s3.listObjects([
         {
-          contentType: "application/pdf",
-          contentUrl: response.body.url,
-          name: "report.pdf",
+          bucket: "test-user-artifacts",
+          key: `artifacts/${fixture.userId}/${uploadId}/report.pdf`,
+          size: 1234,
         },
-      ],
-    });
-    expect(captured.body).not.toHaveProperty("replyToId");
-  });
+      ]);
+
+      const client = setupApp({
+        context,
+        routes: integrationsTeamsUploadCompleteRoutes,
+      })(integrationsTeamsUploadCompleteContract);
+      const response = await accept(
+        client.complete({
+          body: {
+            uploadId,
+            user: target,
+            contentType: "application/pdf",
+          },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+
+      expect(response.body).toMatchObject({
+        activityId: outgoing.activityId,
+        conversationId: outgoing.dmConversationId,
+        filename: "report.pdf",
+      });
+      expect(captured.conversationBody).toMatchObject({
+        bot: { id: fixture.teamsBotId, name: "Nova" },
+        members: [
+          {
+            id: recipientId,
+            ...(target === "me" ? { name: "Ada Lovelace" } : {}),
+          },
+        ],
+        isGroup: false,
+        channelData: { tenant: { id: fixture.teamsTenantId } },
+      });
+      expect(captured.conversationId).toBe(outgoing.dmConversationId);
+      expect(captured.body).toMatchObject({
+        type: "message",
+        attachments: [
+          {
+            contentType: "application/pdf",
+            contentUrl: response.body.url,
+            name: "report.pdf",
+          },
+        ],
+      });
+      expect(captured.body).not.toHaveProperty("replyToId");
+    },
+  );
 });

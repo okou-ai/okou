@@ -543,7 +543,8 @@
       "upload": "Google Drive पर अपलोड करें",
       "uploadDocs": "Google Docs पर अपलोड करें",
       "uploadSheets": "Google Sheets पर अपलोड करें",
-      "uploadSlides": "Google Slides पर अपलोड करें"
+      "uploadSlides": "Google Slides पर अपलोड करें",
+      "viewIt": "देखें"
     },
     "jsonPreview": {
       "allShown": "सभी आइटम दिखाए गए",

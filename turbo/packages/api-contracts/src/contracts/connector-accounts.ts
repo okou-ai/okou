@@ -37,41 +37,14 @@ export const connectorAccountTargetSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 
-export const connectorAccountSetupSchema = z.object({
-  // Prepared App/Guest CLI readers also accept the canonical response without
-  // this field. API producers retain it until the activation in #42323.
-  setupStatus: z.enum(["complete", "incomplete", "invalid"]).optional(),
+export const connectorAccountFieldMetadataSchema = z.object({
   missingRequiredFields: z.array(z.string()),
   configuredFieldKeys: z.array(z.string()),
 });
 
-/**
- * Preserve configuration checks while App/Guest CLI can reach the old API.
- * Remove with #42323 once that API is neither serving nor a rollback target;
- * readiness must also check connectionStatus in both response formats.
- */
-export function connectorAccountSetupIsComplete(
-  account:
-    | {
-        readonly setupStatus?: "complete" | "incomplete" | "invalid";
-        readonly reconnectReason?: z.infer<
-          typeof connectorReconnectReasonSchema
-        > | null;
-      }
-    | null
-    | undefined,
-): boolean {
-  return (
-    account != null &&
-    (account.setupStatus === undefined || account.setupStatus === "complete") &&
-    account.reconnectReason !== "configuration_incomplete" &&
-    account.reconnectReason !== "configuration_invalid"
-  );
-}
-
 export const connectorAccountConnectionSchema = z
   .object({
-    ...connectorAccountSetupSchema.shape,
+    ...connectorAccountFieldMetadataSchema.shape,
     id: z.uuid(),
     target: connectorAccountTargetSchema,
     authMethod: connectorAuthMethodIdSchema,
@@ -102,7 +75,7 @@ export const CONNECTOR_ACCOUNT_LIST_MAX_LIMIT = 100;
 
 const connectorAccountInspectionAvailableSchema = z
   .object({
-    ...connectorAccountSetupSchema.shape,
+    ...connectorAccountFieldMetadataSchema.shape,
     kind: z.literal("available"),
     connectionId: z.uuid(),
     target: connectorAccountTargetSchema,

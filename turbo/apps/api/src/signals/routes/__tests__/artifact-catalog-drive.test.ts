@@ -77,7 +77,7 @@ async function connectDrive(actor: ApiTestUser) {
     code: "drive-ok",
     state,
   });
-  return await connectors.readConnectorBySlug(actor, "google-drive");
+  return await connectors.readDefaultBuiltinAccount(actor, "google-drive");
 }
 
 describe("artifact catalog lazy Drive detail metadata", () => {
@@ -304,7 +304,7 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     expect(terminal.refreshBodies).toHaveLength(1);
     expect(failed.queries).toHaveLength(1);
     await expect(
-      connectors.readConnectorBySlug(actor, "google-drive"),
+      connectors.readDefaultBuiltinAccount(actor, "google-drive"),
     ).resolves.toMatchObject({ connectionStatus: "reconnect-required" });
   });
 

@@ -23,7 +23,10 @@ import {
   discordApiFailure,
   type DiscordFailureResponse,
 } from "../services/discord-api-response";
-import { requireDiscordOutputAccess$ } from "../services/discord-output-destination.service";
+import {
+  requireDiscordOutputAccess$,
+  resolveDiscordOutputChannel$,
+} from "../services/discord-output-destination.service";
 import type { RouteEntry } from "../route-entry";
 
 function partialFailure(
@@ -54,7 +57,7 @@ const sendChunk$ = command(
     for (let attempt = 1; ; attempt += 1) {
       let access = await set(
         requireDiscordOutputAccess$,
-        { ...args, createThread: true },
+        { ...args, createThread: true, allowOtherDmRecipients: true },
         signal,
       );
       if (access.kind === "denied") {
@@ -79,14 +82,14 @@ const sendChunk$ = command(
         // Reference reads may outlive a permission or binding change.
         access = await set(
           requireDiscordOutputAccess$,
-          { ...args, createThread: true },
+          { ...args, createThread: true, allowOtherDmRecipients: true },
           signal,
         );
         if (access.kind === "denied") {
           return access;
         }
       }
-      // Never read bot DM content. Discord validates an own-DM reference on send.
+      // Never read bot DM content. Discord validates DM references on send.
       const sent = await discordClient.createDiscordMessage(
         {
           botToken: access.botToken,
@@ -151,6 +154,19 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (binding.kind === "denied") {
     return partialFailure(binding.response, []);
   }
+  const destination = await set(
+    resolveDiscordOutputChannel$,
+    {
+      ...auth,
+      guildId: body.data.guildId,
+      channelId: body.data.channelId,
+      recipientId: body.data.userId,
+    },
+    signal,
+  );
+  if (destination.kind === "denied") {
+    return partialFailure(destination.response, []);
+  }
   const labels = await get(integrationMessageSendLabels$);
   signal.throwIfAborted();
   const footerText = discordMessageSendFooterText({
@@ -167,7 +183,7 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
       {
         ...auth,
         guildId: body.data.guildId,
-        channelId: body.data.channelId,
+        channelId: destination.channelId,
         content,
         ...(messages.length === 0 && body.data.replyToMessageId !== undefined
           ? { replyToMessageId: body.data.replyToMessageId }

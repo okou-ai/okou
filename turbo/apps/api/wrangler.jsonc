@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "okou-api",
+  "main": "dist-worker/worker.js",
+  "compatibility_date": "2026-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "no_bundle": true,
+  "workers_dev": false,
+  "preview_urls": false,
+  "upload_source_maps": true,
+  // CI generates the deployment config with its account, routes, bindings,
+  // secrets and observability.traces.destinations. Never commit credentials.
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true },
+    "traces": { "enabled": true, "head_sampling_rate": 1 },
+  },
+}

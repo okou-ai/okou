@@ -51,6 +51,8 @@ case "${1:-}" in
       [ "${MOCK_STRUCTURED_DISK_READER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "968063848aea8cf54acd6f56facdf7cdcbd79051" ]; then
       [ "${MOCK_FINALIZING_SOURCE_API_WRITER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "430cb92b5431e1554d0a1dceed6d9cfb27762921" ]; then
+      [ "${MOCK_RUNNER_STATE_WSS_INGRESS_FREE_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "b610ff61043274157618e3925b13a66dc56ef84b" ]; then
       [ "${MOCK_FINALIZING_SOURCE_RUNNER_READER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5959595959595959595959595959595959595959" ]; then
@@ -437,6 +439,7 @@ grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "m
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
 grep -qx "runner_tag=runner-rs-v1.2.3" "$output_file" || fail "missing retained Runner tag output"
 grep -Fxq "git merge-base --is-ancestor 968063848aea8cf54acd6f56facdf7cdcbd79051 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "API target must include the independent finalizing source writer"
+grep -Fxq "git merge-base --is-ancestor 430cb92b5431e1554d0a1dceed6d9cfb27762921 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "API target must include the wss_ingress_service_active-free Runner state mapping"
 grep -Fxq "git merge-base --is-ancestor b610ff61043274157618e3925b13a66dc56ef84b bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "${tmp_dir}/boundaries.log" || fail "selected Runner tag must independently include the finalizing source reader"
 runner_matrix=$(sed -n 's/^runner_matrix=//p' "$output_file")
 jq -e 'length == 2 and .[0].id == "arm64" and .[1].id == "x86_64"' >/dev/null <<<"$runner_matrix" || fail "unexpected Runner matrix"
@@ -466,6 +469,14 @@ assert_failure "Rollback target predates the independent finalizing source write
 [ ! -s "${tmp_dir}/finalizing-source-api-floor.output" ] || fail "old-source API must not publish rollback outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "old-source API must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the wss_ingress_service_active-free Runner state mapping" \
+  run_resolver "${tmp_dir}/runner-state-wss-ingress-floor.output" MOCK_RUNNER_STATE_WSS_INGRESS_FREE_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/runner-state-wss-ingress-floor.output" ] || fail "ingress-mapping API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "ingress-mapping API must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"
@@ -1654,9 +1665,6 @@ ruby - \
   contract = api_release_steps.index { |step| step["name"] == "Contract Pi memory storage after API drain" }
   unless before && deploy && drain && contract && before < deploy && deploy < drain && drain < contract
     raise "Pi memory contraction must follow API deployment and outgoing invocation drain"
-  end
-  unless api_release_steps[before].fetch("run").include?("--defer 1444_retire_pi_memory.sql")
-    raise "pre-promotion migration must defer Pi memory contraction"
   end
   raise "outgoing API must receive its full 300-second drain" unless api_release_steps[drain].fetch("run") == "sleep 300"
   expected_deferred_gate = "${{ steps.production-migrations.outputs.deferred_migration != \x27\x27 }}"

@@ -646,6 +646,8 @@ export default [
           allowedFunctions: [
             "createApp",
             "createAppWithRoutes",
+            // Workers passes its disconnect signal on the platform Request.
+            "workerFetch",
             "readTextLines",
             "createDir",
             "remove",
