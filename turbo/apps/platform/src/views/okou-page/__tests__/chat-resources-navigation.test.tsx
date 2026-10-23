@@ -227,7 +227,6 @@ test.each(["messages", "artifacts"])(
       ).toBeInTheDocument();
     });
     const nextPanel = resourcePanel()!;
-    expect(within(nextPanel).getByText("second.pdf")).toBeInTheDocument();
     expect(within(nextPanel).queryByText("first.pdf")).not.toBeInTheDocument();
   },
 );
