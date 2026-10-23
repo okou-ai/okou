@@ -3155,6 +3155,117 @@ const validateDormantMaterialization$ = command(
   },
 );
 
+function finalizationMaterializationCondition(
+  args: DormantMaterializationOwnershipArgs,
+) {
+  const automation = alias(workflowAutomations, "finalize_automation");
+  const identity = alias(
+    officialWorkflowAutomationIdentities,
+    "finalize_identity",
+  );
+  // JSONB normalizes -0 to 0; strict JavaScript comparison did not.
+  const bindingsComparable = !args.bindings.some((binding) => {
+    return Object.is(binding.value, -0);
+  });
+  return and(
+    isNull(identity.automationId),
+    eq(identity.state, "reconciling"),
+    eq(identity.retainedAppliedFingerprint, args.fingerprint),
+    eq(identity.retainedIntendedEnabled, args.intendedEnabled),
+    eq(identity.retainedParameterBindings, [...args.bindings]),
+    eq(automation.orgId, args.orgId),
+    eq(automation.ownerUserId, args.userId),
+    eq(automation.workflowId, args.workflowId),
+    eq(automation.officialBlueprintKey, args.blueprintKey),
+    eq(automation.officialAppliedFingerprint, args.fingerprint),
+    eq(automation.officialReconciliationStatus, "reconciling"),
+    eq(automation.officialIntendedEnabled, args.intendedEnabled),
+    eq(automation.officialParameterBindings, [...args.bindings]),
+    eq(automation.enabled, args.intendedEnabled),
+    sql`${bindingsComparable}`,
+  );
+}
+
+function dormantMaterializationFinalizationStatement(
+  args: DormantMaterializationOwnershipArgs,
+  releaseId: string,
+  definition: OfficialWorkflowAcceptedDefinition,
+  currentTime: Date,
+) {
+  const catalogCondition = and(
+    eq(
+      officialWorkflowCatalogState.authority,
+      OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+    ),
+    eq(officialWorkflowCatalogState.acceptedReleaseId, releaseId),
+  );
+  const identityCondition = and(
+    eq(officialWorkflowAutomationIdentities.id, args.automationId),
+    eq(officialWorkflowAutomationIdentities.workflowId, args.workflowId),
+    eq(officialWorkflowAutomationIdentities.blueprintKey, args.blueprintKey),
+  );
+  const automation = alias(workflowAutomations, "finalize_automation");
+  const identity = alias(
+    officialWorkflowAutomationIdentities,
+    "finalize_identity",
+  );
+  const currentTimestamp = timestampWithoutTimeZone(currentTime);
+  // MATERIALIZED owners retain the existing catalog -> workflow -> automation
+  // -> identity lock order, including the current tuples returned after waits.
+  // Every mutation consumes its predecessor's actual RETURNING rows.
+  return sql`WITH finalize_catalog_fence AS MATERIALIZED (
+      SELECT ${officialWorkflowCatalogState.authority} FROM ${officialWorkflowCatalogState}
+      WHERE ${catalogCondition} FOR SHARE
+    ), finalize_registered_revision AS MATERIALIZED (
+      ${acceptedRevisionReadStatement(definition)}
+    ), finalize_installed_workflow AS MATERIALIZED (
+      SELECT ${workflows.id} FROM ${workflows}
+      WHERE ${installedWorkflowCondition(args, args.workflowId)}
+        AND ${exists(sql`(SELECT 1 FROM finalize_catalog_fence)`)}
+        AND ${exists(sql`(SELECT 1 FROM finalize_registered_revision)`)}
+      LIMIT 1 FOR UPDATE
+    ), finalize_locked_automation AS MATERIALIZED (
+      SELECT ${workflowAutomations}.* FROM ${workflowAutomations}
+      WHERE ${eq(workflowAutomations.id, args.automationId)}
+        AND ${exists(sql`(SELECT 1 FROM finalize_installed_workflow)`)}
+      LIMIT 1 FOR UPDATE
+    ), finalize_locked_identity AS MATERIALIZED (
+      SELECT ${officialWorkflowAutomationIdentities}.* FROM ${officialWorkflowAutomationIdentities}
+      WHERE ${identityCondition}
+        AND ${exists(sql`(SELECT 1 FROM finalize_installed_workflow)`)}
+      LIMIT (SELECT CASE WHEN ${count()} >= 0 THEN 1 ELSE 0 END FROM finalize_locked_automation)
+      FOR UPDATE
+    ), finalize_owned_materialization AS MATERIALIZED (
+      SELECT ${automation.id} AS id,
+        isfinite(${automation.updatedAt})
+          AND ${automation.updatedAt} = date_trunc('milliseconds', ${automation.updatedAt}) AS exact_timestamp
+      FROM finalize_locked_automation AS finalize_automation
+      INNER JOIN finalize_locked_identity AS finalize_identity ON ${eq(identity.id, automation.id)}
+      WHERE ${finalizationMaterializationCondition(args)}
+    ), finalized_automation AS (
+      UPDATE ${workflowAutomations} SET official_reconciliation_status = 'current',
+        updated_at = ${currentTimestamp}::timestamp
+      FROM finalize_owned_materialization AS owned
+      WHERE ${eq(workflowAutomations.id, sql`owned.id`)} AND owned.exact_timestamp
+      RETURNING ${workflowAutomations.id}
+    ), finalized_identity AS (
+      UPDATE ${officialWorkflowAutomationIdentities} SET automation_id = finalized_automation.id,
+        state = 'active', retained_parameter_bindings = NULL,
+        retained_intended_enabled = NULL, retained_applied_fingerprint = NULL,
+        updated_at = ${currentTimestamp}::timestamp
+      FROM finalized_automation
+      WHERE ${eq(officialWorkflowAutomationIdentities.id, sql`finalized_automation.id`)}
+      RETURNING ${officialWorkflowAutomationIdentities.id}
+    ), finalized_installation AS (
+      UPDATE ${workflows} SET updated_by = ${args.userId}, updated_at = ${currentTimestamp}::timestamp
+      WHERE ${eq(workflows.id, args.workflowId)}
+        AND ${exists(sql`(SELECT 1 FROM finalized_identity)`)}
+      RETURNING ${workflows.id}
+    ) SELECT owned.exact_timestamp AS "exactTimestamp", finalized_installation.id AS "workflowId"
+      FROM finalize_owned_materialization AS owned
+      LEFT JOIN finalized_installation ON ${eq(sql`finalized_installation.id`, args.workflowId)}`;
+}
+
 const finalizeDormantMaterialization$ = command(
   async (
     { set },
@@ -3162,123 +3273,61 @@ const finalizeDormantMaterialization$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
-
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0208; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
-      await tx.execute(acceptedCatalogLockStatement());
-      const [catalogRow] = parseRawRows(
-        acceptedCatalogRowSchema,
-        await tx.execute(acceptedCatalogReadStatement()),
+    // Parse complete immutable payloads before publication. The locked pointer
+    // rejects a catalog replacement after this read without finalizing anything.
+    const [catalogRow] = parseRawRows(
+      acceptedCatalogRowSchema,
+      await db.execute(acceptedCatalogReadStatement()),
+    );
+    signal.throwIfAborted();
+    const catalog = acceptedCatalogFromRow(catalogRow);
+    const catalogIdentity = {
+      definitionName: args.definitionName,
+      blueprintKey: args.blueprintKey,
+      fingerprint: args.fingerprint,
+      activeDefinitionOnly: args.activeDefinitionOnly,
+    };
+    const acceptedDefinition = matchingAcceptedBlueprintDefinition(
+      catalog,
+      catalogIdentity,
+    );
+    if (!catalog || !acceptedDefinition) {
+      return false;
+    }
+    const [revisionRow] = parseRawRows(
+      acceptedRevisionRowSchema,
+      await db.execute(acceptedRevisionReadStatement(acceptedDefinition)),
+    );
+    signal.throwIfAborted();
+    if (!acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)) {
+      return false;
+    }
+    // One audit-clock sample precedes the statement's lock waits.
+    const query = dormantMaterializationFinalizationStatement(
+      args,
+      catalog.releaseId,
+      acceptedDefinition,
+      nowDate(),
+    );
+    const [result] = parseRawRows(
+      z.object({
+        exactTimestamp: z.boolean(),
+        workflowId: z.string().uuid().nullable(),
+      }),
+      await db.execute(query),
+    );
+    signal.throwIfAborted();
+    if (!result) {
+      return false;
+    }
+    if (!result.exactTimestamp || !result.workflowId) {
+      // The original Date-encoded automation CAS rejected submillisecond
+      // timestamps. That rejection gates every write before this error.
+      throw new Error(
+        "Official Workflow materialization finalization lost ownership",
       );
-      signal.throwIfAborted();
-      const catalogIdentity = {
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprintKey,
-        fingerprint: args.fingerprint,
-        activeDefinitionOnly: args.activeDefinitionOnly,
-      };
-      const acceptedDefinition = matchingAcceptedBlueprintDefinition(
-        acceptedCatalogFromRow(catalogRow),
-        catalogIdentity,
-      );
-      if (!acceptedDefinition) {
-        return false;
-      }
-      const [revisionRow] = parseRawRows(
-        acceptedRevisionRowSchema,
-        await tx.execute(acceptedRevisionReadStatement(acceptedDefinition)),
-      );
-      signal.throwIfAborted();
-      if (!acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)) {
-        return false;
-      }
-      const [authorityRow] = await tx
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(installedWorkflowCondition(args, args.workflowId))
-        .for("update")
-        .limit(1);
-      const authority = authorityRow !== undefined;
-      if (!authority) {
-        return false;
-      }
-      const [materializationAutomation] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, args.automationId))
-        .for("update")
-        .limit(1);
-      const [materializationIdentity] = await tx
-        .select()
-        .from(officialWorkflowAutomationIdentities)
-        .where(
-          and(
-            eq(officialWorkflowAutomationIdentities.id, args.automationId),
-            eq(
-              officialWorkflowAutomationIdentities.workflowId,
-              args.workflowId,
-            ),
-            eq(
-              officialWorkflowAutomationIdentities.blueprintKey,
-              args.blueprintKey,
-            ),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      const rows = dormantMaterializationRows(
-        materializationAutomation,
-        materializationIdentity,
-        args,
-      );
-      const expectedEnabled = args.intendedEnabled;
-      if (
-        !rows ||
-        rows.identity.state !== "reconciling" ||
-        rows.automation.officialReconciliationStatus !== "reconciling" ||
-        rows.automation.enabled !== expectedEnabled
-      ) {
-        return false;
-      }
-      const automation = rows.automation;
-      const currentTime = nowDate();
-      const [finalized] = await tx
-        .update(workflowAutomations)
-        .set({
-          officialReconciliationStatus: "current",
-          updatedAt: currentTime,
-        })
-        .where(
-          and(
-            eq(workflowAutomations.id, automation.id),
-            eq(workflowAutomations.officialReconciliationStatus, "reconciling"),
-            eq(workflowAutomations.updatedAt, automation.updatedAt),
-          ),
-        )
-        .returning({ id: workflowAutomations.id });
-      const [identity] = await tx
-        .update(officialWorkflowAutomationIdentities)
-        .set(activeIdentityUpdate(automation, currentTime))
-        .where(
-          and(
-            eq(officialWorkflowAutomationIdentities.id, automation.id),
-            eq(officialWorkflowAutomationIdentities.state, "reconciling"),
-            isNull(officialWorkflowAutomationIdentities.automationId),
-          ),
-        )
-        .returning({ id: officialWorkflowAutomationIdentities.id });
-      if (!finalized || !identity) {
-        throw new Error(
-          "Official Workflow materialization finalization lost ownership",
-        );
-      }
-      await tx
-        .update(workflows)
-        .set({ updatedBy: args.userId, updatedAt: currentTime })
-        .where(eq(workflows.id, args.workflowId));
-      return true;
-    });
+    }
+    return true;
   },
 );
 /** Schema columns decode both committed tuples; the CTE retains xmin as text. */
