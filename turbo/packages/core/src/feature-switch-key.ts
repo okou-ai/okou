@@ -5,7 +5,6 @@
  */
 export enum FeatureSwitchKey {
   SlackWorkspaceIdentity = "slackWorkspaceIdentity",
-  DurableOpenAiImageGeneration = "durableOpenAiImageGeneration",
   BatchConnectorPermissions = "batchConnectorPermissions",
   JsonTreePreview = "jsonTreePreview",
   HostedSiteVisibility = "hostedSiteVisibility",

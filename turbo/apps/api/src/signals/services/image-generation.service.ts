@@ -12,12 +12,10 @@ import {
 } from "@okouai/core/image-model-catalog";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { and, eq, inArray } from "drizzle-orm";
-import { z } from "zod";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { redactPresignedUrls } from "../../lib/presigned-url-redaction";
-import { safeJsonParse } from "../utils";
 import { db$ } from "../external/db";
 import { checkBillableOperationCredits$ } from "./billable-operation-admission.service";
 import { storeGeneratedArtifactObject$ } from "./artifact-storage.service";
@@ -27,7 +25,6 @@ import { builtInGenerationUsageIdempotencyKey } from "./built-in-generation-usag
 
 const FAL_IMAGE_QUEUE_URL_PREFIX = "https://queue.fal.run";
 const FAL_BILLABLE_UNITS_HEADER = "x-fal-billable-units";
-const OPENAI_IMAGES_URL_PREFIX = "https://api.openai.com/v1/images";
 const IMAGE_IO_MAX_PROMPT_LENGTH = 32_000;
 const IMAGE_IO_MIN_PIXELS = 655_360;
 const IMAGE_IO_MAX_PIXELS = 8_294_400;
@@ -477,7 +474,7 @@ export interface ParsedImageGeneration {
   readonly imagePromptStrength: number | undefined;
 }
 
-export interface RecordedImage {
+interface RecordedImage {
   readonly id: string;
   readonly filename: string;
   readonly contentType: string;
@@ -506,7 +503,7 @@ export interface RecordedImage {
   readonly imagePromptStrength: number | undefined;
 }
 
-export interface ImageBillingEntry {
+interface ImageBillingEntry {
   readonly category: ImagePricingCategory;
   readonly quantity: number;
 }
@@ -1621,292 +1618,6 @@ export async function getFalImageBillableUnits(
     return badGateway("Fal returned no billing details", "NO_BILLING_UNITS");
   }
   return billableUnits;
-}
-
-const openAiImageResponseSchema = z.object({
-  data: z.tuple([
-    z.object({
-      b64_json: z.string().min(1),
-      revised_prompt: z.string().optional(),
-    }),
-  ]),
-  size: z.string().optional(),
-  quality: z.enum(OPENAI_IMAGE_QUALITIES).optional(),
-  background: z.enum(IMAGE_BACKGROUNDS).optional(),
-  output_format: z.enum(IMAGE_OUTPUT_FORMATS).optional(),
-  usage: z.object({
-    input_tokens_details: z.object({
-      text_tokens: z.number().int().nonnegative(),
-      image_tokens: z.number().int().nonnegative(),
-    }),
-    output_tokens: z.number().int().positive(),
-    output_tokens_details: z
-      .object({
-        image_tokens: z.number().int().positive(),
-      })
-      .optional(),
-  }),
-});
-
-const openAiImageErrorSchema = z.object({
-  error: z.object({
-    type: z.string().optional(),
-    code: z.string().optional(),
-    moderation_details: z
-      .object({
-        moderation_stage: z.enum(["input", "output", "unknown"]).optional(),
-      })
-      .optional(),
-  }),
-});
-
-interface OpenAiImageFailure {
-  readonly response: ErrorResponse;
-  readonly retryPolicy: string;
-  /** A failure the caller resolves by changing the request, not an operator. */
-  readonly userInput: boolean;
-}
-
-const OPENAI_IMAGE_USER_ERROR_TYPE = "image_generation_user_error";
-
-// Provider strings can echo private request data. Only exact public error
-// identifiers are retained; missing and unrecognized values stay distinct.
-const openAiImageErrorTypeSchema = z.enum([
-  OPENAI_IMAGE_USER_ERROR_TYPE,
-  "invalid_request_error",
-  "authentication_error",
-  "permission_error",
-  "rate_limit_error",
-  "insufficient_quota",
-  "server_error",
-  "service_unavailable_error",
-]);
-
-const openAiImageErrorCodeSchema = z.enum([
-  "invalid_image_file",
-  "moderation_blocked",
-  "content_policy_violation",
-  "invalid_api_key",
-  "invalid_value",
-  "missing_required_parameter",
-  "model_not_found",
-  "unsupported_parameter",
-  "rate_limit_exceeded",
-  "insufficient_quota",
-  "credit_balance_exhausted",
-  "organization_spend_limit_exceeded",
-  "project_spend_limit_exceeded",
-  "organization_usage_limit_exceeded",
-  "slow_down",
-  "server_is_overloaded",
-]);
-
-const openAiImageErrorDiagnosticsSchema = z.object({
-  error: z.object({
-    type: z.unknown().transform((value) => {
-      if (value === undefined || value === null) {
-        return "missing";
-      }
-      const parsed = openAiImageErrorTypeSchema.safeParse(value);
-      return parsed.success ? parsed.data : "unrecognized";
-    }),
-    code: z.unknown().transform((value) => {
-      if (value === undefined || value === null) {
-        return "missing";
-      }
-      const parsed = openAiImageErrorCodeSchema.safeParse(value);
-      return parsed.success ? parsed.data : "unrecognized";
-    }),
-  }),
-});
-
-function unclassifiedOpenAiImageFailure(): OpenAiImageFailure {
-  return {
-    response: badGateway(
-      "Image generation failed",
-      "OPENAI_IMAGE_REQUEST_FAILED",
-    ),
-    retryPolicy: "retry_once",
-    userInput: false,
-  };
-}
-
-/**
- * OpenAI documents `image_generation_user_error` as user-correctable, tells
- * callers not to retry it unmodified, and names `error.code` the stable
- * discriminator. Only the allowlisted codes below become an actionable input
- * failure; every other status, type, or code keeps the provider-fault
- * classification so an unrecognized failure stays visible to an operator.
- */
-function classifyOpenAiImageFailure(
-  status: number,
-  body: unknown,
-): OpenAiImageFailure {
-  const parsed = openAiImageErrorSchema.safeParse(body);
-  if (!parsed.success || status !== 400) {
-    return unclassifiedOpenAiImageFailure();
-  }
-  const providerError = parsed.data.error;
-  if (providerError.type !== OPENAI_IMAGE_USER_ERROR_TYPE) {
-    return unclassifiedOpenAiImageFailure();
-  }
-  if (providerError.code === "invalid_image_file") {
-    return {
-      response: badRequest(
-        "An input image could not be read by the generation provider.",
-        "GENERATION_INPUT_MEDIA_INVALID",
-      ),
-      retryPolicy: "after_input_change",
-      userInput: true,
-    };
-  }
-  if (providerError.code === "moderation_blocked") {
-    // Only an explicit output stage means our generated image was blocked;
-    // input and unknown stages stay a caller-correctable input rejection.
-    return providerError.moderation_details?.moderation_stage === "output"
-      ? {
-          response: badRequest(
-            "The generated image was blocked by the safety filter.",
-            "GENERATION_OUTPUT_SAFETY_BLOCKED",
-          ),
-          retryPolicy: "manual_once",
-          userInput: true,
-        }
-      : {
-          response: badRequest(
-            "The prompt or reference image was blocked by the safety filter.",
-            "GENERATION_INPUT_SAFETY_REJECTED",
-          ),
-          retryPolicy: "after_input_change",
-          userInput: true,
-        };
-  }
-  return unclassifiedOpenAiImageFailure();
-}
-
-export async function generateOpenAiImage(
-  options: ImageOptions,
-  references: ImageProviderReferences,
-  apiKey: string,
-  signal: AbortSignal,
-): Promise<ParsedImageGeneration | ErrorResponse> {
-  const editing = references.sourceImageUrls.length > 0;
-  const response = await fetch(
-    `${OPENAI_IMAGES_URL_PREFIX}/${editing ? "edits" : "generations"}`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: options.model,
-        prompt: options.prompt,
-        n: 1,
-        size: options.size,
-        quality: options.quality,
-        background: options.background,
-        output_format: options.outputFormat,
-        output_compression: options.outputCompression,
-        moderation: options.moderation,
-        ...(editing
-          ? {
-              images: references.sourceImageUrls.map((imageUrl) => {
-                return { image_url: imageUrl };
-              }),
-              ...(references.maskImageUrl
-                ? {
-                    mask: { image_url: references.maskImageUrl },
-                  }
-                : {}),
-            }
-          : {}),
-      }),
-      signal,
-    },
-  );
-  if (!response.ok) {
-    const responseBody = await response.text();
-    signal.throwIfAborted();
-    const providerBody = safeJsonParse(responseBody);
-    const failure = classifyOpenAiImageFailure(response.status, providerBody);
-    // Provider-rejected input is routine and already carried by the public
-    // error code the caller receives, so only a provider-side failure is
-    // logged. The provider body echoes request input and provider request IDs,
-    // so it never reaches the log.
-    if (!failure.userInput) {
-      const diagnostics =
-        openAiImageErrorDiagnosticsSchema.safeParse(providerBody);
-      L.warn("OpenAI image generation request failed", {
-        provider: "openai",
-        model: options.model,
-        providerStatus: response.status,
-        providerErrorType: diagnostics.success
-          ? diagnostics.data.error.type
-          : "invalid_response",
-        providerErrorCode: diagnostics.success
-          ? diagnostics.data.error.code
-          : "invalid_response",
-        publicErrorCode: failure.response.body.error.code,
-        retryPolicy: failure.retryPolicy,
-      });
-    }
-    return failure.response;
-  }
-
-  const responseText = await response.text();
-  signal.throwIfAborted();
-  const parsed = openAiImageResponseSchema.safeParse(
-    safeJsonParse(responseText),
-  );
-  if (!parsed.success) {
-    return badGateway(
-      "OpenAI returned invalid image data or token usage",
-      "OPENAI_IMAGE_BAD_RESPONSE",
-    );
-  }
-  const result = parsed.data;
-  const image = result.data[0];
-  const imageBytes = Buffer.from(image.b64_json, "base64");
-  if (imageBytes.byteLength === 0) {
-    return badGateway("Model returned empty image", "NO_IMAGE_RETURNED");
-  }
-
-  return {
-    model: options.model,
-    provider: "openai",
-    imageBytes,
-    revisedPrompt: image.revised_prompt,
-    imageSize: result.size ?? options.size,
-    quality: result.quality ?? options.quality,
-    background: result.background ?? options.background,
-    outputFormat: result.output_format ?? options.outputFormat,
-    outputCompression: options.outputCompression,
-    moderation: options.moderation,
-    safetyTolerance: undefined,
-    billing: [
-      {
-        category: "tokens.input.text",
-        quantity: result.usage.input_tokens_details.text_tokens,
-      },
-      {
-        category: "tokens.input.image",
-        quantity: result.usage.input_tokens_details.image_tokens,
-      },
-      {
-        category: "tokens.output.image",
-        quantity:
-          result.usage.output_tokens_details?.image_tokens ??
-          result.usage.output_tokens,
-      },
-    ],
-    sourceUrl: undefined,
-    seed: undefined,
-    sourceImageUrls: options.sourceImageUrls,
-    maskImageUrl: options.maskImageUrl,
-    inputFidelity: undefined,
-    imagePromptStrength: undefined,
-  };
 }
 
 function parseFalImageFile(value: unknown): FalImageFile | null {
