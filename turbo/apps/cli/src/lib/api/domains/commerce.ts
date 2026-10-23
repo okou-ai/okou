@@ -47,7 +47,8 @@ export async function searchCommerce(
   try {
     result = await client.search({
       headers: {},
-      body: { ...body, requestId },
+      // Keep the opt-in until supported API rollback targets default to jobs.
+      body: { ...body, async: true, requestId },
       fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
     });
   } catch (error) {
@@ -70,7 +71,8 @@ export async function inspectCommerce(
   try {
     result = await client.inspect({
       headers: {},
-      body: { ...body, requestId },
+      // New CLI sessions can outlive an API rollback to opt-in async handling.
+      body: { ...body, async: true, requestId },
       fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
     });
   } catch (error) {

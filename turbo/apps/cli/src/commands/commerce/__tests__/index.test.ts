@@ -134,6 +134,15 @@ describe("managed Commerce commands", () => {
     server.use(
       http.post(`${api}/search`, async ({ request }) => {
         body = await request.json();
+        // Supported rollback APIs still choose synchronous execution by default.
+        if (
+          typeof body !== "object" ||
+          body === null ||
+          !("async" in body) ||
+          body.async !== true
+        ) {
+          return HttpResponse.json(response("search", "amazon.co.uk"));
+        }
         return HttpResponse.json(job("running", "search", "amazon.co.uk"), {
           status: 202,
         });
@@ -159,6 +168,7 @@ describe("managed Commerce commands", () => {
       query: "standing desk",
       marketplace: "amazon.co.uk",
       limit: 20,
+      async: true,
       requestId: expect.any(String),
     });
     expect(output()).toMatchObject({
@@ -177,6 +187,14 @@ describe("managed Commerce commands", () => {
       server.use(
         http.post(`${api}/inspect`, async ({ request }) => {
           body = await request.json();
+          if (
+            typeof body !== "object" ||
+            body === null ||
+            !("async" in body) ||
+            body.async !== true
+          ) {
+            return HttpResponse.json(response("inspect"));
+          }
           return HttpResponse.json(
             job(
               "running",
@@ -207,6 +225,7 @@ describe("managed Commerce commands", () => {
       ]);
       expect(body).toEqual({
         target,
+        async: true,
         requestId: expect.any(String),
       });
       expect(output()).toMatchObject({

@@ -131,7 +131,8 @@ export async function listSocialDataJobs(
   });
   const result = await client.list({
     headers: {},
-    query,
+    // A new CLI can still reach an API rollback target that filters these jobs.
+    query: { ...query, includeExpanded: "true" },
     fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
   });
   if (result.status === 200) return result.body;

@@ -82,7 +82,7 @@ export const commerceSearchRequestSchema = z
     marketplace: amazonMarketplaceSchema.default("amazon.com"),
     limit: z.number().int().min(1).max(48).default(48),
     // Ignored: every submission is asynchronous. Accepted while supported
-    // Runners still bundle CLIs that send it.
+    // Runners bundle CLIs that send it for supported API rollback targets.
     async: z.boolean().optional(),
     requestId: z.uuid().optional(),
   })
@@ -93,7 +93,7 @@ export const commerceInspectRequestSchema = z
     target: z.string().trim().min(1).max(2048),
     marketplace: amazonMarketplaceSchema.optional(),
     // Ignored: every submission is asynchronous. Accepted while supported
-    // Runners still bundle CLIs that send it.
+    // Runners bundle CLIs that send it for supported API rollback targets.
     async: z.boolean().optional(),
     requestId: z.uuid().optional(),
   })
