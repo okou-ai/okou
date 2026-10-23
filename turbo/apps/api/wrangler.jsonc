@@ -9,7 +9,7 @@
   "preview_urls": false,
   "upload_source_maps": true,
   // CI generates the deployment config with its account, routes, bindings,
-  // secrets and observability.traces.destinations. Never commit credentials.
+  // secrets and observability logs/traces destinations. Never commit credentials.
   "observability": {
     "enabled": true,
     "logs": { "enabled": true },

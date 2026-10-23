@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, onTestFinished } from "vitest";
 
 import { mockEnv, mockOptionalEnv } from "../env";
 import { flushLogs, logger, __resetForTest } from "../log";
+import { withRequestRuntime, type RequestRuntime } from "../request-runtime";
 import { testContext } from "../../__tests__/test-context";
 
 const { axiom, axiomLogging, console: consoleOutput } = testContext().mocks;
@@ -15,6 +16,83 @@ function configureDebug(value: string | undefined): void {
 beforeEach(() => {
   __resetForTest();
   axiomLogging.flush.mockResolvedValue(undefined);
+});
+
+// Logger-owned transport contract: native Workers emit one structured record
+// and leave delivery to the platform, without initializing the SDK transport.
+describe("native Worker logging", () => {
+  function runtime(nativeTelemetry: boolean): RequestRuntime {
+    return {
+      nativeTelemetry,
+      database: () => {
+        throw new Error("Logger tests do not access the database");
+      },
+      waitUntil: () => {},
+      traceQuery: (_name, _sql, execute) => {
+        return execute({ setAttributes: () => {} });
+      },
+      observeHttp: () => {},
+    };
+  }
+
+  it("exports structured fields once without application SDK flushes", async () => {
+    const restoreConsole = consoleOutput.capture();
+    onTestFinished(restoreConsole);
+    mockEnv("GIT_COMMIT_SHA", "d".repeat(40));
+
+    await withRequestRuntime(runtime(true), async () => {
+      logger("NativeLogger").warn("Provider unavailable", {
+        type: "provider_unavailable",
+        provider: "clerk",
+        provider_status: 503,
+        failure_class: "transient_read_exhausted",
+        method: "GET",
+        route: "/api/agents",
+      });
+      await flushLogs();
+    });
+
+    expect(consoleOutput.warn).toHaveBeenCalledExactlyOnceWith({
+      _time: expect.any(String),
+      level: "warn",
+      message: "Provider unavailable",
+      source: "api",
+      type: "provider_unavailable",
+      provider: "clerk",
+      provider_status: 503,
+      failure_class: "transient_read_exhausted",
+      method: "GET",
+      route: "/api/agents",
+      fields: {
+        type: "provider_unavailable",
+        provider: "clerk",
+        provider_status: 503,
+        failure_class: "transient_read_exhausted",
+        method: "GET",
+        route: "/api/agents",
+        context: "NativeLogger",
+      },
+      axiom_dataset: "vm0-web-logs-dev",
+      okou_runtime: "cloudflare-workers",
+      api_commit_sha: "d".repeat(40),
+    });
+    expect(consoleOutput.log).not.toHaveBeenCalled();
+    expect(axiomLogging.warn).not.toHaveBeenCalled();
+    expect(axiomLogging.flush).not.toHaveBeenCalled();
+  });
+
+  it("keeps the SDK transport when the Worker has no native export destination", async () => {
+    await withRequestRuntime(runtime(false), async () => {
+      logger("UnconfiguredWorker").info("Retained SDK delivery");
+      await flushLogs();
+    });
+
+    expect(axiomLogging.info).toHaveBeenCalledExactlyOnceWith(
+      "Retained SDK delivery",
+      expect.objectContaining({ context: "UnconfiguredWorker" }),
+    );
+    expect(axiomLogging.flush).toHaveBeenCalledOnce();
+  });
 });
 
 describe("debug environment", () => {

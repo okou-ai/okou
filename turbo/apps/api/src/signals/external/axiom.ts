@@ -6,7 +6,8 @@ import { decodeHTML } from "entities";
 
 import { createAxiomFetch } from "../../lib/axiom-fetch";
 import { env, optionalEnv } from "../../lib/env";
-import { logger } from "../../lib/log";
+import { logger, writeNativeTelemetry } from "../../lib/log";
+import { currentRequestRuntime } from "../../lib/request-runtime";
 import { singleton } from "../../lib/singleton";
 import { now } from "../../lib/time";
 import {
@@ -120,6 +121,18 @@ export function ingestToAxiom(
   dataset: string,
   events: readonly Record<string, unknown>[],
 ): boolean {
+  // These are observability streams. Product datasets such as run-context and
+  // agent-run-events retain their direct Axiom ingestion and reader contracts.
+  if (
+    currentRequestRuntime()?.nativeTelemetry &&
+    (dataset === getDatasetName("web-logs") ||
+      dataset === getDatasetName("request-log"))
+  ) {
+    for (const event of events) {
+      writeNativeTelemetry(dataset, event);
+    }
+    return true;
+  }
   const client = axiomClientForDataset(dataset);
   if (!client) {
     return false;

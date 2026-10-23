@@ -22,6 +22,7 @@ import { createDeferredPromise, settleIncludingAbort } from "./signals/utils";
 
 interface WorkerBindings {
   readonly HYPERDRIVE: Hyperdrive;
+  readonly API_NATIVE_TELEMETRY?: string;
 }
 
 /** Keep the pool alive until both response streaming and registered work finish. */
@@ -120,7 +121,12 @@ function workerFetch(
   };
 
   return tracing.enterSpan("api.request", (requestSpan) => {
+    requestSpan.setAttributes({
+      "server.address": new URL(request.url).hostname,
+      "okou.api.commit_sha": env("GIT_COMMIT_SHA"),
+    });
     const runtime: RequestRuntime = {
+      nativeTelemetry: bindings.API_NATIVE_TELEMETRY === "true",
       database() {
         if (closing) {
           throw new Error("Worker request database is closed");
@@ -165,7 +171,9 @@ function workerFetch(
             "db.query.text": sql,
             "okou.runtime": "cloudflare-workers",
           });
-          const result = await settleIncludingAbort(execute);
+          const result = await settleIncludingAbort(() => {
+            return execute(span);
+          });
           if (result.ok) {
             span.setAttribute("okou.outcome", "success");
             return result.value;

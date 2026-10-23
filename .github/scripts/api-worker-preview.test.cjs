@@ -11,6 +11,7 @@ const {
   request,
   command,
   sharedPreviewDatabase,
+  previewTelemetry,
   main,
 } = require("./api-worker-preview.cjs");
 
@@ -46,6 +47,25 @@ const neonBase = "https://console.neon.tech/api/v2/projects/test-project";
 const cfBase = `https://api.cloudflare.com/client/v4/accounts/${"a".repeat(32)}`;
 const prUrl = "https://api.github.com/repos/example/repository/pulls/123";
 const neon = (method, route) => request(neonBase, "test-token", method, route);
+const telemetryRoute = "/workers/observability/destinations";
+const cloudflare = async (method, route, body) => {
+  const response = await request(cfBase, "test-token", method, route, body);
+  assert.equal(response.success, true);
+  return response.result;
+};
+function destination(kind, worker = "okou-api-preview-pr-123") {
+  return {
+    name: `${worker}-${kind}`,
+    slug: `${worker}-${kind}`,
+    enabled: true,
+    scripts: [worker],
+    configuration: {
+      type: "logpush",
+      logpushDataset: `opentelemetry-${kind}`,
+      url: `https://api.axiom.co/v1/${kind}`,
+    },
+  };
+}
 
 test("Worker consumes the exact prepared shared branch through a direct GET-only connection", async () => {
   const branch = {
@@ -121,7 +141,7 @@ function operationEnvironment(t, values) {
   });
 }
 
-test("closed-PR Worker cleanup deletes only its Worker and Hyperdrive without Neon credentials", async (t) => {
+test("closed-PR cleanup deletes only owned Worker, Hyperdrive and exports without Neon credentials", async (t) => {
   operationEnvironment(t, {
     JOB_REF: "pr-123",
     CLOUDFLARE_ACCOUNT_ID: "a".repeat(32),
@@ -140,9 +160,21 @@ test("closed-PR Worker cleanup deletes only its Worker and Hyperdrive without Ne
         result: [{ name: "okou-api-preview-pr-123", id: "b".repeat(32) }],
       }),
     ),
+    http.get(`${cfBase}${telemetryRoute}`, () =>
+      HttpResponse.json({
+        success: true,
+        result: [
+          destination("logs"),
+          destination("traces"),
+          destination("logs", "okou-api-preview-pr-456"),
+        ],
+      }),
+    ),
     ...[
       `${cfBase}/workers/scripts/okou-api-preview-pr-123`,
       `${cfBase}/hyperdrive/configs/${"b".repeat(32)}`,
+      `${cfBase}${telemetryRoute}/okou-api-preview-pr-123-logs`,
+      `${cfBase}${telemetryRoute}/okou-api-preview-pr-123-traces`,
     ].map((url) =>
       http.delete(url, ({ request: incoming }) => {
         assert.equal(
@@ -166,6 +198,10 @@ test("closed-PR Worker cleanup deletes only its Worker and Hyperdrive without Ne
         "DELETE",
         `/client/v4/accounts/${"a".repeat(32)}/hyperdrive/configs/${"b".repeat(32)}`,
       ],
+      ...["logs", "traces"].map((kind) => [
+        "DELETE",
+        `/client/v4/accounts/${"a".repeat(32)}${telemetryRoute}/okou-api-preview-pr-123-${kind}`,
+      ]),
     ],
   );
 });
@@ -203,7 +239,12 @@ test("downstream deployment binds the existing branch and runs only build and Wo
   );
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const envFile = path.join(directory, "runtime.env");
-  fs.writeFileSync(envFile, "ENV=preview\n", { mode: 0o600 });
+  fs.writeFileSync(
+    envFile,
+    `ENV=preview\nGIT_COMMIT_SHA=${"3".repeat(40)}\nAXIOM_DATASET_SUFFIX=dev\nAXIOM_TOKEN_TELEMETRY=axiom-private-test-token\n`,
+    { mode: 0o600 },
+  );
+  const outputFile = path.join(directory, "outputs");
   operationEnvironment(t, {
     JOB_REF: "pr-123",
     CLOUDFLARE_ACCOUNT_ID: "a".repeat(32),
@@ -215,6 +256,10 @@ test("downstream deployment binds the existing branch and runs only build and Wo
     NEON_PROJECT_ID: "test-project",
     API_ENV_FILE: envFile,
     CF_API_TRACES_DESTINATION: undefined,
+    CF_API_LOGS_DESTINATION: undefined,
+    CF_API_NATIVE_TELEMETRY: "true",
+    GITHUB_OUTPUT: outputFile,
+    GITHUB_STEP_SUMMARY: undefined,
   });
   const branch = {
     id: "br-shared-preview",
@@ -226,7 +271,42 @@ test("downstream deployment binds the existing branch and runs only build and Wo
     name: "okou-api-preview-pr-123",
     caching: { disabled: true },
   };
+  const destinations = [destination("traces")];
   server.use(
+    http.get(`${cfBase}/workers/subdomain`, () =>
+      HttpResponse.json({
+        success: true,
+        result: { subdomain: "test-account" },
+      }),
+    ),
+    http.get(`${cfBase}${telemetryRoute}`, () =>
+      HttpResponse.json({ success: true, result: destinations }),
+    ),
+    ...["logs", "traces"].map((kind) => {
+      const handler = kind === "logs" ? http.post : http.patch;
+      const route =
+        kind === "logs"
+          ? telemetryRoute
+          : `${telemetryRoute}/okou-api-preview-pr-123-traces`;
+      return handler(`${cfBase}${route}`, async ({ request: incoming }) => {
+        const body = await incoming.json();
+        assert.equal(
+          body.configuration.headers.Authorization,
+          "Bearer axiom-private-test-token",
+        );
+        assert.equal(
+          body.configuration.headers["X-Axiom-Dataset"],
+          kind === "logs" ? "vm0-web-logs-dev" : "vm0-traces-dev",
+        );
+        assert.equal(body.skipPreflightCheck, undefined);
+        if (kind === "logs") destinations.push(destination("logs"));
+        else assert.equal(body.name, undefined);
+        return HttpResponse.json({
+          success: true,
+          result: { slug: destination(kind).slug },
+        });
+      });
+    }),
     http.get(prUrl, () =>
       HttpResponse.json({
         state: "open",
@@ -294,6 +374,17 @@ test("downstream deployment binds the existing branch and runs only build and Wo
       generatedPath = args[args.indexOf("--config") + 1];
       assert.equal(fs.statSync(generatedPath).mode & 0o777, 0o600);
       const config = JSON.parse(fs.readFileSync(generatedPath, "utf8"));
+      assert.equal(config.vars.API_NATIVE_TELEMETRY, "true");
+      for (const kind of ["logs", "traces"]) {
+        assert.equal(config.observability[kind].head_sampling_rate, 1);
+        assert.deepEqual(config.observability[kind].destinations, [
+          `okou-api-preview-pr-123-${kind}`,
+        ]);
+      }
+      assert.equal(
+        JSON.stringify(config).includes("axiom-private-test-token"),
+        false,
+      );
       assert.deepEqual(config.hyperdrive, [
         { binding: "HYPERDRIVE", id: hyperdrive.id },
       ]);
@@ -316,8 +407,63 @@ test("downstream deployment binds the existing branch and runs only build and Wo
   });
   await main("deploy");
   assert.deepEqual(commands, ["build", "upload"]);
+  assert.equal(
+    fs.readFileSync(outputFile, "utf8"),
+    `worker-url=https://okou-api-preview-pr-123.test-account.workers.dev\nsource-sha=${"3".repeat(40)}\n`,
+  );
   assert.equal(fs.existsSync(generatedPath), false);
   assert.equal(fs.existsSync(path.dirname(secretsPath)), false);
+});
+
+test("native telemetry cannot adopt another Worker's destination", async () => {
+  const logs = destination("logs");
+  logs.scripts.push("another-worker");
+  server.use(
+    http.get(`${cfBase}${telemetryRoute}`, () =>
+      HttpResponse.json({
+        success: true,
+        result: [logs, destination("traces")],
+      }),
+    ),
+  );
+  // No mutation handlers: both deploy and cleanup must stop before any write.
+  for (const runtime of [
+    undefined,
+    {
+      ENV: "preview",
+      AXIOM_DATASET_SUFFIX: "dev",
+      AXIOM_TOKEN_TELEMETRY: "test-token",
+    },
+  ]) {
+    await assert.rejects(
+      previewTelemetry(cloudflare, "okou-api-preview-pr-123", runtime),
+      /ownership was not confirmed/,
+    );
+  }
+});
+
+test("native export rejection is visible and cannot silently enable telemetry", async () => {
+  let creates = 0;
+  server.use(
+    http.get(`${cfBase}${telemetryRoute}`, () =>
+      HttpResponse.json({ success: true, result: [] }),
+    ),
+    http.post(`${cfBase}${telemetryRoute}`, () => {
+      creates += 1;
+      return new HttpResponse("private provider details", { status: 403 });
+    }),
+  );
+  await assert.rejects(
+    previewTelemetry(cloudflare, "okou-api-preview-pr-123", {
+      ENV: "preview",
+      AXIOM_DATASET_SUFFIX: "dev",
+      AXIOM_TOKEN_TELEMETRY: "test-token",
+    }),
+    (error) =>
+      error.message.includes("HTTP 403") &&
+      !error.message.includes("private provider details"),
+  );
+  assert.equal(creates, 1);
 });
 
 test("encrypted environment chunks preserve multibyte values and stay below the per-secret limit", () => {

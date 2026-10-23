@@ -1431,6 +1431,7 @@ jobs:
           pnpm --dir turbo/apps/api test:worker-build
 
       - name: Build and deploy API Worker using the shared preview database
+        id: api-worker-deploy
         if: >-
           (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
           (github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -1444,6 +1445,9 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
           CF_API_TRACES_DESTINATION: ${{ vars.CF_API_TRACES_DESTINATION }}
+          CF_API_LOGS_DESTINATION: ${{ vars.CF_API_LOGS_DESTINATION }}
+          # Validate native export on isolated PR Workers before staging rollout.
+          CF_API_NATIVE_TELEMETRY: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/api-worker-preview.cjs deploy
 
