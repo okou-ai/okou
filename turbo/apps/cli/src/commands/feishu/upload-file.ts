@@ -81,7 +81,7 @@ export function createFeishuUploadCommand(platform: FeishuPlatform) {
       `
 Examples:
   Upload to a chat:    okou ${platform} upload-file -f /tmp/report.pdf --to oc_xxx
-  Send a DM:           okou ${platform} upload-file -f /tmp/report.pdf --to ou_xxx
+  DM your own ID:      okou ${platform} upload-file -f /tmp/report.pdf --to ou_xxx
   Reply with a file:   okou ${platform} upload-file -f /tmp/report.pdf --reply-to om_xxx --reply-mode thread
   Select a custom app: okou ${platform} upload-file -f /tmp/report.pdf --as <installation-id> --to oc_xxx
 
@@ -91,6 +91,8 @@ Output:
     {"integration":"${platform}","chatId":"oc_xxx","messages":[{"id":"om_xxx","url":null}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."}}
 
 Notes:
+  - Requires your verified account and access for both you and the bot to the destination
+  - Private messages are limited to your own conversation with the bot
   - Exactly one of --to or --reply-to is required
   - ${providerName} accepts non-empty files up to 30 MB
   - Specify --as when the organization has multiple ${providerName} bots`,

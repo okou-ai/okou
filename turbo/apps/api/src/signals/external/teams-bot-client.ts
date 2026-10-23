@@ -727,6 +727,71 @@ async function postTeamsActivity(
   };
 }
 
+/** The bot must be able to resolve this exact, currently connected member. */
+export async function checkTeamsConversationMember(
+  args: {
+    serviceUrl: string;
+    conversationId: string;
+    teamsUserId: string;
+    tenantId: string;
+  },
+  signal: AbortSignal,
+): Promise<{ kind: "allowed" | "denied" } | TeamsApiErrorResult> {
+  const accessToken = await fetchTeamsBotAccessToken(signal);
+  if (accessToken.kind === "teams-error") {
+    return accessToken;
+  }
+  const base = teamsConversationsUrl(args.serviceUrl);
+  if (!base) {
+    return teamsApiError(400, "Invalid Microsoft Teams serviceUrl");
+  }
+  const requested = await settle(
+    fetch(
+      `${base}/${encodeURIComponent(args.conversationId)}/members/${encodeURIComponent(args.teamsUserId)}`,
+      {
+        headers: { authorization: `Bearer ${accessToken.accessToken}` },
+        signal,
+      },
+    ),
+    signal,
+  );
+  if (!requested.ok) {
+    return teamsApiError(
+      502,
+      "Microsoft Teams could not verify conversation membership",
+    );
+  }
+  const response = requested.value;
+  if (response.status === 403 || response.status === 404) {
+    return { kind: "denied" };
+  }
+  if (!response.ok) {
+    return teamsApiError(
+      response.status,
+      "Microsoft Teams could not verify conversation membership",
+    );
+  }
+  const responseText = await response.text();
+  signal.throwIfAborted();
+  const member = z
+    .object({ id: z.string(), tenantId: z.string() })
+    .safeParse(safeJsonParse(responseText));
+  signal.throwIfAborted();
+  if (!member.success) {
+    return teamsApiError(
+      502,
+      "Microsoft Teams returned invalid member information",
+    );
+  }
+  return {
+    kind:
+      member.data.id === args.teamsUserId &&
+      member.data.tenantId === args.tenantId
+        ? "allowed"
+        : "denied",
+  };
+}
+
 export async function createTeamsPersonalConversation(
   args: {
     readonly serviceUrl: string;

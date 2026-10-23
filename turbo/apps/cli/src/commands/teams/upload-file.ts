@@ -68,6 +68,8 @@ Output:
     {"integration":"teams","chatId":"19:...","messages":[{"id":"...","url":null}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."}}
 
 Notes:
+  - Requires your verified account and access for both you and the bot to the destination
+  - Private messages are limited to your own conversation with the bot
   - Uploads through Okou storage first, then sends the Teams message with the file URL
   - Use the Conversation ID and Activity ID from the current Teams run prompt`,
   )

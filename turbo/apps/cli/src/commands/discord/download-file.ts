@@ -21,7 +21,7 @@ export const downloadFileCommand = new Command()
   .requiredOption("-m, --message <id>", "Discord message ID")
   .option(
     "--guild-id <id>",
-    "Optional; must match your organization's bound guild",
+    "Optional; must match the destination channel's guild",
   )
   .option(
     "-o, --out <path>",

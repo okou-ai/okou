@@ -1,3 +1,4 @@
+import { mockSharedSlackConversations } from "./helpers/slack-conversation-access";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { createStore } from "ccstate";
@@ -546,6 +547,9 @@ type SlackFileMetadata = {
   readonly size: number;
   readonly url_private_download?: string;
   readonly url_private?: string;
+  readonly channels?: string[];
+  readonly groups?: string[];
+  readonly ims?: string[];
 };
 
 function mockSlackFilesInfo(
@@ -554,8 +558,18 @@ function mockSlackFilesInfo(
     | { readonly ok: false; readonly error: string },
 ): void {
   server.use(
-    http.get("https://slack.com/api/files.info", () => {
-      return HttpResponse.json(response);
+    http.get("https://slack.com/api/files.info", ({ request }) => {
+      return HttpResponse.json(
+        response.ok
+          ? {
+              ...response,
+              file: {
+                ...response.file,
+                id: new URL(request.url).searchParams.get("file"),
+              },
+            }
+          : response,
+      );
     }),
   );
 }
@@ -565,6 +579,7 @@ function defaultSlackFile(
 ): SlackFileMetadata {
   return {
     id: "F-OK",
+    channels: ["C123"],
     name: "pic.png",
     mimetype: "image/png",
     size: 19,
@@ -606,6 +621,9 @@ async function expectErrorResponse(
 }
 
 describe("GET /api/integrations/slack/download-file", () => {
+  beforeEach(() => {
+    mockSharedSlackConversations();
+  });
   it.each([
     "users in the same organization",
     "organizations",
@@ -641,6 +659,17 @@ describe("GET /api/integrations/slack/download-file", () => {
         if (b) {
           scenario.beforeWorkspaceCleanup(() => {
             return slackOrgs.uninstallWorkspace(b.slackWorkspaceId);
+          });
+        }
+        if (boundary === "users in the same organization") {
+          if (!first.orgId) {
+            throw new Error("Expected the first actor's organization");
+          }
+          await slackOrgs.connectMember({
+            orgId: first.orgId,
+            userId: other.userId,
+            slackWorkspaceId: a.slackWorkspaceId,
+            run: scenario.run,
           });
         }
         await flushWaitUntilForTest();
@@ -732,6 +761,7 @@ describe("GET /api/integrations/slack/download-file", () => {
             [
               `https://files.slack.com/files-pri/${fileId}/download.txt`,
               request.installation.botToken,
+              expect.any(AbortSignal),
             ],
           ]);
         }
@@ -745,17 +775,28 @@ describe("GET /api/integrations/slack/download-file", () => {
     args: {
       readonly withInstallation?: boolean;
     } = {},
-  ): Promise<{ readonly token: string }> {
+  ): Promise<{
+    readonly token: string;
+    readonly orgId: string;
+    readonly userId: string;
+  }> {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
     if (args.withInstallation !== false) {
-      await slackOrgs.installForOrg({ orgId });
+      const installation = await slackOrgs.installForOrg({ orgId });
+      await slackOrgs.connectMember({
+        orgId,
+        userId,
+        slackWorkspaceId: installation.slackWorkspaceId,
+      });
     }
     // The OAuth install authenticates its installing admin; the Okou token
     // authenticates this member.
     await store.set(seedOrgMembership$, { orgId, userId }, context.signal);
 
     return {
+      orgId,
+      userId,
       token: await claimedToken({ userId, orgId }),
     };
   }
@@ -771,6 +812,20 @@ describe("GET /api/integrations/slack/download-file", () => {
     );
 
     await expectErrorResponse(response, 404, "NOT_FOUND");
+  });
+
+  it("does not download a bot-visible file from another user's private conversation", async () => {
+    const { token } = await seedDownloadContext();
+    mockSlackFilesInfo({
+      ok: true,
+      file: defaultSlackFile({ channels: [], groups: ["G_OTHER_USER"] }),
+    });
+    const response = await requestDownloadFile(
+      "?file_id=F-OK",
+      `Bearer ${token}`,
+    );
+    await expectErrorResponse(response, 404, "NOT_FOUND");
+    expect(context.mocks.slack.fetchFile).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the Slack file has no downloadable URL", async () => {
@@ -915,9 +970,7 @@ describe("GET /api/integrations/slack/download-file", () => {
   });
 
   it("accepts a Clerk session with an active organization", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
-    await slackOrgs.installForOrg({ orgId });
+    const { orgId, userId } = await seedDownloadContext();
     mocks.clerk.session(userId, orgId);
     mockSlackFilesInfo({ ok: true, file: defaultSlackFile() });
     context.mocks.slack.fetchFile.mockResolvedValue(

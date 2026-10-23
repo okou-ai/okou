@@ -42,6 +42,7 @@ How to read the downloaded file:
   - PDF/text/csv/json/markdown: read the file directly
 
 Notes:
+  - Requires slack:read and a file shared by your connected Slack account and Okou
   - Uses the bot token on the server side; no user Slack token is needed
   - Streams the file bytes directly to disk`,
   )

@@ -19,6 +19,7 @@ import {
   storeOutboundAgentPhoneMessage$,
 } from "../services/agentphone.service";
 import { settle } from "../utils";
+import { optionalEnv } from "../../lib/env";
 
 function routeError<Status extends 400 | 401 | 403 | 404 | 502>(
   status: Status,
@@ -73,26 +74,30 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   const phoneHandle = userLink.phoneHandle;
   const userChannel = agentPhoneChannelForLinkedHandle(phoneHandle);
 
-  const agentRows = body.agentphoneAgentId
-    ? Promise.resolve([])
-    : db
-        .select({ agentphoneAgentId: agentphoneMessages.agentphoneAgentId })
-        .from(agentphoneMessages)
-        .where(
-          and(
-            eq(agentphoneMessages.agentphoneUserLinkId, userLink.id),
-            eq(
-              agentphoneMessages.phoneHandle,
-              normalizeAgentPhoneHandle(phoneHandle, userChannel),
-            ),
-          ),
-        )
-        .orderBy(desc(agentphoneMessages.createdAt))
-        .limit(1);
+  const agentRows = db
+    .select({ agentphoneAgentId: agentphoneMessages.agentphoneAgentId })
+    .from(agentphoneMessages)
+    .where(
+      and(
+        eq(agentphoneMessages.agentphoneUserLinkId, userLink.id),
+        body.agentphoneAgentId
+          ? eq(agentphoneMessages.agentphoneAgentId, body.agentphoneAgentId)
+          : undefined,
+        eq(
+          agentphoneMessages.phoneHandle,
+          normalizeAgentPhoneHandle(phoneHandle, userChannel),
+        ),
+      ),
+    )
+    .orderBy(desc(agentphoneMessages.createdAt))
+    .limit(1);
   const [message] = await agentRows;
   signal.throwIfAborted();
   const agentphoneAgentId =
-    body.agentphoneAgentId || (message?.agentphoneAgentId ?? null);
+    body.agentphoneAgentId &&
+    body.agentphoneAgentId === optionalEnv("AGENTPHONE_AGENT_ID")
+      ? body.agentphoneAgentId
+      : (message?.agentphoneAgentId ?? null);
   if (!agentphoneAgentId) {
     return routeError(404, "Phone agent not found", "NOT_FOUND");
   }

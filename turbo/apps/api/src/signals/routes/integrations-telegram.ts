@@ -35,6 +35,7 @@ import {
 import { telegramWebhook$ } from "../services/telegram-post.service";
 import { tapError } from "../utils";
 import type { RouteEntry } from "../route-entry";
+import { requireTelegramFileAccess$ } from "../services/telegram-access.service";
 
 function errorResponse(
   status: number,
@@ -168,7 +169,7 @@ const getIntegrationTelegramLinkStatusInner$ = computed(async (get) => {
 });
 
 const getTelegramDownloadFileInner$ = command(
-  async ({ get }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
     const query = get(
       queryOf(integrationsTelegramDownloadFileContract.download),
     );
@@ -179,6 +180,20 @@ const getTelegramDownloadFileInner$ = command(
 
     if (!botToken) {
       return errorResponse(404, "Telegram bot not found", "NOT_FOUND");
+    }
+
+    const auth = get(organizationAuthContext$);
+    const access = await set(
+      requireTelegramFileAccess$,
+      { orgId: auth.orgId, userId: auth.userId, fileId: query.file_id },
+      signal,
+    );
+    if (access.kind === "denied") {
+      return errorResponse(
+        access.response.status,
+        access.response.body.error.message,
+        access.response.body.error.code,
+      );
     }
 
     const response = await tapError(

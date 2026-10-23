@@ -5,7 +5,11 @@ import { and, eq } from "drizzle-orm";
 
 import { db$ } from "../external/db";
 import type { SlackClient } from "../external/slack-message-client";
-import { tapError } from "../utils";
+import { settle, tapError } from "../utils";
+import {
+  isSlackConversationShared,
+  isSlackConversationWritable,
+} from "../../lib/slack-client";
 import { integrationMessageSendLabels$ } from "./integration-message-context.service";
 
 const userMention$ = computed(async (get) => {
@@ -103,54 +107,126 @@ const noUserConnection = Object.freeze({
 });
 
 /**
- * Resolve a Slack delivery target to a channel ID. A `channel` is used as-is;
- * a `user` (Slack user ID, or `"me"` for the caller's connected Slack user)
- * is resolved to the bot's DM channel with that user.
+ * Resolve and authorize a delivery target shared by the caller and the bot.
  */
 export const resolveSlackTargetChannel$ = command(
   async (
     { get },
     args: {
       readonly client: SlackClient;
+      readonly botToken: string;
       readonly userId: string;
       readonly orgId: string;
       readonly channel?: string;
       readonly user?: string;
+      readonly threadTs?: string;
     },
     signal: AbortSignal,
-  ) => {
+  ): Promise<
+    | { channelId: string }
+    | { status: 400 | 404; body: { error: { code: string; message: string } } }
+  > => {
+    const connectedUser = await get(
+      resolveCurrentUserSlackId({ userId: args.userId, orgId: args.orgId }),
+    );
+    signal.throwIfAborted();
+    if (!connectedUser) {
+      return noUserConnection;
+    }
+    if (args.user && args.user !== "me" && args.user !== connectedUser) {
+      return noUserConnection;
+    }
+    let channelId: string;
     if (!args.user) {
       if (!args.channel) {
         throw new Error("Slack target requires a channel or user");
       }
-      return { channelId: args.channel };
-    }
-
-    let slackUserId = args.user;
-    if (slackUserId === "me") {
-      const resolved = await get(
-        resolveCurrentUserSlackId({ userId: args.userId, orgId: args.orgId }),
-      );
+      channelId = args.channel;
+    } else {
+      const dm = await args.client.openDMChannel(connectedUser);
       signal.throwIfAborted();
-      if (!resolved) {
-        return noUserConnection;
+      if (dm.kind === "slack_error") {
+        return {
+          status: 404 as const,
+          body: {
+            error: {
+              message: `Cannot open DM: ${dm.error}`,
+              code: "NOT_FOUND",
+            },
+          },
+        };
       }
-      slackUserId = resolved;
+      channelId = dm.channelId;
     }
-
-    const dm = await args.client.openDMChannel(slackUserId);
-    signal.throwIfAborted();
-    if (dm.kind === "slack_error") {
+    const shared = await settle(
+      isSlackConversationShared(
+        args.botToken,
+        connectedUser,
+        channelId,
+        signal,
+      ),
+      signal,
+    );
+    if (!shared.ok) {
       return {
-        status: 404 as const,
+        status: 400 as const,
         body: {
           error: {
-            message: `Cannot open DM: ${dm.error}`,
-            code: "NOT_FOUND",
+            code: "SLACK_ERROR",
+            message:
+              "Slack could not verify conversation access. Retry when Slack is available.",
           },
         },
       };
     }
-    return { channelId: dm.channelId };
+    if (!shared.value) {
+      return {
+        status: 404 as const,
+        body: {
+          error: {
+            code: "NOT_FOUND",
+            message:
+              "This Slack conversation is not shared by your connected account and Okou.",
+          },
+        },
+      };
+    }
+    const writable = await settle(
+      isSlackConversationWritable(
+        {
+          token: args.botToken,
+          slackUserId: connectedUser,
+          channelId,
+          thread: args.threadTs !== undefined,
+        },
+        signal,
+      ),
+      signal,
+    );
+    if (!writable.ok) {
+      return {
+        status: 400,
+        body: {
+          error: {
+            code: "SLACK_ERROR",
+            message:
+              "Slack could not verify posting permissions. Check the bot's conversation and user group read scopes.",
+          },
+        },
+      };
+    }
+    if (!writable.value) {
+      return {
+        status: 404,
+        body: {
+          error: {
+            code: "NOT_FOUND",
+            message:
+              "This Slack conversation is not writable by your connected account and Okou.",
+          },
+        },
+      };
+    }
+    return { channelId };
   },
 );

@@ -1,3 +1,4 @@
+import { mockSharedSlackConversations } from "./helpers/slack-conversation-access";
 import { deleteFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { randomUUID } from "node:crypto";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
@@ -178,6 +179,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
   }
 
   beforeEach(() => {
+    mockSharedSlackConversations();
     context.mocks.slack.files.completeUploadExternal.mockResolvedValue({
       ok: true,
     });
@@ -281,14 +283,21 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         );
       });
     }
+    const connections = new Map<string, { readonly slackUserId: string }>();
     async function connectMember(base: {
       readonly orgId: string;
       readonly userId: string;
       readonly slackWorkspaceId: string;
     }) {
+      const key = `${base.orgId}:${base.slackWorkspaceId}:${base.userId}`;
+      const existing = connections.get(key);
+      if (existing) {
+        return existing;
+      }
       const connection = await scenario.run(() => {
         return slackOrgs.connectMember({ ...base, run: scenario.run });
       });
+      connections.set(key, connection);
       await restoreMembership(base);
       return connection;
     }
@@ -300,6 +309,10 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           installer: scenario.user({ orgId: base.orgId, orgRole: "org:admin" }),
           run: scenario.run,
         });
+      });
+      await connectMember({
+        ...base,
+        slackWorkspaceId: installed.slackWorkspaceId,
       });
       await restoreMembership(base);
       return { ...base, slackWorkspaceId: installed.slackWorkspaceId };
@@ -532,6 +545,68 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     ).toHaveBeenCalledTimes(1);
   });
 
+  it("rechecks membership before preparing a canonical Slack delivery", async () => {
+    const fixture = createUploadFixture();
+    const upload = await pendingCanonicalUpload(fixture);
+    mockSharedSlackConversations([]);
+    const result = await fixture.run(() => {
+      return accept(
+        setupApp({ context, routes: integrationsSlackUploadMaterializeRoutes })(
+          integrationsSlackUploadMaterializeContract,
+        ).materialize(upload.request),
+        [200],
+      );
+    });
+    expect(result.body.delivery).toMatchObject({
+      status: "failed",
+      message: expect.stringContaining("not shared"),
+    });
+    expect(
+      context.mocks.slack.files.completeUploadExternal,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("denies completion when membership is revoked after Slack upload preparation", async () => {
+    const fixture = createUploadFixture();
+    const upload = await pendingCanonicalUpload(fixture);
+    const materialized = await fixture.run(() => {
+      return accept(
+        setupApp({ context, routes: integrationsSlackUploadMaterializeRoutes })(
+          integrationsSlackUploadMaterializeContract,
+        ).materialize(upload.request),
+        [200],
+      );
+    });
+    const delivery = materialized.body.delivery;
+    if (delivery.status !== "pending") {
+      throw new Error("Expected a prepared Slack upload");
+    }
+    mockSharedSlackConversations([]);
+    const completed = await fixture.run(() => {
+      return accept(
+        setupApp({ context, routes: integrationsSlackUploadCompleteRoutes })(
+          integrationsSlackUploadCompleteContract,
+        ).complete({
+          headers: upload.request.headers,
+          body: {
+            canonicalAssetId: upload.request.body.assetId,
+            operationId: upload.request.body.operationId,
+            fileId: delivery.fileId,
+            channel: "C123",
+          },
+        }),
+        [200],
+      );
+    });
+    expect(completed.body).toMatchObject({
+      deliveryStatus: "failed",
+      deliveryError: expect.stringContaining("not shared"),
+    });
+    expect(
+      context.mocks.slack.files.completeUploadExternal,
+    ).not.toHaveBeenCalled();
+  });
+
   it("records a canonical Slack reconciliation failure and retries materialization", async () => {
     const fixture = createUploadFixture();
     const upload = await pendingCanonicalUpload(fixture);
@@ -692,6 +767,9 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       deliveryStatus: "delivered",
     };
     for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt === 1) {
+        mockSharedSlackConversations([]);
+      }
       const completed = await fixture.run(() => {
         return accept(
           client.complete({ headers: upload.request.headers, body }),
@@ -918,8 +996,17 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         actor: second,
         withConnection: true,
       });
+      if (!first.orgId) {
+        throw new Error("Expected the first actor's organization");
+      }
       fixture.beforeWorkspaceCleanup(() => {
         return slackOrgs.uninstallWorkspace(b.slackWorkspaceId);
+      });
+      await slackOrgs.connectMember({
+        orgId: first.orgId,
+        userId: member.userId,
+        slackWorkspaceId: a.slackWorkspaceId,
+        run: fixture.run,
       });
       await flushWaitUntilForTest();
       const requests = [

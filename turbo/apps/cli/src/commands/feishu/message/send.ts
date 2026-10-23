@@ -51,7 +51,9 @@ export function createFeishuSendCommand(platform: FeishuPlatform) {
   const providerName = FEISHU_PLATFORMS[platform].name;
   return new Command()
     .name("send")
-    .description(`Send a message to a ${providerName} chat or user`)
+    .description(
+      `Send a message to a shared ${providerName} chat or your bot DM`,
+    )
     .option(
       TO_OPTION_FLAGS,
       toOptionDescription("oc_… chat, ou_… user open ID"),
@@ -67,13 +69,15 @@ export function createFeishuSendCommand(platform: FeishuPlatform) {
       `
 Examples:
   Chat message:          okou ${platform} message send --to oc_xxx -t "Hello!"
-  Direct message:        okou ${platform} message send --to ou_xxx -t "Hello!"
+  DM your own ID:        okou ${platform} message send --to ou_xxx -t "Hello!"
   DM yourself:           okou ${platform} message send --to me -t "Hello!"
   Thread reply:          okou ${platform} message send --reply-to om_xxx --reply-mode thread -t "Reply"
   Interactive card:      okou ${platform} message send --to oc_xxx --rich '{"schema":"2.0","body":{"elements":[]}}'
   Select a custom app:   okou ${platform} message send --as <installation-id> --to oc_xxx -t "Hello!"
 
 Notes:
+  - Requires your verified account and access for both you and the bot to the destination
+  - Private messages are limited to your own conversation with the bot
   - Exactly one of --to or --reply-to is required; replies go to the replied-to message's chat
   - Exactly one of --text or --rich is required
   - --as is required when the organization has multiple ${providerName} bots`,

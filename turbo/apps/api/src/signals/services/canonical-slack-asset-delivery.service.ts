@@ -9,6 +9,7 @@ import { and, eq, isNull, ne, sql, type SQL } from "drizzle-orm";
 import type { SlackClient } from "../external/slack-message-client";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
+import { resolveSlackTargetChannel$ } from "./slack-message-context.service";
 
 interface CanonicalSlackDeliveryRow {
   readonly assetId: string;
@@ -340,6 +341,8 @@ interface PrepareCanonicalSlackDeliveryArgs {
   readonly operationId: string;
   readonly runId: string;
   readonly userId: string;
+  readonly orgId: string;
+  readonly botToken: string;
   readonly client: SlackClient;
 }
 
@@ -363,6 +366,53 @@ function slackDeliveryReadCondition(
   );
 }
 
+const readCanonicalSlackConflict$ = command(
+  async (
+    { set },
+    row: CanonicalSlackDeliveryRow,
+  ): Promise<CanonicalSlackDeliveryResult> => {
+    const [current] = await set(writeDb$)
+      .select(slackConflictSelection())
+      .from(canonicalAssetDeliveries)
+      .where(deliveryIdentityCondition(row))
+      .limit(1);
+    return conflictDeliveryResult(current);
+  },
+);
+
+const authorizeCanonicalSlackDelivery$ = command(
+  async (
+    { set },
+    args: Pick<
+      PrepareCanonicalSlackDeliveryArgs,
+      "orgId" | "userId" | "botToken" | "client"
+    > & {
+      destination: CanonicalSlackDeliveryRow["destination"];
+    },
+    signal: AbortSignal,
+  ) => {
+    const access = await set(
+      resolveSlackTargetChannel$,
+      {
+        client: args.client,
+        botToken: args.botToken,
+        orgId: args.orgId,
+        userId: args.userId,
+        channel: args.destination.channelId,
+        threadTs: args.destination.threadTs,
+      },
+      signal,
+    );
+    return "status" in access
+      ? failedResult({
+          code: "slack-access-denied",
+          message: access.body.error.message,
+          retryable: access.body.error.code === "SLACK_ERROR",
+        })
+      : null;
+  },
+);
+
 export const prepareCanonicalSlackDelivery$ = command(
   async (
     { set },
@@ -370,31 +420,31 @@ export const prepareCanonicalSlackDelivery$ = command(
     signal: AbortSignal,
   ): Promise<CanonicalSlackDeliveryResult | null> => {
     const db = set(writeDb$);
-    const readDelivery = async (): Promise<SlackDeliveryReadResult> => {
-      const [row] = await db
-        .select(slackDeliverySelection())
-        .from(canonicalAssetDeliveries)
-        .innerJoin(runUploadedFiles, slackDeliveryAssetJoin())
-        .where(slackDeliveryReadCondition(args))
-        .limit(1);
-      return validatedSlackDeliveryRow(row);
-    };
-    const row = await readDelivery();
+    const [persisted] = await db
+      .select(slackDeliverySelection())
+      .from(canonicalAssetDeliveries)
+      .innerJoin(runUploadedFiles, slackDeliveryAssetJoin())
+      .where(slackDeliveryReadCondition(args))
+      .limit(1);
     signal.throwIfAborted();
+    const row = validatedSlackDeliveryRow(persisted);
     if (!row) {
       return null;
     }
     if (row.status === "delivered") {
       return deliveredResult(row);
     }
+    const accessFailure = await set(
+      authorizeCanonicalSlackDelivery$,
+      { ...args, destination: row.destination },
+      signal,
+    );
+    if (accessFailure) {
+      return accessFailure;
+    }
 
-    const readConflict = async (): Promise<CanonicalSlackDeliveryResult> => {
-      const [current] = await db
-        .select(slackConflictSelection())
-        .from(canonicalAssetDeliveries)
-        .where(deliveryIdentityCondition(row))
-        .limit(1);
-      return conflictDeliveryResult(current);
+    const readConflict = () => {
+      return set(readCanonicalSlackConflict$, row);
     };
 
     const recordPreparationFailure = async (
@@ -503,6 +553,8 @@ interface CompleteCanonicalSlackDeliveryArgs {
   readonly operationId: string;
   readonly runId: string;
   readonly userId: string;
+  readonly orgId: string;
+  readonly botToken: string;
   readonly fileId: string;
   readonly uploadError?: string;
   readonly client: SlackClient;
@@ -521,30 +573,33 @@ export const completeCanonicalSlackDelivery$ = command(
     (CanonicalSlackDeliveryResult & { readonly channelId: string }) | null
   > => {
     const db = set(writeDb$);
-    const readDelivery = async (): Promise<SlackDeliveryReadResult> => {
-      const [row] = await db
-        .select(slackDeliverySelection())
-        .from(canonicalAssetDeliveries)
-        .innerJoin(
-          runUploadedFiles,
-          eq(runUploadedFiles.id, canonicalAssetDeliveries.assetId),
-        )
-        .where(slackDeliveryReadCondition(args))
-        .limit(1);
-      return validatedSlackDeliveryRow(row);
-    };
-    const row = await readDelivery();
+    const [persisted] = await db
+      .select(slackDeliverySelection())
+      .from(canonicalAssetDeliveries)
+      .innerJoin(
+        runUploadedFiles,
+        eq(runUploadedFiles.id, canonicalAssetDeliveries.assetId),
+      )
+      .where(slackDeliveryReadCondition(args))
+      .limit(1);
     signal.throwIfAborted();
+    const row = validatedSlackDeliveryRow(persisted);
     if (!row) {
       return null;
     }
-    const readConflict = async (): Promise<CanonicalSlackDeliveryResult> => {
-      const [current] = await db
-        .select(slackConflictSelection())
-        .from(canonicalAssetDeliveries)
-        .where(deliveryIdentityCondition(row))
-        .limit(1);
-      return conflictDeliveryResult(current);
+    if (row.status === "delivered") {
+      return { ...deliveredResult(row), channelId: row.destination.channelId };
+    }
+    const accessFailure = await set(
+      authorizeCanonicalSlackDelivery$,
+      { ...args, destination: row.destination },
+      signal,
+    );
+    if (accessFailure) {
+      return { ...accessFailure, channelId: row.destination.channelId };
+    }
+    const readConflict = () => {
+      return set(readCanonicalSlackConflict$, row);
     };
 
     const completeDelivery = async (
@@ -564,9 +619,6 @@ export const completeCanonicalSlackDelivery$ = command(
           .returning({ id: canonicalAssetDeliveries.id });
         return failed ? failedResult(error) : await readConflict();
       };
-      if (row.status === "delivered") {
-        return deliveredResult(row);
-      }
       if (row.externalId !== args.fileId) {
         return await readConflict();
       }

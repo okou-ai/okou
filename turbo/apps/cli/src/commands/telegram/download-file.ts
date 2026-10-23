@@ -41,6 +41,7 @@ How to read the downloaded file:
   - PDF/text/csv/json/markdown: read the file directly
 
 Notes:
+  - File IDs must be recorded in this workspace and belong to a conversation you can access
   - Uses the official Okou Telegram bot
   - Streams the file bytes directly to disk`,
   )

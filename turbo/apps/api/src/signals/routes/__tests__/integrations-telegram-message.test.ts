@@ -1,3 +1,7 @@
+import {
+  createBddIntegrationApi,
+  telegramLoginAuth,
+} from "./helpers/api-bdd-integrations";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
 import { randomInt, randomUUID } from "node:crypto";
@@ -59,6 +63,27 @@ function officialSender() {
   };
 }
 
+async function linkTelegramTestSender(
+  actor: ApiTestUser,
+  telegramUserId: string,
+) {
+  const bdd = createBddApi(context);
+  bdd.acceptAgentStorageWrites();
+  await bdd.readOnboardingStatus(actor);
+  await bdd.completeOnboarding(actor);
+  await createBddIntegrationApi(context).requestLinkTelegram(
+    actor,
+    {
+      telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+      telegramAuth: telegramLoginAuth(OFFICIAL_BOT_TOKEN, {
+        id: Number(telegramUserId),
+        first_name: "Sender",
+      }),
+    },
+    [200],
+  );
+}
+
 type FooterModel = "claude-fable-5-1" | "gpt-6.1-sol";
 
 async function connectFooterCodexSubscription(
@@ -82,13 +107,17 @@ async function connectFooterCodexSubscription(
   }
 }
 
-async function sendOfficialModelMessage(token: string) {
+async function sendOfficialModelMessage(token: string, actor: ApiTestUser) {
   mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", OFFICIAL_BOT_TOKEN);
   mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "official_okou_bot");
   context.mocks.clerk.authenticateRequest.mockResolvedValue({
     isAuthenticated: false,
   });
   const chatId = String(randomInt(1, 2 ** 48));
+  await linkTelegramTestSender(actor, chatId);
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+  });
   let telegramBody: unknown;
   const apiBase =
     optionalEnv("TELEGRAM_API_URL") || "https://api.telegram.org/bot";
@@ -223,7 +252,7 @@ function sendClaimedModelMessage(model: FooterModel) {
       if (!token?.startsWith("vm0_sandbox_")) {
         throw new Error("Expected the actual claim to issue an OKOU_TOKEN");
       }
-      return await sendOfficialModelMessage(token);
+      return await sendOfficialModelMessage(token, actor);
     })
     .finally(() => {
       restoreAccepted = captureConnectorExternalState(context);
@@ -335,6 +364,13 @@ describe("POST /api/integrations/telegram/message", () => {
       isAuthenticated: false,
     });
     const chatId = String(randomInt(1, 2 ** 48));
+    await linkTelegramTestSender(
+      { orgId, userId, orgRole: "org:admin", email: `${userId}@example.test` },
+      chatId,
+    );
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
     let telegramBody: unknown;
     const apiBase =
       optionalEnv("TELEGRAM_API_URL") || "https://api.telegram.org/bot";
@@ -434,6 +470,94 @@ function publicMessageActors() {
 }
 
 describe("official Telegram self delivery", () => {
+  it.each([
+    "shared",
+    "missing user",
+    "missing bot",
+    "restricted user",
+    "restricted bot",
+    "other private chat",
+  ])("checks both Telegram principals before sending: %s", async (scenario) => {
+    const sender = officialSender();
+    await sender.run(async () => {
+      await sender.onboard();
+      await sender.link(sender.telegramUserId);
+      const chatId = -1_001_234_567_890;
+      const posts: string[] = [];
+      server.use(
+        http.get(
+          `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/getChat`,
+          () => {
+            return HttpResponse.json({
+              ok: true,
+              result:
+                scenario === "other private chat"
+                  ? { id: Number(sender.telegramUserId) + 1, type: "private" }
+                  : {
+                      id: chatId,
+                      type: "supergroup",
+                      permissions: {
+                        can_send_messages: true,
+                        can_send_documents: true,
+                      },
+                    },
+            });
+          },
+        ),
+        http.get(
+          `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/getChatMember`,
+          ({ request }) => {
+            const id = Number(new URL(request.url).searchParams.get("user_id"));
+            const user = id === Number(sender.telegramUserId);
+            const missing =
+              (user && scenario === "missing user") ||
+              (!user && scenario === "missing bot");
+            const restricted =
+              (user && scenario === "restricted user") ||
+              (!user && scenario === "restricted bot");
+            return HttpResponse.json({
+              ok: true,
+              result: {
+                user: { id },
+                status: missing ? "left" : restricted ? "restricted" : "member",
+                is_member: true,
+                can_send_messages: !restricted,
+              },
+            });
+          },
+        ),
+        http.post(
+          `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/sendMessage`,
+          async ({ request }) => {
+            const body = z
+              .object({ chat_id: z.string() })
+              .parse(await request.json());
+            posts.push(body.chat_id);
+            return HttpResponse.json({
+              ok: true,
+              result: { message_id: 42, chat: { id: Number(body.chat_id) } },
+            });
+          },
+        ),
+      );
+      const client = setupApp({
+        context,
+        routes: integrationsTelegramMessageRoutes,
+      })(integrationsTelegramMessageContract);
+      const response = await client.sendMessage({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          botId: OFFICIAL_TELEGRAM_BOT_ID,
+          chatId: "@requested_chat",
+          text: "authorized group message",
+        },
+      });
+      expect(response.status).toBe(scenario === "shared" ? 200 : 404);
+      expect(posts).toStrictEqual(
+        scenario === "shared" ? [String(chatId)] : [],
+      );
+    });
+  });
   it("rejects an unlinked public actor without sending through another actor's link", async () => {
     const { a, b, telegramPosts } = publicMessageActors();
     await a.onboard();
@@ -610,81 +734,125 @@ describe("official Telegram self delivery", () => {
     });
   });
 
-  it("delivers an uploaded file to the caller's linked private chat", async () => {
-    const sender = officialSender();
-    await sender.run(async () => {
-      await sender.onboard();
-      await sender.link(sender.telegramUserId);
-      installSharedThreadStorage(context);
-      const initialized = await accept(
-        sender.run(async () => {
-          return await setupApp({
-            context,
-            routes: integrationsTelegramUploadInitRoutes,
-          })(integrationsTelegramUploadInitContract).init({
-            headers: { authorization: "Bearer clerk-session" },
-            body: {
-              filename: "report.pdf",
-              contentType: "application/pdf",
-              length: 1234,
-            },
-          });
-        }),
-        [200],
-      );
-      const { uploadId } = initialized.body;
-      expect(
-        (
-          await sender.run(async () => {
-            return await fetch(initialized.body.uploadUrl, {
-              method: "PUT",
-              headers: initialized.body.uploadHeaders,
-              body: Buffer.alloc(1234),
-            });
-          })
-        ).status,
-      ).toBe(200);
-      let telegramBody: Record<string, unknown> | undefined;
-      server.use(
-        http.post(
-          `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/sendDocument`,
-          async ({ request }) => {
-            telegramBody = (await request.json()) as Record<string, unknown>;
-            return HttpResponse.json({
-              ok: true,
-              result: {
-                message_id: 322,
-                chat: { id: Number(sender.telegramUserId) },
+  it.each(["own DM", "revoked group"] as const)(
+    "authorizes Telegram file delivery to %s",
+    async (destination) => {
+      const sender = officialSender();
+      await sender.run(async () => {
+        await sender.onboard();
+        await sender.link(sender.telegramUserId);
+        installSharedThreadStorage(context);
+        const initialized = await accept(
+          sender.run(async () => {
+            return await setupApp({
+              context,
+              routes: integrationsTelegramUploadInitRoutes,
+            })(integrationsTelegramUploadInitContract).init({
+              headers: { authorization: "Bearer clerk-session" },
+              body: {
+                filename: "report.pdf",
+                contentType: "application/pdf",
+                length: 1234,
               },
             });
-          },
-        ),
-      );
-      const client = setupApp({
-        context,
-        routes: integrationsTelegramUploadCompleteRoutes,
-      })(integrationsTelegramUploadCompleteContract);
-      const response = await accept(
-        sender.run(async () => {
-          return await client.complete({
-            body: {
-              uploadId,
-              botId: OFFICIAL_TELEGRAM_BOT_ID,
-              chatId: "me",
-              contentType: "application/pdf",
+          }),
+          [200],
+        );
+        const { uploadId } = initialized.body;
+        expect(
+          (
+            await sender.run(async () => {
+              return await fetch(initialized.body.uploadUrl, {
+                method: "PUT",
+                headers: initialized.body.uploadHeaders,
+                body: Buffer.alloc(1234),
+              });
+            })
+          ).status,
+        ).toBe(200);
+        let telegramBody: Record<string, unknown> | undefined;
+        let chatChecks = 0;
+        server.use(
+          http.get(
+            `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/getChat`,
+            () => {
+              chatChecks += 1;
+              return HttpResponse.json({
+                ok: true,
+                result: {
+                  id: -100_123,
+                  type: "supergroup",
+                  permissions: {
+                    can_send_messages: true,
+                    can_send_documents: true,
+                  },
+                },
+              });
             },
-            headers: { authorization: "Bearer clerk-session" },
-          });
-        }),
-        [200],
-      );
-      expect(telegramBody).toMatchObject({ chat_id: sender.telegramUserId });
-      expect(response.body).toMatchObject({
-        messageId: 322,
-        chatId: sender.telegramUserId,
+          ),
+          http.get(
+            `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/getChatMember`,
+            ({ request }) => {
+              const userId = new URL(request.url).searchParams.get("user_id");
+              return HttpResponse.json({
+                ok: true,
+                result: {
+                  user: { id: Number(userId) },
+                  status:
+                    userId === sender.telegramUserId && chatChecks > 1
+                      ? "left"
+                      : "member",
+                },
+              });
+            },
+          ),
+          http.post(
+            `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/sendDocument`,
+            async ({ request }) => {
+              telegramBody = (await request.json()) as Record<string, unknown>;
+              return HttpResponse.json({
+                ok: true,
+                result: {
+                  message_id: 322,
+                  chat: { id: Number(sender.telegramUserId) },
+                },
+              });
+            },
+          ),
+        );
+        const client = setupApp({
+          context,
+          routes: integrationsTelegramUploadCompleteRoutes,
+        })(integrationsTelegramUploadCompleteContract);
+        const response = await accept(
+          sender.run(async () => {
+            return await client.complete({
+              body: {
+                uploadId,
+                botId: OFFICIAL_TELEGRAM_BOT_ID,
+                chatId: destination === "own DM" ? "me" : "-100123",
+                contentType: "application/pdf",
+              },
+              headers: { authorization: "Bearer clerk-session" },
+            });
+          }),
+          [200, 404],
+        );
+        if (destination === "revoked group") {
+          expect(chatChecks).toBe(2);
+          expect(response.status).toBe(404);
+          expect(telegramBody).toBeUndefined();
+          return;
+        }
+        expect(response.status).toBe(200);
+        expect(telegramBody).toMatchObject({ chat_id: sender.telegramUserId });
+        expect(response.body).toMatchObject({
+          messageId: 322,
+          chatId: sender.telegramUserId,
+        });
       });
-    });
-  });
+    },
+  );
 
   it("rejects self uploads without an official Telegram link", async () => {
     officialSender();

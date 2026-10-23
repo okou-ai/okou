@@ -7,19 +7,22 @@ import { z } from "zod";
 import { inferMimetype } from "../../lib/mimetype";
 import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
 import type { AuthContext } from "../../types/auth";
-import { authContext$ } from "../auth/auth-context";
+import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { queryOf } from "../context/request";
 import { db$ } from "../external/db";
 import { fetchTeamsFile } from "../external/teams-bot-client";
 import {
-  decodeTeamsFileToken,
   teamsFileTokenPayloadSchema,
   type TeamsFileTokenPayload,
 } from "../services/teams-file-token";
 import { teamsDeliveryTargetSchema } from "../services/teams-chat-callback-payload";
 import type { RouteEntry } from "../route-entry";
 import { safeUriComponentDecode } from "../utils";
+import {
+  teamsInstallation,
+  resolveTeamsMessageTarget$,
+} from "../services/teams-message-target.service";
 
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 const teamsChatCallbackPayloadSchema = z.object({
@@ -129,20 +132,19 @@ const teamsFilePayloadForRun$ = computed(async (get) => {
         return candidate.fileId === input.fileId;
       })
     : undefined;
-  return file ? teamsFileTokenPayloadSchema.parse(file) : null;
+  return file && parsed.success
+    ? {
+        file: teamsFileTokenPayloadSchema.parse(file),
+        delivery: parsed.data.teamsDelivery,
+      }
+    : null;
 });
 
-const resolvedTeamsFilePayload$ = computed(async (get) => {
-  const input = get(downloadInput$);
-  if (!input) {
-    return null;
-  }
-  const signedPayload = decodeTeamsFileToken(input.fileId);
-  if (signedPayload) {
-    return signedPayload;
-  }
-  return input.runId ? await get(teamsFilePayloadForRun$) : null;
-});
+const installation$ = teamsInstallation(
+  computed((get) => {
+    return get(organizationAuthContext$).orgId;
+  }),
+);
 
 function runIdFromAuth(auth: AuthContext): string | undefined {
   return "runId" in auth ? auth.runId : undefined;
@@ -163,16 +165,62 @@ function resolveFilename(args: {
   );
 }
 
-const download$ = command(async ({ get }, signal: AbortSignal) => {
+const authorizeTeamsDownload$ = command(
+  async (
+    { get, set },
+    signal: AbortSignal,
+  ): Promise<TeamsFileTokenPayload | Response> => {
+    const scoped = await get(teamsFilePayloadForRun$);
+    signal.throwIfAborted();
+    if (!scoped?.delivery) {
+      return jsonResponse(
+        404,
+        "Microsoft Teams file is unavailable to this run",
+        "NOT_FOUND",
+      );
+    }
+    const installation = await get(installation$);
+    signal.throwIfAborted();
+    if (
+      !installation ||
+      installation.teamsTenantId !== scoped.file.tenantId ||
+      installation.teamsTenantId !== scoped.delivery.tenantId
+    ) {
+      return jsonResponse(
+        404,
+        "Microsoft Teams file is unavailable to this run",
+        "NOT_FOUND",
+      );
+    }
+    const access = await set(
+      resolveTeamsMessageTarget$,
+      {
+        installation,
+        userId: get(organizationAuthContext$).userId,
+        body: { conversationId: scoped.delivery.conversationId },
+      },
+      signal,
+    );
+    if ("status" in access) {
+      return jsonResponse(
+        access.status,
+        access.body.error.message,
+        access.body.error.code,
+      );
+    }
+    return scoped.file;
+  },
+);
+
+const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   const input = get(downloadInput$);
   if (!input) {
     return jsonResponse(400, "file_id is required", "BAD_REQUEST");
   }
 
-  const payload = await get(resolvedTeamsFilePayload$);
-  signal.throwIfAborted();
-  if (!payload) {
-    return jsonResponse(400, "Invalid Microsoft Teams file id", "BAD_REQUEST");
+  const payload = await set(authorizeTeamsDownload$, signal);
+  if (payload instanceof Response) {
+    return payload;
   }
   if (!isAllowedTeamsDownloadUrl(payload.url)) {
     return jsonResponse(

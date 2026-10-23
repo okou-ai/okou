@@ -31,6 +31,8 @@ Examples:
   DM yourself:         okou telegram message send --to me -t "Hello!"
 
 Notes:
+  - Requires your verified account and access for both you and the bot to the destination
+  - Private messages are limited to your own conversation with the bot
   - Message text can be provided with --text or piped on stdin
   - Sends through the official Okou Telegram bot
   - --to me requires your Telegram account to be linked to the official Okou bot`,

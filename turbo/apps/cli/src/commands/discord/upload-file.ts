@@ -190,7 +190,7 @@ export const uploadFileCommand = new Command()
   )
   .option(
     "--guild-id <id>",
-    "Optional; must match your organization's bound guild",
+    "Optional; must match the destination channel's guild",
   )
   .option("-t, --text <text>", "Comment to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")

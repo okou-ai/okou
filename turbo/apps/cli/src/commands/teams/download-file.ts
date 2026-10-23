@@ -28,6 +28,7 @@ Output:
     {"path":"/tmp/teams-...","mimetype":"image/png","size":12345}
 
 Notes:
+  - File IDs must belong to this run and a conversation your connected account can access
   - Use the file id from a [Teams file] block in the prompt
   - Streams the file bytes directly to disk`,
   )

@@ -32,7 +32,7 @@ export const sendCommand = new Command()
   )
   .option(
     "--guild-id <id>",
-    "Optional; must match your organization's bound guild",
+    "Optional; must match the destination channel's guild",
   )
   .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
@@ -46,7 +46,7 @@ Examples:
 
 Notes:
   - Requires discord:write and access for both your verified Discord user and Okou.
-  - --guild-id is optional; when given, it must match your organization's bound guild.
+  - --guild-id is optional; when given, it must match the destination channel's guild.
   - To send in a native thread, pass its channel ID to --to. This command does not create threads.
   - --reply-to references a message in that destination; it does not create or enter a thread.
   - Run-triggered sends include agent, sender, and model attribution once, after the text.

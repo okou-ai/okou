@@ -1,8 +1,11 @@
+import { mockSharedSlackConversations } from "./helpers/slack-conversation-access";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createStore } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { server } from "../../../mocks/server";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
 
@@ -27,6 +30,7 @@ const api = createRunsApi(context);
 
 describe("POST /api/integrations/slack/message", () => {
   beforeEach(() => {
+    mockSharedSlackConversations();
     context.mocks.slack.chat.postMessage.mockResolvedValue({
       ok: true,
       ts: "mock.ts",
@@ -75,13 +79,19 @@ describe("POST /api/integrations/slack/message", () => {
     return connection;
   }
 
-  async function seedWithInstallation(): Promise<{
+  async function seedWithInstallation(connected = true): Promise<{
     orgId: string;
     userId: string;
     slackWorkspaceId: string;
   }> {
     const base = await seedBaseContext();
     const fixture = await slackOrgs.installForOrg({ orgId: base.orgId });
+    if (connected) {
+      await connectMember({
+        ...base,
+        slackWorkspaceId: fixture.slackWorkspaceId,
+      });
+    }
     await restoreMembership(base);
     return { ...base, slackWorkspaceId: fixture.slackWorkspaceId };
   }
@@ -179,6 +189,17 @@ describe("POST /api/integrations/slack/message", () => {
             ? slackOrgs.uninstallWorkspace(b.slackWorkspaceId)
             : Promise.resolve();
         });
+        if (boundary === "membership") {
+          if (!first.orgId) {
+            throw new Error("Expected the first actor's organization");
+          }
+          await slackOrgs.connectMember({
+            orgId: first.orgId,
+            userId: member.userId,
+            slackWorkspaceId: a.slackWorkspaceId,
+            run: scenario.run,
+          });
+        }
         await flushWaitUntilForTest();
         const requests = [
           { actor: first, installation: a },
@@ -326,6 +347,180 @@ describe("POST /api/integrations/slack/message", () => {
     );
   });
 
+  it("denies a channel or bot DM that the caller does not share", async () => {
+    const actor = await seedWithInstallation();
+    const token = await credentials.okouToken(actor);
+    mockSharedSlackConversations([]);
+    context.mocks.slack.chat.postMessage.mockClear();
+    const client = setupApp({
+      context,
+      routes: integrationsSlackMessageRoutes,
+    })(integrationsSlackMessageContract);
+    for (const target of [
+      { channel: "C_PRIVATE_OTHER" },
+      { channel: "D_OTHER_USER" },
+      { user: "U_OTHER_USER" },
+    ]) {
+      const response = await accept(
+        client.sendMessage({
+          headers: { authorization: `Bearer ${token}` },
+          body: { ...target, text: "must remain private" },
+        }),
+        [404],
+      );
+      expect(response.body.error.code).toBe("NOT_FOUND");
+    }
+    expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { is_read_only: true },
+    { properties: { posting_restricted_to: { type: ["admin"] } } },
+    { properties: { threads_restricted_to: { user: ["U_OTHER_USER"] } } },
+  ])("denies restricted Slack posting for %j", async (restriction) => {
+    const actor = await seedWithInstallation();
+    const token = await credentials.okouToken(actor);
+    server.use(
+      http.get("https://slack.com/api/conversations.info", () => {
+        return HttpResponse.json({
+          ok: true,
+          channel: { id: "C123456", ...restriction },
+        });
+      }),
+    );
+    context.mocks.slack.chat.postMessage.mockClear();
+    const response = await accept(
+      setupApp({ context, routes: integrationsSlackMessageRoutes })(
+        integrationsSlackMessageContract,
+      ).sendMessage({
+        headers: { authorization: `Bearer ${token}` },
+        body: {
+          channel: "C123456",
+          text: "no borrowed posting authority",
+          ...(restriction.properties?.threads_restricted_to
+            ? { threadTs: "1234567890.123456" }
+            : {}),
+        },
+      }),
+      [404],
+    );
+    expect(response.body.error.code).toBe("NOT_FOUND");
+    expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { role: "ra", admin: false, external: false, guest: true, allowed: true },
+    {
+      role: "regular",
+      admin: false,
+      external: false,
+      guest: false,
+      allowed: true,
+    },
+    {
+      role: "regular",
+      admin: false,
+      external: false,
+      guest: true,
+      allowed: false,
+    },
+    {
+      role: "admin",
+      admin: true,
+      external: false,
+      guest: false,
+      allowed: true,
+    },
+    {
+      role: "admin",
+      admin: true,
+      external: true,
+      guest: false,
+      allowed: false,
+    },
+  ])("checks Slack posting roles for %j", async (scenario) => {
+    const actor = await seedWithInstallation();
+    const token = await credentials.okouToken(actor);
+    server.use(
+      http.get("https://slack.com/api/conversations.info", () => {
+        return HttpResponse.json({
+          ok: true,
+          channel: {
+            id: "C123456",
+            is_ext_shared: scenario.external,
+            conversation_host_id: "T_HOME",
+            properties: { posting_restricted_to: { type: [scenario.role] } },
+          },
+        });
+      }),
+      http.get("https://slack.com/api/users.info", ({ request }) => {
+        return HttpResponse.json({
+          ok: true,
+          user: {
+            id: new URL(request.url).searchParams.get("user"),
+            team_id: "T_AWAY",
+            is_admin: scenario.admin,
+            is_owner: false,
+            is_restricted: scenario.guest,
+            is_ultra_restricted: false,
+          },
+        });
+      }),
+    );
+    context.mocks.slack.chat.postMessage.mockClear();
+    const response = await accept(
+      setupApp({ context, routes: integrationsSlackMessageRoutes })(
+        integrationsSlackMessageContract,
+      ).sendMessage({
+        headers: { authorization: `Bearer ${token}` },
+        body: { channel: "C123456", text: "role-checked" },
+      }),
+      [200, 404],
+    );
+    expect(response.status).toBe(scenario.allowed ? 200 : 404);
+    expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledTimes(
+      scenario.allowed ? 1 : 0,
+    );
+  });
+
+  it("fails closed when Slack cannot verify conversation access", async () => {
+    const actor = await seedWithInstallation();
+    const token = await credentials.okouToken(actor);
+    server.use(
+      http.get("https://slack.com/api/users.conversations", () => {
+        return new HttpResponse(null, { status: 503 });
+      }),
+    );
+    context.mocks.slack.chat.postMessage.mockClear();
+    const response = await accept(
+      setupApp({ context, routes: integrationsSlackMessageRoutes })(
+        integrationsSlackMessageContract,
+      ).sendMessage({
+        headers: { authorization: `Bearer ${token}` },
+        body: { channel: "C123456", text: "blocked during outage" },
+      }),
+      [400],
+    );
+    expect(response.body.error.code).toBe("SLACK_ERROR");
+    expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
+  });
+
+  it("requires the caller's own Slack connection for an explicit channel", async () => {
+    const actor = await seedWithInstallation(false);
+    const token = await credentials.okouToken(actor);
+    const response = await accept(
+      setupApp({ context, routes: integrationsSlackMessageRoutes })(
+        integrationsSlackMessageContract,
+      ).sendMessage({
+        headers: { authorization: `Bearer ${token}` },
+        body: { channel: "C123456", text: "no borrowed bot authority" },
+      }),
+      [404],
+    );
+    expect(response.body.error.code).toBe("NOT_FOUND");
+    expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
+  });
+
   it("forwards Slack API error with 400 status", async () => {
     const { orgId, userId } = await seedWithInstallation();
     const token = await credentials.okouToken({ userId, orgId });
@@ -351,8 +546,14 @@ describe("POST /api/integrations/slack/message", () => {
     expect(response.body.error.message).toContain("channel_not_found");
   });
 
-  it("sends DM via user field using conversations.open", async () => {
-    const { orgId, userId } = await seedWithInstallation();
+  it("sends to the connected user through its explicit Slack ID", async () => {
+    const { orgId, userId, slackWorkspaceId } =
+      await seedWithInstallation(false);
+    const { slackUserId } = await connectMember({
+      orgId,
+      userId,
+      slackWorkspaceId,
+    });
     const token = await credentials.okouToken({ userId, orgId });
 
     const client = setupApp({
@@ -361,7 +562,7 @@ describe("POST /api/integrations/slack/message", () => {
     })(integrationsSlackMessageContract);
     const response = await accept(
       client.sendMessage({
-        body: { user: "U0A8V9X98QJ", text: "Hello DM!" },
+        body: { user: slackUserId, text: "Hello DM!" },
         headers: { authorization: `Bearer ${token}` },
       }),
       [200],
@@ -369,7 +570,7 @@ describe("POST /api/integrations/slack/message", () => {
     expect(response.body.ok).toBeTruthy();
 
     expect(context.mocks.slack.conversations.open).toHaveBeenLastCalledWith({
-      users: "U0A8V9X98QJ",
+      users: slackUserId,
     });
     expect(context.mocks.slack.chat.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -395,7 +596,7 @@ describe("POST /api/integrations/slack/message", () => {
     })(integrationsSlackMessageContract);
     const response = await accept(
       client.sendMessage({
-        body: { user: "U-invalid", text: "hello" },
+        body: { user: "me", text: "hello" },
         headers: { authorization: `Bearer ${token}` },
       }),
       [404],
@@ -405,7 +606,8 @@ describe("POST /api/integrations/slack/message", () => {
   });
 
   it("resolves 'me' to current user's Slack ID and sends DM", async () => {
-    const { orgId, userId, slackWorkspaceId } = await seedWithInstallation();
+    const { orgId, userId, slackWorkspaceId } =
+      await seedWithInstallation(false);
     const { slackUserId } = await connectMember({
       orgId,
       userId,
@@ -432,7 +634,7 @@ describe("POST /api/integrations/slack/message", () => {
   });
 
   it("returns 404 when 'me' is used but no Slack connection exists", async () => {
-    const { orgId, userId } = await seedWithInstallation();
+    const { orgId, userId } = await seedWithInstallation(false);
     const token = await credentials.okouToken({ userId, orgId });
 
     const client = setupApp({
@@ -482,13 +684,14 @@ describe("POST /api/integrations/slack/message", () => {
     expect(blocks[blocks.length - 2]!.type).toBe("divider");
     const footerCtx = blocks[blocks.length - 1]!;
     expect(footerCtx.type).toBe("context");
-    expect(footerCtx.elements![0]!.text).toBe(
-      "Sent via My Assistant · Claude Sonnet 5.5",
+    expect(footerCtx.elements![0]!.text).toMatch(
+      /^Sent via My Assistant · Triggered by <@U_.+> · Claude Sonnet 5\.5$/u,
     );
   });
 
   it("appends user attribution footer when run is user-triggered (not scheduled)", async () => {
-    const { orgId, userId, slackWorkspaceId } = await seedWithInstallation();
+    const { orgId, userId, slackWorkspaceId } =
+      await seedWithInstallation(false);
     const { token } = await seedAgentRun({ orgId, userId });
 
     const { slackUserId } = await connectMember({

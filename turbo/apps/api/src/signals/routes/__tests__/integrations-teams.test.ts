@@ -64,6 +64,17 @@ function mockOutgoingTeams(
     "teams-dm-conversation",
   )}`;
   server.use(
+    http.get(
+      "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/members/:memberId",
+      ({ params }) => {
+        return String(params.memberId) === fixture.teamsUserId
+          ? HttpResponse.json({
+              id: fixture.teamsUserId,
+              tenantId: fixture.teamsTenantId,
+            })
+          : new HttpResponse(null, { status: 404 });
+      },
+    ),
     http.post(BOT_FRAMEWORK_TOKEN_URL, async ({ request }) => {
       const form = await request.formData();
       expect(form.get("scope")).toBe("https://api.botframework.com/.default");
@@ -191,6 +202,46 @@ describe("Microsoft Teams integration CLI routes", () => {
       channelData: { tenant: { id: fixture.teamsTenantId } },
     });
   });
+
+  it.each(["missing member", "different tenant"])(
+    "denies Teams delivery for a %s",
+    async (scenario) => {
+      const fixture = teamsFixture();
+      fixtures.push(fixture);
+      await seedConnectedTeams(fixture);
+      const captured: CapturedTeamsActivity = {};
+      mockOutgoingTeams(fixture, captured);
+      server.use(
+        http.get(
+          "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/members/:memberId",
+          () => {
+            return scenario === "missing member"
+              ? new HttpResponse(null, { status: 404 })
+              : HttpResponse.json({
+                  id: fixture.teamsUserId,
+                  tenantId: "another-tenant",
+                });
+          },
+        ),
+      );
+      const response = await accept(
+        setupApp({ context, routes: integrationsTeamsMessageRoutes })(
+          integrationsTeamsMessageContract,
+        ).sendMessage({
+          headers: {
+            authorization: `Bearer ${await credentials.okouToken(fixture)}`,
+          },
+          body: {
+            conversationId: fixture.teamsConversationId,
+            text: "blocked",
+          },
+        }),
+        [404],
+      );
+      expect(response.body.error.code).toBe("NOT_FOUND");
+      expect(captured.body).toBeUndefined();
+    },
+  );
 
   it("sends a Teams DM with an Adaptive Card through the installed bot", async () => {
     const fixture = teamsFixture();

@@ -41,6 +41,7 @@ Examples:
 
 Notes:
   - Sends to the phone connected to your Okou account; connect one first
+  - --as selects the official bot or an agent already used in your linked conversation
   - --as is inferred from the conversation when omitted`,
     )
     .action(

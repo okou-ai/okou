@@ -1,3 +1,8 @@
+import { createBddApi } from "./helpers/api-bdd";
+import {
+  createBddIntegrationApi,
+  telegramLoginAuth,
+} from "./helpers/api-bdd-integrations";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 
 import { integrationsTelegramBotListContract } from "@okouai/api-contracts/contracts/integrations";
@@ -958,11 +963,73 @@ describe("GET /api/integrations/telegram/download-file", () => {
     return app.request(`${downloadPath}${args.search}`, { headers });
   }
 
-  async function seedReadToken(): Promise<string> {
-    const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
-    await store.set(seedOrgMembership$, { orgId, userId }, context.signal);
-    return await credentials.okouToken({ userId, orgId });
+  async function seedReadToken(fileId = "tg-file-1"): Promise<string> {
+    const bdd = createBddApi(context);
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    await bdd.readOnboardingStatus(actor);
+    await bdd.completeOnboarding(actor);
+    const userId = newTelegramBotId();
+    const chatId = -Number(userId);
+    const integrations = createBddIntegrationApi(context);
+    await integrations.requestLinkTelegram(
+      actor,
+      {
+        telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+        telegramAuth: telegramLoginAuth(OFFICIAL_BOT_TOKEN, {
+          id: Number(userId),
+          first_name: "Reader",
+        }),
+      },
+      [200],
+    );
+    await integrations.requestTelegramWebhook(
+      OFFICIAL_TELEGRAM_BOT_ID,
+      JSON.stringify({
+        update_id: 1,
+        message: {
+          message_id: 1,
+          chat: { id: chatId, type: "supergroup" },
+          from: { id: Number(userId), first_name: "Reader" },
+          document: {
+            file_id: fileId,
+            file_unique_id: `unique-${fileId}`,
+            file_name: "attachment.txt",
+            mime_type: "text/plain",
+          },
+          caption: "A file shared in this group",
+        },
+      }),
+      { "x-telegram-bot-api-secret-token": OFFICIAL_WEBHOOK_SECRET },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    server.use(
+      http.get(
+        `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/getChat`,
+        () => {
+          return HttpResponse.json({
+            ok: true,
+            result: { id: chatId, type: "supergroup" },
+          });
+        },
+      ),
+      http.get(
+        `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/getChatMember`,
+        ({ request }) => {
+          return HttpResponse.json({
+            ok: true,
+            result: {
+              user: {
+                id: Number(new URL(request.url).searchParams.get("user_id")),
+              },
+              status: "member",
+            },
+          });
+        },
+      ),
+    );
+    return await credentials.okouToken(actor);
   }
 
   function expectJson(response: Response): Promise<unknown> {
@@ -1007,7 +1074,7 @@ describe("GET /api/integrations/telegram/download-file", () => {
   });
 
   it("streams files for the official Telegram bot", async () => {
-    const token = await seedReadToken();
+    const token = await seedReadToken("tg-official");
     const fileBytes = Buffer.from("official telegram bytes");
     context.mocks.telegram.getFile.mockResolvedValue({
       file_id: "tg-official",
@@ -1044,8 +1111,40 @@ describe("GET /api/integrations/telegram/download-file", () => {
     const receivedBytes = Buffer.from(await response.arrayBuffer());
     expect(receivedBytes.equals(fileBytes)).toBeTruthy();
   });
+
+  it("denies unrecorded bot-global files and files from a chat the caller left", async () => {
+    const token = await seedReadToken("owned-attachment");
+    context.mocks.telegram.getFile.mockClear();
+    const unknown = await requestDownload({
+      search: `?file_id=another-users-attachment&bot_id=${OFFICIAL_TELEGRAM_BOT_ID}`,
+      token,
+    });
+    expect(unknown.status).toBe(404);
+    server.use(
+      http.get(
+        `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/getChatMember`,
+        ({ request }) => {
+          return HttpResponse.json({
+            ok: true,
+            result: {
+              user: {
+                id: Number(new URL(request.url).searchParams.get("user_id")),
+              },
+              status: "left",
+            },
+          });
+        },
+      ),
+    );
+    const revoked = await requestDownload({
+      search: `?file_id=owned-attachment&bot_id=${OFFICIAL_TELEGRAM_BOT_ID}`,
+      token,
+    });
+    expect(revoked.status).toBe(404);
+    expect(context.mocks.telegram.getFile).not.toHaveBeenCalled();
+  });
   it("returns 404 when Telegram file metadata has no downloadable path", async () => {
-    const token = await seedReadToken();
+    const token = await seedReadToken("tg-no-path");
     const botId = OFFICIAL_TELEGRAM_BOT_ID;
     context.mocks.telegram.getFile.mockResolvedValue({
       file_id: "tg-no-path",
@@ -1066,7 +1165,7 @@ describe("GET /api/integrations/telegram/download-file", () => {
   });
 
   it("returns 413 when Telegram reports a file over the proxy limit", async () => {
-    const token = await seedReadToken();
+    const token = await seedReadToken("tg-file-big");
     const botId = OFFICIAL_TELEGRAM_BOT_ID;
     context.mocks.telegram.getFile.mockResolvedValue({
       file_id: "tg-file-big",
@@ -1089,7 +1188,7 @@ describe("GET /api/integrations/telegram/download-file", () => {
   });
 
   it("returns 413 when download content-length exceeds the proxy limit", async () => {
-    const token = await seedReadToken();
+    const token = await seedReadToken("tg-huge-response");
     const botId = OFFICIAL_TELEGRAM_BOT_ID;
     context.mocks.telegram.getFile.mockResolvedValue({
       file_id: "tg-huge-response",
@@ -1125,7 +1224,7 @@ describe("GET /api/integrations/telegram/download-file", () => {
   });
 
   it("returns 502 when Telegram returns HTML for a file download", async () => {
-    const token = await seedReadToken();
+    const token = await seedReadToken("tg-html");
     const botId = OFFICIAL_TELEGRAM_BOT_ID;
     context.mocks.telegram.getFile.mockResolvedValue({
       file_id: "tg-html",
@@ -1158,7 +1257,7 @@ describe("GET /api/integrations/telegram/download-file", () => {
   });
 
   it("returns 502 when Telegram file download returns a non-OK response", async () => {
-    const token = await seedReadToken();
+    const token = await seedReadToken("tg-download-fail");
     const botId = OFFICIAL_TELEGRAM_BOT_ID;
     context.mocks.telegram.getFile.mockResolvedValue({
       file_id: "tg-download-fail",
@@ -1188,7 +1287,7 @@ describe("GET /api/integrations/telegram/download-file", () => {
   });
 
   it("returns a generic 502 body when Telegram file lookup throws", async () => {
-    const token = await seedReadToken();
+    const token = await seedReadToken("tg-throws");
     const botId = OFFICIAL_TELEGRAM_BOT_ID;
     context.mocks.telegram.getFile.mockRejectedValue(
       new Error("upstream detail"),

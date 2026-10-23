@@ -63,6 +63,8 @@ Output:
     {"integration":"telegram","chatId":"-1001234567890","messages":[{"id":"123","url":null}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."}}
 
 Notes:
+  - Requires your verified account and access for both you and the bot to the destination
+  - Private messages are limited to your own conversation with the bot
   - Uses the official Okou Telegram bot
   - Uploads through Okou storage first, then asks Telegram to fetch the file URL
   - Okou does not apply file type or size restrictions before calling Telegram`,
