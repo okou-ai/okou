@@ -68,6 +68,7 @@ jobs:
       coverage-needed: ${{ steps.detect.outputs.coverage-needed }}
       native-kerberos-needed: ${{ steps.detect.outputs.native-kerberos-needed }}
       native-gssapi-peer-needed: ${{ steps.detect.outputs.native-gssapi-peer-needed }}
+      guest-home-cleanup-needed: ${{ steps.detect.outputs.guest-home-cleanup-needed }}
       mitm-addon-test-inputs-changed: ${{ steps.detect.outputs.mitm-addon-test-inputs-changed }}
       mitm-addon-pricing-seed-changed: ${{ steps.detect.outputs.mitm-addon-pricing-seed-changed }}
       runner-firewall-contract-inputs-changed: ${{ steps.detect.outputs.runner-firewall-contract-inputs-changed }}
@@ -170,6 +171,8 @@ jobs:
           native_kerberos_needed=$crate_changed
           check_crate rfb-client
           native_gssapi_peer_needed=$crate_changed
+          check_crate guest-agent
+          guest_home_cleanup_needed=$crate_changed
           while IFS= read -r changed_file; do
             case "$changed_file" in
               .github/workflows/crates.yml | \
@@ -189,9 +192,20 @@ jobs:
                 native_gssapi_peer_needed=true
                 ;;
             esac
+            case "$changed_file" in
+              .github/workflows/crates.yml | \
+              .github/scripts/checks/changed-base-ref.sh | \
+              scripts/crate-changed.sh | \
+              .github/scripts/tests/runner-firewall-contract-workflow-test.sh | \
+              docker/toolchain/Dockerfile)
+                guest_home_cleanup_needed=true
+                ;;
+            esac
           done < "$changed_files"
-          echo "native-kerberos-needed=$native_kerberos_needed" >> "$GITHUB_OUTPUT"
-          echo "native-gssapi-peer-needed=$native_gssapi_peer_needed" >> "$GITHUB_OUTPUT"
+          printf '%s\n' \
+            "native-kerberos-needed=$native_kerberos_needed" \
+            "native-gssapi-peer-needed=$native_gssapi_peer_needed" \
+            "guest-home-cleanup-needed=$guest_home_cleanup_needed" >> "$GITHUB_OUTPUT"
           rm -f "$changed_files"
 
           # Shared contract fixtures are stored under turbo but are read by
@@ -958,6 +972,35 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  guest-home-cleanup-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      # Allow private tmpfs/user/mount namespaces for the constrained-home fixture.
+      options: --cap-add=SYS_ADMIN --security-opt apparmor=unconfined
+    needs: [detect]
+    if: needs.detect.outputs.guest-home-cleanup-needed == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: crates -> target
+          shared-key: guest-home-cleanup-local
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Verify preparation on exhausted private home filesystems
+        shell: bash
+        run: |
+          cargo test --manifest-path crates/Cargo.toml --profile local --locked -j1 \
+            -p guest-agent --test bootstrap_contracts bootstrap_cases::home_reuse_cleanup \
+            -- --ignored --test-threads=1
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+
   nbd-cow-test:
     runs-on: ubuntu-latest
     container:
@@ -1700,6 +1743,7 @@ jobs:
       - runner-rootfs-process-test
       - native-kerberos-runtime
       - native-gssapi-independent-peer
+      - guest-home-cleanup-test
     # Always run so the gate reports an explicit result (not "skipped").
     if: always()
     steps:
@@ -1713,6 +1757,7 @@ jobs:
           COVERAGE_NEEDED: ${{ needs.detect.outputs.coverage-needed }}
           NATIVE_KERBEROS_NEEDED: ${{ needs.detect.outputs.native-kerberos-needed }}
           NATIVE_GSSAPI_PEER_NEEDED: ${{ needs.detect.outputs.native-gssapi-peer-needed }}
+          GUEST_HOME_CLEANUP_NEEDED: ${{ needs.detect.outputs.guest-home-cleanup-needed }}
           FIREWALL_CONTRACT_NEEDED: ${{ needs.detect.outputs.runner-firewall-contract-inputs-changed == 'true' }}
           RUNNER_IMAGE_NEEDED: ${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' }}
           CPU_FAIRNESS_NEEDED: ${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' && (needs.detect.outputs.sandbox-firecracker-changed == 'true' || needs.detect.outputs.ci-changed == 'true') }}
@@ -1793,7 +1838,8 @@ jobs:
           # Native selection must be explicit; missing/invalid outputs refuse.
           NATIVE_KERBEROS_ALLOW_SKIP=""
           NATIVE_GSSAPI_PEER_ALLOW_SKIP=""
-          for selection in "$NATIVE_KERBEROS_NEEDED" "$NATIVE_GSSAPI_PEER_NEEDED"; do
+          GUEST_HOME_CLEANUP_ALLOW_SKIP=""
+          for selection in "$NATIVE_KERBEROS_NEEDED" "$NATIVE_GSSAPI_PEER_NEEDED" "$GUEST_HOME_CLEANUP_NEEDED"; do
             if [ "$selection" != "true" ] && [ "$selection" != "false" ]; then
               echo "::error::Missing or invalid native test selection"
               FAILED=1
@@ -1805,6 +1851,9 @@ jobs:
           if [ "$NATIVE_GSSAPI_PEER_NEEDED" = "false" ]; then
             NATIVE_GSSAPI_PEER_ALLOW_SKIP=true
           fi
+          if [ "$GUEST_HOME_CLEANUP_NEEDED" = "false" ]; then
+            GUEST_HOME_CLEANUP_ALLOW_SKIP=true
+          fi
 
           # May-skip only when the corresponding work was not selected.
           check_result "check" "${{ needs.check.result }}" "$CHECK_ALLOW_SKIP"
@@ -1814,6 +1863,7 @@ jobs:
           check_result "coverage" "${{ needs.coverage.result }}" "$COVERAGE_ALLOW_SKIP"
           check_result "native-kerberos-runtime" "${{ needs.native-kerberos-runtime.result }}" "$NATIVE_KERBEROS_ALLOW_SKIP"
           check_result "native-gssapi-independent-peer" "${{ needs.native-gssapi-independent-peer.result }}" "$NATIVE_GSSAPI_PEER_ALLOW_SKIP"
+          check_result "guest-home-cleanup-test" "${{ needs.guest-home-cleanup-test.result }}" "$GUEST_HOME_CLEANUP_ALLOW_SKIP"
           check_result "api-contracts-rust-bindings" "${{ needs.api-contracts-rust-bindings.result }}" "true"
           check_result "runner-firewall-contract-test" "${{ needs.runner-firewall-contract-test.result }}" "$FIREWALL_CONTRACT_ALLOW_SKIP"
           check_result "mitm-addon-test" "${{ needs.mitm-addon-test.result }}" "true"

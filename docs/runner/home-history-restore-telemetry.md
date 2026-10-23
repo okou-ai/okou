@@ -90,8 +90,10 @@ cancellation ownership remains unchanged.
 
 ## Terminal publication and reader compatibility
 
-Last history/identity/log readers finish before proof capture and terminal
-namespace/auth cleanup. The Guest then freezes home; the Runner must successfully
+Last history/identity/log readers finish before in-memory proof capture and
+terminal namespace/auth cleanup. A below-reserve home gets one allowlisted
+package-cache reclamation attempt before the proof is persisted; insufficient
+capacity rejects publication. The Guest then freezes home; the Runner must successfully
 terminate the sandbox before publishing the generation-owned image. The image,
 metadata staging and affected directories are synchronized before the atomic
 metadata commit exposes the image/fingerprint/taint/proof tuple. A failed cleanup,

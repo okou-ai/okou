@@ -19,7 +19,7 @@ action_json=$(yq -o=json '.' "$ACTION")
 
 jq -e '
   . as $workflow |
-  ["check", "check-docs", "check-guest-production", "check-ably-smoke", "coverage", "runner-firewall-contract-test", "host-cpu-fairness-build", "guest-rpc-firecracker-build", "nbd-cow-test"] |
+  ["check", "check-docs", "check-guest-production", "check-ably-smoke", "coverage", "runner-firewall-contract-test", "host-cpu-fairness-build", "guest-rpc-firecracker-build", "nbd-cow-test", "guest-home-cleanup-test"] |
   all(.[];
     . as $job |
     ($workflow.jobs[$job].steps[-1] |

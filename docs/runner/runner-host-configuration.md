@@ -251,7 +251,8 @@ or a fallback to another process.
 Selected/completed/uncertain counts are returned only after selected reclamation
 attempts finish; uncertain destruction fails the command. A client disconnect
 or timeout does not cancel admitted destruction. Normal shutdown joins these
-tasks. Home promotion and ordinary history/download/storage caches are preserved.
+tasks. Home promotion and ordinary history/download/storage caches are preserved,
+subject to the pressure-only Guest package-cache reclamation described below.
 Later Runs can lose hot VM reuse but retain blank/home-cache paths. Released
 profile budget is not an RSS savings measurement.
 
@@ -273,8 +274,14 @@ checks. Eligible finalized history is verified against actual supported source
 and live bytes, then captured as small identity/source/hash/size-only evidence in
 `/home/user/.vm0/home-cache/session-history-proof.json`; it has no body. Missing
 or invalid evidence clears stale proof and never manufactures a verified history.
-The helper removes completed managed runtime children and managed
-`.codex/auth.json`, not ordinary user files, histories, catalogs or package caches.
+The helper captures finalized history facts in memory, removes completed managed
+runtime children and managed `.codex/auth.json`, then inspects home capacity. A
+home below the byte or inode reserve gets one reclamation attempt using the same
+fixed npm/pip cache allowlist as bootstrap disk recovery. Healthy homes retain
+package caches; ordinary user files, histories, catalogs and installed environments
+remain preserved. Proof persistence follows reclamation, and reported capacity
+includes those writes. Idle preparation shares this pressure-only reclamation
+within its fenced final exec while retaining its current/retained runtime readers.
 It does not widen deletion to a custom runtime parent or invoke an internal Codex
 auth RPC. Cleanup establishes namespace absence, not forensic block erasure.
 
