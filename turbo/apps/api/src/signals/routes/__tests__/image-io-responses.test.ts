@@ -406,6 +406,28 @@ describe("durable OpenAI Responses image generation", () => {
     });
   });
 
+  it("publishes a failed job when the provider submission is interrupted", async () => {
+    const fixture = await createFixture();
+    await fixture.actor.run(async () => {
+      const provider = mockOpenAiImageResponses({
+        submit: () => {
+          return HttpResponse.error();
+        },
+      });
+      const response = await fixture.generate();
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: "OPENAI_IMAGE_SUBMISSION_UNKNOWN" },
+      });
+      const { generationId } = provider.submission();
+      await expect(fixture.status(generationId)).resolves.toMatchObject({
+        generationId,
+        status: "failed",
+        error: { code: "OPENAI_IMAGE_SUBMISSION_UNKNOWN" },
+      });
+    });
+  });
+
   it.each([
     ["invalid_image_file", undefined, "GENERATION_INPUT_MEDIA_INVALID"],
     ["moderation_blocked", "input", "GENERATION_INPUT_SAFETY_REJECTED"],
