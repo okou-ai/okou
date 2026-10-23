@@ -4,6 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import { customConnectorOAuth2Contract } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
+import { integrationOAuthCallbackProvider } from "@okouai/core/integration-routes";
 import {
   connectorSlugSchema,
   type ConnectorSlug,
@@ -17,11 +18,20 @@ import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { loadConnectorCatalogItem$ } from "../external/connectors.ts";
 import { updatePage$ } from "../react-router.ts";
-import { pathParams$, replacePathSilently$, searchParams$ } from "../route.ts";
+import {
+  pathParams$,
+  pathname$,
+  replacePathSilently$,
+  searchParams$,
+  setupAuthPageWrapper,
+} from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { settle } from "../utils.ts";
 import { i18n } from "../../i18n/index.ts";
 import { connectorIconFromSearchParams } from "./connector-redirecting-page-setup.ts";
+import { githubAppSetupCallbackContract } from "@okouai/api-contracts/contracts/github-oauth-callback";
+import { slackOauthCallbackContract } from "@okouai/api-contracts/contracts/slack-oauth-callback";
+import { teamsOauthCallbackContract } from "@okouai/api-contracts/contracts/teams-oauth-callback";
 
 type ConnectorCallbackPageResult =
   { readonly status: "loading" } | ConnectorOauthCallbackResult;
@@ -52,6 +62,16 @@ function connectorLabel(connectorSlug: ConnectorCallbackSlug | null): string {
   if (connectorSlug === "link") {
     return i18n.t(($) => {
       return $.connectors.callback.linkLabel;
+    });
+  }
+  if (connectorSlug === "slack") {
+    return i18n.t(($) => {
+      return $.works.slack.title;
+    });
+  }
+  if (connectorSlug === "microsoft-365") {
+    return i18n.t(($) => {
+      return $.works.teams.title;
     });
   }
   return connectorSlug === "github"
@@ -189,8 +209,49 @@ const completeCustomConnectorCallback$ = command(
   },
 );
 
+const completeIntegrationOAuthCallback$ = command(
+  async ({ get }, signal: AbortSignal) => {
+    const params = get(searchParams$);
+    const integration = integrationOAuthCallbackProvider(
+      get(pathname$),
+      params,
+    );
+    if (!integration) {
+      throw new Error("Invalid integration callback URL");
+    }
+    const contract =
+      integration === "slack"
+        ? slackOauthCallbackContract
+        : integration === "teams"
+          ? teamsOauthCallbackContract
+          : githubAppSetupCallbackContract;
+    const client = get(apiClient$)(contract, { apiBase: "api" });
+    const response = await accept<
+      Awaited<ReturnType<typeof client.callback>>,
+      200
+    >(
+      client.callback({
+        query: { ...Object.fromEntries(params), responseMode: "json" },
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+    );
+    signal.throwIfAborted();
+    window.location.assign(response.body.redirectUrl);
+  },
+);
+
+const setupIntegrationOAuthCallbackPage$ = setupAuthPageWrapper(
+  completeIntegrationOAuthCallback$,
+);
+
 export const setupConnectorCallbackPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    const integration = integrationOAuthCallbackProvider(
+      get(pathname$),
+      get(searchParams$),
+    );
     const params = get(pathParams$);
     const callbackConnectorSlug = connectorSlugFromPath(
       typeof params?.connectorSlug === "string"
@@ -207,46 +268,36 @@ export const setupConnectorCallbackPage$ = command(
       searchParams,
     );
 
-    if (pathResult) {
-      if (!connectorIcon && connectorSlug) {
-        connectorIcon = await set(
-          loadConnectorCallbackIcon$,
-          connectorSlug,
-          signal,
-        );
-      }
-      set(
-        updatePage$,
-        callbackPageElement(connectorIcon, connectorSlug, label, pathResult),
+    if (pathResult && !connectorIcon && connectorSlug) {
+      connectorIcon = await set(
+        loadConnectorCallbackIcon$,
+        connectorSlug,
+        signal,
       );
-      set(updateDocumentTitle$, connectorCallbackDocumentTitle(label));
-      await set(hideAppSkeleton$, signal);
-      return;
     }
-
-    if (!callbackConnectorSlug) {
-      set(
-        updatePage$,
-        callbackPageElement(connectorIcon, connectorSlug, label, {
-          status: "error",
-          message: i18n.t(($) => {
-            return $.connectors.callback.invalidUrl;
-          }),
-        }),
-      );
-      set(updateDocumentTitle$, connectorCallbackDocumentTitle(label));
-      await set(hideAppSkeleton$, signal);
-      return;
-    }
-
+    const initialResult =
+      pathResult ??
+      (!callbackConnectorSlug
+        ? {
+            status: "error" as const,
+            message: i18n.t(($) => {
+              return $.connectors.callback.invalidUrl;
+            }),
+          }
+        : { status: "loading" as const });
     set(
       updatePage$,
-      callbackPageElement(connectorIcon, connectorSlug, label, {
-        status: "loading",
-      }),
+      callbackPageElement(connectorIcon, connectorSlug, label, initialResult),
     );
     set(updateDocumentTitle$, connectorCallbackDocumentTitle(label));
     await set(hideAppSkeleton$, signal);
+    if (pathResult || !callbackConnectorSlug) {
+      return;
+    }
+    if (integration) {
+      await set(setupIntegrationOAuthCallbackPage$, signal);
+      return;
+    }
 
     const query = Object.fromEntries(searchParams);
     const result =

@@ -4,6 +4,7 @@ import type { BrowserOptions, Contexts, User } from "@sentry/browser";
 import { setLogErrorHandler } from "../signals/log.ts";
 import { resolvePlatformRuntimeConfig } from "./platform-host.ts";
 import { SENTRY_APPLICATION_KEY } from "./sentry-application-key.ts";
+import { redactProofUrl } from "./redact-proof-url.ts";
 
 type PlatformSentryRuntime = "page" | "shared-worker";
 
@@ -33,6 +34,16 @@ export function sentryLogContext(
   context: SentryLoggerContext,
 ): SentryLogContextArgument {
   return { [SENTRY_LOG_CONTEXT]: context };
+}
+
+function redactDiagnosticUrls<T>(
+  data: Record<string, T>,
+): Record<string, T | string> {
+  return Object.fromEntries(
+    Object.entries(data).map(([key, value]) => {
+      return [key, typeof value === "string" ? redactProofUrl(value) : value];
+    }),
+  );
 }
 
 export function createPlatformSentryOptions(
@@ -85,11 +96,24 @@ export function createPlatformSentryOptions(
     // Preserve native fetch errors for application-level error handling.
     enhanceFetchErrorMessages: false,
 
-    // Shared worker console breadcrumbs are dropped for payload size only.
+    beforeSend(event) {
+      if (event.request?.url) {
+        event.request.url = redactProofUrl(event.request.url);
+      }
+      if (event.request?.headers) {
+        event.request.headers = redactDiagnosticUrls(event.request.headers);
+      }
+      return event;
+    },
+
     beforeBreadcrumb(breadcrumb) {
-      return runtime === "shared-worker" && breadcrumb.category === "console"
-        ? null
-        : breadcrumb;
+      if (runtime === "shared-worker" && breadcrumb.category === "console") {
+        return null;
+      }
+      if (breadcrumb.data) {
+        breadcrumb.data = redactDiagnosticUrls(breadcrumb.data);
+      }
+      return breadcrumb;
     },
   };
 }

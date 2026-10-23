@@ -9,6 +9,21 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 const context = testContext();
 const ENTRIES = [
   {
+    name: "Slack OAuth completion",
+    entry:
+      "/connectors/slack/callback?integration=slack&state=private-state&code=private-code",
+  },
+  {
+    name: "Teams OAuth completion",
+    entry:
+      "/connectors/microsoft-365/callback?integration=teams&state=private-state&code=private-code",
+  },
+  {
+    name: "GitHub OAuth continuation",
+    entry:
+      "/connectors/github/callback?integration=github&state=private-state&installation_id=12345&setup_action=install",
+  },
+  {
     name: "Slack",
     entry:
       "/settings/slack?w=T123&u=U123&c=C123&t=123.456&context=one&context=two",

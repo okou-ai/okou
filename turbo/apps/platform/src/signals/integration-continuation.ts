@@ -1,4 +1,5 @@
 import { ROUTES } from "./route-paths.ts";
+import { integrationOAuthCallbackProvider } from "@okouai/core/integration-routes";
 
 // Match the Router's case-insensitive paths and optional trailing slash.
 function integrationPath(pathname: string): string {
@@ -22,6 +23,7 @@ export function isLegacyDiscordCallback(
 /** Public continuation only; bootstrap has already consumed Discord's proof. */
 export function isIntegrationAuthContinuation(url: URL): boolean {
   return (
+    integrationOAuthCallbackProvider(url.pathname, url.searchParams) !== null ||
     [
       ROUTES.settingsSlack,
       ROUTES.settingsDiscord,
@@ -31,6 +33,7 @@ export function isIntegrationAuthContinuation(url: URL): boolean {
       ROUTES.telegramConnect,
     ].some((path) => {
       return integrationPath(url.pathname) === path;
-    }) || isLegacyDiscordCallback(url.pathname, url.searchParams)
+    }) ||
+    isLegacyDiscordCallback(url.pathname, url.searchParams)
   );
 }

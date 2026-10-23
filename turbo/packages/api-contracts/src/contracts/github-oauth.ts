@@ -3,6 +3,13 @@ import { z } from "zod";
 import { initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
+import { githubAppSetupCallbackContract } from "./github-oauth-callback";
+
+export {
+  githubAppSetupCallbackQuerySchema,
+  type GithubAppSetupCallbackQuery,
+} from "./github-oauth-callback";
+
 const c = initContract();
 
 const jsonErrorSchema = z.object({ error: z.string() });
@@ -19,17 +26,6 @@ export const githubOauthConnectQuerySchema = z.object({
   ghLogin: z.string().optional(),
   ts: z.coerce.number().optional(),
   sig: z.string().optional(),
-});
-
-export const githubAppSetupCallbackQuerySchema = z.object({
-  code: z.string().optional(),
-  error: z.string().optional(),
-  error_description: z.string().optional(),
-  installation_id: z.string().optional(),
-  setup_action: z.string().optional(),
-  state: z.string().optional(),
-  target_id: z.string().optional(),
-  target_type: z.string().optional(),
 });
 
 export const githubOauthContract = c.router({
@@ -54,15 +50,7 @@ export const githubOauthContract = c.router({
     },
     summary: "Start GitHub user OAuth for the GitHub App",
   },
-  setupCallback: {
-    method: "GET",
-    path: "/api/github/app/setup/callback",
-    query: githubAppSetupCallbackQuerySchema,
-    responses: {
-      307: c.noBody(),
-    },
-    summary: "Handle GitHub App setup callback",
-  },
+  setupCallback: githubAppSetupCallbackContract.callback,
 });
 
 export type GithubOauthContract = typeof githubOauthContract;
@@ -71,7 +59,4 @@ export type GithubOauthInstallQuery = z.infer<
 >;
 export type GithubOauthConnectQuery = z.infer<
   typeof githubOauthConnectQuerySchema
->;
-export type GithubAppSetupCallbackQuery = z.infer<
-  typeof githubAppSetupCallbackQuerySchema
 >;

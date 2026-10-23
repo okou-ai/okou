@@ -33,6 +33,7 @@ test("Complete a custom connector authorization", async () => {
         code: "oauth-code",
         state: "oauth-state",
         responseMode: "json",
+        integration: "provider-context",
       });
       return respond(200, { status: "success", username: null });
     },
@@ -40,7 +41,7 @@ test("Complete a custom connector authorization", async () => {
 
   await setupPage({
     context,
-    path: "/connectors/custom/callback?code=oauth-code&state=oauth-state",
+    path: "/connectors/custom/callback?code=oauth-code&state=oauth-state&integration=provider-context",
     auth: null,
   });
 

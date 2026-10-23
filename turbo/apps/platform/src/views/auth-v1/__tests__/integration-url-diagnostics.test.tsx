@@ -10,13 +10,19 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 
 const context = testContext();
-const TELEGRAM_PATHS = [
+const PROOF_PATHS = [
   "/settings/telegram",
   "/telegram/connect",
   "/SETTINGS/telegram/",
+  "/connectors/slack/callback",
+  "/connectors/microsoft-365/callback",
+  "/connectors/github/callback",
 ] as const;
 
 function signedEntry(path: string): string {
+  if (path.startsWith("/connectors/")) {
+    return `https://app.okou.ai${path}?integration=${path.includes("microsoft-365") ? "teams" : path.includes("github") ? "github" : "slack"}&code=private-code&state=private-state&context=one&context=two#public-context`;
+  }
   return `https://app.okou.ai${path}?bot=official&tgUser=99001&ts=1700000000&sig=private-signature-fixture&tgUserName=private-name&tgDisplayName=Private+Display&context=one&context=two#public-context`;
 }
 
@@ -28,13 +34,15 @@ function expectRedacted(value: unknown): void {
     "private-signature-fixture",
     "private-name",
     "Private",
+    "private-code",
+    "private-state",
   ]) {
     // Boolean assertions avoid printing even fixture proof URLs on failure.
     expect(serialized.includes(secret)).toBeFalsy();
   }
 }
 
-test.each(TELEGRAM_PATHS)(
+test.each(PROOF_PATHS)(
   "%s redacts actual auth diagnostics while keeping signed browser navigation",
   async (path) => {
     const logs = vi.spyOn(console, "info").mockImplementation(() => {});
@@ -47,7 +55,6 @@ test.each(TELEGRAM_PATHS)(
     expectRedacted(logs.mock.calls);
     const authParams = new URLSearchParams(window.location.hash.split("?")[1]);
     expect(authParams.get("redirect_url") === target).toBeTruthy();
-    expect(JSON.stringify(logs.mock.calls)).toContain("bot=official");
     expect(JSON.stringify(logs.mock.calls)).toContain(
       "context=one&context=two",
     );
@@ -73,7 +80,7 @@ test("Query-form Clerk redirects redact the emitted redirectUrl diagnostic too",
   ).toBeTruthy();
 });
 
-test.each(TELEGRAM_PATHS)(
+test.each(PROOF_PATHS)(
   "%s proofs stay out of PostHog URL, referrer and person properties",
   async (path) => {
     const posthog = context.mocks.posthog();
@@ -115,7 +122,9 @@ test.each(TELEGRAM_PATHS)(
     const output = beforeSend(event);
     expectRedacted(output);
     const publicUrl = new URL(String(output?.properties.$initial_current_url));
-    expect(publicUrl.searchParams.get("bot")).toBe("official");
+    expect(publicUrl.searchParams.get("bot")).toBe(
+      new URL(target).searchParams.get("bot"),
+    );
     expect(publicUrl.searchParams.getAll("context")).toStrictEqual([
       "one",
       "two",
