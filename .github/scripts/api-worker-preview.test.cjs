@@ -370,6 +370,27 @@ test("deployment failures expose numeric diagnostics without printing credential
   );
 });
 
+test("startup CPU rejection retains its fixed classification without provider text or credentials", (t) => {
+  const secret = "postgres://secret:password@database";
+  t.mock.method(childProcess, "spawnSync", () => ({
+    status: 1,
+    stdout: Buffer.from(`runtime configuration: ${secret}`),
+    stderr: Buffer.from(
+      `Script startup exceeded CPU time limit. [code: 10021]\nAuthorization: Bearer ${secret}`,
+    ),
+  }));
+  assert.throws(
+    () => command("Deploy API Worker preview", [], {}, process.cwd()),
+    (error) => {
+      assert.equal(
+        error.message,
+        "Deploy API Worker preview failed (Cloudflare code 10021; Worker startup time limit exceeded) (output withheld to protect credentials)",
+      );
+      return true;
+    },
+  );
+});
+
 test("control-plane failures withhold credentials and never replay uncertain requests", async () => {
   const secret = "postgres://secret:password@database";
   server.use(

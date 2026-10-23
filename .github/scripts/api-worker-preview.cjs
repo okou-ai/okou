@@ -135,7 +135,10 @@ function commandDiagnostics(result) {
   }
   if (output.includes("exceeded the size limit"))
     details.add("Worker size limit exceeded");
-  if (output.includes("startup time limit"))
+  if (
+    output.includes("startup time limit") ||
+    output.includes("Script startup exceeded CPU time limit")
+  )
     details.add("Worker startup time limit exceeded");
   return [...details].join("; ");
 }
