@@ -18,6 +18,7 @@ import { chatThreads } from "./chat-thread";
 import { connectors } from "./connector";
 import { workflowAutomationColumns } from "../columns/workflow-automation";
 import type { OfficialWorkflowParameterBindings } from "@okouai/db/jsonb-contracts/workflow";
+import type { WorkflowAttachments } from "../jsonb-contracts/workflow";
 export type { WorkflowAutomationEventConfig } from "@okouai/db/jsonb-contracts/workflow";
 
 /**
@@ -58,6 +59,9 @@ export const workflows = pgTable(
     // single source of truth; the SKILL.md written to the volume is synthesized
     // from (name, description, instruction).
     instruction: text("instruction"),
+    // Additive preparation: NULL means unconverted, never an empty file set.
+    // Published with the legacy HEAD until claim-time distribution is activated.
+    attachments: jsonb("attachments").$type<WorkflowAttachments>(),
     ownerUserId: text("owner_user_id").notNull(),
     displayName: varchar("display_name", { length: 256 }),
     description: text("description"),

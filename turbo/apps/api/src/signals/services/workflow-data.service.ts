@@ -1,4 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
+import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
 import type {
   WorkflowImportSource,
   WorkflowSummary,
@@ -30,6 +31,7 @@ export interface WorkflowRow {
   readonly name: string;
   readonly visibility: "public" | "private";
   readonly instruction: string | null;
+  readonly attachments: WorkflowAttachments | null;
   readonly ownerUserId: string;
   readonly displayName: string | null;
   readonly description: string | null;

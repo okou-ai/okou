@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { Readable } from "node:stream";
 import { gunzipSync } from "node:zlib";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
@@ -60,6 +59,8 @@ import {
 } from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -174,85 +175,8 @@ async function runWorkflowAndLaunch(
   return { chatThreadId: sent.body.chatThreadId, runId };
 }
 
-function s3BodyBuffer(body: unknown): Buffer {
-  if (Buffer.isBuffer(body)) {
-    return Buffer.from(body);
-  }
-  if (typeof body === "string") {
-    return Buffer.from(body, "utf8");
-  }
-  if (body instanceof Uint8Array) {
-    return Buffer.from(body);
-  }
-  throw new Error("Expected an S3 object body");
-}
-
-function missingS3Object(key: string): Error {
-  return Object.assign(new Error(`Missing S3 object ${key}`), {
-    name: "NotFound",
-    $metadata: { httpStatusCode: 404 },
-  });
-}
-
-function installVolumeS3Fixture() {
-  const objects = new Map<string, Buffer>();
-  const writes: { readonly key: string; readonly body: Buffer }[] = [];
-  let beforeNextArchiveWrite:
-    ((key: string, body: Buffer) => void | Promise<void>) | undefined;
-
-  context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-    if (command instanceof PutObjectCommand) {
-      const key = command.input.Key;
-      if (!key) {
-        throw new Error("Expected an S3 object key");
-      }
-      const body = s3BodyBuffer(command.input.Body);
-      if (key.endsWith("/archive.tar.gz") && beforeNextArchiveWrite) {
-        const callback = beforeNextArchiveWrite;
-        beforeNextArchiveWrite = undefined;
-        await callback(key, body);
-      }
-      objects.set(key, body);
-      writes.push({ key, body });
-      return {};
-    }
-    if (command instanceof HeadObjectCommand) {
-      const key = command.input.Key;
-      if (!key) {
-        throw new Error("Expected an S3 object key");
-      }
-      const body = objects.get(key);
-      if (!body) {
-        throw missingS3Object(key);
-      }
-      return { ContentLength: body.length };
-    }
-    if (command instanceof GetObjectCommand) {
-      const key = command.input.Key;
-      if (!key) {
-        throw new Error("Expected an S3 object key");
-      }
-      const body = objects.get(key);
-      if (!body) {
-        throw missingS3Object(key);
-      }
-      return { Body: Readable.from([body]), ContentLength: body.length };
-    }
-    return {};
-  });
-
-  return {
-    objects,
-    writes,
-    clearWrites(): void {
-      writes.length = 0;
-    },
-    beforeNextArchiveWrite(
-      callback: (key: string, body: Buffer) => void | Promise<void>,
-    ): void {
-      beforeNextArchiveWrite = callback;
-    },
-  };
+function installVolumeS3Fixture(objects = new Map<string, Buffer>()) {
+  return installWorkflowVolumeS3Fixture(context, objects);
 }
 
 function visibilityClient() {
@@ -267,12 +191,24 @@ function automationsClient() {
   );
 }
 
+function createCaseWorkflowObjects() {
+  const objects = new Map<string, Buffer>();
+  beforeEach(() => {
+    objects.clear();
+  });
+  return () => {
+    return objects;
+  };
+}
+const workflowObjects = createCaseWorkflowObjects();
+
 async function createAgent(
   actor: ApiTestUser,
   body: Parameters<typeof bdd.createAgent>[1] = {},
 ) {
   bdd.acceptAgentStorageWrites();
   const agent = await bdd.createAgent(actor, body);
+  installVolumeS3Fixture(workflowObjects());
   if (actor.orgId === STAFF_ORG_ID) {
     await registerStaffFixture({
       kind: "agent",
@@ -1078,6 +1014,58 @@ describe("workflows", () => {
       }
     },
   );
+
+  it("does not publish an empty attachment package when the legacy source is unavailable", async () => {
+    const actor = user();
+    const agent = await createAgent(actor, { visibility: "private" });
+    const destination = await createAgent(actor, { visibility: "private" });
+    const s3 = installVolumeS3Fixture();
+    const workflow = await createWorkflow(actor, {
+      agentId: agent.agentId,
+      name: `unavailable-source-${randomUUID().slice(0, 8)}`,
+      instruction: "Keep the existing attachments",
+      files: [{ path: "keep.txt", content: "retained" }],
+    });
+    s3.objects.clear();
+    s3.clearWrites();
+    const client = setupApp({
+      context,
+      routes: workflowsRoutes,
+      rethrowErrors: true,
+    })(workflowsDetailContract);
+    await expect(
+      client.copy({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+        body: { toAgentId: destination.agentId },
+      }),
+    ).rejects.toThrow("Workflow attachment source is unavailable");
+    await expect(
+      client.update({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+        body: { instruction: "Updated instruction" },
+      }),
+    ).rejects.toThrow("Workflow attachment source is unavailable");
+    expect(s3.writes).toHaveLength(0);
+    // An explicit replacement remains recoverable without guessing old content.
+    await accept(
+      client.update({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+        body: { files: [], instruction: "Explicitly cleared" },
+      }),
+      [200],
+    );
+    const detail = await accept(
+      client.get({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+      }),
+      [200],
+    );
+    expect(detail.body.files).toStrictEqual([]);
+  });
 
   it("renames workflow slugs through metadata update and rejects duplicate public slugs", async () => {
     const actor = user();
@@ -2456,7 +2444,10 @@ describe("workflows", () => {
     ownedWorkflows.add(workflow.body.id);
 
     const firstArchiveWrites = s3.writes.filter(({ key }) => {
-      return key.endsWith("/archive.tar.gz");
+      return (
+        !key.startsWith("workflow-attachments/") &&
+        key.endsWith("/archive.tar.gz")
+      );
     });
     expect(firstArchiveWrites).toHaveLength(1);
     const firstArchiveKey = firstArchiveWrites[0]!.key;
@@ -2588,7 +2579,10 @@ describe("workflows", () => {
       files: secondFiles,
     });
     const secondArchiveWrites = s3.writes.filter(({ key }) => {
-      return key.endsWith("/archive.tar.gz");
+      return (
+        !key.startsWith("workflow-attachments/") &&
+        key.endsWith("/archive.tar.gz")
+      );
     });
     expect(secondArchiveWrites).toHaveLength(1);
     const secondArchiveKey = secondArchiveWrites[0]!.key;
@@ -2603,14 +2597,35 @@ describe("workflows", () => {
       instruction: firstInstruction,
       files: [...firstFiles].reverse(),
     });
-    expect(s3.writes).toHaveLength(0);
+    expect(
+      s3.writes.filter(({ key }) => {
+        return !key.startsWith("workflow-attachments/");
+      }),
+    ).toHaveLength(0);
+    // Returning to retired content gets a fresh attachment identity. Legacy
+    // content-addressed volume reuse remains independent of attachment ownership.
+    expect(
+      s3.writes.filter(({ key }) => {
+        return key.startsWith("workflow-attachments/");
+      }),
+    ).toHaveLength(1);
     await readCurrentArchive(firstInstruction, firstFiles, firstArchiveKey);
 
+    s3.clearWrites();
     await updateWorkflow(actor, workflow.body.id, {
       instruction: secondInstruction,
       files: secondFiles,
     });
-    expect(s3.writes).toHaveLength(0);
+    expect(
+      s3.writes.filter(({ key }) => {
+        return !key.startsWith("workflow-attachments/");
+      }),
+    ).toHaveLength(0);
+    expect(
+      s3.writes.filter(({ key }) => {
+        return key.startsWith("workflow-attachments/");
+      }),
+    ).toHaveLength(1);
     await readCurrentArchive(secondInstruction, secondFiles, secondArchiveKey);
 
     // The synthetic archive_size corruption branch was explicitly retired in
@@ -2622,7 +2637,11 @@ describe("workflows", () => {
       instruction: firstInstruction,
       files: firstFiles,
     });
-    expect(s3.writes).toHaveLength(0);
+    expect(
+      s3.writes.filter(({ key }) => {
+        return !key.startsWith("workflow-attachments/");
+      }),
+    ).toHaveLength(0);
     await readCurrentArchive(firstInstruction, firstFiles, firstArchiveKey);
     // Detail reads may GET the manifest on a cache miss. Registered-version
     // reuse must not probe or PUT the archive/manifest again.
@@ -2663,7 +2682,10 @@ describe("workflows", () => {
     });
 
     const archiveWrites = s3.writes.filter(({ key }) => {
-      return key.endsWith("/archive.tar.gz");
+      return (
+        !key.startsWith("workflow-attachments/") &&
+        key.endsWith("/archive.tar.gz")
+      );
     });
     expect(archiveWrites).toHaveLength(1);
     const archiveKey = archiveWrites[0]!.key;

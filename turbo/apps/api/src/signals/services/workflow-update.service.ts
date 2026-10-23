@@ -27,6 +27,7 @@ import {
   SKILL_FILENAME,
 } from "./workflow-volume.service";
 import type { WorkflowRow } from "./workflow-data.service";
+import { prepareWorkflowAttachments$ } from "./workflow-attachments.service";
 
 interface UpdateWorkflowInput {
   readonly workflow: WorkflowRow;
@@ -159,25 +160,26 @@ export const updateWorkflow$ = command(
     }
 
     if (volumeChanged) {
-      const attachedFiles =
-        body.files !== undefined
-          ? body.files.map((file) => {
-              return { path: file.path, content: file.content };
-            })
-          : (
-              (await get(
-                loadWorkflowVolumeFiles({
-                  orgId: workflow.orgId,
-                  workflowId: workflow.id,
-                }),
-              )) ?? []
-            )
-              .filter((file) => {
-                return file.path !== SKILL_FILENAME;
-              })
-              .map((file) => {
-                return { path: file.path, content: file.content };
-              });
+      const sourceFiles =
+        body.files ??
+        (await get(
+          loadWorkflowVolumeFiles({
+            orgId: workflow.orgId,
+            workflowId: workflow.id,
+          }),
+        ));
+      if (sourceFiles === null) {
+        throw new Error(
+          "Workflow attachment source is unavailable; provide an explicit file list to replace it",
+        );
+      }
+      const attachedFiles = sourceFiles
+        .filter((file) => {
+          return file.path !== SKILL_FILENAME;
+        })
+        .map((file) => {
+          return { path: file.path, content: file.content };
+        });
       signal.throwIfAborted();
 
       const skillMd = synthesizeWorkflowSkillMd({
@@ -185,6 +187,17 @@ export const updateWorkflow$ = command(
         description: nextDescription,
         instruction: nextInstruction,
       });
+
+      const attachments = await set(
+        prepareWorkflowAttachments$,
+        {
+          orgId: workflow.orgId,
+          workflowId: workflow.id,
+          files: attachedFiles,
+          current: workflow.attachments,
+        },
+        signal,
+      );
 
       const upload = await settle(
         set(
@@ -197,6 +210,11 @@ export const updateWorkflow$ = command(
               ...attachedFiles,
             ],
             piResourceIndex: true,
+            workflowAttachments: {
+              workflowId: workflow.id,
+              orgId: workflow.orgId,
+              attachments,
+            },
             ...(metadata.publicationFence
               ? { publicationFence: metadata.publicationFence }
               : {}),

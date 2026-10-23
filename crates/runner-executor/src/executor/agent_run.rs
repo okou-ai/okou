@@ -1108,6 +1108,7 @@ impl AgentBootstrapInputs {
                     // Storage reconciliation already finished. Both operations
                     // replace fixed inputs and have no agent execution effects.
                     super::storage::apply_agent_instructions(sandbox, context).await?;
+                    super::storage::apply_workflow_skill_documents(sandbox, context).await?;
                     write_required_agent_files(
                         sandbox,
                         context,

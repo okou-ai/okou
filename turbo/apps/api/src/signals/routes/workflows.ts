@@ -87,6 +87,8 @@ import {
 import { updateWorkflow$ } from "../services/workflow-update.service";
 import { createUserMessageDocument } from "../services/chat-user-message.service";
 import { loadWorkflowVolumeFiles } from "../services/workflow-volume.service";
+import { prepareWorkflowAttachments$ } from "../services/workflow-attachments.service";
+import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
 import {
   encryptWorkflowWebhookSecret,
   encryptWorkflowWebhookToken,
@@ -361,6 +363,7 @@ const commitPreparedWorkflow$ = command(
     args: WorkflowCreationInput & {
       readonly workflowId: string;
       readonly volume: PreparedServerSideVolume;
+      readonly attachments: WorkflowAttachments;
     },
     signal: AbortSignal,
   ) => {
@@ -438,7 +441,10 @@ const commitPreparedWorkflow$ = command(
       const currentTime = nowDate();
       const [workflow] = await tx
         .insert(workflows)
-        .values(workflowCreationRowValues(args, currentTime))
+        .values({
+          ...workflowCreationRowValues(args, currentTime),
+          attachments: args.attachments,
+        })
         .returning({ id: workflows.id });
       signal.throwIfAborted();
       if (!workflow) {
@@ -538,9 +544,18 @@ const prepareAndCreateWorkflow$ = command(
           },
           signal,
         );
+        const attachments = await set(
+          prepareWorkflowAttachments$,
+          {
+            orgId: args.orgId,
+            workflowId,
+            files: args.body.files ?? [],
+          },
+          signal,
+        );
         const pendingPublication = set(
           commitPreparedWorkflow$,
-          { ...args, workflowId, volume },
+          { ...args, workflowId, volume, attachments },
           signal,
         );
         // A committed import remains observable if its caller is cancelled.
@@ -1062,6 +1077,37 @@ function copiedWorkflowVolumeInput(
   };
 }
 
+const prepareCopiedWorkflowContent$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly workflowId: string;
+      readonly source: WorkflowCopySource;
+    },
+    signal: AbortSignal,
+  ) => {
+    const input = copiedWorkflowVolumeInput(
+      args.orgId,
+      args.workflowId,
+      args.source,
+    );
+    const volume = await set(prepareVolumeServerSide$, input, signal);
+    const attachments = await set(
+      prepareWorkflowAttachments$,
+      {
+        orgId: args.orgId,
+        workflowId: args.workflowId,
+        files: input.files.filter((file) => {
+          return file.path !== "SKILL.md";
+        }),
+      },
+      signal,
+    );
+    return { volume, attachments };
+  },
+);
+
 function copiedWorkflowResponse(
   visible: VisibleWorkflow | null,
   member: WorkflowMember,
@@ -1110,6 +1156,9 @@ const publishCopiedWorkflow$ = command(
     if (snapshot.kind === "conflict") {
       return conflict(snapshot.message);
     }
+    if (snapshot.source.files === null) {
+      throw new Error("Workflow attachment source is unavailable");
+    }
     const preparedWebhooks = await prepareCopiedWebhooks(
       args,
       snapshot.source,
@@ -1131,13 +1180,13 @@ const publishCopiedWorkflow$ = command(
     const cleanup = { orgId: args.orgId, workflowId: targetWorkflowId };
     return await onRejection(
       (async () => {
-        const volume = await set(
-          prepareVolumeServerSide$,
-          copiedWorkflowVolumeInput(
-            args.orgId,
-            targetWorkflowId,
-            snapshot.source,
-          ),
+        const content = await set(
+          prepareCopiedWorkflowContent$,
+          {
+            orgId: args.orgId,
+            workflowId: targetWorkflowId,
+            source: snapshot.source,
+          },
           signal,
         );
         const publication = await settle(
@@ -1157,7 +1206,7 @@ const publishCopiedWorkflow$ = command(
               inheritedAutonomyBudget: args.inheritedAutonomyBudget,
               source: snapshot.source,
               preparedWebhooks,
-              volume,
+              ...content,
             },
             signal,
           ),

@@ -5109,6 +5109,11 @@ function buildStoredExecutionContextDraft(
   return {
     context: {
       environment,
+      // Invocation identity remains in the Run's workflowAutomationId; names
+      // and content are not frozen by this API-only discovery selector.
+      ...(args.resolved.agentId !== null
+        ? { customWorkflowSelection: { agentId: args.resolved.agentId } }
+        : {}),
       platformEnvironment,
       secretValueEnvironmentKeys,
       vars: args.environment.vars ?? null,

@@ -33,6 +33,45 @@ pub fn apply_agent_instructions(home: &Path, framework: &str, source: &Path) -> 
     copy_instruction_file(source, &target, filename, "Applied Agent instructions")
 }
 
+/// Replace only SKILL.md after attachment reconciliation, rejecting symlink parents.
+pub fn apply_workflow_skill(home: &Path, mount: &Path, source: &Path) -> bool {
+    let Ok(relative) = mount.strip_prefix(home) else {
+        return false;
+    };
+    let Some(relative) = relative.to_str() else {
+        return false;
+    };
+    let Some(name) = [".claude/skills/", ".codex/skills/", ".pi/agent/skills/"]
+        .iter()
+        .find_map(|prefix| relative.strip_prefix(prefix))
+    else {
+        return false;
+    };
+    if name.len() < 2
+        || name.len() > 64
+        || name.starts_with('-')
+        || name.ends_with('-')
+        || !name
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+        || !existing_instruction_dir_is_safe(home)
+        || !matches!(
+            lstat_instruction_path_state(source),
+            InstructionPathState::RegularFile
+        )
+    {
+        return false;
+    }
+    let mut target = home.to_path_buf();
+    for component in Path::new(relative).components() {
+        target.push(component);
+        if !ensure_final_instruction_dir(&target) {
+            return false;
+        }
+    }
+    copy_instruction_file_atomically(source, &target.join("SKILL.md"), io::copy).is_ok()
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct InstructionCleanup {
     mount_path: String,

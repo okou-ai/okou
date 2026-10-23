@@ -1110,6 +1110,9 @@ importers:
       htmlparser2:
         specifier: ^10.1.0
         version: 10.1.0
+      tar:
+        specifier: '>=7.5.21'
+        version: 7.5.22
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -1163,6 +1166,9 @@ importers:
         specifier: ^3.4.9
         version: 3.4.9
     devDependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1149.0
+        version: 3.1152.0
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
@@ -1196,6 +1202,9 @@ importers:
       pg:
         specifier: ^8.23.0
         version: 8.23.0
+      tar:
+        specifier: '>=7.5.21'
+        version: 7.5.22
       tsx:
         specifier: ^4.21.0
         version: 4.21.0

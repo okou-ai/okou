@@ -1597,6 +1597,7 @@ function claimResponseBody(args: {
 }): ExecutionContext {
   const {
     secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
+    customWorkflowSelection: _customWorkflowSelection,
     storageMounts: _storedStorageMounts,
     ...runnerStoredContext
   } = args.storedContext;
