@@ -13,7 +13,7 @@ import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 
 import { nowDate, timestampWithoutTimeZone } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
@@ -23,11 +23,9 @@ import {
   prepareMcpAutomaticOAuthAuthorization,
   prepareMcpAutomaticOAuthReauthorization,
   exchangeMcpAutomaticOAuthCode,
-  refreshMcpAutomaticOAuthToken,
   type McpAutomaticNoAuth,
   type McpAutomaticOAuthAuthorization,
   type McpAutomaticOAuthContext,
-  type McpAutomaticOAuthDcrClientStore,
   type McpAutomaticOAuthDcrRegistration,
   type McpAutomaticOAuthDcrRegistrationInput,
 } from "./mcp-automatic-oauth.service";
@@ -332,7 +330,7 @@ export function retireCustomConnectorDcrRegistrationSql(
     AND (SELECT ${count()} FROM deleted_bindings) >= 0`;
 }
 
-function customDcrBoundClientCondition(
+export function customDcrBoundClientCondition(
   registrationId: string,
   customConnectorId: string,
 ) {
@@ -342,7 +340,7 @@ function customDcrBoundClientCondition(
   );
 }
 
-async function customDcrClientFromRegistration(
+export async function customDcrClientFromRegistration(
   registration: PersistedDcrRegistration | undefined,
   featureContext: FeatureSwitchContext,
 ) {
@@ -387,28 +385,6 @@ const readCustomDcrBoundClient$ = command(
     );
   },
 );
-
-function customDcrClientStore(args: {
-  readonly db: Db;
-  readonly customConnectorId: string;
-  readonly featureContext: FeatureSwitchContext;
-}): McpAutomaticOAuthDcrClientStore {
-  return {
-    async readBoundClient(registrationId) {
-      const [registration] = await args.db
-        .select()
-        .from(orgCustomConnectorDcrRegistrations)
-        .where(
-          customDcrBoundClientCondition(registrationId, args.customConnectorId),
-        )
-        .limit(1);
-      return await customDcrClientFromRegistration(
-        registration,
-        args.featureContext,
-      );
-    },
-  };
-}
 
 const retireCustomDcrRegistration$ = command(
   async ({ set }, registrationId: string, signal: AbortSignal) => {
@@ -646,27 +622,3 @@ export const exchangeCustomConnectorAutomaticOAuthCode$ = command(
     );
   },
 );
-
-export async function refreshCustomConnectorAutomaticOAuthToken(
-  args: {
-    readonly db: Db;
-    readonly binding: CustomConnectorAutomaticOAuthBinding;
-    readonly endpoint: string;
-    readonly redirectUri: string;
-    readonly cimdClientId: string;
-    readonly refreshToken: string;
-    readonly featureContext: FeatureSwitchContext;
-  },
-  signal: AbortSignal,
-) {
-  return await refreshMcpAutomaticOAuthToken(
-    {
-      ...args,
-      dcrStore: customDcrClientStore({
-        ...args,
-        customConnectorId: args.binding.customConnectorId,
-      }),
-    },
-    signal,
-  );
-}
