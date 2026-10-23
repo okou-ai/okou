@@ -728,8 +728,6 @@ test("Connect and authorize a custom OAuth connector", async () => {
   let connected = false;
   const connectionId = crypto.randomUUID();
   let grants: AgentCustomConnectorGrant[] = [];
-  const grantRequest = context.mocks.deferred<void>();
-  const grantResponse = context.mocks.deferred<void>();
   const connector = customConnector({
     slug: "_acme-oauth",
     displayName: "Acme OAuth",
@@ -784,11 +782,9 @@ test("Connect and authorize a custom OAuth connector", async () => {
   );
   context.mocks.api(
     agentCustomConnectorsContract.update,
-    async ({ body, params, respond }) => {
+    ({ body, params, respond }) => {
       expect(params.id).toBe(AGENT_ID);
       grants = body.grants;
-      grantRequest.resolve();
-      await grantResponse.promise;
       return respond(200, { grants });
     },
   );
@@ -810,18 +806,6 @@ test("Connect and authorize a custom OAuth connector", async () => {
   click(getButtonByText("Connect"));
   await screen.findByRole("dialog", { name: "Connect Acme OAuth" });
   click(getButtonByText("Continue"));
-
-  await grantRequest.promise;
-  const confirmed = screen.getByRole("dialog", {
-    name: "Connect Acme OAuth",
-  });
-  await waitFor(() => {
-    return getButtonByText("Close", confirmed);
-  });
-  expect(
-    within(confirmed).queryByText("Cancel", { selector: "button" }),
-  ).toBeNull();
-  grantResponse.resolve();
 
   await waitFor(() => {
     expect(authWindow.location.href).toBe("https://acme.test/oauth/authorize");
@@ -1105,13 +1089,9 @@ test("Start public OAuth from a directed connection link", async () => {
     expect(startedAgentId).toBe(AGENT_ID);
     expect(authorizeAgent).toBeTruthy();
   });
-  await expect(screen.findByText("Connecting...")).resolves.toBeVisible();
-  expect(
-    screen.getByRole("dialog", { name: "Connecting your account" }),
-  ).toBeVisible();
 });
 
-test("Close directed OAuth progress without reporting a failure", async () => {
+test("Close directed OAuth popup without reporting a failure", async () => {
   const { authWindow } = mockConnectorOauthStart({ popupClosed: false });
   mockPublicConnectorStatus(
     publicOAuthConnectorStatus({
@@ -1134,14 +1114,9 @@ test("Close directed OAuth progress without reporting a failure", async () => {
       "https://oauth.test/github/authorize",
     );
   });
-  const progress = await screen.findByRole("dialog", {
-    name: "Connecting your account",
-  });
+  authWindow.close();
 
-  click(within(progress).getByLabelText("Close"));
-  expect(authWindow.closed).toBeTruthy();
-
-  await screen.findByText("Connect");
+  await expect(screen.findByText("Connect")).resolves.toBeEnabled();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 

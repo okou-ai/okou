@@ -738,9 +738,6 @@ export function ArtifactDownloadMenu({
   const [downloadLoadable, downloadAttachment] =
     useLoadableSet(downloadAttachment$);
   const pageSignal = useGet(pageSignal$);
-  const lightbox = useGet(lightboxUrl$);
-  const actionSignal =
-    surface === "dialog" ? lightbox?.ownerSignal : pageSignal;
   const workspaceTarget = useGoogleWorkspaceTarget(filename);
   const primaryDriveAction = useGoogleDriveMenuAction(syncTarget, surface);
   const originalDriveAction = useGoogleDriveMenuAction(syncTarget, surface);
@@ -775,11 +772,8 @@ export function ArtifactDownloadMenu({
       <DropdownMenuContent align={align} sideOffset={6} className="w-56">
         <DropdownMenuItem
           onClick={() => {
-            if (!actionSignal) {
-              return;
-            }
             detach(
-              downloadAttachment({ filename: downloadName, url }, actionSignal),
+              downloadAttachment({ filename: downloadName, url }, pageSignal),
               Reason.DomCallback,
               "artifact download",
             );

@@ -538,6 +538,10 @@ function ActivityStepsContent({
     return eventGroupMatchesSearch(group, searchTerm);
   });
 
+  if (visibleGroupsLoadable.state === "hasError") {
+    return <ActivityLoadError />;
+  }
+
   return (
     <div className="flex flex-col gap-4 pb-8 min-w-0">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
