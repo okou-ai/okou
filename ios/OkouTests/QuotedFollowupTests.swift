@@ -85,6 +85,52 @@ final class QuotedFollowupTests: XCTestCase {
     XCTAssertEqual(conversation.draft, "New work while retrying")
   }
 
+  func testQuoteCommandRejectsForeignStaleAndClosedSourcesBeforeSending() async throws {
+    let text = "Café status. Review the final evidence."
+    let payload = String(decoding: try JSONEncoder().encode(["content": text]), as: UTF8.self)
+    let fixture = ConversationHistoryFixture(rows: [
+      """
+      {"id":"\(ConversationHistoryFixture.id(1))","chatThreadId":"\(ConversationHistoryFixture.threadID)","seqId":1,"eventType":"output.message","createdAt":"2026-10-20T10:00:00Z","payload":\(payload)}
+      """
+    ])
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    await conversation.refresh()
+    let message = try XCTUnwrap(conversation.messages.first)
+    let selection = try XCTUnwrap(
+      ChatFeedbackSelection(
+        message: message, range: (message.text as NSString).range(of: "Review the final evidence")))
+
+    let unrelatedFixture = AttachmentFlowFixture()
+    let unrelated = unrelatedFixture.conversation()
+    defer { unrelated.close() }
+    unrelated.quote(selection)
+    XCTAssertFalse(unrelated.composer.hasContent)
+
+    // Canonically equal text can have different UTF-16 offsets in a stale selection.
+    let stale = ChatMessage(
+      id: message.id, role: .assistant,
+      text: text.replacingOccurrences(of: "Café", with: "Cafe\u{0301}"),
+      createdAt: message.createdAt, isQueued: false, isError: false)
+    XCTAssertEqual(stale.text, message.text)
+    XCTAssertNotEqual(stale.text.utf16.count, message.text.utf16.count)
+    conversation.quote(
+      try XCTUnwrap(
+        ChatFeedbackSelection(
+          message: stale, range: (stale.text as NSString).range(of: "Review the final evidence"))))
+    XCTAssertFalse(conversation.composer.hasContent)
+
+    conversation.quote(selection)
+    await conversation.send()
+    let data = try XCTUnwrap(fixture.requests.sentMessages.withLock { $0.first })
+    let sent = try JSONDecoder().decode(QuotedSend.self, from: data)
+    XCTAssertEqual(sent.userMessage, ChatDraftDocument(parts: [selection.part]))
+    XCTAssertFalse(conversation.composer.hasContent)
+    conversation.close()
+    conversation.quote(selection)
+    XCTAssertFalse(conversation.composer.hasContent)
+  }
+
   private struct QuotedSend: Decodable {
     let clientEventId: String
     let userMessage: ChatDraftDocument
