@@ -2,6 +2,18 @@ import { defineConfig } from "vitest/config";
 import { apiTestEnvironment } from "./src/__tests__/test-environment";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@sentry/cloudflare": new URL(
+        "./src/test-fixtures/worker-sentry-sdk.ts",
+        import.meta.url,
+      ).pathname,
+      "cloudflare:workers": new URL(
+        "./src/test-fixtures/worker-runtime-sdk.ts",
+        import.meta.url,
+      ).pathname,
+    },
+  },
   test: {
     name: "api",
     globals: true,

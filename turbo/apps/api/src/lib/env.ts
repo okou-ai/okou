@@ -183,12 +183,29 @@ const SCHEMA = {
     .default(128),
 } as const;
 
+// Workers deploy encrypted configuration in bounded chunks rather than one
+// binding per setting. Explicit process variables retain Node/local precedence.
+const configParts = process.env.API_ENV_JSON_PARTS;
+const packedConfig = configParts
+  ? Array.from(
+      { length: z.coerce.number().int().min(1).max(126).parse(configParts) },
+      (_, index) => {
+        return z.string().parse(process.env[`API_ENV_JSON_${index}`]);
+      },
+    ).join("")
+  : undefined;
+const packedEnv = Object.freeze(
+  packedConfig
+    ? z.record(z.string(), z.string()).parse(JSON.parse(packedConfig))
+    : {},
+);
+const runtimeEnv = Object.freeze({ ...packedEnv, ...process.env });
+
 const baseEnv = createEnv<undefined, typeof SCHEMA>({
   server: SCHEMA,
   runtimeEnv: {
-    ...process.env,
-    S3_PUBLIC_ENDPOINT:
-      process.env.S3_PUBLIC_ENDPOINT || process.env.S3_ENDPOINT,
+    ...runtimeEnv,
+    S3_PUBLIC_ENDPOINT: runtimeEnv.S3_PUBLIC_ENDPOINT || runtimeEnv.S3_ENDPOINT,
   },
   emptyStringAsUndefined: true,
 });
@@ -225,7 +242,7 @@ export function optionalEnv(name: string): string | undefined {
   if (Object.prototype.hasOwnProperty.call(overrideEnv, name)) {
     return overrideEnv[name];
   }
-  return process.env[name] || undefined;
+  return process.env[name] || packedEnv[name] || undefined;
 }
 
 export function mockEnv<K extends EnvName>(

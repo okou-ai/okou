@@ -1,0 +1,30 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "vitest/globals"],
+    "lib": ["ES2024"],
+    "module": "Preserve",
+    "disableSourceOfProjectReferenceRedirect": true,
+    "tsBuildInfoFile": "./.typecheck/worker.tsbuildinfo",
+    "paths": {
+      "@cloudflare/workers-types": [
+        "./node_modules/@cloudflare/workers-types/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "src/worker.ts",
+    "src/__tests__/worker-lifecycle.test.ts",
+    "src/worker-runtime.d.ts",
+    "src/worker-unsupported-*.ts"
+  ],
+  "exclude": ["node_modules", "dist", "dist-worker"],
+  "references": [
+    { "path": "./tsconfig.gateways.json" },
+    { "path": "./tsconfig.foundation.json" },
+    { "path": "./tsconfig.admission.json" },
+    { "path": "./tsconfig.core.json" },
+    { "path": "./tsconfig.routes.json" },
+    { "path": "./tsconfig.bootstrap.json" }
+  ]
+}

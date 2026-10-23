@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
+    "build:worker": "node scripts/build-worker.mjs",
+    "test:worker-build": "node --test scripts/build-worker.node-test.mjs",
+    "check-types:worker": "bash scripts/check-types.sh worker",
     "dev": "bash scripts/dev.sh",
     "start": "tsx src/server.ts",
     "db:dev-seed": "dotenv -e .env.local -- tsx src/scripts/dev-seed.ts",
@@ -44,6 +47,7 @@
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
+    "@sentry/cloudflare": "^10.76.2",
     "@sentry/node": "^10.73.0",
     "@slack/web-api": "^7.13.0",
     "@stripe/link-sdk": "^0.13.2",
@@ -80,6 +84,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20260924.1",
     "@electric-sql/pglite": "^0.5.8",
     "@hono/vite-build": "^1.11.1",
     "@okouai/eslint-config": "workspace:*",
@@ -104,6 +109,7 @@
     "tsx": "^4.19.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vite": "^8.1.6",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "wrangler": "^4.129.0"
   }
 }

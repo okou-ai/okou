@@ -18,6 +18,9 @@
       "entry": [
         "src/index.ts",
         "src/server.ts",
+        "src/worker.ts",
+        "src/worker-unsupported-pg-native.ts",
+        "src/worker-unsupported-react-email.ts",
         "src/signals/context/hono.ts",
         "src/signals/context/wait-until.ts",
         "src/signals/external/clerk.ts",
@@ -28,7 +31,7 @@
         "src/signals/routes/__tests__/runners-competing-claims.native.ts"
       ],
       "project": ["src/**/*.ts"],
-      "ignoreDependencies": ["clerk"],
+      "ignoreDependencies": ["clerk", "cloudflare"],
       "ignoreBinaries": ["openssl"]
     },
     "apps/platform": {

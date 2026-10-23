@@ -4,6 +4,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { waitUntil as vercelWaitUntil } from "@vercel/functions";
 
 import { env } from "../../lib/env";
+import { currentRequestRuntime } from "../../lib/request-runtime";
 import { singleton } from "../../lib/singleton";
 import {
   acknowledgeDetachedForTest,
@@ -54,7 +55,12 @@ const waitUntilLifecycle = singleton(() => {
 });
 
 function registerWaitUntil(work: Promise<unknown>): void {
-  vercelWaitUntil(work);
+  const runtime = currentRequestRuntime();
+  if (runtime) {
+    runtime.waitUntil(work);
+  } else {
+    vercelWaitUntil(work);
+  }
   detach(work, Mechanism.WaitUntil);
   trackWaitUntilForTest(work);
 }

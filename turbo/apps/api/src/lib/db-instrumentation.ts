@@ -14,6 +14,7 @@ import type { Pool, PoolClient } from "pg";
 
 import { singleton } from "./singleton";
 import { deriveSqlSpanName } from "./sql-span-name";
+import { currentRequestRuntime } from "./request-runtime";
 import { now } from "./time";
 import { safeSync } from "../signals/utils";
 
@@ -272,6 +273,17 @@ function instrumentQuery(
 
     const sql = extractSql(args);
     const spanName = deriveSqlSpanName(sql) ?? "pg.query";
+    const runtime = currentRequestRuntime();
+    if (runtime) {
+      // Native Workers spans inherit the platform's active request span, not
+      // an unrelated Node SDK provider. Callback-style pool internals above
+      // remain untraced so each query is counted only once.
+      return runtime
+        .traceQuery(spanName, sql, () => {
+          return Reflect.apply(original, target, args) as Promise<unknown>;
+        })
+        .finally(recordExecution);
+    }
     return tracer.startActiveSpan(
       spanName,
       {

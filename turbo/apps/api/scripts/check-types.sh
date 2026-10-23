@@ -44,6 +44,11 @@ bootstrap() {
   tsc -p tsconfig.bootstrap.json --checkers $(node ../../scripts/tsc-checkers.mjs)
 }
 
+worker() {
+  printf '%s\n' 'Type check phase: worker'
+  tsc -p tsconfig.worker.json --checkers $(node ../../scripts/tsc-checkers.mjs)
+}
+
 tests() {
   node scripts/prepare-typecheck-tests.mjs
   printf '%s\n' 'Type check phase: tests-0'
@@ -67,6 +72,7 @@ case "${1:-all}" in
     gateways
     core
     bootstrap
+    worker
     tests
     bootstrap_wiring
     ;;
@@ -77,6 +83,7 @@ case "${1:-all}" in
   admission) admission ;;
   core) core ;;
   bootstrap) bootstrap ;;
+  worker) worker ;;
   tests) tests ;;
   bootstrap-wiring) bootstrap_wiring ;;
   *)

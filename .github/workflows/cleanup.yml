@@ -99,6 +99,33 @@ jobs:
             echo "::warning::Stripe CLI listener cleanup failed for ${JOB_REF} — stale Stripe forwarding may remain on metal hosts"
           fi
 
+  # Worker cleanup never deletes the shared Neon branch; cleanup-database owns it.
+  cleanup-api-worker:
+    if: >-
+      github.event_name == 'pull_request_target' && github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    concurrency:
+      group: deploy-api-pr-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A closed PR must never supply code executed with cleanup credentials.
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Remove API Worker preview resources
+        env:
+          JOB_REF: pr-${{ github.event.pull_request.number }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/api-worker-preview.cjs cleanup
+
   cleanup-database:
     # Skip for release-please PRs (only version bumps and changelogs)
     if: "github.event.action == 'closed' && !startsWith(github.head_ref || '', 'release-please--branches--')"

@@ -14,7 +14,12 @@
     "src/**/*.suite.ts",
     "src/**/*.test.ts"
   ],
-  "exclude": ["node_modules", "dist", "src/__tests__/vercel-crons.test.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/__tests__/vercel-crons.test.ts",
+    "src/__tests__/worker-lifecycle.test.ts"
+  ],
   "references": [
     { "path": "./tsconfig.gateways.json" },
     { "path": "./tsconfig.foundation.json" },
