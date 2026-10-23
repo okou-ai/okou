@@ -3335,14 +3335,12 @@
     "connectDialog": {
       "connectedAs": "Verbunden als {{username}}",
       "device": {
-        "checking": "Genehmigung wird geprüft...",
         "connect": "Verbinden Sie {{connector}}",
         "description": "Öffnen Sie die Bestätigungsseite des Anbieters und geben Sie dann diesen Bestätigungscode ein, um den Zugriff zu genehmigen.",
         "intro": "Stellen Sie eine Verbindung her, um einen Bestätigungscode zu erhalten, und verwenden Sie ihn dann auf der Bestätigungsseite des Anbieters, um den Zugriff zu genehmigen.",
         "openPage": "Verifizierungsseite öffnen",
         "selectOption": "Wählen Sie {{option}}",
         "starting": "Beginnt...",
-        "startingConnection": "Verbindung wird gestartet...",
         "verificationCode": "Bestätigungscode",
         "waiting": "Warten auf Genehmigung. Lassen Sie diesen Dialog geöffnet."
       },
@@ -3368,17 +3366,12 @@
       "noMethod": "Es ist keine Verbindungsmethode verfügbar.",
       "or": "oder",
       "progress": {
-        "connecting": "Verbinden...",
-        "savingPermissions": "Berechtigungen werden gespeichert..."
+        "connecting": "Verbinden..."
       },
       "unavailable": {
         "description": "Für diese Integration sind Verbindungsmethoden verfügbar, die in diesem Dialog noch nicht konfiguriert werden können.",
         "title": "Verbindungsmethoden nicht verfügbar"
       }
-    },
-    "connectionProgress": {
-      "description": "Schließen Sie die Autorisierung ab, falls Sie dazu aufgefordert werden. Bitte warten Sie, während wir die Verbindung einrichten.",
-      "title": "Ihr Konto wird verbunden"
     },
     "custom": {
       "connect": {

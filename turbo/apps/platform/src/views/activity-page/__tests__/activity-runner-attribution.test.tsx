@@ -314,7 +314,9 @@ test("Runner diagnostics do not carry over while the next activity's request is 
       if (params.id === firstRunId) {
         return respond(200, firstRunner);
       }
-      runnerRequested.resolve();
+      if (!runnerRequested.settled()) {
+        runnerRequested.resolve();
+      }
       await releaseRunner.promise;
       return respond(200, nextRunner);
     },

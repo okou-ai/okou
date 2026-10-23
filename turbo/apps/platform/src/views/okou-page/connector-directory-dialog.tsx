@@ -1,7 +1,5 @@
 import { Toolbar } from "@base-ui/react/toolbar";
 import { useGet, useLoadable, useSet, type LoadableState } from "ccstate-react";
-import { registerConnectorConnectionDialog$ } from "../../signals/connector-connection-progress.ts";
-import { useConnectorConnectionDialogClose } from "../components/connector-connection-progress.tsx";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Plus, Search, TriangleAlert } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
@@ -25,6 +23,7 @@ import { Button, cn, LoadErrorRow } from "@okouai/ui";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { connectedConnectorTargetKeys$ } from "../../signals/okou-page/connector-accounts.ts";
 import { reloadUserConnectedConnectors$ } from "../../signals/okou-page/connector-overview.ts";
+import { cancelBuiltinConnectorConnection$ } from "../../signals/okou-page/settings/connectors.ts";
 import { retryCustomConnectors$ } from "../../signals/okou-page/settings/custom-connectors.ts";
 import { vncSummary$ } from "../../signals/vnc.ts";
 import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
@@ -1112,6 +1111,25 @@ interface ConnectorDirectoryDialogProps {
   readonly onClose: () => void;
 }
 
+function useDirectoryDialogOpenChange(
+  connecting: boolean,
+  onClose: () => void,
+): NonNullable<React.ComponentProps<typeof Dialog>["onOpenChange"]> {
+  const cancelConnection = useSet(cancelBuiltinConnectorConnection$);
+  return (open, details) => {
+    if (!open && connecting && details.reason === "outside-press") {
+      details.cancel();
+      return;
+    }
+    if (!open) {
+      if (connecting) {
+        cancelConnection();
+      }
+      onClose();
+    }
+  };
+}
+
 export function ConnectorDirectoryDialog({
   state,
   onUpdateState,
@@ -1132,6 +1150,7 @@ export function ConnectorDirectoryDialog({
   const accountsLoadable = useLoadable(connectedConnectorTargetKeys$);
   const retryAccounts = useSet(reloadUserConnectedConnectors$);
   const retryCustom = useSet(retryCustomConnectors$);
+  const onOpenChange = useDirectoryDialogOpenChange(connecting, onClose);
   const connectedTargets =
     accountsLoadable.state === "hasData" ? accountsLoadable.data : undefined;
   const accountStatus =
@@ -1193,16 +1212,9 @@ export function ConnectorDirectoryDialog({
     );
   };
 
-  const registerConnectionDialog = useSet(registerConnectorConnectionDialog$);
-  const { onOpenChange } = useConnectorConnectionDialogClose(
-    connecting,
-    onClose,
-  );
-
   return (
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent
-        ref={registerConnectionDialog}
         maxWidth="2xl"
         height={600}
         contentClassName="flex flex-col gap-0 p-0"

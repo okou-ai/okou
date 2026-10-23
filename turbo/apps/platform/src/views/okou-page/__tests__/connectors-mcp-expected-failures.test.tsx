@@ -86,9 +86,6 @@ test.each([
     await waitFor(() => {
       expect(popup.closed).toBeTruthy();
       expect(getConnectorAction("button", "Connect Acme MCP")).toBeEnabled();
-      expect(
-        screen.queryByRole("dialog", { name: "Connecting your account" }),
-      ).toBeNull();
     });
     expect(getConnectorCard("Acme MCP")).toHaveTextContent("No accounts");
     expect(sentry.reports).toMatchObject(

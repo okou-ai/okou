@@ -1,3 +1,4 @@
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import type { ReactNode } from "react";
 import { EllipsisVertical } from "lucide-react";
@@ -14,7 +15,7 @@ import {
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   closeCustomConnectorDialog$,
-  connectCustomConnectorAuthorizationWithDialog$,
+  connectCustomConnectorAuthorizationAndSettle$,
   customConnectorAuthorizedAgentsById$,
   customConnectorDialog$,
   openCustomConnectorAccessDialog$,
@@ -49,7 +50,6 @@ import {
   openCustomAccountConnectDialog$,
   openCustomAccountManager$,
 } from "../../../../signals/okou-page/settings/connector-account-dialogs.ts";
-import { connectorConnectionPending$ } from "../../../../signals/connector-connection-progress.ts";
 import { focusCreatedDirectoryConnector$ } from "../../../../signals/okou-page/settings/connector-directory-route.ts";
 
 function connectsDirectlyWithAuthorization(
@@ -68,6 +68,7 @@ interface CustomConnectorRowProps {
   readonly hasAccounts: boolean;
   readonly inventoryStatus: ConnectorInventoryStatus;
   readonly onManageAccounts: () => void;
+  readonly connecting: boolean;
 }
 
 function CustomConnectorAgentAccess({
@@ -302,6 +303,7 @@ function CustomConnectorActions({
 
 function CustomConnectorRow({
   connector,
+  connecting,
   isAdmin,
   onConnect,
   onEdit,
@@ -312,7 +314,6 @@ function CustomConnectorRow({
   onManageAccounts,
 }: CustomConnectorRowProps) {
   const focusCreated = useSet(focusCreatedDirectoryConnector$);
-  const connecting = useGet(connectorConnectionPending$);
   const adminCanDelete = isAdmin;
   const canActivate = inventoryStatus === "ready";
   const activate = hasAccounts ? onManageAccounts : onConnect;
@@ -423,8 +424,8 @@ export function CustomConnectorGrid({
   const openEdit = useSet(openCustomConnectorEditDialog$);
   const openAccess = useSet(openCustomConnectorAccessDialog$);
   const openDelete = useSet(openCustomConnectorDeleteDialog$);
-  const connectAccountAuthorization = useSet(
-    connectCustomConnectorAuthorizationWithDialog$,
+  const [connection, connectAccountAuthorization] = useLoadableSet(
+    connectCustomConnectorAuthorizationAndSettle$,
   );
   const signal = useGet(pageSignal$);
   const openAccountManager = useSet(openCustomAccountManager$);
@@ -480,6 +481,7 @@ export function CustomConnectorGrid({
             key={connector.id}
             connector={connector}
             isAdmin={isAdmin}
+            connecting={connection.state === "loading"}
             onConnect={() => {
               return handleConnect(connector);
             }}
@@ -512,7 +514,7 @@ function CustomAccountDialogs() {
   const openAccountConnect = useSet(openCustomAccountConnectDialog$);
   const finishAccountConnection = useSet(finishConnectorAccountConnection$);
   const connectAccountAuthorization = useSet(
-    connectCustomConnectorAuthorizationWithDialog$,
+    connectCustomConnectorAuthorizationAndSettle$,
   );
   const signal = useGet(pageSignal$);
   return (

@@ -1,4 +1,5 @@
-import { useGet, useSet, useLoadable } from "ccstate-react";
+import { useGet, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import {
   surfaceVariants,
   Button,
@@ -27,7 +28,6 @@ import { detach, Reason } from "../../../signals/utils.ts";
 import {
   deleteAgent$,
   agentDeleteSession$,
-  agentDeleteResult$,
   setAgentDeleteCopyChoices$,
   setAgentDeleteDialogOpen$,
   reloadAgentDeleteWorkflows$,
@@ -403,7 +403,7 @@ function AgentDeleteFeedback({
   error: unknown;
   deleteWorkflowsState: "loading" | "error" | "ready";
   deleteCopyTargets: readonly AgentDeleteCopyTarget[];
-  onRetry: (sessionId: symbol) => void;
+  onRetry: (sessionId: string) => void;
 }) {
   const { t } = useTranslation("agents");
   return (
@@ -484,43 +484,50 @@ function AgentDeleteFeedback({
   );
 }
 
-function useAgentDeleteSessionFeedback(agentId: string) {
+export function AgentDeleteDialog(props: AgentDeleteDialogProps) {
+  const session = useGet(agentDeleteSession$);
+  return (
+    <AgentDeleteDialogContent key={session?.id ?? props.agentId} {...props} />
+  );
+}
+
+function useAgentDeleteConfirmation({
+  agentId,
+  onDelete,
+  deleteWorkflows,
+  deleteWorkflowsState,
+  onCopyWorkflowBeforeDelete,
+}: AgentDeleteDialogProps) {
   const pageSignal = useGet(pageSignal$);
   const currentSession = useGet(agentDeleteSession$);
   const session =
     currentSession?.agentId === agentId && currentSession.owner === pageSignal
       ? currentSession
       : null;
-  const result = useLoadable(agentDeleteResult$);
-  return {
-    pageSignal,
-    session,
-    busy: session !== null && result.state === "loading",
-    error: session && result.state === "hasError" ? result.error : null,
-  };
-}
-
-export function AgentDeleteDialog({
-  agentId,
-  resolvedAgentName,
-  onDelete,
-  deleteWorkflows,
-  deleteWorkflowsState,
-  deleteCopyTargets = [],
-  onCopyWorkflowBeforeDelete,
-}: AgentDeleteDialogProps) {
-  const { t } = useTranslation("agents");
-  const { pageSignal, session, busy, error } =
-    useAgentDeleteSessionFeedback(agentId);
-  const deleteAgentFn = useSet(deleteAgent$);
+  const [deletion, deleteAgentFn] = useLoadableSet(deleteAgent$);
+  const busy = deletion.state === "loading";
+  const error = deletion.state === "hasError" ? deletion.error : null;
   const setOpen = useSet(setAgentDeleteDialogOpen$);
   const updateCopyChoices = useSet(setAgentDeleteCopyChoices$);
   const reloadWorkflows = useSet(reloadAgentDeleteWorkflows$);
   const copyChoices = session?.choices ?? {};
   // Retain this confirmation's last known workflow rows if a refresh fails.
   const workflows = deleteWorkflows ?? session?.workflows ?? [];
-  const copying = busy && session?.phase === "copying";
-  const deleting = busy && session?.phase === "deleting";
+  const copying =
+    busy &&
+    !!onCopyWorkflowBeforeDelete &&
+    Object.entries(copyChoices).some(([workflowId, targetId]) => {
+      return (
+        targetId !== DELETE_WITH_AGENT &&
+        workflows.some((workflow) => {
+          return workflow.id === workflowId;
+        }) &&
+        !session?.completedRescues.some(([copiedId, copiedTo]) => {
+          return copiedId === workflowId && copiedTo === targetId;
+        })
+      );
+    });
+  const deleting = busy && !copying;
   const workflowsReady = deleteWorkflowsState === "ready";
   const setCopyChoices = (choices: Record<string, string>) => {
     if (session) {
@@ -550,6 +557,49 @@ export function AgentDeleteDialog({
     );
   };
 
+  return {
+    pageSignal,
+    session,
+    busy,
+    error,
+    setOpen,
+    reloadWorkflows,
+    copyChoices,
+    workflows,
+    copying,
+    deleting,
+    workflowsReady,
+    setCopyChoices,
+    canReconcile,
+    handleDelete,
+  };
+}
+
+function AgentDeleteDialogContent(props: AgentDeleteDialogProps) {
+  const { t } = useTranslation("agents");
+  const {
+    agentId,
+    resolvedAgentName,
+    deleteWorkflows,
+    deleteWorkflowsState,
+    deleteCopyTargets = [],
+  } = props;
+  const {
+    pageSignal,
+    session,
+    busy,
+    error,
+    setOpen,
+    reloadWorkflows,
+    copyChoices,
+    workflows,
+    copying,
+    deleting,
+    workflowsReady,
+    setCopyChoices,
+    canReconcile,
+    handleDelete,
+  } = useAgentDeleteConfirmation(props);
   return (
     <Card className={surfaceVariants({ className: "overflow-hidden mt-4" })}>
       <CardContent className="p-4 sm:p-5">
@@ -560,6 +610,7 @@ export function AgentDeleteDialog({
               open={session?.open ?? false}
               onOpenChange={(open, eventDetails) => {
                 if (
+                  busy ||
                   !setOpen(
                     { agentId, workflows: deleteWorkflows },
                     open,

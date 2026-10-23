@@ -3386,14 +3386,12 @@
     "connectDialog": {
       "connectedAs": "Conectado como {{username}}",
       "device": {
-        "checking": "Comprobando la aprobación...",
         "connect": "Conectar {{connector}}",
         "description": "Abre la página de verificación del proveedor y luego introduce este código de verificación para aprobar el acceso.",
         "intro": "Conéctate para obtener un código de verificación y luego úsalo en la página de verificación del proveedor para aprobar el acceso.",
         "openPage": "Abrir página de verificación",
         "selectOption": "Seleccionar {{option}}",
         "starting": "Iniciando...",
-        "startingConnection": "Iniciando conexión...",
         "verificationCode": "Código de verificación",
         "waiting": "Esperando aprobación. Mantén este diálogo abierto."
       },
@@ -3419,17 +3417,12 @@
       "noMethod": "No hay método de conexión disponible.",
       "or": "o",
       "progress": {
-        "connecting": "Conectando...",
-        "savingPermissions": "Guardando permisos..."
+        "connecting": "Conectando..."
       },
       "unavailable": {
         "description": "Este conector tiene métodos de conexión disponibles, pero ninguno de ellos puede configurarse aún desde este diálogo.",
         "title": "Métodos de conexión no disponibles"
       }
-    },
-    "connectionProgress": {
-      "description": "Completa la autorización si se solicita. Espera mientras terminamos de configurar la conexión.",
-      "title": "Conectando tu cuenta"
     },
     "custom": {
       "connect": {

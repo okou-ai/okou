@@ -1,10 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { delay } from "signal-timers";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import {
-  markConnectorConnectionCompleted$,
-  withConnectorConnectionProgress,
-} from "../../connector-connection-progress.ts";
 
 import { accept } from "../../../lib/accept.ts";
 import { now } from "../../../lib/time.ts";
@@ -749,38 +745,6 @@ const internalConnectorExternalCodeState$ =
   state<BuiltinConnectorExternalCodeState>(
     createIdleConnectorExternalCodeState(),
   );
-// Keep the real startup operation with its protocol identity across settlement.
-// Selection/cancel and session cleanup must refer to the same attempt; methods
-// rendered alongside it must not inherit its preparing state.
-type ConnectorAuthorizationStart = {
-  readonly connectorSlug: ConnectorSlug;
-  readonly authMethod: ConnectorAuthMethodId;
-  readonly requestId: string;
-  readonly operation: Promise<unknown>;
-};
-const connectorOAuthDeviceAuthStartOperation$ =
-  state<ConnectorAuthorizationStart | null>(null);
-const connectorExternalCodeStartOperation$ =
-  state<ConnectorAuthorizationStart | null>(null);
-
-export const builtinConnectorOAuthDeviceAuthStartContext$ = computed((get) => {
-  return get(connectorOAuthDeviceAuthStartOperation$);
-});
-export const builtinConnectorExternalCodeStartContext$ = computed((get) => {
-  return get(connectorExternalCodeStartOperation$);
-});
-
-export const builtinConnectorOAuthDeviceAuthStartOperation$ = computed(
-  (get) => {
-    return get(connectorOAuthDeviceAuthStartOperation$)?.operation ?? null;
-  },
-);
-export const builtinConnectorExternalCodeStartOperation$ = computed((get) => {
-  return get(connectorExternalCodeStartOperation$)?.operation ?? null;
-});
-
-const connectorOAuthDeviceAuthPollOperation$ =
-  state<Promise<PollConnectorOAuthDeviceAuthIterationOutcome> | null>(null);
 const resetConnectorOAuthDeviceAuthFlowSignal$ = resetSignal();
 const resetConnectorExternalCodeFlowSignal$ = resetSignal();
 const connectorOAuthDeviceAuthStartOptionValues$ = state<
@@ -800,27 +764,18 @@ export const setSelectedBuiltinConnectorSlug$ = command(
     }
     set(internalSelectedConnectorSlug$, connectorSlug);
     const deviceAuthCurrent = get(internalConnectorOAuthDeviceAuthState$);
-    const deviceStart = get(connectorOAuthDeviceAuthStartOperation$);
-    if (
-      connectorSlug !==
-      (deviceStart?.connectorSlug ?? deviceAuthCurrent.connectorSlug)
-    ) {
+    if (connectorSlug !== deviceAuthCurrent.connectorSlug) {
       set(resetConnectorOAuthDeviceAuthFlowSignal$);
-      set(connectorOAuthDeviceAuthStartOperation$, null);
-      set(connectorOAuthDeviceAuthPollOperation$, null);
+
       set(
         internalConnectorOAuthDeviceAuthState$,
         createIdleConnectorOAuthDeviceAuthState(connectorSlug),
       );
     }
     const externalCodeCurrent = get(internalConnectorExternalCodeState$);
-    const externalStart = get(connectorExternalCodeStartOperation$);
-    if (
-      connectorSlug !==
-      (externalStart?.connectorSlug ?? externalCodeCurrent.connectorSlug)
-    ) {
+    if (connectorSlug !== externalCodeCurrent.connectorSlug) {
       set(resetConnectorExternalCodeFlowSignal$);
-      set(connectorExternalCodeStartOperation$, null);
+
       set(
         internalConnectorExternalCodeState$,
         createIdleConnectorExternalCodeState(connectorSlug),
@@ -833,47 +788,9 @@ export const builtinConnectorOAuthDeviceAuthState$ = computed((get) => {
   return get(internalConnectorOAuthDeviceAuthState$);
 });
 
-export const builtinConnectorOAuthDeviceAuthPollOperation$ = computed((get) => {
-  const current = get(internalConnectorOAuthDeviceAuthState$);
-  return current.status === "pending"
-    ? get(connectorOAuthDeviceAuthPollOperation$)
-    : null;
-});
-
 export const builtinConnectorExternalCodeState$ = computed((get) => {
   return get(internalConnectorExternalCodeState$);
 });
-
-function connectorOAuthDeviceAuthStateIsActive(
-  state: BuiltinConnectorOAuthDeviceAuthState,
-): boolean {
-  return state.status === "pending";
-}
-
-function connectorExternalCodeStateIsActive(
-  state: BuiltinConnectorExternalCodeState,
-): boolean {
-  return state.status === "pending";
-}
-
-function connectorConnectOperationIsActive({
-  browserOperation,
-  operation,
-  deviceAuthState,
-  externalCodeState,
-}: {
-  readonly browserOperation: Promise<unknown> | null;
-  readonly operation: Promise<unknown> | null;
-  readonly deviceAuthState: BuiltinConnectorOAuthDeviceAuthState;
-  readonly externalCodeState: BuiltinConnectorExternalCodeState;
-}): boolean {
-  return (
-    browserOperation !== null ||
-    operation !== null ||
-    connectorOAuthDeviceAuthStateIsActive(deviceAuthState) ||
-    connectorExternalCodeStateIsActive(externalCodeState)
-  );
-}
 
 function connectorOAuthDeviceAuthStartOptionsKey(
   connectorSlug: ConnectorSlug,
@@ -1126,19 +1043,9 @@ export const submitBuiltinManualGrant$ = command(
       options: requestedOptions,
       onSuccess,
     }: SubmitManualGrantParams,
-    signal: AbortSignal,
+    parentSignal: AbortSignal,
   ): Promise<BuiltinConnectorConnectionResult | false> => {
-    if (
-      connectorConnectOperationIsActive({
-        browserOperation: get(builtinConnectorBrowserAuthOperation$),
-        operation: get(internalConnectOperation$),
-        deviceAuthState: get(internalConnectorOAuthDeviceAuthState$),
-        externalCodeState: get(internalConnectorExternalCodeState$),
-      })
-    ) {
-      return false;
-    }
-
+    const signal = set(resetBuiltinConnectorConnectionSignal$, parentSignal);
     let connectorStateChanged = false;
     const operation = (async (): Promise<
       BuiltinConnectorConnectionResult | false
@@ -1199,13 +1106,8 @@ export const submitBuiltinManualGrant$ = command(
       signal.throwIfAborted();
       return { connectionId };
     })();
-    set(internalConnectResult$, { connectorSlug, operation });
-    set(internalConnectOperation$, operation);
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(operation, () => {
-      set(internalConnectOperation$, (current) => {
-        return current === operation ? null : current;
-      });
       if (connectorStateChanged) {
         set(reloadConnectorConnectionState$);
       }
@@ -1246,19 +1148,9 @@ export const connectBuiltinConnectorNoAuth$ = command(
       options: requestedOptions,
       onSuccess,
     }: ConnectNoAuthParams,
-    signal: AbortSignal,
+    parentSignal: AbortSignal,
   ): Promise<BuiltinConnectorConnectionResult | false> => {
-    if (
-      connectorConnectOperationIsActive({
-        browserOperation: get(builtinConnectorBrowserAuthOperation$),
-        operation: get(internalConnectOperation$),
-        deviceAuthState: get(internalConnectorOAuthDeviceAuthState$),
-        externalCodeState: get(internalConnectorExternalCodeState$),
-      })
-    ) {
-      return false;
-    }
-
+    const signal = set(resetBuiltinConnectorConnectionSignal$, parentSignal);
     let connectorStateChanged = false;
     const operation = (async (): Promise<
       BuiltinConnectorConnectionResult | false
@@ -1318,13 +1210,8 @@ export const connectBuiltinConnectorNoAuth$ = command(
       signal.throwIfAborted();
       return { connectionId };
     })();
-    set(internalConnectResult$, { connectorSlug, operation });
-    set(internalConnectOperation$, operation);
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(operation, () => {
-      set(internalConnectOperation$, (current) => {
-        return current === operation ? null : current;
-      });
       if (connectorStateChanged) {
         set(reloadConnectorConnectionState$);
       }
@@ -1345,70 +1232,13 @@ export const connectBuiltinConnectorNoAuthAndSettle$ = command(
 );
 
 // ---------------------------------------------------------------------------
-// Shared execution and browser protocol coordination
+// Active device authorization session
 // ---------------------------------------------------------------------------
-
-type ConnectorBrowserAuthOperation = {
-  readonly flowId: string;
-  readonly operation: Promise<BuiltinConnectorConnectionResult | false>;
-};
-const internalBrowserAuthOperation$ =
-  state<ConnectorBrowserAuthOperation | null>(null);
-// Active execution is the command mutex; the latest actual result remains
-// observable after release so shared loadables retain completion or rejection.
-const internalConnectOperation$ = state<Promise<unknown> | null>(null);
-type ConnectorConnectExecution = {
-  readonly connectorSlug: ConnectorSlug;
-  readonly operation: Promise<unknown>;
-};
-const internalConnectResult$ = state<ConnectorConnectExecution | null>(null);
-
-export const builtinConnectorBrowserAuthOperation$ = computed((get) => {
-  return get(internalBrowserAuthOperation$)?.operation ?? null;
-});
 
 export const builtinPollingOAuthDeviceAuthSlug$ = computed((get) => {
   const current = get(internalConnectorOAuthDeviceAuthState$);
   return current.status === "pending" ? current.connectorSlug : null;
 });
-
-export const builtinConnectExecution$ = computed((get) => {
-  return get(internalConnectResult$);
-});
-
-export const builtinConnectOperation$ = computed((get) => {
-  return get(builtinConnectExecution$)?.operation ?? null;
-});
-
-export const runBuiltinConnectorConnectSuccess$ = command(
-  async (
-    { get, set },
-    onSuccess: ConnectorConnectSuccess,
-    connectionId: string,
-    connectorSlug: ConnectorSlug,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const operation = (async (): Promise<void> => {
-      signal.throwIfAborted();
-      await onSuccess(connectionId, signal);
-      signal.throwIfAborted();
-    })();
-    // A continuation awaited by a connection is already owned by that promise.
-    if (get(internalConnectOperation$)) {
-      await operation;
-      signal.throwIfAborted();
-      return;
-    }
-    set(internalConnectResult$, { connectorSlug, operation });
-    set(internalConnectOperation$, operation);
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    return await withCleanup(operation, () => {
-      set(internalConnectOperation$, (current) => {
-        return current === operation ? null : current;
-      });
-    });
-  },
-);
 
 // ---------------------------------------------------------------------------
 // Optimistic connected state — bridges the gap between connect success and
@@ -1441,6 +1271,7 @@ type PollConnectorOAuthDeviceAuthArgs = {
 };
 
 type ConnectConnectorOAuthDeviceAuthParams = {
+  readonly onSuccess?: ConnectorConnectSuccess;
   readonly connectorSlug: ConnectorSlug;
   readonly authMethod: ConnectorAuthMethodId;
   readonly options: PostConnectOptions;
@@ -1534,8 +1365,7 @@ function isCurrentConnectorOAuthDeviceAuthRequest(
 
 export const clearBuiltinConnectorOAuthDeviceAuth$ = command(({ set }) => {
   set(resetConnectorOAuthDeviceAuthFlowSignal$);
-  set(connectorOAuthDeviceAuthStartOperation$, null);
-  set(connectorOAuthDeviceAuthPollOperation$, null);
+
   set(
     internalConnectorOAuthDeviceAuthState$,
     createIdleConnectorOAuthDeviceAuthState(),
@@ -1744,7 +1574,7 @@ const pollConnectorOAuthDeviceAuth$ = command(
         if (!isCurrentRequest(get(internalConnectorOAuthDeviceAuthState$))) {
           return true;
         }
-        const operation = set(
+        const outcome = await set(
           pollConnectorOAuthDeviceAuthOnce$,
           {
             client,
@@ -1755,10 +1585,6 @@ const pollConnectorOAuthDeviceAuth$ = command(
           },
           sig,
         );
-        // Observe only this HTTP request and its response handling, not the
-        // interval spent waiting for the user's device authorization.
-        set(connectorOAuthDeviceAuthPollOperation$, operation);
-        const outcome = await operation;
         sig.throwIfAborted();
         if (outcome.connectionId) {
           connectionId = outcome.connectionId;
@@ -1812,23 +1638,12 @@ const connectConnectorOAuthDeviceAuth$ = command(
     signal: AbortSignal,
   ): Promise<BuiltinConnectorConnectionResult | false> => {
     const { connectorSlug, authMethod } = args;
-    if (
-      connectorConnectOperationIsActive({
-        browserOperation: get(builtinConnectorBrowserAuthOperation$),
-        operation: get(internalConnectOperation$),
-        deviceAuthState: get(internalConnectorOAuthDeviceAuthState$),
-        externalCodeState: get(internalConnectorExternalCodeState$),
-      })
-    ) {
-      return false;
-    }
-
     const requestId = createConnectorOAuthDeviceAuthRequestId(connectorSlug);
     const operation = (async (): Promise<
       BuiltinConnectorConnectionResult | false
     > => {
       const flowSignal = set(resetConnectorOAuthDeviceAuthFlowSignal$, signal);
-      set(connectorOAuthDeviceAuthPollOperation$, null);
+
       set(
         internalConnectorOAuthDeviceAuthState$,
         createIdleConnectorOAuthDeviceAuthState(connectorSlug),
@@ -1879,15 +1694,9 @@ const connectConnectorOAuthDeviceAuth$ = command(
 
         return { createClient, options };
       })();
-      set(connectorOAuthDeviceAuthStartOperation$, {
-        connectorSlug,
-        authMethod,
-        requestId,
-        operation: startOperation,
-      });
       const { createClient, options } = await startOperation;
       flowSignal.throwIfAborted();
-      return await set(
+      const result = await set(
         pollConnectorOAuthDeviceAuth$,
         {
           connectorSlug,
@@ -1898,18 +1707,17 @@ const connectConnectorOAuthDeviceAuth$ = command(
         },
         flowSignal,
       );
+      if (result) {
+        flowSignal.throwIfAborted();
+        await args.onSuccess?.(result.connectionId, flowSignal);
+        flowSignal.throwIfAborted();
+      }
+      return result;
     })();
-    set(internalConnectResult$, { connectorSlug, operation });
-    set(internalConnectOperation$, operation);
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(operation, () => {
-      set(internalConnectOperation$, (current) => {
-        return current === operation ? null : current;
-      });
       set(internalConnectorOAuthDeviceAuthState$, (current) => {
         if (
-          get(connectorOAuthDeviceAuthStartOperation$)?.requestId !==
-            requestId ||
           current.connectorSlug !== connectorSlug ||
           current.status !== "pending" ||
           current.authMethod !== authMethod ||
@@ -1935,27 +1743,22 @@ const connectConnectorOAuthDeviceAuthAndSettleCommand$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const connected = await set(
+    await set(
       connectConnectorOAuthDeviceAuth$,
       {
         connectorSlug: args.connectorSlug,
         authMethod: args.authMethod,
         options: args.options,
         startOptions: args.startOptions,
+        onSuccess: args.onSuccess,
       },
       signal,
     );
-    if (connected) {
-      signal.throwIfAborted();
-      await args.onSuccess(connected.connectionId, signal);
-    }
   },
 );
 
 export const connectBuiltinConnectorOAuthDeviceAuthAndSettle$ =
-  withConnectorConnectionProgress(
-    connectConnectorOAuthDeviceAuthAndSettleCommand$,
-  );
+  connectConnectorOAuthDeviceAuthAndSettleCommand$;
 
 // ---------------------------------------------------------------------------
 // External-code authorization flow state
@@ -1970,6 +1773,7 @@ type ConnectConnectorExternalCodeParams = {
 };
 
 type CompleteConnectorExternalCodeParams = {
+  readonly onSuccess?: ConnectorConnectSuccess;
   readonly connectorSlug: ConnectorSlug;
   readonly authMethod: ConnectorAuthMethodId;
   readonly options: PostConnectOptions;
@@ -1999,7 +1803,7 @@ function isCurrentConnectorExternalCodeRequest(
 
 export const clearBuiltinConnectorExternalCode$ = command(({ set }) => {
   set(resetConnectorExternalCodeFlowSignal$);
-  set(connectorExternalCodeStartOperation$, null);
+
   set(
     internalConnectorExternalCodeState$,
     createIdleConnectorExternalCodeState(),
@@ -2071,17 +1875,6 @@ const connectConnectorExternalCodeCommand$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const { connectorSlug, authMethod } = args;
-    if (
-      connectorConnectOperationIsActive({
-        browserOperation: get(builtinConnectorBrowserAuthOperation$),
-        operation: get(internalConnectOperation$),
-        deviceAuthState: get(internalConnectorOAuthDeviceAuthState$),
-        externalCodeState: get(internalConnectorExternalCodeState$),
-      })
-    ) {
-      return false;
-    }
-
     const requestId = createConnectorExternalCodeRequestId(connectorSlug);
     const operation = (async (): Promise<boolean> => {
       const flowSignal = set(resetConnectorExternalCodeFlowSignal$, signal);
@@ -2134,22 +1927,10 @@ const connectConnectorExternalCodeCommand$ = command(
       });
       return true;
     })();
-    set(connectorExternalCodeStartOperation$, {
-      connectorSlug,
-      authMethod,
-      requestId,
-      operation,
-    });
-    set(internalConnectResult$, { connectorSlug, operation });
-    set(internalConnectOperation$, operation);
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(operation, () => {
-      set(internalConnectOperation$, (current) => {
-        return current === operation ? null : current;
-      });
       set(internalConnectorExternalCodeState$, (current) => {
         if (
-          get(connectorExternalCodeStartOperation$)?.requestId !== requestId ||
           !signal.aborted ||
           current.connectorSlug !== connectorSlug ||
           current.status !== "pending" ||
@@ -2165,12 +1946,16 @@ const connectConnectorExternalCodeCommand$ = command(
 );
 
 export const connectBuiltinConnectorExternalCode$ =
-  withConnectorConnectionProgress(
-    connectConnectorExternalCodeCommand$,
-    // The code-entry session outlives its initial request and already has an
-    // explicit clear command. Do not end that session when progress settles.
-    { cancellable: false },
+  connectConnectorExternalCodeCommand$;
+
+function connectorExternalCodeRequiredMessage(connector: string): string {
+  return i18n.t(
+    ($) => {
+      return $.connectors.connectDialog.errors.codeRequired;
+    },
+    { connector },
   );
+}
 
 const completeConnectorExternalCode$ = command(
   async (
@@ -2203,11 +1988,8 @@ const completeConnectorExternalCode$ = command(
     if (!code) {
       set(internalConnectorExternalCodeState$, {
         ...current,
-        errorMessage: i18n.t(
-          ($) => {
-            return $.connectors.connectDialog.errors.codeRequired;
-          },
-          { connector: options.connectorLabel ?? connectorSlug },
+        errorMessage: connectorExternalCodeRequiredMessage(
+          options.connectorLabel ?? connectorSlug,
         ),
       });
       return false;
@@ -2298,6 +2080,9 @@ const completeConnectorExternalCode$ = command(
           internalConnectorExternalCodeState$,
           createIdleConnectorExternalCodeState(),
         );
+        flowSignal.throwIfAborted();
+        await args.onSuccess?.(connectionId, flowSignal);
+        flowSignal.throwIfAborted();
         return { connectionId };
       })(),
       () => {
@@ -2317,26 +2102,21 @@ const completeConnectorExternalCodeAndSettleCommand$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const connected = await set(
+    await set(
       completeConnectorExternalCode$,
       {
         connectorSlug: args.connectorSlug,
         authMethod: args.authMethod,
         options: args.options,
+        onSuccess: args.onSuccess,
       },
       signal,
     );
-    if (connected) {
-      signal.throwIfAborted();
-      await args.onSuccess(connected.connectionId, signal);
-    }
   },
 );
 
 export const completeBuiltinConnectorExternalCodeAndSettle$ =
-  withConnectorConnectionProgress(
-    completeConnectorExternalCodeAndSettleCommand$,
-  );
+  completeConnectorExternalCodeAndSettleCommand$;
 
 // ---------------------------------------------------------------------------
 // Standalone mode detection
@@ -2728,7 +2508,6 @@ const finishAcceptedConnectorConnection$ = command(
     ) {
       return false;
     }
-    set(markConnectorConnectionCompleted$, signal);
     set(reloadConnectorConnectionState$);
     const isConnected =
       !args.options.useDefaultConnectorProjection ||
@@ -2848,35 +2627,23 @@ const completeConnectorOAuthAuthCodeFlow$ = command(
   },
 );
 
+const resetBuiltinConnectorConnectionSignal$ = resetSignal();
+export const cancelBuiltinConnectorConnection$ = command(({ set }) => {
+  set(resetBuiltinConnectorConnectionSignal$);
+});
+
 const connectConnectorOAuthAuthCodeCommand$ = command(
   async (
-    { get, set },
+    { set },
     connectorSlug: ConnectorSlug,
     method: PublicConnectorCatalogAuthMethodDetail,
     options: BrowserAuthPostConnectOptions,
-    signal: AbortSignal,
+    parentSignal: AbortSignal,
   ): Promise<BuiltinConnectorConnectionResult | false> => {
+    const signal = set(resetBuiltinConnectorConnectionSignal$, parentSignal);
     signal.throwIfAborted();
-    if (
-      connectorConnectOperationIsActive({
-        browserOperation: get(builtinConnectorBrowserAuthOperation$),
-        operation: get(internalConnectOperation$),
-        deviceAuthState: get(internalConnectorOAuthDeviceAuthState$),
-        externalCodeState: get(internalConnectorExternalCodeState$),
-      })
-    ) {
-      return false;
-    }
-
     const flowId = `${connectorSlug}-connect-${now()}-${Math.random().toString(36).slice(2)}`;
     const release = () => {
-      const context = get(internalBrowserAuthOperation$);
-      if (context?.flowId === flowId && context.operation === operation) {
-        set(internalBrowserAuthOperation$, null);
-      }
-      if (get(internalConnectOperation$) === operation) {
-        set(internalConnectOperation$, null);
-      }
       set(internalConnectorOAuthAuthCodeWaitState$, (current) => {
         return current?.flowId === flowId ? null : current;
       });
@@ -2932,14 +2699,12 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
               signal,
             );
       if (result) {
+        signal.throwIfAborted();
         await options.onSuccess?.(result.connectionId, signal);
         signal.throwIfAborted();
       }
       return result;
     })();
-    set(internalBrowserAuthOperation$, { flowId, operation });
-    set(internalConnectResult$, { connectorSlug, operation });
-    set(internalConnectOperation$, operation);
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(operation, () => {
       signal.removeEventListener("abort", release);
@@ -2949,9 +2714,7 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
 );
 
 export const connectBuiltinConnectorOAuthAuthCode$ =
-  withConnectorConnectionProgress(connectConnectorOAuthAuthCodeCommand$, {
-    showDialog: true,
-  });
+  connectConnectorOAuthAuthCodeCommand$;
 
 // ---------------------------------------------------------------------------
 // Connect via browser authorization, then run onSuccess callback.
@@ -2968,29 +2731,36 @@ const connectConnectorOAuthAuthCodeAndSettleCommand$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const connected = await set(
+    await set(
       connectBuiltinConnectorOAuthAuthCode$,
       args.connectorSlug,
       args.method,
-      args.options,
+      {
+        ...args.options,
+        onSuccess: async (connectionId, attemptSignal) => {
+          await args.options.onSuccess?.(connectionId, attemptSignal);
+          attemptSignal.throwIfAborted();
+          await args.onSuccess(connectionId, attemptSignal);
+        },
+      },
       signal,
     );
-    if (connected) {
-      signal.throwIfAborted();
-      await args.onSuccess(connected.connectionId, signal);
-    }
   },
 );
 
 export const connectBuiltinConnectorOAuthAuthCodeAndSettle$ =
-  withConnectorConnectionProgress(
-    connectConnectorOAuthAuthCodeAndSettleCommand$,
-    { showDialog: true },
-  );
+  connectConnectorOAuthAuthCodeAndSettleCommand$;
 
-/** Menu actions disappear on activation and need their own progress feedback. */
-export const connectBuiltinConnectorOAuthAuthCodeWithDialogAndSettle$ =
-  withConnectorConnectionProgress(
-    connectConnectorOAuthAuthCodeAndSettleCommand$,
-    { showDialog: true },
-  );
+export const runBuiltinConnectorConnectSuccess$ = command(
+  async (
+    _context,
+    onSuccess: ConnectorConnectSuccess,
+    connectionId: string,
+    _connectorSlug: ConnectorSlug,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    await onSuccess(connectionId, signal);
+    signal.throwIfAborted();
+  },
+);

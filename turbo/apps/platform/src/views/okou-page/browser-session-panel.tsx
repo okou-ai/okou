@@ -1,3 +1,4 @@
+import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
 import { CdpViewer } from "cdp-viewer";
 import { browserUse } from "cdp-viewer/extensions/browser-use";
@@ -14,7 +15,7 @@ import {
 } from "@okouai/api-contracts/contracts/browser";
 import { Button, cn } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -212,9 +213,10 @@ function ContainedLiveBrowserViewport({
   readonly children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const fitViewport = useSet(signals.fitViewport$);
+  const [fitWindowOperation, fitViewport] = useLoadableSet(
+    signals.fitViewport$,
+  );
   const fitViewportRef = useSet(signals.fitViewportRef$);
-  const fitWindowOperation = useLoadable(signals.fitWindowOperation$);
   const fittingWindow = fitWindowOperation.state === "loading";
   const pageSignal = useGet(pageSignal$);
 
@@ -347,8 +349,7 @@ export function BrowserSessionPanel({
   const cdpViewerEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.BrowserCdpViewer];
   const keepAliveRef = useSet(signals.keepAliveRef$);
-  const start = useSet(signals.start$);
-  const startOperation = useLoadable(signals.startOperation$);
+  const [startOperation, start] = useLoadableSet(signals.start$);
   const starting = startOperation.state === "loading";
   const pageSignal = useGet(pageSignal$);
 

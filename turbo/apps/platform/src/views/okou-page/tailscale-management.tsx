@@ -19,6 +19,7 @@ import { PrivateNetworkHostReferences } from "./private-network-host-references.
 import { useLoadableSet } from "ccstate-react/experimental";
 import { RemoteFormFooter } from "./remote-form-footer.tsx";
 import { useTranslation } from "react-i18next";
+import { ApiError } from "../../lib/api-error.ts";
 import { Plus } from "lucide-react";
 import {
   Button,
@@ -44,13 +45,12 @@ import {
   openTailscaleDialog$,
   refreshTailscaleReview$,
   retryTailscale$,
-  reviewTailscale$,
+  actOnTailscaleDialog$,
   saveTailscale$,
   tailscaleAcknowledged$,
   tailscaleConfigs$,
   tailscaleDialog$,
   tailscaleSettingsEnabled$,
-  tailscaleError$,
   tailscaleImpact$,
   tailscaleLatestConfig$,
   tailscaleSaveUncertain$,
@@ -219,16 +219,20 @@ function TailscaleImpact({
 
 function TailscaleReview({
   dialog,
+  error,
+  reviewing,
+  review,
+  refresh,
 }: {
   readonly dialog: TailscaleDialogState;
+  readonly error: string | null;
+  readonly reviewing: boolean;
+  readonly review: (config: TailscaleConfig) => void;
+  readonly refresh: () => void;
 }) {
   const { t } = useTranslation();
-  const error = useGet(tailscaleError$);
   const uncertain = useGet(tailscaleSaveUncertain$);
   const latest = useLoadable(tailscaleLatestConfig$);
-  const review = useSet(reviewTailscale$);
-  const refresh = useSet(refreshTailscaleReview$);
-  const signal = useGet(pageSignal$);
   if (!error && !uncertain) {
     return null;
   }
@@ -257,7 +261,7 @@ function TailscaleReview({
             type="button"
             variant="outline"
             onClick={() => {
-              return refresh(signal);
+              return refresh();
             }}
           >
             {t(($) => {
@@ -299,8 +303,9 @@ function TailscaleReview({
           <Button
             type="button"
             variant="outline"
+            disabled={reviewing}
             onClick={() => {
-              return detach(review(config, signal), Reason.DomCallback);
+              return review(config);
             }}
           >
             {t(($) => {
@@ -314,7 +319,7 @@ function TailscaleReview({
           type="button"
           variant="outline"
           onClick={() => {
-            return refresh(signal);
+            return refresh();
           }}
         >
           {t(($) => {
@@ -339,7 +344,6 @@ function TailscaleOperationBody({
   const impact = useLoadable(tailscaleImpact$);
   const acknowledged = useGet(tailscaleAcknowledged$);
   const acknowledge = useSet(acknowledgeTailscale$);
-  const error = useGet(tailscaleError$);
   const refresh = useSet(refreshTailscaleReview$);
   const signal = useGet(pageSignal$);
   return (
@@ -349,7 +353,7 @@ function TailscaleOperationBody({
       {kind === "promote" && (
         <label className="flex items-start gap-2 text-sm">
           <Checkbox
-            disabled={disabled || !!error}
+            disabled={disabled}
             checked={acknowledged === "promote"}
             onCheckedChange={(checked) => {
               return acknowledge(checked ? "promote" : null);
@@ -388,7 +392,6 @@ function TailscaleOperationBody({
                 preview={impact.data}
                 disabled={
                   disabled ||
-                  !!error ||
                   (kind === "delete" && impact.data.ownHostCount > 0)
                 }
               />
@@ -415,10 +418,6 @@ function useOperationBlocked(
 ) {
   const impact = useLoadable(tailscaleImpact$);
   const acknowledged = useGet(tailscaleAcknowledged$);
-  const error = useGet(tailscaleError$);
-  if (error && error !== "invalid" && error !== "INVALID_INPUT") {
-    return true;
-  }
   if (kind === "promote") {
     return acknowledged !== "promote";
   }
@@ -485,18 +484,34 @@ function TailscaleFormFields({
   );
 }
 
-function useTailscaleFormSubmission(saveAction: typeof saveTailscale$) {
+function tailscaleRequestErrorCode(error: unknown): string {
+  // Credential requests must never display raw transport or provider messages.
+  return error instanceof ApiError && error.status < 500
+    ? error.code
+    : "uncertain";
+}
+
+function useTailscaleFormSubmission(
+  saveAction: typeof saveTailscale$,
+  dialog: TailscaleDialogState,
+) {
   const { t } = useTranslation();
   const guided = useGet(remoteControlGuidedEnabled$);
   const saveLabel = useRemoteNetworkSaveLabel();
-  const dialog = useLastResolved(tailscaleDialog$);
   const uncertain = useGet(tailscaleSaveUncertain$);
-  const [saving, save] = useLoadableSet(saveAction);
+  const [operation, act] = useLoadableSet(actOnTailscaleDialog$);
+  const error =
+    operation.state === "hasError"
+      ? tailscaleRequestErrorCode(operation.error)
+      : null;
   const signal = useGet(pageSignal$);
   const { title, description } = useOperationCopy(dialog?.kind);
-  const blocked = useOperationBlocked(dialog?.kind, dialog?.config ?? null);
+  const operationBlocked = useOperationBlocked(dialog.kind, dialog.config);
+  const blocked =
+    operationBlocked ||
+    (!!error && error !== "invalid" && error !== "INVALID_INPUT");
   const scopeStatus = useGet(remoteNetworkScopeStatus$);
-  const busy = saving.state === "loading";
+  const busy = operation.state === "loading";
   const edit = dialog?.kind === "create" || dialog?.kind === "edit";
   return {
     dialog,
@@ -504,6 +519,13 @@ function useTailscaleFormSubmission(saveAction: typeof saveTailscale$) {
     description,
     busy,
     uncertain,
+    error,
+    review(config: TailscaleConfig) {
+      detach(act({ kind: "review", config }, signal), Reason.DomCallback);
+    },
+    refresh() {
+      detach(act({ kind: "refresh" }, signal), Reason.DomCallback);
+    },
     submitDisabled: busy || (!uncertain && (blocked || !!scopeStatus.error)),
     submitLabel: busy
       ? t(($) => {
@@ -522,7 +544,10 @@ function useTailscaleFormSubmission(saveAction: typeof saveTailscale$) {
             : title,
     submit(form: HTMLFormElement) {
       if (!busy && !scopeStatus.error && (uncertain || !blocked)) {
-        detach(save(form, signal), Reason.DomCallback);
+        detach(
+          act({ kind: "save", form, save$: saveAction }, signal),
+          Reason.DomCallback,
+        );
       }
     },
   };
@@ -535,23 +560,42 @@ export function TailscaleDialog({
   readonly inline?: boolean;
   readonly saveAction?: typeof saveTailscale$;
 } = {}) {
+  const dialog = useLastResolved(tailscaleDialog$);
+  const visible = useRemoteNetworkEditorVisible(inline, dialog);
+  return dialog && visible ? (
+    <TailscaleDialogForm
+      key={`${dialog.identity}:${dialog.kind}:${dialog.config?.id ?? "new"}`}
+      dialog={dialog}
+      inline={inline}
+      saveAction={saveAction}
+    />
+  ) : null;
+}
+
+function TailscaleDialogForm({
+  dialog,
+  inline,
+  saveAction,
+}: {
+  readonly dialog: TailscaleDialogState;
+  readonly inline: boolean;
+  readonly saveAction: typeof saveTailscale$;
+}) {
   const { t } = useTranslation();
   const {
-    dialog,
     title,
     description,
     busy,
     uncertain,
+    error,
+    review,
+    refresh,
     submitDisabled,
     submitLabel,
     submit,
-  } = useTailscaleFormSubmission(saveAction);
+  } = useTailscaleFormSubmission(saveAction, dialog);
   const close = useSet(closeTailscaleDialog$);
   const mount = useSet(mountTailscaleForm$);
-  const visible = useRemoteNetworkEditorVisible(inline, dialog);
-  if (!dialog || !visible) {
-    return null;
-  }
   return (
     <RemoteEditorFrame
       key={`${dialog.identity}:${dialog.kind}:${dialog.config?.id ?? "new"}`}
@@ -574,7 +618,15 @@ export function TailscaleDialog({
       >
         <DialogBody className="grid gap-4">
           <TailscaleFormFields dialog={dialog} disabled={busy || uncertain} />
-          {!busy && <TailscaleReview dialog={dialog} />}
+          {!busy && (error !== null || uncertain) && (
+            <TailscaleReview
+              dialog={dialog}
+              error={error}
+              reviewing={busy}
+              review={review}
+              refresh={refresh}
+            />
+          )}
           <RemoteNetworkScopeConfirmation
             busy={busy}
             provider="tailscale"

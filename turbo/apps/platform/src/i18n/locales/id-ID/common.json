@@ -3320,14 +3320,12 @@
     "connectDialog": {
       "connectedAs": "Terhubung sebagai {{username}}",
       "device": {
-        "checking": "Memeriksa persetujuan...",
         "connect": "Hubungkan {{connector}}",
         "description": "Buka halaman verifikasi penyedia, lalu masukkan kode verifikasi ini untuk menyetujui akses.",
         "intro": "Hubungkan untuk mendapatkan kode verifikasi, lalu gunakan kode itu di halaman verifikasi penyedia untuk menyetujui akses.",
         "openPage": "Buka halaman verifikasi",
         "selectOption": "Pilih {{option}}",
         "starting": "Memulai...",
-        "startingConnection": "Memulai koneksi...",
         "verificationCode": "Kode verifikasi",
         "waiting": "Menunggu persetujuan. Tetap buka dialog ini."
       },
@@ -3353,17 +3351,12 @@
       "noMethod": "Tidak ada metode koneksi yang tersedia.",
       "or": "atau",
       "progress": {
-        "connecting": "Menghubungkan...",
-        "savingPermissions": "Menyimpan izin..."
+        "connecting": "Menghubungkan..."
       },
       "unavailable": {
         "description": "Konektor ini memiliki metode koneksi yang tersedia, tetapi belum ada yang bisa dikonfigurasi dari dialog ini.",
         "title": "Metode koneksi tidak tersedia"
       }
-    },
-    "connectionProgress": {
-      "description": "Selesaikan otorisasi jika diminta. Tunggu sementara kami menyelesaikan pengaturan koneksi.",
-      "title": "Menghubungkan akun Anda"
     },
     "custom": {
       "connect": {

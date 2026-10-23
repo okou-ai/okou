@@ -277,9 +277,6 @@ describe("reconnecting the exact Gmail account required by a persisted mail card
   it("reconnecting opens mail from the same required account", async () => {
     const { subject, attempt, reconnectCard, completedAttempts } =
       await prepareReconnect();
-    expect(
-      screen.getByRole("dialog", { name: "Connecting your account" }),
-    ).toBeVisible();
     expect(reconnectCard).toHaveTextContent("Reconnecting…");
     expect(reconnectCard).toBeDisabled();
 
@@ -477,44 +474,6 @@ test("Inline, table, and nested mail links keep their labels and open email deta
     expect(within(sidebar).getByText(draft.subject)).toBeInTheDocument();
     expect(window.location.pathname).toBe(RUN_PATH);
   }
-});
-
-test("A rejected Gmail send shows correction guidance and keeps the draft", async () => {
-  const subject = "Draft requiring review";
-  const draft = mailDraft(FIRST_MAIL_ID, { subject });
-  const message =
-    "Gmail rejected this draft. Open it in Gmail and check its recipients and content before trying again.";
-  installCapabilityChat({
-    events: completedConversation(mailCard(FIRST_MAIL_ID, subject)),
-  });
-  context.mocks.api(mailContract.getDraft, ({ respond }) => {
-    return respond(200, mailResponse(FIRST_MAIL_ID, draft));
-  });
-  context.mocks.api(mailContract.sendDraft, ({ respond }) => {
-    return respond(400, { error: { code: "BAD_REQUEST", message } });
-  });
-
-  await setupPage({ context, path: RUN_PATH, host: APP_HOST });
-  await readyChat();
-  click(await findMailCard(subject));
-  const sidebar = await screen.findByRole("complementary", {
-    name: "Email details",
-  });
-  click(await findControl("button", "Send", sidebar));
-
-  await expect(screen.findByText(message)).resolves.toBeInTheDocument();
-  expect(within(sidebar).getByText("Draft")).toBeInTheDocument();
-  expect(within(sidebar).getByText(draft.body)).toBeInTheDocument();
-  expect(within(sidebar).queryByText("Sent")).not.toBeInTheDocument();
-  await waitFor(() => {
-    expect(queryControl("button", "Send", sidebar)).toBeEnabled();
-  });
-  await expect(
-    findControl("link", "Open in Gmail", sidebar),
-  ).resolves.toHaveAttribute(
-    "href",
-    `https://mail.google.com/mail/?authuser=sender%40example.com#drafts?compose=${draft.gmailMessageId}`,
-  );
 });
 
 test("Send, revisit, and delete mail drafts from chat", async () => {

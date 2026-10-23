@@ -3320,14 +3320,12 @@
     "connectDialog": {
       "connectedAs": "已以{{username}}身份連線",
       "device": {
-        "checking": "正在檢查授權結果…",
         "connect": "連線{{connector}}",
         "description": "開啟服務商的驗證頁面，然後輸入此驗證碼以授權訪問。",
         "intro": "點選連線獲取驗證碼，然後在服務商的驗證頁面輸入它以授權訪問。",
         "openPage": "開啟驗證頁面",
         "selectOption": "選擇{{option}}",
         "starting": "正在啟動…",
-        "startingConnection": "正在發起連線…",
         "verificationCode": "驗證碼",
         "waiting": "等待授權中，請保持此視窗開啟。"
       },
@@ -3353,17 +3351,12 @@
       "noMethod": "暫無可用的連線方式。",
       "or": "或",
       "progress": {
-        "connecting": "正在連線…",
-        "savingPermissions": "正在儲存權限…"
+        "connecting": "正在連線…"
       },
       "unavailable": {
         "description": "此連接器有可用的連線方式，但目前都還無法在此視窗中配置。",
         "title": "連線方式不可用"
       }
-    },
-    "connectionProgress": {
-      "description": "如有提示請完成授權。我們正在為你完成連線設定，請稍候。",
-      "title": "正在連線你的帳號"
     },
     "custom": {
       "connect": {

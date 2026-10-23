@@ -15,7 +15,7 @@ import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/cont
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { resetSignal, withCleanup } from "../utils.ts";
+import { resetSignal } from "../utils.ts";
 import {
   connectorAccountTargetKey,
   createConnectorAccountListSignals,
@@ -44,7 +44,6 @@ export interface ComposerConnectorAccountSignals {
   readonly loadMore$: ReturnType<
     typeof createConnectorAccountListSignals
   >["loadMore$"];
-  readonly saveOperation$: Computed<Promise<void> | null>;
   readonly commitSelection$: Command<
     Promise<void>,
     [ConnectorAccountConnection | null, AbortSignal]
@@ -160,9 +159,6 @@ export function createComposerConnectorAccountSignals(
   const list = createConnectorAccountListSignals();
   const menuTarget$ = state<ConnectorAccountTarget | null>(null);
   const menuOpen$ = state(false);
-  const activeSave$ = state<Promise<void> | null>(null);
-  // Retain the actual result for this menu session, independently of its mutex.
-  const saveOperation$ = state<Promise<void> | null>(null);
   const resetSaveSignal$ = resetSignal();
   const reloadVersion$ = state(0);
   const pendingState$ = state<ComposerConnectorAccountPreferenceState>(
@@ -200,8 +196,6 @@ export function createComposerConnectorAccountSignals(
     ): void => {
       const currentTarget = get(menuTarget$);
       set(resetSaveSignal$);
-      set(activeSave$, null);
-      set(saveOperation$, null);
       // A dismissed write may have reached the server before cancellation.
       set(reloadPreference$);
       set(menuTarget$, target);
@@ -219,8 +213,6 @@ export function createComposerConnectorAccountSignals(
   );
   const closeMenu$ = command(({ set }): void => {
     set(resetSaveSignal$);
-    set(activeSave$, null);
-    set(saveOperation$, null);
     set(menuOpen$, false);
     set(menuTarget$, null);
     set(list.clearTarget$);
@@ -240,22 +232,15 @@ export function createComposerConnectorAccountSignals(
       parentSignal: AbortSignal,
     ): Promise<void> => {
       const target = get(menuTarget$);
-      if (!get(menuOpen$) || !target || get(activeSave$)) {
+      if (!get(menuOpen$) || !target) {
         return;
       }
       const signal = set(resetSaveSignal$, parentSignal);
-      const pending = connection
-        ? set(mutations.selectAccount$, connection, signal)
-        : set(mutations.useDefault$, target, signal);
-      set(activeSave$, pending);
-      set(saveOperation$, pending);
-      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-      await withCleanup(pending, () => {
-        // A dismissed request must not reset a newer menu session's save.
-        if (get(activeSave$) === pending) {
-          set(activeSave$, null);
-        }
-      });
+      if (connection) {
+        await set(mutations.selectAccount$, connection, signal);
+      } else {
+        await set(mutations.useDefault$, target, signal);
+      }
       signal.throwIfAborted();
       set(closeMenu$);
     },
@@ -281,9 +266,6 @@ export function createComposerConnectorAccountSignals(
     closeMenu$,
     setSearch$: list.setSearch$,
     loadMore$: list.loadMore$,
-    saveOperation$: computed((get) => {
-      return get(saveOperation$);
-    }),
     commitSelection$,
     reloadPreference$,
     reload$,

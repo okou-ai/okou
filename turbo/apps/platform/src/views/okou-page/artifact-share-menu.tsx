@@ -1,3 +1,4 @@
+import { useLoadableSet } from "ccstate-react/experimental";
 import type { ArtifactShareStatus } from "@okouai/api-contracts/contracts/artifact-shares";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 // The shared `Radio` is the 16px circle meant to sit beside a label. Here the
@@ -293,12 +294,11 @@ function ShareSessionMenu({
   // Subscribing as soon as the preview mounts preloads permissions before Share.
   const loadable = useLoadable(session.details$);
   const details = useLastResolved(session.details$);
-  const audienceOperation = useLoadable(session.audienceOperation$);
+  const [audienceOperation, change] = useLoadableSet(session.change$);
   const requestedOpen = useGet(session.open$);
   const signal = useGet(session.signal$);
   const open = useSet(session.show$);
   const close = useSet(session.close$);
-  const change = useSet(session.change$);
   const refresh = useSet(session.refresh$);
   const copy = useSet(session.copy$);
   const copiedUrl = useGet(session.copiedUrl$);

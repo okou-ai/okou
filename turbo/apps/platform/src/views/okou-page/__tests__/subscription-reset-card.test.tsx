@@ -144,7 +144,7 @@ test("a reset link displays exact-account usage and never resets before a click"
   expect(frame()).toBe(originalFrame);
 });
 
-test("repeated cards share the in-flight request and refreshed remaining credits", async () => {
+test("repeated cards submit the same idempotency key and share refreshed remaining credits", async () => {
   let redeemed = false;
   let submissions = 0;
   const gate = context.mocks.deferred<void>();
@@ -174,17 +174,13 @@ test("repeated cards share the in-flight request and refreshed remaining credits
   click(buttons[0]);
   click(buttons[1]);
   await waitFor(() => {
-    expect(
-      queryAllByRoleFast("button").filter((candidate) => {
-        return candidate.getAttribute("aria-label") === "Resetting…";
-      }),
-    ).toHaveLength(2);
+    expect(submissions).toBe(2);
   });
   gate.resolve();
   await waitFor(() => {
     expect(screen.getAllByText("Remaining resets: 2")).toHaveLength(2);
   });
-  expect(submissions).toBe(1);
+  expect(submissions).toBe(2);
   expect(screen.getAllByText("Usage reset successfully.")).toHaveLength(2);
 });
 
@@ -256,7 +252,7 @@ test("the standalone Claude Code page exposes natural recovery without manual-cr
   ).not.toBeInTheDocument();
 });
 
-test("an uncertain last-credit request can be retried only with its original idempotency key", async () => {
+test("an uncertain last-credit request can be retried from another card with its original idempotency key", async () => {
   const keys: string[] = [];
   context.mocks.api(personalSubscriptionsContract.get, ({ respond }) => {
     return respond(
@@ -275,18 +271,29 @@ test("an uncertain last-credit request can be retried only with its original ide
         : respond(200, { outcome: "alreadyRedeemed" });
     },
   );
-  await setupChat(URL);
-  await screen.findByText("Remaining resets: 1");
-  click(button("1 reset"));
-  await screen.findByText("Reset failed. Retry with the same request.");
-  await screen.findByText("Remaining resets: 0");
+  await setupChat(`${URL}\n\nThe same request:\n\n${URL}`);
   await waitFor(() => {
-    expect(button("0 resets")).toBeEnabled();
+    expect(screen.getAllByText("Remaining resets: 1")).toHaveLength(2);
   });
-  click(button("0 resets"));
+  const cards = screen.getAllByTestId("subscription-reset-card");
+  const firstCard = cards[0]!;
+  const retryCard = cards[1]!;
+  click(button("1 reset", firstCard));
+  await screen.findByText("Reset failed. Retry with the same request.");
+  await waitFor(() => {
+    expect(screen.getAllByText("Remaining resets: 0")).toHaveLength(2);
+    expect(button("0 resets", retryCard)).toBeEnabled();
+  });
+  // This card has no failed hook result: retry eligibility belongs to the
+  // request's idempotency history, not the first view's local error.
+  click(button("0 resets", retryCard));
   await expect(
-    screen.findByText("This reset request has already been redeemed."),
+    within(retryCard).findByText(
+      "This reset request has already been redeemed.",
+    ),
   ).resolves.toBeInTheDocument();
+  expect(button("0 resets", firstCard)).toBeDisabled();
+  expect(button("0 resets", retryCard)).toBeDisabled();
   expect(keys).toStrictEqual([REQUEST_ID, REQUEST_ID]);
 });
 
@@ -350,31 +357,19 @@ test("Claude Code recovery details never advertise manual reset credits or confi
   expect(details.getByText(notice)).toBeInTheDocument();
 });
 
-test("a delayed unavailable read keeps the mounted frame without a refresh action", async () => {
-  const gate = context.mocks.deferred<void>();
-  context.mocks.api(
-    personalSubscriptionsContract.get,
-    async ({ respond, withSignal }) => {
-      await withSignal(gate.promise);
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Account disconnected" },
-      });
-    },
-  );
+test("an unavailable subscription has no reset action", async () => {
+  context.mocks.api(personalSubscriptionsContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Account disconnected" },
+    });
+  });
   await setupChat(`Before\n\n${URL}\n\nAfter`);
-  await screen.findByText("Loading subscription…");
-  const originalFrame = frame();
-  const row = screen.getByTestId("subscription-reset-card");
-  expect(row).toHaveAttribute("aria-busy", "true");
-  expect(originalFrame).toHaveClass("h-[136px]", "@[640px]:h-[88px]");
-  gate.resolve();
   await screen.findByText(
     "This subscription is unavailable in the current workspace.",
   );
-  expect(frame()).toBe(originalFrame);
-  expect(screen.getByTestId("subscription-reset-card")).toBe(row);
-  expect(row).toHaveAttribute("aria-busy", "false");
-  expect(queryAllByRoleFast("button", row)).toHaveLength(0);
+  expect(
+    queryAllByRoleFast("button", screen.getByTestId("subscription-reset-card")),
+  ).toHaveLength(0);
 });
 
 test("usage rings open accessible recovery and expiry details outside the fixed frame", async () => {
@@ -425,22 +420,6 @@ test("nothing to reset is a terminal outcome without spending a credit", async (
   click(button("3 resets"));
   await screen.findByText("There is no exhausted usage window to reset.");
   expect(button("3 resets")).toBeDisabled();
-});
-
-test("a failed subscription read shows an error without reset or refresh actions", async () => {
-  context.mocks.api(personalSubscriptionsContract.get, ({ respond }) => {
-    return respond(500, {
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Usage lookup unavailable",
-      },
-    });
-  });
-  await setupChat(URL);
-  await screen.findByText("Could not read subscription usage.");
-  const row = screen.getByTestId("subscription-reset-card");
-  expect(row).toHaveAttribute("aria-busy", "false");
-  expect(queryAllByRoleFast("button", row)).toHaveLength(0);
 });
 
 test.each([

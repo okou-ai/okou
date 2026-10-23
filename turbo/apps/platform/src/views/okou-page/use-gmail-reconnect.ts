@@ -1,11 +1,10 @@
-import { useLoadable, useGet, useLastResolved } from "ccstate-react";
+import { useGet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 
 import { connectorCatalogItemBySlug } from "../../signals/external/connectors.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
-  builtinConnectOperation$,
   getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -18,7 +17,6 @@ export function useGmailReconnect(
   onSuccess: () => void | Promise<void>,
 ) {
   const connector = useLastResolved(gmailCatalogItem$) ?? undefined;
-  const connectOperation = useLoadable(builtinConnectOperation$);
   const [connection, connect] = useLoadableSet(
     connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   );
@@ -26,8 +24,7 @@ export function useGmailReconnect(
   const authMethod = connector
     ? getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(connector)
     : null;
-  const reconnecting =
-    connectOperation.state === "loading" || connection.state === "loading";
+  const reconnecting = connection.state === "loading";
 
   return {
     connectorIcon: connector?.icon,

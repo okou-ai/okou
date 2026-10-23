@@ -595,32 +595,6 @@ test("An uncertain create retries its original UUID and leaves one saved network
   expect(document.body.textContent).not.toContain("private-secret-detail");
 });
 
-test("An explicit retry after an uncertain create reuses the original UUID", async () => {
-  const requests: { id: string }[] = [];
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, { configs: [] });
-  });
-  context.mocks.api(tailscaleContract.create, ({ body, respond }) => {
-    requests.push(body);
-    if (requests.length === 1) {
-      return respond(500, {
-        error: { code: "INTERNAL_ERROR", message: "unknown" },
-      });
-    }
-    return respond(201, { ...config, id: body.id });
-  });
-  await page();
-  const dialog = await createForm();
-  click(getAction("button", "Save", dialog));
-  await within(dialog).findByRole("alert");
-  click(getAction("button", "Retry", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests).toHaveLength(2);
-  expect(requests[1]?.id).toBe(requests[0]?.id);
-});
-
 test("Changing organizations unmounts the draft, clears secrets and hides old network metadata", async () => {
   context.mocks.data.org({ id: "org_next", name: "Next", role: "member" });
   await page();
@@ -645,22 +619,6 @@ test("Changing organizations unmounts the draft, clears secrets and hides old ne
   });
   await screen.findByText(config.name);
   expect(screen.queryByRole("dialog")).toBeNull();
-});
-
-test("An unavailable list stays an error and can be retried instead of appearing empty", async () => {
-  let unavailable = true;
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return unavailable
-      ? respond(500, { error: { code: "INTERNAL_ERROR", message: "private" } })
-      : respond(200, { configs: [config] });
-  });
-  await page();
-  const section = await networkSection();
-  await within(section).findByText("Could not load Tailscale. Try again.");
-  expect(within(section).queryByText(config.name)).toBeNull();
-  unavailable = false;
-  click(getAction("button", "Try again", section));
-  await expect(within(section).findByText(config.name)).resolves.toBeVisible();
 });
 
 test("Promotion requires explicit sharing acknowledgement and preserves the resource identity", async () => {
@@ -768,7 +726,7 @@ test("Escape discards a secret draft and returns focus to the Add control", asyn
   expect(trigger).toHaveFocus();
 });
 
-test("A busy dialog blocks dismissal but an organization change clears secrets and fences a late response", async () => {
+test("Changing organizations during save clears secrets and fences a late response", async () => {
   const pending = context.mocks.deferred<void>();
   const started = context.mocks.deferred<void>();
   context.mocks.data.org({ id: "org_next", name: "Next", role: "member" });
@@ -782,11 +740,6 @@ test("A busy dialog blocks dismissal but an organization change clears secrets a
   const secret = within(first).getByLabelText("OAuth client secret");
   click(getAction("button", "Save", first));
   await started.promise;
-  expect(getAction("button", "Cancel", first)).toBeDisabled();
-  await userEvent.keyboard("{Escape}");
-  expect(
-    within(screen.getByRole("dialog")).getByLabelText("OAuth client secret"),
-  ).toBeDisabled();
   await act(() => {
     mockOrganization({
       activeOrg: { id: "org_next", name: "Next" },

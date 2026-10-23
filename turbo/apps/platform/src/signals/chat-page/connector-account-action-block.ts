@@ -13,16 +13,17 @@ import { command, computed, state, type Command, type Computed } from "ccstate";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
+import { settle } from "../utils.ts";
 import { connectorCatalogItemBySlug } from "../external/connectors.ts";
 import type {
   ComposerConnectorAuthorizationState,
   ComposerConnectorSignals,
 } from "../okou-page/connectors.ts";
 import { customConnectors$ } from "../okou-page/settings/custom-connectors.ts";
-import { withCleanup } from "../utils.ts";
 import {
   chatActionCallbackFromUrl,
   runChatActionCallback$,
+  type ChatActionCallbackIds,
 } from "./action-callback.ts";
 import {
   chatActionIdMatches,
@@ -62,12 +63,28 @@ export type ConnectorAccountActionStatus =
       readonly selected: boolean;
     };
 
+type ConnectorAccountConfirmAction =
+  | { readonly type: "select" }
+  | { readonly type: "retry"; readonly callbackIds: ChatActionCallbackIds };
+
+export class ConnectorAccountActionError extends Error {
+  readonly callbackIds: ChatActionCallbackIds;
+
+  constructor(cause: unknown, callbackIds: ChatActionCallbackIds) {
+    super("Connector account selection or continuation failed", { cause });
+    this.name = "ConnectorAccountActionError";
+    this.callbackIds = callbackIds;
+  }
+}
+
 export interface ConnectorAccountActionSignals extends ConnectorAccountActionDescriptor {
   readonly status$: Computed<Promise<ConnectorAccountActionStatus>>;
   readonly connector$: Computed<Promise<ConnectorAccountActionConnector>>;
-  readonly operation$: Computed<Promise<void> | undefined>;
   readonly refresh$: Command<void, []>;
-  readonly confirm$: Command<Promise<void>, [AbortSignal]>;
+  readonly confirm$: Command<
+    Promise<void>,
+    [ConnectorAccountConfirmAction, AbortSignal]
+  >;
 }
 
 type ConnectorAccountActionCardSignalsRegistry = CardSignalsRegistry<
@@ -211,14 +228,112 @@ function customActionConnector(
   });
 }
 
+function createConnectorAccountConfirmSignal(
+  descriptor: ConnectorAccountActionDescriptor,
+  status$: ConnectorAccountActionSignals["status$"],
+  refresh$: ConnectorAccountActionSignals["refresh$"],
+): ConnectorAccountActionSignals["confirm$"] {
+  const savedSelection$ = state<{
+    readonly selection: ConnectorAccountSelection;
+    readonly callbackIds: ChatActionCallbackIds;
+  } | null>(null);
+  const callbackIds$ = state<ChatActionCallbackIds | null>(null);
+  const deliveredCallbackIds$ = state<ChatActionCallbackIds | null>(null);
+  const perform$ = command(
+    async (
+      { get, set },
+      callbackIds: ChatActionCallbackIds,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      if (get(savedSelection$)?.callbackIds !== callbackIds) {
+        const result = await accept(
+          get(apiClient$)(chatThreadConnectorSelectionContract).update({
+            params: { id: descriptor.threadId },
+            body: descriptor.selection,
+            fetchOptions: { signal },
+          }),
+          [200],
+          signal,
+        );
+        // This result proves this action saved its selection, not that it is
+        // still the thread's current preference. A retry continues only the
+        // callback; it must not overwrite a later selection from another action.
+        // The card's selected label continues to come from preferenceState$.
+        if (get(callbackIds$) === callbackIds) {
+          set(savedSelection$, { selection: result.body, callbackIds });
+        }
+        set(refresh$);
+      }
+      await set(
+        runChatActionCallback$,
+        {
+          threadId: descriptor.threadId,
+          agentId: descriptor.agentId,
+          callbackPrompt: descriptor.callbackPrompt,
+          callbackIds,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (get(callbackIds$) === callbackIds) {
+        // Keep the acknowledged callback identity: another view may still lose
+        // its response and retry this same selection after this call succeeds.
+        set(deliveredCallbackIds$, callbackIds);
+        set(savedSelection$, null);
+      }
+    },
+  );
+  return command(
+    async (
+      { get, set },
+      action: ConnectorAccountConfirmAction,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      signal.throwIfAborted();
+      let callbackIds = get(callbackIds$);
+      if (
+        action.type === "retry" &&
+        (callbackIds?.clientEventId !== action.callbackIds.clientEventId ||
+          callbackIds.chatThreadSortEventId !==
+            action.callbackIds.chatThreadSortEventId ||
+          get(deliveredCallbackIds$) === callbackIds)
+      ) {
+        return;
+      }
+      if (callbackIds && get(deliveredCallbackIds$) === callbackIds) {
+        const previousIds = callbackIds;
+        const status = await get(status$);
+        signal.throwIfAborted();
+        if (status.kind === "ready" && status.selected) {
+          return;
+        }
+        // A completed switch followed by a different saved selection is a new
+        // user action. Concurrent callers join whichever IDs were chosen first.
+        callbackIds = get(callbackIds$);
+        if (callbackIds === previousIds) {
+          callbackIds = null;
+        }
+      }
+      if (!callbackIds) {
+        callbackIds = {
+          clientEventId: crypto.randomUUID(),
+          chatThreadSortEventId: crypto.randomUUID(),
+        };
+        set(callbackIds$, callbackIds);
+      }
+      const outcome = await settle(set(perform$, callbackIds, signal), signal);
+      if (!outcome.ok) {
+        throw new ConnectorAccountActionError(outcome.error, callbackIds);
+      }
+    },
+  );
+}
+
 function createConnectorAccountActionSignals(
   descriptor: ConnectorAccountActionDescriptor,
   connector: ComposerConnectorSignals,
 ): ConnectorAccountActionSignals {
   const reload$ = state(0);
-  const internalOperation$ = state<Promise<void> | undefined>(undefined);
-  const running$ = state<Promise<void> | null>(null);
-  const savedSelection$ = state<ConnectorAccountSelection | null>(null);
   const target = descriptor.selection.target;
   const connector$ =
     target.kind === "builtin"
@@ -258,65 +373,17 @@ function createConnectorAccountActionSignals(
     });
     set(connector.accounts.reload$);
   });
-  const selectAndContinue$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      signal.throwIfAborted();
-      if (!get(savedSelection$)) {
-        const result = await accept(
-          get(apiClient$)(chatThreadConnectorSelectionContract).update({
-            params: { id: descriptor.threadId },
-            body: descriptor.selection,
-            fetchOptions: { signal },
-          }),
-          [200],
-          signal,
-        );
-        // This result proves this action saved its selection, not that it is
-        // still the thread's current preference. A retry continues only the
-        // callback; it must not overwrite a later selection from another action.
-        // The card's selected label continues to come from preferenceState$.
-        set(savedSelection$, result.body);
-        set(refresh$);
-      }
-      await set(
-        runChatActionCallback$,
-        {
-          threadId: descriptor.threadId,
-          agentId: descriptor.agentId,
-          callbackPrompt: descriptor.callbackPrompt,
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      // The continuation is complete. A later explicit switch (after another
-      // action changes the thread preference) is a new selection, not a retry.
-      set(savedSelection$, null);
-    },
-  );
-  const confirm$ = command(
-    ({ get, set }, signal: AbortSignal): Promise<void> => {
-      const running = get(running$);
-      if (running) {
-        return running;
-      }
-      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-      const operation = withCleanup(set(selectAndContinue$, signal), () => {
-        set(running$, null);
-      });
-      set(running$, operation);
-      set(internalOperation$, operation);
-      return operation;
-    },
-  );
+
   return {
     ...descriptor,
     status$,
     connector$,
-    operation$: computed((get) => {
-      return get(internalOperation$);
-    }),
     refresh$,
-    confirm$,
+    confirm$: createConnectorAccountConfirmSignal(
+      descriptor,
+      status$,
+      refresh$,
+    ),
   };
 }
 

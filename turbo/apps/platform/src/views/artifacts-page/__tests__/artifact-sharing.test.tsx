@@ -229,29 +229,6 @@ test("owner copying uses the canonical version reference returned by the API", a
   expect(clipboard.writes).toStrictEqual([ownerUrl]);
 });
 
-test("failed permission saves retain the current audience", async () => {
-  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
-    return respond(200, sharingStatus("organization"));
-  });
-  context.mocks.api(artifactSharesContract.update, ({ respond }) => {
-    return respond(500, {
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Unable to save sharing",
-      },
-    });
-  });
-  await openArtifact();
-  await openShareMenu();
-  click(permission("Only me"));
-  await screen.findByText("Unable to save sharing");
-  expect(screen.queryByText("Access updated")).not.toBeInTheDocument();
-  await waitFor(() => {
-    return expect(permission("Organization")).not.toBeDisabled();
-  });
-  expect(permission("Organization")).toHaveAttribute("aria-checked", "true");
-});
-
 test("status errors do not treat an owner as a recipient", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
   context.mocks.api(artifactSharesContract.status, ({ respond }) => {
@@ -265,9 +242,6 @@ test("status errors do not treat an owner as a recipient", async () => {
   await openArtifact();
   click(action("button", "Share"));
   await screen.findByText("Unable to load permissions");
-  await waitFor(() => {
-    return expect(action("button", "Share")).not.toBeDisabled();
-  });
   expect(clipboard.writes).toStrictEqual([]);
   // The audience is unknown, not absent. The choices stay on screen so the
   // menu keeps its shape and shows what Retry will restore, but none of them

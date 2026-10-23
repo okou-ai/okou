@@ -3320,14 +3320,12 @@
     "connectDialog": {
       "connectedAs": "{{username}} として接続されています",
       "device": {
-        "checking": "承認を確認しています...",
         "connect": "{{connector}} を接続します",
         "description": "プロバイダーの確認ページを開き、この確認コードを入力してアクセスを承認します。",
         "intro": "接続して確認コードを取得し、プロバイダーの確認ページでそれを使用してアクセスを承認します。",
         "openPage": "認証ページを開く",
         "selectOption": "{{option}} を選択します",
         "starting": "開始中...",
-        "startingConnection": "接続を開始しています...",
         "verificationCode": "認証コード",
         "waiting": "承認を待っています。このダイアログは開いたままにしておきます。"
       },
@@ -3353,17 +3351,12 @@
       "noMethod": "利用できる接続方法はありません。",
       "or": "または",
       "progress": {
-        "connecting": "接続中...",
-        "savingPermissions": "権限を保存しています..."
+        "connecting": "接続中..."
       },
       "unavailable": {
         "description": "このコネクタには利用可能な接続方法がありますが、このダイアログからはまだ設定できません。",
         "title": "利用できない接続方法"
       }
-    },
-    "connectionProgress": {
-      "description": "認証を求められた場合は完了してください。接続の設定が完了するまでお待ちください。",
-      "title": "アカウントを接続中"
     },
     "custom": {
       "connect": {

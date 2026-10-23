@@ -1,3 +1,4 @@
+import { useLoadableSet } from "ccstate-react/experimental";
 import type {
   BankingAccessRequestStatusResponse,
   BankingConnectSessionRequest,
@@ -96,8 +97,7 @@ function useBankingCardController(
   const pageSignal = useGet(pageSignal$);
   const ui = useGet(signals.uiState$);
   const updateUi = useSet(signals.updateUiState$);
-  const action = useLoadable(signals.operation$);
-  const runAction = useSet(signals.runAction$);
+  const [action, runAction] = useLoadableSet(signals.runAction$);
   const busy = action.state === "loading";
   const activeGrant = status.grant?.status === "active" ? status.grant : null;
   const healthyAccounts =

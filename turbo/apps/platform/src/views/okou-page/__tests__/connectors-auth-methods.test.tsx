@@ -58,42 +58,6 @@ function createAuthWindow(onNavigate?: (href: string) => void): Window {
   return authWindow;
 }
 
-function delayAccountDetails(
-  connectorSlug: ConnectorSlug,
-  permissionsSaved: () => boolean,
-) {
-  const requested = context.mocks.deferred<void>();
-  const ready = context.mocks.deferred<void>();
-  context.mocks.api(
-    connectorAccountsContract.connection,
-    async ({ params, respond }) => {
-      if (permissionsSaved()) {
-        requested.resolve();
-        await ready.promise;
-      }
-      return respond(200, {
-        id: params.connectionId,
-        target: { kind: "builtin", connectorSlug },
-        authMethod: "oauth",
-        displayName: null,
-        isDefault: true,
-        externalId: null,
-        externalUsername: `mock-${connectorSlug}`,
-        externalEmail: null,
-        oauthScopes: [],
-        connectionStatus: "connected",
-        missingRequiredFields: [],
-        configuredFieldKeys: [],
-        reconnectReason: null,
-        tokenExpiresAt: null,
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      });
-    },
-  );
-  return { requested, ready };
-}
-
 function storeConnectedConnector(
   slug: ConnectorSlug,
   authMethod: string,
@@ -138,11 +102,7 @@ function mockConnectedCatalogTarget(
   });
 }
 
-function mockAgentConnectorAccess(
-  connectorSlug: ConnectorSlug,
-  completion?: Promise<void>,
-  onRequest?: () => void,
-): void {
+function mockAgentConnectorAccess(connectorSlug: ConnectorSlug): void {
   const authorizedAgentIds = new Set<string>();
   context.mocks.api(
     userBuiltinConnectorsContract.get,
@@ -163,7 +123,7 @@ function mockAgentConnectorAccess(
   });
   context.mocks.api(
     userBuiltinConnectorsContract.update,
-    async ({ params, body, respond }) => {
+    ({ params, body, respond }) => {
       if (body.enabledConnectorSlugs.includes(connectorSlug)) {
         if (body.operation === "add") {
           authorizedAgentIds.add(params.id);
@@ -171,8 +131,6 @@ function mockAgentConnectorAccess(
           authorizedAgentIds.delete(params.id);
         }
       }
-      onRequest?.();
-      await completion;
       return respond(200, {
         enabledConnectorSlugs: authorizedAgentIds.has(params.id)
           ? [connectorSlug]
@@ -365,44 +323,12 @@ test("Show Mercury disclosures before connecting an account", async () => {
   );
 });
 
-async function openAwsWithCode(code: string): Promise<{
-  readonly dialog: HTMLElement;
-  readonly complete: HTMLElement;
-}> {
-  mockConnectors(context, []);
-  context.mocks.browser.open(createAuthWindow());
-  await setupPage({ context, path: "/connectors" });
-  await fill(await screen.findByPlaceholderText("Find connectors"), "aws");
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Connect AWS");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", { name: "AWS" });
-  click(getConnectorAction("button", "Start AWS sign-in", dialog));
-  await fill(
-    await within(dialog).findByTestId("connector-external-code-input"),
-    code,
-  );
-  return {
-    dialog,
-    complete: within(dialog).getByTestId("connector-external-code-complete"),
-  };
-}
-
 test("Add an AWS account through external-code authorization", async () => {
-  const permissions = context.mocks.deferred<void>();
-  const details = delayAccountDetails("aws", () => {
-    return permissions.settled();
-  });
-  const permissionsStarted = context.mocks.deferred<void>();
   mockConnectors(context, []);
   context.mocks.data.agents([
     listAgent("c0000000-0000-4000-a000-000000000002", "Research Agent"),
   ]);
-  mockAgentConnectorAccess("aws", permissions.promise, () => {
-    return permissionsStarted.resolve();
-  });
+  mockAgentConnectorAccess("aws");
   const authWindow = createAuthWindow();
   const browserOpen = context.mocks.browser.open(authWindow);
   context.mocks.api(
@@ -463,25 +389,8 @@ test("Add an AWS account through external-code authorization", async () => {
   );
   click(within(dialog).getByTestId("connector-external-code-complete"));
 
-  await permissionsStarted.promise;
-  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  expect(screen.getByRole("dialog", { name: "AWS" })).toBeVisible();
-  expect(
-    within(dialog).getByTestId("connector-external-code-complete"),
-  ).toBeDisabled();
-  permissions.resolve();
-  await expect(screen.findByText("AWS connected")).resolves.toBeInTheDocument();
-  await details.requested.promise;
-  await expect(within(dialog).findByRole("status")).resolves.toHaveTextContent(
-    "Saving permissions...",
-  );
-  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  details.ready.resolve();
   const naming = await screen.findByRole("dialog", {
     name: "Name your AWS account",
-  });
-  await waitFor(() => {
-    return expect(screen.queryByText("Connecting your account")).toBeNull();
   });
   click(getConnectorAction("button", "Skip", naming));
 
@@ -738,21 +647,12 @@ test("Authorize visible agents only for the first manual account", async () => {
 
 test("Connect through device authorization", async () => {
   const approval = context.mocks.deferred<void>();
-  const permissions = context.mocks.deferred<void>();
-  const details = delayAccountDetails("base44", () => {
-    return permissions.settled();
-  });
-  const permissionsStarted = context.mocks.deferred<void>();
   mockConnectors(context, []);
   context.mocks.data.agents([
     listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
     listAgent("c0000000-0000-4000-a000-000000000002", "Research"),
   ]);
-  mockAgentConnectorAccess("base44", permissions.promise, () => {
-    if (!permissionsStarted.settled()) {
-      permissionsStarted.resolve();
-    }
-  });
+  mockAgentConnectorAccess("base44");
   mockPublicConnectorStatus(context, [
     publicStatusItem({
       connectorSlug: "base44",
@@ -813,22 +713,8 @@ test("Connect through device authorization", async () => {
     }),
   ).toBeTruthy();
   approval.resolve();
-  await permissionsStarted.promise;
-  expect(within(approvalDialog).getByRole("status")).toHaveTextContent(
-    "Checking for approval...",
-  );
-  permissions.resolve();
-  await details.requested.promise;
-  await expect(within(dialog).findByRole("status")).resolves.toHaveTextContent(
-    "Saving permissions...",
-  );
-  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  details.ready.resolve();
   const naming = await screen.findByRole("dialog", {
     name: "Name your Base44 account",
-  });
-  await waitFor(() => {
-    return expect(screen.queryByText("Connecting your account")).toBeNull();
   });
   click(getConnectorAction("button", "Skip", naming));
   await waitFor(() => {
@@ -1482,24 +1368,5 @@ test("Submit credentials only for the chosen manual method", async () => {
     expect(
       within(getConnectorCard("Public Axiom")).getByText("Connected"),
     ).toBeInTheDocument();
-  });
-});
-
-test("Recover from an invalid external code", async () => {
-  context.mocks.api(
-    builtinConnectorExternalCodeSessionContract.complete,
-    ({ respond }) => {
-      return respond(400, {
-        error: { message: "Invalid AWS code", code: "BAD_REQUEST" },
-      });
-    },
-  );
-  const { dialog, complete } = await openAwsWithCode("INVALID-CODE");
-  click(complete);
-  await expect(
-    within(dialog).findByText("Invalid AWS code"),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    return expect(complete).toBeEnabled();
   });
 });

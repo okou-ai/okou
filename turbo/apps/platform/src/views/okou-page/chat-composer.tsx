@@ -114,7 +114,6 @@ import {
   useLastResolved,
   useLoadable,
   useLoadableState,
-  useResolved,
   useSet,
   type Loadable,
 } from "ccstate-react";
@@ -5777,14 +5776,12 @@ function ComposerConnectorAccessRow({
 
 function ComposerConnectorAccountMenu({
   signals,
-  actions,
   target,
   connectorLabel,
   selectedConnection,
   explicit,
 }: {
   readonly signals: ComposerSignals;
-  readonly actions: ComposerConnectorActions;
   readonly target: ConnectorAccountTarget;
   readonly connectorLabel: string;
   readonly selectedConnection: ConnectorAccountConnection | undefined;
@@ -5862,7 +5859,6 @@ function ComposerConnectorAccountMenu({
         {open && (
           <ComposerConnectorAccountMenuContent
             signals={signals}
-            actions={actions}
             target={target}
             connectorLabel={connectorLabel}
           />
@@ -6037,12 +6033,10 @@ function ComposerConnectorAccountChoices({
 
 function ComposerConnectorAccountMenuContent({
   signals,
-  actions,
   target,
   connectorLabel,
 }: {
   readonly signals: ComposerSignals;
-  readonly actions: ComposerConnectorActions;
   readonly target: ConnectorAccountTarget;
   readonly connectorLabel: string;
 }) {
@@ -6056,7 +6050,9 @@ function ComposerConnectorAccountMenuContent({
   const search = useGet(signals.connector.accounts.search$);
   const closeMenu = useSet(signals.connector.accounts.closeMenu$);
   const setSearch = useSet(signals.connector.accounts.setSearch$);
-  const commitSelection = actions.commitAccountSelection;
+  const [saveOperation, commitSelection] = useLoadableSet(
+    signals.connector.accounts.commitSelection$,
+  );
   const [loadMoreLoadable, loadMore] = useLoadableSet(
     signals.connector.accounts.loadMore$,
   );
@@ -6097,7 +6093,6 @@ function ComposerConnectorAccountMenuContent({
     accountList.connections.length > CONNECTOR_ACCOUNT_SEARCH_THRESHOLD ||
     accountList.hasMultiplePages === true ||
     accountList.nextCursor !== null;
-  const saveOperation = useLoadable(signals.connector.accounts.saveOperation$);
   const saving = saveOperation.state === "loading";
   return (
     <Combobox.Root<string>
@@ -6272,11 +6267,9 @@ function deriveComposerConnectorPopoverState(args: {
 
 function ComposerConnectorAccountAction({
   signals,
-  actions,
   item,
 }: {
   readonly signals: ComposerSignals;
-  readonly actions: ComposerConnectorActions;
   readonly item: ComposerPopoverConnectorItem;
 }) {
   const preference = useLastResolved(
@@ -6296,7 +6289,6 @@ function ComposerConnectorAccountAction({
   return (
     <ComposerConnectorAccountMenu
       signals={signals}
-      actions={actions}
       target={target}
       connectorLabel={
         item.kind === "builtin"
@@ -6691,7 +6683,6 @@ function ComposerConnectorsPopoverBody({
                       actions={
                         <ComposerConnectorAccountAction
                           signals={signals}
-                          actions={actions}
                           item={item}
                         />
                       }
@@ -6726,7 +6717,6 @@ function ComposerConnectorsPopoverBody({
                 const accountAction = connector.authorized ? (
                   <ComposerConnectorAccountAction
                     signals={signals}
-                    actions={actions}
                     item={item}
                   />
                 ) : null;
@@ -8494,7 +8484,12 @@ function ComposerFooter({
   actions: ComposerActions;
   children: ReactNode;
 }) {
-  const voiceDraft = useResolved(signals.voice.state$);
+  const { t } = useTranslation();
+  const voiceDraftLoadable = useLoadable(signals.voice.state$);
+  const voiceDraft =
+    voiceDraftLoadable.state === "hasData"
+      ? voiceDraftLoadable.data
+      : undefined;
   const capture = useGet(signals.voice.capture$);
   const voiceAction = useComposerVoiceAction(signals);
   const status =
@@ -8506,7 +8501,9 @@ function ComposerFooter({
           ? "transcribing"
           : capture
             ? "recording"
-            : voiceDraft?.status;
+            : voiceDraftLoadable.state === "hasError"
+              ? "failed"
+              : voiceDraft?.status;
   const activeVoiceDraftStatus: Exclude<
     ComposerVoiceInputStatus,
     "idle"
@@ -8532,7 +8529,13 @@ function ComposerFooter({
           actions={actions}
           status={activeVoiceDraftStatus}
           recordingAvailable={Boolean(voiceDraft?.recording)}
-          voiceMessage={voiceDraft?.message}
+          voiceMessage={
+            voiceDraftLoadable.state === "hasError"
+              ? t(($) => {
+                  return $.chat.voice.storageFailed;
+                })
+              : voiceDraft?.message
+          }
         />
       ) : (
         children

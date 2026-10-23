@@ -47,8 +47,6 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
       readonly cdpUrl: string;
     } | null>
   >;
-  readonly startOperation$: Computed<Promise<void> | null>;
-  readonly fitWindowOperation$: Computed<Promise<void> | null>;
   readonly reload$: Command<void, []>;
   readonly reloadPanel$: Command<void, []>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
@@ -234,10 +232,7 @@ function createFitWindowSignals(
   descriptor: BrowserSessionDescriptor,
   sessionOverride$: State<BrowserSession | null | undefined>,
   browserFitDom: BrowserFitDomSignals,
-): Pick<BrowserSessionSignals, "fitWindowOperation$" | "fitViewport$"> {
-  // Retain the last result for loadable consumers; only running$ gates execution.
-  const operation$ = state<Promise<void> | null>(null);
-  const running$ = state<Promise<void> | null>(null);
+): Pick<BrowserSessionSignals, "fitViewport$"> {
   const resize$ = command(
     async (
       { get, set },
@@ -260,35 +255,14 @@ function createFitWindowSignals(
       }
     },
   );
-  const fitViewport$ = command(({ get, set }, signal: AbortSignal) => {
+  const fitViewport$ = command(async ({ set }, signal: AbortSignal) => {
     signal.throwIfAborted();
-    const active = get(running$);
-    if (active) {
-      return active;
-    }
     const aspectRatio = set(browserFitDom.viewportAspectRatio$);
-    if (aspectRatio === null) {
-      return Promise.resolve();
+    if (aspectRatio !== null) {
+      await set(resize$, aspectRatio, signal);
     }
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    const operation: Promise<void> = withCleanup(
-      set(resize$, aspectRatio, signal),
-      () => {
-        if (get(running$) === operation) {
-          set(running$, null);
-        }
-      },
-    );
-    set(running$, operation);
-    set(operation$, operation);
-    return operation;
   });
-  return {
-    fitWindowOperation$: computed((get) => {
-      return get(operation$);
-    }),
-    fitViewport$,
-  };
+  return { fitViewport$ };
 }
 
 interface BrowserMutationSignalContext {
@@ -301,13 +275,7 @@ function createStartBrowserSignals({
   descriptor,
   sessionOverride$,
   reload$,
-}: BrowserMutationSignalContext): Pick<
-  BrowserSessionSignals,
-  "startOperation$" | "start$"
-> {
-  // Retain the last result for loadable consumers; only running$ gates execution.
-  const operation$ = state<Promise<void> | null>(null);
-  const running$ = state<Promise<void> | null>(null);
+}: BrowserMutationSignalContext): Pick<BrowserSessionSignals, "start$"> {
   const openBrowser$ = command(async ({ get, set }, signal: AbortSignal) => {
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const started = await withCleanup(
@@ -327,31 +295,7 @@ function createStartBrowserSignals({
     signal.throwIfAborted();
     set(sessionOverride$, started.body.browser);
   });
-  const start$ = command(({ get, set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    const active = get(running$);
-    if (active) {
-      return active;
-    }
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    const operation: Promise<void> = withCleanup(
-      set(openBrowser$, signal),
-      () => {
-        if (get(running$) === operation) {
-          set(running$, null);
-        }
-      },
-    );
-    set(running$, operation);
-    set(operation$, operation);
-    return operation;
-  });
-  return {
-    startOperation$: computed((get) => {
-      return get(operation$);
-    }),
-    start$,
-  };
+  return { start$: openBrowser$ };
 }
 
 function createCloseBrowserSignals({
@@ -466,7 +410,7 @@ export function createBrowserSessionSignals(
   });
 
   const browserFitDom = createBrowserFitDomSignals();
-  const { fitWindowOperation$, fitViewport$ } = createFitWindowSignals(
+  const { fitViewport$ } = createFitWindowSignals(
     descriptor,
     sessionOverride$,
     browserFitDom,
@@ -532,7 +476,6 @@ export function createBrowserSessionSignals(
     viewerConnection$,
     ...startSignals,
     ...closeSignals,
-    fitWindowOperation$,
     reload$,
     reloadPanel$: reload$,
     fitViewport$,

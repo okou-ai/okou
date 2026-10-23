@@ -103,16 +103,10 @@ function createBatchState(descriptor: PermissionBatchActionDescriptor) {
   } | null>(null);
   const continued$ = state(false);
   const dismissed$ = state(false);
-  // Hooks observe the returned operation; these private slots only own
-  // synchronous execution exclusion across consumers.
-  const savingInFlight$ = state<Promise<void> | null>(null);
-  const continuingInFlight$ = state<Promise<void> | null>(null);
   const callbackIds$ = state<ChatActionCallbackIds | null>(null);
   const setExpiresIn$ = command(
-    ({ get, set }, value: UserPermissionGrantExpiresIn) => {
-      if (!get(savingInFlight$)) {
-        set(expiresIn$, value);
-      }
+    ({ set }, value: UserPermissionGrantExpiresIn) => {
+      set(expiresIn$, value);
     },
   );
   const dismiss$ = command(({ set }) => {
@@ -124,8 +118,6 @@ function createBatchState(descriptor: PermissionBatchActionDescriptor) {
     savedSnapshot$,
     continued$,
     dismissed$,
-    savingInFlight$,
-    continuingInFlight$,
     callbackIds$,
     setExpiresIn$,
     dismiss$,
@@ -233,6 +225,7 @@ function createBatchSaveCommand(
 ) {
   const performSave$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      const expiresIn = get(local.expiresIn$);
       await set(assertBatchEnabled$, signal);
       if (get(local.dismissed$)) {
         return;
@@ -250,7 +243,7 @@ function createBatchSaveCommand(
         descriptor,
         grants,
         metadata,
-        get(local.expiresIn$),
+        expiresIn,
       );
       let acknowledged = grants;
       if (groups.length) {
@@ -284,27 +277,7 @@ function createBatchSaveCommand(
       set(local.saved$, true);
     },
   );
-  return command(({ get, set }, signal: AbortSignal): Promise<void> => {
-    const running = get(local.savingInFlight$);
-    if (running) {
-      return running;
-    }
-    const execute = async () => {
-      // Acquire the slot synchronously before any operation code can re-enter.
-      await Promise.resolve();
-      // Observe settlement to release execution ownership, not request feedback.
-      const [outcome] = await Promise.allSettled([set(performSave$, signal)]);
-      if (get(local.savingInFlight$) === operation) {
-        set(local.savingInFlight$, null);
-      }
-      if (outcome.status === "rejected") {
-        throw outcome.reason;
-      }
-    };
-    const operation = execute();
-    set(local.savingInFlight$, operation);
-    return operation;
-  });
+  return performSave$;
 }
 
 function createBatchContinueCommand(
@@ -355,29 +328,7 @@ function createBatchContinueCommand(
       set(local.continued$, true);
     },
   );
-  return command(({ get, set }, signal: AbortSignal): Promise<void> => {
-    const running = get(local.continuingInFlight$);
-    if (running) {
-      return running;
-    }
-    const execute = async () => {
-      // Acquire the slot synchronously before any operation code can re-enter.
-      await Promise.resolve();
-      // Observe settlement to release execution ownership, not request feedback.
-      const [outcome] = await Promise.allSettled([
-        set(performContinue$, signal),
-      ]);
-      if (get(local.continuingInFlight$) === operation) {
-        set(local.continuingInFlight$, null);
-      }
-      if (outcome.status === "rejected") {
-        throw outcome.reason;
-      }
-    };
-    const operation = execute();
-    set(local.continuingInFlight$, operation);
-    return operation;
-  });
+  return performContinue$;
 }
 
 /** Constructed by the thread registry or route graph, never during React render. */

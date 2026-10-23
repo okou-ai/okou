@@ -69,9 +69,9 @@ function useBatchResources(signals: PermissionBatchSignals) {
     expiresIn,
     setExpiresIn,
     dismiss,
-    confirmState,
+    saveFailed: confirmState.state === "hasError",
     confirm,
-    continueState,
+    continueFailed: continueState.state === "hasError",
     continueChat,
     descriptor,
     busy,
@@ -124,8 +124,8 @@ function getBatchPolicy(
     currentGrants,
     savedSnapshot,
     descriptor,
-    confirmState,
-    continueState,
+    saveFailed,
+    continueFailed,
   } = resources;
   const chosenGrants =
     grants.state === "hasData"
@@ -153,9 +153,7 @@ function getBatchPolicy(
       : 0;
   const allowed =
     complete && !loadFailed && allowedCount === descriptor.items.length;
-  const callbackFailed =
-    allowed &&
-    (confirmState.state === "hasError" || continueState.state === "hasError");
+  const callbackFailed = allowed && (saveFailed || continueFailed);
 
   return { allowedCount, allowed, callbackFailed, chosenGrants };
 }
@@ -344,7 +342,7 @@ function BatchFeedback({ batch }: BatchViewProps) {
     expiresIn,
     busy,
     setExpiresIn,
-    confirmState,
+    saveFailed,
     callbackFailed,
   } = batch;
   return (
@@ -389,7 +387,7 @@ function BatchFeedback({ batch }: BatchViewProps) {
           })}
         </p>
       )}
-      {confirmState.state === "hasError" && !allowed && (
+      {saveFailed && !allowed && (
         <p role="alert" className="text-sm text-destructive">
           {t(($) => {
             return $.authorization.permission.errors.updateFailed;

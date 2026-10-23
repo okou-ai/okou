@@ -10,10 +10,10 @@ import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { setAblyLoop$ } from "../realtime.ts";
-import { withCleanup } from "../utils.ts";
 import {
   chatActionCallbackFromUrl,
   runChatActionCallback$,
+  type ChatActionCallbackIds,
 } from "./action-callback.ts";
 import {
   chatActionIdMatches,
@@ -59,7 +59,6 @@ export interface BankingSignals extends BankingActionDescriptor {
   readonly refresh$: Command<void, []>;
   readonly subscribe$: Command<void, [AbortSignal]>;
   readonly uiState$: Computed<BankingCardUiState>;
-  readonly operation$: Computed<Promise<void> | undefined>;
   readonly runAction$: Command<Promise<void>, [BankingCardAction, AbortSignal]>;
   readonly updateUiState$: Command<void, [Partial<BankingCardUiState>]>;
 }
@@ -215,13 +214,24 @@ function createBankingMutationSignals(
 }
 
 function createBankingContinueSignal(descriptor: BankingActionDescriptor) {
-  return command(async ({ set }, signal: AbortSignal) => {
+  const callbackIds$ = state<ChatActionCallbackIds | null>(null);
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    let callbackIds = get(callbackIds$);
+    if (!callbackIds) {
+      callbackIds = {
+        clientEventId: crypto.randomUUID(),
+        chatThreadSortEventId: crypto.randomUUID(),
+      };
+      set(callbackIds$, callbackIds);
+    }
     await set(
       runChatActionCallback$,
       {
         threadId: descriptor.threadId,
         agentId: descriptor.agentId,
         callbackPrompt: descriptor.callbackPrompt,
+        callbackIds,
       },
       signal,
     );
@@ -322,33 +332,12 @@ function createBankingSignals(
       }
     },
   );
-  const internalOperation$ = state<Promise<void> | undefined>(undefined);
-  const running$ = state<Promise<void> | null>(null);
-  const runAction$ = command(
-    ({ get, set }, action: BankingCardAction, signal: AbortSignal) => {
-      const running = get(running$);
-      if (running) {
-        return running;
-      }
-      // Duplicate cards share one execution; the Promise also owns their UI state.
-      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-      const operation = withCleanup(set(performAction$, action, signal), () => {
-        set(running$, null);
-      });
-      set(running$, operation);
-      set(internalOperation$, operation);
-      return operation;
-    },
-  );
   return {
     ...descriptor,
     ...statusSignals,
     ...uiSignals,
     subscribe$: createBankingSubscription(statusSignals.refresh$),
-    runAction$,
-    operation$: computed((get) => {
-      return get(internalOperation$);
-    }),
+    runAction$: performAction$,
   };
 }
 

@@ -41,11 +41,9 @@ import {
   saveSsh$,
   sshSaveUncertain$,
   sshSaveMessage$,
-  cancelSshPrivateKeyFile$,
   importSshPrivateKeyFile$,
   mountSshPrivateKey$,
   mountSshForm$,
-  sshPrivateKeyFileResult$,
   sshConnectionModeEditor$,
   chooseSshConnectionMode$,
   usesTailscaleNetwork,
@@ -430,10 +428,8 @@ function PrivateKeyFields({
   guided = false,
 }: { readonly optional?: boolean; readonly guided?: boolean } = {}) {
   const { t } = useTranslation();
-  const importFile = useSet(importSshPrivateKeyFile$);
-  const cancelRead = useSet(cancelSshPrivateKeyFile$);
+  const [result, importFile] = useLoadableSet(importSshPrivateKeyFile$);
   const mountPrivateKey = useSet(mountSshPrivateKey$);
-  const result = useLoadable(sshPrivateKeyFileResult$);
   const signal = useGet(pageSignal$);
   return (
     <>
@@ -485,7 +481,7 @@ function PrivateKeyFields({
           autoComplete="off"
           spellCheck={false}
           onInput={() => {
-            cancelRead();
+            detach(importFile(null, signal), Reason.DomCallback);
           }}
         />
         <p id="ssh-private-key-help" className="text-sm text-muted-foreground">
@@ -502,9 +498,10 @@ function PrivateKeyFields({
             })}
           </p>
         )}
-        {result.state === "hasData" && result.data !== null && (
+        {((result.state === "hasData" && result.data !== null) ||
+          result.state === "hasError") && (
           <p role="alert" className="text-sm text-destructive">
-            {result.data === "size"
+            {result.state === "hasData" && result.data === "size"
               ? t(($) => {
                   return $.ssh.fileSizeError;
                 })
@@ -1395,7 +1392,6 @@ function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
   const configs = useLoadable(cloudflareAccessConfigs$);
   const connectionEditor = useGet(sshConnectionModeEditor$);
   const conflict = useGet(sshConflict$);
-  const fileResult = useLoadable(sshPrivateKeyFileResult$);
   const credentials = useLoadable(sshCredentials$);
   const credentialEditor = useGet(sshCredentialEditor$);
   const hostEditor = dialog.kind === "create" || dialog.kind === "edit";
@@ -1423,7 +1419,6 @@ function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
       !hasResourceSelection(credentials.data, credentialEditor.selection));
   return (
     isSaving ||
-    fileResult.state === "loading" ||
     unavailableProtectedHost ||
     invalidAccess ||
     invalidTailscale ||
