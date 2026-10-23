@@ -5,7 +5,7 @@ import { join } from "node:path";
 import {
   connectorCheckRequestBodySchema,
   type ConnectorCheckRequestBody,
-  type ConnectorCheckTargetAwareDiagnosticResult,
+  type ConnectorCheckDiagnosticResult,
 } from "@okouai/api-contracts/contracts/connector-check";
 import type { ConnectorAccountInspectionResult } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorMcpResponseSchema } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -40,7 +40,7 @@ const TARGET = { kind: "custom", customConnectorId: CUSTOM_ID } as const;
 const REQUEST_URL = "https://api.acme.test/pinned/items";
 
 type ResolvedUrl = Extract<
-  ConnectorCheckTargetAwareDiagnosticResult,
+  ConnectorCheckDiagnosticResult,
   { outcome: "resolved"; mode: "url" }
 >;
 type AvailableAccount = Extract<
@@ -107,9 +107,7 @@ describe("custom connector URL diagnostics", () => {
   let directory = "";
   let contextPath = "";
 
-  function stubDiagnostic(
-    result: ConnectorCheckTargetAwareDiagnosticResult,
-  ): void {
+  function stubDiagnostic(result: ConnectorCheckDiagnosticResult): void {
     server.use(
       http.post(
         `${ORIGIN}/api/connectors/diagnostics/check`,
