@@ -159,7 +159,6 @@ describe("managed Commerce commands", () => {
       query: "standing desk",
       marketplace: "amazon.co.uk",
       limit: 20,
-      async: true,
       requestId: expect.any(String),
     });
     expect(output()).toMatchObject({
@@ -208,7 +207,6 @@ describe("managed Commerce commands", () => {
       ]);
       expect(body).toEqual({
         target,
-        async: true,
         requestId: expect.any(String),
       });
       expect(output()).toMatchObject({
@@ -433,41 +431,6 @@ describe("managed Commerce commands", () => {
     expect(JSON.parse(stderr.mock.calls.flat().join("\n"))).toMatchObject({
       status: "error",
       error: { message: expect.stringContaining("--async does not support") },
-    });
-  });
-
-  it("reports an old API's strict-body rejection with upgrade guidance and no paid fallback", async () => {
-    let submissions = 0;
-    server.use(
-      http.post(`${api}/search`, () => {
-        submissions += 1;
-        return HttpResponse.json(
-          {
-            error: {
-              code: "INVALID_ARGUMENT",
-              message: "Unrecognized key: async",
-            },
-          },
-          { status: 400 },
-        );
-      }),
-    );
-    await commerceCommand.parseAsync([
-      "node",
-      "okou",
-      "search",
-      "standing desk",
-      "--platform",
-      "amazon",
-      "--json",
-    ]);
-    expect(process.exitCode).toBe(1);
-    expect(submissions).toBe(1);
-    expect(JSON.parse(stderr.mock.calls.flat().join("\n"))).toMatchObject({
-      error: {
-        code: "INVALID_ARGUMENT",
-        message: expect.stringContaining("upgrade the API"),
-      },
     });
   });
 

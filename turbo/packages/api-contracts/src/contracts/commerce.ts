@@ -81,6 +81,8 @@ export const commerceSearchRequestSchema = z
       }, "Use commerce inspect for Amazon product URLs, not keyword search"),
     marketplace: amazonMarketplaceSchema.default("amazon.com"),
     limit: z.number().int().min(1).max(48).default(48),
+    // Ignored: every submission is asynchronous. Accepted while supported
+    // Runners still bundle CLIs that send it.
     async: z.boolean().optional(),
     requestId: z.uuid().optional(),
   })
@@ -90,6 +92,8 @@ export const commerceInspectRequestSchema = z
   .object({
     target: z.string().trim().min(1).max(2048),
     marketplace: amazonMarketplaceSchema.optional(),
+    // Ignored: every submission is asynchronous. Accepted while supported
+    // Runners still bundle CLIs that send it.
     async: z.boolean().optional(),
     requestId: z.uuid().optional(),
   })
@@ -147,8 +151,6 @@ export type CommerceInspectRequest = z.infer<
 export type CommerceResponse = z.infer<typeof commerceResponseSchema>;
 
 const responses = {
-  // Temporary rollout compatibility: callers without async still receive 200.
-  200: commerceResponseSchema,
   202: commerceJobSchema,
   400: apiErrorSchema,
   401: apiErrorSchema,

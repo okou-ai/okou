@@ -13,7 +13,7 @@ import {
 // Both priority-2 endpoints cost $0.003 per bounded task.
 const PREFLIGHT_MICROS = 3000;
 
-/** Both legacy Live and async submissions account for unpaid Commerce tasks. */
+/** Admission accounts for unpaid accepted Commerce tasks. */
 export const checkCommerceCredits$ = command(
   async ({ set }, args: ManagedUsageCreditCheckArgs, signal: AbortSignal) => {
     const db = set(writeDb$);

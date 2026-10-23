@@ -29,7 +29,7 @@ function uncertainSubmission(id: string, cause: unknown): ApiRequestError {
 
 function rejectedSubmission(error: { code: string; message: string }): never {
   throw new ApiRequestError(
-    `${error.message}. If this API deployment does not support asynchronous Commerce, upgrade the API before using this CLI. The submission was not retried.`,
+    `${error.message}. The submission was not retried.`,
     error.code,
     400,
   );
@@ -47,7 +47,7 @@ export async function searchCommerce(
   try {
     result = await client.search({
       headers: {},
-      body: { ...body, async: true, requestId },
+      body: { ...body, requestId },
       fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
     });
   } catch (error) {
@@ -70,7 +70,7 @@ export async function inspectCommerce(
   try {
     result = await client.inspect({
       headers: {},
-      body: { ...body, async: true, requestId },
+      body: { ...body, requestId },
       fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
     });
   } catch (error) {
