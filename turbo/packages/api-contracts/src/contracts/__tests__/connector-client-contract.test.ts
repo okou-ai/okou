@@ -17,10 +17,10 @@ import {
 import { connectorCatalogContract } from "../connector-catalog";
 import { connectorAccountsContract } from "../connector-accounts";
 import {
+  connectorCheckContract,
   connectorCheckDiagnosticResultSchema,
   connectorCheckRequestBodySchema,
   connectorCheckRequestSchema,
-  connectorCheckResponseBodySchema,
 } from "../connector-check";
 import {
   builtinConnectorsSearchContract,
@@ -110,7 +110,7 @@ const catalogItem = {
 } as const;
 
 const connectorIdentity = {
-  connectorSlug: "github",
+  target: { kind: "builtin", connectorSlug: "github" },
   label: "GitHub",
   visibility: "available",
   credentialResolution: "network-boundary",
@@ -249,7 +249,7 @@ describe("connector client response contracts", () => {
           policy: { outcome: "allow", basis: "no-policy" },
         },
       }),
-    ).toMatchObject({ connector: { connectorSlug: "github" } });
+    ).toMatchObject({ connector: connectorIdentity });
     expect(
       userBuiltinConnectorEnabledSlugsSchema.parse({
         enabledConnectorSlugs: ["github"],
@@ -546,7 +546,7 @@ describe("connector client request contracts", () => {
     }).toThrow();
   });
 
-  it("accepts target-aware connector check responses separately", () => {
+  it("preserves canonical diagnostic targets in the route response", () => {
     const target = {
       kind: "custom" as const,
       customConnectorId: "00000000-0000-4000-a000-000000000005",
@@ -574,14 +574,11 @@ describe("connector client request contracts", () => {
       },
     };
 
-    expect(connectorCheckResponseBodySchema.parse(resolved)).toStrictEqual(
-      resolved,
-    );
-    expect(() => {
-      connectorCheckDiagnosticResultSchema.parse(resolved);
-    }).toThrow();
     expect(
-      connectorCheckResponseBodySchema.parse({
+      connectorCheckContract.check.responses[200].parse(resolved),
+    ).toStrictEqual(resolved);
+    expect(
+      connectorCheckContract.check.responses[200].parse({
         outcome: "target-unavailable",
         target,
         reason: "not-admitted",

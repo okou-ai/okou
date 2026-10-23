@@ -7,7 +7,7 @@
 
 import {
   connectorCheckTargetAwareUrlRequestSchema,
-  type ConnectorCheckTargetAwareDiagnosticResult,
+  type ConnectorCheckDiagnosticResult,
   type ConnectorCheckPolicy,
 } from "@okouai/api-contracts/contracts/connector-check";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
@@ -29,7 +29,7 @@ const SLACK_READ_PERMISSION = "admin.conversations:read";
 const SLACK_READ_URL = "https://slack.com/api/admin.conversations.search";
 
 type ResolvedUrlDiagnostic = Extract<
-  ConnectorCheckTargetAwareDiagnosticResult,
+  ConnectorCheckDiagnosticResult,
   { readonly outcome: "resolved"; readonly mode: "url" }
 >;
 
@@ -88,7 +88,7 @@ function resolvedUrlDiagnostic(
 }
 
 function stubDiagnostic(
-  result: ConnectorCheckTargetAwareDiagnosticResult,
+  result: ConnectorCheckDiagnosticResult,
   baseUrl = "https://app.okou.ai",
   onRequest?: (
     request: ReturnType<typeof connectorCheckTargetAwareUrlRequestSchema.parse>,
