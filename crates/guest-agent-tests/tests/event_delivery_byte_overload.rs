@@ -93,11 +93,7 @@ async fn claude_code_event_delivery_byte_overload_keeps_recent_events()
     let result = result?;
     assert_eq!(result.exit_code, common::CLEAN_EXIT);
     assert!(result.control_error.is_none());
-    assert!(
-        result
-            .last_event_sequence
-            .is_none_or(|sequence| sequence == 0)
-    );
+    assert_eq!(result.last_event_sequence, Some(EVENT_COUNT as u32));
 
     Ok(())
 }

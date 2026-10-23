@@ -329,7 +329,7 @@ pub struct EventDeliveryDiagnostic {
     /// A batch interrupted by the global drain deadline is reported in
     /// `drain_timeout` instead of being counted as a completed failed batch.
     pub failed_batches: u64,
-    /// Highest contiguous event sequence acknowledged by the API.
+    /// Highest event sequence acknowledged by the API, allowing gaps from loss.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_acknowledged_sequence: Option<u32>,
     /// First logical batch that completed with a terminal delivery failure.

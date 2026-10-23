@@ -92,7 +92,7 @@ async fn codex_app_server_event_delivery_count_overload_keeps_recent_events()
     assert!(warnings.len() < 640);
     assert_eq!(result.exit_code, common::CLEAN_EXIT);
     assert!(result.control_error.is_none());
-    assert!(result.last_event_sequence < sequences.last().copied());
+    assert_eq!(result.last_event_sequence, sequences.last().copied());
 
     Ok(())
 }

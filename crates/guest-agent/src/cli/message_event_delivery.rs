@@ -1,9 +1,8 @@
-//! Pi's projected message shapes remain intact when only delivery content shrinks.
+//! Claude Code and Pi share canonical message blocks before delivery reduction.
 
 use serde_json::{Value, json};
 
 use super::bounded_event_delivery::{ContentPolicy, DELIVERY_NOTICE, PathSegment};
-use crate::error::AgentError;
 
 pub(super) fn labels(event: &Value) -> (&'static str, &'static str) {
     let event_type = match event.get("type").and_then(Value::as_str) {
@@ -29,19 +28,31 @@ pub(super) fn content_policy(value: &Value, path: &[PathSegment]) -> ContentPoli
     use PathSegment::{Index, Key};
     match path {
         [] => ContentPolicy::Descend,
+        [Key(message)] if message == "message" && value.is_string() => {
+            ContentPolicy::Text("message_text")
+        }
         [Key(message)] if message == "message" => ContentPolicy::Descend,
         [Key(result)] if result == "result" => ContentPolicy::Text("result_text"),
         [Key(message), Key(content)] if message == "message" && content == "content" => {
-            ContentPolicy::Descend
+            if value.is_string() {
+                ContentPolicy::Text("message_text")
+            } else {
+                ContentPolicy::Descend
+            }
         }
         [Key(message), Key(content), Index(_)] if message == "message" && content == "content" => {
-            ContentPolicy::Descend
+            if value.get("type").and_then(Value::as_str) == Some("image") {
+                ContentPolicy::Image("text")
+            } else {
+                ContentPolicy::Descend
+            }
         }
         [Key(message), Key(content), Index(_), Key(field), rest @ ..]
             if message == "message" && content == "content" =>
         {
             match field.as_str() {
                 "text" if rest.is_empty() => ContentPolicy::Text("message_text"),
+                "thinking" if rest.is_empty() => ContentPolicy::Text("thinking_text"),
                 "input" => {
                     if value.is_string() {
                         ContentPolicy::Text("tool_input")
@@ -53,7 +64,8 @@ pub(super) fn content_policy(value: &Value, path: &[PathSegment]) -> ContentPoli
                     if value.get("type").and_then(Value::as_str) == Some("image") {
                         ContentPolicy::Image("text")
                     } else if value.is_string()
-                        && matches!(rest.last(), Some(Key(key)) if key == "text")
+                        && (rest.is_empty()
+                            || matches!(rest.last(), Some(Key(key)) if key == "text"))
                     {
                         ContentPolicy::Text("tool_output")
                     } else if value.is_array() || value.is_object() {
@@ -69,31 +81,38 @@ pub(super) fn content_policy(value: &Value, path: &[PathSegment]) -> ContentPoli
     }
 }
 
-pub(super) fn minimum_event(mut event: Value, omitted_image: bool) -> Result<Value, AgentError> {
-    let fields = event
-        .as_object_mut()
-        .ok_or_else(|| AgentError::Execution("normalized Pi event is not an object".into()))?;
+pub(super) fn minimum_event(mut event: Value, omitted_image: bool) -> Option<Value> {
+    let fields = event.as_object_mut()?;
     match fields.get("type").and_then(Value::as_str) {
         Some("assistant" | "user") => {
-            let blocks = fields
-                .get_mut("message")
-                .and_then(|message| message.get_mut("content"))
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| {
-                    AgentError::Execution("Pi delivery minimum requires message content".into())
-                })?;
+            let message = fields.get_mut("message")?;
+            if message.is_string() {
+                *message = json!(DELIVERY_NOTICE);
+                return Some(event);
+            }
+            let content = message.get_mut("content")?;
+            if content.is_string() {
+                *content = json!(DELIVERY_NOTICE);
+                return Some(event);
+            }
+            let blocks = content.as_array_mut()?;
             // Normalization owns expansion before sequence allocation; never split here.
             let [block] = blocks.as_mut_slice() else {
-                return Err(AgentError::Execution(
-                    "Pi delivery minimum requires one canonical content block".into(),
-                ));
+                return None;
             };
-            let block = block.as_object_mut().ok_or_else(|| {
-                AgentError::Execution("Pi delivery content is not an object".into())
-            })?;
+            let block = block.as_object_mut()?;
             match block.get("type").and_then(Value::as_str) {
                 Some("text") => {
                     block.insert("text".into(), json!(DELIVERY_NOTICE));
+                }
+                Some("thinking") => {
+                    block.insert("thinking".into(), json!(DELIVERY_NOTICE));
+                }
+                Some("image") => {
+                    *block = serde_json::Map::from_iter([
+                        ("type".into(), json!("text")),
+                        ("text".into(), json!("[image omitted for delivery]")),
+                    ]);
                 }
                 Some("tool_use") if block.get("input").is_some_and(Value::is_object) => {
                     block.insert("input".into(), json!({"_delivery_notice": DELIVERY_NOTICE}));
@@ -115,9 +134,7 @@ pub(super) fn minimum_event(mut event: Value, omitted_image: bool) -> Result<Val
                     block.insert("content".into(), Value::Array(content));
                 }
                 _ => {
-                    return Err(AgentError::Execution(
-                        "unsupported Pi delivery minimum content".into(),
-                    ));
+                    return None;
                 }
             }
         }
@@ -125,12 +142,10 @@ pub(super) fn minimum_event(mut event: Value, omitted_image: bool) -> Result<Val
             fields.insert("result".into(), json!(DELIVERY_NOTICE));
         }
         _ => {
-            return Err(AgentError::Execution(
-                "unsupported Pi delivery minimum event".into(),
-            ));
+            return None;
         }
     }
     // All outer fields, tool identities, usage, outcomes and unknown data remain.
-    // The final admission guard rejects any irreducibly oversized protected core.
-    Ok(event)
+    // An irreducibly oversized protected core is omitted by the delivery owner.
+    Some(event)
 }

@@ -358,7 +358,7 @@ mod tests {
             r#"{"type":"system","subtype":"init","message":{"content":[{"type":"text","text":"ready"}]}}"#,
         ] {
             let parsed = serde_json::from_str::<Value>(record).expect("record fixture");
-            let (event_type, item_type) = super::super::pi_event_delivery::labels(&parsed);
+            let (event_type, item_type) = super::super::message_event_delivery::labels(&parsed);
             assert_eq!(
                 prefix_labels(record.as_bytes()),
                 EventLabels {

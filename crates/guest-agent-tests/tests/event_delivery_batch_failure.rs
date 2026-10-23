@@ -1,5 +1,5 @@
-//! A failed multi-event request freezes the contiguous watermark at its first
-//! sequence while later batches continue.
+//! A failed multi-event request leaves a gap while later successes advance the
+//! completion watermark.
 
 use guest_agent_tests as common;
 
@@ -70,10 +70,7 @@ async fn failed_batch_retries_three_times_and_later_batches_continue()
     )
     .await?;
     let first_sequences = common::event_request_sequences(&first_request.request)?;
-    let expected_watermark = first_sequences
-        .last()
-        .copied()
-        .ok_or_else(|| io::Error::other("first request contained no events"))?;
+    let expected_watermark = (TOTAL_EVENTS - 1) as u32;
     first_request.respond(200)?;
 
     let failed_request = server.next_request(Duration::from_secs(5)).await?;

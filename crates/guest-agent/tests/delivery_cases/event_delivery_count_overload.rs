@@ -156,11 +156,7 @@ async fn claude_code_event_delivery_count_overload_child() -> Result<(), Box<dyn
     let result = execution?;
     assert_eq!(result.exit_code, common::CLEAN_EXIT);
     assert!(result.control_error.is_none());
-    assert!(
-        result
-            .last_event_sequence
-            .is_none_or(|sequence| sequence < 640)
-    );
+    assert_eq!(result.last_event_sequence, Some(640));
     println!("{CHILD_COMPLETE}");
 
     Ok(())

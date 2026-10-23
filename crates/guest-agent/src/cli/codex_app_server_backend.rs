@@ -297,7 +297,7 @@ pub(super) async fn execute_codex_app_server_for_runtime(
     log_info!(LOG_TAG, "Starting codex app-server execution...");
 
     let should_send_events = http.has_api();
-    let event_delivery = EventDeliveryRuntime::start(http.clone(), &runtime.run_id, 0, false)?;
+    let event_delivery = EventDeliveryRuntime::start(http.clone(), &runtime.run_id, false)?;
 
     let run_result = run_codex_app_server(
         masker,

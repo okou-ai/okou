@@ -3,7 +3,7 @@
 //! Event schema transformation stays in `events`, while HTTP retry policy stays
 //! in `http`. This module owns oldest-first eviction, serial FIFO batching,
 //! continued retries during execution, and bounded final draining. Acknowledgement
-//! remains the highest contiguous successful sequence, including across evictions.
+//! records the highest successful sequence, allowing gaps after discarded events.
 
 use crate::error::AgentError;
 use crate::events;
@@ -48,7 +48,6 @@ pub(super) struct EventDeliverySender {
     queue: Arc<EventQueue>,
     byte_budget: Arc<Semaphore>,
     pressure: Arc<DeliveryPressure>,
-    progress: Arc<Mutex<DeliveryProgress>>,
     payload_envelope: Arc<events::EventPayloadEnvelope>,
 }
 
@@ -103,15 +102,7 @@ impl EventDeliverySender {
         let event = events::prepare_event_for_delivery(event, sequence, masker);
         let framework = match framework {
             crate::env::Framework::ClaudeCode => {
-                let serialized_event = serde_json::to_vec(&event)?;
-                drop(event);
-                // Claude Code bypasses bounded delivery, which owns labels.
-                return self.try_send_prepared(
-                    sequence,
-                    serialized_event,
-                    private_citation,
-                    EventLabels::UNKNOWN,
-                );
+                super::bounded_event_delivery::Framework::ClaudeCode
             }
             crate::env::Framework::Pi => super::bounded_event_delivery::Framework::Pi,
             crate::env::Framework::Codex => super::bounded_event_delivery::Framework::Codex,
@@ -120,21 +111,27 @@ impl EventDeliverySender {
             .payload_envelope
             .singleton_bytes(0, private_citation.as_ref().map_or(0, Bytes::len));
         let budget = EVENT_DELIVERY_MAX_REQUEST_BYTES.saturating_sub(envelope_bytes);
-        let super::bounded_event_delivery::PreparedEvent {
+        let prepared =
+            super::bounded_event_delivery::prepare_for_delivery(event, budget, framework)?;
+        let Some(super::bounded_event_delivery::PreparedEvent {
             serialized,
             labels,
             reduction,
-        } = super::bounded_event_delivery::prepare_for_delivery(event, budget, framework)?;
+        }) = prepared
+        else {
+            log_warn!(
+                LOG_TAG,
+                "Discarding oversized {} event at sequence {sequence}: no safe representation fits the {EVENT_DELIVERY_MAX_REQUEST_BYTES}-byte request limit",
+                framework.label(),
+            );
+            return Ok(());
+        };
         self.try_send_prepared(sequence, serialized, private_citation, labels)?;
         if let Some(reduction) = reduction {
-            let framework = match framework {
-                super::bounded_event_delivery::Framework::Pi => "Pi",
-                super::bounded_event_delivery::Framework::Codex => "Codex",
-            };
             log_info!(
                 LOG_TAG,
                 "{} event reduced for delivery: seq={} event_type={} item_type={} original_event_bytes={} delivered_event_bytes={} original_request_bytes={} delivered_request_bytes={} fields={} fallback={}",
-                framework,
+                framework.label(),
                 sequence,
                 labels.event_type,
                 labels.item_type,
@@ -161,9 +158,11 @@ impl EventDeliverySender {
             .payload_envelope
             .singleton_bytes(event.len(), private_citation.as_ref().map_or(0, Bytes::len));
         if conservative_bytes > EVENT_DELIVERY_MAX_REQUEST_BYTES {
-            return Err(AgentError::Execution(format!(
-                "CLI event delivery payload at sequence {sequence} is {conservative_bytes} bytes, exceeding the {EVENT_DELIVERY_MAX_REQUEST_BYTES}-byte request limit"
-            )));
+            log_warn!(
+                LOG_TAG,
+                "Discarding oversized CLI event at sequence {sequence}: {conservative_bytes} bytes exceeds the {EVENT_DELIVERY_MAX_REQUEST_BYTES}-byte request limit"
+            );
+            return Ok(());
         }
 
         let mut pending = self
@@ -187,9 +186,6 @@ impl EventDeliverySender {
             })?;
             self.pressure.mark_dequeued(dropped.conservative_bytes);
             self.pressure.release_bytes(dropped.conservative_bytes);
-            progress_guard(&self.progress)
-                .acked_prefix
-                .record_failure(dropped.sequence);
             self.queue.dropped_events.fetch_add(1, Ordering::Relaxed);
             let (first, _) = dropped_range.get_or_insert((dropped.sequence, dropped.sequence));
             dropped_range = Some((*first, dropped.sequence));
@@ -241,12 +237,11 @@ impl EventDeliveryRuntime {
     pub(super) fn start(
         http: HttpClient,
         run_id: &str,
-        first_sequence: u32,
         pi_memory_citation_transport: bool,
     ) -> Result<Self, AgentError> {
         let queue = Arc::new(EventQueue::default());
         let pressure = Arc::new(DeliveryPressure::default());
-        let progress = Arc::new(Mutex::new(DeliveryProgress::new(first_sequence)));
+        let progress = Arc::new(Mutex::new(DeliveryProgress::default()));
         let payload_envelope = Arc::new(events::EventPayloadEnvelope::new(
             run_id,
             pi_memory_citation_transport,
@@ -255,7 +250,6 @@ impl EventDeliveryRuntime {
             queue: Arc::clone(&queue),
             byte_budget: Arc::new(Semaphore::new(EVENT_DELIVERY_MAX_BYTES)),
             pressure: Arc::clone(&pressure),
-            progress: Arc::clone(&progress),
             payload_envelope: Arc::clone(&payload_envelope),
         };
         let worker = AbortOnDropHandle::new(tokio::spawn(run_event_sender(
@@ -408,54 +402,8 @@ impl DeliveryPressure {
 }
 
 #[derive(Default)]
-struct AckedEventPrefix {
-    next_expected: u32,
-    last_contiguous: Option<u32>,
-    first_missing: Option<u32>,
-}
-
-impl AckedEventPrefix {
-    fn new(next_expected: u32) -> Self {
-        Self {
-            next_expected,
-            last_contiguous: next_expected.checked_sub(1),
-            first_missing: None,
-        }
-    }
-
-    fn record_success(&mut self, sequence: u32) {
-        if self
-            .first_missing
-            .is_some_and(|missing| sequence >= missing)
-        {
-            return;
-        }
-
-        if sequence == self.next_expected {
-            self.last_contiguous = Some(sequence);
-            self.next_expected = sequence.saturating_add(1);
-        } else if sequence > self.next_expected {
-            self.record_failure(self.next_expected);
-        }
-    }
-
-    fn record_failure(&mut self, sequence: u32) {
-        if sequence >= self.next_expected {
-            self.first_missing = Some(
-                self.first_missing
-                    .map_or(sequence, |missing| missing.min(sequence)),
-            );
-        }
-    }
-
-    fn last_contiguous(&self) -> Option<u32> {
-        self.last_contiguous
-    }
-}
-
-#[derive(Default)]
 struct DeliveryProgress {
-    acked_prefix: AckedEventPrefix,
+    last_acknowledged_sequence: Option<u32>,
     total_events: u64,
     total_batches: u64,
     failed_batches: u64,
@@ -466,13 +414,6 @@ struct DeliveryProgress {
 }
 
 impl DeliveryProgress {
-    fn new(first_sequence: u32) -> Self {
-        Self {
-            acked_prefix: AckedEventPrefix::new(first_sequence),
-            ..Self::default()
-        }
-    }
-
     fn begin_batch(
         &mut self,
         sequences: Vec<u32>,
@@ -504,14 +445,15 @@ impl DeliveryProgress {
             )
         })?;
         if succeeded {
-            for sequence in active_batch.sequences {
-                self.acked_prefix.record_success(sequence);
-            }
+            self.last_acknowledged_sequence = Some(
+                self.last_acknowledged_sequence
+                    .map_or(active_batch.last_sequence, |previous| {
+                        previous.max(active_batch.last_sequence)
+                    }),
+            );
             return Ok(());
         }
 
-        self.acked_prefix
-            .record_failure(active_batch.first_sequence);
         self.failed_batches = self.failed_batches.saturating_add(1);
         if self.first_failed_batch.is_none() {
             let event_count = usize_to_u32(active_batch.sequences.len());
@@ -688,7 +630,7 @@ async fn run_event_sender(
     let progress = progress_guard(&progress);
     log_info!(
         LOG_TAG,
-        "Event delivery complete: events={} requests={} failed_requests={} max_batch_events={} max_batch_bytes={} max_pending_events={} max_buffered_bytes={} last_contiguous_sequence={:?} evicted_events={}",
+        "Event delivery complete: events={} requests={} failed_requests={} max_batch_events={} max_batch_bytes={} max_pending_events={} max_buffered_bytes={} last_acknowledged_sequence={:?} evicted_events={}",
         progress.total_events,
         progress.total_batches,
         progress.failed_batches,
@@ -696,7 +638,7 @@ async fn run_event_sender(
         progress.max_batch_bytes,
         pressure.max_pending_events,
         pressure.max_buffered_bytes,
-        progress.acked_prefix.last_contiguous(),
+        progress.last_acknowledged_sequence,
         queue.dropped_events.load(Ordering::Relaxed)
     );
     Ok(())
@@ -779,7 +721,7 @@ fn progress_report(
     drain_pressure: Option<DeliveryPressureSnapshot>,
 ) -> EventDeliveryReport {
     let progress = progress_guard(progress);
-    let last_acknowledged_sequence = progress.acked_prefix.last_contiguous();
+    let last_acknowledged_sequence = progress.last_acknowledged_sequence;
     let drain_timeout = drain_pressure.map(|pressure| EventDeliveryDrainTimeoutDiagnostic {
         queued_events: usize_to_u32(pressure.pending_events),
         queued_bytes: usize_to_u64(pressure.queued_bytes),
@@ -847,63 +789,4 @@ fn usize_to_u32(value: usize) -> u32 {
 
 fn usize_to_u64(value: usize) -> u64 {
     u64::try_from(value).unwrap_or(u64::MAX)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn acked_event_prefix_advances_on_contiguous_successes() {
-        let mut prefix = AckedEventPrefix::default();
-
-        prefix.record_success(0);
-        prefix.record_success(1);
-        prefix.record_success(2);
-
-        assert_eq!(prefix.last_contiguous(), Some(2));
-    }
-
-    #[test]
-    fn acked_event_prefix_stops_at_first_failed_event() {
-        let mut prefix = AckedEventPrefix::default();
-
-        prefix.record_success(0);
-        prefix.record_failure(1);
-        prefix.record_success(2);
-
-        assert_eq!(prefix.last_contiguous(), Some(0));
-    }
-
-    #[test]
-    fn acked_event_prefix_has_no_watermark_when_first_event_fails() {
-        let mut prefix = AckedEventPrefix::default();
-
-        prefix.record_failure(0);
-        prefix.record_success(1);
-
-        assert_eq!(prefix.last_contiguous(), None);
-    }
-
-    #[test]
-    fn acked_event_prefix_rejects_success_gap() {
-        let mut prefix = AckedEventPrefix::default();
-
-        prefix.record_success(0);
-        prefix.record_success(2);
-        prefix.record_success(3);
-
-        assert_eq!(prefix.last_contiguous(), Some(0));
-    }
-
-    #[test]
-    fn eviction_preserves_acknowledgement_of_earlier_in_flight_events() {
-        let mut prefix = AckedEventPrefix::default();
-        prefix.record_failure(2);
-        prefix.record_success(0);
-        prefix.record_success(1);
-        prefix.record_success(3);
-
-        assert_eq!(prefix.last_contiguous(), Some(1));
-    }
 }

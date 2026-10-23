@@ -41,7 +41,7 @@ mod event_delivery_budget_tests;
 mod exec_boundary;
 mod jsonl_result;
 mod line_reader;
-mod pi_event_delivery;
+mod message_event_delivery;
 mod pi_memory_citation;
 mod pi_preparation_timing;
 mod pi_rpc;
@@ -260,10 +260,10 @@ pub struct CliExecutionResult {
     /// it may be incomplete if stderr reading fails.
     pub stderr_lines: Vec<String>,
 
-    /// Highest contiguous agent event sequence whose webhook POST succeeded.
+    /// Highest agent event sequence whose webhook POST succeeded, allowing gaps.
     ///
     /// This is a terminal event-drain watermark, not merely the last event read
-    /// from stdout. `None` means no contiguous event prefix was acknowledged,
+    /// from stdout. `None` means no event was acknowledged,
     /// such as no-API mode, no emitted events, or failure before the first event
     /// was successfully posted.
     pub last_event_sequence: Option<u32>,
@@ -884,7 +884,6 @@ impl<'a> CliEventPipeline<'a> {
         let delivery = EventDeliveryRuntime::start(
             http.clone(),
             &runtime.run_id,
-            initial_sequence,
             runtime.framework == env::Framework::Pi,
         )?;
         let ingestor = CliEventIngestor::new_with_session_metadata(

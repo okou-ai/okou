@@ -498,28 +498,35 @@ async fn pi_rpc_isolates_citations_before_masking_field_names()
 }
 
 #[tokio::test]
-async fn pi_rpc_rejects_oversized_masked_parent_without_publishing_private_citations()
+async fn pi_rpc_skips_irreducible_events_and_delivers_later_output_without_private_citations()
 -> Result<(), Box<dyn std::error::Error>> {
-    let messages = [assistant(
-        "private-large",
-        json!([{"type":"text","text":format!("{}{CITATION}", "x".repeat(LIMIT))}]),
-        false,
-    )];
-    let delivery = deliver_pi_rpc(&messages, &["message"]).await?;
-    assert!(delivery.result.control_error.is_some());
-    assert!(
-        delivery
-            .delivered
-            .iter()
-            .all(|event| event["type"] == "system")
+    let messages = [
+        assistant(
+            "private-large",
+            json!([{"type":"text","text":format!("{}{CITATION}", "x".repeat(LIMIT))}]),
+            false,
+        ),
+        assistant(
+            "later",
+            json!([{"type":"text","text":"later output"}]),
+            false,
+        ),
+    ];
+    let delivery = deliver_pi_rpc_with_skips(&messages, &["message"], &[2]).await?;
+    assert_eq!(delivery.result.exit_code, common::CLEAN_EXIT);
+    assert!(delivery.result.control_error.is_none());
+    assert_eq!(
+        delivery.delivered[1]["***"]["content"][0]["text"],
+        "later output"
     );
     assert!(delivery.citations.is_empty());
+    assert_eq!(delivery.result.last_event_sequence, Some(4));
     assert!(
         delivery
-            .result
-            .last_event_sequence
-            .is_none_or(|sequence| sequence < 2)
+            .log
+            .contains("Discarding oversized Pi event at sequence 2")
     );
+    assert!(!delivery.log.contains("private-memory"));
     assert_public_citation_isolation(&delivery.delivered);
     Ok(())
 }
@@ -640,6 +647,14 @@ static DELIVERY_FIXTURE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const
 async fn deliver_pi_rpc(
     messages: &[Value],
     secrets: &[&str],
+) -> Result<PiDelivery, Box<dyn std::error::Error>> {
+    deliver_pi_rpc_with_skips(messages, secrets, &[]).await
+}
+
+async fn deliver_pi_rpc_with_skips(
+    messages: &[Value],
+    secrets: &[&str],
+    skipped: &[u32],
 ) -> Result<PiDelivery, Box<dyn std::error::Error>> {
     let _fixture_lock = DELIVERY_FIXTURE_LOCK.lock().await;
     let tmp = tempfile::tempdir()?;
@@ -766,6 +781,18 @@ async fn deliver_pi_rpc(
         let (mut gate, _) = gate.accept().await?;
         let mut next = 0;
         loop {
+            while let Some(end) = ends.get(next).filter(|end| skipped.contains(end)) {
+                // A deliberate size skip has no HTTP response to release this
+                // producer gate. Its warning is the documented loss receipt.
+                common::wait_for_file_contains(
+                    std::path::Path::new(runtime.paths.system_log_file()),
+                    &format!("Discarding oversized Pi event at sequence {end}"),
+                    Duration::from_secs(5),
+                )
+                .await?;
+                gate.write_all(b"x").await?;
+                next += 1;
+            }
             let request = server.next_request(Duration::from_secs(10)).await?;
             let last = common::event_request_sequences(&request.request)?
                 .into_iter()
@@ -817,16 +844,28 @@ async fn deliver_pi_rpc(
             .iter()
             .map(|e| e["sequenceNumber"].as_u64())
             .collect::<Vec<_>>(),
-        (1..=delivered.len() as u64).map(Some).collect::<Vec<_>>()
+        (1..=sequence + 1)
+            .filter(|sequence| !skipped.contains(sequence))
+            .map(|sequence| Some(u64::from(sequence)))
+            .collect::<Vec<_>>()
     );
     if result.control_error.is_none() {
         assert_eq!(
             result.last_event_sequence,
-            (!delivered.is_empty()).then_some(delivered.len() as u32)
+            delivered
+                .last()
+                .and_then(|event| event["sequenceNumber"].as_u64())
+                .map(|sequence| sequence as u32)
         );
     } else {
         // Abort can win after HTTP receipt but before its response is observed.
-        assert!(result.last_event_sequence.unwrap_or(0) <= delivered.len() as u32);
+        assert!(
+            result.last_event_sequence
+                <= delivered
+                    .last()
+                    .and_then(|event| event["sequenceNumber"].as_u64())
+                    .map(|sequence| sequence as u32)
+        );
     }
     assert_eq!(std::fs::read_to_string(&events_path)?, original);
     assert_eq!(std::fs::read_to_string(session_path)?, session);

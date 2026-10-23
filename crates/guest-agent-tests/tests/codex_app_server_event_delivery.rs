@@ -13,7 +13,7 @@ const RUN_ID: &str = "codex-app-server-event-delivery-test";
 const TOTAL_EVENTS: usize = 4;
 
 #[tokio::test]
-async fn codex_app_server_event_delivery_stops_watermark_at_failed_sequence()
+async fn codex_app_server_event_delivery_reports_the_highest_successful_sequence()
 -> Result<(), Box<dyn std::error::Error>> {
     let mock = common::build_and_locate_mock_codex()?;
     let tmp = tempfile::tempdir()?;
@@ -98,10 +98,11 @@ async fn codex_app_server_event_delivery_stops_watermark_at_failed_sequence()
     }
 
     let failed_sequences = failed_sequences.expect("sequence 1 should belong to a failed batch");
-    let expected_watermark = failed_sequences
-        .first()
+    let expected_watermark = logical_sequences
+        .iter()
         .copied()
-        .and_then(|sequence| sequence.checked_sub(1));
+        .filter(|sequence| !failed_sequences.contains(sequence))
+        .max();
     let cli_result = tokio::time::timeout(Duration::from_secs(5), execution)
         .await
         .expect("execute_cli should return promptly")??;
