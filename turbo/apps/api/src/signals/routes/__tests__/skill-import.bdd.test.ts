@@ -539,6 +539,7 @@ describe("POST /api/skill-import/skills", () => {
       orgId: actor.orgId,
       agentId,
       provider: "claudeCode",
+      sessionId: randomUUID(),
       iat: issuedAt,
       exp: issuedAt + 60 * 60,
     });
@@ -579,6 +580,7 @@ describe("POST /api/skill-import/skills", () => {
       orgId: actor.orgId,
       agentId: randomUUID(),
       provider: "claudeCode",
+      sessionId: randomUUID(),
       iat: issuedAt,
       exp: issuedAt + 60 * 60,
     });
