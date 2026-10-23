@@ -6625,10 +6625,11 @@ function UserMessageAttachments({
     return null;
   }
 
+  // Keep the gap to the bubble or actions inside the attachment's hover surface.
   return (
     <div
       data-slot="chat-user-message-attachments"
-      className="mb-2 flex max-w-[85%] flex-col items-end gap-2 self-end"
+      className="pb-2 flex max-w-[85%] flex-col items-end gap-2 self-end"
     >
       <UserMessageAttachmentRow
         threadId={threadId}
