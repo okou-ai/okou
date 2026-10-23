@@ -17,7 +17,8 @@ final class ConversationOpeningTests: XCTestCase {
         await gate.wait()
         return ChatHTTPResponse(
           status: 404,
-          body: "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
+          body:
+            "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
       },
       send: { _ in
         ChatHTTPResponse(body: "{\"threadId\":\"\(ConversationHistoryFixture.threadID)\"}")
@@ -61,7 +62,10 @@ final class ConversationOpeningTests: XCTestCase {
     try await eventually { self.loadingIndicators(in: host.view).filter(\.isAnimating).count == 1 }
 
     await gate.release()
-    try await eventually { !conversation.isLoading && conversation.error != nil }
+    try await eventually {
+      conversation.error != nil
+        && self.loadingIndicators(in: host.view).allSatisfy { $0.isHidden }
+    }
     XCTAssertTrue(self.loadingIndicators(in: host.view).allSatisfy { $0.isHidden })
   }
 
