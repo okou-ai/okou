@@ -10,7 +10,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { request$, setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   claimCustomConnectorOAuthState$,
   getConnectorOAuthStateStatus$,
@@ -36,7 +36,7 @@ import {
   validateMcpAutomaticOAuthCallbackIssuer,
 } from "../services/mcp-automatic-oauth.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import { addUserCustomConnector } from "../services/user-connectors.service";
+import { addUserCustomConnector$ } from "../services/user-connectors.service";
 import {
   connectorRuntimeWakeupRunColumns,
   connectorRuntimeWakeupCondition,
@@ -224,42 +224,44 @@ function isCurrentAutomaticOAuthCustomConnector(
   );
 }
 
-async function authorizeCustomConnectorAgent(
-  args: {
-    readonly db: Db;
-    readonly state: StoredCustomConnectorOAuthState;
-    readonly connectorId: string;
-  },
-  signal: AbortSignal,
-): Promise<string | null> {
-  if (!args.state.authorizeAgent || !args.state.agentId) {
-    return null;
-  }
-  const authorization = await addUserCustomConnector(args.db, {
-    orgId: args.state.orgId,
-    userId: args.state.userId,
-    agentId: args.state.agentId,
-    customConnectorId: args.connectorId,
-  });
-  signal.throwIfAborted();
-  switch (authorization.status) {
-    case "added": {
+const authorizeCustomConnectorAgent$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: StoredCustomConnectorOAuthState;
+      readonly connectorId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    if (!args.state.authorizeAgent || !args.state.agentId) {
       return null;
     }
-    case "agentNotFound": {
-      return "OAuth connected, but the requested agent was not found";
+    const authorization = await set(addUserCustomConnector$, {
+      orgId: args.state.orgId,
+      userId: args.state.userId,
+      agentId: args.state.agentId,
+      customConnectorId: args.connectorId,
+    });
+    signal.throwIfAborted();
+    switch (authorization.status) {
+      case "added": {
+        return null;
+      }
+      case "agentNotFound": {
+        return "OAuth connected, but the requested agent was not found";
+      }
+      case "customConnectorsNotFound": {
+        return "OAuth connected, but the custom connector was not found";
+      }
+      case "customConnectorPermissionSelectionRequired": {
+        return "OAuth connected, but connector permissions must be selected before authorizing the agent";
+      }
+      case "invalidCustomConnectorPermissions": {
+        return `OAuth connected, but agent authorization failed: ${authorization.message}`;
+      }
     }
-    case "customConnectorsNotFound": {
-      return "OAuth connected, but the custom connector was not found";
-    }
-    case "customConnectorPermissionSelectionRequired": {
-      return "OAuth connected, but connector permissions must be selected before authorizing the agent";
-    }
-    case "invalidCustomConnectorPermissions": {
-      return `OAuth connected, but agent authorization failed: ${authorization.message}`;
-    }
-  }
-}
+  },
+);
 
 type CustomOAuthPersistenceResult =
   | { readonly ok: true; readonly connectionId: string }
@@ -699,9 +701,9 @@ const completeOAuth2Callback$ = command(
     if (!persistence.ok) {
       return callbackError(origin, persistence.message);
     }
-    const completionError = await authorizeCustomConnectorAgent(
+    const completionError = await set(
+      authorizeCustomConnectorAgent$,
       {
-        db: set(writeDb$),
         state: claimed.state,
         connectorId: connector.id,
       },

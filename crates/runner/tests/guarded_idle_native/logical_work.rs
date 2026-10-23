@@ -123,7 +123,7 @@ pub async fn exercise(request: Request) -> TestResult<BudgetLease> {
                 id, resources: sandbox::ResourceLimits { cpu_count: 2, memory_mb: 4096 },
                 device_rate_limits: None,
                 home_drive: Some(sandbox::HomeDriveConfig {
-                    size_mb: 16384, seed_image: None,
+                    size_mb: fixture::HOME_DISK_MB, seed_image: None,
                     space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
                 }),
             }).await?;

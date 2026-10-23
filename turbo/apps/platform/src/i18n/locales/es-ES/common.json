@@ -6835,43 +6835,6 @@
         "time": "Hora ({{timezone}})",
         "updateScheduleAria": "Actualizar automatización programada"
       },
-      "stripe": {
-        "addAction": "Añadir automatización de Stripe",
-        "addAria": "Añadir automatización de factura pagada de Stripe",
-        "addDescription": "Ejecuta este flujo de trabajo cuando se paga una factura coincidente en la cuenta Live de Stripe conectada.",
-        "addTitle": "Añadir automatización de Stripe",
-        "anyBillingReason": "Cualquier motivo de facturación",
-        "billingReason": {
-          "automaticPendingInvoiceItemInvoice": "Partidas pendientes automáticas",
-          "manual": "Manual",
-          "quoteAccept": "Presupuesto aceptado",
-          "subscription": "Suscripción",
-          "subscriptionCreate": "Suscripción creada",
-          "subscriptionCycle": "Ciclo de suscripción",
-          "subscriptionThreshold": "Umbral de suscripción",
-          "subscriptionUpdate": "Suscripción actualizada",
-          "upcoming": "Próxima"
-        },
-        "billingReasons": "Motivos de facturación",
-        "billingReasonsHint": "No selecciones ninguno para aceptar cualquier motivo de facturación.",
-        "bindingSummary": "Cuenta de Stripe {{accountId}} · Modo Live · {{billingReasons}}",
-        "delivery": "Entrega",
-        "deliveryStatus": {
-          "delivered": "Entregada",
-          "failed": "Fallida",
-          "pending": "Pendiente",
-          "skipped": "Omitida"
-        },
-        "deliveryWarning": "La última entrega terminal falló. Revisa la actividad del flujo de trabajo antes de volver a intentarlo.",
-        "immutableHint": "La cuenta de Stripe y los motivos de facturación son fijos. Para cambiarlos, elimina esta automatización y vuelve a crearla.",
-        "invoicePaidDescription": "Ejecutar cuando se pague una factura coincidente de Stripe.",
-        "invoicePaidTitle": "Factura de Stripe pagada",
-        "lastEvent": "Último evento",
-        "manageConnection": "Gestionar conexión de Stripe",
-        "noDeliveries": "Aún no hay entregas",
-        "noMatchingEvents": "Aún no hay eventos coincidentes",
-        "rule": "Cuando se paga una factura de Stripe que coincide"
-      },
       "types": {
         "chat": "Chat",
         "github": "GitHub",
@@ -6880,7 +6843,6 @@
         "googleForms": "Google Forms",
         "googleMeet": "Google Meet",
         "notion": "Notion",
-        "stripe": "Stripe",
         "webhook": "Webhook"
       },
       "webhook": {

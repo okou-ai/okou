@@ -8,6 +8,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { integrationsSlackRoutes } from "../integrations-slack";
 import { slackOauthRoutes } from "../slack-oauth";
@@ -15,6 +16,7 @@ import { slackOauthRoutes } from "../slack-oauth";
 const context = testContext();
 const mocks = createRouteMocks(context);
 const slackOrgs = createPublicSlackOrgApi(context);
+const integrations = createBddIntegrationApi(context);
 
 describe("GET /api/integrations/slack", () => {
   const track = createFixtureTracker<{
@@ -49,7 +51,7 @@ describe("GET /api/integrations/slack", () => {
     })(slackOauthContract);
     const started = await accept(
       oauthClient.install({
-        query: { orgId: args.orgId, userId: args.installerUserId },
+        query: {},
         extraHeaders: { authorization: "Bearer clerk-session" },
       }),
       [307],
@@ -77,6 +79,17 @@ describe("GET /api/integrations/slack", () => {
         query: { code: `code-${args.slackWorkspaceId}`, state },
       }),
       [307],
+    );
+    await integrations.connectSlackUser(
+      integrations.user({
+        userId: args.installerUserId,
+        orgId: args.orgId,
+        orgRole: "org:admin",
+      }),
+      {
+        workspaceId: args.slackWorkspaceId,
+        slackUserId: `U_${args.slackWorkspaceId}`,
+      },
     );
 
     return { orgId: args.orgId, slackWorkspaceId: args.slackWorkspaceId };

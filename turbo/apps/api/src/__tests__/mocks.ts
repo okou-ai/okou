@@ -263,7 +263,7 @@ export interface ApiTestMocks {
       readonly release: AsyncMock;
     };
     readonly webhooks: {
-      readonly constructEvent: UnknownMock;
+      readonly constructEventAsync: UnknownMock;
     };
     readonly checkout: {
       readonly sessions: {
@@ -483,7 +483,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
       release: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     },
     webhooks: {
-      constructEvent: vi.fn<(...args: unknown[]) => unknown>(),
+      constructEventAsync: vi.fn<(...args: unknown[]) => unknown>(),
     },
     checkout: {
       sessions: {
@@ -1101,7 +1101,7 @@ vi.mock("stripe", async (importOriginal) => {
           release: apiTestMocks.stripe.subscriptionSchedules.release,
         },
         webhooks: {
-          constructEvent: apiTestMocks.stripe.webhooks.constructEvent,
+          constructEventAsync: apiTestMocks.stripe.webhooks.constructEventAsync,
         },
         checkout: {
           sessions: {
@@ -1545,7 +1545,7 @@ export function resetApiTestMocks(): void {
   apiTestMocks.stripe.subscriptionSchedules.create.mockReset();
   apiTestMocks.stripe.subscriptionSchedules.update.mockReset();
   apiTestMocks.stripe.subscriptionSchedules.release.mockReset();
-  apiTestMocks.stripe.webhooks.constructEvent.mockReset();
+  apiTestMocks.stripe.webhooks.constructEventAsync.mockReset();
   apiTestMocks.stripe.checkout.sessions.create.mockReset();
   apiTestMocks.stripe.checkout.sessions.retrieve.mockReset();
   apiTestMocks.stripe.checkout.sessions.expire.mockReset();

@@ -100,7 +100,7 @@ def validate(directory):
         nonzero = "Nonzero" in case
         exact(original, {"run_id":run,"sandbox_id":old,"backing_generation":old_backing,"thread_id":thread,
             "history_hex":original["history_hex"],"cache_key":key,"reuse_key":reuse,"profile":"vm0/default",
-            "home_bytes":16*1024**3,"exit_code":1 if nonzero else 0,
+            "home_bytes":report.NATIVE_HOME_BYTES,"exit_code":1 if nonzero else 0,
             "final_identity_verified":not nonzero,"allocated":[2,4096,1]}, "invalid complete original preparation")
         new_run, new_thread = identity(incoming.get("run_id")), identity(incoming.get("thread_id"))
         incoming_bytes = history(incoming.get("history_hex"), new_thread)

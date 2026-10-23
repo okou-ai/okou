@@ -11,12 +11,7 @@ import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
   isMorningBriefDefinitionName,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import {
-  googleFormsResponseSubmittedEventConfigSchema,
-  stripeInvoicePaidEventConfigSchema,
-} from "@okouai/api-contracts/contracts/workflows";
-
-import { connectors } from "@okouai/db/schema/connector";
+import { googleFormsResponseSubmittedEventConfigSchema } from "@okouai/api-contracts/contracts/workflows";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import {
   officialWorkflowCatalogState,
@@ -24,11 +19,6 @@ import {
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import {
-  connectorCatalog,
-  connectorCatalogEntries,
-} from "@okouai/db/runtime/connector-catalog";
-import { variables } from "@okouai/db/schema/variable";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
@@ -41,6 +31,7 @@ import { command } from "ccstate";
 import {
   and,
   asc,
+  count,
   eq,
   exists,
   getTableColumns,
@@ -50,6 +41,8 @@ import {
   notExists,
   sql,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
+import { z } from "zod";
 
 import { nowDate, timestampWithoutTimeZone } from "../../lib/time";
 import { pgNullDecoder } from "../../lib/db-structured-result";
@@ -249,21 +242,7 @@ function accountProjectionMatchesPatch(
       config.success && config.data.connectorId === projection.eventConnectorId
     );
   }
-  if (projection.connectorSlug !== "stripe") {
-    return true;
-  }
-  if (projection.stripeBinding === null) {
-    return false;
-  }
-  const config = stripeInvoicePaidEventConfigSchema.safeParse(
-    patch.eventConfig,
-  );
-  return (
-    config.success &&
-    config.data.connectorId === projection.stripeBinding.connectorId &&
-    config.data.stripeAccountId === projection.stripeBinding.stripeAccountId &&
-    config.data.mode === projection.stripeBinding.mode
-  );
+  return true;
 }
 
 function blueprintAuthorityIdentity(args: {
@@ -827,13 +806,7 @@ const persistReconfigurationPatch$ = command(
       };
       const accountPlan = officialAccountProjectionReadPlan(projectionArgs);
       const accountRows = accountPlan.required
-        ? await tx
-            .select(accountPlan.columns)
-            .from(accountPlan.source)
-            .leftJoin(connectorCatalog, accountPlan.catalogJoin)
-            .leftJoin(connectorCatalogEntries, accountPlan.entryJoin)
-            .leftJoin(connectors, accountPlan.connectionJoin)
-            .leftJoin(variables, accountPlan.variableJoin)
+        ? await tx.select(accountPlan.columns).from(accountPlan.source)
         : [];
       if (accountPlan.required) {
         signal.throwIfAborted();
@@ -937,37 +910,18 @@ const reconcileRestoredAutomationWatch$ = command(
     );
   },
 );
-function restoredStripeEventConfig(
-  projection: OfficialAutomationAccountProjection,
-  eventConfig: unknown,
-) {
-  const binding =
-    projection.kind === "projected" ? projection.stripeBinding : null;
-  return binding === null
-    ? {}
-    : {
-        eventConfig: {
-          ...stripeInvoicePaidEventConfigSchema.parse(eventConfig),
-          ...binding,
-        },
-      };
-}
 
 function restoredAutomationAccountFields(
   projection: OfficialAutomationAccountProjection,
   previous: OfficialAutomationRow,
-  eventConfig: OfficialAutomationRow["eventConfig"],
 ) {
   const notion = restoredNotionEventConfig(projection, previous);
-  return {
-    ...(projection.kind === "projected"
-      ? {
-          eventConnectorId: projection.eventConnectorId,
-          ...(notion === null ? {} : { eventConfig: notion }),
-        }
-      : {}),
-    ...restoredStripeEventConfig(projection, eventConfig),
-  };
+  return projection.kind === "projected"
+    ? {
+        eventConnectorId: projection.eventConnectorId,
+        ...(notion === null ? {} : { eventConfig: notion }),
+      }
+    : {};
 }
 
 const restoreFailedReconfiguration$ = command(
@@ -995,13 +949,7 @@ const restoreFailedReconfiguration$ = command(
       };
       const accountPlan = officialAccountProjectionReadPlan(projectionArgs);
       const accountRows = accountPlan.required
-        ? await tx
-            .select(accountPlan.columns)
-            .from(accountPlan.source)
-            .leftJoin(connectorCatalog, accountPlan.catalogJoin)
-            .leftJoin(connectorCatalogEntries, accountPlan.entryJoin)
-            .leftJoin(connectors, accountPlan.connectionJoin)
-            .leftJoin(variables, accountPlan.variableJoin)
+        ? await tx.select(accountPlan.columns).from(accountPlan.source)
         : [];
       if (accountPlan.required) {
         cleanupSignal.throwIfAborted();
@@ -1049,7 +997,6 @@ const restoreFailedReconfiguration$ = command(
           ...restoredAutomationAccountFields(
             accountProjection,
             args.persisted.previous,
-            restorePatch.eventConfig,
           ),
           enabled: args.persisted.previous.enabled,
           officialIntendedEnabled:
@@ -1935,13 +1882,7 @@ const finalizeAutomationStructureTransition$ = command(
         signal.throwIfAborted();
       }
       const accountRows = accountPlan.required
-        ? await tx
-            .select(accountPlan.columns)
-            .from(accountPlan.source)
-            .leftJoin(connectorCatalog, accountPlan.catalogJoin)
-            .leftJoin(connectorCatalogEntries, accountPlan.entryJoin)
-            .leftJoin(connectors, accountPlan.connectionJoin)
-            .leftJoin(variables, accountPlan.variableJoin)
+        ? await tx.select(accountPlan.columns).from(accountPlan.source)
         : [];
       if (accountPlan.required) {
         signal.throwIfAborted();
@@ -3427,6 +3368,69 @@ const persistDiscardedMaterialization$ = command(
     });
   },
 );
+function discardedMaterializationDeleteStatement(
+  args: DormantMaterializationOwnershipArgs,
+  updatedAt: Date,
+) {
+  const automation = alias(workflowAutomations, "discarded_automation");
+  const identity = alias(
+    officialWorkflowAutomationIdentities,
+    "discarded_identity",
+  );
+  // JSON serialization loses negative zero; strict JavaScript comparison did
+  // not match it to the zero read back from either persisted JSONB field.
+  const bindingsComparable = !args.bindings.some((binding) => {
+    return Object.is(binding.value, -0);
+  });
+  const ownedConditions = [
+    isNull(identity.automationId),
+    eq(identity.retainedAppliedFingerprint, args.fingerprint),
+    eq(identity.retainedIntendedEnabled, args.intendedEnabled),
+    eq(identity.retainedParameterBindings, [...args.bindings]),
+    eq(automation.orgId, args.orgId),
+    eq(automation.ownerUserId, args.userId),
+    eq(automation.workflowId, args.workflowId),
+    eq(automation.officialBlueprintKey, args.blueprintKey),
+    eq(automation.officialAppliedFingerprint, args.fingerprint),
+    eq(automation.officialIntendedEnabled, args.intendedEnabled),
+    eq(automation.officialParameterBindings, [...args.bindings]),
+    eq(automation.enabled, false),
+    eq(automation.officialReconciliationStatus, "failed"),
+    eq(
+      sql`date_trunc('milliseconds', ${automation.updatedAt})`,
+      sql`${timestampWithoutTimeZone(updatedAt)}::timestamp`,
+    ),
+    eq(identity.state, "failed"),
+    sql`${bindingsComparable}`,
+  ];
+  const ownedFailedMaterialization = sql`(${sql.join(ownedConditions, sql` and `)})`;
+  const identityScope = sql`(${eq(officialWorkflowAutomationIdentities.id, args.automationId)} and ${eq(officialWorkflowAutomationIdentities.workflowId, args.workflowId)} and ${eq(officialWorkflowAutomationIdentities.blueprintKey, args.blueprintKey)})`;
+  // Each LIMIT consumes the preceding owner even when this selection is empty.
+  // Retain the existing catalog -> automation -> identity locking order.
+  return sql`WITH accepted_catalog_fence AS MATERIALIZED (
+      ${acceptedCatalogLockStatement()}
+    ), locked_discard_automation AS MATERIALIZED (
+      SELECT ${workflowAutomations}.* FROM ${workflowAutomations}
+      WHERE ${eq(workflowAutomations.id, args.automationId)}
+      LIMIT (SELECT CASE WHEN ${count()} >= 0 THEN 1 ELSE 0 END FROM accepted_catalog_fence)
+      FOR UPDATE
+    ), locked_discard_identity AS MATERIALIZED (
+      SELECT ${officialWorkflowAutomationIdentities}.* FROM ${officialWorkflowAutomationIdentities}
+      WHERE ${identityScope}
+      LIMIT (SELECT CASE WHEN ${count()} >= 0 THEN 1 ELSE 0 END FROM locked_discard_automation)
+      FOR UPDATE
+    ), discarded_materialization AS (
+      DELETE FROM ${workflowAutomations}
+      USING locked_discard_automation AS discarded_automation,
+        locked_discard_identity AS discarded_identity
+      WHERE ${eq(workflowAutomations.id, automation.id)}
+        AND ${ownedFailedMaterialization}
+      RETURNING ${workflowAutomations.id}
+    ) SELECT EXISTS (SELECT 1 FROM discarded_materialization) AS deleted
+      FROM (SELECT ${count()} AS owner_count FROM locked_discard_identity) consumed_identity
+      WHERE owner_count >= 0`;
+}
+
 const discardDormantMaterialization$ = command(
   async (
     { set },
@@ -3450,54 +3454,21 @@ const discardDormantMaterialization$ = command(
     if (!watch.ok || !watch.value) {
       return false;
     }
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0210; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
-      await tx.execute(acceptedCatalogLockStatement());
-      const [materializationAutomation] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, args.automationId))
-        .for("update")
-        .limit(1);
-      const [materializationIdentity] = await tx
-        .select()
-        .from(officialWorkflowAutomationIdentities)
-        .where(
-          and(
-            eq(officialWorkflowAutomationIdentities.id, args.automationId),
-            eq(
-              officialWorkflowAutomationIdentities.workflowId,
-              args.workflowId,
-            ),
-            eq(
-              officialWorkflowAutomationIdentities.blueprintKey,
-              args.blueprintKey,
-            ),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      const rows = dormantMaterializationRows(
-        materializationAutomation,
-        materializationIdentity,
-        args,
+    const [result] = parseRawRows(
+      z.object({ deleted: z.boolean() }),
+      await db.execute(
+        discardedMaterializationDeleteStatement(
+          args,
+          persisted.current.updatedAt,
+        ),
+      ),
+    );
+    if (!result) {
+      throw new Error(
+        "Official Workflow materialization discard returned no row",
       );
-      if (
-        !rows ||
-        rows.automation.enabled ||
-        rows.automation.officialReconciliationStatus !== "failed" ||
-        rows.automation.updatedAt.getTime() !==
-          persisted.current.updatedAt.getTime() ||
-        rows.identity.state !== "failed"
-      ) {
-        return false;
-      }
-      await tx
-        .delete(workflowAutomations)
-        .where(eq(workflowAutomations.id, rows.automation.id));
-      return true;
-    });
+    }
+    return result.deleted;
   },
 );
 

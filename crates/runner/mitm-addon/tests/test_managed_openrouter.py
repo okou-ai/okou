@@ -8,7 +8,7 @@ from tests.managed_openrouter_helpers import PRESET, model_config, payload, requ
 
 
 @pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
-@pytest.mark.parametrize("preset", [PRESET, "@preset/memory"])
+@pytest.mark.parametrize("preset", [PRESET, "@preset/another-captured-route"])
 def test_preserves_captured_preset_and_original_body(real_flow, dialect, preset):
     body = payload(dialect, preset)
     body["tools"] = [

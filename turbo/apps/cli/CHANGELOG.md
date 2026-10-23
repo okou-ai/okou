@@ -1,5 +1,27 @@
 # Changelog
 
+## [10.0.1](https://github.com/okou-ai/okou/compare/cli-v10.0.0...cli-v10.0.1) (2026-10-23)
+
+
+### Refactoring
+
+* remove legacy job command alias ([#42569](https://github.com/okou-ai/okou/issues/42569)) ([ae62417](https://github.com/okou-ai/okou/commit/ae6241774c2095d22ada2dc048c4a8f6649516a1))
+* retire stripe invoice-paid automation runtime ([#42572](https://github.com/okou-ai/okou/issues/42572)) ([190cdfb](https://github.com/okou-ai/okou/commit/190cdfba6440b50469117758156616447d707b81))
+
+
+### Performance Improvements
+
+* download authorized files directly from providers ([#42546](https://github.com/okou-ai/okou/issues/42546)) ([1b0a44c](https://github.com/okou-ai/okou/commit/1b0a44c01821d2825c8022560b08b70c0f41130b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.1.0
+    * @okouai/core bumped to 8.783.0
+    * @okouai/pi-agent-runtime bumped to 1.50.61
+
 ## [10.0.0](https://github.com/okou-ai/okou/compare/cli-v9.410.0...cli-v10.0.0) (2026-10-23)
 
 

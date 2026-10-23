@@ -109,10 +109,6 @@ case "${1:-}" in
       [ "${MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a" ]; then
       [ "${MOCK_PI_MEMORY_RETIRED_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "77357abdb29ce96b2caf9ee679299602757844dc" ]; then
-      [ "${MOCK_PI_MEMORY_LUNA_ROUTING_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "39d60bba6aa3a317948d653b4c1d09781719b466" ]; then
-      [ "${MOCK_PI_MEMORY_STORAGE_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "a635ec3afa20cdb5df9c8125afe6cec24ef53e16" ]; then
       [ "${MOCK_PI_OPENROUTER_VERSIONED_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "b6919718b6d856dfa3a7c500b6e899dd3fde7674" ]; then
@@ -139,8 +135,6 @@ case "${1:-}" in
       [ "${MOCK_AGENT_INSTRUCTIONS_API_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "da0dc9cd1b21ecdd91200fb1cad8600ee5fdfd29" ]; then
       [ "${MOCK_AGENT_INSTRUCTIONS_RUNNER_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "4242424242424242424242424242424242424242" ]; then
-      [ "${MOCK_PI_MEMORY_INPUT_REVISION_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1414141414141414141414141414141414141414" ]; then
       [ "${MOCK_BROWSER_SESSION_MUTATIONS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5858585858585858585858585858585858585858" ]; then
@@ -260,8 +254,6 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
     elif [[ "$*" == *pi-memory-retired* ]]; then
       printf '%s\n' "${MOCK_PI_MEMORY_RETIRED_COMMIT-6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a}"
-    elif [[ "$*" == *pi-memory-phase2-input-revision.ts* ]]; then
-      printf '%s\n' "${MOCK_PI_MEMORY_INPUT_REVISION_WRITER_COMMIT-4242424242424242424242424242424242424242}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
       printf '%s\n' "${MOCK_BROWSER_SESSION_MUTATIONS_COMMIT-1414141414141414141414141414141414141414}"
     elif [[ "$*" == *hosted-site-url-routing* ]]; then
@@ -463,8 +455,7 @@ grep -Fxq "git merge-base --is-ancestor e01702c7d762b5d2a76d557db77ccaf19c4f95c8
 grep -Fxq "git merge-base --is-ancestor 625c4607ccdcd2d46a5c7227f61419928035e13f bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "${tmp_dir}/boundaries.log" || fail "retained Runner artifact must contain the pair-free disk telemetry writer"
 grep -Fxq "git merge-base --is-ancestor 5757575757575757575757575757575757575757 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "eligible API artifact must satisfy the canonical VNC producer floor"
 grep -Fxq "git merge-base --is-ancestor 52525252525252525252525252525252525252ab ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Workflow namespace preparation floor"
-grep -Fxq "git merge-base --is-ancestor 77357abdb29ce96b2caf9ee679299602757844dc ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must select Luna for memory"
-grep -Fxq "git merge-base --is-ancestor 39d60bba6aa3a317948d653b4c1d09781719b466 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must omit Pi memory compatibility storage"
+grep -Fxq "git merge-base --is-ancestor 6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must satisfy the Pi memory retirement floor"
 grep -Fxq "git merge-base --is-ancestor 4558c9fac46ce1a96a25745b477b32b70dab7ae6 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft child-only writer floor"
 grep -Fxq "git merge-base --is-ancestor 7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft owner key floor"
 grep -Fxq "git merge-base --is-ancestor 2222222222222222222222222222222222222222 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the public_brand retirement floor"
@@ -646,15 +637,6 @@ grep -Fq 'a635ec3afa20cdb5df9c8125afe6cec24ef53e16' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/pi-openrouter-versioned-writer-floor.output" ] || fail "unversioned Pi writer must not publish rollback outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "unversioned Pi writer must fail before artifact or host access"
-fi
-
-: >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates Pi memory Luna routing" \
-  run_resolver "${tmp_dir}/pi-memory-luna-floor.output" MOCK_PI_MEMORY_LUNA_ROUTING_FLOOR_VALID=0
-grep -Fq '77357abdb29ce96b2caf9ee679299602757844dc' "${tmp_dir}/failure.err" || fail "memory route retirement rejection must identify the Luna routing commit"
-[ ! -s "${tmp_dir}/pi-memory-luna-floor.output" ] || fail "DeepSeek-selecting API must not publish rollback outputs"
-if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "DeepSeek-selecting API must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"
@@ -906,15 +888,6 @@ grep -Fq '3737373737373737373737373737373737373737' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/model-route-state-floor.output" ] || fail "pre-retirement API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "model route state floor must fail before artifact or host access"
-fi
-
-: >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates Pi memory storage-independent writers" \
-  run_resolver "${tmp_dir}/pi-memory-storage-writer-floor.output" MOCK_PI_MEMORY_STORAGE_WRITER_FLOOR_VALID=0
-grep -Fq '39d60bba6aa3a317948d653b4c1d09781719b466' "${tmp_dir}/failure.err" || fail "Pi memory writer rejection must identify the preparation commit"
-[ ! -s "${tmp_dir}/pi-memory-storage-writer-floor.output" ] || fail "compatibility-storage writer must not publish outputs"
-if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "Pi memory writer floor must fail before artifact or host access"
 fi
 
 for drop_commit in "" invalid; do
@@ -1222,20 +1195,6 @@ assert_failure "Rollback target predates the Chat Event V8 migration" \
 [ ! -s "${tmp_dir}/chat-event-v8-floor.output" ] || fail "pre-V8 API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Chat Event V8 floor must fail before artifact or host access"
-fi
-
-for preparation_commit in "" invalid; do
-  : >"${tmp_dir}/boundaries.log"
-  assert_failure "Cannot resolve the merged Pi memory input-revision writer" \
-    run_resolver "${tmp_dir}/memory-input-revision-writer-history.output" "MOCK_PI_MEMORY_INPUT_REVISION_WRITER_COMMIT=${preparation_commit}"
-  [ ! -s "${tmp_dir}/memory-input-revision-writer-history.output" ] || fail "invalid memory input-revision writer history must not publish outputs"
-done
-: >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates Pi memory input-revision writer preparation" \
-  run_resolver "${tmp_dir}/memory-input-revision-writer-floor.output" MOCK_PI_MEMORY_INPUT_REVISION_WRITER_FLOOR_VALID=0
-[ ! -s "${tmp_dir}/memory-input-revision-writer-floor.output" ] || fail "unprepared memory input-revision writer must not publish outputs"
-if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "memory input-revision writer floor must fail before artifact or host access"
 fi
 
 for mutation_commit in "" invalid; do
@@ -1745,9 +1704,8 @@ ruby - \
   raise "deploy-app must not upload per-file App artifacts" if artifact_upload_run.include?("aws s3 cp turbo/apps/platform/dist")
 RUBY
 
-if run_resolver "${tmp_dir}/pi-memory-retired-floor.output" MOCK_PI_MEMORY_RETIRED_FLOOR_VALID=0; then
-  fail "APIs using retired Pi memory tables must not be rollback targets"
-fi
+assert_failure "Rollback target predates Pi memory storage retirement" \
+  run_resolver "${tmp_dir}/pi-memory-retired-floor.output" MOCK_PI_MEMORY_RETIRED_FLOOR_VALID=0
 [ ! -s "${tmp_dir}/pi-memory-retired-floor.output" ] || fail "incompatible Pi memory API must not publish rollback outputs"
 
 echo "resolve-production-rollback-target tests passed"

@@ -95,7 +95,7 @@ function subscriptionCreated(customerId: string) {
 beforeEach(() => {
   const stripe = new ActualStripeSDK("sk_test_metadata_binding");
   mockOptionalEnv("STRIPE_WEBHOOK_SECRET", secret);
-  context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+  context.mocks.stripe.webhooks.constructEventAsync.mockImplementation(
     (body, signature, webhookSecret) => {
       return stripe.webhooks.constructEvent(
         String(body),

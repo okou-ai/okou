@@ -56,9 +56,15 @@ pub(crate) enum FileWriteSubmitError {
     Disconnected,
 }
 
+enum FileWriteInput {
+    File,
+    Stream(crate::file_stream::Input),
+    Files,
+    PrivateFiles,
+}
+
 struct FileWriteRequest {
-    stream: Option<crate::file_stream::Input>,
-    kind: FileWriteKind,
+    input: FileWriteInput,
     seq: u32,
     payload: Vec<u8>,
     operation_guard: OperationGuard,
@@ -133,8 +139,9 @@ impl FileWriteWorker {
         operation_guard: OperationGuard,
         admission: SingleActivePermit,
     ) -> Result<(), FileWriteSubmitError> {
-        let stream = if matches!(kind, FileWriteKind::Stream) {
-            Some(
+        let input = match kind {
+            FileWriteKind::File => FileWriteInput::File,
+            FileWriteKind::Stream => FileWriteInput::Stream(
                 self.streams
                     .begin(
                         seq,
@@ -145,13 +152,12 @@ impl FileWriteWorker {
                             .encoded_size,
                     )
                     .map_err(|_| FileWriteSubmitError::Disconnected)?,
-            )
-        } else {
-            None
+            ),
+            FileWriteKind::Files => FileWriteInput::Files,
+            FileWriteKind::PrivateFiles => FileWriteInput::PrivateFiles,
         };
         let request = FileWriteRequest {
-            stream,
-            kind,
+            input,
             seq,
             payload: payload.to_vec(),
             operation_guard,
@@ -197,8 +203,7 @@ fn handle_request(
     streams: &crate::file_stream::Streams,
 ) -> io::Result<()> {
     let FileWriteRequest {
-        stream,
-        kind,
+        input,
         seq,
         payload,
         operation_guard,
@@ -206,20 +211,16 @@ fn handle_request(
         progress,
     } = request;
 
-    let response = match kind {
-        FileWriteKind::Stream => crate::handlers::handle_file_stream(
-            seq,
-            &payload,
-            stream.ok_or_else(|| io::Error::other("missing file stream input"))?,
-            connection_cancel,
-            &progress,
-        ),
-        FileWriteKind::File => decode_write_file_message(&payload)
+    let response = match input {
+        FileWriteInput::Stream(stream) => {
+            crate::handlers::handle_file_stream(seq, &payload, stream, connection_cancel, &progress)
+        }
+        FileWriteInput::File => decode_write_file_message(&payload)
             .map_err(protocol_error)
             .and_then(|decoded| {
                 handle_decoded_write_file_message(seq, decoded, connection_cancel, &progress)
             }),
-        FileWriteKind::Files => decode_write_files_message(&payload)
+        FileWriteInput::Files => decode_write_files_message(&payload)
             .map_err(protocol_error)
             .and_then(|decoded| {
                 handle_decoded_write_files_message(
@@ -230,7 +231,7 @@ fn handle_request(
                     &progress,
                 )
             }),
-        FileWriteKind::PrivateFiles => decode_write_files_message(&payload)
+        FileWriteInput::PrivateFiles => decode_write_files_message(&payload)
             .map_err(protocol_error)
             .and_then(|decoded| {
                 handle_decoded_write_files_message(seq, decoded, true, connection_cancel, &progress)

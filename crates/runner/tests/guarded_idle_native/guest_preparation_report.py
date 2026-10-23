@@ -242,7 +242,7 @@ def validate(directory, contract):
             or str(expected_path) != home["path"] or not re.fullmatch(r"[0-9a-f]{32}",home.get("filesystem_uuid", ""))
             or not re.fullmatch(r"[0-9a-f]{64}",home.get("superblock_sha256", ""))):
         raise ValueError("fixed original home identity missing")
-    exact(home, {"path":str(expected_path),"bytes":16384*1024**2,"filesystem_uuid":home["filesystem_uuid"],
+    exact(home, {"path":str(expected_path),"bytes":report.NATIVE_HOME_BYTES,"filesystem_uuid":home["filesystem_uuid"],
                  "superblock_sha256":home["superblock_sha256"]},"fixed home profile changed")
     error = refused.get("error")
     expected_error = contract.field("normal operations are not available on this connection",

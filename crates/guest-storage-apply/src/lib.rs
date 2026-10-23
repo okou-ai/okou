@@ -59,6 +59,7 @@ mod http_failure;
 pub mod input_telemetry;
 mod instructions;
 pub use instructions::apply_agent_instructions;
+pub use instructions::apply_workflow_skill;
 mod manifest;
 mod path;
 mod plan;

@@ -85,7 +85,7 @@ pub mod runners {
             /// Generated decode-path schemas under `runners::jobs::by_id::claim`.
             pub mod claim {
                 const NODES: &[crate::decode_path::DecodePathNode] = &[
-                    crate::decode_path::DecodePathNode::Object(76, 36),
+                    crate::decode_path::DecodePathNode::Object(84, 36),
                     crate::decode_path::DecodePathNode::Leaf,
                     crate::decode_path::DecodePathNode::Leaf,
                     crate::decode_path::DecodePathNode::Leaf,
@@ -210,7 +210,7 @@ pub mod runners {
                     crate::decode_path::DecodePathNode::Sequence(123),
                     crate::decode_path::DecodePathNode::Leaf,
                     crate::decode_path::DecodePathNode::Leaf,
-                    crate::decode_path::DecodePathNode::Object(75, 1),
+                    crate::decode_path::DecodePathNode::Object(82, 2),
                     crate::decode_path::DecodePathNode::Sequence(127),
                     crate::decode_path::DecodePathNode::Object(66, 9),
                     crate::decode_path::DecodePathNode::Leaf,
@@ -223,9 +223,18 @@ pub mod runners {
                     crate::decode_path::DecodePathNode::Leaf,
                     crate::decode_path::DecodePathNode::Leaf,
                     crate::decode_path::DecodePathNode::Sequence(138),
+                    crate::decode_path::DecodePathNode::Object(78, 4),
+                    crate::decode_path::DecodePathNode::Object(75, 3),
                     crate::decode_path::DecodePathNode::Leaf,
                     crate::decode_path::DecodePathNode::Leaf,
-                    crate::decode_path::DecodePathNode::DynamicMap(141),
+                    crate::decode_path::DecodePathNode::Leaf,
+                    crate::decode_path::DecodePathNode::Leaf,
+                    crate::decode_path::DecodePathNode::Leaf,
+                    crate::decode_path::DecodePathNode::Leaf,
+                    crate::decode_path::DecodePathNode::Sequence(147),
+                    crate::decode_path::DecodePathNode::Leaf,
+                    crate::decode_path::DecodePathNode::Leaf,
+                    crate::decode_path::DecodePathNode::DynamicMap(150),
                     crate::decode_path::DecodePathNode::Leaf,
                 ];
 
@@ -305,7 +314,15 @@ pub mod runners {
                     crate::decode_path::DecodePathField::new("storageId", 134),
                     crate::decode_path::DecodePathField::new("versionId", 135),
                     crate::decode_path::DecodePathField::new("writeback", 136),
+                    crate::decode_path::DecodePathField::new("archiveSha256", 140),
+                    crate::decode_path::DecodePathField::new("archiveSize", 141),
+                    crate::decode_path::DecodePathField::new("archiveUrl", 142),
+                    crate::decode_path::DecodePathField::new("attachments", 139),
+                    crate::decode_path::DecodePathField::new("mountPath", 143),
+                    crate::decode_path::DecodePathField::new("skillMd", 144),
+                    crate::decode_path::DecodePathField::new("workflowId", 145),
                     crate::decode_path::DecodePathField::new("storageMounts", 126),
+                    crate::decode_path::DecodePathField::new("workflowSkills", 137),
                     crate::decode_path::DecodePathField::new("agentInstructions", 1),
                     crate::decode_path::DecodePathField::new("apiStartTime", 2),
                     crate::decode_path::DecodePathField::new("appendSystemPrompt", 3),
@@ -342,9 +359,9 @@ pub mod runners {
                     crate::decode_path::DecodePathField::new("secretValues", 122),
                     crate::decode_path::DecodePathField::new("settings", 124),
                     crate::decode_path::DecodePathField::new("storageManifest", 125),
-                    crate::decode_path::DecodePathField::new("tools", 137),
-                    crate::decode_path::DecodePathField::new("userTimezone", 139),
-                    crate::decode_path::DecodePathField::new("vars", 140),
+                    crate::decode_path::DecodePathField::new("tools", 146),
+                    crate::decode_path::DecodePathField::new("userTimezone", 148),
+                    crate::decode_path::DecodePathField::new("vars", 149),
                 ];
 
                 /// Decode-path schema for the runner job claim response.

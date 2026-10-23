@@ -1,27 +1,13 @@
 use crate::error::{RunnerError, RunnerResult};
 
-/// A platform-defined profile specifying VM resources.
-pub struct ProfileDef {
-    /// Number of vCPUs for VMs using this profile.
-    pub vcpu: u32,
-    /// Memory in MiB for VMs using this profile.
-    pub memory_mb: u32,
-    /// Rootfs disk size in MiB for VMs using this profile.
-    pub rootfs_disk_mb: u32,
-    /// Home disk size in MiB for VMs using this profile.
-    pub home_disk_mb: u32,
-}
+use runner_types::profile::DEFAULT_PROFILE_DEF;
+pub use runner_types::profile::ProfileDef;
 
 pub use runner_types::profile_name::DEFAULT_PROFILE;
 
 /// Return the profile definition for a given profile name.
 pub fn get(name: &str) -> RunnerResult<&'static ProfileDef> {
-    static DEFAULT: ProfileDef = ProfileDef {
-        vcpu: 2,
-        memory_mb: 4096,
-        rootfs_disk_mb: 12288,
-        home_disk_mb: 24576,
-    };
+    static DEFAULT: ProfileDef = DEFAULT_PROFILE_DEF;
 
     if name == DEFAULT_PROFILE {
         Ok(&DEFAULT)

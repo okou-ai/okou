@@ -38,7 +38,7 @@ def home(value, sandbox_id, filesystem_uuid=None):
     actual_uuid = block[104:120].hex()
     if filesystem_uuid is not None and actual_uuid != filesystem_uuid:
         raise ValueError("actual returned home generation changed")
-    startup.exact(value, {"path": str(path), "bytes": 16384*1024**2, "ext4_magic": "53ef",
+    startup.exact(value, {"path": str(path), "bytes": report.NATIVE_HOME_BYTES, "ext4_magic": "53ef",
         "filesystem_uuid": actual_uuid, "superblock_hex": block_hex,
         "superblock_sha256": hashlib.sha256(block).hexdigest()}, "actual returned home bytes/hash changed")
     return path, actual_uuid

@@ -227,7 +227,7 @@ export async function purchaseUsagePacks(
       },
     },
   };
-  context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+  context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(event);
   await accept(
     setupApp({ context, routes: webhooksStripeRoutes })(
       webhookStripeContract,

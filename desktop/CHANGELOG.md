@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.5](https://github.com/okou-ai/okou/compare/desktop-v0.54.4...desktop-v0.54.5) (2026-10-23)
+
+
+### Bug Fixes
+
+* **desktop:** retain helper exit and timeout diagnostics ([#42573](https://github.com/okou-ai/okou/issues/42573)) ([ed0953d](https://github.com/okou-ai/okou/commit/ed0953d8649fbbf436cf30ad45c75489233ffee2))
+
 ## [0.54.4](https://github.com/okou-ai/okou/compare/desktop-v0.54.3...desktop-v0.54.4) (2026-10-22)
 
 

@@ -6,7 +6,6 @@ export const WORKFLOW_AUTOMATION_ACCOUNT_CONNECTOR_SLUGS = [
   "google-forms",
   "google-meet",
   "notion",
-  "stripe",
 ] as const;
 
 export type WorkflowAutomationAccountConnectorSlug =
@@ -30,7 +29,6 @@ const accountConnectorByEventType = {
   "notion-child-page-created": "notion",
   "notion-database-item-created": "notion",
   "notion-page-content-updated": "notion",
-  "stripe-invoice-paid": "stripe",
   "webhook-received": null,
 } satisfies Record<
   WorkflowAutomationEventType,

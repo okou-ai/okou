@@ -1053,47 +1053,28 @@ export async function listUndeliveredStripePaidInvoices(
   }
 }
 
-type StripeWebhookEventConstructor = (
+export async function constructStripeConnectWebhookEvent(
   rawBody: string,
   signature: string,
   secret: string,
-) => unknown;
-
-const {
-  get: getMockedStripeWebhookEventConstructor,
-  set: setMockedStripeWebhookEventConstructor,
-} = testOverride<StripeWebhookEventConstructor | undefined>(() => {
-  return undefined;
-});
-
-/**
- * Raw event for the automation-event ingress, which zod-parses the payload
- * itself rather than branching on Stripe's union.
- */
-export function constructStripeWebhookEvent(
-  rawBody: string,
-  signature: string,
-  secret: string,
-): unknown {
-  const mocked = getMockedStripeWebhookEventConstructor();
-  if (mocked) {
-    return mocked(rawBody, signature, secret);
-  }
-  return stripeSdk().webhooks.constructEvent(rawBody, signature, secret);
+): Promise<unknown> {
+  return await stripeSdk().webhooks.constructEventAsync(
+    rawBody,
+    signature,
+    secret,
+  );
 }
 
-export function mockStripeWebhookEventConstructor(
-  constructor: StripeWebhookEventConstructor,
-): void {
-  setMockedStripeWebhookEventConstructor(constructor);
-}
-
-export function constructStripeBillingWebhookEvent(
+export async function constructStripeBillingWebhookEvent(
   rawBody: string,
   signature: string,
   secret: string,
-): StripeWebhookEvent {
-  const event = stripeSdk().webhooks.constructEvent(rawBody, signature, secret);
+): Promise<StripeWebhookEvent> {
+  const event = await stripeSdk().webhooks.constructEventAsync(
+    rawBody,
+    signature,
+    secret,
+  );
   const envelope = { id: event.id, type: event.type, created: event.created };
 
   switch (event.type) {

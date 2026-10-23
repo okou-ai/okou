@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.21](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.20...runner-supervisor-v0.20.21) (2026-10-23)
+
+
+### Refactoring
+
+* **workflows:** prepare attachments outside storage ([#42563](https://github.com/okou-ai/okou/issues/42563)) ([c2d0e48](https://github.com/okou-ai/okou/commit/c2d0e488e938512e55dce8ab199046a7f16d7b1c))
+
 ## [0.20.20](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.19...runner-supervisor-v0.20.20) (2026-10-23)
 
 

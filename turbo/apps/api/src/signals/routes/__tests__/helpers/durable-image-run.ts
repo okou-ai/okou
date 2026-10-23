@@ -1,12 +1,9 @@
 import { builtInGenerationResponseSchema } from "@okouai/api-contracts/contracts/built-in-generation";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv } from "../../../../lib/env";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
-import { cronReconcileImageGenerationsRoutes } from "../../cron-reconcile-image-generations";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { createPublicImageMember } from "./public-image-member";
 import { createImageIoTestApp, tokenRequest } from "./public-image-run";
 import { createRouteMocks } from "./route-test";
@@ -16,31 +13,28 @@ const cronHeaders = Object.freeze({
   authorization: "Bearer image-reconciliation-secret",
 });
 
-export async function createDurableImageFixture(context: TestContext) {
+export async function createDurableImageFixture(
+  context: TestContext,
+  { isolatePg = false }: { readonly isolatePg?: boolean } = {},
+) {
   mockEnv("CRON_SECRET", "image-reconciliation-secret");
   mockEnv("OPENAI_API_KEY", "test-openai-key");
   context.mocks.ably.createTokenRequest.mockResolvedValue(tokenRequest);
   context.mocks.ably.publish.mockResolvedValue(undefined);
   context.mocks.s3.send.mockResolvedValue({});
-  // Recovery and compaction scenarios scan global queues, not just this actor.
-  await setupApp({
+  // Select isolation before member setup for cases that scan the global queue.
+  const preferences = await setupApp({
     context,
-    routes: cronReconcileImageGenerationsRoutes,
-    isolatePg: true,
+    routes: userModelPreferenceRoutes,
+    isolatePg,
   });
   const actor = await createPublicImageMember(context, {
     credits: 10_000,
-    ownsFeatures: true,
   });
   await actor.run(async () => {
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.DurableOpenAiImageGeneration]: true,
-    });
     createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
     await accept(
-      setupApp({ context, routes: userModelPreferenceRoutes })(
-        userModelPreferenceContract,
-      ).update({
+      preferences(userModelPreferenceContract).update({
         headers,
         body: {
           selectedModel: null,

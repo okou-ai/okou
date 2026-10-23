@@ -117,6 +117,7 @@
 4 kms-production-exit-check-test.sh
 4 neon-connection-string-ssl-test.sh
 4 provision-runner-kvm-test.sh
+4 publish-desktop-manifest-r2-test.sh
 4 prune-runner-idle-test.sh
 4 reconcile-runner-binary-groups-test.sh
 4 resolve-app-preview-alias-test.sh

@@ -124,7 +124,7 @@ impl Probe {
                 vcpu: 2,
                 memory_mb: 4096,
                 rootfs_hash: rootfs_hash.into(),
-                home_disk_mb: 16384,
+                home_disk_mb: fixture::HOME_DISK_MB,
             },
         )]);
         let active = ActiveRuns::new(Arc::new(Notify::new()));

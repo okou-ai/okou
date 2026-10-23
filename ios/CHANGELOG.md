@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.8](https://github.com/okou-ai/okou/compare/ios-v0.18.7...ios-v0.18.8) (2026-10-23)
+
+
+### CI
+
+* restore writable ios cache refills ([#42597](https://github.com/okou-ai/okou/issues/42597)) ([c22124b](https://github.com/okou-ai/okou/commit/c22124bb5ba19d353ff6d87a9c64d3b95cff5b55))
+
+
+### Performance Improvements
+
+* download authorized files directly from providers ([#42546](https://github.com/okou-ai/okou/issues/42546)) ([1b0a44c](https://github.com/okou-ai/okou/commit/1b0a44c01821d2825c8022560b08b70c0f41130b))
+
 ## [0.18.7](https://github.com/okou-ai/okou/compare/ios-v0.18.6...ios-v0.18.7) (2026-10-23)
 
 

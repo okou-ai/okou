@@ -1,15 +1,4 @@
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { builtinConnectorCredentialValuesFromRows } from "./builtin-connector-credential-runtime.service";
-import {
-  stripeAccountAutomationsReadPlan,
-  stripeAccountAutomationSelectionPlan,
-  stripeAccountCatalogReadPlan,
-  stripeAccountConnectionReadPlan,
-  stripeAccountReadiness,
-  stripeAccountLiveModeReadPlan,
-  stripeAccountProjectionReadiness,
-  stripeAccountProjectionUpdate,
-} from "./stripe-invoice-paid-workflow-automation.service";
 import { memberRewardWalletQuery } from "./get-started-member-reward";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -828,62 +817,6 @@ const completeClaimedSession$ = command(
         const [currentSession] = await tx.select().from(sessionQuery);
         signal.throwIfAborted();
         return lostDeviceAuthClaimResponse(currentSession, session);
-      }
-      const projection = stripeAccountAutomationsReadPlan(prepared);
-      const automations =
-        prepared.runtimeMethod.connectorSlug === "stripe"
-          ? await tx.select().from(projection.query)
-          : [];
-      if (prepared.runtimeMethod.connectorSlug === "stripe") {
-        signal.throwIfAborted();
-      }
-      for (const automation of automations) {
-        const item = stripeAccountAutomationSelectionPlan(prepared, automation);
-        let [selected] = await tx.select().from(item.selected);
-        if (!selected) {
-          [selected] = await tx.select().from(item.defaultAccount);
-        }
-        signal.throwIfAborted();
-        const connectorId = selected?.connectorId ?? null;
-        let readiness =
-          connectorId === null ? undefined : projection.cache.get(connectorId);
-        if (connectorId !== null && readiness === undefined) {
-          const catalog = stripeAccountCatalogReadPlan();
-          const rows = await tx
-            .select(catalog.columns)
-            .from(catalog.from)
-            .leftJoin(catalog.joinTable, catalog.join)
-            .where(catalog.where);
-          const account = stripeAccountConnectionReadPlan(
-            prepared,
-            connectorId,
-            rows,
-          );
-          signal.throwIfAborted();
-          const [connection] = await tx.select().from(account.query);
-          const ready = stripeAccountReadiness(account.input, connection);
-          signal.throwIfAborted();
-          let values: ReadonlyMap<string, string> = new Map();
-          if (ready.kind === "ok") {
-            const liveMode = stripeAccountLiveModeReadPlan(ready.connection);
-            values = await builtinConnectorCredentialValuesFromRows(
-              liveMode.input,
-              await tx.select().from(liveMode.query),
-            );
-            signal.throwIfAborted();
-          }
-          readiness = stripeAccountProjectionReadiness(ready, values);
-          projection.cache.set(connectorId, readiness);
-        }
-        const update = stripeAccountProjectionUpdate(
-          automation,
-          connectorId,
-          readiness,
-        );
-        if (update !== null) {
-          await tx.update(projection.from).set(update).where(item.target);
-        }
-        signal.throwIfAborted();
       }
       const completed = deviceAuthCompletion(args, connectionResult);
       const [completedSession] = await tx

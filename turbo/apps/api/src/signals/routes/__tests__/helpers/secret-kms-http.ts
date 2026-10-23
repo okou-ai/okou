@@ -5,6 +5,7 @@ import { onTestFinished } from "vitest";
 import { z } from "zod";
 
 import { stubTestAwsKmsEnvironment } from "../../../../__tests__/env-stub";
+import { mockOptionalEnv } from "../../../../lib/env";
 import {
   getSecretKmsClient,
   setSecretKmsClientForTests,
@@ -38,11 +39,15 @@ function kmsResponse(body: Record<string, string>, status = 200) {
   });
 }
 
-/** Register before the actor so its requests and teardown retain this boundary. */
-export function mockSecretKmsHttp(): void {
+function registerSecretKmsHttp(configSource: "process" | "application"): void {
   const previousClient = getSecretKmsClient();
   const previousHandlers = server.listHandlers();
-  const restoreEnvironment = stubTestAwsKmsEnvironment();
+  const restoreEnvironment = stubTestAwsKmsEnvironment(configSource);
+  if (configSource === "application") {
+    mockOptionalEnv("AWS_REGION", "us-west-2");
+    mockOptionalEnv("AWS_ACCESS_KEY_ID", "kms-http-test-access-key");
+    mockOptionalEnv("AWS_SECRET_ACCESS_KEY", "kms-http-test-secret-key");
+  }
   const dataKeys = new Map<string, string>();
   onTestFinished(() => {
     server.resetHandlers(...previousHandlers);
@@ -96,4 +101,13 @@ export function mockSecretKmsHttp(): void {
       return kmsResponse({ __type: "UnknownOperationException" }, 400);
     }),
   );
+}
+
+/** Register before the actor so its requests and teardown retain this boundary. */
+export function mockSecretKmsHttp(): void {
+  registerSecretKmsHttp("process");
+}
+
+export function mockSecretKmsApplicationEnvHttp(): void {
+  registerSecretKmsHttp("application");
 }

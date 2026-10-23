@@ -718,12 +718,12 @@ export function createRunsApi(context: TestContext) {
             data: [],
           });
         }
-        context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(
+        context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
           invoicePaidEvent,
         );
         restoreWebhook = () => {
-          context.mocks.stripe.webhooks.constructEvent.mockReset();
-          context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+          context.mocks.stripe.webhooks.constructEventAsync.mockReset();
+          context.mocks.stripe.webhooks.constructEventAsync.mockImplementation(
             (received) => {
               if (String(received) !== payload) {
                 throw new Error(

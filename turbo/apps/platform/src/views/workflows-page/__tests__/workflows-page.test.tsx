@@ -224,10 +224,6 @@ type WorkflowNotionPageContentUpdatedAutomationSummary = Extract<
   WorkflowAutomationSummary,
   { kind: "event"; eventType: "notion-page-content-updated" }
 >;
-type WorkflowStripeInvoicePaidAutomationSummary = Extract<
-  WorkflowAutomationSummary,
-  { kind: "event"; eventType: "stripe-invoice-paid" }
->;
 
 function workflowAutomations(): WorkflowAutomationSummary[] {
   return [weekdayWorkflowAutomation()];
@@ -547,38 +543,6 @@ function webhookWorkflowAutomation(): WorkflowWebhookAutomationSummary {
       "https://api.okou.test/api/webhooks/workflow-automations/whk_test",
     secretLastFour: "abcd",
     lastReceivedAt: null,
-  };
-}
-
-function stripeInvoicePaidWorkflowAutomation(
-  overrides: Partial<WorkflowStripeInvoicePaidAutomationSummary> = {},
-): WorkflowStripeInvoicePaidAutomationSummary {
-  return {
-    id: "workflow-automation-stripe-invoice-paid",
-    kind: "event",
-    eventType: "stripe-invoice-paid",
-    eventConfig: {
-      provider: "stripe",
-      event: "invoice_paid",
-      connectorId: "00000000-0000-4000-a000-000000000411",
-      stripeAccountId: "acct_mock_stripe_invoice_paid",
-      mode: "live",
-    },
-    schedule: null,
-    scheduleSummary: null,
-    ownerUserId: CURRENT_USER_ID,
-    enabled: true,
-    chatThreadId: "thread_stripe_invoice_paid",
-    nextRunAt: null,
-    lastRunAt: null,
-    health: {
-      lastMatchingEventReceivedAt: null,
-      lastDeliveryStatus: null,
-      lastDeliveryStatusAt: null,
-      warning: null,
-    },
-    ...overrides,
-    official: overrides.official ?? null,
   };
 }
 
@@ -1027,24 +991,6 @@ function mockDeleteWorkflow(
 function mockConfiguredEventAutomation(
   body: Extract<WorkflowAutomationCreateRequest, { readonly kind: "event" }>,
 ): WorkflowAutomationSummary {
-  if (body.eventType === "stripe-invoice-paid") {
-    return {
-      ...gmailWorkflowAutomation(),
-      eventType: "stripe-invoice-paid",
-      eventConfig: {
-        ...body.eventConfig,
-        connectorId: "00000000-0000-4000-a000-000000000411",
-        stripeAccountId: "acct_mock_stripe_invoice_paid",
-        mode: "live",
-      },
-      health: {
-        lastMatchingEventReceivedAt: null,
-        lastDeliveryStatus: null,
-        lastDeliveryStatusAt: null,
-        warning: null,
-      },
-    };
-  }
   return {
     ...gmailWorkflowAutomation(),
     eventType: body.eventType,
@@ -1188,7 +1134,6 @@ function mockCreateWorkflowAutomation(
     if (
       body.eventConfig.provider === "github" ||
       body.eventConfig.provider === "google-forms" ||
-      body.eventConfig.provider === "stripe" ||
       body.eventConfig.provider === "chat"
     ) {
       return respond(201, mockConfiguredEventAutomation(body));
@@ -1642,31 +1587,6 @@ test("Keep Official Workflows out of the Workflows list", async () => {
   });
   expect(listed).not.toContain("Open Sales Research");
   expect(listed).not.toContain("Open Morning Brief");
-});
-
-test("Identify existing Stripe automations in the workflow list", async () => {
-  mockWorkflowApis([
-    {
-      ...salesResearch(),
-      automations: [stripeInvoicePaidWorkflowAutomation()],
-    },
-  ]);
-
-  await setupPage({
-    context,
-    path: "/workflows",
-    featureSwitches: {
-      [FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations]: false,
-    },
-  });
-
-  const stripePill = await waitFor(() => {
-    return buttonByText(/^Stripe$/u);
-  });
-  click(stripePill);
-  await expect(
-    screen.findByText("When a matching Stripe invoice is paid"),
-  ).resolves.toBeInTheDocument();
 });
 
 test("Filter workflows by automation and visibility", async () => {
@@ -3155,160 +3075,6 @@ test("Create a Notion database-item automation", async () => {
       },
     });
   });
-});
-
-test("Keep existing Stripe automations manageable when creation is unavailable", async () => {
-  const workflow = {
-    ...salesResearch(),
-    automations: [
-      stripeInvoicePaidWorkflowAutomation(),
-      stripeInvoicePaidWorkflowAutomation({
-        id: "workflow-automation-stripe-invoice-paid-failed",
-        eventConfig: {
-          provider: "stripe",
-          event: "invoice_paid",
-          billingReasons: ["manual", "subscription_cycle"],
-          connectorId: "00000000-0000-4000-a000-000000000412",
-          stripeAccountId: "acct_failed_delivery",
-          mode: "live",
-        },
-        health: {
-          lastMatchingEventReceivedAt: "2026-08-07T08:00:00.000Z",
-          lastDeliveryStatus: "failed",
-          lastDeliveryStatusAt: "2026-08-07T08:01:00.000Z",
-          warning: "delivery_failed",
-        },
-      }),
-    ],
-  };
-  mockWorkflowApis([workflow]);
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {
-    [FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations]: false,
-  });
-
-  await waitFor(() => {
-    expect(screen.getAllByText("Stripe invoice paid")).toHaveLength(2);
-  });
-  expect(
-    screen.getByText(
-      "Stripe account acct_mock_stripe_invoice_paid · Live mode · Any billing reason",
-    ),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByText(
-      "Stripe account acct_failed_delivery · Live mode · Manual, Subscription cycle",
-    ),
-  ).toBeInTheDocument();
-  expect(screen.getByText("No matching events yet")).toBeInTheDocument();
-  expect(screen.getByText("No deliveries yet")).toBeInTheDocument();
-  expect(screen.getByText(/Failed ·/u)).toBeInTheDocument();
-  expect(screen.getByRole("alert")).toHaveTextContent(
-    "The latest terminal delivery failed. Check workflow activity before trying again.",
-  );
-  expect(
-    screen.getAllByText(
-      "The Stripe account and billing reasons are fixed. To change them, delete this automation and recreate it.",
-    ),
-  ).toHaveLength(2);
-  expect(screen.queryByText("Webhook URL hidden")).not.toBeInTheDocument();
-  expect(screen.queryByText("Edit automation")).not.toBeInTheDocument();
-
-  click(await screen.findByText("Add automation"));
-  const picker = await screen.findByRole("dialog");
-  click(buttonByText("Integrations", picker));
-  expect(
-    within(picker).queryByText("Stripe invoice paid"),
-  ).not.toBeInTheDocument();
-  fireEvent.keyDown(document, { key: "Escape" });
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  const stripeSwitches = screen.getAllByRole("switch", {
-    name: "Disable Stripe invoice paid",
-  });
-  const stripeSwitch = stripeSwitches[0];
-  if (!stripeSwitch) {
-    throw new Error("Stripe automation switch not found");
-  }
-  click(stripeSwitch);
-  await waitFor(() => {
-    expect(stripeSwitch).not.toBeChecked();
-  });
-  click(buttonByText("More actions"));
-  expect(menuItemByText("Delete automation")).toBeInTheDocument();
-  expect(screen.queryByText("Edit automation")).not.toBeInTheDocument();
-});
-
-test("Create a Stripe invoice-paid automation for selected billing reasons", async () => {
-  const user = userEvent.setup();
-  const createBodies: WorkflowAutomationCreateRequest[] = [];
-  const workflow = salesResearch();
-  mockWorkflowApis([workflow]);
-  context.mocks.api(workflowAutomationsContract.create, ({ body, respond }) => {
-    createBodies.push(body);
-    if (body.kind !== "event" || body.eventType !== "stripe-invoice-paid") {
-      return respond(400, {
-        error: { code: "BAD_REQUEST", message: "Expected Stripe" },
-      });
-    }
-    const automation = stripeInvoicePaidWorkflowAutomation({
-      eventConfig: {
-        ...body.eventConfig,
-        connectorId: "00000000-0000-4000-a000-000000000411",
-        stripeAccountId: "acct_created_live",
-        mode: "live",
-      },
-    });
-    workflow.automations.push(automation);
-    return respond(201, automation);
-  });
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {
-    [FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations]: true,
-  });
-
-  click(await screen.findByText("Add automation"));
-  await screen.findByRole("dialog");
-  pickAutomation("Integrations", /^Stripe invoice paid/u);
-  const form = await screen.findByRole("form", {
-    name: "Add Stripe invoice paid automation",
-  });
-  expect(within(form).getAllByRole("checkbox")).toHaveLength(9);
-  expect(within(form).queryByRole("combobox")).not.toBeInTheDocument();
-  expect(within(form).queryByRole("textbox")).not.toBeInTheDocument();
-  const manual = within(form).getByRole("checkbox", { name: "Manual" });
-  const subscriptionCycle = within(form).getByRole("checkbox", {
-    name: "Subscription cycle",
-  });
-  await user.click(manual);
-  await user.click(subscriptionCycle);
-  expect(manual).toBeChecked();
-  expect(subscriptionCycle).toBeChecked();
-  fireEvent.submit(form);
-
-  await waitFor(() => {
-    expect(createBodies.at(-1)).toStrictEqual({
-      kind: "event",
-      eventType: "stripe-invoice-paid",
-      eventConfig: {
-        provider: "stripe",
-        event: "invoice_paid",
-        billingReasons: ["manual", "subscription_cycle"],
-      },
-    });
-  });
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("form", {
-        name: "Add Stripe invoice paid automation",
-      }),
-    ).not.toBeInTheDocument();
-  });
-  await expect(
-    screen.findByText(
-      "Stripe account acct_created_live · Live mode · Manual, Subscription cycle",
-    ),
-  ).resolves.toBeInTheDocument();
 });
 
 test("Offer a Team upgrade to a Pro workspace administrator", async () => {

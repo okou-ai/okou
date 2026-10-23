@@ -22,8 +22,11 @@ use shell_quote::quote_shell_arg;
 
 use super::TestResult;
 
-pub const PROFILE: &str = "vm0/default";
-pub const IMAGE_BYTES: u64 = 16384 * 1024 * 1024;
+pub use runner_types::profile::DEFAULT_PROFILE_DEF as PROFILE_DEFINITION;
+
+pub const PROFILE: &str = runner_types::profile_name::DEFAULT_PROFILE;
+pub const HOME_DISK_MB: u32 = PROFILE_DEFINITION.home_disk_mb;
+pub const IMAGE_BYTES: u64 = HOME_DISK_MB as u64 * 1024 * 1024;
 pub const PAYLOAD_BYTES: usize = 64 * 1024;
 const HOME: &str = api_contracts::generated::constants::runners::paths::CANONICAL_GUEST_HOME_DIR;
 
@@ -167,8 +170,8 @@ pub async fn sandbox_config(id: SandboxId, home: &mut HomeImageLease) -> TestRes
     Ok(SandboxConfig {
         id,
         resources: ResourceLimits {
-            cpu_count: 2,
-            memory_mb: 4096,
+            cpu_count: PROFILE_DEFINITION.vcpu,
+            memory_mb: PROFILE_DEFINITION.memory_mb,
         },
         device_rate_limits: None,
         home_drive: home.home_drive_config().await?,

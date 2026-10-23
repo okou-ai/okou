@@ -28,6 +28,7 @@ import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { createRouteMocks } from "./helpers/route-test";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { webhooksGoogleWorkspaceEventsRoutes } from "../webhooks-google-workspace-events";
@@ -91,6 +92,7 @@ interface GoogleMeetProviderAccountRecorder {
 }
 
 interface GoogleMeetFixture {
+  readonly volumeObjects: Map<string, Buffer>;
   readonly actor: OrgActor;
   readonly agentId: string;
   readonly workflowId: string;
@@ -465,13 +467,14 @@ async function setupFixture(
   const agent = await workflows.createAgent(orgActor, {
     displayName: "Google Meet automation agent",
   });
+  const { objects: volumeObjects } = installWorkflowVolumeS3Fixture(context);
   const workflowId = await workflows.createWorkflow(orgActor, {
     agentId: agent.agentId,
     name: `google-meet-transcript-${randomUUID()}`,
   });
   const connectorId = await connectGoogleMeet(orgActor, provider);
-  context.mocks.s3.send.mockResolvedValue({});
   return {
+    volumeObjects,
     actor: orgActor,
     agentId: agent.agentId,
     workflowId,
@@ -891,6 +894,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
     const targetAgent = await workflows.createAgent(fixture.actor, {
       displayName: "Google Meet copy target agent",
     });
+    installWorkflowVolumeS3Fixture(context, fixture.volumeObjects);
     const copied = await accept(
       workflowDetailClient().copy({
         headers: authHeaders(fixture.actor),

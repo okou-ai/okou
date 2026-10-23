@@ -43,12 +43,10 @@ import {
 } from "./workflow-schedule-queue.service";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { connectors } from "@okouai/db/schema/connector";
-import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { now, nowDate } from "../../lib/time";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { queuedChatThreadEnqueuePlan } from "./queued-chat-thread.service";
@@ -78,19 +76,6 @@ import {
   type NotionQueueSource,
   NotionAutomationSourceChangedError,
 } from "./workflow-notion-queue.service";
-import {
-  stripeSourceCredentialAccess,
-  stripeQueueAdmissionPlan,
-  type StripeQueueSource,
-  StripeDeliveryTargetChangedError,
-} from "./workflow-stripe-queue.service";
-import {
-  ORG_SENTINEL_USER_ID,
-  userFeatureSwitchOverridesFromRows,
-} from "./feature-switch-scope";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 
 export const publishEnqueuedWorkflowInput$ = command(
   async (
@@ -273,79 +258,6 @@ const prepareNotionQueueSource$ = command(
   },
 );
 
-const prepareStripeQueueSource$ = command(
-  async (
-    { get },
-    args: {
-      readonly source: StripeQueueSource;
-      readonly snapshot: ConnectorRuntimeSelection;
-      readonly chatThreadId: string;
-    },
-    signal: AbortSignal,
-  ): Promise<WorkflowSourceAdmissionPlan> => {
-    const database = get(db$);
-    const { source } = args;
-    const [connector] = await database
-      .select()
-      .from(connectors)
-      .where(eq(connectors.id, source.connectorId))
-      .limit(1);
-    signal.throwIfAborted();
-    const [consumer] = await database
-      .select()
-      .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, source.automationId))
-      .limit(1);
-    signal.throwIfAborted();
-    const access = stripeSourceCredentialAccess(
-      source,
-      consumer,
-      connector,
-      args.snapshot,
-    );
-    if (!consumer || !connector) {
-      throw new StripeDeliveryTargetChangedError(
-        "automation_target_unavailable",
-      );
-    }
-    const overrides = await database
-      .select({
-        userId: userFeatureSwitches.userId,
-        switches: userFeatureSwitches.switches,
-      })
-      .from(userFeatureSwitches)
-      .where(
-        and(
-          eq(userFeatureSwitches.orgId, source.orgId),
-          inArray(userFeatureSwitches.userId, [
-            source.userId,
-            ORG_SENTINEL_USER_ID,
-          ]),
-        ),
-      );
-    signal.throwIfAborted();
-    // Brief feature-switch staleness is accepted. Execution authority and
-    // the delivery revision are still checked by this owner's SQL transaction.
-    if (
-      !isFeatureEnabled(FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations, {
-        orgId: source.orgId,
-        userId: source.userId,
-        overrides: userFeatureSwitchOverridesFromRows(overrides, source.userId),
-      })
-    ) {
-      throw new StripeDeliveryTargetChangedError("feature_disabled");
-    }
-    return stripeQueueAdmissionPlan({
-      source,
-      chatThreadId: args.chatThreadId,
-      automation: consumer,
-      connector,
-      access,
-      currentTime: nowDate(),
-    });
-  },
-);
-
 const prepareWorkflowQueueSource$ = command(
   async (
     { set },
@@ -405,17 +317,6 @@ const prepareWorkflowQueueSource$ = command(
       }
       case "notion": {
         return await set(prepareNotionQueueSource$, plan.source, signal);
-      }
-      case "stripe": {
-        return await set(
-          prepareStripeQueueSource$,
-          {
-            source: plan.source,
-            snapshot: plan.snapshot,
-            chatThreadId: args.due.chatThreadId,
-          },
-          signal,
-        );
       }
     }
   },

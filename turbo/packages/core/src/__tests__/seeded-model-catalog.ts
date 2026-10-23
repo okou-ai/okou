@@ -2,8 +2,8 @@ import type { PiCatalogSource } from "../pi-execution";
 
 /**
  * Active rows of `run_model_catalog` and every `model_routes` row remaining
- * after memory route retirement (Auto and internal Luna on `openrouter-codex`
- * plus personal Claude Code and Codex subscriptions), so admission tests read
+ * after memory route retirement (Auto on `openrouter-codex` plus personal
+ * Claude Code and Codex subscriptions), so admission tests read
  * the same catalog data the API serves.
  */
 export const SEEDED_MODEL_CATALOG: PiCatalogSource = {
@@ -53,16 +53,6 @@ export const SEEDED_MODEL_CATALOG: PiCatalogSource = {
       enabled: true,
       priority: 0,
       serviceTiers: [],
-    },
-    {
-      model: "gpt-6-luna",
-      providerType: "built-in",
-      concreteProviderType: "openrouter-codex",
-      subscriptionType: null,
-      upstreamModel: "openai/gpt-6-luna",
-      enabled: true,
-      priority: 1,
-      serviceTiers: ["priority"],
     },
     {
       model: "gpt-6-astra",

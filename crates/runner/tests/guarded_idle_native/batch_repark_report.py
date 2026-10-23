@@ -9,6 +9,7 @@ import uuid
 
 import batch_aba_report as batch
 import pressure_report as pressure
+import report
 from startup_report import exact
 
 PREFIX = "NATIVE_BATCH_REPARK_WITNESS "
@@ -86,7 +87,7 @@ def validate(directory):
               "original_sandbox_id":initial["sandbox_id"],
               "original_backing_generation":steps[0]["backing_generation"],"reuse_key":initial["reuse_key"],
               "cycles":cycles,"revision":revision,"same_insertion":False,"restored_original":True,
-              "image_size_bytes":16384*1024**2,"payload_bytes":65536,"allocated":[2,4096,1],
+              "image_size_bytes":report.NATIVE_HOME_BYTES,"payload_bytes":65536,"allocated":[2,4096,1],
               "provider_awaits_outside_pool_status":True}, "physical rollback changed its restored original")
     return {**result,"format":"native-batch-repark-report-v1","native_batch_repark_complete":True,
             "batch_aba_scope":"physical speculative rollback then logical insertion race and new guarded recovery",

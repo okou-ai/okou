@@ -41,6 +41,11 @@ function createMailSelectionSignals(
   result$: State<MailResult | null>,
 ) {
   const selected$ = state<ReadonlySet<string>>(new Set());
+  const filteredDrafts$ = computed(async (get) => {
+    return (await get(filtered$)).filter((mail) => {
+      return mail.status === "draft";
+    });
+  });
   const selectedDrafts$ = computed(async (get) => {
     const mails = get(mails$);
     const selected = get(selected$);
@@ -63,7 +68,7 @@ function createMailSelectionSignals(
   });
   const selectAll$ = command(
     async ({ get, set }, checked: boolean, signal: AbortSignal) => {
-      const mails = await get(filtered$);
+      const mails = await get(filteredDrafts$);
       signal.throwIfAborted();
       if (get(pending$) !== null) {
         return;
@@ -80,7 +85,7 @@ function createMailSelectionSignals(
       set(result$, null);
     },
   );
-  return { selected$, selectedDrafts$, select$, selectAll$ };
+  return { filteredDrafts$, selected$, selectedDrafts$, select$, selectAll$ };
 }
 
 function createMailBulkSignals(

@@ -73,7 +73,7 @@ impl Probe {
         let mut block = [0; 1024];
         file.seek(SeekFrom::Start(1024))?;
         file.read_exact(&mut block)?;
-        if bytes != 16384 * 1024 * 1024 || block[56..58] != [0x53, 0xef] {
+        if bytes != fixture::IMAGE_BYTES || block[56..58] != [0x53, 0xef] {
             return Err(io::Error::other(
                 "returned actual home is not original sized ext4",
             ));

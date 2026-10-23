@@ -2824,6 +2824,17 @@ async function main(): Promise<void> {
     await validatePermanentArtifactThreadCatalog(dbUrl1);
     await validatePiMemoryStage1Cost(dbUrl1);
     await validatePiMemoryRetirement(dbUrl1);
+    console.log("=== Workflow attachment migration CLI ===");
+    console.log(
+      execCommand(
+        "node --import tsx scripts/migrations/024-workflow-attachments/test-backfill.ts",
+        {
+          cwd: PACKAGE_DIR,
+          env: { DATABASE_URL: dbUrl1 },
+        },
+      ),
+    );
+
     await validatePermanentUsagePackPendingSnapshotState(dbUrl1);
     await validatePermanentAgentRunMetadataState(dbUrl1);
     await validatePermanentBuiltInModelKeyState(dbUrl1);

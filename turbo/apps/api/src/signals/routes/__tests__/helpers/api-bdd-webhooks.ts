@@ -245,7 +245,7 @@ export function createWebhookCallbackApi(context: TestContext) {
 
     /**
      * Posts one signed Stripe event through the public webhook route. The
-     * `constructEvent` trust boundary is mocked once per call so later posts
+     * `constructEventAsync` trust boundary is mocked once per call so later posts
      * never leak a stale event. Raw request (not contract client) so processing 500s
      * stay assertable.
      */
@@ -257,7 +257,7 @@ export function createWebhookCallbackApi(context: TestContext) {
       const bodyText = serializedContractBody(event);
       if (run) {
         let consumed = false;
-        context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+        context.mocks.stripe.webhooks.constructEventAsync.mockImplementation(
           (payload) => {
             if (consumed || String(payload) !== bodyText) {
               throw new Error(
@@ -269,7 +269,9 @@ export function createWebhookCallbackApi(context: TestContext) {
           },
         );
       } else {
-        context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+        context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+          event,
+        );
       }
       const execute = async (): Promise<StripeWebhookResponse> => {
         const response = await createApp({
@@ -293,11 +295,13 @@ export function createWebhookCallbackApi(context: TestContext) {
     },
 
     acceptNextStripeWebhookEvent(event: unknown): void {
-      context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+      context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+        event,
+      );
     },
 
     rejectNextStripeWebhookSignature(): void {
-      context.mocks.stripe.webhooks.constructEvent.mockImplementationOnce(
+      context.mocks.stripe.webhooks.constructEventAsync.mockImplementationOnce(
         () => {
           throw new Error("Invalid Stripe webhook signature");
         },

@@ -1,8 +1,4 @@
-import {
-  AST_NODE_TYPES,
-  type TSESLint,
-  type TSESTree,
-} from "@typescript-eslint/utils";
+import { AST_NODE_TYPES, type TSESTree } from "@typescript-eslint/utils";
 
 import {
   importReference,
@@ -86,11 +82,6 @@ const GLOBAL_SWEEP_BOUNDARIES: readonly GlobalSweepBoundary[] = [
     path: "/api/cron/execute-workflow-automations",
   },
 ];
-
-const STRIPE_DUE_OPERATOR_SUFFIX =
-  "/turbo/apps/api/src/signals/routes/__tests__/stripe-automation-events.test.ts";
-const STRIPE_DUE_OPERATOR_TITLE =
-  "skips a queued Stripe delivery after its owner disables the automation";
 
 const CONTRACT_HARNESS_SUFFIX =
   "/src/signals/routes/__tests__/global-sweep-contracts.test.ts";
@@ -212,163 +203,6 @@ function isApprovedHarnessReference(
   const path = staticString(pathArgument);
   return (
     UNAUTHORIZED_HELPERS.has(helper.importedName) && path === boundary.path
-  );
-}
-
-function isUnaliasedValueImport(
-  sourceCode: TSESLint.SourceCode,
-  node: TSESTree.Node | undefined,
-  name: string,
-  source: string,
-): boolean {
-  if (node?.type !== AST_NODE_TYPES.Identifier || node.name !== name) {
-    return false;
-  }
-  const binding = importReference(sourceCode, node);
-  return (
-    binding?.importedName === name &&
-    binding.source === source &&
-    !binding.isTypeOnly
-  );
-}
-
-function hasStripeDueTitle(call: TSESTree.CallExpression): boolean {
-  const title = call.arguments[0];
-  return (
-    title?.type === AST_NODE_TYPES.Literal &&
-    title.value === STRIPE_DUE_OPERATOR_TITLE
-  );
-}
-
-function isStripeDueCase(
-  call: TSESTree.CallExpression,
-  sourceCode: TSESLint.SourceCode,
-): boolean {
-  const callback = call.arguments[1];
-  return (
-    isUnaliasedValueImport(sourceCode, call.callee, "it", "vitest") &&
-    call.arguments.length === 2 &&
-    hasStripeDueTitle(call) &&
-    callback?.type === AST_NODE_TYPES.ArrowFunctionExpression &&
-    callback.async &&
-    callback.body.type === AST_NODE_TYPES.BlockStatement
-  );
-}
-
-function isStripeDueOptions(
-  options: TSESTree.ObjectExpression,
-  route: TSESTree.Identifier,
-): boolean {
-  if (
-    options.properties.length !== 3 ||
-    !options.properties.every((entry) => {
-      return (
-        entry.type === AST_NODE_TYPES.Property &&
-        entry.kind === "init" &&
-        !entry.computed &&
-        !entry.method &&
-        ["context", "routes", "isolatePg"].includes(propertyName(entry) ?? "")
-      );
-    })
-  ) {
-    return false;
-  }
-  const properties = options.properties.filter(
-    (entry): entry is TSESTree.Property => {
-      return entry.type === AST_NODE_TYPES.Property;
-    },
-  );
-  return (
-    new Set(properties.map(propertyName)).size === 3 &&
-    properties.some((entry) => {
-      return propertyName(entry) === "routes" && entry.value === route;
-    }) &&
-    properties.some((entry) => {
-      return (
-        propertyName(entry) === "context" &&
-        entry.value.type === AST_NODE_TYPES.Identifier
-      );
-    }) &&
-    properties.some((entry) => {
-      return (
-        propertyName(entry) === "isolatePg" &&
-        entry.value.type === AST_NODE_TYPES.Literal &&
-        entry.value.value === true
-      );
-    })
-  );
-}
-
-function stripeDueMountCase(
-  call: TSESTree.CallExpression,
-  sourceCode: TSESLint.SourceCode,
-): TSESTree.CallExpression | null {
-  const awaited = call.parent;
-  const client = awaited.parent;
-  if (
-    !isUnaliasedValueImport(
-      sourceCode,
-      call.callee,
-      "setupApp",
-      "../../../__tests__/test-helpers",
-    ) ||
-    awaited.type !== AST_NODE_TYPES.AwaitExpression ||
-    client?.type !== AST_NODE_TYPES.CallExpression ||
-    client.callee !== awaited ||
-    client.arguments.length !== 1 ||
-    !isUnaliasedValueImport(
-      sourceCode,
-      client.arguments[0],
-      "cronExecuteWorkflowAutomationsContract",
-      "@okouai/api-contracts/contracts/cron",
-    )
-  ) {
-    return null;
-  }
-  const binding = client.parent;
-  const statement = binding.parent;
-  if (
-    binding.type !== AST_NODE_TYPES.VariableDeclarator ||
-    binding.init !== client ||
-    binding.id.type !== AST_NODE_TYPES.Identifier ||
-    statement?.type !== AST_NODE_TYPES.VariableDeclaration ||
-    statement.kind !== "const" ||
-    statement.declarations.length !== 1 ||
-    statement.parent?.type !== AST_NODE_TYPES.BlockStatement
-  ) {
-    return null;
-  }
-  const body = statement.parent;
-  const callback = body.parent;
-  const test = callback.parent;
-  if (
-    callback.type !== AST_NODE_TYPES.ArrowFunctionExpression ||
-    callback.body !== body ||
-    test?.type !== AST_NODE_TYPES.CallExpression ||
-    test.arguments[1] !== callback ||
-    !isStripeDueCase(test, sourceCode)
-  ) {
-    return null;
-  }
-  return test;
-}
-
-function isStripeDueReference(
-  route: TSESTree.Identifier,
-  sourceCode: TSESLint.SourceCode,
-): boolean {
-  const property = route.parent;
-  const options = property.parent;
-  const call = options?.parent;
-  return (
-    property.type === AST_NODE_TYPES.Property &&
-    property.value === route &&
-    options?.type === AST_NODE_TYPES.ObjectExpression &&
-    call?.type === AST_NODE_TYPES.CallExpression &&
-    call.arguments.length === 1 &&
-    call.arguments[0] === options &&
-    isStripeDueOptions(options, route) &&
-    stripeDueMountCase(call, sourceCode) !== null
   );
 }
 
@@ -1066,16 +900,9 @@ export const noGlobalSweepTestRoutes = createRule({
           // Approved operator boundaries use isolated databases and construct
           // business state through the normal public lifecycle.
           if (
-            ((filename.endsWith(COMPUTER_USE_RETENTION_SUFFIX) &&
-              node.source.value === "../cron-computer-use-screenshot-cleanup" &&
-              boundary.exportName ===
-                "cronComputerUseScreenshotCleanupRoutes") ||
-              (filename.endsWith(STRIPE_DUE_OPERATOR_SUFFIX) &&
-                node.importKind !== "type" &&
-                specifier.importKind !== "type" &&
-                node.source.value === "../cron-execute-workflow-automations" &&
-                boundary.exportName ===
-                  "cronExecuteWorkflowAutomationsRoutes")) &&
+            filename.endsWith(COMPUTER_USE_RETENTION_SUFFIX) &&
+            node.source.value === "../cron-computer-use-screenshot-cleanup" &&
+            boundary.exportName === "cronComputerUseScreenshotCleanupRoutes" &&
             specifier.local.name === boundary.exportName
           ) {
             systemBoundaryBindings.push({ boundary, specifier });
@@ -1166,22 +993,6 @@ export const noGlobalSweepTestRoutes = createRule({
           }
         }
         for (const { boundary, specifier } of systemBoundaryBindings) {
-          if (filename.endsWith(STRIPE_DUE_OPERATOR_SUFFIX)) {
-            const references = context.sourceCode
-              .getDeclaredVariables(specifier)
-              .flatMap((variable) => variable.references);
-            const reference = references[0];
-            if (
-              references.length !== 1 ||
-              !reference?.isRead() ||
-              reference.identifier.type !== AST_NODE_TYPES.Identifier ||
-              calls.filter(hasStripeDueTitle).length !== 1 ||
-              !isStripeDueReference(reference.identifier, context.sourceCode)
-            ) {
-              report(specifier, boundary);
-            }
-            continue;
-          }
           for (const variable of context.sourceCode.getDeclaredVariables(
             specifier,
           )) {

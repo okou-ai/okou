@@ -1,6 +1,8 @@
 import { command } from "ccstate";
 import { repairVolumeIndexSql } from "./storage-volume-publication-sql";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
+import { workflows } from "@okouai/db/schema/workflow";
+import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { writeDb$ } from "../external/db";
@@ -33,6 +35,11 @@ interface UploadedVolume {
 }
 type UploadVolumeServerSideInput = PrepareVolumeServerSideInput & {
   readonly publicationFence?: StoragePublicationFence;
+  readonly workflowAttachments?: {
+    readonly workflowId: string;
+    readonly orgId: string;
+    readonly attachments: WorkflowAttachments;
+  };
 };
 class StalePublicationFenceError extends Error {}
 export function isStalePublicationFenceError(error: unknown): boolean {
@@ -73,6 +80,7 @@ function storageHeadValues(volume: PreparedServerSideVolume) {
 interface PreparedVolumePublication {
   readonly volume: PreparedServerSideVolume;
   readonly publicationFence?: StoragePublicationFence;
+  readonly workflowAttachments?: UploadVolumeServerSideInput["workflowAttachments"];
 }
 
 /** Prepared objects are immutable inputs. The transaction never leaves this command. */
@@ -85,6 +93,17 @@ const commitPreparedVolumeUpload$ = command(
     const db = set(writeDb$);
     const version = args.volume.version;
     const fence = args.publicationFence;
+    if (
+      args.workflowAttachments &&
+      (!fence ||
+        fence.publicationKey !==
+          `workflow:${args.workflowAttachments.workflowId}` ||
+        fence.scope.orgId !== args.workflowAttachments.orgId)
+    ) {
+      throw new Error(
+        "Workflow attachment publication requires its exact Storage fence",
+      );
+    }
     const projection =
       args.volume.piResourceIndex?.kind === "prepared"
         ? piResourceProjectionValues(
@@ -95,6 +114,31 @@ const commitPreparedVolumeUpload$ = command(
         : undefined;
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0253; new non-billing transactions are prohibited.
     await db.transaction(async (tx) => {
+      // Match deletion's Workflow -> Storage -> generation order. The final
+      // existing fence rejects superseded publications and rolls this back.
+      if (args.workflowAttachments) {
+        if (!fence) {
+          throw new Error("Missing Workflow publication fence");
+        }
+        const descriptor = args.workflowAttachments;
+        const [updated] = await tx
+          .update(workflows)
+          .set({ attachments: descriptor.attachments })
+          .where(
+            and(
+              eq(workflows.id, descriptor.workflowId),
+              eq(workflows.orgId, descriptor.orgId),
+              eq(workflows.agentId, fence.scope.agentId),
+              isNull(workflows.officialDefinitionName),
+            ),
+          )
+          .returning({ id: workflows.id });
+        if (!updated) {
+          throw new StalePublicationFenceError(
+            "Workflow was removed before attachment publication",
+          );
+        }
+      }
       // The version insert's FK check keeps the Storage parent from being
       // deleted, and the HEAD UPDATE below then owns that row implicitly.
       await tx
@@ -177,7 +221,11 @@ export const uploadVolumeServerSide$ = command(
     const volume = await set(prepareVolumeServerSide$, args, signal);
     await set(
       commitPreparedVolumeUpload$,
-      { volume, publicationFence: args.publicationFence },
+      {
+        volume,
+        publicationFence: args.publicationFence,
+        workflowAttachments: args.workflowAttachments,
+      },
       signal,
     );
     signal.throwIfAborted();
