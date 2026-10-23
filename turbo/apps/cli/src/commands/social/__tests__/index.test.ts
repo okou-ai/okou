@@ -87,8 +87,6 @@ function completedDownload() {
     downloadId: "6bdc3449-41ef-4624-a525-45bce09c67f0",
     status: "completed",
     platform: "youtube",
-    quality: "720p",
-    format: "mp4",
     requested: { quality: "720p", format: "mp4" },
     delivered: { quality: null, format: null },
     maxDuration: 600,
@@ -97,15 +95,14 @@ function completedDownload() {
       durationSeconds: 61,
       fileSizeMB: 2,
       creditsCost: 2,
+      quality: "720p",
+      format: "mp4",
       title: "Example",
     },
     billing: { quantity: 2, creditsCharged: 6 },
-    artifact: {
-      id: "e5932cce-3ec7-45ef-a96d-2e4c5dcb4cd4",
-      url: "https://artifacts.example/video.mp4",
-      filename: "example.mp4",
-      contentType: "video/mp4",
-      sizeBytes: 2048,
+    download: {
+      url: "https://media.example/video.mp4?signature=temporary-access",
+      expiresAt: "2026-08-27T01:00:00.000Z",
     },
     error: null,
     createdAt: "2026-08-27T00:00:00.000Z",
@@ -113,22 +110,28 @@ function completedDownload() {
   } satisfies SocialKitDownloadResponse;
 }
 
-function failedDownload(status: "artifact_failed" | "provider_failed") {
-  const billed = status === "artifact_failed";
+function failedDownload(status: "link_failed" | "provider_failed") {
+  const billed = status === "link_failed";
   return {
     ...completedDownload(),
     status,
     provider: billed
-      ? { durationSeconds: 61, fileSizeMB: 2, creditsCost: 2 }
+      ? {
+          durationSeconds: 61,
+          fileSizeMB: 2,
+          creditsCost: 2,
+          quality: "720p",
+          format: "mp4",
+        }
       : null,
     billing: billed ? { quantity: 2, creditsCharged: 6 } : null,
-    artifact: null,
+    download: null,
     error: {
       code: billed
-        ? "ARTIFACT_MATERIALIZATION_FAILED"
+        ? "SOCIAL_DOWNLOAD_LINK_UNAVAILABLE"
         : "SOCIALKIT_DOWNLOAD_FAILED",
       message: billed
-        ? "The artifact could not be materialized"
+        ? "The temporary download link is unavailable"
         : "SocialKit could not prepare the download",
       retryable: billed,
       billed,
@@ -1517,7 +1520,7 @@ describe("okou data social command", () => {
     );
   });
 
-  it("discovers a lost task ID and retrieves its artifact through existing resume", async () => {
+  it("discovers a lost task ID and retrieves its link through existing resume", async () => {
     const task = completedDownload();
     server.use(
       http.get("http://localhost:3000/api/social/downloads", ({ request }) => {
@@ -1556,7 +1559,7 @@ describe("okou data social command", () => {
           request: { url: "https://youtu.be/video123" },
           requested: task.requested,
           delivered: task.delivered,
-          artifact: task.artifact,
+          download: task.download,
         },
       ],
       nextCommand: null,
@@ -1571,11 +1574,11 @@ describe("okou data social command", () => {
       task.downloadId,
       "--json",
     ]);
-    expect(output()).toContain(task.artifact.url);
+    expect(output()).toContain(task.download.url);
   });
 
   it("lists only one requested page and preserves filter and cursor in continuation guidance", async () => {
-    const task = failedDownload("artifact_failed");
+    const task = failedDownload("link_failed");
     const cursor = "fc168c40-dd27-4e4a-b588-628bac29070b";
     server.use(
       http.get("http://localhost:3000/api/social/downloads", ({ request }) => {
@@ -1617,7 +1620,7 @@ describe("okou data social command", () => {
     ]);
     expect(JSON.parse(output()) as unknown).toMatchObject({
       downloads: [
-        { status: "artifact_failed", error: { billed: true, retryable: true } },
+        { status: "link_failed", error: { billed: true, retryable: true } },
       ],
       nextCommand: `okou data social downloads --limit 1 --cursor ${task.downloadId} --status active --json`,
     });
@@ -4846,22 +4849,31 @@ describe("okou data social command", () => {
     });
   });
 
-  it.each([
-    "https://artifacts.example/video.mp4",
-    "https://app.okou.ai/artifacts/abcxyz1234.mp4",
-  ])(
-    "auto-detects downloads and prints a complete artifact URL for %s",
-    async (url) => {
-      vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
-      const completed = completedDownload();
-      completed.artifact.url = url;
-      const expectedUrl = url;
-      let requestBody: unknown;
+  it.each(["2026-08-27T01:00:00.000Z", null])(
+    "returns a temporary direct link with expiry %s without downloading the file",
+    async (expiresAt) => {
+      const completed = {
+        ...completedDownload(),
+        delivered: { quality: null, format: "m4a" },
+        provider: { ...completedDownload().provider, format: "m4a" },
+        download: {
+          url: "https://media.example/audio.m4a?signature=temporary-access",
+          expiresAt,
+        },
+      } satisfies SocialKitDownloadResponse;
+      let submissions = 0;
       server.use(
         http.post(
           "http://localhost:3000/api/social/downloads",
           async ({ request }) => {
-            requestBody = await request.json();
+            submissions += 1;
+            expect(await request.json()).toStrictEqual({
+              platform: "youtube",
+              url: "https://youtu.be/example",
+              maxDuration: 600,
+              quality: "720p",
+              format: "mp4",
+            });
             return HttpResponse.json(completed, { status: 202 });
           },
         ),
@@ -4871,58 +4883,87 @@ describe("okou data social command", () => {
         "node",
         "okou",
         "download",
-        "https://youtu.be/example?si=tracking",
+        "https://youtu.be/example",
         "--max-duration",
         "600",
         "--json",
       ]);
 
-      expect(requestBody).toStrictEqual({
-        platform: "youtube",
-        url: "https://youtu.be/example",
-        maxDuration: 600,
-        quality: "720p",
-        format: "mp4",
-      });
+      expect(submissions).toBe(1);
       expect(JSON.parse(output()) as unknown).toMatchObject({
         status: "complete",
-        operation: "download",
-        platform: "youtube",
-        billing: { quantity: 2, creditsCharged: 6 },
         data: {
-          status: "completed",
-          artifact: { filename: "example.mp4", url: expectedUrl },
+          download: completed.download,
+          requested: { format: "mp4" },
+          delivered: { format: "m4a" },
         },
-        inlineMarkdownLink: `[example.mp4](<${expectedUrl}>)`,
-        previewMarkdownBlock: `![example.mp4](<${expectedUrl}>)`,
-        artifactPresentationContext: expect.stringContaining(
-          "media file saved to Okou",
-        ),
+        warnings: [
+          {
+            code: "TEMPORARY_DOWNLOAD_LINK",
+            message: expect.stringContaining("without credential headers"),
+          },
+        ],
       });
-      expect(outputRequest()).toStrictEqual({
-        resume: false,
-        maxDuration: 600,
-        quality: "720p",
-        format: "mp4",
-      });
+      expect(output()).toContain("not a durable Okou artifact");
+      expect(output()).toContain("grants file access until expiry");
+      expect(output()).toContain("provider-reported, not byte-verified");
+      expect(output()).toContain(expiresAt ?? "Expiry is unknown");
     },
   );
 
-  it("creates, polls and discovers an explicit MP3 audio download", async () => {
-    const legacy = completedDownload();
+  it("preserves billed recovery when a completed job cannot refresh its link", async () => {
     const completed = {
-      ...legacy,
-      quality: "1080p",
-      format: "mp3",
+      ...completedDownload(),
+      download: null,
+      error: {
+        code: "SOCIAL_DOWNLOAD_LINK_UNAVAILABLE",
+        message:
+          "The temporary download link could not be refreshed; query this download again",
+        retryable: true,
+        billed: true,
+      },
+    } satisfies SocialKitDownloadResponse;
+    server.use(
+      http.get("http://localhost:3000/api/social/downloads/:downloadId", () => {
+        return HttpResponse.json(completed);
+      }),
+    );
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "download",
+        "--resume",
+        completed.downloadId,
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+      status: "error",
+      error: {
+        kind: "download_failed",
+        code: "SOCIAL_DOWNLOAD_LINK_UNAVAILABLE",
+        retryable: true,
+        billed: true,
+      },
+      download: { billing: completed.billing, status: "completed" },
+      recovery: {
+        downloadId: completed.downloadId,
+        resumeCommand: `okou data social download --resume ${completed.downloadId}`,
+      },
+    });
+  });
+
+  it("creates, polls and discovers an explicit MP3 audio download", async () => {
+    const base = completedDownload();
+    const completed = {
+      ...base,
       requested: { quality: "1080p", format: "mp3" },
       delivered: { quality: null, format: "mp3" },
-      provider: { ...legacy.provider, quality: "1080p", format: "mp3" },
-      artifact: {
-        ...legacy.artifact,
-        filename: "example.mp3",
-        url: "https://artifacts.example/example.mp3",
-        contentType: "audio/mpeg",
-        format: "mp3",
+      provider: { ...base.provider, quality: "1080p", format: "mp3" },
+      download: {
+        url: "https://media.example/example.mp3?signature=temporary-access",
+        expiresAt: base.download.expiresAt,
       },
     };
     let requestBody: unknown;
@@ -4938,7 +4979,7 @@ describe("okou data social command", () => {
               delivered: { quality: null, format: null },
               provider: null,
               billing: null,
-              artifact: null,
+              download: null,
               completedAt: null,
             },
             { status: 202 },
@@ -4993,11 +5034,9 @@ describe("okou data social command", () => {
       data: {
         requested: completed.requested,
         delivered: completed.delivered,
-        artifact: completed.artifact,
+        download: completed.download,
       },
       billing: { quantity: 2, creditsCharged: 6 },
-      inlineMarkdownLink:
-        "[example.mp3](<https://artifacts.example/example.mp3>)",
     });
     expect(outputRequest()).toStrictEqual({
       resume: false,
@@ -5010,10 +5049,9 @@ describe("okou data social command", () => {
     expect(JSON.parse(output()) as unknown).toMatchObject({
       downloads: [
         {
-          format: "mp3",
           requested: completed.requested,
           delivered: completed.delivered,
-          artifact: completed.artifact,
+          download: completed.download,
           resumeCommand: `okou data social download --resume ${completed.downloadId}`,
         },
       ],
@@ -5113,13 +5151,7 @@ describe("okou data social command", () => {
         requested: { quality: "720p", format: "mp4" },
         delivered: { quality: null, format: null },
       },
-      inlineMarkdownLink:
-        "[example.mp4](<https://artifacts.example/video.mp4>)",
-      previewMarkdownBlock:
-        "![example.mp4](<https://artifacts.example/video.mp4>)",
-      artifactPresentationContext: expect.stringContaining(
-        "outside code fences",
-      ),
+
       target: {
         kind: "download",
         downloadId: "6bdc3449-41ef-4624-a525-45bce09c67f0",
@@ -5140,7 +5172,6 @@ describe("okou data social command", () => {
       providerQuality: "576p",
       delivered: { quality: "576p", format: "mp4" },
       filename: "example.mp4",
-      contentType: "video/mp4",
     },
     {
       platform: "youtube",
@@ -5148,7 +5179,6 @@ describe("okou data social command", () => {
       providerQuality: "720p",
       delivered: { quality: null, format: "mp3" },
       filename: "example.mp3",
-      contentType: "audio/mpeg",
     },
     {
       platform: "youtube",
@@ -5156,7 +5186,6 @@ describe("okou data social command", () => {
       providerQuality: "720p",
       delivered: { quality: null, format: "mp3" },
       filename: "example.mp3",
-      contentType: "audio/mpeg",
     },
   ])(
     "preserves requested $requestedFormat and delivered $delivered.format metadata when resuming",
@@ -5166,26 +5195,21 @@ describe("okou data social command", () => {
       providerQuality,
       delivered,
       filename,
-      contentType,
     }) => {
-      const legacy = completedDownload();
+      const base = completedDownload();
       const response = {
-        ...legacy,
+        ...base,
         platform,
-        format: requestedFormat,
         requested: { quality: "720p", format: requestedFormat },
         delivered,
         provider: {
-          ...legacy.provider,
+          ...base.provider,
           quality: providerQuality,
           format: requestedFormat,
         },
-        artifact: {
-          ...legacy.artifact,
-          filename,
-          url: `https://artifacts.example/${filename}`,
-          contentType,
-          format: delivered.format,
+        download: {
+          url: `https://media.example/${filename}?signature=temporary-access`,
+          expiresAt: base.download.expiresAt,
         },
       };
       server.use(
@@ -5202,17 +5226,15 @@ describe("okou data social command", () => {
         "okou",
         "download",
         "--resume",
-        legacy.downloadId,
+        base.downloadId,
         "--json",
       ]);
 
       expect(JSON.parse(output()) as unknown).toMatchObject({
         data: {
-          quality: "720p",
-          format: requestedFormat,
           requested: response.requested,
           delivered,
-          artifact: { filename, contentType, format: delivered.format },
+          download: response.download,
         },
         billing: { quantity: 2, creditsCharged: 6 },
       });
@@ -5225,14 +5247,14 @@ describe("okou data social command", () => {
     },
   );
 
-  it("retries artifact materialization when resuming a download", async () => {
+  it("retries temporary link recovery when resuming a download", async () => {
     let statusRequests = 0;
     server.use(
       http.get("http://localhost:3000/api/social/downloads/:downloadId", () => {
         statusRequests += 1;
         return HttpResponse.json(
           statusRequests === 1
-            ? failedDownload("artifact_failed")
+            ? failedDownload("link_failed")
             : completedDownload(),
         );
       }),
@@ -5255,7 +5277,7 @@ describe("okou data social command", () => {
     expect(errorOutput()).toBe("");
   });
 
-  it.each(["provider_failed", "artifact_failed"] as const)(
+  it.each(["provider_failed", "link_failed"] as const)(
     "emits a structured %s download failure",
     async (status) => {
       server.use(
@@ -5280,8 +5302,8 @@ describe("okou data social command", () => {
         status: "error",
         error: {
           kind: "download_failed",
-          retryable: status === "artifact_failed",
-          billed: status === "artifact_failed",
+          retryable: status === "link_failed",
+          billed: status === "link_failed",
         },
         download: { status },
       });
@@ -5650,16 +5672,5 @@ describe("okou data social command", () => {
     expect(renderedHelp).toContain("4096 characters");
     expect(renderedHelp).toContain("--prompt adds analysis instructions");
     expect(renderedHelp).toContain("do not enforce strict JSON Schema");
-    const download = socialCommand.commands.find((command) => {
-      return command.name() === "download";
-    });
-    renderedHelp = "";
-    download?.configureOutput({
-      writeOut: (value) => {
-        renderedHelp += value;
-      },
-    });
-    download?.outputHelp();
-    expect(renderedHelp).toContain("mp4, m4a, or mp3");
   });
 });

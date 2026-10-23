@@ -25,20 +25,21 @@ const completedDownload = {
   downloadId: "6bdc3449-41ef-4624-a525-45bce09c67f0",
   status: "completed",
   platform: "youtube",
-  quality: "720p",
-  format: "mp4",
   requested: { quality: "720p", format: "mp4" },
   delivered: { quality: null, format: null },
   maxDuration: 600,
   billingCategory: "request",
-  provider: { durationSeconds: 61, fileSizeMB: 2, creditsCost: 2 },
+  provider: {
+    durationSeconds: 61,
+    fileSizeMB: 2,
+    creditsCost: 2,
+    quality: "720p",
+    format: "mp4",
+  },
   billing: { quantity: 2, creditsCharged: 6 },
-  artifact: {
-    id: "e5932cce-3ec7-45ef-a96d-2e4c5dcb4cd4",
-    url: "https://artifacts.example/video.mp4",
-    filename: "example.mp4",
-    contentType: "video/mp4",
-    sizeBytes: 2048,
+  download: {
+    url: "https://media.example/video.mp4?signature=temporary-access",
+    expiresAt: "2026-08-27T01:00:00.000Z",
   },
   error: null,
   createdAt: "2026-08-27T00:00:00.000Z",
@@ -600,7 +601,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       "--json",
     ]);
     expect(polls).toBe(1);
-    expect(output).toContain("example.mp4");
+    expect(output).toContain(completedDownload.download.url);
     await expect(
       run([
         "data",

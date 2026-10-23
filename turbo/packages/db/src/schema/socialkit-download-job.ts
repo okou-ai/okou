@@ -1,5 +1,4 @@
 import type {
-  SocialKitDownloadArtifactResult,
   SocialKitDownloadError,
   SocialKitDownloadProviderResult,
   SocialKitDownloadRequestSnapshot,
@@ -23,8 +22,7 @@ import { agentRuns } from "./agent-run";
 export const SOCIALKIT_DOWNLOAD_STATUSES = [
   "submitting",
   "processing",
-  "materializing",
-  "artifact_failed",
+  "link_failed",
   "provider_failed",
   "completed",
 ] as const;
@@ -54,7 +52,6 @@ export const socialKitDownloadJobs = pgTable(
     providerJobId: text("provider_job_id"),
     providerResult:
       jsonb("provider_result").$type<SocialKitDownloadProviderResult>(),
-    artifact: jsonb("artifact").$type<SocialKitDownloadArtifactResult>(),
     error: jsonb("error").$type<SocialKitDownloadError>(),
     creditsCharged: bigint("credits_charged", { mode: "number" }),
     retryCount: integer("retry_count").default(0).notNull(),
@@ -70,9 +67,7 @@ export const socialKitDownloadJobs = pgTable(
       ),
       uniqueIndex("uq_socialkit_download_jobs_user_active")
         .on(table.userId)
-        .where(
-          sql`status IN ('submitting', 'processing', 'materializing', 'artifact_failed')`,
-        ),
+        .where(sql`status IN ('submitting', 'processing', 'link_failed')`),
       index("idx_socialkit_download_jobs_owner_created").on(
         table.orgId,
         table.userId,

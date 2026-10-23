@@ -1,5 +1,4 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { apiErrorSchema } from "../errors";
 
 import {
   managedSocialKitToolCatalog,
@@ -18,8 +17,8 @@ import {
 } from "../social";
 
 describe("managed SocialKit contract", () => {
-  it("preserves old conflict readers and accepts scoped conflicts without recovery metadata", () => {
-    const legacy = {
+  it("supports accessible task recovery and scoped conflicts without recovery metadata", () => {
+    const scoped = {
       error: {
         code: "DOWNLOAD_IN_PROGRESS",
         message: "Another social media download is already in progress",
@@ -27,7 +26,7 @@ describe("managed SocialKit contract", () => {
     };
     const enriched = {
       error: {
-        ...legacy.error,
+        ...scoped.error,
         recovery: {
           downloadId: "6bdc3449-41ef-4624-a525-45bce09c67f0",
           resumeCommand:
@@ -35,8 +34,7 @@ describe("managed SocialKit contract", () => {
         },
       },
     };
-    expect(apiErrorSchema.parse(enriched)).toStrictEqual(legacy);
-    expect(socialKitDownloadConflictSchema.parse(legacy)).toStrictEqual(legacy);
+    expect(socialKitDownloadConflictSchema.parse(scoped)).toStrictEqual(scoped);
     expect(socialKitDownloadConflictSchema.parse(enriched)).toStrictEqual(
       enriched,
     );

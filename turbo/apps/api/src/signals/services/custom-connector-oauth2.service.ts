@@ -11,7 +11,6 @@ import { feishuPlatformFromTokenUrl } from "@okouai/core/feishu-platform";
 import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
-import { runAfterSameProcessRefresh } from "./same-process-refresh";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -2539,15 +2538,5 @@ export async function resolveCurrentCustomConnectorOAuth2AccessToken(
     connector.authMode === "automatic"
       ? resolveAutomaticCustomConnectorOAuth2AccessToken
       : resolveCustomConnectorOAuth2AccessToken;
-  return await runAfterSameProcessRefresh(
-    JSON.stringify([
-      "custom-oauth",
-      args.orgId,
-      args.userId,
-      args.memberConnectorId,
-    ]),
-    () => {
-      return resolve({ ...args, connector }, signal);
-    },
-  );
+  return await resolve({ ...args, connector }, signal);
 }
