@@ -17,7 +17,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { command } from "ccstate";
-import { and, desc, eq, isNull, lt, or, notInArray } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { AuthContext } from "../../types/auth";
@@ -803,16 +803,6 @@ export const listSocialDataJobs$ = command(
         and(
           eq(socialDataJobs.orgId, args.auth.orgId),
           eq(socialDataJobs.userId, args.auth.userId),
-          args.query.includeExpanded
-            ? undefined
-            : and(
-                notInArray(socialDataJobs.platform, ["douyin", "weibo"]),
-                notInArray(socialDataJobs.operation, [
-                  "replies",
-                  "followers",
-                  "following",
-                ]),
-              ),
           cursor
             ? or(
                 lt(socialDataJobs.createdAt, cursor.createdAt),

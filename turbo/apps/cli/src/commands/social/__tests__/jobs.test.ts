@@ -775,7 +775,7 @@ describe("saved Social data jobs", () => {
       jobId,
       "--json",
     ]);
-    expect(queries).toEqual([`?limit=5&cursor=${jobId}&includeExpanded=true`]);
+    expect(queries).toEqual([`?limit=5&cursor=${jobId}`]);
     expect(JSON.parse(stdout())).toMatchObject({
       jobs: [{ jobId }],
       nextCursor: null,

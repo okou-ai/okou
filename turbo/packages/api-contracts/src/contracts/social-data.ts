@@ -236,13 +236,6 @@ export const socialDataJobResponseSchema = z.object({
 export const socialDataListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.uuid().optional(),
-  // New clients opt in; old clients must not receive unsupported enum values.
-  includeExpanded: z
-    .enum(["true", "false"])
-    .transform((value) => {
-      return value === "true";
-    })
-    .optional(),
 });
 
 export const socialDataListResponseSchema = z.object({
