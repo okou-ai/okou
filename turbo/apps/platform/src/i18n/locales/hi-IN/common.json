@@ -6757,43 +6757,6 @@
         "time": "समय ({{timezone}})",
         "updateScheduleAria": "शेड्यूल ऑटोमेशन अपडेट करें"
       },
-      "stripe": {
-        "addAction": "Stripe ऑटोमेशन जोड़ें",
-        "addAria": "Stripe इनवॉइस भुगतान ऑटोमेशन जोड़ें",
-        "addDescription": "कनेक्ट किए गए Stripe Live खाते में मेल खाने वाला इनवॉइस भुगतान होने पर यह वर्कफ़्लो चलाएँ।",
-        "addTitle": "Stripe ऑटोमेशन जोड़ें",
-        "anyBillingReason": "कोई भी बिलिंग कारण",
-        "billingReason": {
-          "automaticPendingInvoiceItemInvoice": "स्वचालित लंबित इनवॉइस आइटम",
-          "manual": "मैन्युअल",
-          "quoteAccept": "कोट स्वीकार किया गया",
-          "subscription": "सब्सक्रिप्शन",
-          "subscriptionCreate": "सब्सक्रिप्शन बनाया गया",
-          "subscriptionCycle": "सब्सक्रिप्शन चक्र",
-          "subscriptionThreshold": "सब्सक्रिप्शन सीमा",
-          "subscriptionUpdate": "सब्सक्रिप्शन अपडेट किया गया",
-          "upcoming": "आगामी"
-        },
-        "billingReasons": "बिलिंग कारण",
-        "billingReasonsHint": "किसी भी बिलिंग कारण से मिलान करने के लिए कोई विकल्प न चुनें।",
-        "bindingSummary": "Stripe खाता {{accountId}} · Live मोड · {{billingReasons}}",
-        "delivery": "डिलीवरी",
-        "deliveryStatus": {
-          "delivered": "डिलीवर किया गया",
-          "failed": "विफल",
-          "pending": "लंबित",
-          "skipped": "छोड़ा गया"
-        },
-        "deliveryWarning": "नवीनतम अंतिम डिलीवरी विफल रही। दोबारा कोशिश करने से पहले वर्कफ़्लो गतिविधि जाँचें।",
-        "immutableHint": "Stripe खाता और बिलिंग कारण तय हैं। इन्हें बदलने के लिए यह ऑटोमेशन हटाकर फिर से बनाएँ।",
-        "invoicePaidDescription": "मेल खाने वाला Stripe इनवॉइस भुगतान होने पर चलाएँ।",
-        "invoicePaidTitle": "Stripe इनवॉइस का भुगतान हुआ",
-        "lastEvent": "पिछला इवेंट",
-        "manageConnection": "Stripe कनेक्शन प्रबंधित करें",
-        "noDeliveries": "अभी कोई डिलीवरी नहीं",
-        "noMatchingEvents": "अभी कोई मेल खाने वाला इवेंट नहीं",
-        "rule": "जब मेल खाने वाला Stripe इनवॉइस भुगतान किया जाता है"
-      },
       "types": {
         "chat": "चैट",
         "github": "GitHub",
@@ -6802,7 +6765,6 @@
         "googleForms": "Google Forms",
         "googleMeet": "Google मिलें",
         "notion": "Notion",
-        "stripe": "Stripe",
         "webhook": "वेबहुक"
       },
       "webhook": {

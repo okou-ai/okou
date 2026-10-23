@@ -1,5 +1,5 @@
 import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
-import { Command, Option } from "commander";
+import { Command } from "commander";
 import chalk from "chalk";
 import type {
   ChatRunFinishedRunStatus,
@@ -8,14 +8,8 @@ import type {
   GithubPullRequestAction,
   GithubPullRequestReviewState,
   GithubWorkflowRunConclusion,
-  StripeInvoiceBillingReason,
   WorkflowSchedule,
 } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
 import {
   type WorkflowAutomationCreateRequest,
   type WorkflowAutomationSummary,
@@ -37,7 +31,6 @@ import {
   resolveCatalogModel,
 } from "../../../lib/domain/model-catalog-display";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
-import { decodeSandboxTokenPayload } from "../../../lib/api/sandbox-token";
 import { parseDurationSeconds } from "../../shared/duration";
 import {
   resolveWorkflowRef,
@@ -96,7 +89,6 @@ interface AddOptions extends GmailAutomationOptions {
   readonly chatThreadId?: string;
   readonly runStatus?: string;
   readonly outputPattern?: string;
-  readonly billingReason?: string;
 }
 
 interface UpdateOptions extends GmailAutomationOptions {
@@ -154,47 +146,14 @@ const GITHUB_WEBHOOK_EVENT_KINDS = [
   "github-deployment-status-created",
   "github-issue-comment-created",
 ] as const;
-const STRIPE_EVENT_KINDS = ["stripe-invoice-paid"] as const;
 const CHAT_RUN_FINISHED_STATUSES = [
   "completed",
   "failed",
   "cancelled",
 ] as const;
-const STRIPE_INVOICE_BILLING_REASONS: readonly StripeInvoiceBillingReason[] = [
-  "automatic_pending_invoice_item_invoice",
-  "manual",
-  "quote_accept",
-  "subscription",
-  "subscription_create",
-  "subscription_cycle",
-  "subscription_threshold",
-  "subscription_update",
-  "upcoming",
-];
 
-function stripeInvoicePaidWorkflowAutomationsEnabled(
-  overrides?: FeatureSwitchContext["overrides"],
-): boolean {
-  const payload = decodeSandboxTokenPayload();
-  return isFeatureEnabled(
-    FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations,
-    {
-      userId: payload?.userId,
-      orgId: payload?.orgId,
-      overrides,
-    },
-  );
-}
-
-function automationKinds(
-  stripeInvoicePaidEnabled = stripeInvoicePaidWorkflowAutomationsEnabled(),
-): readonly string[] {
-  return [
-    ...SCHEDULE_KINDS,
-    ...EVENT_KINDS,
-    ...GITHUB_WEBHOOK_EVENT_KINDS,
-    ...(stripeInvoicePaidEnabled ? STRIPE_EVENT_KINDS : []),
-  ];
+function automationKinds(): readonly string[] {
+  return [...SCHEDULE_KINDS, ...EVENT_KINDS, ...GITHUB_WEBHOOK_EVENT_KINDS];
 }
 
 async function loadWorkflowAutomationThreadModel(
@@ -1697,61 +1656,6 @@ function buildWebhookCreateRequest(
   };
 }
 
-function parseStripeInvoiceBillingReasons(
-  value: string,
-): StripeInvoiceBillingReason[] {
-  const values = value.split(",").map((billingReason) => {
-    return billingReason.trim();
-  });
-  if (
-    values.some((billingReason) => {
-      return billingReason.length === 0;
-    })
-  ) {
-    throw new Error("--billing-reason cannot contain empty values");
-  }
-
-  const billingReasons: StripeInvoiceBillingReason[] = [];
-  for (const value of values) {
-    const billingReason = STRIPE_INVOICE_BILLING_REASONS.find((candidate) => {
-      return candidate === value;
-    });
-    if (!billingReason) {
-      throw new Error(
-        `Invalid --billing-reason value "${value}"; expected one of: ${STRIPE_INVOICE_BILLING_REASONS.join(", ")}`,
-      );
-    }
-    if (!billingReasons.includes(billingReason)) {
-      billingReasons.push(billingReason);
-    }
-  }
-  return billingReasons;
-}
-
-function buildStripeInvoicePaidCreateRequest(
-  options: AddOptions,
-): WorkflowAutomationCreateRequest {
-  assertNoScheduleAddOptions(options);
-  if (hasEventAddOptions(options)) {
-    throw new Error(
-      "Only --billing-reason applies to stripe-invoice-paid automations",
-    );
-  }
-  const billingReasons =
-    options.billingReason === undefined
-      ? undefined
-      : parseStripeInvoiceBillingReasons(options.billingReason);
-  return {
-    kind: "event",
-    eventType: "stripe-invoice-paid",
-    eventConfig: {
-      provider: "stripe",
-      event: "invoice_paid",
-      ...(billingReasons ? { billingReasons } : {}),
-    },
-  };
-}
-
 function buildScheduleCreateRequest(
   kind: string,
   options: AddOptions,
@@ -1762,7 +1666,7 @@ function buildScheduleCreateRequest(
   return { schedule: buildSchedule(kind, options) };
 }
 
-function buildNonStripeCreateRequest(
+function buildCreateRequest(
   kind: string,
   options: AddOptions,
 ): WorkflowAutomationCreateRequest {
@@ -1806,21 +1710,6 @@ function buildNonStripeCreateRequest(
     default:
       return buildScheduleCreateRequest(kind, options);
   }
-}
-
-function buildCreateRequest(
-  kind: string,
-  options: AddOptions,
-): WorkflowAutomationCreateRequest {
-  if (kind === "stripe-invoice-paid") {
-    return buildStripeInvoicePaidCreateRequest(options);
-  }
-  if (options.billingReason !== undefined) {
-    throw new Error(
-      "--billing-reason only applies to stripe-invoice-paid automations",
-    );
-  }
-  return buildNonStripeCreateRequest(kind, options);
 }
 
 function buildGithubAutomationEventUpdate(
@@ -1999,12 +1888,6 @@ function buildEventUpdate(
     );
   }
 
-  if (existing.eventType === "stripe-invoice-paid") {
-    throw new Error(
-      "Stripe billing reasons cannot be updated; delete and recreate the automation",
-    );
-  }
-
   const githubWorkflowUpdate = buildGithubAutomationEventUpdate(
     options,
     existing,
@@ -2095,40 +1978,14 @@ function buildUpdate(
   return buildScheduleUpdate(options);
 }
 
-function stripeBillingReasonOption(stripeInvoicePaidEnabled: boolean): Option {
-  const option = new Option(
-    "--billing-reason <reasons>",
-    "Comma-separated Stripe invoice billing reasons (default: any)",
-  );
-  if (!stripeInvoicePaidEnabled) {
-    option.hideHelp();
-  }
-  return option;
-}
-
-export function createAutomationAddCommand(
-  commandOptions: {
-    readonly featureSwitchOverrides?: FeatureSwitchContext["overrides"];
-  } = {},
-): Command {
-  const stripeInvoicePaidEnabledForHelp =
-    stripeInvoicePaidWorkflowAutomationsEnabled(
-      commandOptions.featureSwitchOverrides,
-    );
-  const stripeExample = stripeInvoicePaidEnabledForHelp
-    ? "  okou workflow automation add invoice-follow-up --agent <agent-id> stripe-invoice-paid --billing-reason subscription_create,subscription_cycle\n"
-    : "";
-
+function createAutomationAddCommand(): Command {
   return addGithubAutomationOptions(
     addGmailAutomationOptions(
       new Command()
         .name("add")
         .description("Add an automation to a workflow")
         .argument("<workflow>", "Workflow ID or name")
-        .argument(
-          "<kind>",
-          `Automation type: ${automationKinds(stripeInvoicePaidEnabledForHelp).join(" | ")}`,
-        )
+        .argument("<kind>", `Automation type: ${automationKinds().join(" | ")}`)
         .option("--expr <expression>", 'Cron expression for kind "cron"')
         .option("--at <iso-time>", 'Fire time for kind "once"')
         .option(
@@ -2173,7 +2030,6 @@ export function createAutomationAddCommand(
       "--output-pattern <pattern>",
       "Optional * wildcard matched against the finished run's final assistant text",
     )
-    .addOption(stripeBillingReasonOption(stripeInvoicePaidEnabledForHelp))
     .option("--agent <id>", "Agent ID for resolving a workflow name")
     .addHelpText(
       "after",
@@ -2197,7 +2053,7 @@ Examples:
   okou workflow automation add research-notes --agent <agent-id> notion-database-item-created --database-url "https://www.notion.so/1234567890abcdef1234567890abcdef?v=abcdef1234567890abcdef1234567890"
   okou workflow automation add research-notes --agent <agent-id> notion-page-content-updated --page-url "https://www.notion.so/workspace/Page-title-1234567890abcdef1234567890abcdef"
   okou workflow automation add research-notes --agent <agent-id> notion-page-content-updated --database-url "https://www.notion.so/1234567890abcdef1234567890abcdef?v=abcdef1234567890abcdef1234567890"
-${stripeExample}  okou workflow automation add triage --agent <agent-id> webhook
+  okou workflow automation add triage --agent <agent-id> webhook
   okou workflow automation add follow-up --agent <agent-id> chat-run-finished --chat-thread-id <thread-uuid> --run-status completed,failed --output-pattern "*deploy failed*"
 
 Notes:
@@ -2216,16 +2072,6 @@ Notes:
     .action(
       withErrorHandler(
         async (workflowRef: string, kind: string, options: AddOptions) => {
-          if (
-            kind === "stripe-invoice-paid" &&
-            !stripeInvoicePaidWorkflowAutomationsEnabled(
-              commandOptions.featureSwitchOverrides,
-            )
-          ) {
-            throw new Error(
-              "Stripe invoice-paid workflow automations are not enabled for this workspace",
-            );
-          }
           if (
             options.timezone &&
             kind !== "cron" &&
@@ -2326,10 +2172,7 @@ Examples:
           );
           return;
         }
-
-        printWorkflowAutomationsTable(automations, {
-          showStripeDetails: true,
-        });
+        printWorkflowAutomationsTable(automations);
       },
     ),
   );

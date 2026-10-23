@@ -22,7 +22,6 @@ import type {
   GithubWorkflowRunCompletedEventConfig,
   GithubWorkflowRunConclusion,
   NotionPageContentUpdatedEventCreateConfig,
-  StripeInvoiceBillingReason,
   WorkflowFileEntry,
   WorkflowFileMetadata,
   WorkflowDetailResponse,
@@ -33,7 +32,6 @@ import type {
 import {
   AlertTriangle,
   CalendarClock,
-  CircleCheck,
   ChevronDown,
   Clock,
   Copy,
@@ -59,7 +57,6 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   surfaceVariants,
   Button,
@@ -97,7 +94,6 @@ import {
   TooltipTrigger,
   BrandGithub,
   BrandNotion,
-  BrandStripe,
   buttonVariants,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
@@ -125,7 +121,6 @@ import {
   createGithubPullRequestAction$,
   createScheduleCronFields$,
   createWorkflowScheduleAutomation$,
-  createWorkflowStripeInvoicePaidAutomation$,
   createdWorkflowWebhookAutomation$,
   currentWorkflowId$,
   defaultWorkflowCronFields,
@@ -206,7 +201,6 @@ import {
   saveWorkflowFileDraft$,
   uploadWorkflowFiles$,
 } from "../../signals/workflows-page/workflow-detail-actions.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
@@ -269,26 +263,6 @@ import {
 const AUTOMATION_FIELD_CLASS = "h-8 px-2 text-xs";
 const WORKFLOW_EDIT_TEXTAREA_CLASS = "min-h-24 resize-y";
 const AUTOMATION_TIMEZONE = "UTC";
-
-const STRIPE_INVOICE_BILLING_REASONS = [
-  "automatic_pending_invoice_item_invoice",
-  "manual",
-  "quote_accept",
-  "subscription",
-  "subscription_create",
-  "subscription_cycle",
-  "subscription_threshold",
-  "subscription_update",
-  "upcoming",
-] as const satisfies readonly StripeInvoiceBillingReason[];
-
-type WorkflowStripeInvoicePaidAutomation = Extract<
-  WorkflowAutomationSummary,
-  { readonly kind: "event"; readonly eventType: "stripe-invoice-paid" }
->;
-type StripeDeliveryStatus = NonNullable<
-  WorkflowStripeInvoicePaidAutomation["health"]["lastDeliveryStatus"]
->;
 
 function automationActionCopy() {
   return {
@@ -1253,12 +1227,9 @@ function AutomationCreateAction() {
   const setWebhookUpgradeDialogOpen = useSet(
     setWorkflowWebhookUpgradeDialogOpen$,
   );
-  const features = useGet(featureSwitch$);
   const capabilities = useLastResolved(orgPlanCapabilities$);
   const webhookTierEligible =
     capabilities?.workflowWebhookAutomationAllowed ?? true;
-  const stripeInvoicePaidAutomationsEnabled =
-    features[FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations] ?? false;
 
   return (
     <AutomationCreateMenu
@@ -1269,7 +1240,6 @@ function AutomationCreateAction() {
         }
         setCreateDialog(kind);
       }}
-      stripeInvoicePaidAutomationsEnabled={stripeInvoicePaidAutomationsEnabled}
       webhookTierEligible={webhookTierEligible}
     />
   );
@@ -3271,11 +3241,6 @@ function workflowAutomationTitle(
   automation: WorkflowAutomationSummary,
 ): string {
   if (automation.kind === "event") {
-    if (automation.eventType === "stripe-invoice-paid") {
-      return i18n.t(($) => {
-        return $.workflows.automations.stripe.invoicePaidTitle;
-      });
-    }
     if (
       automation.eventType === "google-forms-response-submitted" ||
       automation.eventType === "webhook-received"
@@ -3496,68 +3461,6 @@ function githubWorkflowAutomationSummary(
   }
 }
 
-function stripeBillingReasonLabel(reason: StripeInvoiceBillingReason): string {
-  switch (reason) {
-    case "automatic_pending_invoice_item_invoice": {
-      return i18n.t(($) => {
-        return $.workflows.automations.stripe.billingReason
-          .automaticPendingInvoiceItemInvoice;
-      });
-    }
-    case "manual": {
-      return i18n.t(($) => {
-        return $.workflows.automations.stripe.billingReason.manual;
-      });
-    }
-    case "quote_accept": {
-      return i18n.t(($) => {
-        return $.workflows.automations.stripe.billingReason.quoteAccept;
-      });
-    }
-    case "subscription": {
-      return i18n.t(($) => {
-        return $.workflows.automations.stripe.billingReason.subscription;
-      });
-    }
-    case "subscription_create": {
-      return i18n.t(($) => {
-        return $.workflows.automations.stripe.billingReason.subscriptionCreate;
-      });
-    }
-    case "subscription_cycle": {
-      return i18n.t(($) => {
-        return $.workflows.automations.stripe.billingReason.subscriptionCycle;
-      });
-    }
-    case "subscription_threshold": {
-      return i18n.t(($) => {
-        return $.workflows.automations.stripe.billingReason
-          .subscriptionThreshold;
-      });
-    }
-    case "subscription_update": {
-      return i18n.t(($) => {
-        return $.workflows.automations.stripe.billingReason.subscriptionUpdate;
-      });
-    }
-    case "upcoming": {
-      return i18n.t(($) => {
-        return $.workflows.automations.stripe.billingReason.upcoming;
-      });
-    }
-  }
-}
-
-function stripeBillingReasonsSummary(
-  reasons: readonly StripeInvoiceBillingReason[] | undefined,
-): string {
-  return reasons && reasons.length > 0
-    ? reasons.map(stripeBillingReasonLabel).join(", ")
-    : i18n.t(($) => {
-        return $.workflows.automations.stripe.anyBillingReason;
-      });
-}
-
 function workflowAutomationSummary(
   automation: WorkflowAutomationSummary,
 ): string | null {
@@ -3566,19 +3469,6 @@ function workflowAutomationSummary(
     automation.eventType === "google-forms-response-submitted"
   ) {
     return null;
-  }
-  if (automation.eventType === "stripe-invoice-paid") {
-    return i18n.t(
-      ($) => {
-        return $.workflows.automations.stripe.bindingSummary;
-      },
-      {
-        accountId: automation.eventConfig.stripeAccountId,
-        billingReasons: stripeBillingReasonsSummary(
-          automation.eventConfig.billingReasons,
-        ),
-      },
-    );
   }
   return (
     githubWorkflowAutomationSummary(automation) ??
@@ -3607,7 +3497,6 @@ type AutomationCreateDialogKind =
   | "notion-child-page"
   | "notion-database-item"
   | "notion-page-content-updated"
-  | "stripe-invoice-paid"
   | "webhook";
 
 type AutomationCategoryKey =
@@ -3634,30 +3523,9 @@ type AutomationCreateCategory = {
   readonly options: readonly AutomationCreateOption[];
 };
 
-function buildStripeInvoicePaidAutomationOptions(
-  enabled: boolean,
-): AutomationCreateOption[] {
-  return enabled
-    ? [
-        {
-          kind: "stripe-invoice-paid",
-          title: i18n.t(($) => {
-            return $.workflows.automations.stripe.invoicePaidTitle;
-          }),
-          description: i18n.t(($) => {
-            return $.workflows.automations.stripe.invoicePaidDescription;
-          }),
-          icon: BrandStripe,
-        },
-      ]
-    : [];
-}
-
 function buildIntegrationAutomationOptions({
-  stripeInvoicePaidAutomationsEnabled,
   webhookTierEligible,
 }: {
-  readonly stripeInvoicePaidAutomationsEnabled: boolean;
   readonly webhookTierEligible: boolean;
 }): AutomationCreateOption[] {
   return [
@@ -3671,9 +3539,6 @@ function buildIntegrationAutomationOptions({
       }),
       icon: MessageCircle,
     },
-    ...buildStripeInvoicePaidAutomationOptions(
-      stripeInvoicePaidAutomationsEnabled,
-    ),
     {
       kind: "webhook",
       title: i18n.t(($) => {
@@ -3929,15 +3794,12 @@ function buildEmailAutomationOptions(): AutomationCreateOption[] {
 }
 
 function buildAutomationCreateCategories({
-  stripeInvoicePaidAutomationsEnabled,
   webhookTierEligible,
 }: {
-  readonly stripeInvoicePaidAutomationsEnabled: boolean;
   readonly webhookTierEligible: boolean;
 }): readonly AutomationCreateCategory[] {
   const googleFormsOptions = buildGoogleFormsAutomationOptions();
   const integrationOptions = buildIntegrationAutomationOptions({
-    stripeInvoicePaidAutomationsEnabled,
     webhookTierEligible,
   });
   const notionOptions = buildNotionAutomationOptions();
@@ -4078,11 +3940,9 @@ function AutomationCreateOptionCard({
 
 function AutomationCreateMenu({
   onSelect,
-  stripeInvoicePaidAutomationsEnabled,
   webhookTierEligible,
 }: {
   readonly onSelect: (kind: AutomationCreateDialogKind) => void;
-  readonly stripeInvoicePaidAutomationsEnabled: boolean;
   readonly webhookTierEligible: boolean;
 }) {
   const open = useGet(workflowAutomationPickerOpen$);
@@ -4090,7 +3950,6 @@ function AutomationCreateMenu({
   const activeKey = useGet(workflowAutomationPickerCategory$);
   const setActiveKey = useSet(setWorkflowAutomationPickerCategory$);
   const categories = buildAutomationCreateCategories({
-    stripeInvoicePaidAutomationsEnabled,
     webhookTierEligible,
   });
   const activeCategory =
@@ -4621,166 +4480,6 @@ function AutomationsSection({
   );
 }
 
-function selectedStripeBillingReasons(
-  form: FormData,
-): StripeInvoiceBillingReason[] {
-  return STRIPE_INVOICE_BILLING_REASONS.filter((reason) => {
-    return form.has(reason);
-  });
-}
-
-function StripeBillingReasonFields({
-  creating,
-}: {
-  readonly creating: boolean;
-}) {
-  return (
-    <fieldset className="flex flex-col gap-2">
-      <legend className="text-sm font-medium text-foreground">
-        {i18n.t(($) => {
-          return $.workflows.automations.stripe.billingReasons;
-        })}
-      </legend>
-      <p className="text-xs text-muted-foreground">
-        {i18n.t(($) => {
-          return $.workflows.automations.stripe.billingReasonsHint;
-        })}
-      </p>
-      <div className="grid grid-cols-1 gap-2 rounded-lg border border-border/60 bg-muted/20 p-3 sm:grid-cols-2">
-        {STRIPE_INVOICE_BILLING_REASONS.map((reason) => {
-          return (
-            <label
-              key={reason}
-              className="flex min-w-0 items-start gap-2 rounded-md px-2 py-1.5 hover:bg-background"
-            >
-              <Checkbox
-                name={reason}
-                disabled={creating}
-                className="mt-0.5 shrink-0"
-              />
-              <span className="text-sm text-foreground">
-                {stripeBillingReasonLabel(reason)}
-              </span>
-            </label>
-          );
-        })}
-      </div>
-    </fieldset>
-  );
-}
-
-function StripeAutomationCreateError({
-  message,
-}: {
-  readonly message: string;
-}) {
-  return (
-    <div
-      role="alert"
-      className="flex flex-col gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"
-    >
-      <div className="flex items-start gap-2">
-        <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-        <p>{message}</p>
-      </div>
-      <Link
-        pathname={ROUTES.connectors}
-        className="w-fit font-medium underline underline-offset-2"
-      >
-        {i18n.t(($) => {
-          return $.workflows.automations.stripe.manageConnection;
-        })}
-      </Link>
-    </div>
-  );
-}
-
-function CreateStripeInvoicePaidAutomationDialog({
-  workflowId,
-  open,
-  onOpenChange,
-}: {
-  readonly workflowId: string;
-  readonly open: boolean;
-  readonly onOpenChange: (open: boolean) => void;
-}) {
-  const pageSignal = useGet(pageSignal$);
-  const [createLoadable, createAutomation] = useLoadableSet(
-    createWorkflowStripeInvoicePaidAutomation$,
-  );
-  const creating = createLoadable.state === "loading";
-  const createError =
-    createLoadable.state === "hasError"
-      ? createLoadable.error instanceof Error
-        ? createLoadable.error.message
-        : i18n.t(($) => {
-            return $.global.errors.requestFailed;
-          })
-      : null;
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {i18n.t(($) => {
-              return $.workflows.automations.stripe.addTitle;
-            })}
-          </DialogTitle>
-          <DialogDescription>
-            {i18n.t(($) => {
-              return $.workflows.automations.stripe.addDescription;
-            })}
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          aria-label={i18n.t(($) => {
-            return $.workflows.automations.stripe.addAria;
-          })}
-          className="flex flex-col gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const billingReasons = selectedStripeBillingReasons(
-              new FormData(event.currentTarget),
-            );
-            detach(
-              (async () => {
-                await createAutomation(
-                  { workflowId, billingReasons },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
-              Reason.DomCallback,
-              "create Stripe invoice-paid automation",
-            );
-          }}
-        >
-          <StripeBillingReasonFields creating={creating} />
-          {createError ? (
-            <StripeAutomationCreateError message={createError} />
-          ) : null}
-          <AutomationFormActions
-            pending={creating}
-            onCancel={() => {
-              onOpenChange(false);
-            }}
-          >
-            {creating ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <BrandStripe size={14} />
-            )}
-            {i18n.t(($) => {
-              return $.workflows.automations.stripe.addAction;
-            })}
-          </AutomationFormActions>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 function IntegrationAutomationCreateDialogs({
   workflowId,
   createDialog,
@@ -4792,15 +4491,6 @@ function IntegrationAutomationCreateDialogs({
 }) {
   return (
     <>
-      {createDialog === "stripe-invoice-paid" ? (
-        <CreateStripeInvoicePaidAutomationDialog
-          workflowId={workflowId}
-          open
-          onOpenChange={(open) => {
-            setCreateDialog(open ? "stripe-invoice-paid" : null);
-          }}
-        />
-      ) : null}
       <CreateWebhookAutomationDialog
         workflowId={workflowId}
         open={createDialog === "webhook"}
@@ -8072,78 +7762,6 @@ function CreateWebhookAutomationView({
   );
 }
 
-function stripeDeliveryStatusLabel(status: StripeDeliveryStatus): string {
-  switch (status) {
-    case "pending": {
-      return i18n.t(($) => {
-        return $.workflows.automations.stripe.deliveryStatus.pending;
-      });
-    }
-    case "delivered": {
-      return i18n.t(($) => {
-        return $.workflows.automations.stripe.deliveryStatus.delivered;
-      });
-    }
-    case "skipped": {
-      return i18n.t(($) => {
-        return $.workflows.automations.stripe.deliveryStatus.skipped;
-      });
-    }
-    case "failed": {
-      return i18n.t(($) => {
-        return $.workflows.automations.stripe.deliveryStatus.failed;
-      });
-    }
-  }
-}
-
-function formatStripeHealthTimestamp(
-  value: string | null,
-  displayTimezone: string,
-): string | null {
-  if (!value || !hasValidRunTimestamp(value)) {
-    return null;
-  }
-  return new Date(value).toLocaleString(currentLocale(), {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: displayTimezone,
-  });
-}
-
-function stripeLastMatchingEventLabel(
-  automation: WorkflowStripeInvoicePaidAutomation,
-  displayTimezone: string,
-): string {
-  return (
-    formatStripeHealthTimestamp(
-      automation.health.lastMatchingEventReceivedAt,
-      displayTimezone,
-    ) ??
-    i18n.t(($) => {
-      return $.workflows.automations.stripe.noMatchingEvents;
-    })
-  );
-}
-
-function stripeLastDeliveryLabel(
-  automation: WorkflowStripeInvoicePaidAutomation,
-  displayTimezone: string,
-): string {
-  const status = automation.health.lastDeliveryStatus;
-  if (!status) {
-    return i18n.t(($) => {
-      return $.workflows.automations.stripe.noDeliveries;
-    });
-  }
-  const statusLabel = stripeDeliveryStatusLabel(status);
-  const timestamp = formatStripeHealthTimestamp(
-    automation.health.lastDeliveryStatusAt,
-    displayTimezone,
-  );
-  return timestamp ? `${statusLabel} · ${timestamp}` : statusLabel;
-}
-
 function AutomationRunStat({
   icon,
   label,
@@ -8181,34 +7799,6 @@ function AutomationRowStats({
   readonly automation: WorkflowAutomationSummary;
   readonly displayTimezone: string;
 }) {
-  if (
-    automation.kind === "event" &&
-    automation.eventType === "stripe-invoice-paid"
-  ) {
-    return (
-      <>
-        <AutomationRunStat
-          icon={<History size={14} />}
-          label={i18n.t(($) => {
-            return $.workflows.automations.stripe.lastEvent;
-          })}
-          value={stripeLastMatchingEventLabel(automation, displayTimezone)}
-          emphasized={hasValidRunTimestamp(
-            automation.health.lastMatchingEventReceivedAt,
-          )}
-        />
-        <AutomationRunStat
-          icon={<CircleCheck size={14} />}
-          label={i18n.t(($) => {
-            return $.workflows.automations.stripe.delivery;
-          })}
-          value={stripeLastDeliveryLabel(automation, displayTimezone)}
-          emphasized={automation.health.lastDeliveryStatus !== null}
-        />
-      </>
-    );
-  }
-
   return (
     <>
       <AutomationRunStat
@@ -8355,11 +7945,6 @@ function AutomationRow({
   const targeted = targetedAutomationId === automation.id;
   const title = workflowScheduleTitle(automation, displayTimezone);
   const subtitle = workflowAutomationSubtitle(automation);
-  const stripeAutomation =
-    automation.kind === "event" &&
-    automation.eventType === "stripe-invoice-paid"
-      ? automation
-      : null;
   const calendarAutomation = isGoogleCalendarWorkflowAutomation(automation)
     ? automation
     : null;
@@ -8411,28 +7996,6 @@ function AutomationRow({
               setEditingAutomationId(calendarAutomation.id);
             }}
           />
-        ) : null}
-        {stripeAutomation ? (
-          <div className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground sm:col-span-5">
-            <p>
-              {i18n.t(($) => {
-                return $.workflows.automations.stripe.immutableHint;
-              })}
-            </p>
-            {stripeAutomation.health.warning === "delivery_failed" ? (
-              <div
-                role="alert"
-                className="flex items-start gap-1.5 text-amber-700 dark:text-amber-400"
-              >
-                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                <p>
-                  {i18n.t(($) => {
-                    return $.workflows.automations.stripe.deliveryWarning;
-                  })}
-                </p>
-              </div>
-            ) : null}
-          </div>
         ) : null}
       </div>
       {showDivider ? (

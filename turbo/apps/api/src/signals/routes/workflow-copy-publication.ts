@@ -7,12 +7,6 @@ import {
   workflowUserAutomationThreads as bindings,
 } from "@okouai/db/schema/workflow";
 import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
-import {
-  connectorCatalog as catalog,
-  connectorCatalogEntries as catalogEntries,
-} from "@okouai/db/runtime/connector-catalog";
-import { connectors } from "@okouai/db/schema/connector";
-import { variables } from "@okouai/db/schema/variable";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
@@ -44,12 +38,10 @@ import {
   copyPublicationPlans,
   requireCopySlugAvailable,
   requireCopyVolumePublished,
-  checkCopyStripeAbort,
   copyAutomationPlan,
   requireCopiedRow,
   copyConnectorSlugs,
   copyAccountReadPlan,
-  cachedCopyStripeBinding,
   copyProjectionValues,
   copyNotionInvalidation,
   copyNeedsThread,
@@ -57,7 +49,6 @@ import {
   copyBindingConflict,
   type WorkflowCopyPublicationArgs as CopyArgs,
   type CopyWorkflowDatabaseResult as CopyResult,
-  type CopyStripeBinding,
 } from "./workflow-copy-publication-plans";
 export const readWorkflowCopySnapshot$ = command(
   async ({ get }, args: WorkflowCopyInput, signal: AbortSignal) => {
@@ -188,18 +179,9 @@ export const commitWorkflowCopy$ = command(
           continue;
         }
         const plan = copyAccountReadPlan(args, slug);
-        const projected = await tx
-          .select(plan.columns)
-          .from(plan.source)
-          .leftJoin(catalog, plan.catalogJoin)
-          .leftJoin(catalogEntries, plan.entryJoin)
-          .leftJoin(connectors, plan.connectionJoin)
-          .leftJoin(variables, plan.variableJoin);
-        checkCopyStripeAbort(slug, signal);
-        const readiness = new Map<string, CopyStripeBinding>();
+        const projected = await tx.select(plan.columns).from(plan.source);
         for (const row of projected) {
-          const binding = cachedCopyStripeBinding(plan, row, readiness);
-          const values = copyProjectionValues(row, slug, binding);
+          const values = copyProjectionValues(row, slug);
           if (values) {
             await tx
               .update(automations)
@@ -213,7 +195,6 @@ export const commitWorkflowCopy$ = command(
                 .where(invalidation.condition);
             }
           }
-          checkCopyStripeAbort(slug, signal);
         }
         signal.throwIfAborted();
       }

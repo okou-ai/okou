@@ -6733,43 +6733,6 @@
         "time": "Waktu ({{timezone}})",
         "updateScheduleAria": "Perbarui otomatisasi jadwal"
       },
-      "stripe": {
-        "addAction": "Tambahkan otomatisasi Stripe",
-        "addAria": "Tambahkan otomatisasi faktur Stripe dibayar",
-        "addDescription": "Jalankan alur kerja ini saat faktur yang cocok dibayar di akun Stripe Live yang terhubung.",
-        "addTitle": "Tambahkan otomatisasi Stripe",
-        "anyBillingReason": "Alasan penagihan apa pun",
-        "billingReason": {
-          "automaticPendingInvoiceItemInvoice": "Item faktur tertunda otomatis",
-          "manual": "Manual",
-          "quoteAccept": "Penawaran diterima",
-          "subscription": "Langganan",
-          "subscriptionCreate": "Langganan dibuat",
-          "subscriptionCycle": "Siklus langganan",
-          "subscriptionThreshold": "Ambang langganan",
-          "subscriptionUpdate": "Langganan diperbarui",
-          "upcoming": "Mendatang"
-        },
-        "billingReasons": "Alasan penagihan",
-        "billingReasonsHint": "Jangan pilih apa pun untuk mencocokkan semua alasan penagihan.",
-        "bindingSummary": "Akun Stripe {{accountId}} · Mode Live · {{billingReasons}}",
-        "delivery": "Pengiriman",
-        "deliveryStatus": {
-          "delivered": "Terkirim",
-          "failed": "Gagal",
-          "pending": "Tertunda",
-          "skipped": "Dilewati"
-        },
-        "deliveryWarning": "Pengiriman terminal terbaru gagal. Periksa aktivitas alur kerja sebelum mencoba lagi.",
-        "immutableHint": "Akun Stripe dan alasan penagihan bersifat tetap. Untuk mengubahnya, hapus otomatisasi ini lalu buat ulang.",
-        "invoicePaidDescription": "Jalankan saat faktur Stripe yang cocok dibayar.",
-        "invoicePaidTitle": "Faktur Stripe dibayar",
-        "lastEvent": "Peristiwa terakhir",
-        "manageConnection": "Kelola koneksi Stripe",
-        "noDeliveries": "Belum ada pengiriman",
-        "noMatchingEvents": "Belum ada peristiwa yang cocok",
-        "rule": "Saat faktur Stripe yang cocok dibayar"
-      },
       "types": {
         "chat": "Chat",
         "github": "GitHub",
@@ -6778,7 +6741,6 @@
         "googleForms": "Google Forms",
         "googleMeet": "Google Meet",
         "notion": "Notion",
-        "stripe": "Stripe",
         "webhook": "Webhook"
       },
       "webhook": {

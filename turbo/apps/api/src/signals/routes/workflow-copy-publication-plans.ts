@@ -1,8 +1,5 @@
 import { StorageVersionIdentityConflictError } from "../services/storage-version-registration.service";
-import {
-  gmailLabelAppliedEventConfigSchema,
-  stripeInvoicePaidEventConfigSchema,
-} from "@okouai/api-contracts/contracts/workflows";
+import { gmailLabelAppliedEventConfigSchema } from "@okouai/api-contracts/contracts/workflows";
 import {
   workflows,
   workflowWebhookAutomations,
@@ -28,11 +25,7 @@ import {
   workflowAutomationAccountConnectorSlug,
   type WorkflowAutomationAccountConnectorSlug,
 } from "../services/workflow-automation-account-classification.service";
-import {
-  officialAccountProjectionReadPlan,
-  officialAccountProjectionFromRow,
-  type OfficialAutomationAccountProjection,
-} from "../services/official-workflow-account-projection";
+import { officialAccountProjectionReadPlan } from "../services/official-workflow-account-projection";
 import { prepareChatThreadInsert } from "../services/chat-thread-create.service";
 import {
   workflowUserAutomationThreadOwnerCondition,
@@ -179,17 +172,12 @@ const copyProjectionEventTypes = {
     "notion-database-item-created",
     "notion-page-content-updated",
   ],
-  stripe: ["stripe-invoice-paid"],
   "google-forms": [],
 } as const;
 type CopyProjectionRow = Pick<
   typeof workflowAutomations.$inferSelect,
   "id" | "workflowId" | "eventType" | "eventConfig" | "eventConnectorId"
 >;
-export type CopyStripeBinding = Extract<
-  OfficialAutomationAccountProjection,
-  { kind: "projected" }
->["stripeBinding"];
 
 export function copyProjectionValues(
   loaded: {
@@ -197,21 +185,8 @@ export function copyProjectionValues(
     readonly connectorId: string | null;
   },
   slug: WorkflowAutomationAccountConnectorSlug,
-  binding: CopyStripeBinding,
 ) {
   const { automation: row, connectorId } = loaded;
-  if (slug === "stripe" && binding !== null) {
-    const config = stripeInvoicePaidEventConfigSchema.parse(row.eventConfig);
-    return row.eventConnectorId === connectorId &&
-      config.connectorId === binding.connectorId &&
-      config.stripeAccountId === binding.stripeAccountId &&
-      config.mode === binding.mode
-      ? null
-      : {
-          eventConnectorId: connectorId,
-          eventConfig: { ...config, ...binding },
-        };
-  }
   if (slug === "notion") {
     if (
       row.eventConnectorId === connectorId &&
@@ -460,25 +435,6 @@ export function copyAccountReadPlan(
   };
 }
 
-export function cachedCopyStripeBinding(
-  plan: ReturnType<typeof copyAccountReadPlan>,
-  row: Parameters<typeof officialAccountProjectionFromRow>[1],
-  cache: Map<string, CopyStripeBinding>,
-): CopyStripeBinding {
-  if (plan.nextConnectorSlug !== "stripe" || !row?.connectorId) {
-    return null;
-  }
-  const cached = cache.get(row.connectorId);
-  if (cached !== undefined) {
-    return cached;
-  }
-  const projection = officialAccountProjectionFromRow(plan, row);
-  const binding =
-    projection.kind === "projected" ? projection.stripeBinding : null;
-  cache.set(row.connectorId, binding);
-  return binding;
-}
-
 export function copyNotionInvalidation(automationId: string) {
   const currentTime = nowDate();
   return {
@@ -510,13 +466,5 @@ export function requireCopyVolumePublished(
 ): void {
   if (count !== 1) {
     throw new StorageVersionIdentityConflictError(versionId);
-  }
-}
-export function checkCopyStripeAbort(
-  slug: WorkflowAutomationAccountConnectorSlug,
-  signal: AbortSignal,
-): void {
-  if (slug === "stripe") {
-    signal.throwIfAborted();
   }
 }

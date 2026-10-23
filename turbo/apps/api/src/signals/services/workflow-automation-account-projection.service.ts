@@ -179,11 +179,6 @@ export async function reprojectWorkflowAutomationsForOwner(
       signal.throwIfAborted();
       return;
     }
-    case "stripe": {
-      throw new Error(
-        "Stripe projections must execute in the owning transaction",
-      );
-    }
   }
   return connectorSlug satisfies never;
 }

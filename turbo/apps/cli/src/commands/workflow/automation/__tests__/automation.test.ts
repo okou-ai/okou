@@ -16,8 +16,7 @@ import { join } from "node:path";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../../mocks/server";
 import { workflowCommand } from "../../index";
-import { automationCommand, createAutomationAddCommand } from "../index";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { automationCommand } from "../index";
 import chalk from "chalk";
 
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
@@ -302,29 +301,6 @@ const webhookAutomation = {
   webhookSecret: "webhook-secret-abcd",
 };
 
-const stripeInvoicePaidAutomation = {
-  ...automationBase,
-  kind: "event",
-  eventType: "stripe-invoice-paid",
-  eventConfig: {
-    provider: "stripe",
-    event: "invoice_paid",
-    billingReasons: ["subscription_cycle"],
-    connectorId: "00000000-0000-4000-a000-000000000411",
-    stripeAccountId: "acct_cli_stripe_invoice_paid",
-    mode: "live",
-  },
-  schedule: null,
-  scheduleSummary: null,
-  nextRunAt: null,
-  health: {
-    lastMatchingEventReceivedAt: "2026-08-07T08:00:00.000Z",
-    lastDeliveryStatus: "delivered",
-    lastDeliveryStatusAt: "2026-08-07T08:01:00.000Z",
-    warning: null,
-  },
-};
-
 describe("okou workflow automation commands", () => {
   const mockExit = vi.spyOn(process, "exit").mockImplementation((() => {
     throw new Error("process.exit called");
@@ -388,15 +364,6 @@ describe("okou workflow automation commands", () => {
       ),
     );
     return captured;
-  }
-
-  async function runStripeEnabledAdd(...args: string[]): Promise<void> {
-    vi.stubEnv("OKOU_TOKEN", okouToken("org-stripe-enabled"));
-    await createAutomationAddCommand({
-      featureSwitchOverrides: {
-        [FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations]: true,
-      },
-    }).parseAsync(["node", "cli", ...args]);
   }
 
   function mockWorkflowList() {
@@ -919,278 +886,6 @@ describe("okou workflow automation commands", () => {
       expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
         "GitHub issue comment created",
       );
-    });
-
-    it("should add a Stripe invoice-paid automation without a billing filter", async () => {
-      const response = {
-        ...stripeInvoicePaidAutomation,
-        eventConfig: {
-          provider: "stripe",
-          event: "invoice_paid",
-          connectorId: "00000000-0000-4000-a000-000000000411",
-          stripeAccountId: "acct_cli_stripe_invoice_paid",
-          mode: "live",
-        },
-        health: {
-          ...stripeInvoicePaidAutomation.health,
-          lastDeliveryStatus: "failed",
-          warning: "delivery_failed",
-          internalError: "private create delivery failure details",
-        },
-      };
-      const captured = captureCreateAutomation(response);
-
-      await runStripeEnabledAdd(WORKFLOW_ID, "stripe-invoice-paid");
-
-      expect(captured.body).toEqual({
-        kind: "event",
-        eventType: "stripe-invoice-paid",
-        eventConfig: {
-          provider: "stripe",
-          event: "invoice_paid",
-        },
-      });
-      const output = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(output).toContain("Stripe invoice paid");
-      expect(output).toContain(
-        "Stripe account ID:  acct_cli_stripe_invoice_paid",
-      );
-      expect(output).toContain("Mode:               live");
-      expect(output).toContain("Billing reasons:    any");
-      expect(output).toContain("Last matched:");
-      expect(output).toContain("Delivery:           failed");
-      expect(output).toContain("Delivery at:");
-      expect(output).toContain("delete and recreate");
-      expect(output).not.toContain("okou workflow automation update --help");
-      expect(output).toContain(
-        `okou workflow automation add ${WORKFLOW_ID} stripe-invoice-paid`,
-      );
-      expect(output).not.toContain("--billing-reason");
-      expect(mockConsoleWarn.mock.calls.flat().join("\n")).toContain(
-        "The latest Stripe workflow delivery failed.",
-      );
-      expect(output).not.toContain("private create delivery failure details");
-      expect(mockConsoleWarn.mock.calls.flat().join("\n")).not.toContain(
-        "private create delivery failure details",
-      );
-      expect(JSON.stringify(captured.body)).not.toContain("connectorId");
-      expect(JSON.stringify(captured.body)).not.toContain("stripeAccountId");
-      expect(JSON.stringify(captured.body)).not.toContain('"mode"');
-    });
-
-    it("should add a Stripe invoice-paid automation with one billing reason", async () => {
-      const captured = captureCreateAutomation(stripeInvoicePaidAutomation);
-
-      await runStripeEnabledAdd(
-        WORKFLOW_ID,
-        "stripe-invoice-paid",
-        "--billing-reason",
-        "subscription_cycle",
-      );
-
-      expect(captured.body).toEqual({
-        kind: "event",
-        eventType: "stripe-invoice-paid",
-        eventConfig: {
-          provider: "stripe",
-          event: "invoice_paid",
-          billingReasons: ["subscription_cycle"],
-        },
-      });
-    });
-
-    it("should trim and stably deduplicate Stripe billing reasons", async () => {
-      const response = {
-        ...stripeInvoicePaidAutomation,
-        eventConfig: {
-          ...stripeInvoicePaidAutomation.eventConfig,
-          billingReasons: ["subscription_cycle", "subscription_create"],
-        },
-      };
-      const captured = captureCreateAutomation(response);
-
-      await runStripeEnabledAdd(
-        WORKFLOW_ID,
-        "stripe-invoice-paid",
-        "--billing-reason",
-        " subscription_cycle, subscription_create,subscription_cycle ",
-      );
-
-      expect(captured.body).toEqual({
-        kind: "event",
-        eventType: "stripe-invoice-paid",
-        eventConfig: {
-          provider: "stripe",
-          event: "invoice_paid",
-          billingReasons: ["subscription_cycle", "subscription_create"],
-        },
-      });
-      expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
-        "subscription_cycle, subscription_create",
-      );
-      expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
-        `okou workflow automation add ${WORKFLOW_ID} stripe-invoice-paid --billing-reason subscription_cycle,subscription_create`,
-      );
-    });
-
-    it.each([
-      ["", "cannot contain empty values"],
-      [",manual", "cannot contain empty values"],
-      ["manual,", "cannot contain empty values"],
-      ["subscription_cycle,,manual", "cannot contain empty values"],
-      [
-        "subscription_cycle,unknown",
-        'Invalid --billing-reason value "unknown"',
-      ],
-    ])(
-      "should reject invalid Stripe billing reasons in %j",
-      async (billingReason, expectedMessage) => {
-        await expect(async () => {
-          await runStripeEnabledAdd(
-            WORKFLOW_ID,
-            "stripe-invoice-paid",
-            "--billing-reason",
-            billingReason,
-          );
-        }).rejects.toThrow("process.exit called");
-
-        expect(mockConsoleError).toHaveBeenCalledWith(
-          expect.stringContaining(expectedMessage),
-        );
-        expect(mockExit).toHaveBeenCalledWith(1);
-      },
-    );
-
-    it.each(["--connector-id", "--stripe-account-id", "--mode"])(
-      "should not accept server-owned Stripe binding option %s",
-      async (option) => {
-        const captured = captureCreateAutomation(stripeInvoicePaidAutomation);
-
-        await expect(async () => {
-          await runStripeEnabledAdd(
-            WORKFLOW_ID,
-            "stripe-invoice-paid",
-            option,
-            "server-owned-value",
-          );
-        }).rejects.toThrow("process.exit called");
-
-        expect(captured.body).toBeUndefined();
-        expect(mockExit).toHaveBeenCalledWith(1);
-      },
-    );
-
-    it.each(["cron", "gmail-new-message"])(
-      "should reject --billing-reason for %s automations",
-      async (kind) => {
-        await expect(async () => {
-          await automationCommand.parseAsync([
-            "node",
-            "cli",
-            "add",
-            WORKFLOW_ID,
-            kind,
-            "--billing-reason",
-            "subscription_cycle",
-          ]);
-        }).rejects.toThrow("process.exit called");
-
-        expect(mockConsoleError).toHaveBeenCalledWith(
-          expect.stringContaining(
-            "--billing-reason only applies to stripe-invoice-paid automations",
-          ),
-        );
-        expect(mockExit).toHaveBeenCalledWith(1);
-      },
-    );
-
-    it.each([
-      "Connect Stripe with OAuth in Live mode before adding a Stripe invoice-paid automation",
-      "Stripe invoice-paid automations require OAuth; reconnect Stripe using OAuth",
-      "Stripe invoice-paid automations require Live mode; reconnect Stripe in Live mode",
-      "Reconnect Stripe with OAuth before using Stripe invoice-paid automations",
-    ])("should surface Stripe readiness failure: %s", async (message) => {
-      server.use(
-        http.post(
-          "http://localhost:3000/api/workflows/:workflowId/automations",
-          () => {
-            return HttpResponse.json(
-              { error: { code: "BAD_REQUEST", message } },
-              { status: 400 },
-            );
-          },
-        ),
-      );
-
-      await expect(async () => {
-        await runStripeEnabledAdd(WORKFLOW_ID, "stripe-invoice-paid");
-      }).rejects.toThrow("process.exit called");
-
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining(message),
-      );
-      expect(mockExit).toHaveBeenCalledWith(1);
-    });
-
-    it("should hide disabled Stripe creation and reject a directly typed kind", async () => {
-      const addCommand = automationCommand.commands.find((command) => {
-        return command.name() === "add";
-      });
-      if (!addCommand) {
-        throw new Error("add command not found");
-      }
-      let helpOutput = "";
-      addCommand.configureOutput({
-        writeOut: (value) => {
-          helpOutput += value;
-        },
-        writeErr: (value) => {
-          helpOutput += value;
-        },
-      });
-      addCommand.outputHelp();
-
-      expect(helpOutput).not.toContain("stripe-invoice-paid");
-      expect(helpOutput).not.toContain("--billing-reason");
-
-      await expect(async () => {
-        await automationCommand.parseAsync([
-          "node",
-          "cli",
-          "add",
-          WORKFLOW_ID,
-          "stripe-invoice-paid",
-        ]);
-      }).rejects.toThrow("process.exit called");
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining(
-          "Stripe invoice-paid workflow automations are not enabled for this workspace",
-        ),
-      );
-      expect(mockExit).toHaveBeenCalledWith(1);
-    });
-
-    it("should show Stripe creation in help when the feature is enabled", async () => {
-      vi.stubEnv("OKOU_TOKEN", okouToken("org-stripe-enabled"));
-      const addCommand = createAutomationAddCommand({
-        featureSwitchOverrides: {
-          [FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations]: true,
-        },
-      });
-      let helpOutput = "";
-      addCommand.configureOutput({
-        writeOut: (value) => {
-          helpOutput += value;
-        },
-        writeErr: (value) => {
-          helpOutput += value;
-        },
-      });
-
-      addCommand.outputHelp();
-
-      expect(helpOutput).toContain("stripe-invoice-paid");
-      expect(helpOutput).toContain("--billing-reason <reasons>");
     });
 
     it("should add a Google Calendar event-created automation", async () => {
@@ -1848,44 +1543,6 @@ describe("okou workflow automation commands", () => {
       expect(mockExit).toHaveBeenCalledWith(1);
     });
 
-    it("should reject Stripe updates with delete-and-recreate guidance and no Stripe flags", async () => {
-      mockExistingAutomation(stripeInvoicePaidAutomation);
-      const updateCommand = automationCommand.commands.find((command) => {
-        return command.name() === "update";
-      });
-      if (!updateCommand) {
-        throw new Error("update command not found");
-      }
-      let helpOutput = "";
-      updateCommand.configureOutput({
-        writeOut: (value) => {
-          helpOutput += value;
-        },
-        writeErr: (value) => {
-          helpOutput += value;
-        },
-      });
-      updateCommand.outputHelp();
-
-      expect(helpOutput).not.toContain("--billing-reason");
-
-      await expect(async () => {
-        await automationCommand.parseAsync([
-          "node",
-          "cli",
-          "update",
-          AUTOMATION_ID,
-        ]);
-      }).rejects.toThrow("process.exit called");
-
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining(
-          "Stripe billing reasons cannot be updated; delete and recreate the automation",
-        ),
-      );
-      expect(mockExit).toHaveBeenCalledWith(1);
-    });
-
     it("should switch to a cron schedule", async () => {
       vi.stubEnv("TZ", "America/New_York");
       const captured = captureUpdateAutomation(cronAutomation);
@@ -2222,7 +1879,6 @@ describe("okou workflow automation commands", () => {
               notionAutomation,
               notionDatabaseAutomation,
               notionContentUpdatedAutomation,
-              stripeInvoicePaidAutomation,
             ]);
           },
         ),
@@ -2246,55 +1902,6 @@ describe("okou workflow automation commands", () => {
       expect(logCalls).toContain("Product notes");
       expect(logCalls).toContain("New Notion database item");
       expect(logCalls).toContain("Bug Bash");
-      expect(logCalls).toContain("Stripe invoice paid");
-      expect(logCalls).toContain("acct_cli_stripe_invoice_paid (live)");
-      expect(logCalls).toContain("billing reasons: subscription_cycle");
-      expect(logCalls).toContain("last matched:");
-      expect(logCalls).toContain("delivery: delivered at");
-    });
-
-    it("should display nullable Stripe health and a generic delivery warning while creation is disabled", async () => {
-      const lastMatchedAt = new Date(
-        Date.now() - 2 * 60 * 60 * 1000,
-      ).toISOString();
-      const failedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-      const failedAutomation = {
-        ...stripeInvoicePaidAutomation,
-        eventConfig: {
-          ...stripeInvoicePaidAutomation.eventConfig,
-          billingReasons: [],
-        },
-        health: {
-          lastMatchingEventReceivedAt: lastMatchedAt,
-          lastDeliveryStatus: "failed",
-          lastDeliveryStatusAt: failedAt,
-          warning: "delivery_failed",
-          internalError: "do not expose this delivery error",
-        },
-      };
-      server.use(
-        http.get(
-          "http://localhost:3000/api/workflows/:workflowId/automations",
-          () => {
-            return HttpResponse.json([failedAutomation]);
-          },
-        ),
-      );
-
-      await automationCommand.parseAsync(["node", "cli", "list", WORKFLOW_ID]);
-
-      const output = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(output).toContain("acct_cli_stripe_invoice_paid (live)");
-      expect(output).toContain("any billing reason");
-      expect(output).toContain("last matched: 2h ago");
-      expect(output).toContain("delivery: failed at 1h ago");
-      expect(mockConsoleWarn.mock.calls.flat().join("\n")).toContain(
-        "The latest Stripe workflow delivery failed.",
-      );
-      expect(output).not.toContain("do not expose this delivery error");
-      expect(mockConsoleWarn.mock.calls.flat().join("\n")).not.toContain(
-        "do not expose this delivery error",
-      );
     });
 
     it("should display an empty state with an add hint", async () => {
@@ -2435,91 +2042,6 @@ describe("okou workflow automation commands", () => {
       expect(logCalls).not.toContain("Manage with Okou CLI:");
       expect(mockExit).not.toHaveBeenCalled();
     });
-
-    it.each([
-      ["pending", null],
-      ["delivered", null],
-      ["skipped", null],
-      ["failed", "delivery_failed"],
-      [null, null],
-    ] as const)(
-      "should display Stripe delivery status %s and immutable recreate guidance while creation is disabled",
-      async (deliveryStatus, warning) => {
-        const hasDelivery = deliveryStatus !== null;
-        const automation = {
-          ...stripeInvoicePaidAutomation,
-          eventConfig: {
-            ...stripeInvoicePaidAutomation.eventConfig,
-            billingReasons: undefined,
-          },
-          health: {
-            lastMatchingEventReceivedAt: hasDelivery
-              ? new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
-              : null,
-            lastDeliveryStatus: deliveryStatus,
-            lastDeliveryStatusAt: hasDelivery
-              ? new Date(Date.now() - 60 * 60 * 1000).toISOString()
-              : null,
-            warning,
-            internalError: "private Stripe delivery failure details",
-          },
-        };
-        server.use(
-          http.get("http://localhost:3000/api/workflow-automations/:id", () => {
-            return HttpResponse.json(automation);
-          }),
-          http.get("http://localhost:3000/api/workflow-automations", () => {
-            return HttpResponse.json([
-              { workflow: workflowSummary, automation },
-            ]);
-          }),
-        );
-
-        await automationCommand.parseAsync([
-          "node",
-          "cli",
-          "show",
-          AUTOMATION_ID,
-        ]);
-
-        const output = mockConsoleLog.mock.calls.flat().join("\n");
-        expect(output).toContain(
-          "Stripe account ID:  acct_cli_stripe_invoice_paid",
-        );
-        expect(output).toContain("Mode:               live");
-        expect(output).toContain("Billing reasons:    any");
-        expect(output).toContain(
-          `Delivery:           ${deliveryStatus ?? "-"}`,
-        );
-        expect(output).toContain("Last matched:");
-        expect(output).toContain("Delivery at:");
-        expect(output).toContain(
-          "Change billing reasons (delete and recreate)",
-        );
-        expect(output).toContain(
-          `okou workflow automation rm ${AUTOMATION_ID}`,
-        );
-        expect(output).toContain(
-          `okou workflow automation add ${WORKFLOW_ID} stripe-invoice-paid`,
-        );
-        expect(output).not.toContain("--billing-reason");
-        expect(output).not.toContain("okou workflow automation update --help");
-        expect(output).not.toContain("private Stripe delivery failure details");
-        const warningOutput = mockConsoleWarn.mock.calls.flat().join("\n");
-        if (warning === "delivery_failed") {
-          expect(warningOutput).toContain(
-            "The latest Stripe workflow delivery failed.",
-          );
-        } else {
-          expect(warningOutput).not.toContain(
-            "The latest Stripe workflow delivery failed.",
-          );
-        }
-        expect(warningOutput).not.toContain(
-          "private Stripe delivery failure details",
-        );
-      },
-    );
   });
 
   describe("rm", () => {
@@ -2545,87 +2067,6 @@ describe("okou workflow automation commands", () => {
   });
 
   describe("enable / disable", () => {
-    it("should keep existing Stripe automations manageable while creation is disabled", async () => {
-      const actions: string[] = [];
-      server.use(
-        http.post(
-          "http://localhost:3000/api/workflow-automations/:id/enable",
-          () => {
-            actions.push("enable");
-            return HttpResponse.json(stripeInvoicePaidAutomation);
-          },
-        ),
-        http.post(
-          "http://localhost:3000/api/workflow-automations/:id/disable",
-          () => {
-            actions.push("disable");
-            return HttpResponse.json({
-              ...stripeInvoicePaidAutomation,
-              enabled: false,
-            });
-          },
-        ),
-        http.delete(
-          "http://localhost:3000/api/workflow-automations/:id",
-          () => {
-            actions.push("delete");
-            return new HttpResponse(null, { status: 204 });
-          },
-        ),
-      );
-
-      await automationCommand.parseAsync([
-        "node",
-        "cli",
-        "enable",
-        AUTOMATION_ID,
-      ]);
-      await automationCommand.parseAsync([
-        "node",
-        "cli",
-        "disable",
-        AUTOMATION_ID,
-      ]);
-      await automationCommand.parseAsync(["node", "cli", "rm", AUTOMATION_ID]);
-
-      expect(actions).toEqual(["enable", "disable", "delete"]);
-      const output = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(output).toContain(`Automation ${AUTOMATION_ID} enabled`);
-      expect(output).toContain(`Automation ${AUTOMATION_ID} disabled`);
-      expect(output).toContain(`Automation ${AUTOMATION_ID} removed`);
-      expect(mockExit).not.toHaveBeenCalled();
-    });
-
-    it("should surface a Stripe binding-mismatch readiness failure on enable", async () => {
-      const message =
-        "The Stripe connection no longer matches this automation; delete and recreate the automation to bind the current Live-mode Stripe account";
-      server.use(
-        http.post(
-          "http://localhost:3000/api/workflow-automations/:id/enable",
-          () => {
-            return HttpResponse.json(
-              { error: { code: "BAD_REQUEST", message } },
-              { status: 400 },
-            );
-          },
-        ),
-      );
-
-      await expect(async () => {
-        await automationCommand.parseAsync([
-          "node",
-          "cli",
-          "enable",
-          AUTOMATION_ID,
-        ]);
-      }).rejects.toThrow("process.exit called");
-
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining(message),
-      );
-      expect(mockExit).toHaveBeenCalledWith(1);
-    });
-
     it("should enable a workflow automation", async () => {
       server.use(
         http.post(

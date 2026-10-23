@@ -123,7 +123,6 @@ export const automationEventTypeSchema = z.enum([
   "notion-child-page-created",
   "notion-database-item-created",
   "notion-page-content-updated",
-  "stripe-invoice-paid",
   "webhook-received",
 ]);
 export type WorkflowAutomationEventType = z.infer<
@@ -708,46 +707,6 @@ export type NotionAutomationEventConfig =
   | NotionDatabaseItemCreatedEventConfig
   | NotionPageContentUpdatedEventConfig;
 
-export const stripeInvoiceBillingReasonSchema = z.enum([
-  "automatic_pending_invoice_item_invoice",
-  "manual",
-  "quote_accept",
-  "subscription",
-  "subscription_create",
-  "subscription_cycle",
-  "subscription_threshold",
-  "subscription_update",
-  "upcoming",
-]);
-export type StripeInvoiceBillingReason = z.infer<
-  typeof stripeInvoiceBillingReasonSchema
->;
-
-export const stripeInvoicePaidEventCreateConfigSchema = z
-  .object({
-    provider: z.literal("stripe"),
-    event: z.literal("invoice_paid"),
-    billingReasons: z.array(stripeInvoiceBillingReasonSchema).optional(),
-  })
-  .strict();
-export type StripeInvoicePaidEventCreateConfig = z.infer<
-  typeof stripeInvoicePaidEventCreateConfigSchema
->;
-
-export const stripeInvoicePaidEventConfigSchema = z
-  .object({
-    provider: z.literal("stripe"),
-    event: z.literal("invoice_paid"),
-    billingReasons: z.array(stripeInvoiceBillingReasonSchema).optional(),
-    connectorId: z.string().uuid(),
-    stripeAccountId: z.string().min(1).max(255),
-    mode: z.literal("live"),
-  })
-  .strict();
-export type StripeInvoicePaidEventConfig = z.infer<
-  typeof stripeInvoicePaidEventConfigSchema
->;
-
 /**
  * Schedule configuration, discriminated by `type`. Aligned with Automation's
  * time-based Automation schedule model:
@@ -966,28 +925,6 @@ export const workflowNotionPageContentUpdatedAutomationSummarySchema =
     scheduleSummary: z.null(),
   });
 
-export const stripeWorkflowAutomationHealthSchema = z.object({
-  lastMatchingEventReceivedAt: z.string().datetime().nullable(),
-  lastDeliveryStatus: z
-    .enum(["pending", "delivered", "skipped", "failed"])
-    .nullable(),
-  lastDeliveryStatusAt: z.string().datetime().nullable(),
-  warning: z.literal("delivery_failed").nullable(),
-});
-export type StripeWorkflowAutomationHealth = z.infer<
-  typeof stripeWorkflowAutomationHealthSchema
->;
-
-export const workflowStripeInvoicePaidAutomationSummarySchema =
-  workflowAutomationSummaryBaseSchema.extend({
-    kind: z.literal("event"),
-    eventType: z.literal("stripe-invoice-paid"),
-    eventConfig: stripeInvoicePaidEventConfigSchema,
-    schedule: z.null(),
-    scheduleSummary: z.null(),
-    health: stripeWorkflowAutomationHealthSchema,
-  });
-
 export const workflowWebhookReceivedAutomationSummarySchema =
   workflowAutomationSummaryBaseSchema.extend({
     kind: z.literal("event"),
@@ -1020,7 +957,6 @@ export const eventAutomationSummarySchema = z.discriminatedUnion("eventType", [
   workflowNotionChildPageCreatedAutomationSummarySchema,
   workflowNotionDatabaseItemCreatedAutomationSummarySchema,
   workflowNotionPageContentUpdatedAutomationSummarySchema,
-  workflowStripeInvoicePaidAutomationSummarySchema,
   workflowWebhookReceivedAutomationSummarySchema,
 ]);
 
@@ -1207,16 +1143,6 @@ export const chatThreadWorkflowNotionPageContentUpdatedAutomationSchema =
     scheduleSummary: z.null(),
   });
 
-export const chatThreadWorkflowStripeInvoicePaidAutomationSchema =
-  chatThreadWorkflowAutomationBaseSchema.extend({
-    kind: z.literal("event"),
-    eventType: z.literal("stripe-invoice-paid"),
-    eventConfig: stripeInvoicePaidEventConfigSchema,
-    schedule: z.null(),
-    scheduleSummary: z.null(),
-    health: stripeWorkflowAutomationHealthSchema,
-  });
-
 export const chatThreadWorkflowWebhookReceivedAutomationSchema =
   workflowWebhookReceivedAutomationSummarySchema.extend({
     id: z.string().uuid(),
@@ -1243,7 +1169,6 @@ export const chatThreadWorkflowAutomationSchema = z.union([
   chatThreadWorkflowNotionChildPageCreatedAutomationSchema,
   chatThreadWorkflowNotionDatabaseItemCreatedAutomationSchema,
   chatThreadWorkflowNotionPageContentUpdatedAutomationSchema,
-  chatThreadWorkflowStripeInvoicePaidAutomationSchema,
   chatThreadWorkflowWebhookReceivedAutomationSchema,
 ]);
 export type ChatThreadWorkflowAutomation = z.infer<
@@ -1412,13 +1337,6 @@ export const workflowNotionPageContentUpdatedAutomationCreateRequestSchema =
     enabled: z.boolean().optional(),
   });
 
-export const workflowStripeInvoicePaidAutomationCreateRequestSchema = z.object({
-  kind: z.literal("event"),
-  eventType: z.literal("stripe-invoice-paid"),
-  eventConfig: stripeInvoicePaidEventCreateConfigSchema,
-  enabled: z.boolean().optional(),
-});
-
 export const workflowWebhookReceivedAutomationCreateRequestSchema = z.object({
   kind: z.literal("event"),
   eventType: z.literal("webhook-received"),
@@ -1445,7 +1363,6 @@ export const workflowAutomationCreateRequestSchema = z.union([
   workflowNotionChildPageCreatedAutomationCreateRequestSchema,
   workflowNotionDatabaseItemCreatedAutomationCreateRequestSchema,
   workflowNotionPageContentUpdatedAutomationCreateRequestSchema,
-  workflowStripeInvoicePaidAutomationCreateRequestSchema,
   workflowWebhookReceivedAutomationCreateRequestSchema,
 ]);
 export type WorkflowAutomationCreateRequest = z.infer<

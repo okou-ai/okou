@@ -6733,43 +6733,6 @@
         "time": "时间（{{timezone}}）",
         "updateScheduleAria": "更新定时自动化"
       },
-      "stripe": {
-        "addAction": "添加 Stripe 自动化",
-        "addAria": "添加 Stripe 发票支付自动化",
-        "addDescription": "当所连接的 Stripe Live 账号中有匹配的发票被支付时运行此工作流。",
-        "addTitle": "添加 Stripe 自动化",
-        "anyBillingReason": "任意计费原因",
-        "billingReason": {
-          "automaticPendingInvoiceItemInvoice": "自动结算待处理账单项",
-          "manual": "手动开具",
-          "quoteAccept": "报价已接受",
-          "subscription": "订阅",
-          "subscriptionCreate": "订阅已创建",
-          "subscriptionCycle": "订阅周期扣费",
-          "subscriptionThreshold": "订阅额度阈值",
-          "subscriptionUpdate": "订阅已更新",
-          "upcoming": "即将出账"
-        },
-        "billingReasons": "计费原因",
-        "billingReasonsHint": "不选则匹配任意计费原因。",
-        "bindingSummary": "Stripe 账号{{accountId}} · Live 模式 · {{billingReasons}}",
-        "delivery": "投递",
-        "deliveryStatus": {
-          "delivered": "已投递",
-          "failed": "失败",
-          "pending": "待投递",
-          "skipped": "已跳过"
-        },
-        "deliveryWarning": "最近一次投递最终失败。请先查看工作流动态，然后再重试。",
-        "immutableHint": "Stripe 账号和计费原因不可更改。如需调整，请删除此自动化并重新创建。",
-        "invoicePaidDescription": "当匹配的 Stripe 发票被支付时运行。",
-        "invoicePaidTitle": "Stripe 发票已支付",
-        "lastEvent": "最近一次事件",
-        "manageConnection": "管理 Stripe 连接",
-        "noDeliveries": "暂无投递记录",
-        "noMatchingEvents": "暂无匹配的事件",
-        "rule": "当匹配的 Stripe 发票被支付时"
-      },
       "types": {
         "chat": "聊天",
         "github": "GitHub",
@@ -6778,7 +6741,6 @@
         "googleForms": "Google Forms",
         "googleMeet": "Google Meet",
         "notion": "Notion",
-        "stripe": "Stripe",
         "webhook": "Webhook"
       },
       "webhook": {

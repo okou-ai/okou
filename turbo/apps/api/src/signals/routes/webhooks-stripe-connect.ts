@@ -1,27 +1,24 @@
-import { webhookStripeAutomationEventsContract } from "@okouai/api-contracts/contracts/webhooks";
+import { webhookStripeConnectContract } from "@okouai/api-contracts/contracts/webhooks";
 import { command } from "ccstate";
 
 import { optionalEnv } from "../../lib/env";
-import { logger } from "../../lib/log";
 import { request$ } from "../context/hono";
-import { constructStripeWebhookEvent } from "../external/stripe-client";
+import { constructStripeConnectWebhookEvent } from "../external/stripe-client";
 import type { RouteEntry } from "../route-entry";
-import { dispatchStripeAutomationEvent$ } from "../services/stripe-automation-event.service";
+import { dispatchStripeConnectorEvent$ } from "../services/stripe-connector-event.service";
 import { safeSync, settle } from "../utils";
-
-const log = logger("api:webhooks-stripe-automation-events");
 
 function jsonError(message: string, status: 400 | 401 | 500 | 503): Response {
   return Response.json({ error: message }, { status });
 }
 
-const postStripeAutomationEvent$ = command(
+const postStripeConnectEvent$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
+    // Existing Connect endpoints use this independently configured signing secret.
     const webhookSecret = optionalEnv("STRIPE_AUTOMATION_WEBHOOK_SECRET");
     if (!webhookSecret) {
-      return jsonError("Stripe automation events are not configured", 503);
+      return jsonError("Stripe Connect events are not configured", 503);
     }
-
     const request = get(request$);
     const signature = request.raw.headers.get("stripe-signature");
     if (!signature) {
@@ -30,33 +27,33 @@ const postStripeAutomationEvent$ = command(
     const rawBody = await request.text();
     signal.throwIfAborted();
     const constructed = safeSync(() => {
-      return constructStripeWebhookEvent(rawBody, signature, webhookSecret);
+      return constructStripeConnectWebhookEvent(
+        rawBody,
+        signature,
+        webhookSecret,
+      );
     });
     signal.throwIfAborted();
     if ("error" in constructed) {
       return jsonError("Invalid webhook signature", 401);
     }
-
     const dispatched = await settle(
-      set(dispatchStripeAutomationEvent$, constructed.ok, signal),
+      set(dispatchStripeConnectorEvent$, constructed.ok, signal),
       signal,
     );
     if (!dispatched.ok) {
-      log.error("Stripe automation ingress transaction failed", {
-        category: "ingress_transaction",
-      });
-      return jsonError("Stripe automation event processing failed", 500);
+      return jsonError("Stripe Connect event processing failed", 500);
     }
-    if (dispatched.value.kind === "bad_request") {
-      return jsonError("Invalid supported Stripe automation event", 400);
+    if (dispatched.value === "bad_request") {
+      return jsonError("Invalid supported Stripe Connect event", 400);
     }
     return new Response("OK", { status: 200 });
   },
 );
 
-export const webhooksStripeAutomationEventsRoutes: readonly RouteEntry[] = [
+export const webhooksStripeConnectRoutes: readonly RouteEntry[] = [
   {
-    route: webhookStripeAutomationEventsContract.post,
-    handler: postStripeAutomationEvent$,
+    route: webhookStripeConnectContract.post,
+    handler: postStripeConnectEvent$,
   },
 ];

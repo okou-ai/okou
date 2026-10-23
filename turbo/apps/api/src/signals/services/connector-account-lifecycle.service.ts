@@ -1,14 +1,3 @@
-import { builtinConnectorCredentialValuesFromRows } from "./builtin-connector-credential-runtime.service";
-import {
-  stripeAccountAutomationsReadPlan,
-  stripeAccountAutomationSelectionPlan,
-  stripeAccountCatalogReadPlan,
-  stripeAccountConnectionReadPlan,
-  stripeAccountReadiness,
-  stripeAccountLiveModeReadPlan,
-  stripeAccountProjectionReadiness,
-  stripeAccountProjectionUpdate,
-} from "./stripe-invoice-paid-workflow-automation.service";
 import { Buffer } from "node:buffer";
 import { command, computed, type Computed } from "ccstate";
 
@@ -1455,70 +1444,7 @@ export const setDefaultConnectorAccount$ = command(
           throw new DefaultConnectorAccountMissing();
         }
         const updatedAt = updated.updatedAt;
-        const isStripe =
-          args.target.kind === "builtin" &&
-          args.target.connectorSlug === "stripe";
-        if (!isStripe) {
-          await reprojectWorkflowAutomationsForOwner(tx, args, signal);
-        }
-        const scope = args;
-        const projection = stripeAccountAutomationsReadPlan(scope);
-        const automations = isStripe
-          ? await tx.select().from(projection.query)
-          : [];
-        if (isStripe) {
-          signal.throwIfAborted();
-        }
-        for (const automation of automations) {
-          const item = stripeAccountAutomationSelectionPlan(scope, automation);
-          let [selected] = await tx.select().from(item.selected);
-          if (!selected) {
-            [selected] = await tx.select().from(item.defaultAccount);
-          }
-          signal.throwIfAborted();
-          const connectorId = selected?.connectorId ?? null;
-          let readiness =
-            connectorId === null
-              ? undefined
-              : projection.cache.get(connectorId);
-          if (connectorId !== null && readiness === undefined) {
-            const catalog = stripeAccountCatalogReadPlan();
-            const rows = await tx
-              .select(catalog.columns)
-              .from(catalog.from)
-              .leftJoin(catalog.joinTable, catalog.join)
-              .where(catalog.where);
-            const account = stripeAccountConnectionReadPlan(
-              scope,
-              connectorId,
-              rows,
-            );
-            signal.throwIfAborted();
-            const [connection] = await tx.select().from(account.query);
-            const ready = stripeAccountReadiness(account.input, connection);
-            signal.throwIfAborted();
-            let values: ReadonlyMap<string, string> = new Map();
-            if (ready.kind === "ok") {
-              const liveMode = stripeAccountLiveModeReadPlan(ready.connection);
-              values = await builtinConnectorCredentialValuesFromRows(
-                liveMode.input,
-                await tx.select().from(liveMode.query),
-              );
-              signal.throwIfAborted();
-            }
-            readiness = stripeAccountProjectionReadiness(ready, values);
-            projection.cache.set(connectorId, readiness);
-          }
-          const update = stripeAccountProjectionUpdate(
-            automation,
-            connectorId,
-            readiness,
-          );
-          if (update !== null) {
-            await tx.update(projection.from).set(update).where(item.target);
-          }
-          signal.throwIfAborted();
-        }
+        await reprojectWorkflowAutomationsForOwner(tx, args, signal);
         return updatedAt;
       }),
     );
@@ -1656,12 +1582,7 @@ export async function prepareConnectorAccountDeletionWithTargetLocked(
       })();
     })();
   }
-  if (
-    args.target.kind !== "builtin" ||
-    args.target.connectorSlug !== "stripe"
-  ) {
-    await reprojectWorkflowAutomationsForOwner(db, args, signal);
-  }
+  await reprojectWorkflowAutomationsForOwner(db, args, signal);
 
   return {
     kind: "ready",

@@ -224,7 +224,6 @@ export type WorkflowAutomationEventType =
   | "notion-child-page-created"
   | "notion-database-item-created"
   | "notion-page-content-updated"
-  | "stripe-invoice-paid"
   | "webhook-received";
 
 export type WorkflowWebhookDisabledReason = "paid_plan_required";
