@@ -29,7 +29,7 @@ import {
   storeCustomConnectorOAuth2Connection$,
   type CustomConnectorOAuthTokenResult,
 } from "../services/custom-connector-oauth2.service";
-import { exchangeCustomConnectorAutomaticOAuthCode } from "../services/custom-connector-automatic-oauth.service";
+import { exchangeCustomConnectorAutomaticOAuthCode$ } from "../services/custom-connector-automatic-oauth.service";
 import {
   McpAutomaticOAuthError,
   mcpAutomaticOAuthResourceMatchesEndpoint,
@@ -429,9 +429,9 @@ const completeAutomaticOAuthCallback$ = command(
             "Automatic OAuth callback changed",
           );
         }
-        const token = await exchangeCustomConnectorAutomaticOAuthCode(
+        const token = await set(
+          exchangeCustomConnectorAutomaticOAuthCode$,
           {
-            db: set(writeDb$),
             context: args.context,
             redirectUri: args.state.redirectUri,
             cimdClientId: clientMetadata.client_id,

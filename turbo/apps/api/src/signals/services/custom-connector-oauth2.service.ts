@@ -94,12 +94,13 @@ import { mcpOAuthSafeFetch } from "./mcp-oauth-safe-fetch.service";
 import {
   customConnectorAutomaticOAuthErrorCode,
   prepareCustomConnectorAutomaticOAuthAuthorization$,
-  prepareCustomConnectorAutomaticOAuthReauthorization,
+  prepareCustomConnectorAutomaticOAuthReauthorization$,
   customConnectorAutomaticOAuthBindingReadPlan,
   customConnectorAutomaticOAuthBindingFromRow,
   refreshCustomConnectorAutomaticOAuthToken,
   retireCustomConnectorDcrRegistrationSql,
   type CustomConnectorAutomaticOAuthBinding,
+  type CustomConnectorAutomaticOAuthAuthorization,
   type CustomConnectorCanonicalAutomaticOAuthStateContext as PreparedCustomConnectorAutomaticOAuthStateContext,
 } from "./custom-connector-automatic-oauth.service";
 import {
@@ -1346,9 +1347,7 @@ interface AutomaticOAuthReauthorizationArgs {
 function automaticOAuthReauthorizationStartValues(
   args: AutomaticOAuthReauthorizationArgs,
   connector: CustomConnectorRow,
-  prepared: Awaited<
-    ReturnType<typeof prepareCustomConnectorAutomaticOAuthReauthorization>
-  >,
+  prepared: CustomConnectorAutomaticOAuthAuthorization,
   redirectUri: string,
   state: string,
 ): CustomConnectorOAuthStartPersistenceArgs {
@@ -1466,9 +1465,9 @@ export const startCustomConnectorAutomaticOAuthReauthorization$ = command(
     }
     const state = generateConnectorOAuthState();
     const preparedResult = await settle(
-      prepareCustomConnectorAutomaticOAuthReauthorization(
+      set(
+        prepareCustomConnectorAutomaticOAuthReauthorization$,
         {
-          db,
           binding,
           storageVersion: connector.storageVersion,
           endpoint: connector.endpoint,
