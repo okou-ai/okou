@@ -315,6 +315,14 @@ not establish production pressure, IO or startup performance.
 
 ## Optional snapshot IO
 
+Startup snapshot selection carries each declared profile-byte bound into the
+actual blocking File reader. Startup and pressure-guarded reads share opened-file
+size validation, a remaining-byte cap on every read and unchanged-size completion
+checks. An oversized or growing snapshot cannot consume past its declared bound
+or report a truncated read as complete. Refusing optional warming leaves the
+snapshot contents intact; the read-byte bound is separate from kernel readahead
+and a whole-host physical-memory envelope.
+
 Supplied-policy optional consumers share the pressure controller's current
 observation state and global cadence through a restricted capability bound to
 its original physical-memory authority. Notifications carry no cached

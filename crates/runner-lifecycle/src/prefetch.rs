@@ -8,6 +8,7 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
+mod bounded;
 mod guarded;
 mod outcome_accounting;
 #[cfg(any(test, feature = "test-support"))]
@@ -34,6 +35,7 @@ enum PrefetchOutcome {
 
 pub struct MemoryPrefetchCandidate {
     pub path: PathBuf,
+    /// Maximum snapshot bytes to consume, expressed in MiB.
     pub memory_mb: u32,
 }
 
@@ -71,15 +73,17 @@ impl MemoryPrefetchTasks {
             candidates,
             budget_mb,
             MEMORY_PREFETCH_CONCURRENCY,
-            move |path, cancel| {
+            move |path, max_bytes, cancel| {
                 #[cfg(any(test, feature = "test-support"))]
                 worker_observer.started();
-                let outcome = prefetch_memory_observed(
+                let outcome = bounded::read(
                     path,
-                    cancel,
+                    max_bytes,
+                    || cancel.is_cancelled(),
                     #[cfg(any(test, feature = "test-support"))]
                     checkpoint.as_ref(),
                 );
+                log_prefetch_outcome(path, &outcome);
                 #[cfg(any(test, feature = "test-support"))]
                 worker_observer.finished(&outcome);
                 #[cfg(not(any(test, feature = "test-support")))]
@@ -103,7 +107,7 @@ impl MemoryPrefetchTasks {
         prefetch: F,
     ) -> Self
     where
-        F: Fn(&Path, &CancellationToken) + Send + Sync + 'static,
+        F: Fn(&Path, u64, &CancellationToken) + Send + Sync + 'static,
     {
         let cancel = CancellationToken::new();
         let physical_io = TaskTracker::new();
@@ -242,7 +246,7 @@ async fn run_prefetches<F>(
     prefetch: Arc<F>,
     physical_io: TaskTracker,
 ) where
-    F: Fn(&Path, &CancellationToken) + Send + Sync + 'static,
+    F: Fn(&Path, u64, &CancellationToken) + Send + Sync + 'static,
 {
     let mut candidates = candidates.into_iter();
     let mut active = JoinSet::new();
@@ -257,7 +261,11 @@ async fn run_prefetches<F>(
             let physical = physical_io.token();
             active.spawn_blocking(move || {
                 let _physical = physical;
-                task_prefetch(&candidate.path, &task_cancel);
+                task_prefetch(
+                    &candidate.path,
+                    u64::from(candidate.memory_mb) * 1024 * 1024,
+                    &task_cancel,
+                );
             });
         }
 
@@ -314,7 +322,12 @@ fn prefetch_memory_observed(
         }
     };
 
-    match &outcome {
+    log_prefetch_outcome(path, &outcome);
+    outcome
+}
+
+fn log_prefetch_outcome(path: &Path, outcome: &PrefetchOutcome) {
+    match outcome {
         PrefetchOutcome::Complete { bytes } => {
             info!(bytes = *bytes, path = %path.display(), "memory prefetch complete");
         }
@@ -328,8 +341,6 @@ fn prefetch_memory_observed(
             warn!(error = %error, bytes = *bytes, path = %path.display(), "memory prefetch: read failed");
         }
     }
-
-    outcome
 }
 
 #[cfg(test)]
@@ -478,7 +489,7 @@ mod tests {
             ],
             7,
             NonZeroUsize::MIN,
-            move |path, _| {
+            move |path, _, _| {
                 started_tx.send(path.to_path_buf()).unwrap();
             },
         );
@@ -509,7 +520,7 @@ mod tests {
             ],
             10,
             NonZeroUsize::new(2).unwrap(),
-            move |path, _| task_gate.run(path),
+            move |path, _, _| task_gate.run(path),
         );
 
         tokio::time::timeout(Duration::from_secs(5), async {
@@ -542,7 +553,7 @@ mod tests {
             ],
             6,
             NonZeroUsize::MIN,
-            move |path, _| task_gate.run(path),
+            move |path, _, _| task_gate.run(path),
         );
 
         let started = tokio::time::timeout(Duration::from_secs(5), started_rx.recv())
