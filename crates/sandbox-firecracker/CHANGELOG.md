@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.53.25](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.24...sandbox-firecracker-v0.53.25) (2026-10-23)
+
+
+### Refactoring
+
+* **sandbox-firecracker:** converge snapshot forwarder retirement ([#42396](https://github.com/okou-ai/okou/issues/42396)) ([09cd6b4](https://github.com/okou-ai/okou/commit/09cd6b412b4b728c277c76f3aa0d20568a63fe20))
+* **sandbox-firecracker:** own bound control socket custody ([#42447](https://github.com/okou-ai/okou/issues/42447)) ([8f4442f](https://github.com/okou-ai/okou/commit/8f4442f3f785e3b33db29eaa9f1b91664b0eeb47))
+* **sandbox-firecracker:** own cleanup terminal identity ([#42416](https://github.com/okou-ai/okou/issues/42416)) ([4d1d6de](https://github.com/okou-ai/okou/commit/4d1d6de7025876bd96e216224e5ef5bd2c79c42d))
+* **sandbox-firecracker:** own guest cpu placement lease custody ([#42458](https://github.com/okou-ai/okou/issues/42458)) ([530c60e](https://github.com/okou-ai/okou/commit/530c60eaa42d9f694883a7a520f05a773a1ab6ca))
+
 ## [0.53.24](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.23...sandbox-firecracker-v0.53.24) (2026-10-22)
 
 

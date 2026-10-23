@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.14](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.13...runner-executor-v0.15.14) (2026-10-23)
+
+
+### Refactoring
+
+* remove retired pi memory storage and compatibility ([#42397](https://github.com/okou-ai/okou/issues/42397)) ([3f7e13b](https://github.com/okou-ai/okou/commit/3f7e13b76f0ea1d4ac1ff39a1f240a7af19dc1ad))
+
 ## [0.15.13](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.12...runner-executor-v0.15.13) (2026-10-22)
 
 ## [0.15.12](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.11...runner-executor-v0.15.12) (2026-10-22)
