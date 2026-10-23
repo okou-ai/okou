@@ -145,7 +145,6 @@ import * as bankingSchema from "./schema/banking";
 import * as linkWalletSchema from "./schema/link-wallet";
 import * as gmailEventSchema from "./schema/gmail-event";
 import * as notionEventSchema from "./schema/notion-event";
-import * as stripeAutomationEventSchema from "./schema/stripe-automation-event";
 import * as googleCalendarEventSchema from "./schema/google-calendar-event";
 import * as googleFormsEventSchema from "./schema/google-forms-event";
 import * as googleWorkspaceEventSchema from "./schema/google-workspace-event";
@@ -311,7 +310,6 @@ export const schema = {
   ...linkWalletSchema,
   ...gmailEventSchema,
   ...notionEventSchema,
-  ...stripeAutomationEventSchema,
   ...googleCalendarEventSchema,
   ...googleFormsEventSchema,
   ...googleWorkspaceEventSchema,

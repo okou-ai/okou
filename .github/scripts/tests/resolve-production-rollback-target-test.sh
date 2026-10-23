@@ -67,6 +67,8 @@ case "${1:-}" in
       [ "${MOCK_FINALIZING_SOURCE_API_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "430cb92b5431e1554d0a1dceed6d9cfb27762921" ]; then
       [ "${MOCK_RUNNER_STATE_WSS_INGRESS_FREE_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "190cdfba6440b50469117758156616447d707b81" ]; then
+      [ "${MOCK_STRIPE_INVOICE_PAID_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "b610ff61043274157618e3925b13a66dc56ef84b" ]; then
       [ "${MOCK_FINALIZING_SOURCE_RUNNER_READER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5959595959595959595959595959595959595959" ]; then
@@ -1707,5 +1709,13 @@ RUBY
 assert_failure "Rollback target predates Pi memory storage retirement" \
   run_resolver "${tmp_dir}/pi-memory-retired-floor.output" MOCK_PI_MEMORY_RETIRED_FLOOR_VALID=0
 [ ! -s "${tmp_dir}/pi-memory-retired-floor.output" ] || fail "incompatible Pi memory API must not publish rollback outputs"
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Stripe invoice-paid automation retirement" \
+  run_resolver "${tmp_dir}/stripe-invoice-paid-floor.output" MOCK_STRIPE_INVOICE_PAID_RETIREMENT_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/stripe-invoice-paid-floor.output" ] || fail "table-dependent API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Stripe invoice-paid retirement must reject before artifact or host access"
+fi
 
 echo "resolve-production-rollback-target tests passed"
