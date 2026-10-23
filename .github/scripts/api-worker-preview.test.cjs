@@ -11,7 +11,6 @@ const {
   request,
   command,
   sharedPreviewDatabase,
-  previewTelemetry,
   main,
 } = require("./api-worker-preview.cjs");
 
@@ -47,39 +46,6 @@ const neonBase = "https://console.neon.tech/api/v2/projects/test-project";
 const cfBase = `https://api.cloudflare.com/client/v4/accounts/${"a".repeat(32)}`;
 const prUrl = "https://api.github.com/repos/example/repository/pulls/123";
 const neon = (method, route) => request(neonBase, "test-token", method, route);
-const telemetryRoute = "/workers/observability/destinations";
-const cloudflare = async (method, route, body) => {
-  const response = await request(cfBase, "test-token", method, route, body);
-  assert.equal(response.success, true);
-  return response.result;
-};
-function destination(kind, worker = "okou-api-preview-pr-123") {
-  return {
-    name: `${worker}-${kind}`,
-    slug: `${worker}-${kind}`,
-    enabled: true,
-    scripts: [worker],
-    configuration: {
-      type: "logpush",
-      logpushDataset: `opentelemetry-${kind}`,
-      url: `https://api.axiom.co/v1/${kind}`,
-    },
-  };
-}
-
-function destinationPage(incoming, destinations) {
-  const params = new URL(incoming.url).searchParams;
-  assert.equal(params.get("perPage"), "50");
-  assert.equal(params.get("orderBy"), "created");
-  assert.equal(params.get("order"), "asc");
-  const page = Number(params.get("page"));
-  assert.ok(Number.isInteger(page) && page >= 1);
-  return HttpResponse.json({
-    success: true,
-    result: destinations.slice((page - 1) * 50, page * 50),
-  });
-}
-
 test("Worker consumes the exact prepared shared branch through a direct GET-only connection", async () => {
   const branch = {
     id: "br-shared-preview",
@@ -154,7 +120,7 @@ function operationEnvironment(t, values) {
   });
 }
 
-test("closed-PR cleanup finds owned exports beyond the first page without Neon credentials", async (t) => {
+test("closed-PR cleanup releases its Worker and Hyperdrive without managing shared exports", async (t) => {
   operationEnvironment(t, {
     JOB_REF: "pr-123",
     CLOUDFLARE_ACCOUNT_ID: "a".repeat(32),
@@ -173,21 +139,9 @@ test("closed-PR cleanup finds owned exports beyond the first page without Neon c
         result: [{ name: "okou-api-preview-pr-123", id: "b".repeat(32) }],
       }),
     ),
-    http.get(`${cfBase}${telemetryRoute}`, ({ request: incoming }) =>
-      destinationPage(incoming, [
-        ...Array.from({ length: 50 }, (_, i) =>
-          destination("logs", `okou-api-preview-pr-${1000 + i}`),
-        ),
-        destination("logs"),
-        destination("traces"),
-        destination("logs", "okou-api-preview-pr-456"),
-      ]),
-    ),
     ...[
       `${cfBase}/workers/scripts/okou-api-preview-pr-123`,
       `${cfBase}/hyperdrive/configs/${"b".repeat(32)}`,
-      `${cfBase}${telemetryRoute}/okou-api-preview-pr-123-logs`,
-      `${cfBase}${telemetryRoute}/okou-api-preview-pr-123-traces`,
     ].map((url) =>
       http.delete(url, ({ request: incoming }) => {
         assert.equal(
@@ -211,10 +165,6 @@ test("closed-PR cleanup finds owned exports beyond the first page without Neon c
         "DELETE",
         `/client/v4/accounts/${"a".repeat(32)}/hyperdrive/configs/${"b".repeat(32)}`,
       ],
-      ...["logs", "traces"].map((kind) => [
-        "DELETE",
-        `/client/v4/accounts/${"a".repeat(32)}${telemetryRoute}/okou-api-preview-pr-123-${kind}`,
-      ]),
     ],
   );
 });
@@ -242,7 +192,7 @@ test("a superseded PR revision is rejected before database or Cloudflare operati
   await assert.rejects(main("deploy"), /Superseded PR revision/);
 });
 
-test("downstream deployment binds the existing branch and runs only build and Worker upload", async (t) => {
+function deploymentFixture(t, environment = {}) {
   const root = path.resolve(__dirname, "../..");
   const cwd = process.cwd();
   process.chdir(root);
@@ -254,7 +204,7 @@ test("downstream deployment binds the existing branch and runs only build and Wo
   const envFile = path.join(directory, "runtime.env");
   fs.writeFileSync(
     envFile,
-    `ENV=preview\nGIT_COMMIT_SHA=${"3".repeat(40)}\nAXIOM_DATASET_SUFFIX=dev\nAXIOM_TOKEN_TELEMETRY=axiom-private-test-token\n`,
+    `ENV=preview\nGIT_COMMIT_SHA=${"3".repeat(40)}\nAXIOM_DATASET_SUFFIX=dev\nAXIOM_TOKEN_TELEMETRY=\nPRIVATE_KEY=private-runtime-credential\n`,
     { mode: 0o600 },
   );
   const outputFile = path.join(directory, "outputs");
@@ -268,11 +218,12 @@ test("downstream deployment binds the existing branch and runs only build and Wo
     NEON_API_KEY: "test-token",
     NEON_PROJECT_ID: "test-project",
     API_ENV_FILE: envFile,
-    CF_API_TRACES_DESTINATION: undefined,
-    CF_API_LOGS_DESTINATION: undefined,
+    CF_API_TRACES_DESTINATION: "okou-api-dev-traces",
+    CF_API_LOGS_DESTINATION: "okou-api-dev-logs",
     CF_API_NATIVE_TELEMETRY: "true",
     GITHUB_OUTPUT: outputFile,
     GITHUB_STEP_SUMMARY: undefined,
+    ...environment,
   });
   const branch = {
     id: "br-shared-preview",
@@ -284,12 +235,7 @@ test("downstream deployment binds the existing branch and runs only build and Wo
     name: "okou-api-preview-pr-123",
     caching: { disabled: true },
   };
-  const destinations = [
-    ...Array.from({ length: 50 }, (_, i) =>
-      destination("logs", `okou-api-preview-pr-${1000 + i}`),
-    ),
-    destination("traces"),
-  ];
+  const mutations = [];
   server.use(
     http.get(`${cfBase}/workers/subdomain`, () =>
       HttpResponse.json({
@@ -297,34 +243,6 @@ test("downstream deployment binds the existing branch and runs only build and Wo
         result: { subdomain: "test-account" },
       }),
     ),
-    http.get(`${cfBase}${telemetryRoute}`, ({ request: incoming }) =>
-      destinationPage(incoming, destinations),
-    ),
-    ...["logs", "traces"].map((kind) => {
-      const handler = kind === "logs" ? http.post : http.patch;
-      const route =
-        kind === "logs"
-          ? telemetryRoute
-          : `${telemetryRoute}/okou-api-preview-pr-123-traces`;
-      return handler(`${cfBase}${route}`, async ({ request: incoming }) => {
-        const body = await incoming.json();
-        assert.equal(
-          body.configuration.headers.Authorization,
-          "Bearer axiom-private-test-token",
-        );
-        assert.equal(
-          body.configuration.headers["X-Axiom-Dataset"],
-          kind === "logs" ? "vm0-web-logs-dev" : "vm0-traces-dev",
-        );
-        assert.equal(body.skipPreflightCheck, undefined);
-        if (kind === "logs") destinations.push(destination("logs"));
-        else assert.equal(body.name, undefined);
-        return HttpResponse.json({
-          success: true,
-          result: { slug: destination(kind).slug },
-        });
-      });
-    }),
     http.get(prUrl, () =>
       HttpResponse.json({
         state: "open",
@@ -366,6 +284,7 @@ test("downstream deployment binds the existing branch and runs only build and Wo
           "Bearer test-token",
         );
         const body = await incoming.json();
+        mutations.push([incoming.method, new URL(incoming.url).pathname]);
         assert.deepEqual(body, {
           name: hyperdrive.name,
           origin: {
@@ -382,6 +301,11 @@ test("downstream deployment binds the existing branch and runs only build and Wo
       },
     ),
   );
+  return { hyperdrive, outputFile, envFile, mutations };
+}
+
+test("native deployment binds preconfigured exports without requiring an Axiom destination credential", async (t) => {
+  const { hyperdrive, outputFile } = deploymentFixture(t);
   const commands = [];
   let generatedPath;
   let secretsPath;
@@ -396,11 +320,11 @@ test("downstream deployment binds the existing branch and runs only build and Wo
       for (const kind of ["logs", "traces"]) {
         assert.equal(config.observability[kind].head_sampling_rate, 1);
         assert.deepEqual(config.observability[kind].destinations, [
-          `okou-api-preview-pr-123-${kind}`,
+          `okou-api-dev-${kind}`,
         ]);
       }
       assert.equal(
-        JSON.stringify(config).includes("axiom-private-test-token"),
+        JSON.stringify(config).includes("private-runtime-credential"),
         false,
       );
       assert.deepEqual(config.hyperdrive, [
@@ -415,6 +339,8 @@ test("downstream deployment binds the existing branch and runs only build and Wo
           (_, i) => secrets[`API_ENV_JSON_${i}`],
         ).join(""),
       );
+      assert.equal(runtime.AXIOM_TOKEN_TELEMETRY, "");
+      assert.equal(runtime.PRIVATE_KEY, "private-runtime-credential");
       assert.equal(
         new URL(runtime.DATABASE_URL).hostname,
         "ep-shared.example.neon.tech",
@@ -433,113 +359,75 @@ test("downstream deployment binds the existing branch and runs only build and Wo
   assert.equal(fs.existsSync(path.dirname(secretsPath)), false);
 });
 
-test("native telemetry cannot adopt another Worker's destination", async () => {
-  const logs = destination("logs");
-  logs.scripts.push("another-worker");
-  server.use(
-    http.get(`${cfBase}${telemetryRoute}`, () =>
-      HttpResponse.json({
-        success: true,
-        result: [logs, destination("traces")],
-      }),
-    ),
-  );
-  // No mutation handlers: both deploy and cleanup must stop before any write.
-  for (const runtime of [
-    undefined,
-    {
-      ENV: "preview",
-      AXIOM_DATASET_SUFFIX: "dev",
-      AXIOM_TOKEN_TELEMETRY: "test-token",
-    },
-  ]) {
+for (const kind of ["logs", "traces"]) {
+  test(`native deployment without the ${kind} destination stops before building or mutating resources`, async (t) => {
+    const { mutations } = deploymentFixture(t, {
+      [`CF_API_${kind.toUpperCase()}_DESTINATION`]: undefined,
+    });
+    const processBoundary = t.mock.method(childProcess, "spawnSync", () => {
+      throw new Error("Deployment must not start with incomplete exports");
+    });
     await assert.rejects(
-      previewTelemetry(cloudflare, "okou-api-preview-pr-123", runtime),
-      /ownership was not confirmed/,
+      main("deploy"),
+      new RegExp(
+        `requires a valid CF_API_${kind.toUpperCase()}_DESTINATION slug`,
+      ),
     );
-  }
+    assert.equal(processBoundary.mock.callCount(), 0);
+    assert.deepEqual(mutations, []);
+  });
+}
+
+test("native deployment rejects a non-dev Axiom configuration before changing resources", async (t) => {
+  const { envFile, mutations } = deploymentFixture(t);
+  fs.writeFileSync(
+    envFile,
+    `ENV=preview\nGIT_COMMIT_SHA=${"3".repeat(40)}\nAXIOM_DATASET_SUFFIX=prod\n`,
+  );
+  const processBoundary = t.mock.method(childProcess, "spawnSync", () => {
+    throw new Error("Deployment must not start with a production dataset");
+  });
+  await assert.rejects(main("deploy"), /requires an Axiom dev configuration/);
+  assert.equal(processBoundary.mock.callCount(), 0);
+  assert.deepEqual(mutations, []);
 });
 
-test("repeated destination pages stop before provisioning or deleting exports", async () => {
-  let reads = 0;
-  server.use(
-    http.get(`${cfBase}${telemetryRoute}`, () => {
-      reads += 1;
-      return HttpResponse.json({
-        success: true,
-        result: [
-          destination("logs"),
-          ...Array.from({ length: 49 }, (_, i) =>
-            destination("logs", `okou-api-preview-pr-${1000 + i}`),
-          ),
-        ],
-      });
-    }),
+test("SDK telemetry deployment retains optional export destinations and runtime credentials", async (t) => {
+  const { envFile } = deploymentFixture(t, {
+    CF_API_NATIVE_TELEMETRY: "false",
+    CF_API_LOGS_DESTINATION: undefined,
+    CF_API_TRACES_DESTINATION: undefined,
+  });
+  fs.writeFileSync(
+    envFile,
+    fs
+      .readFileSync(envFile, "utf8")
+      .replace(
+        "AXIOM_TOKEN_TELEMETRY=\n",
+        "AXIOM_TOKEN_TELEMETRY=private-product-token\n",
+      ),
   );
-  // Even finding the target does not permit mutation with incomplete inventory.
-  for (const runtime of [
-    undefined,
-    {
-      ENV: "preview",
-      AXIOM_DATASET_SUFFIX: "dev",
-      AXIOM_TOKEN_TELEMETRY: "test-token",
-    },
-  ]) {
-    await assert.rejects(
-      previewTelemetry(cloudflare, "okou-api-preview-pr-123", runtime),
-      /inventory did not advance/,
-    );
-  }
-  assert.equal(reads, 4);
-});
-
-test("an inventory that never ends is bounded and cannot create exports", async () => {
-  let reads = 0;
-  server.use(
-    http.get(`${cfBase}${telemetryRoute}`, ({ request: incoming }) => {
-      reads += 1;
-      const page = Number(new URL(incoming.url).searchParams.get("page"));
-      return HttpResponse.json({
-        success: true,
-        result: Array.from({ length: 50 }, (_, i) =>
-          destination("logs", `okou-api-preview-pr-${page * 50 + i}`),
-        ),
-      });
-    }),
-  );
-  await assert.rejects(
-    previewTelemetry(cloudflare, "okou-api-preview-pr-123", {
-      ENV: "preview",
-      AXIOM_DATASET_SUFFIX: "dev",
-      AXIOM_TOKEN_TELEMETRY: "test-token",
-    }),
-    /inventory exceeded the inspection limit/,
-  );
-  assert.equal(reads, 20);
-});
-
-test("native export rejection is visible and cannot silently enable telemetry", async () => {
-  let creates = 0;
-  server.use(
-    http.get(`${cfBase}${telemetryRoute}`, () =>
-      HttpResponse.json({ success: true, result: [] }),
-    ),
-    http.post(`${cfBase}${telemetryRoute}`, () => {
-      creates += 1;
-      return new HttpResponse("private provider details", { status: 403 });
-    }),
-  );
-  await assert.rejects(
-    previewTelemetry(cloudflare, "okou-api-preview-pr-123", {
-      ENV: "preview",
-      AXIOM_DATASET_SUFFIX: "dev",
-      AXIOM_TOKEN_TELEMETRY: "test-token",
-    }),
-    (error) =>
-      error.message.includes("HTTP 403") &&
-      !error.message.includes("private provider details"),
-  );
-  assert.equal(creates, 1);
+  const commands = [];
+  t.mock.method(childProcess, "spawnSync", (_command, args) => {
+    if (args.includes("build:worker")) commands.push("build");
+    else {
+      const config = JSON.parse(
+        fs.readFileSync(args[args.indexOf("--config") + 1], "utf8"),
+      );
+      assert.equal(config.vars.API_NATIVE_TELEMETRY, "false");
+      assert.deepEqual(config.observability.logs.destinations, []);
+      assert.deepEqual(config.observability.traces.destinations, []);
+      const secrets = JSON.parse(
+        fs.readFileSync(args[args.indexOf("--secrets-file") + 1], "utf8"),
+      );
+      const runtime = JSON.parse(secrets.API_ENV_JSON_0);
+      assert.equal(runtime.AXIOM_TOKEN_TELEMETRY, "private-product-token");
+      commands.push("upload");
+    }
+    return { status: 0 };
+  });
+  await main("deploy");
+  assert.deepEqual(commands, ["build", "upload"]);
 });
 
 test("encrypted environment chunks preserve multibyte values and stay below the per-secret limit", () => {

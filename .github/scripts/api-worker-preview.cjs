@@ -3,8 +3,9 @@
 // deploy: JOB_REF, API_ENV_FILE, NEON_API_KEY, NEON_PROJECT_ID,
 // CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, GH_TOKEN, GITHUB_REPOSITORY.
 // PR deploys also require the captured event's EXPECTED_PR_HEAD_SHA.
-// CF_API_NATIVE_TELEMETRY=true provisions PR-owned Axiom dev OTLP destinations.
-// Otherwise CF_API_{LOGS,TRACES}_DESTINATION optionally selects existing exports.
+// CF_API_NATIVE_TELEMETRY=true requires preconfigured Axiom dev OTLP destination
+// slugs in CF_API_{LOGS,TRACES}_DESTINATION; otherwise those exports are optional.
+// Account destination provisioning and credentials belong to their operator.
 // deploy reads the branch prepared by deploy-api; it never creates or migrates it.
 // cleanup needs only JOB_REF, Cloudflare and GitHub credentials; PR refs only.
 // Credentials stay in memory/environment or private temporary files, never argv.
@@ -209,121 +210,6 @@ async function sharedPreviewDatabase(neon, branchName) {
   return database;
 }
 
-// Names and destination schemas identify resources owned by this preview. Never
-// rotate credentials or remove a destination attached to another Worker.
-function ownedDestination(destinations, worker, kind) {
-  const name = `${worker}-${kind}`;
-  const matches = destinations.filter(
-    (destination) => destination?.name === name,
-  );
-  if (matches.length > 1)
-    throw new Error("Ambiguous preview telemetry destination");
-  const destination = matches[0];
-  if (
-    destination &&
-    (!/^[a-z0-9-]+$/.test(destination.slug) ||
-      destination.configuration?.type !== "logpush" ||
-      destination.configuration.logpushDataset !== `opentelemetry-${kind}` ||
-      destination.configuration.url !== `https://api.axiom.co/v1/${kind}` ||
-      !Array.isArray(destination.scripts) ||
-      destination.scripts.some((script) => script !== worker))
-  )
-    throw new Error(
-      "Preview telemetry destination ownership was not confirmed",
-    );
-  return destination;
-}
-
-async function telemetryDestinations(cf) {
-  const route = "/workers/observability/destinations";
-  const destinations = [];
-  const slugs = new Set();
-  // The account inventory is paginated. Stop only on a short page, and order by
-  // creation so updating a destination does not move it between pages.
-  for (let page = 1; page <= 20; page += 1) {
-    const entries = await cf(
-      "GET",
-      `${route}?page=${page}&perPage=50&orderBy=created&order=asc`,
-    );
-    if (!Array.isArray(entries) || entries.length > 50)
-      throw new Error("Invalid telemetry destination inventory");
-    for (const entry of entries) {
-      if (typeof entry?.slug !== "string" || !entry.slug)
-        throw new Error("Invalid telemetry destination inventory");
-      // Repeated pages or shifting inventory cannot establish ownership safely.
-      if (slugs.has(entry.slug))
-        throw new Error("Telemetry destination inventory did not advance");
-      slugs.add(entry.slug);
-      destinations.push(entry);
-    }
-    if (entries.length < 50) return destinations;
-  }
-  throw new Error(
-    "Telemetry destination inventory exceeded the inspection limit",
-  );
-}
-
-async function previewTelemetry(cf, worker, runtime) {
-  const route = "/workers/observability/destinations";
-  const destinations = await telemetryDestinations(cf);
-  if (
-    runtime &&
-    (runtime.ENV !== "preview" ||
-      runtime.AXIOM_DATASET_SUFFIX !== "dev" ||
-      !runtime.AXIOM_TOKEN_TELEMETRY)
-  )
-    throw new Error(
-      "Native preview telemetry requires an Axiom dev configuration",
-    );
-  // Validate both ownership boundaries before changing either destination.
-  const existing = Object.fromEntries(
-    ["logs", "traces"].map((kind) => [
-      kind,
-      ownedDestination(destinations, worker, kind),
-    ]),
-  );
-  const result = {};
-  for (const kind of ["logs", "traces"]) {
-    const destination = existing[kind];
-    if (!runtime) {
-      if (destination) await cf("DELETE", `${route}/${destination.slug}`);
-      continue;
-    }
-    const body = {
-      name: `${worker}-${kind}`,
-      enabled: true,
-      configuration: {
-        type: "logpush",
-        logpushDataset: `opentelemetry-${kind}`,
-        url: `https://api.axiom.co/v1/${kind}`,
-        headers: {
-          Authorization: `Bearer ${runtime.AXIOM_TOKEN_TELEMETRY}`,
-          "X-Axiom-Dataset":
-            kind === "logs" ? "vm0-web-logs-dev" : "vm0-traces-dev",
-        },
-      },
-    };
-    // Default provider preflight validates the OTLP endpoint and credentials.
-    // Never retry uncertain writes or expose returned headers/provider messages.
-    if (destination) {
-      await cf("PATCH", `${route}/${destination.slug}`, {
-        enabled: body.enabled,
-        configuration: body.configuration,
-      });
-    } else {
-      await cf("POST", route, body);
-    }
-    // Mutation response schemas need not include script attachments. Confirm
-    // the recorded resource through inventory before enabling the runtime path.
-    const confirmed = await telemetryDestinations(cf);
-    const owned = ownedDestination(confirmed, worker, kind);
-    if (!owned || owned.enabled !== true)
-      throw new Error("Native preview telemetry export was not confirmed");
-    result[kind] = owned.slug;
-  }
-  return result;
-}
-
 async function main(mode) {
   const ref = required("JOB_REF");
   const names = identities(ref);
@@ -386,7 +272,6 @@ async function main(mode) {
     // Shared Neon branch cleanup belongs exclusively to the existing DB owner.
     await cf("DELETE", `/workers/scripts/${names.worker}`, undefined, true);
     if (hyperdrive) await cf("DELETE", `/hyperdrive/configs/${hyperdrive.id}`);
-    await previewTelemetry(cf, names.worker);
     console.log(`Removed Worker preview resources for ${ref}`);
     return;
   }
@@ -416,6 +301,24 @@ async function main(mode) {
   const nativeTelemetry = process.env.CF_API_NATIVE_TELEMETRY === "true";
   if (nativeTelemetry && !ref.startsWith("pr-"))
     throw new Error("Native telemetry validation requires a PR preview");
+  const exports = {
+    logs: process.env.CF_API_LOGS_DESTINATION,
+    traces: process.env.CF_API_TRACES_DESTINATION,
+  };
+  if (nativeTelemetry) {
+    if (runtime.AXIOM_DATASET_SUFFIX !== "dev")
+      throw new Error(
+        "Native preview telemetry requires an Axiom dev configuration",
+      );
+    // Validate before building or changing Hyperdrive. CI only references
+    // operator-provisioned destinations; it never manages their credentials.
+    for (const kind of ["logs", "traces"]) {
+      if (!/^[a-z0-9-]+$/.test(exports[kind] ?? ""))
+        throw new Error(
+          `Native preview telemetry requires a valid CF_API_${kind.toUpperCase()}_DESTINATION slug`,
+        );
+    }
+  }
   const subdomain = (await cf("GET", "/workers/subdomain"))?.subdomain;
   if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(subdomain))
     throw new Error("Invalid Workers preview subdomain");
@@ -462,12 +365,6 @@ async function main(mode) {
     rawConfig.no_bundle !== true
   )
     throw new Error("Unexpected API Worker entrypoint");
-  const exports = nativeTelemetry
-    ? await previewTelemetry(cf, names.worker, runtime)
-    : {
-        logs: process.env.CF_API_LOGS_DESTINATION,
-        traces: process.env.CF_API_TRACES_DESTINATION,
-      };
   if (!exports.traces)
     console.log(
       "::notice::Native Worker tracing enabled; Axiom export requires the CF_API_TRACES_DESTINATION repository variable and an account OTLP destination",
@@ -559,7 +456,6 @@ module.exports = {
   request,
   command,
   sharedPreviewDatabase,
-  previewTelemetry,
   main,
 };
 if (require.main === module) {
