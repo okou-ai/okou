@@ -2,13 +2,8 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
-import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
@@ -288,6 +283,7 @@ function installViewportGeometry(
 }
 
 test("The embedded Okou viewer owns its shortcuts while the conversation keeps its shortcuts", async () => {
+  const user = userEvent.setup({ delay: null });
   mockWideScreen();
   context.mocks.browser.userAgent(
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
@@ -317,25 +313,24 @@ test("The embedded Okou viewer owns its shortcuts while the conversation keeps i
     expect(continuousSync).not.toBeInTheDocument();
   });
 
-  fireEvent.keyDown(address, {
-    key: "f",
-    code: "KeyF",
-    metaKey: true,
-    shiftKey: true,
-  });
+  await user.click(address);
+  expect(address).toHaveFocus();
+  await user.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");
   expect(
     screen.queryByRole("dialog", { name: "Search workspace..." }),
   ).not.toBeInTheDocument();
   expect(screen.queryByTitle(LIVE_BROWSER_TITLE)).not.toBeInTheDocument();
-  fireEvent.keyDown(screen.getByRole("textbox", { name: "Message" }), {
-    key: "f",
-    code: "KeyF",
-    metaKey: true,
-    shiftKey: true,
-  });
+  const message = screen.getByRole("textbox", { name: "Message" });
+  await user.click(message);
+  expect(message).toHaveFocus();
+  await user.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");
   await expect(
     screen.findByRole("dialog", { name: "Search workspace..." }),
   ).resolves.toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(message).toHaveFocus();
+  });
 });
 
 test("Fit a live browser when the available sidebar space changes", async () => {
