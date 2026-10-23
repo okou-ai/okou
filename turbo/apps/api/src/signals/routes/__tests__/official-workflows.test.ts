@@ -496,37 +496,35 @@ describe("Proactive jobs", () => {
   };
   async function schedule(actor: ApiTestUser) {
     const listed = await accept(
-      workflowCollectionClient().list({
+      setupApp({
+        context,
+        routes: workflowAutomationsRoutes.filter(({ route }) => {
+          return route === workflowAutomationsContract.listWorkspace;
+        }),
+      })(workflowAutomationsContract).listWorkspace({
         headers: authHeaders(actor),
-        query: {},
       }),
       [200],
     );
-    const installation = listed.body.find((item) => {
-      return item.official?.definitionName === "proactive-jobs";
+    const installed = listed.body.find(({ workflow }) => {
+      return workflow.official?.definitionName === "proactive-jobs";
     });
-    if (!installation) {
+    if (!installed) {
       throw new Error("Expected a Jobs installation");
     }
-    return scheduleForWorkflow(actor, installation.id);
-  }
-  async function scheduleForWorkflow(actor: ApiTestUser, workflowId: string) {
-    const detail = await accept(
-      workflowClient().get({
-        headers: authHeaders(actor),
-        params: { workflowId },
-      }),
-      [200],
-    );
-    const automation = detail.body.automations[0];
-    if (!automation) {
-      throw new Error("Expected a Jobs loop");
-    }
-    return { installation: detail.body, automation };
+    return {
+      installation: installed.workflow,
+      automation: installed.automation,
+    };
   }
   async function readJobAutomation(actor: ApiTestUser, automationId: string) {
     const response = await accept(
-      automationClient().get({
+      setupApp({
+        context,
+        routes: workflowAutomationsRoutes.filter(({ route }) => {
+          return route === workflowAutomationsContract.get;
+        }),
+      })(workflowAutomationsContract).get({
         headers: authHeaders(actor),
         params: { id: automationId },
       }),
