@@ -244,6 +244,41 @@ describe("personal paid-tool controls through the CLI entry point", () => {
   });
 
   it.each([
+    "website",
+    "report",
+    "poster",
+    "docs-design",
+    "dashboard-design",
+    "mobile-app-design",
+  ])("filters managed image batch notes from the %s packet", async (type) => {
+    const args = ["generate", type, "--prompt", "Use the supplied assets"];
+    await run(args);
+    const enabled = output;
+    expect(enabled).toContain(
+      "- Image batch results may be relative asset paths",
+    );
+    const filtered = enabled
+      .split("\n")
+      .filter((line) => {
+        return (
+          !line.startsWith("- Image batch results") &&
+          !line.startsWith("- Image workflow:")
+        );
+      })
+      .join("\n");
+
+    output = "";
+    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["image-generation"]');
+    await run(args);
+
+    expect(output).toBe(filtered);
+    expect(output).toContain("okou web download-file --help");
+    expect(output).toContain("## Publish");
+    expect(requests).toEqual([]);
+    expect(await readdir(directory)).toEqual([]);
+  });
+
+  it.each([
     ["image", "--raw-prompt", "A fox"],
     ["image", "--compiled-prompt", "A fox"],
     [
