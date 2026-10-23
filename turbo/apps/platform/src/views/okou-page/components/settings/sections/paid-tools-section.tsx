@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@okouai/ui/components/ui/select";
 import { Switch } from "@okouai/ui/components/ui/switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { IMAGE_MODEL_PRICE_TIER } from "@okouai/api-contracts/contracts/image-model-price-tiers";
 import {
   IMAGE_MODEL_CONFIGS,
@@ -34,6 +35,7 @@ import {
   type PaidToolsSettings,
   type PaidToolSettings,
 } from "../../../../../signals/okou-page/settings/paid-tools.ts";
+import { featureSwitch$ } from "../../../../../signals/external/feature-switch.ts";
 import { currentOrgInfo$ } from "../../../../../signals/auth.ts";
 import { settingsActionSignal$ } from "../../../../../signals/okou-page/settings/settings-dialog.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
@@ -287,6 +289,7 @@ function PaidToolsContent({
   readonly settings: PaidToolsSettings;
 }) {
   const { t } = useTranslation();
+  const features = useGet(featureSwitch$);
   const loadable = useLoadable(settings.disabledTools$);
   const workspace = useLoadable(currentOrgInfo$);
   const retry = useSet(settings.retry$);
@@ -321,6 +324,12 @@ function PaidToolsContent({
         <>
           <div className="flex flex-col gap-3">
             {settings.tools.map((tool) => {
+              if (
+                tool.toolId === "data-search" &&
+                !features[FeatureSwitchKey.DataSearch]
+              ) {
+                return null;
+              }
               return tool.toolId === "image-generation" ? (
                 <ImageGenerationRows
                   key={tool.toolId}

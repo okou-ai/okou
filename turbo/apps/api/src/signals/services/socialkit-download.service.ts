@@ -1192,7 +1192,7 @@ export const listSocialKitDownloads$ = command(
           resumeCommand:
             job.status === "provider_failed"
               ? null
-              : `okou data social download --resume ${job.id}`,
+              : `okou social download --resume ${job.id}`,
         };
       }),
       nextCursor: rows.length > limit && last ? last.id : null,

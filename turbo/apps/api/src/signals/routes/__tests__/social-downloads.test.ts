@@ -400,7 +400,7 @@ describe("social download discovery", () => {
         {
           downloadId: created.body.downloadId,
           status: "processing",
-          resumeCommand: `okou data social download --resume ${created.body.downloadId}`,
+          resumeCommand: `okou social download --resume ${created.body.downloadId}`,
         },
       ]);
       expect(provider.polls()).toBe(pollsBefore);

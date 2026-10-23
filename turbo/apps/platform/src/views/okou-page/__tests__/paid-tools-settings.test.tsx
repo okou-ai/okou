@@ -1,7 +1,11 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
+import {
+  paidToolsContract,
+  type PaidToolId,
+} from "@okouai/api-contracts/contracts/paid-tools";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   type UpdateUserModelPreferenceRequest,
   type UserModelPreferenceResponse,
@@ -30,7 +34,10 @@ function button(name: string, container: ParentNode = document.body) {
   return element;
 }
 
-async function openPaidTools(path = "/?settings=tools") {
+async function openPaidTools(
+  path = "/?settings=tools",
+  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
+) {
   context.mocks.data.org({
     id: "org_default",
     name: "Research team",
@@ -39,6 +46,7 @@ async function openPaidTools(path = "/?settings=tools") {
   await setupPage({
     context,
     path,
+    featureSwitches,
     auth: {
       user: { id: "test-user-123", fullName: "Test User" },
       organization: {
@@ -84,7 +92,7 @@ test("Members manage Paid tools in Tools, separately from Chat", async () => {
   click(button("Tools", dialog));
   const toggle = await readySwitch("Web search");
   expect(toggle).toBeChecked();
-  expect(within(dialog).getAllByRole("switch")).toHaveLength(9);
+  expect(within(dialog).getAllByRole("switch")).toHaveLength(8);
   expect(
     within(dialog).getByText(
       "These settings apply only to you in Research team.",
@@ -136,7 +144,7 @@ test("Paid tools toggles save inverted enabled state and can re-enable a tool", 
   ]);
 });
 
-test("Advanced data research saves independently from historical research preferences", async () => {
+test("DataSearch off hides advanced research without changing historical preferences", async () => {
   const updates: { toolId: string; disabled: boolean }[] = [];
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
     return respond(200, { disabledTools: ["data-search", "people-search"] });
@@ -145,7 +153,40 @@ test("Advanced data research saves independently from historical research prefer
     updates.push({ toolId: params.toolId, disabled: body.disabled });
     return respond(200, { toolId: params.toolId, disabled: body.disabled });
   });
-  await openPaidTools();
+  const dialog = await openPaidTools("/?settings=tools", {
+    [FeatureSwitchKey.DataSearch]: false,
+  });
+  const people = await readySwitch("People search");
+  expect(people).not.toBeChecked();
+  expect(
+    within(dialog).queryByRole("switch", { name: "Advanced data research" }),
+  ).not.toBeInTheDocument();
+  click(people);
+  await waitFor(() => {
+    expect(people).toBeChecked();
+  });
+  expect(updates).toStrictEqual([{ toolId: "people-search", disabled: false }]);
+});
+
+test("Enabled advanced research saves independently and retains stored preferences across Tools visits", async () => {
+  const updates: { toolId: string; disabled: boolean }[] = [];
+  let disabledTools: PaidToolId[] = ["data-search", "people-search"];
+  context.mocks.api(paidToolsContract.get, ({ respond }) => {
+    return respond(200, { disabledTools });
+  });
+  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
+    updates.push({ toolId: params.toolId, disabled: body.disabled });
+    disabledTools = disabledTools.filter((toolId) => {
+      return toolId !== params.toolId;
+    });
+    if (body.disabled) {
+      disabledTools.push(params.toolId);
+    }
+    return respond(200, { toolId: params.toolId, disabled: body.disabled });
+  });
+  const dialog = await openPaidTools("/?settings=tools", {
+    [FeatureSwitchKey.DataSearch]: true,
+  });
   const advanced = await readySwitch("Advanced data research");
   const people = await readySwitch("People search");
   expect(advanced).not.toBeChecked();
@@ -156,6 +197,11 @@ test("Advanced data research saves independently from historical research prefer
   });
   expect(people).not.toBeChecked();
   expect(updates).toStrictEqual([{ toolId: "data-search", disabled: false }]);
+  click(button("Preference", dialog));
+  await within(dialog).findByRole("heading", { name: "Preference" });
+  click(button("Tools", dialog));
+  await expect(readySwitch("Advanced data research")).resolves.toBeChecked();
+  await expect(readySwitch("People search")).resolves.not.toBeChecked();
 });
 
 test("A failed load shows no assumed enabled tools and can be retried", async () => {
@@ -180,37 +226,42 @@ test("A failed load shows no assumed enabled tools and can be retried", async ()
   await expect(readySwitch("Web search")).resolves.not.toBeChecked();
 });
 
-test("A workspace switch while a save obtains its token prevents sending that save under the new workspace", async () => {
-  const tokenRequested = context.mocks.deferred<void>();
-  const releaseToken = context.mocks.deferred<void>();
-  const updates: string[] = [];
-  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
-    updates.push(params.toolId);
-    return respond(200, { toolId: params.toolId, disabled: body.disabled });
-  });
-  await openPaidTools();
-  const webSearch = await readySwitch("Web search");
-  mockedClerk.sessionGetToken.mockImplementationOnce(async () => {
-    tokenRequested.resolve();
-    await releaseToken.promise;
-    return "old-workspace-token";
-  });
-  click(webSearch);
-  await tokenRequested.promise;
-  act(() => {
-    context.mocks.clerk().organization({
-      activeOrg: { id: "org_second", name: "Second workspace" },
-      memberships: [{ id: "org_second" }],
+test.each(["Web search", "Advanced data research"])(
+  "A workspace switch while %s obtains its save token prevents sending under the new workspace",
+  async (toolName) => {
+    const tokenRequested = context.mocks.deferred<void>();
+    const releaseToken = context.mocks.deferred<void>();
+    const updates: string[] = [];
+    context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
+      updates.push(params.toolId);
+      return respond(200, { toolId: params.toolId, disabled: body.disabled });
     });
-    context.mocks.clerk().stateChanged();
-  });
-  releaseToken.resolve();
-  await screen.findByText(
-    "These settings apply only to you in Second workspace.",
-  );
-  await expect(readySwitch("Web search")).resolves.toBeChecked();
-  expect(updates).toStrictEqual([]);
-});
+    await openPaidTools("/?settings=tools", {
+      [FeatureSwitchKey.DataSearch]: true,
+    });
+    const toggle = await readySwitch(toolName);
+    mockedClerk.sessionGetToken.mockImplementationOnce(async () => {
+      tokenRequested.resolve();
+      await releaseToken.promise;
+      return "old-workspace-token";
+    });
+    click(toggle);
+    await tokenRequested.promise;
+    act(() => {
+      context.mocks.clerk().organization({
+        activeOrg: { id: "org_second", name: "Second workspace" },
+        memberships: [{ id: "org_second" }],
+      });
+      context.mocks.clerk().stateChanged();
+    });
+    releaseToken.resolve();
+    await screen.findByText(
+      "These settings apply only to you in Second workspace.",
+    );
+    await expect(readySwitch("Web search")).resolves.toBeChecked();
+    expect(updates).toStrictEqual([]);
+  },
+);
 
 test("The image model shows the system default when the member has none", async () => {
   await openPaidTools();

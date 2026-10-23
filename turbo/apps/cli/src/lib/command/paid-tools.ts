@@ -67,7 +67,9 @@ function commandPath(program: Command, command: Command): Command[] {
     path.unshift(current);
     current = current.parent;
   }
-  return path;
+  // Legacy forwarders parse dataCommand directly. Keep the same canonical
+  // policy path as parsing under okou, without reparenting shared commands.
+  return program.name() === "data" ? [program, ...path] : path;
 }
 
 function researchToolPath(path: Command[]): {

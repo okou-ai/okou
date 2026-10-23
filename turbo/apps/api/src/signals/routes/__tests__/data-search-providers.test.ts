@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import {
   dataSearchContract,
   type DataSearchRequest,
@@ -12,6 +13,7 @@ import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { billingStatusRoutes } from "../billing-status";
 import { dataSearchRoutes } from "../data-search";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -28,7 +30,10 @@ function authenticate(actor: ApiTestUser) {
   return { authorization: "Bearer clerk-session" };
 }
 async function scenario() {
-  const app = await setupApp({ context, routes: dataSearchRoutes });
+  const app = await setupApp({
+    context,
+    routes: [...dataSearchRoutes, ...billingStatusRoutes],
+  });
   const actor = createBddApi(context).user({
     orgId: createUniqueStaffOrgIdFixture(),
   });
@@ -48,7 +53,12 @@ async function scenario() {
   });
   restoreSetup = undefined;
   mockEnv("OKOU_SOCIAL_MONID_API_KEY", "data-provider-test-key");
-  return { actor, run: billing.run, data: app(dataSearchContract) };
+  return {
+    actor,
+    run: billing.run,
+    data: app(dataSearchContract),
+    billing: app(billingStatusContract),
+  };
 }
 const profileProperties = Object.freeze({
   id: { type: "string" },
@@ -394,6 +404,69 @@ describe("Data Search reviewed providers", () => {
     });
   });
 
+  it("searches Apollo organizations through the public company search route", async () => {
+    const setup = await scenario();
+    await setup.run(async () => {
+      monid({
+        provider: "apollo",
+        endpoint: "/mixed_companies/search",
+        properties: {
+          q_organization_name: { type: "string" },
+          page: { type: "integer" },
+          per_page: { type: "integer" },
+        },
+        usd: 0.026,
+        expectedInput: {
+          queryParams: {
+            q_organization_name: "Business",
+            page: 1,
+            per_page: 2,
+          },
+        },
+        output: {
+          organizations: [
+            {
+              id: "company_search_123",
+              name: "Business",
+              primary_domain: "business.test",
+              industry: "Software",
+              estimated_num_employees: 42,
+              phone: "+19990000001",
+              internal_trace: "not-a-public-company-field",
+            },
+          ],
+          pagination: { page: 1, per_page: 2, total_entries: 1 },
+        },
+      });
+      const result = await execute(setup, {
+        capability: "company.search",
+        input: { name: "Business" },
+        limit: 2,
+      });
+      expect(result.body).toMatchObject({
+        status: "completed",
+        data: {
+          items: [
+            {
+              id: "company_search_123",
+              name: "Business",
+              primary_domain: "business.test",
+              industry: "Software",
+              estimated_num_employees: 42,
+              source: { provider: "apollo", capability: "company.search" },
+            },
+          ],
+        },
+        billing: { state: "settled", creditsCharged: 33, reservedCredits: 0 },
+      });
+      expect(result.body.data?.items).toHaveLength(1);
+      expect(JSON.stringify(result.body.data)).not.toContain("+19990000001");
+      expect(JSON.stringify(result.body.data)).not.toContain(
+        "not-a-public-company-field",
+      );
+    });
+  });
+
   it("retains a valid source receipt without exposing the raw provider failure payload", async () => {
     const setup = await scenario();
     await setup.run(async () => {
@@ -473,34 +546,13 @@ describe("Data Search reviewed providers", () => {
     });
   });
 
-  it.each([
-    {
-      name: "the live envelope without per-item success",
-      outcome: {},
-      status: "completed",
-    },
-    {
-      name: "an explicit per-item success",
-      outcome: { success: true },
-      status: "completed",
-    },
-    {
-      name: "an explicit per-item failure",
-      outcome: { success: false },
-      status: "failed",
-    },
-    {
-      name: "a per-item error without a success flag",
-      outcome: {
-        error: { message: "The provider could not complete the operation." },
-      },
-      status: "failed",
-    },
-  ])("settles Firecrawl $name", async ({ outcome, status }) => {
+  it("keeps an unparseable paid synchronous Firecrawl response unknown without replaying or refunding on recovery, reads or cancellation", async () => {
     const setup = await scenario();
     await setup.run(async () => {
       mockEnv("OKOU_SCRAPE_FIRECRAWL_TOKEN", "data-firecrawl-test-key");
       mockEnv("OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT", 1000);
+      const requestId = randomUUID();
+      let paidScrapes = 0;
       server.use(
         http.get(
           "https://www.firecrawl.dev/alexandria/agents/providers/play-google-com/openapi.json",
@@ -554,9 +606,8 @@ describe("Data Search reviewed providers", () => {
         http.post(
           "https://api.firecrawl.dev/v2/scrape",
           async ({ request }) => {
-            expect(request.headers.get("x-request-id")).toMatch(
-              /^[0-9a-f-]{36}$/,
-            );
+            paidScrapes++;
+            expect(request.headers.get("x-request-id")).toBe(requestId);
             await expect(request.json()).resolves.toStrictEqual({
               alexandria: {
                 provider: "play-google-com",
@@ -568,61 +619,253 @@ describe("Data Search reviewed providers", () => {
                 },
               },
             });
-            return HttpResponse.json({
-              success: true,
-              data: {
-                alexandria: [
-                  {
-                    ...outcome,
-                    provider: "play-google-com",
-                    capability: "media/app",
-                    creditsCost: 5,
-                    data: {
-                      package: "com.business.example",
-                      title: "Business Example",
-                      installs_min: 1000,
-                      rating: { average: 4.5, count: 25 },
-                      internal_trace: "not-a-public-field",
-                    },
-                  },
-                ],
-              },
+            // The paid POST returns, but neither a receipt nor a recoverable ID
+            // can be established from its response. It must never be retried.
+            return new HttpResponse("{truncated-paid-response", {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
             });
           },
         ),
       );
-      const result = await execute(setup, {
+      const before = await accept(
+        setup.billing.get({ headers: authenticate(setup.actor) }),
+        [200],
+      );
+      expect(before.body.credits).toBeGreaterThanOrEqual(100);
+      const body = {
         capability: "apps.profile",
         input: { package: "com.business.example" },
         limit: 1,
-      });
-      expect(result.body).toMatchObject({
-        status,
-        data:
-          status === "completed"
-            ? {
-                items: [
-                  {
-                    package: "com.business.example",
-                    title: "Business Example",
-                    installs_min: 1000,
-                    source: { provider: "play-google-com" },
-                  },
-                ],
-              }
-            : null,
-        ...(status === "failed"
-          ? { error: { code: "DATA_SEARCH_SOURCE_FAILED" } }
-          : {}),
-        billing: {
-          state: "settled",
-          creditsCharged: 7,
-          reservedCredits: 0,
-        },
-      });
-      expect(JSON.stringify(result.body.data)).not.toContain(
-        "not-a-public-field",
+        requestId,
+        maxCredits: 100,
+      } as const;
+      const created = await accept(
+        setup.data.create({ headers: authenticate(setup.actor), body }),
+        [202],
       );
+      await flushWaitUntilForTest();
+      const held = {
+        jobId: created.body.jobId,
+        requestId,
+        status: "unknown",
+        data: null,
+        billing: {
+          state: "pending",
+          creditsCharged: 0,
+          reservedCredits: 100,
+          maxCredits: 100,
+        },
+        error: { code: "DATA_SEARCH_START_UNKNOWN" },
+      };
+      async function expectHeld() {
+        const saved = await accept(
+          setup.data.get({
+            headers: authenticate(setup.actor),
+            params: { jobId: created.body.jobId },
+          }),
+          [200],
+        );
+        expect(saved.body).toMatchObject(held);
+        await flushWaitUntilForTest();
+        const wallet = await accept(
+          setup.billing.get({ headers: authenticate(setup.actor) }),
+          [200],
+        );
+        // Pending zero charged is not a settled zero-cost receipt or refund.
+        expect(wallet.body.credits).toBe(before.body.credits);
+        expect(paidScrapes).toBe(1);
+      }
+      await expectHeld();
+      const recovered = await accept(
+        setup.data.create({ headers: authenticate(setup.actor), body }),
+        [202],
+      );
+      expect(recovered.body).toMatchObject(held);
+      await flushWaitUntilForTest();
+      await expectHeld();
+      const cancelled = await accept(
+        setup.data.cancel({
+          headers: authenticate(setup.actor),
+          params: { jobId: created.body.jobId },
+          body: {},
+        }),
+        [200],
+      );
+      expect(cancelled.body).toMatchObject(held);
+      await flushWaitUntilForTest();
+      await expectHeld();
     });
   });
+
+  it.each([
+    {
+      name: "the live envelope without per-item success",
+      outcome: {},
+      status: "completed",
+      clearConfiguredRate: false,
+    },
+    {
+      name: "an explicit per-item success",
+      outcome: { success: true },
+      status: "completed",
+      clearConfiguredRate: false,
+    },
+    {
+      name: "an explicit per-item failure",
+      outcome: { success: false },
+      status: "failed",
+      clearConfiguredRate: false,
+    },
+    {
+      name: "a per-item error without a success flag",
+      outcome: {
+        error: { message: "The provider could not complete the operation." },
+      },
+      status: "failed",
+      clearConfiguredRate: false,
+    },
+    {
+      name: "the frozen quoted rate after configured rate disappears",
+      outcome: {},
+      status: "completed",
+      clearConfiguredRate: true,
+    },
+  ])(
+    "settles Firecrawl $name",
+    async ({ outcome, status, clearConfiguredRate }) => {
+      const setup = await scenario();
+      await setup.run(async () => {
+        mockEnv("OKOU_SCRAPE_FIRECRAWL_TOKEN", "data-firecrawl-test-key");
+        mockEnv("OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT", 1000);
+        let schemaReads = 0;
+        server.use(
+          http.get(
+            "https://www.firecrawl.dev/alexandria/agents/providers/play-google-com/openapi.json",
+            () => {
+              schemaReads++;
+              if (clearConfiguredRate && schemaReads === 2) {
+                mockEnv("OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT", undefined);
+              }
+              return HttpResponse.json({
+                "x-firecrawl-capabilities": [
+                  {
+                    key: "media/app",
+                    credits_per_unit: 5,
+                    billing: { maxCredits: 5 },
+                  },
+                ],
+                paths: {
+                  "/v2/scrape": {
+                    post: {
+                      requestBody: {
+                        content: {
+                          "application/json": {
+                            schema: {
+                              properties: {
+                                alexandria: {
+                                  oneOf: [
+                                    {
+                                      properties: {
+                                        capability: { const: "media/app" },
+                                        options: {
+                                          type: "object",
+                                          properties: {
+                                            package: { type: "string" },
+                                            country: { type: "string" },
+                                            language: { type: "string" },
+                                          },
+                                          required: ["package"],
+                                          additionalProperties: false,
+                                        },
+                                      },
+                                    },
+                                  ],
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              });
+            },
+          ),
+          http.post(
+            "https://api.firecrawl.dev/v2/scrape",
+            async ({ request }) => {
+              expect(request.headers.get("x-request-id")).toMatch(
+                /^[0-9a-f-]{36}$/,
+              );
+              await expect(request.json()).resolves.toStrictEqual({
+                alexandria: {
+                  provider: "play-google-com",
+                  capability: "media/app",
+                  options: {
+                    package: "com.business.example",
+                    country: "US",
+                    language: "en_US",
+                  },
+                },
+              });
+              return HttpResponse.json({
+                success: true,
+                data: {
+                  alexandria: [
+                    {
+                      ...outcome,
+                      provider: "play-google-com",
+                      capability: "media/app",
+                      creditsCost: 5,
+                      data: {
+                        package: "com.business.example",
+                        title: "Business Example",
+                        installs_min: 1000,
+                        rating: { average: 4.5, count: 25 },
+                        internal_trace: "not-a-public-field",
+                      },
+                    },
+                  ],
+                },
+              });
+            },
+          ),
+        );
+        const result = await execute(setup, {
+          capability: "apps.profile",
+          input: { package: "com.business.example" },
+          limit: 1,
+        });
+        expect(result.body).toMatchObject({
+          status,
+          data:
+            status === "completed"
+              ? {
+                  items: [
+                    {
+                      package: "com.business.example",
+                      title: "Business Example",
+                      installs_min: 1000,
+                      source: { provider: "play-google-com" },
+                    },
+                  ],
+                }
+              : null,
+          ...(status === "failed"
+            ? { error: { code: "DATA_SEARCH_SOURCE_FAILED" } }
+            : {}),
+          billing: {
+            state: "settled",
+            creditsCharged: 7,
+            reservedCredits: 0,
+          },
+        });
+        expect(JSON.stringify(result.body.data)).not.toContain(
+          "not-a-public-field",
+        );
+      });
+    },
+  );
 });

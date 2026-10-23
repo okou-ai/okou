@@ -224,7 +224,7 @@ function projectCompanySearch(
   value: Record<string, unknown>,
 ): { items: DataSearchJsonValue[] } {
   return {
-    items: array(value.organizations ?? value.accounts)
+    items: array(value.organizations)
       .slice(0, plan.limit)
       .map((entry) => {
         return { ...company(entry), source: source(plan) };

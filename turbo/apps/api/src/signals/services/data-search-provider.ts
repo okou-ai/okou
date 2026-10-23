@@ -87,10 +87,8 @@ function key(vendor: DataSearchProviderPlan["vendor"]): string {
   );
   return value || unavailable();
 }
-function firecrawlRate(plan?: DataSearchProviderPlan): number {
-  const value =
-    plan?.sourceCostUsdMicrosPerCredit ??
-    env("OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT");
+function firecrawlRate(plan: DataSearchProviderPlan): number {
+  const value = plan.sourceCostUsdMicrosPerCredit;
   if (!value) {
     throw new DataSearchProviderError(
       "DATA_SEARCH_PRICING_UNAVAILABLE",
@@ -650,7 +648,7 @@ export async function startDataSearchProvider(
   }
   key(checked.vendor);
   if (checked.vendor === "firecrawl") {
-    firecrawlRate();
+    firecrawlRate(checked);
   }
   signal.throwIfAborted();
   const started = await settleIncludingAbort(
@@ -738,7 +736,7 @@ export async function readDataSearchProvider(
     };
   }
   if (!runIdSchema.safeParse(runId).success) {
-    return invalidResponse();
+    throw new Error("Invalid saved Data Search source run ID");
   }
   const response = await monidRequest(
     `/runs/${encodeURIComponent(runId)}`,
@@ -767,7 +765,7 @@ export async function stopDataSearchProvider(
     };
   }
   if (!runIdSchema.safeParse(runId).success) {
-    return invalidResponse();
+    throw new Error("Invalid saved Data Search source run ID");
   }
   const response = await monidRequest(
     `/runs/${encodeURIComponent(runId)}/stop`,

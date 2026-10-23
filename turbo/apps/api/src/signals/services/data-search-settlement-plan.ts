@@ -28,14 +28,16 @@ export function dataSearchJobQuery(orgId: string, jobId: string) {
 }
 
 function dataSearchSettledWhere(job: Job & { readonly xmin: string }) {
-  return (
-    and(
-      eq(dataSearchJobs.id, job.id),
-      eq(dataSearchJobs.orgId, job.orgId),
-      isNull(dataSearchJobs.creditsCharged),
-      sql`${dataSearchJobs}.xmin::text = ${job.xmin}`,
-    ) ?? sql`false`
+  const where = and(
+    eq(dataSearchJobs.id, job.id),
+    eq(dataSearchJobs.orgId, job.orgId),
+    isNull(dataSearchJobs.creditsCharged),
+    sql`${dataSearchJobs}.xmin::text = ${job.xmin}`,
   );
+  if (!where) {
+    throw new Error("Data Search settlement predicate is missing");
+  }
+  return where;
 }
 
 export function requireDataSearchSettlement(

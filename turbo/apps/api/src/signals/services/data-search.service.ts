@@ -123,6 +123,13 @@ function ledgerProvider(plan: {
     ? `monid/${plan.provider}`
     : `firecrawl/alexandria/${plan.provider}`;
 }
+function pricingUnavailable() {
+  return dataSearchError(
+    503,
+    "PRICING_NOT_CONFIGURED",
+    "Data Search pricing is unavailable.",
+  );
+}
 function pricingWhere(provider: string) {
   return and(
     eq(usagePricing.kind, "data-search"),
@@ -146,11 +153,7 @@ export const quoteDataSearch$ = command(
           .where(pricingWhere(ledgerProvider(estimate.plan)));
         signal.throwIfAborted();
         if (!price) {
-          return dataSearchError(
-            503,
-            "PRICING_NOT_CONFIGURED",
-            "Data Search pricing is unavailable.",
-          );
+          return pricingUnavailable();
         }
         const credits = creditsFor(
           estimate.estimatedCostUsdMicros,
@@ -204,11 +207,7 @@ const reserveDataSearchJob$ = command(
         .from(usagePricing)
         .where(pricingWhere(providerName));
       if (!price) {
-        return dataSearchError(
-          503,
-          "PRICING_NOT_CONFIGURED",
-          "Data Search pricing is unavailable.",
-        );
+        return pricingUnavailable();
       }
       const estimated = creditsFor(
         estimate.estimatedCostUsdMicros,
@@ -232,7 +231,10 @@ const reserveDataSearchJob$ = command(
         .select(socialReservations.columns)
         .from(socialDataJobs)
         .where(socialReservations.where);
-      if ((reservation?.jobs ?? 0) >= 100) {
+      if (!reservation || !socialReservation) {
+        throw new Error("Data Search reservation aggregate returned no row");
+      }
+      if (reservation.jobs >= 100) {
         return dataSearchError(
           429,
           "DATA_SEARCH_CAPACITY",
@@ -243,7 +245,7 @@ const reserveDataSearchJob$ = command(
         const creditArgs = dataAdmissionCreditArgs(
           args,
           price,
-          (reservation?.credits ?? 0) + (socialReservation?.credits ?? 0),
+          reservation.credits + socialReservation.credits,
         );
         const snapshotPlan = managedSnapshotPlan(creditArgs);
         const [snapshot] = await tx
@@ -517,7 +519,7 @@ const startDataSearchJob$ = command(
   },
 );
 
-export const advanceDataSearchJob$ = command(
+const advanceDataSearchJobOnce$ = command(
   async ({ set }, jobId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
     const [job] = await db
@@ -648,6 +650,45 @@ export const advanceDataSearchJob$ = command(
   },
 );
 
+export const advanceDataSearchJob$ = command(
+  async ({ set }, jobId: string, signal: AbortSignal): Promise<void> => {
+    const advanced = await settle(
+      set(advanceDataSearchJobOnce$, jobId, signal),
+      signal,
+    );
+    if (advanced.ok) {
+      return;
+    }
+    if (
+      !(advanced.error instanceof DataSearchProviderError) ||
+      ![
+        "DATA_SEARCH_UNAVAILABLE",
+        "DATA_SEARCH_INVALID_RESPONSE",
+        "DATA_SEARCH_INVALID_BILLING",
+        "DATA_SEARCH_CANCEL_UNKNOWN",
+      ].includes(advanced.error.code)
+    ) {
+      throw advanced.error;
+    }
+    // A source failure leaves the liability intact, but this attempt must not
+    // monopolize the global oldest-first reconciler. Local/DB failures propagate.
+    await set(writeDb$)
+      .update(dataSearchJobs)
+      .set({
+        error: { code: advanced.error.code, message: advanced.error.message },
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(dataSearchJobs.id, jobId),
+          isNull(dataSearchJobs.creditsCharged),
+          isNull(dataSearchJobs.actualCostUsdMicros),
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
+
 export const getDataSearchJob$ = command(
   async (
     { set },
@@ -708,12 +749,19 @@ export const listDataSearchJobs$ = command(
       .limit(args.query.limit + 1);
     signal.throwIfAborted();
     const jobs = rows.slice(0, args.query.limit);
+    let nextCursor: string | null = null;
+    if (rows.length > args.query.limit) {
+      const last = jobs.at(-1);
+      if (!last) {
+        throw new Error("Data Search next page has no cursor row");
+      }
+      nextCursor = last.id;
+    }
     return {
       status: 200 as const,
       body: {
         jobs: jobs.map(publicJob),
-        nextCursor:
-          rows.length > args.query.limit ? (jobs.at(-1)?.id ?? null) : null,
+        nextCursor,
       },
     };
   },
@@ -779,7 +827,7 @@ export const reconcileDataSearchJobs$ = command(
           ),
         ),
       )
-      .orderBy(dataSearchJobs.updatedAt)
+      .orderBy(dataSearchJobs.updatedAt, dataSearchJobs.id)
       .limit(2);
     signal.throwIfAborted();
     for (const job of jobs) {
