@@ -164,7 +164,7 @@ export function createPublicBillingScenario(context: TestContext) {
   return {
     expectStripeEvent(event: object) {
       registerEvent(stripeEvents, event);
-      context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+      context.mocks.stripe.webhooks.constructEventAsync.mockImplementation(
         (body) => {
           return consumeEvent(stripeEvents, body);
         },

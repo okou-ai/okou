@@ -230,7 +230,7 @@ async function postStripeAutomationEvent(
   event: object,
   expectedStatus = 200,
 ): Promise<Response> {
-  context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+  context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(event);
   const body = JSON.stringify(event);
   const response = await createApp({
     signal: context.signal,
@@ -339,7 +339,7 @@ async function deleteAutomation(scenario: Scenario): Promise<void> {
 
 beforeEach(() => {
   mockStripeWebhookEventConstructor((rawBody, signature, secret) => {
-    return context.mocks.stripe.webhooks.constructEvent(
+    return context.mocks.stripe.webhooks.constructEventAsync(
       rawBody,
       signature,
       secret,
@@ -537,9 +537,11 @@ describe("Stripe automation event webhook", () => {
     });
     expect(unsigned.status).toBe(401);
 
-    context.mocks.stripe.webhooks.constructEvent.mockImplementationOnce(() => {
-      throw new Error("invalid signature");
-    });
+    context.mocks.stripe.webhooks.constructEventAsync.mockImplementationOnce(
+      () => {
+        throw new Error("invalid signature");
+      },
+    );
     const invalidSignature = await createApp({
       signal: context.signal,
       routes: webhooksStripeAutomationEventsRoutes,
@@ -571,7 +573,7 @@ describe("Stripe automation event webhook", () => {
     await postStripeAutomationEvent(unmapped, 200);
 
     expect(
-      context.mocks.stripe.webhooks.constructEvent,
+      context.mocks.stripe.webhooks.constructEventAsync,
     ).toHaveBeenLastCalledWith(
       JSON.stringify(unmapped),
       "t=1,v1=stripe-automation",

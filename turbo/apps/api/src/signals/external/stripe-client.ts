@@ -1070,16 +1070,20 @@ const {
  * Raw event for the automation-event ingress, which zod-parses the payload
  * itself rather than branching on Stripe's union.
  */
-export function constructStripeWebhookEvent(
+export async function constructStripeWebhookEvent(
   rawBody: string,
   signature: string,
   secret: string,
-): unknown {
+): Promise<unknown> {
   const mocked = getMockedStripeWebhookEventConstructor();
   if (mocked) {
     return mocked(rawBody, signature, secret);
   }
-  return stripeSdk().webhooks.constructEvent(rawBody, signature, secret);
+  return await stripeSdk().webhooks.constructEventAsync(
+    rawBody,
+    signature,
+    secret,
+  );
 }
 
 export function mockStripeWebhookEventConstructor(
@@ -1088,12 +1092,16 @@ export function mockStripeWebhookEventConstructor(
   setMockedStripeWebhookEventConstructor(constructor);
 }
 
-export function constructStripeBillingWebhookEvent(
+export async function constructStripeBillingWebhookEvent(
   rawBody: string,
   signature: string,
   secret: string,
-): StripeWebhookEvent {
-  const event = stripeSdk().webhooks.constructEvent(rawBody, signature, secret);
+): Promise<StripeWebhookEvent> {
+  const event = await stripeSdk().webhooks.constructEventAsync(
+    rawBody,
+    signature,
+    secret,
+  );
   const envelope = { id: event.id, type: event.type, created: event.created };
 
   switch (event.type) {

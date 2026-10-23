@@ -7,7 +7,7 @@ import { request$ } from "../context/hono";
 import { constructStripeWebhookEvent } from "../external/stripe-client";
 import type { RouteEntry } from "../route-entry";
 import { dispatchStripeAutomationEvent$ } from "../services/stripe-automation-event.service";
-import { safeSync, settle } from "../utils";
+import { settle } from "../utils";
 
 const log = logger("api:webhooks-stripe-automation-events");
 
@@ -29,16 +29,17 @@ const postStripeAutomationEvent$ = command(
     }
     const rawBody = await request.text();
     signal.throwIfAborted();
-    const constructed = safeSync(() => {
-      return constructStripeWebhookEvent(rawBody, signature, webhookSecret);
-    });
+    const constructed = await settle(
+      constructStripeWebhookEvent(rawBody, signature, webhookSecret),
+      signal,
+    );
     signal.throwIfAborted();
-    if ("error" in constructed) {
+    if (!constructed.ok) {
       return jsonError("Invalid webhook signature", 401);
     }
 
     const dispatched = await settle(
-      set(dispatchStripeAutomationEvent$, constructed.ok, signal),
+      set(dispatchStripeAutomationEvent$, constructed.value, signal),
       signal,
     );
     if (!dispatched.ok) {

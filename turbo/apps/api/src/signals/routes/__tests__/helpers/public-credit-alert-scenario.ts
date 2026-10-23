@@ -159,7 +159,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
   const verifier = new ActualStripe("sk_test_credit_alert_signing_only");
   mockStripeClient(context.mocks.stripe);
   mockOptionalEnv("STRIPE_WEBHOOK_SECRET", stripeSecret);
-  context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+  context.mocks.stripe.webhooks.constructEventAsync.mockImplementation(
     (body, signature, secret) => {
       return verifier.webhooks.constructEvent(
         z.string().parse(body),

@@ -573,7 +573,9 @@ describe("Stripe invoice-paid workflow automation readiness", () => {
       created: Math.floor(now() / 1000),
       data: { object: {} },
     };
-    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
     await accept(
       setupApp({ context, routes: webhooksStripeAutomationEventsRoutes })(
         webhookStripeAutomationEventsContract,

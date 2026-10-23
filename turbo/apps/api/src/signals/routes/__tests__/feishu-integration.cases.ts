@@ -740,7 +740,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       },
     };
     retainedWebhook = () => {
-      context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+      context.mocks.stripe.webhooks.constructEventAsync.mockImplementation(
         (payload) => {
           expect(JSON.parse(String(payload))).toStrictEqual(event);
           return event;

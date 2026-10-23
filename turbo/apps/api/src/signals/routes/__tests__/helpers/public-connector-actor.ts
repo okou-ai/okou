@@ -72,7 +72,7 @@ export function captureConnectorExternalState(
     captureExternalMock(context.mocks.stripe.subscriptions.list),
     captureExternalMock(context.mocks.stripe.invoices.list),
     captureExternalMock(context.mocks.clerk.verifyWebhook),
-    captureExternalMock(context.mocks.stripe.webhooks.constructEvent),
+    captureExternalMock(context.mocks.stripe.webhooks.constructEventAsync),
     captureExternalMock(context.mocks.axiom.ingest),
     captureExternalMock(context.mocks.axiom.query),
   ];
