@@ -8,17 +8,10 @@ const jsonErrorSchema = z.object({ error: z.string() });
 
 export const slackOauthInstallQuerySchema = z.object({
   connectorState: z.string().optional(),
-  orgId: z.string().optional(),
-  userId: z.string().optional(),
-  reinstall: z.string().optional(),
-  prompt: z.string().optional(),
 });
 
 export const slackOauthConnectQuerySchema = z.object({
   connectorState: z.string().optional(),
-  orgId: z.string().optional(),
-  userId: z.string().optional(),
-  prompt: z.string().optional(),
 });
 
 export const slackOauthCallbackQuerySchema = z.object({
@@ -45,10 +38,9 @@ export const slackOauthContract = c.router({
     responses: {
       307: c.noBody(),
       400: jsonErrorSchema,
-      404: jsonErrorSchema,
       503: jsonErrorSchema,
     },
-    summary: "Start Slack user OAuth connect",
+    summary: "Start Slack connector OAuth connect",
   },
   callback: {
     method: "GET",
