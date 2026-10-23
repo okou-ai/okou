@@ -51,7 +51,20 @@ where
             "RPC output unavailable",
         ));
     }
-    let terminal = match result
+    let terminal = terminal_response(result, sent);
+    timeout_at(deadline, emit(&mut output, &terminal))
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "RPC output deadline"))??;
+    Ok(matches!(terminal, Response::Result { .. }))
+}
+
+fn terminal_response(
+    result: Result<Result<Response, ErrorCode>, tokio::time::error::Elapsed>,
+    sent: bool,
+) -> Response {
+    // Only synthesized failures use the local transmission witness. Accepted
+    // host responses already carry their own delivery classification.
+    match result
         .map_err(|_| ErrorCode::TimedOut)
         .and_then(std::convert::identity)
     {
@@ -64,11 +77,7 @@ where
                 Delivery::NotDispatched
             },
         ),
-    };
-    timeout_at(deadline, emit(&mut output, &terminal))
-        .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "RPC output deadline"))??;
-    Ok(matches!(terminal, Response::Result { .. }))
+    }
 }
 
 async fn exchange<R, W, S, C, F>(

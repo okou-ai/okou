@@ -3,7 +3,7 @@
 use std::{future::Future, io, time::Duration};
 
 use runner_rpc_proto::{
-    Delivery, ErrorCode, Response,
+    ErrorCode, Response,
     stream::{Frame, MAX_DURATION_MS, Reader, Writer},
 };
 use tokio::{
@@ -11,7 +11,7 @@ use tokio::{
     time::{Instant, timeout_at},
 };
 
-use crate::{TERMINAL_BUDGET, connect_vsock, dispatch_request};
+use crate::{TERMINAL_BUDGET, connect_vsock, dispatch_request, terminal_response};
 
 pub async fn run() -> io::Result<bool> {
     run_with_io(tokio::io::stdin(), tokio::io::stdout(), connect_vsock).await
@@ -47,20 +47,7 @@ where
             "RPC output unavailable",
         ));
     }
-    let terminal = match result
-        .map_err(|_| ErrorCode::TimedOut)
-        .and_then(std::convert::identity)
-    {
-        Ok(terminal) => terminal,
-        Err(code) => Response::error(
-            code,
-            if sent {
-                Delivery::Unknown
-            } else {
-                Delivery::NotDispatched
-            },
-        ),
-    };
+    let terminal = terminal_response(result, sent);
     let succeeded = matches!(terminal, Response::Result { .. });
     timeout_at(deadline, output.send(&Frame::Control(terminal)))
         .await
