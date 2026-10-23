@@ -62,12 +62,6 @@ readonly RUNNER_STEER_ENDPOINTS_COMMIT=fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da
 # the completion paths for jobs accepted before it, so an earlier API would
 # accept video jobs that can no longer complete after rolling forward.
 readonly VIDEO_GENERATION_RETIREMENT_COMMIT=45b537a596a153a91b76c3bc7223187840f52775
-# #38129 moved both memory stages to Luna. DeepSeek route retirement makes
-# earlier APIs unsafe: they would admit work with a deleted execution binding.
-readonly PI_MEMORY_LUNA_ROUTING_COMMIT=77357abdb29ce96b2caf9ee679299602757844dc
-# #39185 omits compatibility storage from every Pi memory runtime statement.
-# Physical contraction cannot roll back to receipt or compatibility-column writers.
-readonly PI_MEMORY_STORAGE_WRITER_COMMIT=39d60bba6aa3a317948d653b4c1d09781719b466
 # #38096 permanently moved OpenRouter Pi captures to generation 5. Current
 # API/Runner/CLI readers no longer execute unversioned contexts, so a rollback
 # must not restore the generation 1 writer or its disabled-switch path.
@@ -91,7 +85,6 @@ readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
 readonly AGENT_INSTRUCTIONS_DB_ONLY_READER_COMMIT=b4a90a6b3f79527f91836df6a2bcc8fe81c622e8
 # #41393 prepared inline file injection before release 2 emits it.
 readonly AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT=da0dc9cd1b21ecdd91200fb1cad8600ee5fdfd29
-readonly PI_MEMORY_INPUT_REVISION_WRITER_PATH=turbo/apps/api/src/signals/services/pi-memory-phase2-input-revision.ts
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
 readonly HOSTED_SITE_URL_ROUTING_PATH=.github/rollback-floors/hosted-site-url-routing
 readonly DESKTOP_MIGRATION_HOP_PATH=turbo/apps/api/src/signals/services/desktop-electron-migration-release.ts
@@ -299,12 +292,6 @@ if ! git merge-base --is-ancestor "$RUNNER_STEER_ENDPOINTS_COMMIT" "$TARGET_COMM
 fi
 if ! git merge-base --is-ancestor "$VIDEO_GENERATION_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the video generation retirement: ${VIDEO_GENERATION_RETIREMENT_COMMIT}."
-fi
-if ! git merge-base --is-ancestor "$PI_MEMORY_LUNA_ROUTING_COMMIT" "$TARGET_COMMIT"; then
-  fail "Rollback target predates Pi memory Luna routing: ${PI_MEMORY_LUNA_ROUTING_COMMIT}."
-fi
-if ! git merge-base --is-ancestor "$PI_MEMORY_STORAGE_WRITER_COMMIT" "$TARGET_COMMIT"; then
-  fail "Rollback target predates Pi memory storage-independent writers: ${PI_MEMORY_STORAGE_WRITER_COMMIT}."
 fi
 if ! git merge-base --is-ancestor "$PI_OPENROUTER_VERSIONED_WRITER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the versioned Pi OpenRouter writer: ${PI_OPENROUTER_VERSIONED_WRITER_COMMIT}."
@@ -671,17 +658,6 @@ if [[ ! "$desktop_migration_hop_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$desktop_migration_hop_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the frozen Desktop migration-hop policy: ${desktop_migration_hop_commit}."
-fi
-
-# Retired Run snapshot storage requires the already deployed explicit-column
-# Pi memory input-revision writer. Resolve its actual merged preparation commit.
-pi_memory_input_revision_writer_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
-  origin/main -- "$PI_MEMORY_INPUT_REVISION_WRITER_PATH" | sed -n '1p')
-if [[ ! "$pi_memory_input_revision_writer_commit" =~ ^[0-9a-f]{40}$ ]]; then
-  fail "Cannot resolve the merged Pi memory input-revision writer on main."
-fi
-if ! git merge-base --is-ancestor "$pi_memory_input_revision_writer_commit" "$TARGET_COMMIT"; then
-  fail "Rollback target predates Pi memory input-revision writer preparation: ${pi_memory_input_revision_writer_commit}."
 fi
 
 # Migration 1282 drops the retired integration agent preference and
