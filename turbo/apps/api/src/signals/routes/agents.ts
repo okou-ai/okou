@@ -42,7 +42,7 @@ import { connectorActionResolver } from "../services/connector-action-resolver.s
 
 import {
   updateUserBuiltinConnectors$,
-  updateUserCustomConnectors,
+  updateUserCustomConnectors$,
 } from "../services/user-connectors.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -826,10 +826,9 @@ const updateAgentCustomConnectorsInner$ = command(
       return agentNotFound(params.id);
     }
 
-    const writeDb = set(writeDb$);
     const operation = body.data.operation ?? "replace";
 
-    const updated = await updateUserCustomConnectors(writeDb, {
+    const updated = await set(updateUserCustomConnectors$, {
       orgId: auth.orgId,
       userId: auth.userId,
       agentId: params.id,
