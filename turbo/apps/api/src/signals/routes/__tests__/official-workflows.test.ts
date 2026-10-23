@@ -585,7 +585,7 @@ describe("Proactive jobs", () => {
     await runs.grantProEntitlement(actor);
     await selectPersonalDefaultModel(actor);
     await runs.heartbeatRunner(runnerGroup);
-    const delegated = await runs.createThreadRun(actor, {
+    const delegated = await chat.sendAndLaunch(actor, {
       agentId: installed.installation.agentId,
       model: "claude-fable-5-1",
       prompt: "Create an Okou Job to research prospects",
