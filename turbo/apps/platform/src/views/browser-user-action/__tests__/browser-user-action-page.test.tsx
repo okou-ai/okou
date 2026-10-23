@@ -805,7 +805,6 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
     ({ body, respond }) => {
       expect(body).toStrictEqual({
         key: "document",
-        uploadId: expect.any(String),
         index: 0,
         size: 4,
       });
@@ -841,7 +840,6 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
       {
         key: "document",
         operation: "replace",
-        uploadId: expect.any(String),
         observedFingerprint: FILE_FINGERPRINT,
         files: [
           {

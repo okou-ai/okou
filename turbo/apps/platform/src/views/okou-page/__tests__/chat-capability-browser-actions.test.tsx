@@ -1307,7 +1307,6 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
     ({ body, respond }) => {
       expect(body).toStrictEqual({
         key: "document",
-        uploadId: expect.any(String),
         index: 0,
         size: 4,
       });
@@ -1325,7 +1324,6 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
       {
         key: "document",
         operation: "replace",
-        uploadId: expect.any(String),
         observedFingerprint: fingerprint,
         files: [
           {
@@ -1389,177 +1387,6 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
   });
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(window.location.href).toBe(currentUrl);
-});
-
-test("Reopening an inline Browser file submission keeps each submission’s bytes and metadata isolated", async () => {
-  let state: BrowserUserActionResponse["state"] = "pending";
-  const fingerprint = "a".repeat(64);
-  const applyStarted = context.mocks.deferred<void>();
-  const overlappingApply = context.mocks.deferred<void>();
-  let applyClaimed = false;
-  const releaseApply = context.mocks.deferred<void>();
-  const materializedFiles: { metadata: unknown; bytes: string }[] = [];
-  const storedBytes = new Map<string, string>();
-  const uploadUrl = "https://uploads.example.test/reopened-browser-file";
-  const fileAction = () => {
-    return {
-      ...browserInputAction(state),
-      fields: [
-        {
-          key: "document",
-          label: "Document",
-          fieldKind: "file" as const,
-          required: true,
-          control: {
-            tagName: "INPUT" as const,
-            inputType: "file" as const,
-            siteRequired: false,
-            multiple: false,
-            accept: ".txt",
-            files: [],
-            fileSetFingerprint: fingerprint,
-          },
-        },
-      ],
-    };
-  };
-  installCapabilityChat({
-    events: completedConversation(`[Enter details](${browserInputUrl()})`),
-  });
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, fileAction());
-  });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    return respond(200, fileAction());
-  });
-  context.mocks.api(
-    browserUserActionsContract.prepareFileUpload,
-    ({ body, respond }) => {
-      return respond(200, { uploadUrl: `${uploadUrl}/${body.uploadId}` });
-    },
-  );
-  context.mocks.http.put(
-    `${uploadUrl}/:uploadId`,
-    async ({ request, params }) => {
-      storedBytes.set(String(params.uploadId), await request.text());
-      return new HttpResponse(null, { status: 200 });
-    },
-  );
-  context.mocks.api(
-    browserUserActionsContract.apply,
-    async ({ body, respond }) => {
-      if (applyClaimed) {
-        overlappingApply.resolve();
-        return respond(409, {
-          error: {
-            code: "BROWSER_USER_ACTION_CONFLICT",
-            message: "Browser input has already been claimed",
-          },
-        });
-      }
-      applyClaimed = true;
-      applyStarted.resolve();
-      // A stale card may still display pending while the server owns this apply.
-      await releaseApply.promise;
-      const value = body.values.find((candidate) => {
-        return candidate.key === "document";
-      });
-      if (!value || !("files" in value)) {
-        throw new Error("Missing submitted Document file metadata");
-      }
-      materializedFiles.push({
-        metadata: value.files,
-        bytes: storedBytes.get(value.uploadId ?? "") ?? "",
-      });
-      state = "succeeded";
-      return respond(200, fileAction());
-    },
-  );
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    acceptCallback();
-    return respond(201, { threadId: RUN_THREAD_ID });
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  await readyChat();
-  click(await findButton("Enter information"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Sign in to download invoices",
-  });
-  const input = await within(dialog).findByLabelText(/Document/u);
-  await waitFor(() => {
-    expect(input).toBeEnabled();
-  });
-  const firstFile = new File(["AAAA"], "original.txt", {
-    type: "text/plain",
-  });
-  Object.defineProperty(firstFile, "arrayBuffer", {
-    value: () => {
-      return Promise.resolve(new Uint8Array([65, 65, 65, 65]).buffer);
-    },
-  });
-  fireEvent.change(input, { target: { files: [firstFile] } });
-  const submit = buttonsByName("Add to browser", dialog)[0];
-  if (!submit) {
-    throw new Error("Missing original Browser file submission button");
-  }
-  await waitFor(() => {
-    expect(submit).toBeEnabled();
-  });
-  click(submit);
-  await applyStarted.promise;
-
-  const close = buttonsByName("Close", dialog)[0];
-  if (!close) {
-    throw new Error("Missing Browser file dialog close button");
-  }
-  click(close);
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  click(await findButton("Enter information"));
-  const reopened = await screen.findByRole("dialog", {
-    name: "Sign in to download invoices",
-  });
-  const replacementInput = await within(reopened).findByLabelText(/Document/u);
-  await waitFor(() => {
-    expect(replacementInput).toBeEnabled();
-  });
-  const replacementFile = new File(["BBBB"], "replacement.txt", {
-    type: "text/plain",
-  });
-  Object.defineProperty(replacementFile, "arrayBuffer", {
-    value: () => {
-      return Promise.resolve(new Uint8Array([66, 66, 66, 66]).buffer);
-    },
-  });
-  fireEvent.change(replacementInput, { target: { files: [replacementFile] } });
-  const replacementSubmit = buttonsByName("Add to browser", reopened)[0];
-  if (!replacementSubmit) {
-    throw new Error("Missing reopened Browser file submission button");
-  }
-  await waitFor(() => {
-    expect(replacementSubmit).toBeEnabled();
-  });
-  click(replacementSubmit);
-  await overlappingApply.promise;
-  await waitFor(() => {
-    expect(storedBytes.size).toBe(2);
-  });
-  releaseApply.resolve();
-
-  await expect(
-    screen.findByText("Agent notified"),
-  ).resolves.toBeInTheDocument();
-  expect(materializedFiles[0]).toStrictEqual({
-    metadata: [{ name: "original.txt", type: "text/plain", size: 4 }],
-    bytes: "AAAA",
-  });
 });
 
 test("An inline Browser dialog confirms an existing radio choice and preserves the chat callback", async () => {

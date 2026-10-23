@@ -988,7 +988,6 @@ export function fileDraftIsValid(
 async function browserFileSubmissionValue(
   field: BrowserInputAction["fields"][number],
   draft: BrowserFileDraft | undefined,
-  uploadId: string,
   upload: (fieldKey: string, file: File, index: number) => Promise<void>,
 ): Promise<
   | Extract<BrowserUserActionApplyRequest["values"][number], { files: unknown }>
@@ -1011,7 +1010,6 @@ async function browserFileSubmissionValue(
     key: field.key,
     operation: draft.operation,
     observedFingerprint: draft.observedFingerprint,
-    ...(draft.operation === "replace" ? { uploadId } : {}),
     files:
       draft.operation === "replace"
         ? await Promise.all(
@@ -1133,7 +1131,6 @@ async function uploadBrowserInputFile(
 function browserFileUploader(
   clientFactory: ApiClientFactory,
   requestToken: string,
-  uploadId: string,
   signal: AbortSignal,
 ): (fieldKey: string, file: File, index: number) => Promise<void> {
   const client = clientFactory(browserUserActionsContract);
@@ -1146,7 +1143,7 @@ function browserFileUploader(
         const result = await accept(
           client.prepareFileUpload({
             params: { requestToken },
-            body: { ...body, uploadId },
+            body,
             fetchOptions: { signal },
           }),
           [200],
@@ -1161,7 +1158,6 @@ function browserFileUploader(
 
 async function browserInputSubmissionValues(
   action: BrowserInputAction,
-  uploadId: string,
   upload: (fieldKey: string, file: File, index: number) => Promise<void>,
   drafts: {
     readonly draft: ReadonlyMap<string, string>;
@@ -1202,7 +1198,6 @@ async function browserInputSubmissionValues(
       const file = await browserFileSubmissionValue(
         field,
         fileDraft.get(field.key),
-        uploadId,
         upload,
       );
       if (file === null) {
@@ -1330,15 +1325,6 @@ function createSubmitSignal({
       action: BrowserInputAction,
       signal: AbortSignal,
     ): Promise<void> => {
-      const drafts = {
-        draft: get(draft$),
-        choiceDraft: get(choiceDraft$),
-        checkboxDraft: get(checkboxDraft$),
-        radioDraft: get(radioDraft$),
-        rangeDraft: get(rangeDraft$),
-        colorDraft: get(colorDraft$),
-        fileDraft: get(fileDraft$),
-      };
       const request = await get(request$);
       signal.throwIfAborted();
       if (
@@ -1350,18 +1336,19 @@ function createSubmitSignal({
       ) {
         return;
       }
-      const uploadId = crypto.randomUUID();
       const prepared = await settle(
         browserInputSubmissionValues(
           action,
-          uploadId,
-          browserFileUploader(
-            get(apiClient$),
-            descriptor.requestToken,
-            uploadId,
-            signal,
-          ),
-          drafts,
+          browserFileUploader(get(apiClient$), descriptor.requestToken, signal),
+          {
+            draft: get(draft$),
+            choiceDraft: get(choiceDraft$),
+            checkboxDraft: get(checkboxDraft$),
+            radioDraft: get(radioDraft$),
+            rangeDraft: get(rangeDraft$),
+            colorDraft: get(colorDraft$),
+            fileDraft: get(fileDraft$),
+          },
         ),
       );
       signal.throwIfAborted();

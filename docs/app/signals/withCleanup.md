@@ -158,8 +158,7 @@ These are separate responsibilities:
 
 A successful cached resource is different from a command's loading/error state.
 Keep action results in the invoking view's hook. Preserve identity checks that
-prevent an old operation from mutating a replacement session, and scope external
-resources such as file staging keys to the actual attempt. Do not retain a
+prevent an old operation from mutating a replacement session. Do not retain a
 Promise slot or add a command mutex merely to share button feedback.
 
 For pagination, commit the returned page and cursor after success rather than

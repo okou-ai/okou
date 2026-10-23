@@ -6,12 +6,11 @@ import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
-  ListObjectsV2Command,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { runInNewContext } from "node:vm";
@@ -1511,6 +1510,10 @@ function mockNativeFileTarget(state: {
   });
 }
 
+function browserUserActionTokenHash(requestToken: string): string {
+  return createHash("sha256").update(requestToken).digest("hex");
+}
+
 async function setupNativeFileScenario(
   owned?: Awaited<ReturnType<typeof setupOwnedNativeFileBrowserScenario>>,
 ) {
@@ -1541,21 +1544,6 @@ async function setupNativeFileScenario(
   const temporaryObjects = new Map<string, Buffer>();
   const deletedKeys: string[] = [];
   context.mocks.s3.send.mockImplementation((command: unknown) => {
-    if (command instanceof ListObjectsV2Command) {
-      return Promise.resolve({
-        Contents: [...temporaryObjects]
-          .filter(([key]) => {
-            return key.startsWith(command.input.Prefix ?? "");
-          })
-          .map(([key, bytes]) => {
-            return {
-              Key: key,
-              Size: bytes.length,
-              LastModified: new Date(STARTED_AT_MS),
-            };
-          }),
-      });
-    }
     if (command instanceof GetObjectCommand) {
       const bytes = temporaryObjects.get(String(command.input.Key));
       if (!bytes) {
@@ -1675,7 +1663,6 @@ async function setupNativeFileScenario(
     requestToken: string,
     bytes = Buffer.from("test"),
     index = 0,
-    uploadId?: string,
   ) => {
     return await run(async () => {
       const prepared = await accept(
@@ -1684,7 +1671,6 @@ async function setupNativeFileScenario(
           params: { requestToken },
           body: {
             key: "document",
-            ...(uploadId ? { uploadId } : {}),
             index,
             size: bytes.length,
           },
@@ -1707,7 +1693,7 @@ async function setupNativeFileScenario(
         uploadUrl: expect.stringMatching(/^https?:\/\//u),
       });
       expect(JSON.stringify(prepared.body)).not.toContain("note.txt");
-      const key = String(signedCommand.input.Key);
+      const key = `browser-native-input/${browserUserActionTokenHash(requestToken)}/${index.toString()}`;
       temporaryObjects.set(key, bytes);
       return key;
     });
@@ -1836,80 +1822,6 @@ describe("Browser user-action route", () => {
       });
     },
   );
-
-  it("applies the selected file attempt even after another attempt uploads later", async () => {
-    const owned = await setupOwnedNativeFileBrowserScenario();
-    await owned.run(async () => {
-      const { create, stageSyntheticFile, temporaryObjects, deletedKeys } =
-        await setupNativeFileScenario(owned);
-      const created = await create();
-      const requestToken = created.body.action.requestToken;
-      const headers = { authorization: "Bearer clerk-session" };
-      const params = { requestToken };
-      const observed = await accept(
-        userActionClient().preflight({ headers, params, body: {} }),
-        [200],
-      );
-      const firstUploadId = randomUUID();
-      const selectedUploadId = randomUUID();
-      const firstKey = await stageSyntheticFile(
-        requestToken,
-        Buffer.from("old!"),
-        0,
-        firstUploadId,
-      );
-      const selectedKey = await stageSyntheticFile(
-        requestToken,
-        Buffer.from("safe"),
-        0,
-        selectedUploadId,
-      );
-      // A delayed signed PUT from the other mounted form finishes last.
-      temporaryObjects.set(firstKey, Buffer.from("late"));
-      const applied = await accept(
-        userActionClient().apply({
-          headers,
-          params,
-          body: {
-            values: [
-              {
-                ...nativeFileValue(
-                  observed.body.fields[0]?.control.fileSetFingerprint ?? "",
-                ),
-                uploadId: selectedUploadId,
-              },
-            ],
-          },
-        }),
-        [200],
-      );
-      expect(applied.body.state).toBe("succeeded");
-      const fileWrite = context.mocks.browserUseCdp.command.mock.calls
-        .slice()
-        .reverse()
-        .find(([command]) => {
-          return (
-            command.method === "Runtime.callFunctionOn" &&
-            String(command.params.functionDeclaration).includes(
-              "const transfer = new DataTransfer",
-            )
-          );
-        });
-      expect(fileWrite?.[0].params.arguments).toContainEqual({
-        value: [
-          {
-            name: "note.txt",
-            type: "text/plain",
-            size: 4,
-            contentBase64: Buffer.from("safe").toString("base64"),
-          },
-        ],
-      });
-      expect(deletedKeys).toStrictEqual(
-        expect.arrayContaining([firstKey, selectedKey]),
-      );
-    });
-  });
 
   it("rejects overlapping native file applications and preserves the completed action", async () => {
     const owned = await setupOwnedNativeFileBrowserScenario();
