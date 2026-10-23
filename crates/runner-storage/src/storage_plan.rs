@@ -20,9 +20,8 @@
 //! | Empty artifact | `PrepareEmpty { cached: true }` | `PrepareEmpty { cached: false }` |
 //!
 //! On a reused filesystem, changed and removed storage or artifact mounts are cleaned
-//! before materializing their replacements. Restored home images can still carry retired
-//! instruction mount fingerprints; those own only the managed instruction files,
-//! so their removal never erases the surrounding native framework home.
+//! before materializing their replacements. Removed tainted framework-home storage fingerprints
+//! require managed-file-only cleanup, preserving the surrounding native framework home.
 //!
 //! ## Cache and guest boundary
 //!
@@ -47,9 +46,6 @@ use crate::error::{StorageError as RunnerError, StorageResult as RunnerResult};
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
 
 use runner_types::storage_manifest::StorageManifest;
-
-// Persisted home-cache fingerprints outlive the retired instruction mount producer.
-const AGENT_INSTRUCTIONS_STORAGE_NAME_PREFIX: &str = "agent-instructions@";
 
 /// The semantic actions required to apply one canonical storage manifest.
 ///
@@ -755,7 +751,7 @@ fn record_removed_storages<'a>(
         if current_paths.contains(path.as_str()) {
             continue;
         }
-        if is_removed_framework_home_instruction(path, fingerprint) {
+        if is_tainted_framework_home(path, fingerprint) {
             instruction_cleanups.push(InstructionCleanup {
                 mount_path: path.clone(),
                 target_filename: None,
@@ -785,12 +781,8 @@ fn is_framework_home_path(path: &str) -> bool {
         CANONICAL_CLAUDE_CONFIG_DIR | CANONICAL_CODEX_HOME_DIR | PI_AGENT_DIR
     )
 }
-fn is_removed_framework_home_instruction(path: &str, fingerprint: &StorageFingerprint) -> bool {
-    is_framework_home_path(path)
-        && (fingerprint.is_tainted()
-            || fingerprint
-                .vas_storage_name()
-                .is_some_and(|name| name.starts_with(AGENT_INSTRUCTIONS_STORAGE_NAME_PREFIX)))
+fn is_tainted_framework_home(path: &str, fingerprint: &StorageFingerprint) -> bool {
+    is_framework_home_path(path) && fingerprint.is_tainted()
 }
 
 fn missing_root_policy_wire_value(policy: ArtifactEntryMissingRootPolicy) -> String {
