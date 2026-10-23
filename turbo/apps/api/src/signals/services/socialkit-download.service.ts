@@ -147,6 +147,7 @@ const providerReadySchema = z.object({
   status: z.literal("ready"),
   platform: socialKitDownloadPlatformSchema,
   downloadUrl: z.url().max(8192),
+  expiresIn: z.number().int().positive().max(604_800).optional(),
   durationSeconds: z.number().int().positive(),
   fileSizeMB: providerFileSizeMbSchema,
   creditsCost: z.number().int().positive(),
@@ -215,14 +216,26 @@ function externalStatus(job: DownloadJob): SocialKitDownloadResponse["status"] {
   }
 }
 
+function deliveredMedia(
+  job: DownloadJob,
+): SocialKitDownloadResponse["delivered"] {
+  // Artifact formats are byte-sniffed; direct-link formats are only
+  // provider-reported. Historical filenames are not delivery evidence.
+  const format =
+    job.request.delivery === "link"
+      ? (job.providerResult?.format ?? null)
+      : (job.artifact?.format ?? null);
+  const hasVideo = format
+    ? format === "mp4"
+    : job.providerResult?.format === "mp4";
+  return {
+    quality: hasVideo ? (job.providerResult?.quality ?? null) : null,
+    format,
+  };
+}
+
 function responseForJob(job: DownloadJob): SocialKitDownloadResponse {
   const billed = job.creditsCharged !== null;
-  // Historical filenames/content types could be request-derived. Do not use
-  // them to reconstruct missing delivery evidence from older JSONB writers.
-  const deliveredFormat = job.artifact?.format ?? null;
-  const hasVideo = deliveredFormat
-    ? deliveredFormat === "mp4"
-    : job.providerResult?.format === "mp4";
   return socialKitDownloadResponseSchema.parse({
     downloadId: job.id,
     status: externalStatus(job),
@@ -230,10 +243,7 @@ function responseForJob(job: DownloadJob): SocialKitDownloadResponse {
     quality: job.request.quality,
     format: job.request.format,
     requested: { quality: job.request.quality, format: job.request.format },
-    delivered: {
-      quality: hasVideo ? (job.providerResult?.quality ?? null) : null,
-      format: deliveredFormat,
-    },
+    delivered: deliveredMedia(job),
     maxDuration: job.request.maxDuration,
     billingCategory: MANAGED_SOCIALKIT_BILLING_CATEGORY,
     provider: job.providerResult,
@@ -245,6 +255,7 @@ function responseForJob(job: DownloadJob): SocialKitDownloadResponse {
           }
         : null,
     artifact: job.artifact,
+    ...(job.request.delivery === "link" ? { download: null } : {}),
     error: job.error
       ? {
           code: job.error.code,
@@ -932,10 +943,14 @@ async function deferClaimedJob(
       status: billed ? "artifact_failed" : "processing",
       error: error ?? {
         code: billed
-          ? "ARTIFACT_MATERIALIZATION_FAILED"
+          ? job.request.delivery === "link"
+            ? "SOCIALKIT_DOWNLOAD_LINK_UNAVAILABLE"
+            : "ARTIFACT_MATERIALIZATION_FAILED"
           : "SOCIALKIT_RECONCILIATION_FAILED",
         message: billed
-          ? "The artifact could not be materialized"
+          ? job.request.delivery === "link"
+            ? "The temporary download link is unavailable"
+            : "The artifact could not be materialized"
           : "The SocialKit download could not be reconciled yet",
       },
       retryCount: sql`${socialKitDownloadJobs.retryCount} + 1`,
@@ -1107,18 +1122,39 @@ export const getSocialKitDownload$ = command(
     signal: AbortSignal,
   ): Promise<SocialKitDownloadResponse | null> => {
     const writeDb = set(writeDb$);
+    const ownership = and(
+      eq(socialKitDownloadJobs.id, args.downloadId),
+      eq(socialKitDownloadJobs.orgId, args.orgId),
+      eq(socialKitDownloadJobs.userId, args.userId),
+    );
     const [job] = await writeDb
       .select()
       .from(socialKitDownloadJobs)
-      .where(
-        and(
-          eq(socialKitDownloadJobs.id, args.downloadId),
-          eq(socialKitDownloadJobs.orgId, args.orgId),
-          eq(socialKitDownloadJobs.userId, args.userId),
-        ),
-      );
+      .where(ownership);
     signal.throwIfAborted();
-    return job ? responseForJob(job) : null;
+    if (!job) {
+      return null;
+    }
+    if (job.request.delivery !== "link" || job.status === "provider_failed") {
+      return responseForJob(job);
+    }
+    if (job.status === "completed") {
+      return set(refreshSocialKitDownloadLink$, job, signal);
+    }
+    // Link delivery only polls metadata and settles usage. Keep it owned by
+    // this request rather than spending the post-response waitUntil budget.
+    await set(reconcileSocialKitDownload$, job.id, signal);
+    const [updated] = await writeDb
+      .select()
+      .from(socialKitDownloadJobs)
+      .where(ownership);
+    signal.throwIfAborted();
+    if (!updated) {
+      return null;
+    }
+    return updated.status === "completed"
+      ? set(refreshSocialKitDownloadLink$, updated, signal)
+      : responseForJob(updated);
   },
 );
 
@@ -1188,6 +1224,7 @@ export const listSocialKitDownloads$ = command(
             maxDuration: job.request.maxDuration,
             quality: job.request.quality,
             format: job.request.format,
+            delivery: job.request.delivery,
           },
           resumeCommand:
             job.status === "provider_failed"
@@ -1549,6 +1586,88 @@ const materializeSocialKitArtifact$ = command(
   },
 );
 
+function directDownloadLink(
+  ready: ProviderReady,
+  accessKey: string,
+): NonNullable<SocialKitDownloadResponse["download"]> {
+  const target = validateScrapeTargetUrl(ready.downloadUrl);
+  if (typeof target === "string" || target.url.protocol !== "https:") {
+    throw new Error("SocialKit returned an unsafe download link");
+  }
+  const { url } = target;
+  // The provider's documented delivery bucket issues file-scoped S3 URLs.
+  // Never forward a project API endpoint or a project credential to a sandbox.
+  if (
+    url.hostname !== "socialkit-downloads.s3.amazonaws.com" ||
+    url.port !== "" ||
+    url.hash !== "" ||
+    url.pathname === "/" ||
+    ready.downloadUrl.includes(accessKey) ||
+    ready.downloadUrl.includes(encodeURIComponent(accessKey)) ||
+    decodeURIComponent(url.pathname).includes(accessKey) ||
+    [...url.searchParams].some(([key, value]) => {
+      return (
+        /^(?:access[_-]?key|x-access-key|authorization)$/iu.test(key) ||
+        key.includes(accessKey) ||
+        value.includes(accessKey)
+      );
+    })
+  ) {
+    throw new Error("SocialKit returned an unsafe download link");
+  }
+  return {
+    // Preserve the original signed bytes, not a reconstructed URL.
+    url: ready.downloadUrl,
+    expiresAt:
+      ready.expiresIn === undefined
+        ? null
+        : new Date(nowDate().getTime() + ready.expiresIn * 1000).toISOString(),
+  };
+}
+
+const refreshSocialKitDownloadLink$ = command(
+  async (
+    _,
+    job: DownloadJob,
+    signal: AbortSignal,
+  ): Promise<SocialKitDownloadResponse> => {
+    const accessKey = env("OKOU_SOCIAL_SOCIALKIT_TOKEN");
+    const refreshed = await settle(
+      (async () => {
+        if (!accessKey || !job.providerJobId) {
+          throw new Error("Social download link is unavailable");
+        }
+        const poll = await pollProviderJob(
+          accessKey,
+          job.providerJobId,
+          signal,
+        );
+        if (poll.status !== "ready" || !readyMetadataIsValid(job, poll.ready)) {
+          throw new Error("Social download link is unavailable");
+        }
+        return directDownloadLink(poll.ready, accessKey);
+      })(),
+    );
+    signal.throwIfAborted();
+    if (!refreshed.ok) {
+      return {
+        ...responseForJob(job),
+        download: null,
+        error: {
+          code: "SOCIALKIT_DOWNLOAD_LINK_UNAVAILABLE",
+          message:
+            "The temporary download link could not be refreshed; query this download again",
+          retryable: true,
+          billed: job.creditsCharged !== null,
+        },
+      };
+    }
+    // Signed bearer URLs are released only to the authorized caller; neither
+    // durable job snapshots nor list responses retain them.
+    return { ...responseForJob(job), download: refreshed.value };
+  },
+);
+
 const completeReadySocialKitDownload$ = command(
   async (
     { set },
@@ -1564,6 +1683,27 @@ const completeReadySocialKitDownload$ = command(
     );
     signal.throwIfAborted();
     const writeDb = set(writeDb$);
+    if (settledJob.request.delivery === "link") {
+      const accessKey = env("OKOU_SOCIAL_SOCIALKIT_TOKEN");
+      if (!accessKey) {
+        throw new Error("SocialKit provider is not configured");
+      }
+      directDownloadLink(args.ready, accessKey);
+      await writeDb
+        .update(socialKitDownloadJobs)
+        .set({
+          status: "completed",
+          providerResult,
+          creditsCharged: settledJob.creditsCharged,
+          error: null,
+          claimExpiresAt: null,
+          updatedAt: nowDate(),
+          completedAt: nowDate(),
+        })
+        .where(eq(socialKitDownloadJobs.id, args.job.id));
+      signal.throwIfAborted();
+      return;
+    }
     const artifact = await set(
       materializeSocialKitArtifact$,
       { job: settledJob, ready: args.ready, providerResult },

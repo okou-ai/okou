@@ -191,6 +191,8 @@ export const socialKitDownloadRequestSchema = z
         );
       }, "URL must use HTTPS without embedded credentials"),
     maxDuration: z.number().int().positive().max(86_400),
+    // Omission preserves legacy artifact delivery for existing clients and jobs.
+    delivery: z.enum(["link", "artifact"]).optional(),
     quality: socialKitDownloadQualitySchema.default("720p"),
     format: socialKitDownloadFormatSchema.default("mp4"),
   })
@@ -249,6 +251,23 @@ export const socialKitDownloadResponseSchema = z.object({
     })
     .nullable(),
   artifact: socialKitDownloadArtifactSchema.nullable(),
+  download: z
+    .object({
+      url: z
+        .url()
+        .max(8192)
+        .refine((value) => {
+          const url = new URL(value);
+          return (
+            url.protocol === "https:" &&
+            url.username === "" &&
+            url.password === ""
+          );
+        }, "Download URL must use HTTPS without embedded credentials"),
+      expiresAt: z.iso.datetime().nullable(),
+    })
+    .nullable()
+    .optional(),
   error: z
     .object({
       code: z.string(),
@@ -643,7 +662,7 @@ export const socialContract = c.router({
       502: socialKitErrorSchema,
       503: socialKitErrorSchema,
     },
-    summary: "Start an Okou Social artifact download",
+    summary: "Start an Okou Social media download",
   },
   listDownloads: {
     method: "GET",
@@ -671,7 +690,7 @@ export const socialContract = c.router({
       404: apiErrorSchema,
       500: apiErrorSchema,
     },
-    summary: "Get an Okou Social artifact download",
+    summary: "Get an Okou Social media download",
   },
 });
 

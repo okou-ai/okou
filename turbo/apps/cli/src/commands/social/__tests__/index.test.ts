@@ -4846,6 +4846,144 @@ describe("okou social command", () => {
     });
   });
 
+  it.each(["2026-08-27T01:00:00.000Z", null])(
+    "returns a temporary direct link with expiry %s without downloading the file",
+    async (expiresAt) => {
+      const completed = {
+        ...completedDownload(),
+        artifact: null,
+        delivered: { quality: null, format: "m4a" },
+        provider: { ...completedDownload().provider, format: "m4a" },
+        download: {
+          url: "https://media.example/audio.m4a?signature=temporary-access",
+          expiresAt,
+        },
+      } satisfies SocialKitDownloadResponse;
+      let submissions = 0;
+      server.use(
+        http.post(
+          "http://localhost:3000/api/social/downloads",
+          async ({ request }) => {
+            submissions += 1;
+            expect(await request.json()).toStrictEqual({
+              platform: "youtube",
+              url: "https://youtu.be/example",
+              maxDuration: 600,
+              quality: "720p",
+              format: "mp4",
+              delivery: "link",
+            });
+            return HttpResponse.json(completed, { status: 202 });
+          },
+        ),
+      );
+
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        "download",
+        "https://youtu.be/example",
+        "--max-duration",
+        "600",
+        "--json",
+      ]);
+
+      expect(submissions).toBe(1);
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        status: "complete",
+        data: {
+          artifact: null,
+          download: completed.download,
+          requested: { format: "mp4" },
+          delivered: { format: "m4a" },
+        },
+        warnings: [
+          {
+            code: "TEMPORARY_DOWNLOAD_LINK",
+            message: expect.stringContaining("without credential headers"),
+          },
+        ],
+      });
+      expect(output()).toContain("not a durable Okou artifact");
+      expect(output()).toContain("grants file access until expiry");
+      expect(output()).toContain("provider-reported, not byte-verified");
+      expect(output()).toContain(expiresAt ?? "Expiry is unknown");
+    },
+  );
+
+  it("reads an existing direct-link job without resubmitting it", async () => {
+    const completed = {
+      ...completedDownload(),
+      artifact: null,
+      download: {
+        url: "https://media.example/video.mp4?signature=temporary-access",
+        expiresAt: "2026-08-27T01:00:00.000Z",
+      },
+    } satisfies SocialKitDownloadResponse;
+    server.use(
+      http.get("http://localhost:3000/api/social/downloads/:downloadId", () => {
+        return HttpResponse.json(completed);
+      }),
+    );
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "download",
+      "--resume",
+      completed.downloadId,
+      "--json",
+    ]);
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      status: "complete",
+      data: { download: completed.download, artifact: null },
+      request: { resume: true },
+    });
+  });
+
+  it("preserves billed recovery when a completed job cannot refresh its link", async () => {
+    const completed = {
+      ...completedDownload(),
+      artifact: null,
+      download: null,
+      error: {
+        code: "SOCIAL_DOWNLOAD_LINK_UNAVAILABLE",
+        message:
+          "The temporary download link could not be refreshed; query this download again",
+        retryable: true,
+        billed: true,
+      },
+    } satisfies SocialKitDownloadResponse;
+    server.use(
+      http.get("http://localhost:3000/api/social/downloads/:downloadId", () => {
+        return HttpResponse.json(completed);
+      }),
+    );
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "download",
+        "--resume",
+        completed.downloadId,
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+      status: "error",
+      error: {
+        kind: "download_failed",
+        code: "SOCIAL_DOWNLOAD_LINK_UNAVAILABLE",
+        retryable: true,
+        billed: true,
+      },
+      download: { billing: completed.billing, status: "completed" },
+      recovery: {
+        downloadId: completed.downloadId,
+        resumeCommand: `okou social download --resume ${completed.downloadId}`,
+      },
+    });
+  });
+
   it.each([
     "https://artifacts.example/video.mp4",
     "https://app.okou.ai/artifacts/abcxyz1234.mp4",
@@ -4883,6 +5021,7 @@ describe("okou social command", () => {
         maxDuration: 600,
         quality: "720p",
         format: "mp4",
+        delivery: "link",
       });
       expect(JSON.parse(output()) as unknown).toMatchObject({
         status: "complete",
@@ -4987,6 +5126,7 @@ describe("okou social command", () => {
       maxDuration: 600,
       quality: "1080p",
       format: "mp3",
+      delivery: "link",
     });
     expect(JSON.parse(output()) as unknown).toMatchObject({
       status: "complete",
@@ -5661,5 +5801,10 @@ describe("okou social command", () => {
     });
     download?.outputHelp();
     expect(renderedHelp).toContain("mp4, m4a, or mp3");
+    expect(renderedHelp).toContain("sandbox can download it directly");
+    expect(renderedHelp).toContain("without credential headers");
+    expect(renderedHelp).toContain("grants file access until expiry");
+    expect(renderedHelp).toContain("provider-reported, not byte-verified");
+    expect(renderedHelp).toContain("does not download the file");
   });
 });

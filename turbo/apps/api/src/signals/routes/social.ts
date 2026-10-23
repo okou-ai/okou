@@ -120,6 +120,7 @@ const socialKitRequestInner$ = command(
 
 const createSocialKitDownloadInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "private, no-store");
     const auth = get(organizationAuthContext$);
     const bodyResult = await get(socialKitDownloadBody$);
     signal.throwIfAborted();
@@ -134,7 +135,7 @@ const createSocialKitDownloadInner$ = command(
       { auth, body: bodyResult.data },
       signal,
     );
-    if (response.status === 202) {
+    if (response.status === 202 && bodyResult.data.delivery !== "link") {
       waitUntil(
         set(
           reconcileSocialKitDownload$,
@@ -175,6 +176,7 @@ const createSocialKitDownloadInner$ = command(
 
 const listSocialKitDownloadsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "private, no-store");
     const auth = get(organizationAuthContext$);
     const response = await set(
       listSocialKitDownloads$,
@@ -199,6 +201,7 @@ const listSocialKitDownloadsInner$ = command(
 
 const getSocialKitDownloadInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "private, no-store");
     const auth = get(organizationAuthContext$);
     const params = get(socialKitDownloadPathParams$);
     const response = await set(
@@ -214,9 +217,10 @@ const getSocialKitDownloadInner$ = command(
       return agentSafeResponse(auth, socialKitDownloadNotFound);
     }
     if (
-      response.status === "processing" ||
-      response.status === "materializing" ||
-      response.status === "artifact_failed"
+      response.download === undefined &&
+      (response.status === "processing" ||
+        response.status === "materializing" ||
+        response.status === "artifact_failed")
     ) {
       waitUntil(
         set(
