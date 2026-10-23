@@ -153,12 +153,14 @@ describe("agent-facing operational CLI help", () => {
     expect(download).toContain("grants file access until expiry");
     expect(download).toContain("provider-reported, not byte-verified");
     expect(download).toContain("does not download the file");
+    expect(download).toContain("may retry link recovery");
     expect(download).toContain(
       "does not cancel upstream work or prevent billing",
     );
 
     const downloads = await helpFor(socialCommand, ["downloads"]);
     expect(downloads).toContain("without starting, polling, or billing");
+    expect(downloads).toContain("link_failed");
     expect(downloads).toContain(
       "verify that its task and original target match",
     );

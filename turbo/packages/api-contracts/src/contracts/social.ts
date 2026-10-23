@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { artifactUrlSchema } from "./artifact-references";
 
 import {
   findManagedSocialKitTool,
@@ -174,8 +173,6 @@ export const socialKitDownloadDeliveredQualitySchema = z
   .string()
   .regex(/^[1-9]\d{0,3}p$/u);
 
-const socialKitDownloadArtifactFormatSchema = z.enum(["mp4", "m4a", "mp3"]);
-
 export const socialKitDownloadRequestSchema = z
   .object({
     platform: socialKitDownloadPlatformSchema,
@@ -191,8 +188,6 @@ export const socialKitDownloadRequestSchema = z
         );
       }, "URL must use HTTPS without embedded credentials"),
     maxDuration: z.number().int().positive().max(86_400),
-    // Omission preserves legacy artifact delivery for existing clients and jobs.
-    delivery: z.enum(["link", "artifact"]).optional(),
     quality: socialKitDownloadQualitySchema.default("720p"),
     format: socialKitDownloadFormatSchema.default("mp4"),
   })
@@ -201,8 +196,7 @@ export const socialKitDownloadRequestSchema = z
 export const socialKitDownloadStatusSchema = z.enum([
   "queued",
   "processing",
-  "materializing",
-  "artifact_failed",
+  "link_failed",
   "provider_failed",
   "completed",
 ]);
@@ -211,35 +205,23 @@ const socialKitDownloadProviderResultSchema = z.object({
   durationSeconds: z.number().int().nonnegative(),
   fileSizeMB: z.number().nonnegative(),
   creditsCost: z.number().int().positive(),
-  quality: socialKitDownloadDeliveredQualitySchema.optional(),
-  format: socialKitDownloadFormatSchema.optional(),
+  quality: socialKitDownloadDeliveredQualitySchema,
+  format: socialKitDownloadFormatSchema,
   title: z.string().max(1000).optional(),
   thumbnail: z.url().max(4096).optional(),
-});
-
-const socialKitDownloadArtifactSchema = z.object({
-  id: z.string().uuid(),
-  url: artifactUrlSchema,
-  filename: z.string().min(1),
-  contentType: z.string().min(1),
-  sizeBytes: z.number().int().positive(),
-  format: socialKitDownloadArtifactFormatSchema.nullable().optional(),
 });
 
 export const socialKitDownloadResponseSchema = z.object({
   downloadId: z.string().uuid(),
   status: socialKitDownloadStatusSchema,
   platform: socialKitDownloadPlatformSchema,
-  // Retain the request aliases for already selected commit-addressed CLIs.
-  quality: socialKitDownloadQualitySchema,
-  format: socialKitDownloadFormatSchema,
   requested: z.object({
     quality: socialKitDownloadQualitySchema,
     format: socialKitDownloadFormatSchema,
   }),
   delivered: z.object({
     quality: socialKitDownloadDeliveredQualitySchema.nullable(),
-    format: socialKitDownloadArtifactFormatSchema.nullable(),
+    format: socialKitDownloadFormatSchema.nullable(),
   }),
   maxDuration: z.number().int().positive(),
   billingCategory: z.literal(MANAGED_SOCIALKIT_BILLING_CATEGORY),
@@ -250,7 +232,6 @@ export const socialKitDownloadResponseSchema = z.object({
       creditsCharged: z.number().int().nonnegative(),
     })
     .nullable(),
-  artifact: socialKitDownloadArtifactSchema.nullable(),
   download: z
     .object({
       url: z
@@ -266,8 +247,7 @@ export const socialKitDownloadResponseSchema = z.object({
         }, "Download URL must use HTTPS without embedded credentials"),
       expiresAt: z.iso.datetime().nullable(),
     })
-    .nullable()
-    .optional(),
+    .nullable(),
   error: z
     .object({
       code: z.string(),

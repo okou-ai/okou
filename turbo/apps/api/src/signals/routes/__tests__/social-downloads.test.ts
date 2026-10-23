@@ -248,8 +248,10 @@ const signedDownloadUrl =
 
 function readyProviderDownload(downloadUrl: () => string) {
   const providerJobId = randomUUID();
+  let starts = 0;
   server.use(
     http.post(`${providerBase}/v2/youtube/download`, () => {
+      starts += 1;
       return HttpResponse.json({ jobId: providerJobId, status: "queued" });
     }),
     http.get(`${providerBase}/v2/downloads/${providerJobId}`, () => {
@@ -269,6 +271,11 @@ function readyProviderDownload(downloadUrl: () => string) {
       });
     }),
   );
+  return {
+    starts: () => {
+      return starts;
+    },
+  };
 }
 
 describe("social download link delivery", () => {
@@ -286,17 +293,15 @@ describe("social download link delivery", () => {
       const created = await accept(
         fixture.client.createDownload({
           headers: authenticate(owner),
-          body: { ...requestBody, delivery: "link" },
+          body: requestBody,
         }),
         [202],
       );
       expect(created.body).toMatchObject({
         status: "processing",
-        artifact: null,
         download: null,
         billing: null,
       });
-      await flushWaitUntilForTest();
       const pending = await accept(
         fixture.client.listDownloads({
           headers: authenticate(owner),
@@ -308,7 +313,7 @@ describe("social download link delivery", () => {
         {
           downloadId: created.body.downloadId,
           status: "processing",
-          request: { delivery: "link" },
+          request: requestBody,
         },
       ]);
       expect((await billingStatus(owner)).credits).toBe(beforeCredits);
@@ -322,6 +327,7 @@ describe("social download link delivery", () => {
         }),
         [404],
       );
+      expect((await billingStatus(owner)).credits).toBe(beforeCredits);
       const completed = await accept(
         fixture.client.getDownload({ headers: authenticate(owner), params }),
         [200],
@@ -331,7 +337,6 @@ describe("social download link delivery", () => {
         status: "completed",
         requested: { quality: "720p", format: "mp4" },
         delivered: { quality: "480p", format: "mp4" },
-        artifact: null,
         download: {
           url: signedDownloadUrl,
           expiresAt: new Date(startedAt + 3_600_000).toISOString(),
@@ -368,7 +373,6 @@ describe("social download link delivery", () => {
         downloadId: created.body.downloadId,
         status: "completed",
         delivered: { quality: "480p", format: "mp4" },
-        artifact: null,
         download: {
           url: providerUrl,
           expiresAt: new Date(startedAt + 7_201_000).toISOString(),
@@ -389,7 +393,7 @@ describe("social download link delivery", () => {
       expect(listed.body.downloads).toMatchObject([
         { downloadId: created.body.downloadId, status: "completed" },
       ]);
-      expect(listed.body.downloads[0]?.download ?? null).toBeNull();
+      expect(listed.body.downloads[0]?.download).toBeNull();
       expect(JSON.stringify(listed.body)).not.toContain(signedDownloadUrl);
       expect(JSON.stringify(listed.body)).not.toContain(providerUrl);
 
@@ -405,13 +409,62 @@ describe("social download link delivery", () => {
       expect(unavailable.body).toMatchObject({
         status: "completed",
         download: null,
-        artifact: null,
         billing: completed.body.billing,
         error: { retryable: true, billed: true },
       });
       expect((await billingStatus(owner)).credits).toBe(
         beforeCredits - (chargedCredits ?? 0),
       );
+    });
+  });
+
+  it("recovers an unavailable link on the same paid download without charging twice", async () => {
+    const owner = actor();
+    const fixture = await configuredFixture(owner);
+    await fixture.run(async () => {
+      let providerUrl = "https://attacker.example/private.mp4";
+      const provider = readyProviderDownload(() => {
+        return providerUrl;
+      });
+      const beforeCredits = (await billingStatus(owner)).credits;
+      const created = await accept(
+        fixture.client.createDownload({
+          headers: authenticate(owner),
+          body: requestBody,
+        }),
+        [202],
+      );
+      const params = { downloadId: created.body.downloadId };
+      const failed = await accept(
+        fixture.client.getDownload({ headers: authenticate(owner), params }),
+        [200],
+      );
+      expect(failed.body).toMatchObject({
+        status: "link_failed",
+        download: null,
+        billing: { quantity: 4 },
+        error: { billed: true, retryable: true },
+      });
+      expect(failed.body.billing?.creditsCharged).toBeGreaterThan(0);
+      const afterFailure = (await billingStatus(owner)).credits;
+      expect(afterFailure).toBe(
+        beforeCredits - (failed.body.billing?.creditsCharged ?? 0),
+      );
+      providerUrl = signedDownloadUrl;
+      mockNow(now() + 61_000);
+      const recovered = await accept(
+        fixture.client.getDownload({ headers: authenticate(owner), params }),
+        [200],
+      );
+      expect(recovered.body).toMatchObject({
+        downloadId: created.body.downloadId,
+        status: "completed",
+        download: { url: signedDownloadUrl },
+        billing: failed.body.billing,
+        error: null,
+      });
+      expect((await billingStatus(owner)).credits).toBe(afterFailure);
+      expect(provider.starts()).toBe(1);
     });
   });
 
@@ -431,7 +484,7 @@ describe("social download link delivery", () => {
       const created = await accept(
         fixture.client.createDownload({
           headers,
-          body: { ...requestBody, delivery: "link" },
+          body: requestBody,
         }),
         [202],
       );
@@ -445,7 +498,6 @@ describe("social download link delivery", () => {
       );
       expect(completed.body).toMatchObject({
         status: "completed",
-        artifact: null,
         delivered: { quality: "480p", format: "mp4" },
         download: { url: signedDownloadUrl },
         error: null,
@@ -463,6 +515,22 @@ describe("social download link delivery", () => {
       name: "an access_key query parameter",
       url: `${signedDownloadUrl}&access_key=synthetic-other-provider-key`,
     },
+    {
+      name: "an untrusted host",
+      url: "https://attacker.example/file.mp4?X-Amz-Signature=test",
+    },
+    {
+      name: "a bucket-host suffix attack",
+      url: "https://socialkit-downloads.s3.amazonaws.com.attacker.example/file.mp4?X-Amz-Signature=test",
+    },
+    {
+      name: "an insecure transport",
+      url: signedDownloadUrl.replace("https:", "http:"),
+    },
+    {
+      name: "URL credentials",
+      url: signedDownloadUrl.replace("https://", "https://user:password@"),
+    },
   ])(
     "rejects a provider link containing $name without exposing credentials",
     async ({ url }) => {
@@ -475,7 +543,7 @@ describe("social download link delivery", () => {
         const created = await accept(
           fixture.client.createDownload({
             headers: authenticate(owner),
-            body: { ...requestBody, delivery: "link" },
+            body: requestBody,
           }),
           [202],
         );
@@ -487,14 +555,13 @@ describe("social download link delivery", () => {
           [200],
         );
         expect(failed.body).toMatchObject({
-          artifact: null,
           error: {
             code: expect.any(String),
             message: expect.any(String),
           },
         });
         expect(failed.body.status).not.toBe("completed");
-        expect(failed.body.download ?? null).toBeNull();
+        expect(failed.body.download).toBeNull();
         const serialized = JSON.stringify(failed.body);
         expect(serialized).not.toContain("test-socialkit-key");
         expect(serialized).not.toContain("synthetic-other-provider-key");
@@ -541,7 +608,13 @@ describe("social download discovery", () => {
           [202],
         );
         ids.push(created.body.downloadId);
-        await flushWaitUntilForTest();
+        await accept(
+          client.getDownload({
+            headers: authenticate(owner),
+            params: { downloadId: created.body.downloadId },
+          }),
+          [200],
+        );
       }
       const first = await accept(
         client.listDownloads({ headers: authenticate(owner), query: {} }),
@@ -562,14 +635,20 @@ describe("social download discovery", () => {
         error: { retryable: false, billed: false },
       });
 
-      await accept(
+      const inserted = await accept(
         client.createDownload({
           headers: authenticate(owner),
           body: requestBody,
         }),
         [202],
       );
-      await flushWaitUntilForTest();
+      await accept(
+        client.getDownload({
+          headers: authenticate(owner),
+          params: { downloadId: inserted.body.downloadId },
+        }),
+        [200],
+      );
       const last = await accept(
         client.listDownloads({
           headers: authenticate(owner),
@@ -646,7 +725,6 @@ describe("social download discovery", () => {
       });
       release.resolve();
       const created = await accept(creating, [202]);
-      await flushWaitUntilForTest();
       expect(created.body.downloadId).toBe(task?.downloadId);
       const pollsBefore = provider.polls();
       const processing = await accept(
@@ -656,7 +734,6 @@ describe("social download discovery", () => {
         }),
         [200],
       );
-      await flushWaitUntilForTest();
       expect(processing.body.downloads).toMatchObject([
         {
           downloadId: created.body.downloadId,
@@ -683,7 +760,6 @@ describe("social download discovery", () => {
         [200],
       );
       expect(known.body.downloadId).toBe(created.body.downloadId);
-      await flushWaitUntilForTest();
     });
   });
 
@@ -700,7 +776,6 @@ describe("social download discovery", () => {
         }),
         [202],
       );
-      await flushWaitUntilForTest();
       const otherUser = actor({ orgId: owner.orgId });
 
       const otherOrg = actor({ userId: owner.userId });
@@ -749,7 +824,6 @@ describe("social download discovery", () => {
         }),
         [202],
       );
-      await flushWaitUntilForTest();
       const ownPage = await accept(
         client.listDownloads({ headers: authenticate(owner), query: {} }),
         [200],
@@ -779,14 +853,20 @@ describe("social download discovery", () => {
     const client = fixture.client;
     await fixture.run(async () => {
       providerDownloads("failed");
-      await accept(
+      const created = await accept(
         client.createDownload({
           headers: authenticate(owner),
           body: requestBody,
         }),
         [202],
       );
-      await flushWaitUntilForTest();
+      await accept(
+        client.getDownload({
+          headers: authenticate(owner),
+          params: { downloadId: created.body.downloadId },
+        }),
+        [200],
+      );
       const { token } = await claimPublicToolRun(
         context,
         owner,

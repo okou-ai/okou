@@ -12,7 +12,6 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
-import { waitUntil } from "../context/wait-until";
 import { notFound } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 import { socialKitRequest$ } from "../services/social.service";
@@ -21,8 +20,6 @@ import {
   createSocialKitDownload$,
   getSocialKitDownload$,
   listSocialKitDownloads$,
-  reconcileSocialKitDownload$,
-  SOCIALKIT_RECONCILIATION_TIMEOUT_MS,
 } from "../services/socialkit-download.service";
 
 const socialKitRequestBody$ = bodyResultOf(socialContract.request);
@@ -127,23 +124,11 @@ const createSocialKitDownloadInner$ = command(
     if (!bodyResult.ok) {
       return agentSafeResponse(auth, bodyResult.response);
     }
-    const reconciliationSignal = AbortSignal.timeout(
-      SOCIALKIT_RECONCILIATION_TIMEOUT_MS,
-    );
     const response = await set(
       createSocialKitDownload$,
       { auth, body: bodyResult.data },
       signal,
     );
-    if (response.status === 202 && bodyResult.data.delivery !== "link") {
-      waitUntil(
-        set(
-          reconcileSocialKitDownload$,
-          response.body.downloadId,
-          reconciliationSignal,
-        ),
-      );
-    }
     if (response.status === 409) {
       const active = await set(
         listSocialKitDownloads$,
@@ -215,20 +200,6 @@ const getSocialKitDownloadInner$ = command(
     );
     if (!response) {
       return agentSafeResponse(auth, socialKitDownloadNotFound);
-    }
-    if (
-      response.download === undefined &&
-      (response.status === "processing" ||
-        response.status === "materializing" ||
-        response.status === "artifact_failed")
-    ) {
-      waitUntil(
-        set(
-          reconcileSocialKitDownload$,
-          response.downloadId,
-          AbortSignal.timeout(SOCIALKIT_RECONCILIATION_TIMEOUT_MS),
-        ),
-      );
     }
     return agentSafeResponse(auth, { status: 200 as const, body: response });
   },
