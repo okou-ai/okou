@@ -260,7 +260,7 @@ final class ConversationOpeningTests: XCTestCase {
 
   private func composerInput(in view: UIView) -> ComposerTextView? {
     if let input = view as? ComposerTextView { return input }
-    return view.subviews.lazy.compactMap { composerInput(in: $0) }.first
+    return view.subviews.lazy.compactMap { self.composerInput(in: $0) }.first
   }
 }
 
