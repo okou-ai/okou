@@ -193,14 +193,22 @@ const commitOfficialFormsReconfiguration$ = command(
       at,
       { gate: admitted, reset },
     );
-    const cursor = db.$with("published_forms_cursor", {}).as(
-      cursorStatement ??
-        db
-          .select({ automationId: updated.id })
-          .from(updated)
-          .where(sql`false`)
-          .getSQL(),
-    );
+    const cursor = db
+      .$with("published_forms_cursor", {
+        automationId: googleFormsAutomationCursors.automationId,
+      })
+      .as(
+        cursorStatement ??
+          db
+            .select({
+              automationId: sql`${updated.id}`
+                .mapWith(googleFormsAutomationCursors.automationId)
+                .as("automation_id"),
+            })
+            .from(updated)
+            .where(sql`false`)
+            .getSQL(),
+      );
     // Reset an old interval even when its new watch is absent. A successful
     // upsert already replaced the interval, so these writes never share a row.
     const removedCursor = db.$with("removed_forms_cursor").as(
