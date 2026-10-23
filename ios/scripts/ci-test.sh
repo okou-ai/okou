@@ -88,7 +88,12 @@ fi
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == compile ]]; then
   ios_phase_started=$SECONDS
   cmp "$resolved" "$build_root/Package.resolved.before"
-  xcodebuild "${xcode_args[@]}" -showBuildTimingSummary build-for-testing
+  if [[ "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true ]]; then
+    python3 ios/scripts/sample-xcode-startup.py "$build_root/startup-samples" -- \
+      xcodebuild "${xcode_args[@]}" -showBuildTimingSummary build-for-testing
+  else
+    xcodebuild "${xcode_args[@]}" -showBuildTimingSummary build-for-testing
+  fi
   cmp "$resolved" "$build_root/Package.resolved.before"
   echo "iOS build-for-testing: $((SECONDS - ios_phase_started)) seconds"
 fi

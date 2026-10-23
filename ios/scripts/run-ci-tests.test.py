@@ -120,6 +120,7 @@ class CIProcessTests(unittest.TestCase):
             "ci-package-test.sh",
             "preboot-simulator.py",
             "run-ci-tests.sh",
+            "sample-xcode-startup.py",
         ):
             shutil.copy2(SCRIPTS / name, scripts / name)
         resolved = (
@@ -212,6 +213,13 @@ class CIProcessTests(unittest.TestCase):
         result = self.invoke()
         self.assertNotEqual(result.returncode, 0, result.stderr)
         self.assertIn("Expected exactly one built test specification", result.stderr)
+        self.assertFalse((self.state / "tests-ran").exists())
+
+    def test_sampled_compiler_failure_still_blocks_native_tests(self):
+        self.env["CI_PROCESS_SCENARIO"] = "build-failure"
+        self.env["IOS_XCODE_STARTUP_SAMPLING"] = "true"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 23, result.stderr)
         self.assertFalse((self.state / "tests-ran").exists())
 
     def test_native_failure_preserves_its_status_and_result_bundle(self):
