@@ -2,7 +2,7 @@ import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
-import { expect, it } from "vitest";
+import { expect, test } from "vitest";
 import { z } from "zod";
 
 import { browserUseCdpHandler } from "../../../__tests__/mocks";

@@ -4,7 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/browser";
 import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -144,6 +144,60 @@ test("A reclaimed connection shows an unavailable state without opening the prov
     screen.findByText("Browser unavailable"),
   ).resolves.toBeInTheDocument();
   expect(screen.queryByTitle("Live browser: booking")).not.toBeInTheDocument();
+});
+
+test("A replacement browser detaches the previous viewer while its connection loads", async () => {
+  let currentSession = browserSession();
+  let replacing = false;
+  const connectionStarted = context.mocks.deferred<void>();
+  const releaseConnection = context.mocks.deferred<void>();
+  const cdpUrl = "wss://cdp.browser-use.com/original";
+  mockBrowserCdp(context, cdpUrl);
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(200, { browser: currentSession });
+  });
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, { browser: currentSession });
+  });
+  context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
+    if (!replacing) {
+      return respond(200, { cdpUrl });
+    }
+    connectionStarted.resolve();
+    await releaseConnection.promise;
+    return respond(409, {
+      error: { code: "BROWSER_NOT_LIVE", message: "Browser is no longer live" },
+    });
+  });
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.BrowserCdpViewer]: true },
+  });
+  await expect(
+    screen.findByDisplayValue("https://example.com"),
+  ).resolves.toBeEnabled();
+  const previousViewer = screen.getByRole("region", {
+    name: "Remote browser viewer",
+  });
+  currentSession = browserSession({
+    liveUrl: "https://viewer.example/live?token=replacement",
+  });
+  replacing = true;
+  act(() => {
+    context.mocks.ably.trigger("browserSessionChanged", {
+      threadId: THREAD_ID,
+    });
+  });
+  await connectionStarted.promise;
+  await waitFor(() => {
+    expect(previousViewer).not.toBeInTheDocument();
+  });
+  expect(screen.queryByTitle("Live browser: booking")).not.toBeInTheDocument();
+  releaseConnection.resolve();
+  await expect(
+    screen.findByText("Browser unavailable"),
+  ).resolves.toBeInTheDocument();
 });
 
 test("An inaccessible conversation has no browser page", async () => {
