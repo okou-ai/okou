@@ -91,6 +91,7 @@ function context(event = "pull_request", sameRepo = true) {
   needs.prepare.outputs["job-ref"] = event === "push" ? "staging" : "pr-123";
   return {
     needs,
+    steps: { "api-worker-checks": { outcome: "success" } },
     github: {
       event_name: event,
       ref: "refs/heads/main",
@@ -108,7 +109,7 @@ function context(event = "pull_request", sameRepo = true) {
   };
 }
 
-test("API job owns mandatory Worker steps after the original Vercel deployment", () => {
+test("API job keeps auxiliary Worker steps non-blocking after Vercel deployment", () => {
   const names = [
     "Deploy API to Vercel",
     "Check API health",
@@ -129,10 +130,7 @@ test("API job owns mandatory Worker steps after the original Vercel deployment",
         .map(() => jobName),
     );
     assert.deepEqual(owners, ["deploy-api"], name);
-    assert.doesNotMatch(
-      stepNamed(name),
-      /^        continue-on-error: (?!false\s*$)/m,
-    );
+    assert.equal(field(stepNamed(name), "continue-on-error", 8), "true");
   }
   assert.doesNotMatch(deploy, /^    continue-on-error: (?!false\s*$)/m);
   assert.match(
@@ -151,10 +149,6 @@ test("API job owns mandatory Worker steps after the original Vercel deployment",
       .map(() => name),
   );
   assert.deepEqual(executionOwners, ["deploy-api"]);
-  assert.equal(
-    deploySteps.indexOf(stepNamed(workerName)),
-    deploySteps.length - 2,
-  );
 });
 
 test("both Worker steps run only for same-repository PRs and main pushes", () => {
@@ -178,6 +172,12 @@ test("both Worker steps run only for same-repository PRs and main pushes", () =>
     const nonMain = context("push");
     nonMain.github.ref = "refs/heads/other";
     assert.equal(evaluate(condition, nonMain), false, name);
+  }
+  const deployCondition = field(stepNamed(workerName), "if", 8);
+  for (const outcome of ["failure", "skipped", "cancelled"]) {
+    const data = context();
+    data.steps["api-worker-checks"].outcome = outcome;
+    assert.equal(evaluate(deployCondition, data), false, outcome);
   }
 });
 

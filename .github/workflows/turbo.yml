@@ -1425,8 +1425,10 @@ jobs:
             API preview: ${{ steps.api-alias.outputs.url || steps.api-deploy.outputs.url }}
 
       # Reuse the captured source, installed toolchain and resolved API env.
-      # These steps extend deploy-api, so E2E waits for both API deployments.
+      # E2E consumes Vercel; auxiliary Worker failures must not block that lane.
       - name: Check Worker deployment contracts and secret handling
+        id: api-worker-checks
+        continue-on-error: true
         if: >-
           (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
           (github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -1435,9 +1437,13 @@ jobs:
           pnpm --dir turbo/apps/api test:worker-build
 
       - name: Build and deploy API Worker using the shared preview database
+        id: api-worker-deploy
+        continue-on-error: true
         if: >-
-          (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-          (github.event_name == 'push' && github.ref == 'refs/heads/main')
+          steps.api-worker-checks.outcome == 'success' && (
+            (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+            (github.event_name == 'push' && github.ref == 'refs/heads/main')
+          )
         env:
           JOB_REF: ${{ needs.prepare.outputs.job-ref }}
           API_ENV_FILE: ${{ steps.api-deploy-env.outputs.file }}
@@ -1450,6 +1456,24 @@ jobs:
           CF_API_TRACES_DESTINATION: ${{ vars.CF_API_TRACES_DESTINATION }}
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/api-worker-preview.cjs deploy
+
+      - name: Report API Worker preview failure
+        if: >-
+          always() && (
+            steps.api-worker-checks.outcome == 'failure' ||
+            steps.api-worker-deploy.outcome == 'failure'
+          )
+        env:
+          WORKER_CHECKS_OUTCOME: ${{ steps.api-worker-checks.outcome }}
+          WORKER_DEPLOY_OUTCOME: ${{ steps.api-worker-deploy.outcome }}
+        run: |
+          set -euo pipefail
+          echo "::warning::API Worker preview failed (checks=$WORKER_CHECKS_OUTCOME, deploy=$WORKER_DEPLOY_OUTCOME). Vercel API and E2E remain required."
+          {
+            echo "### API Worker preview failed (non-blocking)"
+            echo "Checks: $WORKER_CHECKS_OUTCOME; deployment: $WORKER_DEPLOY_OUTCOME."
+            echo "See the Worker steps above for the failure. Vercel API and E2E remain required."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Remove temporary API runtime environments
         if: always()
