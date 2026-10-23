@@ -475,8 +475,13 @@ final class ConnectorActionTests: XCTestCase {
           try VNImageRequestHandler(cgImage: captured).perform([request])
           return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
         }.value
+        // Capsule edges can become single-character OCR tokens. Match the remaining
+        // complete line so the explanatory sentence cannot stand in for a button label.
+        let buttonIsVisible = labels.contains { line in
+          line.split(whereSeparator: \.isWhitespace).filter { $0.count > 1 } == [Substring(expected)]
+        }
         XCTAssertTrue(
-          labels.contains(expected),
+          buttonIsVisible,
           "Expected visible \(expected) button in \(colorScheme) mode; recognized: \(labels)")
       }
     }
