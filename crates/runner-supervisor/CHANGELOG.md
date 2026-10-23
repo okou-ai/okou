@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.20](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.19...runner-supervisor-v0.20.20) (2026-10-23)
+
+
+### Refactoring
+
+* remove remaining retired pi memory contracts ([#42544](https://github.com/okou-ai/okou/issues/42544)) ([f61b214](https://github.com/okou-ai/okou/commit/f61b21485c8c369277aaa5ea89296879d838e1c6))
+
 ## [0.20.19](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.18...runner-supervisor-v0.20.19) (2026-10-23)
 
 ## [0.20.18](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.17...runner-supervisor-v0.20.18) (2026-10-23)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.11](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.10...runner-lifecycle-v0.17.11) (2026-10-23)
+
+
+### Bug Fixes
+
+* **runner:** enforce startup snapshot prefetch byte bounds ([#42547](https://github.com/okou-ai/okou/issues/42547)) ([548c30d](https://github.com/okou-ai/okou/commit/548c30d3250002c541681ed33cd305e0a066ab4c))
+
 ## [0.17.10](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.9...runner-lifecycle-v0.17.10) (2026-10-23)
 
 ## [0.17.9](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.8...runner-lifecycle-v0.17.9) (2026-10-23)

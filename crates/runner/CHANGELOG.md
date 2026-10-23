@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.236.26](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.25...runner-rs-v0.236.26) (2026-10-23)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.236.25](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.24...runner-rs-v0.236.25) (2026-10-23)
 
 ### Release Dependencies
