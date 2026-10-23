@@ -170,10 +170,10 @@ async function setupJobs() {
     path: `/agents/${agentId}/chat`,
     featureSwitches: { [FeatureSwitchKey.ProactiveJobs]: true },
   });
-  return await findControl("Jobs", "tab");
+  return await findControl("Tasks", "tab");
 }
 
-test("opens a Job in a home dialog, saves its reply, and restores focus on Escape", async () => {
+test("opens a Task in a home dialog, saves its reply, and restores focus on Escape", async () => {
   const user = userEvent.setup();
   const fixture = mockJob();
   const tab = await setupJobs();
@@ -240,7 +240,7 @@ test("keeps the completed dialog open while the card moves to history and accept
     "https://example.com/report",
   );
   await screen.findByText(
-    "No jobs in this view. Ask Okou to create a Job when you want it to keep working on something.",
+    "No tasks in this view. Give Okou a task. It keeps working and comes back when it needs your input or has a result.",
   );
   expect(dialog).toBeInTheDocument();
   await fill(
@@ -260,12 +260,12 @@ test("keeps the completed dialog open while the card moves to history and accept
   ).resolves.toHaveTextContent("Completed");
 });
 
-test("archives the Job from its dialog and keeps its record in the archived view", async () => {
+test("archives the Task from its dialog and keeps its record in the archived view", async () => {
   const user = userEvent.setup();
   mockJob();
   await setupJobs();
   await user.click(await findControl(/Research customers/, "button"));
-  click(await findControl("Archive job", "button"));
+  click(await findControl("Archive task", "button"));
   await waitFor(() => {
     return expect(
       screen.queryByRole("textbox", { name: "Reply" }),
@@ -336,7 +336,7 @@ test("grants the actual connector permission before persisting authorization inp
   expect(fixture.replies).toStrictEqual([]);
 });
 
-test("a late initial Jobs response cannot override a task the user selected", async () => {
+test("a late initial Tasks response cannot override a task the user selected", async () => {
   mockJob();
   const gate = createDeferredPromise<void>(context.signal);
   context.mocks.api(jobsContract.list, async ({ respond }) => {
@@ -352,7 +352,7 @@ test("a late initial Jobs response cannot override a task the user selected", as
   expect(queryControl(/Research customers/, "button")).not.toBeInTheDocument();
 });
 
-test("shows Proactive jobs and keeps Suggestions independently enabled", async () => {
+test("shows Proactive tasks and keeps Suggestions independently enabled", async () => {
   let enabled = true;
   context.mocks.api(proactiveJobsContract.get, ({ respond }) => {
     return respond(200, {
@@ -384,7 +384,7 @@ test("shows Proactive jobs and keeps Suggestions independently enabled", async (
       [FeatureSwitchKey.AgentSuggestion]: true,
     },
   });
-  const jobs = await screen.findByRole("switch", { name: "Proactive jobs" });
+  const jobs = await screen.findByRole("switch", { name: "Proactive tasks" });
   const suggestions = await screen.findByRole("switch", {
     name: "Proactive Suggestions",
   });

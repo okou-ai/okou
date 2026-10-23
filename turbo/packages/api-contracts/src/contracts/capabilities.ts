@@ -84,8 +84,8 @@ export interface CapabilityMeta {
  * will produce a TypeScript compile error.
  */
 export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
-  "job:read": { group: "Jobs", label: "Read your entrusted jobs" },
-  "job:write": { group: "Jobs", label: "Advance your entrusted jobs" },
+  "job:read": { group: "Tasks", label: "Read your entrusted tasks" },
+  "job:write": { group: "Tasks", label: "Advance your entrusted tasks" },
   "computer-use:shell:write": {
     group: "Computer Use",
     label: "Use interactive shells on your authorized computer",

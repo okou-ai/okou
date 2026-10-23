@@ -11,19 +11,19 @@ export async function listJobs(query: JobListQuery) {
   const client = initClient(jobsContract, await getClientConfig());
   const result = await client.list({ query, headers: {} });
   if (result.status === 200) return result.body;
-  handleError(result, "Failed to list Jobs");
+  handleError(result, "Failed to list Tasks");
 }
 export async function getJob(id: string) {
   const client = initClient(jobsContract, await getClientConfig());
   const result = await client.get({ params: { id }, headers: {} });
   if (result.status === 200) return result.body;
-  handleError(result, "Failed to read Job");
+  handleError(result, "Failed to read Task");
 }
 export async function createJob(body: JobCreate) {
   const client = initClient(jobsContract, await getClientConfig());
   const result = await client.create({ body, headers: {} });
   if (result.status === 200) return result.body;
-  handleError(result, "Failed to create Job");
+  handleError(result, "Failed to create Task");
 }
 export async function updateJob(id: string, body: JobUpdate) {
   const client = initClient(jobsContract, await getClientConfig());
@@ -31,6 +31,6 @@ export async function updateJob(id: string, body: JobUpdate) {
   if (result.status === 200) return result.body;
   handleError(
     result,
-    "Failed to update Job; read its current state before another action",
+    "Failed to update Task; read its current state before another action",
   );
 }

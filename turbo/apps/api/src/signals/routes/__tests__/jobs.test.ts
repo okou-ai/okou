@@ -58,7 +58,7 @@ async function fixture(secondary = false) {
   const run = await runs.createThreadRun(actor, {
     agentId,
     model: "claude-fable-5-1",
-    prompt: "Create the Job explicitly entrusted by the user",
+    prompt: "Create the Task explicitly entrusted by the user",
   });
   const claim = await runs.claimRunnerJob(run.runId);
   return {
@@ -90,7 +90,7 @@ async function read(id: string, actor: ApiTestUser) {
   ).body;
 }
 
-describe("Entrusted Jobs", () => {
+describe("Entrusted Tasks", () => {
   it("preserves a stable creation identity and rejects reuse for different delegation", async () => {
     const f = await fixture();
     const job = await create(f.headers);
@@ -448,7 +448,7 @@ describe("Entrusted Jobs", () => {
     );
   });
 
-  it("isolates owners and prevents non-primary Agents and disabled features from reading Jobs", async () => {
+  it("isolates owners and prevents non-primary Agents and disabled features from reading Tasks", async () => {
     const f = await fixture();
     const job = await create(f.headers);
     const bdd = createBddApi(context);
@@ -478,14 +478,14 @@ describe("Entrusted Jobs", () => {
     expect(denied.status).toBe(403);
   });
 
-  it("does not issue Job write authority to a secondary Agent", async () => {
+  it("does not issue Task write authority to a secondary Agent", async () => {
     const f = await fixture(true);
     const forbidden = await accept(
       client().create({
         headers: f.headers,
         body: {
           id: randomUUID(),
-          title: "Unauthorized Job",
+          title: "Unauthorized Task",
           objective: "Must not be created",
         },
       }),
@@ -493,7 +493,7 @@ describe("Entrusted Jobs", () => {
     );
     expect(forbidden.status).toBe(403);
   });
-  it("orders waiting work and unseen Results before active Jobs across pages", async () => {
+  it("orders waiting work and unseen Results before active Tasks across pages", async () => {
     const f = await fixture();
     const active = await create(f.headers);
     const waiting = await create(f.headers);

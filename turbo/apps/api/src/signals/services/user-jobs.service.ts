@@ -59,7 +59,7 @@ export const jobAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   if (!isFeatureEnabled(FeatureSwitchKey.ProactiveJobs, features)) {
-    return resourceUnavailable("Jobs are not enabled.");
+    return resourceUnavailable("Tasks are not enabled.");
   }
   if (auth.tokenType === "agent") {
     const [run] = await get(db$)
@@ -84,7 +84,7 @@ export const jobAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     if (!run) {
       return resourceUnavailable(
-        "Jobs are available only to a running primary Agent.",
+        "Tasks are available only to a running primary Agent.",
       );
     }
   }
@@ -113,7 +113,7 @@ export const readUserJob$ = command(
     signal.throwIfAborted();
     return row
       ? { status: 200 as const, body: presentJob(row) }
-      : notFound("Job not found");
+      : notFound("Task not found");
   },
 );
 
@@ -139,7 +139,7 @@ export const listUserJobs$ = command(
     signal.throwIfAborted();
     if (query.after && !cursor) {
       return conflict(
-        "The list cursor is unavailable. Restart this Jobs view.",
+        "The list cursor is unavailable. Restart this Tasks view.",
       );
     }
     const filter =
@@ -225,7 +225,7 @@ export const createUserJob$ = command(
       return existing;
     }
     return conflict(
-      "Job identity already exists with different content. Reuse the original file or choose a new ID for a new delegation.",
+      "Task identity already exists with different content. Reuse the original file or choose a new ID for a new delegation.",
     );
   },
 );
@@ -240,7 +240,7 @@ function jobUpdateReferenceConflict(job: Job, input: JobUpdate) {
     })
   ) {
     return conflict(
-      "Acknowledge only the exact input prefix you inspected. Read the Job again.",
+      "Acknowledge only the exact input prefix you inspected. Read the Task again.",
     );
   }
   if (
@@ -250,7 +250,7 @@ function jobUpdateReferenceConflict(job: Job, input: JobUpdate) {
     }) &&
     input.result?.id !== input.work.currentResultId
   ) {
-    return conflict("The current Result must exist on this Job.");
+    return conflict("The current Result must exist on this Task.");
   }
   return null;
 }
@@ -269,7 +269,7 @@ export const updateUserJob$ = command(
     }
     const job = read.body;
     if (job.status === "archived") {
-      return conflict("This Job is archived.");
+      return conflict("This Task is archived.");
     }
     const invalid = jobUpdateReferenceConflict(job, input);
     if (invalid) {
@@ -341,7 +341,7 @@ export const updateUserJob$ = command(
     signal.throwIfAborted();
     if (!row) {
       return conflict(
-        "Job progress changed. Read the current Job before deciding the next action.",
+        "Task progress changed. Read the current Task before deciding the next action.",
       );
     }
     await set(sleepIdleProactiveJobs$, owner, signal);
@@ -379,7 +379,7 @@ export const appendUserJobInput$ = command(
         : conflict("Input identity already exists with different content.");
     }
     if (job.status === "archived") {
-      return conflict("Archived Jobs do not accept new input.");
+      return conflict("Archived Tasks do not accept new input.");
     }
     const request = job.work.authorization;
     if (input.kind === "authorization") {
@@ -467,7 +467,7 @@ export const appendUserJobInput$ = command(
           return current;
         }
       }
-      return conflict("The Job or input identity changed. Reload the Job.");
+      return conflict("The Task or input identity changed. Reload the Task.");
     }
     await set(wakeProactiveJobs$, owner, signal);
     await publishUserJobsChangedSafely(owner);
@@ -502,7 +502,7 @@ export const acknowledgeUserJobResult$ = command(
       .returning();
     signal.throwIfAborted();
     if (!row) {
-      return notFound("Job Result not found");
+      return notFound("Task Result not found");
     }
     await publishUserJobsChangedSafely(owner);
     signal.throwIfAborted();
@@ -519,7 +519,7 @@ export const archiveUserJob$ = command(
       .returning();
     signal.throwIfAborted();
     if (!row) {
-      return notFound("Job not found");
+      return notFound("Task not found");
     }
     await set(sleepIdleProactiveJobs$, owner, signal);
     await publishUserJobsChangedSafely(owner);

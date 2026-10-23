@@ -1927,12 +1927,12 @@
     },
     "documentTitle": "聊天",
     "entrustedJobs": {
-      "archive": "Archive job",
+      "archive": "封存任務",
       "authorize": "Authorize",
       "currentGrant": "Current access: {{scope}} · {{expiry}}",
       "decline": "Decline",
       "declined": "Authorization declined",
-      "details": "Job details",
+      "details": "任務詳情",
       "detailsDescription": "Review progress, reply, or view the result here.",
       "duration": "Allow access for",
       "durations": {
@@ -1941,14 +1941,14 @@
         "7d": "7 days",
         "always": "Always"
       },
-      "empty": "No jobs in this view. Ask Okou to create a Job when you want it to keep working on something.",
+      "empty": "這裡還沒有任務。把任務交給 Okou，它會持續推進，並在需要你協助或有結果時通知你。",
       "filters": {
         "archived": "Archived",
         "history": "History",
         "home": "Current"
       },
       "granted": "Authorization saved",
-      "loading": "Loading Jobs",
+      "loading": "正在載入任務",
       "next": "Next",
       "noExpiry": "No expiry",
       "previous": "Previous",
@@ -2568,7 +2568,7 @@
       "tasks": {
         "document": "文件",
         "image": "圖片",
-        "jobs": "Jobs",
+        "jobs": "任務",
         "presentation": "簡報",
         "suggestions": "建議",
         "visualization": "視覺化",
@@ -5522,13 +5522,13 @@
         "title": "晨報"
       },
       "proactiveJobs": {
-        "description": "Automatically work on your jobs and notify you when your input is needed or a job is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your jobs.",
-        "preparationFailed": "Jobs could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your jobs. You can turn this off at any time.",
-        "retry": "Retry",
-        "retryMessage": "Job settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive jobs"
+        "description": "自動推進你的任務，在需要你協助或任務完成時通知你。",
+        "missingDefaultAgent": "請先選擇可用的預設 Agent。",
+        "preparationFailed": "任務暫時無法推進；如果工作已暫停，可關閉後重新開啟以重試。",
+        "preparing": "正在準備任務，你可以隨時關閉。",
+        "retry": "重試",
+        "retryMessage": "無法讀取或更新任務設定，請重試。",
+        "title": "自動推進任務"
       },
       "proactiveSuggestions": {
         "description": "讓 Okou 每小時檢查已連接的資訊來源，並在首頁推薦實用的下一步行動。",
