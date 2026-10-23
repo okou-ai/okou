@@ -2461,7 +2461,7 @@ const activateAcceptedPurchase$ = command(
           "Invitation acceptance is missing its user or allocation",
         );
       }
-      // Publish grants only while owning the same wallet as settlement. The
+      // Grants and refund sources share the accepted receipt's commit. The
       // recurring Stripe quantity follows from this commit by identity sync.
       const [wallet] = await tx
         .select()
