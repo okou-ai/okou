@@ -628,6 +628,11 @@
       "singularTitle": "アーティファクト",
       "unavailable": "このアーティファクトはもう入手できません。"
     },
+    "siteBanner": {
+      "label": "Okou バナーを表示",
+      "loadFailed": "バナー設定を読み込めません",
+      "updated": "バナーを更新しました"
+    },
     "siteUrl": {
       "available": "使用できます",
       "cancel": "キャンセル",

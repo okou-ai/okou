@@ -1,7 +1,10 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
+import {
+  paidToolsContract,
+  type PaidToolId,
+} from "@okouai/api-contracts/contracts/paid-tools";
 import {
   type UpdateUserModelPreferenceRequest,
   type UserModelPreferenceResponse,
@@ -136,16 +139,23 @@ test("Paid tools toggles save inverted enabled state and can re-enable a tool", 
   ]);
 });
 
-test("Advanced data research saves independently from historical research preferences", async () => {
+test("Advanced data research saves independently and retains preferences across Tools visits", async () => {
   const updates: { toolId: string; disabled: boolean }[] = [];
+  let disabledTools: PaidToolId[] = [];
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools: [] });
+    return respond(200, { disabledTools });
   });
   context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
     updates.push({ toolId: params.toolId, disabled: body.disabled });
+    disabledTools = disabledTools.filter((toolId) => {
+      return toolId !== params.toolId;
+    });
+    if (body.disabled) {
+      disabledTools.push(params.toolId);
+    }
     return respond(200, { toolId: params.toolId, disabled: body.disabled });
   });
-  await openPaidTools();
+  const dialog = await openPaidTools();
   const advanced = await readySwitch("Advanced data research");
   const people = await readySwitch("People search");
   expect(advanced).toBeChecked();
@@ -154,12 +164,17 @@ test("Advanced data research saves independently from historical research prefer
   await waitFor(() => {
     expect(updates).toStrictEqual([{ toolId: "data-search", disabled: true }]);
   });
-  await readySwitch("Advanced data research");
-  click(advanced);
+  click(button("Preference", dialog));
+  await within(dialog).findByRole("heading", { name: "Preference" });
+  click(button("Tools", dialog));
+  const savedAdvanced = await readySwitch("Advanced data research");
+  expect(savedAdvanced).toHaveAttribute("aria-checked", "false");
+  await expect(readySwitch("People search")).resolves.toBeChecked();
+  click(savedAdvanced);
   await waitFor(() => {
-    expect(advanced).toBeChecked();
+    expect(savedAdvanced).toBeChecked();
   });
-  expect(people).toBeChecked();
+  await expect(readySwitch("People search")).resolves.toBeChecked();
   expect(updates).toStrictEqual([
     { toolId: "data-search", disabled: true },
     { toolId: "data-search", disabled: false },

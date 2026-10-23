@@ -123,6 +123,13 @@ function ledgerProvider(plan: {
     ? `monid/${plan.provider}`
     : `firecrawl/alexandria/${plan.provider}`;
 }
+function pricingUnavailable() {
+  return dataSearchError(
+    503,
+    "PRICING_NOT_CONFIGURED",
+    "Data Search pricing is unavailable.",
+  );
+}
 function pricingWhere(provider: string) {
   return and(
     eq(usagePricing.kind, "data-search"),
@@ -146,11 +153,7 @@ export const quoteDataSearch$ = command(
           .where(pricingWhere(ledgerProvider(estimate.plan)));
         signal.throwIfAborted();
         if (!price) {
-          return dataSearchError(
-            503,
-            "PRICING_NOT_CONFIGURED",
-            "Data Search pricing is unavailable.",
-          );
+          return pricingUnavailable();
         }
         const credits = creditsFor(
           estimate.estimatedCostUsdMicros,
@@ -202,11 +205,7 @@ const reserveDataSearchJob$ = command(
         .from(usagePricing)
         .where(pricingWhere(args.providerName));
       if (!price) {
-        return dataSearchError(
-          503,
-          "PRICING_NOT_CONFIGURED",
-          "Data Search pricing is unavailable.",
-        );
+        return pricingUnavailable();
       }
       const estimated = creditsFor(
         args.estimate.estimatedCostUsdMicros,
@@ -242,7 +241,7 @@ const reserveDataSearchJob$ = command(
         .from(socialDataJobs)
         .where(socialReservations.where);
       if (!reservation || !socialReservation) {
-        throw new Error("Data Search reservation aggregate is missing");
+        throw new Error("Data Search reservation aggregate returned no row");
       }
       if (reservation.jobs >= 100) {
         return dataSearchError(
@@ -517,7 +516,7 @@ const startDataSearchJob$ = command(
   },
 );
 
-export const advanceDataSearchJob$ = command(
+const advanceDataSearchJobOnce$ = command(
   async ({ set }, jobId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
     const [job] = await db
@@ -648,6 +647,45 @@ export const advanceDataSearchJob$ = command(
   },
 );
 
+export const advanceDataSearchJob$ = command(
+  async ({ set }, jobId: string, signal: AbortSignal): Promise<void> => {
+    const advanced = await settle(
+      set(advanceDataSearchJobOnce$, jobId, signal),
+      signal,
+    );
+    if (advanced.ok) {
+      return;
+    }
+    if (
+      !(advanced.error instanceof DataSearchProviderError) ||
+      ![
+        "DATA_SEARCH_UNAVAILABLE",
+        "DATA_SEARCH_INVALID_RESPONSE",
+        "DATA_SEARCH_INVALID_BILLING",
+        "DATA_SEARCH_CANCEL_UNKNOWN",
+      ].includes(advanced.error.code)
+    ) {
+      throw advanced.error;
+    }
+    // A source failure leaves the liability intact, but this attempt must not
+    // monopolize the global oldest-first reconciler. Local/DB failures propagate.
+    await set(writeDb$)
+      .update(dataSearchJobs)
+      .set({
+        error: { code: advanced.error.code, message: advanced.error.message },
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(dataSearchJobs.id, jobId),
+          isNull(dataSearchJobs.creditsCharged),
+          isNull(dataSearchJobs.actualCostUsdMicros),
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
+
 export const getDataSearchJob$ = command(
   async (
     { set },
@@ -710,11 +748,11 @@ export const listDataSearchJobs$ = command(
     const jobs = rows.slice(0, args.query.limit);
     let nextCursor: string | null = null;
     if (rows.length > args.query.limit) {
-      const lastJob = jobs.at(-1);
-      if (!lastJob) {
-        throw new Error("Data Search next page has no cursor job");
+      const last = jobs.at(-1);
+      if (!last) {
+        throw new Error("Data Search next page has no cursor row");
       }
-      nextCursor = lastJob.id;
+      nextCursor = last.id;
     }
     return {
       status: 200 as const,
@@ -787,7 +825,7 @@ export const reconcileDataSearchJobs$ = command(
           ),
         ),
       )
-      .orderBy(dataSearchJobs.updatedAt)
+      .orderBy(dataSearchJobs.updatedAt, dataSearchJobs.id)
       .limit(2);
     signal.throwIfAborted();
     for (const job of jobs) {
@@ -803,34 +841,8 @@ export const reconcileDataSearchJobs$ = command(
           ),
         );
       signal.throwIfAborted();
-      const advanced = await settle(
-        set(advanceDataSearchJob$, job.id, signal),
-        signal,
-      );
-      if (!advanced.ok) {
-        if (!(advanced.error instanceof DataSearchProviderError)) {
-          throw advanced.error;
-        }
-        // A failed source read is visible on its job. Keep its reservation and
-        // receipt unchanged while allowing healthy sibling jobs to reconcile.
-        await db
-          .update(dataSearchJobs)
-          .set({
-            error: {
-              code: advanced.error.code,
-              message: advanced.error.message,
-            },
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(dataSearchJobs.id, job.id),
-              isNull(dataSearchJobs.creditsCharged),
-              isNull(dataSearchJobs.actualCostUsdMicros),
-            ),
-          );
-        signal.throwIfAborted();
-      }
+      await set(advanceDataSearchJob$, job.id, signal);
+      signal.throwIfAborted();
     }
     return jobs.length;
   },

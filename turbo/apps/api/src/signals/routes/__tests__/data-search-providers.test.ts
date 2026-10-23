@@ -406,6 +406,74 @@ describe("Data Search reviewed providers", () => {
     });
   });
 
+  it("searches Apollo organizations through the public company search route", async () => {
+    const setup = await scenario();
+    await setup.run(async () => {
+      monid({
+        provider: "apollo",
+        endpoint: "/mixed_companies/search",
+        properties: {
+          q_organization_name: { type: "string" },
+          page: { type: "integer" },
+          per_page: { type: "integer" },
+        },
+        usd: 0.026,
+        expectedInput: {
+          queryParams: {
+            q_organization_name: "Business",
+            page: 1,
+            per_page: 2,
+          },
+        },
+        output: {
+          organizations: [
+            {
+              id: "company_search_123",
+              name: "Business",
+              primary_domain: "business.test",
+              industry: "Software",
+              estimated_num_employees: 42,
+              phone: "+19990000001",
+              internal_trace: "not-a-public-company-field",
+            },
+          ],
+          pagination: { page: 1, per_page: 2, total_entries: 1 },
+        },
+      });
+      const result = await execute(setup, {
+        capability: "company.search",
+        input: { name: "Business" },
+        limit: 2,
+      });
+      expect(result.body).toMatchObject({
+        status: "completed",
+        data: {
+          items: [
+            {
+              id: "company_search_123",
+              name: "Business",
+              primary_domain: "business.test",
+              industry: "Software",
+              estimated_num_employees: 42,
+              source: { provider: "apollo", capability: "company.search" },
+            },
+          ],
+        },
+        billing: { state: "settled", creditsCharged: 33, reservedCredits: 0 },
+      });
+      expect(result.body.data?.items).toStrictEqual([
+        {
+          id: "company_search_123",
+          name: "Business",
+          primary_domain: "business.test",
+          industry: "Software",
+          estimated_num_employees: 42,
+          source: { provider: "apollo", capability: "company.search" },
+        },
+      ]);
+    });
+  });
+
   it.each([
     {
       name: "the live envelope without per-item success",

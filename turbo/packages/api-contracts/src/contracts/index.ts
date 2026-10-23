@@ -204,7 +204,6 @@ export {
   webhookWorkflowAutomationContract,
   webhookStripeContract,
   webhookBuiltInGenerationFalContract,
-  webhookOpenaiImagesContract,
   webhookCompleteContract,
   webhookHeartbeatContract,
   webhookTelemetryContract,

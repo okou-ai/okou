@@ -628,6 +628,11 @@
       "singularTitle": "아티팩트",
       "unavailable": "이 아티팩트는 더 이상 사용할 수 없습니다."
     },
+    "siteBanner": {
+      "label": "Okou 배너 표시",
+      "loadFailed": "배너 설정을 불러올 수 없습니다",
+      "updated": "배너가 업데이트되었습니다"
+    },
     "siteUrl": {
       "available": "사용 가능",
       "cancel": "취소",

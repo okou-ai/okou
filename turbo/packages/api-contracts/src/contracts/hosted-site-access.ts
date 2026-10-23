@@ -71,8 +71,25 @@ export const hostedSiteVisibilityStatusSchema = z.object({
   revision: z.uuid().nullable(),
 });
 
+export const hostedSiteBannerStatusSchema = z.object({
+  siteId: z.uuid(),
+  showBanner: z.boolean(),
+  revision: z.uuid().nullable(),
+});
+
+export const hostedSitePresentationSchema = z.object({
+  showBanner: z.boolean(),
+  title: z.string(),
+  siteUrl: z.url(),
+});
+
 export const hostedSiteAccessDecisionSchema = z.discriminatedUnion("decision", [
-  z.object({ allowed: z.literal(true), decision: z.literal("allow") }),
+  z.object({
+    allowed: z.literal(true),
+    decision: z.literal("allow"),
+    // Only document delivery requests ask for Site presentation metadata.
+    presentation: hostedSitePresentationSchema.optional(),
+  }),
   z.object({ allowed: z.literal(false), decision: z.literal("authenticate") }),
   z.object({ allowed: z.literal(false), decision: z.literal("deny") }),
 ]);

@@ -628,6 +628,11 @@
       "singularTitle": "Artefak",
       "unavailable": "Artefak ini tidak lagi tersedia."
     },
+    "siteBanner": {
+      "label": "Tampilkan banner Okou",
+      "loadFailed": "Tidak dapat memuat pengaturan banner",
+      "updated": "Banner diperbarui"
+    },
     "siteUrl": {
       "available": "Tersedia",
       "cancel": "Batal",

@@ -36,17 +36,3 @@ CREATE UNIQUE INDEX "uq_data_search_jobs_usage" ON "data_search_jobs" USING btre
 CREATE UNIQUE INDEX "uq_data_search_jobs_upstream" ON "data_search_jobs" USING btree ("provider_name","upstream_run_id");--> statement-breakpoint
 CREATE INDEX "idx_data_search_jobs_owner" ON "data_search_jobs" USING btree ("org_id","user_id","created_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "idx_data_search_jobs_reserved" ON "data_search_jobs" USING btree ("org_id") WHERE "data_search_jobs"."credits_charged" IS NULL;
---> statement-breakpoint
-INSERT INTO "usage_pricing" ("kind", "provider", "category", "unit_price", "unit_size") VALUES
-  ('data-search', 'monid/apollo', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'monid/hunterio', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/similarweb', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/upspring', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/firecrawl-trends', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/oriane', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/web-archive-org', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/affiliate-com', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/play-google-com', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/particle', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/fiscal-ai', 'provider_cost_usd_micros', 1250, 1000000)
-ON CONFLICT ("kind", "provider", "category") DO UPDATE SET "unit_price" = EXCLUDED."unit_price", "unit_size" = EXCLUDED."unit_size";

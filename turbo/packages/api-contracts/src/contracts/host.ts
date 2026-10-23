@@ -11,6 +11,7 @@ import {
   hostedSiteAuthProofSchema,
   hostedSiteAuthCodeSchema,
   hostedSiteSessionSchema,
+  hostedSiteBannerStatusSchema,
 } from "./hosted-site-access";
 
 const c = initContract();
@@ -478,6 +479,38 @@ export const hostContract = c.router({
     },
     summary: "Change an owned published site's visibility",
   },
+  siteBanner: {
+    method: "GET",
+    path: "/api/host/sites/:siteId/branding",
+    pathParams: z.object({ siteId: z.uuid() }),
+    headers: authHeadersSchema,
+    responses: {
+      200: hostedSiteBannerStatusSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Read an owned published site's Okou banner preference",
+  },
+  updateSiteBanner: {
+    method: "PATCH",
+    path: "/api/host/sites/:siteId/branding",
+    pathParams: z.object({ siteId: z.uuid() }),
+    headers: authHeadersSchema,
+    body: z.object({
+      showBanner: z.boolean(),
+      expectedRevision: z.uuid().nullable(),
+    }),
+    responses: {
+      200: hostedSiteBannerStatusSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+    },
+    summary: "Show or hide the Okou banner on an owned published site",
+  },
   siteAccess: {
     method: "GET",
     path: "/api/host/sites/:siteId/access",
@@ -520,6 +553,7 @@ export const hostContract = c.router({
       publicBrand: z.enum(["vm0", "okou"]),
       prefix: z.string().startsWith("sites/").max(1024),
       manifestKey: z.string().startsWith("sites/").max(1024),
+      presentation: z.literal("banner").optional(),
     }),
     responses: {
       200: hostedSiteAccessDecisionSchema,

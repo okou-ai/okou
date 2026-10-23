@@ -629,6 +629,11 @@
       "singularTitle": "आर्टिफ़ैक्ट",
       "unavailable": "यह आर्टिफ़ैक्ट अब उपलब्ध नहीं है।"
     },
+    "siteBanner": {
+      "label": "Okou बैनर दिखाएँ",
+      "loadFailed": "बैनर सेटिंग लोड नहीं हो सकीं",
+      "updated": "बैनर अपडेट हो गया"
+    },
     "siteUrl": {
       "available": "उपलब्ध",
       "cancel": "रद्द करें",

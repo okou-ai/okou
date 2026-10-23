@@ -719,7 +719,7 @@ export async function readDataSearchProvider(
     throw new Error("A synchronous data source cannot have a saved run ID");
   }
   if (!runIdSchema.safeParse(runId).success) {
-    return invalidResponse();
+    throw new Error("Invalid saved Data Search source run ID");
   }
   const response = await monidRequest(
     `/runs/${encodeURIComponent(runId)}`,
@@ -742,7 +742,7 @@ export async function stopDataSearchProvider(
     throw new Error("A synchronous data source cannot have a saved run ID");
   }
   if (!runIdSchema.safeParse(runId).success) {
-    return invalidResponse();
+    throw new Error("Invalid saved Data Search source run ID");
   }
   const response = await monidRequest(
     `/runs/${encodeURIComponent(runId)}/stop`,

@@ -33,7 +33,7 @@ const capabilitiesRoute$ = command(({ get, set }, signal: AbortSignal) => {
     if (
       auth.tokenType === "agent" &&
       !auth.capabilities.includes("data-enrichment:read") &&
-      (item.id === "people.enrich" || item.id === "people.email")
+      item.id === "people.enrich"
     ) {
       return false;
     }
@@ -53,8 +53,7 @@ const quoteRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   if (
     auth.tokenType === "agent" &&
-    (body.data.capability === "people.enrich" ||
-      body.data.capability === "people.email") &&
+    body.data.capability === "people.enrich" &&
     !auth.capabilities.includes("data-enrichment:read")
   ) {
     return dataSearchError(
@@ -75,8 +74,7 @@ const createRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   if (
     auth.tokenType === "agent" &&
-    (body.data.capability === "people.enrich" ||
-      body.data.capability === "people.email") &&
+    body.data.capability === "people.enrich" &&
     !auth.capabilities.includes("data-enrichment:read")
   ) {
     return dataSearchError(

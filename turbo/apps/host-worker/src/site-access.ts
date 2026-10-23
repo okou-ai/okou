@@ -10,6 +10,7 @@ import {
   hostedSiteAuthProofSchema,
   hostedSiteSessionSchema,
   hostedSiteSessionTokenSchema,
+  type HostedSiteAccessDecision,
 } from "@okouai/api-contracts/contracts/hosted-site-access";
 
 export interface SiteAuthEnv {
@@ -331,7 +332,14 @@ export async function authorizeSiteRequest(
   env: SiteAuthEnv,
   endpoint: URL,
 ): Promise<
-  | { readonly headers: Headers; readonly response?: never }
+  | {
+      readonly headers: Headers;
+      readonly presentation?: Extract<
+        HostedSiteAccessDecision,
+        { allowed: true }
+      >["presentation"];
+      readonly response?: never;
+    }
   | { readonly response: Response; readonly headers?: never }
 > {
   const completed = await hostedSiteAuthCallback(request, env);
@@ -371,7 +379,10 @@ export async function authorizeSiteRequest(
       };
   }
   if (anonymous.allowed)
-    return { headers: new Headers({ "Cache-Control": "private, no-store" }) };
+    return {
+      headers: new Headers({ "Cache-Control": "private, no-store" }),
+      presentation: anonymous.presentation,
+    };
   if (anonymous.decision === "deny")
     return {
       response: new Response("Not found", {
@@ -385,7 +396,8 @@ export async function authorizeSiteRequest(
   );
   if (token.success) {
     const authenticated = await decision(request, env, endpoint, token.data);
-    if (authenticated.allowed) return { headers };
+    if (authenticated.allowed)
+      return { headers, presentation: authenticated.presentation };
     if (authenticated.decision === "deny") {
       return {
         response: hostedSiteRecoveryResponse(

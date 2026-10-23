@@ -9,6 +9,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.767.0](https://github.com/okou-ai/okou/compare/api-v1.766.6...api-v1.767.0) (2026-10-23)
+
+
+### Features
+
+* add configurable branding banners to hosted sites ([#42516](https://github.com/okou-ai/okou/issues/42516)) ([d3a40c7](https://github.com/okou-ai/okou/commit/d3a40c7c422bd9c9ee678e59bb447f81bc927a69))
+
+
+### Refactoring
+
+* **api:** remove openai image webhook recovery ([#42514](https://github.com/okou-ai/okou/issues/42514)) ([f8e2c47](https://github.com/okou-ai/okou/commit/f8e2c477521f7ef1e0bd59f0580869f58cf654fa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.590.0
+    * @okouai/core bumped to 8.782.0
+    * @okouai/db bumped to 1.359.0
+    * @okouai/pi-agent-runtime bumped to 1.50.59
+
 ## [1.766.6](https://github.com/okou-ai/okou/compare/api-v1.766.5...api-v1.766.6) (2026-10-23)
 
 
