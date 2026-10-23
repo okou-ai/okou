@@ -2,6 +2,7 @@ import type { Element, Root, RootContent } from "hast";
 import type {
   Content,
   ContentText,
+  Node,
   Style,
   TableCell,
   TDocumentDefinitions,
@@ -13,6 +14,8 @@ import { pdfLink } from "./urls.ts";
 
 const PAGE_WIDTH = 499;
 const FIGURE_HEIGHT = 650;
+const TABLE_FONT_SIZE = 9;
+const TABLE_PADDING = 8;
 const OMITTED_ELEMENTS: ReadonlySet<string> = new Set([
   "script",
   "style",
@@ -66,6 +69,8 @@ interface Context {
   readonly assets: PdfAssets;
   readonly renderMath: PdfMathRenderer;
   readonly baseUrl: string;
+  readonly segmenter: Intl.Segmenter;
+  readonly nextTextId: () => string;
 }
 
 /**
@@ -79,7 +84,16 @@ export function buildMessagePdfDocument(
   renderMath: PdfMathRenderer,
   baseUrl: string,
 ): TDocumentDefinitions {
-  const context: Context = { assets, renderMath, baseUrl };
+  let textId = 0;
+  const context: Context = {
+    assets,
+    renderMath,
+    baseUrl,
+    segmenter: new Intl.Segmenter(undefined, { granularity: "grapheme" }),
+    nextTextId() {
+      return `message-pdf-text-${textId++}`;
+    },
+  };
   return {
     pageSize: "A4",
     pageMargins: [48, 46, 48, 46],
@@ -100,10 +114,18 @@ export function buildMessagePdfDocument(
     content: blocks(tree.children, context, PAGE_WIDTH),
     pageBreakBefore(node, queries) {
       return Boolean(
-        node.headlineLevel && queries.getFollowingNodesOnPage().length === 0,
+        node.headlineLevel &&
+        !queries.getFollowingNodesOnPage().some(isRenderedBlock) &&
+        queries.getNodesOnNextPage().some(isRenderedBlock),
       );
     },
   };
+}
+
+function isRenderedBlock(node: Node): boolean {
+  // Table/list containers can keep a position on the previous page even when
+  // all of their visible children move. Only actual content keeps a heading.
+  return Boolean(node.text || node.image || node.svg || node.canvas);
 }
 
 function inlineStyle(node: Element, inherited: Style): Style {
@@ -124,11 +146,20 @@ function inlineStyle(node: Element, inherited: Style): Style {
       return { ...inherited, decoration: "underline" };
     }
     case "code": {
-      return { ...inherited, background: "#f1f3f4", fontSize: 9 };
+      return {
+        ...inherited,
+        background: "#f1f3f4",
+        fontSize: 9,
+        fontFeatures: ["hwid"],
+        preserveLeadingSpaces: true,
+        preserveTrailingSpaces: true,
+      };
     }
-    case "sup":
+    case "sup": {
+      return { ...inherited, sup: true, sub: false };
+    }
     case "sub": {
-      return { ...inherited, fontSize: 8 };
+      return { ...inherited, sub: true, sup: false };
     }
     default: {
       return inherited;
@@ -142,6 +173,27 @@ function omittedElement(node: Element): boolean {
     node.data?.copyCode !== undefined ||
     node.data?.colorPreview !== undefined
   );
+}
+
+function textRuns(
+  text: string,
+  context: Context,
+  style: Style = {},
+  link?: string,
+): ContentText[] {
+  const runs: ContentText[] = [];
+  for (const { segment } of context.segmenter.segment(text)) {
+    const font = /[\p{Emoji_Presentation}\uFE0F\u20E3]/u.test(segment)
+      ? "NotoEmoji"
+      : "NotoSans";
+    const previous = runs.at(-1);
+    if (previous?.font === font) {
+      previous.text = String(previous.text) + segment;
+    } else {
+      runs.push({ text: segment, ...style, font, ...(link ? { link } : {}) });
+    }
+  }
+  return runs;
 }
 
 function paragraph(
@@ -158,13 +210,36 @@ function paragraph(
         return String(run.text).trim() !== "";
       })
     ) {
-      output.push({ text: runs, ...style, margin: [0, 0, 0, 7] });
+      // pdfmake relocates text-node page metadata for identified nodes when
+      // an unbreakable table row moves. Document-scoped IDs keep heading
+      // pagination based on the visible page, not the temporary row context.
+      const content: ContentText & { id: string } = {
+        id: context.nextTextId(),
+        text: runs,
+        ...style,
+        margin: [0, 0, 0, 7],
+      };
+      output.push(content);
     }
     runs = [];
   };
-  const walk = (node: RootContent, inherited: Style, link?: string): void => {
+  const walk = (
+    node: RootContent,
+    inherited: Style,
+    link?: string,
+    preserveWhitespace = false,
+  ): void => {
     if (node.type === "text") {
-      runs.push({ text: node.value, ...inherited, ...(link ? { link } : {}) });
+      runs.push(
+        ...textRuns(
+          preserveWhitespace
+            ? node.value
+            : node.value.replace(/[ \t\r\n]+/gu, " "),
+          context,
+          inherited,
+          link,
+        ),
+      );
       return;
     }
     if (node.type !== "element" || omittedElement(node)) {
@@ -192,7 +267,12 @@ function paragraph(
       ? { ...nextStyle, color: "#1557b0", decoration: "underline" }
       : nextStyle;
     for (const child of node.children) {
-      walk(child, linkedStyle, href);
+      walk(
+        child,
+        linkedStyle,
+        href,
+        preserveWhitespace || node.tagName === "code",
+      );
     }
   };
   for (const node of nodes) {
@@ -240,6 +320,83 @@ function visual(
   return picture(image, width, link);
 }
 
+function columnSpan(cell: Element): number {
+  const span = Number(cell.properties.colSpan ?? 1);
+  // HTML caps a column span at 1000. Do not allocate unbounded columns.
+  return Number.isInteger(span) && span > 0 ? Math.min(span, 1000) : 1;
+}
+
+function shortTableCell(cell: Element, width: number): boolean {
+  const charsPerLine = Math.floor(width / TABLE_FONT_SIZE);
+  if (charsPerLine < 1) {
+    return false;
+  }
+  let lines = 0;
+  const visit = (node: RootContent): boolean => {
+    if (node.type === "text") {
+      // Allow for word wrapping and full-width glyphs rather than assuming
+      // Latin average widths. Twenty lines leave room for a repeated header.
+      lines += 2 * Math.ceil(node.value.length / charsPerLine);
+      return true;
+    }
+    if (node.type !== "element" || node.data?.math || node.data?.mermaid) {
+      return false;
+    }
+    if (node.tagName === "input") {
+      lines += 2 * Math.ceil(4 / charsPerLine);
+      return true;
+    }
+    if (node.tagName === "br") {
+      lines++;
+      return true;
+    }
+    return INLINE_ELEMENTS.has(node.tagName) && node.children.every(visit);
+  };
+  return cell.children.every(visit) && lines <= 20;
+}
+
+function tableWidths(
+  cells: readonly Element[][],
+  columns: number,
+  width: number,
+) {
+  // Star columns honor the longest unbroken token's minimum width and can
+  // exceed the page. Numeric widths keep wrapping inside the available area.
+  const padding = Math.min(TABLE_PADDING, width / (columns * 4));
+  const available = width - padding * 2 * (columns - 1);
+  const minimum = Math.min(28, available / columns);
+  const desired = Array.from({ length: columns }, () => {
+    return minimum;
+  });
+  for (const row of cells) {
+    let column = 0;
+    for (const cell of row) {
+      const span = columnSpan(cell);
+      const length = Array.from(textOf(cell)).length;
+      const preference =
+        Math.min(width / 2, length * TABLE_FONT_SIZE + 4) / span;
+      for (let offset = 0; offset < span; offset++) {
+        desired[column + offset] = Math.max(
+          desired[column + offset] ?? minimum,
+          preference,
+        );
+      }
+      column += span;
+    }
+  }
+  const total = desired.reduce((sum, value) => {
+    return sum + value - minimum;
+  }, 0);
+  const remaining = available - minimum * columns;
+  const widths = desired.map((value) => {
+    return (
+      minimum +
+      (total ? (remaining * (value - minimum)) / total : remaining / columns)
+    );
+  });
+  return { widths, padding };
+}
+
 function table(node: Element, context: Context, width: number): Content {
   const rows: Element[] = [];
   for (const section of node.children) {
@@ -265,35 +422,39 @@ function table(node: Element, context: Context, width: number): Content {
     0,
     ...cells.map((row) => {
       return row.reduce((sum, cell) => {
-        return (
-          sum +
-          (typeof cell.properties.colSpan === "number"
-            ? cell.properties.colSpan
-            : 1)
-        );
+        return sum + columnSpan(cell);
       }, 0);
     }),
   );
   if (columns === 0) {
     throw new Error("PDF table has no usable cells");
   }
+  const { widths, padding } = tableWidths(cells, columns, width);
+  const headerRows = cells[0]?.every((cell) => {
+    return cell.tagName === "th";
+  })
+    ? 1
+    : 0;
+  let keepRows = true;
   const body: TableCell[][] = cells.map((row) => {
     const result: TableCell[] = [];
     for (const cell of row) {
-      const colSpan =
-        typeof cell.properties.colSpan === "number"
-          ? cell.properties.colSpan
-          : 1;
-      if (cell.properties.rowSpan && cell.properties.rowSpan !== 1) {
+      const colSpan = columnSpan(cell);
+      if (Number(cell.properties.rowSpan ?? 1) !== 1) {
         throw new Error("PDF tables with row spans are unsupported");
       }
       const alignment = cell.properties.align;
+      const cellWidth =
+        widths
+          .slice(result.length, result.length + colSpan)
+          .reduce((sum, value) => {
+            return sum + value;
+          }, 0) +
+        padding * 2 * (colSpan - 1) -
+        4;
+      keepRows = keepRows && shortTableCell(cell, cellWidth);
       result.push({
-        stack: blocks(
-          cell.children,
-          context,
-          Math.max(20, (width / columns) * colSpan - 12),
-        ),
+        stack: blocks(cell.children, context, Math.max(1, cellWidth)),
         colSpan,
         bold: cell.tagName === "th",
         fillColor: cell.tagName === "th" ? "#f1f3f4" : undefined,
@@ -315,18 +476,35 @@ function table(node: Element, context: Context, width: number): Content {
   });
   return {
     table: {
-      widths: Array.from({ length: columns }, () => {
-        return "*";
-      }),
-      headerRows: cells[0]?.every((cell) => {
-        return cell.tagName === "th";
-      })
-        ? 1
-        : 0,
+      widths,
+      // Unbreakable rows taller than a page lose content in pdfmake. Only
+      // enable this for tables with conservatively bounded, short text cells.
+      dontBreakRows: keepRows,
+      headerRows,
+      keepWithHeaderRows: keepRows && headerRows ? 1 : 0,
       body,
     },
-    layout: "lightHorizontalLines",
-    fontSize: 9,
+    layout: {
+      hLineWidth(index, tableNode) {
+        if (index === 0 || index === tableNode.table.body.length) {
+          return 0;
+        }
+        return index === tableNode.table.headerRows ? 2 : 1;
+      },
+      vLineWidth: () => {
+        return 0;
+      },
+      hLineColor: (index) => {
+        return index === 1 ? "black" : "#aaa";
+      },
+      paddingLeft: (index) => {
+        return index === 0 ? 0 : padding;
+      },
+      paddingRight: (index) => {
+        return index === columns - 1 ? 0 : padding;
+      },
+    },
+    fontSize: TABLE_FONT_SIZE,
     margin: [0, 4, 0, 10],
   };
 }
@@ -342,11 +520,19 @@ function block(node: Element, context: Context, width: number): Content[] {
     const content = paragraph(node.children, context, width);
     return [
       {
-        stack: content,
+        stack: content.map((child, index) => {
+          if (
+            typeof child === "object" &&
+            !Array.isArray(child) &&
+            index === content.length - 1
+          ) {
+            return { ...child, headlineLevel: Number(node.tagName.slice(1)) };
+          }
+          return child;
+        }),
         style: node.tagName,
-        headlineLevel: Number(node.tagName.slice(1)),
-        // Per-message heading slugs can collide. Fragment links are not exported,
-        // so do not register these unused IDs in the combined PDF.
+        // Use document-scoped paragraph IDs; per-message heading slugs can
+        // collide when several responses are exported together.
       },
     ];
   }
@@ -358,7 +544,8 @@ function block(node: Element, context: Context, width: number): Content[] {
       const text = textOf(code ?? node);
       return [
         {
-          text,
+          text: textRuns(text, context),
+          fontFeatures: ["hwid"],
           fontSize: 8,
           wordBreak: "break-all",
           preserveLeadingSpaces: true,

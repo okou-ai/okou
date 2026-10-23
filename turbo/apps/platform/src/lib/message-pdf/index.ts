@@ -1,6 +1,9 @@
 import boldFontUrl from "@fontpkg/noto-sans-cjk-sc/NotoSansCJKsc-Bold.otf?url";
 import regularFontUrl from "@fontpkg/noto-sans-cjk-sc/NotoSansCJKsc-Regular.otf?url";
-import type { Root } from "hast";
+import italicFontUrl from "@fontpkg/sarasa-gothic-sc/sarasa-gothic-sc-italic.ttf?url";
+import boldItalicFontUrl from "@fontpkg/sarasa-gothic-sc/sarasa-gothic-sc-bolditalic.ttf?url";
+import emojiFontUrl from "@fontsource/noto-emoji/files/noto-emoji-emoji-400-normal.woff?url";
+import type { Root, RootContent } from "hast";
 
 import { createDeferredPromise } from "../../signals/utils.ts";
 import { preparePdfAssets } from "./assets.ts";
@@ -14,6 +17,33 @@ async function loadFont(
 ): Promise<ArrayBuffer> {
   const response = await readPdfResource(url, "default", signal);
   return response.arrayBuffer();
+}
+
+function requiredExtraFonts(tree: Root) {
+  const needed = { italic: false, boldItalic: false, emoji: false };
+  const visit = (node: RootContent, bold: boolean, italic: boolean): void => {
+    if (node.type === "text") {
+      if (node.value.trim()) {
+        needed.italic ||= italic && !bold;
+        needed.boldItalic ||= italic && bold;
+        needed.emoji ||= /[\p{Emoji_Presentation}\uFE0F\u20E3]/u.test(
+          node.value,
+        );
+      }
+    } else if (node.type === "element") {
+      for (const child of node.children) {
+        visit(
+          child,
+          bold || /^(b|strong|th|h[1-6])$/u.test(node.tagName),
+          italic || /^(i|em)$/u.test(node.tagName),
+        );
+      }
+    }
+  };
+  for (const child of tree.children) {
+    visit(child, false, false);
+  }
+  return needed;
 }
 
 /** Export independently parsed Markdown responses. Invoke only from the export command. */
@@ -30,11 +60,16 @@ export async function generateMessagePdfBlob(
       return parseMessagePdfTree(content).children;
     }),
   };
-  const [assets, regularFont, boldFont] = await Promise.all([
-    preparePdfAssets(tree, imageUrls, signal),
-    loadFont(regularFontUrl, signal),
-    loadFont(boldFontUrl, signal),
-  ]);
+  const needed = requiredExtraFonts(tree);
+  const [assets, regularFont, boldFont, italicFont, boldItalicFont, emojiFont] =
+    await Promise.all([
+      preparePdfAssets(tree, imageUrls, signal),
+      loadFont(regularFontUrl, signal),
+      loadFont(boldFontUrl, signal),
+      needed.italic ? loadFont(italicFontUrl, signal) : undefined,
+      needed.boldItalic ? loadFont(boldItalicFontUrl, signal) : undefined,
+      needed.emoji ? loadFont(emojiFontUrl, signal) : undefined,
+    ]);
   signal.throwIfAborted();
   const worker = new Worker(
     new URL("./message-pdf-worker.ts", import.meta.url),
@@ -77,7 +112,19 @@ export async function generateMessagePdfBlob(
     assets,
     regularFont,
     boldFont,
+    italicFont,
+    boldItalicFont,
+    emojiFont,
   };
-  worker.postMessage(request, [regularFont, boldFont]);
+  const fonts = [
+    regularFont,
+    boldFont,
+    italicFont,
+    boldItalicFont,
+    emojiFont,
+  ].filter((font): font is ArrayBuffer => {
+    return font !== undefined;
+  });
+  worker.postMessage(request, fonts);
   return result.promise;
 }
