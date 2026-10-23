@@ -20,7 +20,7 @@ const { default: ActualStripeSDK } = await vi.importActual<{
 test.each(["billing", "connect"] as const)(
   "authenticates signed %s webhooks with the Worker's Web Crypto provider",
   async (ingress) => {
-    const secret = "whsec_worker_signature_test";
+    const secret = `whsec_${randomUUID()}`;
     mockOptionalEnv("STRIPE_WEBHOOK_SECRET", secret);
     mockOptionalEnv("STRIPE_AUTOMATION_WEBHOOK_SECRET", secret);
     const stripe = new ActualStripeSDK("sk_test_worker_signature_test");

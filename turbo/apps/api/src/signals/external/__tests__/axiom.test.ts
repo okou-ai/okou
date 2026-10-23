@@ -197,7 +197,7 @@ describe("shared SDK ingestion", () => {
         }),
         [500],
       );
-      expect(response.body.error.code).toBe("INTERNAL_SERVER_ERROR");
+      expect(response.body).toStrictEqual({ error: "Internal server error" });
       expect(ingestRequests).toBe(1);
       expect(redirectedRequests).toBe(0);
     });
