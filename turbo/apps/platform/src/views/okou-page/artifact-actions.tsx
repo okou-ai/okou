@@ -42,7 +42,7 @@ import type {
   ChatThreadArtifactFile,
   ChatThreadArtifactGoogleDriveRecovery,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
@@ -50,16 +50,14 @@ import type { PlatformConnectorAccountMutationIntent } from "../../signals/conne
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
 import { connectorCatalogItemBySlug } from "../../signals/external/connectors.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { connectorConnectionPending$ } from "../../signals/connector-connection-progress.ts";
+import { lightboxUrl$ } from "../../signals/okou-page/attachment-chips.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   syncArtifactAndRefresh$,
-  googleDriveSyncOperations$,
-  idleGoogleDriveSync$,
   googleDriveSyncAccount$,
 } from "../../signals/chat-page/artifact-google-drive-sync.ts";
 import {
-  connectBuiltinConnectorOAuthAuthCodeWithDialogAndSettle$,
+  connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   getOnlyAvailableCatalogBrowserAuthMethodDetail,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { copyAttachmentLinkToClipboard } from "./attachment-url.ts";
@@ -403,17 +401,22 @@ function resolveGoogleDrivePendingAction(
 
 function useGoogleDriveMenuAction(
   syncTarget: ArtifactDownloadSyncTarget | undefined,
-  availability: ReturnType<typeof useGoogleDriveAvailability>,
-  mode: GoogleDriveUploadMode,
-): () => void {
-  const syncArtifact = useSet(syncArtifactAndRefresh$);
+  surface: "dialog" | "page",
+) {
+  const [syncOperation, syncArtifact] = useLoadableSet(syncArtifactAndRefresh$);
   const pageSignal = useGet(pageSignal$);
-  const connectGoogleDrive = useSet(
-    connectBuiltinConnectorOAuthAuthCodeWithDialogAndSettle$,
+  const lightbox = useGet(lightboxUrl$);
+  const actionSignal =
+    surface === "dialog" ? lightbox?.ownerSignal : pageSignal;
+  const [connectionOperation, connectGoogleDrive] = useLoadableSet(
+    connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   );
 
-  return () => {
-    if (!syncTarget) {
+  const syncOrConnect = (
+    availability: ReturnType<typeof useGoogleDriveAvailability>,
+    mode: GoogleDriveUploadMode,
+  ) => {
+    if (!syncTarget || !actionSignal) {
       return;
     }
     const run = (
@@ -439,7 +442,7 @@ function useGoogleDriveMenuAction(
     };
     if (availability.googleDriveReady) {
       detach(
-        run(availability.googleDriveConnectionId, false, pageSignal),
+        run(availability.googleDriveConnectionId, false, actionSignal),
         Reason.DomCallback,
         "artifact google drive sync",
       );
@@ -460,7 +463,7 @@ function useGoogleDriveMenuAction(
     const agentId = syncTarget.agentId;
     if (action.kind === "authorize") {
       detach(
-        run(syncTarget.connectionId, true, pageSignal),
+        run(syncTarget.connectionId, true, actionSignal),
         Reason.DomCallback,
         "artifact google drive authorize sync",
       );
@@ -487,11 +490,16 @@ function useGoogleDriveMenuAction(
             connectorLabel: availability.googleDriveConnector.label,
           },
         },
-        pageSignal,
+        actionSignal,
       ),
       Reason.DomCallback,
       "artifact google drive connect sync",
     );
+  };
+  return {
+    syncOrConnect,
+    syncing: syncOperation.state === "loading",
+    connecting: connectionOperation.state === "loading",
   };
 }
 
@@ -591,38 +599,26 @@ function GoogleDriveConnectMenuItem({
   );
 }
 
-function useGoogleDriveSyncOperation(
-  syncTarget: ArtifactDownloadSyncTarget | undefined,
-  mode: GoogleDriveUploadMode,
-) {
-  const operations = useGet(googleDriveSyncOperations$);
-  return useLoadable(
-    (syncTarget && operations.get(syncTarget.artifactId)?.get(mode)) ??
-      idleGoogleDriveSync$,
-  );
-}
-
 function GoogleDriveMenuItem({
-  filename,
   syncTarget,
+  target,
   original = false,
+  syncing,
+  connecting,
+  onSyncOrConnect,
 }: {
-  filename: string;
   syncTarget?: ArtifactDownloadSyncTarget;
+  target?: GoogleWorkspaceTarget | undefined;
   original?: boolean;
+  syncing: boolean;
+  connecting: boolean;
+  onSyncOrConnect: ReturnType<typeof useGoogleDriveMenuAction>["syncOrConnect"];
 }) {
   const { t } = useTranslation();
   const availability = useGoogleDriveAvailability(syncTarget);
-  const connectionPending = useGet(connectorConnectionPending$);
-  const workspaceTarget = useGoogleWorkspaceTarget(filename);
-  const target = original ? undefined : workspaceTarget;
-  const mode = target ? "google" : "original";
-  const syncOrConnect = useGoogleDriveMenuAction(
-    syncTarget,
-    availability,
-    mode,
-  );
-  const syncOperation = useGoogleDriveSyncOperation(syncTarget, mode);
+  const syncOrConnect = () => {
+    onSyncOrConnect(availability, target ? "google" : "original");
+  };
   const labels = useGoogleDriveMenuLabels(target);
   const { googleDriveReady } = availability;
 
@@ -652,7 +648,7 @@ function GoogleDriveMenuItem({
     return <GoogleDriveCompletedMenuItem action={completed} />;
   }
 
-  if (syncOperation.state === "loading") {
+  if (syncing) {
     return (
       <DropdownMenuItem disabled>
         <Loader2 size={14} className="animate-spin" />
@@ -663,7 +659,7 @@ function GoogleDriveMenuItem({
     );
   }
 
-  if (connectionPending) {
+  if (connecting) {
     return (
       <GoogleDriveDisabledMenuItem
         kind={syncTarget.disconnected ? "connect" : "upload"}
@@ -707,31 +703,6 @@ function GoogleDriveMenuItem({
   );
 }
 
-function GoogleDriveMenuItems({
-  filename,
-  syncTarget,
-}: {
-  filename: string;
-  syncTarget?: ArtifactDownloadSyncTarget;
-}) {
-  const target = useGoogleWorkspaceTarget(filename);
-  return (
-    <>
-      <GoogleDriveMenuItem
-        filename={filename}
-        {...(syncTarget ? { syncTarget } : {})}
-      />
-      {target && (
-        <GoogleDriveMenuItem
-          filename={filename}
-          {...(syncTarget ? { syncTarget } : {})}
-          original
-        />
-      )}
-    </>
-  );
-}
-
 type ArtifactDownloadMenuProps = {
   align?: "center" | "end" | "start";
   ariaLabel?: string;
@@ -741,6 +712,7 @@ type ArtifactDownloadMenuProps = {
   iconSize?: number;
   showGoogleDriveAction?: boolean;
   syncTarget?: ArtifactDownloadSyncTarget;
+  surface?: "dialog" | "page";
   url: string;
 };
 
@@ -753,6 +725,7 @@ export function ArtifactDownloadMenu({
   iconSize = 16,
   showGoogleDriveAction = true,
   syncTarget,
+  surface = "page",
   url: sourceUrl,
 }: ArtifactDownloadMenuProps) {
   const { t } = useTranslation();
@@ -765,6 +738,12 @@ export function ArtifactDownloadMenu({
   const [downloadLoadable, downloadAttachment] =
     useLoadableSet(downloadAttachment$);
   const pageSignal = useGet(pageSignal$);
+  const lightbox = useGet(lightboxUrl$);
+  const actionSignal =
+    surface === "dialog" ? lightbox?.ownerSignal : pageSignal;
+  const workspaceTarget = useGoogleWorkspaceTarget(filename);
+  const primaryDriveAction = useGoogleDriveMenuAction(syncTarget, surface);
+  const originalDriveAction = useGoogleDriveMenuAction(syncTarget, surface);
   const downloadPending = downloadLoadable.state === "loading";
   const downloadName = artifactDownloadFilename(artifactKind, filename, url);
   return (
@@ -796,8 +775,11 @@ export function ArtifactDownloadMenu({
       <DropdownMenuContent align={align} sideOffset={6} className="w-56">
         <DropdownMenuItem
           onClick={() => {
+            if (!actionSignal) {
+              return;
+            }
             detach(
-              downloadAttachment({ filename: downloadName, url }, pageSignal),
+              downloadAttachment({ filename: downloadName, url }, actionSignal),
               Reason.DomCallback,
               "artifact download",
             );
@@ -809,7 +791,24 @@ export function ArtifactDownloadMenu({
           })}
         </DropdownMenuItem>
         {showGoogleDriveAction && (
-          <GoogleDriveMenuItems filename={filename} syncTarget={syncTarget} />
+          <>
+            <GoogleDriveMenuItem
+              syncTarget={syncTarget}
+              target={workspaceTarget}
+              syncing={primaryDriveAction.syncing}
+              connecting={primaryDriveAction.connecting}
+              onSyncOrConnect={primaryDriveAction.syncOrConnect}
+            />
+            {workspaceTarget && (
+              <GoogleDriveMenuItem
+                syncTarget={syncTarget}
+                original
+                syncing={originalDriveAction.syncing}
+                connecting={originalDriveAction.connecting}
+                onSyncOrConnect={originalDriveAction.syncOrConnect}
+              />
+            )}
+          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>

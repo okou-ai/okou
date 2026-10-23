@@ -1,5 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { withConnectorConnectionProgress } from "../../connector-connection-progress.ts";
 import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorResponse,
@@ -272,7 +271,7 @@ const finishConnectorAccountConnectionCommand$ = command(
 );
 
 export const finishConnectorAccountConnection$ =
-  withConnectorConnectionProgress(finishConnectorAccountConnectionCommand$);
+  finishConnectorAccountConnectionCommand$;
 
 interface ConnectorAccountRenameDraft {
   readonly phase: "closing-menu" | "editing";

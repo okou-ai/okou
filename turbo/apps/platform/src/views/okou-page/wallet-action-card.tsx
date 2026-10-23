@@ -1,3 +1,4 @@
+import { useLoadableSet } from "ccstate-react/experimental";
 import { Button, buttonVariants, cn } from "@okouai/ui";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { ArrowUpRight, Check, Loader2, Wallet } from "lucide-react";
@@ -98,8 +99,7 @@ function WalletConnectCard({
         : null;
   const continued = useGet(connect.continued$);
   const pageSignal = useGet(pageSignal$);
-  const continuation = useLoadable(connect.operation$);
-  const start = useSet(connect.start$);
+  const [continuation, start] = useLoadableSet(connect.start$);
   const busy = continuation.state === "loading";
   const title = t(($) => {
     return $.chat.walletAction.connectTitle;

@@ -1,4 +1,4 @@
-import { useLoadable, useGet, useSet, useLastLoadable } from "ccstate-react";
+import { useGet, useSet, useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Button } from "@okouai/ui";
 import {
@@ -9,7 +9,6 @@ import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import {
   type ConnectorConnectSuccess,
-  builtinConnectOperation$,
   justConnectedBuiltinSlugs$,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -227,7 +226,6 @@ function DirectedAuthorizeConnectModal({
 
 function useDirectedAuthorizeCardState() {
   const params = useDirectedAuthorizeParams();
-  const connectOperation = useLoadable(builtinConnectOperation$);
   const [authorizeLoadable, authorize] = useLoadableSet(
     authorizeDirectedConnector$,
   );
@@ -249,7 +247,6 @@ function useDirectedAuthorizeCardState() {
     modalKey?.signal === signal;
   return {
     params,
-    connectOperation,
     authorizeLoadable,
     authorize,
     completeAuthorization,
@@ -300,7 +297,6 @@ function DirectedAuthorizeCard() {
   const { t } = useTranslation();
   const {
     params,
-    connectOperation,
     authorizeLoadable,
     authorize,
     completeAuthorization,
@@ -325,9 +321,7 @@ function DirectedAuthorizeCard() {
     return null;
   }
   const { connectorSlug, agentId } = params;
-  const isConnecting =
-    connectOperation.state === "loading" ||
-    authorizeLoadable.state === "loading";
+  const isConnecting = authorizeLoadable.state === "loading";
   const canAuthorize =
     isConnected || (item ? item.authMethods.length > 0 : false);
   const completedAuthorization =

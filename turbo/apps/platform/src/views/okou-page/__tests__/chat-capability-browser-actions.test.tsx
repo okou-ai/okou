@@ -1307,6 +1307,7 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
     ({ body, respond }) => {
       expect(body).toStrictEqual({
         key: "document",
+        uploadId: expect.any(String),
         index: 0,
         size: 4,
       });
@@ -1324,6 +1325,7 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
       {
         key: "document",
         operation: "replace",
+        uploadId: expect.any(String),
         observedFingerprint: fingerprint,
         files: [
           {
@@ -1389,13 +1391,15 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
   expect(window.location.href).toBe(currentUrl);
 });
 
-test("Reopening an inline Browser file submission preserves the original bytes and metadata", async () => {
+test("Reopening an inline Browser file submission keeps each submission’s bytes and metadata isolated", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   const fingerprint = "a".repeat(64);
   const applyStarted = context.mocks.deferred<void>();
+  const overlappingApply = context.mocks.deferred<void>();
+  let applyClaimed = false;
   const releaseApply = context.mocks.deferred<void>();
   const materializedFiles: { metadata: unknown; bytes: string }[] = [];
-  let storedBytes = "";
+  const storedBytes = new Map<string, string>();
   const uploadUrl = "https://uploads.example.test/reopened-browser-file";
   const fileAction = () => {
     return {
@@ -1430,21 +1434,32 @@ test("Reopening an inline Browser file submission preserves the original bytes a
   });
   context.mocks.api(
     browserUserActionsContract.prepareFileUpload,
-    ({ respond }) => {
-      // Production staging is keyed by request, field and index, not filename.
-      // Both same-sized selections therefore receive the same object URL.
-      return respond(200, { uploadUrl });
+    ({ body, respond }) => {
+      return respond(200, { uploadUrl: `${uploadUrl}/${body.uploadId}` });
     },
   );
-  context.mocks.http.put(uploadUrl, async ({ request }) => {
-    storedBytes = await request.text();
-    return new HttpResponse(null, { status: 200 });
-  });
+  context.mocks.http.put(
+    `${uploadUrl}/:uploadId`,
+    async ({ request, params }) => {
+      storedBytes.set(String(params.uploadId), await request.text());
+      return new HttpResponse(null, { status: 200 });
+    },
+  );
   context.mocks.api(
     browserUserActionsContract.apply,
     async ({ body, respond }) => {
+      if (applyClaimed) {
+        overlappingApply.resolve();
+        return respond(409, {
+          error: {
+            code: "BROWSER_USER_ACTION_CONFLICT",
+            message: "Browser input has already been claimed",
+          },
+        });
+      }
+      applyClaimed = true;
       applyStarted.resolve();
-      // Keep the request pending while the website has not consumed staging.
+      // A stale card may still display pending while the server owns this apply.
       await releaseApply.promise;
       const value = body.values.find((candidate) => {
         return candidate.key === "document";
@@ -1452,7 +1467,10 @@ test("Reopening an inline Browser file submission preserves the original bytes a
       if (!value || !("files" in value)) {
         throw new Error("Missing submitted Document file metadata");
       }
-      materializedFiles.push({ metadata: value.files, bytes: storedBytes });
+      materializedFiles.push({
+        metadata: value.files,
+        bytes: storedBytes.get(value.uploadId ?? "") ?? "",
+      });
       state = "succeeded";
       return respond(200, fileAction());
     },
@@ -1529,10 +1547,9 @@ test("Reopening an inline Browser file submission preserves the original bytes a
     expect(replacementSubmit).toBeEnabled();
   });
   click(replacementSubmit);
-  // A disabled loading control proves the reopened form actually submitted;
-  // merely clicking and immediately releasing apply can miss the race.
+  await overlappingApply.promise;
   await waitFor(() => {
-    expect(buttonsByName("Adding…", reopened)[0]).toBeDisabled();
+    expect(storedBytes.size).toBe(2);
   });
   releaseApply.resolve();
 

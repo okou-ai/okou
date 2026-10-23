@@ -10,7 +10,6 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { pathParams$ } from "../route.ts";
 import { pageVersion$ } from "../page-signal.ts";
-import { NEVER_RESOLVED_PROMISE, resetSignal, settle } from "../utils.ts";
 import type {
   AgentEvent,
   AgentEventsResponse,
@@ -56,7 +55,6 @@ async function fetchAgentEventPage(
   client: AgentEventsClient,
   runId: string,
   cursor: string | undefined,
-  signal: AbortSignal,
 ): Promise<AgentEventsResponse> {
   const result = await accept(
     client.getAgentEvents({
@@ -66,10 +64,8 @@ async function fetchAgentEventPage(
         order: "asc",
         ...(cursor === undefined ? {} : { cursor }),
       },
-      fetchOptions: { signal },
     }),
     [200],
-    signal,
   );
   return result.body;
 }
@@ -77,9 +73,8 @@ async function fetchAgentEventPage(
 async function fetchAgentEventBatch(
   client: AgentEventsClient,
   runId: string,
-  signal: AbortSignal,
 ): Promise<ActivityEvents> {
-  let page = await fetchAgentEventPage(client, runId, undefined, signal);
+  let page = await fetchAgentEventPage(client, runId, undefined);
   const events = [...page.events];
 
   const seenCursors = new Set<string>();
@@ -90,12 +85,7 @@ async function fetchAgentEventBatch(
       throw new Error("Agent event pagination cursor did not advance");
     }
     seenCursors.add(nextCursor);
-    const nextPage = await fetchAgentEventPage(
-      client,
-      runId,
-      nextCursor,
-      signal,
-    );
+    const nextPage = await fetchAgentEventPage(client, runId, nextCursor);
     events.push(...nextPage.events);
     page = nextPage;
   }
@@ -106,88 +96,57 @@ async function fetchAgentEventBatch(
 async function fetchActivityDetail(
   client: ActivityDetailClient,
   runId: string,
-  signal: AbortSignal,
 ): Promise<LogDetail> {
   const result = await accept(
     client.getById({
       params: { id: runId },
-      fetchOptions: { signal },
     }),
     [200],
-    signal,
   );
   return result.body;
 }
 
 const activityData$ = computed((get) => {
   get(pageVersion$);
+  const runId = get(currentRunId$);
+  const reload$ = state(0);
   return {
-    runId: get(currentRunId$),
-    detail$: state<Promise<LogDetail>>(NEVER_RESOLVED_PROMISE),
-    events$: state<Promise<ActivityEvents>>(NEVER_RESOLVED_PROMISE),
-    resetRefresh$: resetSignal(),
+    reload$,
+    detail$: computed(async (get) => {
+      get(reload$);
+      return runId
+        ? await fetchActivityDetail(get(apiClient$)(logsByIdContract), runId)
+        : null;
+    }),
+    events$: computed(async (get) => {
+      get(reload$);
+      return runId
+        ? await fetchAgentEventBatch(
+            get(apiClient$)(runAgentEventsContract),
+            runId,
+          )
+        : null;
+    }),
   };
 });
 
 export const activityEvents$ = computed(async (get) => {
-  const data = get(activityData$);
-  return data.runId ? await get(data.events$) : null;
+  return await get(get(activityData$).events$);
 });
 
-export const setupActivity$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    const data = get(activityData$);
-    const runId = data.runId;
-    if (!runId) {
-      return;
-    }
-
-    const client = get(apiClient$);
-    const detail = fetchActivityDetail(client(logsByIdContract), runId, signal);
-    const events = fetchAgentEventBatch(
-      client(runAgentEventsContract),
-      runId,
-      signal,
-    );
-    set(data.detail$, detail);
-    set(data.events$, events);
-    // The detail request keeps its error for the page's not-found view.
-    await Promise.all([settle(detail), events]);
-    signal.throwIfAborted();
-  },
-);
-
 export const activityDetail$ = computed(async (get) => {
-  const data = get(activityData$);
-  return data.runId ? await get(data.detail$) : null;
+  return await get(get(activityData$).detail$);
 });
 
 export const refreshActivity$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     const data = get(activityData$);
-    const runId = data.runId;
-    if (!runId) {
-      return;
-    }
-    const refreshSignal = set(data.resetRefresh$, signal);
-    const client = get(apiClient$);
-    const detail = fetchActivityDetail(
-      client(logsByIdContract),
-      runId,
-      refreshSignal,
-    );
-    const events = fetchAgentEventBatch(
-      client(runAgentEventsContract),
-      runId,
-      refreshSignal,
-    );
-    await Promise.all([detail, events]);
+    set(data.reload$, (value) => {
+      return value + 1;
+    });
+    await Promise.all([get(data.detail$), get(data.events$)]);
     signal.throwIfAborted();
-    refreshSignal.throwIfAborted();
-    set(data.detail$, detail);
-    set(data.events$, events);
   },
 );
 

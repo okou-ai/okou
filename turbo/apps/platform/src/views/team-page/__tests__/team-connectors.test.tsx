@@ -261,7 +261,7 @@ async function openAgentConnectorIsolationStory() {
   return { customSaves };
 }
 
-test("A failed built-in connector toggle rolls back its draft and can be retried", async () => {
+test("A failed built-in connector toggle preserves authoritative access and can be retried", async () => {
   const saveStarted = context.mocks.deferred<void>();
   const saveResult = context.mocks.deferred<void>();
   let failSave = true;
@@ -302,11 +302,11 @@ test("A failed built-in connector toggle rolls back its draft and can be retried
   click(connectorAccessSwitch("Grant GitHub access"));
   await saveStarted.promise;
   await waitFor(() => {
-    expect(connectorAccessSwitch("Revoke GitHub access")).toHaveAttribute(
+    expect(connectorAccessSwitch("Grant GitHub access")).toHaveAttribute(
       "aria-disabled",
       "true",
     );
-    expect(connectorAccessSwitch("Grant Slack access")).toHaveAttribute(
+    expect(connectorAccessSwitch("Grant Slack access")).not.toHaveAttribute(
       "aria-disabled",
       "true",
     );

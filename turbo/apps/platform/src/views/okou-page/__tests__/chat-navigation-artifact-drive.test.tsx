@@ -22,7 +22,7 @@ import {
   userBuiltinConnectorsContract,
   type UserBuiltinConnectorUpdate,
 } from "@okouai/api-contracts/contracts/user-connectors";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test, describe, it } from "vitest";
@@ -926,10 +926,21 @@ test("Keep a reopened artifact usable after cancelling the remaining Drive setup
     ).not.toHaveAttribute("aria-disabled", "true");
   });
   click(roleItemNamed("menuitem", "Connect Google Drive"));
-  await expect(within(preview).findByRole("status")).resolves.toBeVisible();
   await waitFor(() => {
     expect(popup.location.href).toBe(AUTHORIZATION_URL);
+    expect(buttonNamed("Download options", preview)).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
   });
+  click(buttonNamed("Download options", preview));
+  await waitFor(() => {
+    expect(roleItemNamed("menuitem", "Connect Google Drive")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+  await userEvent.setup().keyboard("{Escape}");
   drive.completeAuthorization();
   await syncing.promise;
   click(buttonNamed("Close", preview));
@@ -944,7 +955,6 @@ test("Keep a reopened artifact usable after cancelling the remaining Drive setup
   await waitFor(() => {
     expect(buttonNamed("Download options", reopened)).toBeEnabled();
   });
-  expect(within(reopened).queryByRole("status")).toBeNull();
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
   expect(popup.window.closed).toBeTruthy();
   click(buttonNamed("Download options", reopened));
@@ -998,11 +1008,26 @@ test.each([
       ).not.toHaveAttribute("aria-disabled", "true");
     });
     await user.click(roleItemNamed("menuitem", "Connect Google Drive"));
-    await expect(
-      within(preview).findByRole("status"),
-    ).resolves.toHaveTextContent(
-      "Please wait while we finish setting up your connection.",
-    );
+    await waitFor(() => {
+      expect(buttonNamed("Download options", preview)).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+    });
+    await user.click(buttonNamed("Download options", preview));
+    await waitFor(() => {
+      expect(roleItemNamed("menuitem", "Connect Google Drive")).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    });
+    await user.click(buttonNamed("Download options", preview));
+    await waitFor(() => {
+      expect(buttonNamed("Download options", preview)).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+    });
     expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
     expect(buttonNamed("Close", preview)).toBeEnabled();
     await waitFor(() => {
@@ -1022,7 +1047,7 @@ test.each([
         await user.click(viewport);
       }
     }
-    const cancelled = dismiss === "Close" || dismiss === "Escape";
+    const cancelled = dismiss !== null;
     await waitFor(() => {
       expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
         cancelled ? 0 : 1,
@@ -1038,15 +1063,33 @@ test.each([
     }
     await syncing.promise;
     expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    expect(
-      screen.queryAllByText(
-        /Please wait while we finish setting up your connection/,
-      ),
-    ).toHaveLength(1);
+    await user.click(buttonNamed("Download options", preview));
+    await waitFor(() => {
+      expect(roleItemNamed("menuitem", "Syncing artifact...")).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    });
     sync.resolve();
     await expect(
       screen.findByText("Synced to Google Drive"),
-    ).resolves.toBeVisible();
+    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        roleItemNamed("menuitem", "Upload to Google Drive"),
+      ).not.toHaveAttribute("aria-disabled", "true");
+    });
+    expect(drive.syncRequests).toStrictEqual([
+      {
+        artifactId: DRIVE_ARTIFACT_ID,
+        agentId: NAVIGATION_ARTIFACT_AGENT_ID,
+        connectionId:
+          state === "not-connected"
+            ? NEW_DRIVE_CONNECTION_ID
+            : SELECTED_DRIVE_CONNECTION_ID,
+        mode: "original",
+      },
+    ]);
     await waitFor(() => {
       expect(
         queryAllByRoleFast("button").filter((button) => {
@@ -1055,11 +1098,10 @@ test.each([
       ).toHaveLength(1);
     });
     expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    expect(
-      screen.queryByText(
-        /Please wait while we finish setting up your connection/,
-      ),
-    ).toBeNull();
+    expect(roleItemNamed("menuitem", "Download")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   },
 );
 
@@ -1255,9 +1297,7 @@ describe("google editor conversion", () => {
           },
         ]);
       });
-      await expect(
-        screen.findByText("Synced to Google Drive"),
-      ).resolves.toBeInTheDocument();
+      await screen.findAllByText("Synced to Google Drive");
       await waitFor(() => {
         expect(
           buttonNamed("Download artifact", artifactPreview()),

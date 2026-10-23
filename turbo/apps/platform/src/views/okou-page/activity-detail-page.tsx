@@ -22,6 +22,7 @@ import {
   TooltipTrigger,
   buttonVariants,
   cn,
+  LoadErrorRow,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import {
@@ -35,6 +36,7 @@ import {
   getFrameworkDisplayName,
   isSupportedFramework,
 } from "@okouai/core/frameworks";
+import { ApiError } from "../../lib/api-error.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { fetchDownloadExtra$ } from "../../signals/activity-page/activity-download.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -1132,7 +1134,12 @@ export function ActivityDetailPage() {
 
   if (!detail || isStale) {
     if (detailLoadable.state === "hasError") {
-      return <ActivityNotFound />;
+      return detailLoadable.error instanceof ApiError &&
+        detailLoadable.error.status === 404 ? (
+        <ActivityNotFound />
+      ) : (
+        <ActivityLoadError />
+      );
     }
     return <ActivitySkeleton />;
   }
@@ -1143,6 +1150,27 @@ export function ActivityDetailPage() {
       displayName={displayName}
       events={events}
       features={features}
+    />
+  );
+}
+
+function ActivityLoadError() {
+  const { t } = useTranslation("common");
+  const [refresh, retry] = useLoadableSet(refreshActivity$);
+  const signal = useGet(pageSignal$);
+  return (
+    <LoadErrorRow
+      message={t(($) => {
+        return $.global.errors.requestFailed;
+      })}
+      retryLabel={t(($) => {
+        return $.global.actions.tryAgain;
+      })}
+      onRetry={() => {
+        if (refresh.state !== "loading") {
+          detach(retry(signal), Reason.DomCallback);
+        }
+      }}
     />
   );
 }

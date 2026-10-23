@@ -583,11 +583,8 @@ test("Leave an agent unauthorized when OAuth progress is closed", async () => {
     );
   });
   await expect(screen.findByText("Connecting...")).resolves.toBeVisible();
-  const progress = screen.getByRole("dialog", {
-    name: "Connecting your account",
-  });
-
-  click(within(progress).getByLabelText("Close"));
+  // Closing the provider window cancels the owning authorization attempt.
+  authWindow.close();
   expect(authWindow.closed).toBeTruthy();
 
   await screen.findByText("Authorize Okou");

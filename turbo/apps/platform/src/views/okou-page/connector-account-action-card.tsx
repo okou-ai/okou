@@ -1,3 +1,4 @@
+import { useLoadableSet } from "ccstate-react/experimental";
 import {
   connectorAccountEffectiveLabel,
   connectorAccountExternalIdentity,
@@ -8,9 +9,10 @@ import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { AlertCircle, Check, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import type {
-  ConnectorAccountActionSignals,
-  ConnectorAccountActionStatus,
+import {
+  ConnectorAccountActionError,
+  type ConnectorAccountActionSignals,
+  type ConnectorAccountActionStatus,
 } from "../../signals/chat-page/connector-account-action-block.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -190,9 +192,8 @@ function ReadyConnectorAccountActionCard({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const operation = useLoadable(signals.operation$);
+  const [operation, confirm] = useLoadableSet(signals.confirm$);
   const connectorLoadable = useLastLoadable(signals.connector$);
-  const confirm = useSet(signals.confirm$);
   const selected = status.selected;
   const switching = operation.state === "loading";
   const switchFailed = operation.state === "hasError";
@@ -275,7 +276,16 @@ function ReadyConnectorAccountActionCard({
           className="w-full shrink-0 @[640px]:w-auto"
           disabled={switching}
           onClick={() => {
-            detach(confirm(pageSignal), Reason.DomCallback);
+            detach(
+              confirm(
+                operation.state === "hasError" &&
+                  operation.error instanceof ConnectorAccountActionError
+                  ? { type: "retry", callbackIds: operation.error.callbackIds }
+                  : { type: "select" },
+                pageSignal,
+              ),
+              Reason.DomCallback,
+            );
           }}
         >
           {switching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

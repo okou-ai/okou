@@ -12,10 +12,9 @@ import { i18n } from "../../../i18n/index.ts";
 import { thirdPartySubscriptions$ } from "../../external/third-party-subscriptions.ts";
 
 // ---------------------------------------------------------------------------
-// Action promise (loading state)
+// Account dialogs
 // ---------------------------------------------------------------------------
 
-const internalPersonalActionPromise$ = state<Promise<unknown> | null>(null);
 const internalSettingsCodexResetDialog$ = state({
   open: false,
   resetCredits: null as number | null,
@@ -32,10 +31,6 @@ interface PersonalAccountDisconnectDialogState {
 
 const internalPersonalAccountDisconnectDialog$ =
   state<PersonalAccountDisconnectDialogState | null>(null);
-
-export const personalActionPromise$ = computed((get) => {
-  return get(internalPersonalActionPromise$);
-});
 
 export const settingsCodexResetDialog$ = computed((get) => {
   return get(internalSettingsCodexResetDialog$);
@@ -90,91 +85,66 @@ export const personalConfiguredProviders$ = computed(async (get) => {
 
 export const activatePersonalOAuthCredentialAccount$ = command(
   async ({ set }, id: string, signal: AbortSignal) => {
-    const promise = (async () => {
-      await set(activatePersonalModelProviderAccount$, id, signal);
-      signal.throwIfAborted();
-      toast.success(
-        i18n.t(($) => {
-          return $.settings.models.toasts.accountSwitched;
-        }),
-      );
-    })();
-    set(internalPersonalActionPromise$, promise);
-    signal.addEventListener("abort", () => {
-      set(internalPersonalActionPromise$, null);
-    });
-    await promise;
+    await set(activatePersonalModelProviderAccount$, id, signal);
+    signal.throwIfAborted();
+    toast.success(
+      i18n.t(($) => {
+        return $.settings.models.toasts.accountSwitched;
+      }),
+    );
     signal.throwIfAborted();
   },
 );
 
 export const deletePersonalOAuthCredentialAccount$ = command(
   async ({ set }, id: string, signal: AbortSignal) => {
-    const promise = (async () => {
-      await set(deletePersonalModelProviderAccount$, id, signal);
-      signal.throwIfAborted();
-      toast.success(
-        i18n.t(($) => {
-          return $.settings.models.toasts.accountDisconnected;
-        }),
-      );
-    })();
-    set(internalPersonalActionPromise$, promise);
-    signal.addEventListener("abort", () => {
-      set(internalPersonalActionPromise$, null);
-    });
-    await promise;
+    await set(deletePersonalModelProviderAccount$, id, signal);
+    signal.throwIfAborted();
+    toast.success(
+      i18n.t(($) => {
+        return $.settings.models.toasts.accountDisconnected;
+      }),
+    );
     signal.throwIfAborted();
   },
 );
 
 const runPersonalCodexSubscriptionUsageReset$ = command(
   async (
-    { set },
+    _context,
     request: () => Promise<ResetPersonalModelProviderSubscriptionUsageResponse>,
     signal: AbortSignal,
   ) => {
-    const promise = (async () => {
-      const result = await request();
-      signal.throwIfAborted();
-
-      switch (result.outcome) {
-        case "reset":
-        case "alreadyRedeemed": {
-          toast.success(
-            i18n.t(($) => {
-              return $.settings.models.toasts.reset;
-            }),
-          );
-          break;
-        }
-        case "nothingToReset": {
-          toast.info(
-            i18n.t(($) => {
-              return $.settings.models.toasts.resetUnneeded;
-            }),
-          );
-          break;
-        }
-        case "noCredit": {
-          toast.error(
-            i18n.t(($) => {
-              return $.settings.models.toasts.resetUnavailable;
-            }),
-          );
-          break;
-        }
-      }
-      return result;
-    })();
-
-    set(internalPersonalActionPromise$, promise);
-    signal.addEventListener("abort", () => {
-      set(internalPersonalActionPromise$, null);
-    });
-
-    const result = await promise;
+    const result = await request();
     signal.throwIfAborted();
+
+    switch (result.outcome) {
+      case "reset":
+      case "alreadyRedeemed": {
+        toast.success(
+          i18n.t(($) => {
+            return $.settings.models.toasts.reset;
+          }),
+        );
+        break;
+      }
+      case "nothingToReset": {
+        toast.info(
+          i18n.t(($) => {
+            return $.settings.models.toasts.resetUnneeded;
+          }),
+        );
+        break;
+      }
+      case "noCredit": {
+        toast.error(
+          i18n.t(($) => {
+            return $.settings.models.toasts.resetUnavailable;
+          }),
+        );
+        break;
+      }
+    }
     return result;
   },
 );
@@ -202,16 +172,12 @@ export const confirmSettingsCodexUsageReset$ = command(
     if (!accountId) {
       return;
     }
-    const promise = (async () => {
-      await set(resetPersonalCodexAccountSubscriptionUsage$, accountId, signal);
-      await get(personalConfiguredProviders$);
-      signal.throwIfAborted();
-      if (get(settingsCodexResetDialog$) === dialog) {
-        set(setSettingsCodexResetDialog$, { ...dialog, open: false });
-      }
-    })();
-    set(internalPersonalActionPromise$, promise);
-    await promise;
+    await set(resetPersonalCodexAccountSubscriptionUsage$, accountId, signal);
+    await get(personalConfiguredProviders$);
+    signal.throwIfAborted();
+    if (get(settingsCodexResetDialog$) === dialog) {
+      set(setSettingsCodexResetDialog$, { ...dialog, open: false });
+    }
   },
 );
 

@@ -473,15 +473,12 @@ test("Add an AWS account through external-code authorization", async () => {
   await expect(screen.findByText("AWS connected")).resolves.toBeInTheDocument();
   await details.requested.promise;
   await expect(within(dialog).findByRole("status")).resolves.toHaveTextContent(
-    "Saving permissions...",
+    "Connecting...",
   );
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
   details.ready.resolve();
   const naming = await screen.findByRole("dialog", {
     name: "Name your AWS account",
-  });
-  await waitFor(() => {
-    return expect(screen.queryByText("Connecting your account")).toBeNull();
   });
   click(getConnectorAction("button", "Skip", naming));
 
@@ -815,20 +812,17 @@ test("Connect through device authorization", async () => {
   approval.resolve();
   await permissionsStarted.promise;
   expect(within(approvalDialog).getByRole("status")).toHaveTextContent(
-    "Checking for approval...",
+    "Waiting for approval. Keep this dialog open.",
   );
   permissions.resolve();
   await details.requested.promise;
   await expect(within(dialog).findByRole("status")).resolves.toHaveTextContent(
-    "Saving permissions...",
+    "Connecting...",
   );
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
   details.ready.resolve();
   const naming = await screen.findByRole("dialog", {
     name: "Name your Base44 account",
-  });
-  await waitFor(() => {
-    return expect(screen.queryByText("Connecting your account")).toBeNull();
   });
   click(getConnectorAction("button", "Skip", naming));
   await waitFor(() => {

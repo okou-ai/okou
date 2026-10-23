@@ -108,8 +108,7 @@ import {
   focusPermSearchRef$,
   permSearchActive$,
   setPermSearchActive$,
-  permissionToggleActions$,
-  type PermissionToggleActions,
+  toggleAgentPermissionConnector$,
 } from "../../signals/okou-page/job-detail-page.ts";
 import type { FirewallPolicies } from "@okouai/connectors/firewall-contracts";
 import type {
@@ -488,56 +487,56 @@ interface ConnectedPermissionConnector extends PermissionConnectorCardItem {
 }
 
 function ConnectedPermissionConnectorRow({
-  toggleActions,
   connector,
   enabled,
-  disabled,
   canManagePermissions,
   onManage,
   isLast,
 }: {
-  toggleActions: PermissionToggleActions;
   connector: ConnectedPermissionConnector;
   enabled: boolean;
-  disabled: boolean;
   canManagePermissions: boolean;
   onManage: (connectorSlug: ConnectorSlug) => void;
   isLast: boolean;
 }) {
+  const { t } = useTranslation("agents");
   const pageSignal = useGet(pageSignal$);
   const [toggleLoadable, toggleConnector] = useLoadableSet(
-    toggleActions.toggle$,
+    toggleAgentPermissionConnector$,
   );
-  const canToggleConnector = useSet(toggleActions.canToggle$);
+  const error = loadableErrorMessage(
+    toggleLoadable,
+    t(($) => {
+      return $.errors.unknown;
+    }),
+  );
   return (
-    <ConnectorCard
-      variant="permission"
-      connector={connector}
-      enabled={enabled}
-      disabled={disabled}
-      onToggle={onDomEventFn(async (checked) => {
-        // Do not reset this row's loadable for an ignored same-tick click.
-        if (!canToggleConnector()) {
-          return;
-        }
-        const request = toggleConnector(connector.slug, checked, pageSignal);
-        if (!request) {
-          return;
-        }
-        await request;
-      })}
-      loading={toggleLoadable.state === "loading"}
-      showManage={canManagePermissions && connector.hasPermissions}
-      onManage={() => {
-        return onManage(connector.slug);
-      }}
-      isLast={isLast}
-    />
+    <>
+      <ConnectorCard
+        variant="permission"
+        connector={connector}
+        enabled={enabled}
+        disabled={toggleLoadable.state === "loading"}
+        onToggle={onDomEventFn(async (checked) => {
+          await toggleConnector(connector.slug, checked, pageSignal);
+        })}
+        loading={toggleLoadable.state === "loading"}
+        showManage={canManagePermissions && connector.hasPermissions}
+        onManage={() => {
+          return onManage(connector.slug);
+        }}
+        isLast={isLast}
+      />
+      {error && (
+        <p role="alert" className="px-5 pb-3 text-sm text-destructive">
+          {error}
+        </p>
+      )}
+    </>
   );
 }
 
 function ConnectedConnectorPermissions({
-  toggleActions,
   status,
   filteredConnectors,
   authorizedSet,
@@ -545,11 +544,9 @@ function ConnectedConnectorPermissions({
   setSearch,
   searchActive,
   setSearchActive,
-  toggleBusy,
   canManagePermissions,
   onManage,
 }: {
-  toggleActions: PermissionToggleActions;
   status: ReactNode;
   filteredConnectors: readonly ConnectedPermissionConnector[];
   authorizedSet: ReadonlySet<string>;
@@ -557,7 +554,6 @@ function ConnectedConnectorPermissions({
   setSearch: (value: string) => void;
   searchActive: boolean;
   setSearchActive: (active: boolean) => void;
-  toggleBusy: boolean;
   canManagePermissions: boolean;
   onManage: (connectorSlug: ConnectorSlug) => void;
 }) {
@@ -641,10 +637,8 @@ function ConnectedConnectorPermissions({
               return (
                 <ConnectedPermissionConnectorRow
                   key={c.slug}
-                  toggleActions={toggleActions}
                   connector={c}
                   enabled={authorizedSet.has(c.slug)}
-                  disabled={toggleBusy}
                   canManagePermissions={canManagePermissions}
                   onManage={onManage}
                   isLast={i === filteredConnectors.length - 1}
@@ -743,8 +737,6 @@ function JobPermissionsTab({
   const connectorsLoadable = useLastLoadable(agentAuthorizedConnectors$);
   const authorizedConnectors =
     connectorsLoadable.state === "hasData" ? connectorsLoadable.data : [];
-  const toggleActions = useGet(permissionToggleActions$);
-  const toggleLoadable = useLoadable(toggleActions.request$);
   const pageSignal = useGet(pageSignal$);
   const userGrantsLoadable = useLoadable(currentAgentUserPermissionGrants$);
   const userGrants =
@@ -762,12 +754,6 @@ function JobPermissionsTab({
   const setSearch = useSet(setPermSearch$);
   const searchActive = useGet(permSearchActive$);
   const setSearchActive = useSet(setPermSearchActive$);
-  const toggleError = loadableErrorMessage(
-    toggleLoadable,
-    t(($) => {
-      return $.errors.unknown;
-    }),
-  );
 
   const connectorsLoading = connectorsLoadable.state === "loading";
 
@@ -806,11 +792,6 @@ function JobPermissionsTab({
 
   return (
     <div className="mx-auto w-full max-w-[900px] flex flex-col gap-4">
-      {toggleError && (
-        <p role="alert" className="text-sm text-destructive">
-          {toggleError}
-        </p>
-      )}
       {connectedConnectors.length === 0 ? (
         overviewLoadable.state === "hasData" &&
         overviewLoadable.data.customConnectors.length > 0 ? (
@@ -822,7 +803,6 @@ function JobPermissionsTab({
         <>
           <ConnectedConnectorPermissions
             key={agentId}
-            toggleActions={toggleActions}
             status={status}
             filteredConnectors={filteredConnectors}
             authorizedSet={authorizedSet}
@@ -830,7 +810,6 @@ function JobPermissionsTab({
             setSearch={setSearch}
             searchActive={searchActive}
             setSearchActive={setSearchActive}
-            toggleBusy={toggleLoadable.state === "loading"}
             canManagePermissions={canManagePermissions}
             onManage={setConnectorSlug}
           />

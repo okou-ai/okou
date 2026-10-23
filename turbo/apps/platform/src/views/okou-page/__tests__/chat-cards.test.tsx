@@ -6,7 +6,10 @@ import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connec
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
-import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatEventsContract,
+  chatThreadConnectorSelectionContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
 
 import {
@@ -874,14 +877,24 @@ test("A reconnect completion for another account never continues the chat", asyn
 test("Closing an in-flight reconnect dialog never continues after a late success", async () => {
   const complete = mockExactReconnectAccount("reconnect-required");
   const gate = context.mocks.deferred<void>();
-  let submittedAccount: unknown = null;
+  const requestStarted = context.mocks.deferred<{
+    account: unknown;
+    signal: AbortSignal;
+  }>();
+  const serverCompleted = context.mocks.deferred<void>();
   let continuationPrompt: string | null = null;
-  mockManualReconnect(
-    (account) => {
-      submittedAccount = account;
+  context.mocks.api(
+    builtinConnectorManualGrantContract.connect,
+    async ({ params, body, request, respond }) => {
+      expect(params.connectorSlug).toBe("github");
+      expect(body.authMethod).toBe("api-token");
+      requestStarted.resolve({ account: body.account, signal: request.signal });
+      // The server can still complete after the client cancels its request.
+      await gate.promise;
+      complete();
+      serverCompleted.resolve();
+      return respond(200, { connectionId: EXACT_CONNECTION_ID });
     },
-    complete,
-    { completion: gate.promise },
   );
   await setupChat(exactReconnectUrl().toString(), (prompt) => {
     continuationPrompt = prompt;
@@ -898,8 +911,9 @@ test("Closing an in-flight reconnect dialog never continues after a late success
   );
   const save = buttonIn(dialog, "Save");
   click(save);
+  const request = await requestStarted.promise;
   await waitFor(() => {
-    expect(submittedAccount).toStrictEqual({
+    expect(request.account).toStrictEqual({
       intent: "reconnect",
       connectionId: EXACT_CONNECTION_ID,
     });
@@ -908,10 +922,12 @@ test("Closing an in-flight reconnect dialog never continues after a late success
   click(buttonIn(dialog, "Close"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(request.signal.aborted).toBeTruthy();
   });
 
   gate.resolve();
-  await screen.findByText("GitHub connected successfully");
+  await serverCompleted.promise;
+  expect(screen.queryByText("GitHub connected successfully")).toBeNull();
   expect(continuationPrompt).toBeNull();
 });
 
@@ -1154,7 +1170,7 @@ test("Retrying an exact reconnect card reloads unavailable catalog data", async 
   expect(card).toHaveTextContent("Reconnect");
 });
 
-test("A connector account switch shows its connector icon from that connector's catalog entry", async () => {
+test("A connector account switch keeps its icon and retries its continuation with the same identity", async () => {
   const github = connectorSlugSchema.parse("github");
   const connectionId = "f0000000-0000-4000-a000-000000000901";
   const iconUrl = "https://icons.example.test/account-switch-github.svg";
@@ -1197,9 +1213,25 @@ test("A connector account switch shows its connector icon from that connector's 
       });
     },
   );
+  let selectionWrites = 0;
+  const selection = {
+    target: { kind: "builtin" as const, connectorSlug: github },
+    connectionId,
+  };
   context.mocks.api(chatThreadConnectorSelectionContract.get, ({ respond }) => {
-    return respond(200, { selections: [], selectedConnections: [] });
+    return respond(200, {
+      selections: selectionWrites > 0 ? [selection] : [],
+      selectedConnections: [],
+    });
   });
+  context.mocks.api(
+    chatThreadConnectorSelectionContract.update,
+    ({ body, respond }) => {
+      expect(body).toStrictEqual(selection);
+      selectionWrites += 1;
+      return respond(200, body);
+    },
+  );
   // The slug route also matches the catalog's static paths, so the status
   // route is registered after it to keep answering its own path.
   const itemReads: string[] = [];
@@ -1250,6 +1282,38 @@ test("A connector account switch shows its connector icon from that connector's 
   });
   expect(itemReads).toStrictEqual([github]);
   expect(statusReads).toBe(0);
+
+  const callbackIds: {
+    clientEventId?: string;
+    chatThreadSortEventId?: string;
+  }[] = [];
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    callbackIds.push({
+      clientEventId: body.clientEventId,
+      chatThreadSortEventId: body.chatThreadSortEventId,
+    });
+    return callbackIds.length === 1
+      ? respond(500, {
+          error: { code: "INTERNAL_SERVER_ERROR", message: "Response lost" },
+        })
+      : respond(201, { threadId: THREAD_ID });
+  });
+  click(buttonIn(card, "Switch"));
+  click(
+    await waitFor(() => {
+      return buttonIn(card, "Retry");
+    }),
+  );
+  await waitFor(() => {
+    expect(callbackIds).toHaveLength(2);
+    expect(queryAllByRoleFast("button", card)).toHaveLength(0);
+  });
+  expect(callbackIds[0]).toStrictEqual({
+    clientEventId: expect.any(String),
+    chatThreadSortEventId: expect.any(String),
+  });
+  expect(callbackIds[1]).toStrictEqual(callbackIds[0]);
+  expect(selectionWrites).toBe(1);
 });
 
 test("Ordinary or code links remain message content", async () => {

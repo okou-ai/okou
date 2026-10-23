@@ -67,10 +67,12 @@ return (
 );
 ```
 
-Use `useLoadable` for an existing Promise-backed signal and `useLoadableSet` for
-a command. Observe the **actual operation**, not an unrelated Promise that
-resolves early. If multiple consumers must share one operation, expose that
-same Promise through their owner rather than inventing parallel flags.
+Use `useLoadable` for an async computed resource and `useLoadableSet` in the
+view that invokes a command. The command must await its complete operation and
+reject on failure. Do not store action Promises in signals to distribute
+loading/error state or join repeated clicks. Repeated views own their own action
+feedback; persisted outcomes and protocol idempotency belong to the business
+owner.
 
 For pagination, commit the returned page and next cursor only after success;
 a failed request then needs no cursor rollback. Give caches explicit retention,

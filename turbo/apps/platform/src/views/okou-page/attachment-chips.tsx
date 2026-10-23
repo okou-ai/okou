@@ -44,11 +44,6 @@ import { downloadAttachment$ } from "../../signals/attachment-download.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import {
-  connectorConnectionProgressActive$,
-  registerConnectorConnectionDialog$,
-} from "../../signals/connector-connection-progress.ts";
-import { ConnectorConnectionStatus } from "../components/connector-connection-dialog-body.tsx";
-import {
   currentLeftThread$,
   currentRightThread$,
 } from "../../signals/chat-page/chat-thread-panes.ts";
@@ -1404,6 +1399,7 @@ function ArtifactPreviewDialogActions({
         />
       )}
       <ArtifactDownloadMenu
+        surface="dialog"
         key={`${preview.url}:${artifact?.filename ?? artifactDialogFilename(preview)}`}
         ariaLabel={t(($) => {
           return $.artifacts.actions.downloadOptions;
@@ -1438,12 +1434,9 @@ function ArtifactPreviewDialogHeaderActions({
   artifact: AttachmentArtifactMetadata | undefined;
   preview: AttachmentLightboxState;
 }) {
-  const connectionProgressActive = useGet(connectorConnectionProgressActive$);
   const fullscreen = useGet(lightboxDialogFullscreen$);
 
-  return connectionProgressActive ? (
-    <ArtifactPreviewCloseButton />
-  ) : (
+  return (
     <ArtifactPreviewDialogActions
       artifact={artifact}
       fullscreen={fullscreen}
@@ -1461,14 +1454,9 @@ function ArtifactPreviewDialogBody({
   imageNavigation?: ArtifactImageNavigationActions;
   preview: AttachmentLightboxState;
 }) {
-  const connectionProgressActive = useGet(connectorConnectionProgressActive$);
   const fullscreen = useGet(lightboxDialogFullscreen$);
 
-  return connectionProgressActive ? (
-    <div className="flex h-full items-center justify-center p-6">
-      <ConnectorConnectionStatus />
-    </div>
-  ) : (
+  return (
     <ArtifactPreviewBody
       artifact={artifact}
       fullscreen={fullscreen}
@@ -1489,7 +1477,6 @@ function ArtifactPreviewDialogContent({
   preview: AttachmentLightboxState;
 }) {
   const { t } = useTranslation();
-  const registerConnectionDialog = useSet(registerConnectorConnectionDialog$);
   const filename = artifact?.filename ?? artifactDialogFilename(preview);
   const title = artifact?.title ?? filename;
   const subtitle = artifactDialogKindLabel(preview, artifact);
@@ -1506,7 +1493,6 @@ function ArtifactPreviewDialogContent({
       kind={preview.kind}
     >
       <div
-        ref={registerConnectionDialog}
         className="relative flex min-h-0 flex-1 flex-col overflow-hidden text-foreground"
         data-testid="attachment-lightbox-panel"
       >

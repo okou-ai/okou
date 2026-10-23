@@ -43,6 +43,7 @@ import {
   invalidateCloudflareAccess$,
   retryCloudflareAccess$,
 } from "./cloudflare-access.ts";
+import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
 import {
   createDeferredPromise,
@@ -54,17 +55,10 @@ import {
   withCleanup,
 } from "./utils.ts";
 
-type PrivateKeyFileError = "size" | "read";
-const privateKeyFileRead$ = state<Promise<PrivateKeyFileError | null> | null>(
-  null,
-);
+type PrivateKeyFileError = "size";
 const resetPrivateKeyRead$ = resetSignal();
-export const sshPrivateKeyFileResult$ = computed(async (get) => {
-  return await get(privateKeyFileRead$);
-});
 export const cancelSshPrivateKeyFile$ = command(({ set }) => {
   set(resetPrivateKeyRead$);
-  set(privateKeyFileRead$, null);
 });
 const resetFormSave$ = resetSignal();
 export const mountSshForm$ = onRef(
@@ -89,18 +83,20 @@ export const mountSshPrivateKey$ = onRef(
   }),
 );
 
-const readPrivateKeyFile$ = command(
+export const importSshPrivateKeyFile$ = command(
   async (
     { set },
-    input: HTMLInputElement,
+    input: HTMLInputElement | null,
     parentSignal: AbortSignal,
   ): Promise<PrivateKeyFileError | null> => {
-    const file = input.files?.[0];
-    input.value = "";
-    if (!file) {
+    set(cancelSshPrivateKeyFile$);
+    const file = input?.files?.[0];
+    if (input) {
+      input.value = "";
+    }
+    if (!file || !input) {
       return null;
     }
-    set(cancelSshPrivateKeyFile$);
     const signal = set(resetPrivateKeyRead$, parentSignal);
     signal.throwIfAborted();
     const privateKey = input.form?.elements.namedItem("privateKey");
@@ -111,11 +107,25 @@ const readPrivateKeyFile$ = command(
     if (file.size === 0 || file.size > SSH_PRIVATE_KEY_MAX_LENGTH) {
       return "size";
     }
+    // Keep native form validation active while replacing an optional existing key.
+    privateKey.setCustomValidity(
+      i18n.t(($) => {
+        return $.ssh.fileReading;
+      }),
+    );
+    const clearReadConstraint = () => {
+      return privateKey.setCustomValidity("");
+    };
+    signal.addEventListener("abort", clearReadConstraint, { once: true });
     const aborted = createDeferredPromise<never>(signal);
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const result = await withCleanup(
       settle(Promise.race([file.text(), aborted.promise]), signal),
       () => {
+        signal.removeEventListener("abort", clearReadConstraint);
+        if (!signal.aborted) {
+          clearReadConstraint();
+        }
         if (!aborted.settled()) {
           aborted.reject(new DOMException("File read finished", "AbortError"));
         }
@@ -123,21 +133,13 @@ const readPrivateKeyFile$ = command(
     );
     signal.throwIfAborted();
     if (!result.ok) {
-      return "read";
+      throw result.error;
     }
     if (result.value.length === 0) {
       return "size";
     }
     privateKey.value = result.value;
     return null;
-  },
-);
-export const importSshPrivateKeyFile$ = command(
-  ({ set }, input: HTMLInputElement, signal: AbortSignal) => {
-    // Persist only the non-secret outcome, never the File or decoded key.
-    const result = set(readPrivateKeyFile$, input, signal);
-    set(privateKeyFileRead$, result);
-    return result;
   },
 );
 

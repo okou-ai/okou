@@ -144,7 +144,7 @@ test("a reset link displays exact-account usage and never resets before a click"
   expect(frame()).toBe(originalFrame);
 });
 
-test("repeated cards share the in-flight request and refreshed remaining credits", async () => {
+test("repeated cards submit the same idempotency key and share refreshed remaining credits", async () => {
   let redeemed = false;
   let submissions = 0;
   const gate = context.mocks.deferred<void>();
@@ -184,7 +184,7 @@ test("repeated cards share the in-flight request and refreshed remaining credits
   await waitFor(() => {
     expect(screen.getAllByText("Remaining resets: 2")).toHaveLength(2);
   });
-  expect(submissions).toBe(1);
+  expect(submissions).toBe(2);
   expect(screen.getAllByText("Usage reset successfully.")).toHaveLength(2);
 });
 
@@ -256,7 +256,7 @@ test("the standalone Claude Code page exposes natural recovery without manual-cr
   ).not.toBeInTheDocument();
 });
 
-test("an uncertain last-credit request can be retried only with its original idempotency key", async () => {
+test("an uncertain last-credit request can be retried from another card with its original idempotency key", async () => {
   const keys: string[] = [];
   context.mocks.api(personalSubscriptionsContract.get, ({ respond }) => {
     return respond(
@@ -275,18 +275,29 @@ test("an uncertain last-credit request can be retried only with its original ide
         : respond(200, { outcome: "alreadyRedeemed" });
     },
   );
-  await setupChat(URL);
-  await screen.findByText("Remaining resets: 1");
-  click(button("1 reset"));
-  await screen.findByText("Reset failed. Retry with the same request.");
-  await screen.findByText("Remaining resets: 0");
+  await setupChat(`${URL}\n\nThe same request:\n\n${URL}`);
   await waitFor(() => {
-    expect(button("0 resets")).toBeEnabled();
+    expect(screen.getAllByText("Remaining resets: 1")).toHaveLength(2);
   });
-  click(button("0 resets"));
+  const cards = screen.getAllByTestId("subscription-reset-card");
+  const firstCard = cards[0]!;
+  const retryCard = cards[1]!;
+  click(button("1 reset", firstCard));
+  await screen.findByText("Reset failed. Retry with the same request.");
+  await waitFor(() => {
+    expect(screen.getAllByText("Remaining resets: 0")).toHaveLength(2);
+    expect(button("0 resets", retryCard)).toBeEnabled();
+  });
+  // This card has no failed hook result: retry eligibility belongs to the
+  // request's idempotency history, not the first view's local error.
+  click(button("0 resets", retryCard));
   await expect(
-    screen.findByText("This reset request has already been redeemed."),
+    within(retryCard).findByText(
+      "This reset request has already been redeemed.",
+    ),
   ).resolves.toBeInTheDocument();
+  expect(button("0 resets", firstCard)).toBeDisabled();
+  expect(button("0 resets", retryCard)).toBeDisabled();
   expect(keys).toStrictEqual([REQUEST_ID, REQUEST_ID]);
 });
 

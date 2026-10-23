@@ -197,6 +197,7 @@ const browserUserActionFileValueSchema = z
     key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
     observedFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
     operation: z.enum(["keep", "replace", "clear"]),
+    uploadId: z.uuid().optional(),
     files: z
       .array(
         z
@@ -467,6 +468,7 @@ const requestTokenParamsSchema = z
 const browserFileUploadPrepareSchema = z
   .object({
     key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+    uploadId: z.uuid().optional(),
     index: z
       .number()
       .int()

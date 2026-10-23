@@ -912,13 +912,12 @@ test("A failed rescue keeps the source agent and the completed workflow copy", a
     within(dialog).queryByText("Weekly research copied to Nova"),
   ).not.toBeInTheDocument();
   for (const select of within(dialog).getAllByRole("combobox")) {
-    expect(select).toHaveTextContent("Delete with agent");
+    expect(select).toHaveTextContent("Copy to Nova");
   }
 });
 
 test("Retry unfinished rescues without duplicating completed workflows", async () => {
   const { dialog, allowRetry } = await preparePartialWorkflowRescue();
-  await chooseBothWorkflowCopies(dialog);
   allowRetry();
   click(within(dialog).getByText("Delete agent"));
   await screen.findByText("Agent deleted");
@@ -975,7 +974,7 @@ test("Keep the source agent when its workflow refresh fails after copying", asyn
     expect(within(dialog).getByText("Delete agent")).toBeDisabled();
   });
   expect(within(dialog).getByRole("combobox")).toHaveTextContent(
-    "Delete with agent",
+    "Copy to Nova",
   );
   expect(within(dialog).getByRole("combobox")).toBeDisabled();
   expect(

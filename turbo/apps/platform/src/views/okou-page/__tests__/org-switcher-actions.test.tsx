@@ -107,7 +107,6 @@ test("Leaving the page during workspace creation reconciles the quota without ac
   });
   await navigateToConnectors();
   click(workspaceSwitcher());
-  await screen.findByText("Creating…");
 
   creation.resolve({ id: "org_created_after_navigation" });
 
@@ -143,7 +142,6 @@ test("Failed workspace activation still reconciles the committed creation quota"
     });
   });
   await reopenWorkspaceMenu();
-  await screen.findByText("Creating…");
 
   activation.reject(new Error("Clerk organization activation failed"));
 
@@ -201,7 +199,6 @@ test("Leaving the page during invitation acceptance removes the committed invita
   await navigateToConnectors();
   click(workspaceSwitcher());
   await screen.findByText("Invited Org");
-  await expect(screen.findByText("Joining…")).resolves.toBeDisabled();
 
   acceptance.resolve();
 

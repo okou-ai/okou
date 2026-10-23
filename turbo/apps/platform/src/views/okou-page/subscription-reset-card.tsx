@@ -1,3 +1,4 @@
+import { useLoadableSet } from "ccstate-react/experimental";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import {
   Badge,
@@ -12,7 +13,6 @@ import {
   useGet,
   useLastLoadable,
   useLoadable,
-  useSet,
   type Loadable,
 } from "ccstate-react";
 import { Loader2 } from "lucide-react";
@@ -60,7 +60,8 @@ function resetSupported(account: ModelProviderResponse | null): boolean {
 
 function useResetNotice(
   account: ModelProviderResponse | null,
-  operation: Loadable<ResetOutcome | undefined>,
+  operation: Loadable<ResetOutcome> | { readonly state: "idle" },
+  terminalOutcome: ResetOutcome | null,
   readFailed: boolean,
   unavailable: boolean,
 ): string | null {
@@ -90,17 +91,20 @@ function useResetNotice(
       return $.chat.subscriptionReset.reconnect;
     });
   }
-  if (operation.state === "hasError") {
+  if (terminalOutcome === null && operation.state === "hasError") {
     return t(($) => {
       return $.chat.subscriptionReset.error;
     });
   }
-  if (operation.state === "loading") {
+  if (terminalOutcome === null && operation.state === "loading") {
     return t(($) => {
       return $.chat.subscriptionReset.resetting;
     });
   }
-  switch (operation.data) {
+  const outcome =
+    terminalOutcome ??
+    (operation.state === "hasData" ? operation.data : undefined);
+  switch (outcome) {
     case "reset": {
       return t(($) => {
         return $.chat.subscriptionReset.reset;
@@ -138,7 +142,10 @@ function SubscriptionResetCardContent({
 }) {
   const loadable = useLoadable(signals.status$);
   const last = useLastLoadable(signals.status$);
-  const operation = useLoadable(signals.operation$);
+  const [operation, confirm] = useLoadableSet(signals.confirm$);
+  const requestAttempted = useGet(signals.requestAttempted$);
+  const terminalOutcome = useGet(signals.terminalOutcome$);
+  const pageSignal = useGet(pageSignal$);
   const status =
     loadable.state === "hasData"
       ? loadable.data
@@ -151,6 +158,7 @@ function SubscriptionResetCardContent({
   const notice = useResetNotice(
     account,
     operation,
+    terminalOutcome,
     readFailed,
     status?.kind === "unavailable",
   );
@@ -167,11 +175,18 @@ function SubscriptionResetCardContent({
           loading={refreshing && !account}
         />
         <SubscriptionResetControls
-          signals={signals}
           account={account}
-          operation={operation}
-          refreshing={refreshing}
-          readFailed={readFailed}
+          pending={operation.state === "loading"}
+          disabled={resetActionDisabled(
+            account,
+            operation,
+            requestAttempted,
+            terminalOutcome,
+            refreshing || readFailed,
+          )}
+          onConfirm={() => {
+            detach(confirm(pageSignal), Reason.DomCallback);
+          }}
           notice={notice}
         />
       </div>
@@ -306,18 +321,21 @@ function SubscriptionResetIdentityContent({
 
 function resetActionDisabled(
   account: ModelProviderResponse | null,
-  operation: Loadable<ResetOutcome | undefined>,
+  operation: Loadable<ResetOutcome> | { readonly state: "idle" },
+  requestAttempted: boolean,
+  terminalOutcome: ResetOutcome | null,
   readUnavailable: boolean,
 ): boolean {
   const terminal =
     operation.state === "loading" ||
-    (operation.state === "hasData" && operation.data !== undefined);
+    operation.state === "hasData" ||
+    terminalOutcome !== null;
   const credits = account?.subscriptionResetCredits;
   return (
     terminal ||
     readUnavailable ||
     account?.needsReconnect === true ||
-    (operation.state !== "hasError" && !(credits && credits > 0))
+    (!requestAttempted && !(credits && credits > 0))
   );
 }
 
@@ -380,31 +398,21 @@ function SubscriptionResetDetails({
 }
 
 function SubscriptionResetControls({
-  signals,
   account,
-  operation,
-  refreshing,
-  readFailed,
+  pending,
+  disabled,
+  onConfirm,
   notice,
 }: {
-  readonly signals: SubscriptionResetSignals;
   readonly account: ModelProviderResponse | null;
-  readonly operation: Loadable<ResetOutcome | undefined>;
-  readonly refreshing: boolean;
-  readonly readFailed: boolean;
+  readonly pending: boolean;
+  readonly disabled: boolean;
+  readonly onConfirm: () => void;
   readonly notice: string | null;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const confirm = useSet(signals.confirm$);
   const creditLabel = useResetCreditLabel(account);
-  const pending = operation.state === "loading";
   const credits = account?.subscriptionResetCredits;
-  const disabled = resetActionDisabled(
-    account,
-    operation,
-    refreshing || readFailed,
-  );
   const label = pending
     ? t(($) => {
         return $.chat.subscriptionReset.resetting;
@@ -461,9 +469,7 @@ function SubscriptionResetControls({
               })}`}
               disabled={disabled}
               className="h-9 min-w-24 shrink-0 gap-1.5"
-              onClick={() => {
-                detach(confirm(pageSignal), Reason.DomCallback);
-              }}
+              onClick={onConfirm}
             >
               {pending ? <Loader2 size={14} className="animate-spin" /> : null}
               <span>{label}</span>

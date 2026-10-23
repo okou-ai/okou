@@ -805,6 +805,7 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
     ({ body, respond }) => {
       expect(body).toStrictEqual({
         key: "document",
+        uploadId: expect.any(String),
         index: 0,
         size: 4,
       });
@@ -840,6 +841,7 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
       {
         key: "document",
         operation: "replace",
+        uploadId: expect.any(String),
         observedFingerprint: FILE_FINGERPRINT,
         files: [
           {
@@ -2611,14 +2613,14 @@ test("An applying action settles when the thread signals a change", async () => 
   expect(screen.queryByRole("form")).toBeNull();
 });
 
-test("A status read is cancelled when the route changes and its late result stays stale", async () => {
+test("A late status read cannot replace the action on a new route", async () => {
   const nextToken = `vm0_browser_user_action_${"c".repeat(43)}`;
-  const started = createDeferredPromise<AbortSignal>(context.signal);
+  const started = createDeferredPromise<void>(context.signal);
   const release = createDeferredPromise<void>(context.signal);
   let initial = true;
   context.mocks.api(
     browserUserActionsContract.get,
-    async ({ params, request, respond }) => {
+    async ({ params, respond }) => {
       if (params.requestToken === nextToken) {
         return respond(200, {
           ...action("cancelled"),
@@ -2629,7 +2631,7 @@ test("A status read is cancelled when the route changes and its late result stay
         initial = false;
         return respond(200, action("applying"));
       }
-      started.resolve(request.signal);
+      started.resolve(undefined);
       await release.promise;
       return respond(200, action("pending"));
     },
@@ -2640,7 +2642,7 @@ test("A status read is cancelled when the route changes and its late result stay
     host: "app.okou.ai",
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
-  const readSignal = await started.promise;
+  await started.promise;
   await act(async () => {
     const next = new URL(
       route().replace(REQUEST_TOKEN, nextToken),
@@ -2659,7 +2661,6 @@ test("A status read is cancelled when the route changes and its late result stay
   await expect(
     screen.findByText("Request cancelled"),
   ).resolves.toBeInTheDocument();
-  expect(readSignal.aborted).toBeTruthy();
   await act(async () => {
     release.resolve(undefined);
     await release.promise;

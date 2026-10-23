@@ -57,7 +57,6 @@ import {
 } from "../../signals/okou-page/billing.ts";
 import {
   accountMenuCodexResetDialog$,
-  personalActionPromise$,
   setAccountMenuCodexResetDialog$,
 } from "../../signals/okou-page/settings/personal-model-providers.ts";
 import { CodexResetUsageDialog } from "./components/preferences/codex-reset-usage-dialog.tsx";
@@ -707,10 +706,8 @@ function useAccountCodexResetAction(
   const [resetLoadable, confirmReset] = useLoadableSet(
     confirmAccountMenuCodexUsageReset$,
   );
-  const actionLoadable = useLoadable(personalActionPromise$);
   const pageSignal = useGet(pageSignal$);
-  const actionPending =
-    actionLoadable.state === "loading" || resetLoadable.state === "loading";
+  const actionPending = resetLoadable.state === "loading";
   const resetError =
     resetLoadable.state === "hasError" ? String(resetLoadable.error) : null;
 

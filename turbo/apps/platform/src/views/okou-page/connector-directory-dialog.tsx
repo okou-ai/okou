@@ -1,7 +1,5 @@
 import { Toolbar } from "@base-ui/react/toolbar";
 import { useGet, useLoadable, useSet, type LoadableState } from "ccstate-react";
-import { registerConnectorConnectionDialog$ } from "../../signals/connector-connection-progress.ts";
-import { useConnectorConnectionDialogClose } from "../components/connector-connection-progress.tsx";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Plus, Search, TriangleAlert } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
@@ -1193,16 +1191,16 @@ export function ConnectorDirectoryDialog({
     );
   };
 
-  const registerConnectionDialog = useSet(registerConnectorConnectionDialog$);
-  const { onOpenChange } = useConnectorConnectionDialogClose(
-    connecting,
-    onClose,
-  );
-
   return (
-    <Dialog open onOpenChange={onOpenChange}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+    >
       <DialogContent
-        ref={registerConnectionDialog}
         maxWidth="2xl"
         height={600}
         contentClassName="flex flex-col gap-0 p-0"

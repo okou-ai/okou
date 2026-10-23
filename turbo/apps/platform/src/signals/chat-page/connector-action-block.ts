@@ -6,7 +6,6 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { withConnectorConnectionProgress } from "../connector-connection-progress.ts";
 import {
   connectorSlugSchema,
   type ConnectorSlug,
@@ -392,91 +391,89 @@ function createCatalogConnectorActivation(
   descriptor: CatalogConnectorActionDescriptor,
   signals: CatalogConnectorActivationSignals,
 ): CatalogConnectorSignals["activate$"] {
-  return withConnectorConnectionProgress(
-    command(async ({ get, set }, signal: AbortSignal) => {
-      const available = await get(signals.available$);
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    const available = await get(signals.available$);
+    signal.throwIfAborted();
+    if (!available) {
+      return;
+    }
+
+    const catalogItem = await set(signals.readAccount$, undefined, signal);
+    signal.throwIfAborted();
+    const connected = catalogItem?.connected === true;
+    const status =
+      catalogItem === null
+        ? null
+        : builtinConnectorCurrentConnectionStatus(catalogItem);
+    if (status === "unavailable") {
+      throw new Error(
+        "Connector account metadata is unavailable. Refresh and try again.",
+      );
+    }
+    const reconnectRequired = status === "reconnect-required";
+    if (connected && !reconnectRequired) {
+      await set(
+        authorizeDirectedConnector$,
+        descriptor.connectorSlug,
+        descriptor.agentId,
+        signal,
+      );
+      await set(runConnectorActionCallback$, descriptor, signal);
+      return;
+    }
+
+    const connector = catalogItem;
+    if (!connector) {
+      return;
+    }
+    const accountOptions = defaultBuiltinConnectorAccountOptions(connector);
+    if (!accountOptions) {
+      return;
+    }
+
+    const directConnectMethod =
+      getBuiltinConnectorStatusDirectConnectMethod(connector);
+    if (!directConnectMethod) {
+      set(resetBuiltinManualGrantForm$, connector.slug);
+      set(activeChatConnectorActionState$, {
+        ...descriptor,
+        catalogItem: connector,
+        readAccount$: signals.readAccount$,
+      });
+      return;
+    }
+
+    const connectOptions = {
+      connectorLabel: connector.label,
+      connectorIcon: connector.icon,
+      agentId: descriptor.agentId,
+      ...accountOptions,
+    };
+    const connectionCompleted =
+      directConnectMethod.kind === "browser-auth"
+        ? await set(
+            connectBuiltinConnectorOAuthAuthCode$,
+            descriptor.connectorSlug,
+            directConnectMethod.authMethod,
+            connectOptions,
+            signal,
+          )
+        : await set(
+            connectBuiltinConnectorNoAuth$,
+            {
+              connectorSlug: descriptor.connectorSlug,
+              authMethod: directConnectMethod.authMethod,
+              options: connectOptions,
+            },
+            signal,
+          );
+    if (connectionCompleted) {
+      const current = await set(signals.readAccount$, undefined, signal);
       signal.throwIfAborted();
-      if (!available) {
-        return;
-      }
-
-      const catalogItem = await set(signals.readAccount$, undefined, signal);
-      signal.throwIfAborted();
-      const connected = catalogItem?.connected === true;
-      const status =
-        catalogItem === null
-          ? null
-          : builtinConnectorCurrentConnectionStatus(catalogItem);
-      if (status === "unavailable") {
-        throw new Error(
-          "Connector account metadata is unavailable. Refresh and try again.",
-        );
-      }
-      const reconnectRequired = status === "reconnect-required";
-      if (connected && !reconnectRequired) {
-        await set(
-          authorizeDirectedConnector$,
-          descriptor.connectorSlug,
-          descriptor.agentId,
-          signal,
-        );
-        await set(runConnectorActionCallback$, descriptor, signal);
-        return;
-      }
-
-      const connector = catalogItem;
-      if (!connector) {
-        return;
-      }
-      const accountOptions = defaultBuiltinConnectorAccountOptions(connector);
-      if (!accountOptions) {
-        return;
-      }
-
-      const directConnectMethod =
-        getBuiltinConnectorStatusDirectConnectMethod(connector);
-      if (!directConnectMethod) {
-        set(resetBuiltinManualGrantForm$, connector.slug);
-        set(activeChatConnectorActionState$, {
-          ...descriptor,
-          catalogItem: connector,
-          readAccount$: signals.readAccount$,
-        });
-        return;
-      }
-
-      const connectOptions = {
-        connectorLabel: connector.label,
-        connectorIcon: connector.icon,
-        agentId: descriptor.agentId,
-        ...accountOptions,
-      };
-      const connectionCompleted =
-        directConnectMethod.kind === "browser-auth"
-          ? await set(
-              connectBuiltinConnectorOAuthAuthCode$,
-              descriptor.connectorSlug,
-              directConnectMethod.authMethod,
-              connectOptions,
-              signal,
-            )
-          : await set(
-              connectBuiltinConnectorNoAuth$,
-              {
-                connectorSlug: descriptor.connectorSlug,
-                authMethod: directConnectMethod.authMethod,
-                options: connectOptions,
-              },
-              signal,
-            );
-      if (connectionCompleted) {
-        const current = await set(signals.readAccount$, undefined, signal);
-        signal.throwIfAborted();
-        requireCompletedCatalogAccount(current);
-        await set(runConnectorActionCallback$, descriptor, signal);
-      }
-    }),
-  );
+      requireCompletedCatalogAccount(current);
+      await set(runConnectorActionCallback$, descriptor, signal);
+    }
+  });
 }
 
 function createCatalogConnectorSignals(

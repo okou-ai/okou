@@ -277,9 +277,6 @@ describe("reconnecting the exact Gmail account required by a persisted mail card
   it("reconnecting opens mail from the same required account", async () => {
     const { subject, attempt, reconnectCard, completedAttempts } =
       await prepareReconnect();
-    expect(
-      screen.getByRole("dialog", { name: "Connecting your account" }),
-    ).toBeVisible();
     expect(reconnectCard).toHaveTextContent("Reconnecting…");
     expect(reconnectCard).toBeDisabled();
 

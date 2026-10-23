@@ -25,9 +25,8 @@ import { ApiError } from "../../lib/api-error.ts";
 import { fetchResource } from "../../lib/resource-fetch.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { pageSignal$ } from "../page-signal.ts";
 import { setAblyLoop$ } from "../realtime.ts";
-import { onRef, resetSignal, settle, withCleanup } from "../utils.ts";
+import { onRef, settle } from "../utils.ts";
 import {
   runChatActionCallback$,
   type ChatActionCallbackIds,
@@ -354,29 +353,20 @@ async function readBrowserUserAction(
 }
 
 function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
-  // Owned reads publish their Promise, never a late resolved snapshot.
-  const refreshedRequest$ =
-    state<Promise<BrowserUserActionRequestState> | null>(null);
-  const resetRead$ = resetSignal();
+  const revision$ = state(0);
   const request$ = computed(
     async (get): Promise<BrowserUserActionRequestState> => {
+      get(revision$);
       if (get(featureSwitch$)[FeatureSwitchKey.BrowserNativeInput] !== true) {
         return { kind: "unavailable" };
       }
-      return await (get(refreshedRequest$) ??
-        readBrowserUserAction(get(apiClient$), descriptor));
+      return await readBrowserUserAction(get(apiClient$), descriptor);
     },
   );
-  const refresh$ = command(({ get, set }) => {
-    const signal = set(resetRead$, get(pageSignal$));
-    signal.throwIfAborted();
-    if (get(featureSwitch$)[FeatureSwitchKey.BrowserNativeInput] !== true) {
-      return;
-    }
-    set(
-      refreshedRequest$,
-      readBrowserUserAction(get(apiClient$), descriptor, signal),
-    );
+  const refresh$ = command(({ set }) => {
+    set(revision$, (revision) => {
+      return revision + 1;
+    });
   });
   return { request$, refresh$ };
 }
@@ -998,6 +988,7 @@ export function fileDraftIsValid(
 async function browserFileSubmissionValue(
   field: BrowserInputAction["fields"][number],
   draft: BrowserFileDraft | undefined,
+  uploadId: string,
   upload: (fieldKey: string, file: File, index: number) => Promise<void>,
 ): Promise<
   | Extract<BrowserUserActionApplyRequest["values"][number], { files: unknown }>
@@ -1020,6 +1011,7 @@ async function browserFileSubmissionValue(
     key: field.key,
     operation: draft.operation,
     observedFingerprint: draft.observedFingerprint,
+    ...(draft.operation === "replace" ? { uploadId } : {}),
     files:
       draft.operation === "replace"
         ? await Promise.all(
@@ -1141,6 +1133,7 @@ async function uploadBrowserInputFile(
 function browserFileUploader(
   clientFactory: ApiClientFactory,
   requestToken: string,
+  uploadId: string,
   signal: AbortSignal,
 ): (fieldKey: string, file: File, index: number) => Promise<void> {
   const client = clientFactory(browserUserActionsContract);
@@ -1153,7 +1146,7 @@ function browserFileUploader(
         const result = await accept(
           client.prepareFileUpload({
             params: { requestToken },
-            body,
+            body: { ...body, uploadId },
             fetchOptions: { signal },
           }),
           [200],
@@ -1168,6 +1161,7 @@ function browserFileUploader(
 
 async function browserInputSubmissionValues(
   action: BrowserInputAction,
+  uploadId: string,
   upload: (fieldKey: string, file: File, index: number) => Promise<void>,
   drafts: {
     readonly draft: ReadonlyMap<string, string>;
@@ -1208,6 +1202,7 @@ async function browserInputSubmissionValues(
       const file = await browserFileSubmissionValue(
         field,
         fileDraft.get(field.key),
+        uploadId,
         upload,
       );
       if (file === null) {
@@ -1335,6 +1330,15 @@ function createSubmitSignal({
       action: BrowserInputAction,
       signal: AbortSignal,
     ): Promise<void> => {
+      const drafts = {
+        draft: get(draft$),
+        choiceDraft: get(choiceDraft$),
+        checkboxDraft: get(checkboxDraft$),
+        radioDraft: get(radioDraft$),
+        rangeDraft: get(rangeDraft$),
+        colorDraft: get(colorDraft$),
+        fileDraft: get(fileDraft$),
+      };
       const request = await get(request$);
       signal.throwIfAborted();
       if (
@@ -1346,19 +1350,18 @@ function createSubmitSignal({
       ) {
         return;
       }
+      const uploadId = crypto.randomUUID();
       const prepared = await settle(
         browserInputSubmissionValues(
           action,
-          browserFileUploader(get(apiClient$), descriptor.requestToken, signal),
-          {
-            draft: get(draft$),
-            choiceDraft: get(choiceDraft$),
-            checkboxDraft: get(checkboxDraft$),
-            radioDraft: get(radioDraft$),
-            rangeDraft: get(rangeDraft$),
-            colorDraft: get(colorDraft$),
-            fileDraft: get(fileDraft$),
-          },
+          uploadId,
+          browserFileUploader(
+            get(apiClient$),
+            descriptor.requestToken,
+            uploadId,
+            signal,
+          ),
+          drafts,
         ),
       );
       signal.throwIfAborted();
@@ -1401,24 +1404,7 @@ function createSubmitSignal({
       }
     },
   );
-  // Upload staging is shared by request, not by the mounted form. A reopened
-  // form must await the existing submit instead of overwriting its file bytes.
-  const inFlight$ = state<Promise<void> | null>(null);
-  return command(
-    ({ get, set }, action: BrowserInputAction, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      const inFlight = get(inFlight$);
-      if (inFlight) {
-        return inFlight;
-      }
-      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-      const operation = withCleanup(set(submit$, action, signal), () => {
-        set(inFlight$, null);
-      });
-      set(inFlight$, operation);
-      return operation;
-    },
-  );
+  return submit$;
 }
 
 function createCancelSignal({

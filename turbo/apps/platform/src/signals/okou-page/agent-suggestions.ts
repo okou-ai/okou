@@ -52,11 +52,6 @@ interface SuggestionCardContext {
   readonly draftApplied?: boolean;
 }
 const cardContext$ = state<SuggestionCardContext | null>(null);
-const running$ = state<Promise<void> | null>(null);
-const operation$ = state<Promise<void> | undefined>(undefined);
-export const agentSuggestionOperation$ = computed((get) => {
-  return get(operation$);
-});
 export const agentSuggestionRecoveryId$ = computed((get) => {
   const context = get(cardContext$);
   return context?.recoveryAgentId ? context.item.id : null;
@@ -175,7 +170,6 @@ export const consumeAgentSuggestion$ = command(
   },
 );
 const lookupSuggestionThread$ = createThreadMetaLookup();
-const resetSuggestionExecution$ = resetSignal();
 interface SuggestionTarget {
   readonly agentId: string;
   readonly threadId: string | null;
@@ -191,6 +185,7 @@ const runner$ = computed((get) => {
   if (target.threadId) {
     const events = createChatEventSignals(target.threadId);
     return {
+      resetExecution$: resetSignal(),
       composer: createThreadComposerSignals(
         target.threadId,
         target.agentId,
@@ -201,6 +196,7 @@ const runner$ = computed((get) => {
     };
   }
   return {
+    resetExecution$: resetSignal(),
     composer: createIsolatedAgentComposerSignals(target.agentId),
     events: null,
   };
@@ -258,82 +254,112 @@ const sendAgentSuggestion$ = command(
     { get, set },
     item: Suggestion,
     primary: string,
-    signal: AbortSignal,
+    parentSignal: AbortSignal,
   ) => {
-    const agentId =
-      item.threadId === null
-        ? primary
-        : (await set(lookupSuggestionThread$, item.threadId, signal)).meta
-            ?.agentId;
-    signal.throwIfAborted();
-    if (!agentId) {
-      throw new Error("Suggestion target is unavailable");
-    }
-    set(target$, { agentId, threadId: item.threadId });
-    const runner = get(runner$);
-    if (!runner) {
-      throw new Error("Suggestion target is unavailable");
-    }
-    const { composer, events } = runner;
-    const message = item.draft.draftUserMessage;
-    const document = draftToEditorDoc(message);
-    const content = message ? messageDocumentToPrompt(message) : null;
-    if (!message || !document || content === null) {
-      throw new Error("Invalid suggestion message");
-    }
-    const attachments = userMessageDraftAttachments(
-      message,
-      item.draft.draftAttachments ?? [],
-    );
-    if (
-      attachments.length !==
-      message.parts.filter((part) => {
-        return part.type === "file";
-      }).length
-    ) {
-      return false;
-    }
-    const removedAttachments = await set(
-      composer.draft.seed$,
-      {
-        content,
-        userMessage: message,
-        generationTemplate: message.parts.find((part) => {
-          return part.type === "template";
-        })?.template,
-        attachments: attachments.map(createRestoredAttachment),
+    let sent = false;
+    let releaseRunner: (() => void) | undefined;
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
+    return await withCleanup(
+      (async () => {
+        const agentId =
+          item.threadId === null
+            ? primary
+            : (await set(lookupSuggestionThread$, item.threadId, parentSignal))
+                .meta?.agentId;
+        parentSignal.throwIfAborted();
+        if (!agentId) {
+          throw new Error("Suggestion target is unavailable");
+        }
+        const target = { agentId, threadId: item.threadId };
+        set(target$, target);
+        const runner = get(runner$);
+        if (!runner) {
+          throw new Error("Suggestion target is unavailable");
+        }
+        const signal = set(runner.resetExecution$, parentSignal);
+        const { composer, events } = runner;
+        releaseRunner = () => {
+          set(runner.resetExecution$);
+          for (const attachment of get(composer.draft.attachments$)) {
+            set(attachment.cancel$);
+          }
+          composer.editor.editor.destroy();
+          if (get(target$) === target) {
+            set(target$, null);
+            get(runner$);
+          }
+        };
+        const message = item.draft.draftUserMessage;
+        const document = draftToEditorDoc(message);
+        const content = message ? messageDocumentToPrompt(message) : null;
+        if (!message || !document || content === null) {
+          throw new Error("Invalid suggestion message");
+        }
+        const attachments = userMessageDraftAttachments(
+          message,
+          item.draft.draftAttachments ?? [],
+        );
+        if (
+          attachments.length !==
+          message.parts.filter((part) => {
+            return part.type === "file";
+          }).length
+        ) {
+          return false;
+        }
+        const removedAttachments = await set(
+          composer.draft.seed$,
+          {
+            content,
+            userMessage: message,
+            generationTemplate: message.parts.find((part) => {
+              return part.type === "template";
+            })?.template,
+            attachments: attachments.map(createRestoredAttachment),
+          },
+          signal,
+        );
+        // Sending a partial suggestion could change its meaning. Let the member
+        // recover and repair its draft when a referenced attachment is unavailable.
+        if (removedAttachments) {
+          return false;
+        }
+        composer.editor.editor.commands.setContent(document);
+        if (events) {
+          await set(events.setup$, signal);
+          await set(events.catchUp$, signal);
+        }
+        signal.throwIfAborted();
+        const action = await get(composer.submission.primaryAction$);
+        signal.throwIfAborted();
+        if (action !== "send" && action !== "queue") {
+          return false;
+        }
+        sent = await set(
+          composer.submission.submitCurrentInput$,
+          action,
+          undefined,
+          signal,
+        );
+        signal.throwIfAborted();
+        if (sent && item.threadId !== null) {
+          set(detachedNavigateTo$, ROUTES.chat, {
+            pathParams: { threadId: item.threadId },
+          });
+        }
+        return sent;
+      })(),
+      () => {
+        releaseRunner?.();
+        const recovery = get(cardContext$);
+        if (!parentSignal.aborted && !sent && recovery?.item.id === item.id) {
+          set(cardContext$, { ...recovery, recoveryAgentId: primary });
+          set(showAgentSuggestionRecovery$, recovery.item);
+        } else {
+          toast.dismiss(`suggestion-recovery-${item.id}`);
+        }
       },
-      signal,
     );
-    // Sending a partial suggestion could change its meaning. Let the member
-    // recover and repair its draft when a referenced attachment is unavailable.
-    if (removedAttachments) {
-      return false;
-    }
-    composer.editor.editor.commands.setContent(document);
-    if (events) {
-      await set(events.setup$, signal);
-      await set(events.catchUp$, signal);
-    }
-    signal.throwIfAborted();
-    const action = await get(composer.submission.primaryAction$);
-    signal.throwIfAborted();
-    if (action !== "send" && action !== "queue") {
-      return false;
-    }
-    const sent = await set(
-      composer.submission.submitCurrentInput$,
-      action,
-      undefined,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (sent && item.threadId !== null) {
-      set(detachedNavigateTo$, ROUTES.chat, {
-        pathParams: { threadId: item.threadId },
-      });
-    }
-    return sent;
   },
 );
 
@@ -352,7 +378,7 @@ const consumeAndRunAgentSuggestion$ = command(
     // The consume response owns the current content and destination. Preserve
     // it for recovery on both a domain refusal and a rejected send, without
     // turning transport failures into fulfilled operations.
-    set(cardContext$, { item: selected, recoveryAgentId: primary });
+    set(cardContext$, { item: selected, recoveryAgentId: null });
     if (await set(sendAgentSuggestion$, selected, primary, signal)) {
       set(cardContext$, null);
     }
@@ -372,6 +398,7 @@ const runAgentSuggestion$ = command(
       );
       signal.throwIfAborted();
       set(cardContext$, null);
+      toast.dismiss(`suggestion-recovery-${item.id}`);
       return;
     }
     set(cardContext$, { item, recoveryAgentId: null });
@@ -407,16 +434,12 @@ const showAgentSuggestionRecovery$ = command(
 );
 
 export const startAgentSuggestion$ = command(
-  (
+  async (
     { get, set },
     item: Suggestion,
     pageSignal: AbortSignal,
-  ): Promise<void> | undefined => {
+  ): Promise<void> => {
     pageSignal.throwIfAborted();
-    const running = get(running$);
-    if (running) {
-      return running;
-    }
     const context = get(cardContext$);
     if (
       get(consumedIds$).includes(item.id) &&
@@ -424,47 +447,15 @@ export const startAgentSuggestion$ = command(
     ) {
       return;
     }
-    // Consumption, sending and draft recovery belong to the root-owned action,
-    // not to the card that navigation can unmount. Keep the terminal Promise
-    // observable while separately releasing exclusion and runner resources.
-    const signal = set(resetSuggestionExecution$, get(rootSignal$));
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    const operation = withCleanup(
-      set(runAgentSuggestion$, item, signal),
-      () => {
-        const cancelled = signal.aborted;
-        set(resetSuggestionExecution$);
-        const runner = get(runner$);
-        if (runner) {
-          for (const attachment of get(runner.composer.draft.attachments$)) {
-            set(attachment.cancel$);
-          }
-          runner.composer.editor.editor.destroy();
-        }
-        set(target$, null);
-        // Drop the computed's memoized isolated graph as well as its target.
-        get(runner$);
-        set(running$, null);
-        const recovery = get(cardContext$);
-        if (!cancelled && recovery?.recoveryAgentId) {
-          set(showAgentSuggestionRecovery$, recovery.item);
-        } else {
-          toast.dismiss(`suggestion-recovery-${item.id}`);
-        }
-      },
-    );
-    set(running$, operation);
-    set(operation$, operation);
-    return operation;
+    // Consumption and draft recovery survive the navigation initiated by sending.
+    const signal = get(rootSignal$);
+    await set(runAgentSuggestion$, item, signal);
   },
 );
 
 export const dismissAgentSuggestion$ = command(
   async ({ get, set }, item: Suggestion, signal: AbortSignal) => {
     signal.throwIfAborted();
-    if (get(running$)) {
-      return;
-    }
     const context = get(cardContext$);
     if (context?.item.id === item.id) {
       toast.dismiss(`suggestion-recovery-${item.id}`);

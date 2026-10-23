@@ -1,8 +1,4 @@
 import { command, computed, state } from "ccstate";
-import {
-  markConnectorConnectionCompleted$,
-  withConnectorConnectionProgress,
-} from "../../connector-connection-progress.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
@@ -37,7 +33,7 @@ import {
   connectorAgentAccess$,
   reloadConnectorAgentAccess$,
 } from "./connector-agent-access.ts";
-import { waitLoopUntil, withCleanup } from "../../utils.ts";
+import { resetSignal, waitLoopUntil, withCleanup } from "../../utils.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../connector-domain.ts";
 import {
   hasSavedConnectorAccounts,
@@ -712,9 +708,6 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
         connectionId,
         signal,
       );
-      if (connected) {
-        set(markConnectorConnectionCompleted$, signal);
-      }
       set(bumpReload$);
       const targetAuthorized = await set(
         authorizeCompletedCustomConnectorTarget$,
@@ -761,9 +754,6 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
       connectionId,
       signal,
     );
-    if (connected) {
-      set(markConnectorConnectionCompleted$, signal);
-    }
     const targetAuthorized = await set(
       authorizeCompletedCustomConnectorTarget$,
       {
@@ -782,29 +772,25 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
   },
 );
 
-const connectCustomConnectorAuthorizationForTarget$ =
-  withConnectorConnectionProgress(
-    command(
-      async (
-        { set },
-        args: CustomConnectorAuthorizationTargetArgs,
-        signal: AbortSignal,
-      ) => {
-        const result = await set(
-          connectCustomConnectorAuthorizationForTargetCommand$,
-          args,
-          signal,
-        );
-        signal.throwIfAborted();
-        if (result.connected) {
-          await args.onSuccess?.(result, signal);
-          signal.throwIfAborted();
-        }
-        return result;
-      },
-    ),
-    { showDialog: true },
-  );
+const connectCustomConnectorAuthorizationForTarget$ = command(
+  async (
+    { set },
+    args: CustomConnectorAuthorizationTargetArgs,
+    signal: AbortSignal,
+  ) => {
+    const result = await set(
+      connectCustomConnectorAuthorizationForTargetCommand$,
+      args,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (result.connected) {
+      await args.onSuccess?.(result, signal);
+      signal.throwIfAborted();
+    }
+    return result;
+  },
+);
 
 export const connectCustomConnectorAuthorization$ = command(
   async (
@@ -827,32 +813,28 @@ export const connectCustomConnectorAuthorization$ = command(
   },
 );
 
-/** Custom connector cards have no inline connection indicator. */
-export const connectCustomConnectorAuthorizationWithDialog$ =
-  withConnectorConnectionProgress(
-    command(
-      async (
-        { set },
-        args: {
-          readonly id: string;
-          readonly account: PlatformConnectorAccountMutationIntent;
-          readonly onSuccess: ConnectorConnectSuccess;
-        },
-        signal: AbortSignal,
-      ) => {
-        const result = await set(
-          connectCustomConnectorAuthorization$,
-          { id: args.id, account: args.account },
-          signal,
-        );
-        if (result.connected) {
-          signal.throwIfAborted();
-          await args.onSuccess(result.connectionId, signal);
-        }
-      },
-    ),
-    { showDialog: true },
-  );
+/** Complete a card-triggered connection and its continuation. */
+export const connectCustomConnectorAuthorizationAndSettle$ = command(
+  async (
+    { set },
+    args: {
+      readonly id: string;
+      readonly account: PlatformConnectorAccountMutationIntent;
+      readonly onSuccess: ConnectorConnectSuccess;
+    },
+    signal: AbortSignal,
+  ) => {
+    const result = await set(
+      connectCustomConnectorAuthorization$,
+      { id: args.id, account: args.account },
+      signal,
+    );
+    if (result.connected) {
+      signal.throwIfAborted();
+      await args.onSuccess(result.connectionId, signal);
+    }
+  },
+);
 
 export const connectCustomConnectorAuthorizationForAgent$ = command(
   async (
@@ -878,6 +860,11 @@ export const connectCustomConnectorAuthorizationForAgent$ = command(
   },
 );
 
+const resetCustomConnectorConnectionSignal$ = resetSignal();
+export const cancelCustomConnectorConnection$ = command(({ set }) => {
+  set(resetCustomConnectorConnectionSignal$);
+});
+
 const submitCustomConnectorConnectionCommand$ = command(
   async (
     { get, set },
@@ -890,8 +877,9 @@ const submitCustomConnectorConnectionCommand$ = command(
       readonly onConnected?: ConnectorConnectSuccess;
     },
     onSuccess: ConnectorConnectSuccess | undefined,
-    signal: AbortSignal,
+    parentSignal: AbortSignal,
   ): Promise<boolean> => {
+    const signal = set(resetCustomConnectorConnectionSignal$, parentSignal);
     const finish = async (
       result: CustomConnectorConnectionResult,
       attemptSignal: AbortSignal,
@@ -948,9 +936,8 @@ const submitCustomConnectorConnectionCommand$ = command(
 );
 
 /** One loadable owns connection, target authorization, and the continuation. */
-export const submitCustomConnectorConnection$ = withConnectorConnectionProgress(
-  submitCustomConnectorConnectionCommand$,
-);
+export const submitCustomConnectorConnection$ =
+  submitCustomConnectorConnectionCommand$;
 
 // ---------------------------------------------------------------------------
 // Settings page dialog state — tracks which dialog is open.

@@ -30,7 +30,8 @@ export type ResetOutcome =
 
 export interface SubscriptionResetSignals extends SubscriptionResetDescriptor {
   readonly status$: Computed<Promise<SubscriptionResetStatus>>;
-  readonly operation$: Computed<Promise<ResetOutcome> | undefined>;
+  readonly requestAttempted$: Computed<boolean>;
+  readonly terminalOutcome$: Computed<ResetOutcome | null>;
   readonly refresh$: Command<void, []>;
   readonly confirm$: Command<Promise<ResetOutcome>, [AbortSignal]>;
 }
@@ -74,10 +75,7 @@ export function createSubscriptionResetSignals(
   descriptor: SubscriptionResetDescriptor,
 ): SubscriptionResetSignals {
   const revision$ = state(0);
-  const internalOperation$ = state<Promise<ResetOutcome> | undefined>(
-    undefined,
-  );
-  const running$ = state<Promise<ResetOutcome> | null>(null);
+  const requestAttempted$ = state(false);
   const terminalOutcome$ = state<ResetOutcome | null>(null);
   const status$ = computed(async (get): Promise<SubscriptionResetStatus> => {
     get(revision$);
@@ -135,38 +133,32 @@ export function createSubscriptionResetSignals(
     },
   );
   const confirm$ = command(
-    ({ get, set }, signal: AbortSignal): Promise<ResetOutcome> => {
-      const previous = get(internalOperation$);
-      const running = get(running$);
-      if (running) {
-        return running;
+    async ({ get, set }, signal: AbortSignal): Promise<ResetOutcome> => {
+      signal.throwIfAborted();
+      const terminalOutcome = get(terminalOutcome$);
+      if (terminalOutcome !== null) {
+        return terminalOutcome;
       }
-      if (get(terminalOutcome$) !== null && previous) {
-        return previous;
-      }
-      // A failed attempt may have spent the last credit before its response was
-      // lost. Retry the same key even at zero/unknown credits. Eligibility and
-      // reconnect checks still apply, including after a failed precondition read.
-      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-      const operation = withCleanup(
-        set(reset$, previous !== undefined, signal),
-        () => {
-          set(running$, null);
-          if (!signal.aborted) {
-            set(refresh$);
-          }
-        },
-      );
-      set(running$, operation);
-      set(internalOperation$, operation);
-      return operation;
+      // The same request key may have spent the last credit before its response
+      // was lost. Request history permits retry without mirroring its lifecycle.
+      const retry = get(requestAttempted$);
+      set(requestAttempted$, true);
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: reconcile remaining credits after an uncertain reset response.
+      return await withCleanup(set(reset$, retry, signal), () => {
+        if (!signal.aborted) {
+          set(refresh$);
+        }
+      });
     },
   );
   return {
     ...descriptor,
     status$,
-    operation$: computed((get) => {
-      return get(internalOperation$);
+    requestAttempted$: computed((get) => {
+      return get(requestAttempted$);
+    }),
+    terminalOutcome$: computed((get) => {
+      return get(terminalOutcome$);
     }),
     refresh$,
     confirm$,

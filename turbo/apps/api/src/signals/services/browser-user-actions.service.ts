@@ -49,6 +49,7 @@ import {
   deleteS3Objects,
   downloadS3BufferWithMaxBytes,
   generatePresignedPutUrl,
+  listS3ObjectsUnderPrefix,
 } from "../external/s3";
 import { safeSync, settle, settleIncludingAbort } from "../utils";
 import {
@@ -142,17 +143,11 @@ const FILE_UPLOAD_CONTENT_TYPE = "application/octet-stream";
 function temporaryFileKey(
   row: Pick<RequestRow, "requestTokenHash">,
   index: number,
+  uploadId?: string,
 ): string {
-  return `${FILE_UPLOAD_PREFIX}${row.requestTokenHash}/${index.toString()}`;
-}
-
-export function temporaryBrowserFileKeys(
-  requestTokenHash: string,
-): readonly string[] {
-  const row = { requestTokenHash };
-  return Array.from({ length: BROWSER_USER_ACTION_MAX_FILES }, (_, index) => {
-    return temporaryFileKey(row, index);
-  });
+  const prefix = `${FILE_UPLOAD_PREFIX}${row.requestTokenHash}/`;
+  // Older mounted forms use the request-wide slot until they reload.
+  return `${prefix}${uploadId ? `${uploadId}/` : ""}${index.toString()}`;
 }
 
 export const prepareBrowserUserFileUpload$ = command(
@@ -187,7 +182,7 @@ export const prepareBrowserUserFileUpload$ = command(
     const uploadUrl = await get(
       generatePresignedPutUrl(
         env("R2_USER_STORAGES_BUCKET_NAME"),
-        temporaryFileKey(row, args.input.index),
+        temporaryFileKey(row, args.input.index, args.input.uploadId),
         FILE_UPLOAD_CONTENT_TYPE,
         {
           usePublicEndpoint: true,
@@ -482,12 +477,24 @@ const deleteTemporaryBrowserUserActionFiles$ = command(
   async (
     { get },
     requestTokenHash: string,
-    signal: AbortSignal,
+    signal?: AbortSignal,
   ): Promise<void> => {
+    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    const objects = await get(
+      listS3ObjectsUnderPrefix(
+        bucket,
+        `${FILE_UPLOAD_PREFIX}${requestTokenHash}`,
+      ),
+    );
+    signal?.throwIfAborted();
+    // Cleanup runs only after this request is terminal, or during its retained
+    // request cleanup. Other pending requests have separate bounded prefixes.
     await get(
       deleteS3Objects(
-        env("R2_USER_STORAGES_BUCKET_NAME"),
-        temporaryBrowserFileKeys(requestTokenHash),
+        bucket,
+        objects.map((object) => {
+          return object.key;
+        }),
         signal,
       ),
     );
@@ -1318,7 +1325,7 @@ const materializeBrowserFileChoice$ = command(
       const buffer = await get(
         downloadS3BufferWithMaxBytes(
           env("R2_USER_STORAGES_BUCKET_NAME"),
-          temporaryFileKey(row, index),
+          temporaryFileKey(row, index, entry.uploadId),
           BROWSER_USER_ACTION_MAX_FILE_BYTES,
           signal,
         ),
@@ -1515,7 +1522,7 @@ async function inspectPendingBrowserUserAction(
 
 export const preflightBrowserUserAction$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1594,12 +1601,7 @@ export const preflightBrowserUserAction$ = command(
       signal.throwIfAborted();
       if (payload.target.fields[0]?.fieldKind === "file") {
         const cleanup = await settle(
-          get(
-            deleteS3Objects(
-              env("R2_USER_STORAGES_BUCKET_NAME"),
-              temporaryBrowserFileKeys(stale.requestTokenHash),
-            ),
-          ),
+          set(deleteTemporaryBrowserUserActionFiles$, stale.requestTokenHash),
         );
         signal.throwIfAborted();
         if (!cleanup.ok) {
@@ -1761,7 +1763,7 @@ const applyClaimedBrowserUserAction$ = command(
 
 export const applyBrowserUserAction$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1858,11 +1860,9 @@ export const applyBrowserUserAction$ = command(
       payload.target.fields[0]?.fieldKind === "file"
     ) {
       const cleanup = await settle(
-        get(
-          deleteS3Objects(
-            env("R2_USER_STORAGES_BUCKET_NAME"),
-            temporaryBrowserFileKeys(applied.value.requestTokenHash),
-          ),
+        set(
+          deleteTemporaryBrowserUserActionFiles$,
+          applied.value.requestTokenHash,
         ),
       );
       signal.throwIfAborted();
@@ -1879,7 +1879,7 @@ export const applyBrowserUserAction$ = command(
 
 export const cancelBrowserUserAction$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1943,12 +1943,7 @@ export const cancelBrowserUserAction$ = command(
     };
     if (decodePayload(row)?.target.fields[0]?.fieldKind === "file") {
       const cleanup = await settle(
-        get(
-          deleteS3Objects(
-            env("R2_USER_STORAGES_BUCKET_NAME"),
-            temporaryBrowserFileKeys(row.requestTokenHash),
-          ),
-        ),
+        set(deleteTemporaryBrowserUserActionFiles$, row.requestTokenHash),
       );
       signal.throwIfAborted();
       if (!cleanup.ok) {

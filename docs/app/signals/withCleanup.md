@@ -40,8 +40,8 @@ ID, saving connector slug, pending-map placeholder, or submit-only audience
 "draft" is also duplicate request state if it exists only to show pending UI.
 Renaming a boolean does not change its lifetime.
 
-Use `useLoadableSet` for a command, or `useLoadable` for an existing Promise-backed
-signal. Keep the actual operation rejecting on failure; observing a Promise
+Use `useLoadableSet` in the view invoking a command, or `useLoadable` for an
+async computed resource. Keep the actual operation rejecting on failure; observing a Promise
 wrapped in `settle`, `tapError`, or another success-producing fallback does not
 recover the real error state.
 
@@ -63,19 +63,16 @@ statuses and the real owner signal. Let the common boundary handle unexpected
 API errors; do not clear loading into a fabricated `error`, show a duplicate
 toast, or infer a server outcome from a cancelled response.
 
-For row-specific feedback, organize operations by their real row owner rather
-than creating a global "currently saving slug" mirror. For repeated cards or
-multiple consumers that must join one execution, expose the same real Promise.
-A hook does **not** implement cancellation, synchronous execution exclusion, or
-cross-consumer deduplication. Preserve those contracts at their shared owner;
-disabling a button alone is not an execution lock.
+For row-specific feedback, let the row view own its action hook. Do not save
+command Promises in signals, publish a global progress loadable, or pass action
+loadables between views. Repeated cards can submit the same protocol idempotency
+key; the server owns deduplication and the persisted result. A hook does not
+provide cancellation or resource ownership: keep the appropriate AbortSignal,
+session identity, and teardown at the real owner without introducing an action
+mutex to model request UI.
 
-[PR #42092](https://github.com/okou-ai/okou/pull/42092) derives browser-card
-feedback from operations and authoritative notifications, removing manual busy
-and callback-failure state. [PR #42119](https://github.com/okou-ai/okou/pull/42119)
-applies the distinction to workspace actions, connector saves, sharing, and
-shared operations. Its retained wrappers are historical ownership constraints,
-not permission to introduce new calls.
+Historical PRs #42092 and #42119 introduced intermediate shared Promise slots.
+Those action slots are migration targets, not the recommended end state.
 
 ### Collapsing a business session into request loading
 
@@ -92,10 +89,10 @@ already rescued workflows so retries do not copy twice. Independent unsent
 text, selections, annotations, and identity-scoped drafts remain business data.
 Do not erase them merely because a request failed.
 
-PR #42119 separates startup, approval sessions, and single polling requests for
-Codex, Claude Code, connectors, and onboarding. It also preserves annotation
-facts and idempotent draft recovery. Removing loading/error mirrors does not
-justify deleting these domain contracts or their resource owners.
+Keep startup and polling request feedback in the owning view while signals
+retain the authorization session and its cancellation boundary. Removing
+loading/error mirrors does not justify deleting domain contracts, annotation
+facts, idempotent draft recovery, or resource owners.
 
 ### Ad-hoc cancellation wrappers and cleanup-driven ownership
 
@@ -154,16 +151,16 @@ These are separate responsibilities:
 
 | Responsibility       | Correct lifetime                                                                           |
 | -------------------- | ------------------------------------------------------------------------------------------ |
-| In-flight sharing    | Join the actual Promise for the same owner/key while it runs.                              |
+| Resource ownership   | Keep acquired resources and teardown at their real owner; do not cache action Promises.    |
 | Successful cache     | Commit only a successful result, scoped to identity and invalidation generation.           |
 | Retry                | Allow a new attempt after failure; do not accidentally retain a rejected entry forever.    |
 | Draft or domain data | Commit, reconcile, and release according to its business contract, not request settlement. |
 
-Removing an in-flight entry is not rolling back a successful cached value.
-Clearing a running slot must not erase the last operation result needed by
-loadable consumers. Where an older operation can finish after a replacement,
-release only its own entry; preserve Promise/attempt identity checks. Inspect
-existing shared owners before adding custom maps or another coordination helper.
+A successful cached resource is different from a command's loading/error state.
+Keep action results in the invoking view's hook. Preserve identity checks that
+prevent an old operation from mutating a replacement session, and scope external
+resources such as file staging keys to the actual attempt. Do not retain a
+Promise slot or add a command mutex merely to share button feedback.
 
 For pagination, commit the returned page and cursor after success rather than
 advancing first and relying on cleanup to restore them. For attachment recovery,
@@ -227,7 +224,7 @@ use proper ownership without new `withCleanup`. When a legacy reference is
 removed, remove its waiver and unused import too. The permitted direction is
 reduction only.
 
-Review the design rather than the helper count: preserve cancellation, shared
-execution, business progress, successful results, reconciliation timing, and
+Review the design rather than the helper count: preserve cancellation,
+protocol idempotency, business progress, successful results, reconciliation timing, and
 real disposal. Do not substitute `onRejection`, `settle`, `bestEffort`, raw
 catch/finally state repair, or detached work to reproduce the same anti-pattern.

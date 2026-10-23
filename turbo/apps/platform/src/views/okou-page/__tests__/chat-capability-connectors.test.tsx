@@ -529,6 +529,20 @@ describe("with an active banking grant", () => {
     click(getButton("Continue", card));
     await waitFor(() => {
       expect(sentPrompts(sends)).toStrictEqual([continuation]);
+      expect(getButton("Continue", card)).toBeEnabled();
+    });
+    click(getButton("Continue", card));
+    await waitFor(() => {
+      expect(sends).toHaveLength(2);
+      expect(getButton("Continue", card)).toBeEnabled();
+    });
+    expect(sends[0]).toMatchObject({
+      clientEventId: expect.any(String),
+      chatThreadSortEventId: expect.any(String),
+    });
+    expect(sends[1]).toMatchObject({
+      clientEventId: sends[0]!.clientEventId,
+      chatThreadSortEventId: sends[0]!.chatThreadSortEventId,
     });
 
     click(getButton("Revoke", card));
@@ -793,9 +807,6 @@ test("Connect a single available connector without an unnecessary chooser", asyn
       "https://provider.example.test/authorize-drive",
     );
   });
-  expect(
-    screen.getByRole("dialog", { name: "Connecting your account" }),
-  ).toBeVisible();
 
   connected = true;
   context.mocks.data.connectors([
