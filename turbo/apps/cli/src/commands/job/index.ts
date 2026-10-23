@@ -44,7 +44,6 @@ function jsonError(error: unknown, options: { readonly json?: boolean }) {
 const jobId = z.uuid().toLowerCase();
 export function createJobCommand() {
   const job = new Command("task")
-    .alias("job")
     .description(
       "Delegate explicitly entrusted work to Okou's background Tasks loop",
     )

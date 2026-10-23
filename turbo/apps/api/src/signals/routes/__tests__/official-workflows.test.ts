@@ -672,7 +672,7 @@ describe("Proactive jobs", () => {
     const claim = await runs.claimRunnerJob(runId);
     expect(
       capturedOfficialSkill(claim.storageManifest, "proactive-jobs"),
-    ).toContain("okou job list --runnable --json");
+    ).toContain("okou task list --runnable --json");
     const waiting = (
       await accept(
         jobs().update({
