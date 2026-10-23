@@ -6,8 +6,8 @@
  */
 
 import {
-  connectorCheckRequestSchema,
-  type ConnectorCheckDiagnosticResult,
+  connectorCheckTargetAwareUrlRequestSchema,
+  type ConnectorCheckTargetAwareDiagnosticResult,
   type ConnectorCheckPolicy,
 } from "@okouai/api-contracts/contracts/connector-check";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
@@ -29,7 +29,7 @@ const SLACK_READ_PERMISSION = "admin.conversations:read";
 const SLACK_READ_URL = "https://slack.com/api/admin.conversations.search";
 
 type ResolvedUrlDiagnostic = Extract<
-  ConnectorCheckDiagnosticResult,
+  ConnectorCheckTargetAwareDiagnosticResult,
   { readonly outcome: "resolved"; readonly mode: "url" }
 >;
 
@@ -62,7 +62,7 @@ function resolvedUrlDiagnostic(
     outcome: "resolved",
     mode: "url",
     connector: {
-      connectorSlug: args.connectorSlug ?? "slack",
+      target: { kind: "builtin", connectorSlug: args.connectorSlug ?? "slack" },
       label: args.label ?? "Slack",
       visibility: "available",
       credentialResolution: "network-boundary",
@@ -88,10 +88,10 @@ function resolvedUrlDiagnostic(
 }
 
 function stubDiagnostic(
-  result: ConnectorCheckDiagnosticResult,
+  result: ConnectorCheckTargetAwareDiagnosticResult,
   baseUrl = "https://app.okou.ai",
   onRequest?: (
-    request: ReturnType<typeof connectorCheckRequestSchema.parse>,
+    request: ReturnType<typeof connectorCheckTargetAwareUrlRequestSchema.parse>,
   ) => void,
 ): void {
   if (result.outcome === "unknown-connector") {
@@ -102,15 +102,25 @@ function stubDiagnostic(
       ),
     );
   }
-  if ("connector" in result) {
-    server.use(stubConnectorCatalog([catalogItem(result.connector)], baseUrl));
+  if ("connector" in result && result.connector.target.kind === "builtin") {
+    server.use(
+      stubConnectorCatalog(
+        [
+          catalogItem({
+            connectorSlug: result.connector.target.connectorSlug,
+            label: result.connector.label,
+          }),
+        ],
+        baseUrl,
+      ),
+    );
   }
   server.use(
     http.post(
       `${baseUrl}/api/connectors/diagnostics/check`,
       async ({ request }) => {
         const body: unknown = await request.json();
-        const parsed = connectorCheckRequestSchema.parse(body);
+        const parsed = connectorCheckTargetAwareUrlRequestSchema.parse(body);
         onRequest?.(parsed);
         return HttpResponse.json(result);
       },
@@ -195,7 +205,8 @@ describe("okou connector permission-request command", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
     vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
     let diagnosticRequest:
-      ReturnType<typeof connectorCheckRequestSchema.parse> | undefined;
+      | ReturnType<typeof connectorCheckTargetAwareUrlRequestSchema.parse>
+      | undefined;
     stubDiagnostic(
       resolvedUrlDiagnostic(),
       "https://app.okou.ai",
@@ -218,7 +229,7 @@ describe("okou connector permission-request command", () => {
       mode: "url",
       method: "GET",
       url: SLACK_READ_URL,
-      connectorSlug: "slack",
+      target: { kind: "builtin", connectorSlug: "slack" },
     });
     const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
     expect(logCalls).toContain(
@@ -241,7 +252,8 @@ describe("okou connector permission-request command", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
     vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
     let diagnosticRequest:
-      ReturnType<typeof connectorCheckRequestSchema.parse> | undefined;
+      | ReturnType<typeof connectorCheckTargetAwareUrlRequestSchema.parse>
+      | undefined;
     stubDiagnostic(
       resolvedUrlDiagnostic({
         connectorSlug: "aws",
@@ -285,7 +297,7 @@ describe("okou connector permission-request command", () => {
       mode: "url",
       method: "POST",
       url: "https://sts.us-west-2.amazonaws.com/",
-      connectorSlug: "aws",
+      target: { kind: "builtin", connectorSlug: "aws" },
       aws: { sigv4Service: "sts", action: "GetCallerIdentity" },
     });
     const output = mockConsoleLog.mock.calls.flat().join("\n");

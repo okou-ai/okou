@@ -35,6 +35,7 @@ import {
   type ConnectorCheckDiagnosticResult,
   type ConnectorCheckRequestBody,
   type ConnectorCheckTargetAwareDiagnosticResult,
+  type ConnectorCheckTargetAwareUrlRequest,
 } from "@okouai/api-contracts/contracts/connector-check";
 import {
   customConnectorPermissionBundleSchema,
@@ -272,8 +273,12 @@ export interface ConnectorCheckWithContext {
   readonly awsContextIncomplete: boolean;
 }
 
+export type ConnectorDiagnosticRequest =
+  | ConnectorCheckTargetAwareUrlRequest
+  | Extract<ConnectorCheckRequestBody, { readonly mode: "environment" }>;
+
 export async function diagnoseConnectorCheckWithContext(
-  request: ConnectorCheckRequestBody,
+  request: ConnectorDiagnosticRequest,
 ): Promise<ConnectorCheckWithContext> {
   const config = await getClientConfig();
   const client = initClient(connectorCheckContract, {
@@ -284,12 +289,22 @@ export async function diagnoseConnectorCheckWithContext(
   const result = await client.check({ body: request });
 
   if (result.status === 200) {
-    const diagnostic =
-      "target" in request || "includeCustomConnectors" in request
-        ? connectorCheckTargetAwareDiagnosticResultSchema.parse(result.body)
+    let diagnostic: ConnectorCheckTargetAwareDiagnosticResult;
+    if (request.mode === "environment") {
+      const canonical =
+        connectorCheckTargetAwareDiagnosticResultSchema.safeParse(result.body);
+      // API and installed CLI releases overlap. Remove the legacy environment
+      // reader in #42489 after canonical API serving/drain/rollback qualification.
+      diagnostic = canonical.success
+        ? canonical.data
         : normalizeBuiltinDiagnostic(
             connectorCheckDiagnosticResultSchema.parse(result.body),
           );
+    } else {
+      diagnostic = connectorCheckTargetAwareDiagnosticResultSchema.parse(
+        result.body,
+      );
+    }
     return {
       diagnostic,
       awsContextIncomplete:
@@ -302,7 +317,7 @@ export async function diagnoseConnectorCheckWithContext(
 }
 
 export async function diagnoseConnectorCheck(
-  request: ConnectorCheckRequestBody,
+  request: ConnectorDiagnosticRequest,
 ): Promise<ConnectorCheckTargetAwareDiagnosticResult> {
   return (await diagnoseConnectorCheckWithContext(request)).diagnostic;
 }
