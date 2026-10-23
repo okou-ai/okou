@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { imageCommand } from "./image";
-import { getGenerationCommand } from "./get";
+import { createGetGenerationCommand } from "./get";
 import { imageBatchCommand } from "./image-batch";
 import {
   dashboardDesignCommand,
@@ -99,7 +99,7 @@ export function createGenerateCommand(): Command {
             description: "List connectors that provide image generation",
           }),
     )
-    .addCommand(getGenerationCommand);
+    .addCommand(createGetGenerationCommand());
   if (imageEnabled) command.addCommand(imageBatchCommand);
   return command
     .addCommand(presentationCommand)

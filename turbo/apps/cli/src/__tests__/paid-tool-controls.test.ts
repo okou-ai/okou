@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -216,32 +216,66 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     expect(requests).toEqual([]);
   });
 
-  it("retrieves an existing image job while managed generation is absent", async () => {
-    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["image-generation"]');
-    const generationId = "00000000-0000-4000-8000-000000000001";
-    let reads = 0;
-    server.use(
-      http.get(
-        `http://localhost:3000/api/built-in-generations/${generationId}`,
-        () => {
-          reads += 1;
-          return HttpResponse.json({
-            generationId,
-            type: "image",
-            status: "completed",
-            result: {
-              id: "existing-image",
-              url: "https://example.com/image.png",
-            },
-          });
-        },
-      ),
-    );
-    await run(["generate", "get", generationId, "--json"]);
-    expect(reads).toBe(1);
-    expect(output).toContain('"status":"completed"');
-    expect(requests).toEqual([]);
-  });
+  it.each(['["image-generation"]', "not-json"])(
+    "keeps image result queries and downloads without offering generation recovery under policy %s",
+    async (policy) => {
+      vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, policy);
+      const generationId = "00000000-0000-4000-8000-000000000001";
+      await expect(run(["generate", "get", "--help"])).rejects.toMatchObject({
+        code: "commander.helpDisplayed",
+      });
+      expect(output).toContain("--out <path>");
+      expect(output).not.toContain("--refresh");
+      output = "";
+      await expect(
+        run(["generate", "get", generationId, "--refresh"]),
+      ).rejects.toMatchObject({ code: "commander.unknownOption" });
+      expect(requests).toEqual([]);
+      let completed = false;
+      let reads = 0;
+      let downloads = 0;
+      server.use(
+        http.get(
+          `http://localhost:3000/api/built-in-generations/${generationId}`,
+          () => {
+            reads += 1;
+            return HttpResponse.json({
+              generationId,
+              type: "image",
+              status: completed ? "completed" : "queued",
+              ...(completed
+                ? {
+                    result: {
+                      id: "existing-image",
+                      url: "https://example.com/image.png",
+                    },
+                  }
+                : {}),
+            });
+          },
+        ),
+        http.get("http://localhost:3000/api/web/download-file", () => {
+          downloads += 1;
+          return new HttpResponse("existing image");
+        }),
+      );
+      await run(["generate", "get", generationId]);
+      expect(output).toContain("Status: queued");
+      expect(output).toContain(
+        `Query again: okou generate get ${generationId}`,
+      );
+      expect(output).not.toContain("--refresh");
+      completed = true;
+      output = "";
+      const out = join(directory, "existing-image.png");
+      await run(["generate", "get", generationId, "--out", out, "--json"]);
+      expect(await readFile(out, "utf8")).toBe("existing image");
+      expect(output).toContain('"status":"completed"');
+      expect(reads).toBe(2);
+      expect(downloads).toBe(1);
+      expect(requests).toEqual([]);
+    },
+  );
 
   it.each([undefined, "", "   ", "[]", '["future-tool"]', '["finance"]'])(
     "permits an enabled operation under policy %s",
