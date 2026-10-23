@@ -33,6 +33,7 @@ import { seededSystemSkillArchive } from "../../../test-fixtures/seeded-system-s
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { uniquePhoneHandle } from "./helpers/api-bdd-agentphone";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
@@ -1042,10 +1043,6 @@ function agentPhoneVerificationSend(
       );
     },
   );
-}
-
-function uniquePhoneHandle() {
-  return `+1555${randomInt(1_000_000, 9_999_999)}`;
 }
 
 function agentPhoneWebhookHeaders(
