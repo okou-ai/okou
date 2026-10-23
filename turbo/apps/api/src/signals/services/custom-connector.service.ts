@@ -110,7 +110,10 @@ import { userFeatureSwitchContext } from "./feature-switches.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
 
 import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
-import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
+import {
+  preparedVolumePublicationPlan,
+  preparedVolumePublicationSql,
+} from "./storage-volume-publication-sql";
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
 import { addUserCustomConnector$ } from "./user-connectors.service";
 
@@ -1834,20 +1837,148 @@ function randomShortId(): string {
   return randomUUID().replace(/-/g, "").slice(0, 6);
 }
 
+type PersistCustomConnectorCreateArgs = {
+  readonly connectorId: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly slug: string;
+  readonly definition: ValidatedDefinition;
+  readonly storageVersion: number;
+  readonly oauthConfigUpdate: ValidatedOAuthConfigUpdate;
+  readonly encryptedClientSecret: string | null;
+  readonly preparedSkill: PreparedServerSideVolume | null;
+};
+
+function customConnectorCreateSource(args: PersistCustomConnectorCreateArgs) {
+  const protocol = protocolColumns(args.definition);
+  return {
+    id: sql`${sql.param(args.connectorId, orgCustomConnectors.id)}`.mapWith(
+      orgCustomConnectors.id,
+    ),
+    orgId: sql`${sql.param(args.orgId, orgCustomConnectors.orgId)}`.mapWith(
+      orgCustomConnectors.orgId,
+    ),
+    slug: sql`${sql.param(args.slug, orgCustomConnectors.slug)}`.mapWith(
+      orgCustomConnectors.slug,
+    ),
+    displayName:
+      sql`${sql.param(args.definition.displayName, orgCustomConnectors.displayName)}`.mapWith(
+        orgCustomConnectors.displayName,
+      ),
+    prefixTemplates:
+      sql`${sql.param(protocol.prefixTemplates, orgCustomConnectors.prefixTemplates)}`.mapWith(
+        orgCustomConnectors.prefixTemplates,
+      ),
+    fields:
+      sql`${sql.param([...args.definition.fields], orgCustomConnectors.fields)}`.mapWith(
+        orgCustomConnectors.fields,
+      ),
+    headerInjections:
+      sql`${sql.param([...args.definition.headerInjections], orgCustomConnectors.headerInjections)}`.mapWith(
+        orgCustomConnectors.headerInjections,
+      ),
+    queryInjections:
+      sql`${sql.param([...args.definition.queryInjections], orgCustomConnectors.queryInjections)}`.mapWith(
+        orgCustomConnectors.queryInjections,
+      ),
+    authMode:
+      sql`${sql.param(args.definition.authMode, orgCustomConnectors.authMode)}`.mapWith(
+        orgCustomConnectors.authMode,
+      ),
+    enabled: sql`true`.mapWith(orgCustomConnectors.enabled),
+    permissionBundleRef:
+      sql`${sql.param(protocol.permissionBundleRef, orgCustomConnectors.permissionBundleRef)}`.mapWith(
+        orgCustomConnectors.permissionBundleRef,
+      ),
+    mcpEndpoint:
+      sql`${sql.param(protocol.mcpEndpoint, orgCustomConnectors.mcpEndpoint)}`.mapWith(
+        orgCustomConnectors.mcpEndpoint,
+      ),
+    mcpTransport:
+      sql`${sql.param(protocol.mcpTransport, orgCustomConnectors.mcpTransport)}`.mapWith(
+        orgCustomConnectors.mcpTransport,
+      ),
+    skillMarkdown:
+      sql`${sql.param(args.definition.skillMarkdown, orgCustomConnectors.skillMarkdown)}`.mapWith(
+        orgCustomConnectors.skillMarkdown,
+      ),
+    skillStorageVersionId:
+      sql`${sql.param(args.preparedSkill?.version.versionId ?? null, orgCustomConnectors.skillStorageVersionId)}`.mapWith(
+        orgCustomConnectors.skillStorageVersionId,
+      ),
+    storageVersion:
+      sql`${sql.param(args.storageVersion, orgCustomConnectors.storageVersion)}`.mapWith(
+        orgCustomConnectors.storageVersion,
+      ),
+    createdBy:
+      sql`${sql.param(args.userId, orgCustomConnectors.createdBy)}`.mapWith(
+        orgCustomConnectors.createdBy,
+      ),
+    createdAt: sql`now()`.mapWith(orgCustomConnectors.createdAt),
+    updatedAt: sql`now()`.mapWith(orgCustomConnectors.updatedAt),
+  };
+}
+
+function customConnectorOAuthCreateSource(
+  connectorId: SQL,
+  orgId: string,
+  config: Extract<
+    ValidatedOAuthConfigUpdate,
+    { readonly kind: "upsert" }
+  >["config"],
+  encryptedClientSecret: string,
+) {
+  return {
+    connectorId,
+    orgId:
+      sql`${sql.param(orgId, orgCustomConnectorOauthConfigs.orgId)}`.mapWith(
+        orgCustomConnectorOauthConfigs.orgId,
+      ),
+    providerAdapter:
+      sql`${sql.param(config.providerAdapter, orgCustomConnectorOauthConfigs.providerAdapter)}`.mapWith(
+        orgCustomConnectorOauthConfigs.providerAdapter,
+      ),
+    clientId:
+      sql`${sql.param(config.clientId, orgCustomConnectorOauthConfigs.clientId)}`.mapWith(
+        orgCustomConnectorOauthConfigs.clientId,
+      ),
+    encryptedClientSecret:
+      sql`${sql.param(encryptedClientSecret, orgCustomConnectorOauthConfigs.encryptedClientSecret)}`.mapWith(
+        orgCustomConnectorOauthConfigs.encryptedClientSecret,
+      ),
+    authorizationUrl:
+      sql`${sql.param(config.authorizationUrl, orgCustomConnectorOauthConfigs.authorizationUrl)}`.mapWith(
+        orgCustomConnectorOauthConfigs.authorizationUrl,
+      ),
+    tokenUrl:
+      sql`${sql.param(config.tokenUrl, orgCustomConnectorOauthConfigs.tokenUrl)}`.mapWith(
+        orgCustomConnectorOauthConfigs.tokenUrl,
+      ),
+    tokenEndpointAuthMethod:
+      sql`${sql.param(config.tokenEndpointAuthMethod, orgCustomConnectorOauthConfigs.tokenEndpointAuthMethod)}`.mapWith(
+        orgCustomConnectorOauthConfigs.tokenEndpointAuthMethod,
+      ),
+    pkceMethod:
+      sql`${sql.param(config.pkceMethod, orgCustomConnectorOauthConfigs.pkceMethod)}`.mapWith(
+        orgCustomConnectorOauthConfigs.pkceMethod,
+      ),
+    scopes:
+      sql`${sql.param(config.scopes, orgCustomConnectorOauthConfigs.scopes)}`.mapWith(
+        orgCustomConnectorOauthConfigs.scopes,
+      ),
+    authorizationParams:
+      sql`${sql.param(config.authorizationParams, orgCustomConnectorOauthConfigs.authorizationParams)}`.mapWith(
+        orgCustomConnectorOauthConfigs.authorizationParams,
+      ),
+    createdAt: sql`now()`.mapWith(orgCustomConnectorOauthConfigs.createdAt),
+    updatedAt: sql`now()`.mapWith(orgCustomConnectorOauthConfigs.updatedAt),
+  };
+}
+
 const persistCustomConnectorCreate$ = command(
   async (
     { set },
-    args: {
-      readonly connectorId: string;
-      readonly orgId: string;
-      readonly userId: string;
-      readonly slug: string;
-      readonly definition: ValidatedDefinition;
-      readonly storageVersion: number;
-      readonly oauthConfigUpdate: ValidatedOAuthConfigUpdate;
-      readonly encryptedClientSecret: string | null;
-      readonly preparedSkill: PreparedServerSideVolume | null;
-    },
+    args: PersistCustomConnectorCreateArgs,
     signal: AbortSignal,
   ): Promise<
     | {
@@ -1857,62 +1988,78 @@ const persistCustomConnectorCreate$ = command(
     | BadRequestResponse
   > => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0144; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      if (args.preparedSkill) {
-        const { rowCount: published } = await tx.execute(
-          preparedVolumePublicationSql(args.preparedSkill, nowDate()),
-        );
-        if (published !== 1) {
+    const oauth =
+      args.oauthConfigUpdate.kind === "upsert" && args.encryptedClientSecret
+        ? {
+            config: args.oauthConfigUpdate.config,
+            secret: args.encryptedClientSecret,
+          }
+        : null;
+    if ((args.definition.authMode === "oauth") !== (oauth !== null)) {
+      throw new Error("custom connector OAuth mode and config do not match");
+    }
+    const publication = args.preparedSkill
+      ? preparedVolumePublicationPlan(args.preparedSkill, nowDate())
+      : null;
+    const source =
+      publication?.published ?? sql`(VALUES (1)) AS connector_create_source`;
+    const values = db.select(customConnectorCreateSource(args)).from(source);
+    const created = db
+      .$with("created_connector")
+      .as(db.insert(orgCustomConnectors).select(values).returning());
+    const ctes = publication?.ctes ?? [];
+    signal.throwIfAborted();
+    if (oauth) {
+      const config = db.$with("created_oauth_config").as(
+        db
+          .insert(orgCustomConnectorOauthConfigs)
+          .select(
+            db
+              .select(
+                customConnectorOAuthCreateSource(
+                  sql`${created.id}`,
+                  args.orgId,
+                  oauth.config,
+                  oauth.secret,
+                ),
+              )
+              .from(created),
+          )
+          .returning(),
+      );
+      const [result] = await db
+        .with(...ctes, created, config)
+        .select()
+        .from(created)
+        .innerJoin(config, eq(config.connectorId, created.id));
+      signal.throwIfAborted();
+      if (!result) {
+        if (args.preparedSkill) {
           throw new StorageVersionIdentityConflictError(
             args.preparedSkill.version.versionId,
           );
         }
-        signal.throwIfAborted();
-      }
-      const [row] = await tx
-        .insert(orgCustomConnectors)
-        .values({
-          id: args.connectorId,
-          orgId: args.orgId,
-          slug: args.slug,
-          displayName: args.definition.displayName,
-          ...protocolColumns(args.definition),
-          fields: [...args.definition.fields],
-          headerInjections: [...args.definition.headerInjections],
-          queryInjections: [...args.definition.queryInjections],
-          authMode: args.definition.authMode,
-          skillMarkdown: args.definition.skillMarkdown,
-          skillStorageVersionId: args.preparedSkill?.version.versionId ?? null,
-          storageVersion: args.storageVersion,
-          createdBy: args.userId,
-        })
-        .returning(customConnectorDefinitionSelection());
-      if (!row) {
         throw new Error("Expected insert to return a row");
       }
-      let oauthConfig: CustomConnectorOAuthConfigRow | null = null;
-      if (
-        args.oauthConfigUpdate.kind === "upsert" &&
-        args.encryptedClientSecret
-      ) {
-        const [insertedOAuthConfig] = await tx
-          .insert(orgCustomConnectorOauthConfigs)
-          .values({
-            connectorId: row.id,
-            orgId: args.orgId,
-            ...args.oauthConfigUpdate.config,
-            encryptedClientSecret: args.encryptedClientSecret,
-          })
-          .returning();
-        if (!insertedOAuthConfig) {
-          throw new Error("Expected OAuth config insert to return a row");
-        }
-        oauthConfig = insertedOAuthConfig;
+      return {
+        row: result.created_connector,
+        oauthConfig: result.created_oauth_config,
+      };
+    }
+    const [row] = await db
+      .with(...ctes, created)
+      .select()
+      .from(created);
+    signal.throwIfAborted();
+    if (!row) {
+      if (args.preparedSkill) {
+        throw new StorageVersionIdentityConflictError(
+          args.preparedSkill.version.versionId,
+        );
       }
-      requireCustomConnectorOAuthConfig(row.authMode, oauthConfig);
-      return { row, oauthConfig };
-    });
+      throw new Error("Expected insert to return a row");
+    }
+    return { row, oauthConfig: null };
   },
 );
 
