@@ -502,32 +502,34 @@ const compactUsageEventBatch$ = command(
   > => {
     const db = set(writeDb$);
     const rawSeedLimit = USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0129; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const lockWaitMs = 0;
-      signal.throwIfAborted();
+    const lockWaitMs = 0;
+    signal.throwIfAborted();
 
-      const cutoffRows = parseRawRows(
-        cutoffRowSchema,
-        await tx.execute(sql`
+    const cutoffRows = parseRawRows(
+      cutoffRowSchema,
+      await db.execute(sql`
       SELECT (date_trunc('hour', timezone('UTC', statement_timestamp()))
         - interval '4 days')::timestamp AS cutoff
     `),
+    );
+    const cutoffDate = cutoffRows[0]?.cutoff;
+    if (!cutoffDate) {
+      throw new Error("Usage event compaction cutoff query returned no row");
+    }
+    const cutoff = timestampWithoutTimeZone(cutoffDate);
+    const [holdProbe] = parseRawRows(
+      holdProbeRowSchema,
+      await db.execute(compactionHoldProbeSql(cutoff, rawSeedLimit)),
+    );
+    if (!holdProbe) {
+      throw new Error(
+        "Usage event compaction hold probe returned no summary row",
       );
-      const cutoffDate = cutoffRows[0]?.cutoff;
-      if (!cutoffDate) {
-        throw new Error("Usage event compaction cutoff query returned no row");
-      }
-      const cutoff = timestampWithoutTimeZone(cutoffDate);
-      const [holdProbe] = parseRawRows(
-        holdProbeRowSchema,
-        await tx.execute(compactionHoldProbeSql(cutoff, rawSeedLimit)),
-      );
-      if (!holdProbe) {
-        throw new Error(
-          "Usage event compaction hold probe returned no summary row",
-        );
-      }
+    }
+    // The probes are read-only; financial reconciliation still rejects the
+    // compaction and attribution writes together before this transaction commits.
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0129; new non-billing transactions are prohibited.
+    return await db.transaction(async (tx) => {
       const rows = parseRawRows(
         compactionRowSchema,
         await tx.execute(compactUsageEventsSql({ cutoff, rawSeedLimit })),
