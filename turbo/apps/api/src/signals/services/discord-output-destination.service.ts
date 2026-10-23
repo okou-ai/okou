@@ -22,9 +22,57 @@ interface DiscordOutputDestination {
   readonly guildId?: string;
   readonly channelId: string;
   readonly attachFiles?: boolean;
+  readonly allowOtherDmRecipients?: boolean;
   /** Upload preparation checks access without creating an empty thread. */
   readonly createThread: boolean;
 }
+
+/** Resolve a recipient without exposing any private message content. */
+export const resolveDiscordOutputChannel$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly guildId?: string;
+      readonly channelId?: string;
+      readonly recipientId?: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    if (args.channelId) {
+      return { kind: "resolved" as const, channelId: args.channelId };
+    }
+    const current = await set(requireDiscordBinding$, args, signal);
+    if (current.kind === "denied") {
+      return current;
+    }
+    const recipientId =
+      args.recipientId === "me"
+        ? current.binding.discordUserId
+        : args.recipientId;
+    if (!recipientId || args.guildId !== undefined) {
+      return { kind: "denied" as const, response: discordUnavailable() };
+    }
+    const opened = await discordClient.openDiscordDm(
+      { botToken: current.botToken, userId: recipientId },
+      signal,
+    );
+    if (opened.kind !== "ok") {
+      return { kind: "denied" as const, response: discordApiFailure(opened) };
+    }
+    const channel = opened.data;
+    if (
+      channel.type !== 1 ||
+      channel.guild_id !== undefined ||
+      channel.recipients?.length !== 1 ||
+      channel.recipients[0]?.id !== recipientId
+    ) {
+      return { kind: "denied" as const, response: discordUnavailable() };
+    }
+    return { kind: "resolved" as const, channelId: channel.id };
+  },
+);
 
 function matchingThread(
   channel: DiscordChannel,

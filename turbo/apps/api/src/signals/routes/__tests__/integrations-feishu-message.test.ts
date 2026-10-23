@@ -504,7 +504,6 @@ describe("POST /api/integrations/feishu/message", () => {
       for (const target of [
         { chat: "oc_target_chat" },
         { replyToMessageId: "om_parent" },
-        { user: "ou_someone_else" },
       ]) {
         const response = await app.request(
           `/api/integrations/${platform}/message`,
@@ -532,6 +531,75 @@ describe("POST /api/integrations/feishu/message", () => {
       );
       expect(response.status).toBe(403);
       expect(captured).toStrictEqual([]);
+    },
+  );
+
+  it.each(["feishu", "lark"] as const)(
+    "allows outbound %s DMs without granting private file access",
+    async (platform) => {
+      const { actor, installationId } = await createOnboardedFeishuInstallation(
+        undefined,
+        platform,
+      );
+      captured = [];
+      const origin = FEISHU_PLATFORMS[platform].apiOrigin;
+      server.use(
+        http.get(`${origin}/open-apis/im/v1/chats/:chatId`, () => {
+          return HttpResponse.json({ code: 0, data: { chat_mode: "p2p" } });
+        }),
+        http.get(`${origin}/open-apis/im/v1/chats/:chatId/members`, () => {
+          return HttpResponse.json({
+            code: 0,
+            data: {
+              items: [{ member_id: "ou_recipient", member_id_type: "open_id" }],
+              has_more: false,
+            },
+          });
+        }),
+      );
+      const app = createApp({
+        signal: context.signal,
+        routes: TEST_APP_ROUTES,
+      });
+      const headers = {
+        authorization: `Bearer ${await credentials.okouToken(actor)}`,
+        "content-type": "application/json",
+      };
+      for (const target of [
+        { user: "ou_recipient" },
+        { chat: "oc_target_chat" },
+        { replyToMessageId: "om_parent" },
+      ]) {
+        const response = await app.request(
+          `/api/integrations/${platform}/message`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              installationId,
+              ...target,
+              text: "Hello recipient",
+            }),
+          },
+        );
+        expect(response.status).toBe(200);
+      }
+      expect(captured[0]).toMatchObject({
+        receiveIdType: "open_id",
+        target: "ou_recipient",
+      });
+      expect(captured).toHaveLength(3);
+      const query = new URLSearchParams({
+        installation_id: installationId,
+        message_id: "om_parent",
+        file_key: "private-file",
+        type: "file",
+      });
+      const denied = await app.request(
+        `/api/integrations/${platform}/download-file?${query}`,
+        { headers },
+      );
+      expect(denied.status).toBe(403);
     },
   );
 
@@ -790,13 +858,15 @@ describe("POST /api/integrations/feishu/message", () => {
   );
 
   it.each([
-    ["feishu", false],
-    ["lark", false],
-    ["feishu", true],
-    ["lark", true],
+    ["feishu", false, false],
+    ["lark", false, false],
+    ["feishu", true, false],
+    ["lark", true, false],
+    ["feishu", false, true],
+    ["lark", false, true],
   ] as const)(
-    "authorizes a stored %s file at delivery (membership revoked during upload: %s)",
-    async (platform, revokeDuringUpload) => {
+    "authorizes a stored %s file (membership revoked: %s; other recipient DM: %s)",
+    async (platform, revokeDuringUpload, otherRecipient) => {
       const { actor, agentId, installationId } =
         await createOnboardedFeishuInstallation(undefined, platform);
       await runsApi.grantProEntitlement(actor);
@@ -905,7 +975,9 @@ describe("POST /api/integrations/feishu/message", () => {
           body: {
             uploadId: initialized.body.uploadId,
             installationId,
-            chat: "oc_file_target",
+            ...(otherRecipient
+              ? { user: "ou_recipient" }
+              : { chat: "oc_file_target" }),
             contentType: "application/pdf",
           },
         }),
@@ -935,8 +1007,8 @@ describe("POST /api/integrations/feishu/message", () => {
       expect(captured).toStrictEqual([
         {
           kind: "send",
-          receiveIdType: "chat_id",
-          target: "oc_file_target",
+          receiveIdType: otherRecipient ? "open_id" : "chat_id",
+          target: otherRecipient ? "ou_recipient" : "oc_file_target",
           msgType: "file",
           content: { file_key: "file_uploaded" },
           replyInThread: false,

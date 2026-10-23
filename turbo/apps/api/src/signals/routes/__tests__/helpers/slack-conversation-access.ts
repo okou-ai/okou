@@ -16,6 +16,7 @@ export function mockSharedSlackConversations(
     "D-mock-dm",
     "D-SELF",
   ],
+  dmRecipientId = "U_DM_RECIPIENT",
 ) {
   server.use(
     http.get("https://slack.com/api/conversations.info", ({ request }) => {
@@ -25,6 +26,9 @@ export function mockSharedSlackConversations(
           id: new URL(request.url).searchParams.get("channel"),
           is_archived: false,
           is_read_only: false,
+          ...(new URL(request.url).searchParams.get("channel")?.startsWith("D")
+            ? { is_im: true, is_mpim: false, user: dmRecipientId }
+            : {}),
         },
       });
     }),

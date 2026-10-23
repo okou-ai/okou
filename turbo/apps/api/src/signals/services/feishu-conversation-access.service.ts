@@ -207,7 +207,7 @@ async function requireFeishuChatPosting(
   return denied();
 }
 
-/** User-supplied chat, message and open IDs never inherit the bot's authority. */
+/** Group access and private reads require the caller; outbound DMs may target others. */
 export const requireFeishuConversationAccess$ = command(
   async (
     { get, set },
@@ -242,10 +242,10 @@ export const requireFeishuConversationAccess$ = command(
       return denied();
     }
     if (args.user) {
-      if (args.user !== "me" && args.user !== binding.openId) {
+      if (!args.write && args.user !== "me" && args.user !== binding.openId) {
         return denied();
       }
-      return binding.openId;
+      return args.user === "me" ? binding.openId : args.user;
     }
     const [installation] = await get(db$)
       .select()
@@ -310,6 +310,9 @@ export const requireFeishuConversationAccess$ = command(
       chatSchema,
       await readAccessData({ token, url: infoUrl }, signal),
     );
+    if (args.write && chat.chat_mode === "p2p") {
+      return;
+    }
     // Reading chat metadata with a tenant token does not prove the bot joined.
     if (chat.chat_mode !== "p2p") {
       const present = parseAccessData(

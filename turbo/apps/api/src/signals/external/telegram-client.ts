@@ -158,7 +158,9 @@ export async function checkTelegramConversationAccess(
     return null;
   }
   if (chat.type === "private") {
-    return chatId === args.userId ? chatId : null;
+    // Outbound DMs follow Telegram's bot reachability rules. They confer no
+    // authority to read the recipient's private conversation or attachments.
+    return args.mode === "read" && chatId !== args.userId ? null : chatId;
   }
   const members = await Promise.all(
     [args.userId, args.botId].map(async (userId) => {

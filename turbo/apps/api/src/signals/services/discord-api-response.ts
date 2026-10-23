@@ -31,7 +31,7 @@ export function discordDmReadDenied(): DiscordFailureResponse {
       error: {
         code: "DISCORD_DM_READ_DENIED",
         message:
-          "Discord bot DM content cannot be read because that DM is shared by every Okou organization connected to your Discord account. Sending to your own bot DM is still available.",
+          "Discord bot DM content cannot be read because that DM is shared by every Okou organization connected to your Discord account. Outbound bot DMs are still available.",
       },
     },
   };

@@ -122,6 +122,7 @@ const authorizeDelivery$ = command(
         channelId: row.destination.channelId,
         createThread,
         attachFiles: true,
+        allowOtherDmRecipients: true,
       },
       signal,
     );

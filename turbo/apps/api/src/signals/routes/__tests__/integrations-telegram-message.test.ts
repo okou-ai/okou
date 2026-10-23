@@ -552,9 +552,15 @@ describe("official Telegram self delivery", () => {
           text: "authorized group message",
         },
       });
-      expect(response.status).toBe(scenario === "shared" ? 200 : 404);
+      expect(response.status).toBe(
+        scenario === "shared" || scenario === "other private chat" ? 200 : 404,
+      );
       expect(posts).toStrictEqual(
-        scenario === "shared" ? [String(chatId)] : [],
+        scenario === "shared"
+          ? [String(chatId)]
+          : scenario === "other private chat"
+            ? [String(Number(sender.telegramUserId) + 1)]
+            : [],
       );
     });
   });
@@ -734,7 +740,7 @@ describe("official Telegram self delivery", () => {
     });
   });
 
-  it.each(["own DM", "revoked group"] as const)(
+  it.each(["own DM", "other DM", "revoked group"] as const)(
     "authorizes Telegram file delivery to %s",
     async (destination) => {
       const sender = officialSender();
@@ -780,8 +786,11 @@ describe("official Telegram self delivery", () => {
               return HttpResponse.json({
                 ok: true,
                 result: {
-                  id: -100_123,
-                  type: "supergroup",
+                  id:
+                    destination === "other DM"
+                      ? Number(sender.telegramUserId) + 1
+                      : -100_123,
+                  type: destination === "other DM" ? "private" : "supergroup",
                   permissions: {
                     can_send_messages: true,
                     can_send_documents: true,
@@ -814,7 +823,7 @@ describe("official Telegram self delivery", () => {
                 ok: true,
                 result: {
                   message_id: 322,
-                  chat: { id: Number(sender.telegramUserId) },
+                  chat: { id: Number(telegramBody.chat_id) },
                 },
               });
             },
@@ -830,7 +839,12 @@ describe("official Telegram self delivery", () => {
               body: {
                 uploadId,
                 botId: OFFICIAL_TELEGRAM_BOT_ID,
-                chatId: destination === "own DM" ? "me" : "-100123",
+                chatId:
+                  destination === "own DM"
+                    ? "me"
+                    : destination === "other DM"
+                      ? String(Number(sender.telegramUserId) + 1)
+                      : "-100123",
                 contentType: "application/pdf",
               },
               headers: { authorization: "Bearer clerk-session" },
@@ -845,10 +859,14 @@ describe("official Telegram self delivery", () => {
           return;
         }
         expect(response.status).toBe(200);
-        expect(telegramBody).toMatchObject({ chat_id: sender.telegramUserId });
+        const recipient =
+          destination === "own DM"
+            ? sender.telegramUserId
+            : String(Number(sender.telegramUserId) + 1);
+        expect(telegramBody).toMatchObject({ chat_id: recipient });
         expect(response.body).toMatchObject({
           messageId: 322,
-          chatId: sender.telegramUserId,
+          chatId: recipient,
         });
       });
     },

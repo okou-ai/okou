@@ -76,6 +76,7 @@ describe("POST /api/integrations/slack/message", () => {
   }): Promise<{ readonly slackUserId: string }> {
     const connection = await slackOrgs.connectMember(base);
     await restoreMembership(base);
+    mockSharedSlackConversations(undefined, connection.slackUserId);
     return connection;
   }
 
@@ -347,7 +348,7 @@ describe("POST /api/integrations/slack/message", () => {
     );
   });
 
-  it("denies a channel or bot DM that the caller does not share", async () => {
+  it("denies a group channel that the caller does not share", async () => {
     const actor = await seedWithInstallation();
     const token = await credentials.okouToken(actor);
     mockSharedSlackConversations([]);
@@ -358,8 +359,7 @@ describe("POST /api/integrations/slack/message", () => {
     })(integrationsSlackMessageContract);
     for (const target of [
       { channel: "C_PRIVATE_OTHER" },
-      { channel: "D_OTHER_USER" },
-      { user: "U_OTHER_USER" },
+      { channel: "G_PRIVATE_OTHER" },
     ]) {
       const response = await accept(
         client.sendMessage({
@@ -372,6 +372,72 @@ describe("POST /api/integrations/slack/message", () => {
     }
     expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
   });
+
+  it.each([{ user: "U_OTHER_USER" }, { channel: "D_OTHER_USER" }])(
+    "allows an outbound bot DM to another recipient: %j",
+    async (target) => {
+      const actor = await seedWithInstallation();
+      mockSharedSlackConversations([], "U_OTHER_USER");
+      const client = setupApp({
+        context,
+        routes: integrationsSlackMessageRoutes,
+      })(integrationsSlackMessageContract);
+      await accept(
+        client.sendMessage({
+          headers: {
+            authorization: `Bearer ${await credentials.okouToken(actor)}`,
+          },
+          body: { ...target, text: "Hello recipient" },
+        }),
+        [200],
+      );
+      expect(context.mocks.slack.chat.postMessage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          channel: "channel" in target ? target.channel : "D-mock-dm",
+          text: "Hello recipient",
+        }),
+      );
+      if ("user" in target) {
+        expect(context.mocks.slack.conversations.open).toHaveBeenLastCalledWith(
+          {
+            users: "U_OTHER_USER",
+          },
+        );
+      }
+    },
+  );
+
+  it.each([
+    { is_im: false },
+    { is_im: true, is_mpim: true, user: "U_OTHER_USER" },
+    { is_im: true, user: "U_WRONG_RECIPIENT" },
+  ])(
+    "does not treat an invalid DM destination as an outbound grant: %j",
+    async (dm) => {
+      const actor = await seedWithInstallation();
+      server.use(
+        http.get("https://slack.com/api/conversations.info", () => {
+          return HttpResponse.json({
+            ok: true,
+            channel: { id: "D-mock-dm", ...dm },
+          });
+        }),
+      );
+      context.mocks.slack.chat.postMessage.mockClear();
+      await accept(
+        setupApp({ context, routes: integrationsSlackMessageRoutes })(
+          integrationsSlackMessageContract,
+        ).sendMessage({
+          headers: {
+            authorization: `Bearer ${await credentials.okouToken(actor)}`,
+          },
+          body: { user: "U_OTHER_USER", text: "must not send" },
+        }),
+        [404],
+      );
+      expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     { is_read_only: true },

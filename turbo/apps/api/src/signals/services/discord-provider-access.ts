@@ -174,6 +174,8 @@ interface DiscordProviderAccessArgs {
   mode: DiscordAccessMode;
   attachFiles?: boolean;
   createPublicThread?: boolean;
+  /** Explicit outbound delivery only; never prompt admission or private reads. */
+  allowOtherDmRecipients?: boolean;
   /** Only reuse facts captured by this operation for these exact principals. */
   snapshot?: DiscordProviderSnapshot;
 }
@@ -243,12 +245,13 @@ async function resolveDiscordDmAccess(
   channel: DiscordChannel,
   signal?: AbortSignal,
 ): Promise<{ kind: "allowed"; channel: DiscordChannel } | AccessFailure> {
-  // A bot can only fetch its own DMs; the single other recipient must be
-  // the exact connected sender, never a supplied arbitrary Discord user.
+  // Bot DMs may address other recipients only for explicit outbound delivery.
   if (
     channel.guild_id !== undefined ||
     channel.recipients?.length !== 1 ||
-    channel.recipients[0]?.id !== args.discordUserId
+    !channel.recipients[0]?.id ||
+    (channel.recipients[0].id !== args.discordUserId &&
+      !(args.mode === "write" && args.allowOtherDmRecipients))
   ) {
     return unavailable();
   }
@@ -537,6 +540,7 @@ export function authorizeDiscordSnapshot(
     readonly mode: DiscordAccessMode;
     readonly attachFiles?: boolean;
     readonly createPublicThread?: boolean;
+    readonly allowOtherDmRecipients?: boolean;
   },
 ): ProviderAccess | AccessFailure {
   const { channel, guild } = snapshot;
@@ -547,6 +551,16 @@ export function authorizeDiscordSnapshot(
     return unavailable();
   }
   if (!guild) {
+    if (
+      channel.type !== 1 ||
+      channel.guild_id !== undefined ||
+      channel.recipients?.length !== 1 ||
+      !channel.recipients[0]?.id ||
+      (channel.recipients[0].id !== snapshot.discordUserId &&
+        !(requirements.mode === "write" && requirements.allowOtherDmRecipients))
+    ) {
+      return unavailable();
+    }
     return { kind: "allowed", channel, snapshot };
   }
   if (

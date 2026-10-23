@@ -11,16 +11,16 @@ import {
   JSON_OPTION_FLAGS,
   printMessageOutput,
 } from "../../../lib/command/message-output";
-import { resolveDiscordChannelId } from "../target";
+import { resolveDiscordDestination } from "../target";
 
 export const sendCommand = new Command()
   .name("send")
   .description(
-    "Send text to an authorized Discord channel, native thread, or your bot DM",
+    "Send text to a Discord channel, native thread, or recipient's bot DM",
   )
   .requiredOption(
     TO_OPTION_FLAGS,
-    "Destination: chat:<id> or a channel, native thread, or bot DM ID",
+    "Destination: me, user:<id>, chat:<id>, or a channel or native thread ID",
   )
   .option(
     "-t, --text <message>",
@@ -40,17 +40,20 @@ export const sendCommand = new Command()
     `
 Examples:
   okou discord message send --to <channel-id> --text "Hello!"
+  okou discord message send --to user:<user-id> --text "Hello!"
   okou discord message send --guild-id <guild-id> --to <thread-id> --text "Update" --json
   okou discord message send --to <channel-id> --reply-to <message-id> --text "Reply"
   printf 'Release update' | okou discord message send --to <channel-id>
 
 Notes:
-  - Requires discord:write and access for both your verified Discord user and Okou.
+  - Requires discord:write and your own verified Discord binding.
+  - Guild channels and threads require access for both your connected user and Okou.
   - --guild-id is optional; when given, it must match the destination channel's guild.
   - To send in a native thread, pass its channel ID to --to. This command does not create threads.
   - --reply-to references a message in that destination; it does not create or enter a thread.
   - Run-triggered sends include agent, sender, and model attribution once, after the text.
-  - Bot DMs are limited to your own existing one-to-one conversation with Okou.
+  - Use user:<id> to DM another recipient; Discord privacy settings may prevent delivery.
+  - Sending a DM does not grant access to its private history or attachments.
   - Long text is split into Discord-sized messages without truncation; every delivered URL is returned.
   - Mention notifications are suppressed, including @everyone, roles, and users.
   - If a send partially fails, inspect already delivered URLs before retrying to avoid duplicates.`,
@@ -69,7 +72,7 @@ Notes:
           throw new Error("Provide --text or pipe message text on stdin");
         }
         const parsed = sendDiscordMessageBodySchema.safeParse({
-          channelId: resolveDiscordChannelId(options.to),
+          ...resolveDiscordDestination(options.to),
           text,
           replyToMessageId: options.replyTo,
           guildId: options.guildId,

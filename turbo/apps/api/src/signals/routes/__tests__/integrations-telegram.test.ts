@@ -27,6 +27,9 @@ import { integrationsTelegramRoutes } from "../integrations-telegram";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createPublicTelegramActor } from "./helpers/public-telegram-actor";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 
 const TEST_APP_ROUTES = Object.freeze([...integrationsTelegramRoutes]);
@@ -963,14 +966,17 @@ describe("GET /api/integrations/telegram/download-file", () => {
     return app.request(`${downloadPath}${args.search}`, { headers });
   }
 
-  async function seedReadToken(fileId = "tg-file-1"): Promise<string> {
+  async function seedReadToken(
+    fileId = "tg-file-1",
+    previousPrivateAccount = false,
+  ): Promise<string> {
     const bdd = createBddApi(context);
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     await bdd.readOnboardingStatus(actor);
     await bdd.completeOnboarding(actor);
     const userId = newTelegramBotId();
-    const chatId = -Number(userId);
+    const chatId = previousPrivateAccount ? Number(userId) : -Number(userId);
     const integrations = createBddIntegrationApi(context);
     await integrations.requestLinkTelegram(
       actor,
@@ -983,34 +989,93 @@ describe("GET /api/integrations/telegram/download-file", () => {
       },
       [200],
     );
-    await integrations.requestTelegramWebhook(
-      OFFICIAL_TELEGRAM_BOT_ID,
-      JSON.stringify({
-        update_id: 1,
-        message: {
-          message_id: 1,
-          chat: { id: chatId, type: "supergroup" },
-          from: { id: Number(userId), first_name: "Reader" },
-          document: {
-            file_id: fileId,
-            file_unique_id: `unique-${fileId}`,
-            file_name: "attachment.txt",
-            mime_type: "text/plain",
+    if (previousPrivateAccount) {
+      const runs = createRunsApi(context);
+      runs.configureRunnerGroup();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      server.use(
+        http.post(
+          `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/sendChatAction`,
+          () => {
+            return HttpResponse.json({ ok: true, result: true });
           },
-          caption: "A file shared in this group",
-        },
-      }),
-      { "x-telegram-bot-api-secret-token": OFFICIAL_WEBHOOK_SECRET },
-      [200],
-    );
+        ),
+        http.post(
+          `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/sendMessage`,
+          () => {
+            return HttpResponse.json({
+              ok: true,
+              result: { message_id: 2, chat: { id: chatId } },
+            });
+          },
+        ),
+      );
+    }
+    const owner = previousPrivateAccount
+      ? publicRunOwner(context, actor, {
+          restoreEnvironment: captureConnectorExternalState(context),
+        })
+      : undefined;
+    const recordFile = () => {
+      return integrations.requestTelegramWebhook(
+        OFFICIAL_TELEGRAM_BOT_ID,
+        JSON.stringify({
+          update_id: 1,
+          message: {
+            message_id: 1,
+            chat: {
+              id: chatId,
+              type: previousPrivateAccount ? "private" : "supergroup",
+            },
+            from: { id: Number(userId), first_name: "Reader" },
+            document: {
+              file_id: fileId,
+              file_unique_id: `unique-${fileId}`,
+              file_name: "attachment.txt",
+              mime_type: "text/plain",
+            },
+            caption: "A file shared in this group",
+          },
+        }),
+        { "x-telegram-bot-api-secret-token": OFFICIAL_WEBHOOK_SECRET },
+        [200],
+      );
+    };
+    if (owner) {
+      await owner.run(recordFile);
+    } else {
+      await recordFile();
+    }
     await flushWaitUntilForTest();
+    if (previousPrivateAccount) {
+      await integrations.requestUnlinkTelegram(
+        actor,
+        OFFICIAL_TELEGRAM_BOT_ID,
+        [204],
+      );
+      await integrations.requestLinkTelegram(
+        actor,
+        {
+          telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+          telegramAuth: telegramLoginAuth(OFFICIAL_BOT_TOKEN, {
+            id: Number(newTelegramBotId()),
+            first_name: "New account",
+          }),
+        },
+        [200],
+      );
+    }
     server.use(
       http.get(
         `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/getChat`,
         () => {
           return HttpResponse.json({
             ok: true,
-            result: { id: chatId, type: "supergroup" },
+            result: {
+              id: chatId,
+              type: previousPrivateAccount ? "private" : "supergroup",
+            },
           });
         },
       ),
@@ -1110,6 +1175,35 @@ describe("GET /api/integrations/telegram/download-file", () => {
     expect(response.headers.get("x-file-name")).toBe("official.jpg");
     const receivedBytes = Buffer.from(await response.arrayBuffer());
     expect(receivedBytes.equals(fileBytes)).toBeTruthy();
+  });
+
+  it("does not read an old account's recorded private files through the new account's binding", async () => {
+    const token = await seedReadToken("previous-private-attachment", true);
+    const checkedChats: string[] = [];
+    server.use(
+      http.get(
+        `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/getChat`,
+        ({ request }) => {
+          const chatId = new URL(request.url).searchParams.get("chat_id");
+          if (!chatId) {
+            throw new Error("Expected a recorded private source chat");
+          }
+          checkedChats.push(chatId);
+          return HttpResponse.json({
+            ok: true,
+            result: { id: Number(chatId), type: "private" },
+          });
+        },
+      ),
+    );
+    context.mocks.telegram.getFile.mockClear();
+    const denied = await requestDownload({
+      search: `?file_id=previous-private-attachment&bot_id=${OFFICIAL_TELEGRAM_BOT_ID}`,
+      token,
+    });
+    expect(denied.status).toBe(404);
+    expect(checkedChats).toHaveLength(1);
+    expect(context.mocks.telegram.getFile).not.toHaveBeenCalled();
   });
 
   it("denies unrecorded bot-global files and files from a chat the caller left", async () => {

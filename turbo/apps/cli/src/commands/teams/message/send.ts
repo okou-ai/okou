@@ -39,7 +39,7 @@ function parseTeamsCard(value: string): TeamsCardInput {
 export const sendCommand = new Command()
   .name("send")
   .description(
-    "Send a message to a shared Microsoft Teams conversation or your bot DM",
+    "Send a message to a shared Microsoft Teams conversation or a recipient's bot DM",
   )
   .option(TO_OPTION_FLAGS, toOptionDescription("19:… conversation, 29:… user"))
   .option("-t, --text <message>", "Message text (or pipe it on stdin)")
@@ -51,14 +51,15 @@ export const sendCommand = new Command()
     `
 Examples:
   Simple message:        okou teams message send --to 19:thread@thread.tacv2 -t "Hello!"
-  DM your own ID:        okou teams message send --to 29:user-id -t "Hello!"
+  DM a recipient:        okou teams message send --to 29:user-id -t "Hello!"
   DM yourself:           okou teams message send --to me -t "Hello!"
   Thread reply:          okou teams message send --to 19:thread@thread.tacv2 --reply-to root-activity -t "reply"
   Adaptive Card:         okou teams message send --to 19:thread@thread.tacv2 --rich '{"type":"AdaptiveCard","version":"1.4","body":[{"type":"TextBlock","text":"Hello","wrap":true}]}'
 
 Notes:
-  - Requires your verified account and access for both you and the bot to the destination
-  - Private messages are limited to your own conversation with the bot
+  - Requires your verified account; group targets require access for both you and the bot
+  - You can DM other recipients, subject to the platform's bot delivery rules
+  - Sending a DM does not grant access to its private history or attachments
   - --to is required; 29:… IDs open a DM, other IDs are conversations
   - Either --text or --rich is required; text can be provided with --text or piped on stdin
   - Use the Conversation ID and Activity ID from the current Teams run prompt`,

@@ -21,7 +21,7 @@ import {
   JSON_OPTION_FLAGS,
   printMessageOutput,
 } from "../../lib/command/message-output";
-import { resolveDiscordChannelId } from "./target";
+import { resolveDiscordDestination } from "./target";
 
 interface UploadFileOptions {
   readonly file: string;
@@ -90,7 +90,7 @@ async function uploadCanonicalBody(
 function printDelivery(
   result: DiscordUploadMaterializeResponse,
   upload: {
-    readonly channelId: string;
+    readonly channelId: string | null;
     readonly filename: string;
     readonly contentType: string;
     readonly size: number;
@@ -127,7 +127,7 @@ function printDelivery(
 }
 
 async function uploadFile(options: UploadFileOptions): Promise<void> {
-  const channelId = resolveDiscordChannelId(options.to);
+  const destination = resolveDiscordDestination(options.to);
   const content = await readUploadFile(options.file);
   const contentType = new MIMEType(
     options.contentType ?? inferWebUploadContentType(options.file),
@@ -135,7 +135,7 @@ async function uploadFile(options: UploadFileOptions): Promise<void> {
   const operationId = options.operationId ?? randomUUID();
   const filename = basename(options.file);
   const upload = {
-    channelId,
+    channelId: destination.channelId ?? null,
     filename,
     contentType,
     size: content.byteLength,
@@ -149,7 +149,7 @@ async function uploadFile(options: UploadFileOptions): Promise<void> {
       contentType,
       checksumSha256: createHash("sha256").update(content).digest("hex"),
       operationId,
-      channelId,
+      ...destination,
       ...(options.guildId === undefined ? {} : { guildId: options.guildId }),
       ...(options.text === undefined ? {} : { comment: options.text }),
     });
@@ -179,14 +179,16 @@ async function uploadFile(options: UploadFileOptions): Promise<void> {
 
 export const uploadFileCommand = new Command()
   .name("upload-file")
-  .description("Publish a file to Okou and deliver it to a Discord channel")
+  .description(
+    "Publish a file to Okou and deliver it to a Discord channel or DM",
+  )
   .requiredOption(
     "-f, --file <path>",
     "Local file path to upload (up to 10 MiB)",
   )
   .requiredOption(
     TO_OPTION_FLAGS,
-    "Destination: chat:<id> or a Discord channel or thread ID",
+    "Destination: me, user:<id>, chat:<id>, or a Discord channel or thread ID",
   )
   .option(
     "--guild-id <id>",
@@ -201,6 +203,7 @@ export const uploadFileCommand = new Command()
     `
 Examples:
   okou discord upload-file -f /tmp/report.pdf --to 123456789012345678
+  okou discord upload-file -f /tmp/report.pdf --to user:123456789012345678
   okou discord upload-file -f /tmp/report.pdf --to 123456789012345678 -t "Weekly report"
 
 Output:
@@ -214,6 +217,8 @@ Notes:
   - Reuse the same file, destination and --operation-id to resume publication or
     check a recorded delivery; it will never resend that delivery.
   - Uses server-side bot credentials; no Discord token is needed locally.
+  - Requires your verified Discord binding; guild targets require shared access.
+  - Recipient DMs follow Discord privacy settings and grant no private read access.
   - Like okou slack upload-file, the command exits 0 whenever the server reports a
     delivery status, even if Discord delivery failed or is pending. Check
     delivery.status in the --json output. To send again after a failed delivery,

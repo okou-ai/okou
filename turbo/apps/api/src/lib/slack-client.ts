@@ -318,13 +318,26 @@ async function hasSlackPostingRole(
   });
 }
 
-/** Bot write access must not stand in for the caller's posting privileges. */
+function isSlackDmRecipient(
+  channel: { is_im?: boolean; is_mpim?: boolean; user?: string },
+  recipientId: string | undefined,
+): boolean {
+  return (
+    channel.is_im === true &&
+    channel.is_mpim !== true &&
+    Boolean(channel.user) &&
+    (!recipientId || channel.user === recipientId)
+  );
+}
+
+/** Check bot DM recipients and the caller's group posting privileges. */
 export async function isSlackConversationWritable(
   args: {
     token: string;
     slackUserId: string;
     channelId: string;
     thread: boolean;
+    recipientId?: string;
   },
   signal: AbortSignal,
 ): Promise<boolean> {
@@ -332,6 +345,9 @@ export async function isSlackConversationWritable(
     .object({
       channel: z.object({
         id: z.string(),
+        is_im: z.boolean().optional(),
+        is_mpim: z.boolean().optional(),
+        user: z.string().optional(),
         is_archived: z.boolean().optional(),
         is_read_only: z.boolean().optional(),
         is_ext_shared: z.boolean().optional(),
@@ -358,6 +374,12 @@ export async function isSlackConversationWritable(
     channel.is_archived === true ||
     channel.is_read_only === true
   ) {
+    return false;
+  }
+  if (args.channelId.startsWith("D")) {
+    return isSlackDmRecipient(channel, args.recipientId);
+  }
+  if (args.recipientId) {
     return false;
   }
   const restriction = args.thread

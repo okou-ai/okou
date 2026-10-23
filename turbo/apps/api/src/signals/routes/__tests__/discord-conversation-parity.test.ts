@@ -745,41 +745,50 @@ describe("Discord reply parity through public OAuth bindings", () => {
     expect(written.body.messages).toHaveLength(1);
   });
 
-  it("references the sender's own bot DM without reading its content", async () => {
-    const f = await nativeFixture();
-    const dmId = uniqueDiscordSnowflake();
-    f.channels.set(dmId, {
-      id: dmId,
-      type: 1,
-      recipients: [{ id: f.discordUserId, username: "sender" }],
-    });
-    const root = f.message(
-      uniqueDiscordSnowflake(),
-      dmId,
-      "Private DM content",
-    );
-    f.messages.set(dmId, [root]);
-    server.use(
-      http.get(`${API}/channels/${dmId}/messages/:messageId`, () => {
-        return HttpResponse.json(
-          { message: "DM reads are forbidden" },
-          { status: 500 },
-        );
-      }),
-    );
-    const response = await accept(
-      f.write.sendMessage({
-        headers: f.headers,
-        body: {
-          channelId: dmId,
-          replyToMessageId: root.id,
-          text: "Own DM reply",
-        },
-      }),
-      [200],
-    );
-    expect(response.body.messages[0]?.channelId).toBe(dmId);
-    expect(JSON.stringify(response.body)).not.toContain(root.content);
-    expect(f.sentBodies[0]?.message_reference?.message_id).toBe(root.id);
-  });
+  it.each(["own", "other"] as const)(
+    "references an %s bot DM without reading its content",
+    async (recipient) => {
+      const f = await nativeFixture();
+      const dmId = uniqueDiscordSnowflake();
+      f.channels.set(dmId, {
+        id: dmId,
+        type: 1,
+        recipients: [
+          {
+            id:
+              recipient === "own" ? f.discordUserId : uniqueDiscordSnowflake(),
+            username: "recipient",
+          },
+        ],
+      });
+      const root = f.message(
+        uniqueDiscordSnowflake(),
+        dmId,
+        "Private DM content",
+      );
+      f.messages.set(dmId, [root]);
+      server.use(
+        http.get(`${API}/channels/${dmId}/messages/:messageId`, () => {
+          return HttpResponse.json(
+            { message: "DM reads are forbidden" },
+            { status: 500 },
+          );
+        }),
+      );
+      const response = await accept(
+        f.write.sendMessage({
+          headers: f.headers,
+          body: {
+            channelId: dmId,
+            replyToMessageId: root.id,
+            text: "Own DM reply",
+          },
+        }),
+        [200],
+      );
+      expect(response.body.messages[0]?.channelId).toBe(dmId);
+      expect(JSON.stringify(response.body)).not.toContain(root.content);
+      expect(f.sentBodies[0]?.message_reference?.message_id).toBe(root.id);
+    },
+  );
 });

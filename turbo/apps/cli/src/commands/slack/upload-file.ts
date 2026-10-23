@@ -348,8 +348,9 @@ Examples:
   With title and comment:  okou slack upload-file -f /tmp/data.csv --to C01234 --title "Daily Report" -t "Here's the report"
 
 Notes:
-  - Requires your verified account and access for both you and the bot to the destination
-  - Private messages are limited to your own conversation with the bot
+  - Requires your verified account; group targets require access for both you and the bot
+  - You can DM other recipients, subject to the platform's bot delivery rules
+  - Sending a DM does not grant access to its private history or attachments
   - Uses the bot token (not user SLACK_TOKEN), so no files:write permission is needed
   - Run-scoped calls publish to Okou storage before Slack delivery
   - Delivery failures are reported on stderr with an --operation-id retry hint

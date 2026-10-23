@@ -33,7 +33,9 @@ function parseBlocks(value: string): SlackBlock[] {
 
 export const sendCommand = new Command()
   .name("send")
-  .description("Send a message to a shared Slack conversation or your bot DM")
+  .description(
+    "Send a message to a shared Slack conversation or a recipient's bot DM",
+  )
   .option(TO_OPTION_FLAGS, toOptionDescription("C… channel, D… DM, U…/W… user"))
   .option("-t, --text <message>", "Message text (or pipe it on stdin)")
   .option("--reply-to <ts>", "Parent message timestamp to reply in thread")
@@ -44,14 +46,15 @@ export const sendCommand = new Command()
     `
 Examples:
   Simple message:        okou slack message send --to C01234 -t "Hello!"
-  DM your own ID:        okou slack message send --to U0A8V9X98QJ -t "Hello!"
+  DM a recipient:        okou slack message send --to U0A8V9X98QJ -t "Hello!"
   DM yourself:           okou slack message send --to me -t "Hello!"
   Reply in thread:       okou slack message send --to C01234 --reply-to 1234567890.123456 -t "reply"
   Rich blocks:           okou slack message send --to C01234 --rich '[{"type":"section","text":{"type":"mrkdwn","text":"*Bold*"}}]'
 
 Notes:
-  - Requires your verified account and access for both you and the bot to the destination
-  - Private messages are limited to your own conversation with the bot
+  - Requires your verified account; group targets require access for both you and the bot
+  - You can DM other recipients, subject to the platform's bot delivery rules
+  - Sending a DM does not grant access to its private history or attachments
   - --to is required; U…/W… IDs open a DM, other IDs are channels
   - Either --text or --rich is required; both can be used together`,
   )

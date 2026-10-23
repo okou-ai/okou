@@ -33,6 +33,7 @@ import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
+import { mockSharedSlackConversations } from "./helpers/slack-conversation-access";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
   discordChatThreads,
@@ -667,6 +668,9 @@ describe("Discord file authorization and input validation", () => {
     { filename: "report\\private.csv" },
     { filename: "." },
     { length: MAX_DISCORD_FILE_SIZE_BYTES + 1 },
+    { channelId: undefined },
+    { userId: "123456789012345678" },
+    { channelId: undefined, userId: "18446744073709551616" },
   ])("rejects malformed upload metadata: %j", async (invalid) => {
     await actorSession();
     const response = await accept(
@@ -742,27 +746,85 @@ describe("Discord attachment downloads", () => {
     },
   );
 
-  it("denies bot DM attachment downloads while keeping uploads to the sender's own DM", async () => {
-    const fixture = await boundFixture();
-    const source = incomingAttachment(fixture);
-    // Discord keeps one bot DM per user, shared by every connected org.
-    server.use(
-      http.get(`${discordApiOrigin}/channels/${fixture.channelId}`, () => {
-        return HttpResponse.json({
-          id: fixture.channelId,
-          type: 1,
-          recipients: [{ id: fixture.discordUserId, username: "file-owner" }],
-        });
-      }),
-    );
-    const denied = await accept(
-      fileClients().download({ headers: fixture.headers, query: source.query }),
-      [403],
-    );
-    expect(denied.body.error.code).toBe("DISCORD_DM_READ_DENIED");
-    const upload = await canonicalUpload(fixture);
-    expect(upload.initialized.assetId).toStrictEqual(expect.any(String));
-  });
+  it.each(["own", "other"] as const)(
+    "denies %s bot DM downloads while allowing outbound file delivery",
+    async (recipient) => {
+      const fixture = await boundFixture();
+      const source = incomingAttachment(fixture);
+      const recipientId =
+        recipient === "own" ? fixture.discordUserId : discordSnowflake();
+      // Discord keeps one bot DM per user, shared by every connected org.
+      server.use(
+        http.get(`${discordApiOrigin}/channels/${fixture.channelId}`, () => {
+          return HttpResponse.json({
+            id: fixture.channelId,
+            type: 1,
+            recipients: [{ id: recipientId, username: "file-owner" }],
+          });
+        }),
+        http.post(
+          `${discordApiOrigin}/users/@me/channels`,
+          async ({ request }) => {
+            await expect(request.json()).resolves.toStrictEqual({
+              recipient_id: recipientId,
+            });
+            return HttpResponse.json({
+              id: fixture.channelId,
+              type: 1,
+              recipients: [{ id: recipientId, username: "file-owner" }],
+            });
+          },
+        ),
+      );
+      const denied = await accept(
+        fileClients().download({
+          headers: fixture.headers,
+          query: source.query,
+        }),
+        [recipient === "own" ? 403 : 404],
+      );
+      expect(denied.body.error.code).toBe(
+        recipient === "own" ? "DISCORD_DM_READ_DENIED" : "NOT_FOUND",
+      );
+      const upload = await canonicalUpload(fixture, {
+        channelId: undefined,
+        userId: recipientId,
+      });
+      expect(upload.initialized.assetId).toStrictEqual(expect.any(String));
+      server.use(
+        http.post(
+          `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
+          async ({ request }) => {
+            await expectUploadedDiscordFile(request, upload.bytes);
+            return HttpResponse.json(
+              discordFileMessage({
+                channelId: fixture.channelId,
+                messageId: discordSnowflake(),
+                authorId: fixture.botUserId,
+                bot: true,
+                attachment: source.attachment,
+              }),
+            );
+          },
+        ),
+      );
+      await accept(
+        fileClients().materialize({
+          headers: fixture.headers,
+          body: upload.operation,
+        }),
+        [200],
+      );
+      const delivered = await accept(
+        fileClients().complete({
+          headers: fixture.headers,
+          body: upload.operation,
+        }),
+        [200],
+      );
+      expect(delivered.body.delivery.status).toBe("delivered");
+    },
+  );
 
   it("returns fresh, authorized attachment bytes with private download headers", async () => {
     const fixture = await boundFixture();
@@ -1273,6 +1335,7 @@ describe("Canonical Discord file publication and delivery", () => {
   it.each(["discord", "slack"] as const)(
     "preserves the provider across concurrent initialization and replay (%s first)",
     async (firstProvider) => {
+      mockSharedSlackConversations(["C_FILE_IDENTITY"]);
       const fixture = await boundFixture();
       const slackOrgs = createPublicSlackOrgApi(context);
       const slack = await slackOrgs.installOrg({

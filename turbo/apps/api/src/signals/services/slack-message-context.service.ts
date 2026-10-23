@@ -107,7 +107,7 @@ const noUserConnection = Object.freeze({
 });
 
 /**
- * Resolve and authorize a delivery target shared by the caller and the bot.
+ * Authorize shared group targets and outbound one-to-one bot DMs separately.
  */
 export const resolveSlackTargetChannel$ = command(
   async (
@@ -133,9 +133,7 @@ export const resolveSlackTargetChannel$ = command(
     if (!connectedUser) {
       return noUserConnection;
     }
-    if (args.user && args.user !== "me" && args.user !== connectedUser) {
-      return noUserConnection;
-    }
+    const recipientId = args.user === "me" ? connectedUser : args.user;
     let channelId: string;
     if (!args.user) {
       if (!args.channel) {
@@ -143,7 +141,7 @@ export const resolveSlackTargetChannel$ = command(
       }
       channelId = args.channel;
     } else {
-      const dm = await args.client.openDMChannel(connectedUser);
+      const dm = await args.client.openDMChannel(recipientId ?? connectedUser);
       signal.throwIfAborted();
       if (dm.kind === "slack_error") {
         return {
@@ -159,12 +157,14 @@ export const resolveSlackTargetChannel$ = command(
       channelId = dm.channelId;
     }
     const shared = await settle(
-      isSlackConversationShared(
-        args.botToken,
-        connectedUser,
-        channelId,
-        signal,
-      ),
+      channelId.startsWith("D")
+        ? Promise.resolve(true)
+        : isSlackConversationShared(
+            args.botToken,
+            connectedUser,
+            channelId,
+            signal,
+          ),
       signal,
     );
     if (!shared.ok) {
@@ -197,6 +197,7 @@ export const resolveSlackTargetChannel$ = command(
           token: args.botToken,
           slackUserId: connectedUser,
           channelId,
+          recipientId,
           thread: args.threadTs !== undefined,
         },
         signal,

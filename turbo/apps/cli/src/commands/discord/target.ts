@@ -1,22 +1,20 @@
-import {
-  parseMessageTarget,
-  unsupportedTargetError,
-} from "../../lib/command/message-target";
+import { parseMessageTarget } from "../../lib/command/message-target";
 
 /**
- * Discord destinations are channel IDs (including native threads and the
- * sender's existing bot DM channel); user IDs cannot be resolved to a channel.
+ * Bare Discord IDs are channels; explicit user targets open a bot DM.
  */
-export function resolveDiscordChannelId(to: string): string {
+export function resolveDiscordDestination(
+  to: string,
+):
+  | { channelId: string; userId?: never }
+  | { userId: string; channelId?: never } {
   const target = parseMessageTarget(to, () => {
     return false;
   });
-  if (target.kind !== "chat") {
-    throw unsupportedTargetError(
-      "Discord",
-      target,
-      "Pass a channel, native thread, or your bot DM channel ID",
-    );
+  if (target.kind === "me") {
+    return { userId: "me" };
   }
-  return target.id;
+  return target.kind === "user"
+    ? { userId: target.id }
+    : { channelId: target.id };
 }

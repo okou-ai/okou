@@ -61,13 +61,14 @@ export function teamsErrorResponse(result: {
   );
 }
 
-/** Resolve only conversations shared by the connected user and this bot. */
+/** Resolve shared conversations or explicitly addressed outbound bot DMs. */
 export const resolveTeamsMessageTarget$ = command(
   async (
     { get },
     args: {
       readonly installation: TeamsInstallation;
       readonly userId: string;
+      readonly mode?: "read" | "write";
       readonly body: {
         readonly conversationId?: string;
         readonly user?: string;
@@ -101,11 +102,14 @@ export const resolveTeamsMessageTarget$ = command(
       );
     }
     let conversationId = args.body.conversationId;
+    let memberId = connection.teamsUserId;
     if (!conversationId) {
       if (
         !args.installation.botId ||
         !args.body.user ||
-        (args.body.user !== "me" && args.body.user !== connection.teamsUserId)
+        (args.mode === "read" &&
+          args.body.user !== "me" &&
+          args.body.user !== connection.teamsUserId)
       ) {
         return routeError(
           404,
@@ -113,14 +117,19 @@ export const resolveTeamsMessageTarget$ = command(
           "NOT_FOUND",
         );
       }
+      memberId =
+        args.body.user === "me" ? connection.teamsUserId : args.body.user;
       const conversation = await createTeamsPersonalConversation(
         {
           serviceUrl: args.installation.serviceUrl,
           tenantId: args.installation.teamsTenantId,
           botId: args.installation.botId,
           botName: args.installation.botName,
-          teamsUserId: connection.teamsUserId,
-          teamsUserDisplayName: connection.teamsUserDisplayName,
+          teamsUserId: memberId,
+          teamsUserDisplayName:
+            memberId === connection.teamsUserId
+              ? connection.teamsUserDisplayName
+              : null,
         },
         signal,
       );
@@ -134,7 +143,7 @@ export const resolveTeamsMessageTarget$ = command(
         serviceUrl: args.installation.serviceUrl,
         tenantId: args.installation.teamsTenantId,
         conversationId,
-        teamsUserId: connection.teamsUserId,
+        teamsUserId: memberId,
       },
       signal,
     );

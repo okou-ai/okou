@@ -52,7 +52,7 @@ export function createFeishuSendCommand(platform: FeishuPlatform) {
   return new Command()
     .name("send")
     .description(
-      `Send a message to a shared ${providerName} chat or your bot DM`,
+      `Send a message to a shared ${providerName} chat or a recipient's bot DM`,
     )
     .option(
       TO_OPTION_FLAGS,
@@ -69,15 +69,16 @@ export function createFeishuSendCommand(platform: FeishuPlatform) {
       `
 Examples:
   Chat message:          okou ${platform} message send --to oc_xxx -t "Hello!"
-  DM your own ID:        okou ${platform} message send --to ou_xxx -t "Hello!"
+  DM a recipient:        okou ${platform} message send --to ou_xxx -t "Hello!"
   DM yourself:           okou ${platform} message send --to me -t "Hello!"
   Thread reply:          okou ${platform} message send --reply-to om_xxx --reply-mode thread -t "Reply"
   Interactive card:      okou ${platform} message send --to oc_xxx --rich '{"schema":"2.0","body":{"elements":[]}}'
   Select a custom app:   okou ${platform} message send --as <installation-id> --to oc_xxx -t "Hello!"
 
 Notes:
-  - Requires your verified account and access for both you and the bot to the destination
-  - Private messages are limited to your own conversation with the bot
+  - Requires your verified account; group targets require access for both you and the bot
+  - You can DM other recipients, subject to the platform's bot delivery rules
+  - Sending a DM does not grant access to its private history or attachments
   - Exactly one of --to or --reply-to is required; replies go to the replied-to message's chat
   - Exactly one of --text or --rich is required
   - --as is required when the organization has multiple ${providerName} bots`,
