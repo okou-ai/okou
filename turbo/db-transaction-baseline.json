@@ -462,11 +462,6 @@
       "owner": "updateUserBuiltinConnectors$"
     },
     {
-      "id": "TX-0309",
-      "file": "turbo/apps/api/src/signals/services/user-export-durable.service.ts",
-      "owner": "commitCollectedEntries$"
-    },
-    {
       "id": "TX-0313",
       "file": "turbo/apps/api/src/signals/services/user-export.service.ts",
       "owner": "startUserExport$"
