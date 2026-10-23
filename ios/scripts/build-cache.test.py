@@ -147,17 +147,23 @@ class BuildCacheTests(unittest.TestCase):
                 "refs/pull/1/merge",
                 "refs/heads/gh-readonly-queue/main/pr-1",
             ):
-                for needed in ("true", "false", ""):
-                    condition = (
-                        job["if"]
-                        .replace("github.ref", repr(ref))
-                        .replace("needs.detect.outputs.needed", repr(needed))
-                    )
-                    self.assertEqual(
-                        compare_literals(condition),
-                        ref == "refs/heads/main"
-                        and (role == "detect" or needed == "true"),
-                    )
+                for event in ("push", "workflow_dispatch", "workflow_run"):
+                    for needed in ("true", "false", ""):
+                        condition = (
+                            job["if"]
+                            .replace("github.ref", repr(ref))
+                            .replace("github.event_name", repr(event))
+                            .replace("needs.detect.outputs.needed", repr(needed))
+                        )
+                        selected = {
+                            "detect": True,
+                            "dispatch": needed == "true" and event == "workflow_run",
+                            "warm": needed == "true" and event != "workflow_run",
+                        }
+                        self.assertEqual(
+                            compare_literals(condition),
+                            ref == "refs/heads/main" and selected[role],
+                        )
         warm = workflow["jobs"]["warm"]
         self.assertFalse(warm["concurrency"]["cancel-in-progress"])
         checkout = next(
@@ -180,8 +186,10 @@ class BuildCacheTests(unittest.TestCase):
                 needed = {
                     "prepare": dependencies != "true" or compilation != "true",
                     "save-dependencies": dependencies != "true",
+                    "verify-dependencies": dependencies != "true",
                     "compile": compilation != "true",
                     "save-compilation": compilation != "true",
+                    "verify-compilation": compilation != "true",
                 }
                 for role, step in steps.items():
                     condition = (
@@ -214,6 +222,57 @@ class BuildCacheTests(unittest.TestCase):
                     "steps.cache.outputs.", "steps.identity.outputs."
                 ),
                 restores[role]["with"]["key"],
+            )
+            verify = next(
+                step
+                for step in workflow["jobs"]["warm"]["steps"]
+                if step.get("id") == f"verify-{role}"
+            )
+            self.assertEqual(verify["with"]["path"], save["with"]["path"])
+            self.assertEqual(verify["with"]["key"], save["with"]["key"])
+            self.assertTrue(verify["with"]["lookup-only"])
+            self.assertTrue(verify["with"]["fail-on-cache-miss"])
+            self.assertNotIn("restore-keys", verify["with"])
+
+    def test_completion_dispatches_only_main_and_preserves_api_failure(self):
+        workflow = yaml(ROOT / ".github/workflows/ios-build-cache.yml")
+        dispatch = workflow["jobs"]["dispatch"]
+        self.assertEqual(dispatch["permissions"], {"actions": "write"})
+        request = self.root / "dispatch-request.json"
+        gh = self.root / "bin/gh"
+        gh.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, sys\n"
+            "from pathlib import Path\n"
+            "Path(os.environ['TEST_REQUEST']).write_text(json.dumps(sys.argv[1:]))\n"
+            "sys.exit(int(os.environ['TEST_API_STATUS']))\n"
+        )
+        gh.chmod(0o755)
+        for status in (0, 1):
+            result = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", dispatch["steps"][0]["run"]],
+                cwd=self.repo,
+                env=self.env
+                | {
+                    "GITHUB_REPOSITORY": "okou-ai/okou",
+                    "TEST_REQUEST": str(request),
+                    "TEST_API_STATUS": str(status),
+                },
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, status, result.stderr)
+            self.assertEqual(
+                json.loads(request.read_text()),
+                [
+                    "api",
+                    "--method",
+                    "POST",
+                    "repos/okou-ai/okou/actions/workflows/ios-build-cache.yml/dispatches",
+                    "-f",
+                    "ref=main",
+                ],
             )
 
     def warm_decision(self, event, jobs, source="okou-ai/okou", api_status=0):

@@ -54,9 +54,26 @@ jobs:
           fi
           echo "needed=$needed" >> "$GITHUB_OUTPUT"
 
+  dispatch:
+    needs: detect
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_run' && needs.detect.outputs.needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch trusted main cache refill
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # workflow_run has read-only cache access; workflow_dispatch can write.
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/$GITHUB_REPOSITORY/actions/workflows/ios-build-cache.yml/dispatches" \
+            -f ref=main
+
   warm:
     needs: detect
-    if: github.ref == 'refs/heads/main' && needs.detect.outputs.needed == 'true'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'workflow_run' && needs.detect.outputs.needed == 'true'
     runs-on: xcode-27
     # Preserve main's cold-seeding budget, including compiler-cache upload.
     timeout-minutes: 30
@@ -84,6 +101,15 @@ jobs:
         with:
           path: ${{ runner.temp }}/okou-ios-ci/SourcePackages
           key: ${{ steps.cache.outputs.dependencies-key }}
+      - name: Verify main SwiftPM cache
+        id: verify-dependencies
+        if: steps.cache.outputs.dependencies-hit != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/okou-ios-ci/SourcePackages
+          key: ${{ steps.cache.outputs.dependencies-key }}
+          lookup-only: true
+          fail-on-cache-miss: true
       - name: Prepare simulator and compiler cache
         id: compile
         if: steps.cache.outputs.compilation-hit != 'true'
@@ -100,3 +126,12 @@ jobs:
         with:
           path: ${{ runner.temp }}/okou-ios-ci/DerivedData/CompilationCache.noindex
           key: ${{ steps.cache.outputs.compilation-key }}
+      - name: Verify main Xcode compilation cache
+        id: verify-compilation
+        if: steps.cache.outputs.compilation-hit != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/okou-ios-ci/DerivedData/CompilationCache.noindex
+          key: ${{ steps.cache.outputs.compilation-key }}
+          lookup-only: true
+          fail-on-cache-miss: true
