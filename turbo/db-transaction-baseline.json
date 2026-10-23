@@ -457,11 +457,6 @@
       "owner": "persistInvitation$"
     },
     {
-      "id": "TX-0281",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "activateAcceptedPurchase$"
-    },
-    {
       "id": "TX-0283",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "recordInvitationAcceptance$"

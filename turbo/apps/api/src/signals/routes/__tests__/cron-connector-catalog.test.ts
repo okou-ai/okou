@@ -2001,7 +2001,7 @@ describe("connector catalog valid lifecycle", () => {
     expect(diagnostic.body).toMatchObject({
       outcome: "resolved",
       connector: {
-        connectorSlug: "dynamic-firewall",
+        target: { kind: "builtin", connectorSlug: "dynamic-firewall" },
         label: "Dynamic Firewall",
       },
       permission: {
@@ -2400,7 +2400,7 @@ describe("connector catalog rejection and latest-valid retention", () => {
     );
     expect(diagnostic.body).toMatchObject({
       outcome: "resolved",
-      connector: { connectorSlug: "collision-a" },
+      connector: { target: { kind: "builtin", connectorSlug: "collision-a" } },
     });
   });
 

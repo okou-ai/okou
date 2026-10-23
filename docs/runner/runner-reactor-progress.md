@@ -243,6 +243,16 @@ Recovery revalidates the retained generation at its actual location and complete
 an uncertain metadata commit before retiring old data. Failed required saving
 retains its capsule while releasing physical IO admission.
 
+Fresh storage archives retain their existing runner-wide body admission through
+fetch, atomic cache publication and Guest staging. Each admitted capability also
+retains a shared completion witness, including every split of a grouped
+reservation. Normal per-job cancellation drains publication; unexpected owner
+loss lets an accepted fsync/rename transaction finish under that shared witness.
+After jobs and producers stop, Runner teardown closes further archive admission
+and positively joins those retained bodies before dependent cache/runtime
+teardown and final stopped publication. Closing admission does not cancel an
+atomic write or count cancellation as completed IO.
+
 Publication orders entry/source, then local IO admission.
 Move and exceptional Copy share that same bounded IO admission. Copy checks
 actual destination headroom before transfer and metadata headroom before commit;

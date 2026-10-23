@@ -26,8 +26,6 @@ export interface ApplyPendingMigrationsOptions {
    * value. Migration tests use it to seed data in the preceding schema.
    */
   readonly beforeMillis?: number;
-  /** Hold one final pending contraction until its outgoing API has drained. */
-  readonly deferMigration?: string;
   /** Disposable smoke clones only: a diagnostic replay can commit its batch. */
   readonly diagnoseBatchTimeouts?: boolean;
 }
@@ -75,25 +73,6 @@ function diagnosticBatchFor(
     : null;
 }
 
-function validateDeferredMigration(
-  entries: readonly { readonly tag: string; readonly when: number }[],
-  lastDbMigration: DbMigration | undefined,
-  file: string | undefined,
-): void {
-  if (file === undefined) return;
-  const deferred = entries.find((entry) => {
-    return `${entry.tag}.sql` === file;
-  });
-  if (!deferred) throw new Error(`Unknown deferred migration ${file}`);
-  const pending =
-    !lastDbMigration || Number(lastDbMigration.created_at) < deferred.when;
-  if (pending && entries.at(-1)?.when !== deferred.when) {
-    throw new Error(
-      "A deferred contraction must be the final pending migration; later schema changes must ship separately",
-    );
-  }
-}
-
 function requiredMigrationFile(
   files: ReadonlyMap<number, string>,
   millis: number,
@@ -108,7 +87,7 @@ function requiredMigrationFile(
 export async function applyPendingMigrations(
   sql: postgres.Sql,
   options: ApplyPendingMigrationsOptions = {},
-): Promise<{ readonly deferredMigration: string | null }> {
+): Promise<void> {
   const migrations = readMigrationFiles({
     migrationsFolder: DRIZZLE_MIGRATE_OUT,
   });
@@ -148,12 +127,6 @@ export async function applyPendingMigrations(
   `;
   const lastDbMigration = dbMigrations[0];
 
-  validateDeferredMigration(
-    journal.entries,
-    lastDbMigration,
-    options.deferMigration,
-  );
-
   for (const migration of migrations) {
     if (
       options.beforeMillis !== undefined &&
@@ -169,9 +142,6 @@ export async function applyPendingMigrations(
     }
 
     const file = requiredMigrationFile(migrationFiles, migration.folderMillis);
-    if (file === options.deferMigration) {
-      return { deferredMigration: file };
-    }
     const startedAt = performance.now();
     const nonTransactional = migration.sql.some((statement) => {
       return statement.includes(NON_TRANSACTIONAL_MIGRATION_MARKER);
@@ -369,5 +339,4 @@ export async function applyPendingMigrations(
       }),
     );
   }
-  return { deferredMigration: null };
 }

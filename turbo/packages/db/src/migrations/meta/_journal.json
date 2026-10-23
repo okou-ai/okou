@@ -2588,8 +2588,15 @@
     {
       "idx": 1448,
       "version": "7",
-      "when": 1792729241595,
-      "tag": "1448_hosted_site_banner",
+      "when": 1792727932489,
+      "tag": "1448_retire_pi_memory_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 1449,
+      "version": "7",
+      "when": 1792735715408,
+      "tag": "1449_hosted_site_banner",
       "breakpoints": true
     }
   ]
