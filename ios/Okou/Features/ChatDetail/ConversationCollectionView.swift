@@ -30,6 +30,13 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     if case .failure(let message, _, _) = self { return message }
     return nil
   }
+
+  var isMessageContent: Bool {
+    switch self {
+    case .message, .failure, .work: true
+    case .earlier, .footer, .followups, .usage: false
+    }
+  }
 }
 
 struct ConversationCollectionMetrics: Equatable {
@@ -77,6 +84,7 @@ struct ConversationCollectionView<Content: View>: UIViewControllerRepresentable 
   let followsBottom: Bool
   var sidebar: SidebarInteraction?
   var sendTransition: ConversationSendTransition?
+  var isLoadingHistory = false
   let phaseChanged: (ScrollPhase) -> Void
   let metricsChanged: (ConversationCollectionMetrics) -> Void
   let refresh: () async -> Void
@@ -229,6 +237,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       self?.isPresentedMarker(marker) ?? false
     }
     loading.hidesWhenStopped = true
+    loading.isUserInteractionEnabled = false
+    loading.isAccessibilityElement = true
+    loading.accessibilityLabel = "Loading conversation"
     view.addSubview(loading)
     source.sidebar?.attach(self)
     registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) {
@@ -363,6 +374,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   private func prepareRowsIfNeeded() {
+    defer { updateLoading() }
     guard !stopped, collection.bounds.width > 0 else { return }
     let width = collection.bounds.width
     let category = traitCollection.preferredContentSizeCategory
@@ -401,9 +413,6 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       applyPreparedRows()
       return
     }
-    if displayedRows.isEmpty && rows.contains(where: { $0.message != nil }) {
-      revealLoadingAfterDelay()
-    }
     preparation = Task { [weak self] in
       guard let self else { return }
       // Four temporary hosts at a time bound retained views even in an expanded history.
@@ -427,11 +436,20 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     }
   }
 
-  private func revealLoadingAfterDelay() {
+  private var needsLoadingIndicator: Bool {
+    !stopped && !displayedRows.values.contains(where: \.isMessageContent)
+      && (source.isLoadingHistory || source.rows.contains(where: \.isMessageContent))
+  }
+
+  private func updateLoading() {
+    guard needsLoadingIndicator else {
+      stopLoading()
+      return
+    }
     guard loadingTask == nil, !loading.isAnimating else { return }
     loadingTask = Task { [weak self, sleep] in
       do { try await sleep(.milliseconds(100)) } catch { return }
-      guard !Task.isCancelled, let self, !stopped, displayedRows.isEmpty else { return }
+      guard !Task.isCancelled, let self, needsLoadingIndicator else { return }
       loading.startAnimating()
     }
   }
@@ -533,7 +551,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       displayedRows = displayedRows.filter { ids.contains($0.key) }
       measurements = measurements.filter { ids.contains($0.key) }
       collection.layoutIfNeeded()
-      stopLoading()
+      updateLoading()
       if isScrolling {
         publishMetrics()
         return
