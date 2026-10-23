@@ -244,5 +244,12 @@ describe("chat-thread connector account ownership", () => {
         return account.id === custom.connectionId;
       }),
     });
+
+    await connectors.deleteCustomConnector(owner, definition.id);
+    const cleared = await accept(selections.get({ headers, params }), [200]);
+    expect(cleared.body).toStrictEqual({
+      selections: [],
+      selectedConnections: [],
+    });
   });
 });
