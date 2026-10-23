@@ -572,7 +572,7 @@ async function normalizeFirecrawl(
         alexandria: z
           .array(
             z.object({
-              success: z.boolean(),
+              success: z.boolean().optional(),
               provider: z.string(),
               capability: z.string(),
               creditsCost: z
@@ -603,7 +603,7 @@ async function normalizeFirecrawl(
     result.creditsCost * firecrawlRate(plan),
   );
   if (
-    !result.success ||
+    result.success === false ||
     (result.error !== undefined && result.error !== null)
   ) {
     return {

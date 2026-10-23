@@ -473,7 +473,30 @@ describe("Data Search reviewed providers", () => {
     });
   });
 
-  it("settles a bounded Firecrawl receipt using creditsCost and projects only the reviewed public record", async () => {
+  it.each([
+    {
+      name: "the live envelope without per-item success",
+      outcome: {},
+      status: "completed",
+    },
+    {
+      name: "an explicit per-item success",
+      outcome: { success: true },
+      status: "completed",
+    },
+    {
+      name: "an explicit per-item failure",
+      outcome: { success: false },
+      status: "failed",
+    },
+    {
+      name: "a per-item error without a success flag",
+      outcome: {
+        error: { message: "The provider could not complete the operation." },
+      },
+      status: "failed",
+    },
+  ])("settles Firecrawl $name", async ({ outcome, status }) => {
     const setup = await scenario();
     await setup.run(async () => {
       mockEnv("OKOU_SCRAPE_FIRECRAWL_TOKEN", "data-firecrawl-test-key");
@@ -550,7 +573,7 @@ describe("Data Search reviewed providers", () => {
               data: {
                 alexandria: [
                   {
-                    success: true,
+                    ...outcome,
                     provider: "play-google-com",
                     capability: "media/app",
                     creditsCost: 5,
@@ -574,18 +597,28 @@ describe("Data Search reviewed providers", () => {
         limit: 1,
       });
       expect(result.body).toMatchObject({
-        status: "completed",
-        data: {
-          items: [
-            {
-              package: "com.business.example",
-              title: "Business Example",
-              installs_min: 1000,
-              source: { provider: "play-google-com" },
-            },
-          ],
+        status,
+        data:
+          status === "completed"
+            ? {
+                items: [
+                  {
+                    package: "com.business.example",
+                    title: "Business Example",
+                    installs_min: 1000,
+                    source: { provider: "play-google-com" },
+                  },
+                ],
+              }
+            : null,
+        ...(status === "failed"
+          ? { error: { code: "DATA_SEARCH_SOURCE_FAILED" } }
+          : {}),
+        billing: {
+          state: "settled",
+          creditsCharged: 7,
+          reservedCredits: 0,
         },
-        billing: { state: "settled", creditsCharged: 7 },
       });
       expect(JSON.stringify(result.body.data)).not.toContain(
         "not-a-public-field",
