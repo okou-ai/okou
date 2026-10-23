@@ -5,15 +5,17 @@ fn index_writer_bounds_allocation_before_serialization_completes() {
     let mut writer = IndexWriter::new();
     // Non-power-of-two chunks must not cause an allocation beyond the envelope.
     writer.write_all(&vec![b'x'; 3301]).unwrap();
-    writer.write_all(&vec![b'x'; INDEX_LIMIT - 3301]).unwrap();
+    writer
+        .write_all(&vec![b'x'; MAX_ADMITTED_INDEX_BYTES - 3301])
+        .unwrap();
     assert!(writer.write_all(b"x").is_err());
-    assert_eq!(writer.0.len(), INDEX_LIMIT);
-    assert!(writer.0.capacity() <= INDEX_LIMIT);
+    assert_eq!(writer.0.len(), MAX_ADMITTED_INDEX_BYTES);
+    assert!(writer.0.capacity() <= MAX_ADMITTED_INDEX_BYTES);
 
     let mut writer = IndexWriter::new();
-    assert!(serde_json::to_writer(&mut writer, &"\"".repeat(INDEX_LIMIT)).is_err());
-    assert!(writer.0.len() <= INDEX_LIMIT);
-    assert!(writer.0.capacity() <= INDEX_LIMIT);
+    assert!(serde_json::to_writer(&mut writer, &"\"".repeat(MAX_ADMITTED_INDEX_BYTES)).is_err());
+    assert!(writer.0.len() <= MAX_ADMITTED_INDEX_BYTES);
+    assert!(writer.0.capacity() <= MAX_ADMITTED_INDEX_BYTES);
 }
 
 #[test]
