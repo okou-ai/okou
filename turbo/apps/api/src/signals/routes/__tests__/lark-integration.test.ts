@@ -332,6 +332,54 @@ describe("Lark integration", () => {
   it("sends through Lark only and blocks sends when the switch is disabled", async () => {
     const { actor, install, token } = await createOnboardedActor();
     const installation = await install("lark");
+    if (!installation.connectUrl) {
+      throw new Error("Expected the Lark account connection URL");
+    }
+    const oauth = createAppWithRoutes({
+      signal: context.signal,
+      routes: feishuOauthRoutes,
+    });
+    const started = await oauth.request(installation.connectUrl);
+    expect(started.status).toBe(307);
+    const state = new URL(
+      started.headers.get("location") ?? "",
+    ).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected the Lark account connection state");
+    }
+    const connected = await oauth.request(
+      `${feishuOauthContract.callback.path}?${new URLSearchParams({ state, code: "lark-message-code", responseMode: "json" })}`,
+    );
+    expect(connected.status).toBe(200);
+    server.use(
+      http.get(
+        "https://open.larksuite.com/open-apis/im/v1/chats/oc_lark",
+        () => {
+          return HttpResponse.json({
+            code: 0,
+            data: { chat_mode: "group", moderation_permission: "all_members" },
+          });
+        },
+      ),
+      http.get(
+        "https://open.larksuite.com/open-apis/im/v1/chats/oc_lark/members/is_in_chat",
+        () => {
+          return HttpResponse.json({ code: 0, data: { is_in_chat: true } });
+        },
+      ),
+      http.get(
+        "https://open.larksuite.com/open-apis/im/v1/chats/oc_lark/members",
+        () => {
+          return HttpResponse.json({
+            code: 0,
+            data: {
+              items: [{ member_id: "ou_user", member_id_type: "open_id" }],
+              has_more: false,
+            },
+          });
+        },
+      ),
+    );
     const client = setupApp({
       context,
       routes: integrationsFeishuMessageRoutes,
