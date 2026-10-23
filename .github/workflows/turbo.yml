@@ -350,6 +350,10 @@ jobs:
       - name: Configure Git safe directory
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.23.4
+
       - name: Detect changes
         id: detect
         env:
@@ -1861,6 +1865,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.23.4
+
       - name: Install Ansible
         run: pip3 install ansible-core
 
@@ -1953,7 +1961,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 22.23.4
       - name: Install E2E dependencies
         run: npm install -g agent-browser@0.22.0
       - name: Run browser E2E tests
@@ -2016,7 +2024,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 22
+          node-version: 22.23.4
       - name: Install pnpm
         run: corepack enable pnpm
       - name: Install E2E dependencies
@@ -2078,7 +2086,7 @@ jobs:
           ref: ${{ github.sha }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 22
+          node-version: 22.23.4
       - name: Install pnpm
         run: corepack enable pnpm
       - name: Install E2E dependencies
@@ -2161,7 +2169,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 22.23.4
       - name: Download CLI artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -2376,7 +2384,7 @@ jobs:
           version: 10.33.4
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 22
+          node-version: 22.23.4
       - name: Install E2E dependencies
         run: cd e2e && pnpm install --frozen-lockfile
       - name: Check runner E2E model selection
@@ -2541,7 +2549,7 @@ jobs:
           version: 10.33.4
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 22
+          node-version: 22.23.4
       - name: Install E2E dependencies
         run: cd e2e && pnpm install --frozen-lockfile
       - name: Download runner E2E API tokens
@@ -2692,7 +2700,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         if: steps.cleanup-scope.outputs.scope == 'generation' || steps.cleanup-scope.outputs.scope == 'run'
         with:
-          node-version: 22
+          node-version: 22.23.4
       - name: Install E2E dependencies
         if: steps.cleanup-scope.outputs.scope == 'generation' || steps.cleanup-scope.outputs.scope == 'run'
         run: cd e2e && pnpm install --frozen-lockfile
