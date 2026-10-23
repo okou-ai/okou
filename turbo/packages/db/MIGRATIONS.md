@@ -378,22 +378,6 @@ are enforced by the integration ingress tests.
   compaction/immutable-identity tests. This validator authorizes no production
   SQL or attribution backfill.
 
-- `scripts/test-pi-candidate-trigger-retirement.ts` protects migration
-  `1121_retire_pi_candidate_reference_trigger` (#33975): original catalog
-  identity, single-snapshot candidate ownership, narrowly classified #33973
-  residuals, default timeouts, post-drop/journal rollback and content-free
-  migration receipts. Test-only B lock/decision coverage lives in the API
-  candidate accounting suite. Retain both until the contract migration has
-  shipped and the B rollback window is closed; permanent current-schema
-  trigger/function inventory and C ownership coverage remain.
-
-- `scripts/test-pi-memory-checkpoint-settlement.ts` protects migration
-  `1079_pi_memory_checkpoint_settlement` (#31937): real PostgreSQL checks exact
-  live legacy grandfathering, valid sandbox leases, unsafe-shape rollback and
-  rejection of fresh null/null or mismatched claims from `1078_baseline`.
-  Retire it only after the three transition conditions above are met; retain
-  the current claim-shape invariants in permanent coverage.
-
 ### Retired Goal transition validators (2026-09-10)
 
 [#33323](https://github.com/vm0-ai/vm0/issues/33323) retires the 1093/1094 and
