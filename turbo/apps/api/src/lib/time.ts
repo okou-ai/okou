@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { sql } from "drizzle-orm";
 
 import { singleton, testOverride } from "./singleton";
 
@@ -42,6 +43,16 @@ export function now(): number {
 
 export function nowDate(): Date {
   return new Date(now());
+}
+
+/** UTC wall time evaluated by SQL after its preceding dependencies complete. */
+export function nowDateSql() {
+  const scoped = currentScopedMockNow();
+  const mocked = scoped ? scoped.value : getMockedNow();
+  if (mocked !== undefined) {
+    return sql`${timestampWithoutTimeZone(new Date(mocked))}::timestamp`;
+  }
+  return sql`date_trunc('milliseconds', clock_timestamp() AT TIME ZONE 'UTC')`;
 }
 
 /** The non-wall clock used to measure real elapsed I/O time. */

@@ -39,10 +39,12 @@ import {
   sql,
 } from "drizzle-orm";
 import { command } from "ccstate";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 
 import { env } from "../../lib/env";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
-import { nowDate } from "../../lib/time";
+import { nowDate, nowDateSql } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { publishBrowserUserActionChangedSafely } from "../external/realtime";
 import {
@@ -991,6 +993,81 @@ function buildBrowserUserActionPayload(
   };
 }
 
+/** Read descriptions only. The request owner executes the dependent writes. */
+function browserUserActionCreationPlan(args: {
+  readonly runId: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly chatThreadId: string;
+}) {
+  const query = new QueryBuilder();
+  const run = query.$with("action_run").as(
+    query
+      .select({ agentId: chatThreads.agentId })
+      .from(agentRuns)
+      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
+      .where(
+        and(
+          eq(agentRuns.id, args.runId),
+          eq(agentRuns.orgId, args.orgId),
+          eq(agentRuns.userId, args.userId),
+          eq(agentRuns.chatThreadId, args.chatThreadId),
+          inArray(agentRuns.status, ["pending", "running"]),
+          eq(chatThreads.userId, args.userId),
+          isNotNull(chatThreads.agentId),
+        ),
+      )
+      .limit(1)
+      .for("share", { of: agentRuns }),
+  );
+  const liveClock = query.$with("action_live_clock").as(
+    query
+      .select({
+        at: nowDateSql()
+          .mapWith(browserSessionInstances.lastTouchedAt)
+          .as("at"),
+      })
+      .from(run),
+  );
+  const browser = query.$with("action_browser").as(
+    query
+      .select({
+        runId: browserSessions.runId,
+        providerSessionId: browserSessionInstances.providerSessionId,
+      })
+      .from(browserSessions)
+      .innerJoin(
+        browserSessionInstances,
+        eq(browserSessionInstances.chatThreadId, browserSessions.chatThreadId),
+      )
+      .innerJoin(liveClock, gt(browserSessionInstances.timeoutAt, liveClock.at))
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, args.chatThreadId),
+          eq(browserSessions.orgId, args.orgId),
+          eq(browserSessions.userId, args.userId),
+          eq(browserSessions.status, "active"),
+          eq(browserSessionInstances.status, "active"),
+          gt(browserSessionInstances.idleExpiresAt, liveClock.at),
+        ),
+      )
+      .limit(1)
+      .for("share"),
+  );
+  const leaseClock = query.$with("action_lease_clock").as(
+    query
+      .select({
+        at: nowDateSql()
+          .mapWith(browserSessionInstances.lastTouchedAt)
+          .as("at"),
+        runId: browser.runId,
+        providerSessionId: browser.providerSessionId,
+      })
+      .from(browser),
+  );
+  return { run, liveClock, browser, leaseClock };
+}
+
 const persistBrowserUserAction = command(
   async (
     { set },
@@ -1003,102 +1080,72 @@ const persistBrowserUserAction = command(
   ): Promise<RequestRow | null> => {
     const db = set(writeDb$);
     const { args, payload, prepared, requestToken } = input;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0066; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx): Promise<RequestRow | null> => {
-      const [currentRun] = await tx
-        .select({ agentId: chatThreads.agentId })
-        .from(agentRuns)
-        .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-        .where(
-          and(
-            eq(agentRuns.id, args.runId),
-            eq(agentRuns.orgId, args.orgId),
-            eq(agentRuns.userId, args.userId),
-            eq(agentRuns.chatThreadId, prepared.chatThreadId),
-            inArray(agentRuns.status, ["pending", "running"]),
-            eq(chatThreads.userId, args.userId),
-          ),
-        )
-        .limit(1)
-        .for("share", { of: agentRuns });
-      if (!currentRun?.agentId) {
-        return null;
-      }
-      const liveNow = nowDate();
-      const [liveBrowser] = await tx
-        .select({
-          runId: browserSessions.runId,
-          providerSessionId: browserSessionInstances.providerSessionId,
-        })
-        .from(browserSessions)
-        .innerJoin(
-          browserSessionInstances,
-          eq(
-            browserSessionInstances.chatThreadId,
-            browserSessions.chatThreadId,
-          ),
-        )
-        .where(
-          and(
-            eq(browserSessions.chatThreadId, prepared.chatThreadId),
-            eq(browserSessions.orgId, args.orgId),
-            eq(browserSessions.userId, args.userId),
-            eq(browserSessions.status, "active"),
-            eq(browserSessionInstances.status, "active"),
-            gt(browserSessionInstances.timeoutAt, liveNow),
-            gt(browserSessionInstances.idleExpiresAt, liveNow),
-          ),
-        )
-        .limit(1)
-        .for("share");
-      const currentLive = liveBrowser ?? null;
-      if (
-        currentLive?.runId !== args.runId ||
-        currentLive.providerSessionId !== prepared.providerSessionId
-      ) {
-        return null;
-      }
-      const now = nowDate();
-      const [leased] = await tx
+    const plan = browserUserActionCreationPlan({ ...args, ...prepared });
+    const leased = db.$with("action_leased_browser").as(
+      db
         .update(browserSessionInstances)
         .set({
-          lastTouchedAt: now,
-          idleExpiresAt: new Date(now.getTime() + IDLE_LEASE_MS),
-          updatedAt: now,
+          lastTouchedAt: sql`${plan.leaseClock.at}`,
+          idleExpiresAt: sql`${plan.leaseClock.at} + ${IDLE_LEASE_MS} * interval '1 millisecond'`,
+          updatedAt: sql`${plan.leaseClock.at}`,
         })
+        .from(plan.leaseClock)
         .where(
           and(
+            eq(plan.leaseClock.runId, args.runId),
+            eq(plan.leaseClock.providerSessionId, prepared.providerSessionId),
             eq(
               browserSessionInstances.providerSessionId,
               prepared.providerSessionId,
             ),
             eq(browserSessionInstances.chatThreadId, prepared.chatThreadId),
             eq(browserSessionInstances.status, "active"),
-            gt(browserSessionInstances.timeoutAt, now),
-            gt(browserSessionInstances.idleExpiresAt, now),
+            gt(browserSessionInstances.timeoutAt, plan.leaseClock.at),
+            gt(browserSessionInstances.idleExpiresAt, plan.leaseClock.at),
           ),
         )
         .returning({
           providerSessionId: browserSessionInstances.providerSessionId,
-        });
-      if (!leased) {
-        return null;
-      }
-      const [created] = await tx
-        .insert(browserUserActionRequests)
-        .values({
-          requestTokenHash: hash(requestToken),
-          orgId: args.orgId,
-          userId: args.userId,
-          agentId: currentRun.agentId,
-          chatThreadId: prepared.chatThreadId,
-          status: "pending",
-          providerSessionId: prepared.providerSessionId,
-          payload,
-        })
-        .returning();
-      return created ?? null;
-    });
+        }),
+    );
+    const t = browserUserActionRequests;
+    const source = new QueryBuilder()
+      .select({
+        requestTokenHash:
+          sql`${sql.param(hash(requestToken), t.requestTokenHash)}`
+            .mapWith(t.requestTokenHash)
+            .as("request_token_hash"),
+        orgId: sql`${sql.param(args.orgId, t.orgId)}`
+          .mapWith(t.orgId)
+          .as("org_id"),
+        userId: sql`${sql.param(args.userId, t.userId)}`
+          .mapWith(t.userId)
+          .as("user_id"),
+        agentId: sql`${plan.run.agentId}`.mapWith(t.agentId).as("agent_id"),
+        chatThreadId:
+          sql`${sql.param(prepared.chatThreadId, t.chatThreadId)}::uuid`
+            .mapWith(t.chatThreadId)
+            .as("chat_thread_id"),
+        status: sql`'pending'`.mapWith(t.status).as("status"),
+        providerSessionId: leased.providerSessionId,
+        payload: sql`${sql.param(payload, t.payload)}::jsonb`
+          .mapWith(t.payload)
+          .as("payload"),
+        applyStartedAt: sql`NULL`
+          .mapWith(nullableDriverValueDecoder(t.applyStartedAt))
+          .as("apply_started_at"),
+        completedAt: sql`NULL`
+          .mapWith(nullableDriverValueDecoder(t.completedAt))
+          .as("completed_at"),
+      })
+      .from(leased)
+      .innerJoin(plan.run, sql`TRUE`);
+    const [created] = await db
+      .with(plan.run, plan.liveClock, plan.browser, plan.leaseClock, leased)
+      .insert(browserUserActionRequests)
+      .select(source)
+      .returning();
+    return created ?? null;
   },
 );
 
