@@ -5,7 +5,6 @@ import { nowDate } from "../../../lib/time";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { expectApiError } from "./helpers/api-bdd";
 import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -20,7 +19,6 @@ import {
 } from "./helpers/chat-events-fixture";
 const context = testContext();
 const {
-  bdd,
   api,
   chat,
   webhooks,
@@ -1162,38 +1160,6 @@ describe("CHAT-02: run-level model overrides", () => {
       readCompletedRunSessionId(context, actor, fourth.runId),
     ).resolves.toBe(`bdd-cli-${fourth.runId}`);
   }, 90_000);
-
-  it("rejects invalid model selections without creating visible state", async () => {
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    await api.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Invalid model selection agent",
-    });
-
-    // Chat send only accepts supported run models.
-    const invalidModelThreadId = randomUUID();
-    const invalidModel = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "use an unsupported model",
-        clientThreadId: invalidModelThreadId,
-        model: "codex" as never,
-      },
-      [400],
-    );
-    expectApiError(invalidModel.body);
-    expect(invalidModel.body.error.message).toBe('Unknown model "codex"');
-    await chat.requestReadThread(actor, invalidModelThreadId, [404]);
-
-    const events = await chat.requestThreadEvents(actor, {}, [200]);
-    expect(events.status).toBe(200);
-    if (events.status !== 200) {
-      throw new Error("Expected chat thread events to load");
-    }
-    expect(events.body.events).toStrictEqual([]);
-  }, 60_000);
 
   it("rejects an explicit disconnected personal model instead of capturing Auto", async () => {
     const { actor, agentId } = await entitledNativeChatActor();

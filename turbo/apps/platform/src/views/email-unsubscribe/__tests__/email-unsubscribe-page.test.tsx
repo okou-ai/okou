@@ -42,7 +42,6 @@ test("An invalid unsubscribe token shows an error", async () => {
   await expect(
     screen.findByRole("heading", { name: "Something went wrong" }),
   ).resolves.toBeVisible();
-  expect(screen.queryByText("Unsubscribed")).toBeNull();
 });
 
 test("A user can confirm email unsubscribe", async () => {

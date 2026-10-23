@@ -226,7 +226,6 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
     expect(button).toBeEnabled();
     return button;
   });
-  expect(connect).toBeEnabled();
   click(connect);
 
   expect(opened.calls).toStrictEqual([

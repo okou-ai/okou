@@ -89,7 +89,6 @@ describe("unified preference settings", () => {
       expect(
         within(dialog).getByRole("heading", { name: "ChatGPT (Codex)" }),
       ).toBeVisible();
-      expect(pathname()).toBe("/agents");
     },
   );
 

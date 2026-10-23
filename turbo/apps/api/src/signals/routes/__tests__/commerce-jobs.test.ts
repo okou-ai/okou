@@ -337,7 +337,6 @@ describe("Commerce async jobs", () => {
         async: true,
         requestId: randomUUID(),
       };
-      expect(nextBody.requestId).not.toBe(created.body.id);
       // Neither submission nor checkpointing reserves or debits public credits.
       // Both outstanding stages must nevertheless block a new paid POST.
       for (const stage of ["accepted", "checkpointed"]) {

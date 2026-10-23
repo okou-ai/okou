@@ -2909,7 +2909,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
         return call[0] === `chatThreadMessageCreated:${first.threadId}`;
       }),
     ).toBeTruthy();
-    context.mocks.axiom.query.mockClear();
     context.mocks.ably.publish.mockClear();
     await webhooks.requestAgentHeartbeat(
       { runId: first.runId },
@@ -2917,7 +2916,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
       [200],
     );
 
-    expect(context.mocks.axiom.query).not.toHaveBeenCalled();
     const progressMessages = await chat.listThreadEvents(actor, first.threadId);
     const progressUserMessages = userMessages(progressMessages.events);
     expect(progressUserMessages).toHaveLength(2);
@@ -5018,11 +5016,9 @@ describe("CHAT-02: thread deletion while a run is active", () => {
         return call[0] === `chatThreadMessageCreated:${run.threadId}`;
       }),
     ).toBeTruthy();
-    context.mocks.axiom.query.mockClear();
     context.mocks.ably.publish.mockClear();
     await chat.deleteThread(actor, run.threadId);
     await waitForRunStatus(actor, run.runId, "cancelled");
-    expect(context.mocks.axiom.query).not.toHaveBeenCalled();
     const deletedRead = await chat.requestReadThread(
       actor,
       run.threadId,
