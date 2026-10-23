@@ -167,6 +167,8 @@ async fn run_response_failures(
         Duration::ZERO,
     )?;
     let _run_files = common::RunFilesGuard::new_for_paths(&runtime.paths);
+    let system_log_file = tmp.path().join("system.log");
+    let _system_log = common::SystemLogOverrideGuard::set(&system_log_file);
     let execution = tokio::spawn(async move {
         common::execute_cli_for_runtime(
             &runtime,
@@ -182,6 +184,14 @@ async fn run_response_failures(
     let mut accepted_sequences = Vec::new();
     for status in responses {
         let request = server.next_request(Duration::from_secs(5)).await?;
+        if request_body.is_none() {
+            common::wait_for_file_contains(
+                &system_log_file,
+                "Event delivery drain started:",
+                Duration::from_secs(5),
+            )
+            .await?;
+        }
         if let Some(request_body) = &request_body {
             assert_eq!(&request.request.body, request_body);
         } else {

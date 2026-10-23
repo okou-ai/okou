@@ -44,6 +44,8 @@ async fn failed_batch_retries_three_times_and_later_batches_continue()
     )?;
     let agent_log_file = runtime.paths.agent_log_file().to_string();
     let _run_files = common::RunFilesGuard::new_for_paths(&runtime.paths);
+    let system_log_file = tmp.path().join("system.log");
+    let _system_log = common::SystemLogOverrideGuard::set(&system_log_file);
 
     let execution = tokio::spawn(async move {
         common::execute_cli_for_runtime(
@@ -58,6 +60,12 @@ async fn failed_batch_retries_three_times_and_later_batches_continue()
     common::wait_for_file_contains(
         std::path::Path::new(&agent_log_file),
         "failed-batch-sentinel",
+        Duration::from_secs(5),
+    )
+    .await?;
+    common::wait_for_file_contains(
+        &system_log_file,
+        "Event delivery drain started:",
         Duration::from_secs(5),
     )
     .await?;

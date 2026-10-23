@@ -1,12 +1,10 @@
-//! Claude Code event delivery must fail without blocking stdout when the
-//! bounded delivery queue fills behind a stalled event endpoint.
+//! Claude Code retains the newest events without blocking stdout when its queue fills.
 //!
 //! Configure the test child's environment and working directory before spawn.
 
 use crate::common;
 
 use guest_agent::masker::SecretMasker;
-use httpmock::prelude::*;
 use serde_json::json;
 use std::time::Duration;
 use tokio::process::Command;
@@ -15,20 +13,16 @@ const RUN_ID: &str = "event-delivery-count-overload-test";
 const CHILD_COMPLETE: &str = "Claude count-overload assertions passed";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn claude_code_event_delivery_count_overload_terminates_promptly()
+async fn claude_code_event_delivery_count_overload_keeps_recent_events()
 -> Result<(), Box<dyn std::error::Error>> {
     let mock_cli = common::build_and_locate_mock()?;
     let tmp = tempfile::tempdir()?;
-    let server = MockServer::start();
-    let mut prompt_lines = vec!["@ECHO-HANG@".to_string()];
+    let mut server = common::ControlledHttpServer::start().await?;
+    let mut prompt_lines = vec!["@ECHO@".to_string()];
     prompt_lines
         .extend((0..640).map(|index| json!({ "type": "assistant", "index": index }).to_string()));
+    prompt_lines.push(json!({ "type": "result", "marker": "count-overload-finished" }).to_string());
     let prompt = prompt_lines.join("\n");
-
-    let stalled_events = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
-        then.status(200).delay(Duration::from_secs(30));
-    });
 
     let runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(tmp.path(), RUN_ID)?;
     let payload_path = common::write_run_payload_file_for_test(
@@ -70,7 +64,7 @@ async fn claude_code_event_delivery_count_overload_terminates_promptly()
         .env(guest_contracts::env::RUN_ID_ENV, RUN_ID)
         .env(
             guest_contracts::env::CANONICAL_API_URL_ENV,
-            server.base_url(),
+            &server.base_url,
         )
         .env(guest_contracts::env::CANONICAL_API_TOKEN_ENV, "test-token")
         .env(
@@ -91,12 +85,44 @@ async fn claude_code_event_delivery_count_overload_terminates_promptly()
 
     // Clean up the child's session, including CLI descendants, before releasing
     // the mock server and temporary files on success, failure, or timeout.
-    let output = common::command_output_with_timeout(
-        &mut command,
-        Duration::from_secs(15),
-        "count-overload child test did not finish",
-    )
-    .await?;
+    let paths = guest_agent::paths::GuestPaths::from_runtime_dir(runtime_dir);
+    let delivery = async {
+        let first = server.next_request(Duration::from_secs(5)).await?;
+        common::wait_for_file_contains(
+            std::path::Path::new(paths.agent_log_file()),
+            "count-overload-finished",
+            Duration::from_secs(5),
+        )
+        .await?;
+        let mut delivered = common::event_request_sequences(&first.request)?;
+        first.respond(200)?;
+        while delivered.last() != Some(&640) {
+            let request = server.next_request(Duration::from_secs(5)).await?;
+            delivered.extend(common::event_request_sequences(&request.request)?);
+            request.respond(200)?;
+        }
+        Ok::<_, Box<dyn std::error::Error>>(delivered)
+    };
+    let (output, delivered) = tokio::join!(
+        common::command_output_with_timeout(
+            &mut command,
+            Duration::from_secs(15),
+            "count-overload child test did not finish",
+        ),
+        delivery,
+    );
+    let output = output?;
+    let delivered = delivered?;
+    assert_eq!(
+        delivered
+            .iter()
+            .copied()
+            .filter(|sequence| *sequence >= 129)
+            .collect::<Vec<_>>(),
+        (129..=640).collect::<Vec<_>>(),
+        "the newest 512 events should survive a stalled upload"
+    );
+    assert!(delivered.len() < 641);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -107,10 +133,6 @@ async fn claude_code_event_delivery_count_overload_terminates_promptly()
     assert!(
         stdout.contains(CHILD_COMPLETE),
         "count-overload child did not complete its assertions; stdout:\n{stdout}\nstderr:\n{stderr}"
-    );
-    assert!(
-        stalled_events.calls() <= 1,
-        "the serial sender should have at most one stalled request in flight"
     );
 
     Ok(())
@@ -129,24 +151,15 @@ async fn claude_code_event_delivery_count_overload_child() -> Result<(), Box<dyn
         common::execute_cli_for_runtime(&runtime, &masker, common::spawn_dummy_heartbeat()),
     )
     .await
-    .expect("delivery overload should not wait for the stalled event request");
+    .expect("delivery should finish after the pending requests are acknowledged");
 
-    let result = execution.expect("the live CLI should use controlled delivery termination");
-    let error = result
-        .control_error
-        .expect("count overload should be exposed as a control error")
-        .to_string();
+    let result = execution?;
+    assert_eq!(result.exit_code, common::CLEAN_EXIT);
+    assert!(result.control_error.is_none());
     assert!(
-        error.contains("event delivery queue exceeded 512 pending events"),
-        "unexpected overload error: {error}"
-    );
-    assert_eq!(result.last_event_sequence, None);
-    assert_eq!(
         result
-            .cli_termination
-            .expect("delivery overload should record process-group termination")
-            .reason,
-        guest_contracts::diagnostics::CliTerminationReason::EventDelivery
+            .last_event_sequence
+            .is_none_or(|sequence| sequence < 640)
     );
     println!("{CHILD_COMPLETE}");
 

@@ -27,7 +27,7 @@ tempfile = { workspace = true, features = ["getrandom"] }
 thiserror = { workspace = true, features = ["std"] }
 tar = { workspace = true, features = ["xattr"] }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
-tokio-util.workspace = true
+tokio-util = { workspace = true, features = ["rt"] }
 uuid = { workspace = true, features = ["std", "v4", "v5"] }
 zstd.workspace = true
 

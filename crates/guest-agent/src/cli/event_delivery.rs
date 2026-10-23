@@ -1,10 +1,9 @@
 //! Shared CLI event delivery worker and acknowledgement state.
 //!
 //! Event schema transformation stays in `events`, while HTTP retry policy stays
-//! in `http`. This module owns bounded non-blocking admission, serial FIFO
-//! batching, and the bounded progress snapshot shared by CLI backends. A batch
-//! is one retry/failure unit, and acknowledgement remains the highest
-//! contiguous successful sequence.
+//! in `http`. This module owns oldest-first eviction, serial FIFO batching,
+//! continued retries during execution, and bounded final draining. Acknowledgement
+//! remains the highest contiguous successful sequence, including across evictions.
 
 use crate::error::AgentError;
 use crate::events;
@@ -18,11 +17,12 @@ use guest_contracts::diagnostics::{
     HttpCompletedAttemptDiagnostic,
 };
 use guest_telemetry::{log_info, log_warn};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
-use tokio::task::JoinHandle;
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
+use tokio_util::task::AbortOnDropHandle;
 
 use super::LOG_TAG;
 use super::record_labels::EventLabels;
@@ -32,6 +32,8 @@ const EVENT_DELIVERY_MAX_BYTES: usize = 32 * 1024 * 1024;
 const EVENT_DELIVERY_MAX_REQUEST_EVENTS: usize = 32;
 const EVENT_DELIVERY_MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
 const EVENT_DELIVERY_DRAIN_TIMEOUT: Duration = Duration::from_secs(120);
+const EVENT_DELIVERY_MAX_RETRY_DELAY: Duration = Duration::from_secs(30);
+const EVENT_DELIVERY_RETAINED_ATTEMPTS: usize = 3;
 
 struct PreparedEvent {
     sequence: u32,
@@ -43,10 +45,47 @@ struct PreparedEvent {
 }
 
 pub(super) struct EventDeliverySender {
-    tx: mpsc::Sender<PreparedEvent>,
+    queue: Arc<EventQueue>,
     byte_budget: Arc<Semaphore>,
     pressure: Arc<DeliveryPressure>,
+    progress: Arc<Mutex<DeliveryProgress>>,
     payload_envelope: Arc<events::EventPayloadEnvelope>,
+}
+
+#[derive(Default)]
+struct EventQueue {
+    pending: Mutex<VecDeque<PreparedEvent>>,
+    ready: Notify,
+    closed: AtomicBool,
+    dropped_events: AtomicUsize,
+}
+
+impl EventQueue {
+    fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+        self.ready.notify_one();
+    }
+
+    async fn next(&self, pressure: &DeliveryPressure) -> Option<(PreparedEvent, usize)> {
+        loop {
+            let ready = self.ready.notified();
+            {
+                let mut pending = self
+                    .pending
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if let Some(event) = pending.pop_front() {
+                    pressure.mark_dequeued(event.conservative_bytes);
+                    // Pair the retry generation with dequeue under the eviction lock.
+                    return Some((event, self.dropped_events.load(Ordering::Relaxed)));
+                }
+                if self.closed.load(Ordering::Acquire) {
+                    return None;
+                }
+            }
+            ready.await;
+        }
+    }
 }
 
 impl EventDeliverySender {
@@ -127,14 +166,39 @@ impl EventDeliverySender {
             )));
         }
 
-        let available_bytes = self.byte_budget.available_permits();
+        let mut pending = self
+            .queue
+            .pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.queue.closed.load(Ordering::Acquire) {
+            return Err(AgentError::Execution(format!(
+                "CLI event delivery worker stopped before sequence {sequence} could be queued"
+            )));
+        }
+        let mut dropped_range = None;
+        while pending.len() >= EVENT_DELIVERY_QUEUE_CAPACITY
+            || self.byte_budget.available_permits() < conservative_bytes
+        {
+            let dropped = pending.pop_front().ok_or_else(|| {
+                AgentError::Execution(
+                    "CLI event delivery byte budget exhausted without queued events".to_string(),
+                )
+            })?;
+            self.pressure.mark_dequeued(dropped.conservative_bytes);
+            self.pressure.release_bytes(dropped.conservative_bytes);
+            progress_guard(&self.progress)
+                .acked_prefix
+                .record_failure(dropped.sequence);
+            self.queue.dropped_events.fetch_add(1, Ordering::Relaxed);
+            let (first, _) = dropped_range.get_or_insert((dropped.sequence, dropped.sequence));
+            dropped_range = Some((*first, dropped.sequence));
+            drop(dropped);
+        }
         let byte_budget = Arc::clone(&self.byte_budget)
             .try_acquire_many_owned(conservative_bytes as u32)
             .map_err(|_| {
-                AgentError::Execution(format!(
-                    "CLI event delivery byte buffer exhausted at sequence {sequence}: payload is {conservative_bytes} bytes, {available_bytes} of {EVENT_DELIVERY_MAX_BYTES} bytes available, {} events pending",
-                    self.pressure.pending_events()
-                ))
+                AgentError::Execution("CLI event delivery byte reservation failed".to_string())
             })?;
         let admission = self.pressure.begin_admission(conservative_bytes);
         let prepared = PreparedEvent {
@@ -146,25 +210,17 @@ impl EventDeliverySender {
             byte_budget,
         };
 
-        match self.tx.try_send(prepared) {
-            Ok(()) => {
-                self.pressure.confirm_admission(admission);
-                Ok(())
-            }
-            Err(mpsc::error::TrySendError::Full(_)) => {
-                self.pressure.reject_admission(conservative_bytes);
-                Err(AgentError::Execution(format!(
-                    "CLI event delivery queue exceeded {EVENT_DELIVERY_QUEUE_CAPACITY} pending events at sequence {sequence}; {} bytes buffered",
-                    self.pressure.buffered_bytes()
-                )))
-            }
-            Err(mpsc::error::TrySendError::Closed(_)) => {
-                self.pressure.reject_admission(conservative_bytes);
-                Err(AgentError::Execution(format!(
-                    "CLI event delivery worker stopped before sequence {sequence} could be queued"
-                )))
-            }
+        pending.push_back(prepared);
+        self.pressure.confirm_admission(admission);
+        drop(pending);
+        self.queue.ready.notify_one();
+        if let Some((first, last)) = dropped_range {
+            log_warn!(
+                LOG_TAG,
+                "Discarded oldest queued events {first}-{last} to admit sequence {sequence} within the event delivery memory limits"
+            );
         }
+        Ok(())
     }
 }
 
@@ -176,7 +232,7 @@ pub(super) struct EventDeliveryReport {
 
 pub(super) struct EventDeliveryRuntime {
     sender: EventDeliverySender,
-    worker: JoinHandle<Result<(), AgentError>>,
+    worker: AbortOnDropHandle<Result<(), AgentError>>,
     pressure: Arc<DeliveryPressure>,
     progress: Arc<Mutex<DeliveryProgress>>,
 }
@@ -188,7 +244,7 @@ impl EventDeliveryRuntime {
         first_sequence: u32,
         pi_memory_citation_transport: bool,
     ) -> Result<Self, AgentError> {
-        let (tx, event_rx) = mpsc::channel(EVENT_DELIVERY_QUEUE_CAPACITY);
+        let queue = Arc::new(EventQueue::default());
         let pressure = Arc::new(DeliveryPressure::default());
         let progress = Arc::new(Mutex::new(DeliveryProgress::new(first_sequence)));
         let payload_envelope = Arc::new(events::EventPayloadEnvelope::new(
@@ -196,18 +252,19 @@ impl EventDeliveryRuntime {
             pi_memory_citation_transport,
         )?);
         let sender = EventDeliverySender {
-            tx,
+            queue: Arc::clone(&queue),
             byte_budget: Arc::new(Semaphore::new(EVENT_DELIVERY_MAX_BYTES)),
             pressure: Arc::clone(&pressure),
+            progress: Arc::clone(&progress),
             payload_envelope: Arc::clone(&payload_envelope),
         };
-        let worker = tokio::spawn(run_event_sender(
-            event_rx,
+        let worker = AbortOnDropHandle::new(tokio::spawn(run_event_sender(
+            queue,
             http,
             payload_envelope,
             Arc::clone(&pressure),
             Arc::clone(&progress),
-        ));
+        )));
         Ok(Self {
             sender,
             worker,
@@ -227,6 +284,7 @@ impl EventDeliveryRuntime {
             pressure,
             progress,
         } = self;
+        sender.queue.close();
         drop(sender);
         let drain_start = pressure.snapshot();
         log_info!(
@@ -273,6 +331,7 @@ impl EventDeliveryRuntime {
             pressure: _,
             progress,
         } = self;
+        sender.queue.close();
         drop(sender);
         worker.abort();
         let _ = worker.await;
@@ -320,12 +379,6 @@ impl DeliveryPressure {
             .fetch_max(admission.buffered_bytes, Ordering::Relaxed);
     }
 
-    fn reject_admission(&self, bytes: usize) {
-        self.pending_events.fetch_sub(1, Ordering::Relaxed);
-        self.queued_bytes.fetch_sub(bytes, Ordering::Relaxed);
-        self.buffered_bytes.fetch_sub(bytes, Ordering::Relaxed);
-    }
-
     fn mark_dequeued(&self, bytes: usize) {
         self.pending_events.fetch_sub(1, Ordering::Relaxed);
         self.queued_bytes.fetch_sub(bytes, Ordering::Relaxed);
@@ -358,7 +411,7 @@ impl DeliveryPressure {
 struct AckedEventPrefix {
     next_expected: u32,
     last_contiguous: Option<u32>,
-    prefix_broken: bool,
+    first_missing: Option<u32>,
 }
 
 impl AckedEventPrefix {
@@ -366,12 +419,15 @@ impl AckedEventPrefix {
         Self {
             next_expected,
             last_contiguous: next_expected.checked_sub(1),
-            prefix_broken: false,
+            first_missing: None,
         }
     }
 
     fn record_success(&mut self, sequence: u32) {
-        if self.prefix_broken {
+        if self
+            .first_missing
+            .is_some_and(|missing| sequence >= missing)
+        {
             return;
         }
 
@@ -379,13 +435,16 @@ impl AckedEventPrefix {
             self.last_contiguous = Some(sequence);
             self.next_expected = sequence.saturating_add(1);
         } else if sequence > self.next_expected {
-            self.prefix_broken = true;
+            self.record_failure(self.next_expected);
         }
     }
 
     fn record_failure(&mut self, sequence: u32) {
         if sequence >= self.next_expected {
-            self.prefix_broken = true;
+            self.first_missing = Some(
+                self.first_missing
+                    .map_or(sequence, |missing| missing.min(sequence)),
+            );
         }
     }
 
@@ -404,7 +463,6 @@ struct DeliveryProgress {
     max_batch_bytes: usize,
     first_failed_batch: Option<EventDeliveryFailedBatchDiagnostic>,
     active_batch: Option<ActiveBatchProgress>,
-    carried_event_bytes: Option<usize>,
 }
 
 impl DeliveryProgress {
@@ -421,7 +479,6 @@ impl DeliveryProgress {
         first_sequence: u32,
         last_sequence: u32,
         conservative_bytes: usize,
-        carried_event_bytes: Option<usize>,
     ) {
         let event_count = sequences.len();
         self.total_events = self.total_events.saturating_add(usize_to_u64(event_count));
@@ -435,8 +492,9 @@ impl DeliveryProgress {
             conservative_bytes,
             completed_attempts: Vec::new(),
             active_attempt: None,
+            attempt_count: 0,
+            transport_failure: false,
         });
-        self.carried_event_bytes = carried_event_bytes;
     }
 
     fn finish_batch(&mut self, succeeded: bool) -> Result<(), AgentError> {
@@ -459,7 +517,11 @@ impl DeliveryProgress {
             let event_count = usize_to_u32(active_batch.sequences.len());
             let conservative_bytes = usize_to_u64(active_batch.conservative_bytes);
             let attempts = active_batch.completed_attempts;
-            let response_state = response_state(&attempts);
+            let response_state = if active_batch.transport_failure {
+                EventDeliveryResponseState::Incomplete
+            } else {
+                response_state(&attempts)
+            };
             self.first_failed_batch = Some(EventDeliveryFailedBatchDiagnostic {
                 first_sequence: active_batch.first_sequence,
                 last_sequence: active_batch.last_sequence,
@@ -480,25 +542,40 @@ struct ActiveBatchProgress {
     conservative_bytes: usize,
     completed_attempts: Vec<HttpCompletedAttemptDiagnostic>,
     active_attempt: Option<HttpAttemptStarted>,
+    attempt_count: u32,
+    transport_failure: bool,
 }
 
 struct DeliveryAttemptObserver {
     progress: Arc<Mutex<DeliveryProgress>>,
+    queue: Arc<EventQueue>,
+    drops_at_start: usize,
 }
 
 impl HttpAttemptObserver for DeliveryAttemptObserver {
-    fn attempt_started(&self, attempt: HttpAttemptStarted) -> Result<(), AgentError> {
+    fn before_retry(&self) -> Result<(), AgentError> {
+        if self.queue.dropped_events.load(Ordering::Relaxed) != self.drops_at_start {
+            return Err(AgentError::Http(
+                "event batch superseded after oldest-event eviction".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn attempt_started(&self, mut attempt: HttpAttemptStarted) -> Result<(), AgentError> {
         let mut progress = progress_guard(&self.progress);
         let active_batch = progress.active_batch.as_mut().ok_or_else(|| {
             AgentError::Execution(
                 "event delivery batch state missing before HTTP attempt".to_string(),
             )
         })?;
+        active_batch.attempt_count = active_batch.attempt_count.saturating_add(1);
+        attempt.attempt = active_batch.attempt_count;
         active_batch.active_attempt = Some(attempt);
         Ok(())
     }
 
-    fn attempt_finished(&self, attempt: HttpAttemptFinished) -> Result<(), AgentError> {
+    fn attempt_finished(&self, mut attempt: HttpAttemptFinished) -> Result<(), AgentError> {
         let mut progress = progress_guard(&self.progress);
         let active_batch = progress.active_batch.as_mut().ok_or_else(|| {
             AgentError::Execution(
@@ -506,7 +583,13 @@ impl HttpAttemptObserver for DeliveryAttemptObserver {
             )
         })?;
         active_batch.active_attempt = None;
+        attempt.attempt = active_batch.attempt_count;
         if let Some(diagnostic) = attempt.into_failure_diagnostic() {
+            active_batch.transport_failure |=
+                diagnostic.failure_kind != HttpAttemptFailureKind::HttpStatus;
+            if active_batch.completed_attempts.len() == EVENT_DELIVERY_RETAINED_ATTEMPTS {
+                active_batch.completed_attempts.remove(0);
+            }
             active_batch.completed_attempts.push(diagnostic);
         }
         Ok(())
@@ -514,32 +597,16 @@ impl HttpAttemptObserver for DeliveryAttemptObserver {
 }
 
 async fn run_event_sender(
-    mut event_rx: mpsc::Receiver<PreparedEvent>,
+    queue: Arc<EventQueue>,
     http: HttpClient,
     payload_envelope: Arc<events::EventPayloadEnvelope>,
     pressure: Arc<DeliveryPressure>,
     progress: Arc<Mutex<DeliveryProgress>>,
 ) -> Result<(), AgentError> {
-    let observer = DeliveryAttemptObserver {
-        progress: Arc::clone(&progress),
-    };
-    let mut carried_event = None;
-
-    loop {
-        let first_event = match carried_event.take() {
-            Some(event) => event,
-            None => {
-                let Some(event) = event_rx.recv().await else {
-                    break;
-                };
-                pressure.mark_dequeued(event.conservative_bytes);
-                event
-            }
-        };
+    while let Some((first_event, drops_at_start)) = queue.next(&pressure).await {
         let first_sequence = first_event.sequence;
-        let (batch, next_carried_event) = collect_batch(first_event, &mut event_rx, &pressure);
+        let batch = collect_batch(first_event, &queue, &pressure);
         let last_sequence = batch.last().map_or(first_sequence, |event| event.sequence);
-        carried_event = next_carried_event;
         let EventBatch {
             sequences,
             payload,
@@ -553,12 +620,50 @@ async fn run_event_sender(
             first_sequence,
             last_sequence,
             conservative_bytes,
-            carried_event.as_ref().map(|event| event.conservative_bytes),
         );
+        let observer = DeliveryAttemptObserver {
+            progress: Arc::clone(&progress),
+            queue: Arc::clone(&queue),
+            drops_at_start,
+        };
 
-        let send_result = events::post_serialized_event(&http, payload, &observer).await;
-        drop(byte_budgets);
-        pressure.release_bytes(conservative_bytes);
+        let mut retry_cycle = 0u32;
+        let send_result = loop {
+            let result = events::post_serialized_event(&http, payload.clone(), &observer).await;
+            let Err(error) = &result else {
+                break result;
+            };
+            let terminal = matches!(error, AgentError::HttpStatus { status, .. } if (400..500).contains(status) && *status != 429);
+            if terminal
+                || queue.closed.load(Ordering::Acquire)
+                || queue.dropped_events.load(Ordering::Relaxed) != drops_at_start
+            {
+                break result;
+            }
+            let delay = http
+                .retry_delay()
+                .saturating_mul(1u32 << retry_cycle.min(5))
+                .min(EVENT_DELIVERY_MAX_RETRY_DELAY);
+            retry_cycle = retry_cycle.saturating_add(1);
+            log_warn!(
+                LOG_TAG,
+                "Retrying event batch {first_sequence}-{last_sequence} while CLI execution continues after upload failure: {error}"
+            );
+            tokio::time::sleep(delay).await;
+            if queue.closed.load(Ordering::Acquire)
+                || queue.dropped_events.load(Ordering::Relaxed) != drops_at_start
+            {
+                break result;
+            }
+        };
+        {
+            let _pending = queue
+                .pending
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            drop(byte_budgets);
+            pressure.release_bytes(conservative_bytes);
+        }
         progress_guard(&progress).finish_batch(send_result.is_ok())?;
 
         let succeeded = send_result.is_ok();
@@ -568,13 +673,13 @@ async fn run_event_sender(
             labels.event_type,
             labels.item_type,
             if succeeded { "success" } else { "failure" },
-            pressure.pending_events() + usize::from(carried_event.is_some())
+            pressure.pending_events()
         );
 
         if let Err(error) = send_result {
             log_warn!(
                 LOG_TAG,
-                "Event send failed for sequences {first_sequence}-{last_sequence}: {error}"
+                "Discarding event batch {first_sequence}-{last_sequence} after upload failure: {error}"
             );
         }
     }
@@ -583,7 +688,7 @@ async fn run_event_sender(
     let progress = progress_guard(&progress);
     log_info!(
         LOG_TAG,
-        "Event delivery complete: events={} requests={} failed_requests={} max_batch_events={} max_batch_bytes={} max_pending_events={} max_buffered_bytes={} last_contiguous_sequence={:?}",
+        "Event delivery complete: events={} requests={} failed_requests={} max_batch_events={} max_batch_bytes={} max_pending_events={} max_buffered_bytes={} last_contiguous_sequence={:?} evicted_events={}",
         progress.total_events,
         progress.total_batches,
         progress.failed_batches,
@@ -591,38 +696,39 @@ async fn run_event_sender(
         progress.max_batch_bytes,
         pressure.max_pending_events,
         pressure.max_buffered_bytes,
-        progress.acked_prefix.last_contiguous()
+        progress.acked_prefix.last_contiguous(),
+        queue.dropped_events.load(Ordering::Relaxed)
     );
     Ok(())
 }
 
 fn collect_batch(
     first_event: PreparedEvent,
-    event_rx: &mut mpsc::Receiver<PreparedEvent>,
+    queue: &EventQueue,
     pressure: &DeliveryPressure,
-) -> (Vec<PreparedEvent>, Option<PreparedEvent>) {
+) -> Vec<PreparedEvent> {
     let mut conservative_bytes = first_event.conservative_bytes;
     let mut batch = Vec::with_capacity(EVENT_DELIVERY_MAX_REQUEST_EVENTS);
     batch.push(first_event);
 
+    let mut pending = queue
+        .pending
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     while batch.len() < EVENT_DELIVERY_MAX_REQUEST_EVENTS {
-        let next_event = match event_rx.try_recv() {
-            Ok(event) => {
-                pressure.mark_dequeued(event.conservative_bytes);
-                event
-            }
-            Err(mpsc::error::TryRecvError::Empty | mpsc::error::TryRecvError::Disconnected) => {
-                break;
-            }
+        let Some(next_event) = pending.pop_front() else {
+            break;
         };
         if next_event.conservative_bytes > EVENT_DELIVERY_MAX_REQUEST_BYTES - conservative_bytes {
-            return (batch, Some(next_event));
+            pending.push_front(next_event);
+            break;
         }
+        pressure.mark_dequeued(next_event.conservative_bytes);
         conservative_bytes += next_event.conservative_bytes;
         batch.push(next_event);
     }
 
-    (batch, None)
+    batch
 }
 
 struct EventBatch {
@@ -677,8 +783,8 @@ fn progress_report(
     let drain_timeout = drain_pressure.map(|pressure| EventDeliveryDrainTimeoutDiagnostic {
         queued_events: usize_to_u32(pressure.pending_events),
         queued_bytes: usize_to_u64(pressure.queued_bytes),
-        carried_events: u32::from(progress.carried_event_bytes.is_some()),
-        carried_bytes: progress.carried_event_bytes.map_or(0, usize_to_u64),
+        carried_events: 0,
+        carried_bytes: 0,
         active_batch: progress.active_batch.as_ref().map(active_batch_diagnostic),
     });
     let has_failure = progress.first_failed_batch.is_some() || drain_timeout.is_some();
@@ -788,5 +894,16 @@ mod tests {
         prefix.record_success(3);
 
         assert_eq!(prefix.last_contiguous(), Some(0));
+    }
+
+    #[test]
+    fn eviction_preserves_acknowledgement_of_earlier_in_flight_events() {
+        let mut prefix = AckedEventPrefix::default();
+        prefix.record_failure(2);
+        prefix.record_success(0);
+        prefix.record_success(1);
+        prefix.record_success(3);
+
+        assert_eq!(prefix.last_contiguous(), Some(1));
     }
 }
