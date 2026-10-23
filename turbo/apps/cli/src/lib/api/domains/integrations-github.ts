@@ -66,5 +66,8 @@ export async function downloadGithubFile(
   }
   return downloadFileViaUrl(url, outPath, {
     maxBytes: 100 * 1024 * 1024,
+    acceptContentType: (contentType) => {
+      return contentType !== "text/html";
+    },
   });
 }
