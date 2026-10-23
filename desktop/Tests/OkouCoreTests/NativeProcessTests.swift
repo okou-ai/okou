@@ -1,8 +1,7 @@
 import Darwin
 import Foundation
-import XCTest
-
 import OkouCore
+import XCTest
 
 @MainActor
 final class NativeProcessTests: XCTestCase {
@@ -12,14 +11,17 @@ final class NativeProcessTests: XCTestCase {
     return collector
   }
 
-  private func nativeFixture(_ source: String) throws -> (NativeProcess, URL) {
+  private func nativeFixture(
+    _ source: String, purpose: NativeProcess.Purpose = .computerUse
+  ) throws -> (NativeProcess, URL) {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let executable = directory.appendingPathComponent("helper")
     try source.write(to: executable, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
     let helper = NativeProcess(
-      executable: executable, environment: ["OKOU_NATIVE_TEST_DIRECTORY": directory.path])
+      executable: executable, environment: ["OKOU_NATIVE_TEST_DIRECTORY": directory.path],
+      purpose: purpose)
     addTeardownBlock {
       await helper.stop()
       try FileManager.default.removeItem(at: directory)
@@ -175,8 +177,10 @@ final class NativeProcessTests: XCTestCase {
     XCTAssertFalse(event.formatted.contains("0123456789abcdefghijklmnopqrstuvwxyz"))
     let details = String(
       decoding: try XCTUnwrap(attachments["native-helper-diagnostics.txt"]), as: UTF8.self)
-    let mismatch = zip(received, expected).enumerated().first { $0.element.0 != $0.element.1 }?.offset
-    XCTAssertEqual(received, expected, "firstMismatchOffset=\(String(describing: mismatch))\n\(details)")
+    let mismatch = zip(received, expected).enumerated().first { $0.element.0 != $0.element.1 }?
+      .offset
+    XCTAssertEqual(
+      received, expected, "firstMismatchOffset=\(String(describing: mismatch))\n\(details)")
     XCTAssertTrue(details.contains("responseBytes=\(expected.count)"))
     XCTAssertTrue(details.contains("responseTruncated=false"))
     XCTAssertTrue(details.contains("DecodingError"))
@@ -184,7 +188,9 @@ final class NativeProcessTests: XCTestCase {
     XCTAssertTrue(details.contains("readSequence="))
   }
 
-  func testProtocolAttachmentsAreBoundedAcrossHelperRestartsWithoutDroppingErrorEvents() async throws {
+  func testProtocolAttachmentsAreBoundedAcrossHelperRestartsWithoutDroppingErrorEvents()
+    async throws
+  {
     let collector = try telemetry()
     let (executor, _) = try fixture(
       #"""
@@ -286,7 +292,7 @@ final class NativeProcessTests: XCTestCase {
     let succeeded = try await good
     XCTAssertEqual(succeeded["status"].string, "succeeded")
     let expected = String(
-      String(repeating: "0123456789abcdefghijklmnopqrstuvwxyz", count: 44738).prefix(1610565))
+      String(repeating: "0123456789abcdefghijklmnopqrstuvwxyz", count: 44738).prefix(1_610_565))
     XCTAssertEqual(succeeded["result"]["content"].string, expected)
     do {
       _ = try await bad
@@ -301,48 +307,108 @@ final class NativeProcessTests: XCTestCase {
     XCTAssertEqual(attachments["native-helper-response.bin"], Data("invalid-second-response".utf8))
   }
 
-  func testUnexpectedHelperExitIsDeliveredToSentry() async throws {
+  func testExitStatusDistinguishesExitCodesFromSignals() async throws {
     let collector = try telemetry()
-    let (executor, _) = try fixture(
-      #"""
-      #!/usr/bin/python3
-      import os, sys
-      for line in sys.stdin:
-          os._exit(23)
-      """#)
-    let response = await listApps(executor)
-    XCTAssertEqual(response["status"].string, "failed")
-    let event = try XCTUnwrap(collector.events().first)
-    XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "unexpected_exit")
-    XCTAssertEqual(event["contexts"]["nativeHelper"]["exitStatus"].number, 23)
+    let cases: [(String, String, NativeProcess.Purpose)] = [
+      ("os._exit(15)", "exit", .computerUse),
+      ("os.kill(os.getpid(), signal.SIGTERM)", "uncaught_signal", .browserAutomationProbe),
+    ]
+    for (terminate, reason, purpose) in cases {
+      let (helper, _) = try nativeFixture(
+        """
+        #!/usr/bin/python3
+        import os, signal, sys
+        for line in sys.stdin:
+            \(terminate)
+        """, purpose: purpose)
+      let response = await listApps(CommandExecutor(helper: helper))
+      XCTAssertEqual(response["error"]["code"].string, "accessibility_unavailable")
+      let event = try XCTUnwrap(
+        collector.events().first {
+          $0["contexts"]["nativeHelper"]["purpose"].string == purpose.rawValue
+        })
+      let diagnostics = event["contexts"]["nativeHelper"]
+      XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "unexpected_exit")
+      XCTAssertEqual(diagnostics["exitStatus"].number, 15)
+      XCTAssertEqual(diagnostics["terminationReason"].string, reason)
+      XCTAssertEqual(diagnostics["generation"].number, 1)
+      XCTAssertEqual(diagnostics["pendingRequests"].number, 1)
+    }
+    XCTAssertEqual(try collector.events().count, 2)
   }
 
   func testHelperTimeoutIsDeliveredToSentry() async throws {
     let collector = try telemetry()
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let executable = directory.appendingPathComponent("helper")
-    try #"""
+    let (helper, _) = try nativeFixture(
+      #"""
       #!/usr/bin/python3
       import sys
       for line in sys.stdin:
           pass
-      """#.write(to: executable, atomically: true, encoding: .utf8)
-    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
-    let helper = NativeProcess(executable: executable)
-    addTeardownBlock {
-      await helper.stop()
-      try FileManager.default.removeItem(at: directory)
+      """#)
+    for kind in ["apps.list", "private-operation-content"] {
+      do {
+        _ = try await helper.request(
+          .object(["kind": .string(kind), "text": .string("private-input-content")]), timeout: 0.1)
+        XCTFail("An unanswered helper request must fail at its deadline")
+      } catch let failure as DesktopFailure {
+        XCTAssertEqual(failure.code, "command_timeout")
+      }
     }
+    let events = try collector.events()
+    XCTAssertEqual(events.count, 2)
+    for (operation, generation) in [("apps.list", 1), ("unknown", 3)] {
+      let event = try XCTUnwrap(
+        events.first { $0["contexts"]["nativeHelper"]["generation"].number == Double(generation) })
+      let diagnostics = event["contexts"]["nativeHelper"]
+      XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "timeout")
+      XCTAssertEqual(diagnostics["purpose"].string, "computer_use")
+      XCTAssertEqual(diagnostics["operation"].string, operation)
+      XCTAssertEqual(diagnostics["timeoutMs"].number, 100)
+      XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["elapsedMs"].number), 100)
+      XCTAssertFalse(event.formatted.contains("private-operation-content"))
+      XCTAssertFalse(event.formatted.contains("private-input-content"))
+    }
+  }
+
+  func testExplicitStopReapsTheHelperWithoutReportingAnUnexpectedExit() async throws {
+    let collector = try telemetry()
+    let (helper, directory) = try nativeFixture(
+      #"""
+      #!/usr/bin/python3
+      import json, os, pathlib, sys
+      attempts = pathlib.Path(os.environ['OKOU_NATIVE_TEST_DIRECTORY']) / 'attempts'
+      for line in sys.stdin:
+          request = json.loads(line)
+          with attempts.open('a') as stream:
+              stream.write(request['kind'] + '\n')
+          if request['kind'] == 'exit':
+              os._exit(15)
+          print(json.dumps({'id': request['id'], 'status': 'succeeded',
+                            'result': {'pid': os.getpid()}}), flush=True)
+      """#)
+
+    let first = try await helper.request(.object(["kind": .string("first")]))
+    let retiredPID = try XCTUnwrap(first["result"]["pid"].number.flatMap(Int32.init(exactly:)))
+    await helper.stop()
+    XCTAssertEqual(kill(retiredPID, 0), -1)
+    XCTAssertEqual(errno, ESRCH)
+
+    let second = try await helper.request(.object(["kind": .string("second")]))
+    XCTAssertNotEqual(first["result"]["pid"], second["result"]["pid"])
     do {
-      _ = try await helper.request(.object(["kind": .string("apps.list")]), timeout: 0.1)
-      XCTFail("An unanswered helper request must fail at its deadline")
+      _ = try await helper.request(.object(["kind": .string("exit")]))
+      XCTFail("The replacement helper's exit must fail its pending request")
     } catch let failure as DesktopFailure {
-      XCTAssertEqual(failure.code, "command_timeout")
+      XCTAssertEqual(failure.code, "accessibility_unavailable")
     }
     let events = try collector.events()
     XCTAssertEqual(events.count, 1)
-    XCTAssertEqual(events.first?["tags"]["nativeHelperFailure"].string, "timeout")
+    XCTAssertEqual(events.first?["contexts"]["nativeHelper"]["generation"].number, 3)
+    XCTAssertEqual(events.first?["contexts"]["nativeHelper"]["terminationReason"].string, "exit")
+    let attempts = try String(
+      contentsOf: directory.appendingPathComponent("attempts"), encoding: .utf8)
+    XCTAssertEqual(attempts.split(separator: "\n"), ["first", "second", "exit"])
   }
 
   func testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath() async throws {
@@ -397,22 +463,29 @@ final class NativeProcessTests: XCTestCase {
   }
 
   func testFinalLargeResponseIsDrainedBeforeHelperExit() async throws {
+    let collector = try telemetry()
     let (helper, _) = try nativeFixture(
       #"""
       #!/usr/bin/python3
-      import json, os, sys
+      import json, os, signal, sys
       request = json.loads(sys.stdin.readline())
       data = json.dumps({'id': request['id'], 'status': 'succeeded',
                          'result': {'value': 'final-response-' * 131072}}).encode() + b'\n'
       chunk = memoryview(data)
       while chunk:
           chunk = chunk[os.write(1, chunk):]
-      os._exit(0)
+      os.kill(os.getpid(), signal.SIGTERM)
       """#)
     let response = try await helper.request(.object(["kind": .string("app.state")]))
     XCTAssertTrue(
       response["result"]["value"].string == String(repeating: "final-response-", count: 131_072),
       "The helper's final response must be complete")
+    await fulfillment(of: [collector.expectation(eventCount: 1)], timeout: 5)
+    let event = try XCTUnwrap(collector.events().first)
+    let diagnostics = event["contexts"]["nativeHelper"]
+    XCTAssertEqual(diagnostics["pendingRequests"].number, 0)
+    XCTAssertEqual(diagnostics["exitStatus"].number, 15)
+    XCTAssertEqual(diagnostics["terminationReason"].string, "uncaught_signal")
   }
 
   func testInternalTimeoutReapsHelperBeforeFailureAndRecoversForANewCommand() async throws {

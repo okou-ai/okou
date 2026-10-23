@@ -296,24 +296,6 @@ export function builtinConnectorCredentialValuesReadPlan(args: {
   };
 }
 
-export function builtinConnectorVariableValuesFromRows(
-  rows: readonly {
-    readonly kind: string;
-    readonly name: string;
-    readonly value: string;
-  }[],
-): ReadonlyMap<string, string> {
-  const values = new Map<string, string>();
-  for (const row of rows) {
-    // Variable-only plans cannot select a secret; no KMS runs here.
-    if (row.kind !== "variable") {
-      throw new Error("Invalid connector credential value kind");
-    }
-    values.set(`$vars.${row.name}`, row.value);
-  }
-  return values;
-}
-
 export async function builtinConnectorCredentialValuesFromRows(
   args: {
     readonly connection: BuiltinConnectorCredentialConnection;

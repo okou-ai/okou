@@ -66,7 +66,8 @@
     "billing:pi-memory-stage1": "tsx scripts/pi-memory-stage1-cost.ts",
     "test:pi-memory-stage1-cost": "tsx scripts/test-pi-memory-stage1-cost.ts",
     "test:migration-smoke-diagnostics": "tsx scripts/test-migration-smoke-diagnostics.ts",
-    "test:pi-memory-retirement": "tsx scripts/test-pi-memory-retirement.ts"
+    "test:pi-memory-retirement": "tsx scripts/test-pi-memory-retirement.ts",
+    "test:workflow-attachments": "node --import tsx scripts/migrations/024-workflow-attachments/test-backfill.ts"
   },
   "dependencies": {
     "@okouai/api-contracts": "workspace:*",
@@ -76,6 +77,7 @@
     "postgres": "^3.4.9"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1149.0",
     "@okouai/eslint-config": "workspace:*",
     "@okouai/eslint-rules": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
@@ -87,6 +89,7 @@
     "oxlint": "^1.75.0",
     "oxlint-tsgolint": "7.0.2001",
     "pg": "^8.23.0",
+    "tar": "^7.5.19",
     "tsx": "^4.21.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vitest": "^5.0.5",

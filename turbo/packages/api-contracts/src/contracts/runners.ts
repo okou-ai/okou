@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { workflowSkillDocumentSchema } from "./workflow-attachments";
 
 import {
   executionFirewallInlineEntrySchema,
@@ -610,6 +611,8 @@ function uniqueStorageMountPaths<T extends { readonly mountPath: string }>(
 
 /** Canonical Runner wire representation. */
 export const storageManifestSchema = z.object({
+  // Reader preparation only: the Stage 1 API never emits this field.
+  workflowSkills: z.array(workflowSkillDocumentSchema).optional(),
   storageMounts: z
     .array(storageMountEntrySchema)
     .superRefine(uniqueStorageMountPaths),
@@ -938,6 +941,13 @@ function requireCompletePiFields(
  * Secrets are encrypted with AES-256-GCM before storage
  */
 const storedExecutionContextObjectSchema = z.object({
+  // API-only logical identity for Stage 2; absence marks an older queued context.
+  customWorkflowSelection: z
+    .object({
+      agentId: z.uuid(),
+    })
+    .strict()
+    .optional(),
   storageMounts: z
     .array(storedStorageMountEntrySchema)
     .superRefine(uniqueStorageMountPaths),

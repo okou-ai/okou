@@ -1,8 +1,10 @@
 import { command } from "ccstate";
 import { createElement } from "react";
 import { hostedSiteAccessReasonSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
-import { hostedSiteRecoveryTarget } from "../lib/hosted-site-access.ts";
-import { i18n } from "../i18n/index.ts";
+import {
+  hostedSiteAccessTitle,
+  hostedSiteRecoveryTarget,
+} from "../lib/hosted-site-access.ts";
 import { HostedSiteAccessPage } from "../views/hosted-site-authorization/hosted-site-access-page.tsx";
 import { hideAppSkeleton$ } from "./app-skeleton.ts";
 import { updateDocumentTitle$ } from "./document-title.ts";
@@ -13,18 +15,14 @@ export const setupHostedSiteAccessPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const params = get(searchParams$);
     const target = hostedSiteRecoveryTarget(params.get("url"));
-    const reason = hostedSiteAccessReasonSchema.safeParse(params.get("reason"));
-    set(
-      updateDocumentTitle$,
-      i18n.t(($) => {
-        return $.artifacts.access.websiteTitle;
-      }),
-    );
+    const parsed = hostedSiteAccessReasonSchema.safeParse(params.get("reason"));
+    const reason = parsed.success ? parsed.data : "denied";
+    set(updateDocumentTitle$, hostedSiteAccessTitle(reason));
     set(
       updatePage$,
       createElement(HostedSiteAccessPage, {
         target,
-        reason: reason.success ? reason.data : "denied",
+        reason,
       }),
     );
     await set(hideAppSkeleton$, signal);

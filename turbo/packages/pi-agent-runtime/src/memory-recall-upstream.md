@@ -15,7 +15,7 @@ Okou's TypeScript authority is
 is `guest-agent/src/cli/pi_memory_citation.rs`. Both consume the same
 `fixtures/pi-memory-citations.json`. Okou additionally removes complete stray
 delimiters, bounds untrusted fields and counts, and never exposes citation
-metadata through public text, logs, metrics, Stage 1 input, or exported Pi
+metadata through public text, logs, metrics, or exported Pi
 JSONL derivatives.
 
 Canonical Pi session JSONL remains immutable. Sandbox runtime and shared projections normalize

@@ -242,6 +242,7 @@ impl Fixture {
             recovery_prompt: None,
         });
         context.storage_manifest = Some(StorageManifest {
+            workflow_skills: Vec::new(),
             storages: Vec::new(),
             artifacts: self.workspace_artifact.iter().cloned().collect(),
         });

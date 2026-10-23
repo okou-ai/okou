@@ -376,7 +376,16 @@ describe("Workflow creation publication", () => {
           return workflow.name === body.name;
         }),
       ).toMatchObject([{ id: winner.body.id, visibility }]);
-      expect(s3.objects.size).toBe(2);
+      expect(
+        [...s3.objects.keys()].filter((key) => {
+          return !key.startsWith("workflow-attachments/");
+        }),
+      ).toHaveLength(2);
+      expect(
+        [...s3.objects.keys()].filter((key) => {
+          return key.startsWith("workflow-attachments/");
+        }),
+      ).toHaveLength(2);
       await assertReadable(actor, winner.body.id, body);
     },
   );
@@ -423,7 +432,16 @@ describe("Workflow creation publication", () => {
         [200],
       );
       expect(sharedThread.body.chatThreadId).toBe(thread.id);
-      expect(s3.objects.size).toBe(2);
+      expect(
+        [...s3.objects.keys()].filter((key) => {
+          return !key.startsWith("workflow-attachments/");
+        }),
+      ).toHaveLength(2);
+      expect(
+        [...s3.objects.keys()].filter((key) => {
+          return key.startsWith("workflow-attachments/");
+        }),
+      ).toHaveLength(1);
     },
   );
 

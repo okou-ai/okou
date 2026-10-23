@@ -23,7 +23,6 @@ import {
   type NotionChildPageCreatedEventCreateConfig,
   type NotionDatabaseItemCreatedEventCreateConfig,
   type NotionPageContentUpdatedEventCreateConfig,
-  type StripeInvoiceBillingReason,
   type WorkflowDetailResponse,
   type WorkflowSchedule,
   type WorkflowWebhookSecretResponse,
@@ -111,7 +110,6 @@ export type WorkflowAutomationCreateDialog =
   | "notion-child-page"
   | "notion-database-item"
   | "notion-page-content-updated"
-  | "stripe-invoice-paid"
   | "webhook"
   | null;
 export type NotionPageContentUpdatedScopeMode = "page" | "database";
@@ -1397,41 +1395,6 @@ export const createWorkflowNotionPageContentUpdatedAutomation$ = command(
         fetchOptions: { signal },
       }),
       [201],
-    );
-    signal.throwIfAborted();
-    set(reloadWorkflows$);
-  },
-);
-
-export const createWorkflowStripeInvoicePaidAutomation$ = command(
-  async (
-    { get, set },
-    input: {
-      readonly workflowId: string;
-      readonly billingReasons: readonly StripeInvoiceBillingReason[];
-    },
-    signal: AbortSignal,
-  ) => {
-    const client = get(apiClient$)(workflowAutomationsContract);
-    await accept(
-      client.create({
-        params: { workflowId: input.workflowId },
-        body: {
-          kind: "event",
-          eventType: "stripe-invoice-paid",
-          eventConfig: {
-            provider: "stripe",
-            event: "invoice_paid",
-            ...(input.billingReasons.length > 0
-              ? { billingReasons: [...input.billingReasons] }
-              : {}),
-          },
-        },
-        fetchOptions: { signal },
-      }),
-      [201],
-      signal,
-      { showErrorToast: false },
     );
     signal.throwIfAborted();
     set(reloadWorkflows$);

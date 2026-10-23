@@ -3,6 +3,8 @@ import {
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
 import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
 import {
@@ -14,6 +16,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import { mockBrowserCdp } from "../../../__tests__/browser-cdp-fixture.ts";
 
 const context = testContext();
 
@@ -168,7 +171,10 @@ function mockWideScreen(): void {
   });
 }
 
-function openConversation(chatEvents: MockChatEventInput[]): Promise<void> {
+function openConversation(
+  chatEvents: MockChatEventInput[],
+  cdpViewerEnabled = false,
+): Promise<void> {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Browser navigation",
@@ -178,6 +184,7 @@ function openConversation(chatEvents: MockChatEventInput[]): Promise<void> {
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserCdpViewer]: cdpViewerEnabled },
   });
 }
 
@@ -274,6 +281,57 @@ function installViewportGeometry(
     },
   };
 }
+
+test("The embedded Okou viewer owns its shortcuts while the conversation keeps its shortcuts", async () => {
+  const user = userEvent.setup({ delay: null });
+  mockWideScreen();
+  context.mocks.browser.userAgent(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+  );
+  mockBrowserApi(liveBrowserSession());
+  const cdpUrl = "wss://cdp.browser-use.com/sidebar";
+  mockBrowserCdp(context, cdpUrl);
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, { cdpUrl });
+  });
+  await openConversation(completedConversationEvents(), true);
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const address = await screen.findByDisplayValue("https://example.com");
+  expect(address).toBeEnabled();
+
+  click(screen.getByLabelText("Browser menu"));
+  const menu = await screen.findByRole("menu");
+  const continuousSync = queryAllByRoleFast("menuitemradio", menu).find(
+    (item) => {
+      return item.textContent?.trim() === "Sync continuously";
+    },
+  );
+  expect(continuousSync).toHaveAttribute("aria-checked", "true");
+  click(screen.getByLabelText("Browser menu"));
+  await waitFor(() => {
+    expect(continuousSync).not.toBeInTheDocument();
+  });
+
+  await user.click(address);
+  expect(address).toHaveFocus();
+  await user.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");
+  expect(
+    screen.queryByRole("dialog", { name: "Search workspace..." }),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByTitle(LIVE_BROWSER_TITLE)).not.toBeInTheDocument();
+  const message = screen.getByRole("textbox", { name: "Message" });
+  await user.click(message);
+  expect(message).toHaveFocus();
+  await user.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");
+  await expect(
+    screen.findByRole("dialog", { name: "Search workspace..." }),
+  ).resolves.toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(message).toHaveFocus();
+  });
+});
 
 test("Fit a live browser when the available sidebar space changes", async () => {
   mockWideScreen();

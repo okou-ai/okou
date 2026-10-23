@@ -118,6 +118,10 @@ jobs:
           # A closed PR must never supply code executed with cleanup credentials.
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.23.4
+
       - name: Remove API Worker preview resources
         env:
           JOB_REF: pr-${{ github.event.pull_request.number }}
@@ -134,6 +138,10 @@ jobs:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.23.4
 
       - name: Delete Neon Branch
         uses: ./.github/actions/neon-branch

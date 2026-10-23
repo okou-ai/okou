@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import type StripeSDK from "stripe";
 import {
-  webhookStripeAutomationEventsContract,
+  webhookStripeConnectContract,
   webhookStripeContract,
 } from "@okouai/api-contracts/contracts/webhooks";
 
@@ -10,14 +10,14 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { webhooksStripeRoutes } from "../webhooks-stripe";
-import { webhooksStripeAutomationEventsRoutes } from "../webhooks-stripe-automation-events";
+import { webhooksStripeConnectRoutes } from "../webhooks-stripe-connect";
 
 const context = testContext();
 const { default: ActualStripeSDK } = await vi.importActual<{
   default: typeof StripeSDK;
 }>("stripe");
 
-test.each(["billing", "automation"] as const)(
+test.each(["billing", "connect"] as const)(
   "authenticates signed %s webhooks with the Worker's Web Crypto provider",
   async (ingress) => {
     const secret = "whsec_worker_signature_test";
@@ -40,15 +40,12 @@ test.each(["billing", "automation"] as const)(
 
     const app = setupApp({
       context,
-      routes: [
-        ...webhooksStripeRoutes,
-        ...webhooksStripeAutomationEventsRoutes,
-      ],
+      routes: [...webhooksStripeRoutes, ...webhooksStripeConnectRoutes],
     });
     const post =
       ingress === "billing"
         ? app(webhookStripeContract).post
-        : app(webhookStripeAutomationEventsContract).post;
+        : app(webhookStripeConnectContract).post;
     const timestamp = Math.floor(now() / 1000);
     const body = JSON.stringify({
       id: `evt_${randomUUID()}`,

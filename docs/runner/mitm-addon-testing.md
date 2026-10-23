@@ -198,11 +198,14 @@ Run the same static checks used by CI:
 ```bash
 uv run --no-sync ruff format --check .
 uv run --no-sync ruff check .
-uv run --no-sync basedpyright -p .
+uv run --no-sync npm exec --yes --package=basedpyright@1.39.9 -- basedpyright -p .
 ```
 
 Keep these commands in the same locked environment as the complete addon suite,
 using the exact interpreter declared in `.python-version`.
+BasedPyright runs through npm with the repository's patched Node.js runtime;
+its Python package bundles a separate Node.js binary. The pinned npm package
+uses the locked Python environment provided by `uv run` for import resolution.
 
 ### Private control and packaged runtime
 

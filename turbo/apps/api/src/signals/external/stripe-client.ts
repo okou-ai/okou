@@ -1053,43 +1053,16 @@ export async function listUndeliveredStripePaidInvoices(
   }
 }
 
-type StripeWebhookEventConstructor = (
-  rawBody: string,
-  signature: string,
-  secret: string,
-) => unknown;
-
-const {
-  get: getMockedStripeWebhookEventConstructor,
-  set: setMockedStripeWebhookEventConstructor,
-} = testOverride<StripeWebhookEventConstructor | undefined>(() => {
-  return undefined;
-});
-
-/**
- * Raw event for the automation-event ingress, which zod-parses the payload
- * itself rather than branching on Stripe's union.
- */
-export async function constructStripeWebhookEvent(
+export async function constructStripeConnectWebhookEvent(
   rawBody: string,
   signature: string,
   secret: string,
 ): Promise<unknown> {
-  const mocked = getMockedStripeWebhookEventConstructor();
-  if (mocked) {
-    return mocked(rawBody, signature, secret);
-  }
   return await stripeSdk().webhooks.constructEventAsync(
     rawBody,
     signature,
     secret,
   );
-}
-
-export function mockStripeWebhookEventConstructor(
-  constructor: StripeWebhookEventConstructor,
-): void {
-  setMockedStripeWebhookEventConstructor(constructor);
 }
 
 export async function constructStripeBillingWebhookEvent(

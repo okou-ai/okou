@@ -386,7 +386,7 @@ final class DesktopModel: ObservableObject {
   }
   func probeBrowser(_ target: String) {
     perform {
-      let helper = NativeProcess(executable: Self.helperURL)
+      let helper = NativeProcess(executable: Self.helperURL, purpose: .browserAutomationProbe)
       defer { Task { await helper.stop() } }
       let response = try await helper.request(
         .object(["kind": .string("permissions.probe_automation"), "target": .string(target)]))

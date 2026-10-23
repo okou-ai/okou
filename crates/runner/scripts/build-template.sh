@@ -112,6 +112,7 @@ ROOTFS_DIR=""
 CACHE_TMP_TAR=""
 
 # Pinned versions (changes here invalidate the template cache via script hash)
+NODE_VERSION="24.22.1"
 GO_VERSION="1.27.3"
 CLAUDE_CODE_VERSION="2.1.309"
 CODEX_CLI_VERSION="0.163.0"
@@ -346,7 +347,7 @@ install_packages() {
   '
 
   # Step 3: Install all APT packages in single pass.
-  sudo chroot "$ROOTFS_DIR" bash -c 'set -e
+  sudo chroot "$ROOTFS_DIR" env NODE_VERSION="$NODE_VERSION" bash -c 'set -e
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
   apt-get install -y \
@@ -354,7 +355,7 @@ install_packages() {
     libreoffice-impress poppler-utils \
     fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji \
     libnss3 p11-kit-modules tzdata-legacy unzip \
-    nodejs \
+    "nodejs=${NODE_VERSION}-1nodesource1" \
     python3 python3-pip python3-venv \
     ruby-full bundler \
     php php-cli php-common php-curl php-mbstring php-xml php-zip \
@@ -363,6 +364,8 @@ install_packages() {
     postgresql-18 postgresql-contrib-18 postgresql-18-pgvector \
     redis-server \
     gh
+
+  test "$(/usr/bin/node --version)" = "v${NODE_VERSION}"
 
   # Clean up third-party APT sources (no longer needed at runtime)
   rm -f /etc/apt/sources.list.d/nodesource.list \

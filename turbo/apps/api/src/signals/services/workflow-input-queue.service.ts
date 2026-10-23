@@ -9,10 +9,6 @@ import { GoogleCalendarSourceTransitionChangedError } from "./workflow-google-ca
 import { GoogleFormsSourceTransitionChangedError } from "./workflow-google-forms-queue.service";
 import { GoogleMeetAutomationSourceChangedError } from "./workflow-google-meet-queue.service";
 import { NotionAutomationSourceChangedError } from "./workflow-notion-queue.service";
-import {
-  StripeDeliveryClaimChangedError,
-  StripeDeliveryTargetChangedError,
-} from "./workflow-stripe-queue.service";
 
 export class ChatRunFinishedAutomationAlreadyAdmittedError extends Error {}
 
@@ -38,9 +34,7 @@ export type WorkflowSourceFailure =
   | { readonly kind: "google-calendar" }
   | { readonly kind: "google-forms" }
   | { readonly kind: "google-meet" }
-  | { readonly kind: "notion" }
-  | { readonly kind: "stripe-claim" }
-  | { readonly kind: "stripe-target"; readonly reason: string };
+  | { readonly kind: "notion" };
 
 /** A finite SQL plan contains neither resources nor executable callbacks. */
 export interface WorkflowSourceAdmissionPlan {
@@ -72,12 +66,6 @@ export function workflowSourceAdmissionError(
     }
     case "notion": {
       return new NotionAutomationSourceChangedError();
-    }
-    case "stripe-claim": {
-      return new StripeDeliveryClaimChangedError();
-    }
-    case "stripe-target": {
-      return new StripeDeliveryTargetChangedError(failure.reason);
     }
   }
 }

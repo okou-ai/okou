@@ -443,6 +443,9 @@
       "switchAccountFailed": "アカウント切り替え画面を開けませんでした。もう一度お試しください。",
       "title": "このアーティファクトを表示できません",
       "tryAgain": "再試行",
+      "websiteAuthenticationDescription": "このウェブサイトにアクセスできるアカウントでログインしてください。",
+      "websiteAuthenticationSignedInDescription": "現在のアカウントでアクセス権を確認するには、続行してください。",
+      "websiteAuthenticationTitle": "このウェブサイトへのアクセス権を確認",
       "websiteTitle": "このウェブサイトは表示できません",
       "websiteUnavailableDescription": "しばらくしてからもう一度お試しください。",
       "websiteUnavailableTitle": "このウェブサイトは一時的に利用できません"
@@ -6730,43 +6733,6 @@
         "time": "時間 ({{timezone}})",
         "updateScheduleAria": "更新スケジュールのオートメーション"
       },
-      "stripe": {
-        "addAction": "Stripe オートメーションを追加",
-        "addAria": "Stripe の請求書支払い済みオートメーションを追加",
-        "addDescription": "接続済みの Stripe Live アカウントで一致する請求書が支払われたときに、このワークフローを実行します。",
-        "addTitle": "Stripe オートメーションを追加",
-        "anyBillingReason": "すべての請求理由",
-        "billingReason": {
-          "automaticPendingInvoiceItemInvoice": "保留中の請求項目の自動請求",
-          "manual": "手動",
-          "quoteAccept": "見積もり承認",
-          "subscription": "サブスクリプション",
-          "subscriptionCreate": "サブスクリプション作成",
-          "subscriptionCycle": "サブスクリプション周期",
-          "subscriptionThreshold": "サブスクリプションしきい値",
-          "subscriptionUpdate": "サブスクリプション更新",
-          "upcoming": "次回予定"
-        },
-        "billingReasons": "請求理由",
-        "billingReasonsHint": "何も選択しない場合は、すべての請求理由に一致します。",
-        "bindingSummary": "Stripe アカウント {{accountId}} · Live モード · {{billingReasons}}",
-        "delivery": "配信",
-        "deliveryStatus": {
-          "delivered": "配信済み",
-          "failed": "失敗",
-          "pending": "保留中",
-          "skipped": "スキップ"
-        },
-        "deliveryWarning": "直近の最終配信に失敗しました。再試行する前にワークフローのアクティビティを確認してください。",
-        "immutableHint": "Stripe アカウントと請求理由は固定されています。変更するには、このオートメーションを削除して再作成してください。",
-        "invoicePaidDescription": "一致する Stripe の請求書が支払われたときに実行します。",
-        "invoicePaidTitle": "Stripe 請求書の支払い完了",
-        "lastEvent": "最新イベント",
-        "manageConnection": "Stripe 接続を管理",
-        "noDeliveries": "配信はまだありません",
-        "noMatchingEvents": "一致するイベントはまだありません",
-        "rule": "一致する Stripe 請求書の支払いが完了したとき"
-      },
       "types": {
         "chat": "チャット",
         "github": "GitHub",
@@ -6775,7 +6741,6 @@
         "googleForms": "Google Forms",
         "googleMeet": "Google 会う",
         "notion": "Notion",
-        "stripe": "Stripe",
         "webhook": "Webhook"
       },
       "webhook": {

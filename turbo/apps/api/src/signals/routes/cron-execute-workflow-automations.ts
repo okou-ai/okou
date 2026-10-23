@@ -4,7 +4,6 @@ import { command } from "ccstate";
 import { logger } from "../../lib/log";
 import type { RouteEntry } from "../route-entry";
 import { executeDueNotionAutomationEvents$ } from "../services/notion-automation-event.service";
-import { executeDueStripeAutomationEvents$ } from "../services/stripe-automation-event.service";
 import { executeDueWorkflowAutomations$ } from "../services/workflow-automation-poller.service";
 import { executeOfficialWorkflowReconciliationWork$ } from "../services/official-workflow-reconciliation-worker.service";
 import {
@@ -71,21 +70,14 @@ const executeWorkflowAutomationsRoute$: RouteEntry["handler"] = command(
     }
     const result = await set(executeDueWorkflowAutomations$, signal);
     const notionResult = await set(executeDueNotionAutomationEvents$, signal);
-    const stripeResult = await set(executeDueStripeAutomationEvents$, signal);
     signal.throwIfAborted();
 
     return {
       status: 200 as const,
       body: {
         success: true as const,
-        executed:
-          result.executed + notionResult.executed + stripeResult.executed,
-        skipped:
-          result.skipped +
-          notionResult.skipped +
-          stripeResult.skipped +
-          stripeResult.failed +
-          stripeResult.retried,
+        executed: result.executed + notionResult.executed,
+        skipped: result.skipped + notionResult.skipped,
       },
     };
   },

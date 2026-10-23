@@ -6,15 +6,12 @@ import { imageIoGenerateContract } from "@okouai/api-contracts/contracts/image-i
 import type { BuiltInGenerationRealtimeSubscription } from "@okouai/api-contracts/contracts/built-in-generation";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import { DEFAULT_IMAGE_MODEL } from "@okouai/core/image-model-catalog";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq, isNotNull } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { waitUntil } from "../context/wait-until";
 import { logger } from "../../lib/log";
 import type { RouteEntry } from "../route-entry";
 import { env } from "../../lib/env";
@@ -29,7 +26,6 @@ import {
   serviceUnavailable,
   submitFalImageQueueGeneration,
   type ImageOptions,
-  type ImagePricing,
   type ImageProviderReferences,
 } from "../services/image-generation.service";
 import {
@@ -44,13 +40,10 @@ import {
   openAiImageOrchestrationPricing$,
   submitOpenAiImageJob$,
 } from "../services/openai-image-generation.service";
-import { runLegacyOpenAiImageJob$ } from "../services/openai-image-legacy.service";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import {
   completeRunBuiltInAdmission$,
   isRunBuiltInAdmissionError,
   startRunBuiltInAdmission$,
-  type RunBuiltInAdmission,
 } from "../services/run-built-in-admission.service";
 import { userModelPreference } from "../services/user-data.service";
 import { resolveProviderReferenceUrls$ } from "../services/provider-reference-url.service";
@@ -74,12 +67,7 @@ interface ImageJobArgs {
   readonly generationId: string;
   readonly orgId: string;
   readonly userId: string;
-  readonly runId: string | undefined;
-  readonly privateArtifacts: boolean;
-  readonly admission: RunBuiltInAdmission | null;
   readonly options: ImageOptions;
-  readonly pricing: ImagePricing;
-  readonly useResponses: boolean;
 }
 
 function isGenerationError(value: unknown): value is GenerationError {
@@ -238,14 +226,8 @@ const startImageProviderJob$ = command(
     args: ImageJobArgs,
     signal: AbortSignal,
   ): Promise<GenerationErrorResponse | null> => {
-    if (args.options.provider !== "fal") {
-      if (args.useResponses) {
-        return await set(submitOpenAiImageJob$, args.generationId, signal);
-      }
-      waitUntil(
-        set(runLegacyOpenAiImageJob$, args, new AbortController().signal),
-      );
-      return null;
+    if (args.options.provider === "openai") {
+      return await set(submitOpenAiImageJob$, args.generationId, signal);
     }
     return await set(submitImageProviderWebhookJob$, args, signal);
   },
@@ -355,14 +337,7 @@ const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
-  const useResponses =
-    options.provider === "openai" &&
-    isFeatureEnabled(
-      FeatureSwitchKey.DurableOpenAiImageGeneration,
-      await set(loadUserFeatureSwitchContext$, auth.orgId, auth.userId, signal),
-    );
-  signal.throwIfAborted();
-  if (useResponses) {
+  if (options.provider === "openai") {
     await get(openAiImageOrchestrationPricing$);
     signal.throwIfAborted();
   }
@@ -378,7 +353,7 @@ const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return admission;
   }
 
-  const { privateArtifacts } = await set(
+  await set(
     createImageGenerationJob$,
     {
       generationId,
@@ -390,7 +365,8 @@ const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         {
           admissionId: admission?.id,
           provider: options.provider,
-          providerTask: useResponses ? "image-response" : "image",
+          providerTask:
+            options.provider === "openai" ? "image-response" : "image",
         },
       ),
     },
@@ -403,12 +379,7 @@ const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       generationId,
       orgId: auth.orgId,
       userId: auth.userId,
-      runId,
-      privateArtifacts,
-      admission,
       options,
-      pricing,
-      useResponses,
     },
     signal,
   );
@@ -422,7 +393,11 @@ const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return submitError;
   }
 
-  return acceptedImageResponse(generationId, realtime, useResponses);
+  return acceptedImageResponse(
+    generationId,
+    realtime,
+    options.provider === "openai",
+  );
 });
 
 export const imageIoGenerateRoutes: readonly RouteEntry[] = [

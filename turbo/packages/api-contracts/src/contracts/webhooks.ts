@@ -95,11 +95,8 @@ export const webhookStripeContract = c.router({
   },
 });
 
-/**
- * Stripe Connect automation-event webhook contract. This route is intentionally
- * separate from the platform billing webhook above.
- */
-export const webhookStripeAutomationEventsContract = c.router({
+// Connect account notifications keep their configured URL and signing secret.
+export const webhookStripeConnectContract = c.router({
   post: {
     method: "POST",
     path: "/api/webhooks/stripe-automation-events",
@@ -111,7 +108,7 @@ export const webhookStripeAutomationEventsContract = c.router({
       500: thirdPartyWebhookErrorSchema,
       503: thirdPartyWebhookErrorSchema,
     },
-    summary: "Handle Stripe Connect automation events",
+    summary: "Handle Stripe Connect account notifications",
   },
 });
 
@@ -1061,8 +1058,7 @@ export type WebhookGoogleCalendarContract =
 export type WebhookGoogleWorkspaceEventsContract =
   typeof webhookGoogleWorkspaceEventsContract;
 export type WebhookStripeContract = typeof webhookStripeContract;
-export type WebhookStripeAutomationEventsContract =
-  typeof webhookStripeAutomationEventsContract;
+export type WebhookStripeConnectContract = typeof webhookStripeConnectContract;
 export type WebhookWorkflowAutomationContract =
   typeof webhookWorkflowAutomationContract;
 export type WebhookBuiltInGenerationFalContract =

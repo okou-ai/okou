@@ -23,7 +23,7 @@ import {
   Tag,
   Video,
 } from "lucide-react";
-import { Button, Switch, cn, BrandGithub, BrandStripe } from "@okouai/ui";
+import { Button, Switch, cn, BrandGithub } from "@okouai/ui";
 import {
   Dialog,
   DialogContent,
@@ -497,11 +497,6 @@ export function humanReadableAutomationRuleLabel(
       return $.workflows.automations.rules.inboundWebhook;
     });
   }
-  if (automation.eventType === "stripe-invoice-paid") {
-    return i18n.t(($) => {
-      return $.workflows.automations.stripe.rule;
-    });
-  }
   return gmailAutomationTitle(automation);
 }
 
@@ -581,11 +576,6 @@ export function automationTypeLabel(
       return $.workflows.automations.types.webhook;
     });
   }
-  if (automation.eventType === "stripe-invoice-paid") {
-    return i18n.t(($) => {
-      return $.workflows.automations.types.stripe;
-    });
-  }
   if (automation.eventType === "chat-run-finished") {
     return i18n.t(($) => {
       return $.workflows.automations.types.chat;
@@ -642,9 +632,6 @@ export function AutomationListIcon({
     if (automation.eventType === "webhook-received") {
       return Link;
     }
-    if (automation.eventType === "stripe-invoice-paid") {
-      return BrandStripe;
-    }
     if (
       automation.eventType === "github-pull-request" ||
       automation.eventType === "github-deployment-status-created" ||
@@ -680,9 +667,7 @@ export function AutomationListIcon({
       ? "bg-blue-50 text-blue-600"
       : automation.eventType === "webhook-received"
         ? "bg-amber-50 text-amber-700"
-        : automation.eventType === "stripe-invoice-paid"
-          ? "bg-violet-50 text-violet-700"
-          : "bg-emerald-50 text-emerald-700";
+        : "bg-emerald-50 text-emerald-700";
 
   const compact = size === "sm";
   return (

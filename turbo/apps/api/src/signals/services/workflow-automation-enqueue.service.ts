@@ -26,8 +26,6 @@ import type { GoogleCalendarQueueSource } from "./workflow-google-calendar-queue
 import type { GoogleFormsQueueSource } from "./workflow-google-forms-queue.service";
 import type { GoogleMeetQueueSource } from "./workflow-google-meet-queue.service";
 import type { NotionQueueSource } from "./workflow-notion-queue.service";
-import type { StripeQueueSource } from "./workflow-stripe-queue.service";
-import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 
 export type WorkflowQueueSourcePlan =
   | WorkflowQueueReceipt
@@ -38,12 +36,7 @@ export type WorkflowQueueSourcePlan =
     }
   | { readonly kind: "google-forms"; readonly source: GoogleFormsQueueSource }
   | { readonly kind: "google-meet"; readonly source: GoogleMeetQueueSource }
-  | { readonly kind: "notion"; readonly source: NotionQueueSource }
-  | {
-      readonly kind: "stripe";
-      readonly source: StripeQueueSource;
-      readonly snapshot: ConnectorRuntimeSelection;
-    };
+  | { readonly kind: "notion"; readonly source: NotionQueueSource };
 
 export type AutomationRow = typeof workflowAutomations.$inferSelect;
 

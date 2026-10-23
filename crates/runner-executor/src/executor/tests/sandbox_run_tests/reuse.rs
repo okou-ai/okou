@@ -17,6 +17,7 @@ fn context_with_remote_storage(archive_url: &str, archive_size: usize) -> Execut
     let mut storage = api_storage("reused-archive", "/data", "v1", archive_url);
     storage.archive_size = Some(archive_size as u64);
     context.storage_manifest = Some(StorageManifest {
+        workflow_skills: Vec::new(),
         storages: vec![storage],
         artifacts: Vec::new(),
     });
@@ -394,6 +395,7 @@ async fn execute_job_reuse_rejects_invalid_storage_plan_before_proxy_registratio
     );
     artifact.archive_url = None;
     context.storage_manifest = Some(StorageManifest {
+        workflow_skills: Vec::new(),
         storages: Vec::new(),
         artifacts: vec![artifact],
     });

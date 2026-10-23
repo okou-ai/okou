@@ -11,12 +11,7 @@ import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
   isMorningBriefDefinitionName,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import {
-  googleFormsResponseSubmittedEventConfigSchema,
-  stripeInvoicePaidEventConfigSchema,
-} from "@okouai/api-contracts/contracts/workflows";
-
-import { connectors } from "@okouai/db/schema/connector";
+import { googleFormsResponseSubmittedEventConfigSchema } from "@okouai/api-contracts/contracts/workflows";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import {
   officialWorkflowCatalogState,
@@ -24,11 +19,6 @@ import {
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import {
-  connectorCatalog,
-  connectorCatalogEntries,
-} from "@okouai/db/runtime/connector-catalog";
-import { variables } from "@okouai/db/schema/variable";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
@@ -249,21 +239,7 @@ function accountProjectionMatchesPatch(
       config.success && config.data.connectorId === projection.eventConnectorId
     );
   }
-  if (projection.connectorSlug !== "stripe") {
-    return true;
-  }
-  if (projection.stripeBinding === null) {
-    return false;
-  }
-  const config = stripeInvoicePaidEventConfigSchema.safeParse(
-    patch.eventConfig,
-  );
-  return (
-    config.success &&
-    config.data.connectorId === projection.stripeBinding.connectorId &&
-    config.data.stripeAccountId === projection.stripeBinding.stripeAccountId &&
-    config.data.mode === projection.stripeBinding.mode
-  );
+  return true;
 }
 
 function blueprintAuthorityIdentity(args: {
@@ -827,13 +803,7 @@ const persistReconfigurationPatch$ = command(
       };
       const accountPlan = officialAccountProjectionReadPlan(projectionArgs);
       const accountRows = accountPlan.required
-        ? await tx
-            .select(accountPlan.columns)
-            .from(accountPlan.source)
-            .leftJoin(connectorCatalog, accountPlan.catalogJoin)
-            .leftJoin(connectorCatalogEntries, accountPlan.entryJoin)
-            .leftJoin(connectors, accountPlan.connectionJoin)
-            .leftJoin(variables, accountPlan.variableJoin)
+        ? await tx.select(accountPlan.columns).from(accountPlan.source)
         : [];
       if (accountPlan.required) {
         signal.throwIfAborted();
@@ -937,37 +907,18 @@ const reconcileRestoredAutomationWatch$ = command(
     );
   },
 );
-function restoredStripeEventConfig(
-  projection: OfficialAutomationAccountProjection,
-  eventConfig: unknown,
-) {
-  const binding =
-    projection.kind === "projected" ? projection.stripeBinding : null;
-  return binding === null
-    ? {}
-    : {
-        eventConfig: {
-          ...stripeInvoicePaidEventConfigSchema.parse(eventConfig),
-          ...binding,
-        },
-      };
-}
 
 function restoredAutomationAccountFields(
   projection: OfficialAutomationAccountProjection,
   previous: OfficialAutomationRow,
-  eventConfig: OfficialAutomationRow["eventConfig"],
 ) {
   const notion = restoredNotionEventConfig(projection, previous);
-  return {
-    ...(projection.kind === "projected"
-      ? {
-          eventConnectorId: projection.eventConnectorId,
-          ...(notion === null ? {} : { eventConfig: notion }),
-        }
-      : {}),
-    ...restoredStripeEventConfig(projection, eventConfig),
-  };
+  return projection.kind === "projected"
+    ? {
+        eventConnectorId: projection.eventConnectorId,
+        ...(notion === null ? {} : { eventConfig: notion }),
+      }
+    : {};
 }
 
 const restoreFailedReconfiguration$ = command(
@@ -995,13 +946,7 @@ const restoreFailedReconfiguration$ = command(
       };
       const accountPlan = officialAccountProjectionReadPlan(projectionArgs);
       const accountRows = accountPlan.required
-        ? await tx
-            .select(accountPlan.columns)
-            .from(accountPlan.source)
-            .leftJoin(connectorCatalog, accountPlan.catalogJoin)
-            .leftJoin(connectorCatalogEntries, accountPlan.entryJoin)
-            .leftJoin(connectors, accountPlan.connectionJoin)
-            .leftJoin(variables, accountPlan.variableJoin)
+        ? await tx.select(accountPlan.columns).from(accountPlan.source)
         : [];
       if (accountPlan.required) {
         cleanupSignal.throwIfAborted();
@@ -1049,7 +994,6 @@ const restoreFailedReconfiguration$ = command(
           ...restoredAutomationAccountFields(
             accountProjection,
             args.persisted.previous,
-            restorePatch.eventConfig,
           ),
           enabled: args.persisted.previous.enabled,
           officialIntendedEnabled:
@@ -1935,13 +1879,7 @@ const finalizeAutomationStructureTransition$ = command(
         signal.throwIfAborted();
       }
       const accountRows = accountPlan.required
-        ? await tx
-            .select(accountPlan.columns)
-            .from(accountPlan.source)
-            .leftJoin(connectorCatalog, accountPlan.catalogJoin)
-            .leftJoin(connectorCatalogEntries, accountPlan.entryJoin)
-            .leftJoin(connectors, accountPlan.connectionJoin)
-            .leftJoin(variables, accountPlan.variableJoin)
+        ? await tx.select(accountPlan.columns).from(accountPlan.source)
         : [];
       if (accountPlan.required) {
         signal.throwIfAborted();
