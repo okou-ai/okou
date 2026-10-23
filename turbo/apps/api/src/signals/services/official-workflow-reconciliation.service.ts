@@ -35,7 +35,9 @@ import {
   eq,
   exists,
   getTableColumns,
+  gte,
   isNull,
+  inArray,
   isNotNull,
   ne,
   notExists,
@@ -45,7 +47,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
 import { nowDate, timestampWithoutTimeZone } from "../../lib/time";
-import { pgNullDecoder } from "../../lib/db-structured-result";
+import { pgNullDecoder, pgTextDecoder } from "../../lib/db-structured-result";
 
 import {
   webhookTierLockStatement,
@@ -95,6 +97,7 @@ import { observedWorkflowAutomationCondition } from "./workflow-automation-snaps
 import { notionConfigWithConnectorId } from "./notion-automation-account.service";
 import {
   acceptedCatalogFromRow,
+  OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
   acceptedOfficialWorkflowCatalogReadPlan,
   acceptedOfficialWorkflowRevisionReadPlan,
   type AcceptedOfficialWorkflowCatalog,
@@ -3278,6 +3281,53 @@ const finalizeDormantMaterialization$ = command(
     });
   },
 );
+/** Schema columns decode both committed tuples; the CTE retains xmin as text. */
+function discardedMaterializationColumns(name: string) {
+  const automation = alias(workflowAutomations, name);
+  return {
+    ...getTableColumns(automation),
+    observedUpdatedAt: sql`${automation.updatedAt}::text`.mapWith(
+      pgTextDecoder,
+    ),
+    observedXmin: sql`${automation}.${sql.identifier("observedXmin")}`.mapWith(
+      pgTextDecoder,
+    ),
+  };
+}
+
+function discardedMaterializationCondition(
+  args: DormantMaterializationOwnershipArgs,
+) {
+  const lockedAutomation = alias(
+    workflowAutomations,
+    "discard_locked_automation",
+  );
+  const lockedIdentity = alias(
+    officialWorkflowAutomationIdentities,
+    "discard_locked_identity",
+  );
+  // JSONB cannot retain negative zero, whereas isDeepStrictEqual rejects it.
+  const bindingsComparable = !args.bindings.some((binding) => {
+    return Object.is(binding.value, -0);
+  });
+  return and(
+    isNull(lockedIdentity.automationId),
+    eq(lockedIdentity.retainedAppliedFingerprint, args.fingerprint),
+    eq(lockedIdentity.retainedIntendedEnabled, args.intendedEnabled),
+    eq(lockedIdentity.retainedParameterBindings, [...args.bindings]),
+    eq(lockedAutomation.orgId, args.orgId),
+    eq(lockedAutomation.ownerUserId, args.userId),
+    eq(lockedAutomation.workflowId, args.workflowId),
+    eq(lockedAutomation.officialBlueprintKey, args.blueprintKey),
+    eq(lockedAutomation.officialAppliedFingerprint, args.fingerprint),
+    eq(lockedAutomation.officialIntendedEnabled, args.intendedEnabled),
+    eq(lockedAutomation.officialParameterBindings, [...args.bindings]),
+    eq(lockedAutomation.officialReconciliationStatus, lockedIdentity.state),
+    inArray(lockedIdentity.state, ["reconciling", "failed"]),
+    sql`${bindingsComparable}`,
+  );
+}
+
 const persistDiscardedMaterialization$ = command(
   async (
     { set },
@@ -3285,53 +3335,71 @@ const persistDiscardedMaterialization$ = command(
     _signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0209; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
-      await tx.execute(acceptedCatalogLockStatement());
-      const [materializationAutomation] = await tx
-        .select(workflowAutomationColumns())
+    const columns = workflowAutomationColumns();
+    const identities = officialWorkflowAutomationIdentities;
+    const catalog = db
+      .$with("discard_catalog_fence")
+      .as(
+        db
+          .select({ authority: officialWorkflowCatalogState.authority })
+          .from(officialWorkflowCatalogState)
+          .where(
+            eq(
+              officialWorkflowCatalogState.authority,
+              OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+            ),
+          )
+          .for("share"),
+      );
+    // Retain the existing catalog -> automation -> identity lock order. The
+    // locked tuples, including a row changed while waiting, own both writes.
+    const lockedAutomation = db.$with("discard_locked_automation").as(
+      db
+        .select({
+          ...columns,
+          observedUpdatedAt: columns.observedUpdatedAt.as("observedUpdatedAt"),
+          observedXmin: columns.observedXmin.as("observedXmin"),
+        })
         .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, args.automationId))
-        .for("update")
-        .limit(1);
-      const [materializationIdentity] = await tx
-        .select()
-        .from(officialWorkflowAutomationIdentities)
         .where(
           and(
-            eq(officialWorkflowAutomationIdentities.id, args.automationId),
-            eq(
-              officialWorkflowAutomationIdentities.workflowId,
-              args.workflowId,
-            ),
-            eq(
-              officialWorkflowAutomationIdentities.blueprintKey,
-              args.blueprintKey,
-            ),
+            eq(workflowAutomations.id, args.automationId),
+            gte(db.select({ count: count() }).from(catalog), 0),
           ),
         )
         .for("update")
-        .limit(1);
-      const rows = dormantMaterializationRows(
-        materializationAutomation,
-        materializationIdentity,
-        args,
-      );
-      if (
-        !rows ||
-        !(
-          (rows.automation.officialReconciliationStatus === "reconciling" &&
-            rows.identity.state === "reconciling") ||
-          (rows.automation.officialReconciliationStatus === "failed" &&
-            rows.identity.state === "failed")
+        .limit(1),
+    );
+    const lockedIdentity = db.$with("discard_locked_identity").as(
+      db
+        .select()
+        .from(identities)
+        .where(
+          and(
+            eq(identities.id, args.automationId),
+            eq(identities.workflowId, args.workflowId),
+            eq(identities.blueprintKey, args.blueprintKey),
+            gte(db.select({ count: count() }).from(lockedAutomation), 0),
+          ),
         )
-      ) {
-        return null;
-      }
-      const previous = rows.automation;
-      const currentTime = nowDate();
-      const [current] = await tx
+        .for("update")
+        .limit(1),
+    );
+    const owned = db.$with("discard_owned_materialization").as(
+      db
+        .select({
+          id: lockedAutomation.id,
+          identityUpdatedAt: lockedIdentity.updatedAt,
+        })
+        .from(lockedAutomation)
+        .innerJoin(lockedIdentity, eq(lockedIdentity.id, lockedAutomation.id))
+        .where(discardedMaterializationCondition(args)),
+    );
+    // Both persisted rows receive the same application-clock sample. It is
+    // prepared before this statement instead of after its lock wait.
+    const currentTime = nowDate();
+    const failedAutomation = db.$with("discard_failed_automation").as(
+      db
         .update(workflowAutomations)
         .set({
           enabled: false,
@@ -3339,33 +3407,61 @@ const persistDiscardedMaterialization$ = command(
           officialReconciliationStatus: "failed",
           updatedAt: currentTime,
         })
-        .where(eq(workflowAutomations.id, previous.id))
-        .returning(workflowAutomationColumns());
-      if (!current) {
-        return null;
-      }
-      const [identity] = await tx
-        .update(officialWorkflowAutomationIdentities)
-        .set({ state: "failed", updatedAt: currentTime })
+        .from(owned)
         .where(
           and(
-            eq(officialWorkflowAutomationIdentities.id, previous.id),
-            eq(officialWorkflowAutomationIdentities.state, rows.identity.state),
+            eq(workflowAutomations.id, owned.id),
+            // The former Date-encoded identity CAS rejected submillisecond
+            // timestamps. Reject before either write, preserving its rollback.
             eq(
-              officialWorkflowAutomationIdentities.updatedAt,
-              rows.identity.updatedAt,
+              owned.identityUpdatedAt,
+              sql`date_trunc('milliseconds', ${owned.identityUpdatedAt})`,
             ),
-            isNull(officialWorkflowAutomationIdentities.automationId),
           ),
         )
-        .returning({ id: officialWorkflowAutomationIdentities.id });
-      if (!identity) {
-        throw new Error(
-          "Official Workflow materialization discard lost identity",
-        );
-      }
-      return { previous, current };
-    });
+        .returning({
+          ...columns,
+          observedUpdatedAt: columns.observedUpdatedAt.as("observedUpdatedAt"),
+          observedXmin: columns.observedXmin.as("observedXmin"),
+        }),
+    );
+    const failedIdentity = db
+      .$with("discard_failed_identity")
+      .as(
+        db
+          .update(identities)
+          .set({ state: "failed", updatedAt: currentTime })
+          .from(failedAutomation)
+          .where(eq(identities.id, failedAutomation.id))
+          .returning({ id: identities.id }),
+      );
+    const [row] = await db
+      .with(
+        catalog,
+        lockedAutomation,
+        lockedIdentity,
+        owned,
+        failedAutomation,
+        failedIdentity,
+      )
+      .select({
+        previous: discardedMaterializationColumns("discard_locked_automation"),
+        current: discardedMaterializationColumns("discard_failed_automation"),
+        identityId: failedIdentity.id,
+      })
+      .from(owned)
+      .innerJoin(lockedAutomation, eq(lockedAutomation.id, owned.id))
+      .leftJoin(failedAutomation, eq(failedAutomation.id, owned.id))
+      .leftJoin(failedIdentity, eq(failedIdentity.id, owned.id));
+    if (!row) {
+      return null;
+    }
+    if (!row.current || !row.identityId) {
+      throw new Error(
+        "Official Workflow materialization discard lost identity",
+      );
+    }
+    return { previous: row.previous, current: row.current };
   },
 );
 function discardedMaterializationDeleteStatement(
