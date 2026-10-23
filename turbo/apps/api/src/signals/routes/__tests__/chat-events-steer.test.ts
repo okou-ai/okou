@@ -1,4 +1,6 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
+import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
+import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { randomUUID } from "node:crypto";
@@ -141,36 +143,56 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       expect(
         claimed.claim.appendSystemPrompt?.includes("# Built-in image model"),
       ).toBe(!disabled);
-      const template = WEBSITE_TEMPLATE_ITEMS[0];
-      if (!template) {
-        throw new Error("Expected a website template");
+      const website = WEBSITE_TEMPLATE_ITEMS[0];
+      const illustration = ILLUSTRATION_TEMPLATE_ITEMS[0];
+      if (!website || !illustration) {
+        throw new Error("Expected registered templates");
       }
-      const eventId = randomUUID();
-      await chat.requestSendEvent(
-        actor,
+      const templates: readonly GenerationTemplateRequest[] = [
+        { type: "website", selection: { websiteTemplateId: website.id } },
         {
-          agentId,
-          threadId: active.threadId,
-          clientEventId: eventId,
-          prompt: "Make a website",
-          userMessage: userMessageWithTemplate("Make a website", {
-            type: "website",
-            selection: { websiteTemplateId: template.id },
-          }),
+          type: "illustration",
+          selection: { illustrationStyleId: illustration.illustrationStyleId },
         },
-        [201],
-      );
-      const next = await api.nextSteerableInput(
-        claimed.claim.sandboxToken,
-        active.runId,
-      );
-      expect(next.input?.eventId).toBe(eventId);
-      expect(next.input?.prompt).toContain("okou host");
-      expect(next.input?.prompt).toContain(
-        "an image tool exposed in the current agent context or an authorized connector",
-      );
-      expect(next.input?.prompt).not.toContain("okou generate image-batch");
-      expect(next.input?.prompt).not.toContain("--provider built-in");
+      ];
+      for (const template of templates) {
+        const eventId = randomUUID();
+        await chat.requestSendEvent(
+          actor,
+          {
+            agentId,
+            threadId: active.threadId,
+            clientEventId: eventId,
+            prompt: "Use this template",
+            userMessage: userMessageWithTemplate("Use this template", template),
+          },
+          [201],
+        );
+        const next = await api.nextSteerableInput(
+          claimed.claim.sandboxToken,
+          active.runId,
+        );
+        expect(next.input?.eventId).toBe(eventId);
+        if (template.type === "illustration") {
+          expect(next.input?.prompt).toContain(
+            `Style: ${illustration.title} (${illustration.illustrationStyleId})`,
+          );
+          expect(next.input?.prompt).toMatch(/- Style description: \S/);
+        } else {
+          expect(next.input?.prompt).toContain("okou host");
+        }
+        expect(next.input?.prompt).toContain(
+          "an image tool exposed in the current agent context or an authorized connector",
+        );
+        expect(next.input?.prompt).not.toContain("okou generate image-batch");
+        expect(next.input?.prompt).not.toContain("--provider built-in");
+        await api.requestDeclareSteeredInputAs(
+          `Bearer ${claimed.claim.sandboxToken}`,
+          active.runId,
+          eventId,
+          [200],
+        );
+      }
       await cancelChatRun(actor, active.runId);
     },
   );

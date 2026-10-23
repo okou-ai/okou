@@ -20,6 +20,7 @@ import {
   userPresentationTemplateDirectory,
 } from "@okouai/core/presentation-template-selection";
 import {
+  IMAGE_ASSET_INSTRUCTION,
   presentationImageInstructions,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
   presentationDeliveryInstructions,
@@ -472,8 +473,18 @@ function buildIllustrationGenerationTemplatePrompt(
   if (!imageStyle) {
     return { status: "invalid", message: "Unknown generation image style" };
   }
+  const styleContext = [
+    ...templateFraming("an illustration or image"),
+    "Selected illustration style:",
+    "- Artifact type: illustration",
+    `- Style: ${imageStyle.name} (${imageStyle.id})`,
+    `- Style description: ${imageStyle.description}`,
+  ];
   if (!imageGenerationEnabled) {
-    return { status: "resolved", prompt: "" };
+    return {
+      status: "resolved",
+      prompt: [...styleContext, "", `- ${IMAGE_ASSET_INSTRUCTION}`].join("\n"),
+    };
   }
   const styleSource = `private R2 registry resource ${imageStyle.id}`;
   const compileCommand = `okou generate image --provider built-in --style ${imageStyle.id} --prompt "<user request>" --compile --style-source r2`;
@@ -483,11 +494,7 @@ function buildIllustrationGenerationTemplatePrompt(
   return {
     status: "resolved",
     prompt: [
-      ...templateFraming("an illustration or image"),
-      "Selected illustration style:",
-      "- Artifact type: illustration",
-      `- Style: ${imageStyle.name} (${imageStyle.id})`,
-      `- Style description: ${imageStyle.description}`,
+      ...styleContext,
       `- Style source: ${styleSource}`,
       "",
       "When you produce an illustration or image from the user's request:",

@@ -1081,6 +1081,12 @@ describe("CHAT-02: generation templates and attachments", () => {
       expect(prompt).not.toContain("--provider built-in");
       expect(prompt).not.toContain("# Built-in image model");
       expect(prompt).toContain("okou connector search");
+      if (template.type === "illustration") {
+        expect(prompt).toContain(
+          `Style: ${illustration.title} (${illustration.illustrationStyleId})`,
+        );
+        expect(prompt).toMatch(/- Style description: \S/);
+      }
       await cancelChatRun(actor, run.runId);
     }
   });
