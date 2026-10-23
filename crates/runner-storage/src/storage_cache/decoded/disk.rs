@@ -251,40 +251,6 @@ pub(super) fn read_with_budget(
     file_budget: usize,
     cancel: &CancellationToken,
 ) -> io::Result<Option<Vec<StorageFile>>> {
-    read_with_source_size(home, name, version, content_budget, file_budget, cancel)
-        .map(|entry| entry.map(|entry| entry.files))
-}
-
-pub(super) struct ReadFiles {
-    pub(super) files: Vec<StorageFile>,
-    pub(super) compressed_bytes: usize,
-    pub(super) index_bytes: usize,
-}
-
-enum LookupOutcome {
-    Miss,
-    Rejected,
-    Ready(ReadFiles),
-}
-
-impl LookupOutcome {
-    fn into_ready_files(self) -> io::Result<Option<ReadFiles>> {
-        match self {
-            Self::Miss => Ok(None),
-            Self::Ready(files) => Ok(Some(files)),
-            Self::Rejected => Err(invalid("decoded cache identity or admission mismatch")),
-        }
-    }
-}
-
-pub(super) fn read_with_source_size(
-    home: &HomePaths,
-    name: &str,
-    version: &str,
-    content_budget: usize,
-    file_budget: usize,
-    cancel: &CancellationToken,
-) -> io::Result<Option<ReadFiles>> {
     read_entry(
         home,
         name,
@@ -295,6 +261,22 @@ pub(super) fn read_with_source_size(
         cancel,
     )?
     .into_ready_files()
+}
+
+enum LookupOutcome {
+    Miss,
+    Rejected,
+    Ready(Vec<StorageFile>),
+}
+
+impl LookupOutcome {
+    fn into_ready_files(self) -> io::Result<Option<Vec<StorageFile>>> {
+        match self {
+            Self::Miss => Ok(None),
+            Self::Ready(files) => Ok(Some(files)),
+            Self::Rejected => Err(invalid("decoded cache identity or admission mismatch")),
+        }
+    }
 }
 
 pub(super) fn is_rejected(
@@ -417,7 +399,6 @@ fn read_locked_entry(
         Err(error) => return Err(error),
     };
     let encoded_index = read_file(&root, "index.json", INDEX_LIMIT)?;
-    let index_bytes = encoded_index.len();
     let index: Index = serde_json::from_slice(&encoded_index).map_err(io::Error::other)?;
     drop(encoded_index);
     let index_kind = if index.files.is_some() {
@@ -496,11 +477,7 @@ fn read_locked_entry(
     }
     check_cancel(cancel)?;
     touch_mtime(&path);
-    Ok(LookupOutcome::Ready(ReadFiles {
-        files,
-        compressed_bytes: index.compressed_bytes,
-        index_bytes,
-    }))
+    Ok(LookupOutcome::Ready(files))
 }
 
 pub(super) fn retire_archive(

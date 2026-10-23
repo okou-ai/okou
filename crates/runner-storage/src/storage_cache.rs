@@ -1858,10 +1858,6 @@ fn reuse_decoded(
     let Some(files) = files else {
         return Ok(false);
     };
-    // Apply the active producer policy only after validating the positive entry.
-    if !decoded::admitted_for_delivery(&files) {
-        return Ok(false);
-    }
     // An archive may still be required by another target sharing this key,
     // such as an instruction storage. Admit its ordinary targets without
     // changing archive delivery for that other consumer.
