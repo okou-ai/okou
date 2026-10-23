@@ -2568,8 +2568,8 @@ export const openBrowserForThread$ = command(
     if (connection.kind === "error") {
       return connection;
     }
-    // The viewer only learns the live view; the CDP endpoint stays inside
-    // the agent runtime.
+    // Keep lifecycle responses compatible with existing clients. The gated
+    // first-party viewer obtains CDP through its session-only endpoint.
     return {
       kind: "ok",
       value: {
