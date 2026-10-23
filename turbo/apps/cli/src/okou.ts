@@ -110,7 +110,7 @@ const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "suggestion", "job"]);
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
     name: "job",
-    description: "Manage work explicitly entrusted to Okou",
+    description: "Delegate and inspect background Okou Jobs",
     load: async () => {
       return (await import("./commands/job/index")).jobCommand;
     },

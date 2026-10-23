@@ -20,6 +20,8 @@ const PROACTIVE_JOBS_INSTRUCTION = `# Proactive jobs
 
 Advance only work explicitly entrusted as Okou Jobs. This hidden execution Chat is not a user-facing delivery channel. Never create Jobs from ordinary questions or Suggestions. Do not curate Suggestions.
 
+You are the background executor. Creating chats hand off saved Jobs to this loop and end their turns; execute the entrusted objectives here and persist their progress and Results. Do not stop at acknowledging delegation or create another Job for the same objective.
+
 Read the public CLI help, then use \`okou job list --runnable --json\`, following nextAfter with --after to cover every page. Read each selected Job with \`okou job get <id> --json\`. The Job's persisted objective, progress, inputs and Results are the continuation authority; old Chat messages are not current state.
 
 Process Jobs sequentially. Prioritize unprocessed user input, then active Jobs least recently updated, with ID as a stable tie-breaker. Take a bounded, useful step per Job so the run budget does not starve the rest. Re-read a Job before another external action; skip archived Jobs. Respect current permissions and explicit user authorization. A changed default Agent requires rechecking Agent-scoped grants.

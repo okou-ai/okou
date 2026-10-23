@@ -1,7 +1,8 @@
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
+use std::thread::{self, JoinHandle};
 
 /// Default buffer size for reading process output from stdout/stderr pipes.
 const DEFAULT_DRAIN_READ_BYTES: usize = 64 * 1024;
@@ -64,6 +65,45 @@ pub(crate) struct BoundedDrainResult {
     pub(crate) captured: Option<Vec<u8>>,
     pub(crate) capture_truncated: bool,
     pub(crate) stream_truncated: bool,
+}
+
+/// Pairs a bounded capture thread with its result and joins before collection.
+pub(crate) struct BoundedDrainHandle {
+    handle: JoinHandle<()>,
+    result_rx: mpsc::Receiver<BoundedDrainResult>,
+}
+
+impl BoundedDrainHandle {
+    pub(crate) fn spawn(
+        pipe: impl Into<OwnedFd> + Send + 'static,
+        capture_limit_bytes: usize,
+        cancel: Arc<DrainCancellation>,
+        done_tx: mpsc::Sender<()>,
+        thread_name: &'static str,
+    ) -> io::Result<Self> {
+        let (result_tx, result_rx) = mpsc::channel();
+        let handle = thread::Builder::new()
+            .name(thread_name.to_string())
+            .spawn(move || {
+                let result = drain_bounded_cancellable(
+                    pipe,
+                    &cancel,
+                    Some(capture_limit_bytes),
+                    None,
+                    |_, _| true,
+                );
+                let _ = result_tx.send(result);
+                let _ = done_tx.send(());
+            })?;
+        Ok(Self { handle, result_rx })
+    }
+
+    pub(crate) fn join(self) -> Result<BoundedDrainResult, ()> {
+        if self.handle.join().is_err() {
+            return Err(());
+        }
+        self.result_rx.recv().map_err(|_| ())
+    }
 }
 
 /// Drain `pipe` until EOF or `cancel` is set, calling `on_chunk` for each

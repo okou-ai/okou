@@ -5,7 +5,6 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
-use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use guest_control_proto::{
@@ -13,7 +12,7 @@ use guest_control_proto::{
     GuestDnsReadinessTermination, MSG_GUEST_DNS_READINESS_RESULT,
 };
 
-use crate::drain::{BoundedDrainResult, DrainCancellation, drain_bounded_cancellable};
+use crate::drain::{BoundedDrainHandle, DrainCancellation};
 use crate::error::to_io_error;
 use crate::process::{extract_exit_code, kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
@@ -236,8 +235,8 @@ fn run_probe(
     };
 
     let (drain_done_tx, drain_done_rx) = mpsc::channel();
-    let stdout_drain = match spawn_drain(
-        stdout.into(),
+    let stdout_drain = match BoundedDrainHandle::spawn(
+        OwnedFd::from(stdout),
         GUEST_DNS_READINESS_MAX_ANSWER_BYTES,
         Arc::clone(&drain_cancel),
         drain_done_tx.clone(),
@@ -254,8 +253,8 @@ fn run_probe(
             );
         }
     };
-    let stderr_drain = match spawn_drain(
-        stderr.into(),
+    let stderr_drain = match BoundedDrainHandle::spawn(
+        OwnedFd::from(stderr),
         GUEST_DNS_READINESS_MAX_DIAGNOSTIC_BYTES,
         Arc::clone(&drain_cancel),
         drain_done_tx.clone(),
@@ -324,38 +323,6 @@ fn run_probe(
             || stderr_result.capture_truncated,
         diagnostic: truncate_utf8(diagnostic, GUEST_DNS_READINESS_MAX_DIAGNOSTIC_BYTES),
     }
-}
-
-struct DrainHandle {
-    handle: JoinHandle<()>,
-    result_rx: mpsc::Receiver<BoundedDrainResult>,
-}
-
-impl DrainHandle {
-    fn join(self) -> Result<BoundedDrainResult, ()> {
-        if self.handle.join().is_err() {
-            return Err(());
-        }
-        self.result_rx.recv().map_err(|_| ())
-    }
-}
-
-fn spawn_drain(
-    pipe: OwnedFd,
-    limit: usize,
-    cancel: Arc<DrainCancellation>,
-    done_tx: mpsc::Sender<()>,
-    thread_name: &'static str,
-) -> io::Result<DrainHandle> {
-    let (result_tx, result_rx) = mpsc::channel();
-    let handle = thread::Builder::new()
-        .name(thread_name.to_string())
-        .spawn(move || {
-            let result = drain_bounded_cancellable(pipe, &cancel, Some(limit), None, |_, _| true);
-            let _ = result_tx.send(result);
-            let _ = done_tx.send(());
-        })?;
-    Ok(DrainHandle { handle, result_rx })
 }
 
 fn failed_output(
