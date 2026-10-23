@@ -458,6 +458,60 @@ describe("GET /api/artifacts/catalog", () => {
     );
   });
 
+  it("retains a renamed catalog identity when a hosted site becomes a presentation", async () => {
+    const owner = await catalogActor("Renamed presentation owner");
+    const site = `renamed-deck-${randomUUID().slice(0, 8)}`;
+    const published = await publishHostedSite({
+      owner,
+      site,
+      title: "Original site",
+    });
+    const before = await chat.listArtifactCatalog(owner.actor);
+    expect(before.artifacts).toHaveLength(1);
+    const entry = before.artifacts[0]!;
+    routeMocks.clerk.session(
+      owner.actor.userId,
+      owner.actor.orgId,
+      owner.actor.orgRole,
+    );
+    await accept(
+      setupApp({ context, routes: hostRoutes })(hostContract).updateSiteTitle({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { publicSlug: published.publicSlug },
+        body: { title: "保留的报告标题" },
+      }),
+      [200],
+    );
+    const deck = await publishHostedSite({
+      owner,
+      site,
+      title: "Incoming deck title",
+      artifactKind: "presentation-html",
+      threadId: published.threadId,
+    });
+    expect(deck.siteId).toBe(published.siteId);
+    const after = await chat.listArtifactCatalog(owner.actor);
+    expect(after.artifacts).toStrictEqual([
+      expect.objectContaining({
+        id: entry.id,
+        kind: "presentation",
+        title: "保留的报告标题",
+      }),
+    ]);
+    await expect(
+      chat.getArtifactCatalogEntry(owner.actor, entry.id),
+    ).resolves.toMatchObject({
+      id: entry.id,
+      kind: "presentation",
+      title: "保留的报告标题",
+      site: {
+        id: published.siteId,
+        publicSlug: published.publicSlug,
+        url: deck.url,
+      },
+    });
+  });
+
   it("gates site title editing and denies other owners without changing the title", async () => {
     const owner = await catalogActor("Site title access owner");
     const published = await publishHostedSite({
