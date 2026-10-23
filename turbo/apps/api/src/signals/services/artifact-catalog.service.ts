@@ -4,9 +4,11 @@ import { hostedLinkOrigin } from "../../lib/link-layout";
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   exists,
+  gte,
   ilike,
   inArray,
   isNull,
@@ -503,6 +505,57 @@ function artifactUpsertPlan(args: UpsertArtifactArgs) {
   };
 }
 
+/** Keep the insert's column encoders when its source is a guarded SELECT. */
+function fileArtifactInsertSelection(
+  values: ReturnType<typeof artifactUpsertPlan>["values"],
+) {
+  return {
+    id: sql`gen_random_uuid()`.mapWith(artifacts.id).as("id"),
+    orgId: sql`${values.orgId}`.mapWith(artifacts.orgId).as("org_id"),
+    authorUserId: sql`${values.authorUserId}`
+      .mapWith(artifacts.authorUserId)
+      .as("author_user_id"),
+    kind: sql`${values.kind}`.mapWith(artifacts.kind).as("kind"),
+    entityId: sql`${values.entityId}::uuid`
+      .mapWith(artifacts.entityId)
+      .as("entity_id"),
+    logicalKey: sql`${values.logicalKey}`
+      .mapWith(artifacts.logicalKey)
+      .as("logical_key"),
+    chatThreadId: sql`${values.chatThreadId}::uuid`
+      .mapWith(nullableDriverValueDecoder(artifacts.chatThreadId))
+      .as("chat_thread_id"),
+    displayKind: sql`${values.displayKind}`
+      .mapWith(nullableDriverValueDecoder(artifacts.displayKind))
+      .as("display_kind"),
+    sourceUrl: sql`${values.sourceUrl}`
+      .mapWith(nullableDriverValueDecoder(artifacts.sourceUrl))
+      .as("source_url"),
+    aliasUrl: sql`${values.aliasUrl}`
+      .mapWith(nullableDriverValueDecoder(artifacts.aliasUrl))
+      .as("alias_url"),
+    videoSourceUrl: sql`${values.videoSourceUrl}`
+      .mapWith(nullableDriverValueDecoder(artifacts.videoSourceUrl))
+      .as("video_source_url"),
+    projectionFileId: sql`${values.projectionFileId}::uuid`
+      .mapWith(nullableDriverValueDecoder(artifacts.projectionFileId))
+      .as("projection_file_id"),
+    projectionCreatedAt:
+      sql`${sql.param(values.projectionCreatedAt, artifacts.projectionCreatedAt)}::timestamp`
+        .mapWith(artifacts.projectionCreatedAt)
+        .as("projection_created_at"),
+    title: sql`${values.title}`.mapWith(artifacts.title).as("title"),
+    thumbnail: sql`${sql.param(values.thumbnail, artifacts.thumbnail)}::jsonb`
+      .mapWith(nullableDriverValueDecoder(artifacts.thumbnail))
+      .as("thumbnail"),
+    createdAt:
+      sql`${sql.param(values.createdAt, artifacts.createdAt)}::timestamp`
+        .mapWith(artifacts.createdAt)
+        .as("created_at"),
+    updatedAt: sql`now()`.mapWith(artifacts.updatedAt).as("updated_at"),
+  };
+}
+
 const upsertGeneratedMediaEntity$ = command(
   async (
     { set },
@@ -762,52 +815,69 @@ const syncFileArtifact$ = command(
   ): Promise<boolean> => {
     const db = set(writeDb$);
     const { row, orgId, authorUserId, logicalKey, kind, entityId } = args;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0057; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // Serialize retries for one file before touching either artifact key.
-      const [lockedFile] = await tx
-        .select({ id: runUploadedFiles.id })
-        .from(runUploadedFiles)
-        .where(eq(runUploadedFiles.id, row.id))
-        .for("update")
-        .limit(1);
-      signal.throwIfAborted();
-      if (!lockedFile) {
-        return false;
-      }
-
-      await tx
+    // Retain the file lock, and make both projection mutations depend on it.
+    const lockedFile = db
+      .$with("catalog_locked_file")
+      .as(
+        db
+          .select({ id: runUploadedFiles.id })
+          .from(runUploadedFiles)
+          .where(eq(runUploadedFiles.id, row.id))
+          .for("update")
+          .limit(1),
+      );
+    const deleted = db.$with("catalog_deleted_projection").as(
+      db
         .delete(artifacts)
         .where(
           and(
+            exists(db.select({ id: lockedFile.id }).from(lockedFile)),
             eq(artifacts.projectionFileId, row.id),
             sql`(${artifacts.orgId}, ${artifacts.authorUserId}, ${artifacts.logicalKey}) IS DISTINCT FROM (${orgId}, ${authorUserId}, ${logicalKey})`,
           ),
-        );
+        )
+        .returning({ id: artifacts.id }),
+    );
 
-      const plan = artifactUpsertPlan({
-        kind,
-        displayKind: catalogArtifactKind(kind, row.metadata, logicalKey),
-        sourceUrl: row.url,
-        aliasUrl: metadataString(row.metadata, "aliasUrl"),
-        videoSourceUrl: videoSourceUrl(row, row.filename ?? row.externalId),
-        chatThreadId: args.chatThreadId,
-        entityId,
-        logicalKey,
-        projectionFileId: row.id,
-        projectionCreatedAt: row.createdAt,
-        orgId,
-        authorUserId,
-        title: row.filename ?? row.externalId,
-        thumbnail: fileThumbnail(row),
-        createdAt: row.createdAt,
-      });
-      await tx
-        .insert(artifacts)
-        .values(plan.values)
-        .onConflictDoUpdate(plan.conflict);
-      return true;
+    const plan = artifactUpsertPlan({
+      kind,
+      displayKind: catalogArtifactKind(kind, row.metadata, logicalKey),
+      sourceUrl: row.url,
+      aliasUrl: metadataString(row.metadata, "aliasUrl"),
+      videoSourceUrl: videoSourceUrl(row, row.filename ?? row.externalId),
+      chatThreadId: args.chatThreadId,
+      entityId,
+      logicalKey,
+      projectionFileId: row.id,
+      projectionCreatedAt: row.createdAt,
+      orgId,
+      authorUserId,
+      title: row.filename ?? row.externalId,
+      thumbnail: fileThumbnail(row),
+      createdAt: row.createdAt,
     });
+    const written = db.$with("catalog_written_projection").as(
+      db
+        .insert(artifacts)
+        .select(
+          db
+            .select(fileArtifactInsertSelection(plan.values))
+            .from(lockedFile)
+            // Consume DELETE's RETURNING relation even when no old row existed.
+            .where(gte(db.select({ total: count() }).from(deleted), 0)),
+        )
+        .onConflictDoUpdate(plan.conflict)
+        .returning({ id: artifacts.id }),
+    );
+    signal.throwIfAborted();
+    const [locked] = await db
+      .with(lockedFile, deleted, written)
+      .select({ id: lockedFile.id })
+      .from(lockedFile)
+      // A losing projection-order predicate is still a completed sync.
+      .where(gte(db.select({ total: count() }).from(written), 0));
+    signal.throwIfAborted();
+    return locked !== undefined;
   },
 );
 
