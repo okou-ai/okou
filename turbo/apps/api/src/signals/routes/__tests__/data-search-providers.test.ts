@@ -485,11 +485,10 @@ describe("Data Search reviewed providers", () => {
       outcome: { success: true },
       status: "completed",
     },
-  ])("settles Firecrawl $name", async ({ outcome }) => {
+  ])("settles Firecrawl $name using database pricing", async ({ outcome }) => {
     const setup = await scenario();
     await setup.run(async () => {
       mockEnv("OKOU_SCRAPE_FIRECRAWL_TOKEN", "data-firecrawl-test-key");
-      mockEnv("OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT", 1000);
       server.use(
         http.get(
           "https://www.firecrawl.dev/alexandria/agents/providers/play-google-com/openapi.json",
