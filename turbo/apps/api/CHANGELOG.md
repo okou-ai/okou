@@ -9,6 +9,25 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.766.2](https://github.com/okou-ai/okou/compare/api-v1.766.1...api-v1.766.2) (2026-10-23)
+
+
+### Refactoring
+
+* **api:** own custom connector oauth start persistence ([#42444](https://github.com/okou-ai/okou/issues/42444)) ([3d5fd65](https://github.com/okou-ai/okou/commit/3d5fd65bef7a119cb13491388cd611c74984d362))
+* **api:** tighten financial transaction boundaries ([#42480](https://github.com/okou-ai/okou/issues/42480)) ([2add5b1](https://github.com/okou-ai/okou/commit/2add5b11778ca2a6f42b84dd9035e7de66fa8ae0))
+* **connectors:** retire unused builtin read projections ([#42437](https://github.com/okou-ai/okou/issues/42437)) ([dfb4154](https://github.com/okou-ai/okou/commit/dfb4154505e4c5c10b9ff329f180a7b68753fc88))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.589.1
+    * @okouai/core bumped to 8.780.1
+    * @okouai/db bumped to 1.358.1
+    * @okouai/pi-agent-runtime bumped to 1.50.55
+
 ## [1.766.1](https://github.com/okou-ai/okou/compare/api-v1.766.0...api-v1.766.1) (2026-10-23)
 
 

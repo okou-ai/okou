@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1056.2](https://github.com/okou-ai/okou/compare/app-v0.1056.1...app-v0.1056.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* **app:** add a view link to google drive sync confirmation ([#42477](https://github.com/okou-ai/okou/issues/42477)) ([14d3662](https://github.com/okou-ai/okou/commit/14d3662ed39fd8bd299cde890db7bfbc7b180472))
+
+
+### Refactoring
+
+* **connectors:** retire unused builtin read projections ([#42437](https://github.com/okou-ai/okou/issues/42437)) ([dfb4154](https://github.com/okou-ai/okou/commit/dfb4154505e4c5c10b9ff329f180a7b68753fc88))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.589.1
+    * @okouai/core bumped to 8.780.1
+
 ## [0.1056.1](https://github.com/okou-ai/okou/compare/app-v0.1056.0...app-v0.1056.1) (2026-10-23)
 
 
