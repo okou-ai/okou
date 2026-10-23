@@ -11,7 +11,11 @@ import {
 } from "./lib/api/sandbox-token.js";
 import { getOkouToken } from "./lib/okou-env.js";
 import { artifactCommand } from "./commands/artifact/index.js";
-import { installPaidToolPolicy } from "./lib/command/paid-tools.js";
+import {
+  installPaidToolPolicy,
+  isPaidCommandEnabled,
+  isPaidToolEnabled,
+} from "./lib/command/paid-tools.js";
 import {
   observePiCliEntryImports,
   startPiCliObservation,
@@ -395,7 +399,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     description:
       "Generate assets via Okou's built-in pipelines or get connector skill-invocation guidance",
     load: async () => {
-      return (await import("./commands/generate")).generateCommand;
+      return (await import("./commands/generate")).createGenerateCommand();
     },
   },
   {
@@ -445,7 +449,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     name: "data",
     description: "Search and retrieve managed research data",
     load: async () => {
-      return (await import("./commands/data")).dataCommand;
+      return (await import("./commands/data")).createDataCommand();
     },
   },
   {
@@ -482,6 +486,7 @@ function shouldHideCommand(
   name: string,
   payload: SandboxTokenPayload | undefined,
 ): boolean {
+  if (!isPaidCommandEnabled(name)) return true;
   if (name.startsWith("__")) return true;
   if (name === "subagent") return !isPiSession();
   if (!payload) return RUN_ONLY_COMMANDS.has(name);
@@ -501,6 +506,7 @@ function addCommandWithVisibility(
   cmd: Command,
   payload: SandboxTokenPayload | undefined,
 ): void {
+  if (!isPaidCommandEnabled(cmd.name())) return;
   const hidden = shouldHideCommand(cmd.name(), payload);
   prog.addCommand(cmd, hidden ? { hidden: true } : {});
 }
@@ -538,7 +544,7 @@ function getRequestedCommandName(argv = process.argv): string | undefined {
 async function loadRequestedCommand(
   name: string | undefined,
 ): Promise<Command | undefined> {
-  if (!name) {
+  if (!name || !isPaidCommandEnabled(name)) {
     return undefined;
   }
 
@@ -589,6 +595,7 @@ function dataExampleIfVisible(
   example: string,
   payload: SandboxTokenPayload | undefined,
 ): string[] {
+  if (!isPaidCommandEnabled(capability.split(":")[0] ?? "")) return [];
   return payload && !payload.capabilities.includes(capability) ? [] : [example];
 }
 
@@ -665,8 +672,12 @@ export function buildHelpText(
     ),
     "  Introduce Okou?       okou intro",
     "  List generators?       okou generate --help",
-    '  Generate final image?  okou generate image --raw-prompt "..." --wait',
-    "  Image tasks: retrieve and deliver the final artifact before marking complete; a job receipt is not the final image. Query an existing job with okou generate get <id> --refresh; never regenerate to check progress.",
+    ...(isPaidToolEnabled("image-generation")
+      ? [
+          '  Generate final image?  okou generate image --raw-prompt "..." --wait',
+          "  Image tasks: retrieve and deliver the final artifact before marking complete; a job receipt is not the final image. Query an existing job with okou generate get <id> --refresh; never regenerate to check progress.",
+        ]
+      : []),
     '  Generate website?      okou generate website --prompt "..."',
     ...(canWriteHost
       ? [
@@ -738,7 +749,7 @@ export function buildHelpText(
 }
 
 /**
- * Register commands with visibility based on OKOU_TOKEN capabilities.
+ * Omit disabled managed families, then apply OKOU_TOKEN visibility.
  * Commands not granted by the token are registered as hidden via
  * Commander's public `addCommand(cmd, { hidden: true })` API.
  * Without OKOU_TOKEN, globally available commands stay visible while

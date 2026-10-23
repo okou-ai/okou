@@ -101,6 +101,9 @@ export function createThreadContext(
   const sourceFeatureSwitches$ = computed((get) => {
     return get(bootstrap.featureSwitches$);
   });
+  const disabledPaidTools$ = computed((get) => {
+    return get(bootstrap.disabledPaidTools$);
+  });
   const thread$ = computed(async (get) => {
     return (await get(pickedEvent$))?.thread ?? null;
   });
@@ -161,6 +164,7 @@ export function createThreadContext(
     pickedEvent$,
     orgId,
     sourceFeatureSwitches$,
+    disabledPaidTools$,
   );
   const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
   const runIds$ = createRunIds();

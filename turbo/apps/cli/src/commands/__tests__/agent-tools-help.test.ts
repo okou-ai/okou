@@ -3,7 +3,7 @@ import { afterEach, afterAll, describe, expect, it, vi } from "vitest";
 
 import { chatCommand } from "../chat";
 import { connectorCommand } from "../connector";
-import { generateCommand } from "../generate";
+import { createGenerateCommand } from "../generate";
 import { hostCommand } from "../host";
 import { mailCommand } from "../mail";
 import { presentationCommand as presentationRenderCommand } from "../presentation";
@@ -13,6 +13,8 @@ import { socialCommand } from "../social";
 import { sshCommand } from "../ssh";
 import { webCommand } from "../web";
 import { workflowCommand } from "../workflow";
+
+const generateCommand = createGenerateCommand();
 
 const exit = vi.spyOn(process, "exit").mockImplementation((() => {
   throw new Error("CLI exit");

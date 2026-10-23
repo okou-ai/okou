@@ -18,6 +18,7 @@ import {
   listDataSearchJobs,
   quoteDataSearch,
 } from "../../lib/api/domains/data-search";
+import { isDataCapabilityEnabled } from "../../lib/command/paid-tools";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { registerDataSourceCommands } from "./sources";
 import {
@@ -499,9 +500,15 @@ export function registerDataSearchCommands(dataCommand: Command): void {
       .action(
         withErrorHandler(
           async (query: string | undefined, options: { json?: boolean }) => {
+            const result = await listDataSearchCapabilities(query);
             console.log(
               JSON.stringify(
-                await listDataSearchCapabilities(query),
+                {
+                  ...result,
+                  capabilities: result.capabilities.filter((capability) => {
+                    return isDataCapabilityEnabled(capability.id);
+                  }),
+                },
                 null,
                 options.json ? undefined : 2,
               ),

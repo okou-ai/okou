@@ -1,0 +1,58 @@
+Usage: okou generate sprite [options]
+
+Prepare 2D game sprite/asset authoring instructions from a prompt
+
+Options:
+  --prompt <text>            Sprite prompt/theme; can also be piped via stdin
+  --asset-type <type>        Asset type: player, npc, creature, character,
+                             spell, projectile, impact, prop, summon, fx
+  --action <action>          Animation/action: single, idle, cast, attack,
+                             shoot, jump, hurt, combat, walk, run, hover,
+                             charge, projectile, impact, explode, death
+  --view <view>              Camera view: topdown, side, 3-4 (3-4 means 3/4
+                             view)
+  --sheet <grid>             Sheet/grid shape: auto, 2x2, 2x3, 2x4, 3x3, 3x4,
+                             4x4, 5x5, strip-1x3, strip-1x4, custom (default:
+                             "auto")
+  --frames <count>           Frame count: 'auto' or an integer (1-64)
+  --bundle <preset>          Bundle preset: single, unit, spell, combat, line,
+                             hero-action, engine-atlas
+  --art-style <style>        Sprite art style (the sprite analog of 'okou
+                             generate image --style'): pixel-art, clean-hd,
+                             pixel-inspired, retro-pixel, map-style,
+                             project-native
+  --anchor <anchor>          Frame anchor: center, bottom, feet
+  --margin <margin>          Safe-area margin: tight, normal, safe
+  --effect-policy <policy>   Detached-FX component policy: all, largest
+  --reference <url>          Reference image URL for identity/style consistency
+  --name <slug>              Output bundle name/slug
+  --visibility <visibility>  Who can access the result (defaults to only-me)
+                             (choices: "only-me", "org", "public")
+  -h, --help                 display help for command
+
+Examples:
+  Generate sprite:       okou generate sprite --prompt "A green slime monster idle loop"
+  Pick asset + action:   okou generate sprite --asset-type creature --action idle --sheet 3x3 --prompt "A fire dragon boss"
+  Hero action bundle:    okou generate sprite --asset-type player --bundle hero-action --view side --prompt "A knight with idle, run, attack, jump"
+  4-direction walk:      okou generate sprite --asset-type player --action walk --view topdown --sheet 4x4 --prompt "A 16-bit RPG villager"
+  Pixel art style:       okou generate sprite --art-style pixel-art --prompt "A retro fireball projectile" --sheet 2x2
+  Match a reference:     okou generate sprite --reference https://example.com/hero.png --action attack --prompt "Attack animation for this hero"
+  Pipe prompt:           cat brief.txt | okou generate sprite
+  Show choices:          okou generate sprite
+
+Output:
+  Prints a sprite source-selection packet for the current agent: the resolved
+  plan, the image generation guidance, the upstream sprite skill to resolve,
+  and the hard containment rules for grids, identity, and FX.
+  With no --prompt and no piped input, prints the generation choices instead.
+
+Notes:
+  - The agent generates each raw sheet with built-in image generation, which
+    uses the image model selected in Settings › Built-in tools, on a solid
+    magenta background, then runs the
+    sprite skill's local processor for chroma-key cleanup, frame extraction,
+    alignment, QC, and transparent/GIF export.
+  - Raw sprite art must originate from image generation, never from code-drawn
+    primitives (Three.js/Canvas/SVG/HTML/PIL).
+  - Unset flags resolve to "agent decides"; the agent infers them from the
+    prompt and the skill's modes reference.

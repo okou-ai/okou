@@ -117,6 +117,9 @@ function createExecutionPromptSources(bootstrap: AgentRunContextSignals) {
   const selectedImageModel$ = computed((get) => {
     return get(bootstrap.selectedImageModel$);
   });
+  const disabledPaidTools$ = computed((get) => {
+    return get(bootstrap.disabledPaidTools$);
+  });
   return {
     agent$,
     memberMetadata$,
@@ -124,6 +127,7 @@ function createExecutionPromptSources(bootstrap: AgentRunContextSignals) {
     memberRoutes$,
     authorizedConnectors$,
     selectedImageModel$,
+    disabledPaidTools$,
   };
 }
 
@@ -140,6 +144,7 @@ export function createPromptAndSkillVolumesSignals(
     featureSwitches$,
     authorizedConnectors$,
     selectedImageModel$,
+    disabledPaidTools$,
   } = sources;
   const workflowSkills$ = computed((get) => {
     return get(threadContext.workflowSkills$);
@@ -161,6 +166,7 @@ export function createPromptAndSkillVolumesSignals(
     agent$,
     featureSwitches$,
     cloudBrowserEnabled$,
+    disabledPaidTools$,
   );
   const userPrompt$ = createUserPrompt(memberMetadata$);
   const computerUsePrompt$ = createComputerUsePrompt(
@@ -170,8 +176,11 @@ export function createPromptAndSkillVolumesSignals(
   );
   const rotatedPrompt$ = createRotatedPrompt(pickedEvent$);
   const connectors$ = createConnectorsContext(authorizedConnectors$);
-  const runtimePrompt$ = createRuntimePrompt(selectedImageModel$);
-  const systemSkills$ = createSystemSkillsContext();
+  const runtimePrompt$ = createRuntimePrompt(
+    selectedImageModel$,
+    disabledPaidTools$,
+  );
+  const systemSkills$ = createSystemSkillsContext(disabledPaidTools$);
 
   return computed(async (get): Promise<PromptAndSkillVolumes> => {
     const contextType = (await get(pickedEvent$))?.contextType;

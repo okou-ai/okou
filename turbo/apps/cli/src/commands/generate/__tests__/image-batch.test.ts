@@ -8,12 +8,14 @@ import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../mocks/server";
 import { deferred } from "../../../test-fixtures/ably-realtime";
-import { generateCommand } from "../index";
+import { createGenerateCommand } from "../index";
 import { imageBatchCommand } from "../image-batch";
 import {
   AVAILABILITY_URL,
   serveGenerationVisibility,
 } from "./artifact-visibility-fixtures";
+
+const generateCommand = createGenerateCommand();
 
 const taskHelper = vi.hoisted(() => {
   return { path: "" };

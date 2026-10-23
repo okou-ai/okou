@@ -4,11 +4,17 @@ import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { getSkillStorageName } from "@okouai/core/storage-names";
 import type { RunPromptAndSkills, SkillVolume } from "./run-prompt-and-skills";
 
-export function createSystemSkillsContext(): Computed<
-  Promise<RunPromptAndSkills>
-> {
-  return computed((): Promise<RunPromptAndSkills> => {
-    const skillVolumes = [...new Set(SEED_SKILLS)].flatMap(
+export function createSystemSkillsContext(
+  disabledPaidTools$: Computed<Promise<readonly string[]>>,
+): Computed<Promise<RunPromptAndSkills>> {
+  return computed(async (get): Promise<RunPromptAndSkills> => {
+    const disabledPaidTools = await get(disabledPaidTools$);
+    // The external gen skill unconditionally teaches managed image execution.
+    // Other generation types retain their CLI and Agent Tools guidance.
+    const skills = SEED_SKILLS.filter((name) => {
+      return name !== "gen" || !disabledPaidTools.includes("image-generation");
+    });
+    const skillVolumes = [...new Set(skills)].flatMap(
       (skillName): readonly SkillVolume[] => {
         const parsed = parseGitHubTreeUrl(resolveSkillRef(skillName));
         return parsed
@@ -23,10 +29,10 @@ export function createSystemSkillsContext(): Computed<
           : [];
       },
     );
-    return Promise.resolve({
+    return {
       systemPromptVariables: {},
       userPromptVariables: {},
       skillVolumes,
-    });
+    };
   });
 }

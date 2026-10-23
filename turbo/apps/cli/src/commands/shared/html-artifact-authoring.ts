@@ -5,6 +5,7 @@ import {
   hostedSiteVisibilityEnabled,
   hostedSiteVisibilityInstructions,
 } from "../../lib/host/visibility";
+import { isPaidToolEnabled } from "../../lib/command/paid-tools";
 
 /** Generation targets authored as static HTML from a target-specific resource index. */
 export type HtmlArtifactKind = Extract<
@@ -163,7 +164,11 @@ export function createHtmlArtifactAuthoringInstructions(
       ? "- Keep supporting generated media bundled inside the website output directory when needed."
       : "- Keep supporting generated media at its default visibility and bundle local copies. The selected visibility applies to the final artifact; do not make supporting media public separately.",
     "- For private generated media, use `okou web download-file --help` to download by file ID, artifact URL, or /artifacts/<hash> reference; bundle the downloaded assets using relative paths. Never embed private artifact references (absolute or hostless) or expiring preview/provider signatures in HTML.",
-    "- Image batch results may be relative asset paths rooted at the batch state directory. Copy its optimized WebP assets into this output bundle, reference them with relative paths, and preserve image dimensions.",
+    ...(isPaidToolEnabled("image-generation")
+      ? [
+          "- Image batch results may be relative asset paths rooted at the batch state directory. Copy its optimized WebP assets into this output bundle, reference them with relative paths, and preserve image dimensions.",
+        ]
+      : []),
     "- Do not reference files from another project path.",
     "- Use descriptive filenames and canonical HTML: close non-void tags and double-quote attributes.",
     "- Prefer a single self-contained HTML file unless the artifact genuinely needs separate assets.",

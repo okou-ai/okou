@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { http, HttpResponse } from "msw";
 import chalk from "chalk";
 import { server } from "../../../mocks/server";
-import { generateCommand } from "../index";
+import { createGenerateCommand } from "../index";
 import { imageCommand } from "../image";
 import {
   ablyRealtimeFake,
@@ -24,6 +24,8 @@ import {
   GENERATION_ARTIFACT_ID,
   serveGenerationVisibility,
 } from "./artifact-visibility-fixtures";
+
+const generateCommand = createGenerateCommand();
 
 vi.mock("ably", async () => {
   const { FakeRealtime } = await import("../../../test-fixtures/ably-realtime");
