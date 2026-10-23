@@ -24,12 +24,7 @@ final class ConversationOpeningTests: XCTestCase {
       })
     let conversation = fixture.conversation()
     defer { conversation.close() }
-    let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
-    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-    let window = UIWindow(windowScene: scene)
-    window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-    window.rootViewController = host
-    window.makeKeyAndVisible()
+    let (host, window) = try mountDetail(conversation)
     defer { unmount(window) }
     try await eventually { self.loadingIndicators(in: host.view).filter(\.isAnimating).count == 1 }
 
@@ -46,6 +41,27 @@ final class ConversationOpeningTests: XCTestCase {
 
     await gate.release()
     try await eventually { !conversation.isLoading }
+    XCTAssertTrue(self.loadingIndicators(in: host.view).allSatisfy { $0.isHidden })
+  }
+
+  func testInitialHistoryFailureStopsTheIndicator() async throws {
+    let gate = OpeningHistoryGate()
+    addTeardownBlock { await gate.release() }
+    let fixture = ConversationHistoryFixture(
+      rows: [],
+      snapshot: { _ in
+        await gate.wait()
+        return ChatHTTPResponse(
+          status: 503, body: "{\"error\":{\"message\":\"History unavailable\"}}")
+      })
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    let (host, window) = try mountDetail(conversation)
+    defer { unmount(window) }
+    try await eventually { self.loadingIndicators(in: host.view).filter(\.isAnimating).count == 1 }
+
+    await gate.release()
+    try await eventually { !conversation.isLoading && conversation.error != nil }
     XCTAssertTrue(self.loadingIndicators(in: host.view).allSatisfy { $0.isHidden })
   }
 
@@ -224,6 +240,18 @@ final class ConversationOpeningTests: XCTestCase {
   private func loadingIndicators(in view: UIView) -> [UIActivityIndicatorView] {
     if let indicator = view as? UIActivityIndicatorView { return [indicator] }
     return view.subviews.flatMap { loadingIndicators(in: $0) }
+  }
+
+  private func mountDetail(_ conversation: ConversationStore) throws
+    -> (UIHostingController<ChatDetailView>, UIWindow)
+  {
+    let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+    let window = UIWindow(windowScene: scene)
+    window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+    window.rootViewController = host
+    window.makeKeyAndVisible()
+    return (host, window)
   }
 
   private func composerInput(in view: UIView) -> ComposerTextView? {
