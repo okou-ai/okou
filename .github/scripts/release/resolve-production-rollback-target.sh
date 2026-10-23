@@ -104,6 +104,7 @@ readonly WECHAT_WORKFLOWS_ONLY_PATH=.github/rollback-floors/wechat-workflows-onl
 readonly CONNECTOR_RESOURCE_SPLIT_PATH=.github/rollback-floors/connector-resource-split
 readonly RUN_STORAGE_OUTPUT_READER_PATH=.github/rollback-floors/run-storage-output-reader
 readonly GUEST_STORAGE_OUTPUT_COMPLETION_READER_PATH=.github/rollback-floors/guest-storage-output-completion-reader
+readonly DECODED_STORAGE_CAPACITY_READER_PATH=.github/rollback-floors/decoded-storage-capacity-reader
 readonly STORAGE_DEBUG_CONTRACTS_PATH=.github/rollback-floors/storage-debug-contracts
 readonly PI_MEMORY_RETIRED_PATH=.github/rollback-floors/pi-memory-retired
 # Completion now accepts only storageOutputs. The selected Runner must embed
@@ -771,6 +772,18 @@ if ! git merge-base --is-ancestor "$AGENT_INSTRUCTIONS_DB_ONLY_READER_COMMIT" "$
   fail "Rollback target predates the database-only Agent instructions reader: ${AGENT_INSTRUCTIONS_DB_ONLY_READER_COMMIT}."
 fi
 
+# Retained decoded-v1 entries can outlive the wider writer. Read main's floor
+# before provider access, then check the independently selected Runner below.
+if ! decoded_storage_capacity_reader_commit=$(git show "origin/main:${DECODED_STORAGE_CAPACITY_READER_PATH}"); then
+  fail "Cannot read the decoded storage capacity reader rollback floor from main."
+fi
+if [[ ! "$decoded_storage_capacity_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid decoded storage capacity reader rollback floor."
+fi
+if ! git merge-base --is-ancestor "$decoded_storage_capacity_reader_commit" origin/main; then
+  fail "Decoded storage capacity reader rollback floor is not on main."
+fi
+
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \
   -H "Authorization: Bearer ${VERCEL_TOKEN}" \
   --data-urlencode "teamId=${VERCEL_ORG_ID}" \
@@ -827,6 +840,10 @@ fi
 
 if ! git merge-base --is-ancestor "$AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates inline Agent instructions: ${AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$decoded_storage_capacity_reader_commit" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates the decoded storage capacity reader: ${decoded_storage_capacity_reader_commit}."
 fi
 
 runner_matrix=$("${script_dir}/../runner/runner-host-architecture-groups.sh" target-matrix)

@@ -22,7 +22,7 @@ fn index_writer_bounds_allocation_before_serialization_completes() {
 fn valid_path_envelope_can_still_fail_bounded_index_publication_cleanly() {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());
-    let files: Vec<_> = (0..512)
+    let files: Vec<_> = (0..2048)
         .map(|index| StorageFile {
             path: format!("{index:04}{}", "\"".repeat(250)),
             mode: 0o640,
