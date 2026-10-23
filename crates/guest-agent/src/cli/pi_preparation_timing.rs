@@ -214,7 +214,7 @@ mod tests {
         for line in [
             "plain CLI stderr",
             r#"["pi_preparation_timing"]"#,
-            r#"{"type":"pi_memory_recall_outcome","phase":"model_runtime"}"#,
+            r#"{"type":"cli_failure","phase":"model_runtime"}"#,
             r#"{"type":"pi_preparation_timing","phase":"model_runtime"}"#,
             r#"prefix {"type":"pi_preparation_timing","phase":"model_runtime","durationMs":1,"outcome":"success"}"#,
         ] {

@@ -233,13 +233,6 @@ are enforced by the integration ingress tests.
   its current target and prerequisites before execution. Shipped SQL migrations
   and permanent schema invariant coverage remain in the repository.
 
-- `scripts/test-pi-memory-phase2-input-revision.ts` executes the production Phase 2
-  input-revision SQL before and after the historical Run snapshot contraction. It
-  retains the outgoing ORM mapping to prove the preparation boundary and covers
-  first insert, conflict revision advancement, active lease preservation and
-  unleased retry reset. Preserve the historical replay and writer invariants when
-  updating this validator; its outgoing mapping documents the preparation boundary.
-
 - `scripts/test-runner-state-storage-permanent.ts` protects the canonical physical
   and runtime Runner-state contract on replayed and freshly generated schemas.
   Real ORM statements cover defaults, whole inventories, empty-state replacement,

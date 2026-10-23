@@ -655,17 +655,6 @@ export const secretConnectorMetadataMapSchema = z.record(
   secretConnectorMetadataSchema,
 );
 
-export const PI_MEMORY_SUMMARY_MAX_BYTES = 64 * 1024;
-/** Budget for the summary excerpt injected into the prompt, marker included. */
-export const PI_MEMORY_SUMMARY_MAX_TOKENS = 2500;
-/** Every o200k token decodes to at least one UTF-8 byte. */
-const PI_MEMORY_SUMMARY_MIN_TOKEN_BYTES = 1;
-/**
- * Finite bound for the exact o200k token count of the full stored summary,
- * derived from the source byte ceiling rather than the injection budget.
- */
-export const PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS =
-  PI_MEMORY_SUMMARY_MAX_BYTES / PI_MEMORY_SUMMARY_MIN_TOKEN_BYTES;
 export const PI_SKILLS_ROOT = `${PI_AGENT_DIR}/skills`;
 
 const piResourceSnapshotAgentsFilesSchema = z
@@ -696,38 +685,7 @@ const piResourceSnapshotSkillsSchema = z
   )
   .readonly();
 
-const piMemoryRecallIdentityShape = {
-  memoryStorageId: z.string().min(1),
-  storageVersionId: z.string().min(1),
-};
-
-export const piMemoryRecallSelectionSchema = z.discriminatedUnion("status", [
-  z
-    .object({
-      ...piMemoryRecallIdentityShape,
-      status: z.literal("no-content"),
-    })
-    .strict()
-    .readonly(),
-  z
-    .object({
-      ...piMemoryRecallIdentityShape,
-      status: z.literal("ready"),
-      content: z.string().min(1).max(PI_MEMORY_SUMMARY_MAX_BYTES),
-      sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
-      sourceSize: z.number().int().positive().max(PI_MEMORY_SUMMARY_MAX_BYTES),
-      // Exact o200k token count of the full source, not of the injected excerpt.
-      tokenCount: z
-        .number()
-        .int()
-        .positive()
-        .max(PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS),
-    })
-    .strict()
-    .readonly(),
-]);
-
-const piResourceSnapshotV1Schema = z
+export const piResourceSnapshotSchema = z
   .object({
     schemaVersion: z.literal(1),
     agentsFiles: piResourceSnapshotAgentsFilesSchema,
@@ -735,21 +693,6 @@ const piResourceSnapshotV1Schema = z
   })
   .strict()
   .readonly();
-
-const piResourceSnapshotV2Schema = z
-  .object({
-    schemaVersion: z.literal(2),
-    agentsFiles: piResourceSnapshotAgentsFilesSchema,
-    skills: piResourceSnapshotSkillsSchema,
-    memoryRecall: piMemoryRecallSelectionSchema,
-  })
-  .strict()
-  .readonly();
-
-export const piResourceSnapshotSchema = z.discriminatedUnion("schemaVersion", [
-  piResourceSnapshotV1Schema,
-  piResourceSnapshotV2Schema,
-]);
 
 const piApiKeyCredentialSecretNameSchema = z.enum(["OPENROUTER_API_KEY"]);
 
@@ -1508,9 +1451,6 @@ export type RunnerInstalledVersions = z.infer<
   typeof runnerInstalledVersionsSchema
 >;
 export type PiLaunchConfig = z.infer<typeof piLaunchConfigSchema>;
-export type PiMemoryRecallSelection = z.infer<
-  typeof piMemoryRecallSelectionSchema
->;
 export type PiResourceSnapshot = z.infer<typeof piResourceSnapshotSchema>;
 export type PiLaunchPayload = z.infer<typeof piLaunchPayloadSchema>;
 export type ClaimCompatibleStoredExecutionContext = z.infer<

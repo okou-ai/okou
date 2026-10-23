@@ -581,14 +581,14 @@ mod tests {
     }
 
     #[test]
-    fn pi_memory_phase2_terminal_diagnostics_remain_actionable() {
-        let fixtures: Vec<serde_json::Value> = serde_json::from_str(include_str!(concat!(
+    fn cli_terminal_diagnostics_remain_actionable() {
+        let fixtures: Vec<String> = serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../fixtures/pi-memory-phase2-terminal.json"
+            "/../../fixtures/cli-terminal-stderr.json"
         )))
         .unwrap();
         for fixture in fixtures {
-            let message = fixture["stderr"].as_str().unwrap();
+            let message = fixture.as_str();
             let diagnostic = FailureDiagnostic::new(
                 FailureClass::CliNonzero,
                 AgentFramework::Pi,

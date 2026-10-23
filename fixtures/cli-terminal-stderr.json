@@ -1,0 +1,5 @@
+[
+  "TypeError: cannot read properties of undefined",
+  "Error: ENOSPC: no space left on device, write",
+  "{\"type\":\"cli_failure\",\"error\":\"output unavailable\"}"
+]
