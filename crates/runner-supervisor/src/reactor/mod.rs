@@ -1789,6 +1789,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let phase = teardown.phase_start("memory_prefetch_drain");
     memory_prefetch.drain().await;
     teardown.phase_complete("memory_prefetch_drain", phase);
+    let phase = teardown.phase_start("fresh_archive_delivery_shutdown");
+    exec_config.fresh_archive_delivery.shutdown().await;
+    teardown.phase_complete("fresh_archive_delivery_shutdown", phase);
     let phase = teardown.phase_start("background_fill_shutdown");
     exec_config.background_fill.shutdown().await;
     exec_config.decoded_cache.shutdown().await;
