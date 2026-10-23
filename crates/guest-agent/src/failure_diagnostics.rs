@@ -15,8 +15,8 @@ use crate::session_metadata::CapturedSessionMetadata;
 use crate::upstream_error_text::upstream_non_api_response_status;
 use guest_contracts::diagnostics::{
     AgentFramework, CliObservedExitDiagnostic, CliTerminationDiagnostic, CliTerminationReason,
-    EventDeliveryDiagnostic, FailureClass, FailureDetailSource, FailureDiagnostic, FailureReason,
-    PromptMetadata, SessionHistoryStatus,
+    FailureClass, FailureDetailSource, FailureDiagnostic, FailureReason, PromptMetadata,
+    SessionHistoryStatus,
 };
 use guest_contracts::env::CliFramework;
 use guest_telemetry::{log_info, log_warn};
@@ -95,26 +95,6 @@ pub fn cli_control_failure_for_config(
     } else {
         diagnostic
     }
-}
-
-/// Build the primary diagnostic for terminal event delivery after a CLI result.
-pub fn event_delivery_failure_for_config(
-    config: &env::GuestConfig,
-    session_metadata: Option<&CapturedSessionMetadata>,
-    cli_result: &cli::CliExecutionResult,
-    event_delivery: EventDeliveryDiagnostic,
-) -> FailureDiagnostic {
-    let diagnostic = cli_result_failure_diagnostic_for_config(
-        config,
-        session_metadata,
-        FailureClass::EventUploadFailed,
-        cli_result.exit_code,
-        cli_result.jsonl_result,
-    )
-    .with_event_delivery(event_delivery);
-    let diagnostic =
-        with_cli_observed_exit(diagnostic, cli_result.cli_observed_exit.as_ref().cloned());
-    with_cli_termination(diagnostic, cli_result.cli_termination)
 }
 
 /// Select the final message and build the diagnostic for a nonzero CLI result.

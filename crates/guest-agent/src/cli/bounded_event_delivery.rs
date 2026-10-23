@@ -1,4 +1,4 @@
-//! Bounded webhook representation for normalized Pi and Codex events.
+//! Bounded webhook representation for normalized CLI events.
 //!
 //! Source records reach the best-effort local log before this module sees
 //! the webhook copy. Official history is owned by the CLI. Normal events retain
@@ -10,14 +10,25 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 use super::record_labels::EventLabels;
-use super::{codex_event_delivery, pi_event_delivery};
+use super::{codex_event_delivery, message_event_delivery};
 
 use crate::error::AgentError;
 
 #[derive(Clone, Copy)]
 pub(super) enum Framework {
+    ClaudeCode,
     Pi,
     Codex,
+}
+
+impl Framework {
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "Claude Code",
+            Self::Pi => "Pi",
+            Self::Codex => "Codex",
+        }
+    }
 }
 
 pub(super) const DELIVERY_NOTICE: &str = "[event content truncated for delivery]";
@@ -62,15 +73,17 @@ struct SelectedContent {
     original: String,
 }
 
+/// Return `None` when oversized content has no safe representation in the budget.
+/// The caller owns the warning and nonfatal skip; unrelated errors still propagate.
 pub(super) fn prepare_for_delivery(
     mut event: Value,
     max_serialized_event_bytes: usize,
     framework: Framework,
-) -> Result<PreparedEvent, AgentError> {
+) -> Result<Option<PreparedEvent>, AgentError> {
     // Every delivered event is named, not only the reduced ones: the ordinary
     // delivery log line carries these labels too.
     let (event_type, item_type) = match framework {
-        Framework::Pi => pi_event_delivery::labels(&event),
+        Framework::ClaudeCode | Framework::Pi => message_event_delivery::labels(&event),
         Framework::Codex => codex_event_delivery::labels(&event),
     };
     let labels = EventLabels {
@@ -79,11 +92,11 @@ pub(super) fn prepare_for_delivery(
     };
     let serialized = serde_json::to_vec(&event)?;
     if serialized.len() <= max_serialized_event_bytes {
-        return Ok(PreparedEvent {
+        return Ok(Some(PreparedEvent {
             serialized,
             labels,
             reduction: None,
-        });
+        }));
     }
 
     let original_bytes = serialized.len();
@@ -148,13 +161,13 @@ pub(super) fn prepare_for_delivery(
             )?;
             let serialized = serde_json::to_vec(&event)?;
             if serialized.len() <= max_serialized_event_bytes {
-                return Ok(reduced_event(
+                return Ok(Some(reduced_event(
                     serialized,
                     labels,
                     original_bytes,
                     reduced_categories,
                     false,
-                ));
+                )));
             }
 
             let added_bytes = serialized.len().saturating_sub(minimum.len()).max(1);
@@ -164,13 +177,13 @@ pub(super) fn prepare_for_delivery(
                 .saturating_sub(selected.len().saturating_mul(32));
         }
 
-        return Ok(reduced_event(
+        return Ok(Some(reduced_event(
             minimum,
             labels,
             original_bytes,
             reduced_categories,
             false,
-        ));
+        )));
     }
 
     let mut fallback_categories = candidates
@@ -179,28 +192,28 @@ pub(super) fn prepare_for_delivery(
         .collect::<BTreeSet<_>>();
     fallback_categories.insert("event_structure");
     let fallback = match framework {
-        Framework::Pi => {
-            pi_event_delivery::minimum_event(event, reduced_categories.contains("image"))?
+        Framework::ClaudeCode | Framework::Pi => {
+            message_event_delivery::minimum_event(event, reduced_categories.contains("image"))
         }
         Framework::Codex => {
-            codex_event_delivery::minimum_event(event, reduced_categories.contains("image"))?
+            codex_event_delivery::minimum_event(event, reduced_categories.contains("image"))
         }
+    };
+    let Some(fallback) = fallback else {
+        return Ok(None);
     };
     let serialized = serde_json::to_vec(&fallback)?;
     if serialized.len() > max_serialized_event_bytes {
-        return Err(AgentError::Execution(format!(
-            "CLI event delivery minimum is {} bytes, exceeding the {max_serialized_event_bytes}-byte serialized event budget",
-            serialized.len()
-        )));
+        return Ok(None);
     }
 
-    Ok(reduced_event(
+    Ok(Some(reduced_event(
         serialized,
         labels,
         original_bytes,
         fallback_categories,
         true,
-    ))
+    )))
 }
 
 fn reduced_event(
@@ -262,7 +275,9 @@ fn collect_value(
     }
     *visited += 1;
     let policy = match framework {
-        Framework::Pi => pi_event_delivery::content_policy(value, path),
+        Framework::ClaudeCode | Framework::Pi => {
+            message_event_delivery::content_policy(value, path)
+        }
         Framework::Codex => codex_event_delivery::content_policy(value, path, item_type),
     };
     match policy {

@@ -69,9 +69,9 @@ fn as_optional(value: &str) -> Option<&str> {
 /// empty strings are serialized as absent so an unset env var is equivalent
 /// to omitting the field.
 ///
-/// `last_event_sequence` is the highest contiguous agent event sequence whose
-/// events webhook POST succeeded. The host persists it on the run, and clients
-/// use it as a terminal event-drain watermark after observing terminal status.
+/// `last_event_sequence` is the highest agent event sequence whose events webhook
+/// POST succeeded. Missing earlier events are permitted. The host persists this
+/// upper bound for selecting delivered output after observing terminal status.
 ///
 /// This uses the finalization request's retry budget and propagates failure so a
 /// successful execution can return nonzero rather than silently lose

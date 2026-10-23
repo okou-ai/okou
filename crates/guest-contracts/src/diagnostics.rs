@@ -329,7 +329,7 @@ pub struct EventDeliveryDiagnostic {
     /// A batch interrupted by the global drain deadline is reported in
     /// `drain_timeout` instead of being counted as a completed failed batch.
     pub failed_batches: u64,
-    /// Highest contiguous event sequence acknowledged by the API.
+    /// Highest event sequence acknowledged by the API, allowing gaps from loss.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_acknowledged_sequence: Option<u32>,
     /// First logical batch that completed with a terminal delivery failure.
@@ -363,7 +363,8 @@ pub struct EventDeliveryFailedBatchDiagnostic {
     pub conservative_bytes: u64,
     /// Observed response state across the batch's failed attempts.
     pub response_state: EventDeliveryResponseState,
-    /// Completed failed attempts, bounded by the delivery retry budget.
+    /// Recent completed failed attempts, retained within a bounded history.
+    /// Attempt numbers remain monotonic when earlier history has been dropped.
     pub attempts: Vec<HttpCompletedAttemptDiagnostic>,
 }
 
@@ -371,9 +372,9 @@ pub struct EventDeliveryFailedBatchDiagnostic {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EventDeliveryDrainTimeoutDiagnostic {
-    /// Events still waiting in the bounded channel.
+    /// Events still waiting in the bounded queue.
     pub queued_events: u32,
-    /// Conservative bytes still waiting in the bounded channel.
+    /// Conservative bytes still waiting in the bounded queue.
     pub queued_bytes: u64,
     /// Events held outside the channel for the next batch.
     pub carried_events: u32,

@@ -3,13 +3,15 @@
 # not consume their deadline budget. Each scenario retains its own concurrency.
 [[profile.default.overrides]]
 filter = '''
-package(=guest-agent-tests) & (
-    test(=codex_app_server_event_delivery_byte_overload_terminates_promptly) |
+(package(=guest-agent-tests) & (
+    test(=codex_app_server_retries_recover_or_make_room_for_recent_events) |
     test(=claude_code_drains_healthy_backlog_in_bounded_fifo_batches) |
-    test(=claude_code_event_delivery_byte_overload_terminates_promptly) |
+    test(=claude_code_event_delivery_byte_overload_keeps_recent_events) |
     test(=codex_app_server_delivers_buffered_notifications_before_turn_start_response) |
     test(=codex_app_server_delivers_notification_above_former_stdout_limit) |
-    test(=codex_app_server_reduces_oversized_events_before_delivery)
-)
+    test(=codex_app_server_reduces_oversized_events_before_delivery) |
+    test(=pi_rpc_skips_irreducible_events_and_delivers_later_output_without_private_citations)
+)) |
+(package(=guest-agent) & test(=delivery_cases::event_delivery_oversized::oversized_claude_events_are_reduced_or_skipped_while_run_completes))
 '''
 threads-required = "num-test-threads"

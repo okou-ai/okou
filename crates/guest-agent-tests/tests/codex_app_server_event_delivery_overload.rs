@@ -4,17 +4,17 @@
 use guest_agent_tests as common;
 
 use guest_agent::masker::SecretMasker;
-use httpmock::prelude::*;
+use serde_json::Value;
 use std::time::Duration;
 
 const RUN_ID: &str = "codex-app-server-event-delivery-overload-test";
 
 #[tokio::test]
-async fn codex_app_server_event_delivery_count_overload_terminates_promptly()
+async fn codex_app_server_event_delivery_count_overload_keeps_recent_events()
 -> Result<(), Box<dyn std::error::Error>> {
     let mock = common::build_and_locate_mock_codex()?;
     let tmp = tempfile::tempdir()?;
-    let server = MockServer::start();
+    let mut server = common::ControlledHttpServer::start().await?;
 
     unsafe {
         common::setup_codex_app_server_env(
@@ -29,13 +29,13 @@ async fn codex_app_server_event_delivery_count_overload_terminates_promptly()
         )?;
         std::env::set_var(
             guest_contracts::env::CANONICAL_API_URL_ENV,
-            server.base_url(),
+            &server.base_url,
         );
         std::env::set_var(guest_contracts::env::CANONICAL_API_TOKEN_ENV, "test-token");
     }
     let mut runtime = common::guest_runtime_from_process_env()?;
     runtime.http = guest_agent::http::HttpClient::with_api_config(
-        server.base_url(),
+        &server.base_url,
         "test-token",
         "",
         RUN_ID,
@@ -43,33 +43,56 @@ async fn codex_app_server_event_delivery_count_overload_terminates_promptly()
     )?;
     let _run_files = common::RunFilesGuard::new_for_paths(&runtime.paths);
 
-    let stalled_events = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
-        then.status(200).delay(Duration::from_secs(30));
+    let system_log_file = tmp.path().join("system.log");
+    let _system_log = common::SystemLogOverrideGuard::set(&system_log_file);
+    let mut execution = tokio::spawn(async move {
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            common::execute_cli_for_runtime(
+                &runtime,
+                &SecretMasker::from_raw(""),
+                common::spawn_dummy_heartbeat(),
+            ),
+        )
+        .await
     });
-
-    let masker = SecretMasker::from_raw("");
-    let error = tokio::time::timeout(
+    let first = server.next_request(Duration::from_secs(5)).await?;
+    common::wait_for_file_contains(
+        &system_log_file,
+        "Event delivery drain started:",
         Duration::from_secs(5),
-        common::execute_cli_for_runtime(&runtime, &masker, common::spawn_dummy_heartbeat()),
     )
-    .await
-    .expect("app-server delivery overload should not wait for the stalled request")
-    .expect_err("delivery queue overload should fail the app-server run");
-
-    let error = error.to_string();
-    assert!(
-        error.contains("event delivery queue exceeded 512 pending events"),
-        "unexpected overload error: {error}"
-    );
-    assert!(
-        !error.contains("server notification queue exceeded"),
-        "the test must exercise the downstream delivery queue: {error}"
-    );
-    assert!(
-        stalled_events.calls() <= 1,
-        "the serial sender should have at most one stalled request in flight"
-    );
+    .await?;
+    let mut warnings = Vec::new();
+    let mut sequences = Vec::new();
+    let mut request = first;
+    let result = loop {
+        sequences.extend(common::event_request_sequences(&request.request)?);
+        let payload: Value = serde_json::from_str(&request.request.body)?;
+        for event in payload["events"].as_array().ok_or("missing events")? {
+            if let Some(index) = event["message"]
+                .as_str()
+                .and_then(|text| text.strip_prefix("codex-mock warning "))
+            {
+                warnings.push(index.parse::<usize>()?);
+            }
+        }
+        request.respond(200)?;
+        tokio::select! {
+            result = &mut execution => break result???,
+            next = server.next_request(Duration::from_secs(5)) => request = next?,
+        }
+    };
+    for index in 129..640 {
+        assert!(
+            warnings.contains(&index),
+            "recent warning {index} was evicted"
+        );
+    }
+    assert!(warnings.len() < 640);
+    assert_eq!(result.exit_code, common::CLEAN_EXIT);
+    assert!(result.control_error.is_none());
+    assert_eq!(result.last_event_sequence, sequences.last().copied());
 
     Ok(())
 }

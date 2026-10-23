@@ -13,7 +13,7 @@ const RUN_ID: &str = "codex-app-server-event-delivery-test";
 const TOTAL_EVENTS: usize = 4;
 
 #[tokio::test]
-async fn codex_app_server_event_delivery_stops_watermark_at_failed_sequence()
+async fn codex_app_server_event_delivery_reports_the_highest_successful_sequence()
 -> Result<(), Box<dyn std::error::Error>> {
     let mock = common::build_and_locate_mock_codex()?;
     let tmp = tempfile::tempdir()?;
@@ -45,6 +45,8 @@ async fn codex_app_server_event_delivery_stops_watermark_at_failed_sequence()
         Duration::ZERO,
     )?;
     let _run_files = common::RunFilesGuard::new_for_paths(&runtime.paths);
+    let system_log_file = tmp.path().join("system.log");
+    let _system_log = common::SystemLogOverrideGuard::set(&system_log_file);
 
     let execution = tokio::spawn(async move {
         common::execute_cli_for_runtime(
@@ -61,6 +63,14 @@ async fn codex_app_server_event_delivery_stops_watermark_at_failed_sequence()
     let mut failed_request_ids = Vec::new();
     while logical_sequences.len() < TOTAL_EVENTS || failed_attempts < 3 {
         let request = server.next_request(Duration::from_secs(5)).await?;
+        if logical_sequences.is_empty() && failed_attempts == 0 {
+            common::wait_for_file_contains(
+                &system_log_file,
+                "Event delivery drain started:",
+                Duration::from_secs(5),
+            )
+            .await?;
+        }
         let sequences = common::event_request_sequences(&request.request)?;
         if sequences.contains(&1) {
             if let Some(expected) = &failed_sequences {
@@ -88,10 +98,11 @@ async fn codex_app_server_event_delivery_stops_watermark_at_failed_sequence()
     }
 
     let failed_sequences = failed_sequences.expect("sequence 1 should belong to a failed batch");
-    let expected_watermark = failed_sequences
-        .first()
+    let expected_watermark = logical_sequences
+        .iter()
         .copied()
-        .and_then(|sequence| sequence.checked_sub(1));
+        .filter(|sequence| !failed_sequences.contains(sequence))
+        .max();
     let cli_result = tokio::time::timeout(Duration::from_secs(5), execution)
         .await
         .expect("execute_cli should return promptly")??;

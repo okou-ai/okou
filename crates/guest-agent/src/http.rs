@@ -157,6 +157,11 @@ impl RetryableFailure {
 pub(crate) trait HttpAttemptObserver: Send + Sync {
     fn attempt_started(&self, attempt: HttpAttemptStarted) -> Result<(), AgentError>;
     fn attempt_finished(&self, attempt: HttpAttemptFinished) -> Result<(), AgentError>;
+
+    /// Let the request owner retire stale work before another attempt starts.
+    fn before_retry(&self) -> Result<(), AgentError> {
+        Ok(())
+    }
 }
 
 fn format_reqwest_error(error: reqwest::Error) -> String {
@@ -335,6 +340,10 @@ impl HttpClient {
         self.api.is_some()
     }
 
+    pub(crate) fn retry_delay(&self) -> Duration {
+        self.retry_delay
+    }
+
     fn inner(&self) -> Result<&Client, AgentError> {
         self.inner.as_ref().ok_or_else(|| {
             AgentError::Http(
@@ -490,6 +499,11 @@ where
 {
     let mut last_retryable_failure = None;
     for attempt in 1..=max_attempts {
+        if attempt > 1
+            && let Some(observer) = observer
+        {
+            observer.before_retry()?;
+        }
         let request = build_request().await?;
         let active_attempt =
             request

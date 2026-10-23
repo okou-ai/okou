@@ -515,7 +515,7 @@ async fn execute(
     log_info!(LOG_TAG, "▷ Execution");
     let cli_start = Instant::now();
     let mut last_event_sequence = None;
-    let mut event_delivery_failure = None;
+    let mut event_delivery = None;
     let session_metadata = session_metadata::SessionMetadataStore::default();
     let cli_result = cli::execute_cli_with_controls_for_config_started_at(
         masker,
@@ -538,22 +538,14 @@ async fn execute(
     }
     let (
         cli_exit_code,
-        mut exit_code,
+        exit_code,
         mut error_message,
         mut failure_diagnostic,
         cli_execution_succeeded,
     ) = match cli_result {
         Ok(cli_result) => {
             last_event_sequence = cli_result.last_event_sequence;
-            if let Some(event_delivery) = cli_result.event_delivery.clone() {
-                let diagnostic = failure_diagnostics::event_delivery_failure_for_config(
-                    config,
-                    session_metadata.captured(),
-                    &cli_result,
-                    event_delivery.clone(),
-                );
-                event_delivery_failure = Some((event_delivery, diagnostic));
-            }
+            event_delivery = cli_result.event_delivery.clone();
             let cli_exit_code = cli_result.exit_code;
             if let Some(control_error) = cli_result.control_error.as_ref() {
                 let msg = control_error.to_string();
@@ -673,17 +665,15 @@ async fn execute(
         },
     );
 
-    if let Some((event_delivery, event_failure_diagnostic)) = event_delivery_failure {
-        match failure_diagnostic.take() {
-            Some(diagnostic) => {
-                failure_diagnostic = Some(diagnostic.with_event_delivery(event_delivery));
-            }
-            None => {
-                error_message = event_delivery_failure_message(&event_delivery);
-                log_error!(LOG_TAG, "{error_message}");
-                exit_code = 1;
-                failure_diagnostic = Some(event_failure_diagnostic);
-            }
+    // Event visibility is best effort; native finalization still owns persistence.
+    if let Some(event_delivery) = event_delivery {
+        log_warn!(
+            LOG_TAG,
+            "{}; retaining CLI outcome; diagnostic={event_delivery:?}",
+            event_delivery_failure_message(&event_delivery)
+        );
+        if let Some(diagnostic) = failure_diagnostic.take() {
+            failure_diagnostic = Some(diagnostic.with_event_delivery(event_delivery));
         }
     }
 

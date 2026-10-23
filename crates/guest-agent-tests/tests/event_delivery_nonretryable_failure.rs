@@ -64,10 +64,7 @@ async fn nonretryable_client_rejection_records_one_attempt()
     )
     .await?;
     let first_sequences = common::event_request_sequences(&first_request.request)?;
-    let expected_watermark = first_sequences
-        .last()
-        .copied()
-        .ok_or_else(|| io::Error::other("first request contained no events"))?;
+    let expected_watermark = (TOTAL_EVENTS - 1) as u32;
     first_request.respond(200)?;
 
     let rejected_request = server.next_request(Duration::from_secs(5)).await?;
