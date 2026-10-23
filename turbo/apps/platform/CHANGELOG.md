@@ -12,6 +12,20 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1058.2](https://github.com/okou-ai/okou/compare/app-v0.1058.1...app-v0.1058.2) (2026-10-23)
+
+
+### Refactoring
+
+* **app:** keep async action state in views ([#42608](https://github.com/okou-ai/okou/issues/42608)) ([ec42eb2](https://github.com/okou-ai/okou/commit/ec42eb24c17d0ed66a55d87fc03201ad0da586d7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.783.2
+
 ## [0.1058.1](https://github.com/okou-ai/okou/compare/app-v0.1058.0...app-v0.1058.1) (2026-10-23)
 
 

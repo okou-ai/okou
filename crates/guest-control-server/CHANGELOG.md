@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.38](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.37...guest-control-server-v0.24.38) (2026-10-23)
+
+
+### Refactoring
+
+* **guest-control:** pair lazy worker channel and thread custody ([#42630](https://github.com/okou-ai/okou/issues/42630)) ([11eb74e](https://github.com/okou-ai/okou/commit/11eb74e5caaf023f7b208428f8fa35d4cc00dbf7))
+
 ## [0.24.37](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.36...guest-control-server-v0.24.37) (2026-10-23)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.783.2](https://github.com/okou-ai/okou/compare/core-v8.783.1...core-v8.783.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* hide disabled managed tools in prompts and cli ([#42440](https://github.com/okou-ai/okou/issues/42440)) ([33b35f9](https://github.com/okou-ai/okou/commit/33b35f94cb80e9ad361d36b732250587f04bc79b))
+
 ## [8.783.1](https://github.com/okou-ai/okou/compare/core-v8.783.0...core-v8.783.1) (2026-10-23)
 
 
