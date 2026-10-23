@@ -7,7 +7,6 @@ import { randomUUID } from "node:crypto";
 import {
   CONNECTOR_CHECK_AWS_CONTEXT_HEADER,
   CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
-  type ConnectorCheckRequest,
   type ConnectorCheckRequestBody,
   connectorCheckContract,
 } from "@okouai/api-contracts/contracts/connector-check";
@@ -95,7 +94,7 @@ function requireOrgId(actor: ApiTestUser): string {
 
 async function checkWithSession(
   actor: ApiTestUser,
-  body: ConnectorCheckRequest,
+  body: ConnectorCheckRequestBody,
 ) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   return await accept(
