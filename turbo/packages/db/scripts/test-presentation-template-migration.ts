@@ -60,8 +60,8 @@ async function seed() {
       'Existing document', 'private/document', 'document.docx',
       '{"kind":"document","pageCount":2}', 'owner-a', 'owner-a'
     );
-    INSERT INTO storages (id, org_id, user_id, name, s3_prefix, created_at, updated_at)
-    SELECT id, org_id, '__org__', 'presentation-template@' || id::text,
+    INSERT INTO storages (org_id, user_id, name, s3_prefix, created_at, updated_at)
+    SELECT org_id, '__org__', 'presentation-template@' || id::text,
       'original/prefix/' || id::text, created_at, updated_at
     FROM presentation_templates;
     INSERT INTO storage_versions (
@@ -116,7 +116,13 @@ try {
     after.storages,
     before.storages!.map((row) => {
       return row.user_id === "__org__" && row.org_id !== "org-unrelated"
-        ? { ...row, name: `user-template@${String(row.id)}` }
+        ? {
+            ...row,
+            name: String(row.name).replace(
+              "presentation-template@",
+              "user-template@",
+            ),
+          }
         : row;
     }),
   );
@@ -129,7 +135,8 @@ try {
   const failures = [
     {
       name: "missing package",
-      sql: `DELETE FROM storage_versions WHERE storage_id IN
+      sql: `UPDATE storages SET head_version_id = NULL WHERE org_id = 'org-b';
+        DELETE FROM storage_versions WHERE storage_id IN
         (SELECT id FROM storages WHERE org_id = 'org-b');
         DELETE FROM storages WHERE org_id = 'org-b'`,
       error: /Expected one committed guidance package/,
@@ -141,8 +148,10 @@ try {
     },
     {
       name: "HEAD owned by a different storage",
-      sql: `UPDATE storages SET head_version_id =
-        '00000000000040008000000000000001' WHERE org_id = 'org-b'`,
+      sql: `UPDATE storages SET head_version_id = (
+        SELECT head_version_id FROM storages WHERE org_id = 'org-a'
+          AND user_id = '__org__'
+      ) WHERE org_id = 'org-b'`,
       error: /Expected one committed guidance package/,
     },
     {
