@@ -38,7 +38,7 @@ import {
   type OrgCustomConnectorOAuthTokenEndpointAuthMethod,
 } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { command, computed, type Computed } from "ccstate";
-import { and, count, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
@@ -1852,70 +1852,73 @@ type PersistCustomConnectorCreateArgs = {
 function customConnectorCreateSource(args: PersistCustomConnectorCreateArgs) {
   const protocol = protocolColumns(args.definition);
   return {
-    id: sql`${sql.param(args.connectorId, orgCustomConnectors.id)}`.mapWith(
-      orgCustomConnectors.id,
-    ),
-    orgId: sql`${sql.param(args.orgId, orgCustomConnectors.orgId)}`.mapWith(
-      orgCustomConnectors.orgId,
-    ),
-    slug: sql`${sql.param(args.slug, orgCustomConnectors.slug)}`.mapWith(
-      orgCustomConnectors.slug,
-    ),
+    id: sql`${sql.param(args.connectorId, orgCustomConnectors.id)}`
+      .mapWith(orgCustomConnectors.id)
+      .as("id"),
+    orgId: sql`${sql.param(args.orgId, orgCustomConnectors.orgId)}`
+      .mapWith(orgCustomConnectors.orgId)
+      .as("org_id"),
+    slug: sql`${sql.param(args.slug, orgCustomConnectors.slug)}`
+      .mapWith(orgCustomConnectors.slug)
+      .as("slug"),
     displayName:
-      sql`${sql.param(args.definition.displayName, orgCustomConnectors.displayName)}`.mapWith(
-        orgCustomConnectors.displayName,
-      ),
+      sql`${sql.param(args.definition.displayName, orgCustomConnectors.displayName)}`
+        .mapWith(orgCustomConnectors.displayName)
+        .as("display_name"),
     prefixTemplates:
-      sql`${sql.param(protocol.prefixTemplates, orgCustomConnectors.prefixTemplates)}`.mapWith(
-        orgCustomConnectors.prefixTemplates,
-      ),
+      sql`${sql.param(protocol.prefixTemplates, orgCustomConnectors.prefixTemplates)}`
+        .mapWith(orgCustomConnectors.prefixTemplates)
+        .as("prefix_templates"),
     fields:
-      sql`${sql.param([...args.definition.fields], orgCustomConnectors.fields)}`.mapWith(
-        orgCustomConnectors.fields,
-      ),
+      sql`${sql.param([...args.definition.fields], orgCustomConnectors.fields)}`
+        .mapWith(orgCustomConnectors.fields)
+        .as("fields"),
     headerInjections:
-      sql`${sql.param([...args.definition.headerInjections], orgCustomConnectors.headerInjections)}`.mapWith(
-        orgCustomConnectors.headerInjections,
-      ),
+      sql`${sql.param([...args.definition.headerInjections], orgCustomConnectors.headerInjections)}`
+        .mapWith(orgCustomConnectors.headerInjections)
+        .as("header_injections"),
     queryInjections:
-      sql`${sql.param([...args.definition.queryInjections], orgCustomConnectors.queryInjections)}`.mapWith(
-        orgCustomConnectors.queryInjections,
-      ),
+      sql`${sql.param([...args.definition.queryInjections], orgCustomConnectors.queryInjections)}`
+        .mapWith(orgCustomConnectors.queryInjections)
+        .as("query_injections"),
     authMode:
-      sql`${sql.param(args.definition.authMode, orgCustomConnectors.authMode)}`.mapWith(
-        orgCustomConnectors.authMode,
-      ),
-    enabled: sql`true`.mapWith(orgCustomConnectors.enabled),
+      sql`${sql.param(args.definition.authMode, orgCustomConnectors.authMode)}`
+        .mapWith(orgCustomConnectors.authMode)
+        .as("auth_mode"),
+    enabled: sql`true`.mapWith(orgCustomConnectors.enabled).as("enabled"),
     permissionBundleRef:
-      sql`${sql.param(protocol.permissionBundleRef, orgCustomConnectors.permissionBundleRef)}`.mapWith(
-        orgCustomConnectors.permissionBundleRef,
-      ),
+      sql`${sql.param(protocol.permissionBundleRef, orgCustomConnectors.permissionBundleRef)}`
+        .mapWith(orgCustomConnectors.permissionBundleRef)
+        .as("permission_bundle_ref"),
     mcpEndpoint:
-      sql`${sql.param(protocol.mcpEndpoint, orgCustomConnectors.mcpEndpoint)}`.mapWith(
-        orgCustomConnectors.mcpEndpoint,
-      ),
+      sql`${sql.param(protocol.mcpEndpoint, orgCustomConnectors.mcpEndpoint)}`
+        .mapWith(orgCustomConnectors.mcpEndpoint)
+        .as("mcp_endpoint"),
     mcpTransport:
-      sql`${sql.param(protocol.mcpTransport, orgCustomConnectors.mcpTransport)}`.mapWith(
-        orgCustomConnectors.mcpTransport,
-      ),
+      sql`${sql.param(protocol.mcpTransport, orgCustomConnectors.mcpTransport)}`
+        .mapWith(orgCustomConnectors.mcpTransport)
+        .as("mcp_transport"),
     skillMarkdown:
-      sql`${sql.param(args.definition.skillMarkdown, orgCustomConnectors.skillMarkdown)}`.mapWith(
-        orgCustomConnectors.skillMarkdown,
-      ),
+      sql`${sql.param(args.definition.skillMarkdown, orgCustomConnectors.skillMarkdown)}`
+        .mapWith(orgCustomConnectors.skillMarkdown)
+        .as("skill_markdown"),
     skillStorageVersionId:
-      sql`${sql.param(args.preparedSkill?.version.versionId ?? null, orgCustomConnectors.skillStorageVersionId)}`.mapWith(
-        orgCustomConnectors.skillStorageVersionId,
-      ),
+      sql`${sql.param(args.preparedSkill?.version.versionId ?? null, orgCustomConnectors.skillStorageVersionId)}`
+        .mapWith(orgCustomConnectors.skillStorageVersionId)
+        .as("skill_storage_version_id"),
     storageVersion:
-      sql`${sql.param(args.storageVersion, orgCustomConnectors.storageVersion)}`.mapWith(
-        orgCustomConnectors.storageVersion,
-      ),
-    createdBy:
-      sql`${sql.param(args.userId, orgCustomConnectors.createdBy)}`.mapWith(
-        orgCustomConnectors.createdBy,
-      ),
-    createdAt: sql`now()`.mapWith(orgCustomConnectors.createdAt),
-    updatedAt: sql`now()`.mapWith(orgCustomConnectors.updatedAt),
+      sql`${sql.param(args.storageVersion, orgCustomConnectors.storageVersion)}`
+        .mapWith(orgCustomConnectors.storageVersion)
+        .as("storage_version"),
+    createdBy: sql`${sql.param(args.userId, orgCustomConnectors.createdBy)}`
+      .mapWith(orgCustomConnectors.createdBy)
+      .as("created_by"),
+    createdAt: sql`now()`
+      .mapWith(orgCustomConnectors.createdAt)
+      .as("created_at"),
+    updatedAt: sql`now()`
+      .mapWith(orgCustomConnectors.updatedAt)
+      .as("updated_at"),
   };
 }
 
@@ -1929,49 +1932,52 @@ function customConnectorOAuthCreateSource(
   encryptedClientSecret: string,
 ) {
   return {
-    connectorId,
-    orgId:
-      sql`${sql.param(orgId, orgCustomConnectorOauthConfigs.orgId)}`.mapWith(
-        orgCustomConnectorOauthConfigs.orgId,
-      ),
+    connectorId: connectorId.as("connector_id"),
+    orgId: sql`${sql.param(orgId, orgCustomConnectorOauthConfigs.orgId)}`
+      .mapWith(orgCustomConnectorOauthConfigs.orgId)
+      .as("org_id"),
     providerAdapter:
-      sql`${sql.param(config.providerAdapter, orgCustomConnectorOauthConfigs.providerAdapter)}`.mapWith(
-        orgCustomConnectorOauthConfigs.providerAdapter,
-      ),
+      sql`${sql.param(config.providerAdapter, orgCustomConnectorOauthConfigs.providerAdapter)}`
+        .mapWith(orgCustomConnectorOauthConfigs.providerAdapter)
+        .as("provider_adapter"),
     clientId:
-      sql`${sql.param(config.clientId, orgCustomConnectorOauthConfigs.clientId)}`.mapWith(
-        orgCustomConnectorOauthConfigs.clientId,
-      ),
+      sql`${sql.param(config.clientId, orgCustomConnectorOauthConfigs.clientId)}`
+        .mapWith(orgCustomConnectorOauthConfigs.clientId)
+        .as("client_id"),
     encryptedClientSecret:
-      sql`${sql.param(encryptedClientSecret, orgCustomConnectorOauthConfigs.encryptedClientSecret)}`.mapWith(
-        orgCustomConnectorOauthConfigs.encryptedClientSecret,
-      ),
+      sql`${sql.param(encryptedClientSecret, orgCustomConnectorOauthConfigs.encryptedClientSecret)}`
+        .mapWith(orgCustomConnectorOauthConfigs.encryptedClientSecret)
+        .as("encrypted_client_secret"),
     authorizationUrl:
-      sql`${sql.param(config.authorizationUrl, orgCustomConnectorOauthConfigs.authorizationUrl)}`.mapWith(
-        orgCustomConnectorOauthConfigs.authorizationUrl,
-      ),
+      sql`${sql.param(config.authorizationUrl, orgCustomConnectorOauthConfigs.authorizationUrl)}`
+        .mapWith(orgCustomConnectorOauthConfigs.authorizationUrl)
+        .as("authorization_url"),
     tokenUrl:
-      sql`${sql.param(config.tokenUrl, orgCustomConnectorOauthConfigs.tokenUrl)}`.mapWith(
-        orgCustomConnectorOauthConfigs.tokenUrl,
-      ),
+      sql`${sql.param(config.tokenUrl, orgCustomConnectorOauthConfigs.tokenUrl)}`
+        .mapWith(orgCustomConnectorOauthConfigs.tokenUrl)
+        .as("token_url"),
     tokenEndpointAuthMethod:
-      sql`${sql.param(config.tokenEndpointAuthMethod, orgCustomConnectorOauthConfigs.tokenEndpointAuthMethod)}`.mapWith(
-        orgCustomConnectorOauthConfigs.tokenEndpointAuthMethod,
-      ),
+      sql`${sql.param(config.tokenEndpointAuthMethod, orgCustomConnectorOauthConfigs.tokenEndpointAuthMethod)}`
+        .mapWith(orgCustomConnectorOauthConfigs.tokenEndpointAuthMethod)
+        .as("token_endpoint_auth_method"),
     pkceMethod:
-      sql`${sql.param(config.pkceMethod, orgCustomConnectorOauthConfigs.pkceMethod)}`.mapWith(
-        orgCustomConnectorOauthConfigs.pkceMethod,
-      ),
+      sql`${sql.param(config.pkceMethod, orgCustomConnectorOauthConfigs.pkceMethod)}`
+        .mapWith(orgCustomConnectorOauthConfigs.pkceMethod)
+        .as("pkce_method"),
     scopes:
-      sql`${sql.param(config.scopes, orgCustomConnectorOauthConfigs.scopes)}`.mapWith(
-        orgCustomConnectorOauthConfigs.scopes,
-      ),
+      sql`${sql.param(config.scopes, orgCustomConnectorOauthConfigs.scopes)}`
+        .mapWith(orgCustomConnectorOauthConfigs.scopes)
+        .as("scopes"),
     authorizationParams:
-      sql`${sql.param(config.authorizationParams, orgCustomConnectorOauthConfigs.authorizationParams)}`.mapWith(
-        orgCustomConnectorOauthConfigs.authorizationParams,
-      ),
-    createdAt: sql`now()`.mapWith(orgCustomConnectorOauthConfigs.createdAt),
-    updatedAt: sql`now()`.mapWith(orgCustomConnectorOauthConfigs.updatedAt),
+      sql`${sql.param(config.authorizationParams, orgCustomConnectorOauthConfigs.authorizationParams)}`
+        .mapWith(orgCustomConnectorOauthConfigs.authorizationParams)
+        .as("authorization_params"),
+    createdAt: sql`now()`
+      .mapWith(orgCustomConnectorOauthConfigs.createdAt)
+      .as("created_at"),
+    updatedAt: sql`now()`
+      .mapWith(orgCustomConnectorOauthConfigs.updatedAt)
+      .as("updated_at"),
   };
 }
 
