@@ -2,11 +2,14 @@ import { apiBackendUrl } from "./api-backend-url";
 import { webUrl } from "./web-url";
 
 const WEB_ORIGIN_HEADER = "x-okou-web-origin";
+const API_WORKER_PREVIEW_HOST_PATTERN =
+  /^okou-api-preview-(?:staging|pr-[1-9][0-9]*)\.vm0\.workers\.dev$/u;
 
 type HostRole = "api" | "www";
 
 function isTrustedFirstPartyHost(hostname: string, role: HostRole): boolean {
   return (
+    (role === "api" && API_WORKER_PREVIEW_HOST_PATTERN.test(hostname)) ||
     (role === "www" &&
       (hostname === "okou.ai" || hostname.endsWith(".okou.ai"))) ||
     hostname === `${role}.okou.ai` ||

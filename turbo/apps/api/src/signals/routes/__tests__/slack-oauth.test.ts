@@ -1138,8 +1138,10 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("keeps preview OAuth start and callback handling on the preview API", async () => {
-      const previewApiOrigin = "https://pr-22539-api.vm6.ai";
-      const previewAppOrigin = "https://pr-22539-app.omby.ai";
+      const previewApiOrigin =
+        "https://okou-api-preview-pr-22539.vm0.workers.dev";
+      const previewAppOrigin =
+        "https://pr-22539-app-okou-app-preview.vm0.workers.dev";
       mockEnv("OKOU_WEB_URL", previewApiOrigin);
       mockEnv("OKOU_API_BACKEND_URL", previewApiOrigin);
       mockEnv("APP_URL", previewAppOrigin);

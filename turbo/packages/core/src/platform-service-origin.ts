@@ -63,9 +63,12 @@ function rewritePreviewServiceHostname(
     if (target === "app") {
       return hostname;
     }
-    const targetDomain =
-      target === "api" ? PREVIEW_API_DOMAIN : OKOU_PREVIEW_DOMAIN;
-    return `${workerPreviewJobRef}-${target}.${targetDomain}`;
+    if (target === "api") {
+      return workerPreviewJobRef === "staging"
+        ? `staging-api.${PREVIEW_API_DOMAIN}`
+        : `okou-api-preview-${workerPreviewJobRef}.vm0.workers.dev`;
+    }
+    return `${workerPreviewJobRef}-${target}.${OKOU_PREVIEW_DOMAIN}`;
   }
 
   const rewrittenHostname = rewritePlatformHostname(hostname, target);

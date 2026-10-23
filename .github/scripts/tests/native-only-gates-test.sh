@@ -44,6 +44,8 @@ def context(ios=True, ts=False, event='pull_request', release=False):
         'needs.prepare.outputs.cli-e2e-consumer-needed': str(not ios and not release).lower(),
         'needs.prepare.outputs.job-ref': 'pr-42',
     }
+    for changed in ['api', 'cli', 'platform', 'crates', 'ci', 'e2e']:
+        values[f'needs.prepare.outputs.{changed}-changed'] = 'false'
     for job in set(turbo) | set(security):
         values[f'needs.{job}.result'] = 'success'
     return values

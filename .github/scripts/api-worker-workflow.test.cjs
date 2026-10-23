@@ -70,6 +70,9 @@ const deploySteps = steps(deploy);
 const cleanupJobs = jobs(cleanupWorkflow);
 const cleanup = cleanupJobs["cleanup-api-worker"];
 const gate = turboJobs["ci-gate-turbo"];
+const gateValidation = steps(gate).find((step) =>
+  step.startsWith("        name: Validate CI results\n"),
+);
 const contractName = "Check Worker deployment contracts and secret handling";
 const workerName =
   "Build and deploy API Worker using the shared preview database";
@@ -108,14 +111,14 @@ function context(event = "pull_request", sameRepo = true) {
   };
 }
 
-test("API job owns mandatory Worker steps after the original Vercel deployment", () => {
+test("API readiness is required before publishing the Worker preview URL", () => {
   const names = [
     "Deploy API to Vercel",
     "Check API health",
     "Create API Vercel Alias",
-    "Post API preview URL",
     contractName,
     workerName,
+    "Post API preview URL",
   ];
   const indices = names.map((name) => deploySteps.indexOf(stepNamed(name)));
   assert.deepEqual(
@@ -151,13 +154,44 @@ test("API job owns mandatory Worker steps after the original Vercel deployment",
       .map(() => name),
   );
   assert.deepEqual(executionOwners, ["deploy-api"]);
+  for (const event of ["pull_request", "merge_group", "push"]) {
+    const data = {
+      ...context(event),
+      steps: {
+        "api-alias": {
+          outputs: { url: "https://staging-api.preview.example" },
+        },
+        "api-deploy": { outputs: { url: "https://comparison.vercel.app" } },
+        "api-worker": { outputs: { url: "https://tested.workers.dev" } },
+      },
+    };
+    assert.equal(
+      render(field(deploy, "preview-url", 6), data),
+      event === "push"
+        ? "https://staging-api.preview.example"
+        : "https://tested.workers.dev",
+    );
+    if (event !== "push") {
+      data.steps["api-worker"].outputs.url = "";
+      assert.equal(
+        render(field(deploy, "preview-url", 6), data),
+        "",
+        `${event} must not fall back to Vercel`,
+      );
+    }
+  }
   assert.equal(
-    deploySteps.indexOf(stepNamed(workerName)),
-    deploySteps.length - 2,
+    field(deploy, "worker-deployment-id", 6),
+    "${{ steps.api-worker.outputs.deployment-id }}",
+  );
+  assert.equal(field(stepNamed(workerName), "id", 8), "api-worker");
+  assert.match(
+    stepNamed("Post API preview URL"),
+    /API preview: \$\{\{ steps.api-worker.outputs.url \}\}/,
   );
 });
 
-test("both Worker steps run only for same-repository PRs and main pushes", () => {
+test("Worker validation covers same-repository PRs, merge groups and main pushes", () => {
   for (const name of [contractName, workerName]) {
     const step = stepNamed(name);
     assert.match(step, /^        if: (?:\||>-)\n/m);
@@ -166,7 +200,7 @@ test("both Worker steps run only for same-repository PRs and main pushes", () =>
       ["pull_request", true, true],
       ["pull_request", false, false],
       ["push", true, true],
-      ["merge_group", true, false],
+      ["merge_group", true, true],
       ["workflow_dispatch", true, false],
     ]) {
       assert.equal(
@@ -235,6 +269,10 @@ test("Worker reuses API setup, environment and sole shared database owner", () =
   for (const binding of [
     "JOB_REF: ${{ needs.prepare.outputs.job-ref }}",
     "EXPECTED_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
+    "EXPECTED_SOURCE_SHA: ${{ github.sha }}",
+    "EXPECTED_MERGE_GROUP_REF: ${{ github.event.merge_group.head_ref }}",
+    "API_PREVIEW_URL: ${{ format('https://okou-api-preview-{0}.{1}.workers.dev', needs.prepare.outputs.job-ref, vars.CF_WORKERS_SUBDOMAIN) }}",
+    "CF_WORKERS_SUBDOMAIN: ${{ vars.CF_WORKERS_SUBDOMAIN }}",
     "NEON_API_KEY: ${{ secrets.NEON_API_KEY }}",
     "NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}",
     "CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}",
@@ -263,6 +301,80 @@ test("existing E2E consumers wait for the complete API job", () => {
   ]) {
     assert.deepEqual(dependencies(turboJobs[name]), expected, name);
     assert.match(turboJobs[name], /needs.deploy-api.result == 'success'/);
+  }
+});
+
+test("API callers consume the selected preview and callbacks use the same origin", () => {
+  for (const [job, key] of [
+    ["cli-e2e-02-browser", "OKOU_API_BACKEND_URL"],
+    ["cli-e2e-02-playwright", "OKOU_API_BACKEND_URL"],
+    ["cli-e2e-03-runner-prepare", "OKOU_API_BACKEND_URL"],
+    ["deploy-runner-start", "RUNNER_API_URL"],
+  ]) {
+    assert.equal(
+      field(turboJobs[job], key, 10),
+      "${{ needs.deploy-api.outputs.preview-url }}",
+      job,
+    );
+  }
+  for (const name of [
+    "Resolve API seed environment",
+    "Resolve API deploy environment",
+  ]) {
+    const resolver = stepNamed(name);
+    for (const key of ["web-url", "api-backend-url"])
+      assert.equal(
+        field(resolver, key, 10),
+        "${{ needs.prepare.outputs.api-preview-url }}",
+        `${name}/${key}`,
+      );
+  }
+  assert.equal(
+    field(turboJobs["deploy-stripe-listener"], "API_PREVIEW_URL", 10),
+    "${{ needs.prepare.outputs.api-preview-url }}",
+  );
+  assert.deepEqual(dependencies(turboJobs["cli-e2e-01-serial"]), [
+    "prepare",
+    "prepare-cli",
+  ]);
+});
+
+test("preview preparation routes PRs to Workers and retains the staging callback origin", () => {
+  const preparation = steps(turboJobs.prepare).find((step) =>
+    step.includes("        id: preview-urls\n"),
+  );
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "worker-preview-urls-"),
+  );
+  try {
+    for (const [jobRef, domain, expected] of [
+      [
+        "pr-123",
+        "",
+        "https://okou-api-preview-pr-123.example-team.workers.dev",
+      ],
+      ["staging", "preview.example", "https://staging-api.preview.example"],
+    ]) {
+      const outputFile = path.join(directory, jobRef);
+      const script = render(field(preparation, "run", 8), {
+        steps: { "set-job-ref": { outputs: { "job-ref": jobRef } } },
+        vars: { CF_WORKERS_SUBDOMAIN: "example-team", PREVIEW_DOMAIN: domain },
+      });
+      const result = spawnSync("bash", ["-eu", "-c", script], {
+        cwd: root,
+        encoding: "utf8",
+        env: { ...process.env, GITHUB_OUTPUT: outputFile },
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.ok(
+        fs
+          .readFileSync(outputFile, "utf8")
+          .split("\n")
+          .includes(`api-url=${expected}`),
+      );
+    }
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
   }
 });
 
@@ -365,8 +477,8 @@ test("trusted closed-PR cleanup shares the API preview lock without database cre
 test("actual gate shell propagates API job failure and cancellation, retaining allowed skips", () => {
   assert.match(gate, /^    if: always\(\)/m);
   assert.ok(dependencies(gate).includes("deploy-api"));
-  const script = field(gate, "run", 8);
-  const envKeys = [...gate.matchAll(/^          (\w+): /gm)].map(
+  const script = field(gateValidation, "run", 8);
+  const envKeys = [...gateValidation.matchAll(/^          (\w+): /gm)].map(
     ([, key]) => key,
   );
   for (const event of ["pull_request", "merge_group", "push"]) {
@@ -380,7 +492,10 @@ test("actual gate shell propagates API job failure and cancellation, retaining a
       data.needs["deploy-api"].result = result;
       data.needs["detect-release"].outputs.skip = "false";
       const env = Object.fromEntries(
-        envKeys.map((key) => [key, render(field(gate, key, 10), data)]),
+        envKeys.map((key) => [
+          key,
+          render(field(gateValidation, key, 10), data),
+        ]),
       );
       const output = spawnSync("bash", ["-eu", "-c", render(script, data)], {
         encoding: "utf8",
@@ -395,4 +510,85 @@ test("actual gate shell propagates API job failure and cancellation, retaining a
         assert.match(output.stdout, /::error::deploy-api:/);
     }
   }
+});
+
+test("selected deployed journeys fail the gate on failures, cancellation or unexpected skips", () => {
+  const script = field(gateValidation, "run", 8);
+  const envKeys = [...gateValidation.matchAll(/^          (\w+): /gm)].map(
+    ([, key]) => key,
+  );
+  for (const event of ["pull_request", "merge_group"]) {
+    for (const job of [
+      "deploy-api",
+      "deploy-stripe-listener",
+      "cli-e2e-02-browser",
+      "cli-e2e-02-playwright",
+      "cli-e2e-03-runner-prepare",
+      "cli-e2e-03-runner-bootstrap",
+      "cli-e2e-03-runner",
+      "deploy-runner-prepare",
+      "deploy-runner-start",
+    ]) {
+      for (const result of ["failure", "cancelled", "skipped"]) {
+        const data = context(event);
+        data.needs["detect-release"].outputs.skip = "false";
+        Object.assign(data.needs.prepare.outputs, {
+          "ci-changed": "true",
+          "turbo-runner-consumer-needed": "true",
+          "playwright-runner-consumer-needed": "true",
+        });
+        data.needs[job].result = result;
+        const env = Object.fromEntries(
+          envKeys.map((key) => [
+            key,
+            render(field(gateValidation, key, 10), data),
+          ]),
+        );
+        const output = spawnSync("bash", ["-eu", "-c", render(script, data)], {
+          encoding: "utf8",
+          env: { ...process.env, ...env },
+        });
+        assert.equal(
+          output.status,
+          1,
+          `${event}/${job}/${result}\n${output.stdout}\n${output.stderr}`,
+        );
+        assert.ok(output.stdout.includes(`::error::${job}:`));
+      }
+    }
+  }
+});
+
+test("PR and merge-group gates verify the same Worker deployment after E2E", () => {
+  const gateSteps = steps(gate);
+  const verify = gateSteps.find((step) =>
+    step.includes("        name: Verify API Worker deployment after E2E\n"),
+  );
+  const checkout = gateSteps.find((step) =>
+    step.includes("        name: Check out the tested API Worker source\n"),
+  );
+  assert.ok(gateSteps.indexOf(gateValidation) < gateSteps.indexOf(checkout));
+  assert.ok(gateSteps.indexOf(checkout) < gateSteps.indexOf(verify));
+  assert.equal(field(checkout, "ref", 10), "${{ github.sha }}");
+  for (const step of [checkout, verify]) {
+    for (const [event, expected] of [
+      ["pull_request", true],
+      ["merge_group", true],
+      ["push", false],
+    ]) {
+      const data = context(event);
+      assert.equal(evaluate(field(step, "if", 8), data), expected);
+      data.needs["deploy-api"].result = "skipped";
+      assert.equal(evaluate(field(step, "if", 8), data), false);
+    }
+  }
+  assert.equal(field(verify, "EXPECTED_SOURCE_SHA", 10), "${{ github.sha }}");
+  assert.equal(
+    field(verify, "EXPECTED_DEPLOYMENT_ID", 10),
+    "${{ needs.deploy-api.outputs.worker-deployment-id }}",
+  );
+  assert.equal(
+    field(verify, "run", 8).trim(),
+    "node .github/scripts/api-worker-preview.cjs verify",
+  );
 });

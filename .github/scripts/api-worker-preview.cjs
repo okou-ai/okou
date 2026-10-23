@@ -2,16 +2,21 @@
 // Run from the repository root with Node 24 and the installed toolchain.
 // deploy: JOB_REF, API_ENV_FILE, NEON_API_KEY, NEON_PROJECT_ID,
 // CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, GH_TOKEN, GITHUB_REPOSITORY.
-// PR deploys also require the captured event's EXPECTED_PR_HEAD_SHA.
+// deploy also needs API_PREVIEW_URL, CF_WORKERS_SUBDOMAIN, EXPECTED_SOURCE_SHA,
+// GITHUB_EVENT_NAME and GITHUB_OUTPUT. PRs need EXPECTED_PR_HEAD_SHA; merge
+// groups need EXPECTED_MERGE_GROUP_REF from the captured event.
 // deploy reads the branch prepared by deploy-api; it never creates or migrates it.
 // cleanup needs only JOB_REF, Cloudflare and GitHub credentials; PR refs only.
+// verify needs the preview/source/Cloudflare inputs, EXPECTED_DEPLOYMENT_ID and
+// optional VERCEL_AUTOMATION_BYPASS_SECRET; it makes only read requests.
 // Credentials stay in memory/environment or private temporary files, never argv.
-// Only control-plane APIs are called: never the deployed Worker.
+// Publish the URL only after the Worker serves healthy, same-SHA responses.
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { createRequire } = require("node:module");
 const childProcess = require("node:child_process");
+const { setTimeout } = require("node:timers/promises");
 
 // Locally created errors carry only reviewed diagnostics; native failures do not.
 class Error extends globalThis.Error {}
@@ -207,17 +212,78 @@ async function sharedPreviewDatabase(neon, branchName) {
   return database;
 }
 
+async function verifyWorkerPreview(url, sha, bypass) {
+  for (const route of ["/health", "/api/build-info"]) {
+    let response;
+    let body;
+    try {
+      response = await fetch(`${url}${route}`, {
+        redirect: "error",
+        headers: {
+          "Cache-Control": "no-cache",
+          ...(bypass ? { "x-vercel-protection-bypass": bypass } : {}),
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+      body = await response.json();
+    } catch {
+      throw new Error(`Worker preview ${route} did not return JSON directly`);
+    }
+    if (
+      response.status !== 200 ||
+      response.headers.get("x-okou-api-runtime") !== "cloudflare-workers"
+    ) {
+      throw new Error(
+        `Worker preview ${route} did not confirm a healthy Worker`,
+      );
+    }
+    if (route === "/health" ? body?.status !== "ok" : body?.commitSha !== sha) {
+      throw new Error(
+        `Worker preview ${route} did not confirm the expected build`,
+      );
+    }
+  }
+}
+
+async function waitForWorkerPreview(url, sha, bypass) {
+  // Only idempotent readiness reads are retried, never deployment mutations.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await verifyWorkerPreview(url, sha, bypass);
+      return;
+    } catch (error) {
+      if (attempt === 12) throw error;
+      console.log(`Waiting for Worker preview propagation (${attempt}/12)`);
+      await setTimeout(5000);
+    }
+  }
+}
+
 async function main(mode) {
   const ref = required("JOB_REF");
   const names = identities(ref);
-  if (!["deploy", "cleanup"].includes(mode))
-    throw new Error("Usage: api-worker-preview.cjs deploy|cleanup");
+  if (!["deploy", "cleanup", "verify"].includes(mode))
+    throw new Error("Usage: api-worker-preview.cjs deploy|cleanup|verify");
   if (mode === "cleanup" && ref === "staging")
     throw new Error("Cleanup requires a PR reference");
   const account = required("CLOUDFLARE_ACCOUNT_ID");
   if (!/^[a-f0-9]{32}$/.test(account))
     throw new Error("Invalid Cloudflare account identity");
   const cfToken = required("CLOUDFLARE_API_TOKEN");
+  let previewUrl;
+  let sourceSha;
+  if (mode !== "cleanup") {
+    sourceSha = required("EXPECTED_SOURCE_SHA");
+    if (!/^[a-f0-9]{40}$/.test(sourceSha))
+      throw new Error("Invalid Worker source revision");
+    const subdomain = required("CF_WORKERS_SUBDOMAIN");
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(subdomain))
+      throw new Error("Invalid Workers preview subdomain");
+    previewUrl = `https://${names.worker}.${subdomain}.workers.dev`;
+    if (required("API_PREVIEW_URL") !== previewUrl)
+      throw new Error("Worker preview URL does not match the deployed Worker");
+    if (mode === "deploy") required("GITHUB_OUTPUT");
+  }
   const cf = async (method, route, body, missing = false) => {
     const response = await request(
       `https://api.cloudflare.com/client/v4/accounts/${account}`,
@@ -232,6 +298,27 @@ async function main(mode) {
       throw new Error("Cloudflare control-plane operation rejected");
     return response.result;
   };
+  const activeDeploymentId = async () => {
+    const result = await cf(
+      "GET",
+      `/workers/scripts/${names.worker}/deployments`,
+    );
+    const id = result?.deployments?.[0]?.id;
+    if (!/^[a-f0-9-]{36}$/.test(id ?? ""))
+      throw new Error("Worker active deployment identity was not confirmed");
+    return id;
+  };
+  if (mode === "verify") {
+    if ((await activeDeploymentId()) !== required("EXPECTED_DEPLOYMENT_ID"))
+      throw new Error("Worker deployment changed during E2E");
+    await verifyWorkerPreview(
+      previewUrl,
+      sourceSha,
+      process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
+    );
+    console.log(`E2E completed against Worker ${previewUrl} at ${sourceSha}`);
+    return;
+  }
   // Turbo may cancel a superseded preview run. Reconcile exact resource names
   // on the next run, reject stale PR revisions and never replay uncertain writes.
   // Cleanup executes trusted default-branch code and never owns the shared DB.
@@ -250,8 +337,33 @@ async function main(mode) {
       throw new Error("PR state does not authorize Worker preview operation");
     if (mode === "deploy" && pr.head?.repo?.full_name !== repository)
       throw new Error("Fork PR cannot deploy a Worker preview");
-    if (mode === "deploy" && pr.head?.sha !== required("EXPECTED_PR_HEAD_SHA"))
-      throw new Error("Superseded PR revision cannot deploy a Worker preview");
+    if (mode === "deploy") {
+      if (required("GITHUB_EVENT_NAME") === "merge_group") {
+        const mergeRef = required("EXPECTED_MERGE_GROUP_REF");
+        if (
+          !mergeRef.startsWith("refs/heads/gh-readonly-queue/") ||
+          !mergeRef.includes(`/${ref}-`)
+        )
+          throw new Error("Merge-group reference does not match the preview");
+        const revision = await request(
+          "https://api.github.com",
+          required("GH_TOKEN"),
+          "GET",
+          `/repos/${repository}/git/ref/${mergeRef.slice("refs/".length)}`,
+        );
+        if (revision.ref !== mergeRef || revision.object?.sha !== sourceSha)
+          throw new Error(
+            "Superseded merge-group revision cannot deploy a Worker preview",
+          );
+      } else if (
+        required("GITHUB_EVENT_NAME") !== "pull_request" ||
+        pr.head?.sha !== required("EXPECTED_PR_HEAD_SHA")
+      ) {
+        throw new Error(
+          "Superseded PR revision cannot deploy a Worker preview",
+        );
+      }
+    }
   };
   await assertCurrentPreview();
 
@@ -295,6 +407,21 @@ async function main(mode) {
   runtime.DATABASE_URL = database.toString();
   if (runtime.ENV !== "preview")
     throw new Error("Only preview runtime configuration is allowed");
+  if (
+    runtime.GIT_COMMIT_SHA !== sourceSha ||
+    childProcess
+      .execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" })
+      .trim() !== sourceSha
+  )
+    throw new Error("Worker build must use the captured source revision");
+  if (
+    ref !== "staging" &&
+    (runtime.OKOU_API_BACKEND_URL !== previewUrl ||
+      runtime.OKOU_WEB_URL !== previewUrl)
+  )
+    throw new Error(
+      "Worker callbacks and self-requests must use its preview URL",
+    );
   const root = process.cwd();
   command(
     "Build API Worker",
@@ -395,9 +522,22 @@ async function main(mode) {
       },
       root,
     );
-    console.log(
-      `Deployed ${names.worker}; no Worker HTTP/health/E2E requests were made`,
+    await assertCurrentPreview();
+    const deploymentId = await activeDeploymentId();
+    await waitForWorkerPreview(
+      previewUrl,
+      sourceSha,
+      runtime.VERCEL_AUTOMATION_BYPASS_SECRET,
     );
+    if ((await activeDeploymentId()) !== deploymentId)
+      throw new Error(
+        "Worker deployment changed during readiness verification",
+      );
+    fs.appendFileSync(
+      required("GITHUB_OUTPUT"),
+      `url=${previewUrl}\ndeployment-id=${deploymentId}\n`,
+    );
+    console.log(`Verified Worker ${previewUrl} at ${sourceSha}`);
   } finally {
     fs.rmSync(generatedPath, { force: true });
     fs.rmSync(temporary, { recursive: true, force: true });
@@ -411,6 +551,7 @@ module.exports = {
   request,
   command,
   sharedPreviewDatabase,
+  verifyWorkerPreview,
   main,
 };
 if (require.main === module) {

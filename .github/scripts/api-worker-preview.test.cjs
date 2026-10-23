@@ -11,6 +11,7 @@ const {
   request,
   command,
   sharedPreviewDatabase,
+  verifyWorkerPreview,
   main,
 } = require("./api-worker-preview.cjs");
 
@@ -44,6 +45,11 @@ afterEach(() => {
 after(() => server.close());
 const neonBase = "https://console.neon.tech/api/v2/projects/test-project";
 const cfBase = `https://api.cloudflare.com/client/v4/accounts/${"a".repeat(32)}`;
+const sourceSha = childProcess
+  .execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" })
+  .trim();
+const deploymentId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+const previewUrl = "https://okou-api-preview-pr-123.vm0.workers.dev";
 const prUrl = "https://api.github.com/repos/example/repository/pulls/123";
 const neon = (method, route) => request(neonBase, "test-token", method, route);
 
@@ -178,6 +184,11 @@ test("a superseded PR revision is rejected before database or Cloudflare operati
     GH_TOKEN: "test-token",
     GITHUB_REPOSITORY: "example/repository",
     EXPECTED_PR_HEAD_SHA: "1".repeat(40),
+    EXPECTED_SOURCE_SHA: sourceSha,
+    CF_WORKERS_SUBDOMAIN: "vm0",
+    API_PREVIEW_URL: previewUrl,
+    GITHUB_EVENT_NAME: "pull_request",
+    GITHUB_OUTPUT: "/dev/null",
   });
   server.use(
     http.get(prUrl, () =>
@@ -193,132 +204,181 @@ test("a superseded PR revision is rejected before database or Cloudflare operati
   await assert.rejects(main("deploy"), /Superseded PR revision/);
 });
 
-test("downstream deployment binds the existing branch and runs only build and Worker upload", async (t) => {
-  const root = path.resolve(__dirname, "../..");
-  const cwd = process.cwd();
-  process.chdir(root);
-  t.after(() => process.chdir(cwd));
-  const directory = fs.mkdtempSync(
-    path.join(os.tmpdir(), "shared-worker-test-"),
-  );
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const envFile = path.join(directory, "runtime.env");
-  fs.writeFileSync(envFile, "ENV=preview\n", { mode: 0o600 });
-  operationEnvironment(t, {
-    JOB_REF: "pr-123",
-    CLOUDFLARE_ACCOUNT_ID: "a".repeat(32),
-    CLOUDFLARE_API_TOKEN: "test-token",
-    GH_TOKEN: "test-token",
-    GITHUB_REPOSITORY: "example/repository",
-    EXPECTED_PR_HEAD_SHA: "1".repeat(40),
-    NEON_API_KEY: "test-token",
-    NEON_PROJECT_ID: "test-project",
-    API_ENV_FILE: envFile,
-    CF_API_TRACES_DESTINATION: undefined,
-  });
-  const branch = {
-    id: "br-shared-preview",
-    name: "preview/pr-123",
-    current_state: "ready",
-  };
-  const hyperdrive = {
-    id: "b".repeat(32),
-    name: "okou-api-preview-pr-123",
-    caching: { disabled: true },
-  };
-  server.use(
-    http.get(prUrl, () =>
-      HttpResponse.json({
-        state: "open",
-        head: {
-          sha: "1".repeat(40),
-          repo: { full_name: "example/repository" },
-        },
-      }),
-    ),
-    http.get(`${neonBase}/branches`, ({ request: incoming }) => {
-      assert.equal(
-        new URL(incoming.url).searchParams.get("search"),
-        branch.name,
-      );
-      return HttpResponse.json({ branches: [branch] });
-    }),
-    http.get(`${neonBase}/branches/${branch.id}`, () =>
-      HttpResponse.json({ branch }),
-    ),
-    http.get(`${neonBase}/connection_uri`, ({ request: incoming }) => {
-      const params = new URL(incoming.url).searchParams;
-      assert.equal(params.get("branch_id"), branch.id);
-      assert.equal(params.get("pooled"), "false");
-      return HttpResponse.json({
-        uri: "postgresql://preview:password@ep-shared.example.neon.tech/neondb",
-      });
-    }),
-    http.get(`${cfBase}/hyperdrive/configs`, () =>
-      HttpResponse.json({
-        success: true,
-        result: [hyperdrive],
-      }),
-    ),
-    http.put(
-      `${cfBase}/hyperdrive/configs/${hyperdrive.id}`,
-      async ({ request: incoming }) => {
-        assert.equal(
-          incoming.headers.get("authorization"),
-          "Bearer test-token",
-        );
-        const body = await incoming.json();
-        assert.deepEqual(body, {
-          name: hyperdrive.name,
-          origin: {
-            scheme: "postgres",
-            host: "ep-shared.example.neon.tech",
-            port: 5432,
-            database: "neondb",
-            user: "preview",
-            password: "password",
+for (const event of ["pull_request", "merge_group"]) {
+  test(`${event} publishes the Worker URL only after verifying its deployed source`, async (t) => {
+    const root = path.resolve(__dirname, "../..");
+    const cwd = process.cwd();
+    process.chdir(root);
+    t.after(() => process.chdir(cwd));
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "shared-worker-test-"),
+    );
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    const envFile = path.join(directory, "runtime.env");
+    fs.writeFileSync(
+      envFile,
+      `ENV=preview\nGIT_COMMIT_SHA=${sourceSha}\nOKOU_API_BACKEND_URL=${previewUrl}\nOKOU_WEB_URL=${previewUrl}\nVERCEL_AUTOMATION_BYPASS_SECRET=preview-secret\n`,
+      { mode: 0o600 },
+    );
+    const outputFile = path.join(directory, "outputs");
+    const mergeRef = `refs/heads/gh-readonly-queue/main/pr-123-${sourceSha}`;
+    operationEnvironment(t, {
+      JOB_REF: "pr-123",
+      CLOUDFLARE_ACCOUNT_ID: "a".repeat(32),
+      CLOUDFLARE_API_TOKEN: "test-token",
+      GH_TOKEN: "test-token",
+      GITHUB_REPOSITORY: "example/repository",
+      EXPECTED_PR_HEAD_SHA: "1".repeat(40),
+      EXPECTED_SOURCE_SHA: sourceSha,
+      CF_WORKERS_SUBDOMAIN: "vm0",
+      API_PREVIEW_URL: previewUrl,
+      NEON_API_KEY: "test-token",
+      NEON_PROJECT_ID: "test-project",
+      API_ENV_FILE: envFile,
+      CF_API_TRACES_DESTINATION: undefined,
+      GITHUB_EVENT_NAME: event,
+      EXPECTED_MERGE_GROUP_REF: mergeRef,
+      GITHUB_OUTPUT: outputFile,
+    });
+    const branch = {
+      id: "br-shared-preview",
+      name: "preview/pr-123",
+      current_state: "ready",
+    };
+    const hyperdrive = {
+      id: "b".repeat(32),
+      name: "okou-api-preview-pr-123",
+      caching: { disabled: true },
+    };
+    server.use(
+      http.get(prUrl, () =>
+        HttpResponse.json({
+          state: "open",
+          head: {
+            sha: "1".repeat(40),
+            repo: { full_name: "example/repository" },
           },
-          caching: { disabled: true },
+        }),
+      ),
+      http.get(`${neonBase}/branches`, ({ request: incoming }) => {
+        assert.equal(
+          new URL(incoming.url).searchParams.get("search"),
+          branch.name,
+        );
+        return HttpResponse.json({ branches: [branch] });
+      }),
+      http.get(`${neonBase}/branches/${branch.id}`, () =>
+        HttpResponse.json({ branch }),
+      ),
+      http.get(`${neonBase}/connection_uri`, ({ request: incoming }) => {
+        const params = new URL(incoming.url).searchParams;
+        assert.equal(params.get("branch_id"), branch.id);
+        assert.equal(params.get("pooled"), "false");
+        return HttpResponse.json({
+          uri: "postgresql://preview:password@ep-shared.example.neon.tech/neondb",
         });
-        return HttpResponse.json({ success: true, result: hyperdrive });
-      },
-    ),
-  );
-  const commands = [];
-  let generatedPath;
-  let secretsPath;
-  t.mock.method(childProcess, "spawnSync", (_command, args) => {
-    if (args.includes("build:worker")) commands.push("build");
-    else {
-      assert.ok(args.includes("deploy"));
-      generatedPath = args[args.indexOf("--config") + 1];
-      assert.equal(fs.statSync(generatedPath).mode & 0o777, 0o600);
-      const config = JSON.parse(fs.readFileSync(generatedPath, "utf8"));
-      assert.deepEqual(config.hyperdrive, [
-        { binding: "HYPERDRIVE", id: hyperdrive.id },
-      ]);
-      secretsPath = args[args.indexOf("--secrets-file") + 1];
-      assert.equal(fs.statSync(secretsPath).mode & 0o777, 0o600);
-      const secrets = JSON.parse(fs.readFileSync(secretsPath, "utf8"));
-      const runtime = JSON.parse(
-        Array.from(
-          { length: Number(secrets.API_ENV_JSON_PARTS) },
-          (_, i) => secrets[`API_ENV_JSON_${i}`],
-        ).join(""),
-      );
-      assert.equal(
-        new URL(runtime.DATABASE_URL).hostname,
-        "ep-shared.example.neon.tech",
-      );
-      commands.push("upload");
-    }
-    return { status: 0 };
+      }),
+      http.get(`${cfBase}/hyperdrive/configs`, () =>
+        HttpResponse.json({
+          success: true,
+          result: [hyperdrive],
+        }),
+      ),
+      http.put(
+        `${cfBase}/hyperdrive/configs/${hyperdrive.id}`,
+        async ({ request: incoming }) => {
+          assert.equal(
+            incoming.headers.get("authorization"),
+            "Bearer test-token",
+          );
+          const body = await incoming.json();
+          assert.deepEqual(body, {
+            name: hyperdrive.name,
+            origin: {
+              scheme: "postgres",
+              host: "ep-shared.example.neon.tech",
+              port: 5432,
+              database: "neondb",
+              user: "preview",
+              password: "password",
+            },
+            caching: { disabled: true },
+          });
+          return HttpResponse.json({ success: true, result: hyperdrive });
+        },
+      ),
+    );
+    server.use(
+      http.get(
+        `${cfBase}/workers/scripts/okou-api-preview-pr-123/deployments`,
+        () =>
+          HttpResponse.json({
+            success: true,
+            result: { deployments: [{ id: deploymentId }] },
+          }),
+      ),
+      http.get(
+        `https://api.github.com/repos/example/repository/git/ref/${mergeRef.slice(5)}`,
+        () => HttpResponse.json({ ref: mergeRef, object: { sha: sourceSha } }),
+      ),
+      http.get(`${previewUrl}/health`, ({ request: incoming }) => {
+        assert.equal(
+          incoming.headers.get("x-vercel-protection-bypass"),
+          "preview-secret",
+        );
+        return HttpResponse.json(
+          { status: "ok" },
+          { headers: { "x-okou-api-runtime": "cloudflare-workers" } },
+        );
+      }),
+      http.get(`${previewUrl}/api/build-info`, () => {
+        assert.equal(fs.existsSync(outputFile), false);
+        return HttpResponse.json(
+          { commitSha: sourceSha },
+          { headers: { "x-okou-api-runtime": "cloudflare-workers" } },
+        );
+      }),
+    );
+    const commands = [];
+    let generatedPath;
+    let secretsPath;
+    t.mock.method(childProcess, "spawnSync", (_command, args) => {
+      if (args.includes("build:worker")) commands.push("build");
+      else {
+        assert.ok(args.includes("deploy"));
+        generatedPath = args[args.indexOf("--config") + 1];
+        assert.equal(fs.statSync(generatedPath).mode & 0o777, 0o600);
+        const config = JSON.parse(fs.readFileSync(generatedPath, "utf8"));
+        assert.deepEqual(config.hyperdrive, [
+          { binding: "HYPERDRIVE", id: hyperdrive.id },
+        ]);
+        secretsPath = args[args.indexOf("--secrets-file") + 1];
+        assert.equal(fs.statSync(secretsPath).mode & 0o777, 0o600);
+        const secrets = JSON.parse(fs.readFileSync(secretsPath, "utf8"));
+        const runtime = JSON.parse(
+          Array.from(
+            { length: Number(secrets.API_ENV_JSON_PARTS) },
+            (_, i) => secrets[`API_ENV_JSON_${i}`],
+          ).join(""),
+        );
+        assert.equal(
+          new URL(runtime.DATABASE_URL).hostname,
+          "ep-shared.example.neon.tech",
+        );
+        commands.push("upload");
+      }
+      return { status: 0 };
+    });
+    await main("deploy");
+    assert.deepEqual(commands, ["build", "upload"]);
+    assert.equal(fs.existsSync(generatedPath), false);
+    assert.equal(fs.existsSync(path.dirname(secretsPath)), false);
+    assert.equal(
+      fs.readFileSync(outputFile, "utf8"),
+      `url=${previewUrl}\ndeployment-id=${deploymentId}\n`,
+    );
   });
-  await main("deploy");
-  assert.deepEqual(commands, ["build", "upload"]);
-  assert.equal(fs.existsSync(generatedPath), false);
-  assert.equal(fs.existsSync(path.dirname(secretsPath)), false);
-});
+}
 
 test("encrypted environment chunks preserve multibyte values and stay below the per-secret limit", () => {
   const runtime = { ENV: "preview", KEY: "🔐中".repeat(3000), EMPTY: "" };
@@ -433,3 +493,118 @@ test("control-plane failures withhold credentials and never replay uncertain req
   );
   assert.equal(attempts, 1);
 });
+
+for (const scenario of ["vercel", "stale", "redirect", "unhealthy"]) {
+  test(`readiness rejects ${scenario} API responses instead of accepting another target`, async () => {
+    const headers =
+      scenario === "vercel"
+        ? {}
+        : { "x-okou-api-runtime": "cloudflare-workers" };
+    server.use(
+      http.get(`${previewUrl}/health`, () => {
+        if (scenario === "redirect")
+          return new HttpResponse(null, {
+            status: 302,
+            headers: { Location: "https://api.example.com/health" },
+          });
+        return HttpResponse.json(
+          { status: "ok" },
+          { headers, status: scenario === "unhealthy" ? 503 : 200 },
+        );
+      }),
+      http.get(`${previewUrl}/api/build-info`, () =>
+        HttpResponse.json({ commitSha: "0".repeat(40) }, { headers }),
+      ),
+    );
+    await assert.rejects(
+      verifyWorkerPreview(previewUrl, sourceSha),
+      /Worker preview/,
+    );
+  });
+}
+
+test("an obsolete merge-group revision is rejected before database or deployment operations", async (t) => {
+  const mergeRef = `refs/heads/gh-readonly-queue/main/pr-123-${sourceSha}`;
+  operationEnvironment(t, {
+    JOB_REF: "pr-123",
+    CLOUDFLARE_ACCOUNT_ID: "a".repeat(32),
+    CLOUDFLARE_API_TOKEN: "test-token",
+    GH_TOKEN: "test-token",
+    GITHUB_REPOSITORY: "example/repository",
+    GITHUB_EVENT_NAME: "merge_group",
+    EXPECTED_SOURCE_SHA: sourceSha,
+    EXPECTED_MERGE_GROUP_REF: mergeRef,
+    CF_WORKERS_SUBDOMAIN: "vm0",
+    API_PREVIEW_URL: previewUrl,
+    GITHUB_OUTPUT: "/dev/null",
+  });
+  server.use(
+    http.get(prUrl, () =>
+      HttpResponse.json({
+        state: "open",
+        head: { repo: { full_name: "example/repository" } },
+      }),
+    ),
+    http.get(
+      `https://api.github.com/repos/example/repository/git/ref/${mergeRef.slice(5)}`,
+      () =>
+        HttpResponse.json({ ref: mergeRef, object: { sha: "0".repeat(40) } }),
+    ),
+  );
+  await assert.rejects(main("deploy"), /Superseded merge-group revision/);
+});
+
+for (const overwritten of [false, true]) {
+  test(`final verification ${overwritten ? "rejects a superseded deployment even with the same SHA" : "accepts the unchanged Worker deployment"}`, async (t) => {
+    operationEnvironment(t, {
+      JOB_REF: "pr-123",
+      CLOUDFLARE_ACCOUNT_ID: "a".repeat(32),
+      CLOUDFLARE_API_TOKEN: "test-token",
+      EXPECTED_SOURCE_SHA: sourceSha,
+      CF_WORKERS_SUBDOMAIN: "vm0",
+      API_PREVIEW_URL: previewUrl,
+      EXPECTED_DEPLOYMENT_ID: deploymentId,
+      VERCEL_AUTOMATION_BYPASS_SECRET: "preview-secret",
+    });
+    server.use(
+      http.get(
+        `${cfBase}/workers/scripts/okou-api-preview-pr-123/deployments`,
+        () =>
+          HttpResponse.json({
+            success: true,
+            result: {
+              deployments: [
+                {
+                  id: overwritten
+                    ? "bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+                    : deploymentId,
+                },
+              ],
+            },
+          }),
+      ),
+      http.get(`${previewUrl}/health`, ({ request: incoming }) => {
+        assert.equal(
+          incoming.headers.get("x-vercel-protection-bypass"),
+          "preview-secret",
+        );
+        return HttpResponse.json(
+          { status: "ok" },
+          { headers: { "x-okou-api-runtime": "cloudflare-workers" } },
+        );
+      }),
+      http.get(`${previewUrl}/api/build-info`, () =>
+        HttpResponse.json(
+          { commitSha: sourceSha },
+          { headers: { "x-okou-api-runtime": "cloudflare-workers" } },
+        ),
+      ),
+    );
+    if (overwritten)
+      await assert.rejects(
+        main("verify"),
+        /Worker deployment changed during E2E/,
+      );
+    else await main("verify");
+  });
+}

@@ -299,7 +299,7 @@ test.each([
   { host: "pr-37968-app.omby.ai", apiOrigin: "https://pr-37968-api.vm6.ai" },
   {
     host: "pr-37968-app-okou-app-preview.vm0.workers.dev",
-    apiOrigin: "https://pr-37968-api.vm6.ai",
+    apiOrigin: "https://okou-api-preview-pr-37968.vm0.workers.dev",
   },
 ])(
   "Discord starts at the canonical API host from $host, not an App proxy or web host",

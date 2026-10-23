@@ -8,7 +8,7 @@ import {
 } from "@aws-sdk/client-s3";
 import type { ExecutionContext, Hyperdrive } from "@cloudflare/workers-types";
 import { onTestFinished } from "vitest";
-import { env } from "../lib/env";
+import { env, mockEnv } from "../lib/env";
 import { createDeferredPromise } from "../signals/utils";
 import { testContext } from "./test-context";
 import { createRouteMocks } from "../signals/routes/__tests__/helpers/route-test";
@@ -130,6 +130,28 @@ async function createAgent(name: string) {
   await expect(http.settle()).resolves.toStrictEqual([]);
   return body;
 }
+
+test("identifies the Worker serving readiness and build metadata, including HEAD responses", async () => {
+  const commitSha = "b".repeat(40);
+  mockEnv("GIT_COMMIT_SHA", commitSha);
+  const http = caller();
+  const health = await http.request("/health");
+  expect(health.status).toBe(200);
+  expect(health.headers.get("x-okou-api-runtime")).toBe("cloudflare-workers");
+  await expect(health.json()).resolves.toStrictEqual({ status: "ok" });
+
+  const build = await http.request("/api/build-info");
+  expect(build.status).toBe(200);
+  expect(build.headers.get("x-okou-api-runtime")).toBe("cloudflare-workers");
+  expect(build.headers.get("cache-control")).toBe("no-store");
+  await expect(build.json()).resolves.toMatchObject({ commitSha });
+
+  const head = await http.request("/health", { method: "HEAD" });
+  expect(head.status).toBe(200);
+  expect(head.headers.get("x-okou-api-runtime")).toBe("cloudflare-workers");
+  expect(head.body).toBeNull();
+  await expect(http.settle()).resolves.toStrictEqual([]);
+});
 
 test("serves DB-backed foreground writes through response EOF and a subsequent Worker request", async () => {
   actor();

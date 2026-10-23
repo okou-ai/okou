@@ -31,9 +31,16 @@ function ownResponse(
   waitUntil: (work: Promise<unknown>) => void,
   signal: AbortSignal,
 ): Response {
+  const headers = new Headers(response.headers);
+  headers.set("x-okou-api-runtime", "cloudflare-workers");
+  const init = {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  };
   if (!response.body) {
     finish();
-    return response;
+    return new Response(null, init);
   }
   const reader = response.body.getReader();
   let finished = false;
@@ -85,11 +92,7 @@ function ownResponse(
         return cancellation;
       },
     }),
-    {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
-    },
+    init,
   );
 }
 

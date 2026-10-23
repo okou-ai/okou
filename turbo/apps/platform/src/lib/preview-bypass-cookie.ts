@@ -28,11 +28,19 @@ function isCorrespondingPreviewService(
   targetHostname: string,
 ): boolean {
   const workerPreviewJobRef = okouAppWorkerPreviewJobRef(sourceHostname);
-  const target = hostnameBeforeRoot(targetHostname, PREVIEW_API_ROOT_DOMAIN);
   if (workerPreviewJobRef) {
-    return target === `${workerPreviewJobRef}${BYPASS_TARGET_SERVICE_SUFFIX}`;
+    return (
+      targetHostname ===
+        `okou-api-preview-${workerPreviewJobRef}.vm0.workers.dev` ||
+      targetHostname ===
+        `${workerPreviewJobRef}${BYPASS_TARGET_SERVICE_SUFFIX}.${PREVIEW_API_ROOT_DOMAIN}`
+    );
+  }
+  if (!isHostnameWithin(targetHostname, PREVIEW_API_ROOT_DOMAIN)) {
+    return false;
   }
 
+  const target = hostnameBeforeRoot(targetHostname, PREVIEW_API_ROOT_DOMAIN);
   const source = hostnameBeforeRoot(sourceHostname, OKOU_PREVIEW_ROOT_DOMAIN);
   if (!source.endsWith(APP_SERVICE_SUFFIX)) {
     return false;
@@ -71,7 +79,6 @@ function previewBypassForTarget(
   if (
     (!isHostnameWithin(location.hostname, OKOU_PREVIEW_ROOT_DOMAIN) &&
       okouAppWorkerPreviewJobRef(location.hostname) === null) ||
-    !isHostnameWithin(targetHostname, PREVIEW_API_ROOT_DOMAIN) ||
     !isCorrespondingPreviewService(
       location.hostname.toLowerCase(),
       targetHostname,

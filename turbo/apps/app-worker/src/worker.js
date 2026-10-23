@@ -14,7 +14,7 @@ const COPPER_CALLBACK_MAX_BODY_BYTES = 16 * 1024;
 const SHARED_THREAD_PATH =
   /^\/share\/threads\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/iu;
 const PREVIEW_API_ORIGIN_PATTERN =
-  /^https:\/\/(?:staging|pr-[0-9]+)-api\.vm6\.ai$/u;
+  /^https:\/\/(?:(?:staging|pr-[0-9]+)-api\.vm6\.ai|okou-api-preview-(?:staging|pr-[1-9][0-9]*)\.vm0\.workers\.dev)$/u;
 const APP_ASSET_PATH_PREFIX = "/okou-app/assets/";
 const APP_API_PREFETCH_PATHS = [
   "/api/feature-switches",

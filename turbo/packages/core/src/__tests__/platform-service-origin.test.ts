@@ -9,7 +9,11 @@ describe("derivePlatformServiceOrigin", () => {
     ["https://staging-app.omby.ai", "https://staging-api.vm6.ai"],
     [
       "https://pr-42-app-okou-app-preview.vm0.workers.dev",
-      "https://pr-42-api.vm6.ai",
+      "https://okou-api-preview-pr-42.vm0.workers.dev",
+    ],
+    [
+      "https://staging-app-okou-app-preview.vm0.workers.dev",
+      "https://staging-api.vm6.ai",
     ],
     ["http://localhost:3002", "http://localhost:3002"],
   ])("maps %s to %s", (origin, expected) => {

@@ -297,6 +297,8 @@ assert.deepEqual(faviconEntries(favicon), [
 ]);
 const sharedThreadId = "10000000-0000-4000-8000-000000000001";
 const previewOrigin = "https://pr-25304-api.vm6.ai";
+const workerPreviewApiOrigin =
+  "https://okou-api-preview-pr-25304.vm0.workers.dev";
 const clerkJsVersion = "6.25.8";
 const previewClerkHost = "informed-calf-6.clerk.accounts.dev";
 const productionClerkHost = "clerk.okou.ai";
@@ -1417,7 +1419,7 @@ assert.deepEqual(
   ],
 );
 for (const { headers, method, url } of observedApiRequests) {
-  assert.equal(url.origin, previewOrigin);
+  assert.equal(url.origin, workerPreviewApiOrigin);
   assert.equal(url.search, "");
   assert.equal(method, "GET");
   assert.equal(headers.get("Origin"), edgePreviewOrigin);
@@ -1728,6 +1730,30 @@ assert.equal(
 assert.equal(
   tagAttribute(previewHtml, "link", "rel", "canonical", "href"),
   null,
+);
+
+const workerPreview = await requestSharedPage({
+  appOrigin: edgePreviewOrigin,
+  query: "?x-vercel-protection-bypass=preview-secret",
+  metaResponse() {
+    return Response.json({
+      title: "Worker preview conversation",
+      publicBrand: "okou",
+    });
+  },
+});
+assert.equal(workerPreview.response.status, 200);
+assert.equal(
+  workerPreview.observedUrl,
+  `${workerPreviewApiOrigin}/api/shared-threads/${sharedThreadId}/meta`,
+);
+assert.equal(
+  workerPreview.observedHeaders.get("x-vercel-protection-bypass"),
+  "preview-secret",
+);
+assert.equal(
+  documentTitle(await workerPreview.response.text()),
+  "Worker preview conversation | Okou",
 );
 
 const production = await requestSharedPage({

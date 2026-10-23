@@ -143,7 +143,7 @@ end
 unless browser_env.fetch("OKOU_AUTH_REDIRECT_URL") == "#{expected_downstream_preview}/_/skeleton"
   raise "browser E2E redirect must stay on the app Worker preview"
 end
-expected_auth_domain = "${{ needs.prepare.outputs.api-preview-url != '' && format('{0}-api.{1}', needs.prepare.outputs.job-ref, vars.PREVIEW_DOMAIN || 'vm6.ai') || '' }}"
+expected_auth_domain = "${{ needs.prepare.outputs.api-preview-url != '' && (github.event_name == 'push' && format('{0}-api.{1}', needs.prepare.outputs.job-ref, vars.PREVIEW_DOMAIN) || format('okou-api-preview-{0}.{1}.workers.dev', needs.prepare.outputs.job-ref, vars.CF_WORKERS_SUBDOMAIN)) || '' }}"
 unless browser_env.fetch("OKOU_AUTH_DOMAIN") == expected_auth_domain
   raise "browser E2E auth domain must stay on the API preview"
 end

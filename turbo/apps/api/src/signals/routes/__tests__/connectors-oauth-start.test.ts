@@ -2379,25 +2379,31 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
     await rejectProviderAuthorization(authorizationUrl);
   });
 
-  it("keeps API-origin OAuth callbacks on the PR API when WWW uses Omby staging", async () => {
-    mockAuthenticatedSession();
-    mockEnv("OKOU_API_BACKEND_URL", "https://pr-19337-api.vm6.ai");
-    mockEnv("OKOU_WEB_URL", "https://staging-www.omby.ai");
+  it.each([
+    "https://pr-19337-api.vm6.ai",
+    "https://okou-api-preview-pr-19337.vm0.workers.dev",
+  ])(
+    "keeps API-origin OAuth callbacks on %s when WWW uses Omby staging",
+    async (previewApiOrigin) => {
+      mockAuthenticatedSession();
+      mockEnv("OKOU_API_BACKEND_URL", previewApiOrigin);
+      mockEnv("OKOU_WEB_URL", "https://staging-www.omby.ai");
 
-    const response = await requestOauthStart("cloudflare", {
-      headers: authHeaders(),
-      origin: "https://pr-19337-api.vm6.ai",
-    });
+      const response = await requestOauthStart("cloudflare", {
+        headers: authHeaders(),
+        origin: previewApiOrigin,
+      });
 
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      "https://pr-19337-api.vm6.ai/api/connectors/cloudflare/callback",
-    );
-    expectCloudflareAuthorizationScopes(authorizationUrl);
-    expectOauthState(authorizationUrl);
-    await rejectProviderAuthorization(authorizationUrl);
-  });
+      expect(response.status).toBe(200);
+      const authorizationUrl = await authorizationUrlFromResponse(response);
+      expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
+        `${previewApiOrigin}/api/connectors/cloudflare/callback`,
+      );
+      expectCloudflareAuthorizationScopes(authorizationUrl);
+      expectOauthState(authorizationUrl);
+      await rejectProviderAuthorization(authorizationUrl);
+    },
+  );
 
   it("uses the canonical API origin when OKOU_API_BACKEND_URL is localhost", async () => {
     mockAuthenticatedSession();

@@ -509,21 +509,29 @@ jobs:
           PREVIEW_DOMAIN="${{ vars.PREVIEW_DOMAIN }}"
           CF_WORKERS_SUBDOMAIN="${{ vars.CF_WORKERS_SUBDOMAIN }}"
 
-          if [ -n "$PREVIEW_DOMAIN" ] && [ -n "$CF_WORKERS_SUBDOMAIN" ] && [ -n "$JOB_REF" ]; then
+          if [ -n "$CF_WORKERS_SUBDOMAIN" ] && [ -n "$JOB_REF" ]; then
             APP_URL="$(bash .github/scripts/resolve-app-preview-url.sh \
               "$JOB_REF" \
               "$CF_WORKERS_SUBDOMAIN")"
+            API_URL="https://okou-api-preview-${JOB_REF}.${CF_WORKERS_SUBDOMAIN}.workers.dev"
+            if [ "$JOB_REF" = "staging" ]; then
+              # Staging retains its standing provider callback endpoints.
+              API_URL=""
+              if [ -n "$PREVIEW_DOMAIN" ]; then
+                API_URL="https://${JOB_REF}-api.${PREVIEW_DOMAIN}"
+              fi
+            fi
             {
               echo "app-url=${APP_URL}"
-              echo "api-url=https://${JOB_REF}-api.${PREVIEW_DOMAIN}"
+              echo "api-url=${API_URL}"
             } >> "$GITHUB_OUTPUT"
-            echo "App preview URL uses ${CF_WORKERS_SUBDOMAIN}.workers.dev; API preview uses ${PREVIEW_DOMAIN}"
+            echo "API preview URL: ${API_URL}"
           else
             {
               echo "app-url="
               echo "api-url="
             } >> "$GITHUB_OUTPUT"
-            echo "Preview URL not set (preview domain or job-ref is empty)"
+            echo "Preview URL not set (Workers subdomain or job-ref is empty)"
           fi
 
   file-size-check:
@@ -1211,7 +1219,8 @@ jobs:
         needs.prepare.outputs.e2e-changed == 'true'
       )
     outputs:
-      preview-url: ${{ steps.api-alias.outputs.url || steps.api-deploy.outputs.url }}
+      preview-url: ${{ github.event_name == 'push' && (steps.api-alias.outputs.url || steps.api-deploy.outputs.url) || steps.api-worker.outputs.url }}
+      worker-deployment-id: ${{ steps.api-worker.outputs.deployment-id }}
     permissions:
       contents: read
       pull-requests: write
@@ -1245,8 +1254,8 @@ jobs:
           app: api
           environment: preview
           job-ref: ${{ needs.prepare.outputs.job-ref }}
-          # Preview API routes stay on the matching preview API instead of
-          # depending on a PR WWW proxy.
+          # PR and merge-group self-calls and callbacks use the tested Worker.
+          # Staging keeps its standing provider callback endpoints.
           web-url: ${{ needs.prepare.outputs.api-preview-url }}
           app-url: ${{ needs.prepare.outputs.app-preview-url }}
           api-backend-url: ${{ needs.prepare.outputs.api-preview-url }}
@@ -1412,33 +1421,33 @@ jobs:
           deployment-id: ${{ steps.api-deploy.outputs.deployment-id }}
           deployment-env: ${{ steps.api-deploy.outputs.deployment-env }}
 
-      - name: Post API preview URL
-        if: github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
-        with:
-          header: api-preview
-          message: |
-            API preview: ${{ steps.api-alias.outputs.url || steps.api-deploy.outputs.url }}
-
       # Reuse the captured source, installed toolchain and resolved API env.
-      # These steps extend deploy-api, so E2E waits for both API deployments.
+      # PR and merge-group E2E receives the verified Worker URL. Staging keeps
+      # its existing API endpoint while continuing the parallel Worker deployment.
       - name: Check Worker deployment contracts and secret handling
         if: >-
           (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+          github.event_name == 'merge_group' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/main')
         run: |
           node --test .github/scripts/api-worker-workflow.test.cjs .github/scripts/api-worker-preview.test.cjs
           pnpm --dir turbo/apps/api test:worker-build
 
       - name: Build and deploy API Worker using the shared preview database
+        id: api-worker
         if: >-
           (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+          github.event_name == 'merge_group' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/main')
         env:
           JOB_REF: ${{ needs.prepare.outputs.job-ref }}
           API_ENV_FILE: ${{ steps.api-deploy-env.outputs.file }}
           # Resolve the existing preview/<ref> branch; deploy-api owns DB setup.
           EXPECTED_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_SOURCE_SHA: ${{ github.sha }}
+          EXPECTED_MERGE_GROUP_REF: ${{ github.event.merge_group.head_ref }}
+          API_PREVIEW_URL: ${{ format('https://okou-api-preview-{0}.{1}.workers.dev', needs.prepare.outputs.job-ref, vars.CF_WORKERS_SUBDOMAIN) }}
+          CF_WORKERS_SUBDOMAIN: ${{ vars.CF_WORKERS_SUBDOMAIN }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}
@@ -1446,6 +1455,14 @@ jobs:
           CF_API_TRACES_DESTINATION: ${{ vars.CF_API_TRACES_DESTINATION }}
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/api-worker-preview.cjs deploy
+
+      - name: Post API preview URL
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: api-preview
+          message: |
+            API preview: ${{ steps.api-worker.outputs.url }}
 
       - name: Remove temporary API runtime environments
         if: always()
@@ -1846,7 +1863,7 @@ jobs:
       cancel-in-progress: true
     # Runs in parallel with deploy-api whenever a deployed E2E consumer may
     # exercise a payment flow. The forward URL is the deterministic
-    # prepare.outputs.api-preview-url (a stable alias, not a deploy-api output),
+    # prepare.outputs.api-preview-url (the deterministic Worker URL),
     # and Stripe webhooks only fire after deploy-api has succeeded — so the
     # listener never forwards to a dead API.
     needs: [prepare]
@@ -1963,7 +1980,7 @@ jobs:
           OKOU_API_BACKEND_URL: ${{ needs.deploy-api.outputs.preview-url }}
           OKOU_AUTH_URL: ${{ needs.deploy-app.outputs.preview-url }}
           OKOU_AUTH_REDIRECT_URL: ${{ needs.deploy-app.outputs.preview-url }}/_/skeleton
-          OKOU_AUTH_DOMAIN: ${{ needs.prepare.outputs.api-preview-url != '' && format('{0}-api.{1}', needs.prepare.outputs.job-ref, vars.PREVIEW_DOMAIN || 'vm6.ai') || '' }}
+          OKOU_AUTH_DOMAIN: ${{ needs.prepare.outputs.api-preview-url != '' && (github.event_name == 'push' && format('{0}-api.{1}', needs.prepare.outputs.job-ref, vars.PREVIEW_DOMAIN) || format('okou-api-preview-{0}.{1}.workers.dev', needs.prepare.outputs.job-ref, vars.CF_WORKERS_SUBDOMAIN)) || '' }}
           JOB_REF: ${{ needs.prepare.outputs.job-ref }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
@@ -2933,6 +2950,9 @@ jobs:
           IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
           RELEASE_PRESENCE_RESULT: ${{ needs.validate-release-presence.result }}
           RELEASE_DEPLOY_APP_RESULT: ${{ needs.deploy-app.result }}
+          API_PREVIEW_REQUIRED: ${{ needs.prepare.outputs.job-ref != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (needs.prepare.outputs.api-changed == 'true' || needs.prepare.outputs.cli-changed == 'true' || needs.prepare.outputs.platform-changed == 'true' || needs.prepare.outputs.ci-changed == 'true' || needs.prepare.outputs.e2e-changed == 'true' || needs.prepare.outputs.crates-changed == 'true') }}
+          DEPLOYED_BROWSER_E2E_REQUIRED: ${{ needs.prepare.outputs.job-ref != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.actor != 'dependabot[bot]' && (needs.prepare.outputs.api-changed == 'true' || needs.prepare.outputs.cli-changed == 'true' || needs.prepare.outputs.platform-changed == 'true' || needs.prepare.outputs.ci-changed == 'true' || needs.prepare.outputs.e2e-changed == 'true') }}
+          STRIPE_LISTENER_REQUIRED: ${{ needs.prepare.outputs.job-ref != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.event_name != 'push' && (needs.prepare.outputs.turbo-runner-consumer-needed == 'true' || needs.prepare.outputs.playwright-runner-consumer-needed == 'true') }}
         run: |
           if [[ "$CI_ADMISSION_RESULT" != "success" ]]; then
             echo "::error::CI admission did not pass ($CI_ADMISSION_RESULT). See the Check PR CI limits job and workflow summary for the reason and retry instructions."
@@ -2995,6 +3015,19 @@ jobs:
             CF_APP_SKIP_ALLOWED="true"
           fi
 
+          API_PREVIEW_SKIP_ALLOWED="true"
+          BROWSER_E2E_SKIP_ALLOWED="true"
+          STRIPE_LISTENER_SKIP_ALLOWED="true"
+          if [ "$API_PREVIEW_REQUIRED" = "true" ]; then
+            API_PREVIEW_SKIP_ALLOWED=""
+          fi
+          if [ "$DEPLOYED_BROWSER_E2E_REQUIRED" = "true" ]; then
+            BROWSER_E2E_SKIP_ALLOWED=""
+          fi
+          if [ "$STRIPE_LISTENER_REQUIRED" = "true" ]; then
+            STRIPE_LISTENER_SKIP_ALLOWED=""
+          fi
+
           CLI_E2E_SKIP_ALLOWED="true"
           if [ "${{ needs.prepare.outputs.cli-e2e-consumer-needed }}" = "true" ] &&
             [ "${{ github.actor == 'dependabot[bot]' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) }}" != "true" ]; then
@@ -3045,12 +3078,12 @@ jobs:
 
           # May-skip: 'success' or 'skipped' are both acceptable
           check_result "test-migrate" "${{ needs.test-migrate.result }}" "true"
-          check_result "deploy-api" "${{ needs.deploy-api.result }}" "true"
+          check_result "deploy-api" "${{ needs.deploy-api.result }}" "$API_PREVIEW_SKIP_ALLOWED"
           check_result "deploy-app" "${{ needs.deploy-app.result }}" "$CF_APP_SKIP_ALLOWED"
-          check_result "deploy-stripe-listener" "${{ needs.deploy-stripe-listener.result }}" "true"
+          check_result "deploy-stripe-listener" "${{ needs.deploy-stripe-listener.result }}" "$STRIPE_LISTENER_SKIP_ALLOWED"
           check_result "prepare-cli" "${{ needs.prepare-cli.result }}" "$CLI_E2E_SKIP_ALLOWED"
-          check_result "cli-e2e-02-browser" "${{ needs.cli-e2e-02-browser.result }}" "true"
-          check_result "cli-e2e-02-playwright" "${{ needs.cli-e2e-02-playwright.result }}" "true"
+          check_result "cli-e2e-02-browser" "${{ needs.cli-e2e-02-browser.result }}" "$BROWSER_E2E_SKIP_ALLOWED"
+          check_result "cli-e2e-02-playwright" "${{ needs.cli-e2e-02-playwright.result }}" "$BROWSER_E2E_SKIP_ALLOWED"
           check_result "cli-e2e-01-serial" "${{ needs.cli-e2e-01-serial.result }}" "$CLI_E2E_SKIP_ALLOWED"
           check_result "cli-e2e-03-runner-prepare" "${{ needs.cli-e2e-03-runner-prepare.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
           check_result "cli-e2e-03-runner-bootstrap" "${{ needs.cli-e2e-03-runner-bootstrap.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
@@ -3060,3 +3093,23 @@ jobs:
 
           echo "::endgroup::"
           exit $FAILED
+
+      - name: Check out the tested API Worker source
+        if: needs.deploy-api.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify API Worker deployment after E2E
+        if: needs.deploy-api.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+        env:
+          JOB_REF: ${{ needs.prepare.outputs.job-ref }}
+          EXPECTED_SOURCE_SHA: ${{ github.sha }}
+          API_PREVIEW_URL: ${{ format('https://okou-api-preview-{0}.{1}.workers.dev', needs.prepare.outputs.job-ref, vars.CF_WORKERS_SUBDOMAIN) }}
+          CF_WORKERS_SUBDOMAIN: ${{ vars.CF_WORKERS_SUBDOMAIN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}
+          EXPECTED_DEPLOYMENT_ID: ${{ needs.deploy-api.outputs.worker-deployment-id }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: node .github/scripts/api-worker-preview.cjs verify
