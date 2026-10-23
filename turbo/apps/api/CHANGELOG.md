@@ -9,6 +9,41 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.1.0](https://github.com/okou-ai/okou/compare/api-v2.0.0...api-v2.1.0) (2026-10-23)
+
+
+### Features
+
+* **browser:** add feature-gated cdp viewer ([#42535](https://github.com/okou-ai/okou/issues/42535)) ([a489e1d](https://github.com/okou-ai/okou/commit/a489e1d3e2c492ed3a2c83f4eccf60ccf0349df0))
+* **slack:** decouple connections and scope external channel access ([#42486](https://github.com/okou-ai/okou/issues/42486)) ([b82249e](https://github.com/okou-ai/okou/commit/b82249e6de08bb61974dc5503f2ee5adc85cd1ee))
+
+
+### Refactoring
+
+* **api:** delete failed dormant materializations atomically ([#42601](https://github.com/okou-ai/okou/issues/42601)) ([c010789](https://github.com/okou-ai/okou/commit/c01078912838d4eff4b8788817aa0143bc8c87d5))
+* **api:** own custom connector agent grant orchestration ([#42595](https://github.com/okou-ai/okou/issues/42595)) ([e26910d](https://github.com/okou-ai/okou/commit/e26910d8b31449114cda81f323a9efa07cfeca54))
+* **api:** publish benchmark runs and identities atomically ([#42460](https://github.com/okou-ai/okou/issues/42460)) ([c6017b4](https://github.com/okou-ai/okou/commit/c6017b48554833c4c62779ed641bde30a16eba86))
+* **api:** retire official workflow cutover compatibility ([#42564](https://github.com/okou-ai/okou/issues/42564)) ([beb38c7](https://github.com/okou-ai/okou/commit/beb38c7a00af109c0da26128b7c6cac974b1b291))
+* remove legacy job command alias ([#42569](https://github.com/okou-ai/okou/issues/42569)) ([ae62417](https://github.com/okou-ai/okou/commit/ae6241774c2095d22ada2dc048c4a8f6649516a1))
+* retire durable openai image generation switch ([#42594](https://github.com/okou-ai/okou/issues/42594)) ([a5e1f4c](https://github.com/okou-ai/okou/commit/a5e1f4c35c9f3d7ef1824fe9fa47bd4ffbb472d7))
+* retire stripe invoice-paid automation runtime ([#42572](https://github.com/okou-ai/okou/issues/42572)) ([190cdfb](https://github.com/okou-ai/okou/commit/190cdfba6440b50469117758156616447d707b81))
+* **workflows:** prepare attachments outside storage ([#42563](https://github.com/okou-ai/okou/issues/42563)) ([c2d0e48](https://github.com/okou-ai/okou/commit/c2d0e488e938512e55dce8ab199046a7f16d7b1c))
+
+
+### Performance Improvements
+
+* download authorized files directly from providers ([#42546](https://github.com/okou-ai/okou/issues/42546)) ([1b0a44c](https://github.com/okou-ai/okou/commit/1b0a44c01821d2825c8022560b08b70c0f41130b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.1.0
+    * @okouai/core bumped to 8.783.0
+    * @okouai/db bumped to 2.1.0
+    * @okouai/pi-agent-runtime bumped to 1.50.61
+
 ## [2.0.0](https://github.com/okou-ai/okou/compare/api-v1.767.0...api-v2.0.0) (2026-10-23)
 
 

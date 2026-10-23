@@ -12,6 +12,41 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1058.0](https://github.com/okou-ai/okou/compare/app-v0.1057.1...app-v0.1058.0) (2026-10-23)
+
+
+### Features
+
+* **browser:** add feature-gated cdp viewer ([#42535](https://github.com/okou-ai/okou/issues/42535)) ([a489e1d](https://github.com/okou-ai/okou/commit/a489e1d3e2c492ed3a2c83f4eccf60ccf0349df0))
+* **slack:** decouple connections and scope external channel access ([#42486](https://github.com/okou-ai/okou/issues/42486)) ([b82249e](https://github.com/okou-ai/okou/commit/b82249e6de08bb61974dc5503f2ee5adc85cd1ee))
+
+
+### Bug Fixes
+
+* **app:** limit user message action hover to content ([#42555](https://github.com/okou-ai/okou/issues/42555)) ([35a6a05](https://github.com/okou-ai/okou/commit/35a6a05a362ac68650426f78e2097fedaa231ae1))
+* **app:** match hosted site share menu spacing to artifacts ([#42561](https://github.com/okou-ai/okou/issues/42561)) ([ff47c79](https://github.com/okou-ai/okou/commit/ff47c791808b501fe3c90aca92a19dab5354d0a6))
+* **app:** refine email list spacing and draft selection ([#42576](https://github.com/okou-ai/okou/issues/42576)) ([9f9f71b](https://github.com/okou-ai/okou/commit/9f9f71b5d29496508fc4d7a35ed25e2d9b37d94e))
+* authorize hosted sites before showing access errors ([#42571](https://github.com/okou-ai/okou/issues/42571)) ([e0d907a](https://github.com/okou-ai/okou/commit/e0d907ac48e586fc4287cc33ecd751bda9b9bfa4))
+
+
+### Refactoring
+
+* retire stripe invoice-paid automation runtime ([#42572](https://github.com/okou-ai/okou/issues/42572)) ([190cdfb](https://github.com/okou-ai/okou/commit/190cdfba6440b50469117758156616447d707b81))
+
+
+### Performance Improvements
+
+* download authorized files directly from providers ([#42546](https://github.com/okou-ai/okou/issues/42546)) ([1b0a44c](https://github.com/okou-ai/okou/commit/1b0a44c01821d2825c8022560b08b70c0f41130b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.1.0
+    * @okouai/core bumped to 8.783.0
+    * @okouai/ui bumped to 1.18.1
+
 ## [0.1057.1](https://github.com/okou-ai/okou/compare/app-v0.1057.0...app-v0.1057.1) (2026-10-23)
 
 

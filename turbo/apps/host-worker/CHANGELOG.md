@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.8.2](https://github.com/okou-ai/okou/compare/host-worker-v1.8.1...host-worker-v1.8.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* authorize hosted sites before showing access errors ([#42571](https://github.com/okou-ai/okou/issues/42571)) ([e0d907a](https://github.com/okou-ai/okou/commit/e0d907ac48e586fc4287cc33ecd751bda9b9bfa4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.1.0
+    * @okouai/core bumped to 8.783.0
+    * @okouai/ui bumped to 1.18.1
+
 ## [1.8.1](https://github.com/okou-ai/okou/compare/host-worker-v1.8.0...host-worker-v1.8.1) (2026-10-23)
 
 
