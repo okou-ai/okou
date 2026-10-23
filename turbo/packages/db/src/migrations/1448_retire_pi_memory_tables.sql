@@ -1,15 +1,36 @@
 -- The storage-independent API is already serving and its predecessor drained.
 -- Apply this contraction in the ordinary pre-promotion migration batch.
 DO $$
+DECLARE
+  present_tables integer;
 BEGIN
-  IF EXISTS (SELECT 1 FROM pi_memory_stage1_candidates WHERE status = 'leased')
-    OR EXISTS (
-      SELECT 1 FROM pi_memory_phase2_jobs
-      WHERE status = 'leased' OR maintenance_run_id IS NOT NULL
-    )
-    OR EXISTS (SELECT 1 FROM memory_summary_projections WHERE status = 'running')
-  THEN
-    RAISE EXCEPTION 'Pi memory retirement requires extraction, maintenance and projection leases to drain';
+  SELECT COUNT(*) INTO present_tables
+  FROM unnest(ARRAY[
+    'public.memory_summary_projections',
+    'public.pi_memory_publication_provenance',
+    'public.pi_memory_phase2_jobs',
+    'public.pi_memory_stage1_watermarks',
+    'public.pi_memory_stage1_selections',
+    'public.pi_memory_stage1_days',
+    'public.pi_memory_stage1_candidates'
+  ]) AS retired(table_name)
+  WHERE to_regclass(retired.table_name) IS NOT NULL;
+
+  -- Preview parents may already have applied the withdrawn 1444 contraction.
+  IF present_tables NOT IN (0, 7) THEN
+    RAISE EXCEPTION 'Pi memory retirement requires all seven tables or a fully contracted schema';
+  END IF;
+
+  IF present_tables = 7 THEN
+    IF EXISTS (SELECT 1 FROM pi_memory_stage1_candidates WHERE status = 'leased')
+      OR EXISTS (
+        SELECT 1 FROM pi_memory_phase2_jobs
+        WHERE status = 'leased' OR maintenance_run_id IS NOT NULL
+      )
+      OR EXISTS (SELECT 1 FROM memory_summary_projections WHERE status = 'running')
+    THEN
+      RAISE EXCEPTION 'Pi memory retirement requires extraction, maintenance and projection leases to drain';
+    END IF;
   END IF;
 
   IF EXISTS (
@@ -51,6 +72,11 @@ DECLARE
   expected_blobs bigint;
   released_blobs bigint;
 BEGIN
+  -- A previous complete contraction already released these candidate retains.
+  IF to_regclass('public.pi_memory_stage1_candidates') IS NULL THEN
+    RETURN;
+  END IF;
+
   SELECT COUNT(DISTINCT source_history_hash)
   INTO expected_blobs
   FROM pi_memory_stage1_candidates;
@@ -78,19 +104,19 @@ UPDATE user_feature_switches
 SET switches = switches - 'piMemory'
 WHERE switches ? 'piMemory';
 --> statement-breakpoint
-DROP INDEX "idx_agent_run_callbacks_pi_memory";
+DROP INDEX IF EXISTS "idx_agent_run_callbacks_pi_memory";
 --> statement-breakpoint
 -- RESTRICT is intentional: unexpected consumers must stop the contraction.
-DROP TABLE "memory_summary_projections";
+DROP TABLE IF EXISTS "memory_summary_projections";
 --> statement-breakpoint
-DROP TABLE "pi_memory_publication_provenance";
+DROP TABLE IF EXISTS "pi_memory_publication_provenance";
 --> statement-breakpoint
-DROP TABLE "pi_memory_phase2_jobs";
+DROP TABLE IF EXISTS "pi_memory_phase2_jobs";
 --> statement-breakpoint
-DROP TABLE "pi_memory_stage1_watermarks";
+DROP TABLE IF EXISTS "pi_memory_stage1_watermarks";
 --> statement-breakpoint
-DROP TABLE "pi_memory_stage1_selections";
+DROP TABLE IF EXISTS "pi_memory_stage1_selections";
 --> statement-breakpoint
-DROP TABLE "pi_memory_stage1_days";
+DROP TABLE IF EXISTS "pi_memory_stage1_days";
 --> statement-breakpoint
-DROP TABLE "pi_memory_stage1_candidates";
+DROP TABLE IF EXISTS "pi_memory_stage1_candidates";

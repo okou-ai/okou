@@ -50,7 +50,7 @@ INSERT INTO pi_memory_phase2_jobs VALUES ('dormant-job', 'pending', NULL);
 INSERT INTO memory_summary_projections VALUES ('projection', 'ready');
 `;
 
-/** Replay the contraction and a following migration in owned disposable DBs. */
+/** Replay normal and already-contracted preview schemas in disposable DBs. */
 export async function validatePiMemoryRetirement(
   databaseUrl: string,
 ): Promise<void> {
@@ -70,6 +70,10 @@ export async function validatePiMemoryRetirement(
     await writeFile(path.join(migrations, "0000_baseline.sql"), baseline);
     await writeFile(path.join(migrations, "0001_retire_pi_memory.sql"), source);
     await writeFile(
+      path.join(migrations, "0003_already_contracted.sql"),
+      source,
+    );
+    await writeFile(
       path.join(migrations, "0002_following.sql"),
       "CREATE TABLE following_release (id integer PRIMARY KEY);",
     );
@@ -78,17 +82,20 @@ export async function validatePiMemoryRetirement(
       JSON.stringify({
         version: "7",
         dialect: "postgresql",
-        entries: ["baseline", "retire_pi_memory", "following"].map(
-          (tag, index) => {
-            return {
-              idx: index,
-              version: "7",
-              when: index + 1,
-              tag: `${String(index).padStart(4, "0")}_${tag}`,
-              breakpoints: true,
-            };
-          },
-        ),
+        entries: [
+          "baseline",
+          "retire_pi_memory",
+          "following",
+          "already_contracted",
+        ].map((tag, index) => {
+          return {
+            idx: index,
+            version: "7",
+            when: index + 1,
+            tag: `${String(index).padStart(4, "0")}_${tag}`,
+            breakpoints: true,
+          };
+        }),
       }),
     );
     process.chdir(directory);
@@ -104,6 +111,7 @@ export async function validatePiMemoryRetirement(
       "unsettled-maintenance-usage",
       "blob-undercount",
       "dependent-view",
+      "partial-schema",
     ]) {
       const name = `pi_memory_retirement_${randomUUID().replaceAll("-", "")}`;
       await admin.unsafe(`CREATE DATABASE "${name}"`);
@@ -179,6 +187,14 @@ export async function validatePiMemoryRetirement(
             Array.from(await sql`SELECT * FROM following_release`),
             [{ id: 1 }],
           );
+          assert.deepEqual(
+            Array.from(
+              await sql`SELECT created_at::text FROM drizzle.__drizzle_migrations ORDER BY created_at`,
+            ),
+            ["1", "2", "3", "4"].map((createdAt) => {
+              return { created_at: createdAt };
+            }),
+          );
           continue;
         }
         if (scenario === "extraction-lease")
@@ -201,6 +217,8 @@ export async function validatePiMemoryRetirement(
           await sql`UPDATE blobs SET ref_count = 1 WHERE hash = 'shared-history'`;
         if (scenario === "dependent-view")
           await sql`CREATE VIEW candidate_consumer AS SELECT * FROM pi_memory_stage1_candidates`;
+        if (scenario === "partial-schema")
+          await sql`DROP TABLE pi_memory_publication_provenance`;
         const state = async () => {
           const result = [await preserved()];
           result.push(
