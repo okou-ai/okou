@@ -1308,7 +1308,7 @@ jobs:
           echo "Running production migrations on production"
           cd turbo
           result_file="$RUNNER_TEMP/production-migration-result.json"
-          pnpm -F @okouai/db db:migrate --defer 1444_retire_pi_memory.sql --result-file "$result_file"
+          pnpm -F @okouai/db db:migrate --result-file "$result_file"
           jq -r '"deferred_migration=\(.deferredMigration // "")"' "$result_file" >> "$GITHUB_OUTPUT"
         env:
           DATABASE_URL: ${{ steps.get-db-url.outputs.database-url }}

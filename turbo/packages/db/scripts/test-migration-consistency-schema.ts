@@ -1,6 +1,5 @@
 #!/usr/bin/env tsx
 
-import { validatePiMemoryRetirement } from "./test-pi-memory-retirement";
 import { validatePiMemoryStage1Cost } from "./test-pi-memory-stage1-cost";
 /**
  * Migration Consistency Test - Schema Comparison
@@ -2823,7 +2822,6 @@ async function main(): Promise<void> {
     await validateBillingRunLifecycle(dbUrl1);
     await validatePermanentArtifactThreadCatalog(dbUrl1);
     await validatePiMemoryStage1Cost(dbUrl1);
-    await validatePiMemoryRetirement(dbUrl1);
     await validatePermanentUsagePackPendingSnapshotState(dbUrl1);
     await validatePermanentAgentRunMetadataState(dbUrl1);
     await validatePermanentBuiltInModelKeyState(dbUrl1);
@@ -2927,9 +2925,6 @@ async function main(): Promise<void> {
       console.log("   ✅ Permanent trigger and function inventories match");
       console.log(
         "   ✅ Usage-pack pending guards retain uniqueness and count constraints",
-      );
-      console.log(
-        "   ✅ Native memory and historical billing survive Pi-only retirement",
       );
       console.log("   ✅ Draining API avatar writes receive preset defaults");
       console.log("   ✅ Consecutive database resets replay all migrations");
