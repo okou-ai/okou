@@ -542,7 +542,8 @@
       "upload": "Unggah ke Google Drive",
       "uploadDocs": "Unggah ke Google Docs",
       "uploadSheets": "Unggah ke Google Sheets",
-      "uploadSlides": "Unggah ke Google Slides"
+      "uploadSlides": "Unggah ke Google Slides",
+      "viewIt": "Lihat"
     },
     "jsonPreview": {
       "allShown": "Semua item ditampilkan",

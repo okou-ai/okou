@@ -543,7 +543,8 @@
       "upload": "Upload to Google Drive",
       "uploadDocs": "Upload to Google Docs",
       "uploadSheets": "Upload to Google Sheets",
-      "uploadSlides": "Upload to Google Slides"
+      "uploadSlides": "Upload to Google Slides",
+      "viewIt": "View it"
     },
     "jsonPreview": {
       "allShown": "All items shown",

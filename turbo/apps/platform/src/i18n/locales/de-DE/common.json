@@ -543,7 +543,8 @@
       "upload": "Auf Google Drive hochladen",
       "uploadDocs": "In Google Docs hochladen",
       "uploadSheets": "In Google Sheets hochladen",
-      "uploadSlides": "Auf Google Slides hochladen"
+      "uploadSlides": "Auf Google Slides hochladen",
+      "viewIt": "Ansehen"
     },
     "jsonPreview": {
       "allShown": "Alle Einträge angezeigt",
