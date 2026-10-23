@@ -1120,7 +1120,7 @@ describe("okou generate image command", () => {
     },
   );
 
-  it("polls and reconciles the same job to completion without webhook or realtime delivery", async () => {
+  it("polls the same job to completion when realtime is unavailable", async () => {
     let submissions = 0;
     let refreshes = 0;
     let queries = 0;
@@ -1186,7 +1186,6 @@ describe("okou generate image command", () => {
       ...IMAGE_RESULT,
       previewMarkdownBlock: `![${IMAGE_RESULT.filename}](<${IMAGE_RESULT.url}>)`,
     });
-    expect(ablyRealtimeFake.clients).toHaveLength(0);
   });
 
   it("prints a completed image while cancelling unfinished token redemption", async () => {

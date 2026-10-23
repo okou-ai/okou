@@ -233,7 +233,6 @@ import { webhooksAgentSessionOutputRoutes } from "./routes/webhooks-agent-sessio
 import { webhooksAgentStorageRoutes } from "./routes/webhooks-agent-storage";
 import { runnersStartupRoutes } from "./routes/runners-startup";
 import { webhooksBuiltInGenerationRoutes } from "./routes/webhooks-built-in-generations";
-import { webhooksOpenaiImagesRoutes } from "./routes/webhooks-openai-images";
 import { webhooksClerkRoutes } from "./routes/webhooks-clerk";
 import { webhooksGithubRoutes } from "./routes/webhooks-github";
 import { webhooksGmailRoutes } from "./routes/webhooks-gmail";
@@ -262,7 +261,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronReconcileImageGenerationsRoutes,
   ...webhooksClerkRoutes,
   ...webhooksBuiltInGenerationRoutes,
-  ...webhooksOpenaiImagesRoutes,
   ...webhooksGithubRoutes,
   ...webhooksGmailRoutes,
   ...webhooksGoogleFormsRoutes,

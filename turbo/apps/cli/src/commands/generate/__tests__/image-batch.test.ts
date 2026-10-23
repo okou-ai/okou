@@ -689,6 +689,56 @@ if (args[0] === "stop") {
     );
   });
 
+  it("reports the original uncertain submission as failed batch work", async () => {
+    const root = await makeTemporaryDirectory();
+    const manifestPath = join(root, "images.tsv");
+    const stateDirectory = join(root, "state");
+    await writeFile(manifestPath, "hero\tA blue circle\n", "utf8");
+    await mkdir(stateDirectory);
+    server.use(
+      http.post(
+        IMAGE_URL,
+        () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "OPENAI_IMAGE_SUBMISSION_UNKNOWN",
+                message: "Original submission outcome is unknown",
+              },
+            },
+            { status: 503 },
+          );
+        },
+        { once: true },
+      ),
+      http.post(IMAGE_URL, () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "GENERATION_PROVIDER_UNAVAILABLE",
+              message: "A later submission failed",
+            },
+          },
+          { status: 503 },
+        );
+      }),
+    );
+    await generateCommand.parseAsync([
+      "node",
+      "cli",
+      "image-batch",
+      "__run",
+      manifestPath,
+      stateDirectory,
+    ]);
+    await expect(readFile(join(stateDirectory, "done"), "utf8")).resolves.toBe(
+      "1\n",
+    );
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "Original submission outcome is unknown",
+    );
+  });
+
   it.each([
     "request-timeout",
     "refresh-503",

@@ -158,7 +158,10 @@ function shouldRetry(error: unknown): boolean {
     return false;
   }
   if (error instanceof ApiRequestError) {
-    return error.status === 429 || error.status >= 500;
+    return (
+      error.code !== "OPENAI_IMAGE_SUBMISSION_UNKNOWN" &&
+      (error.status === 429 || error.status >= 500)
+    );
   }
   return (
     error instanceof Error &&
