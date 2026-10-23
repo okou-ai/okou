@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { VNC_RSA_AES_FIELD_MAX_BYTES } from "./vnc-rsa-aes";

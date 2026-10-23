@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { logger } from "../../lib/log";
 import { discordSnowflakeSchema, discordUserSchema } from "./discord-client";
 import { safeJsonParse, settle } from "../utils";

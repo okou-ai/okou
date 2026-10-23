@@ -1,7 +1,7 @@
 import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { z } from "zod";
+import * as z from "zod";
 
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 export const vncObservationChangedPayloadSchema = z
   .object({ orgId: z.string().min(1) })

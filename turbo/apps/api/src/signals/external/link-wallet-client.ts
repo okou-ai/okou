@@ -1,5 +1,5 @@
 import { Link, LinkResponseError, LinkTransportError } from "@stripe/link-sdk";
-import { z } from "zod";
+import * as z from "zod";
 
 import { settleIncludingAbort } from "../utils";
 

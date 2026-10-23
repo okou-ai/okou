@@ -9,7 +9,7 @@ import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { and, eq, inArray, ne, exists, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,

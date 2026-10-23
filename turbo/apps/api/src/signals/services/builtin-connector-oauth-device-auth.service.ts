@@ -35,7 +35,7 @@ import { builtinConnectorOauthDeviceAuthorizationSessions } from "@okouai/db/sch
 import { connectors } from "@okouai/db/schema/connector";
 import { command } from "ccstate";
 import { and, eq, inArray, lt, ne, or, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { badRequestMessage, notFound } from "../../lib/error";

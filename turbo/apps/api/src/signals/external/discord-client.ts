@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { discordSnowflakeSchema } from "@okouai/api-contracts/contracts/integrations-discord-read";
 import {
   discordApplicationSchema,

@@ -4,7 +4,7 @@ import {
 } from "@okouai/db/schema/workflow";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { badRequestMessage } from "../../lib/error";
-import { z } from "zod";
+import * as z from "zod";
 import {
   parseRawRows,
   pgTimestampWithoutTimezoneToDateSchema,

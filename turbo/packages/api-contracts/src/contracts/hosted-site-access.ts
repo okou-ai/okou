@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 export const HOSTED_SITE_AUTHORIZATION_PATH = "/hosted-site-authorize";
 export const HOSTED_SITE_AUTH_CALLBACK_PATH = "/.okou/auth/callback";

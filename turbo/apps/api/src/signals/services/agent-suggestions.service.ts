@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { z } from "zod";
+import * as z from "zod";
 import { command } from "ccstate";
 import { and, eq, not, sql } from "drizzle-orm";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";

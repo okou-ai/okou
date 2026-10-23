@@ -43,7 +43,7 @@ import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
 import { command, computed, type Computed } from "ccstate";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import {
   completedGetStartedQuestSql,
   memberRewardWalletQuery,

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 import { feishuOrgCallbackFileSchema } from "./feishu-org-callback-payload";
 

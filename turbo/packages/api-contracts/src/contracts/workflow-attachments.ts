@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 export const WORKFLOW_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
 export const WORKFLOW_ATTACHMENT_MAX_FILES = 500;

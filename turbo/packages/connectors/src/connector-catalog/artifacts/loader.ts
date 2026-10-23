@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { z } from "zod";
+import * as z from "zod";
 
 import {
   CONNECTOR_CATALOG_MAX_RAW_BYTES,

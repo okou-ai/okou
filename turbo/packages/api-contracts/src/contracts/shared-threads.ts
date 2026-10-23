@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 import { apiErrorSchema, type ApiErrorResponse } from "./errors";
 import { authHeadersSchema, initContract } from "./base";

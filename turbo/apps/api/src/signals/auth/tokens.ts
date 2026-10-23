@@ -11,7 +11,7 @@ import {
   workflowImportSourceSchema,
   type WorkflowImportSource,
 } from "@okouai/api-contracts/contracts/workflows";
-import { z } from "zod";
+import * as z from "zod";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 
 import { env } from "../../lib/env";

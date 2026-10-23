@@ -12,7 +12,7 @@ import {
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
-import { z } from "zod";
+import * as z from "zod";
 import {
   pgBooleanDecoder,
   pgTextDecoder,

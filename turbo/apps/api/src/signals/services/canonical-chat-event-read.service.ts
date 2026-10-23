@@ -3,7 +3,7 @@ import { userMessageDocumentSchema } from "@okouai/api-contracts/contracts/chat-
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { sql, type SQLWrapper } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
 import {

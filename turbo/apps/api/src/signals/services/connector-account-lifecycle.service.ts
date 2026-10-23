@@ -50,7 +50,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import type { Tx } from "../../lib/db-types";
 import { pgTextDecoder } from "../../lib/db-structured-result";

@@ -12,7 +12,7 @@ import { writeDb$ } from "../external/db";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
-import { z } from "zod";
+import * as z from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   integrationChatThreadInsertFromRouteSql,

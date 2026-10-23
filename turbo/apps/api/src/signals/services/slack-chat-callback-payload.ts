@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 export const slackChatCallbackPayloadSchema = z.object({
   workspaceId: z.string().optional(),

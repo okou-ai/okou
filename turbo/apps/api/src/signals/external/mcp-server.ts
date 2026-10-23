@@ -39,7 +39,7 @@ import {
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
 import type { AppRoute } from "@okouai/api-contracts/contracts/trpc-contract";
-import { z } from "zod";
+import * as z from "zod";
 import { requestValidationError } from "@okouai/api-contracts/contracts/errors";
 import { onRejection, settleIncludingAbort } from "../utils";
 

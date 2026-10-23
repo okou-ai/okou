@@ -35,7 +35,7 @@ import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { command } from "ccstate";
 import { and, asc, desc, eq, isNotNull, lte, max, not, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";

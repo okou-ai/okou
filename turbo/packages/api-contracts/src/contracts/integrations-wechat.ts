@@ -1,5 +1,5 @@
 import { wechatUpdatesSchema } from "./wechat-protocol";
-import { z } from "zod";
+import * as z from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 const c = initContract();

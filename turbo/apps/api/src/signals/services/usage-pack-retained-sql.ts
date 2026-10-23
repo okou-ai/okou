@@ -1,6 +1,6 @@
 import { getTableColumns, is, sql, SQL, type Column } from "drizzle-orm";
 import { PgDialect, PgColumn, type PgTable } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 import { contextProjectionSchema } from "./context-rowset";
 
 export type UsagePackRetainedStep =

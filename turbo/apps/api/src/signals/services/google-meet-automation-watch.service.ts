@@ -3,7 +3,7 @@ import { googleWorkspaceEventSubscriptionStates } from "@okouai/db/schema/google
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, isNotNull, notExists, or, sql, type SQL } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { optionalEnv } from "../../lib/env";
 import { isForeignKeyViolation } from "../../lib/pg-errors";

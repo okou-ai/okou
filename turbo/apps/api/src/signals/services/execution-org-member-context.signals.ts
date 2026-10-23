@@ -1,6 +1,6 @@
 import { computed } from "ccstate";
 import { sql, type SQL } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { CONNECTOR_CATALOG_VALIDATION_FAILURE_CODES } from "@okouai/connectors/connector-catalog/contracts";
 
 export const connectorCatalogSyncFailureCodeSchema = z.enum([

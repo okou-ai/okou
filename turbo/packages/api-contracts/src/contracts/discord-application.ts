@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 /** Discord's application metadata, not a guild or channel authorization grant. */
 export const discordApplicationSchema = z

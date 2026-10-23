@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { agentResponseSchema } from "./agents";
 import { initContract } from "./base";
 import { CHAT_SEARCH_RESULT_LIMIT, chatSearchContract } from "./chat-threads";

@@ -28,7 +28,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { githubUserLinks } from "@okouai/db/schema/github-user-link";
-import { z } from "zod";
+import * as z from "zod";
 import { command } from "ccstate";
 
 import { db$, writeDb$ } from "../external/db";

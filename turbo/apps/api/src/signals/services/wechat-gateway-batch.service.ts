@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { z } from "zod";
+import * as z from "zod";
 import { and, eq } from "drizzle-orm";
 import { wechatConnections, wechatMessages } from "@okouai/db/schema/wechat";
 import {

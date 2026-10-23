@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { agentRuns } from "../runtime/agent-run";
 export function agentRunDeletionMembership(agentIds: readonly string[]) {
   return eq(agentRuns.agentId, sql`ANY(${sql.param(agentIds)}::uuid[])`);

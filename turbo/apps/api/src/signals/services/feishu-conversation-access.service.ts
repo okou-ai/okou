@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { db$, writeDb$ } from "../external/db";

@@ -22,7 +22,7 @@ import {
   QueryBuilder,
   type WithSubqueryWithSelection,
 } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";

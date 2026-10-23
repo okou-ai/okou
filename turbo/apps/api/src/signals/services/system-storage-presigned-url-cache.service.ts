@@ -7,7 +7,7 @@ import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage
 import { command, computed, type Computed } from "ccstate";
 import { and, eq, inArray, like, lte, sql, type SQL } from "drizzle-orm";
 import { createHash } from "node:crypto";
-import { z } from "zod";
+import * as z from "zod";
 import {
   withPgPoolAcquisitionCapture,
   type PgPoolAcquisition,

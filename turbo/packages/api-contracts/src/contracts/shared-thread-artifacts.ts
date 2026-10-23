@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { linkLayoutSegmentSchema, type LinkLayoutSegment } from "./link-layout";
 import { artifactSharePolicySchema } from "./artifact-shares";
 

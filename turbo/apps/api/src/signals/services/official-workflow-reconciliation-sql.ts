@@ -15,7 +15,7 @@ import {
   workflows,
 } from "@okouai/db/schema/workflow";
 import { and, eq, sql, type SQL } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import {
   acceptedCatalogFromRow,

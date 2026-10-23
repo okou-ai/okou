@@ -21,7 +21,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
-import { z } from "zod";
+import * as z from "zod";
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";

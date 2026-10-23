@@ -3,7 +3,7 @@ import type {
   DataSearchRequest,
 } from "@okouai/api-contracts/contracts/data-search";
 import { isDeepStrictEqual } from "node:util";
-import { z } from "zod";
+import * as z from "zod";
 
 import { env } from "../../lib/env";
 import { firecrawlDataSearchCapabilities } from "./data-search-firecrawl-catalog";

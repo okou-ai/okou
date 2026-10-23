@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import {
   integrationsWechatUploadInitContract,
   integrationsWechatUploadMaterializeContract,

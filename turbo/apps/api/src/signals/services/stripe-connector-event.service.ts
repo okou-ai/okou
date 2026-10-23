@@ -1,7 +1,7 @@
 import { connectors } from "@okouai/db/schema/connector";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 const paymentMethod = z.object({
   id: z.string().regex(/^[A-Za-z0-9_-]{1,256}$/),

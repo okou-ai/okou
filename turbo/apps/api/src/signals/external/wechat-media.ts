@@ -11,7 +11,7 @@ import {
   createHash,
   randomBytes,
 } from "node:crypto";
-import { z } from "zod";
+import * as z from "zod";
 import type { WechatAttachment } from "@okouai/db/jsonb-contracts/wechat";
 import { MAX_WECHAT_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/integrations-wechat-files";
 import { wechatItemSchema } from "@okouai/api-contracts/contracts/wechat-protocol";

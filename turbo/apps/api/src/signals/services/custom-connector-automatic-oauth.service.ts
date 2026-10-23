@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import type { OAuthClientMetadata } from "@modelcontextprotocol/client";
 import { and, count, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import {
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
   type CustomConnectorAutomaticOAuthErrorCode,

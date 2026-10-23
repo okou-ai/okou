@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { formatRunBalanceError } from "./run-balance-errors";
 import type { ModelProviderType } from "./model-providers";
 import type { ModelProviderFramework } from "./model-provider-types";

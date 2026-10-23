@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { initContract, authHeadersSchema } from "./base";
 import { connectorOauthCallbackResultSchema } from "./connectors-slug-callback";
 import { connectorCompletedOperationResponseSchema } from "./connector-schemas";

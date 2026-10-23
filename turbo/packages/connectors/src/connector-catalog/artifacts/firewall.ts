@@ -7,7 +7,7 @@ import {
   validateBaseUrlHostPolicy,
 } from "../../firewall-types";
 import { collectAndValidatePermissions } from "../../firewall-expander";
-import { z } from "zod";
+import * as z from "zod";
 
 import { connectorSlugSchema, privateNameSchema } from "./common";
 import { ConnectorCatalogRelationshipError } from "./relationship-error";

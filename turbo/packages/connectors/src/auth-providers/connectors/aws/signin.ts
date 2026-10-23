@@ -10,7 +10,7 @@ import {
   type KeyObject,
 } from "node:crypto";
 
-import { z } from "zod";
+import * as z from "zod";
 
 import { OAuthProviderHttpError } from "../../oauth/error";
 import { ProviderResponseError } from "../../provider-error";

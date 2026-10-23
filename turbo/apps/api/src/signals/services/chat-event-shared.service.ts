@@ -20,7 +20,7 @@ import {
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { writeDb$ } from "../external/db";
-import { z } from "zod";
+import * as z from "zod";
 import { settleIncludingAbort } from "../utils";
 import {
   publishChatThreadMessageCreatedSafely,

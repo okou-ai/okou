@@ -10,7 +10,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import type { ProactiveWorkflowKind } from "@okouai/api-contracts/contracts/proactive";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { workflows } from "@okouai/db/schema/workflow";

@@ -17,7 +17,7 @@ import {
   type ExecutionFirewalls,
   type NetworkPolicies,
 } from "@okouai/connectors/firewall-types";
-import { z } from "zod";
+import * as z from "zod";
 import type { PiModelConfigObservation } from "../../lib/pi-model-config-observation";
 
 type UnknownRecord = Record<string, unknown>;

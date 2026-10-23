@@ -5,7 +5,7 @@ import {
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { z } from "zod";
+import * as z from "zod";
 import { randomUUID } from "node:crypto";
 import {
   chatThreadEventInsertPlan,

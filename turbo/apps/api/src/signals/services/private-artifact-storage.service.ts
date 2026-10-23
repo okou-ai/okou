@@ -6,7 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import {
   CURRENT_LINK_LAYOUT,
   linkLayoutFromSegment,

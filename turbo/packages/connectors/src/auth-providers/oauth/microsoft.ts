@@ -1,5 +1,5 @@
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
-import { z } from "zod";
+import * as z from "zod";
 
 import { throwOAuthError } from "./error";
 import { effectiveOAuthScopes, reportedOAuthScopes } from "./scope";

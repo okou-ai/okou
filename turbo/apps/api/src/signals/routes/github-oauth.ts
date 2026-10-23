@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { eq, and } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import {
   githubOauthContract,
   type GithubAppSetupCallbackQuery,

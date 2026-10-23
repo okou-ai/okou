@@ -11,7 +11,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { buildFeishuNoticeMessage } from "../../lib/feishu-message-card";
 import {
   formatFeishuMessageContent,

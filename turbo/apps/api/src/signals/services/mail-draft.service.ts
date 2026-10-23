@@ -24,7 +24,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { convert } from "html-to-text";
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
+import * as z from "zod";
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";

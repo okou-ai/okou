@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import { and, asc, eq, gt, gte, inArray, sql } from "drizzle-orm";
 import { createSHA256 } from "hash-wasm";
-import { z } from "zod";
+import * as z from "zod";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { exportJobs } from "@okouai/db/schema/export-job";

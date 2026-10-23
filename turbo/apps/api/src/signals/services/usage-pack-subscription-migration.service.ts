@@ -30,7 +30,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";

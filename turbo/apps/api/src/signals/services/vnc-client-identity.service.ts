@@ -3,7 +3,7 @@ import {
   createPublicKey,
   X509Certificate,
 } from "node:crypto";
-import { z } from "zod";
+import * as z from "zod";
 import { now } from "../../lib/time";
 import { safeSync, safeJsonParse } from "../utils";
 import {

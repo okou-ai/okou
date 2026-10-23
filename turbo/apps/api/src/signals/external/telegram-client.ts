@@ -1,5 +1,5 @@
 import { optionalEnv } from "../../lib/env";
-import { z } from "zod";
+import * as z from "zod";
 
 const DEFAULT_TELEGRAM_API_BASE = "https://api.telegram.org/bot";
 

@@ -18,7 +18,7 @@ import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation"
 import { usagePackAllocations } from "@okouai/db/schema/usage-pack-subscription";
 import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
 import {

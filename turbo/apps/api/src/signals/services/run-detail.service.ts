@@ -9,7 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { db$ } from "../external/db";
 import { getDatasetName, queryAxiom } from "../external/axiom";

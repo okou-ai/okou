@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 export const teamsFileTokenPayloadSchema = z.object({
   tenantId: z.string().min(1),

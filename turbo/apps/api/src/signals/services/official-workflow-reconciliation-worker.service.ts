@@ -2,7 +2,7 @@ import { officialWorkflowReconciliationWork } from "@okouai/db/schema/official-w
 import { workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, asc, eq, gt, lte, or, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 

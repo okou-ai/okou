@@ -1,6 +1,6 @@
 import { modelProviderTypeSchema } from "./model-providers";
 import type { RunFailureReasonToken } from "./run-failure-reasons";
-import { z } from "zod";
+import * as z from "zod";
 
 export const PROVIDER_INSUFFICIENT_CREDITS_MESSAGE =
   "Your connected subscription account has insufficient balance.";

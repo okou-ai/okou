@@ -8,7 +8,7 @@ import { recordWechatDeliveryPhase } from "./wechat-delivery-timing.service";
 import { monotonicNow, nowDate } from "../../lib/time";
 import { command } from "ccstate";
 import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { settle } from "../utils";
 import {

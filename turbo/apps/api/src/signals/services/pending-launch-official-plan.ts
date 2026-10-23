@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { asc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
 import { workflows } from "@okouai/db/schema/workflow";

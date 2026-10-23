@@ -4,7 +4,7 @@ import {
   type SocialDataRecord,
   type SocialDataResult,
 } from "@okouai/api-contracts/contracts/social-data";
-import { z } from "zod";
+import * as z from "zod";
 import type { SocialDataProviderPlan } from "./social-data-provider-catalog";
 import { SocialDataProviderError } from "./social-data-provider-error";
 

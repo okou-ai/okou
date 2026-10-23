@@ -25,7 +25,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";

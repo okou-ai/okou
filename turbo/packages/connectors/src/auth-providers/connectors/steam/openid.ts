@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 const STEAM_OPENID_ENDPOINT = "https://steamcommunity.com/openid/login";
 const STEAM_OPENID_NS = "http://specs.openid.net/auth/2.0";

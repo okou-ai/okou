@@ -9,7 +9,7 @@ import {
   type PiModelConfig,
   type RunnerClaimCapabilities,
 } from "@okouai/api-contracts/contracts/runners";
-import { z } from "zod";
+import * as z from "zod";
 
 type PiModelConfigClaimResolution =
   | {

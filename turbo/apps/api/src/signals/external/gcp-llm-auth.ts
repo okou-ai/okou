@@ -1,6 +1,6 @@
 import { getVercelOidcTokenSync } from "@vercel/oidc";
 import { delay } from "signal-timers";
-import { z } from "zod";
+import * as z from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";

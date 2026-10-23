@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 export const X_RESOURCE_USAGE_MAX_IDS = 1_000;
 

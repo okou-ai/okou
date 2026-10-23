@@ -1,7 +1,7 @@
 import { command, computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { escapeText } from "entities/escape";
-import { z } from "zod";
+import * as z from "zod";
 import type { ArtifactDeliveryRecord } from "@okouai/api-contracts/contracts/artifact-delivery";
 import type { ArtifactOgTarget } from "@okouai/api-contracts/contracts/artifact-og";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";

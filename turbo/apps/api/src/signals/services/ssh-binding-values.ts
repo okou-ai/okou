@@ -5,7 +5,7 @@ import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { and, eq, ne, or, sql, type SQL, type Subquery } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,

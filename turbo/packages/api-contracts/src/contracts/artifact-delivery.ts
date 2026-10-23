@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { linkLayoutSegmentSchema, type LinkLayoutSegment } from "./link-layout";
 
 // `publicBrand` is the persisted link-layout marker. Deployed delivery Workers

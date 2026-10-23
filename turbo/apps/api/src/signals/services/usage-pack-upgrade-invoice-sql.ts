@@ -20,7 +20,7 @@ import {
   type PgTable,
   type PgColumn,
 } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { pgTimestampWithoutTimezoneToDateSchema } from "../../lib/db-raw-rows";
 

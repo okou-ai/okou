@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { linkLayoutSegmentSchema } from "./link-layout";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";

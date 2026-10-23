@@ -9,7 +9,7 @@ import type {
   DiscordCommandInteraction,
   DiscordComponentInteraction,
 } from "@okouai/api-contracts/contracts/discord-interactions";
-import { z } from "zod";
+import * as z from "zod";
 
 import { now } from "./time";
 

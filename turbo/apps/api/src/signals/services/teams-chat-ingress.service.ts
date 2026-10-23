@@ -2,7 +2,7 @@ import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
 import { and, eq, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 
 import { writeDb$ } from "../external/db";

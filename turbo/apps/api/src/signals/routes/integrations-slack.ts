@@ -1,6 +1,6 @@
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { command, computed, type Computed } from "ccstate";
-import { z } from "zod";
+import * as z from "zod";
 import {
   slackOrgStatusSchema,
   integrationsSlackContract,

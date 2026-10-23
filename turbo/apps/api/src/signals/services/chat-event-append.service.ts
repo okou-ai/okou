@@ -1,7 +1,7 @@
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatRelations } from "@okouai/db/schema/chat-relation";
 import { sql, type SQL } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import {
   pgInt8ToSafeIntegerSchema,
   pgTimestampWithoutTimezoneToDateSchema,

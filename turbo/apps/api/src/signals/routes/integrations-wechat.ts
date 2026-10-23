@@ -33,7 +33,7 @@ import {
 import type { RouteEntry } from "../route-entry";
 import { nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { z } from "zod";
+import * as z from "zod";
 import { notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { sendWechatWelcome$ } from "../services/wechat-notice.service";

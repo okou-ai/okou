@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import { telegramMessages } from "@okouai/db/schema/telegram-message";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
-import { z } from "zod";
+import * as z from "zod";
 import { db$ } from "../external/db";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import {

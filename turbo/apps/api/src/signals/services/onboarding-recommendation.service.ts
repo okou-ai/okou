@@ -21,7 +21,7 @@ import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { command, computed } from "ccstate";
 import { and, eq, inArray, lt } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";

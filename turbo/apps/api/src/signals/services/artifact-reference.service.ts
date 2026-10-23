@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { z } from "zod";
+import * as z from "zod";
 import { linkLayoutSegmentSchema } from "@okouai/api-contracts/contracts/link-layout";
 import {
   artifactShareTargetSchema,

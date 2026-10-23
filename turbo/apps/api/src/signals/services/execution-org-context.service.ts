@@ -4,7 +4,7 @@ import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-s
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { eq, type SQL, sql, sum } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 import { pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { executionCreditQueries } from "./execution-credit-balance.service";

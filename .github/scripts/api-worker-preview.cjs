@@ -160,6 +160,13 @@ function command(label, args, env, cwd) {
       `${label} failed${diagnostics ? ` (${diagnostics})` : ""} (output withheld to protect credentials)`,
     );
   }
+  // Wrangler prints the Cloudflare upload response's startup_time_ms. Return
+  // only that numeric field; captured output can also contain runtime secrets.
+  const startup = result.stdout
+    ?.toString()
+    .match(/^Worker Startup Time: ([0-9]+(?:\.[0-9]+)?) ms\r?$/m);
+  const startupTimeMs = startup ? Number(startup[1]) : undefined;
+  return Number.isFinite(startupTimeMs) ? startupTimeMs : undefined;
 }
 
 // deploy-api is the only owner of branch creation, restore, migration and seed.
@@ -376,7 +383,7 @@ async function main(mode) {
     fs.writeFileSync(secretPath, JSON.stringify(packSecrets(runtime)), {
       mode: 0o600,
     });
-    command(
+    const startupTimeMs = command(
       "Deploy API Worker preview",
       [
         "--dir",
@@ -395,6 +402,8 @@ async function main(mode) {
       },
       root,
     );
+    if (startupTimeMs !== undefined)
+      console.log(`Worker Startup Time: ${startupTimeMs} ms`);
     console.log(
       `Deployed ${names.worker}; no Worker HTTP/health/E2E requests were made`,
     );

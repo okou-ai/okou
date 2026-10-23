@@ -1,7 +1,7 @@
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { command } from "ccstate";
 import { teamsOauthContract } from "@okouai/api-contracts/contracts/teams-oauth";
-import { z } from "zod";
+import * as z from "zod";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";

@@ -37,7 +37,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { PgDialect, QueryBuilder, type PgTable } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import * as z from "zod";
 import { pgTimestampWithoutTimezoneToDateSchema } from "../../lib/db-raw-rows";
 import { agents } from "@okouai/db/schema/agent";
 import { nowDate } from "../../lib/time";

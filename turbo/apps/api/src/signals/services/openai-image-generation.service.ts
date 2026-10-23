@@ -1,6 +1,6 @@
 import { command, computed } from "ccstate";
 import { and, asc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { builtInGenerationJobs } from "@okouai/db/schema/built-in-generation-job";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 

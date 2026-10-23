@@ -17,7 +17,7 @@ import {
   sql,
   type InferColumnsDataTypes,
 } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import { logger } from "../../lib/log";
 import {
   enrichMessageContent,

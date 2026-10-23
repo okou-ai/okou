@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   usagePackPendingSnapshotPlan,

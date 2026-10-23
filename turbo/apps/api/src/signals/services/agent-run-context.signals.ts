@@ -12,7 +12,7 @@ import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-co
 import { secrets } from "@okouai/db/schema/secret";
 import { command, computed, type Computed } from "ccstate";
 import { performance } from "node:perf_hooks";
-import { z } from "zod";
+import * as z from "zod";
 import {
   withPgPoolAcquisitionCapture,
   type PgPoolAcquisition,

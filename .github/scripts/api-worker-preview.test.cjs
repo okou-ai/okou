@@ -285,6 +285,8 @@ test("downstream deployment binds the existing branch and runs only build and Wo
     ),
   );
   const commands = [];
+  const output = [];
+  t.mock.method(console, "log", (...values) => output.push(values.join(" ")));
   let generatedPath;
   let secretsPath;
   t.mock.method(childProcess, "spawnSync", (_command, args) => {
@@ -311,11 +313,23 @@ test("downstream deployment binds the existing branch and runs only build and Wo
         "ep-shared.example.neon.tech",
       );
       commands.push("upload");
+      return {
+        status: 0,
+        stdout: Buffer.from(
+          "Worker Startup Time: 612.5 ms\r\nruntime secret: private-value\n",
+        ),
+        stderr: Buffer.from("Authorization: Bearer private-value"),
+      };
     }
     return { status: 0 };
   });
   await main("deploy");
   assert.deepEqual(commands, ["build", "upload"]);
+  assert.deepEqual(
+    output.filter((line) => line.startsWith("Worker Startup Time:")),
+    ["Worker Startup Time: 612.5 ms"],
+  );
+  assert.ok(output.every((line) => !line.includes("private-value")));
   assert.equal(fs.existsSync(generatedPath), false);
   assert.equal(fs.existsSync(path.dirname(secretsPath)), false);
 });
@@ -351,9 +365,13 @@ test("resolver literal environment records preserve multiline credentials and eq
 
 test("deployment failures expose numeric diagnostics without printing credentials or provider messages", (t) => {
   const secret = "postgres://secret:password@database";
+  const output = [];
+  t.mock.method(console, "log", (...values) => output.push(values.join(" ")));
   t.mock.method(childProcess, "spawnSync", () => ({
     status: 1,
-    stdout: Buffer.from(`runtime configuration: ${secret}`),
+    stdout: Buffer.from(
+      `Worker Startup Time: 612.5 ms\nruntime configuration: ${secret}`,
+    ),
     stderr: Buffer.from(
       `Uncaught TypeError: ${secret}\n at worker.js:12:345 [code: 10021]\nAuthorization: Bearer secret-value`,
     ),
@@ -368,6 +386,34 @@ test("deployment failures expose numeric diagnostics without printing credential
       return true;
     },
   );
+  assert.deepEqual(output, ["Deploy API Worker preview"]);
+});
+
+test("successful commands leave absent or invalid startup measurements unavailable", (t) => {
+  let stdout;
+  t.mock.method(childProcess, "spawnSync", () => ({
+    status: 0,
+    stdout,
+    stderr: Buffer.from("Worker Startup Time: 123 ms\n"),
+  }));
+  const output = [];
+  t.mock.method(console, "log", (...values) => output.push(values.join(" ")));
+  for (const value of [
+    undefined,
+    "",
+    "Worker Startup Time: 12 ms secret-value\n",
+    "Worker Startup Time: NaN ms\n",
+    "Worker Startup Time: Infinity ms\n",
+    "Worker Startup Time: -1 ms\n",
+    `Worker Startup Time: ${"9".repeat(400)} ms\n`,
+  ]) {
+    stdout = value === undefined ? undefined : Buffer.from(value);
+    assert.equal(
+      command("Deploy API Worker preview", [], {}, process.cwd()),
+      undefined,
+    );
+  }
+  assert.ok(output.every((line) => line === "Deploy API Worker preview"));
 });
 
 test("startup CPU rejection retains its fixed classification without provider text or credentials", (t) => {

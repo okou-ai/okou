@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 /** Connection evidence only, never command failure or authorization state. */
 export const sshConnectionFailureReasonSchema = z.enum([

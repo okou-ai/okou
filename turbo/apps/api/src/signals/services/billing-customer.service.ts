@@ -4,7 +4,7 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";

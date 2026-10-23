@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { reasoningEffortSchema } from "./model-reasoning-effort";
 
 /** Server-owned model choice captured when a chat input is enqueued. */

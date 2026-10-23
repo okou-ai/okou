@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { z } from "zod";
+import * as z from "zod";
 
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";

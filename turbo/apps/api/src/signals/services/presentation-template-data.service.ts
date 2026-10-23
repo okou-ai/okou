@@ -8,7 +8,7 @@ import {
 import { getPresentationTemplateStorageName } from "@okouai/core/storage-names";
 import type { presentationTemplates } from "@okouai/db/schema/presentation-template";
 import { createHash } from "node:crypto";
-import { z } from "zod";
+import * as z from "zod";
 
 export type PresentationTemplateRow = typeof presentationTemplates.$inferSelect;
 

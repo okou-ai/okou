@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";

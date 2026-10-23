@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 import { env } from "../../lib/env";
 import { readBoundedResponseText, safeJsonParse, settle } from "../utils";

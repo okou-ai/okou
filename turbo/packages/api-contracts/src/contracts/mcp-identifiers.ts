@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 /** Canonical entity references in declared MCP arguments and responses. */
 export const mcpThreadIdSchema = z.uuid();

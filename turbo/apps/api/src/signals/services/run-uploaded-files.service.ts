@@ -12,7 +12,7 @@ import {
   type RunUploadedFileSource,
 } from "@okouai/db/schema/run-uploaded-file";
 
-import { z } from "zod";
+import * as z from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { logger } from "../../lib/log";

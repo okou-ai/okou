@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "../../../connector-config";
 import { requireConnectorGrantUserId } from "../../grant-result";

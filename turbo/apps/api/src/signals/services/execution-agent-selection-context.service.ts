@@ -7,7 +7,7 @@ import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { workflows } from "@okouai/db/schema/workflow";
-import { z } from "zod";
+import * as z from "zod";
 import { db$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";

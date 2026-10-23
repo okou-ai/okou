@@ -26,7 +26,7 @@ import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connecto
 import { connectors } from "@okouai/db/schema/connector";
 import { command } from "ccstate";
 import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";

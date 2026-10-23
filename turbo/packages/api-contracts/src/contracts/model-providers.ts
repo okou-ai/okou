@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 import {
   MODEL_PROVIDER_TYPE_IDS,
