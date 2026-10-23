@@ -334,10 +334,10 @@ function capturedNativeOutputError(
         body.cliAgentSessionId,
       ).success ||
       (run.launchSnapshot.framework === "pi" &&
-        body.cliAgentSessionId !== (run.chatThreadId ?? run.id) &&
-        !(
-          run.officialWorkflowProvenance && body.cliAgentSessionId === run.id
-        )) ||
+        body.cliAgentSessionId !==
+          (run.officialWorkflowProvenance
+            ? run.id
+            : (run.chatThreadId ?? run.id))) ||
       body.cliAgentType !== run.launchSnapshot.framework)
   ) {
     return "Native Run output does not match its captured Framework identity";

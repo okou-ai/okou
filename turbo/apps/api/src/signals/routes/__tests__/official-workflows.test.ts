@@ -245,23 +245,20 @@ async function syncSourceCatalog() {
   return result;
 }
 
-async function syncMorningBriefCatalog(hiddenThread = false) {
+async function syncMorningBriefCatalog() {
   return await syncCatalog(
     catalog(
       MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
-        return {
-          ...activeDefinition(name, [
-            {
-              key: "daily-delivery",
-              parameters: [],
-              desiredState: {
-                kind: "schedule",
-                schedule: { type: "cron", cronExpression: "0 7 * * *" },
-              },
+        return activeDefinition(name, [
+          {
+            key: "daily-delivery",
+            parameters: [],
+            desiredState: {
+              kind: "schedule",
+              schedule: { type: "cron", cronExpression: "0 7 * * *" },
             },
-          ]),
-          hiddenThread,
-        };
+          },
+        ]);
       }),
     ),
   );
@@ -4169,9 +4166,50 @@ describe("Official Workflow credit policy", () => {
     const started = await fireOfficialSchedule(actor, automation);
     const claim = await runs.claimRunnerJob(started.runId);
     expect(claim.piSessionId).toBe(started.runId);
+    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+    await webhooks.requestAgentRunOutputs(
+      {
+        runId: started.runId,
+        cliAgentType: "pi",
+        cliAgentSessionId: started.chatThreadId,
+        cliAgentSessionHistoryDisposition: "native_only",
+      },
+      headers,
+      [400],
+    );
+    await webhooks.requestAgentEvents(
+      {
+        runId: started.runId,
+        events: [
+          {
+            type: "system",
+            subtype: "init",
+            session_id: started.chatThreadId,
+            sequenceNumber: 0,
+          },
+        ],
+      },
+      headers,
+      [503],
+    );
+    await webhooks.requestAgentEvents(
+      {
+        runId: started.runId,
+        events: [
+          {
+            type: "system",
+            subtype: "init",
+            session_id: started.runId,
+            sequenceNumber: 0,
+          },
+        ],
+      },
+      headers,
+      [200],
+    );
     await createChatEventsFixture(context).completeChatRunOk(
       started.runId,
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      headers,
       { cliAgentType: "pi", cliAgentSessionId: claim.piSessionId },
     );
     await flushWaitUntilForTest();
@@ -4191,6 +4229,17 @@ describe("Official Workflow credit policy", () => {
       generationRunId: null,
       recoveryPrompt: null,
     });
+    const replayed = await webhooks.requestAgentRunOutputs(
+      {
+        runId: started.runId,
+        cliAgentType: "pi",
+        cliAgentSessionId: started.runId,
+        cliAgentSessionHistoryDisposition: "native_only",
+      },
+      headers,
+      [200],
+    );
+    expect(replayed.body).toStrictEqual({ success: true, status: "completed" });
     await createChatEventsFixture(context).completeChatRunOk(
       next.runId,
       { authorization: `Bearer ${nextClaim.sandboxToken}` },
@@ -4443,7 +4492,7 @@ describe("Official Workflow installations", () => {
       catalogAvailable: false,
       bootstrap: false,
     });
-    await syncMorningBriefCatalog(true);
+    await syncMorningBriefCatalog();
     await deliverClerkOrganizationCreated(actor, createdAt);
     await initializeBriefMember(actor, "Asia/Shanghai");
     await selectPersonalDefaultModel(actor);
