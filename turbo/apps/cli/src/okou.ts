@@ -23,7 +23,6 @@ observePiCliEntryImports();
 
 interface CommandDefinition {
   name: string;
-  aliases?: readonly string[];
   description: string;
   load: () => Promise<Command>;
 }
@@ -111,7 +110,6 @@ const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "suggestion", "task"]);
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
     name: "task",
-    aliases: ["job"],
     description: "Delegate and inspect background Okou Tasks",
     load: async () => {
       return (await import("./commands/job/index")).jobCommand;
@@ -467,17 +465,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
 ];
 
 const COMMAND_DEFINITION_BY_NAME = new Map(
-  COMMAND_DEFINITIONS.flatMap((definition) => {
-    return [definition.name, ...(definition.aliases ?? [])].map((name) => {
-      return [name, definition] as const;
-    });
+  COMMAND_DEFINITIONS.map((definition) => {
+    return [definition.name, definition];
   }),
 );
 
 function createCommandStub(definition: CommandDefinition): Command {
-  return new Command(definition.name)
-    .aliases([...(definition.aliases ?? [])])
-    .description(definition.description);
+  return new Command(definition.name).description(definition.description);
 }
 
 function buildDefaultCommands(): Command[] {
