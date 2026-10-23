@@ -11,19 +11,17 @@ fn inline_instructions_preserve_bytes_clear_empty_and_keep_unrelated_home_files(
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("private-source");
         let home = dir.path().join(root);
+        let skill = home.join("skills/keep/SKILL.md");
+        fs::create_dir_all(home.join("skills/keep")).unwrap();
+        fs::write(&skill, b"keep").unwrap();
         for content in ["\u{feff}  指令\n[AGENT_PROFILE]\nkeep raw\n\n", ""] {
             fs::write(&source, content).unwrap();
+            fs::write(home.join(alternate), "stale").unwrap();
             assert!(apply_agent_instructions(dir.path(), framework, &source));
+            assert_eq!(fs::read(&skill).unwrap(), b"keep");
             assert_eq!(fs::read(home.join(filename)).unwrap(), content.as_bytes());
             assert!(!home.join(alternate).exists());
-            fs::create_dir_all(home.join("skills/keep")).unwrap();
-            fs::write(home.join("skills/keep/SKILL.md"), "keep").unwrap();
-            fs::write(home.join(alternate), "stale").unwrap();
         }
-        assert_eq!(
-            fs::read_to_string(home.join("skills/keep/SKILL.md")).unwrap(),
-            "keep"
-        );
     }
 }
 
