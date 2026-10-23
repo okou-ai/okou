@@ -57,11 +57,6 @@
       "owner": "linkAgentPhoneIdentity$"
     },
     {
-      "id": "TX-0056",
-      "file": "turbo/apps/api/src/signals/services/artifact-catalog.service.ts",
-      "owner": "syncHostedArtifact$"
-    },
-    {
       "id": "TX-0064",
       "file": "turbo/apps/api/src/signals/services/billing-restore.service.ts",
       "owner": "restoreSubscription$"
