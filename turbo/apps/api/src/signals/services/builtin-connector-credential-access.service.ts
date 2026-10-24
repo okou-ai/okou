@@ -1,3 +1,4 @@
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import {
   connectorAuthMethodOwnedSecretNames,
   connectorAuthMethodOwnedVariableNames,
@@ -333,4 +334,83 @@ export function builtinConnectorTokenRevokeInputsFromRows(
     encryptedInputs[inputName] = encryptedValue;
   }
   return encryptedInputs;
+}
+
+export interface BuiltinConnectorPendingTokenRevokeArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorSlug: string;
+  readonly snapshot: ConnectorRuntimeAuthLookup;
+  readonly featureSwitchContext: FeatureSwitchContext;
+  readonly existing: {
+    readonly id: string;
+    readonly authMethod: string;
+    readonly storageVersion: number;
+  } | null;
+  readonly replacement: "local" | "token";
+}
+
+export function prepareBuiltinTokenRevoke(
+  args: BuiltinConnectorPendingTokenRevokeArgs,
+) {
+  if (!args.existing) {
+    return null;
+  }
+  const accessResult = resolveBuiltinConnectorCredentialAccess({
+    snapshot: args.snapshot,
+    stored: {
+      authMethodId: args.existing.authMethod,
+      connectorId: args.existing.id,
+      connectorSlug: args.connectorSlug,
+      orgId: args.orgId,
+      storageVersion: args.existing.storageVersion,
+      userId: args.userId,
+    },
+  });
+  if (
+    accessResult.kind !== "ok" ||
+    accessResult.access.runtimeMethod.method.revoke.kind !== "token-revoke"
+  ) {
+    return null;
+  }
+  if (
+    args.replacement === "token" &&
+    accessResult.access.runtimeMethod.method.revoke.revokePreviousOnReplace !==
+      true
+  ) {
+    return null;
+  }
+  const context = {
+    access: accessResult.access,
+    featureSwitchContext: args.featureSwitchContext,
+  };
+  return context;
+}
+
+export function builtinTokenRevokeFromRows(
+  preparation: NonNullable<ReturnType<typeof prepareBuiltinTokenRevoke>>,
+  read: ReturnType<typeof builtinConnectorTokenRevokeReadPlan>,
+  secretRows: readonly {
+    readonly name: string;
+    readonly encryptedValue: string | null;
+  }[],
+) {
+  if (read.kind === "none") {
+    return null;
+  }
+  const encryptedInputs =
+    read.kind === "empty"
+      ? {}
+      : builtinConnectorTokenRevokeInputsFromRows(
+          read.inputEntries,
+          secretRows,
+        );
+  if (encryptedInputs === null) {
+    return null;
+  }
+  return {
+    runtimeMethod: preparation.access.runtimeMethod,
+    encryptedInputs,
+    featureSwitchContext: preparation.featureSwitchContext,
+  };
 }
