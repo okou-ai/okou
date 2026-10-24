@@ -17,7 +17,7 @@
     "@okouai/typescript-config": "workspace:*",
     "@typescript/native": "npm:typescript@7.0.2",
     "eslint": "^9.34.0",
-    "happy-dom": "^20.11.6",
+    "happy-dom": "^21.0.4",
     "msw": "^2.13.2",
     "oxlint": "^1.75.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
