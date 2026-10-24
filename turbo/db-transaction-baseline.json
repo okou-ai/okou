@@ -207,11 +207,6 @@
       "owner": "deleteHostedSite$"
     },
     {
-      "id": "TX-0178",
-      "file": "turbo/apps/api/src/signals/services/managed-usage.service.ts",
-      "owner": "recordManagedUsage$"
-    },
-    {
       "id": "TX-0185",
       "file": "turbo/apps/api/src/signals/services/model-provider-account.service.ts",
       "owner": "writePersonalAccount"
