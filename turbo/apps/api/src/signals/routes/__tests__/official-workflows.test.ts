@@ -72,6 +72,10 @@ import { logsRoutes } from "../logs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import {
+  PROACTIVE_LEARNING_BLUEPRINT_KEY,
+  PROACTIVE_LEARNING_DEFINITION_NAME,
+  PROACTIVE_PLANNING_BLUEPRINT_KEY,
+  PROACTIVE_PLANNING_DEFINITION_NAME,
   proactiveLearningContract,
   proactivePlanningContract,
 } from "@okouai/api-contracts/contracts/proactive-nightly";
@@ -252,6 +256,53 @@ async function syncSourceCatalog() {
     [200],
   );
   catalogPublication.recordPublished(result.body.outcome);
+  return result;
+}
+
+/** A user-owned workflow can share a name with an active Official definition. */
+async function syncNightlyCatalog() {
+  const definitions = [
+    [
+      PROACTIVE_LEARNING_DEFINITION_NAME,
+      PROACTIVE_LEARNING_BLUEPRINT_KEY,
+      "0 2 * * *",
+    ],
+    [
+      PROACTIVE_PLANNING_DEFINITION_NAME,
+      PROACTIVE_PLANNING_BLUEPRINT_KEY,
+      "0 4 * * *",
+    ],
+  ] as const;
+  const result = await syncCatalog(
+    catalog(
+      definitions.map(([name, key, cronExpression]) => {
+        return activeDefinition(name, [
+          {
+            key,
+            parameters: [
+              {
+                key: "cron",
+                type: "string",
+                required: true,
+                format: "text",
+                default: cronExpression,
+              },
+            ],
+            desiredState: {
+              kind: "schedule",
+              schedule: {
+                type: "cron",
+                cronExpression: { parameter: "cron" },
+              },
+            },
+          },
+        ]);
+      }),
+    ),
+  );
+  if (result.body.outcome === "rejected") {
+    throw new Error("Expected a published nightly catalog");
+  }
   return result;
 }
 
@@ -523,10 +574,17 @@ describe("Proactive nightly workflows", () => {
     return setupApp({ context, routes: jobsRoutes })(jobsContract);
   };
 
-  async function nightlyMember() {
+  async function nightlyMember({
+    catalogSync = syncDeployedCatalog,
+  }: {
+    readonly catalogSync?: typeof syncDeployedCatalog;
+  } = {}) {
     mockNow(new Date("2030-01-01T12:00:00.000Z"));
-    const { actor } = await prepareBriefMember();
-    await bdd.completeOnboarding(actor);
+    const { actor } = await prepareBriefMember({
+      catalogSync,
+      bootstrap: false,
+    });
+    await runs.grantProEntitlement(actor);
     await initializeBriefMember(actor, "Asia/Shanghai");
     if (!actor.orgId) {
       throw new Error("Expected organization");
@@ -541,7 +599,6 @@ describe("Proactive nightly workflows", () => {
     const runnerGroup = runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    await runs.grantProEntitlement(actor);
     await selectPersonalDefaultModel(actor);
     await runs.heartbeatRunner(runnerGroup);
     return { actor, runnerGroup };
@@ -588,7 +645,9 @@ describe("Proactive nightly workflows", () => {
       routes: workflowAutomationsRoutes,
       isolatePg: true,
     });
-    const { actor, runnerGroup } = await nightlyMember();
+    const { actor, runnerGroup } = await nightlyMember({
+      catalogSync: syncNightlyCatalog,
+    });
     const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
     if (!defaultAgentId) {
       throw new Error("Expected primary Agent");
