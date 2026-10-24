@@ -167,18 +167,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.AgentSuggestion]: {
+  [FeatureSwitchKey.ProactiveAgent]: {
     maintainer: "lancy@okou.ai",
-    displayName: "Agent Suggestion",
-    description: "Let Okou manage actionable suggestions on your home page.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ProactiveJobs]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "Proactive jobs",
+    displayName: "Proactive Agent",
     description:
-      "Automatically advance explicitly entrusted Jobs and show their progress and Results.",
+      "Review activity, learn, plan next steps, advance entrusted Tasks and curate Suggestions.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

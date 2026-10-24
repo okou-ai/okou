@@ -33,7 +33,7 @@ import {
 import { detach, Reason, resetSignal, withCleanup } from "../utils.ts";
 
 export const agentSuggestionsEnabled$ = computed(async (get) => {
-  if (!get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion]) {
+  if (!get(featureSwitch$)[FeatureSwitchKey.ProactiveAgent]) {
     return false;
   }
   const [current, primary] = await Promise.all([
@@ -106,7 +106,7 @@ export const enterAgentSuggestions$ = command(({ set }) => {
 });
 export const subscribeAgentSuggestions$ = command(
   ({ get, set }, signal: AbortSignal) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion]) {
+    if (!get(featureSwitch$)[FeatureSwitchKey.ProactiveAgent]) {
       return;
     }
     set(

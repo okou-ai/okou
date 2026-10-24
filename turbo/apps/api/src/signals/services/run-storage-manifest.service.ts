@@ -1,8 +1,10 @@
+import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import {
   CANONICAL_CLAUDE_CONFIG_DIR,
   CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
   CANONICAL_CODEX_HOME_DIR,
   CANONICAL_CODEX_MEMORY_MOUNT_PATH,
+  CANONICAL_PI_MEMORY_MOUNT_PATH,
   PI_SKILLS_ROOT,
   type PiModelConfig,
   type StorageMountEntry,
@@ -1484,16 +1486,23 @@ function autoMemoryMountPath(framework: SupportedFramework): string {
 }
 
 function artifactsForRun(args: {
+  readonly officialWorkflow: OfficialWorkflowObservation | undefined;
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
 }): RunArtifacts {
   return {
     artifacts:
-      args.piSandbox === undefined
+      args.piSandbox === undefined ||
+      args.officialWorkflow?.definitions.some((definition) => {
+        return proactiveWorkflowKind(definition.name) !== null;
+      })
         ? [
             {
               name: AUTO_MEMORY_ARTIFACT_NAME,
-              mountPath: autoMemoryMountPath(args.framework),
+              mountPath:
+                args.piSandbox === undefined
+                  ? autoMemoryMountPath(args.framework)
+                  : CANONICAL_PI_MEMORY_MOUNT_PATH,
               missingRootPolicy: AUTO_MEMORY_MISSING_ROOT_POLICY,
             },
           ]
@@ -1552,6 +1561,7 @@ export function prepareRunOutputMetadata(args: {
     resolved: args.resolved,
   });
   const artifacts = artifactsForRun({
+    officialWorkflow: args.officialWorkflow,
     framework: args.framework,
     piSandbox: args.piSandbox,
   }).artifacts;

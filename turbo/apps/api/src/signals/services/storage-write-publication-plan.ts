@@ -16,7 +16,8 @@ import {
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
-import { notFound } from "../../lib/error";
+import { conflict, notFound } from "../../lib/error";
+import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
 import {
   sandboxStorageRunCondition,
@@ -75,7 +76,26 @@ export const storageCommitPublicationRow = z.object({
   admitted: z.boolean(),
   inserted: z.boolean(),
   indexed: z.boolean(),
+  memoryConflict: z.boolean(),
 });
+
+function memoryParentVersion(input: CommitStorageForStorageInput) {
+  return input.parentVersionId === undefined
+    ? sql`(SELECT value->>'version' FROM commit_mount)`
+    : sql`${input.parentVersionId}`;
+}
+
+function memoryPublicationAllowed(input: CommitStorageForStorageInput) {
+  if (!input.sandboxAuth) {
+    return sql`true`;
+  }
+  const parent = memoryParentVersion(input);
+  return sql`(s.name <> ${MEMORY_ARTIFACT_NAME}
+    OR s."headVersionId" IS NOT DISTINCT FROM ${parent}
+    OR s."headVersionId" = ${input.versionId}
+    OR ${input.versionId} IS NOT DISTINCT FROM ${parent}
+    OR EXISTS (SELECT 1 FROM terminal_lineage))`;
+}
 
 function storageSelection() {
   return {
@@ -235,9 +255,10 @@ function storageCommitAdmission(
       AND v."fileCount"=${input.files.length}
       AND v.message IS NOT DISTINCT FROM ${input.message ?? null}
       AND v."createdBy"='agent'
-      AND s."headVersionId"=${input.versionId}
-      AND s.size=${totalSize(input.files)}
-      AND s."fileCount"=${input.files.length}
+      AND (s.name = ${MEMORY_ARTIFACT_NAME} OR (
+        s."headVersionId"=${input.versionId}
+        AND s.size=${totalSize(input.files)}
+        AND s."fileCount"=${input.files.length}))
   `;
   return sql`
     commit_run AS MATERIALIZED (${run}), commit_mount AS MATERIALIZED (${mount}), initial_storage AS MATERIALIZED (${storage}), existing_version AS MATERIALIZED (${version}), terminal_lineage AS (${lineage}), admitted_storage AS MATERIALIZED (SELECT s.*, ${terminal} AS terminal
@@ -301,7 +322,7 @@ function storageCommitLineageInsert(input: CommitStorageForStorageInput) {
       parentVersionId: parent,
       runId: auth.runId,
     },
-    sql`locked_storage CROSS JOIN published_version CROSS JOIN (SELECT count(*) FROM published_head) AS completed_head`,
+    sql`locked_storage AS s CROSS JOIN published_version CROSS JOIN (SELECT count(*) FROM published_head) AS completed_head WHERE ${memoryPublicationAllowed(input)}`,
     { id: storageVersionLineage.id },
   );
 }
@@ -355,7 +376,11 @@ export function storageCommitPublicationStatement(
       updatedAt: sql.param(changedAt, storages.updatedAt),
     },
     from: sql`locked_storage AS s CROSS JOIN published_version AS v`,
-    where: sql`${storages.id}=s.id AND ${storages.headVersionId} IS DISTINCT FROM v.id`,
+    where: sql`${storages.id}=s.id AND ${storages.headVersionId} IS DISTINCT FROM v.id
+      AND ${memoryPublicationAllowed(input)}
+      AND (s.name <> ${MEMORY_ARTIFACT_NAME} OR ${input.sandboxAuth === undefined}
+        OR (NOT EXISTS (SELECT 1 FROM terminal_lineage)
+          AND v.id IS DISTINCT FROM ${memoryParentVersion(input)}))`,
     joins: [],
     returning: [{ path: ["id"], field: storages.id }],
   });
@@ -379,7 +404,8 @@ export function storageCommitPublicationStatement(
       FROM admitted_storage
       WHERE terminal) AS admitted, EXISTS(SELECT 1
       FROM inserted_version) AS inserted, (SELECT count(*)
-      FROM enqueued_index)>=0 AS indexed
+      FROM enqueued_index)>=0 AS indexed,
+      EXISTS (SELECT 1 FROM locked_storage AS s WHERE NOT ${memoryPublicationAllowed(input)}) AS "memoryConflict"
   `;
 }
 
@@ -408,6 +434,11 @@ export function storageCommitPublicationResult(
   }
   if (!row.admitted) {
     throw new Error("Storage disappeared before HEAD publication");
+  }
+  if (row.memoryConflict) {
+    return conflict(
+      `Memory changed during this Run. Candidate version ${input.versionId} was retained; review the latest memory before publishing again.`,
+    );
   }
   if (!row.version) {
     throw new Error(
@@ -455,9 +486,10 @@ export function terminalStorageCommitPersistedStateMatches(args: {
     version.fileCount === fileCount &&
     version.message === (args.input.message ?? null) &&
     version.createdBy === "agent" &&
-    args.storage.headVersionId === args.input.versionId &&
-    Number(args.storage.size) === size &&
-    args.storage.fileCount === fileCount
+    (args.storage.name === MEMORY_ARTIFACT_NAME ||
+      (args.storage.headVersionId === args.input.versionId &&
+        Number(args.storage.size) === size &&
+        args.storage.fileCount === fileCount))
   );
 }
 

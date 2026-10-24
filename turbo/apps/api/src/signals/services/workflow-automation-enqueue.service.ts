@@ -26,6 +26,7 @@ import type { GoogleCalendarQueueSource } from "./workflow-google-calendar-queue
 import type { GoogleFormsQueueSource } from "./workflow-google-forms-queue.service";
 import type { GoogleMeetQueueSource } from "./workflow-google-meet-queue.service";
 import type { NotionQueueSource } from "./workflow-notion-queue.service";
+import type { ProactiveNightlyOccurrence } from "./proactive-nightly-schedule";
 
 export type WorkflowQueueSourcePlan =
   | WorkflowQueueReceipt
@@ -85,6 +86,8 @@ export interface RunWorkflowAutomationNowArgs {
    */
   readonly scheduleClaim?: WorkflowScheduleClaimPlan;
   readonly timing?: ApiDispatchTimingCollector;
+  /** Backend-verified nightly ordering; committed with its canonical queue event. */
+  readonly proactiveNightlyOccurrence?: ProactiveNightlyOccurrence;
 }
 
 export function scheduleTriggerContext(args: {

@@ -26,6 +26,10 @@ import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
 import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
+import {
+  PROACTIVE_LEARNING_DEFINITION_NAME,
+  PROACTIVE_PLANNING_DEFINITION_NAME,
+} from "@okouai/api-contracts/contracts/proactive-nightly";
 
 interface Owner {
   readonly userId: string;
@@ -69,7 +73,7 @@ export const suggestionAccess$ = command(
     );
     signal.throwIfAborted();
     if (
-      !isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, {
+      !isFeatureEnabled(FeatureSwitchKey.ProactiveAgent, {
         userId: auth.userId,
         orgId: auth.orgId,
         overrides,
@@ -109,14 +113,26 @@ export const suggestionAccess$ = command(
         );
       }
       if (
-        (run.triggerSource === "automation-schedule" ||
-          run.triggerSource === "automation-event") &&
         run.provenance?.definitions.some((definition) => {
-          return (
-            definition.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME ||
-            isMorningBriefDefinitionName(definition.name)
-          );
+          return definition.name === PROACTIVE_LEARNING_DEFINITION_NAME;
         })
+      ) {
+        return resourceUnavailable(
+          "Learning maintains memory, not Suggestions.",
+        );
+      }
+      if (
+        run.provenance?.definitions.some((definition) => {
+          return definition.name === PROACTIVE_PLANNING_DEFINITION_NAME;
+        }) ||
+        ((run.triggerSource === "automation-schedule" ||
+          run.triggerSource === "automation-event") &&
+          run.provenance?.definitions.some((definition) => {
+            return (
+              definition.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME ||
+              isMorningBriefDefinitionName(definition.name)
+            );
+          }))
       ) {
         const preference = await set(
           loadProactiveWorkflowsEligibility$,

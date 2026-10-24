@@ -20,6 +20,7 @@ const TASKS_PROMPT = [
   "  - Creating chat: after successful creation, confirm the saved Task ID and end the turn. The background Tasks loop owns execution, progress and Results. Do not also perform the objective, mark the Task completed, start another worker or workflow, or poll while waiting for completion. Creation and an `active` status acknowledge saved work, not a running or completed action. When background Tasks execution is paused, saved Tasks wait; do not take over their work in this chat.",
   "  - Status requests: use `okou task list --json` or `okou task get <id> --json` to report saved progress and Results. Reading a pending Task does not transfer execution to this chat.",
   "  - Background executor: in a Proactive tasks run, follow that workflow's instructions to perform the saved objectives, verify outcomes and persist progress or Results through `okou task update`. The creating-chat handoff rule does not prevent the background executor from doing the work.",
+  "  - Official planner: in a Proactive Planning run, follow its bounded planning instructions. Finish the authorized planning batch, use `okou task identity` and `okou task observe` for stable source context, and hand execution to the Tasks loop. This exception does not apply to ordinary creating chats or permit inferred delegation. Proactive Learning updates personal memory and never mutates Tasks.",
   "  - User replies and permission responses belong to Task details. Never infer permission from a stored approval or bypass current tool grants.",
 ].join("\n");
 
@@ -70,7 +71,10 @@ export function createAgentPrompt(
             }),
           ) +
           (agent?.id === agent?.defaultAgentId &&
-          isFeatureEnabled(FeatureSwitchKey.ProactiveJobs, featureSwitchContext)
+          isFeatureEnabled(
+            FeatureSwitchKey.ProactiveAgent,
+            featureSwitchContext,
+          )
             ? TASKS_PROMPT
             : ""),
       },

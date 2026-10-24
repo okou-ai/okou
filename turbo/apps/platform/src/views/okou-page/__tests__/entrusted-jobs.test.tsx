@@ -168,7 +168,7 @@ async function setupJobs() {
   await setupPage({
     context,
     path: `/agents/${agentId}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ProactiveJobs]: true },
+    featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: true },
   });
   return await findControl("Tasks", "tab");
 }
@@ -378,10 +378,9 @@ test("shows Proactive tasks and keeps Suggestions independently enabled", async 
   });
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/agents?settings=proactive-agent",
     featureSwitches: {
-      [FeatureSwitchKey.ProactiveJobs]: true,
-      [FeatureSwitchKey.AgentSuggestion]: true,
+      [FeatureSwitchKey.ProactiveAgent]: true,
     },
   });
   const jobs = await screen.findByRole("switch", { name: "Proactive tasks" });

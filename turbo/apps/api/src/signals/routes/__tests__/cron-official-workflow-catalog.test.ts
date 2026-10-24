@@ -363,7 +363,7 @@ describe("Official Workflow catalog release boundary", () => {
       outcome: "accepted",
       diagnostics: [],
     });
-    expect(s3.objects.size).toBe(12);
+    expect(s3.objects.size).toBe(16);
 
     s3.clearWrites();
     const second = await syncDeployedCatalog();

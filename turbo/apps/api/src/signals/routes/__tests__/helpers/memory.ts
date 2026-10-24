@@ -24,7 +24,12 @@ export async function commitMemoryVersion(
     readonly storageManifest: StorageManifest | null | undefined;
   },
   files: readonly MemoryFile[],
-): Promise<{ readonly storageId: string; readonly versionId: string }> {
+  expectedStatus: 200 | 409 | readonly (200 | 409)[] = 200,
+): Promise<{
+  readonly storageId: string;
+  readonly versionId: string;
+  readonly status: 200 | 409;
+}> {
   const memory = expectCanonicalStorageManifest(
     run.storageManifest,
   )?.storageMounts.find((mount) => {
@@ -112,6 +117,8 @@ export async function commitMemoryVersion(
     }
     return fallback(command);
   });
+  const statuses =
+    typeof expectedStatus === "number" ? [expectedStatus] : expectedStatus;
   const committed = await webhooks.requestAgentStorageCommit(
     {
       runId: run.runId,
@@ -121,10 +128,17 @@ export async function commitMemoryVersion(
       files: entries,
     },
     run.sandboxHeaders,
-    [200],
+    statuses,
   );
-  if (committed.status !== 200) {
-    throw new Error("Expected Run-authorized memory publication");
+  if (committed.status !== 200 && committed.status !== 409) {
+    throw new Error("Unexpected memory publication status");
   }
-  return { storageId: memory.storageId, versionId: committed.body.versionId };
+  if (!statuses.includes(committed.status)) {
+    throw new Error("Unexpected memory publication outcome");
+  }
+  return {
+    storageId: memory.storageId,
+    versionId: prepared.body.versionId,
+    status: committed.status,
+  };
 }

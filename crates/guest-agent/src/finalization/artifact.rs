@@ -1025,4 +1025,56 @@ mod tests {
         prepare.assert_calls(0);
         commit.assert_calls(0);
     }
+    #[tokio::test]
+    async fn memory_publication_conflict_is_not_acknowledged_as_a_finalized_output() {
+        let _system_log_state_guard = crate::lock_system_log_test_state_async().await;
+        let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
+        let server = MockServer::start();
+        let prepare = server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/webhooks/agent/storages/prepare");
+            then.status(200).json_body(json!({
+                "versionId": "retained-memory-candidate",
+                "existing": true,
+            }));
+        });
+        let commit = server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/webhooks/agent/storages/commit");
+            then.status(409).json_body(json!({
+                "error": {
+                    "code": "CONFLICT",
+                    "message": "Memory changed during this Run. Candidate version retained-memory-candidate was retained; review the latest memory before publishing again.",
+                },
+            }));
+        });
+        let http = HttpClient::with_api_config(
+            server.base_url(),
+            "test-token",
+            "",
+            "test-run",
+            Duration::ZERO,
+        )
+        .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("notes.md"), "Competing learned fact").unwrap();
+        let entries = vec![env::ArtifactEnv {
+            name: "memory".to_string(),
+            mount_path: dir.path().to_string_lossy().into_owned(),
+            storage_id: "memory-storage-id".to_string(),
+            version_id: "captured-memory-parent".to_string(),
+            missing_root_policy: Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion),
+        }];
+        let error = snapshot_artifact_entries_for_test(&http, "test-run", &entries)
+            .await
+            .expect_err("a conflicting Memory candidate must not become a completion output");
+        assert!(
+            error
+                .to_string()
+                .contains("Candidate version retained-memory-candidate was retained"),
+            "got: {error}"
+        );
+        prepare.assert_calls(1);
+        commit.assert_calls(1);
+    }
 }

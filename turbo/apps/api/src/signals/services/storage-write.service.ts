@@ -11,7 +11,7 @@ import { and, eq, sql } from "drizzle-orm";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
-import { badRequestMessage, notFound } from "../../lib/error";
+import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
 import { db$, writeDb$ } from "../external/db";
@@ -149,7 +149,8 @@ export type CommitStorageResponse =
         readonly deduplicated?: boolean;
       };
     }
-  | StorageErrorResponse;
+  | StorageErrorResponse
+  | ReturnType<typeof conflict>;
 
 function payloadTooLarge(message: string): StorageErrorResponse {
   return {
