@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
-use std::fs::{File, FileTimes, OpenOptions, Permissions};
+use std::fs::{self, File, FileTimes, OpenOptions, Permissions};
 use std::io::{self, Read};
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
@@ -23,6 +23,7 @@ const DIRECTORY_FLAGS: libc::c_int =
 
 pub(crate) struct RootedWriter<'a> {
     target: &'a Path,
+    cache_directories: bool,
     root: Option<File>,
     root_path_bytes: usize,
     parents: HashMap<PathBuf, File>,
@@ -32,6 +33,7 @@ impl<'a> RootedWriter<'a> {
     pub(crate) fn new(target: &'a Path) -> Self {
         Self {
             target,
+            cache_directories: has_descriptor_budget(),
             root: None,
             root_path_bytes: target.as_os_str().as_bytes().len(),
             parents: HashMap::new(),
@@ -46,6 +48,9 @@ impl<'a> RootedWriter<'a> {
     }
 
     fn parent_fd(&mut self, parent: &Path) -> io::Result<Option<RawFd>> {
+        if !self.cache_directories {
+            return Ok(None);
+        }
         if let Some(directory) = self.parents.get(parent) {
             return Ok(Some(directory.as_raw_fd()));
         }
@@ -190,6 +195,32 @@ impl<'a> RootedWriter<'a> {
         file.set_permissions(Permissions::from_mode(mode & 0o777))?;
         Ok(true)
     }
+}
+
+fn has_descriptor_budget() -> bool {
+    let mut limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: limit is a valid writable rlimit and RLIMIT_NOFILE is supported.
+    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) } != 0 {
+        return false;
+    }
+    // All workers can retain a full directory cache at once. Keep the same
+    // number of slots free for source setup and checked file IO: releasing one
+    // worker's handles on EMFILE cannot release handles held by its peers.
+    let required = (2 * MAX_DIRECTORY_HANDLES * crate::download::MAX_CONCURRENT) as libc::rlim_t;
+    if limit.rlim_cur < required {
+        return false;
+    }
+    let Ok(mut descriptors) = fs::read_dir("/proc/self/fd") else {
+        return false;
+    };
+    let Ok(open_descriptors) = descriptors.try_fold(0, |count, entry| entry.map(|_| count + 1))
+    else {
+        return false;
+    };
+    limit.rlim_cur.saturating_sub(open_descriptors) >= required
 }
 
 fn descriptor_limit(error: &io::Error) -> bool {
