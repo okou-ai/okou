@@ -7,6 +7,7 @@ import { variables } from "@okouai/db/schema/variable";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
+import type { ConnectorRuntimeMethod } from "./connector-catalog-runtime.service";
 
 export interface ConnectorCredentialStorageDeclaration {
   readonly secrets: readonly string[];
@@ -30,6 +31,104 @@ interface ManualGrantUserCredentialDeletion {
   readonly orgId: string;
   readonly userId: string;
   readonly name: string;
+}
+
+interface ManualGrantCredentialScope {
+  readonly connectorId: string;
+  readonly method: Pick<ConnectorRuntimeMethod["method"], "storage">;
+  readonly orgId: string;
+  readonly userId: string;
+}
+
+interface ManualGrantCredentialInputs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly runtimeMethod: ConnectorRuntimeMethod;
+  readonly encryptedSecrets: readonly {
+    readonly name: string;
+    readonly encryptedValue: string;
+  }[];
+  readonly prepared: {
+    readonly variableValues: readonly {
+      readonly name: string;
+      readonly value: string;
+    }[];
+  };
+}
+
+export function manualGrantCredentialArgs(
+  args: ManualGrantCredentialInputs,
+  connectorId: string,
+) {
+  return {
+    connectorId,
+    encryptedSecrets: args.encryptedSecrets,
+    method: args.runtimeMethod.method,
+    orgId: args.orgId,
+    userId: args.userId,
+    variableValues: args.prepared.variableValues,
+  };
+}
+
+export function requireManualGrantWrite(
+  row: { readonly id: string } | undefined,
+  kind: "secret" | "variable",
+  name: string,
+): void {
+  if (!row) {
+    throw new Error(`Connector ${kind} ${name} is owned by another row`);
+  }
+}
+
+export function manualGrantConnectionMetadata(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly runtimeMethod: ConnectorRuntimeMethod;
+}) {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    authMethod: args.runtimeMethod.authMethodId,
+    storageVersion: args.runtimeMethod.method.storage.version,
+    tokenExpiresAt: null,
+    target: {
+      kind: "builtin" as const,
+      connectorSlug: args.runtimeMethod.connectorSlug,
+      identity: { kind: "local" as const },
+    },
+  };
+}
+
+export function manualGrantSecretWrite(
+  args: ManualGrantCredentialScope,
+  field: { readonly name: string; readonly encryptedValue: string },
+) {
+  return connectorOwnedSecretWrite({
+    connectorId: args.connectorId,
+    storage: args.method.storage,
+    orgId: args.orgId,
+    userId: args.userId,
+    name: field.name,
+    encryptedValue: field.encryptedValue,
+    description: null,
+    updatedDescription: null,
+  });
+}
+
+export function manualGrantVariableWrite(
+  args: ManualGrantCredentialScope,
+  field: { readonly name: string; readonly value: string },
+) {
+  return connectorOwnedVariableWrite({
+    connectorId: args.connectorId,
+    storage: args.method.storage,
+    orgId: args.orgId,
+    userId: args.userId,
+    name: field.name,
+    value: field.value,
+    description: null,
+    updatedDescription: null,
+  });
 }
 
 export function manualGrantUserSecretDeletion(
