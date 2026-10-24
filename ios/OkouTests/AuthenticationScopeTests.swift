@@ -11,15 +11,10 @@ final class AuthenticationScopeTests: XCTestCase {
       $0.pending = true
     }
     await provider.activation.hold()
-    let refresh = Task { await authentication.refresh() }
-    addTeardownBlock {
-      await provider.activation.releaseAll()
-      await refresh.value
-    }
-    try await requestStarted(at: provider.activation)
+    let refresh = try await refreshUntilRequest(authentication, at: provider.activation)
     XCTAssertNil(authentication.scopeID)
     await provider.activation.releaseAll()
-    await refresh.value
+    await refresh.task.value
     XCTAssertEqual(authentication.activeWorkspaceID, "org_one")
     try await assertToken(authentication)
   }
@@ -64,17 +59,11 @@ final class AuthenticationScopeTests: XCTestCase {
     let (provider, authentication) = try await session()
     await authentication.refresh()
     let scope = try XCTUnwrap(authentication.scopeID)
-    let previous = await provider.memberships.count
     await provider.memberships.hold()
-    let refresh = Task { await authentication.refresh() }
-    addTeardownBlock {
-      await provider.memberships.releaseAll()
-      await refresh.value
-    }
-    try await requestStarted(at: provider.memberships, after: previous)
+    let refresh = try await refreshUntilRequest(authentication, at: provider.memberships)
     try await authentication.signOut()
     await provider.memberships.releaseAll()
-    await refresh.value
+    await refresh.task.value
     await assertRejected(authentication, workspace: "org_one", scope: scope)
     XCTAssertNil(authentication.scopeID)
   }
@@ -83,14 +72,8 @@ final class AuthenticationScopeTests: XCTestCase {
     let (provider, authentication) = try await session()
     await authentication.refresh()
     let oldScope = try XCTUnwrap(authentication.scopeID)
-    let previous = await provider.memberships.count
     await provider.memberships.hold()
-    let refreshing = Task { await authentication.refresh() }
-    addTeardownBlock {
-      await provider.memberships.releaseAll()
-      await refreshing.value
-    }
-    try await requestStarted(at: provider.memberships, after: previous)
+    let refreshing = try await refreshUntilRequest(authentication, at: provider.memberships)
     provider.state.withLock {
       $0.userID = "user_replacement_" + UUID().uuidString
       $0.sessionID = "sess_replacement_" + UUID().uuidString
@@ -99,7 +82,7 @@ final class AuthenticationScopeTests: XCTestCase {
     }
     try await authentication.clerk?.refreshClient()
     await provider.memberships.releaseAll()
-    await refreshing.value
+    await refreshing.task.value
     await authentication.refresh()
     await assertRejected(authentication, workspace: "org_one", scope: oldScope)
     XCTAssertEqual(authentication.activeWorkspaceID, "org_two")
@@ -119,43 +102,47 @@ final class AuthenticationScopeTests: XCTestCase {
 
   func testOnlyTheLatestInitialMembershipReadCanAuthorizeTheScope() async throws {
     let (provider, authentication) = try await session()
-    let previous = await provider.memberships.count
     await provider.memberships.hold()
-    let first = Task { await authentication.refresh() }
-    addTeardownBlock {
-      await provider.memberships.releaseAll()
-      await first.value
-    }
-    try await requestStarted(at: provider.memberships, after: previous)
-    let latest = Task { await authentication.refresh() }
-    addTeardownBlock {
-      await provider.memberships.releaseAll()
-      await latest.value
-    }
-    try await requestStarted(at: provider.memberships, after: previous + 1)
-    await provider.memberships.release(previous + 1)
-    await first.value
+    let first = try await refreshUntilRequest(authentication, at: provider.memberships)
+    let latest = try await refreshUntilRequest(authentication, at: provider.memberships)
+    await provider.memberships.release(first.request)
+    await first.task.value
     XCTAssertNil(authentication.scopeID)
     await provider.memberships.releaseAll()
-    await latest.value
+    await latest.task.value
     try await assertToken(authentication)
   }
 
   func testCancelledMembershipVerificationCanRetryWithoutReusingItsOldRead() async throws {
     let (provider, authentication) = try await session()
-    let previous = await provider.memberships.count
     await provider.memberships.hold()
-    let cancelled = Task { await authentication.refresh() }
-    addTeardownBlock {
-      await provider.memberships.releaseAll()
-      await cancelled.value
-    }
-    try await requestStarted(at: provider.memberships, after: previous)
-    cancelled.cancel()
+    let cancelled = try await refreshUntilRequest(authentication, at: provider.memberships)
+    cancelled.task.cancel()
     await provider.memberships.releaseAll()
-    await cancelled.value
+    await cancelled.task.value
     await authentication.refresh()
     try await assertToken(authentication)
+  }
+
+  func testCompletedRefreshWithoutARequestStopsBeforeDependentActions() async throws {
+    let authentication = AuthenticationService(publishableKey: "")
+    let gate = AuthenticationRequestGate()
+    XCTExpectFailure(
+      "A completed refresh must not satisfy an identity request it never issued",
+      issueMatcher: { @Sendable issue in
+        issue.compactDescription.contains("Refresh completed without the expected fixture request")
+      })
+    var reachedDependentAction = false
+    var caughtFailure = false
+    do {
+      _ = try await refreshUntilRequest(authentication, at: gate)
+      reachedDependentAction = true
+    } catch {
+      caughtFailure = true
+    }
+    XCTAssertTrue(caughtFailure)
+    XCTAssertFalse(reachedDependentAction)
+    XCTAssertNotNil(authentication.errorMessage)
   }
 
   private func session(_ configure: (inout AuthenticationHTTPFixture.State) -> Void = { _ in })
@@ -172,12 +159,34 @@ final class AuthenticationScopeTests: XCTestCase {
     return (provider, authentication)
   }
 
-  private func requestStarted(at gate: AuthenticationRequestGate, after count: Int = 0) async throws
-  {
-    let deadline = ContinuousClock.now + .seconds(3)
-    while await gate.count <= count, ContinuousClock.now < deadline { await Task.yield() }
-    let started = await gate.count > count
-    _ = try XCTUnwrap(started ? true : nil, "Expected the external identity request to start")
+  private func refreshUntilRequest(
+    _ authentication: AuthenticationService, at gate: AuthenticationRequestGate,
+    file: StaticString = #filePath, line: UInt = #line
+  ) async throws -> (task: Task<Void, Never>, request: Int) {
+    let observation = await gate.observeRequests()
+    let refresh = Task {
+      await authentication.refresh()
+      await gate.stopObserving(observation.id)
+    }
+    addTeardownBlock {
+      refresh.cancel()
+      await gate.releaseAll()
+      await refresh.value
+      await gate.stopObserving(observation.id)
+    }
+    var request: Int?
+    for await arrival in observation.arrivals {
+      request = arrival
+      break
+    }
+    await gate.stopObserving(observation.id)
+    try Task.checkCancellation()
+    let observedRequest = try XCTUnwrap(
+      request,
+      "Refresh completed without the expected fixture request: "
+        + (authentication.errorMessage ?? "no authentication error"),
+      file: file, line: line)
+    return (refresh, observedRequest)
   }
 
   private func assertToken(_ authentication: AuthenticationService) async throws {
