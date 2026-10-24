@@ -185,7 +185,6 @@ describe("GET /api/connector-catalog", () => {
     const openai = response.body.connectors.find((connector) => {
       return connector.slug === "openai";
     });
-    expect(openai).toBeDefined();
     expect(openai?.label).toBe("OpenAI");
     expect(openai?.generation).toContain("text");
     expect(openai?.tags).toContain("llm");

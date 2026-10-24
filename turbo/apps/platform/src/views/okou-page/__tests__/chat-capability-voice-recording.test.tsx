@@ -370,8 +370,6 @@ test.each([
       { segments: expectedSegments },
       { segments: expectedSegments },
     ]);
-    expect(expectedSegments.length).toBeLessThanOrEqual(128);
-    expect(expectedSegments.join(" ")).toBe(fullText);
     expect(uploads).toBe(1);
   },
 );

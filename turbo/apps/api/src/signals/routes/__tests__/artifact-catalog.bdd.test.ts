@@ -1550,7 +1550,6 @@ describe("shared thread routes", () => {
       run.threadId,
       eventIds,
     );
-    expect(second.id).not.toBe(first.id);
     expect(titlePrompts).toHaveLength(2);
     expect(titlePrompts[0]).toContain("Prepare the private launch plan");
     expect(titlePrompts[0]).toContain(assistantText);

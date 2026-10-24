@@ -2104,7 +2104,6 @@ describe("Morning Brief explicit installation", () => {
     });
     const changedSchedule = await readBriefSchedule(actor);
     expect(changedSchedule.timezone).toBe("America/Los_Angeles");
-    expect(changedSchedule.nextRunAt).not.toBeNull();
     if (!changedSchedule.nextRunAt) {
       throw new Error("Expected next run");
     }
