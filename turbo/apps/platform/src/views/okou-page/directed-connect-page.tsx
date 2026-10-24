@@ -24,7 +24,6 @@ import {
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import {
   type ConnectorConnectSuccess,
-  justConnectedBuiltinSlugs$,
   builtinPollingOAuthDeviceAuthSlug$,
   submitBuiltinManualGrantAndSettle$,
   setBuiltinManualGrantFormValue$,
@@ -403,7 +402,6 @@ interface DirectedConnectCatalogState {
 function useDirectedConnectCatalogState(
   connectorSlug: ConnectorSlug | null,
 ): DirectedConnectCatalogState {
-  const justConnected = useGet(justConnectedBuiltinSlugs$);
   const itemLoadable = useLastLoadable(directedConnectCatalogItem$);
   // The last entry is kept across a reload, never shown for another slug.
   const catalogLoaded =
@@ -413,19 +411,12 @@ function useDirectedConnectCatalogState(
     catalogLoaded && connectorSlug
       ? (itemLoadable.data ?? undefined)
       : undefined;
-  const optimisticallyConnected =
-    connectorSlug !== null && justConnected.has(connectorSlug);
-  const isConnected = optimisticallyConnected || (item?.connected ?? false);
+  const isConnected = item?.connected ?? false;
   return {
     item,
     isConnected,
-    isLoading:
-      connectorSlug !== null && !optimisticallyConnected && !catalogLoaded,
-    unavailable:
-      connectorSlug !== null &&
-      catalogLoaded &&
-      !item &&
-      !optimisticallyConnected,
+    isLoading: connectorSlug !== null && !catalogLoaded,
+    unavailable: connectorSlug !== null && catalogLoaded && !item,
   };
 }
 
@@ -643,7 +634,6 @@ function DirectedConnectCard() {
   const setManualGrantDialogKey = useSet(setManualGrantDialogKey$);
   const setDirectedConnectModalKey = useSet(setDirectedConnectModalKey$);
   const completeAction = useSet(completeDirectedConnectorAction$);
-  const reloadAccounts = useSet(reloadDirectedConnectAccounts$);
   const actionCallback = useGet(routeChatActionCallback$);
   const { manualGrantDialogOpen, connectModalOpen } =
     useDirectedConnectDialogOpenState(connectorSlug, agentId, signal);
@@ -679,7 +669,6 @@ function DirectedConnectCard() {
     _connectionId,
     attemptSignal,
   ) => {
-    reloadAccounts(attemptSignal);
     return completeAction(agentId, actionCallback, attemptSignal);
   };
 

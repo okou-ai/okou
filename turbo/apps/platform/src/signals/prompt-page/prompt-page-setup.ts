@@ -11,11 +11,6 @@ import { defaultAgentId$ } from "../agent.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { redirectToConfiguredOnboarding$ } from "../okou-page/onboard-guard.ts";
-import {
-  resetChatPageModelSelection$,
-  setChatPageModelSelection$,
-} from "../okou-page/chat-page.ts";
-import { withCleanup } from "../utils.ts";
 
 interface ResolvedGenerationTemplate {
   readonly template: GenerationTemplateRequest;
@@ -172,13 +167,6 @@ export const setupPromptPage$ = command(
     const catalog = await get(modelCatalog$);
     signal.throwIfAborted();
     const resolvedRequestedModel = catalog.resolve(requestedModel);
-    if (resolvedRequestedModel) {
-      set(setChatPageModelSelection$, {
-        selectedModel: resolvedRequestedModel,
-      });
-    } else {
-      set(resetChatPageModelSelection$);
-    }
 
     const cleaned = new URLSearchParams(params);
     cleaned.delete("prompt");
@@ -186,24 +174,21 @@ export const setupPromptPage$ = command(
     cleaned.delete("template");
     cleaned.delete("connector");
     const rootSignal = get(rootSignal$);
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    await withCleanup(
-      set(
-        sendNewThread$,
-        {
-          agentId,
-          prompt,
-          generationTemplate: resolvedGenerationTemplate?.template,
-          generationTemplateTitleSnapshot:
-            resolvedGenerationTemplate?.titleSnapshot,
-          computerUseHostId: null,
-          routeSearchParams: cleaned,
-        },
-        rootSignal,
-      ),
-      () => {
-        set(resetChatPageModelSelection$);
+    await set(
+      sendNewThread$,
+      {
+        agentId,
+        prompt,
+        modelSelection: resolvedRequestedModel
+          ? { selectedModel: resolvedRequestedModel, modelSettings: {} }
+          : null,
+        generationTemplate: resolvedGenerationTemplate?.template,
+        generationTemplateTitleSnapshot:
+          resolvedGenerationTemplate?.titleSnapshot,
+        computerUseHostId: null,
+        routeSearchParams: cleaned,
       },
+      rootSignal,
     );
   },
 );

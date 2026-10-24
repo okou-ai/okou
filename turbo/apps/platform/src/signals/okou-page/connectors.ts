@@ -13,7 +13,7 @@ import { apiClient$ } from "../api-client.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import { userPermissionGrantsByAgent } from "../permission-allow/permission-allow-signals.ts";
-import { withCleanup } from "../utils.ts";
+import { resetSignal, withCleanup } from "../utils.ts";
 import { reloadAgentConnectorAuthorizations$ } from "./agent-connector-authorizations.ts";
 import {
   composerAgentConnectors,
@@ -28,6 +28,7 @@ import type {
 } from "../connector-domain.ts";
 import {
   relatedConnectorCatalog,
+  subscribeBuiltinConnectorChanges$,
   withConnectorCompletion,
 } from "../external/connectors.ts";
 import {
@@ -283,12 +284,29 @@ function createConnectorUiSignals(
   "connectorUiState$" | "updateConnectorUiState$" | "openAddConnectorsDialog$"
 > {
   const internalUiState$ = state(initialComposerConnectorUiState());
+  const resetBuiltinSubscription$ = resetSignal();
   const connectorUiState$ = computed((get): ComposerConnectorUiState => {
     return get(internalUiState$);
   });
   const updateConnectorUiState$ = command(
     ({ get, set }, patch: Partial<ComposerConnectorUiState>): void => {
-      if (patch.popoverOpen === true && !get(internalUiState$).popoverOpen) {
+      const current = get(internalUiState$);
+      const next = { ...current, ...patch };
+      const wasOpen =
+        current.popoverOpen ||
+        current.showAddDialog ||
+        current.selectedConnectorSlug !== null;
+      const isOpen =
+        next.popoverOpen ||
+        next.showAddDialog ||
+        next.selectedConnectorSlug !== null;
+      if (isOpen && !wasOpen) {
+        const signal = set(resetBuiltinSubscription$, get(pageSignal$));
+        set(subscribeBuiltinConnectorChanges$, signal);
+      } else if (!isOpen && wasOpen) {
+        set(resetBuiltinSubscription$);
+      }
+      if (patch.popoverOpen === true && !current.popoverOpen) {
         set(resources.open$, get(pageSignal$));
       } else if (patch.popoverOpen === false) {
         set(resources.close$);
@@ -296,9 +314,7 @@ function createConnectorUiSignals(
       if (patch.selectedConnectorSlug) {
         set(resetBuiltinManualGrantForm$, patch.selectedConnectorSlug);
       }
-      set(internalUiState$, (current) => {
-        return { ...current, ...patch };
-      });
+      set(internalUiState$, next);
     },
   );
   const openAddConnectorsDialog$ = command(({ set }): void => {

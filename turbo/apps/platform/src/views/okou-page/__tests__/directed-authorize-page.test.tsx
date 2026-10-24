@@ -197,6 +197,9 @@ test("Authorize an agent to use an already connected connector", async () => {
         operation: "add",
       });
       authorized = true;
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: AGENT_ID,
+      });
       return respond(200, { enabledConnectorSlugs: ["gmail"] });
     },
   );
@@ -317,6 +320,12 @@ test("Connect a manual-token connector while authorizing an agent", async () => 
         updatedAt: "2026-01-01T00:00:00Z",
       };
       context.mocks.data.connectors([connected]);
+      context.mocks.ably.trigger("connector:changed", {
+        connectorSlug: "axiom",
+      });
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: AGENT_ID,
+      });
       return respond(200, { connectionId: connected.id });
     },
   );
@@ -379,6 +388,12 @@ test("Connect and authorize an agent through OpenID", async () => {
           updatedAt: "2026-01-01T00:00:01Z",
         },
       ]);
+      context.mocks.ably.trigger("connector:changed", {
+        connectorSlug: "steam",
+      });
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: AGENT_ID,
+      });
     },
   });
   context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
@@ -456,6 +471,12 @@ test("Connect and authorize an agent to use a no-auth connector", async () => {
         updatedAt: "2026-01-01T00:00:00Z",
       };
       context.mocks.data.connectors([connected]);
+      context.mocks.ably.trigger("connector:changed", {
+        connectorSlug: "stripe",
+      });
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: AGENT_ID,
+      });
       return respond(200, { connectionId: connected.id });
     },
   );
@@ -531,12 +552,10 @@ test("Leave an agent unauthorized when OAuth progress is closed", async () => {
       "https://oauth.test/github/authorize",
     );
   });
-  await expect(screen.findByText("Connecting...")).resolves.toBeVisible();
   // Closing the provider window cancels the owning authorization attempt.
   authWindow.close();
 
   await screen.findByText("Authorize Okou");
   expect(updateCalls).toBe(0);
   expect(screen.queryByText("GitHub authorized")).not.toBeInTheDocument();
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });

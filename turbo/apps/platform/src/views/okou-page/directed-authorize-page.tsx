@@ -7,10 +7,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
-import {
-  type ConnectorConnectSuccess,
-  justConnectedBuiltinSlugs$,
-} from "../../signals/okou-page/settings/connectors.ts";
+import type { ConnectorConnectSuccess } from "../../signals/okou-page/settings/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   directedAuthorizeCatalogItem$,
@@ -94,7 +91,6 @@ function useDirectedAuthorizeParams(): {
 }
 
 function useDirectedAuthorizeCatalogState(connectorSlug: ConnectorSlug | null) {
-  const justConnected = useGet(justConnectedBuiltinSlugs$);
   const itemLoadable = useLastLoadable(directedAuthorizeCatalogItem$);
   // The last entry is kept across a reload, never shown for another slug.
   const catalogLoaded =
@@ -104,16 +100,13 @@ function useDirectedAuthorizeCatalogState(connectorSlug: ConnectorSlug | null) {
     catalogLoaded && connectorSlug
       ? (itemLoadable.data ?? undefined)
       : undefined;
-  const isConnected =
-    connectorSlug !== null &&
-    (justConnected.has(connectorSlug) || item?.connected === true);
+  const isConnected = connectorSlug !== null && item?.connected === true;
   return {
     item,
     isConnected,
     catalogFailed: itemLoadable.state === "hasError",
     catalogLoading:
       connectorSlug !== null &&
-      !justConnected.has(connectorSlug) &&
       itemLoadable.state !== "hasError" &&
       !catalogLoaded,
     unavailable:

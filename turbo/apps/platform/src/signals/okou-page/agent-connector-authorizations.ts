@@ -1,10 +1,13 @@
-import { command, computed, state, type Computed } from "ccstate";
+import { computed, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { withCleanup } from "../utils.ts";
-import { reloadConnectorAgentAccess$ } from "./settings/connector-agent-access.ts";
+import {
+  connectorAuthorizationVersion$,
+  reloadConnectorAgentAccess$,
+} from "./settings/connector-agent-access.ts";
 
 interface AgentConnectorAuthorizations {
   readonly agentId: string;
@@ -13,18 +16,7 @@ interface AgentConnectorAuthorizations {
 
 type MissingPolicy = "throw" | "null";
 
-const internalAgentConnectorAuthorizationsReload$ = state(0);
-
-const agentConnectorAuthorizationsReload$ = computed((get) => {
-  return get(internalAgentConnectorAuthorizationsReload$);
-});
-
-export const reloadAgentConnectorAuthorizations$ = command(({ set }) => {
-  set(internalAgentConnectorAuthorizationsReload$, (x) => {
-    return x + 1;
-  });
-  set(reloadConnectorAgentAccess$);
-});
+export const reloadAgentConnectorAuthorizations$ = reloadConnectorAgentAccess$;
 
 function pendingRequestKey(params: {
   readonly agentId: string;
@@ -135,7 +127,7 @@ function createAuthorizationsAtom(
   options: { readonly missing: "throw" | "null" },
 ): Computed<Promise<AgentConnectorAuthorizations | null>> {
   return computed(async (get): Promise<AgentConnectorAuthorizations | null> => {
-    const reloadGeneration = get(agentConnectorAuthorizationsReload$);
+    const reloadGeneration = get(connectorAuthorizationVersion$);
     return await get(agentConnectorAuthorizationRequestBroker$).load({
       createClient: get(apiClient$),
       agentId,

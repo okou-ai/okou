@@ -11,7 +11,6 @@ import {
   connectBuiltinConnectorNoAuth$,
   connectBuiltinConnectorOAuthAuthCode$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
-  justConnectedBuiltinSlugs$,
   builtinPollingOAuthDeviceAuthSlug$,
   getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
   runBuiltinConnectorConnectSuccess$,
@@ -281,7 +280,6 @@ function SourcesConnectorGrid({
     onConnected,
   );
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
-  const justConnectedSlugs = useGet(justConnectedBuiltinSlugs$);
   const connectorCatalogItems =
     connectorCatalogItemsLoadable.state === "hasData"
       ? connectorCatalogItemsLoadable.data
@@ -315,8 +313,7 @@ function SourcesConnectorGrid({
           if (!item) {
             return null;
           }
-          const connected =
-            item.connected === true || justConnectedSlugs.has(connectorSlug);
+          const connected = item.connected === true;
           return (
             <SourceConnectorCard
               key={connectorSlug}
@@ -421,7 +418,6 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
     setSelectedConnectorSlug,
   );
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
-  const justConnectedSlugs = useGet(justConnectedBuiltinSlugs$);
 
   if (validConnectorSlugs.length === 0) {
     return null;
@@ -451,8 +447,7 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
           if (!item) {
             return null;
           }
-          const connected =
-            item.connected === true || justConnectedSlugs.has(connectorSlug);
+          const connected = item.connected === true;
           const connecting = busy || pollingDeviceAuthSlug === connectorSlug;
           const connectHandlers = connectHandlersFor(connectorSlug, item);
           return (

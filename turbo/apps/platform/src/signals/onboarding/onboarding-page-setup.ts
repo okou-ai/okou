@@ -5,6 +5,7 @@ import { OnboardingSourcesFirstPromptPage } from "../../views/onboarding-sources
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { brandName$ } from "../branding.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
+import { subscribeBuiltinConnectorChanges$ } from "../external/connectors.ts";
 import { updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
@@ -36,6 +37,7 @@ export const setupOnboardingPromptPage$ = command(
       return;
     }
 
+    set(subscribeBuiltinConnectorChanges$, signal);
     set(sendEvent$, "onboarding-start");
     set(hydrateOnboardingRoute$, searchParams);
 

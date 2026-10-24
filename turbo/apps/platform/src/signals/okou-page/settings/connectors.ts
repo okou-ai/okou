@@ -36,7 +36,6 @@ import {
   connectorCatalogItemForSlug,
   relatedConnectorCatalog,
   withConnectorCompletion,
-  reloadBuiltinConnectors$,
 } from "../../external/connectors.ts";
 import { replaceSearchParams$, searchParams$ } from "../../route.ts";
 import { connectorAgentAuthorizations$ } from "./connector-access-management.ts";
@@ -53,7 +52,6 @@ import {
 } from "../../utils.ts";
 import { waitAblyPayloadLoopUntil$ } from "../../realtime.ts";
 import { agents$ } from "../../agent.ts";
-import { reloadAgentConnectorAuthorizations$ } from "../agent-connector-authorizations.ts";
 import { connectedConnectorTargetKeys$ } from "../connector-accounts.ts";
 import { sanitizeTokenInputRecord } from "./token-input.ts";
 import { IN_VITEST } from "../../../env.ts";
@@ -150,9 +148,6 @@ const resolveConnectorPostConnectOptions$ = command(
   },
 );
 
-const reloadConnectorConnectionState$ = command(({ set }) => {
-  set(reloadBuiltinConnectors$);
-});
 // ---------------------------------------------------------------------------
 // Derived state
 // ---------------------------------------------------------------------------
@@ -922,7 +917,6 @@ export const builtinManualGrantFormValuesFor$ = computed((get) => {
 
 type FinishConnectorConnectionOptions = PostConnectOptions & {
   readonly clearSelectedConnector?: boolean;
-  readonly reloadConnectors?: boolean;
   readonly toastMessage?: string | null;
 };
 
@@ -948,33 +942,27 @@ async function readCompletedBuiltinConnectorAccount(
 
 const authorizeConnectorForVisibleAgents$ = command(
   async (
-    { get, set },
+    { get },
     connectorSlug: ConnectorSlug,
     signal: AbortSignal,
   ): Promise<void> => {
     const visibleAgents = await get(agents$);
     signal.throwIfAborted();
     const client = get(apiClient$)(userBuiltinConnectorsContract);
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    await withCleanup(
-      Promise.all(
-        visibleAgents.map(async (agent) => {
-          await accept(
-            client.update({
-              params: { id: agent.agentId },
-              body: {
-                enabledConnectorSlugs: [connectorSlug],
-                operation: "add",
-              },
-              fetchOptions: { signal },
-            }),
-            [200, 404],
-          );
-        }),
-      ),
-      () => {
-        set(reloadAgentConnectorAuthorizations$);
-      },
+    await Promise.all(
+      visibleAgents.map(async (agent) => {
+        await accept(
+          client.update({
+            params: { id: agent.agentId },
+            body: {
+              enabledConnectorSlugs: [connectorSlug],
+              operation: "add",
+            },
+            fetchOptions: { signal },
+          }),
+          [200, 404],
+        );
+      }),
     );
     signal.throwIfAborted();
   },
@@ -989,15 +977,6 @@ const finishConnectorConnection$ = command(
   ): Promise<boolean> => {
     if (options.authorizeVisibleAgents) {
       await set(authorizeConnectorForVisibleAgents$, connectorSlug, signal);
-    }
-    set(internalJustConnectedSlugs$, (prev) => {
-      return new Set([...prev, connectorSlug]);
-    });
-    if (options.reloadConnectors !== false) {
-      set(reloadBuiltinConnectors$);
-    }
-    if (options.agentId) {
-      set(reloadAgentConnectorAuthorizations$);
     }
 
     if (options.toastMessage !== null) {
@@ -1046,72 +1025,59 @@ export const submitBuiltinManualGrant$ = command(
     parentSignal: AbortSignal,
   ): Promise<BuiltinConnectorConnectionResult | false> => {
     const signal = set(resetBuiltinConnectorConnectionSignal$, parentSignal);
-    let connectorStateChanged = false;
-    const operation = (async (): Promise<
-      BuiltinConnectorConnectionResult | false
-    > => {
-      const options = await set(
-        resolveConnectorPostConnectOptions$,
-        connectorSlug,
-        requestedOptions,
-        signal,
-      );
-      const createClient = get(apiClient$);
-      const connectorClient = createClient(builtinConnectorManualGrantContract);
-      const result = await accept(
-        connectorClient.connect({
-          params: { connectorSlug },
-          body: {
-            account: options.account,
-            authMethod,
-            ...(shouldAuthorizeAgent(options)
-              ? { authorizeAgent: true as const }
-              : {}),
-            ...(options.agentId ? { agentId: options.agentId } : {}),
-            values: sanitizeTokenInputRecord(inputValues),
-          },
-          fetchOptions: { signal },
-        }),
-        [200],
-      );
-      connectorStateChanged = true;
-      signal.throwIfAborted();
-      const { connectionId } =
-        builtinConnectorManualGrantContract.connect.responses[200].parse(
-          result.body,
-        );
-      if (
-        !(await readCompletedBuiltinConnectorAccount(
-          createClient,
-          connectorSlug,
-          connectionId,
-          options.account,
-          signal,
-        ))
-      ) {
-        return false;
-      }
-      await set(
-        finishConnectorConnection$,
-        connectorSlug,
-        {
-          ...options,
-          reloadConnectors: false,
-          toastMessage: `${options.connectorLabel ?? connectorSlug} connected successfully`,
+    const options = await set(
+      resolveConnectorPostConnectOptions$,
+      connectorSlug,
+      requestedOptions,
+      signal,
+    );
+    const createClient = get(apiClient$);
+    const connectorClient = createClient(builtinConnectorManualGrantContract);
+    const result = await accept(
+      connectorClient.connect({
+        params: { connectorSlug },
+        body: {
+          account: options.account,
+          authMethod,
+          ...(shouldAuthorizeAgent(options)
+            ? { authorizeAgent: true as const }
+            : {}),
+          ...(options.agentId ? { agentId: options.agentId } : {}),
+          values: sanitizeTokenInputRecord(inputValues),
         },
-        signal,
+        fetchOptions: { signal },
+      }),
+      [200],
+    );
+    signal.throwIfAborted();
+    const { connectionId } =
+      builtinConnectorManualGrantContract.connect.responses[200].parse(
+        result.body,
       );
-      signal.throwIfAborted();
-      await onSuccess?.(connectionId, signal);
-      signal.throwIfAborted();
-      return { connectionId };
-    })();
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    return await withCleanup(operation, () => {
-      if (connectorStateChanged) {
-        set(reloadConnectorConnectionState$);
-      }
-    });
+    if (
+      !(await readCompletedBuiltinConnectorAccount(
+        createClient,
+        connectorSlug,
+        connectionId,
+        options.account,
+        signal,
+      ))
+    ) {
+      return false;
+    }
+    await set(
+      finishConnectorConnection$,
+      connectorSlug,
+      {
+        ...options,
+        toastMessage: `${options.connectorLabel ?? connectorSlug} connected successfully`,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    await onSuccess?.(connectionId, signal);
+    signal.throwIfAborted();
+    return { connectionId };
   },
 );
 
@@ -1151,71 +1117,58 @@ export const connectBuiltinConnectorNoAuth$ = command(
     parentSignal: AbortSignal,
   ): Promise<BuiltinConnectorConnectionResult | false> => {
     const signal = set(resetBuiltinConnectorConnectionSignal$, parentSignal);
-    let connectorStateChanged = false;
-    const operation = (async (): Promise<
-      BuiltinConnectorConnectionResult | false
-    > => {
-      const options = await set(
-        resolveConnectorPostConnectOptions$,
-        connectorSlug,
-        requestedOptions,
-        signal,
-      );
-      const createClient = get(apiClient$);
-      const connectorClient = createClient(builtinConnectorNoAuthGrantContract);
-      const result = await accept(
-        connectorClient.connect({
-          params: { connectorSlug },
-          body: {
-            account: options.account,
-            authMethod,
-            ...(shouldAuthorizeAgent(options)
-              ? { authorizeAgent: true as const }
-              : {}),
-            ...(options.agentId ? { agentId: options.agentId } : {}),
-          },
-          fetchOptions: { signal },
-        }),
-        [200],
-      );
-      connectorStateChanged = true;
-      signal.throwIfAborted();
-      const { connectionId } =
-        builtinConnectorNoAuthGrantContract.connect.responses[200].parse(
-          result.body,
-        );
-      if (
-        !(await readCompletedBuiltinConnectorAccount(
-          createClient,
-          connectorSlug,
-          connectionId,
-          options.account,
-          signal,
-        ))
-      ) {
-        return false;
-      }
-      await set(
-        finishConnectorConnection$,
-        connectorSlug,
-        {
-          ...options,
-          reloadConnectors: false,
-          toastMessage: `${options.connectorLabel ?? connectorSlug} enabled successfully`,
+    const options = await set(
+      resolveConnectorPostConnectOptions$,
+      connectorSlug,
+      requestedOptions,
+      signal,
+    );
+    const createClient = get(apiClient$);
+    const connectorClient = createClient(builtinConnectorNoAuthGrantContract);
+    const result = await accept(
+      connectorClient.connect({
+        params: { connectorSlug },
+        body: {
+          account: options.account,
+          authMethod,
+          ...(shouldAuthorizeAgent(options)
+            ? { authorizeAgent: true as const }
+            : {}),
+          ...(options.agentId ? { agentId: options.agentId } : {}),
         },
-        signal,
+        fetchOptions: { signal },
+      }),
+      [200],
+    );
+    signal.throwIfAborted();
+    const { connectionId } =
+      builtinConnectorNoAuthGrantContract.connect.responses[200].parse(
+        result.body,
       );
-      signal.throwIfAborted();
-      await onSuccess?.(connectionId, signal);
-      signal.throwIfAborted();
-      return { connectionId };
-    })();
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    return await withCleanup(operation, () => {
-      if (connectorStateChanged) {
-        set(reloadConnectorConnectionState$);
-      }
-    });
+    if (
+      !(await readCompletedBuiltinConnectorAccount(
+        createClient,
+        connectorSlug,
+        connectionId,
+        options.account,
+        signal,
+      ))
+    ) {
+      return false;
+    }
+    await set(
+      finishConnectorConnection$,
+      connectorSlug,
+      {
+        ...options,
+        toastMessage: `${options.connectorLabel ?? connectorSlug} enabled successfully`,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    await onSuccess?.(connectionId, signal);
+    signal.throwIfAborted();
+    return { connectionId };
   },
 );
 
@@ -1238,18 +1191,6 @@ export const connectBuiltinConnectorNoAuthAndSettle$ = command(
 export const builtinPollingOAuthDeviceAuthSlug$ = computed((get) => {
   const current = get(internalConnectorOAuthDeviceAuthState$);
   return current.status === "pending" ? current.connectorSlug : null;
-});
-
-// ---------------------------------------------------------------------------
-// Optimistic connected state — bridges the gap between connect success and
-// relatedCatalogItems$ recomputation so the UI doesn't flash.
-// ---------------------------------------------------------------------------
-
-const internalJustConnectedSlugs$ = state<Set<ConnectorSlug>>(new Set());
-
-/** Slugs that were just connected but may not yet be reflected in relatedCatalogItems$. */
-export const justConnectedBuiltinSlugs$ = computed((get) => {
-  return get(internalJustConnectedSlugs$);
 });
 
 function secondsToMilliseconds(value: number): number {
@@ -1429,113 +1370,99 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
         requestId,
       );
     };
-    let connectorStateChanged = false;
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    return await withCleanup(
-      (async () => {
-        const current = get(internalConnectorOAuthDeviceAuthState$);
-        if (!isCurrentRequest(current)) {
-          return { stop: true };
-        }
+    const current = get(internalConnectorOAuthDeviceAuthState$);
+    if (!isCurrentRequest(current)) {
+      return { stop: true };
+    }
 
-        const remainingMs = current.expiresAtMs - now();
-        if (remainingMs <= 0) {
-          return { stop: true, expired: true };
-        }
+    const remainingMs = current.expiresAtMs - now();
+    if (remainingMs <= 0) {
+      return { stop: true, expired: true };
+    }
 
-        const pollResponse = await accept(
-          client.poll({
-            params: { connectorSlug, sessionId: current.sessionId },
-            body: { sessionToken: current.sessionToken },
-            fetchOptions: { signal },
-          }),
-          [200],
-        );
-        if (pollResponse.body.status === "complete") {
-          connectorStateChanged = true;
-        }
-
-        const latest = get(internalConnectorOAuthDeviceAuthState$);
-        if (!isCurrentRequest(latest)) {
-          return { stop: true };
-        }
-
-        signal.throwIfAborted();
-        const pollResult =
-          builtinConnectorOauthDeviceAuthSessionContract.poll.responses[200].parse(
-            pollResponse.body,
-          );
-        if (pollResult.status === "complete") {
-          const connectionId = pollResult.connectionId;
-          if (
-            !(await readCompletedBuiltinConnectorAccount(
-              get(apiClient$),
-              connectorSlug,
-              connectionId,
-              options.account,
-              signal,
-            ))
-          ) {
-            return { stop: true };
-          }
-          signal.throwIfAborted();
-          if (!isCurrentRequest(get(internalConnectorOAuthDeviceAuthState$))) {
-            return { stop: true };
-          }
-          await set(
-            finishConnectorConnection$,
-            connectorSlug,
-            {
-              ...options,
-              clearSelectedConnector: true,
-              reloadConnectors: false,
-            },
-            signal,
-          );
-          signal.throwIfAborted();
-          if (!isCurrentRequest(get(internalConnectorOAuthDeviceAuthState$))) {
-            return { stop: true };
-          }
-          set(
-            internalConnectorOAuthDeviceAuthState$,
-            createIdleConnectorOAuthDeviceAuthState(),
-          );
-          return {
-            stop: true,
-            connectionId,
-          };
-        }
-
-        signal.throwIfAborted();
-
-        if (pollResult.status !== "pending") {
-          set(internalConnectorOAuthDeviceAuthState$, {
-            status: pollResult.status,
-            connectorSlug,
-            authMethod,
-            message: getOAuthDeviceAuthTerminalMessage(pollResult),
-          });
-          return { stop: true };
-        }
-
-        const pollIntervalMs = Math.max(
-          secondsToMilliseconds(pollResult.interval),
-          OAUTH_DEVICE_AUTH_MIN_POLL_INTERVAL_MS,
-        );
-        set(internalConnectorOAuthDeviceAuthState$, {
-          ...latest,
-          pollIntervalMs,
-          errorMessage: null,
-        });
-
-        return { stop: false };
-      })(),
-      () => {
-        if (connectorStateChanged) {
-          set(reloadConnectorConnectionState$);
-        }
-      },
+    const pollResponse = await accept(
+      client.poll({
+        params: { connectorSlug, sessionId: current.sessionId },
+        body: { sessionToken: current.sessionToken },
+        fetchOptions: { signal },
+      }),
+      [200],
     );
+    signal.throwIfAborted();
+
+    const latest = get(internalConnectorOAuthDeviceAuthState$);
+    if (!isCurrentRequest(latest)) {
+      return { stop: true };
+    }
+
+    signal.throwIfAborted();
+    const pollResult =
+      builtinConnectorOauthDeviceAuthSessionContract.poll.responses[200].parse(
+        pollResponse.body,
+      );
+    if (pollResult.status === "complete") {
+      const connectionId = pollResult.connectionId;
+      if (
+        !(await readCompletedBuiltinConnectorAccount(
+          get(apiClient$),
+          connectorSlug,
+          connectionId,
+          options.account,
+          signal,
+        ))
+      ) {
+        return { stop: true };
+      }
+      signal.throwIfAborted();
+      if (!isCurrentRequest(get(internalConnectorOAuthDeviceAuthState$))) {
+        return { stop: true };
+      }
+      await set(
+        finishConnectorConnection$,
+        connectorSlug,
+        {
+          ...options,
+          clearSelectedConnector: true,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!isCurrentRequest(get(internalConnectorOAuthDeviceAuthState$))) {
+        return { stop: true };
+      }
+      set(
+        internalConnectorOAuthDeviceAuthState$,
+        createIdleConnectorOAuthDeviceAuthState(),
+      );
+      return {
+        stop: true,
+        connectionId,
+      };
+    }
+
+    signal.throwIfAborted();
+
+    if (pollResult.status !== "pending") {
+      set(internalConnectorOAuthDeviceAuthState$, {
+        status: pollResult.status,
+        connectorSlug,
+        authMethod,
+        message: getOAuthDeviceAuthTerminalMessage(pollResult),
+      });
+      return { stop: true };
+    }
+
+    const pollIntervalMs = Math.max(
+      secondsToMilliseconds(pollResult.interval),
+      OAUTH_DEVICE_AUTH_MIN_POLL_INTERVAL_MS,
+    );
+    set(internalConnectorOAuthDeviceAuthState$, {
+      ...latest,
+      pollIntervalMs,
+      errorMessage: null,
+    });
+
+    return { stop: false };
   },
 );
 
@@ -2001,96 +1928,81 @@ const completeConnectorExternalCode$ = command(
       errorMessage: null,
     });
 
-    let connectorStateChanged = false;
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    return await withCleanup(
-      (async () => {
-        const flowSignal = set(resetConnectorExternalCodeFlowSignal$, signal);
-        const createClient = get(apiClient$);
-        const client = createClient(
-          builtinConnectorExternalCodeSessionContract,
-          {
-            apiBase: OAUTH_API_BASE,
-          },
-        );
-        const completeResult = await accept(
-          client.complete({
-            params: { connectorSlug, sessionId: current.sessionId },
-            body: {
-              sessionToken: current.sessionToken,
-              code,
-            },
-            fetchOptions: { signal: flowSignal },
-          }),
-          [200, 400],
-        );
-        if (completeResult.status === 200) {
-          connectorStateChanged = true;
-        }
-        signal.throwIfAborted();
-        flowSignal.throwIfAborted();
-        const latest = get(internalConnectorExternalCodeState$);
-        if (
-          !isCurrentConnectorExternalCodeRequest(
-            latest,
-            connectorSlug,
-            authMethod,
-            current.requestId,
-          )
-        ) {
-          return false;
-        }
-
-        if (completeResult.status === 400) {
-          set(internalConnectorExternalCodeState$, {
-            ...latest,
-            errorMessage: completeResult.body.error.message,
-          });
-          return false;
-        }
-
-        const { connectionId } =
-          builtinConnectorExternalCodeSessionContract.complete.responses[200].parse(
-            completeResult.body,
-          );
-        if (
-          !(await readCompletedBuiltinConnectorAccount(
-            createClient,
-            connectorSlug,
-            connectionId,
-            current.account,
-            flowSignal,
-          ))
-        ) {
-          return false;
-        }
-        await set(
-          finishConnectorConnection$,
-          connectorSlug,
-          {
-            ...options,
-            account: current.account,
-            authorizeVisibleAgents: current.authorizeVisibleAgents,
-            clearSelectedConnector: true,
-            reloadConnectors: false,
-          },
-          flowSignal,
-        );
-        set(
-          internalConnectorExternalCodeState$,
-          createIdleConnectorExternalCodeState(),
-        );
-        flowSignal.throwIfAborted();
-        await args.onSuccess?.(connectionId, flowSignal);
-        flowSignal.throwIfAborted();
-        return { connectionId };
-      })(),
-      () => {
-        if (connectorStateChanged) {
-          set(reloadConnectorConnectionState$);
-        }
-      },
+    const flowSignal = set(resetConnectorExternalCodeFlowSignal$, signal);
+    const createClient = get(apiClient$);
+    const client = createClient(builtinConnectorExternalCodeSessionContract, {
+      apiBase: OAUTH_API_BASE,
+    });
+    const completeResult = await accept(
+      client.complete({
+        params: { connectorSlug, sessionId: current.sessionId },
+        body: {
+          sessionToken: current.sessionToken,
+          code,
+        },
+        fetchOptions: { signal: flowSignal },
+      }),
+      [200, 400],
     );
+    signal.throwIfAborted();
+    flowSignal.throwIfAborted();
+    const latest = get(internalConnectorExternalCodeState$);
+    if (
+      !isCurrentConnectorExternalCodeRequest(
+        latest,
+        connectorSlug,
+        authMethod,
+        current.requestId,
+      )
+    ) {
+      return false;
+    }
+
+    if (completeResult.status === 400) {
+      set(internalConnectorExternalCodeState$, {
+        ...latest,
+        errorMessage: completeResult.body.error.message,
+      });
+      return false;
+    }
+
+    const { connectionId } =
+      builtinConnectorExternalCodeSessionContract.complete.responses[200].parse(
+        completeResult.body,
+      );
+    if (
+      !(await readCompletedBuiltinConnectorAccount(
+        createClient,
+        connectorSlug,
+        connectionId,
+        current.account,
+        flowSignal,
+      ))
+    ) {
+      return false;
+    }
+    await set(
+      finishConnectorConnection$,
+      connectorSlug,
+      {
+        ...options,
+        account: current.account,
+        authorizeVisibleAgents: current.authorizeVisibleAgents,
+        clearSelectedConnector: true,
+      },
+      flowSignal,
+    );
+    signal.throwIfAborted();
+    flowSignal.throwIfAborted();
+    set(
+      internalConnectorExternalCodeState$,
+      createIdleConnectorExternalCodeState(),
+    );
+    flowSignal.throwIfAborted();
+    await args.onSuccess?.(connectionId, flowSignal);
+    signal.throwIfAborted();
+    flowSignal.throwIfAborted();
+    return { connectionId };
   },
 );
 
@@ -2508,7 +2420,6 @@ const finishAcceptedConnectorConnection$ = command(
     ) {
       return false;
     }
-    set(reloadConnectorConnectionState$);
     const isConnected =
       !args.options.useDefaultConnectorProjection ||
       (await set(
@@ -2527,7 +2438,6 @@ const finishAcceptedConnectorConnection$ = command(
       {
         ...args.options,
         clearSelectedConnector: true,
-        reloadConnectors: false,
         toastMessage: null,
       },
       signal,

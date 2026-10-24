@@ -253,6 +253,9 @@ async function openConnectorAccessSummary() {
     ({ params, body, respond }) => {
       const next = body.operation === "remove" ? [] : ["github"];
       enabled.set(params.id, next);
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: params.id,
+      });
       return respond(200, { enabledConnectorSlugs: next });
     },
   );
@@ -522,6 +525,9 @@ test("Grant and revoke connector access for agents", async () => {
             })
           : [...new Set([...current, ...body.enabledConnectorSlugs])];
       enabled.set(params.id, next);
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: params.id,
+      });
       return respond(200, { enabledConnectorSlugs: next });
     },
   );

@@ -264,6 +264,9 @@ test("A source card starts OAuth directly and reports a successful connect", asy
           updatedAt: "2026-01-01T00:00:00.000Z",
         },
       ]);
+      context.mocks.ably.trigger("connector:changed", {
+        connectorSlug: "notion",
+      });
       return respond(200, {
         authorizationUrl: "https://oauth.test/notion/authorize",
         oauthAttemptId,
@@ -300,6 +303,9 @@ test("A source card starts OAuth directly and reports a successful connect", asy
       }),
     ]),
   );
+
+  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
+  expect(getButtonByName("Continue")).toBeEnabled();
 
   await waitFor(() => {
     expect(posthog.events).toStrictEqual(

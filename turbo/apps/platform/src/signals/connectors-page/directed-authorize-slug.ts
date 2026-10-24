@@ -8,11 +8,7 @@ import { accept } from "../../lib/accept.ts";
 import { pathParams$, searchParams$ } from "../route.ts";
 import { apiClient$ } from "../api-client.ts";
 import { agents$ } from "../agent.ts";
-import { withCleanup } from "../utils.ts";
-import {
-  agentConnectorAuthorizations,
-  reloadAgentConnectorAuthorizations$,
-} from "../okou-page/agent-connector-authorizations.ts";
+import { agentConnectorAuthorizations } from "../okou-page/agent-connector-authorizations.ts";
 import {
   resetBuiltinManualGrantForm$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
@@ -163,7 +159,6 @@ export const completeDirectedConnectorAuthorization$ = command(
     callback: ChatActionCallback,
     signal: AbortSignal,
   ): Promise<void> => {
-    set(reloadAgentConnectorAuthorizations$);
     await set(completeDirectedConnectorAction$, agentId, callback, signal);
   },
 );
@@ -246,7 +241,7 @@ export const authorizeDirectedConnector$ = command(
 /** Authorize a connector for the given agent via user-connectors API. */
 export const authorizeConnector$ = command(
   async (
-    { get, set },
+    { get },
     connectorSlug: ConnectorSlug,
     agentId: string,
     signal: AbortSignal,
@@ -254,22 +249,16 @@ export const authorizeConnector$ = command(
     const createClient = get(apiClient$);
     const client = createClient(userBuiltinConnectorsContract);
 
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    await withCleanup(
-      accept(
-        client.update({
-          params: { id: agentId },
-          body: {
-            enabledConnectorSlugs: [connectorSlug],
-            operation: "add",
-          },
-          fetchOptions: { signal },
-        }),
-        [200],
-      ),
-      () => {
-        set(reloadAgentConnectorAuthorizations$);
-      },
+    await accept(
+      client.update({
+        params: { id: agentId },
+        body: {
+          enabledConnectorSlugs: [connectorSlug],
+          operation: "add",
+        },
+        fetchOptions: { signal },
+      }),
+      [200],
     );
     signal.throwIfAborted();
   },

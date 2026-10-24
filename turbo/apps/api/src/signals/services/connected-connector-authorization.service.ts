@@ -5,8 +5,6 @@ import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
 import { db$ } from "../external/db";
-import { publishUserSignal } from "../external/realtime";
-import { publishBuiltinConnectorInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import { updateUserBuiltinConnectors$ } from "./user-connectors.service";
 
 type AuthorizeConnectedConnectorResult =
@@ -131,17 +129,6 @@ export const authorizeConnectedConnector$ = command(
       };
     }
 
-    await publishBuiltinConnectorInvalidationAfterCommit(
-      {
-        userId,
-        connectorSlug,
-      },
-      signal,
-    );
-    await publishUserSignal([userId], "composerAgentConnectorsChanged", {
-      agentId: agent.id,
-    });
-    signal.throwIfAborted();
     return { status: "authorized", agentId: agent.id };
   },
 );

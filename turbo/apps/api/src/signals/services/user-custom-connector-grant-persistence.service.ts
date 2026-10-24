@@ -5,6 +5,7 @@ import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { writeDb$ } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
 
 interface PersistUserCustomConnectorGrantsArgs {
   readonly orgId: string;
@@ -12,6 +13,7 @@ interface PersistUserCustomConnectorGrantsArgs {
   readonly agentId: string;
   readonly grants: readonly AgentCustomConnectorGrant[];
   readonly operation: "replace" | "add" | "remove";
+  readonly deferClientInvalidationUntilOuterCommit?: boolean;
 }
 
 export const persistUserCustomConnectorGrants$ = command(
@@ -33,6 +35,16 @@ export const persistUserCustomConnectorGrants$ = command(
     );
     if (args.operation === "replace") {
       await db.delete(userCustomConnectors).where(connectorScope);
+      // Each statement commits independently, so later failures cannot hide it.
+      if (!args.deferClientInvalidationUntilOuterCommit) {
+        await publishUserSignal(
+          [args.userId],
+          "composerAgentConnectorsChanged",
+          {
+            agentId: args.agentId,
+          },
+        );
+      }
     } else if (args.operation === "remove" && connectorIds.length > 0) {
       await db
         .delete(userCustomConnectors)
@@ -42,6 +54,15 @@ export const persistUserCustomConnectorGrants$ = command(
             inArray(userCustomConnectors.customConnectorId, connectorIds),
           ),
         );
+      if (!args.deferClientInvalidationUntilOuterCommit) {
+        await publishUserSignal(
+          [args.userId],
+          "composerAgentConnectorsChanged",
+          {
+            agentId: args.agentId,
+          },
+        );
+      }
     }
 
     if (args.operation !== "remove" && args.grants.length > 0) {
@@ -69,6 +90,15 @@ export const persistUserCustomConnectorGrants$ = command(
             permissionNames: sql`excluded.permission_names`,
           },
         });
+      if (!args.deferClientInvalidationUntilOuterCommit) {
+        await publishUserSignal(
+          [args.userId],
+          "composerAgentConnectorsChanged",
+          {
+            agentId: args.agentId,
+          },
+        );
+      }
     }
 
     if (args.operation === "replace") {
