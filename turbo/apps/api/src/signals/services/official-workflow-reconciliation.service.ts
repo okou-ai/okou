@@ -21,9 +21,13 @@ import {
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
-import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
+import {
+  googleFormsAutomationCursors,
+  googleFormsWatchStates,
+} from "@okouai/db/schema/google-forms-event";
 import {
   officialWorkflowAutomationIdentities,
+  workflowWebhookAutomations,
   workflows,
 } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
@@ -43,6 +47,7 @@ import {
   notExists,
   or,
   sql,
+  WithSubquery,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
@@ -52,30 +57,24 @@ import {
   pgBooleanDecoder,
   pgNullDecoder,
   pgTextDecoder,
+  nullableDriverValueDecoder,
 } from "../../lib/db-structured-result";
 
 import {
   webhookTierLockStatement,
   webhookTierFromRows,
   webhookTierRowSchema,
-  activeAutomationIdentityUpsertStatement,
-  installationUpdatedStatement,
-  deleteGoogleFormsCursorStatement,
   acceptedBlueprintDefinitionFromRows,
   acceptedRevisionBlueprintRowsMatch,
   matchingAcceptedBlueprintDefinition,
   acceptedRevisionBlueprintMatches,
   type AcceptedBlueprintIdentity,
-  installedWorkflowLockStatement,
-  activeAutomationIdentityLockStatement,
-  automationWebhookReadStatement,
   acceptedCatalogRowSchema,
   acceptedCatalogReadStatement,
   acceptedCatalogDefinitionRevision,
   acceptedCatalogLockStatement,
   acceptedRevisionRowSchema,
   acceptedRevisionReadStatement,
-  officialWebhookSubtypeMutation,
 } from "./official-workflow-reconciliation-sql";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
@@ -303,14 +302,6 @@ function structureTransitionSourceIsCurrent(
     current.officialReconciliationStatus === "reconciling" &&
     Boolean(current.officialBlueprintKey)
   );
-}
-
-function assertStructureCursorPublished(rowCount: number | null) {
-  if (rowCount !== 1) {
-    throw new Error(
-      "Google Forms structure watch disappeared before publication",
-    );
-  }
 }
 
 const loadReconciliationContext$ = command(
@@ -2176,36 +2167,334 @@ function structureTransitionReadPlan(
   };
 }
 
-function requireOfficialAutomationRow(
-  row: OfficialAutomationRow | undefined,
-): OfficialAutomationRow {
+function structureTransitionCursorGate(current: OfficialAutomationRow) {
+  if (
+    !current.enabled ||
+    current.eventType !== "google-forms-response-submitted"
+  ) {
+    return sql`true`;
+  }
+  const config = googleFormsResponseSubmittedEventConfigSchema.parse(
+    current.eventConfig,
+  );
+  const builder = new QueryBuilder();
+  return exists(
+    builder
+      .select({ id: googleFormsWatchStates.id })
+      .from(googleFormsWatchStates)
+      .where(
+        and(
+          eq(googleFormsWatchStates.orgId, current.orgId),
+          eq(googleFormsWatchStates.userId, current.ownerUserId),
+          eq(googleFormsWatchStates.connectorId, config.connectorId),
+          eq(googleFormsWatchStates.formId, config.form.id),
+        ),
+      ),
+  );
+}
+
+function structureFinalizationCatalog(releaseId: string) {
+  const builder = new QueryBuilder();
+  return builder.$with("structure_catalog_fence").as(
+    builder
+      .select({ authority: officialWorkflowCatalogState.authority })
+      .from(officialWorkflowCatalogState)
+      .where(
+        and(
+          eq(
+            officialWorkflowCatalogState.authority,
+            OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+          ),
+          eq(officialWorkflowCatalogState.acceptedReleaseId, releaseId),
+        ),
+      )
+      .for("share"),
+  );
+}
+
+function structureFinalizationTier(
+  orgId: string,
+  webhook: boolean,
+  catalog: ReturnType<typeof structureFinalizationCatalog>,
+) {
+  const builder = new QueryBuilder();
+  return builder.$with("structure_webhook_tier").as(
+    builder
+      .select({
+        entitlementExists: sql`structure_tier."entitlementExists"`
+          .mapWith(pgBooleanDecoder)
+          .as("entitlementExists"),
+        orgExists: sql`structure_tier."orgExists"`
+          .mapWith(pgBooleanDecoder)
+          .as("orgExists"),
+        restrictedBuiltInModels: sql`structure_tier."restrictedBuiltInModels"`
+          .mapWith(nullableDriverValueDecoder(pgBooleanDecoder))
+          .as("restrictedBuiltInModels"),
+        allowed: sql`structure_tier.allowed`
+          .mapWith(nullableDriverValueDecoder(pgBooleanDecoder))
+          .as("allowed"),
+      })
+      .from(
+        sql`(SELECT * FROM (${
+          webhook
+            ? webhookTierLockStatement(orgId)
+            : sql`SELECT true AS "entitlementExists", false AS "orgExists", false AS "restrictedBuiltInModels", true AS allowed`
+        }) AS structure_tier LIMIT (SELECT CASE WHEN ${count()} > 0 THEN 1 ELSE 0 END FROM ${catalog})) AS structure_tier`,
+      ),
+  );
+}
+
+function structureFinalizationOwnership(
+  args: FinalizeAutomationStructureTransitionArgs,
+  releaseId: string,
+  desired: OfficialAutomationRow,
+  accountPlan: ReturnType<typeof officialAccountProjectionReadPlan>,
+) {
+  const builder = new QueryBuilder();
+  const catalog = structureFinalizationCatalog(releaseId);
+  const tier = structureFinalizationTier(
+    args.orgId,
+    desired.eventType === "webhook-received",
+    catalog,
+  );
+  const installation = builder.$with("structure_installed_workflow").as(
+    builder
+      .select({ id: workflows.id })
+      .from(workflows)
+      .where(
+        and(
+          installedWorkflowCondition(args, desired.workflowId),
+          exists(builder.select().from(tier)),
+        ),
+      )
+      .for("update")
+      .limit(1),
+  );
+  const locked = builder.$with("structure_locked_automation").as(
+    builder
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(
+        and(
+          observedWorkflowAutomationCondition(args.persisted.current),
+          exists(builder.select().from(installation)),
+        ),
+      )
+      .for("update")
+      .limit(1),
+  );
+  const identity = builder.$with("structure_owned_identity").as(
+    builder
+      .select({ id: officialWorkflowAutomationIdentities.id })
+      .from(officialWorkflowAutomationIdentities)
+      .where(
+        and(
+          activeIdentityOwnershipCondition(args.persisted.current),
+          exists(builder.select().from(locked)),
+        ),
+      )
+      .for("update")
+      .limit(1),
+  );
+  const accountMatches = accountPlan.required
+    ? sql`(SELECT projection_selection."connectorId" FROM ${accountPlan.source}) IS NOT DISTINCT FROM ${args.patch.eventConnectorId}::uuid`
+    : sql`true`;
+  const webhookPresent = exists(
+    builder
+      .select({ id: workflowWebhookAutomations.automationId })
+      .from(workflowWebhookAutomations)
+      .where(eq(workflowWebhookAutomations.automationId, desired.id)),
+  );
+  const cursorPresent = structureTransitionCursorGate(desired);
+  const ready = builder.$with("structure_ready").as(
+    builder
+      .select({ id: identity.id })
+      .from(identity)
+      .where(
+        and(
+          accountMatches,
+          exists(
+            builder
+              .select()
+              .from(tier)
+              .where(
+                and(
+                  eq(tier.entitlementExists, true),
+                  isNotNull(tier.restrictedBuiltInModels),
+                  eq(tier.allowed, true),
+                ),
+              ),
+          ),
+          cursorPresent,
+          desired.eventType === "webhook-received" &&
+            !args.preparation?.webhookCredentials
+            ? webhookPresent
+            : undefined,
+        ),
+      ),
+  );
+  return {
+    catalog,
+    tier,
+    installation,
+    locked,
+    identity,
+    ready,
+    accountMatches,
+    webhookPresent,
+    cursorPresent,
+    owners: [catalog, tier, installation, locked, identity, ready] as const,
+  };
+}
+
+function structureTransitionWebhookStatement(
+  desired: OfficialAutomationRow,
+  credentials: OfficialAutomationEventPreparation["webhookCredentials"],
+  currentTime: Date,
+) {
+  const gate = sql`EXISTS (SELECT 1 FROM structure_ready)`;
+  const condition = eq(workflowWebhookAutomations.automationId, desired.id);
+  const timestamp = timestampWithoutTimeZone(currentTime);
+  if (desired.eventType !== "webhook-received") {
+    return sql`DELETE FROM ${workflowWebhookAutomations} WHERE ${condition} AND ${gate} RETURNING automation_id`;
+  }
+  if (!credentials) {
+    return sql`UPDATE ${workflowWebhookAutomations} SET disabled_reason = NULL,
+      updated_at = ${timestamp}::timestamp WHERE ${condition} AND ${gate} RETURNING automation_id`;
+  }
+  return sql`INSERT INTO ${workflowWebhookAutomations}
+    (automation_id, token_hash, encrypted_token, encrypted_secret, secret_last_four, created_at, updated_at)
+    SELECT ${desired.id}::uuid, ${credentials.tokenHash}, ${credentials.encryptedToken},
+      ${credentials.encryptedSecret}, ${credentials.secretLastFour}, ${timestamp}::timestamp, ${timestamp}::timestamp
+    WHERE ${gate}
+    ON CONFLICT (automation_id) DO UPDATE SET disabled_reason = NULL, updated_at = excluded.updated_at
+    RETURNING automation_id`;
+}
+
+function structureTransitionResult(
+  row:
+    | {
+        readonly owned: boolean;
+        readonly accountMatches: boolean;
+        readonly cursorPresent: boolean;
+        readonly webhookPresent: boolean;
+        readonly published: boolean;
+        readonly entitlementExists: boolean | null;
+        readonly orgExists: boolean | null;
+        readonly restrictedBuiltInModels: boolean | null;
+        readonly allowed: boolean | null;
+      }
+    | undefined,
+  args: FinalizeAutomationStructureTransitionArgs,
+): FinalizeAutomationStructureTransitionResult {
   if (!row) {
     throw new Error("Official Workflow automation disappeared");
   }
-  return row;
+  if (!row.owned || !row.accountMatches) {
+    return { kind: "superseded" };
+  }
+  if (args.patch.eventType === "webhook-received") {
+    const eligible = webhookTierFromRows(
+      webhookTierRowSchema.array().parse([row]),
+      args.orgId,
+    );
+    if (!eligible) {
+      return {
+        kind: "failed",
+        message: "Webhook automations require a Team or Custom workspace",
+      };
+    }
+    if (!row.webhookPresent && !args.preparation?.webhookCredentials) {
+      throw new Error("Missing prepared Official webhook credentials");
+    }
+  }
+  if (!row.cursorPresent) {
+    throw new Error(
+      "Google Forms structure watch disappeared before publication",
+    );
+  }
+  if (!row.published) {
+    throw new Error("Official Workflow automation disappeared");
+  }
+  return { kind: "current" };
 }
 
-function structureTransitionPublicationPlan(
-  previous: OfficialAutomationRow,
-  current: OfficialAutomationRow,
+function structureFinalizationPublicationPlan(
   args: FinalizeAutomationStructureTransitionArgs,
   currentTime: Date,
+  p: ReturnType<typeof structureFinalizationOwnership>,
 ) {
+  const source = args.persisted.current;
+  const desired = structureTransitionWatchAutomation(source, args.patch);
+  const builder = new QueryBuilder();
+  const updated = sql`structure_updated`;
+  const published = sql`structure_updated_installation`;
+  const subtype = new WithSubquery(
+    structureTransitionWebhookStatement(
+      desired,
+      args.preparation?.webhookCredentials,
+      currentTime,
+    ),
+    {},
+    "structure_webhook",
+    true,
+  );
   return {
-    resetCursor: googleFormsCursorMustReset(previous, current)
-      ? deleteGoogleFormsCursorStatement(previous.id)
-      : null,
-    cursor: googleFormsCursorPublicationStatement(
-      current,
+    subtype,
+    subtypeCompleted:
+      desired.eventType === "webhook-received"
+        ? eq(builder.select({ count: count() }).from(sql`structure_webhook`), 1)
+        : gte(
+            builder.select({ count: count() }).from(sql`structure_webhook`),
+            0,
+          ),
+    cursorStatement: googleFormsCursorPublicationStatement(
+      desired,
       args.preparation?.googleFormsSeedCursor ?? null,
       currentTime,
+      {
+        gate: exists(builder.select().from(updated)),
+        reset: googleFormsCursorMustReset(source, desired),
+      },
     ),
-    identity: activeAutomationIdentityUpsertStatement(current, currentTime),
-    installation: installationUpdatedStatement(
-      current.workflowId,
-      args.userId,
-      currentTime,
+    deleteCursor: and(
+      eq(googleFormsAutomationCursors.automationId, source.id),
+      exists(builder.select().from(updated)),
+      googleFormsCursorMustReset(source, desired) ? sql`true` : sql`false`,
     ),
+    identityValues: {
+      automationId: desired.id,
+      state: "active" as const,
+      retainedParameterBindings: null,
+      retainedIntendedEnabled: null,
+      retainedAppliedFingerprint: null,
+      updatedAt: currentTime,
+    },
+    selection: {
+      owned: exists(builder.select().from(p.identity)).mapWith(
+        pgBooleanDecoder,
+      ),
+      accountMatches: p.accountMatches.mapWith(pgBooleanDecoder),
+      cursorPresent: p.cursorPresent.mapWith(pgBooleanDecoder),
+      webhookPresent: p.webhookPresent.mapWith(pgBooleanDecoder),
+      published: exists(builder.select().from(published)).mapWith(
+        pgBooleanDecoder,
+      ),
+      entitlementExists:
+        sql`(SELECT "entitlementExists" FROM ${p.tier})`.mapWith(
+          nullableDriverValueDecoder(pgBooleanDecoder),
+        ),
+      orgExists: sql`(SELECT "orgExists" FROM ${p.tier})`.mapWith(
+        nullableDriverValueDecoder(pgBooleanDecoder),
+      ),
+      restrictedBuiltInModels:
+        sql`(SELECT "restrictedBuiltInModels" FROM ${p.tier})`.mapWith(
+          nullableDriverValueDecoder(pgBooleanDecoder),
+        ),
+      allowed: sql`(SELECT allowed FROM ${p.tier})`.mapWith(
+        nullableDriverValueDecoder(pgBooleanDecoder),
+      ),
+    },
   };
 }
 
@@ -2216,122 +2505,125 @@ const finalizeAutomationStructureTransition$ = command(
     signal: AbortSignal,
   ): Promise<FinalizeAutomationStructureTransitionResult> => {
     const db = set(writeDb$);
-    const { source, authority, accountPlan, installation } =
+    const { source, authority, accountPlan } =
       structureTransitionReadPlan(args);
-
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0202; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
-      await tx.execute(acceptedCatalogLockStatement());
-      const catalogRows = parseRawRows(
-        acceptedCatalogRowSchema,
-        await tx.execute(acceptedCatalogReadStatement()),
-      );
-      signal.throwIfAborted();
-      const acceptedDefinition = acceptedBlueprintDefinitionFromRows(
-        catalogRows,
-        authority,
-      );
-      if (!acceptedDefinition) {
-        return { kind: "superseded" };
-      }
-      const revisionRows = parseRawRows(
-        acceptedRevisionRowSchema,
-        await tx.execute(acceptedRevisionReadStatement(acceptedDefinition)),
-      );
-      signal.throwIfAborted();
-      if (!acceptedRevisionBlueprintRowsMatch(revisionRows, authority)) {
-        return { kind: "superseded" };
-      }
-      let webhookTierEligible = true;
-      if (args.patch.eventType === "webhook-received") {
-        const tierRows = parseRawRows(
-          webhookTierRowSchema,
-          await tx.execute(webhookTierLockStatement(args.orgId)),
-        );
-        webhookTierEligible = webhookTierFromRows(tierRows, args.orgId);
-        signal.throwIfAborted();
-      }
-      const accountRows = accountPlan.required
-        ? await tx.select(accountPlan.columns).from(accountPlan.source)
-        : [];
-      if (accountPlan.required) {
-        signal.throwIfAborted();
-      }
-      const projection = officialAccountProjectionFromRow(
-        accountPlan,
-        accountRows[0],
-      );
-      const { rowCount: installationCount } = await tx.execute(
-        installedWorkflowLockStatement(installation),
-      );
-      if (installationCount !== 1) {
-        return { kind: "superseded" };
-      }
-      const [current] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(observedWorkflowAutomationCondition(source))
-        .for("update")
-        .limit(1);
-      if (!structureTransitionSourceIsCurrent(current, source)) {
-        return { kind: "superseded" };
-      }
-      const identityCondition = activeIdentityOwnershipCondition(current);
-      const { rowCount: identityCount } = await tx.execute(
-        activeAutomationIdentityLockStatement(identityCondition),
-      );
-      if (
-        identityCount !== 1 ||
-        !accountProjectionMatchesPatch(projection, args.patch)
-      ) {
-        return { kind: "superseded" };
-      }
-      const currentTime = nowDate();
-      const desired = structureTransitionWatchAutomation(current, args.patch);
-      const values = finalizedStructurePatch(current, args.patch, currentTime);
-      const { rowCount: webhookCount } = await tx.execute(
-        automationWebhookReadStatement(desired.id),
-      );
-      signal.throwIfAborted();
-      const subtype = officialWebhookSubtypeMutation(
-        desired,
-        webhookCount === 1,
-        args.preparation?.webhookCredentials,
-        webhookTierEligible,
-        currentTime,
-      );
-      if (subtype.kind === "failed") {
-        return subtype;
-      }
-      if (subtype.statement !== null) {
-        await tx.execute(subtype.statement);
-      }
-      signal.throwIfAborted();
-
-      const [updated] = await tx
+    const catalogRows = parseRawRows(
+      acceptedCatalogRowSchema,
+      await db.execute(acceptedCatalogReadStatement()),
+    );
+    signal.throwIfAborted();
+    const acceptedDefinition = acceptedBlueprintDefinitionFromRows(
+      catalogRows,
+      authority,
+    );
+    const releaseId = catalogRows[0]?.releaseId;
+    if (!acceptedDefinition || !releaseId) {
+      return { kind: "superseded" };
+    }
+    const revisionRows = parseRawRows(
+      acceptedRevisionRowSchema,
+      await db.execute(acceptedRevisionReadStatement(acceptedDefinition)),
+    );
+    signal.throwIfAborted();
+    if (
+      !acceptedRevisionBlueprintRowsMatch(revisionRows, authority) ||
+      !structureTransitionSourceIsCurrent(source, source)
+    ) {
+      return { kind: "superseded" };
+    }
+    const accountRows = accountPlan.required
+      ? await db.select(accountPlan.columns).from(accountPlan.source)
+      : [];
+    signal.throwIfAborted();
+    if (
+      !accountProjectionMatchesPatch(
+        officialAccountProjectionFromRow(accountPlan, accountRows[0]),
+        args.patch,
+      )
+    ) {
+      return { kind: "superseded" };
+    }
+    const currentTime = nowDate();
+    const values = finalizedStructurePatch(source, args.patch, currentTime);
+    const desired = structureTransitionWatchAutomation(source, args.patch);
+    const p = structureFinalizationOwnership(
+      args,
+      releaseId,
+      desired,
+      accountPlan,
+    );
+    const publication = structureFinalizationPublicationPlan(
+      args,
+      currentTime,
+      p,
+    );
+    const updated = db.$with("structure_updated").as(
+      db
         .update(workflowAutomations)
         .set(values)
-        .where(eq(workflowAutomations.id, current.id))
-        .returning(workflowAutomationColumns());
-      const finalized = requireOfficialAutomationRow(updated);
-      const publication = structureTransitionPublicationPlan(
-        current,
-        finalized,
-        args,
-        currentTime,
+        .from(p.ready)
+        .where(
+          and(
+            eq(workflowAutomations.id, p.ready.id),
+            publication.subtypeCompleted,
+          ),
+        )
+        .returning({ id: workflowAutomations.id }),
+    );
+    const cursor =
+      publication.cursorStatement === null
+        ? db.$with("structure_cursor").as(
+            db
+              .delete(googleFormsAutomationCursors)
+              .where(publication.deleteCursor)
+              .returning({
+                automationId: googleFormsAutomationCursors.automationId,
+              }),
+          )
+        : new WithSubquery(
+            publication.cursorStatement,
+            {},
+            "structure_cursor",
+            true,
+          );
+    const identities = officialWorkflowAutomationIdentities;
+    const identity = db.$with("structure_updated_identity").as(
+      db
+        .update(identities)
+        .set(publication.identityValues)
+        .from(updated)
+        .where(
+          and(
+            eq(identities.id, updated.id),
+            gte(db.select({ count: count() }).from(sql`structure_cursor`), 0),
+          ),
+        )
+        .returning({ id: identities.id }),
+    );
+    const installation = db
+      .$with("structure_updated_installation")
+      .as(
+        db
+          .update(workflows)
+          .set({ updatedBy: args.userId, updatedAt: currentTime })
+          .from(identity)
+          .where(eq(workflows.id, source.workflowId))
+          .returning({ id: workflows.id }),
       );
-      if (publication.resetCursor !== null) {
-        await tx.execute(publication.resetCursor);
-      }
-      if (publication.cursor !== null) {
-        const { rowCount } = await tx.execute(publication.cursor);
-        assertStructureCursorPublished(rowCount);
-      }
-      await tx.execute(publication.identity);
-      await tx.execute(publication.installation);
-      return { kind: "current" };
-    });
+    signal.throwIfAborted();
+    const [row] = await db
+      .with(
+        ...p.owners,
+        publication.subtype,
+        updated,
+        cursor,
+        identity,
+        installation,
+      )
+      .select(publication.selection)
+      .from(sql`(SELECT 1) AS structure_result`);
+    signal.throwIfAborted();
+    return structureTransitionResult(row, args);
   },
 );
 // Complete both watch cleanups before cancellation reaches the state restoration owner.
