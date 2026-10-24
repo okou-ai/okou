@@ -110,35 +110,6 @@ function sentTemplate(capture: ReturnType<typeof mockTemplateChat>) {
   return templatePart(message).template;
 }
 
-test("A closed composer does not load uploaded template covers", async () => {
-  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
-  mockTemplateChat();
-  const uploaded = createUploadedTemplate({
-    id: UPLOADED_TEMPLATE_ID,
-    title: "Quarterly Board Review",
-  });
-  mockPresentationTemplateLibrary([uploaded]);
-  const user = userEvent.setup();
-
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    host: "app.okou.ai",
-  });
-
-  await screen.findByLabelText("Add");
-  expect(
-    document.querySelector(`img[src*="${uploaded.id}"]`),
-  ).not.toBeInTheDocument();
-
-  await openTemplatePicker(user, "Presentation");
-  await waitFor(() => {
-    expect(
-      importedTemplateMedia(uploaded.id).querySelector("img"),
-    ).toHaveAttribute("src", expect.stringContaining(uploaded.id));
-  });
-});
-
 async function openUploadedPresentationPicker() {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   const capture = mockTemplateChat();

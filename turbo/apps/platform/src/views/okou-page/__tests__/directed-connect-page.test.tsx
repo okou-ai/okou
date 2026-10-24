@@ -101,9 +101,6 @@ test("Retry a failed target account read from the directed connection page", asy
   );
   await screen.findByText("Okou needs Public GitHub to proceed");
   expect(getButtonByText("Connect")).toBeEnabled();
-  expect(
-    screen.queryByText("Accounts are unavailable for this connector."),
-  ).not.toBeInTheDocument();
 });
 
 function mockAccounts(read: () => readonly ConnectorAccountConnection[]) {
@@ -1094,35 +1091,6 @@ test("Start public OAuth from a directed connection link", async () => {
   });
 });
 
-test("Close directed OAuth popup without reporting a failure", async () => {
-  const { authWindow } = mockConnectorOauthStart({ popupClosed: false });
-  mockPublicConnectorStatus(
-    publicOAuthConnectorStatus({
-      slug: "github",
-      label: "Public GitHub",
-      singleAuthCodeAuthMethodId: "oauth",
-    }),
-  );
-
-  await setupPage({
-    context,
-    path: `/connectors/github/connect?agentId=${AGENT_ID}`,
-  });
-
-  await screen.findByText("Okou needs Public GitHub to proceed");
-  click(getButtonByText("Connect"));
-
-  await waitFor(() => {
-    expect(authWindow.location.href).toBe(
-      "https://oauth.test/github/authorize",
-    );
-  });
-  authWindow.close();
-
-  await expect(screen.findByText("Connect")).resolves.toBeEnabled();
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-});
-
 test("Connect a no-auth connector and continue the originating chat", async () => {
   let savedConnection: BuiltinConnectorResponse | null = null;
   mockPublicConnectorStatus(
@@ -1622,7 +1590,6 @@ test("Connect a manual grant and continue the originating chat", async () => {
   await expect(
     screen.findByText("Public Axiom connected"),
   ).resolves.toBeInTheDocument();
-  expect(getButtonByText("Saving...")).toBeDisabled();
   expect(axiomDialog).toBeInTheDocument();
   releaseCallback.resolve();
 

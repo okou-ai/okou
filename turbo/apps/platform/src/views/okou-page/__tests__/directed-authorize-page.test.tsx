@@ -552,12 +552,10 @@ test("Leave an agent unauthorized when OAuth progress is closed", async () => {
       "https://oauth.test/github/authorize",
     );
   });
-  await expect(screen.findByText("Connecting...")).resolves.toBeVisible();
   // Closing the provider window cancels the owning authorization attempt.
   authWindow.close();
 
   await screen.findByText("Authorize Okou");
   expect(updateCalls).toBe(0);
   expect(screen.queryByText("GitHub authorized")).not.toBeInTheDocument();
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });

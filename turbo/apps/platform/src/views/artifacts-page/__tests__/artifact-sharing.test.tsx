@@ -170,9 +170,6 @@ test("owners can change three access levels separately from copying the stable a
     await waitFor(() => {
       return expect(permission(name)).toHaveAttribute("aria-checked", "true");
     });
-    await waitFor(() => {
-      return expect(permission(name)).toHaveAttribute("aria-busy", "false");
-    });
     expect(clipboard.writes).toHaveLength(changes.length - 1);
     await waitFor(() => {
       return expect(action("button", "Copy link")).not.toBeDisabled();

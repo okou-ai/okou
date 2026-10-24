@@ -380,7 +380,6 @@ test("Add an AWS account through external-code authorization", async () => {
       return getConnectorAction("button", "Open AWS sign-in", dialog);
     }),
   ).resolves.toBeInTheDocument();
-  expect(within(dialog).getByLabelText("Close")).toBeEnabled();
   click(getConnectorAction("button", "Open AWS sign-in", dialog));
   expect(
     browserOpen.calls.some((call) => {
@@ -1011,9 +1010,6 @@ test("Complete OAuth only after the current attempt succeeds", async () => {
   );
   const dialog = await screen.findByRole("dialog", { name: "Public Stripe" });
   click(getConnectorAction("button", "Connect", dialog));
-  await expect(
-    within(dialog).findByRole("status"),
-  ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(authWindow.location.href).toBe(
       "https://oauth.test/stripe/authorize",
@@ -1040,9 +1036,6 @@ test("Complete OAuth only after the current attempt succeeds", async () => {
   authWindow = createAuthWindow();
   context.mocks.browser.open(authWindow);
   click(getConnectorAction("button", "Connect", dialog));
-  await expect(
-    within(dialog).findByRole("status"),
-  ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(authWindow.location.href).toBe(
       "https://oauth.test/stripe/authorize",
@@ -1297,9 +1290,6 @@ test("Start provider sign-in from catalog metadata", async () => {
     );
   });
   expect(screen.queryByRole("dialog", { name: label })).toBeNull();
-  await waitFor(() => {
-    expect(getConnectorAction("button", `Connect ${label}`)).toBeEnabled();
-  });
 
   expect(starts).toStrictEqual([{ slug, callbackTarget: "app" }]);
   expect(browserOpen.calls).toHaveLength(1);

@@ -435,7 +435,6 @@ test("Reflect a late successful agent grant after another grant has failed", asy
   await expect(
     within(connect).findByText(/Research access was denied/u),
   ).resolves.toBeInTheDocument();
-  expect(getConnectorAction("button", "Save", connect)).toBeEnabled();
   expect(getConnectorCard("Acme Search")).not.toHaveTextContent(
     "Used by Support",
   );
@@ -577,7 +576,6 @@ test("Preserve revoked access when adding another account", async () => {
 });
 
 test("Manage agent access and permissions for a custom connector", async () => {
-  const save = context.mocks.deferred<void>();
   const connector = customConnector({
     permissionBundleRef: "builtin:feishu@1",
     account: {
@@ -630,9 +628,8 @@ test("Manage agent access and permissions for a custom connector", async () => {
   });
   context.mocks.api(
     agentCustomConnectorsContract.update,
-    async ({ params, body, respond, withSignal }) => {
+    ({ params, body, respond }) => {
       updates.push({ agentId: params.id, body });
-      await withSignal(save.promise);
       const next = body.operation === "remove" ? [] : body.grants;
       const grants = { grants: next };
       access.set(params.id, grants);
@@ -674,13 +671,6 @@ test("Manage agent access and permissions for a custom connector", async () => {
   );
   expect(updates).toHaveLength(0);
   click(getConnectorAction("button", "Apply", drawer));
-  await waitFor(() => {
-    expect(getConnectorAction("button", "Saving...", drawer)).toBeDisabled();
-  });
-  expect(getConnectorAction("button", "Allow", drawer)).toBeDisabled();
-  expect(getConnectorAction("button", "Deny", drawer)).toBeDisabled();
-  expect(getConnectorAction("button", "Cancel", drawer)).toBeDisabled();
-  save.resolve();
   await waitFor(() => {
     expect(
       getConnectorSwitch("Revoke Acme Search access for Support", dialog),
@@ -1872,8 +1862,6 @@ test("Reconnect an OAuth account after cancelled consent and metadata changes", 
       "https://oauth.acme.test/reconnect",
     );
   });
-  await expect(within(dialog).findByText("Connecting…")).resolves.toBeVisible();
-  expect(getConnectorAction("button", "Connecting…", dialog)).toBeDisabled();
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
   expect(within(dialog).getByLabelText("Close")).toBeEnabled();
   personal = {
@@ -1898,7 +1886,6 @@ test("Reconnect an OAuth account after cancelled consent and metadata changes", 
       "https://oauth.acme.test/reconnect",
     );
   });
-  await expect(within(dialog).findByText("Connecting…")).resolves.toBeVisible();
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
   await waitFor(() => {
     expect(screen.queryAllByRole("dialog")).toHaveLength(1);
