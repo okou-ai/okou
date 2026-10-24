@@ -1,3 +1,10 @@
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+import {
+  getDocument,
+  GlobalWorkerOptions,
+} from "pdfjs-dist/legacy/build/pdf.mjs";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
@@ -13,7 +20,11 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import type { PdfWorkerResponse } from "../../../lib/message-pdf/types.ts";
+import { renderMessagePdf } from "../../../lib/message-pdf/render.ts";
+import type {
+  PdfWorkerRequest,
+  PdfWorkerResponse,
+} from "../../../lib/message-pdf/types.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
@@ -70,7 +81,7 @@ async function setupPdfChat(
     ],
   });
   context.mocks.http.get(
-    /NotoSansCJKsc-(Regular|Bold)\.otf/u,
+    /(NotoSansCJKsc-|sarasa-gothic-sc-|noto-emoji-emoji-).*\.(otf|ttf|woff)/u,
     ({ request }) => {
       return loadFont(request);
     },
@@ -224,4 +235,234 @@ test("Removing the message actions cancels PDF generation without leaving the pa
   await waitFor(() => {
     expect(browser.blobForUrl(downloadLink().href)).toBe(pdf);
   });
+});
+
+async function exportRenderedPdf(markdown: string) {
+  const require = createRequire(import.meta.url);
+  GlobalWorkerOptions.workerSrc = pathToFileURL(
+    require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs"),
+  ).href;
+  const fontFiles = [
+    "@fontpkg/noto-sans-cjk-sc/NotoSansCJKsc-Regular.otf",
+    "@fontpkg/noto-sans-cjk-sc/NotoSansCJKsc-Bold.otf",
+    "@fontpkg/sarasa-gothic-sc/sarasa-gothic-sc-italic.ttf",
+    "@fontpkg/sarasa-gothic-sc/sarasa-gothic-sc-bolditalic.ttf",
+    "@fontsource/noto-emoji/files/noto-emoji-emoji-400-normal.woff",
+  ];
+  const rendered = context.mocks.deferred<void>();
+  // Replace only the browser transport. The page command, Markdown parser,
+  // document builder, font loading and PDF renderer all execute unchanged.
+  context.mocks.browser.dedicatedWorker(async (message) => {
+    const blob = await renderMessagePdf(message as PdfWorkerRequest);
+    rendered.resolve();
+    return { ok: true, blob };
+  });
+  const browser = context.mocks.browser.blobDownload();
+  await setupPdfChat(`${ANSWER}\n\n${markdown}`, async (request) => {
+    const file = fontFiles.find((name) => {
+      return request.url.includes(name.split("/").at(-1) ?? "");
+    });
+    if (!file) {
+      throw new Error("Unexpected PDF font request");
+    }
+    const filename = file.split("/").at(-1);
+    const data = await readFile(
+      require.resolve(
+        `../../../../test-fixtures/message-pdf-fonts/${filename}`,
+      ),
+    );
+    return HttpResponse.arrayBuffer(Uint8Array.from(data).buffer);
+  });
+  click(button("Generate PDF"));
+  await rendered.promise;
+  await waitFor(() => {
+    expect(downloadLink()).toBeInTheDocument();
+  });
+  const blob = browser.blobForUrl(downloadLink().href);
+  if (!blob) {
+    throw new Error("PDF download has no data");
+  }
+  const task = getDocument({
+    data: new Uint8Array(await blob.arrayBuffer()),
+    useSystemFonts: false,
+  });
+  return { pdf: await task.promise, task };
+}
+
+test("Exported table text stays inside the page and merged columns preserve all cells", async () => {
+  const { pdf, task } = await exportRenderedPdf(`| Rank | Candidate | Reason |
+|---|---|---|
+| 1 | org_members_metadata.translation_language | RIGHT_EDGE_SENTINEL |
+| 2 | ${"https://example.com/" + "longpath".repeat(25)} | LAST_COLUMN |
+
+<table><tr><th colspan="2">Group header</th><th>Notes</th></tr><tr><td>A</td><td>B</td><td>Normal row</td></tr><tr><td colspan="2">Combined columns</td><td>Final note</td></tr></table>`);
+  try {
+    let text = "";
+    for (let number = 1; number <= pdf.numPages; number++) {
+      const page = await pdf.getPage(number);
+      const width = page.getViewport({ scale: 1 }).width;
+      const content = await page.getTextContent();
+      for (const item of content.items) {
+        if (!("str" in item)) {
+          continue;
+        }
+        text += item.str;
+        expect(item.transform[4]).toBeGreaterThanOrEqual(47);
+        expect(item.transform[4] + item.width).toBeLessThanOrEqual(width - 47);
+      }
+    }
+    expect(text).toContain("RIGHT_EDGE_SENTINEL");
+    expect(text).toContain("LAST_COLUMN");
+    expect(text).toContain("Group header");
+    expect(text).toContain("Combined columns");
+    expect(text).toContain("Final note");
+  } finally {
+    await task.destroy();
+  }
+});
+
+test("Exported typography preserves code alignment, emphasis, emoji and Markdown breaks", async () => {
+  const { pdf, task } =
+    await exportRenderedPdf(`Normal **Bold** *Italic* ***BoldItalic*** 中文 *中文斜体* ✅ 🚀 👩‍💻 🇨🇳 1️⃣
+
+H<sub>2</sub>O x<sup>2</sup>
+
+soft_first
+soft_second
+
+hard_first${"  "}
+hard_second
+
+\`\`\`text
+iiii|VALUE
+WWWW|VALUE
+1111|VALUE
+\`\`\``);
+  try {
+    const page = await pdf.getPage(1);
+    const content = await page.getTextContent();
+    const items = content.items.filter((item) => {
+      return "str" in item;
+    });
+    const text = items
+      .map((item) => {
+        return item.str;
+      })
+      .join("");
+    expect(text).toContain("✅");
+    expect(text).toContain("🚀");
+    expect(text).toContain("👩‍💻");
+    expect(text).toContain("🇨🇳");
+    const find = (value: string) => {
+      const item = items.find((entry) => {
+        return entry.str.includes(value);
+      });
+      if (!item) {
+        throw new Error(`Missing PDF text: ${value}`);
+      }
+      return item;
+    };
+    expect(find("Italic").fontName).not.toBe(find("Normal").fontName);
+    expect(find("BoldItalic").fontName).not.toBe(find("Bold").fontName);
+    expect(find("soft_first").transform[5]).toBe(
+      find("soft_second").transform[5],
+    );
+    expect(find("hard_first").transform[5]).toBeGreaterThan(
+      find("hard_second").transform[5],
+    );
+    expect(find("iiii|VALUE").width).toBeCloseTo(find("WWWW|VALUE").width, 2);
+    expect(find("1111|VALUE").width).toBeCloseTo(find("WWWW|VALUE").width, 2);
+    const twos = items.filter((item) => {
+      return item.str === "2";
+    });
+    expect(twos).toHaveLength(2);
+    expect(twos[0]?.transform[5]).toBeLessThan(find("H").transform[5]);
+    expect(twos[1]?.transform[5]).toBeGreaterThan(find("x").transform[5]);
+  } finally {
+    await task.destroy();
+  }
+});
+
+test("A table row taller than a page retains every line in the exported PDF", async () => {
+  const lines = Array.from({ length: 75 }, (_, index) => {
+    return `LONG_ROW_${String(index + 1).padStart(3, "0")}`;
+  });
+  const { pdf, task } = await exportRenderedPdf(
+    `| ID | Content |\n|---|---|\n| A | ${lines.join("<br>")} |\n\nTABLE_END`,
+  );
+  try {
+    expect(pdf.numPages).toBeGreaterThan(1);
+    let text = "";
+    for (let number = 1; number <= pdf.numPages; number++) {
+      const content = await (await pdf.getPage(number)).getTextContent();
+      text += content.items
+        .map((item) => {
+          return "str" in item ? item.str : "";
+        })
+        .join("");
+    }
+    for (const line of lines) {
+      expect(text.split(line)).toHaveLength(2);
+    }
+    expect(text).toContain("TABLE_END");
+  } finally {
+    await task.destroy();
+  }
+});
+
+test("Exported short table rows keep their identifiers, descriptions and statuses on one page", async () => {
+  const rows = Array.from({ length: 42 }, (_, index) => {
+    const id = String(index + 1).padStart(2, "0");
+    return `| ROW_${id} | 中文说明；A short description for record ${id}. DETAIL_${id} | OK_${id} |`;
+  });
+  const { pdf, task } = await exportRenderedPdf(
+    `| Row | Description | Status |\n|---|---|---|\n${rows.join("\n")}\n\nTABLE_END`,
+  );
+  try {
+    const pages: string[] = [];
+    for (let number = 1; number <= pdf.numPages; number++) {
+      const content = await (await pdf.getPage(number)).getTextContent();
+      pages.push(
+        content.items
+          .map((item) => {
+            return "str" in item ? item.str : "";
+          })
+          .join(""),
+      );
+    }
+    for (let number = 1; number <= 42; number++) {
+      const id = String(number).padStart(2, "0");
+      const page = pages.find((text) => {
+        return text.includes(`ROW_${id}`);
+      });
+      expect(page).toContain(`DETAIL_${id}`);
+      expect(page).toContain(`OK_${id}`);
+    }
+  } finally {
+    await task.destroy();
+  }
+});
+
+test("An exported heading stays with the following table at a page boundary", async () => {
+  const fillers = Array.from({ length: 22 }, (_, index) => {
+    return `FILLER_${index} — Pagination calibration paragraph.`;
+  }).join("\n\n");
+  const { pdf, task } = await exportRenderedPdf(
+    `# Heading pagination\n\n${fillers}\n\n## Important table heading\n\n| Name | Status |\n|---|---|\n| CONTENT_START | Ready |`,
+  );
+  try {
+    const locations = new Map<string, number>();
+    for (let number = 1; number <= pdf.numPages; number++) {
+      const content = await (await pdf.getPage(number)).getTextContent();
+      for (const item of content.items) {
+        if ("str" in item) {
+          locations.set(item.str, number);
+        }
+      }
+    }
+    expect(locations.get("Important table heading")).toBe(2);
+    expect(locations.get("CONTENT_START")).toBe(2);
+  } finally {
+    await task.destroy();
+  }
 });

@@ -13,6 +13,8 @@
     "@floating-ui/react-dom": 2,
     "@floating-ui/utils": 2,
     "@fontpkg/noto-sans-cjk-sc": 1,
+    "@fontpkg/sarasa-gothic-sc": 1,
+    "@fontsource/noto-emoji": 1,
     "@okouai/mermaid-lite": 5,
     "@ricky0123/vad-web": 5,
     "@sentry/browser": 4,
