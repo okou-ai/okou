@@ -16,6 +16,7 @@ import { InvalidArgumentError } from "commander";
 import { z } from "zod";
 
 import { getApiUrl } from "../../lib/api/config";
+import { getDataRouterUrl } from "../../lib/api/data-router-client";
 import { getOkouToken } from "../../lib/okou-env";
 import {
   commentsIntent,
@@ -223,6 +224,7 @@ export class CollectionCheckpoint {
     readonly path: string,
     private readonly token: string,
     private readonly apiUrl: string,
+    private readonly dataRouterUrl: string,
     private replace: boolean,
   ) {}
 
@@ -248,6 +250,7 @@ export class CollectionCheckpoint {
       canonical,
       token,
       await getApiUrl(),
+      getDataRouterUrl().href,
       resume,
     );
     try {
@@ -287,6 +290,8 @@ export class CollectionCheckpoint {
     return createHmac("sha256", this.token)
       .update("okou-social-collection-v1\0")
       .update(this.apiUrl)
+      .update("\0")
+      .update(this.dataRouterUrl)
       .update("\0")
       .update(payload)
       .digest();

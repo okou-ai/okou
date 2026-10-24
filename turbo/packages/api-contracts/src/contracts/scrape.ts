@@ -1,10 +1,5 @@
 import { z } from "zod";
 
-import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
-
-const c = initContract();
-
 export const scrapeFormatSchema = z.enum(["markdown", "links"]);
 export const scrapeModeSchema = z.enum(["standard", "enhanced"]);
 export const scrapeBillingCategorySchema = z.enum([
@@ -93,26 +88,3 @@ export type ScrapeResponse = z.infer<typeof scrapeResponseSchema>;
 export type ScrapeFormat = z.infer<typeof scrapeFormatSchema>;
 export type ScrapeMode = z.infer<typeof scrapeModeSchema>;
 export type ScrapeBillingCategory = z.infer<typeof scrapeBillingCategorySchema>;
-
-const scrapeResponses = {
-  200: scrapeResponseSchema,
-  400: apiErrorSchema,
-  401: apiErrorSchema,
-  402: apiErrorSchema,
-  403: apiErrorSchema,
-  502: apiErrorSchema,
-  503: apiErrorSchema,
-} as const;
-
-export const scrapeContract = c.router({
-  scrape: {
-    method: "POST",
-    path: "/api/scrape",
-    headers: authHeadersSchema,
-    body: scrapeRequestSchema,
-    responses: scrapeResponses,
-    summary: "Scrape a public web page through Okou-managed scraping",
-  },
-});
-
-export type ScrapeContract = typeof scrapeContract;

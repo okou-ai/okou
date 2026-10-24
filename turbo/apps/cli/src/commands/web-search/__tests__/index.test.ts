@@ -87,13 +87,9 @@ describe("okou data web search command", () => {
 
   it("prints search results and pending billing when the charge is unknown", async () => {
     server.use(
-      dataRouterTool(
-        "web_search",
-        "http://localhost:3000/api/web-search",
-        () => {
-          return HttpResponse.json({ ...responseBody, creditsCharged: null });
-        },
-      ),
+      dataRouterTool("web_search", () => {
+        return HttpResponse.json({ ...responseBody, creditsCharged: null });
+      }),
     );
     await webSearchCommand.parseAsync(["node", "cli", "latest AI regulation"]);
     expect(output()).toContain("AI regulation update");
@@ -104,14 +100,10 @@ describe("okou data web search command", () => {
   it("posts default requests and prints JSON", async () => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "web_search",
-        "http://localhost:3000/api/web-search",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(responseBody);
-        },
-      ),
+      dataRouterTool("web_search", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json(responseBody);
+      }),
     );
 
     await webSearchCommand.parseAsync([
@@ -131,19 +123,15 @@ describe("okou data web search command", () => {
   it("translates filters and renders ranked results", async () => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "web_search",
-        "http://localhost:3000/api/web-search",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json({
-            ...responseBody,
-            limit: 3,
-            recency: "week",
-            domains: ["example.com", "docs.example.com"],
-          });
-        },
-      ),
+      dataRouterTool("web_search", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json({
+          ...responseBody,
+          limit: 3,
+          recency: "week",
+          domains: ["example.com", "docs.example.com"],
+        });
+      }),
     );
 
     await webSearchCommand.parseAsync([
@@ -178,13 +166,9 @@ describe("okou data web search command", () => {
 
   it("guides users when no results are returned", async () => {
     server.use(
-      dataRouterTool(
-        "web_search",
-        "http://localhost:3000/api/web-search",
-        () => {
-          return HttpResponse.json({ ...responseBody, results: [] });
-        },
-      ),
+      dataRouterTool("web_search", () => {
+        return HttpResponse.json({ ...responseBody, results: [] });
+      }),
     );
 
     await webSearchCommand.parseAsync(["node", "cli", "very narrow query"]);
@@ -209,14 +193,10 @@ describe("okou data web search command", () => {
   ])("rejects %s before calling the API", async (_name, args, message) => {
     let apiRequests = 0;
     server.use(
-      dataRouterTool(
-        "web_search",
-        "http://localhost:3000/api/web-search",
-        () => {
-          apiRequests += 1;
-          return HttpResponse.json(responseBody);
-        },
-      ),
+      dataRouterTool("web_search", () => {
+        apiRequests += 1;
+        return HttpResponse.json(responseBody);
+      }),
     );
 
     await expect(
@@ -230,21 +210,17 @@ describe("okou data web search command", () => {
 
   it("prints API error messages", async () => {
     server.use(
-      dataRouterTool(
-        "web_search",
-        "http://localhost:3000/api/web-search",
-        () => {
-          return HttpResponse.json(
-            {
-              error: {
-                message: "Perplexity web search request failed",
-                code: "PERPLEXITY_ERROR",
-              },
+      dataRouterTool("web_search", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              message: "Perplexity web search request failed",
+              code: "PERPLEXITY_ERROR",
             },
-            { status: 502 },
-          );
-        },
-      ),
+          },
+          { status: 502 },
+        );
+      }),
     );
 
     await expect(

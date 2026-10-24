@@ -21,7 +21,6 @@ import { socialCommand } from "../index";
 
 const jobId = "e36218c1-94a9-4728-9a4d-d41c4c73a720";
 const requestId = "d835e249-b217-4c41-9c41-48da45d592b0";
-const api = "http://localhost:3000/api/social/data";
 
 function job(
   overrides: Partial<SocialDataJobResponse> = {},
@@ -68,6 +67,28 @@ describe("saved Social data jobs", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-okou-token");
     resetOptions(socialCommand);
+    server.use(
+      dataRouterTool("social_data_quote", ({ toolArguments }) => {
+        return HttpResponse.json({
+          platform: toolArguments.platform,
+          operation: toolArguments.operation,
+          estimatedCredits: 7,
+          maxCredits: 9,
+          quantity: 1,
+          unit: "request",
+        });
+      }),
+      dataRouterTool("social_data_quote_continuation", () => {
+        return HttpResponse.json({
+          platform: "douyin",
+          operation: "posts",
+          estimatedCredits: 7,
+          maxCredits: 9,
+          quantity: 1,
+          unit: "request",
+        });
+      }),
+    );
     directory = await mkdtemp(join(tmpdir(), "okou-social-jobs-"));
   });
 
@@ -91,6 +112,24 @@ describe("saved Social data jobs", () => {
   function stdout(): string {
     return output.mock.calls.flat().join("\n");
   }
+
+  it("rejects a continuation quote above the budget without submitting a page", async () => {
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "jobs",
+        "continue",
+        jobId,
+        "--max-credits",
+        "1",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(errors.mock.calls.flat().join("\n")).toContain(
+      "Quoted cost 9 credits exceeds --max-credits 1; no continuation was submitted",
+    );
+  });
 
   it.each([
     {
@@ -146,21 +185,17 @@ describe("saved Social data jobs", () => {
     async (testCase) => {
       let body: unknown;
       server.use(
-        dataRouterTool(
-          "social_data_quote",
-          `${api}/quote`,
-          async ({ request }) => {
-            body = await request.json();
-            return HttpResponse.json({
-              platform: testCase.platform,
-              operation: testCase.operation,
-              estimatedCredits: 10,
-              maxCredits: 10,
-              quantity: 1,
-              unit: "request",
-            });
-          },
-        ),
+        dataRouterTool("social_data_quote", ({ toolArguments }) => {
+          body = toolArguments;
+          return HttpResponse.json({
+            platform: testCase.platform,
+            operation: testCase.operation,
+            estimatedCredits: 10,
+            maxCredits: 10,
+            quantity: 1,
+            unit: "request",
+          });
+        }),
       );
       await socialCommand.parseAsync([
         "node",
@@ -195,21 +230,17 @@ describe("saved Social data jobs", () => {
     async (platform, type) => {
       let body: unknown;
       server.use(
-        dataRouterTool(
-          "social_data_quote",
-          `${api}/quote`,
-          async ({ request }) => {
-            body = await request.json();
-            return HttpResponse.json({
-              platform,
-              operation: "search",
-              estimatedCredits: 10,
-              maxCredits: 10,
-              quantity: 1,
-              unit: "request",
-            });
-          },
-        ),
+        dataRouterTool("social_data_quote", ({ toolArguments }) => {
+          body = toolArguments;
+          return HttpResponse.json({
+            platform,
+            operation: "search",
+            estimatedCredits: 10,
+            maxCredits: 10,
+            quantity: 1,
+            unit: "request",
+          });
+        }),
       );
       await socialCommand.parseAsync([
         "node",
@@ -272,21 +303,17 @@ describe("saved Social data jobs", () => {
   it("quotes continuation without changing the saved target or total limit", async () => {
     let body: unknown;
     server.use(
-      dataRouterTool(
-        "social_data_quote_continuation",
-        `${api}/jobs/${jobId}/continue/quote`,
-        async ({ request }) => {
-          body = await request.json();
-          return HttpResponse.json({
-            platform: "douyin",
-            operation: "followers",
-            estimatedCredits: 10,
-            maxCredits: 10,
-            quantity: 1,
-            unit: "request",
-          });
-        },
-      ),
+      dataRouterTool("social_data_quote_continuation", ({ toolArguments }) => {
+        body = toolArguments;
+        return HttpResponse.json({
+          platform: "douyin",
+          operation: "followers",
+          estimatedCredits: 10,
+          maxCredits: 10,
+          quantity: 1,
+          unit: "request",
+        });
+      }),
     );
     await socialCommand.parseAsync([
       "node",
@@ -299,7 +326,7 @@ describe("saved Social data jobs", () => {
       "9",
       "--json",
     ]);
-    expect(body).toEqual({});
+    expect(body).toEqual({ jobId });
     expect(JSON.parse(stdout())).toMatchObject({
       kind: "quote",
       budget: { maxCredits: 9, fits: false },
@@ -310,21 +337,17 @@ describe("saved Social data jobs", () => {
     const successorId = "747b03d1-907b-4e46-963e-dc922b4210ca";
     let body: unknown;
     server.use(
-      dataRouterTool(
-        "social_data_continue",
-        `${api}/jobs/${jobId}/continue`,
-        async ({ request }) => {
-          body = await request.json();
-          return HttpResponse.json(
-            job({
-              jobId: successorId,
-              platform: "douyin",
-              operation: "followers",
-            }),
-            { status: 202 },
-          );
-        },
-      ),
+      dataRouterTool("social_data_continue", ({ toolArguments }) => {
+        body = toolArguments;
+        return HttpResponse.json(
+          job({
+            jobId: successorId,
+            platform: "douyin",
+            operation: "followers",
+          }),
+          { status: 202 },
+        );
+      }),
     );
     await socialCommand.parseAsync([
       "node",
@@ -339,7 +362,7 @@ describe("saved Social data jobs", () => {
       "--async",
       "--json",
     ]);
-    expect(body).toEqual({ requestId, maxCredits: 12 });
+    expect(body).toEqual({ jobId, requestId, maxCredits: 12 });
     expect(JSON.parse(stdout())).toMatchObject({
       jobId: successorId,
       recoveryCommand: `okou data social jobs get ${successorId} --wait --json`,
@@ -375,22 +398,18 @@ describe("saved Social data jobs", () => {
       sourceJobId: jobId,
     };
     server.use(
-      dataRouterTool(
-        "social_data_continue",
-        `${api}/jobs/${jobId}/continue`,
-        () => {
-          return HttpResponse.json(
-            job({
-              jobId: successorId,
-              platform: "douyin",
-              operation: "followers",
-              collection,
-              data: { items: [{ id: "follower-11", username: "coffee" }] },
-            }),
-            { status: 202 },
-          );
-        },
-      ),
+      dataRouterTool("social_data_continue", () => {
+        return HttpResponse.json(
+          job({
+            jobId: successorId,
+            platform: "douyin",
+            operation: "followers",
+            collection,
+            data: { items: [{ id: "follower-11", username: "coffee" }] },
+          }),
+          { status: 202 },
+        );
+      }),
     );
     await socialCommand.parseAsync([
       "node",
@@ -421,21 +440,17 @@ describe("saved Social data jobs", () => {
   it("quotes Facebook posts through the free API without invoking a legacy intent", async () => {
     const requests: unknown[] = [];
     server.use(
-      dataRouterTool(
-        "social_data_quote",
-        `${api}/quote`,
-        async ({ request }) => {
-          requests.push(await request.json());
-          return HttpResponse.json({
-            platform: "facebook",
-            operation: "posts",
-            estimatedCredits: 7,
-            maxCredits: 9,
-            quantity: 20,
-            unit: "result",
-          });
-        },
-      ),
+      dataRouterTool("social_data_quote", ({ toolArguments }) => {
+        requests.push(toolArguments);
+        return HttpResponse.json({
+          platform: "facebook",
+          operation: "posts",
+          estimatedCredits: 7,
+          maxCredits: 9,
+          quantity: 20,
+          unit: "result",
+        });
+      }),
     );
     await socialCommand.parseAsync([
       "node",
@@ -468,21 +483,17 @@ describe("saved Social data jobs", () => {
   it("routes a Xiaohongshu note URL to a saved job", async () => {
     const requests: unknown[] = [];
     server.use(
-      dataRouterTool(
-        "social_data_quote",
-        `${api}/quote`,
-        async ({ request }) => {
-          requests.push(await request.json());
-          return HttpResponse.json({
-            platform: "xiaohongshu",
-            operation: "comments",
-            estimatedCredits: 19,
-            maxCredits: 19,
-            quantity: 1,
-            unit: "request",
-          });
-        },
-      ),
+      dataRouterTool("social_data_quote", ({ toolArguments }) => {
+        requests.push(toolArguments);
+        return HttpResponse.json({
+          platform: "xiaohongshu",
+          operation: "comments",
+          estimatedCredits: 19,
+          maxCredits: 19,
+          quantity: 1,
+          unit: "request",
+        });
+      }),
     );
     await socialCommand.parseAsync([
       "node",
@@ -511,21 +522,17 @@ describe("saved Social data jobs", () => {
   it("routes an xhslink share link to a saved job without rewriting it", async () => {
     const requests: unknown[] = [];
     server.use(
-      dataRouterTool(
-        "social_data_quote",
-        `${api}/quote`,
-        async ({ request }) => {
-          requests.push(await request.json());
-          return HttpResponse.json({
-            platform: "xiaohongshu",
-            operation: "posts",
-            estimatedCredits: 19,
-            maxCredits: 19,
-            quantity: 1,
-            unit: "request",
-          });
-        },
-      ),
+      dataRouterTool("social_data_quote", ({ toolArguments }) => {
+        requests.push(toolArguments);
+        return HttpResponse.json({
+          platform: "xiaohongshu",
+          operation: "posts",
+          estimatedCredits: 19,
+          maxCredits: 19,
+          quantity: 1,
+          unit: "request",
+        });
+      }),
     );
     await socialCommand.parseAsync([
       "node",
@@ -548,21 +555,17 @@ describe("saved Social data jobs", () => {
   it("searches Xiaohongshu by name only through saved jobs", async () => {
     const requests: unknown[] = [];
     server.use(
-      dataRouterTool(
-        "social_data_quote",
-        `${api}/quote`,
-        async ({ request }) => {
-          requests.push(await request.json());
-          return HttpResponse.json({
-            platform: "xiaohongshu",
-            operation: "search",
-            estimatedCredits: 19,
-            maxCredits: 19,
-            quantity: 1,
-            unit: "request",
-          });
-        },
-      ),
+      dataRouterTool("social_data_quote", ({ toolArguments }) => {
+        requests.push(toolArguments);
+        return HttpResponse.json({
+          platform: "xiaohongshu",
+          operation: "search",
+          estimatedCredits: 19,
+          maxCredits: 19,
+          quantity: 1,
+          unit: "request",
+        });
+      }),
     );
     await socialCommand.parseAsync([
       "node",
@@ -604,16 +607,12 @@ describe("saved Social data jobs", () => {
   it("submits an async job with the caller's idempotency key and hard credit cap", async () => {
     const requests: unknown[] = [];
     server.use(
-      dataRouterTool(
-        "social_data_create",
-        `${api}/jobs`,
-        async ({ request }) => {
-          requests.push(await request.json());
-          return HttpResponse.json(job({ status: "pending", data: null }), {
-            status: 202,
-          });
-        },
-      ),
+      dataRouterTool("social_data_create", ({ toolArguments }) => {
+        requests.push(toolArguments);
+        return HttpResponse.json(job({ status: "pending", data: null }), {
+          status: 202,
+        });
+      }),
     );
     await socialCommand.parseAsync([
       "node",
@@ -648,7 +647,7 @@ describe("saved Social data jobs", () => {
 
   it("exports completed job rows through the existing CSV serializer", async () => {
     server.use(
-      dataRouterTool("social_data_create", `${api}/jobs`, () => {
+      dataRouterTool("social_data_create", () => {
         return HttpResponse.json(job(), { status: 202 });
       }),
     );
@@ -683,7 +682,7 @@ describe("saved Social data jobs", () => {
 
   it("exports normalized timestamped transcripts without another collection", async () => {
     server.use(
-      dataRouterTool("social_data_create", `${api}/jobs`, () => {
+      dataRouterTool("social_data_create", () => {
         return HttpResponse.json(
           job({
             platform: "youtube",
@@ -725,28 +724,24 @@ describe("saved Social data jobs", () => {
   it.each(["running", "completed"] as const)(
     "waits for a %s job's settlement only by reading the saved job",
     async (status) => {
-      const methods: string[] = [];
+      const calls: unknown[] = [];
       server.use(
-        dataRouterTool(
-          "social_data_get",
-          `${api}/jobs/${jobId}`,
-          ({ request }) => {
-            methods.push(request.method);
-            return HttpResponse.json(
-              methods.length === 1
-                ? job({
-                    status,
-                    billing: {
-                      state: "pending",
-                      creditsCharged: 0,
-                      reservedCredits: 9,
-                      maxCredits: 9,
-                    },
-                  })
-                : job(),
-            );
-          },
-        ),
+        dataRouterTool("social_data_get", ({ toolArguments }) => {
+          calls.push(toolArguments);
+          return HttpResponse.json(
+            calls.length === 1
+              ? job({
+                  status,
+                  billing: {
+                    state: "pending",
+                    creditsCharged: 0,
+                    reservedCredits: 9,
+                    maxCredits: 9,
+                  },
+                })
+              : job(),
+          );
+        }),
       );
       await socialCommand.parseAsync([
         "node",
@@ -763,13 +758,13 @@ describe("saved Social data jobs", () => {
         billing: { state: "settled", creditsCharged: 7 },
         data: { items: [{ text: "Useful feedback" }] },
       });
-      expect(methods).toEqual(["GET", "GET"]);
+      expect(calls).toEqual([{ jobId }, { jobId }]);
     },
   );
 
   it("returns an unknown job for recovery without repeated polling", async () => {
     server.use(
-      dataRouterTool("social_data_get", `${api}/jobs/${jobId}`, () => {
+      dataRouterTool("social_data_get", () => {
         return HttpResponse.json(
           job({
             status: "unknown",
@@ -801,18 +796,13 @@ describe("saved Social data jobs", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it("lists expanded saved jobs through a supported API and forwards its opaque cursor", async () => {
-    const queries: string[] = [];
+  it("lists saved jobs through MCP and forwards the opaque cursor", async () => {
+    const queries: unknown[] = [];
     server.use(
-      dataRouterTool("social_data_list", `${api}/jobs`, ({ request }) => {
-        const url = new URL(request.url);
-        queries.push(url.search);
-        // Supported rollback APIs still filter expanded jobs without the opt-in.
+      dataRouterTool("social_data_list", ({ toolArguments }) => {
+        queries.push(toolArguments);
         return HttpResponse.json({
-          jobs:
-            url.searchParams.get("includeExpanded") === "true"
-              ? [job({ platform: "douyin", operation: "posts" })]
-              : [],
+          jobs: [job({ platform: "douyin", operation: "posts" })],
           nextCursor: null,
         });
       }),
@@ -828,7 +818,7 @@ describe("saved Social data jobs", () => {
       jobId,
       "--json",
     ]);
-    expect(queries).toEqual([`?limit=5&cursor=${jobId}&includeExpanded=true`]);
+    expect(queries).toEqual([{ limit: 5, cursor: jobId, requestIds: [] }]);
     expect(JSON.parse(stdout())).toMatchObject({
       jobs: [{ jobId, platform: "douyin", operation: "posts" }],
       nextCursor: null,
@@ -838,14 +828,10 @@ describe("saved Social data jobs", () => {
   it("cancels only the specified saved job", async () => {
     const bodies: unknown[] = [];
     server.use(
-      dataRouterTool(
-        "social_data_cancel",
-        `${api}/jobs/${jobId}/cancel`,
-        async ({ request }) => {
-          bodies.push(await request.json());
-          return HttpResponse.json(job({ status: "cancelled" }));
-        },
-      ),
+      dataRouterTool("social_data_cancel", ({ toolArguments }) => {
+        bodies.push(toolArguments);
+        return HttpResponse.json(job({ status: "cancelled" }));
+      }),
     );
     await socialCommand.parseAsync([
       "node",
@@ -855,7 +841,7 @@ describe("saved Social data jobs", () => {
       jobId,
       "--json",
     ]);
-    expect(bodies).toEqual([{}]);
+    expect(bodies).toEqual([{ jobId }]);
     expect(JSON.parse(stdout())).toMatchObject({ jobId, status: "cancelled" });
   });
 
@@ -872,7 +858,7 @@ describe("saved Social data jobs", () => {
     async (...flags) => {
       const requests: string[] = [];
       server.use(
-        http.all(`${api}/*`, ({ request }) => {
+        http.all("https://data.okou.ai/mcp", ({ request }) => {
           requests.push(request.url);
           return HttpResponse.json({});
         }),
@@ -893,7 +879,7 @@ describe("saved Social data jobs", () => {
 
   it("retains the submission key when a network response is lost", async () => {
     server.use(
-      dataRouterTool("social_data_create", `${api}/jobs`, () => {
+      dataRouterTool("social_data_create", () => {
         return HttpResponse.error();
       }),
     );
@@ -909,7 +895,7 @@ describe("saved Social data jobs", () => {
       ]),
     ).rejects.toThrow("process.exit called");
     expect(errors.mock.calls.flat().join("\n")).toContain(
-      `--request-id ${requestId}`,
+      `client request ID ${requestId}`,
     );
     expect(errors.mock.calls.flat().join("\n")).toContain(
       '"recovery":{"requestId":',
@@ -918,7 +904,7 @@ describe("saved Social data jobs", () => {
 
   it("prints only the documented job and result fields", async () => {
     server.use(
-      dataRouterTool("social_data_get", `${api}/jobs/${jobId}`, () => {
+      dataRouterTool("social_data_get", () => {
         return HttpResponse.json({
           ...job(),
           sourceJobId: "private-task-id",
@@ -946,12 +932,12 @@ describe("saved Social data jobs", () => {
 
   it("retains job recovery guidance when waiting is interrupted", async () => {
     server.use(
-      dataRouterTool("social_data_create", `${api}/jobs`, () => {
+      dataRouterTool("social_data_create", () => {
         return HttpResponse.json(job({ status: "running", data: null }), {
           status: 202,
         });
       }),
-      dataRouterTool("social_data_get", `${api}/jobs/${jobId}`, () => {
+      dataRouterTool("social_data_get", () => {
         process.emit("SIGINT");
         return HttpResponse.json(job({ status: "running", data: null }));
       }),
@@ -975,32 +961,24 @@ describe("saved Social data jobs", () => {
   it("routes job-only platform URLs and search platforms to the saved-job API", async () => {
     const requests: unknown[] = [];
     server.use(
-      dataRouterTool(
-        "social_data_create",
-        `${api}/jobs`,
-        async ({ request }) => {
-          requests.push(await request.json());
-          return HttpResponse.json(
-            job({ platform: "wechat", status: "pending", data: null }),
-            { status: 202 },
-          );
-        },
-      ),
-      dataRouterTool(
-        "social_data_quote",
-        `${api}/quote`,
-        async ({ request }) => {
-          requests.push(await request.json());
-          return HttpResponse.json({
-            platform: "threads",
-            operation: "search",
-            estimatedCredits: 21,
-            maxCredits: 21,
-            quantity: 1,
-            unit: "request",
-          });
-        },
-      ),
+      dataRouterTool("social_data_create", ({ toolArguments }) => {
+        requests.push(toolArguments);
+        return HttpResponse.json(
+          job({ platform: "wechat", status: "pending", data: null }),
+          { status: 202 },
+        );
+      }),
+      dataRouterTool("social_data_quote", ({ toolArguments }) => {
+        requests.push(toolArguments);
+        return HttpResponse.json({
+          platform: "threads",
+          operation: "search",
+          estimatedCredits: 21,
+          maxCredits: 21,
+          quantity: 1,
+          unit: "request",
+        });
+      }),
     );
     await socialCommand.parseAsync([
       "node",
@@ -1032,6 +1010,12 @@ describe("saved Social data jobs", () => {
         platform: "wechat",
         url: "https://mp.weixin.qq.com/s/TSNQKkRpN1qbKsT7BvzqIw",
         limit: 50,
+      },
+      {
+        operation: "comments",
+        platform: "wechat",
+        url: "https://mp.weixin.qq.com/s/TSNQKkRpN1qbKsT7BvzqIw",
+        limit: 50,
         maxCredits: 200,
         requestId: expect.any(String),
       },
@@ -1047,7 +1031,7 @@ describe("saved Social data jobs", () => {
   it("requires a job control for job-only platforms", async () => {
     const requests: string[] = [];
     server.use(
-      http.all("http://localhost:3000/api/social/*", ({ request }) => {
+      http.all("https://data.okou.ai/mcp", ({ request }) => {
         requests.push(request.url);
         return HttpResponse.json({});
       }),
@@ -1078,24 +1062,20 @@ describe("saved Social data jobs", () => {
   it("keeps the existing request protocol when no job controls are supplied", async () => {
     const requests: unknown[] = [];
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        async ({ request }) => {
-          requests.push(await request.json());
-          return HttpResponse.json({
-            tool: "facebook_comments",
-            billingCategory: "request",
-            billingQuantity: 1,
-            creditsCharged: 3,
-            collection: { state: "complete", itemsReturned: 1 },
-            result: {
-              comments: [{ id: "legacy-comment", text: "Existing result" }],
-              hasMore: false,
-            },
-          });
-        },
-      ),
+      dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+        requests.push({ tool: toolName, input: toolArguments });
+        return HttpResponse.json({
+          tool: "facebook_comments",
+          billingCategory: "request",
+          billingQuantity: 1,
+          creditsCharged: 3,
+          collection: { state: "complete", itemsReturned: 1 },
+          result: {
+            comments: [{ id: "legacy-comment", text: "Existing result" }],
+            hasMore: false,
+          },
+        });
+      }),
     );
     await socialCommand.parseAsync([
       "node",

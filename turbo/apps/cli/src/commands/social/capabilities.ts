@@ -318,7 +318,8 @@ function collectionDetails(tool: ManagedSocialKitTool) {
                 "okou data social resume <file> --limit <count> [--json|--stream]",
               version: 1,
               lifetimeHours: 24,
-              context: "same OKOU_TOKEN and API endpoint",
+              context:
+                "same OKOU_TOKEN, API endpoint, and Data Router endpoint",
               limit: "additional items per invocation; buffered items first",
             },
       ...(collection.sourceLimit

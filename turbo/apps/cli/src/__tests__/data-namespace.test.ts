@@ -67,25 +67,21 @@ describe("managed research through the canonical CLI entry point", () => {
     expect(output).toContain(`Usage: okou data ${path.join(" ")}`);
   });
 
-  it("uses the managed web API through okou data web search", async () => {
+  it("calls Data Router through okou data web search", async () => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "web_search",
-        "http://localhost:3000/api/web-search",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json({
-            query: "business productivity",
-            limit: 5,
-            provider: "perplexity",
-            billingCategory: "request",
-            billingQuantity: 1,
-            creditsCharged: 5,
-            results: [],
-          });
-        },
-      ),
+      dataRouterTool("web_search", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json({
+          query: "business productivity",
+          limit: 5,
+          provider: "perplexity",
+          billingCategory: "request",
+          billingQuantity: 1,
+          creditsCharged: 5,
+          results: [],
+        });
+      }),
     );
     await run(["data", "web", "search", "business productivity", "--json"]);
     expect(requestBody).toMatchObject({
@@ -95,25 +91,21 @@ describe("managed research through the canonical CLI entry point", () => {
     expect(output).toContain('"provider":"perplexity"');
   });
 
-  it("keeps research people search on its existing API", async () => {
+  it("calls Data Router for research people search", async () => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "people_search",
-        "http://localhost:3000/api/people-search",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json({
-            query: "marketing leaders in London",
-            limit: 5,
-            provider: "perplexity",
-            billingCategory: "request",
-            billingQuantity: 1,
-            creditsCharged: 20,
-            profiles: [],
-          });
-        },
-      ),
+      dataRouterTool("people_search", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json({
+          query: "marketing leaders in London",
+          limit: 5,
+          provider: "perplexity",
+          billingCategory: "request",
+          billingQuantity: 1,
+          creditsCharged: 20,
+          profiles: [],
+        });
+      }),
     );
     await run([
       "data",

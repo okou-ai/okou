@@ -79,13 +79,13 @@ export function addSocialJobOptions(
     .option("--dry-run", "Quote this bounded data operation without billing")
     .option(
       "--max-credits <credits>",
-      "Hard maximum credits for a saved data job",
+      "Maximum quote accepted before submitting a saved data job",
       positiveInteger,
     )
     .option("--async", "Start a saved data job and return its ID immediately")
     .option(
       "--request-id <uuid>",
-      "Recover or deduplicate the same data job submission",
+      "Set the client request label; repeated submissions can charge again",
       uuid,
     )
     .addHelpText(
@@ -101,12 +101,13 @@ Saved data jobs:
   ${
     continuation
       ? "The original total --limit (maximum 1000) cannot be overridden. Exports contain this page only; collection metadata reports cumulative progress."
-      : "--limit bounds the total results (maximum 1000); quotes show the reserved credit ceiling."
+      : "--limit bounds the total results (maximum 1000); quotes estimate the credit cost."
   }
-  --dry-run is free. --max-credits is enforced by the server before starting work.
+  --dry-run is free. When supplied, --max-credits rejects a higher quote before submission.
+  The quote is an estimate; Router records final credits from actual usage and current prices.
   --stream and --checkpoint are unavailable for saved jobs. --dry-run and --async do not accept export options.
   Synchronous saved jobs support the command's existing export formats.
-  Reuse --request-id only with identical inputs to recover a submission without starting another job.
+  --request-id is a client label, not a replay guarantee. If submission is uncertain, inspect okou data social jobs list --json before another paid command.
   Read a saved job with okou data social jobs get <job-id> --wait --json; reading does not start another collection.
   Interrupting the CLI leaves server work running. Cancel explicitly with okou data social jobs cancel <job-id>.`,
     );
@@ -413,7 +414,7 @@ export function createSocialJobsCommand(runAction: RunAction): Command {
     .option("--json", "Print compact JSON")
     .addHelpText(
       "after",
-      "\nThe target, filters, and original total limit are immutable. Quote first with --dry-run. Creating a successor is a separately billed operation, not reading the original job. Creation requires an independent --max-credits. Exports contain this successor page only, not an aggregate of earlier jobs; collection metadata reports cumulative progress. No automatic continuation, recursion, or retry; reuse the same request ID only to recover the same successor submission.",
+      "\nThe target, filters, and original total limit are immutable. Quote first with --dry-run. Creating a successor is a separately billed operation, not reading the original job. Creation requires an independent --max-credits. Exports contain this successor page only, not an aggregate of earlier jobs; collection metadata reports cumulative progress. No automatic continuation, recursion, or retry. If submission is uncertain, inspect saved jobs; repeating a continuation can create another paid job.",
     )
     .action(async (jobId: string, options: SocialJobOptions) => {
       await runAction(options.json === true, async () => {

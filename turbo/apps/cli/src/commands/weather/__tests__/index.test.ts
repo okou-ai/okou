@@ -33,26 +33,22 @@ describe("okou data weather command", () => {
   it("posts current-condition requests and renders a readable summary", async () => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "weather_current",
-        "http://localhost:3000/api/weather/current",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json({
-            operation: "current",
-            provider: "google-weather",
-            attribution: WEATHER_ATTRIBUTION,
-            creditsCharged: 0,
-            billingCategory: "current",
-            billingQuantity: 1,
-            result: {
-              timeZone: { id: "America/Los_Angeles" },
-              weatherCondition: { description: { text: "Clear" } },
-              temperature: { degrees: 28, unit: "CELSIUS" },
-            },
-          });
-        },
-      ),
+      dataRouterTool("weather_current", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json({
+          operation: "current",
+          provider: "google-weather",
+          attribution: WEATHER_ATTRIBUTION,
+          creditsCharged: 0,
+          billingCategory: "current",
+          billingQuantity: 1,
+          result: {
+            timeZone: { id: "America/Los_Angeles" },
+            weatherCondition: { description: { text: "Clear" } },
+            temperature: { degrees: 28, unit: "CELSIUS" },
+          },
+        });
+      }),
     );
 
     await weatherCommand.parseAsync([
@@ -82,58 +78,54 @@ describe("okou data weather command", () => {
   it("renders daily forecasts with the useful weather fields", async () => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "weather_forecast_daily",
-        "http://localhost:3000/api/weather/forecast/daily",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json({
-            operation: "forecast.daily",
-            provider: "google-weather",
-            attribution: WEATHER_ATTRIBUTION,
-            creditsCharged: 0,
-            billingCategory: "forecast.daily",
-            billingQuantity: 1,
-            result: {
-              forecastDays: [
-                {
-                  displayDate: { year: 2026, month: 7, day: 23 },
-                  daytimeForecast: {
-                    weatherCondition: {
-                      description: { text: "Partly cloudy" },
-                    },
-                    precipitation: { probability: { percent: 10 } },
-                    wind: {
-                      direction: { cardinal: "WEST" },
-                      speed: { unit: "KILOMETERS_PER_HOUR", value: 27 },
-                      gust: { unit: "KILOMETERS_PER_HOUR", value: 39 },
-                    },
-                    uvIndex: 9,
+      dataRouterTool("weather_forecast_daily", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json({
+          operation: "forecast.daily",
+          provider: "google-weather",
+          attribution: WEATHER_ATTRIBUTION,
+          creditsCharged: 0,
+          billingCategory: "forecast.daily",
+          billingQuantity: 1,
+          result: {
+            forecastDays: [
+              {
+                displayDate: { year: 2026, month: 7, day: 23 },
+                daytimeForecast: {
+                  weatherCondition: {
+                    description: { text: "Partly cloudy" },
                   },
-                  nighttimeForecast: {
-                    weatherCondition: {
-                      description: { text: "Partly clear" },
-                    },
-                    precipitation: { probability: { percent: 5 } },
+                  precipitation: { probability: { percent: 10 } },
+                  wind: {
+                    direction: { cardinal: "WEST" },
+                    speed: { unit: "KILOMETERS_PER_HOUR", value: 27 },
+                    gust: { unit: "KILOMETERS_PER_HOUR", value: 39 },
                   },
-                  maxTemperature: { degrees: 19.9, unit: "CELSIUS" },
-                  minTemperature: { degrees: 15.1, unit: "CELSIUS" },
-                  feelsLikeMaxTemperature: {
-                    degrees: 24.6,
-                    unit: "CELSIUS",
-                  },
-                  feelsLikeMinTemperature: { degrees: 14, unit: "CELSIUS" },
-                  sunEvents: {
-                    sunriseTime: "2026-07-22T13:05:12Z",
-                    sunsetTime: "2026-07-23T03:26:43Z",
-                  },
+                  uvIndex: 9,
                 },
-              ],
-              timeZone: { id: "America/Los_Angeles" },
-            },
-          });
-        },
-      ),
+                nighttimeForecast: {
+                  weatherCondition: {
+                    description: { text: "Partly clear" },
+                  },
+                  precipitation: { probability: { percent: 5 } },
+                },
+                maxTemperature: { degrees: 19.9, unit: "CELSIUS" },
+                minTemperature: { degrees: 15.1, unit: "CELSIUS" },
+                feelsLikeMaxTemperature: {
+                  degrees: 24.6,
+                  unit: "CELSIUS",
+                },
+                feelsLikeMinTemperature: { degrees: 14, unit: "CELSIUS" },
+                sunEvents: {
+                  sunriseTime: "2026-07-22T13:05:12Z",
+                  sunsetTime: "2026-07-23T03:26:43Z",
+                },
+              },
+            ],
+            timeZone: { id: "America/Los_Angeles" },
+          },
+        });
+      }),
     );
 
     await weatherCommand.parseAsync([
@@ -172,25 +164,21 @@ describe("okou data weather command", () => {
   it("passes hourly forecast range and pagination without aggregating pages", async () => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "weather_forecast_hourly",
-        "http://localhost:3000/api/weather/forecast/hourly",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json({
-            operation: "forecast.hourly",
-            provider: "google-weather",
-            attribution: WEATHER_ATTRIBUTION,
-            creditsCharged: 0,
-            billingCategory: "forecast.hourly",
-            billingQuantity: 1,
-            result: {
-              forecastHours: [],
-              nextPageToken: "next-hourly-page",
-            },
-          });
-        },
-      ),
+      dataRouterTool("weather_forecast_hourly", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json({
+          operation: "forecast.hourly",
+          provider: "google-weather",
+          attribution: WEATHER_ATTRIBUTION,
+          creditsCharged: 0,
+          billingCategory: "forecast.hourly",
+          billingQuantity: 1,
+          result: {
+            forecastHours: [],
+            nextPageToken: "next-hourly-page",
+          },
+        });
+      }),
     );
 
     await weatherCommand.parseAsync([
@@ -241,25 +229,21 @@ describe("okou data weather command", () => {
   it("posts compact current air quality requests", async () => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "weather_air_quality_current",
-        "http://localhost:3000/api/weather/air-quality/current",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json({
-            operation: "air-quality.current",
-            provider: "google-air-quality",
-            attribution: AIR_QUALITY_ATTRIBUTION,
-            creditsCharged: 0,
-            billingCategory: "current",
-            billingQuantity: 1,
-            result: {
-              indexes: [{ code: "uaqi", aqi: 42 }],
-              pollutants: [{ code: "pm25", concentration: { value: 18.2 } }],
-            },
-          });
-        },
-      ),
+      dataRouterTool("weather_air_quality_current", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json({
+          operation: "air-quality.current",
+          provider: "google-air-quality",
+          attribution: AIR_QUALITY_ATTRIBUTION,
+          creditsCharged: 0,
+          billingCategory: "current",
+          billingQuantity: 1,
+          result: {
+            indexes: [{ code: "uaqi", aqi: 42 }],
+            pollutants: [{ code: "pm25", concentration: { value: 18.2 } }],
+          },
+        });
+      }),
     );
 
     await weatherCommand.parseAsync([
@@ -287,22 +271,18 @@ describe("okou data weather command", () => {
   it("posts daily forecast options to the daily endpoint", async () => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "weather_forecast_daily",
-        "http://localhost:3000/api/weather/forecast/daily",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json({
-            operation: "forecast.daily",
-            provider: "google-weather",
-            attribution: WEATHER_ATTRIBUTION,
-            creditsCharged: 0,
-            billingCategory: "forecast.daily",
-            billingQuantity: 1,
-            result: { forecastDays: [] },
-          });
-        },
-      ),
+      dataRouterTool("weather_forecast_daily", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json({
+          operation: "forecast.daily",
+          provider: "google-weather",
+          attribution: WEATHER_ATTRIBUTION,
+          creditsCharged: 0,
+          billingCategory: "forecast.daily",
+          billingQuantity: 1,
+          result: { forecastDays: [] },
+        });
+      }),
     );
 
     await weatherCommand.parseAsync([
@@ -334,22 +314,18 @@ describe("okou data weather command", () => {
   it("posts recent hourly history options to the history endpoint", async () => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "weather_history_hourly",
-        "http://localhost:3000/api/weather/history/hourly",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json({
-            operation: "history.hourly",
-            provider: "google-weather",
-            attribution: WEATHER_ATTRIBUTION,
-            creditsCharged: 0,
-            billingCategory: "history.hourly",
-            billingQuantity: 1,
-            result: { historyHours: [] },
-          });
-        },
-      ),
+      dataRouterTool("weather_history_hourly", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json({
+          operation: "history.hourly",
+          provider: "google-weather",
+          attribution: WEATHER_ATTRIBUTION,
+          creditsCharged: 0,
+          billingCategory: "history.hourly",
+          billingQuantity: 1,
+          result: { historyHours: [] },
+        });
+      }),
     );
 
     await weatherCommand.parseAsync([

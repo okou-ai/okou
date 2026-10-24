@@ -217,12 +217,12 @@ function addJobOptions(
     .option("--dry-run", "Get a free quote without creating a job")
     .option(
       "--max-credits <credits>",
-      "Required hard credit ceiling for execution",
+      "Required maximum quote accepted before submission",
       credits,
     )
     .option(
       "--request-id <uuid>",
-      "Recover the identical submission without another create",
+      "Set the client request label; repeated submissions can charge again",
       uuid,
     )
     .option("--async", "Return the saved job immediately")
@@ -237,11 +237,12 @@ function addJobOptions(
     "after",
     `
 Data Search jobs:
-  Execution requires --max-credits. --dry-run quotes for free and never creates a job.
+  Execution requires --max-credits and checks a free quote before submission. --dry-run only quotes.
+  The quote is an estimate; Router records final credits from actual usage and current prices.
   --limit bounds results, not guaranteed matches. Successful empty results may incur credits.
   --async returns a saved job. Otherwise, wait is bounded; interrupting leaves server work running.
   Recover with okou data jobs get <job-id> --wait --json. GET never creates another job.
-  Reuse --request-id only with identical capability, input, limit, and budget.
+  --request-id is a client label, not a replay guarantee. If submission is uncertain, inspect okou data jobs list --json before another paid command.
   --dry-run and --async cannot use export options. CSV requires --output and --select.
   Queries go to managed external data sources: do not include secrets or private context.
   Use only for legitimate professional research. Verify important claims against source evidence.

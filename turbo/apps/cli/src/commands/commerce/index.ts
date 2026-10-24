@@ -113,7 +113,7 @@ const capabilities = new Command("capabilities")
               },
               billing: {
                 mode: "asynchronous",
-                note: "Each submission may consume credits. Admission preflight is not a caller hard cap; no --dry-run, --max-credits, or automatic paid retries.",
+                note: "Each submission may consume credits; no --dry-run, --max-credits, or automatic paid retries.",
               },
               export: socialExportCapabilities("collection"),
               note: "Exports contain this request's data.items only. Source metadata is preserved in JSON; retain the stdout billing receipt for CSV.",

@@ -357,7 +357,7 @@ function apiErrorRetryable(error: ApiRequestError): boolean {
   ) {
     return error.details.retryable;
   }
-  // Older supported API responses and local errors omit optional retry advice.
+  // Provider responses and local errors can omit optional retry advice.
   return (
     error.status >= 500 ||
     error.status === 429 ||
@@ -1610,7 +1610,7 @@ const statusCommand = new Command()
 Reports public service health, not account access, quota, or balance.
 Overall includes service-wide health even when operations are filtered.
 Missing, invalid, unavailable, or older-than-five-minute observations are unknown.
-Requires authentication, an organization, and social:read for capability tokens.
+Requires an authenticated Okou sandbox with Data Router access.
 Discover supported operations and constraints offline: okou data social capabilities [platform] --json
 `,
   )
@@ -1864,7 +1864,7 @@ const resumeCollectionCommand = new Command()
   .option("--json", "Print compact JSON")
   .addHelpText(
     "after",
-    "\nRequires the original OKOU_TOKEN and API endpoint; checkpoints expire after 24 hours. The saved target and filters cannot be changed. Buffered items incur no new usage. Failed requests are never retried automatically. Do not reuse copied or interrupted checkpoints without inspecting their output.",
+    "\nRequires the original OKOU_TOKEN, API endpoint, and Data Router endpoint; checkpoints expire after 24 hours. The saved target and filters cannot be changed. Buffered items incur no new usage. Failed requests are never retried automatically. Do not reuse copied or interrupted checkpoints without inspecting their output.",
   )
   .action(async (path: string, options: CollectionOptions) => {
     await runSocialAction(
@@ -2293,11 +2293,11 @@ Notes:
   - Commands use reviewed managed capabilities without exposing provider operation names
   - capabilities is offline; status separately checks reported service health without credits
   - Capability details distinguish total limits, page limits, source constraints, and supported inputs
-  - Authenticates via OKOU_TOKEN (requires social:read capability) or a CLI token
-  - Provider credentials remain on the Okou API server
+  - Requires an authenticated Okou sandbox; service authentication is provided by its proxy
+  - Provider credentials remain on Data Router
   - Collection --limit applies to the total returned result, not one provider page
   - --checkpoint saves reviewed collections; social resume returns up to --limit additional items, buffered items first
-  - Checkpoints require the same OKOU_TOKEN and API endpoint, expire after 24 hours, and are updated in place
+  - Checkpoints require the same OKOU_TOKEN, API endpoint, and Data Router endpoint, expire after 24 hours, and are updated in place
   - Checkpointed output includes cumulative accepted progress/usage; billing describes this invocation only
   - YouTube posts --full-details requests exact dates and descriptions for at most 30 videos; it is slower than the default listing
   - Unavailable publication dates and descriptions remain null, empty, or missing

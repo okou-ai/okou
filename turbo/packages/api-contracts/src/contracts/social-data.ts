@@ -1,10 +1,5 @@
 import { z } from "zod";
 
-import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
-
-const c = initContract();
-
 export const SOCIAL_DATA_MAX_RESULTS = 1_000;
 
 export const socialDataPlatformSchema = z.enum([
@@ -236,14 +231,6 @@ export const socialDataJobResponseSchema = z.object({
 export const socialDataListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.uuid().optional(),
-  // Ignored by current APIs. Keep the CLI opt-in until supported API rollback
-  // targets also list expanded jobs without it.
-  includeExpanded: z
-    .enum(["true", "false"])
-    .transform((value) => {
-      return value === "true";
-    })
-    .optional(),
 });
 
 export const socialDataListResponseSchema = z.object({
@@ -267,81 +254,3 @@ export type SocialDataListQuery = z.infer<typeof socialDataListQuerySchema>;
 export type SocialDataListResponse = z.infer<
   typeof socialDataListResponseSchema
 >;
-
-const errors = {
-  400: apiErrorSchema,
-  401: apiErrorSchema,
-  402: apiErrorSchema,
-  403: apiErrorSchema,
-  404: apiErrorSchema,
-  409: apiErrorSchema,
-  422: apiErrorSchema,
-  429: apiErrorSchema,
-  500: apiErrorSchema,
-  502: apiErrorSchema,
-  503: apiErrorSchema,
-};
-
-export const socialDataContract = c.router({
-  quote: {
-    method: "POST",
-    path: "/api/social/data/quote",
-    headers: authHeadersSchema,
-    body: socialDataRequestSchema,
-    responses: { 200: socialDataQuoteResponseSchema, ...errors },
-    summary: "Quote a bounded public Social data operation without billing",
-  },
-  create: {
-    method: "POST",
-    path: "/api/social/data/jobs",
-    headers: authHeadersSchema,
-    body: socialDataCreateRequestSchema,
-    responses: { 202: socialDataJobResponseSchema, ...errors },
-    summary: "Create an idempotent, budget-limited Social data job",
-  },
-  list: {
-    method: "GET",
-    path: "/api/social/data/jobs",
-    headers: authHeadersSchema,
-    query: socialDataListQuerySchema,
-    responses: { 200: socialDataListResponseSchema, ...errors },
-    summary: "List the current user's saved Social data jobs",
-  },
-  get: {
-    method: "GET",
-    path: "/api/social/data/jobs/:jobId",
-    headers: authHeadersSchema,
-    pathParams: z.object({ jobId: z.uuid() }),
-    responses: { 200: socialDataJobResponseSchema, ...errors },
-    summary: "Read a saved Social data job without starting another operation",
-  },
-  quoteContinuation: {
-    method: "POST",
-    path: "/api/social/data/jobs/:jobId/continue/quote",
-    headers: authHeadersSchema,
-    pathParams: z.object({ jobId: z.uuid() }),
-    body: z.object({}).strict(),
-    responses: { 200: socialDataQuoteResponseSchema, ...errors },
-    summary:
-      "Quote one explicit next page without starting a provider operation",
-  },
-  continue: {
-    method: "POST",
-    path: "/api/social/data/jobs/:jobId/continue",
-    headers: authHeadersSchema,
-    pathParams: z.object({ jobId: z.uuid() }),
-    body: socialDataContinueRequestSchema,
-    responses: { 202: socialDataJobResponseSchema, ...errors },
-    summary:
-      "Create one independently budgeted next page of a saved collection",
-  },
-  cancel: {
-    method: "POST",
-    path: "/api/social/data/jobs/:jobId/cancel",
-    headers: authHeadersSchema,
-    pathParams: z.object({ jobId: z.uuid() }),
-    body: z.object({}).strict(),
-    responses: { 200: socialDataJobResponseSchema, ...errors },
-    summary: "Cancel a Social data job and retain its delivered results",
-  },
-});

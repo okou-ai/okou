@@ -233,23 +233,19 @@ describe("okou data social command", () => {
     function serveRows(rows: readonly unknown[], collection?: Collection) {
       const requests: unknown[] = [];
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          async ({ request }) => {
-            requests.push(await request.json());
-            return HttpResponse.json(
-              socialResponse(
-                "instagram_comments",
-                collection ?? {
-                  state: "complete",
-                  itemsReturned: rows.length,
-                },
-                { comments: rows, commentCount: rows.length },
-              ),
-            );
-          },
-        ),
+        dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+          requests.push({ tool: toolName, input: toolArguments });
+          return HttpResponse.json(
+            socialResponse(
+              "instagram_comments",
+              collection ?? {
+                state: "complete",
+                itemsReturned: rows.length,
+              },
+              { comments: rows, commentCount: rows.length },
+            ),
+          );
+        }),
       );
       return requests;
     }
@@ -260,17 +256,13 @@ describe("okou data social command", () => {
     ) {
       const requests: unknown[] = [];
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          async ({ request }) => {
-            requests.push(await request.json());
-            return HttpResponse.json({
-              ...socialResponse("youtube_transcript", null, data),
-              creditsCharged,
-            });
-          },
-        ),
+        dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+          requests.push({ tool: toolName, input: toolArguments });
+          return HttpResponse.json({
+            ...socialResponse("youtube_transcript", null, data),
+            creditsCharged,
+          });
+        }),
       );
       return requests;
     }
@@ -897,27 +889,23 @@ describe("okou data social command", () => {
     it("returns all pages while keeping an unknown cumulative charge unknown", async () => {
       let page = 0;
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            page += 1;
-            return HttpResponse.json({
-              ...socialResponse(
-                "instagram_comments",
-                page === 1
-                  ? {
-                      state: "more",
-                      itemsReturned: 1,
-                      nextInput: { cursor: "next" },
-                    }
-                  : { state: "complete", itemsReturned: 1 },
-                { comments: [{ id: String(page), text: "delivered" }] },
-              ),
-              creditsCharged: page === 1 ? null : 3,
-            });
-          },
-        ),
+        dataRouterTool("social:*", () => {
+          page += 1;
+          return HttpResponse.json({
+            ...socialResponse(
+              "instagram_comments",
+              page === 1
+                ? {
+                    state: "more",
+                    itemsReturned: 1,
+                    nextInput: { cursor: "next" },
+                  }
+                : { state: "complete", itemsReturned: 1 },
+              { comments: [{ id: String(page), text: "delivered" }] },
+            ),
+            creditsCharged: page === 1 ? null : 3,
+          });
+        }),
       );
       await socialCommand.parseAsync([...commentsArgs, "--json"]);
       expect(JSON.parse(output()) as unknown).toMatchObject({
@@ -933,42 +921,38 @@ describe("okou data social command", () => {
       async (format) => {
         const requests: unknown[] = [];
         server.use(
-          dataRouterTool(
-            "social:*",
-            "http://localhost:3000/api/social/request",
-            async ({ request }) => {
-              requests.push(await request.json());
-              if (requests.length === 1)
-                return HttpResponse.json(
-                  socialResponse(
-                    "instagram_comments",
-                    {
-                      state: "more",
-                      itemsReturned: 1,
-                      nextInput: { cursor: "next" },
-                      reportedTotal: 20,
-                    },
-                    {
-                      comments: [
-                        { id: "accepted", text: "saved", extra: "unselected" },
-                      ],
-                    },
-                    2,
-                  ),
-                );
+          dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+            requests.push({ tool: toolName, input: toolArguments });
+            if (requests.length === 1)
               return HttpResponse.json(
-                {
-                  error: {
-                    code: "SOCIALKIT_UPSTREAM_ERROR",
-                    message: "Page failed",
-                    reason: "upstream_failure",
-                    retryable: false,
+                socialResponse(
+                  "instagram_comments",
+                  {
+                    state: "more",
+                    itemsReturned: 1,
+                    nextInput: { cursor: "next" },
+                    reportedTotal: 20,
                   },
-                },
-                { status: 502 },
+                  {
+                    comments: [
+                      { id: "accepted", text: "saved", extra: "unselected" },
+                    ],
+                  },
+                  2,
+                ),
               );
-            },
-          ),
+            return HttpResponse.json(
+              {
+                error: {
+                  code: "SOCIALKIT_UPSTREAM_ERROR",
+                  message: "Page failed",
+                  reason: "upstream_failure",
+                  retryable: false,
+                },
+              },
+              { status: 502 },
+            );
+          }),
         );
         const path = join(directory, `partial.${format}`);
         await socialCommand.parseAsync([
@@ -1046,21 +1030,17 @@ describe("okou data social command", () => {
       async (command, url, tool) => {
         const requests: unknown[] = [];
         server.use(
-          dataRouterTool(
-            "social:*",
-            "http://localhost:3000/api/social/request",
-            async ({ request }) => {
-              requests.push(await request.json());
-              return HttpResponse.json({
-                ...socialResponse(tool, null, {
-                  title: "Example",
-                  nested: { value: 0 },
-                  optional: null,
-                }),
-                creditsCharged: 0,
-              });
-            },
-          ),
+          dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+            requests.push({ tool: toolName, input: toolArguments });
+            return HttpResponse.json({
+              ...socialResponse(tool, null, {
+                title: "Example",
+                nested: { value: 0 },
+                optional: null,
+              }),
+              creditsCharged: 0,
+            });
+          }),
         );
         const path = join(directory, "single.json");
         await socialCommand.parseAsync([
@@ -1116,25 +1096,21 @@ describe("okou data social command", () => {
       async (command, target, tool) => {
         const requests: unknown[] = [];
         server.use(
-          dataRouterTool(
-            "social:*",
-            "http://localhost:3000/api/social/request",
-            async ({ request }) => {
-              requests.push(await request.json());
-              return HttpResponse.json(
-                socialResponse(
-                  tool,
-                  { state: "complete", itemsReturned: 1 },
-                  {
-                    results: [
-                      { title: "Example", url: "https://youtu.be/example" },
-                    ],
-                    hasMore: false,
-                  },
-                ),
-              );
-            },
-          ),
+          dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+            requests.push({ tool: toolName, input: toolArguments });
+            return HttpResponse.json(
+              socialResponse(
+                tool,
+                { state: "complete", itemsReturned: 1 },
+                {
+                  results: [
+                    { title: "Example", url: "https://youtu.be/example" },
+                  ],
+                  hasMore: false,
+                },
+              ),
+            );
+          }),
         );
         const path = join(directory, "research.csv");
         await socialCommand.parseAsync([
@@ -1169,21 +1145,17 @@ describe("okou data social command", () => {
 
     it("writes a first-page failure envelope with no accepted billing", async () => {
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            return HttpResponse.json(
-              {
-                error: {
-                  code: "SOCIALKIT_UPSTREAM_ERROR",
-                  message: "Unavailable",
-                },
+        dataRouterTool("social:*", () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "SOCIALKIT_UPSTREAM_ERROR",
+                message: "Unavailable",
               },
-              { status: 502 },
-            );
-          },
-        ),
+            },
+            { status: 502 },
+          );
+        }),
       );
       const path = join(directory, "failure.json");
       await socialCommand.parseAsync([
@@ -1217,21 +1189,17 @@ describe("okou data social command", () => {
       const path = join(directory, "keep.json");
       await writeFile(path, "original");
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            return HttpResponse.json(
-              {
-                error: {
-                  code: "SOCIALKIT_UPSTREAM_ERROR",
-                  message: "Unavailable",
-                },
+        dataRouterTool("social:*", () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "SOCIALKIT_UPSTREAM_ERROR",
+                message: "Unavailable",
               },
-              { status: 502 },
-            );
-          },
-        ),
+            },
+            { status: 502 },
+          );
+        }),
       );
       await expect(
         socialCommand.parseAsync([
@@ -1399,20 +1367,16 @@ describe("okou data social command", () => {
       const path = join(directory, "out.json");
       await writeFile(path, "old content");
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          async () => {
-            expect(await readFile(path, "utf8")).toBe("old content");
-            return HttpResponse.json(
-              socialResponse(
-                "instagram_comments",
-                { state: "complete", itemsReturned: 1 },
-                { comments: [{ id: "new" }] },
-              ),
-            );
-          },
-        ),
+        dataRouterTool("social:*", async () => {
+          expect(await readFile(path, "utf8")).toBe("old content");
+          return HttpResponse.json(
+            socialResponse(
+              "instagram_comments",
+              { state: "complete", itemsReturned: 1 },
+              { comments: [{ id: "new" }] },
+            ),
+          );
+        }),
       );
       await socialCommand.parseAsync([
         ...commentsArgs,
@@ -1431,21 +1395,17 @@ describe("okou data social command", () => {
       const path = join(directory, "out.csv");
       const requests: unknown[] = [];
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          async ({ request }) => {
-            requests.push(await request.json());
-            await writeFile(path, "concurrent writer");
-            return HttpResponse.json(
-              socialResponse(
-                "instagram_comments",
-                { state: "complete", itemsReturned: 1 },
-                { comments: [{ id: "one", text: "recover me" }] },
-              ),
-            );
-          },
-        ),
+        dataRouterTool("social:*", async ({ toolArguments, toolName }) => {
+          requests.push({ tool: toolName, input: toolArguments });
+          await writeFile(path, "concurrent writer");
+          return HttpResponse.json(
+            socialResponse(
+              "instagram_comments",
+              { state: "complete", itemsReturned: 1 },
+              { comments: [{ id: "one", text: "recover me" }] },
+            ),
+          );
+        }),
       );
       await socialCommand.parseAsync([
         ...commentsArgs,
@@ -1476,21 +1436,17 @@ describe("okou data social command", () => {
         const path = join(directory, "blocked.json");
         const requests: unknown[] = [];
         server.use(
-          dataRouterTool(
-            "social:*",
-            "http://localhost:3000/api/social/request",
-            async ({ request }) => {
-              requests.push(await request.json());
-              await chmod(directory, 0o500);
-              return HttpResponse.json(
-                socialResponse(
-                  "instagram_comments",
-                  { state: "complete", itemsReturned: 1 },
-                  { comments: [{ id: "one", text: "retain me" }] },
-                ),
-              );
-            },
-          ),
+          dataRouterTool("social:*", async ({ toolArguments, toolName }) => {
+            requests.push({ tool: toolName, input: toolArguments });
+            await chmod(directory, 0o500);
+            return HttpResponse.json(
+              socialResponse(
+                "instagram_comments",
+                { state: "complete", itemsReturned: 1 },
+                { comments: [{ id: "one", text: "retain me" }] },
+              ),
+            );
+          }),
         );
         try {
           await socialCommand.parseAsync([
@@ -1547,38 +1503,30 @@ describe("okou data social command", () => {
   it("discovers a lost task ID and retrieves its link through existing resume", async () => {
     const task = completedDownload();
     server.use(
-      dataRouterTool(
-        "social_download_list",
-        "http://localhost:3000/api/social/downloads",
-        ({ request }) => {
-          expect(new URL(request.url).searchParams.get("limit")).toBe("20");
-          return HttpResponse.json({
-            downloads: [
-              {
-                ...task,
-                providerName: "SocialKit",
-                request: {
-                  platform: "youtube",
-                  url: "https://youtu.be/video123",
-                  maxDuration: 600,
-                  quality: "720p",
-                  format: "mp4",
-                },
-                resumeCommand: `okou data social download --resume ${task.downloadId}`,
+      dataRouterTool("social_download_list", ({ toolArguments }) => {
+        expect(toolArguments.limit).toBe(20);
+        return HttpResponse.json({
+          downloads: [
+            {
+              ...task,
+              providerName: "SocialKit",
+              request: {
+                platform: "youtube",
+                url: "https://youtu.be/video123",
+                maxDuration: 600,
+                quality: "720p",
+                format: "mp4",
               },
-            ],
-            nextCursor: null,
-          });
-        },
-      ),
-      dataRouterTool(
-        "social_download_get",
-        "http://localhost:3000/api/social/downloads/:downloadId",
-        ({ params }) => {
-          expect(params.downloadId).toBe(task.downloadId);
-          return HttpResponse.json(task);
-        },
-      ),
+              resumeCommand: `okou data social download --resume ${task.downloadId}`,
+            },
+          ],
+          nextCursor: null,
+        });
+      }),
+      dataRouterTool("social_download_get", ({ toolArguments }) => {
+        expect(toolArguments.downloadId).toBe(task.downloadId);
+        return HttpResponse.json(task);
+      }),
     );
     await socialCommand.parseAsync(["node", "okou", "downloads", "--json"]);
     expect(JSON.parse(output()) as unknown).toMatchObject({
@@ -1610,34 +1558,30 @@ describe("okou data social command", () => {
     const task = failedDownload("link_failed");
     const cursor = "fc168c40-dd27-4e4a-b588-628bac29070b";
     server.use(
-      dataRouterTool(
-        "social_download_list",
-        "http://localhost:3000/api/social/downloads",
-        ({ request }) => {
-          const params = new URL(request.url).searchParams;
-          expect(Object.fromEntries(params)).toStrictEqual({
-            limit: "1",
-            cursor,
-            status: "active",
-          });
-          return HttpResponse.json({
-            downloads: [
-              {
-                ...task,
-                request: {
-                  platform: "youtube",
-                  url: "https://youtu.be/video123",
-                  maxDuration: 600,
-                  quality: "720p",
-                  format: "mp4",
-                },
-                resumeCommand: `okou data social download --resume ${task.downloadId}`,
+      dataRouterTool("social_download_list", ({ toolArguments }) => {
+        expect(toolArguments).toStrictEqual({
+          requestIds: [],
+          limit: 1,
+          cursor,
+          status: "active",
+        });
+        return HttpResponse.json({
+          downloads: [
+            {
+              ...task,
+              request: {
+                platform: "youtube",
+                url: "https://youtu.be/video123",
+                maxDuration: 600,
+                quality: "720p",
+                format: "mp4",
               },
-            ],
-            nextCursor: task.downloadId,
-          });
-        },
-      ),
+              resumeCommand: `okou data social download --resume ${task.downloadId}`,
+            },
+          ],
+          nextCursor: task.downloadId,
+        });
+      }),
     );
     await socialCommand.parseAsync([
       "node",
@@ -1661,13 +1605,9 @@ describe("okou data social command", () => {
 
   it("prints empty discovery guidance without starting a download", async () => {
     server.use(
-      dataRouterTool(
-        "social_download_list",
-        "http://localhost:3000/api/social/downloads",
-        () => {
-          return HttpResponse.json({ downloads: [], nextCursor: null });
-        },
-      ),
+      dataRouterTool("social_download_list", () => {
+        return HttpResponse.json({ downloads: [], nextCursor: null });
+      }),
     );
     await socialCommand.parseAsync(["node", "okou", "downloads", "--json"]);
     expect(JSON.parse(output()) as unknown).toMatchObject({
@@ -1708,23 +1648,18 @@ describe("okou data social command", () => {
         resumeCommand: `okou data social download --resume ${completedDownload().downloadId}`,
       };
       server.use(
-        dataRouterTool(
-          "social_download_create",
-          "http://localhost:3000/api/social/downloads",
-          () => {
-            return HttpResponse.json(
-              {
-                error: {
-                  code: "DOWNLOAD_IN_PROGRESS",
-                  message:
-                    "Another social media download is already in progress",
-                  recovery,
-                },
+        dataRouterTool("social_download_create", () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "DOWNLOAD_IN_PROGRESS",
+                message: "Another social media download is already in progress",
+                recovery,
               },
-              { status: 409 },
-            );
-          },
-        ),
+            },
+            { status: 409 },
+          );
+        }),
       );
       await expect(
         socialCommand.parseAsync([
@@ -1755,21 +1690,17 @@ describe("okou data social command", () => {
 
   it("accepts a generic create conflict without inventing recovery details", async () => {
     server.use(
-      dataRouterTool(
-        "social_download_create",
-        "http://localhost:3000/api/social/downloads",
-        () => {
-          return HttpResponse.json(
-            {
-              error: {
-                code: "DOWNLOAD_IN_PROGRESS",
-                message: "Another social media download is already in progress",
-              },
+      dataRouterTool("social_download_create", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "DOWNLOAD_IN_PROGRESS",
+              message: "Another social media download is already in progress",
             },
-            { status: 409 },
-          );
-        },
-      ),
+          },
+          { status: 409 },
+        );
+      }),
     );
     await expect(
       socialCommand.parseAsync([
@@ -1798,21 +1729,17 @@ describe("okou data social command", () => {
     "reports discovery HTTP %s without substituting another operation",
     async (status) => {
       server.use(
-        dataRouterTool(
-          "social_download_list",
-          "http://localhost:3000/api/social/downloads",
-          () => {
-            return HttpResponse.json(
-              {
-                error: {
-                  code: "UNAVAILABLE",
-                  message: "Discovery unavailable",
-                },
+        dataRouterTool("social_download_list", () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "UNAVAILABLE",
+                message: "Discovery unavailable",
               },
-              { status },
-            );
-          },
-        ),
+            },
+            { status },
+          );
+        }),
       );
       await expect(
         socialCommand.parseAsync(["node", "okou", "downloads", "--json"]),
@@ -2135,7 +2062,7 @@ describe("okou data social command", () => {
       socialCommand.parseAsync(["node", "okou", "status", "--help"]),
     ).rejects.toThrow("process.exit called");
     expect(stdout.mock.calls.flat().join("")).toContain(
-      "Requires authentication, an organization, and social:read for capability tokens.",
+      "Requires an authenticated Okou sandbox with Data Router access.",
     );
     expect(mockExit).toHaveBeenCalledWith(0);
   });
@@ -2163,17 +2090,11 @@ describe("okou data social command", () => {
         ],
       };
       server.use(
-        dataRouterTool(
-          "social_status",
-          "http://localhost:3000/api/social/status",
-          ({ request }) => {
-            expect(new URL(request.url).searchParams.get("platform")).toBe(
-              "twitter",
-            );
-            expect(request.headers.get("authorization")).toBeNull();
-            return HttpResponse.json(body);
-          },
-        ),
+        dataRouterTool("social_status", ({ request, toolArguments }) => {
+          expect(toolArguments.platform).toBe("twitter");
+          expect(request.headers.get("authorization")).toBeNull();
+          return HttpResponse.json(body);
+        }),
       );
       await socialCommand.parseAsync(["node", "okou", "status", "x", "--json"]);
       expect(JSON.parse(output())).toEqual(body);
@@ -2181,28 +2102,24 @@ describe("okou data social command", () => {
     },
   );
 
-  it("reports missing status capabilities without inventing healthy observations", async () => {
+  it("reports Router authentication errors without inventing healthy observations", async () => {
     server.use(
-      dataRouterTool(
-        "social_status",
-        "http://localhost:3000/api/social/status",
-        () => {
-          return HttpResponse.json(
-            {
-              error: {
-                code: "FORBIDDEN",
-                message: "Missing required capability: social:read",
-              },
+      dataRouterTool("social_status", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "UNAUTHORIZED",
+              message: "Data Router authentication failed",
             },
-            { status: 403 },
-          );
-        },
-      ),
+          },
+          { status: 401 },
+        );
+      }),
     );
     await expect(
       socialCommand.parseAsync(["node", "okou", "status", "--json"]),
     ).rejects.toThrow("process.exit called");
-    expect(errorOutput()).toContain("Missing required capability: social:read");
+    expect(errorOutput()).toContain("Data Router authentication failed");
     expect(mockExit).toHaveBeenCalledWith(1);
     expect(output()).toBe("");
   });
@@ -2211,23 +2128,19 @@ describe("okou data social command", () => {
     "accepts the advertised TikTok sort %s through the real command",
     async (sort) => {
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          async ({ request }) => {
-            expect(await request.json()).toMatchObject({
-              tool: "tiktok_search",
-              input: { sortBy: sort, datePosted: "week", limit: 10 },
-            });
-            return HttpResponse.json(
-              socialResponse(
-                "tiktok_search",
-                { state: "complete", itemsReturned: 0 },
-                collectionResult("tiktok_search"),
-              ),
-            );
-          },
-        ),
+        dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+          expect({ tool: toolName, input: toolArguments }).toMatchObject({
+            tool: "tiktok_search",
+            input: { sortBy: sort, datePosted: "week", limit: 10 },
+          });
+          return HttpResponse.json(
+            socialResponse(
+              "tiktok_search",
+              { state: "complete", itemsReturned: 0 },
+              collectionResult("tiktok_search"),
+            ),
+          );
+        }),
       );
       await socialCommand.parseAsync([
         "node",
@@ -2281,14 +2194,10 @@ describe("okou data social command", () => {
   ])("routes inspect %s to %s", async (url, expectedTool) => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(socialResponse(expectedTool, null, {}));
-        },
-      ),
+      dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+        requestBody = { tool: toolName, input: toolArguments };
+        return HttpResponse.json(socialResponse(expectedTool, null, {}));
+      }),
     );
 
     await socialCommand.parseAsync(["node", "okou", "inspect", url, "--json"]);
@@ -2314,16 +2223,12 @@ describe("okou data social command", () => {
       };
       const requests: unknown[] = [];
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          async ({ request }) => {
-            requests.push(await request.json());
-            return HttpResponse.json(
-              socialResponse("instagram_stats", null, data),
-            );
-          },
-        ),
+        dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+          requests.push({ tool: toolName, input: toolArguments });
+          return HttpResponse.json(
+            socialResponse("instagram_stats", null, data),
+          );
+        }),
       );
 
       await socialCommand.parseAsync([
@@ -2354,16 +2259,12 @@ describe("okou data social command", () => {
   it("forwards strict Instagram lookup and preserves verified zero", async () => {
     const requests: unknown[] = [];
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        async ({ request }) => {
-          requests.push(await request.json());
-          return HttpResponse.json(
-            socialResponse("instagram_stats", null, { views: 0 }),
-          );
-        },
-      ),
+      dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+        requests.push({ tool: toolName, input: toolArguments });
+        return HttpResponse.json(
+          socialResponse("instagram_stats", null, { views: 0 }),
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -2401,14 +2302,10 @@ describe("okou data social command", () => {
   ])("rejects --require-views for %s before HTTP", async (url) => {
     let requests = 0;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        () => {
-          requests += 1;
-          return HttpResponse.json({});
-        },
-      ),
+      dataRouterTool("social:*", () => {
+        requests += 1;
+        return HttpResponse.json({});
+      }),
     );
 
     await expect(
@@ -2431,23 +2328,19 @@ describe("okou data social command", () => {
   it("reports strict Instagram 503 without retrying optional lookup", async () => {
     const requests: unknown[] = [];
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        async ({ request }) => {
-          requests.push(await request.json());
-          return HttpResponse.json(
-            {
-              error: {
-                code: "SOCIAL_VIEWS_UNAVAILABLE",
-                message:
-                  "Instagram view count is temporarily unavailable. No credits were charged. Retry later, or omit --require-views to use other available data.",
-              },
+      dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+        requests.push({ tool: toolName, input: toolArguments });
+        return HttpResponse.json(
+          {
+            error: {
+              code: "SOCIAL_VIEWS_UNAVAILABLE",
+              message:
+                "Instagram view count is temporarily unavailable. No credits were charged. Retry later, or omit --require-views to use other available data.",
             },
-            { status: 503 },
-          );
-        },
-      ),
+          },
+          { status: 503 },
+        );
+      }),
     );
 
     await expect(
@@ -2485,14 +2378,10 @@ describe("okou data social command", () => {
   it("canonicalizes supported URLs and routes X threads", async () => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(socialResponse("twitter_thread", null, {}));
-        },
-      ),
+      dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+        requestBody = { tool: toolName, input: toolArguments };
+        return HttpResponse.json(socialResponse("twitter_thread", null, {}));
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -2534,20 +2423,16 @@ describe("okou data social command", () => {
   ])("routes posts %s %s to %s", async (url, kind, expectedTool) => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(
-            socialResponse(
-              expectedTool,
-              { state: "complete", itemsReturned: 0 },
-              collectionResult(expectedTool),
-            ),
-          );
-        },
-      ),
+      dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+        requestBody = { tool: toolName, input: toolArguments };
+        return HttpResponse.json(
+          socialResponse(
+            expectedTool,
+            { state: "complete", itemsReturned: 0 },
+            collectionResult(expectedTool),
+          ),
+        );
+      }),
     );
     const args = ["node", "okou", "posts", url, "--limit", "250", "--json"];
     if (kind) {
@@ -2601,20 +2486,16 @@ describe("okou data social command", () => {
         },
       ];
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          async ({ request }) => {
-            requestBody = await request.json();
-            return HttpResponse.json(
-              socialResponse(
-                "youtube_videos",
-                { state: "complete", itemsReturned: results.length },
-                { type: source, url, results },
-              ),
-            );
-          },
-        ),
+        dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+          requestBody = { tool: toolName, input: toolArguments };
+          return HttpResponse.json(
+            socialResponse(
+              "youtube_videos",
+              { state: "complete", itemsReturned: results.length },
+              { type: source, url, results },
+            ),
+          );
+        }),
       );
       const args = ["node", "okou", "posts", url, "--full-details", "--json"];
       if (limit !== undefined) {
@@ -2643,19 +2524,15 @@ describe("okou data social command", () => {
         { videoId: "missing" },
       ];
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            return HttpResponse.json(
-              socialResponse(
-                "youtube_videos",
-                { state: "complete", itemsReturned: results.length },
-                { type: "playlist", results },
-              ),
-            );
-          },
-        ),
+        dataRouterTool("social:*", () => {
+          return HttpResponse.json(
+            socialResponse(
+              "youtube_videos",
+              { state: "complete", itemsReturned: results.length },
+              { type: "playlist", results },
+            ),
+          );
+        }),
       );
       const args = [
         "node",
@@ -2680,19 +2557,15 @@ describe("okou data social command", () => {
 
   it("includes full-details intent in streamed pages and the summary", async () => {
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        () => {
-          return HttpResponse.json(
-            socialResponse(
-              "youtube_videos",
-              { state: "complete", itemsReturned: 1 },
-              { results: [{ videoId: "example", publishedAt: null }] },
-            ),
-          );
-        },
-      ),
+      dataRouterTool("social:*", () => {
+        return HttpResponse.json(
+          socialResponse(
+            "youtube_videos",
+            { state: "complete", itemsReturned: 1 },
+            { results: [{ videoId: "example", publishedAt: null }] },
+          ),
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -2726,16 +2599,10 @@ describe("okou data social command", () => {
     async (limit) => {
       let apiRequests = 0;
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            apiRequests += 1;
-            return HttpResponse.json(
-              socialResponse("youtube_videos", null, {}),
-            );
-          },
-        ),
+        dataRouterTool("social:*", () => {
+          apiRequests += 1;
+          return HttpResponse.json(socialResponse("youtube_videos", null, {}));
+        }),
       );
 
       await expect(
@@ -2789,27 +2656,23 @@ describe("okou data social command", () => {
   ])("routes %s search to %s", async (platform, hashtag, expectedTool) => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(
-            socialResponse(
-              expectedTool,
-              platform === "instagram"
-                ? {
-                    state: "provider_limited",
-                    itemsReturned: 0,
-                    reason: "provider_ceiling",
-                    sourceLimit: { kind: "single_batch", maxItems: 12 },
-                  }
-                : { state: "complete", itemsReturned: 0 },
-              collectionResult(expectedTool),
-            ),
-          );
-        },
-      ),
+      dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+        requestBody = { tool: toolName, input: toolArguments };
+        return HttpResponse.json(
+          socialResponse(
+            expectedTool,
+            platform === "instagram"
+              ? {
+                  state: "provider_limited",
+                  itemsReturned: 0,
+                  reason: "provider_ceiling",
+                  sourceLimit: { kind: "single_batch", maxItems: 12 },
+                }
+              : { state: "complete", itemsReturned: 0 },
+            collectionResult(expectedTool),
+          ),
+        );
+      }),
     );
     const args = [
       "node",
@@ -2852,25 +2715,21 @@ describe("okou data social command", () => {
     async ({ query, hashtag, normalized }) => {
       let requestBody: unknown;
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          async ({ request }) => {
-            requestBody = await request.json();
-            return HttpResponse.json(
-              socialResponse(
-                "instagram_reels_search",
-                {
-                  state: "provider_limited",
-                  itemsReturned: 0,
-                  reason: "provider_ceiling",
-                  sourceLimit: { kind: "single_batch", maxItems: 12 },
-                },
-                { items: [], hasMore: false },
-              ),
-            );
-          },
-        ),
+        dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+          requestBody = { tool: toolName, input: toolArguments };
+          return HttpResponse.json(
+            socialResponse(
+              "instagram_reels_search",
+              {
+                state: "provider_limited",
+                itemsReturned: 0,
+                reason: "provider_ceiling",
+                sourceLimit: { kind: "single_batch", maxItems: 12 },
+              },
+              { items: [], hasMore: false },
+            ),
+          );
+        }),
       );
       const args = [
         "node",
@@ -2900,14 +2759,10 @@ describe("okou data social command", () => {
     async (query) => {
       let apiRequests = 0;
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            apiRequests += 1;
-            return new HttpResponse(null, { status: 500 });
-          },
-        ),
+        dataRouterTool("social:*", () => {
+          apiRequests += 1;
+          return new HttpResponse(null, { status: 500 });
+        }),
       );
 
       await expect(
@@ -2948,25 +2803,21 @@ describe("okou data social command", () => {
         };
       });
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            apiRequests += 1;
-            return HttpResponse.json(
-              socialResponse(
-                "instagram_reels_search",
-                {
-                  state: "provider_limited",
-                  itemsReturned: count,
-                  reason: "provider_ceiling",
-                  sourceLimit: { kind: "single_batch", maxItems: 12 },
-                },
-                { items, count, hasMore: false },
-              ),
-            );
-          },
-        ),
+        dataRouterTool("social:*", () => {
+          apiRequests += 1;
+          return HttpResponse.json(
+            socialResponse(
+              "instagram_reels_search",
+              {
+                state: "provider_limited",
+                itemsReturned: count,
+                reason: "provider_ceiling",
+                sourceLimit: { kind: "single_batch", maxItems: 12 },
+              },
+              { items, count, hasMore: false },
+            ),
+          );
+        }),
       );
       const args = [
         "node",
@@ -3035,20 +2886,16 @@ describe("okou data social command", () => {
   it("reports provider-neutral search filters in the result envelope", async () => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(
-            socialResponse(
-              "youtube_search",
-              { state: "complete", itemsReturned: 0 },
-              collectionResult("youtube_search"),
-            ),
-          );
-        },
-      ),
+      dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+        requestBody = { tool: toolName, input: toolArguments };
+        return HttpResponse.json(
+          socialResponse(
+            "youtube_search",
+            { state: "complete", itemsReturned: 0 },
+            collectionResult("youtube_search"),
+          ),
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -3096,20 +2943,16 @@ describe("okou data social command", () => {
   ])("routes comments %s to %s", async (url, expectedTool) => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(
-            socialResponse(
-              expectedTool,
-              { state: "complete", itemsReturned: 0 },
-              collectionResult(expectedTool),
-            ),
-          );
-        },
-      ),
+      dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+        requestBody = { tool: toolName, input: toolArguments };
+        return HttpResponse.json(
+          socialResponse(
+            expectedTool,
+            { state: "complete", itemsReturned: 0 },
+            collectionResult(expectedTool),
+          ),
+        );
+      }),
     );
 
     await socialCommand.parseAsync(["node", "okou", "comments", url, "--json"]);
@@ -3128,16 +2971,12 @@ describe("okou data social command", () => {
   ])("routes transcript %s to %s", async (url, expectedTool) => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(
-            socialResponse(expectedTool, null, { transcript: "Example" }),
-          );
-        },
-      ),
+      dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+        requestBody = { tool: toolName, input: toolArguments };
+        return HttpResponse.json(
+          socialResponse(expectedTool, null, { transcript: "Example" }),
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -3162,16 +3001,12 @@ describe("okou data social command", () => {
   ])("routes summarize %s to %s", async (url, expectedTool) => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(
-            socialResponse(expectedTool, null, { summary: "Example" }),
-          );
-        },
-      ),
+      dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+        requestBody = { tool: toolName, input: toolArguments };
+        return HttpResponse.json(
+          socialResponse(expectedTool, null, { summary: "Example" }),
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -3198,19 +3033,15 @@ describe("okou data social command", () => {
     async (operation) => {
       let requestBody: unknown;
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          async ({ request }) => {
-            requestBody = await request.json();
-            return HttpResponse.json(
-              socialResponse(`youtube_${operation}`, null, {
-                transcript: "Fresh captions",
-                summary: "Fresh summary",
-              }),
-            );
-          },
-        ),
+        dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+          requestBody = { tool: toolName, input: toolArguments };
+          return HttpResponse.json(
+            socialResponse(`youtube_${operation}`, null, {
+              transcript: "Fresh captions",
+              summary: "Fresh summary",
+            }),
+          );
+        }),
       );
 
       const isSummary = operation === "summarize";
@@ -3252,14 +3083,10 @@ describe("okou data social command", () => {
     async (operation) => {
       let requests = 0;
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            requests += 1;
-            return HttpResponse.json({});
-          },
-        ),
+        dataRouterTool("social:*", () => {
+          requests += 1;
+          return HttpResponse.json({});
+        }),
       );
 
       await expect(
@@ -3294,19 +3121,15 @@ describe("okou data social command", () => {
     async (operation, status, code) => {
       let requests = 0;
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            requests += 1;
-            return HttpResponse.json(
-              {
-                error: { code, message: "Requested extraction is unavailable" },
-              },
-              { status },
-            );
-          },
-        ),
+        dataRouterTool("social:*", () => {
+          requests += 1;
+          return HttpResponse.json(
+            {
+              error: { code, message: "Requested extraction is unavailable" },
+            },
+            { status },
+          );
+        }),
       );
 
       await expect(
@@ -3347,14 +3170,10 @@ describe("okou data social command", () => {
     };
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(socialResponse(expectedTool, null, data));
-        },
-      ),
+      dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+        requestBody = { tool: toolName, input: toolArguments };
+        return HttpResponse.json(socialResponse(expectedTool, null, data));
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -3389,19 +3208,15 @@ describe("okou data social command", () => {
       const path = await fieldsFile(` ${JSON.stringify(fields, null, 2)}\r\n`);
       let requestBody: unknown;
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          async ({ request }) => {
-            requestBody = await request.json();
-            return HttpResponse.json(
-              socialResponse("youtube_summarize", null, {
-                audience: "Business owners",
-                topics: ["Customer retention"],
-              }),
-            );
-          },
-        ),
+        dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+          requestBody = { tool: toolName, input: toolArguments };
+          return HttpResponse.json(
+            socialResponse("youtube_summarize", null, {
+              audience: "Business owners",
+              topics: ["Customer retention"],
+            }),
+          );
+        }),
       );
 
       await socialCommand.parseAsync([
@@ -3438,16 +3253,12 @@ describe("okou data social command", () => {
   it("preserves default summary requests without customization", async () => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(
-            socialResponse("youtube_summarize", null, { summary: "Example" }),
-          );
-        },
-      ),
+      dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+        requestBody = { tool: toolName, input: toolArguments };
+        return HttpResponse.json(
+          socialResponse("youtube_summarize", null, { summary: "Example" }),
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -3472,18 +3283,14 @@ describe("okou data social command", () => {
     );
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(
-            socialResponse("youtube_summarize", null, {
-              audience: "Business owners",
-            }),
-          );
-        },
-      ),
+      dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+        requestBody = { tool: toolName, input: toolArguments };
+        return HttpResponse.json(
+          socialResponse("youtube_summarize", null, {
+            audience: "Business owners",
+          }),
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -3524,16 +3331,10 @@ describe("okou data social command", () => {
   ])("rejects %s fields before a managed request", async (_name, fields) => {
     let apiRequests = 0;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        () => {
-          apiRequests += 1;
-          return HttpResponse.json(
-            socialResponse("youtube_summarize", null, {}),
-          );
-        },
-      ),
+      dataRouterTool("social:*", () => {
+        apiRequests += 1;
+        return HttpResponse.json(socialResponse("youtube_summarize", null, {}));
+      }),
     );
 
     await expect(
@@ -3571,16 +3372,12 @@ describe("okou data social command", () => {
       }
       let apiRequests = 0;
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            apiRequests += 1;
-            return HttpResponse.json(
-              socialResponse("youtube_summarize", null, {}),
-            );
-          },
-        ),
+        dataRouterTool("social:*", () => {
+          apiRequests += 1;
+          return HttpResponse.json(
+            socialResponse("youtube_summarize", null, {}),
+          );
+        }),
       );
 
       await expect(
@@ -3621,16 +3418,10 @@ describe("okou data social command", () => {
   ])("rejects fields on unsupported %s targets %s", async (operation, url) => {
     let apiRequests = 0;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        () => {
-          apiRequests += 1;
-          return HttpResponse.json(
-            socialResponse("youtube_summarize", null, {}),
-          );
-        },
-      ),
+      dataRouterTool("social:*", () => {
+        apiRequests += 1;
+        return HttpResponse.json(socialResponse("youtube_summarize", null, {}));
+      }),
     );
 
     await expect(
@@ -3678,30 +3469,26 @@ describe("okou data social command", () => {
   it("aggregates pages, trims provider overshoot, and totals billing", async () => {
     const requests: unknown[] = [];
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        async ({ request }) => {
-          requests.push(await request.json());
-          const firstPage = requests.length === 1;
-          const comments = Array.from({ length: 7 }, (_, index) => {
-            return { id: `${firstPage ? "a" : "b"}-${index}` };
-          });
-          return HttpResponse.json(
-            socialResponse(
-              "instagram_comments",
-              {
-                state: "more",
-                itemsReturned: 7,
-                reportedTotal: 82,
-                nextInput: { cursor: firstPage ? "next" : "after-next" },
-              },
-              { comments, hasMore: true, commentCount: 82 },
-              2,
-            ),
-          );
-        },
-      ),
+      dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+        requests.push({ tool: toolName, input: toolArguments });
+        const firstPage = requests.length === 1;
+        const comments = Array.from({ length: 7 }, (_, index) => {
+          return { id: `${firstPage ? "a" : "b"}-${index}` };
+        });
+        return HttpResponse.json(
+          socialResponse(
+            "instagram_comments",
+            {
+              state: "more",
+              itemsReturned: 7,
+              reportedTotal: 82,
+              nextInput: { cursor: firstPage ? "next" : "after-next" },
+            },
+            { comments, hasMore: true, commentCount: 82 },
+            2,
+          ),
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -3746,51 +3533,47 @@ describe("okou data social command", () => {
     async (mode) => {
       let page = 0;
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            page += 1;
-            const first = page === 1;
-            const providerOutcome = first
-              ? {
-                  collectionStatus: "partial" as const,
-                  stopReason: "requested_limit" as const,
-                }
-              : {
-                  collectionStatus: "partial" as const,
-                  stopReason: "repeated_cursor" as const,
-                };
-            return HttpResponse.json(
-              socialResponse(
-                "instagram_comments",
-                first
-                  ? {
-                      state: "more",
-                      itemsReturned: 2,
-                      nextInput: { cursor: "next" },
-                      providerOutcome,
-                    }
-                  : {
-                      state: "provider_limited",
-                      itemsReturned: 1,
-                      reason: "provider_partial",
-                      providerOutcome,
-                    },
-                {
-                  postUrl: "https://instagram.com/p/example",
-                  comments: first
-                    ? [{ id: "one" }, { id: "two" }]
-                    : [{ id: "three" }],
-                  commentCount: null,
-                  hasMore: first,
-                  cursor: first ? "next" : null,
-                  ...providerOutcome,
-                },
-              ),
-            );
-          },
-        ),
+        dataRouterTool("social:*", () => {
+          page += 1;
+          const first = page === 1;
+          const providerOutcome = first
+            ? {
+                collectionStatus: "partial" as const,
+                stopReason: "requested_limit" as const,
+              }
+            : {
+                collectionStatus: "partial" as const,
+                stopReason: "repeated_cursor" as const,
+              };
+          return HttpResponse.json(
+            socialResponse(
+              "instagram_comments",
+              first
+                ? {
+                    state: "more",
+                    itemsReturned: 2,
+                    nextInput: { cursor: "next" },
+                    providerOutcome,
+                  }
+                : {
+                    state: "provider_limited",
+                    itemsReturned: 1,
+                    reason: "provider_partial",
+                    providerOutcome,
+                  },
+              {
+                postUrl: "https://instagram.com/p/example",
+                comments: first
+                  ? [{ id: "one" }, { id: "two" }]
+                  : [{ id: "three" }],
+                commentCount: null,
+                hasMore: first,
+                cursor: first ? "next" : null,
+                ...providerOutcome,
+              },
+            ),
+          );
+        }),
       );
 
       await socialCommand.parseAsync([
@@ -3871,28 +3654,24 @@ describe("okou data social command", () => {
     "scopes Instagram $providerOutcome.collectionStatus output",
     async (testCase) => {
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            return HttpResponse.json(
-              socialResponse(
-                "instagram_comments",
-                {
-                  state: testCase.state,
-                  itemsReturned: 1,
-                  providerOutcome: testCase.providerOutcome,
-                },
-                {
-                  comments: [{ id: "one" }],
-                  commentCount: null,
-                  hasMore: false,
-                  ...testCase.providerOutcome,
-                },
-              ),
-            );
-          },
-        ),
+        dataRouterTool("social:*", () => {
+          return HttpResponse.json(
+            socialResponse(
+              "instagram_comments",
+              {
+                state: testCase.state,
+                itemsReturned: 1,
+                providerOutcome: testCase.providerOutcome,
+              },
+              {
+                comments: [{ id: "one" }],
+                commentCount: null,
+                hasMore: false,
+                ...testCase.providerOutcome,
+              },
+            ),
+          );
+        }),
       );
 
       await socialCommand.parseAsync([
@@ -3918,33 +3697,29 @@ describe("okou data social command", () => {
 
   it("does not treat Instagram's post-wide comment count as a caller-truncated tail", async () => {
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        () => {
-          return HttpResponse.json(
-            socialResponse(
-              "instagram_comments",
-              {
-                state: "complete",
-                itemsReturned: 1,
-                reportedTotal: 486,
-                providerOutcome: {
-                  collectionStatus: "exhausted",
-                  stopReason: "upstream_exhausted",
-                },
-              },
-              {
-                comments: [{ id: "one" }],
-                commentCount: 486,
-                hasMore: false,
+      dataRouterTool("social:*", () => {
+        return HttpResponse.json(
+          socialResponse(
+            "instagram_comments",
+            {
+              state: "complete",
+              itemsReturned: 1,
+              reportedTotal: 486,
+              providerOutcome: {
                 collectionStatus: "exhausted",
                 stopReason: "upstream_exhausted",
               },
-            ),
-          );
-        },
-      ),
+            },
+            {
+              comments: [{ id: "one" }],
+              commentCount: 486,
+              hasMore: false,
+              collectionStatus: "exhausted",
+              stopReason: "upstream_exhausted",
+            },
+          ),
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -3966,33 +3741,29 @@ describe("okou data social command", () => {
 
   it("keeps an Instagram partial stop partial when the requested count is met", async () => {
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        () => {
-          return HttpResponse.json(
-            socialResponse(
-              "instagram_comments",
-              {
-                state: "provider_limited",
-                itemsReturned: 1,
-                reason: "provider_partial",
-                providerOutcome: {
-                  collectionStatus: "partial",
-                  stopReason: "repeated_cursor",
-                },
-              },
-              {
-                comments: [{ id: "one" }],
-                commentCount: null,
-                hasMore: false,
+      dataRouterTool("social:*", () => {
+        return HttpResponse.json(
+          socialResponse(
+            "instagram_comments",
+            {
+              state: "provider_limited",
+              itemsReturned: 1,
+              reason: "provider_partial",
+              providerOutcome: {
                 collectionStatus: "partial",
                 stopReason: "repeated_cursor",
               },
-            ),
-          );
-        },
-      ),
+            },
+            {
+              comments: [{ id: "one" }],
+              commentCount: null,
+              hasMore: false,
+              collectionStatus: "partial",
+              stopReason: "repeated_cursor",
+            },
+          ),
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -4014,22 +3785,18 @@ describe("okou data social command", () => {
 
   it("marks a complete provider page caller-limited when trimming overshoot", async () => {
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        () => {
-          return HttpResponse.json(
-            socialResponse(
-              "youtube_search",
-              { state: "complete", itemsReturned: 3 },
-              {
-                results: [{ id: "one" }, { id: "two" }, { id: "three" }],
-                hasMore: false,
-              },
-            ),
-          );
-        },
-      ),
+      dataRouterTool("social:*", () => {
+        return HttpResponse.json(
+          socialResponse(
+            "youtube_search",
+            { state: "complete", itemsReturned: 3 },
+            {
+              results: [{ id: "one" }, { id: "two" }, { id: "three" }],
+              hasMore: false,
+            },
+          ),
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -4058,23 +3825,19 @@ describe("okou data social command", () => {
 
   it("marks an unsatisfied provider-limited collection partial", async () => {
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        () => {
-          return HttpResponse.json(
-            socialResponse(
-              "youtube_comments",
-              {
-                state: "provider_limited",
-                itemsReturned: 2,
-                reason: "no_pagination",
-              },
-              { comments: [{ id: "1" }, { id: "2" }] },
-            ),
-          );
-        },
-      ),
+      dataRouterTool("social:*", () => {
+        return HttpResponse.json(
+          socialResponse(
+            "youtube_comments",
+            {
+              state: "provider_limited",
+              itemsReturned: 2,
+              reason: "no_pagination",
+            },
+            { comments: [{ id: "1" }, { id: "2" }] },
+          ),
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -4102,28 +3865,24 @@ describe("okou data social command", () => {
   it("detects repeated pagination and emits a structured error", async () => {
     let requests = 0;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        () => {
-          requests += 1;
-          return HttpResponse.json(
-            socialResponse(
-              "tiktok_search",
-              {
-                state: "more",
-                itemsReturned: 1,
-                nextInput: { cursor: "same" },
-              },
-              {
-                results: [{ id: `video-${requests}` }],
-                hasMore: true,
-                cursor: "same",
-              },
-            ),
-          );
-        },
-      ),
+      dataRouterTool("social:*", () => {
+        requests += 1;
+        return HttpResponse.json(
+          socialResponse(
+            "tiktok_search",
+            {
+              state: "more",
+              itemsReturned: 1,
+              nextInput: { cursor: "same" },
+            },
+            {
+              results: [{ id: `video-${requests}` }],
+              hasMore: true,
+              cursor: "same",
+            },
+          ),
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -4175,61 +3934,57 @@ describe("okou data social command", () => {
   ])("preserves accepted results after %s", async (_name, format, failure) => {
     const requests: unknown[] = [];
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        async ({ request }) => {
-          requests.push(await request.json());
-          if (requests.length === 1) {
-            return HttpResponse.json(
-              socialResponse(
-                "instagram_comments",
-                {
-                  state: "more",
-                  itemsReturned: 2,
-                  reportedTotal: 12,
-                  nextInput: { cursor: "next" },
-                },
-                {
-                  comments: [{ id: "one" }, { id: "two" }],
-                  hasMore: true,
-                  commentCount: 12,
-                },
-                2,
-              ),
-            );
-          }
-          if (failure === "malformed" || failure === "metadata") {
-            return HttpResponse.json(
-              socialResponse(
-                "instagram_comments",
-                failure === "metadata"
-                  ? null
-                  : { state: "complete", itemsReturned: 1 },
-                {
-                  comments: failure === "malformed" ? null : [{ id: "third" }],
-                },
-              ),
-            );
-          }
+      dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+        requests.push({ tool: toolName, input: toolArguments });
+        if (requests.length === 1) {
           return HttpResponse.json(
-            {
-              error: {
-                code: "SOCIALKIT_UPSTREAM_ERROR",
-                message: "SocialKit request failed",
-                ...(failure === "structured"
-                  ? {
-                      reason: "upstream_failure",
-                      retryable: false,
-                      retryAfterSeconds: 120,
-                    }
-                  : {}),
+            socialResponse(
+              "instagram_comments",
+              {
+                state: "more",
+                itemsReturned: 2,
+                reportedTotal: 12,
+                nextInput: { cursor: "next" },
               },
-            },
-            { status: 502 },
+              {
+                comments: [{ id: "one" }, { id: "two" }],
+                hasMore: true,
+                commentCount: 12,
+              },
+              2,
+            ),
           );
-        },
-      ),
+        }
+        if (failure === "malformed" || failure === "metadata") {
+          return HttpResponse.json(
+            socialResponse(
+              "instagram_comments",
+              failure === "metadata"
+                ? null
+                : { state: "complete", itemsReturned: 1 },
+              {
+                comments: failure === "malformed" ? null : [{ id: "third" }],
+              },
+            ),
+          );
+        }
+        return HttpResponse.json(
+          {
+            error: {
+              code: "SOCIALKIT_UPSTREAM_ERROR",
+              message: "SocialKit request failed",
+              ...(failure === "structured"
+                ? {
+                    reason: "upstream_failure",
+                    retryable: false,
+                    retryAfterSeconds: 120,
+                  }
+                : {}),
+            },
+          },
+          { status: 502 },
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -4317,22 +4072,18 @@ describe("okou data social command", () => {
     async (format) => {
       let requests = 0;
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            requests += 1;
-            return HttpResponse.json(
-              {
-                error: {
-                  code: "SOCIAL_UPSTREAM_ERROR",
-                  message: "Unavailable",
-                },
+        dataRouterTool("social:*", () => {
+          requests += 1;
+          return HttpResponse.json(
+            {
+              error: {
+                code: "SOCIAL_UPSTREAM_ERROR",
+                message: "Unavailable",
               },
-              { status: 502 },
-            );
-          },
-        ),
+            },
+            { status: 502 },
+          );
+        }),
       );
 
       await socialCommand.parseAsync([
@@ -4391,19 +4142,15 @@ describe("okou data social command", () => {
         return { id: String(index) };
       });
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            return HttpResponse.json(
-              socialResponse(
-                "instagram_comments",
-                { state: "complete", itemsReturned: items.length },
-                { comments: items, hasMore: false },
-              ),
-            );
-          },
-        ),
+        dataRouterTool("social:*", () => {
+          return HttpResponse.json(
+            socialResponse(
+              "instagram_comments",
+              { state: "complete", itemsReturned: items.length },
+              { comments: items, hasMore: false },
+            ),
+          );
+        }),
       );
 
       await socialCommand.parseAsync([
@@ -4447,35 +4194,31 @@ describe("okou data social command", () => {
     async ({ nextInput }) => {
       const requests: unknown[] = [];
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          async ({ request }) => {
-            requests.push(await request.json());
-            if (requests.length === 1) {
-              return HttpResponse.json(
-                socialResponse(
-                  "instagram_comments",
-                  {
-                    state: "more",
-                    itemsReturned: 1,
-                    nextInput,
-                  },
-                  { comments: [{ id: "one" }], hasMore: true },
-                ),
-              );
-            }
+        dataRouterTool("social:*", ({ toolArguments, toolName }) => {
+          requests.push({ tool: toolName, input: toolArguments });
+          if (requests.length === 1) {
             return HttpResponse.json(
-              {
-                error: {
-                  code: "SOCIAL_UPSTREAM_ERROR",
-                  message: "Unavailable",
+              socialResponse(
+                "instagram_comments",
+                {
+                  state: "more",
+                  itemsReturned: 1,
+                  nextInput,
                 },
-              },
-              { status: 502 },
+                { comments: [{ id: "one" }], hasMore: true },
+              ),
             );
-          },
-        ),
+          }
+          return HttpResponse.json(
+            {
+              error: {
+                code: "SOCIAL_UPSTREAM_ERROR",
+                message: "Unavailable",
+              },
+            },
+            { status: 502 },
+          );
+        }),
       );
 
       await socialCommand.parseAsync([
@@ -4512,25 +4255,21 @@ describe("okou data social command", () => {
     async (state) => {
       let requests = 0;
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            requests += 1;
-            return HttpResponse.json(
-              socialResponse(
-                "instagram_comments",
-                state === "more"
-                  ? { state, itemsReturned: 3, nextInput: { cursor: "next" } }
-                  : { state, itemsReturned: 3, reason: "provider_ceiling" },
-                {
-                  comments: [{ id: "one" }, { id: "two" }, { id: "three" }],
-                  hasMore: true,
-                },
-              ),
-            );
-          },
-        ),
+        dataRouterTool("social:*", () => {
+          requests += 1;
+          return HttpResponse.json(
+            socialResponse(
+              "instagram_comments",
+              state === "more"
+                ? { state, itemsReturned: 3, nextInput: { cursor: "next" } }
+                : { state, itemsReturned: 3, reason: "provider_ceiling" },
+              {
+                comments: [{ id: "one" }, { id: "two" }, { id: "three" }],
+                hasMore: true,
+              },
+            ),
+          );
+        }),
       );
 
       await socialCommand.parseAsync([
@@ -4574,24 +4313,20 @@ describe("okou data social command", () => {
   it("retains the pending cursor in the safety-ceiling summary", async () => {
     let requests = 0;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        () => {
-          requests += 1;
-          return HttpResponse.json(
-            socialResponse(
-              "instagram_comments",
-              {
-                state: "more",
-                itemsReturned: 1,
-                nextInput: { cursor: `after-${requests}` },
-              },
-              { comments: [{ id: String(requests) }], hasMore: true },
-            ),
-          );
-        },
-      ),
+      dataRouterTool("social:*", () => {
+        requests += 1;
+        return HttpResponse.json(
+          socialResponse(
+            "instagram_comments",
+            {
+              state: "more",
+              itemsReturned: 1,
+              nextInput: { cursor: `after-${requests}` },
+            },
+            { comments: [{ id: String(requests) }], hasMore: true },
+          ),
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -4628,31 +4363,27 @@ describe("okou data social command", () => {
   it("streams only when explicitly requested", async () => {
     let requests = 0;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        () => {
-          requests += 1;
-          const firstPage = requests === 1;
-          return HttpResponse.json(
-            socialResponse(
-              "instagram_comments",
-              firstPage
-                ? {
-                    state: "more",
-                    itemsReturned: 1,
-                    nextInput: { cursor: "next" },
-                  }
-                : { state: "complete", itemsReturned: 1 },
-              {
-                comments: [{ id: String(requests) }],
-                hasMore: firstPage,
-                ...(firstPage ? { cursor: "next" } : {}),
-              },
-            ),
-          );
-        },
-      ),
+      dataRouterTool("social:*", () => {
+        requests += 1;
+        const firstPage = requests === 1;
+        return HttpResponse.json(
+          socialResponse(
+            "instagram_comments",
+            firstPage
+              ? {
+                  state: "more",
+                  itemsReturned: 1,
+                  nextInput: { cursor: "next" },
+                }
+              : { state: "complete", itemsReturned: 1 },
+            {
+              comments: [{ id: String(requests) }],
+              hasMore: firstPage,
+              ...(firstPage ? { cursor: "next" } : {}),
+            },
+          ),
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -4739,25 +4470,21 @@ describe("okou data social command", () => {
     async (testCase) => {
       let requests = 0;
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            requests += 1;
-            return HttpResponse.json(
-              {
-                error: {
-                  code: "SOCIAL_FAILURE",
-                  message: "The social request failed",
-                  reason: testCase.reason,
-                  retryable: testCase.retryable,
-                  retryAfterSeconds: 24,
-                },
+        dataRouterTool("social:*", () => {
+          requests += 1;
+          return HttpResponse.json(
+            {
+              error: {
+                code: "SOCIAL_FAILURE",
+                message: "The social request failed",
+                reason: testCase.reason,
+                retryable: testCase.retryable,
+                retryAfterSeconds: 24,
               },
-              { status: testCase.status },
-            );
-          },
-        ),
+            },
+            { status: testCase.status },
+          );
+        }),
       );
       await expect(
         socialCommand.parseAsync([
@@ -4784,25 +4511,21 @@ describe("okou data social command", () => {
 
   it("explains retry delay and quota ownership in human output", async () => {
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        () => {
-          return HttpResponse.json(
-            {
-              error: {
-                code: "SOCIAL_QUOTA_EXHAUSTED",
-                message:
-                  "The social data service has insufficient provider credits",
-                reason: "provider_quota_exhausted",
-                retryable: false,
-                retryAfterSeconds: 120,
-              },
+      dataRouterTool("social:*", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "SOCIAL_QUOTA_EXHAUSTED",
+              message:
+                "The social data service has insufficient provider credits",
+              reason: "provider_quota_exhausted",
+              retryable: false,
+              retryAfterSeconds: 120,
             },
-            { status: 503 },
-          );
-        },
-      ),
+          },
+          { status: 503 },
+        );
+      }),
     );
     await expect(
       socialCommand.parseAsync([
@@ -4819,21 +4542,17 @@ describe("okou data social command", () => {
 
   it("emits structured API failures and exits non-zero", async () => {
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        () => {
-          return HttpResponse.json(
-            {
-              error: {
-                code: "SOCIAL_UPSTREAM_ERROR",
-                message: "The social data service is temporarily unavailable",
-              },
+      dataRouterTool("social:*", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "SOCIAL_UPSTREAM_ERROR",
+              message: "The social data service is temporarily unavailable",
             },
-            { status: 502 },
-          );
-        },
-      ),
+          },
+          { status: 502 },
+        );
+      }),
     );
 
     await expect(
@@ -4910,14 +4629,10 @@ describe("okou data social command", () => {
   ])("rejects unsupported URL %s before managed work", async (url) => {
     let apiRequests = 0;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        () => {
-          apiRequests += 1;
-          return HttpResponse.json(socialResponse("youtube_stats", null, {}));
-        },
-      ),
+      dataRouterTool("social:*", () => {
+        apiRequests += 1;
+        return HttpResponse.json(socialResponse("youtube_stats", null, {}));
+      }),
     );
 
     await expect(
@@ -4961,16 +4676,12 @@ describe("okou data social command", () => {
     async (operation, url) => {
       let apiRequests = 0;
       server.use(
-        dataRouterTool(
-          "social:*",
-          "http://localhost:3000/api/social/request",
-          () => {
-            apiRequests += 1;
-            return HttpResponse.json(
-              socialResponse("youtube_transcript", null, {}),
-            );
-          },
-        ),
+        dataRouterTool("social:*", () => {
+          apiRequests += 1;
+          return HttpResponse.json(
+            socialResponse("youtube_transcript", null, {}),
+          );
+        }),
       );
 
       await expect(
@@ -5032,22 +4743,14 @@ describe("okou data social command", () => {
   ])("rejects mismatched %s options before managed work", async (...args) => {
     let apiRequests = 0;
     server.use(
-      dataRouterTool(
-        "social:*",
-        "http://localhost:3000/api/social/request",
-        () => {
-          apiRequests += 1;
-          return HttpResponse.json(socialResponse("youtube_stats", null, {}));
-        },
-      ),
-      dataRouterTool(
-        "social_download_create",
-        "http://localhost:3000/api/social/downloads",
-        () => {
-          apiRequests += 1;
-          return HttpResponse.json(completedDownload(), { status: 202 });
-        },
-      ),
+      dataRouterTool("social:*", () => {
+        apiRequests += 1;
+        return HttpResponse.json(socialResponse("youtube_stats", null, {}));
+      }),
+      dataRouterTool("social_download_create", () => {
+        apiRequests += 1;
+        return HttpResponse.json(completedDownload(), { status: 202 });
+      }),
     );
 
     await expect(
@@ -5075,21 +4778,17 @@ describe("okou data social command", () => {
       } satisfies SocialKitDownloadResponse;
       let submissions = 0;
       server.use(
-        dataRouterTool(
-          "social_download_create",
-          "http://localhost:3000/api/social/downloads",
-          async ({ request }) => {
-            submissions += 1;
-            expect(await request.json()).toStrictEqual({
-              platform: "youtube",
-              url: "https://youtu.be/example",
-              maxDuration: 600,
-              quality: "720p",
-              format: "mp4",
-            });
-            return HttpResponse.json(completed, { status: 202 });
-          },
-        ),
+        dataRouterTool("social_download_create", ({ toolArguments }) => {
+          submissions += 1;
+          expect(toolArguments).toStrictEqual({
+            platform: "youtube",
+            url: "https://youtu.be/example",
+            maxDuration: 600,
+            quality: "720p",
+            format: "mp4",
+          });
+          return HttpResponse.json(completed, { status: 202 });
+        }),
       );
 
       await socialCommand.parseAsync([
@@ -5137,13 +4836,9 @@ describe("okou data social command", () => {
       },
     } satisfies SocialKitDownloadResponse;
     server.use(
-      dataRouterTool(
-        "social_download_get",
-        "http://localhost:3000/api/social/downloads/:downloadId",
-        () => {
-          return HttpResponse.json(completed);
-        },
-      ),
+      dataRouterTool("social_download_get", () => {
+        return HttpResponse.json(completed);
+      }),
     );
     await expect(
       socialCommand.parseAsync([
@@ -5185,54 +4880,42 @@ describe("okou data social command", () => {
     };
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "social_download_create",
-        "http://localhost:3000/api/social/downloads",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(
+      dataRouterTool("social_download_create", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json(
+          {
+            ...completed,
+            status: "processing",
+            delivered: { quality: null, format: null },
+            provider: null,
+            billing: null,
+            download: null,
+            completedAt: null,
+          },
+          { status: 202 },
+        );
+      }),
+      dataRouterTool("social_download_get", () => {
+        return HttpResponse.json(completed);
+      }),
+      dataRouterTool("social_download_list", () => {
+        return HttpResponse.json({
+          downloads: [
             {
               ...completed,
-              status: "processing",
-              delivered: { quality: null, format: null },
-              provider: null,
-              billing: null,
-              download: null,
-              completedAt: null,
-            },
-            { status: 202 },
-          );
-        },
-      ),
-      dataRouterTool(
-        "social_download_get",
-        "http://localhost:3000/api/social/downloads/:downloadId",
-        () => {
-          return HttpResponse.json(completed);
-        },
-      ),
-      dataRouterTool(
-        "social_download_list",
-        "http://localhost:3000/api/social/downloads",
-        () => {
-          return HttpResponse.json({
-            downloads: [
-              {
-                ...completed,
-                request: {
-                  platform: "youtube",
-                  url: "https://youtu.be/example",
-                  maxDuration: 600,
-                  quality: "1080p",
-                  format: "mp3",
-                },
-                resumeCommand: `okou data social download --resume ${completed.downloadId}`,
+              request: {
+                platform: "youtube",
+                url: "https://youtu.be/example",
+                maxDuration: 600,
+                quality: "1080p",
+                format: "mp3",
               },
-            ],
-            nextCursor: null,
-          });
-        },
-      ),
+              resumeCommand: `okou data social download --resume ${completed.downloadId}`,
+            },
+          ],
+          nextCursor: null,
+        });
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -5325,16 +5008,8 @@ describe("okou data social command", () => {
       };
       server.use(
         method === "post"
-          ? dataRouterTool(
-              "social_download_create",
-              "http://localhost:3000/api/social/downloads",
-              response,
-            )
-          : dataRouterTool(
-              "social_download_get",
-              "http://localhost:3000/api/social/downloads/:downloadId",
-              response,
-            ),
+          ? dataRouterTool("social_download_create", response)
+          : dataRouterTool("social_download_get", response),
       );
 
       await expect(
@@ -5358,21 +5033,13 @@ describe("okou data social command", () => {
   it("resumes an existing download without a new request", async () => {
     let creates = 0;
     server.use(
-      dataRouterTool(
-        "social_download_create",
-        "http://localhost:3000/api/social/downloads",
-        () => {
-          creates += 1;
-          return HttpResponse.json(completedDownload(), { status: 202 });
-        },
-      ),
-      dataRouterTool(
-        "social_download_get",
-        "http://localhost:3000/api/social/downloads/:downloadId",
-        () => {
-          return HttpResponse.json(completedDownload());
-        },
-      ),
+      dataRouterTool("social_download_create", () => {
+        creates += 1;
+        return HttpResponse.json(completedDownload(), { status: 202 });
+      }),
+      dataRouterTool("social_download_get", () => {
+        return HttpResponse.json(completedDownload());
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -5452,13 +5119,9 @@ describe("okou data social command", () => {
         },
       };
       server.use(
-        dataRouterTool(
-          "social_download_get",
-          "http://localhost:3000/api/social/downloads/:downloadId",
-          () => {
-            return HttpResponse.json(response);
-          },
-        ),
+        dataRouterTool("social_download_get", () => {
+          return HttpResponse.json(response);
+        }),
       );
 
       await socialCommand.parseAsync([
@@ -5490,18 +5153,14 @@ describe("okou data social command", () => {
   it("retries temporary link recovery when resuming a download", async () => {
     let statusRequests = 0;
     server.use(
-      dataRouterTool(
-        "social_download_get",
-        "http://localhost:3000/api/social/downloads/:downloadId",
-        () => {
-          statusRequests += 1;
-          return HttpResponse.json(
-            statusRequests === 1
-              ? failedDownload("link_failed")
-              : completedDownload(),
-          );
-        },
-      ),
+      dataRouterTool("social_download_get", () => {
+        statusRequests += 1;
+        return HttpResponse.json(
+          statusRequests === 1
+            ? failedDownload("link_failed")
+            : completedDownload(),
+        );
+      }),
     );
 
     await socialCommand.parseAsync([
@@ -5525,13 +5184,9 @@ describe("okou data social command", () => {
     "emits a structured %s download failure",
     async (status) => {
       server.use(
-        dataRouterTool(
-          "social_download_create",
-          "http://localhost:3000/api/social/downloads",
-          () => {
-            return HttpResponse.json(failedDownload(status), { status: 202 });
-          },
-        ),
+        dataRouterTool("social_download_create", () => {
+          return HttpResponse.json(failedDownload(status), { status: 202 });
+        }),
       );
 
       await expect(
@@ -5564,21 +5219,17 @@ describe("okou data social command", () => {
       const terminal = failedDownload("provider_failed");
       let polls = 0;
       server.use(
-        dataRouterTool(
-          "social_download_get",
-          "http://localhost:3000/api/social/downloads/:downloadId",
-          () => {
-            polls += 1;
-            return HttpResponse.json({
-              ...terminal,
-              error: {
-                ...terminal.error,
-                reason: "upstream_failure",
-                resubmitRetryable,
-              },
-            });
-          },
-        ),
+        dataRouterTool("social_download_get", () => {
+          polls += 1;
+          return HttpResponse.json({
+            ...terminal,
+            error: {
+              ...terminal.error,
+              reason: "upstream_failure",
+              resubmitRetryable,
+            },
+          });
+        }),
       );
       await expect(
         socialCommand.parseAsync([
@@ -5605,26 +5256,22 @@ describe("okou data social command", () => {
     const initial = failedDownload("provider_failed");
     let polls = 0;
     server.use(
-      dataRouterTool(
-        "social_download_get",
-        "http://localhost:3000/api/social/downloads/:downloadId",
-        () => {
-          polls += 1;
-          return HttpResponse.json({
-            ...initial,
-            status: "processing",
-            completedAt: null,
-            error: {
-              code: "SOCIAL_QUOTA_EXHAUSTED",
-              message: "Social service capacity must be restored",
-              reason: "provider_quota_exhausted",
-              retryable: false,
-              billed: false,
-              retryAfterSeconds: 120,
-            },
-          });
-        },
-      ),
+      dataRouterTool("social_download_get", () => {
+        polls += 1;
+        return HttpResponse.json({
+          ...initial,
+          status: "processing",
+          completedAt: null,
+          error: {
+            code: "SOCIAL_QUOTA_EXHAUSTED",
+            message: "Social service capacity must be restored",
+            reason: "provider_quota_exhausted",
+            retryable: false,
+            billed: false,
+            retryAfterSeconds: 120,
+          },
+        });
+      }),
     );
     await expect(
       socialCommand.parseAsync([
@@ -5655,23 +5302,19 @@ describe("okou data social command", () => {
     async (failure) => {
       const downloadId = completedDownload().downloadId;
       server.use(
-        dataRouterTool(
-          "social_download_get",
-          "http://localhost:3000/api/social/downloads/:downloadId",
-          () => {
-            return failure === "network"
-              ? HttpResponse.error()
-              : HttpResponse.json(
-                  {
-                    error: {
-                      code: "TEMPORARY",
-                      message: "Service temporarily unavailable",
-                    },
+        dataRouterTool("social_download_get", () => {
+          return failure === "network"
+            ? HttpResponse.error()
+            : HttpResponse.json(
+                {
+                  error: {
+                    code: "TEMPORARY",
+                    message: "Service temporarily unavailable",
                   },
-                  { status: 500 },
-                );
-          },
-        ),
+                },
+                { status: 500 },
+              );
+        }),
       );
       await expect(
         socialCommand.parseAsync([
@@ -5694,16 +5337,12 @@ describe("okou data social command", () => {
 
   it("fails visibly when a terminal download omits error details", async () => {
     server.use(
-      dataRouterTool(
-        "social_download_create",
-        "http://localhost:3000/api/social/downloads",
-        () => {
-          return HttpResponse.json(
-            { ...failedDownload("provider_failed"), error: null },
-            { status: 202 },
-          );
-        },
-      ),
+      dataRouterTool("social_download_create", () => {
+        return HttpResponse.json(
+          { ...failedDownload("provider_failed"), error: null },
+          { status: 202 },
+        );
+      }),
     );
 
     await expect(
@@ -5789,27 +5428,23 @@ describe("okou data social command", () => {
       const initialSigintListeners = process.listenerCount("SIGINT");
       const initialSigtermListeners = process.listenerCount("SIGTERM");
       server.use(
-        dataRouterTool(
-          "social_download_get",
-          "http://localhost:3000/api/social/downloads/:downloadId",
-          async ({ request }) => {
-            statusRequestStarted = true;
-            await new Promise<void>((resolve) => {
-              if (request.signal.aborted) {
+        dataRouterTool("social_download_get", async ({ request }) => {
+          statusRequestStarted = true;
+          await new Promise<void>((resolve) => {
+            if (request.signal.aborted) {
+              resolve();
+              return;
+            }
+            request.signal.addEventListener(
+              "abort",
+              () => {
                 resolve();
-                return;
-              }
-              request.signal.addEventListener(
-                "abort",
-                () => {
-                  resolve();
-                },
-                { once: true },
-              );
-            });
-            return HttpResponse.error();
-          },
-        ),
+              },
+              { once: true },
+            );
+          });
+          return HttpResponse.error();
+        }),
       );
 
       const command = socialCommand.parseAsync([
@@ -5882,7 +5517,7 @@ describe("okou data social command", () => {
       expect(command?.helpInformation()).toContain("YouTube extraction caches");
     }
     expect(renderedHelp).toContain(
-      "Provider credentials remain on the Okou API server",
+      "Provider credentials remain on Data Router",
     );
     expect(renderedHelp).toContain(
       "one kind=page record per fetched page, followed by one metadata-only kind=summary record",

@@ -615,15 +615,15 @@ assert_env_value "$success_env_file" MICROSOFT_TEAMS_BOT_APP_ID "github-teams-bo
 assert_env_value "$success_env_file" MICROSOFT_TEAMS_BOT_APP_PASSWORD "github-teams-bot-app-password"
 assert_env_value "$success_env_file" MICROSOFT_TEAMS_APP_TENANT_ID "github-teams-app-tenant-id"
 assert_env_value "$success_env_file" GOOGLE_ADS_DEVELOPER_TOKEN "github-google-ads-secret"
-assert_env_key_absent "$success_env_file" OKOU_WEATHER_GOOGLE_WEATHER_TOKEN
-assert_env_key_absent "$success_env_file" OKOU_FINANCE_APIDOJO_TOKEN
-assert_env_key_absent "$success_env_file" OKOU_SEO_DATAFORSEO_LOGIN
-assert_env_key_absent "$success_env_file" OKOU_SEO_DATAFORSEO_PASSWORD
+assert_env_value "$success_env_file" OKOU_WEATHER_GOOGLE_WEATHER_TOKEN "github-google-weather-token"
+assert_env_value "$success_env_file" OKOU_FINANCE_APIDOJO_TOKEN "github-apidojo-token"
+assert_env_value "$success_env_file" OKOU_SEO_DATAFORSEO_LOGIN "github-dataforseo-login"
+assert_env_value "$success_env_file" OKOU_SEO_DATAFORSEO_PASSWORD "github-dataforseo-password"
 assert_env_value "$success_env_file" OKOU_BROWSER_USE_API_KEY "github-browser-use-api-key"
-assert_env_key_absent "$success_env_file" OKOU_SCRAPE_FIRECRAWL_TOKEN
-assert_env_key_absent "$success_env_file" OKOU_WEB_SEARCH_PERPLEXITY_TOKEN
-assert_env_key_absent "$success_env_file" OKOU_SOCIAL_MONID_API_KEY
-assert_env_key_absent "$success_env_file" OKOU_SOCIAL_SOCIALKIT_TOKEN
+assert_env_value "$success_env_file" OKOU_SCRAPE_FIRECRAWL_TOKEN "github-firecrawl-token"
+assert_env_value "$success_env_file" OKOU_WEB_SEARCH_PERPLEXITY_TOKEN "github-perplexity-token"
+assert_env_value "$success_env_file" OKOU_SOCIAL_MONID_API_KEY "github-monid-api-key"
+assert_env_value "$success_env_file" OKOU_SOCIAL_SOCIALKIT_TOKEN "github-socialkit-token"
 assert_env_value "$success_env_file" STEAM_WEB_API_KEY "github-steam-web-api-key"
 assert_env_value "$success_env_file" LINK_OAUTH_CLIENT_ID "doppler-link-client-id"
 assert_env_value "$success_env_file" LINK_OAUTH_CLIENT_SECRET "doppler-link-client-secret"
@@ -719,9 +719,9 @@ assert_api_backend_url_canonical "$empty_env_file" "https://pr-123-api-backend.o
 assert_machine_secret_absent "$empty_env_file"
 assert_env_value "$empty_env_file" OKOU_PUBLIC_ARTIFACTS_BASE_URL ""
 assert_env_value "$empty_env_file" OKOU_PUBLIC_HOST_DOMAIN ""
-assert_env_key_absent "$empty_env_file" OKOU_SOCIAL_MONID_API_KEY
-assert_env_key_absent "$empty_env_file" OKOU_SOCIAL_SOCIALKIT_TOKEN
-assert_env_key_absent "$empty_env_file" OKOU_SEO_DATAFORSEO_LOGIN
+assert_env_value "$empty_env_file" OKOU_SOCIAL_MONID_API_KEY ""
+assert_env_value "$empty_env_file" OKOU_SOCIAL_SOCIALKIT_TOKEN ""
+assert_env_value "$empty_env_file" OKOU_SEO_DATAFORSEO_LOGIN ""
 assert_env_value "$empty_env_file" OKOU_PRICE_PRO ""
 assert_env_value "$empty_env_file" OKOU_ONE_TIME_CAMPAIGN ""
 
@@ -744,12 +744,12 @@ assert_env_value "$production_web_env_file" POSTHOG_HOST "https://posthog.github
 assert_env_value "$production_web_env_file" GIT_COMMIT_SHA "$EXPECTED_BUILD_COMMIT_SHA"
 assert_env_absent_value "$production_web_env_file" "ATOM_URL="
 assert_env_key_absent "$production_web_env_file" OKOU_MACHINE_SECRET_KEY
-assert_env_key_absent "$production_web_env_file" OKOU_WEATHER_GOOGLE_WEATHER_TOKEN
-assert_env_key_absent "$production_web_env_file" OKOU_FINANCE_APIDOJO_TOKEN
+assert_env_value "$production_web_env_file" OKOU_WEATHER_GOOGLE_WEATHER_TOKEN "github-google-weather-token"
+assert_env_value "$production_web_env_file" OKOU_FINANCE_APIDOJO_TOKEN "github-apidojo-token"
 assert_env_absent_value "$production_web_env_file" "OKOU_SEO_DATAFORSEO_LOGIN="
 assert_env_absent_value "$production_web_env_file" "OKOU_SEO_DATAFORSEO_PASSWORD="
-assert_env_key_absent "$production_web_env_file" OKOU_SCRAPE_FIRECRAWL_TOKEN
-assert_env_key_absent "$production_web_env_file" OKOU_WEB_SEARCH_PERPLEXITY_TOKEN
+assert_env_value "$production_web_env_file" OKOU_SCRAPE_FIRECRAWL_TOKEN "github-firecrawl-token"
+assert_env_value "$production_web_env_file" OKOU_WEB_SEARCH_PERPLEXITY_TOKEN "github-perplexity-token"
 assert_env_absent_value "$production_web_env_file" "OKOU_SOCIAL_MONID_API_KEY="
 assert_env_absent_value "$production_web_env_file" "OKOU_SOCIAL_SOCIALKIT_TOKEN="
 assert_env_absent_value "$production_web_env_file" "OKOU_BROWSER_USE_API_KEY="
@@ -788,15 +788,15 @@ assert_machine_secret_canonical "$production_api_env_file" "github-atom-machine-
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_BOT_APP_ID "github-teams-bot-app-id"
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_BOT_APP_PASSWORD "github-teams-bot-app-password"
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_APP_TENANT_ID "github-teams-app-tenant-id"
-assert_env_key_absent "$production_api_env_file" OKOU_WEATHER_GOOGLE_WEATHER_TOKEN
-assert_env_key_absent "$production_api_env_file" OKOU_FINANCE_APIDOJO_TOKEN
-assert_env_key_absent "$production_api_env_file" OKOU_SEO_DATAFORSEO_LOGIN
-assert_env_key_absent "$production_api_env_file" OKOU_SEO_DATAFORSEO_PASSWORD
+assert_env_value "$production_api_env_file" OKOU_WEATHER_GOOGLE_WEATHER_TOKEN "github-google-weather-token"
+assert_env_value "$production_api_env_file" OKOU_FINANCE_APIDOJO_TOKEN "github-apidojo-token"
+assert_env_value "$production_api_env_file" OKOU_SEO_DATAFORSEO_LOGIN "github-dataforseo-login"
+assert_env_value "$production_api_env_file" OKOU_SEO_DATAFORSEO_PASSWORD "github-dataforseo-password"
 assert_env_value "$production_api_env_file" OKOU_BROWSER_USE_API_KEY "github-browser-use-api-key"
-assert_env_key_absent "$production_api_env_file" OKOU_SCRAPE_FIRECRAWL_TOKEN
-assert_env_key_absent "$production_api_env_file" OKOU_WEB_SEARCH_PERPLEXITY_TOKEN
-assert_env_key_absent "$production_api_env_file" OKOU_SOCIAL_MONID_API_KEY
-assert_env_key_absent "$production_api_env_file" OKOU_SOCIAL_SOCIALKIT_TOKEN
+assert_env_value "$production_api_env_file" OKOU_SCRAPE_FIRECRAWL_TOKEN "github-firecrawl-token"
+assert_env_value "$production_api_env_file" OKOU_WEB_SEARCH_PERPLEXITY_TOKEN "github-perplexity-token"
+assert_env_value "$production_api_env_file" OKOU_SOCIAL_MONID_API_KEY "github-monid-api-key"
+assert_env_value "$production_api_env_file" OKOU_SOCIAL_SOCIALKIT_TOKEN "github-socialkit-token"
 assert_env_absent_value "$production_api_env_file" "ONBOARDING_URL="
 assert_env_value "$production_api_env_file" STRIPE_WEBHOOK_SECRET "github-stripe-billing-webhook-secret"
 assert_env_value "$production_api_env_file" STRIPE_AUTOMATION_WEBHOOK_SECRET "github-stripe-automation-webhook-secret"

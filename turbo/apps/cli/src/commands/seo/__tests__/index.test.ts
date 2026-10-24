@@ -83,14 +83,10 @@ describe("okou data seo command", () => {
       tasks: [{ result: [{ title: "Coffee" }] }],
     });
     server.use(
-      dataRouterTool(
-        "seo_serp",
-        "http://localhost:3000/api/seo/serp",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(response);
-        },
-      ),
+      dataRouterTool("seo_serp", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json(response);
+      }),
     );
 
     await seoCommand.parseAsync([
@@ -120,7 +116,9 @@ describe("okou data seo command", () => {
       device: "mobile",
       limit: 20,
     });
-    expect(mockConsoleLog).toHaveBeenCalledWith(JSON.stringify(response));
+    expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toEqual(
+      response,
+    );
   });
 
   it.each(["human", "json"] as const)(
@@ -149,7 +147,7 @@ describe("okou data seo command", () => {
         partialResults: true,
       };
       server.use(
-        dataRouterTool("seo_serp", "http://localhost:3000/api/seo/serp", () => {
+        dataRouterTool("seo_serp", () => {
           return HttpResponse.json(response);
         }),
       );
@@ -163,9 +161,11 @@ describe("okou data seo command", () => {
       ]);
 
       if (format === "json") {
-        expect(mockConsoleLog.mock.calls).toStrictEqual([
-          [JSON.stringify(response)],
-        ]);
+        expect(
+          mockConsoleLog.mock.calls.map(([value]) => {
+            return JSON.parse(String(value));
+          }),
+        ).toStrictEqual([response]);
       } else {
         const output = mockConsoleLog.mock.calls.flat().join("\n");
         expect(output).toContain("completed with partial results");
@@ -182,7 +182,7 @@ describe("okou data seo command", () => {
 
   it("keeps provider failures unsuccessful instead of reporting partial success", async () => {
     server.use(
-      dataRouterTool("seo_serp", "http://localhost:3000/api/seo/serp", () => {
+      dataRouterTool("seo_serp", () => {
         return HttpResponse.json(
           {
             error: {
@@ -212,14 +212,10 @@ describe("okou data seo command", () => {
       tasks: [{ result: [{ keyword: "seo audit" }] }],
     });
     server.use(
-      dataRouterTool(
-        "seo_keyword_ideas",
-        "http://localhost:3000/api/seo/keyword-ideas",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(response);
-        },
-      ),
+      dataRouterTool("seo_keyword_ideas", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json(response);
+      }),
     );
 
     await seoCommand.parseAsync([
@@ -246,14 +242,10 @@ describe("okou data seo command", () => {
   it("posts supported DataForSEO search engines", async () => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "seo_serp",
-        "http://localhost:3000/api/seo/serp",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(dataForSeoResponse("serp", {}));
-        },
-      ),
+      dataRouterTool("seo_serp", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json(dataForSeoResponse("serp", {}));
+      }),
     );
 
     await seoCommand.parseAsync([
@@ -283,7 +275,7 @@ describe("okou data seo command", () => {
   it("rejects mobile DataForSEO Google News before calling the API", async () => {
     let apiRequests = 0;
     server.use(
-      dataRouterTool("seo_serp", "http://localhost:3000/api/seo/serp", () => {
+      dataRouterTool("seo_serp", () => {
         apiRequests += 1;
         return HttpResponse.json(dataForSeoResponse("serp", {}));
       }),
@@ -370,17 +362,13 @@ describe("okou data seo command", () => {
       'Use a supported country or region, such as "United States" or "US". City and state locations are not supported.';
     let apiRequests = 0;
     server.use(
-      dataRouterTool(
-        "seo_keyword_ideas",
-        "http://localhost:3000/api/seo/keyword-ideas",
-        () => {
-          apiRequests += 1;
-          return HttpResponse.json(
-            { error: { code: "DATAFORSEO_INVALID_REQUEST", message } },
-            { status: 400 },
-          );
-        },
-      ),
+      dataRouterTool("seo_keyword_ideas", () => {
+        apiRequests += 1;
+        return HttpResponse.json(
+          { error: { code: "DATAFORSEO_INVALID_REQUEST", message } },
+          { status: 400 },
+        );
+      }),
     );
 
     await expect(

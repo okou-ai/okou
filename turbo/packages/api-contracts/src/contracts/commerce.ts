@@ -1,10 +1,5 @@
 import { z } from "zod";
 
-import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
-
-const c = initContract();
-
 /** Explicit Amazon marketplace, country and locale pairs; never provider URLs. */
 export const AMAZON_MARKETPLACES = {
   "amazon.com": { country: "US", locationCode: 2840, languageCode: "en_US" },
@@ -81,9 +76,6 @@ export const commerceSearchRequestSchema = z
       }, "Use commerce inspect for Amazon product URLs, not keyword search"),
     marketplace: amazonMarketplaceSchema.default("amazon.com"),
     limit: z.number().int().min(1).max(48).default(48),
-    // Ignored: every submission is asynchronous. Accepted while supported
-    // Runners bundle CLIs that send it for supported API rollback targets.
-    async: z.boolean().optional(),
     requestId: z.uuid().optional(),
   })
   .strict();
@@ -92,9 +84,6 @@ export const commerceInspectRequestSchema = z
   .object({
     target: z.string().trim().min(1).max(2048),
     marketplace: amazonMarketplaceSchema.optional(),
-    // Ignored: every submission is asynchronous. Accepted while supported
-    // Runners bundle CLIs that send it for supported API rollback targets.
-    async: z.boolean().optional(),
     requestId: z.uuid().optional(),
   })
   .strict()
@@ -149,49 +138,3 @@ export type CommerceInspectRequest = z.infer<
   typeof commerceInspectRequestSchema
 >;
 export type CommerceResponse = z.infer<typeof commerceResponseSchema>;
-
-const responses = {
-  202: commerceJobSchema,
-  400: apiErrorSchema,
-  401: apiErrorSchema,
-  402: apiErrorSchema,
-  403: apiErrorSchema,
-  409: apiErrorSchema,
-  502: apiErrorSchema,
-  503: apiErrorSchema,
-} as const;
-
-export const commerceContract = c.router({
-  getJob: {
-    method: "GET",
-    path: "/api/commerce/jobs/:id",
-    headers: authHeadersSchema,
-    pathParams: z.object({ id: z.uuid() }),
-    responses: {
-      200: commerceJobSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-      503: apiErrorSchema,
-    },
-    summary: "Read a Commerce job without starting another paid operation",
-  },
-  search: {
-    method: "POST",
-    path: "/api/commerce/search",
-    headers: authHeadersSchema,
-    body: commerceSearchRequestSchema,
-    responses,
-    summary: "Search one page of Amazon products through managed Commerce",
-  },
-  inspect: {
-    method: "POST",
-    path: "/api/commerce/inspect",
-    headers: authHeadersSchema,
-    body: commerceInspectRequestSchema,
-    responses,
-    summary: "Inspect an Amazon product by ASIN or marketplace product URL",
-  },
-});
-export type CommerceContract = typeof commerceContract;

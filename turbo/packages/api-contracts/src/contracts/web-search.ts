@@ -1,10 +1,5 @@
 import { z } from "zod";
 
-import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
-
-const c = initContract();
-
 export const WEB_SEARCH_DEFAULT_LIMIT = 5;
 export const WEB_SEARCH_MAX_LIMIT = 10;
 export const WEB_SEARCH_MAX_QUERY_CHARS = 2_048;
@@ -100,26 +95,3 @@ export type WebSearchRecency = z.infer<typeof webSearchRecencySchema>;
 export type WebSearchRequest = z.infer<typeof webSearchRequestSchema>;
 export type WebSearchResult = z.infer<typeof webSearchResultSchema>;
 export type WebSearchResponse = z.infer<typeof webSearchResponseSchema>;
-
-const webSearchResponses = {
-  200: webSearchResponseSchema,
-  400: apiErrorSchema,
-  401: apiErrorSchema,
-  402: apiErrorSchema,
-  403: apiErrorSchema,
-  502: apiErrorSchema,
-  503: apiErrorSchema,
-} as const;
-
-export const webSearchContract = c.router({
-  search: {
-    method: "POST",
-    path: "/api/web-search",
-    headers: authHeadersSchema,
-    body: webSearchRequestSchema,
-    responses: webSearchResponses,
-    summary: "Search the public web through managed Okou web search",
-  },
-});
-
-export type WebSearchContract = typeof webSearchContract;

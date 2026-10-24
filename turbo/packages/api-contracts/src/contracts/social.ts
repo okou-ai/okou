@@ -11,12 +11,7 @@ import {
   type ManagedSocialKitToolName,
   socialKitRequestSchema,
 } from "./social-tools";
-import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import {
-  socialPlatformSchema,
-  socialStatusResponseSchema,
-} from "./social-discovery";
 
 export {
   findManagedSocialKitTool,
@@ -52,8 +47,6 @@ export {
   type SocialKitRequest,
   type SocialKitCollectionSourceLimit,
 } from "./social-tools";
-
-const c = initContract();
 
 export const socialErrorReasonSchema = z.enum([
   ...socialKitTranscriptErrorReasonSchema.options,
@@ -589,89 +582,3 @@ export function projectPublicSocialResponse(
     ? { ok: true, response: parsed.data as SocialKitResponse }
     : { ok: false };
 }
-
-export const socialContract = c.router({
-  status: {
-    method: "GET",
-    path: "/api/social/status",
-    headers: authHeadersSchema,
-    query: z.object({ platform: socialPlatformSchema.optional() }).strict(),
-    responses: {
-      200: socialStatusResponseSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-    },
-    summary: "Get reported Social service health without billing",
-  },
-  request: {
-    method: "POST",
-    path: "/api/social/request",
-    headers: authHeadersSchema,
-    body: socialKitRequestSchema,
-    responses: {
-      200: socialKitResponseSchema,
-      400: socialKitErrorSchema,
-      401: socialKitErrorSchema,
-      402: socialKitErrorSchema,
-      403: socialKitErrorSchema,
-      404: socialKitErrorSchema,
-      422: socialKitErrorSchema,
-      429: socialKitErrorSchema,
-      502: socialKitErrorSchema,
-      503: socialKitErrorSchema,
-    },
-    summary: "Call a typed Okou Social tool",
-  },
-  createDownload: {
-    method: "POST",
-    path: "/api/social/downloads",
-    headers: authHeadersSchema,
-    body: socialKitDownloadRequestSchema,
-    responses: {
-      202: socialKitDownloadResponseSchema,
-      400: socialKitErrorSchema,
-      401: apiErrorSchema,
-      402: apiErrorSchema,
-      403: apiErrorSchema,
-      404: socialKitErrorSchema,
-      409: socialKitDownloadConflictSchema,
-      422: socialKitErrorSchema,
-      429: socialKitErrorSchema,
-      500: apiErrorSchema,
-      502: socialKitErrorSchema,
-      503: socialKitErrorSchema,
-    },
-    summary: "Start an Okou Social media download",
-  },
-  listDownloads: {
-    method: "GET",
-    path: "/api/social/downloads",
-    headers: authHeadersSchema,
-    query: socialKitDownloadListQuerySchema,
-    responses: {
-      200: socialKitDownloadListResponseSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "List saved downloads for the current user and organization",
-  },
-  getDownload: {
-    method: "GET",
-    path: "/api/social/downloads/:downloadId",
-    headers: authHeadersSchema,
-    pathParams: z.object({ downloadId: z.string().uuid() }),
-    responses: {
-      200: socialKitDownloadResponseSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Get an Okou Social media download",
-  },
-});
-
-export type SocialContract = typeof socialContract;

@@ -1,10 +1,5 @@
 import { z } from "zod";
 
-import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
-
-const c = initContract();
-
 export const WEATHER_ATTRIBUTION = "Source: Includes weather data from Google";
 export const AIR_QUALITY_ATTRIBUTION =
   "Source: Includes air quality data from Google";
@@ -103,68 +98,3 @@ export type WeatherHistoryHourlyRequest = z.infer<
 export type AirQualityCurrentRequest = z.infer<
   typeof airQualityCurrentRequestSchema
 >;
-
-const weatherResponses = {
-  200: weatherConditionsResponseSchema,
-  400: apiErrorSchema,
-  401: apiErrorSchema,
-  402: apiErrorSchema,
-  403: apiErrorSchema,
-  502: apiErrorSchema,
-  503: apiErrorSchema,
-} as const;
-
-const airQualityResponses = {
-  200: airQualityResponseSchema,
-  400: apiErrorSchema,
-  401: apiErrorSchema,
-  402: apiErrorSchema,
-  403: apiErrorSchema,
-  502: apiErrorSchema,
-  503: apiErrorSchema,
-} as const;
-
-export const weatherContract = c.router({
-  current: {
-    method: "POST",
-    path: "/api/weather/current",
-    headers: authHeadersSchema,
-    body: weatherCurrentRequestSchema,
-    responses: weatherResponses,
-    summary: "Get current conditions through managed Okou Weather",
-  },
-  forecastHourly: {
-    method: "POST",
-    path: "/api/weather/forecast/hourly",
-    headers: authHeadersSchema,
-    body: weatherForecastHourlyRequestSchema,
-    responses: weatherResponses,
-    summary: "Get an hourly forecast through managed Okou Weather",
-  },
-  forecastDaily: {
-    method: "POST",
-    path: "/api/weather/forecast/daily",
-    headers: authHeadersSchema,
-    body: weatherForecastDailyRequestSchema,
-    responses: weatherResponses,
-    summary: "Get a daily forecast through managed Okou Weather",
-  },
-  historyHourly: {
-    method: "POST",
-    path: "/api/weather/history/hourly",
-    headers: authHeadersSchema,
-    body: weatherHistoryHourlyRequestSchema,
-    responses: weatherResponses,
-    summary: "Get recent hourly history through managed Okou Weather",
-  },
-  airQualityCurrent: {
-    method: "POST",
-    path: "/api/weather/air-quality/current",
-    headers: authHeadersSchema,
-    body: airQualityCurrentRequestSchema,
-    responses: airQualityResponses,
-    summary: "Get current air quality through managed Okou Weather",
-  },
-});
-
-export type WeatherContract = typeof weatherContract;

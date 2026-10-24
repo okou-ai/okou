@@ -63,14 +63,10 @@ describe("okou data maps command", () => {
   it("posts one conversational search with explicit location and language", async () => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool(
-        "maps_search",
-        "http://localhost:3000/api/maps/search",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(groundedResponse());
-        },
-      ),
+      dataRouterTool("maps_search", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json(groundedResponse());
+      }),
     );
 
     await mapsCommand.parseAsync([
@@ -99,13 +95,9 @@ describe("okou data maps command", () => {
 
   it("keeps the grounded answer immediately adjacent to Google Maps sources", async () => {
     server.use(
-      dataRouterTool(
-        "maps_search",
-        "http://localhost:3000/api/maps/search",
-        () => {
-          return HttpResponse.json(groundedResponse());
-        },
-      ),
+      dataRouterTool("maps_search", () => {
+        return HttpResponse.json(groundedResponse());
+      }),
     );
 
     await mapsCommand.parseAsync([
@@ -131,13 +123,9 @@ describe("okou data maps command", () => {
     "renders the server's %s model during API and CLI version overlap",
     async (model) => {
       server.use(
-        dataRouterTool(
-          "maps_search",
-          "http://localhost:3000/api/maps/search",
-          () => {
-            return HttpResponse.json(groundedResponse(model));
-          },
-        ),
+        dataRouterTool("maps_search", () => {
+          return HttpResponse.json(groundedResponse(model));
+        }),
       );
 
       await mapsCommand.parseAsync([
@@ -173,16 +161,12 @@ describe("okou data maps command", () => {
     "shows the $code cause and recovery guidance in $mode mode",
     async ({ code, message, options }) => {
       server.use(
-        dataRouterTool(
-          "maps_search",
-          "http://localhost:3000/api/maps/search",
-          () => {
-            return HttpResponse.json(
-              { error: { code, message } },
-              { status: 502 },
-            );
-          },
-        ),
+        dataRouterTool("maps_search", () => {
+          return HttpResponse.json(
+            { error: { code, message } },
+            { status: 502 },
+          );
+        }),
       );
 
       await expect(

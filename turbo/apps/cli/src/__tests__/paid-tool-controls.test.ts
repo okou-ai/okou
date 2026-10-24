@@ -276,13 +276,9 @@ describe("personal paid-tool controls through the CLI entry point", () => {
         };
       });
       server.use(
-        dataRouterTool(
-          "data_capabilities",
-          "http://localhost:3000/api/data/capabilities",
-          () => {
-            return HttpResponse.json({ capabilities });
-          },
-        ),
+        dataRouterTool("data_capabilities", () => {
+          return HttpResponse.json({ capabilities });
+        }),
       );
       await run(["data", operation, "--json"]);
       expect(JSON.parse(output)).toEqual({
@@ -504,22 +500,18 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, policy);
     let paidRequests = 0;
     server.use(
-      dataRouterTool(
-        "web_search",
-        "http://localhost:3000/api/web-search",
-        () => {
-          paidRequests += 1;
-          return HttpResponse.json({
-            query: "example",
-            limit: 5,
-            provider: "perplexity",
-            billingCategory: "request",
-            billingQuantity: 1,
-            creditsCharged: 5,
-            results: [],
-          });
-        },
-      ),
+      dataRouterTool("web_search", () => {
+        paidRequests += 1;
+        return HttpResponse.json({
+          query: "example",
+          limit: 5,
+          provider: "perplexity",
+          billingCategory: "request",
+          billingQuantity: 1,
+          creditsCharged: 5,
+          results: [],
+        });
+      }),
     );
     await run(["data", "web", "search", "example", "--json"]);
     expect(paidRequests).toBe(1);
