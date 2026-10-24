@@ -256,6 +256,8 @@ pub(super) fn read_with_budget(
     // Persisted v1 entries can be the only remaining local source after archive
     // retirement. Keep their original locks and checks; corrupt v2 data must
     // never be hidden by trying a different representation.
+    // Remove this cross-Runner cache compatibility only after old producers exit
+    // and retained v1 entries are migrated or safely retired (#42702).
     for kind in [EntryKind::Positive, EntryKind::LegacyPositive] {
         if let Some(files) = read_entry(
             home,
