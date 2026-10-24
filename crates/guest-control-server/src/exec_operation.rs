@@ -727,13 +727,11 @@ impl ExecSetup {
 
     fn into_stdout_started(
         self,
-        stdout_handle: JoinHandle<()>,
-        stdout_result_rx: mpsc::Receiver<BoundedDrainResult>,
+        stdout_handle: JoinHandle<BoundedDrainResult>,
     ) -> ExecSetupWithStdout {
         ExecSetupWithStdout {
             setup: self,
             stdout_handle,
-            stdout_result_rx,
         }
     }
 
@@ -798,8 +796,7 @@ impl ExecSetup {
 /// [`RunningExec`].
 struct ExecSetupWithStdout {
     setup: ExecSetup,
-    stdout_handle: JoinHandle<()>,
-    stdout_result_rx: mpsc::Receiver<BoundedDrainResult>,
+    stdout_handle: JoinHandle<BoundedDrainResult>,
 }
 
 impl ExecSetupWithStdout {
@@ -820,7 +817,6 @@ impl ExecSetupWithStdout {
         let ExecSetupWithStdout {
             setup,
             stdout_handle,
-            stdout_result_rx: _,
         } = self;
         let ExecSetup {
             child,
@@ -850,14 +846,12 @@ impl ExecSetupWithStdout {
 
     fn into_running(
         self,
-        stderr_handle: JoinHandle<()>,
-        stderr_result_rx: mpsc::Receiver<BoundedDrainResult>,
+        stderr_handle: JoinHandle<BoundedDrainResult>,
         stream_writer: Option<SharedExecStreamWriter>,
     ) -> RunningExec {
         let ExecSetupWithStdout {
             setup,
             stdout_handle,
-            stdout_result_rx,
         } = self;
         let ExecSetup {
             child,
@@ -876,9 +870,7 @@ impl ExecSetupWithStdout {
             placement_bootstrap,
             stdin_writer,
             stdout_handle,
-            stdout_result_rx,
             stderr_handle,
-            stderr_result_rx,
             stream_writer,
             drain_cancel,
             drain_done_rx,
@@ -898,10 +890,8 @@ struct RunningExec {
     process_containment: ExecProcessContainment,
     placement_bootstrap: Option<WorkloadPlacementBootstrap>,
     stdin_writer: Option<StdinWriter>,
-    stdout_handle: JoinHandle<()>,
-    stdout_result_rx: mpsc::Receiver<BoundedDrainResult>,
-    stderr_handle: JoinHandle<()>,
-    stderr_result_rx: mpsc::Receiver<BoundedDrainResult>,
+    stdout_handle: JoinHandle<BoundedDrainResult>,
+    stderr_handle: JoinHandle<BoundedDrainResult>,
     stream_writer: Option<SharedExecStreamWriter>,
     drain_cancel: Arc<DrainCancellation>,
     drain_done_rx: mpsc::Receiver<()>,
@@ -986,9 +976,7 @@ impl RunningExec {
             placement_bootstrap,
             stdin_writer,
             stdout_handle,
-            stdout_result_rx,
             stderr_handle,
-            stderr_result_rx,
             stream_writer,
             drain_cancel,
             drain_done_rx,
@@ -1061,21 +1049,15 @@ impl RunningExec {
             );
         }
 
-        let stdout_join_failed = stdout_handle.join().is_err();
-        let stderr_join_failed = stderr_handle.join().is_err();
-        let stdout_result = stdout_result_rx.recv().ok();
-        let stderr_result = stderr_result_rx.recv().ok();
-        let drains_incomplete = completed < 2
-            || stdout_join_failed
-            || stderr_join_failed
-            || stdout_result.is_none()
-            || stderr_result.is_none();
+        let stdout_result = stdout_handle.join();
+        let stderr_result = stderr_handle.join();
+        let drains_incomplete = completed < 2 || stdout_result.is_err() || stderr_result.is_err();
         let stdout_settings = output_settings(request.stdout);
         let stderr_settings = output_settings(request.stderr);
         let stdout_result =
-            finalize_exec_drain_result(stdout_result, stdout_settings, drains_incomplete);
+            finalize_exec_drain_result(stdout_result.ok(), stdout_settings, drains_incomplete);
         let stderr_result =
-            finalize_exec_drain_result(stderr_result, stderr_settings, drains_incomplete);
+            finalize_exec_drain_result(stderr_result.ok(), stderr_settings, drains_incomplete);
         if drains_incomplete {
             emit_exec_stream_truncation_markers(
                 stream_writer.as_ref(),
@@ -1354,7 +1336,7 @@ where
     let worker_writer = writer.clone();
     let worker_spawner = spawner.clone();
     let worker_operation_guard = operation_guard.clone();
-    let result = spawner.spawn_unit(
+    let result = spawner.spawn(
         THREAD_EXEC_OPERATION_WORKER,
         Box::new(move || {
             run_exec_operation_worker(
@@ -1653,9 +1635,7 @@ fn run_exec_operation_worker<S>(
         spawner.clone(),
     );
     let setup = match stdout_spawn {
-        Ok((stdout_handle, stdout_result_rx)) => {
-            setup.into_stdout_started(stdout_handle, stdout_result_rx)
-        }
+        Ok(stdout_handle) => setup.into_stdout_started(stdout_handle),
         Err(e) => {
             setup.abort_wait_failed(
                 &exec_cancel,
@@ -1679,9 +1659,7 @@ fn run_exec_operation_worker<S>(
         spawner.clone(),
     );
     let mut running = match stderr_spawn {
-        Ok((stderr_handle, stderr_result_rx)) => {
-            setup.into_running(stderr_handle, stderr_result_rx, stream_writer)
-        }
+        Ok(stderr_handle) => setup.into_running(stderr_handle, stream_writer),
         Err(e) => {
             setup.abort_wait_failed(
                 &exec_cancel,
@@ -1849,7 +1827,7 @@ fn spawn_exec_operation_drain<R, S>(
     pipe: R,
     worker: DrainWorker,
     spawner: S,
-) -> io::Result<(JoinHandle<()>, mpsc::Receiver<BoundedDrainResult>)>
+) -> io::Result<JoinHandle<BoundedDrainResult>>
 where
     R: Into<OwnedFd> + Send + 'static,
     S: ThreadSpawner,
@@ -1862,12 +1840,11 @@ where
         exec_cancel,
         drain_done_tx,
     } = worker;
-    let (result_tx, result_rx) = mpsc::channel();
     let thread_name = match stream {
         ExecOutputStream::Stdout => THREAD_EXEC_OPERATION_STDOUT,
         ExecOutputStream::Stderr => THREAD_EXEC_OPERATION_STDERR,
     };
-    let handle = spawner.spawn_unit(
+    spawner.spawn(
         thread_name,
         Box::new(move || {
             let result = drain_bounded_cancellable(
@@ -1929,11 +1906,10 @@ where
                     }
                 },
             );
-            let _ = result_tx.send(result);
             let _ = drain_done_tx.send(());
+            result
         }),
-    )?;
-    Ok((handle, result_rx))
+    )
 }
 
 fn spawn_exec_operation_stdin<W, S>(
@@ -1951,7 +1927,7 @@ where
     let writer_cancel = Arc::clone(&cancel);
     let (done_tx, done_rx) = mpsc::channel();
     let (result_tx, result_rx) = mpsc::channel();
-    let handle = spawner.spawn_unit(
+    let handle = spawner.spawn(
         THREAD_EXEC_OPERATION_STDIN,
         Box::new(move || {
             let result = write_stdin_cancellable(
@@ -2485,8 +2461,8 @@ fn log_exec_terminal_if_notable(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::threading::ThreadTask;
     use crate::threading::test_support::FailingThreadSpawner;
-    use crate::threading::{UnitTask, VecTask};
     use std::cell::Cell;
     use std::fs::File;
     use std::io::{Read, Write};
@@ -2506,19 +2482,19 @@ mod tests {
     }
 
     impl ThreadSpawner for StdinPollReadySpawner {
-        fn spawn_unit(&self, name: &'static str, task: UnitTask) -> io::Result<JoinHandle<()>> {
+        fn spawn<T: Send + 'static>(
+            &self,
+            name: &'static str,
+            task: ThreadTask<T>,
+        ) -> io::Result<JoinHandle<T>> {
             let ready = self.ready.clone();
-            SystemThreadSpawner.spawn_unit(
+            SystemThreadSpawner.spawn(
                 name,
                 Box::new(move || {
                     STDIN_POLL_READY.set(Some(ready));
-                    task();
+                    task()
                 }),
             )
-        }
-
-        fn spawn_vec(&self, name: &'static str, task: VecTask) -> io::Result<JoinHandle<Vec<u8>>> {
-            SystemThreadSpawner.spawn_vec(name, task)
         }
     }
 
