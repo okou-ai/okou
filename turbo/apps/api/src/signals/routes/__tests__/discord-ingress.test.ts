@@ -1,5 +1,9 @@
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
+import {
+  discordGatewayContract,
+  type DiscordGatewayEnvelope,
+} from "@okouai/api-contracts/contracts/discord-gateway";
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
@@ -11,7 +15,7 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { http, HttpResponse } from "msw";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -22,6 +26,7 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { integrationsDiscordRoutes } from "../integrations-discord";
+import { discordGatewayRoutes } from "../discord-gateway";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webFileUrlRoutes } from "../web-file-url";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -68,6 +73,22 @@ afterEach(async () => {
 
 function connected() {
   return track(setupConnectedDiscordActor(context));
+}
+
+function signedGatewayRequest(envelope: DiscordGatewayEnvelope) {
+  const timestamp = Math.floor(now() / 1000).toString();
+  const signature = createHmac("sha256", DISCORD_TEST_GATEWAY_SECRET)
+    .update(`${timestamp}.${JSON.stringify(envelope)}`)
+    .digest("hex");
+  return setupApp({ context, routes: discordGatewayRoutes })(
+    discordGatewayContract,
+  ).post({
+    headers: {
+      "x-discord-gateway-timestamp": timestamp,
+      "x-discord-gateway-signature": signature,
+    },
+    body: envelope,
+  });
 }
 
 function events(actor: ConnectedDiscordActor, threadId: string) {
@@ -797,6 +818,165 @@ describe("canonical Discord ingress", () => {
       outcome: "ignored",
       reason: "no-explicit-mention",
     });
+  });
+
+  it("does not consume a message receipt when another message already owns its event ID", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    const first = discordMessageForTest(actor, {
+      channelId: provider.dmChannelId,
+      guild: false,
+      content: "keep the original event",
+    });
+    const second = discordMessageForTest(actor, {
+      channelId: provider.dmChannelId,
+      guild: false,
+      content: "retry this distinct message after its event conflict",
+    });
+    provider.messages.set(first.id, first);
+    provider.messages.set(second.id, second);
+    const eventId = `shared-event:${randomUUID()}`;
+    await postDiscordMessage(context, first, eventId);
+    await flushWaitUntilForTest();
+    await accept(
+      signedGatewayRequest({
+        version: 1,
+        applicationId: DISCORD_TEST_APPLICATION_ID,
+        eventType: "MESSAGE_CREATE",
+        eventId,
+        payload: second,
+      }),
+      [500],
+    );
+    expect(
+      (await postDiscordMessage(context, second, `recovered:${second.id}`)).body
+        .outcome,
+    ).toBe("accepted");
+    await flushWaitUntilForTest();
+    const threads = await discordChatThreads(context, actor);
+    expect(threads).toHaveLength(1);
+    const thread = threads[0];
+    if (!thread) {
+      throw new Error("Expected the recovered Discord conversation");
+    }
+    const projected = JSON.stringify(await events(actor, thread.id));
+    expect(projected).toContain(first.content);
+    expect(projected).toContain(second.content);
+  });
+
+  it("rolls back a losing application's receipt when another connection wins the message", async () => {
+    const first = await connected();
+    const provider = mockDiscordProvider(first);
+    const second = await track(setupConnectedDiscordActor(context));
+    provider.guildIds.add(second.guildId);
+    const secondChannelId = uniqueDiscordSnowflake();
+    provider.channels.set(secondChannelId, {
+      id: secondChannelId,
+      type: 1,
+      recipients: [{ id: second.discordUserId, username: "second-member" }],
+    });
+    mockDiscordMemberships(context, [first, second]);
+    await flushWaitUntilForTest();
+    const originalMembership =
+      context.mocks.clerk.organizations.getOrganizationMembershipList.getMockImplementation();
+    if (!originalMembership) {
+      throw new Error("Expected the external membership authority mock");
+    }
+    const membershipReached = createDeferredPromise<void>(context.signal);
+    const releaseMembership = createDeferredPromise<void>(context.signal);
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementationOnce(
+      async (input) => {
+        expect(input).toMatchObject({ organizationId: first.orgId });
+        membershipReached.resolve();
+        await releaseMembership.promise;
+        return originalMembership(input);
+      },
+    );
+    const message = discordMessageForTest(first, {
+      channelId: provider.dmChannelId,
+      guild: false,
+      content: "private losing payload must remain retryable",
+    });
+    const otherMessage = {
+      ...discordMessageForTest(second, {
+        channelId: secondChannelId,
+        guild: false,
+        content: "the other connection's canonical message",
+      }),
+      id: message.id,
+    };
+    const firstRequest = signedGatewayRequest({
+      version: 1,
+      applicationId: DISCORD_TEST_APPLICATION_ID,
+      eventType: "MESSAGE_CREATE",
+      eventId: `first-application:${message.id}`,
+      payload: message,
+    });
+    const secondRequest = (async () => {
+      const outcome = await settleIncludingAbort(async () => {
+        await membershipReached.promise;
+        const nextApplicationId = uniqueDiscordSnowflake();
+        mockEnv("DISCORD_APPLICATION_ID", nextApplicationId);
+        provider.messages.set(otherMessage.id, otherMessage);
+        const accepted = await accept(
+          signedGatewayRequest({
+            version: 1,
+            applicationId: nextApplicationId,
+            eventType: "MESSAGE_CREATE",
+            eventId: `second-application:${message.id}`,
+            payload: otherMessage,
+          }),
+          [200],
+        );
+        expect(accepted.body.outcome).toBe("accepted");
+        await flushWaitUntilForTest();
+      });
+      releaseMembership.resolve();
+      if (!outcome.ok) {
+        throw outcome.error;
+      }
+    })();
+    const [firstResult, secondResult] = await Promise.allSettled([
+      firstRequest,
+      secondRequest,
+    ]);
+    if (firstResult.status === "rejected") {
+      throw firstResult.reason;
+    }
+    if (secondResult.status === "rejected") {
+      throw secondResult.reason;
+    }
+    expect(firstResult.value.status).toBe(500);
+    expect(JSON.stringify(firstResult.value.body)).not.toContain(
+      message.content,
+    );
+    await expect(discordChatThreads(context, first)).resolves.toHaveLength(0);
+
+    mockEnv("DISCORD_APPLICATION_ID", DISCORD_TEST_APPLICATION_ID);
+    await removePublicDiscordBinding(context, second.fixture);
+    await flushWaitUntilForTest();
+    provider.messages.set(message.id, message);
+    expect(
+      (
+        await postDiscordMessage(
+          context,
+          message,
+          `owner-recovered:${message.id}`,
+        )
+      ).body.outcome,
+    ).toBe("accepted");
+    await flushWaitUntilForTest();
+    const threads = await discordChatThreads(context, first);
+    expect(threads).toHaveLength(1);
+    const thread = threads[0];
+    if (!thread) {
+      throw new Error(
+        "Expected the winning receipt to leave the loser retryable",
+      );
+    }
+    expect(JSON.stringify(await events(first, thread.id))).toContain(
+      message.content,
+    );
   });
 
   it("creates one owned input and run across concurrent relay retries", async () => {

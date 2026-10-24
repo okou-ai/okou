@@ -172,11 +172,6 @@
       "owner": "deleteCustomConnectorAccount$"
     },
     {
-      "id": "TX-0150",
-      "file": "turbo/apps/api/src/signals/services/discord-chat-ingress.service.ts",
-      "owner": "admitCanonicalDiscordChatEvent$"
-    },
-    {
       "id": "TX-0156",
       "file": "turbo/apps/api/src/signals/services/email-common.service.ts",
       "owner": "prepareNextOutboxItem"

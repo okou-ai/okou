@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { explicitModelSettings } from "@okouai/core/auto-run-model";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -33,6 +33,7 @@ import {
 } from "../../lib/db-raw-rows";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { writeDb$ } from "../external/db";
+import { settle } from "../utils";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import type { DefaultModelFirstPin } from "./model-selection.service";
 import {
@@ -526,9 +527,9 @@ interface DiscordIngressAdmissionArgs {
   readonly currentTime: Date;
 }
 
-const discordIngressInsertResultSchema = z.discriminatedUnion("inserted", [
-  z.object({
-    inserted: z.literal(true),
+const discordIngressInsertResultSchema = z
+  .object({
+    inserted: z.boolean(),
     id: z.string().uuid(),
     connectionId: z.string().uuid(),
     status: z.enum([
@@ -538,14 +539,14 @@ const discordIngressInsertResultSchema = z.discriminatedUnion("inserted", [
       "processed",
       "terminal",
     ]),
-  }),
-  z.object({
-    inserted: z.literal(false),
-    id: z.null(),
-    connectionId: z.null(),
-    status: z.null(),
-  }),
-]);
+  })
+  .strict();
+
+const discordIngressOwnerConflictSchema = z.object({
+  code: z.literal("23502"),
+  table: z.literal("discord_chat_ingress"),
+  column: z.literal("connection_id"),
+});
 
 function discordIngressAdmissionSql(args: DiscordIngressAdmissionArgs) {
   const digest = discordMessageReceiptDigest(
@@ -553,6 +554,7 @@ function discordIngressAdmissionSql(args: DiscordIngressAdmissionArgs) {
     args.messageId,
   );
   const currentTime = args.currentTime.toISOString();
+  const ingressId = randomUUID();
   // Drizzle insert-select requires every table column. This partial-column
   // publication preserves database defaults and gates ingress on the receipt.
   return sql`WITH receipt AS (
@@ -562,16 +564,22 @@ function discordIngressAdmissionSql(args: DiscordIngressAdmissionArgs) {
     RETURNING event_digest
   ), inserted AS (
     INSERT INTO ${discordChatIngress}
-      (connection_id, message_id, event_id, payload, status, created_at, updated_at)
-    SELECT ${args.connectionId}::uuid, ${args.messageId}, ${args.eventId},
+      (id, connection_id, message_id, event_id, payload, status, created_at, updated_at)
+    SELECT ${ingressId}::uuid, ${args.connectionId}::uuid, ${args.messageId}, ${args.eventId},
       ${args.payload}, 'pending', ${currentTime}::timestamp, ${currentTime}::timestamp
     FROM receipt
-    ON CONFLICT (message_id) DO NOTHING
+    ON CONFLICT (message_id) DO UPDATE SET connection_id = CASE
+      WHEN ${discordChatIngress.connectionId}::text = ${args.connectionId}
+        THEN EXCLUDED.connection_id
+      ELSE NULL END
+    -- This required business identity rejects a different owner and rolls the
+    -- permanent receipt back too. A matching conflict retains payload, status,
+    -- claim, retry and timestamps, and RETURNING sees its current tuple.
     RETURNING id, connection_id, status
   )
-  SELECT inserted.id IS NOT NULL AS inserted,
+  SELECT inserted.id = ${ingressId}::uuid AS inserted,
     inserted.id AS id, inserted.connection_id AS "connectionId", inserted.status AS status
-  FROM receipt LEFT JOIN inserted ON TRUE`;
+  FROM inserted`;
 }
 
 export const admitCanonicalDiscordChatEvent$ = command(
@@ -581,43 +589,33 @@ export const admitCanonicalDiscordChatEvent$ = command(
     signal: AbortSignal,
   ): Promise<DiscordChatIngressAdmission | undefined> => {
     const db = set(writeDb$);
-    // The existing fresh-winner read and ownership check must roll back the
-    // permanent receipt if a message is missing or bound to another connection.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0150; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // Identity-only receipts survive connection/chat deletion. A duplicate
-      // receipt cannot publish another ingress, including after reconnection.
-      const [result] = parseRawRows(
-        discordIngressInsertResultSchema,
-        await tx.execute(discordIngressAdmissionSql(args)),
-      );
-      signal.throwIfAborted();
-      if (!result) {
-        return undefined;
-      }
-      if (result.inserted) {
-        return result;
-      }
-
-      const [existing] = await tx
-        .select({
-          id: discordChatIngress.id,
-          connectionId: discordChatIngress.connectionId,
-          status: discordChatIngress.status,
-        })
-        .from(discordChatIngress)
-        .where(eq(discordChatIngress.messageId, args.messageId))
-        .limit(1);
-      signal.throwIfAborted();
-      if (!existing) {
-        throw new Error("Failed to resolve canonical Discord ingress event");
-      }
-      if (existing.connectionId !== args.connectionId) {
+    // Keep receipt -> ingress order. Only the natural message key arbitrates;
+    // a consumed receipt produces no ingress write, even after chat deletion.
+    const statement = discordIngressAdmissionSql(args);
+    const schema = discordIngressInsertResultSchema;
+    const outcome = await settle(
+      (async () => {
+        return parseRawRows(schema, await db.execute(statement));
+      })(),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!outcome.ok) {
+      // Preserve the old owner error without exposing SQL/payload parameters.
+      // All other database and result errors retain their actual identity.
+      if (
+        outcome.error instanceof Error &&
+        discordIngressOwnerConflictSchema.safeParse(outcome.error.cause).success
+      ) {
         throw new Error(
           "Discord message ID is already bound to another connection",
         );
       }
-      return { ...existing, inserted: false };
-    });
+      throw outcome.error;
+    }
+    if (outcome.value.length > 1) {
+      throw new Error("Canonical Discord admission returned multiple events");
+    }
+    return outcome.value[0];
   },
 );
