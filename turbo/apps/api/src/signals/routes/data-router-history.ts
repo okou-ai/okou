@@ -41,6 +41,9 @@ const list$ = command(async ({ get }, signal: AbortSignal) => {
 export const dataRouterHistoryRoutes: readonly RouteEntry[] = [
   {
     route: dataRouterHistoryContract.list,
-    handler: authRoute({ requireOrganization: true }, list$),
+    handler: authRoute(
+      { requireOrganization: true, requiredCapability: "data-search:read" },
+      list$,
+    ),
   },
 ];

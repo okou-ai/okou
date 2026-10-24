@@ -230,13 +230,16 @@ describe("Data Router completion accounting", () => {
     await expect(credits(run.actor)).resolves.toBe(before - 3);
   });
 
-  it("returns only the authenticated user's request history and rejects another Run token", async () => {
+  it("scopes session and agent request history to the user's organization and rejects another Run token", async () => {
     const own = await createRun();
-    const other = await createRun();
+    const other = await createRun(bdd.user({ orgId: own.actor.orgId }));
+    const otherOrg = await createRun(bdd.user({ userId: own.actor.userId }));
     const ownId = randomUUID();
     const otherId = randomUUID();
+    const otherOrgId = randomUUID();
     await accept(register(own, ownId), [200]);
     await accept(register(other, otherId), [200]);
+    await accept(register(otherOrg, otherOrgId), [200]);
     await accept(
       setupApp({ context, routes: webhooksAgentDataRequestRoutes })(
         dataRouterRequestContract,
@@ -246,13 +249,27 @@ describe("Data Router completion accounting", () => {
       }),
       [401],
     );
-    const history = await accept(
-      setupApp({ context, routes: dataRouterHistoryRoutes })(
-        dataRouterHistoryContract,
-      ).list({ headers: auth(own.actor) }),
-      [200],
-    );
-    expect(history.body.requestIds).toContain(ownId);
-    expect(history.body.requestIds).not.toContain(otherId);
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [
+        { role: own.actor.orgRole, organization: { id: own.actor.orgId } },
+        {
+          role: otherOrg.actor.orgRole,
+          organization: { id: otherOrg.actor.orgId },
+        },
+      ],
+      totalCount: 2,
+    });
+    for (const headers of [
+      auth(own.actor),
+      { authorization: `Bearer ${own.claim.platformEnvironment.OKOU_TOKEN}` },
+    ]) {
+      const history = await accept(
+        setupApp({ context, routes: dataRouterHistoryRoutes })(
+          dataRouterHistoryContract,
+        ).list({ headers }),
+        [200],
+      );
+      expect(history.body.requestIds).toStrictEqual([ownId]);
+    }
   });
 });

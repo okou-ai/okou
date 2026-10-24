@@ -14,7 +14,7 @@ teardown() {
     runner_e2e_teardown_test
 }
 
-@test "sandbox calls Router staging directly with MITM authentication and owned request history" {
+@test "sandbox calls Router staging and lists owned jobs with MITM authentication" {
     local before_history
     before_history=$(runner_api_curl "/api/data/router/requests")
     jq -e '.requestIds | type == "array"' <<<"$before_history" >/dev/null
@@ -43,6 +43,14 @@ jq -e '
     .result.structuredContent.data.status == 200 and
     (.result.structuredContent.data.body.capabilities | length > 0)
 ' "$result" >/dev/null
+# These installed CLI commands read owned request history with the run's OKOU_TOKEN
+# before listing Router jobs; none of them creates paid work.
+okou data jobs list --json >"$result"
+jq -e '.jobs | type == "array"' "$result" >/dev/null
+okou data social jobs list --json >"$result"
+jq -e '.jobs | type == "array"' "$result" >/dev/null
+okou data social downloads --json >"$result"
+jq -e '.downloads | type == "array"' "$result" >/dev/null
 printf 'DATA_ROUTER_DIRECT_OK\n'
 EOF
 )

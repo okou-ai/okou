@@ -9,7 +9,6 @@ import {
   socialKitCollectionSourceLimitSchema,
   type ManagedSocialKitTool,
   type ManagedSocialKitToolName,
-  socialKitRequestSchema,
 } from "./social-tools";
 import { apiErrorSchema } from "./errors";
 
