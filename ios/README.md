@@ -39,8 +39,12 @@ Conversation history renders durable user messages and assistant results using
 Textual 0.5.0. The renderer supports Markdown headings, lists, quotes, tables,
 links, images, and code blocks, with text selection, code copying, and horizontal
 overflow for wide tables and code. Ably notifications trigger fresh API reads;
-transient token output is not rendered. Conversation sharing, Cloud Browser,
-Computer Use, artifact publishing, and the global connector picker are outside this local UI.
+transient token output is not rendered. The native composer Connector sheet is available through the staff-enabled
+`iosComposerConnectors` feature switch. It supports service access, conversation
+account choices, permission grants, discovery and connection, Cloud Browser,
+Computer Use, and SSH/VNC conversation access. Separate setup/settings destinations
+open in Safari and refresh on return. Conversation sharing and artifact publishing
+remain outside this local UI.
 Generated results retain inline link labels and show native cards for Markdown image
 embeds. Images support enlarged system viewing and navigation within their transcript
 group. Video/audio use system playback; PDF and supported Office files use Quick Look.
@@ -59,11 +63,13 @@ before continuing the conversation. The composer uses a combined send/stop
 control: a nonempty draft can be sent while work is active, and the empty-draft
 control can stop active work.
 
-Before sending in an existing conversation, the app preserves confirmed connector
-account selections and disables Cloud Browser and Computer Use through existing APIs,
-then reads the settings back. These are shared conversation settings: the same
-conversation on the web will also reflect the changes. Existing Agent connector
-authorizations and confirmed chat account choices remain in use.
+Sending preserves the conversation's confirmed connector account choices and
+Cloud Browser / Computer Use selection. The same conversation shares these
+settings with the PWA. Service access belongs to the current user and Agent;
+account preferences and remote host overrides belong to the conversation.
+New-chat account and host choices remain with their Agent composer until the
+first message creates a conversation. An uncertain settings write requires fresh
+readback before another message can be sent.
 
 ## Local setup
 

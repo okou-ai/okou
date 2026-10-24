@@ -884,7 +884,7 @@ final class ChatClientTests: XCTestCase {
       ])
   }
 
-  func testSendPreservesConnectorSelectionsAndDisablesBrowserWithoutModelOverride() async throws {
+  func testSendPreservesConnectorSelectionsAndBrowserWithoutModelOverride() async throws {
     struct State: Sendable {
       var overridden = true
       var browserEnabled = true
@@ -908,15 +908,6 @@ final class ChatClientTests: XCTestCase {
       if path.hasSuffix("/metadata") {
         return ChatHTTPResponse(body: metadataJSON(browser: state.withLock { $0.browserEnabled }))
       }
-      if path.hasSuffix("/computer-use-host") {
-        let access = try JSONDecoder().decode(
-          CapturedComputerAccess.self, from: chatRequestBody(request))
-        guard access.hostIsExplicitNull && !access.cloudBrowserEnabled else {
-          throw URLError(.badServerResponse)
-        }
-        state.withLock { $0.browserEnabled = false }
-        return ChatHTTPResponse(status: 204, body: "")
-      }
       if path == "/api/chat/events" {
         let body = try JSONDecoder().decode(CapturedSend.self, from: chatRequestBody(request))
         state.withLock { $0.sends.append(body) }
@@ -936,8 +927,34 @@ final class ChatClientTests: XCTestCase {
     XCTAssertEqual(sent.prompt, "Steer this task")
     XCTAssertFalse(sent.hasModelOverride)
     XCTAssertTrue(sent.hostIsExplicitNull)
-    XCTAssertFalse(sent.cloudBrowserEnabled)
+    XCTAssertTrue(sent.cloudBrowserEnabled)
     XCTAssertTrue(state.withLock { $0.overridden })
+  }
+
+  func testSendPreservesTheSelectedComputerUseHost() async throws {
+    struct Sent: Decodable, Sendable {
+      let computerUseHostId: String
+      let cloudBrowserEnabled: Bool
+    }
+    let sent = Mutex<Sent?>(nil)
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path.hasSuffix("/metadata") {
+        return ChatHTTPResponse(
+          body: metadataJSON(browser: false).replacingOccurrences(
+            of: "\"computerUseHostId\":null", with: "\"computerUseHostId\":\"\(fixtureRun)\""))
+      }
+      if request.url!.path == "/api/chat/events" {
+        let body = try JSONDecoder().decode(Sent.self, from: chatRequestBody(request))
+        sent.withLock { $0 = body }
+        return ChatHTTPResponse(status: 201, body: "{\"threadId\":\"\(fixtureThread)\"}")
+      }
+      throw URLError(.unsupportedURL)
+    }
+    _ = try await ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
+      .send(thread: sampleThread(), text: "Use my computer")
+    let request = try XCTUnwrap(sent.withLock { $0 })
+    XCTAssertEqual(request.computerUseHostId, fixtureRun)
+    XCTAssertFalse(request.cloudBrowserEnabled)
   }
 
   func testAmbiguousSendIsNotResubmittedAndExplicitRetryReusesIdentity() async throws {
@@ -1028,18 +1045,6 @@ private struct CapturedSend: Decodable, Sendable {
     hostIsExplicitNull =
       try c.contains(.computerUseHostId) && c.decodeNil(forKey: .computerUseHostId)
     hasModelOverride = c.contains(.model)
-  }
-}
-
-private struct CapturedComputerAccess: Decodable {
-  let cloudBrowserEnabled: Bool
-  let hostIsExplicitNull: Bool
-  enum Keys: String, CodingKey { case cloudBrowserEnabled, computerUseHostId }
-  init(from decoder: Decoder) throws {
-    let c = try decoder.container(keyedBy: Keys.self)
-    cloudBrowserEnabled = try c.decode(Bool.self, forKey: .cloudBrowserEnabled)
-    hostIsExplicitNull =
-      try c.contains(.computerUseHostId) && c.decodeNil(forKey: .computerUseHostId)
   }
 }
 

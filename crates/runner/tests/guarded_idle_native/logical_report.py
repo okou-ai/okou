@@ -100,23 +100,17 @@ def validate(directory):
         if (not isinstance(samples, list) or not pressure.integer(available, policy["recovery_available_bytes"])
                 or available > policy["host_total_bytes"]):
             raise ValueError("logical Ready has no actual supplied observations")
-        previous, offset, fresh = -1, granted["read_start_offset_ns"], []
+        previous, offset = -1, granted["read_start_offset_ns"]
         for value in samples:
             sample(value, events[1]["monotonic_ns"], events[2]["monotonic_ns"], policy)
             if value["started_ns"] <= previous or value["read_start_offset_ns"] <= offset:
                 raise ValueError("logical Ready replays an original sample")
             previous, offset = value["started_ns"], value["read_start_offset_ns"]
-            if (pressure.integer(value["available_bytes"], policy["recovery_available_bytes"])
-                    and value["age_ns"]+events[2]["monotonic_ns"]-value["finished_ns"] < policy["max_sample_age_millis"]*1_000_000):
-                fresh.append(value)
-        if (len(fresh) < 2 or not any(s["available_bytes"] == available for s in fresh)
-                or fresh[-1]["started_ns"]-fresh[0]["started_ns"] < policy["pressure_recovery_sustain_millis"]*1_000_000):
+        fresh = pressure.sustained_ready_samples(samples, events[2]["monotonic_ns"], policy)
+        if not any(s["available_bytes"] == available for s in fresh):
             raise ValueError("logical Ready lacks distinct sustained fresh observations")
-        before_runtime = [s for s in samples if s["finished_ns"] < runtime_completed
-            and pressure.integer(s["available_bytes"], policy["recovery_available_bytes"])
-            and s["age_ns"]+runtime_completed-s["finished_ns"] < policy["max_sample_age_millis"]*1_000_000]
-        if (len(before_runtime) < 2 or before_runtime[-1]["started_ns"]-before_runtime[0]["started_ns"]
-                < policy["pressure_recovery_sustain_millis"]*1_000_000):
+        before_runtime = pressure.sustained_ready_samples(samples, runtime_completed, policy)
+        if not before_runtime:
             raise ValueError("logical runtime completed without actual sustained Ready under the held pool")
         startup.exact(status, {"state": "Ready", "available_bytes": available, "reads": status["reads"],
             "runtime_drained": True, "runtime_completed_ns": runtime_completed,
