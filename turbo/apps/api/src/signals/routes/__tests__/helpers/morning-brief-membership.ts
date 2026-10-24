@@ -55,13 +55,12 @@ export async function pauseBriefForMembershipFailure(context: TestContext) {
   async function publish(
     definitions: readonly OfficialWorkflowSourceDefinition[],
   ) {
-    const app = await setupApp({
+    const app = setupApp({
       context,
       routes: createCronOfficialWorkflowCatalogRoutes({
         schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
         definitions,
       }),
-      isolatePg: true,
     });
     const result = await accept(
       app(cronOfficialWorkflowCatalogContract).sync({

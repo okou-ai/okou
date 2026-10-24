@@ -25,12 +25,7 @@ const {
 const STEER_AT_MS = 115 * 60 * 1000;
 const CRON_SECRET = "test-run-time-budget-steer-secret";
 
-async function startBudgetRun() {
-  const app = await setupApp({
-    context,
-    routes: cronSteerRunTimeBudgetRoutes,
-    isolatePg: true,
-  });
+async function startBudgetRun(app: Awaited<ReturnType<typeof setupApp>>) {
   const client = app(cronSteerRunTimeBudgetContract);
   async function requestBudgetSweep() {
     mockEnv("CRON_SECRET", CRON_SECRET);
@@ -64,8 +59,10 @@ async function startBudgetRun() {
   };
 }
 
-async function startRunAtBudgetBoundary() {
-  const started = await startBudgetRun();
+async function startRunAtBudgetBoundary(
+  app: Awaited<ReturnType<typeof setupApp>>,
+) {
+  const started = await startBudgetRun(app);
   const { actor, active, claimed, startedAt, requestBudgetSweep } = started;
   mockNow(startedAt + STEER_AT_MS - 1);
   await requestBudgetSweep();
@@ -112,8 +109,13 @@ async function startRunAtBudgetBoundary() {
 
 describe("run-targeted time budget steering through HTTP", () => {
   it("does not append a late warning after the runner completed", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronSteerRunTimeBudgetRoutes,
+      isolatePg: true,
+    });
     const { actor, active, claimed, startedAt, requestBudgetSweep } =
-      await startBudgetRun();
+      await startBudgetRun(app);
     await completeChatRunOk(active.runId, claimed.sandboxHeaders);
     await flushWaitUntilForTest();
     mockNow(startedAt + STEER_AT_MS);
@@ -131,8 +133,13 @@ describe("run-targeted time budget steering through HTTP", () => {
   }, 90_000);
 
   it("leaves no pending warning when a sweep overlaps runner completion", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronSteerRunTimeBudgetRoutes,
+      isolatePg: true,
+    });
     const { actor, active, claimed, startedAt, requestBudgetSweep } =
-      await startBudgetRun();
+      await startBudgetRun(app);
     mockNow(startedAt + STEER_AT_MS);
     await Promise.all([
       requestBudgetSweep(),
@@ -165,6 +172,11 @@ describe("run-targeted time budget steering through HTTP", () => {
   }, 90_000);
 
   it("consumes the warning once, retains its run identity, and survives a later prompt anchor", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronSteerRunTimeBudgetRoutes,
+      isolatePg: true,
+    });
     const {
       actor,
       agentId,
@@ -173,7 +185,7 @@ describe("run-targeted time budget steering through HTTP", () => {
       budget,
       prompt,
       requestBudgetSweep,
-    } = await startRunAtBudgetBoundary();
+    } = await startRunAtBudgetBoundary(app);
     const token = claimed.claim.sandboxToken;
     const laterPromptId = randomUUID();
     await chat.requestSendEvent(
@@ -238,8 +250,13 @@ describe("run-targeted time budget steering through HTTP", () => {
   }, 90_000);
 
   it("revokes an unsteered warning at completion and never gives it to the next run", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronSteerRunTimeBudgetRoutes,
+      isolatePg: true,
+    });
     const { actor, agentId, runnerGroup, active, claimed, budget } =
-      await startRunAtBudgetBoundary();
+      await startRunAtBudgetBoundary(app);
     await completeChatRunOk(active.runId, claimed.sandboxHeaders);
     await flushWaitUntilForTest();
     const completed = (await chat.listThreadEvents(actor, active.threadId))

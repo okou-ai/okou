@@ -339,10 +339,25 @@ inherit the case's database; omitting `isolatePg` never switches an isolated cas
 back to shared PostgreSQL. The same binding covers HTTP requests, the production
 services they call, and their asynchronous background work.
 
-Select isolation in the case's first real API request or API fixture operation,
-and use the returned client. Do not initialize it with an unused client, an
-empty route slice, or a database cleanup action. Each case receives a separate
+Select isolation explicitly inside each test body with an awaited
+`setupApp({ context, routes, isolatePg: true })`, before any database access,
+including fixture or helper calls. Use the returned client for the case's real
+API requests when possible. If a separate setup call is needed to select the
+database before a fixture, use routes that the case actually exercises, never an
+empty route slice or a database cleanup action. Each case receives a separate
 engine; keep `testContext()` at module or describe scope.
+
+Helpers must not know about `isolatePg`: do not accept, forward, destructure or
+select it inside a helper. Later plain `setupApp` calls in helpers inherit the
+case's selection. Do not select isolation in `beforeEach` for a whole file or
+suite. `setupRawAppRequest` does not select isolation; use `setupApp` in the case
+first when raw requests need an isolated database.
+
+`api/isolate-pg-setup-app-only` enforces that `isolatePg` appears only as a direct
+property with the literal value `true` in the object argument of `setupApp`
+inside a test body. Isolation options in types or variables, shorthand or spread
+isolation properties, and helper-owned selection are rejected. Only the
+`setupApp` definition and the case-database lifecycle implementation are exempt.
 
 An isolated database is discarded after the case. Do not enumerate and delete
 its rows in teardown, clear catalogs before starting, or republish an obsolete

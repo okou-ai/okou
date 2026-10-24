@@ -1,5 +1,6 @@
 import { dbTransactionExemptions } from "./rules/db-transaction-exemptions.ts";
 import { gatewayTypecheckBoundary } from "./rules/gateway-typecheck-boundary.ts";
+import { isolatePgSetupAppOnly } from "./rules/isolate-pg-setup-app-only.ts";
 import { maxSignalOwnerLines } from "./rules/max-signal-owner-lines.ts";
 import { noCatchAbort } from "./rules/no-catch-abort.ts";
 import { noCrossTestTimeStaggering } from "./rules/no-cross-test-time-staggering.ts";
@@ -42,6 +43,7 @@ export const apiLintPlugin = {
   rules: {
     "db-transaction-exemptions": dbTransactionExemptions,
     "gateway-typecheck-boundary": gatewayTypecheckBoundary,
+    "isolate-pg-setup-app-only": isolatePgSetupAppOnly,
     "max-signal-owner-lines": maxSignalOwnerLines,
     "no-catch-abort": noCatchAbort,
     "no-cross-test-time-staggering": noCrossTestTimeStaggering,

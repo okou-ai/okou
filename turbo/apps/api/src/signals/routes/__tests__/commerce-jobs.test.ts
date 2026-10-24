@@ -448,8 +448,9 @@ describe("Commerce async jobs", () => {
   });
 
   it("completes and settles through independent cron requests without user polling", async () => {
+    const app = await setupApp({ context, routes: ROUTES, isolatePg: true });
     const user = createBddApi(context).user();
-    await createRunsApi(context).grantProEntitlement(user, { isolatePg: true });
+    await createRunsApi(context).grantProEntitlement(user);
     configureProvider();
     mockEnv("CRON_SECRET", "commerce-jobs-cron-secret");
     const beforeCredits = await credits(user);
@@ -471,14 +472,14 @@ describe("Commerce async jobs", () => {
       }),
     );
     const created = await accept(
-      client()(commerceContract).search({
+      app(commerceContract).search({
         headers: authenticate(user),
         body: { query: "coffee maker", async: true },
       }),
       [202],
     );
     expect(created.body.status).toBe("running");
-    const cron = client()(cronReconcileCommerceJobsContract);
+    const cron = app(cronReconcileCommerceJobsContract);
     await accept(cron.reconcile({ headers: {} }), [401]);
     await accept(
       cron.reconcile({ headers: { authorization: "Bearer wrong-secret" } }),
@@ -555,8 +556,9 @@ describe("Commerce async jobs", () => {
   });
 
   it("settles once when user GET overlaps the global recovery cron", async () => {
+    const app = await setupApp({ context, routes: ROUTES, isolatePg: true });
     const user = createBddApi(context).user();
-    await createRunsApi(context).grantProEntitlement(user, { isolatePg: true });
+    await createRunsApi(context).grantProEntitlement(user);
     configureProvider();
     mockEnv("CRON_SECRET", "commerce-jobs-cron-secret");
     const beforeCredits = await credits(user);
@@ -579,7 +581,7 @@ describe("Commerce async jobs", () => {
       }),
     );
     const created = await accept(
-      client()(commerceContract).search({
+      app(commerceContract).search({
         headers: authenticate(user),
         body: { query: "coffee maker", async: true },
       }),
@@ -590,7 +592,7 @@ describe("Commerce async jobs", () => {
     await Promise.all([
       getJob(user, created.body.id),
       accept(
-        client()(cronReconcileCommerceJobsContract).reconcile({
+        app(cronReconcileCommerceJobsContract).reconcile({
           headers: { authorization: "Bearer commerce-jobs-cron-secret" },
         }),
         [200],

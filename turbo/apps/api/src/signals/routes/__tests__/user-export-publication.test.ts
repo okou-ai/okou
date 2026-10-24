@@ -64,7 +64,8 @@ function authenticate(user: ReturnType<typeof actor>) {
   createRouteMocks(context).clerk.session(user.userId, user.orgId);
 }
 
-async function initialize(
+function initialize(
+  app: Awaited<ReturnType<typeof setupApp>>,
   users: readonly ReturnType<typeof actor>[],
   onComplete?: () => Promise<void>,
 ) {
@@ -108,11 +109,10 @@ async function initialize(
       }
     },
   });
-  const app = await setupApp({ context, routes, isolatePg: true });
   return { app, storage, profiles };
 }
 
-type Fixture = Awaited<ReturnType<typeof initialize>>;
+type Fixture = ReturnType<typeof initialize>;
 
 async function ownedAgent(fixture: Fixture, owner: ReturnType<typeof actor>) {
   authenticate(owner);
@@ -167,7 +167,8 @@ function archive(fixture: Fixture, url: string | null | undefined) {
 test("exports PATCH-created drafts with owned thread timestamps and absent draft nulls", async () => {
   const owner = actor();
   const peer = actor(owner.orgId);
-  const fixture = await initialize([owner, peer]);
+  const app = await setupApp({ context, routes, isolatePg: true });
+  const fixture = initialize(app, [owner, peer]);
   const agentId = await ownedAgent(fixture, owner);
   const threads = [];
   for (const title of ["Saved draft", "No draft", "Cleared draft"]) {
@@ -302,7 +303,8 @@ test("publishes an owned ZIP while isolating peers and preserving replay", async
   const owner = actor();
   const peer = actor(owner.orgId);
   const outsider = actor();
-  const fixture = await initialize([owner, peer, outsider]);
+  const app = await setupApp({ context, routes, isolatePg: true });
+  const fixture = initialize(app, [owner, peer, outsider]);
   const agentId = await ownedAgent(fixture, owner);
   const rawInstructions =
     "[AGENT_PROFILE]\nLegacy display metadata\n[/AGENT_PROFILE]\nExported current instructions";
@@ -391,7 +393,8 @@ test("withholds publication after membership withdrawal and re-enters the comple
   const owner = actor();
   let withdrew = false;
   let observedBlocked = false;
-  const fixture = await initialize([owner], () => {
+  const app = await setupApp({ context, routes, isolatePg: true });
+  const fixture = initialize(app, [owner], () => {
     context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
       async () => {
         if (!withdrew) {
@@ -425,7 +428,8 @@ test("withholds publication after membership withdrawal and re-enters the comple
 test("rejects publication when the owner deletes an already collected agent", async () => {
   mockNow(now() - 700_000);
   const owner = actor();
-  const fixture = await initialize([owner], async () => {
+  const app = await setupApp({ context, routes, isolatePg: true });
+  const fixture = initialize(app, [owner], async () => {
     authenticate(owner);
     await accept(
       fixture
@@ -453,7 +457,8 @@ test("rejects publication when the owner deletes an already collected agent", as
 test("keeps the completed ZIP downloadable while notification preparation recovers", async () => {
   mockNow(now() - 120_000);
   const owner = actor();
-  const fixture = await initialize([owner]);
+  const app = await setupApp({ context, routes, isolatePg: true });
+  const fixture = initialize(app, [owner]);
   const jobId = await startExport(fixture, owner);
   let unavailable = true;
   let observedUrl: string | undefined;
@@ -490,7 +495,8 @@ test("keeps the completed ZIP downloadable while notification preparation recove
 
 test("publishes the exact owned memory bytes committed by a genuine Runner claim", async () => {
   const owner = actor();
-  const fixture = await initialize([owner]);
+  const app = await setupApp({ context, routes, isolatePg: true });
+  const fixture = initialize(app, [owner]);
   const carrier = createPublicRunnerMemory(context, owner);
   await carrier.run(async () => {
     const agentId = await carrier.initializeNative();
@@ -621,7 +627,8 @@ test.each([
   async ({ count, size, firstSize, firstCharacter }) => {
     const owner = actor();
     const peer = actor(owner.orgId);
-    const fixture = await initialize([owner, peer]);
+    const app = await setupApp({ context, routes, isolatePg: true });
+    const fixture = initialize(app, [owner, peer]);
     const carrier = createPublicRunnerMemory(context, owner);
     await carrier.run(async () => {
       const agentId = await carrier.initializeNative();

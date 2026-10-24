@@ -15,6 +15,7 @@ export const createRule = ESLintUtils.RuleCreator<RuleDocs>((name) => {
     case "no-test-vi-mocks":
       return "https://github.com/okou-ai/okou/blob/main/docs/api/api-testing.md#mocks";
     case "no-test-database-binding":
+    case "isolate-pg-setup-app-only":
       return "https://github.com/okou-ai/okou/blob/main/docs/api/api-testing.md#case-owned-database-selection";
     case "no-global-sweep-test-routes":
       return "https://github.com/okou-ai/okou/blob/main/docs/api/api-testing.md#external-behavior-boundary";

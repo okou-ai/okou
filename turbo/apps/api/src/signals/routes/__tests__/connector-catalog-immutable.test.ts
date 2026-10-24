@@ -114,12 +114,7 @@ async function directory(candidate: ReturnType<typeof release>) {
   ).toBe(first.label);
 }
 
-async function sync() {
-  const app = await setupApp({
-    context,
-    routes: cronConnectorCatalogRoutes,
-    isolatePg: true,
-  });
+async function sync(app: Awaited<ReturnType<typeof setupApp>>) {
   return await app(cronConnectorCatalogContract).sync({
     headers: { authorization: "Bearer test-cron-secret" },
   });
@@ -225,9 +220,14 @@ describe("immutable connector catalog publication", () => {
   });
 
   it("serves the current MCP descriptor to an admitted Run after publication changes", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     const first = release("2099-01-02.old", "Old MCP catalog", "manual-mcp");
     serve(first);
-    await accept(sync(), [200]);
+    await accept(sync(app), [200]);
     const { actor, connection, run, runs, client, headers } =
       await admittedMcpRun();
     const original = await accept(client.list({ headers }), [200]);
@@ -239,7 +239,7 @@ describe("immutable connector catalog publication", () => {
     );
     const next = release("2099-01-02.new", "New MCP catalog", "manual-mcp");
     serve(next);
-    await accept(sync(), [200]);
+    await accept(sync(app), [200]);
     const current = await accept(client.list({ headers }), [200]);
     expect(current.body.connectors).toContainEqual(
       expect.objectContaining({
@@ -258,17 +258,22 @@ describe("slug-first current catalog business readers", () => {
       connectorCatalogContract,
     );
   }
-  async function publishedCatalog() {
+  async function publishedCatalog(app: Awaited<ReturnType<typeof setupApp>>) {
     const candidate = release(
       `2099-02-01.${randomUUID()}`,
       "Slug-reader catalog",
     );
     serve(candidate);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    expect((await sync(app)).body).toMatchObject({ outcome: "accepted" });
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     return candidate;
   }
   it("follows permission metadata changes and removal across catalog publications", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     const client = catalogClient();
     const first = release(
       `2099-02-02.${randomUUID()}`,
@@ -276,7 +281,7 @@ describe("slug-first current catalog business readers", () => {
       "notion",
     );
     serve(first);
-    await accept(sync(), [200]);
+    await accept(sync(app), [200]);
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     const params = { connectorSlug: "notion" };
     const initial = await accept(
@@ -291,7 +296,7 @@ describe("slug-first current catalog business readers", () => {
       "notion",
     );
     serve(next);
-    await accept(sync(), [200]);
+    await accept(sync(app), [200]);
     const updated = await accept(
       client.permissions({ headers, params }),
       [200],
@@ -306,7 +311,7 @@ describe("slug-first current catalog business readers", () => {
       }),
     });
     serve(removed);
-    await accept(sync(), [200]);
+    await accept(sync(app), [200]);
     const missing = await accept(
       client.permissions({ headers, params }),
       [404],
@@ -314,10 +319,15 @@ describe("slug-first current catalog business readers", () => {
     expect(missing.body.error.code).toBe("NOT_FOUND");
   });
   it("serves concurrent and subsequent catalog reads across publications", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     for (const label of ["Initial catalog", "Replacement catalog"]) {
       const candidate = release(`2099-02-01.${randomUUID()}`, label, "github");
       serve(candidate);
-      expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+      expect((await sync(app)).body).toMatchObject({ outcome: "accepted" });
       routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
       const client = catalogClient();
       const responses = await Promise.all(
@@ -340,7 +350,12 @@ describe("slug-first current catalog business readers", () => {
   });
 
   it("lists named onboarding sources from current entries", async () => {
-    await publishedCatalog();
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
+    await publishedCatalog(app);
     const client = setupApp({ context, routes: onboardingSourcesRoutes })(
       onboardingSourcesContract,
     );

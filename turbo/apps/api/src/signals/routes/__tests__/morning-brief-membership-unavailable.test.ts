@@ -12,6 +12,11 @@ const mocks = createRouteMocks(context);
 
 describe("Morning Brief explicit installation", () => {
   it("keeps an existing brief paused when membership lookup returns 503", async () => {
+    const app = await setupApp({
+      context,
+      routes: morningBriefPreferenceRoutes,
+      isolatePg: true,
+    });
     const fixture = await pauseBriefForMembershipFailure(context);
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
       new ClerkTransportTestError(503),
@@ -19,9 +24,9 @@ describe("Morning Brief explicit installation", () => {
     const { actor } = fixture;
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     await accept(
-      setupApp({ context, routes: morningBriefPreferenceRoutes })(
-        morningBriefPreferenceContract,
-      ).retry({ headers: { authorization: "Bearer clerk-session" } }),
+      app(morningBriefPreferenceContract).retry({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
       [500],
     );
     await expect(fixture.readAutomations()).resolves.toMatchObject([

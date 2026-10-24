@@ -988,18 +988,9 @@ function cronHeaders(secret = CRON_SECRET): { readonly authorization: string } {
   return { authorization: `Bearer ${secret}` };
 }
 
-async function cronClient() {
-  const app = await setupApp({
-    context,
-    routes: cronConnectorCatalogRoutes,
-    isolatePg: true,
-  });
-  return app(cronConnectorCatalogContract);
-}
-
-async function syncCatalog() {
+async function syncCatalog(app: Awaited<ReturnType<typeof setupApp>>) {
   return await accept(
-    (await cronClient()).sync({ headers: cronHeaders() }),
+    app(cronConnectorCatalogContract).sync({ headers: cronHeaders() }),
     [200],
   );
 }
@@ -1059,6 +1050,11 @@ describe("connector catalog cron authentication", () => {
 
 describe("connector catalog valid lifecycle", () => {
   it("accepts, advances, rolls back, and serves the active database snapshot", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     const bucket = configureSource();
     const first = buildRelease({ version: "2026-07-15.1" });
     const second = buildRelease({
@@ -1066,7 +1062,7 @@ describe("connector catalog valid lifecycle", () => {
       label: "External Test Updated",
     });
     serveObjects(catalogObjects([first, second], first));
-    const acceptedFirst = await syncCatalog();
+    const acceptedFirst = await syncCatalog(app);
     expect(acceptedFirst.body).toStrictEqual({
       outcome: "accepted",
       failureCode: null,
@@ -1080,7 +1076,7 @@ describe("connector catalog valid lifecycle", () => {
 
     mockNow(new Date("2026-07-15T08:01:00.000Z"));
     const callsBeforeUnchanged = context.mocks.s3.send.mock.calls.length;
-    const unchanged = await syncCatalog();
+    const unchanged = await syncCatalog(app);
     expect(unchanged.body).toStrictEqual({
       outcome: "unchanged",
       failureCode: null,
@@ -1094,7 +1090,9 @@ describe("connector catalog valid lifecycle", () => {
     ).toMatchObject({ Bucket: bucket, Key: ACTIVE_KEY });
 
     serveObjects(catalogObjects([first, second], second));
-    expect((await syncCatalog()).body).toMatchObject({ outcome: "accepted" });
+    expect((await syncCatalog(app)).body).toMatchObject({
+      outcome: "accepted",
+    });
     await expect(servedConnectors()).resolves.toMatchObject([
       { slug: second.connectorSlug, label: "External Test Updated" },
     ]);
@@ -1102,7 +1100,9 @@ describe("connector catalog valid lifecycle", () => {
     // Rolling back publishes the first generation again rather than treating
     // it as unchanged.
     serveObjects(catalogObjects([first, second], first));
-    expect((await syncCatalog()).body).toMatchObject({ outcome: "accepted" });
+    expect((await syncCatalog(app)).body).toMatchObject({
+      outcome: "accepted",
+    });
 
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     const callsBeforePublicCatalog = context.mocks.s3.send.mock.calls.length;
@@ -1125,6 +1125,11 @@ describe("connector catalog valid lifecycle", () => {
   });
 
   it("serves every public catalog surface from accepted database state", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     configureSource();
     const release = buildRelease({
       version: "2026-07-15.external-public-reader",
@@ -1136,7 +1141,7 @@ describe("connector catalog valid lifecycle", () => {
       },
     });
     serveObjects(catalogObjects([release], release));
-    await syncCatalog();
+    await syncCatalog(app);
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     const headers = { authorization: "Bearer clerk-session" };
     const catalogClient = setupApp({
@@ -1251,6 +1256,11 @@ describe("connector catalog valid lifecycle", () => {
   });
 
   it("keeps the first firewall permission description and sorts public permissions", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     configureSource();
     const release = buildRelease({
       version: "2026-07-15.external-permission-projection",
@@ -1282,7 +1292,7 @@ describe("connector catalog valid lifecycle", () => {
       },
     });
     serveObjects(catalogObjects([release], release));
-    await syncCatalog();
+    await syncCatalog(app);
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     const response = await accept(
       setupApp({ context, routes: connectorCatalogRoutes })(
@@ -1300,6 +1310,11 @@ describe("connector catalog valid lifecycle", () => {
   });
 
   it("executes an external manual grant with catalog-owned storage", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     configureSource();
     const optionalSecretName = "EXTERNAL_OPTIONAL_TOKEN";
     const release = buildRelease({
@@ -1340,7 +1355,7 @@ describe("connector catalog valid lifecycle", () => {
       },
     });
     serveObjects(catalogObjects([release], release));
-    await syncCatalog();
+    await syncCatalog(app);
 
     const actor = bdd.user();
     onTestFinished(createConnectorCleanup(actor, "agora"));
@@ -1379,6 +1394,11 @@ describe("connector catalog valid lifecycle", () => {
   });
 
   it("wakes claimed runs when a custom permission bundle changes", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     const connectorSlug = "external-custom-permissions";
     configureSource();
     const initial = buildRelease({
@@ -1388,7 +1408,7 @@ describe("connector catalog valid lifecycle", () => {
       generatedFirewall: true,
     });
     serveObjects(catalogObjects([initial], initial));
-    await syncCatalog();
+    await syncCatalog(app);
 
     const runs = createRunsApi(context);
     const actor = bdd.user();
@@ -1464,7 +1484,7 @@ describe("connector catalog valid lifecycle", () => {
       },
     });
     serveObjects(catalogObjects([initial, replacement], replacement));
-    await syncCatalog();
+    await syncCatalog(app);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledWith({
       channels: [expect.stringMatching(/^runner-group:/)],
       messages: expect.arrayContaining([
@@ -1480,7 +1500,7 @@ describe("connector catalog valid lifecycle", () => {
     });
 
     context.mocks.ably.batchPublish.mockClear();
-    await syncCatalog();
+    await syncCatalog(app);
     expect(context.mocks.ably.batchPublish).not.toHaveBeenCalled();
   }, 15_000);
 
@@ -1661,6 +1681,11 @@ describe("connector catalog valid lifecycle", () => {
   }, 30_000);
 
   it("executes an external OpenID grant with catalog-owned storage", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     mockOptionalEnv("STEAM_WEB_API_KEY", "catalog-steam-api-key");
@@ -1681,7 +1706,7 @@ describe("connector catalog valid lifecycle", () => {
       },
     });
     serveObjects(catalogObjects([release], release));
-    await syncCatalog();
+    await syncCatalog(app);
 
     const actor = bdd.user();
     onTestFinished(createConnectorCleanup(actor, "steam"));
@@ -1726,6 +1751,11 @@ describe("connector catalog valid lifecycle", () => {
   });
 
   it("executes an external-code grant with catalog-owned storage", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     const provider = mockAwsExternalCodeProvider();
     configureSource();
     const release = buildRelease({
@@ -1744,7 +1774,7 @@ describe("connector catalog valid lifecycle", () => {
       },
     });
     serveObjects(catalogObjects([release], release));
-    await syncCatalog();
+    await syncCatalog(app);
 
     const actor = bdd.user();
     const cleanupConnector = createConnectorCleanup(actor, "aws");
@@ -1770,7 +1800,7 @@ describe("connector catalog valid lifecycle", () => {
       },
     });
     serveObjects(catalogObjects([release, changedScopes], changedScopes));
-    await syncCatalog();
+    await syncCatalog(app);
     const callsBeforeCompletion = context.mocks.s3.send.mock.calls.length;
     const completed = await connectorsApi.completeExternalCode(actor, "aws", {
       sessionId: session.sessionId,
@@ -1827,6 +1857,11 @@ describe("connector catalog valid lifecycle", () => {
   });
 
   it("revokes an external auth-code credential through its selected method", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     mockSlackConnectorOAuth();
     let revokeCalls = 0;
     server.use(
@@ -1853,7 +1888,7 @@ describe("connector catalog valid lifecycle", () => {
       },
     });
     serveObjects(catalogObjects([release], release));
-    await syncCatalog();
+    await syncCatalog(app);
 
     const actor = bdd.user();
     const callsBeforeAction = context.mocks.s3.send.mock.calls.length;
@@ -1968,6 +2003,11 @@ describe("connector catalog valid lifecycle", () => {
   });
 
   it("merges duplicate dynamic firewall execution templates", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     configureSource();
     const release = buildRelease({
       version: "2026-07-15.duplicate-dynamic-firewall-base",
@@ -1979,7 +2019,7 @@ describe("connector catalog valid lifecycle", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toStrictEqual({
+    expect((await syncCatalog(app)).body).toStrictEqual({
       outcome: "accepted",
       failureCode: null,
     });
@@ -2013,6 +2053,11 @@ describe("connector catalog valid lifecycle", () => {
   });
 
   it("accepts canonical firewall bases with authority parameters", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     configureSource();
     const base = "https://{awsHost+}.amazonaws.com";
     const release = buildRelease({
@@ -2024,13 +2069,18 @@ describe("connector catalog valid lifecycle", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toStrictEqual({
+    expect((await syncCatalog(app)).body).toStrictEqual({
       outcome: "accepted",
       failureCode: null,
     });
   });
 
   it("reuses bundled skill registrations across overlapping syncs and later releases", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     configureSource();
     const skill = buildBundledSkillFixture("agora");
     const release = buildRelease({
@@ -2041,7 +2091,7 @@ describe("connector catalog valid lifecycle", () => {
       },
     });
     serveObjects(catalogObjects([release], release));
-    const results = await Promise.all([syncCatalog(), syncCatalog()]);
+    const results = await Promise.all([syncCatalog(app), syncCatalog(app)]);
     // The last writer wins: both attempts may publish the same generation, or
     // the later one may observe it already serving. Neither reports a failure.
     const outcomes = results.map((result) => {
@@ -2052,7 +2102,7 @@ describe("connector catalog valid lifecycle", () => {
       expect(["accepted", "unchanged"]).toContain(outcome);
     }
     // The serving generation is the release, so a later sync is unchanged.
-    expect((await syncCatalog()).body).toStrictEqual({
+    expect((await syncCatalog(app)).body).toStrictEqual({
       outcome: "unchanged",
       failureCode: null,
     });
@@ -2071,7 +2121,7 @@ describe("connector catalog valid lifecycle", () => {
       },
     });
     serveObjects(catalogObjects([release, later], later));
-    expect((await syncCatalog()).body).toStrictEqual({
+    expect((await syncCatalog(app)).body).toStrictEqual({
       outcome: "accepted",
       failureCode: null,
     });
@@ -2099,6 +2149,11 @@ describe("connector catalog valid lifecycle", () => {
   });
 
   it("advances on the next sync when active changes during validation", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     configureSource();
     const observed = buildRelease({ version: "2026-07-15.observed" });
     const current = buildRelease({ version: "2026-07-15.current" });
@@ -2126,13 +2181,22 @@ describe("connector catalog valid lifecycle", () => {
 
     // The first attempt publishes the observed generation, so the next one
     // accepts the current pointer instead of reporting it unchanged.
-    expect((await syncCatalog()).body).toMatchObject({ outcome: "accepted" });
-    expect((await syncCatalog()).body).toMatchObject({ outcome: "accepted" });
+    expect((await syncCatalog(app)).body).toMatchObject({
+      outcome: "accepted",
+    });
+    expect((await syncCatalog(app)).body).toMatchObject({
+      outcome: "accepted",
+    });
   });
 });
 
 describe("connector catalog executable compatibility", () => {
   it("accepts inline confidential test clients and applies rollout at request time", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     const provider = mockTestOAuthAuthCodeProvider({
       refreshToken: "catalog-test-oauth-refresh",
@@ -2154,7 +2218,7 @@ describe("connector catalog executable compatibility", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body.outcome).toBe("accepted");
+    expect((await syncCatalog(app)).body.outcome).toBe("accepted");
     const actor = bdd.user();
     onTestFinished(createConnectorCleanup(actor, "test-oauth"));
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -2209,6 +2273,11 @@ describe("connector catalog executable compatibility", () => {
   });
 
   it("matches provider fields without pinning catalog storage names", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     configureSource();
     mockOptionalEnv("DEEL_OAUTH_CLIENT_ID", "configured-client-id");
     mockOptionalEnv("DEEL_OAUTH_CLIENT_SECRET", "configured-client-secret");
@@ -2226,7 +2295,7 @@ describe("connector catalog executable compatibility", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body.outcome).toBe("accepted");
+    expect((await syncCatalog(app)).body.outcome).toBe("accepted");
     const served = await servedConnectors({
       [FeatureSwitchKey.DeelConnector]: true,
     });
@@ -2239,6 +2308,11 @@ describe("connector catalog executable compatibility", () => {
 
 describe("connector catalog rejection and latest-valid retention", () => {
   it("accepts one connector sharing storage names across auth methods", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     configureSource();
     const release = buildRelease({
       version: "same-connector-storage-sharing",
@@ -2253,13 +2327,18 @@ describe("connector catalog rejection and latest-valid retention", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toStrictEqual({
+    expect((await syncCatalog(app)).body).toStrictEqual({
       outcome: "accepted",
       failureCode: null,
     });
   });
 
   it("accepts producer connector order and scopes private-value leak detection", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     configureSource();
     const release = buildRelease({
       version: "cross-connector-private-name-placeholder",
@@ -2294,13 +2373,18 @@ describe("connector catalog rejection and latest-valid retention", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toStrictEqual({
+    expect((await syncCatalog(app)).body).toStrictEqual({
       outcome: "accepted",
       failureCode: null,
     });
   });
 
   it("accepts credentialed path variables without a host policy", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     configureSource();
     const release = buildRelease({
       version: "credentialed-firewall-path-variable",
@@ -2327,13 +2411,18 @@ describe("connector catalog rejection and latest-valid retention", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toStrictEqual({
+    expect((await syncCatalog(app)).body).toStrictEqual({
       outcome: "accepted",
       failureCode: null,
     });
   });
 
   it("accepts a shared fixed host for auth.base placeholder routes", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     configureSource();
     const release = buildRelease({
       version: "shared-firewall-placeholder-host",
@@ -2381,7 +2470,7 @@ describe("connector catalog rejection and latest-valid retention", () => {
     });
     serveObjects(catalogObjects([release], release));
 
-    expect((await syncCatalog()).body).toStrictEqual({
+    expect((await syncCatalog(app)).body).toStrictEqual({
       outcome: "accepted",
       failureCode: null,
     });
@@ -2406,17 +2495,22 @@ describe("connector catalog rejection and latest-valid retention", () => {
   });
 
   it("replaces current content when a catalog version is reused", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
     configureSource();
     const original = buildRelease({ version: "2026-07-15.conflict" });
     serveObjects(catalogObjects([original], original));
-    const originalResponse = await syncCatalog();
+    const originalResponse = await syncCatalog(app);
 
     const conflicting = buildRelease({
       version: original.version,
       label: "Conflicting Content",
     });
     serveObjects(catalogObjects([conflicting], conflicting));
-    const replacementResponse = await syncCatalog();
+    const replacementResponse = await syncCatalog(app);
     expect(originalResponse.body.outcome).toBe("accepted");
     expect(replacementResponse.body).toStrictEqual({
       outcome: "accepted",
