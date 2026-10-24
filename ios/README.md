@@ -278,6 +278,14 @@ Slow tools delay later rounds; rounds never catch up in a burst.
 Sampled script entry, test-command readiness, observer launch/readiness and Xcode
 creation are separate milestones, so shell/Python startup is visible as well.
 
+For a manual startup-order experiment, dispatch `ios.yml` with
+`simulator_boot_mode=xcodebuild`. After compilation, CI selects the exact
+configured simulator without booting it and passes its UDID to
+`test-without-building`. Xcode then owns simulator boot, readiness and the full
+App suite. The default `preboot` mode and all automatic PR/queue runs retain
+explicit simulator boot and readiness. Compare complete workflow durations with
+sampling disabled, since boot cost moves into the test command in this mode.
+
 `ios-build-cache.yml` refreshes shared caches after iOS changes reach main and
 after a same-repository iOS workflow actually starts its native `build-test`
 job, including failed or cancelled builds. A Linux check filters out workflows

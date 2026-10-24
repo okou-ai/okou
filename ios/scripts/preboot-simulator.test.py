@@ -61,9 +61,9 @@ class PrebootSimulatorTests(unittest.TestCase):
             "IOS_TEST_DESTINATION": "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2",
         }
 
-    def invoke(self):
+    def invoke(self, *options):
         return subprocess.run(
-            ["python3", str(SCRIPT)],
+            ["python3", str(SCRIPT), *options],
             env=self.env,
             text=True,
             capture_output=True,
@@ -86,6 +86,13 @@ class PrebootSimulatorTests(unittest.TestCase):
         self.assertEqual(json.loads(self.state.read_text()), self.inventory)
         self.assertEqual(self.state.with_suffix(".ready").read_text(), "configured")
 
+    def test_select_only_returns_the_exact_device_without_booting(self):
+        result = self.invoke("--select-only")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "configured\n")
+        self.assertEqual(json.loads(self.state.read_text()), self.inventory)
+        self.assertFalse(self.state.with_suffix(".ready").exists())
+
     def test_readiness_failure_blocks_ci_after_boot_was_requested(self):
         self.env["SIMULATOR_READY_FAILURE"] = "true"
         result = self.invoke()
@@ -95,10 +102,12 @@ class PrebootSimulatorTests(unittest.TestCase):
     def test_missing_runtime_does_not_start_the_same_model_on_another_os(self):
         del self.inventory["devices"][RUNTIME]
         self.state.write_text(json.dumps(self.inventory))
-        result = self.invoke()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("one available simulator", result.stderr)
-        self.assertEqual(json.loads(self.state.read_text()), self.inventory)
+        for options in ((), ("--select-only",)):
+            with self.subTest(options=options):
+                result = self.invoke(*options)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("one available simulator", result.stderr)
+                self.assertEqual(json.loads(self.state.read_text()), self.inventory)
 
     def test_boot_failure_blocks_ci_without_changing_devices(self):
         self.env["SIMULATOR_BOOT_FAILURE"] = "true"

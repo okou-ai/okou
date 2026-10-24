@@ -36,6 +36,8 @@ if command == 'xcrun':
         print(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-26-2':
             [{'name': 'iPhone 17 Pro', 'udid': 'configured', 'state': 'Shutdown'}]}}))
     elif args == ['simctl', 'boot', 'configured']:
+        if os.environ.get('IOS_SIMULATOR_BOOT_MODE') == 'xcodebuild':
+            sys.exit('Xcode-managed startup must not explicitly preboot')
         if not (state / 'build-finished').exists():
             sys.exit('Simulator boot requested before compilation finished')
     elif args == ['simctl', 'bootstatus', 'configured']:
@@ -92,6 +94,16 @@ elif command == 'xcodebuild':
     elif 'test-without-building' in args:
         if not (state / 'build-finished').exists():
             sys.exit('Tests require built products')
+        if os.environ.get('IOS_SIMULATOR_BOOT_MODE') == 'xcodebuild':
+            role = 'boot'
+            if args[args.index('-destination') + 1] != 'platform=iOS Simulator,id=configured':
+                sys.exit('Xcode must use the uniquely selected simulator')
+            mark('boot-started')
+            if scenario == 'cancel-delegated-boot':
+                wait_for('allow-boot')
+            if scenario == 'delegated-boot-failure':
+                sys.exit(69)
+            mark('boot-finished')
         if scenario != 'manual' and not (state / 'boot-finished').exists():
             sys.exit('Tests started before simulator readiness')
         if (state / 'tests-ran').exists():
@@ -195,6 +207,41 @@ class CIProcessTests(unittest.TestCase):
         self.env["CI_PROCESS_SCENARIO"] = "package-failure"
         result = self.invoke("ci-package-test.sh")
         self.assertEqual(result.returncode, 19, result.stderr)
+
+    def test_xcode_managed_startup_uses_the_selected_device_and_complete_suite(self):
+        self.env["IOS_SIMULATOR_BOOT_MODE"] = "xcodebuild"
+        packages = self.invoke("ci-package-test.sh")
+        self.assertEqual(packages.returncode, 0, packages.stderr)
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.state / "boot-finished").exists())
+        self.assert_complete_suite()
+
+    def test_xcode_managed_boot_failure_reaches_ci_without_running_tests(self):
+        self.env["IOS_SIMULATOR_BOOT_MODE"] = "xcodebuild"
+        self.env["CI_PROCESS_SCENARIO"] = "delegated-boot-failure"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 69, result.stderr)
+        self.assertTrue((self.state / "build-finished").exists())
+        self.assertFalse((self.state / "tests-ran").exists())
+
+    def test_cancellation_retires_xcode_while_it_owns_simulator_boot(self):
+        self.env["IOS_SIMULATOR_BOOT_MODE"] = "xcodebuild"
+        self.env["CI_PROCESS_SCENARIO"] = "cancel-delegated-boot"
+        with subprocess.Popen(
+            self.command(),
+            cwd=self.repo,
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ) as process:
+            self.await_marker("boot-started")
+            process.send_signal(signal.SIGTERM)
+            _, stderr = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 143, stderr)
+        self.await_marker("boot-stopped")
+        self.assertFalse((self.state / "tests-ran").exists())
 
     def test_resolution_failure_does_not_start_the_simulator_or_native_tests(self):
         self.env["CI_PROCESS_SCENARIO"] = "prepare-failure"
