@@ -941,7 +941,7 @@ final class ChatClientTests: XCTestCase {
       if request.url!.path.hasSuffix("/metadata") {
         return ChatHTTPResponse(
           body: metadataJSON(browser: false).replacingOccurrences(
-            "\"computerUseHostId\":null", with: "\"computerUseHostId\":\"\(fixtureRun)\""))
+            of: "\"computerUseHostId\":null", with: "\"computerUseHostId\":\"\(fixtureRun)\""))
       }
       if request.url!.path == "/api/chat/events" {
         let body = try JSONDecoder().decode(Sent.self, from: chatRequestBody(request))
