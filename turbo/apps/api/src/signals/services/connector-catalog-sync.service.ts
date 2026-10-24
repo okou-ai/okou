@@ -304,6 +304,7 @@ export const syncConnectorCatalog$ = command(
 
     // Compare permission bundles against the generation serving before the
     // switch. A cold catalog has no previous runtime snapshot.
+    set(writeDb$);
     const previousSnapshotResult = await settle(
       (async () => {
         return materializeConnectorRuntimeSnapshot(

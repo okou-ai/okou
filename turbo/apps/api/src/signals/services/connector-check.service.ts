@@ -35,7 +35,7 @@ import { variables } from "@okouai/db/schema/variable";
 import { command } from "ccstate";
 import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 
-import { db$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import {
   buildConnectorDiagnosticBaseCandidates,
@@ -1604,6 +1604,7 @@ export const resolveConnectorCheck$ = command(
       return { kind: "ok", diagnostic: parsed };
     }
 
+    set(writeDb$);
     let runRegistration: RunDiagnosticRegistration | undefined;
     if (args.stateSource.kind === "run") {
       const registration = await set(readRunDiagnosticRegistration$, {

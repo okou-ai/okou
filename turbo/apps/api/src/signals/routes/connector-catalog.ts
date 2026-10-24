@@ -86,6 +86,7 @@ const connectorCatalogRequestContext$ = command(async ({ get }) => {
     userId: auth.userId,
     overrides,
   };
+  get(db$);
   return {
     featureStates: getAllFeatureStates(featureSwitchContext),
   };

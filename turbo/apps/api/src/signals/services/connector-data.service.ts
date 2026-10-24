@@ -2929,6 +2929,7 @@ export const builtinConnectorSearch$ = command(
       orgId: args.orgId,
       overrides,
     });
+    get(db$);
     const catalogSearchKeyword = args.keyword;
     return (async () => {
       return await (async () => {
