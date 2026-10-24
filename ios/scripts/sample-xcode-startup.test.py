@@ -166,7 +166,7 @@ class StartupSamplingTests(unittest.TestCase):
             names.index("command_banner"), names.index("observer_stopped")
         )
         self.assertLess(
-            names.index("observer_stopped"), names.index("compiler_finished")
+            names.index("observer_stopped"), names.index("xcode_finished")
         )
         self.assertTrue(
             all("utc" in event and "elapsed_seconds" in event for event in events)
