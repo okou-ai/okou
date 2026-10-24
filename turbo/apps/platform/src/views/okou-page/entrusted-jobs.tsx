@@ -185,6 +185,29 @@ function JobResult({ job }: { readonly job: Job }) {
   );
 }
 
+function TaskInputContent({
+  input,
+}: {
+  readonly input: Job["inputs"][number];
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {input.kind === "reply"
+        ? input.text
+        : input.kind === "observation"
+          ? `${t(($) => {
+              return $.chat.entrustedJobs.sourceUpdate;
+            })}: ${input.text}`
+          : t(($) => {
+              return input.outcome === "granted"
+                ? $.chat.entrustedJobs.granted
+                : $.chat.entrustedJobs.declined;
+            })}
+    </>
+  );
+}
+
 function JobDetails({ job }: { readonly job: Job }) {
   const { t } = useTranslation();
   const statusLabels = t(
@@ -238,13 +261,7 @@ function JobDetails({ job }: { readonly job: Job }) {
                 key={input.id}
                 className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-sm"
               >
-                {input.kind === "reply"
-                  ? input.text
-                  : t(($) => {
-                      return input.outcome === "granted"
-                        ? $.chat.entrustedJobs.granted
-                        : $.chat.entrustedJobs.declined;
-                    })}
+                <TaskInputContent input={input} />
               </p>
             );
           })}

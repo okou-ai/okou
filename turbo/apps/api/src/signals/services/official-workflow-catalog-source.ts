@@ -5,6 +5,16 @@ import {
 } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { RETIRED_PROACTIVE_DEFINITION_NAME } from "./proactive-workflow-definitions";
 import {
+  PROACTIVE_LEARNING_DEFINITION_NAME,
+  PROACTIVE_LEARNING_BLUEPRINT_KEY,
+  PROACTIVE_PLANNING_DEFINITION_NAME,
+  PROACTIVE_PLANNING_BLUEPRINT_KEY,
+} from "@okouai/api-contracts/contracts/proactive-nightly";
+import {
+  PROACTIVE_LEARNING_INSTRUCTION,
+  PROACTIVE_PLANNING_INSTRUCTION,
+} from "./proactive-nightly-instructions";
+import {
   PROACTIVE_JOBS_BLUEPRINT_KEY,
   PROACTIVE_JOBS_DEFINITION_NAME,
   PROACTIVE_JOBS_INTERVAL_SECONDS,
@@ -157,6 +167,49 @@ function morningBriefDefinition(
   };
 }
 
+function nightlyDefinition(
+  kind: "learning" | "planning",
+): OfficialWorkflowSourceDefinition {
+  const learning = kind === "learning";
+  return {
+    name: learning
+      ? PROACTIVE_LEARNING_DEFINITION_NAME
+      : PROACTIVE_PLANNING_DEFINITION_NAME,
+    lifecycle: "active",
+    workflow: {
+      displayName: learning ? "Proactive Learning" : "Proactive Planning",
+      description: learning
+        ? "Review your activity overnight and improve personal memory and understanding."
+        : "Plan next steps within your explicit delegation and keep Tasks up to date.",
+      instruction: learning
+        ? PROACTIVE_LEARNING_INSTRUCTION
+        : PROACTIVE_PLANNING_INSTRUCTION,
+      files: [],
+    },
+    blueprints: [
+      {
+        key: learning
+          ? PROACTIVE_LEARNING_BLUEPRINT_KEY
+          : PROACTIVE_PLANNING_BLUEPRINT_KEY,
+        parameters: [
+          {
+            key: "cron",
+            type: "string",
+            required: true,
+            format: "text",
+            default: learning ? "0 2 * * *" : "0 3 * * *",
+          },
+        ],
+        desiredState: {
+          kind: "schedule",
+          schedule: { type: "cron", cronExpression: { parameter: "cron" } },
+        },
+      },
+    ],
+    presentation: { category: "productivity" },
+  };
+}
+
 /**
  * The sole deployed source candidate. Every Definition uses the same validated
  * release boundary and immutable shared-artifact publication path.
@@ -165,6 +218,8 @@ export const OFFICIAL_WORKFLOW_SOURCE_CATALOG: OfficialWorkflowSourceCatalog =
   Object.freeze<OfficialWorkflowSourceCatalog>({
     schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
     definitions: [
+      nightlyDefinition("learning"),
+      nightlyDefinition("planning"),
       {
         name: PROACTIVE_JOBS_DEFINITION_NAME,
         lifecycle: "active",

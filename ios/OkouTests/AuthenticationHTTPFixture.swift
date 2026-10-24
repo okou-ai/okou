@@ -185,6 +185,8 @@ final class AuthenticationHTTPFixture: Sendable {
   func close() async {
     await memberships.releaseAll()
     await activation.releaseAll()
+    await memberships.finishObservations()
+    await activation.finishObservations()
     listener.cancel()
     connections.withLock {
       for connection in $0 { connection.cancel() }
@@ -310,12 +312,31 @@ actor AuthenticationRequestGate {
   private var requests = 0
   private var open = true
   private var blocked: [Int: CheckedContinuation<Void, Never>] = [:]
+  private var observers: [UUID: AsyncStream<Int>.Continuation] = [:]
 
   func hold() { open = false }
-  var count: Int { requests }
+
+  func observeRequests() -> (id: UUID, arrivals: AsyncStream<Int>) {
+    let id = UUID()
+    let (arrivals, continuation) = AsyncStream<Int>.makeStream(bufferingPolicy: .bufferingOldest(1))
+    observers[id] = continuation
+    return (id, arrivals)
+  }
+
+  func stopObserving(_ id: UUID) {
+    observers.removeValue(forKey: id)?.finish()
+  }
+
+  func finishObservations() {
+    let pending = observers.values
+    observers.removeAll()
+    for continuation in pending { continuation.finish() }
+  }
+
   func enter() async {
     requests += 1
     let request = requests
+    for continuation in observers.values { continuation.yield(request) }
     if !open {
       await withCheckedContinuation { blocked[request] = $0 }
     }

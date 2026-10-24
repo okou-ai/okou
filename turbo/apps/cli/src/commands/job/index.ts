@@ -5,12 +5,15 @@ import {
   jobCreateSchema,
   jobListQuerySchema,
   jobUpdateSchema,
+  jobObservationCreateSchema,
 } from "@okouai/api-contracts/contracts/jobs";
 import {
   createJob,
   getJob,
   listJobs,
   updateJob,
+  deriveJobIdentity,
+  observeJob,
 } from "../../lib/api/domains/jobs";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -21,7 +24,9 @@ const JOB_HANDOFF_HELP = `Execution handoff:
   In the creating chat, successful create is the handoff: confirm the Task ID and end the turn.
   Do not also perform the objective, mark it completed, start another worker/workflow, or poll for completion.
   Creation and status active do not prove that work is running or complete.
-  Read saved progress and Results later with okou task get <id> --json.`;
+  Read saved progress and Results later with okou task get <id> --json.
+  Official Proactive Planning Runs may finish their bounded planning batch after create;
+  they append source observations with task observe and leave execution to the Tasks loop.`;
 
 async function inputFile(path: string): Promise<unknown> {
   const info = await stat(path);
@@ -67,6 +72,57 @@ Background executor:
   update persists inspected progress and verified Results; it does not start a worker.
   User replies and permission responses belong to Task details.
 `,
+    );
+  job
+    .command("identity")
+    .description(
+      "Derive an owner-scoped stable UUID for one source and next action",
+    )
+    .requiredOption(
+      "--key <key>",
+      "Canonical source and specific action; exclude Run IDs and nightly timestamps",
+    )
+    .option("--json", "Output JSON")
+    .action(
+      withErrorHandler(
+        async (options: { readonly key: string; readonly json?: boolean }) => {
+          const key = z.string().trim().min(1).max(2048).parse(options.key);
+          const result = await deriveJobIdentity(key);
+          console.log(options.json ? JSON.stringify(result) : result.id);
+        },
+        jsonError,
+      ),
+    );
+  job
+    .command("observe <id>")
+    .description(
+      "Official planner: append verified source context, preserving executor progress",
+    )
+    .requiredOption(
+      "--file <path>",
+      "JSON with stable id, text, sourceReferences and sourceVersion",
+    )
+    .option("--json", "Output JSON")
+    .action(
+      withErrorHandler(
+        async (
+          id: string,
+          options: { readonly file: string; readonly json?: boolean },
+        ) => {
+          const result = await observeJob(
+            jobId.parse(id),
+            jobObservationCreateSchema.parse(await inputFile(options.file)),
+          );
+          console.log(
+            options.json
+              ? JSON.stringify(result)
+              : `Source context saved on Task ${result.id}. Background execution follows the Tasks setting.`,
+          );
+        },
+        (error, _id, options) => {
+          return jsonError(error, options);
+        },
+      ),
     );
   job
     .command("list")

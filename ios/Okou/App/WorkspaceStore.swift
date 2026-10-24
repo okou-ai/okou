@@ -11,6 +11,8 @@ final class WorkspaceStore {
   private let sync: ChatSync
   private let commands: ChatCommands
   private let conversationLimit: Int
+  private let readRetrySleep: @Sendable (Duration) async throws -> Void
+  private let historyWarmingSleep: @Sendable (Duration) async throws -> Void
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
   private(set) var needsUpgrade = false
@@ -62,13 +64,15 @@ final class WorkspaceStore {
   @ObservationIgnored lazy var list = ThreadListStore(
     client: client, sync: sync, commands: commands,
     didRefresh: { [weak self] in self?.applyThreads($0) },
-    didFail: { [weak self] in self?.handle($0) })
+    didFail: { [weak self] in self?.handle($0) }, readRetrySleep: readRetrySleep)
   @ObservationIgnored private var conversations: [String: ConversationStore] = [:]
   @ObservationIgnored private var lastUse: [String: UInt64] = [:]
   private var clock: UInt64 = 0
   private var realtime: RealtimeService?
   private var invalidations: Set<ChatInvalidation> = []
   private var refreshTask: Task<Void, Never>?
+  private var refreshGeneration = UUID()
+  private var refreshSuspended = false
   private var creationTask: Task<ChatThread?, Never>?
   private var pruneTask: Task<Void, Never>?
   private var pruneAgain = false
@@ -80,9 +84,17 @@ final class WorkspaceStore {
 
   init(
     client: APIClient, webURL: URL, cache: ChatCache? = nil, conversationLimit: Int = 8,
-    draftStorage: ChatDraftStorage? = nil
+    draftStorage: ChatDraftStorage? = nil,
+    readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
+    },
+    historyWarmingSleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
+    }
   ) {
     self.client = client
+    self.readRetrySleep = readRetrySleep
+    self.historyWarmingSleep = historyWarmingSleep
     self.draftStorage = draftStorage
     draftRepository = draftStorage.map { _ in ChatDraftRepository(client: client) }
     let sync = ChatSync(client: client, cache: cache)
@@ -165,7 +177,8 @@ final class WorkspaceStore {
       modelSelection: ChatModelSelectionStore(models: modelStore, thread: thread),
       workflowSource: composerWorkflows,
       draftRepository: draftRepository, draftStorage: draftStorage,
-      didRequestNewChat: { [weak self] in self?.startNewChat(agentID: thread.agentID) })
+      didRequestNewChat: { [weak self] in self?.startNewChat(agentID: thread.agentID) },
+      readRetrySleep: readRetrySleep)
     conversation.composer.setForeground(isForeground)
     conversations[id] = conversation
     return conversation
@@ -194,8 +207,22 @@ final class WorkspaceStore {
   }
 
   func setForeground(_ active: Bool) {
-    guard !closed, isForeground != active else { return }
+    guard !closed else { return }
+    let suspended = !active
+    guard isForeground != active || refreshSuspended != suspended else { return }
     isForeground = active
+    refreshSuspended = suspended
+    if suspended {
+      refreshGeneration = UUID()
+      refreshTask?.cancel()
+      refreshTask = nil
+      warmingTask?.cancel()
+      warmingTask = nil
+      list.cancelRefresh()
+      for conversation in conversations.values { conversation.cancelRefresh() }
+      // Reconnect with a complete catch-up, including invalidations received while suspended.
+      invalidations.insert(.reconnected)
+    }
     newComposer.setForeground(active)
     for composer in agentDrafts.values { composer.setForeground(active) }
     for conversation in conversations.values { conversation.composer.setForeground(active) }
@@ -229,11 +256,16 @@ final class WorkspaceStore {
   func requestRefresh(_ invalidation: ChatInvalidation = .reconnected) {
     guard !closed, !needsUpgrade else { return }
     invalidations.insert(invalidation)
-    guard refreshTask == nil else { return }
+    guard !refreshSuspended, refreshTask == nil else { return }
+    let generation = refreshGeneration
     refreshTask = Task { [weak self] in
       guard let self else { return }
-      defer { refreshTask = nil }
-      while !invalidations.isEmpty && !closed && !needsUpgrade && !Task.isCancelled {
+      defer {
+        if refreshGeneration == generation { refreshTask = nil }
+      }
+      while !invalidations.isEmpty && !closed && !needsUpgrade && !Task.isCancelled
+        && refreshGeneration == generation
+      {
         let batch = invalidations
         invalidations.removeAll()
         await refresh(batch)
@@ -243,12 +275,14 @@ final class WorkspaceStore {
 
   /// Awaitable refresh boundary used by manual refresh and deterministic HTTP tests.
   func refresh(_ batch: Set<ChatInvalidation> = [.reconnected]) async {
-    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+    guard !closed, !needsUpgrade, !refreshSuspended, !Task.isCancelled else { return }
+    let generation = refreshGeneration
     let full = batch.contains(.reconnected)
     if modelStore.active && (full || batch.contains(.runModels) || batch.contains(.modelPreference))
     {
       await modelStore.refresh()
     }
+    guard refreshGeneration == generation, !Task.isCancelled else { return }
     if full || batch.contains(.threadList) {
       await list.refresh()
     } else if batch.contains(.readCursor)
@@ -259,7 +293,7 @@ final class WorkspaceStore {
     {
       await list.refreshIndicators()
     }
-    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+    guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     var ids = Set<String>()
     for invalidation in batch {
       switch invalidation {
@@ -269,6 +303,7 @@ final class WorkspaceStore {
     }
     if full || batch.contains(.readCursor), let selectedThreadID { ids.insert(selectedThreadID) }
     for id in ids.sorted() {
+      guard !Task.isCancelled, refreshGeneration == generation else { return }
       // Dormant conversations read their durable state when opened.
       if let conversation = conversations[id] {
         await conversation.refresh()
@@ -276,6 +311,7 @@ final class WorkspaceStore {
         await conversation(for: id)?.refresh()
       }
     }
+    guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
     if modelStore.configuration != nil && (full || batch.contains(.threadList)) {
       await selectedConversation?.modelSelection?.refresh()
     }
@@ -284,15 +320,18 @@ final class WorkspaceStore {
   }
 
   private func requestHistoryWarming() {
-    guard !closed, !needsUpgrade else { return }
+    guard !closed, !needsUpgrade, !refreshSuspended else { return }
     warmAgain = true
     guard warmingTask == nil else { return }
+    let generation = refreshGeneration
     warmingTask = Task(priority: .utility) { [weak self] in
       guard let self else { return }
-      defer { warmingTask = nil }
+      defer {
+        if refreshGeneration == generation { warmingTask = nil }
+      }
       repeat {
         // Coalesce startup, indicator updates and bursts of realtime messages.
-        do { try await Task.sleep(for: .seconds(1)) } catch { return }
+        do { try await historyWarmingSleep(.seconds(1)) } catch { return }
         warmAgain = false
         let recent = list.threads.sorted {
           $0.sortAt == $1.sortAt ? $0.id > $1.id : $0.sortAt > $1.sortAt

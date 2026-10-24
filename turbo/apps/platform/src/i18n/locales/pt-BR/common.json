@@ -1073,6 +1073,7 @@
       "loadFailed": "Não foi possível verificar todas as permissões solicitadas. Nenhuma permissão pode ser alterada.",
       "loading": "Carregando permissões",
       "notNow": "Agora não",
+      "review": "Revisar permissões",
       "scopeNote": "Aplica-se a este agente, não apenas à tarefa atual.",
       "title": "Conceder as seguintes permissões"
     }
@@ -2000,6 +2001,7 @@
       "retry": "Retry",
       "saved": "Saved for the next evaluation",
       "saveReply": "Save reply",
+      "sourceUpdate": "Atualização da fonte",
       "states": {
         "active": "In progress",
         "archived": "Archived",
@@ -2412,6 +2414,7 @@
       "unknown": "Desconhecido",
       "unsupported": "A redefinição manual não é compatível; o uso se recupera automaticamente."
     },
+    "syncFailed": "Suas conversas podem estar desatualizadas",
     "taskChips": {
       "chooseTask": "Escolha uma tarefa",
       "ideas": {
@@ -5194,6 +5197,10 @@
           "description": "Personalize a aparência e o comportamento do app.",
           "title": "Preferência"
         },
+        "proactiveAgent": {
+          "description": "Escolha como o Okou aprende, planeja, avança Tasks e sugere próximos passos.",
+          "title": "Proactive Agent"
+        },
         "tools": {
           "title": "Ferramentas"
         },
@@ -5604,15 +5611,37 @@
       "proactiveJobs": {
         "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
         "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
+        "missingTimezone": "Defina seu fuso horário nas Preferências.",
         "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
         "preparing": "Preparing your tasks. You can turn this off at any time.",
         "retry": "Retry",
         "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
         "title": "Proactive tasks"
       },
+      "proactiveLearning": {
+        "description": "Revise sua atividade à noite e melhore a memória pessoal.",
+        "missingDefaultAgent": "Escolha um Agent padrão disponível.",
+        "missingTimezone": "Defina seu fuso horário nas Preferências.",
+        "preparationFailed": "Este fluxo está temporariamente indisponível. O Okou tentará novamente.",
+        "preparing": "Preparando este fluxo de trabalho.",
+        "retry": "Retry",
+        "retryMessage": "Não foi possível carregar ou atualizar esta configuração. Tente novamente.",
+        "title": "Aprendizado"
+      },
+      "proactivePlanning": {
+        "description": "Planeje dentro do trabalho que você delegou e atualize Tasks. Novos trabalhos podem começar quando Tasks estiver ativado.",
+        "missingDefaultAgent": "Escolha um Agent padrão disponível.",
+        "missingTimezone": "Defina seu fuso horário nas Preferências.",
+        "preparationFailed": "Este fluxo está temporariamente indisponível. O Okou tentará novamente.",
+        "preparing": "Preparando este fluxo de trabalho.",
+        "retry": "Retry",
+        "retryMessage": "Não foi possível carregar ou atualizar esta configuração. Tente novamente.",
+        "title": "Planejamento"
+      },
       "proactiveSuggestions": {
         "description": "O Okou verifica suas fontes conectadas a cada hora e sugere próximos passos úteis na página inicial.",
         "missingDefaultAgent": "Escolha um Agent padrão disponível para receber sugestões proativas.",
+        "missingTimezone": "Defina seu fuso horário nas Preferências.",
         "preparationFailed": "Temporariamente indisponível. O Okou tentará novamente automaticamente.",
         "preparing": "Preparando sugestões por hora. Você pode desativá-las a qualquer momento.",
         "retry": "Tentar novamente",

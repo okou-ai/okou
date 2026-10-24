@@ -65,6 +65,7 @@ const workerDaemonsStartedState$ = state(false);
 const pendingChatThreadIndicatorsRefresh$ = state<Promise<boolean> | null>(
   null,
 );
+const chatThreadIndicatorsRefreshVersion$ = state(0);
 interface BootstrapSharedDatabaseWorkerOptions {
   readonly appVersion: string;
   readonly identity: SharedDatabaseIdentity;
@@ -338,6 +339,7 @@ const reloadWorkerChatIndicatorsFromRealtime$ = command(
 
 const chatThreadIndicatorsRefreshThrottle$ = computed((get) => {
   get(rootVersion$);
+  get(chatThreadIndicatorsRefreshVersion$);
   return throttleCommand(
     reloadWorkerChatIndicatorsFromRealtime$,
     CHAT_THREAD_INDICATORS_RELOAD_THROTTLE_MS,
@@ -546,6 +548,17 @@ export const getComputedStoreMessage$ = command(
     signal: AbortSignal,
   ): Promise<ComputedValue<ComputedKey>> => {
     set(requireConnectionSignal$, connectionId, signal);
+    if (message.refresh) {
+      if (message.computedKey === "chat-thread-indicators") {
+        // A fresh read supersedes the old coalescing barrier. Tab readers must
+        // not wait behind a refresh suspended before this revalidation began.
+        set(pendingChatThreadIndicatorsRefresh$, null);
+        set(chatThreadIndicatorsRefreshVersion$, (version) => {
+          return version + 1;
+        });
+      }
+      set(refreshWorkerComputed$, message.computedKey);
+    }
     if (message.computedKey === "indexeddb-diagnostics") {
       const diagnostics = await requireRuntime(
         get(workerRuntimeState$),
@@ -560,7 +573,9 @@ export const getComputedStoreMessage$ = command(
     }
     const value =
       message.computedKey === "chat-thread-indicators"
-        ? await set(readWorkerChatThreadIndicators$, signal)
+        ? message.refresh
+          ? await get(chatThreadIndicators$)
+          : await set(readWorkerChatThreadIndicators$, signal)
         : message.computedKey === "computer-use-hosts"
           ? await get(computerUseHosts$)
           : await get(queueData$);

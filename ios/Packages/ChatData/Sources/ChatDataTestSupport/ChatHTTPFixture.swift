@@ -21,7 +21,6 @@ public final class ChatHTTPFixture: Sendable {
   public typealias Handler = @Sendable (URLRequest) async throws -> ChatHTTPResponse
   public let baseURL: URL
   public let clientVersion: String
-  private let host: String
   public let session: URLSession
 
   public init(
@@ -30,7 +29,6 @@ public final class ChatHTTPFixture: Sendable {
   ) {
     self.clientVersion = clientVersion
     let fixtureHost = UUID().uuidString.lowercased() + ".example.invalid"
-    host = fixtureHost
     baseURL = URL(string: "https://" + fixtureHost)!
     ChatFixtureURLProtocol.handlers.withLock {
       $0[fixtureHost] = ChatFixtureURLProtocol.Route(handler: handler, report: onUnhandledRequest)
@@ -38,11 +36,24 @@ public final class ChatHTTPFixture: Sendable {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [ChatFixtureURLProtocol.self]
     configuration.httpAdditionalHeaders = [ChatFixtureURLProtocol.ownerHeader: fixtureHost]
-    session = URLSession(configuration: configuration)
+    session = URLSession(
+      configuration: configuration,
+      delegate: ChatFixtureSessionDelegate(host: fixtureHost), delegateQueue: nil)
   }
 
   deinit {
     session.invalidateAndCancel()
+  }
+}
+
+private final class ChatFixtureSessionDelegate: NSObject, URLSessionDelegate {
+  let host: String
+
+  init(host: String) { self.host = host }
+
+  func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
+    // Cancellation is asynchronous. Keep this route until all session tasks have
+    // finished so a retiring request cannot be reported to another fixture.
     _ = ChatFixtureURLProtocol.handlers.withLock { $0.removeValue(forKey: host) }
   }
 }
@@ -67,18 +78,20 @@ private final class ChatFixtureURLProtocol: URLProtocol, @unchecked Sendable {
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
   override func startLoading() {
+    // The protocol task must retain its route even if session invalidation
+    // finishes before this task observes cancellation.
+    let owner = request.value(forHTTPHeaderField: Self.ownerHeader) ?? request.url?.host ?? ""
+    let route = Self.handlers.withLock { $0[owner] }
     let task = Task { @Sendable [self] in
-      await deliverResponse()
+      await deliverResponse(owner: owner, route: route)
     }
     loadingTask.withLock { $0 = task }
   }
 
-  private func deliverResponse() async {
+  private func deliverResponse(owner: String, route: Route?) async {
     guard !Task.isCancelled else { return }
     let description =
       "Unhandled fixture request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "<missing URL>")"
-    let owner = request.value(forHTTPHeaderField: Self.ownerHeader) ?? request.url?.host ?? ""
-    let route = Self.handlers.withLock { $0[owner] }
     do {
       guard let url = request.url, let route, url.host == owner else {
         if let route {

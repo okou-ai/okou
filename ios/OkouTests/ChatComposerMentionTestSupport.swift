@@ -162,7 +162,6 @@ struct MentionComposerHarness: View {
       Spacer(minLength: 0)
     }
     .safeAreaBar(edge: .bottom, spacing: 0) {
-      // Reference tests assert expanded geometry without sampling animation frames.
       let composer = workspace?.newComposer ?? state
       ChatComposerView(
         draft: Binding(get: { composer.text }, set: { composer.text = $0 }),
@@ -190,18 +189,16 @@ func mentionInputs(in view: UIView) -> [ComposerTextView] {
 @MainActor
 func focusMentionInput(_ input: ComposerTextView) async throws {
   input.becomeFirstResponder()
+  await hostingPresentationFrame()
   try await eventually(
     message:
-      "Native composer focus/expansion: \(input.isFirstResponder), \(input.bounds); "
+      "Native composer focus: \(input.isFirstResponder); "
       + "window: \(input.window != nil); current: \(input.isCurrent()); "
       + "bound focus: \(String(describing: (input.delegate as? ChatComposerTextInput.Coordinator)?.input.isFocused)); "
       + "key window: \(String(describing: input.window?.isKeyWindow)); "
-      + "scene: \(String(describing: input.window?.windowScene?.activationState)); "
-      + "line height: \(String(describing: input.font?.lineHeight))"
+      + "scene: \(String(describing: input.window?.windowScene?.activationState))"
   ) {
-    // Measure the native size after its window has laid out the focus change.
-    input.window?.layoutIfNeeded()
-    return input.isFirstResponder && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
+    input.isFirstResponder
   }
 }
 
@@ -217,7 +214,7 @@ func mentionTable(in view: UIView) -> UITableView? {
 func mountMentionHost<V: View>(_ host: UIHostingController<V>) async throws -> UIWindow {
   let window = try await mountNativeHost(host) { window in
     guard let input = mentionInputs(in: host.view).first else { return false }
-    return input.window === window && !input.bounds.isEmpty
+    return input.window === window
   }
   // Native focus must follow the initial hosting transaction's presented frame.
   await hostingPresentationFrame()

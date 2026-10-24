@@ -1051,6 +1051,7 @@
       "loadFailed": "요청된 모든 권한을 확인하지 못했습니다. 권한을 변경할 수 없습니다.",
       "loading": "권한을 불러오는 중",
       "notNow": "나중에",
+      "review": "권한 검토",
       "scopeNote": "현재 작업뿐 아니라 이 에이전트에 적용됩니다.",
       "title": "다음 권한 허용"
     }
@@ -1962,6 +1963,7 @@
       "retry": "Retry",
       "saved": "Saved for the next evaluation",
       "saveReply": "Save reply",
+      "sourceUpdate": "출처 업데이트",
       "states": {
         "active": "In progress",
         "archived": "Archived",
@@ -2355,6 +2357,7 @@
       "unknown": "알 수 없음",
       "unsupported": "수동 초기화는 지원되지 않으며 사용량은 자동으로 복구됩니다."
     },
+    "syncFailed": "채팅이 최신 상태가 아닐 수 있습니다",
     "taskChips": {
       "chooseTask": "작업 선택",
       "ideas": {
@@ -5118,6 +5121,10 @@
           "description": "앱의 외관과 동작 방식을 개인화하세요.",
           "title": "환경설정"
         },
+        "proactiveAgent": {
+          "description": "Okou의 학습, 계획, Tasks 실행과 제안을 설정합니다.",
+          "title": "Proactive Agent"
+        },
         "tools": {
           "title": "도구"
         },
@@ -5524,15 +5531,37 @@
       "proactiveJobs": {
         "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
         "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
+        "missingTimezone": "환경설정에서 시간대를 설정하세요.",
         "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
         "preparing": "Preparing your tasks. You can turn this off at any time.",
         "retry": "Retry",
         "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
         "title": "Proactive tasks"
       },
+      "proactiveLearning": {
+        "description": "밤에 활동을 검토하고 개인 기억과 이해를 갱신합니다.",
+        "missingDefaultAgent": "사용 가능한 기본 Agent를 선택하세요.",
+        "missingTimezone": "환경설정에서 시간대를 설정하세요.",
+        "preparationFailed": "이 워크플로는 일시적으로 사용할 수 없습니다. Okou가 다시 시도합니다.",
+        "preparing": "워크플로를 준비하고 있습니다.",
+        "retry": "Retry",
+        "retryMessage": "이 설정을 불러오거나 업데이트하지 못했습니다. 다시 시도하세요.",
+        "title": "학습"
+      },
+      "proactivePlanning": {
+        "description": "명확히 위임한 범위에서 계획하고 Tasks를 관리합니다. Tasks가 켜져 있으면 새 작업을 시작할 수 있습니다.",
+        "missingDefaultAgent": "사용 가능한 기본 Agent를 선택하세요.",
+        "missingTimezone": "환경설정에서 시간대를 설정하세요.",
+        "preparationFailed": "이 워크플로는 일시적으로 사용할 수 없습니다. Okou가 다시 시도합니다.",
+        "preparing": "워크플로를 준비하고 있습니다.",
+        "retry": "Retry",
+        "retryMessage": "이 설정을 불러오거나 업데이트하지 못했습니다. 다시 시도하세요.",
+        "title": "계획"
+      },
       "proactiveSuggestions": {
         "description": "Okou가 매시간 연결된 소스를 확인하고 홈에서 유용한 다음 행동을 제안합니다.",
         "missingDefaultAgent": "선제적 제안을 받으려면 사용 가능한 기본 Agent를 선택하세요.",
+        "missingTimezone": "환경설정에서 시간대를 설정하세요.",
         "preparationFailed": "일시적으로 사용할 수 없습니다. Okou가 자동으로 다시 시도합니다.",
         "preparing": "시간별 제안을 준비하고 있습니다. 언제든지 끌 수 있습니다.",
         "retry": "다시 시도",

@@ -1,4 +1,6 @@
 import { command } from "ccstate";
+import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
+import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { nowDate } from "../../lib/time";
 import {
   canUseAgent,
@@ -55,12 +57,6 @@ export const runOwnedWorkflowAutomationNow$ = command(
       return owned;
     }
     const { automation } = owned;
-    if (automation.officialBlueprintKey !== null) {
-      return {
-        kind: "conflict",
-        message: OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE,
-      };
-    }
     const target = await set(
       loadAutomationWorkflowRunTarget$,
       {
@@ -72,6 +68,32 @@ export const runOwnedWorkflowAutomationNow$ = command(
     signal.throwIfAborted();
     if (!target) {
       return { kind: "not-found" };
+    }
+    if (automation.officialBlueprintKey !== null) {
+      const kind = proactiveWorkflowKind(target.workflowName);
+      if (kind !== "learning" && kind !== "planning") {
+        return {
+          kind: "conflict",
+          message: OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE,
+        };
+      }
+      const eligibility = await set(
+        loadProactiveWorkflowsEligibility$,
+        {
+          orgId: automation.orgId,
+          userId: automation.ownerUserId,
+        },
+        signal,
+      );
+      if (
+        !eligibility[kind].available ||
+        eligibility.agentId !== target.agentId
+      ) {
+        return {
+          kind: "forbidden",
+          message: "Proactive Agent is not available.",
+        };
+      }
     }
     const agent = await set(
       loadAgent$,

@@ -8,7 +8,7 @@ use std::io;
 use std::path::Path;
 
 #[cfg(target_os = "linux")]
-mod rooted;
+pub(crate) mod rooted;
 
 /// Extract a gzip-compressed tar archive into an existing target directory.
 ///

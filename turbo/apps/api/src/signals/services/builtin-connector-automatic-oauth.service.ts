@@ -418,7 +418,7 @@ export const startBuiltinConnectorAutomatic$ = command(
       return failure(prepared.error);
     }
     if (prepared.value.kind === "none") {
-      const connected = await set(
+      const [connected] = await set(
         publishAutomaticConnection$,
         {
           orgId: args.orgId,
@@ -435,7 +435,7 @@ export const startBuiltinConnectorAutomatic$ = command(
         },
         signal,
       );
-      if (connected.kind === "connected") {
+      if (connected) {
         await set(
           publishConnectorRuntimeSyncWakeups$,
           {
@@ -448,7 +448,9 @@ export const startBuiltinConnectorAutomatic$ = command(
         );
       }
       signal.throwIfAborted();
-      return connected;
+      return connected
+        ? { kind: "connected", connectionId: connected.connectionId }
+        : { kind: "error", reason: "invalid-account" };
     }
     const authorization = prepared.value;
     const context = builtinAutomaticContextSchema.parse({
@@ -603,13 +605,13 @@ const finishAutomaticOAuth$ = command(
       { stored, context, contract, token: exchanged.value },
       signal,
     );
-    const published = await set(
+    const [published] = await set(
       publishAutomaticConnection$,
       publication,
       signal,
     );
-    if (published.kind !== "connected") {
-      return published;
+    if (!published) {
+      return { kind: "error", reason: "invalid-account" } as const;
     }
     await set(
       publishConnectorRuntimeSyncWakeups$,

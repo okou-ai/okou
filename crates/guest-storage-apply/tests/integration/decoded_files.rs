@@ -205,6 +205,169 @@ fn existing_hardlink_is_replaced_without_modifying_its_other_name() {
 }
 
 #[test]
+pub(super) fn shared_and_wide_parents_preserve_complete_decoded_outputs() {
+    let root = tempfile::tempdir().unwrap();
+    for directories in [4, 80] {
+        let target = root.path().join(format!("mount-{directories}"));
+        let entries = (0..directories * 2)
+            .map(|index| StorageFile {
+                path: format!("parent-{}/nested/file-{index}", index % directories),
+                mode: if index % 2 == 0 { 0o751 } else { 0o640 },
+                mtime: index as u64,
+                content: if index % 3 == 0 {
+                    Vec::new()
+                } else {
+                    format!("file-{index}").into_bytes()
+                },
+            })
+            .collect::<Vec<_>>();
+        for _ in 0..2 {
+            assert!(guest_storage_apply::run_storage_files_bytes(
+                &input(&target, true, &entries).unwrap()
+            ));
+            for entry in &entries {
+                let path = target.join(&entry.path);
+                assert_eq!(fs::read(&path).unwrap(), entry.content);
+                let metadata = fs::metadata(path).unwrap();
+                assert_eq!(metadata.mode() & 0o777, entry.mode);
+                assert_eq!(metadata.mtime() as u64, entry.mtime.max(1));
+            }
+        }
+    }
+}
+
+#[test]
+fn allowed_parent_links_and_replaced_leaves_keep_later_writes_contained() {
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("mount");
+    fs::create_dir_all(target.join("actual")).unwrap();
+    symlink("actual", target.join("nested")).unwrap();
+    fs::write(root.path().join("outside"), b"keep").unwrap();
+    symlink(root.path().join("outside"), target.join("empty")).unwrap();
+    let mut entries = files();
+    entries.push(StorageFile {
+        path: "actual/after".into(),
+        mode: 0o644,
+        mtime: 2,
+        content: b"after".to_vec(),
+    });
+    assert!(guest_storage_apply::run_storage_files_bytes(
+        &input(&target, false, &entries).unwrap()
+    ));
+    assert_eq!(
+        fs::read(target.join("actual/tool")).unwrap(),
+        b"final-content"
+    );
+    assert_eq!(fs::read(target.join("actual/after")).unwrap(), b"after");
+    assert_eq!(fs::read(target.join("empty")).unwrap(), b"");
+    assert!(
+        !fs::symlink_metadata(target.join("empty"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(fs::read(root.path().join("outside")).unwrap(), b"keep");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn concurrent_mounts_remain_writable_with_limited_descriptors() {
+    const CHILD: &str = "OKOU_GUEST_DECODED_CONCURRENT_LOW_FD_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        use std::os::unix::process::CommandExt;
+        for low_limit in [true, false] {
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            child
+                .args([
+                    "--exact",
+                    "decoded_files::concurrent_mounts_remain_writable_with_limited_descriptors",
+                    "--nocapture",
+                ])
+                .env(CHILD, if low_limit { "low-limit" } else { "held" });
+            // SAFETY: only async-signal-safe resource-limit syscalls run in the
+            // child before exec. Neither the parent nor its hard limit changes.
+            unsafe {
+                child.pre_exec(move || {
+                    let mut limit = libc::rlimit {
+                        rlim_cur: 0,
+                        rlim_max: 0,
+                    };
+                    if libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    limit.rlim_cur = limit.rlim_cur.min(if low_limit { 32 } else { 1024 });
+                    if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+            let output = crate::process::CommandExecution::spawn(&mut child, None)
+                .unwrap()
+                .wait()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "child failed: {}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+        }
+        return;
+    }
+
+    let mut held = Vec::new();
+    if std::env::var_os(CHILD).as_deref() == Some(std::ffi::OsStr::new("held")) {
+        loop {
+            match fs::File::open("/dev/null") {
+                Ok(file) => held.push(file),
+                Err(error) => {
+                    assert_eq!(error.raw_os_error(), Some(libc::EMFILE));
+                    break;
+                }
+            }
+        }
+        for _ in 0..16 {
+            assert!(held.pop().is_some());
+        }
+    }
+    let root = tempfile::tempdir().unwrap();
+    let mounts = (0..4)
+        .map(|index| root.path().join(format!("mount-{index}")))
+        .collect::<Vec<_>>();
+    let entries = (0..80)
+        .map(|index| StorageFile {
+            path: format!("parent-{}/nested/file-{index}", index % 16),
+            mode: if index % 2 == 0 { 0o751 } else { 0o640 },
+            mtime: index,
+            content: format!("file-{index}").into_bytes(),
+        })
+        .collect::<Vec<_>>();
+    let manifest = json!({"storageMounts": mounts.iter().map(|mount| json!({
+        "mountPath":mount,"archiveUrl":"file:///must-not-open","name":"test","versionId":"v1"
+    })).collect::<Vec<_>>()});
+    let groups = mounts
+        .iter()
+        .map(|mount| (mount.to_str().unwrap(), entries.as_slice()))
+        .collect::<Vec<_>>();
+    let data =
+        storage_files::encode_input(&serde_json::to_vec(&manifest).unwrap(), &groups).unwrap();
+    let success = guest_storage_apply::run_storage_files_bytes(&data);
+    drop(held);
+    assert!(success);
+    for mount in mounts {
+        for entry in &entries {
+            let path = mount.join(&entry.path);
+            assert_eq!(fs::read(&path).unwrap(), entry.content);
+            let metadata = fs::metadata(path).unwrap();
+            assert_eq!(metadata.mode() & 0o777, entry.mode);
+            assert_eq!(metadata.mtime() as u64, entry.mtime.max(1));
+        }
+    }
+}
+
+#[test]
 fn escaping_parent_is_skipped_like_archive_extraction() {
     let root = tempfile::tempdir().unwrap();
     let target = root.path().join("mount");

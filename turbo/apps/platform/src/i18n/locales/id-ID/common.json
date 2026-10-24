@@ -1051,6 +1051,7 @@
       "loadFailed": "Tidak dapat memverifikasi semua izin yang diminta. Tidak ada izin yang dapat diubah.",
       "loading": "Memuat izin",
       "notNow": "Tidak sekarang",
+      "review": "Tinjau izin",
       "scopeNote": "Berlaku untuk agen ini, bukan hanya tugas saat ini.",
       "title": "Berikan izin berikut"
     }
@@ -1962,6 +1963,7 @@
       "retry": "Retry",
       "saved": "Saved for the next evaluation",
       "saveReply": "Save reply",
+      "sourceUpdate": "Pembaruan sumber",
       "states": {
         "active": "In progress",
         "archived": "Archived",
@@ -2355,6 +2357,7 @@
       "unknown": "Tidak diketahui",
       "unsupported": "Reset manual tidak didukung; penggunaan akan pulih secara otomatis."
     },
+    "syncFailed": "Percakapan Anda mungkin belum diperbarui",
     "taskChips": {
       "chooseTask": "Pilih tugas",
       "ideas": {
@@ -5118,6 +5121,10 @@
           "description": "Personalisasi tampilan dan perilaku aplikasi.",
           "title": "Preferensi"
         },
+        "proactiveAgent": {
+          "description": "Pilih cara Okou belajar, merencanakan, mengerjakan Tasks, dan menyarankan langkah berikutnya.",
+          "title": "Proactive Agent"
+        },
         "tools": {
           "title": "Alat"
         },
@@ -5524,15 +5531,37 @@
       "proactiveJobs": {
         "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
         "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
+        "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
         "preparing": "Preparing your tasks. You can turn this off at any time.",
         "retry": "Retry",
         "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
         "title": "Proactive tasks"
       },
+      "proactiveLearning": {
+        "description": "Tinjau aktivitas pada malam hari dan perbarui memori pribadi.",
+        "missingDefaultAgent": "Pilih Agent default yang tersedia.",
+        "missingTimezone": "Atur zona waktu Anda di Preferensi.",
+        "preparationFailed": "Alur kerja ini sementara tidak tersedia. Okou akan mencoba lagi.",
+        "preparing": "Menyiapkan alur kerja ini.",
+        "retry": "Retry",
+        "retryMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui. Coba lagi.",
+        "title": "Pembelajaran"
+      },
+      "proactivePlanning": {
+        "description": "Rencanakan dalam lingkup pekerjaan yang Anda delegasikan dan perbarui Tasks. Pekerjaan baru dapat dimulai saat Tasks aktif.",
+        "missingDefaultAgent": "Pilih Agent default yang tersedia.",
+        "missingTimezone": "Atur zona waktu Anda di Preferensi.",
+        "preparationFailed": "Alur kerja ini sementara tidak tersedia. Okou akan mencoba lagi.",
+        "preparing": "Menyiapkan alur kerja ini.",
+        "retry": "Retry",
+        "retryMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui. Coba lagi.",
+        "title": "Perencanaan"
+      },
       "proactiveSuggestions": {
         "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
         "missingDefaultAgent": "Pilih Agent default yang tersedia untuk menerima saran proaktif.",
+        "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Untuk sementara tidak tersedia. Okou akan mencoba lagi secara otomatis.",
         "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",
         "retry": "Coba lagi",

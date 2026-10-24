@@ -14,7 +14,7 @@ import {
   type AcceptedOfficialWorkflowCatalog,
 } from "./official-workflow-catalog-read.service";
 import { acceptedDefinitionForName } from "./official-workflow-run.service";
-import { proactiveWorkflowOwnerEnabledSql } from "./proactive-workflows-lifecycle.service";
+import { proactiveWorkflowOwnerEnabledSql } from "./proactive-workflow-owner";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";

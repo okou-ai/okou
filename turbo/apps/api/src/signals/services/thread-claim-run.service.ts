@@ -38,6 +38,7 @@ import {
   mergeEnvironments,
 } from "./run-environment";
 import { createOfficialWorkflowSignals } from "./thread-official-workflow.signals";
+import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
 import type {
   ThreadModelError,
@@ -607,6 +608,12 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
       eventType,
     ),
     ...EVENT_POLICY[eventType],
+    ...(eventType === "manual" &&
+    ["learning", "planning"].includes(
+      proactiveWorkflowKind(args.workflowName) ?? "",
+    )
+      ? { recordLastRunId: false, recordLastRunAt: false }
+      : {}),
     allowClaimedOnceScheduleAutomation: args.automation.scheduleType === "once",
   };
 }
@@ -937,7 +944,15 @@ function buildWorkflowAutomationCallbacks(
 ): InternalRunCallbackInput[] {
   const callbacks: InternalRunCallbackInput[] = [];
   // Debug adds one delivery and never settles the daily schedule occurrence.
-  if (automation.kind === "schedule" && eventType !== "morning-brief-debug") {
+  const nightlyManual =
+    eventType === "manual" &&
+    (automation.officialBlueprintKey === "nightly-learning" ||
+      automation.officialBlueprintKey === "nightly-planning");
+  if (
+    automation.kind === "schedule" &&
+    eventType !== "morning-brief-debug" &&
+    !nightlyManual
+  ) {
     if (automation.scheduleType === "loop") {
       callbacks.push({
         internalKind: "workflow-automation:loop",
@@ -2110,7 +2125,11 @@ export function createThreadClaimRunObjects(
       }
       if (
         loadedTarget.workflow.officialDefinitionName !== null &&
-        event.eventType === "manual"
+        event.eventType === "manual" &&
+        proactiveWorkflowKind(loadedTarget.workflow.officialDefinitionName) !==
+          "learning" &&
+        proactiveWorkflowKind(loadedTarget.workflow.officialDefinitionName) !==
+          "planning"
       ) {
         return rejectedAutomationLaunch(
           unreadable(OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE),

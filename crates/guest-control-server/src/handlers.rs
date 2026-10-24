@@ -353,14 +353,17 @@ pub(crate) fn handle_file_stream(
     let begin = crate::file_stream::decode_begin(payload).map_err(to_io_error)?;
     progress.mark(FileWriteStage::StartingHelper);
     let mut command = Command::new(guest_write_file_path());
-    if let Some(crc32) = begin.crc32 {
-        command.args([
-            "--zstd-source",
-            &begin.raw_size.to_string(),
-            &crc32.to_string(),
-        ]);
-    } else {
-        command.args(["--zstd", &begin.raw_size.to_string()]);
+    match begin.codec {
+        crate::file_stream::StreamCodec::Zstd => {
+            command.args(["--zstd", &begin.raw_size.to_string()]);
+        }
+        crate::file_stream::StreamCodec::ZstdSource { crc32, .. } => {
+            command.args([
+                "--zstd-source",
+                &begin.raw_size.to_string(),
+                &crc32.to_string(),
+            ]);
+        }
     }
     command.args(write_file_command_args(begin.sudo, begin.append, false)?);
     command

@@ -19,8 +19,10 @@ replace verification.
 Required CI primarily covers business, HTTP, security, compatibility,
 persistence, cancellation, and recovery contracts in process. Do not add
 XCUITest, a separate fixture application, screenshot/OCR assertions, appearance
-matrices, or full-screen navigation journeys to admission CI. Keep ordinary
-visual and interaction acceptance explicit and on demand.
+matrices, UI pixel/geometry assertions, or full-screen navigation journeys to
+admission CI. Do not require exact scroll offsets, view sizes, animation frames,
+or settled layout as prerequisites for business assertions. Keep ordinary visual
+and interaction acceptance explicit and on demand.
 
 Choose the cheapest boundary that still proves the independent guarantee. Do
 not duplicate a Domain/Data contract through App rendering or repeat the same
@@ -63,16 +65,21 @@ schema/writer cannot produce.
 ## External Fixtures and Isolation
 
 Use the shared `ChatDataTestSupport` HTTP fixture for owned sessions and
-realistic canonical responses. Unhandled requests must fail with their method
-and URL, including requests whose errors an SDK catches. Mock only external
-HTTP, identity/realtime providers, and genuinely external system capabilities.
-Keep real decoding, commands, synchronization, SQLite, and temporary files.
+realistic canonical responses. Intercept ordinary API requests in process with
+`URLProtocol`, the native counterpart to Web's MSW boundary; do not send them to
+live services. Unhandled requests must fail with their method and URL, including
+requests whose errors an SDK catches. Mock only external HTTP, identity/realtime
+providers, and genuinely external system capabilities. Keep real decoding,
+commands, synchronization, SQLite, and temporary files.
 
 Use unique reserved `.invalid` origins, identities, workspaces, storage scopes,
-and temporary directories. Keep a real owned loopback server for transfer
-contracts such as compression and signed downloads. Identity tests use the real
-SDK against an isolated synthetic identity service. Never fall through to live
-services, authorize a real account, or reuse a user's signed-in simulator.
+and temporary directories. Keep a real owned loopback server only for transfer
+contracts such as compression and signed downloads, or a third-party SDK whose
+public API cannot inject its HTTP transport. Identity tests keep the real SDK;
+intercept its requests in process when supported, otherwise point its public
+proxy configuration at the fixture's loopback service and disable telemetry.
+Never fall through to live services, authorize a real account, or reuse a user's
+signed-in simulator.
 
 Register cleanup immediately after acquiring resources. Each case owns its
 tasks, response gates, sessions, servers, files, windows, and altered clipboard

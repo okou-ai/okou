@@ -150,8 +150,8 @@ public enum ChatExecutionState: String, Equatable, Sendable {
   public var label: String {
     switch self {
     case .idle: "Ready"
-    case .queued: "Starting"
-    case .running: "Working"
+    case .queued: "Waiting in queue..."
+    case .running: "Thinking..."
     case .stopping: "Stopping"
     case .recovering: "Finishing cancellation"
     case .completed: "Completed"

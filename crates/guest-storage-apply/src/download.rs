@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const MAX_CONCURRENT: usize = 4;
+pub(crate) const MAX_CONCURRENT: usize = 4;
 type AttemptRunner = fn(&mut StartedDownload) -> Result<(), DownloadError>;
 
 #[derive(Debug, PartialEq, Eq)]

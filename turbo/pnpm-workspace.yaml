@@ -52,9 +52,17 @@ overrides:
   # 1.15 line; remove once the toolchain container satisfies 1.16's cache checks.
   "i18next-cli>@swc/core": 1.15.46
   # Miniflare pins vulnerable patch releases. Remove when upstream requires
-  # sharp >=0.35.4 (libheif) and undici >=7.29.1 (TLS validation and DoS fixes).
+  # sharp >=0.35.4 (libheif) and undici >=7.30.1 (TLS validation fixes,
+  # GHSA-xjj6-f33q-929c, GHSA-4qv8-2p9j-2685, GHSA-f72v-6w45-q472).
   "miniflare>sharp": ^0.35.4
-  "miniflare>undici": ^7.29.1
+  "miniflare>undici": ^7.30.1
+  # @earendil-works/pi-coding-agent pins undici 8.10.2 exactly, which is still
+  # affected by GHSA-xjj6-f33q-929c, GHSA-4qv8-2p9j-2685 and GHSA-f72v-6w45-q472.
+  # Remove when upstream requires a patched undici 8.x release.
+  "@earendil-works/pi-coding-agent>undici": ^8.12.2
+  # zod below 4.6.6 can exhaust memory while validating oversized collections
+  # (GHSA-mrhx-c7xc-m3w5). Remove when every workspace dependency requires >=4.6.6.
+  zod: ^4.6.6
   # Slack SDK 7.x still permits vulnerable axios releases. Remove when upstream
   # requires axios >=1.20.0, which fixes the data-URL parser ReDoS.
   "@slack/web-api>axios": 1.20.0

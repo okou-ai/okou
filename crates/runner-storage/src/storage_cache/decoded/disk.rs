@@ -10,7 +10,7 @@ use runner_host::paths::{HomePaths, short_digest, touch_mtime};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::io::{BufReader, BufWriter, Write};
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
@@ -109,15 +109,17 @@ pub(super) fn paths(home: &HomePaths, name: &str, version: &str) -> (PathBuf, Pa
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EntryKind {
     Positive,
+    LegacyPositive,
     Rejection,
 }
 
 fn version_key(version: &str, kind: EntryKind) -> String {
     let prefix = match kind {
-        EntryKind::Positive => "",
-        EntryKind::Rejection => "rejected-",
+        EntryKind::Positive => "decoded-v2-",
+        EntryKind::LegacyPositive => "decoded-v1-",
+        EntryKind::Rejection => "decoded-v1-rejected-",
     };
-    format!("decoded-v1-{prefix}{}", short_digest(version))
+    format!("{prefix}{}", short_digest(version))
 }
 
 fn entry_paths(home: &HomePaths, name: &str, version: &str, kind: EntryKind) -> (PathBuf, PathBuf) {
@@ -154,7 +156,7 @@ impl EntryKey {
     }
 }
 
-fn open_directory(path: &Path) -> io::Result<File> {
+pub(super) fn open_directory(path: &Path) -> io::Result<File> {
     OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
@@ -251,20 +253,34 @@ pub(super) fn read_with_budget(
     file_budget: usize,
     cancel: &CancellationToken,
 ) -> io::Result<Option<Vec<StorageFile>>> {
-    read_entry(
-        home,
-        name,
-        version,
-        EntryKind::Positive,
-        content_budget,
-        file_budget,
-        cancel,
-    )?
-    .into_ready_files()
+    // Persisted v1 entries can be the only remaining local source after archive
+    // retirement. Keep their original locks and checks; corrupt v2 data must
+    // never be hidden by trying a different representation.
+    // Remove this reader and the temporary migrator after accepted old writers
+    // finish and complete retained-root inventories contain no positive v1 (#42702).
+    for kind in [EntryKind::Positive, EntryKind::LegacyPositive] {
+        let outcome = read_entry(
+            home,
+            name,
+            version,
+            kind,
+            content_budget,
+            file_budget,
+            cancel,
+        )?;
+        // An existing v2 can be busy or exceed this batch's remaining budget.
+        // Its v1 source may already be partially retired; only absence permits
+        // trying that older representation.
+        if !matches!(outcome, LookupOutcome::Miss) {
+            return outcome.into_ready_files();
+        }
+    }
+    Ok(None)
 }
 
 enum LookupOutcome {
     Miss,
+    Unavailable,
     Rejected,
     Ready(Vec<StorageFile>),
 }
@@ -272,7 +288,7 @@ enum LookupOutcome {
 impl LookupOutcome {
     fn into_ready_files(self) -> io::Result<Option<Vec<StorageFile>>> {
         match self {
-            Self::Miss => Ok(None),
+            Self::Miss | Self::Unavailable => Ok(None),
             Self::Ready(files) => Ok(Some(files)),
             Self::Rejected => Err(invalid("decoded cache identity or admission mismatch")),
         }
@@ -286,7 +302,7 @@ pub(super) fn is_rejected(
     cancel: &CancellationToken,
 ) -> io::Result<bool> {
     match read_entry(home, name, version, EntryKind::Rejection, 0, 0, cancel)? {
-        LookupOutcome::Miss => Ok(false),
+        LookupOutcome::Miss | LookupOutcome::Unavailable => Ok(false),
         LookupOutcome::Rejected => Ok(true),
         LookupOutcome::Ready(_) => Err(invalid("decoded cache identity or admission mismatch")),
     }
@@ -360,14 +376,14 @@ fn read_entry(
         .map_err(io::Error::other)?
     {
         ExistingTryLock::Acquired(lock) => lock,
-        ExistingTryLock::Busy => return Ok(LookupOutcome::Miss),
+        ExistingTryLock::Busy => return Ok(LookupOutcome::Unavailable),
         ExistingTryLock::Missing => {
             // Existing Runner GC removes free lock files independently from
             // their cached data. Recreate for the observed entry, then reopen
             // it under the validated lock (GC may have removed it meanwhile).
             match lock::try_acquire_or_busy_blocking(&lock_path).map_err(io::Error::other)? {
                 TryLock::Acquired(lock) => lock,
-                TryLock::Busy => return Ok(LookupOutcome::Miss),
+                TryLock::Busy => return Ok(LookupOutcome::Unavailable),
             }
         }
     };
@@ -392,7 +408,31 @@ fn read_locked_entry(
     file_budget: usize,
     cancel: &CancellationToken,
 ) -> io::Result<LookupOutcome> {
-    let path = EntryKey::new(name, version, kind).directory(home);
+    let outcome = read_locked_contents(
+        home,
+        name,
+        version,
+        kind,
+        content_budget,
+        file_budget,
+        cancel,
+    )?;
+    if matches!(outcome, LookupOutcome::Ready(_) | LookupOutcome::Rejected) {
+        touch_mtime(&EntryKey::new(name, version, kind).directory(home));
+    }
+    Ok(outcome)
+}
+
+/// Migration validation must not count as foreground use in the LRU policy.
+fn read_locked_contents(
+    home: &HomePaths,
+    name: &str,
+    version: &str,
+    kind: EntryKind,
+    content_budget: usize,
+    file_budget: usize,
+    cancel: &CancellationToken,
+) -> io::Result<LookupOutcome> {
     let root = match open_entry(home, name, version, kind) {
         Ok(root) => root,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(LookupOutcome::Miss),
@@ -401,20 +441,14 @@ fn read_locked_entry(
     let encoded_index = read_file(&root, "index.json", INDEX_LIMIT)?;
     let index: Index = serde_json::from_slice(&encoded_index).map_err(io::Error::other)?;
     drop(encoded_index);
-    let index_kind = if index.files.is_some() {
-        EntryKind::Positive
-    } else {
-        EntryKind::Rejection
-    };
     if index.name != name
         || index.version != version
         || index.compressed_bytes > MAX_COMPRESSED_BYTES
-        || index_kind != kind
+        || index.files.is_none() != (kind == EntryKind::Rejection)
     {
         return Err(invalid("decoded cache identity or admission mismatch"));
     }
     let Some(metadata) = index.files else {
-        touch_mtime(&path);
         return Ok(LookupOutcome::Rejected);
     };
     if index.compressed_bytes == 0
@@ -455,28 +489,55 @@ fn read_locked_entry(
     if total > content_budget || files.len() > file_budget {
         // A valid optional entry can miss either batch budget without reading its
         // bodies. Later smaller entries may fit; malformed metadata remains an error.
-        return Ok(LookupOutcome::Miss);
+        return Ok(LookupOutcome::Unavailable);
     }
     let data = File::from(
         openat(
             &root,
-            "files",
-            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            if kind == EntryKind::Positive {
+                "data.bin"
+            } else {
+                "files"
+            },
+            OFlag::O_RDONLY
+                | OFlag::O_NOFOLLOW
+                | OFlag::O_CLOEXEC
+                | if kind == EntryKind::Positive {
+                    OFlag::O_NONBLOCK
+                } else {
+                    OFlag::O_DIRECTORY
+                },
             Mode::empty(),
         )
         .map_err(io::Error::from)?,
     );
+    if kind == EntryKind::Positive {
+        let attributes = data.metadata()?;
+        if !attributes.is_file() || attributes.nlink() != 1 || attributes.len() != total as u64 {
+            return Err(invalid("invalid decoded cache payload type or size"));
+        }
+    }
+    // Keep one small read buffer, rather than a second storage-sized allocation.
+    // The v1 reader uses the same descriptor without consuming this buffer.
+    let mut data = BufReader::new(data);
     for (file, entry) in files.iter_mut().zip(metadata) {
         check_cancel(cancel)?;
-        file.content = read_file(&data, &file.path, entry.size)?;
+        if kind == EntryKind::Positive {
+            file.content = vec![0; entry.size];
+            data.read_exact(&mut file.content)?;
+        } else {
+            file.content = read_file(data.get_ref(), &file.path, entry.size)?;
+        }
         if file.content.len() != entry.size
             || hex::encode(Sha256::digest(&file.content)) != entry.sha256
         {
             return Err(invalid("decoded cache content mismatch"));
         }
     }
+    if kind == EntryKind::Positive && data.read(&mut [0])? != 0 {
+        return Err(invalid("decoded cache payload grew during read"));
+    }
     check_cancel(cancel)?;
-    touch_mtime(&path);
     Ok(LookupOutcome::Ready(files))
 }
 
@@ -535,28 +596,35 @@ pub(super) fn retire_archive(
             "retired storage archive is not a regular private file",
         ));
     }
-    let replacement_lock = EntryKey::new(name, version, EntryKind::Positive).lock(home);
-    let _replacement =
-        match lock::try_acquire_existing_shared_or_missing_blocking(&replacement_lock)
+    let mut replacement = None;
+    for kind in [EntryKind::Positive, EntryKind::LegacyPositive] {
+        let replacement_lock = EntryKey::new(name, version, kind).lock(home);
+        let guard = match lock::try_acquire_existing_shared_or_missing_blocking(&replacement_lock)
             .map_err(io::Error::other)?
         {
             ExistingTryLock::Acquired(lock) => lock,
-            ExistingTryLock::Busy | ExistingTryLock::Missing => return Ok(false),
+            ExistingTryLock::Busy => return Ok(false),
+            ExistingTryLock::Missing => continue,
         };
-    if read_locked_entry(
-        home,
-        name,
-        version,
-        EntryKind::Positive,
-        storage_files::MAX_STORAGE_BYTES,
-        storage_files::MAX_FILES,
-        cancel,
-    )?
-    .into_ready_files()?
-    .is_none()
-    {
-        return Ok(false);
+        if read_locked_entry(
+            home,
+            name,
+            version,
+            kind,
+            storage_files::MAX_STORAGE_BYTES,
+            storage_files::MAX_FILES,
+            cancel,
+        )?
+        .into_ready_files()?
+        .is_some()
+        {
+            replacement = Some(guard);
+            break;
+        }
     }
+    let Some(_replacement) = replacement else {
+        return Ok(false);
+    };
     check_cancel(cancel)?;
     // Both formats stay protected until deletion completes. Use directory FDs
     // so no cache-parent symlink can redirect the destructive operation.
@@ -623,6 +691,18 @@ pub(super) fn publish(
     cancel: &CancellationToken,
 ) -> io::Result<()> {
     check_cancel(cancel)?;
+    if files.is_some() {
+        // Like the current-format existence check below, this only skips an
+        // optional fill; foreground reads still validate the complete entry.
+        // Do not allocate another storage's contents beside the decoded input.
+        let legacy = EntryKey::new(name, version, EntryKind::LegacyPositive).directory(home);
+        match fs::symlink_metadata(legacy) {
+            Ok(metadata) if metadata.is_dir() => return Ok(()),
+            Ok(_) => return Err(invalid("decoded cache target is not a directory")),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
     let kind = if files.is_some() {
         EntryKind::Positive
     } else {
@@ -639,6 +719,20 @@ pub(super) fn publish(
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),
     }
+    publish_locked(home, name, version, compressed_bytes, files, kind, cancel)
+}
+
+/// Caller owns the selected format's exclusive publication/GC lock.
+fn publish_locked(
+    home: &HomePaths,
+    name: &str,
+    version: &str,
+    compressed_bytes: usize,
+    files: Option<&[StorageFile]>,
+    kind: EntryKind,
+    cancel: &CancellationToken,
+) -> io::Result<()> {
+    let path = EntryKey::new(name, version, kind).directory(home);
     let parent = path
         .parent()
         .ok_or_else(|| invalid("missing decoded cache parent"))?;
@@ -664,25 +758,19 @@ pub(super) fn publish(
         }
         let index = encode_index(name, version, compressed_bytes, files)?;
         if let Some(files) = files {
+            let output = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+                .open(staging.join("data.bin"))?;
+            let mut output = BufWriter::new(output);
             for file in files {
                 check_cancel(cancel)?;
-                let target = staging.join("files").join(&file.path);
-                host_file::ensure_dir(
-                    target
-                        .parent()
-                        .ok_or_else(|| invalid("missing file parent"))?,
-                    DirMode::Private,
-                    "decoded cache files",
-                )?;
-                let mut output = OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .mode(0o600)
-                    .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-                    .open(target)?;
                 output.write_all(&file.content)?;
-                output.sync_all()?;
             }
+            output.flush()?;
+            output.get_ref().sync_all()?;
         }
         let mut output = OpenOptions::new()
             .write(true)
@@ -693,14 +781,184 @@ pub(super) fn publish(
         output.write_all(&index)?;
         output.sync_all()?;
         check_cancel(cancel)?;
+        open_directory(&staging)?.sync_all()?;
         fs::rename(&staging, &path)?;
+        open_directory(parent)?.sync_all()?;
         Ok(())
     })();
-    if operation.is_err() {
-        // A failed optional fill must not leave live work after its lock drops.
-        if let Err(error) = fs::remove_dir_all(&staging) {
-            tracing::warn!(%error, "failed to clean extracted cache staging; storage GC will retry");
-        }
+    // A failed optional fill must not leave live work after its lock drops.
+    if operation.is_err()
+        && let Err(error) = fs::remove_dir_all(&staging)
+        && error.kind() != io::ErrorKind::NotFound
+    {
+        tracing::warn!(%error, "failed to clean extracted cache staging; storage GC will retry");
     }
     operation
+}
+
+pub(super) enum MigrationOutcome {
+    Gone,
+    Busy,
+    Converted,
+}
+
+pub(super) fn open_child_directory(parent: &File, name: &str) -> io::Result<File> {
+    openat(
+        parent,
+        name,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .map(File::from)
+    .map_err(io::Error::from)
+}
+
+/// Convert one discovered positive entry without requiring its retired archive.
+/// Directory hashes are validated by the scanner; index identity is revalidated
+/// under both formats' real locks before any publication or source deletion.
+pub(super) fn migrate_legacy(
+    home: &HomePaths,
+    name_hash: &str,
+    version_hash: &str,
+    cancel: &CancellationToken,
+) -> io::Result<MigrationOutcome> {
+    use std::os::fd::AsRawFd;
+
+    check_cancel(cancel)?;
+    let legacy_key = format!("decoded-v1-{version_hash}");
+    let packed_key = format!("decoded-v2-{version_hash}");
+    let source_lock = home.storage_lock_for_cache_key(name_hash, &legacy_key);
+    let source = match lock::try_acquire_existing_shared_or_missing_blocking(&source_lock)
+        .map_err(io::Error::other)?
+    {
+        ExistingTryLock::Acquired(lock) => lock,
+        ExistingTryLock::Busy => return Ok(MigrationOutcome::Busy),
+        ExistingTryLock::Missing => {
+            match lock::try_acquire_or_busy_blocking(&source_lock).map_err(io::Error::other)? {
+                TryLock::Acquired(lock) => lock,
+                TryLock::Busy => return Ok(MigrationOutcome::Busy),
+            }
+        }
+    };
+    let _destination = match lock::try_acquire_or_busy_blocking(
+        &home.storage_lock_for_cache_key(name_hash, &packed_key),
+    )
+    .map_err(io::Error::other)?
+    {
+        TryLock::Acquired(lock) => lock,
+        TryLock::Busy => return Ok(MigrationOutcome::Busy),
+    };
+    let parent = match open_directory(&home.storages_dir())
+        .and_then(|root| open_child_directory(&root, name_hash))
+    {
+        Ok(parent) => parent,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(MigrationOutcome::Gone),
+        Err(error) => return Err(error),
+    };
+    let legacy = match open_child_directory(&parent, &legacy_key) {
+        Ok(legacy) => legacy,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(MigrationOutcome::Gone),
+        Err(error) => return Err(error),
+    };
+    let source_metadata = legacy.metadata()?;
+    let packed = match open_child_directory(&parent, &packed_key) {
+        Ok(packed) => Some(packed),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error),
+    };
+    // Prefer the destination index when it exists: interrupted source cleanup
+    // can remove v1's index before all its members, while valid v2 remains usable.
+    let encoded = read_file(
+        packed.as_ref().unwrap_or(&legacy),
+        "index.json",
+        INDEX_LIMIT,
+    )?;
+    let index: Index = serde_json::from_slice(&encoded).map_err(io::Error::other)?;
+    if index.name.len() > 4096
+        || index.version.len() > 4096
+        || short_digest(&index.name) != name_hash
+        || short_digest(&index.version) != version_hash
+    {
+        return Err(invalid("decoded migration identity mismatch"));
+    }
+    let Index {
+        name,
+        version,
+        compressed_bytes,
+        ..
+    } = index;
+    drop(encoded);
+    let published = packed.is_none();
+    if published {
+        let files = read_locked_contents(
+            home,
+            &name,
+            &version,
+            EntryKind::LegacyPositive,
+            storage_files::MAX_STORAGE_BYTES,
+            storage_files::MAX_FILES,
+            cancel,
+        )?
+        .into_ready_files()?
+        .ok_or_else(|| invalid("decoded migration source disappeared"))?;
+        publish_locked(
+            home,
+            &name,
+            &version,
+            compressed_bytes,
+            Some(&files),
+            EntryKind::Positive,
+            cancel,
+        )?;
+        // The verification below must not retain a second whole-storage body.
+        drop(files);
+    }
+    let verified = read_locked_contents(
+        home,
+        &name,
+        &version,
+        EntryKind::Positive,
+        storage_files::MAX_STORAGE_BYTES,
+        storage_files::MAX_FILES,
+        cancel,
+    )?
+    .into_ready_files()?
+    .ok_or_else(|| invalid("decoded migration replacement disappeared"))?;
+    drop(verified);
+    let packed = open_child_directory(&parent, &packed_key)?;
+    if published {
+        packed.set_times(std::fs::FileTimes::new().set_modified(legacy.metadata()?.modified()?))?;
+    }
+    packed.sync_all()?;
+    parent.sync_all()?;
+    check_cancel(cancel)?;
+    // Do not upgrade a live shared flock or wait behind foreground readers.
+    // Keep v2 pinned while reacquiring exclusive source access for cleanup.
+    drop(source);
+    let _source =
+        match lock::try_acquire_or_busy_blocking(&source_lock).map_err(io::Error::other)? {
+            TryLock::Acquired(lock) => lock,
+            TryLock::Busy => return Ok(MigrationOutcome::Busy),
+        };
+    let current = match open_child_directory(&parent, &legacy_key) {
+        Ok(current) => current.metadata()?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(MigrationOutcome::Gone),
+        Err(error) => return Err(error),
+    };
+    if current.dev() != source_metadata.dev() || current.ino() != source_metadata.ino() {
+        return Ok(MigrationOutcome::Busy);
+    }
+    if published {
+        // Include real reads that completed while the source's shared lock was held.
+        packed.set_times(std::fs::FileTimes::new().set_modified(current.modified()?))?;
+        packed.sync_all()?;
+    }
+    check_cancel(cancel)?;
+    // Anchor recursive removal to the already opened name directory on Linux
+    // Runner hosts, so no cache-parent symlink can redirect source retirement.
+    let source_path =
+        PathBuf::from(format!("/proc/self/fd/{}", parent.as_raw_fd())).join(legacy_key);
+    fs::remove_dir_all(source_path)?;
+    parent.sync_all()?;
+    Ok(MigrationOutcome::Converted)
 }

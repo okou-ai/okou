@@ -67,11 +67,6 @@
       "owner": "claimExpiredInactiveBrowser$"
     },
     {
-      "id": "TX-0077",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-connection.service.ts",
-      "owner": "publishAutomaticConnection$"
-    },
-    {
       "id": "TX-0084",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-oauth-device-auth.service.ts",
       "owner": "completeClaimedSession$"
@@ -157,19 +152,9 @@
       "owner": "projectThread"
     },
     {
-      "id": "TX-0138",
-      "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
-      "owner": "persistCustomConnectorOAuthStart"
-    },
-    {
       "id": "TX-0139",
       "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
       "owner": "persistAutomaticNoAuthConnection"
-    },
-    {
-      "id": "TX-0140",
-      "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
-      "owner": "replaceConnectionTokens"
     },
     {
       "id": "TX-0141",
@@ -265,26 +250,6 @@
       "id": "TX-0195",
       "file": "turbo/apps/api/src/signals/services/official-workflow-catalog-sync.service.ts",
       "owner": "activateCandidate$"
-    },
-    {
-      "id": "TX-0197",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "persistReconfigurationPatch$"
-    },
-    {
-      "id": "TX-0198",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "restoreFailedReconfiguration$"
-    },
-    {
-      "id": "TX-0202",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "finalizeAutomationStructureTransition$"
-    },
-    {
-      "id": "TX-0204",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "reserveDormantIdentity$"
     },
     {
       "id": "TX-0218",
