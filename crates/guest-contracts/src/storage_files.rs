@@ -202,55 +202,8 @@ fn invalid() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, "invalid decoded storage files")
 }
 
-/// Validate the admitted regular-file shape without touching the filesystem.
-pub fn validate_files(files: &[StorageFile]) -> io::Result<()> {
-    if files.is_empty() || files.len() > MAX_FILES {
-        return Err(invalid());
-    }
-    let mut paths = Vec::with_capacity(files.len());
-    let mut total = 0usize;
-    let mut path_bytes = 0usize;
-    for file in files {
-        let path = Path::new(&file.path);
-        if file.path.is_empty()
-            || file.path.len() > MAX_PATH_BYTES
-            || file.path.as_bytes().contains(&0)
-            || path
-                .components()
-                .any(|c| !matches!(c, Component::Normal(_)))
-            || path
-                .components()
-                .collect::<std::path::PathBuf>()
-                .as_os_str()
-                != path.as_os_str()
-            || file.mode & !0o777 != 0
-            || file.mtime > i64::MAX as u64
-            || file.content.len() > MAX_FILE_BYTES
-        {
-            return Err(invalid());
-        }
-        total = total.checked_add(file.content.len()).ok_or_else(invalid)?;
-        path_bytes = path_bytes
-            .checked_add(file.path.len())
-            .ok_or_else(invalid)?;
-        if total > MAX_STORAGE_BYTES || path_bytes > MAX_TOTAL_PATH_BYTES {
-            return Err(invalid());
-        }
-        paths.push(path);
-    }
-    // Path ordering compares components, keeping an ancestor adjacent to its first
-    // descendant even when a lexical distractor (such as "a-b") is present.
-    // Sort borrowed paths only: the caller's file/write order remains unchanged.
-    paths.sort_unstable();
-    if paths
-        .iter()
-        .zip(paths.iter().skip(1))
-        .any(|(ancestor, descendant)| descendant.starts_with(ancestor))
-    {
-        return Err(invalid());
-    }
-    Ok(())
-}
+mod validation;
+pub use validation::validate_files;
 
 /// Encode a complete bounded set of mount groups.
 pub fn encode(groups: &[(&str, &[StorageFile])]) -> io::Result<Vec<u8>> {
