@@ -143,6 +143,9 @@ function mockAccounts(read: () => readonly ConnectorAccountConnection[]) {
 
 function savedBuiltinResponse(connector: BuiltinConnectorResponse) {
   context.mocks.data.connectors([connector]);
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: connector.slug,
+  });
   return connector;
 }
 
@@ -1616,6 +1619,9 @@ test("Connect a manual grant and continue the originating chat", async () => {
   click(getButtonByText("Save"));
 
   await callbackStarted.promise;
+  await expect(
+    screen.findByText("Public Axiom connected"),
+  ).resolves.toBeInTheDocument();
   expect(getButtonByText("Saving...")).toBeDisabled();
   expect(axiomDialog).toBeInTheDocument();
   releaseCallback.resolve();

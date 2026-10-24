@@ -174,6 +174,9 @@ function mockCustomAgentAccess(
             ? [...retained, ...body.grants]
             : body.grants;
       grantsByAgent.set(params.id, grants);
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: params.id,
+      });
       return respond(200, { grants });
     },
   );
@@ -362,6 +365,103 @@ test("Add and optionally name a custom connector account", async () => {
   ).toHaveTextContent("Used by Research");
 });
 
+test("Reflect a late successful agent grant after another grant has failed", async () => {
+  const connector = customConnector({ account: undefined });
+  const lateGrant = context.mocks.deferred<void>();
+  const lateGrantStarted = context.mocks.deferred<void>();
+  const grantsByAgent = new Map<string, AgentCustomConnectorGrant[]>();
+  let account: ConnectorAccountConnection | undefined;
+  context.mocks.data.agents([
+    listAgent(RESEARCH_ID, "Research"),
+    listAgent(SUPPORT_ID, "Support"),
+  ]);
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, { connectors: [connector] });
+  });
+  mockSavedConnectorAccounts(context, () => {
+    return account ? [account] : [];
+  });
+  context.mocks.api(connectorAccountsContract.connection, ({ respond }) => {
+    return account
+      ? respond(200, account)
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Account not found" },
+        });
+  });
+  context.mocks.api(customConnectorValuesContract.set, ({ respond }) => {
+    account = customAccount(connector.id, crypto.randomUUID(), {
+      configuredFieldKeys: ["secret"],
+    });
+    return respond(200, { ...connector, connectionId: account.id });
+  });
+  context.mocks.api(
+    agentCustomConnectorsContract.get,
+    ({ params, respond }) => {
+      return respond(200, { grants: grantsByAgent.get(params.id) ?? [] });
+    },
+  );
+  mockConnectorAgentAccess(context, (agentId) => {
+    return { grants: grantsByAgent.get(agentId) ?? [] };
+  });
+  context.mocks.api(
+    agentCustomConnectorsContract.update,
+    async ({ params, body, respond, withSignal }) => {
+      if (params.id === RESEARCH_ID) {
+        return respond(403, {
+          error: { code: "FORBIDDEN", message: "Research access was denied" },
+        });
+      }
+      lateGrantStarted.resolve();
+      await withSignal(lateGrant.promise);
+      grantsByAgent.set(params.id, body.grants);
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: params.id,
+      });
+      return respond(200, { grants: body.grants });
+    },
+  );
+  await setupCustomPage();
+  click(
+    await waitFor(() => {
+      return getConnectorAction("button", "Connect Acme Search");
+    }),
+  );
+  const connect = await screen.findByRole("dialog", {
+    name: "Connect Acme Search",
+  });
+  await fill(within(connect).getByLabelText("Secret"), "custom-secret");
+  click(getConnectorAction("button", "Save", connect));
+  await lateGrantStarted.promise;
+  await expect(
+    within(connect).findByText(/Research access was denied/u),
+  ).resolves.toBeInTheDocument();
+  expect(getConnectorAction("button", "Save", connect)).toBeEnabled();
+  expect(getConnectorCard("Acme Search")).not.toHaveTextContent(
+    "Used by Support",
+  );
+
+  lateGrant.resolve();
+  await waitFor(() => {
+    expect(getConnectorCard("Acme Search")).toHaveTextContent(
+      "Used by Support",
+    );
+  });
+  expect(
+    within(connect).getByText(/Research access was denied/u),
+  ).toBeInTheDocument();
+  click(getConnectorAction("button", "Cancel", connect));
+  click(getConnectorAction("button", "Manage Acme Search access"));
+  const access = await screen.findByRole("dialog", {
+    name: "Manage Acme Search access",
+  });
+  expect(
+    getConnectorSwitch("Revoke Acme Search access for Support", access),
+  ).toBeChecked();
+  expect(
+    getConnectorSwitch("Authorize Acme Search access for Research", access),
+  ).not.toBeChecked();
+});
+
 test("Preserve revoked access when adding another account", async () => {
   const defaultId = "c0000000-0000-4000-a000-000000000001";
   const connector = customConnector({
@@ -536,6 +636,9 @@ test("Manage agent access and permissions for a custom connector", async () => {
       const next = body.operation === "remove" ? [] : body.grants;
       const grants = { grants: next };
       access.set(params.id, grants);
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: params.id,
+      });
       return respond(200, grants);
     },
   );
@@ -1322,6 +1425,9 @@ test("Manage a manual MCP connector through its lifecycle", async () => {
     ({ params, body, respond }) => {
       const next = body.operation === "remove" ? [] : body.grants;
       grants.set(params.id, next);
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: params.id,
+      });
       return respond(200, { grants: next });
     },
   );

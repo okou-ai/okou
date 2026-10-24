@@ -4,6 +4,7 @@ import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { resetSignal } from "../utils.ts";
 
 function resourceRequests(signal?: AbortSignal) {
@@ -47,7 +48,17 @@ export function createConnectorResourceSignals() {
     return await get(requests$).remotes(get(apiClient$));
   });
   const open$ = command(({ set }, signal: AbortSignal) => {
-    set(requests$, resourceRequests(set(resetRequests$, signal)));
+    const ownerSignal = set(resetRequests$, signal);
+    set(requests$, resourceRequests(ownerSignal));
+    set(
+      setAblyInvalidationLoop$,
+      {
+        topic: "connector:changed",
+        invalidations: [reloadConnected$],
+        options: { runOnSubscribe: true },
+      },
+      ownerSignal,
+    );
     set(openedVersion$, (version) => {
       return version + 1;
     });

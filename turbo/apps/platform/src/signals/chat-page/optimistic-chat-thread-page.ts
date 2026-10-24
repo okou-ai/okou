@@ -76,6 +76,8 @@ interface SendNewThreadMessageRequest {
   /** Send from an isolated draft without clearing the Agent's saved composer. */
   preserveAgentDraft?: boolean;
   prompt: string;
+  /** Undefined uses the composer selection; null resolves the member default. */
+  modelSelection?: ModelProviderSelection | null;
   generationTemplate: GenerationTemplateRequest | undefined;
   generationTemplateTitleSnapshot?: string;
   editorDocument?: EditorDocumentSnapshot;
@@ -236,11 +238,15 @@ function resolveNewThreadModelSelection(
   });
 }
 
-const resolveCurrentNewThreadModelSelection$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+const resolveNewThreadModelSelection$ = command(
+  async (
+    { get, set },
+    override: ModelProviderSelection | null | undefined,
+    signal: AbortSignal,
+  ) => {
     const [modelSelection, models, userPreference, catalog] = await Promise.all(
       [
-        get(chatPageModelSelection$),
+        override === undefined ? get(chatPageModelSelection$) : override,
         get(availableRunModels$),
         get(userModelPreference$),
         get(modelCatalog$),
@@ -525,7 +531,11 @@ const sendNewThreadMessage$ = command(
     const { agentId, prompt } = request;
     const { computerUseHostId, cloudBrowserEnabled } = request;
     const draft = request.draft ?? get(talkDraft$);
-    const resolved = await set(resolveCurrentNewThreadModelSelection$, signal);
+    const resolved = await set(
+      resolveNewThreadModelSelection$,
+      request.modelSelection,
+      signal,
+    );
     if (!resolved) {
       return null;
     }

@@ -9,6 +9,8 @@ import {
 } from "@okouai/api-contracts/contracts/get-started";
 import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
+import { subscribeBuiltinConnectorChanges$ } from "../external/connectors.ts";
+import { pageSignal$ } from "../page-signal.ts";
 import { accept } from "../../lib/accept.ts";
 import { resetSignal, settle } from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
@@ -270,8 +272,15 @@ const internalQuestIntroLastKey$ = state<GetStartedQuestKey | null>(null);
 export const questIntroLastKey$ = computed((get) => {
   return get(internalQuestIntroLastKey$);
 });
+const resetConnectorQuestSubscription$ = resetSignal();
 export const setQuestIntroKey$ = command(
-  ({ set }, key: GetStartedQuestKey | null) => {
+  ({ get, set }, key: GetStartedQuestKey | null) => {
+    if (key === "connector" && get(internalQuestIntroKey$) !== "connector") {
+      const signal = set(resetConnectorQuestSubscription$, get(pageSignal$));
+      set(subscribeBuiltinConnectorChanges$, signal);
+    } else if (key !== "connector") {
+      set(resetConnectorQuestSubscription$);
+    }
     set(internalQuestIntroKey$, key);
     if (key !== null) {
       set(internalQuestIntroLastKey$, key);

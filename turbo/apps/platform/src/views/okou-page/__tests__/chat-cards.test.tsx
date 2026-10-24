@@ -43,13 +43,12 @@ function mockExactReconnectAccount(
   accountStatus: "connected" | "reconnect-required" | "missing",
   options?: {
     unnamedManualAccount?: boolean;
-    accountMissingOnActivate?: boolean;
+    accountAvailable?: () => boolean;
     unsupportedAuthMethod?: boolean;
     accountAuthMethod?: "oauth" | "api-token";
   },
 ): () => void {
   let exactReconnectCompleted = false;
-  let accountLookups = 0;
   const github = connectorSlugSchema.parse("github");
   const catalogItem = {
     slug: github,
@@ -133,10 +132,9 @@ function mockExactReconnectAccount(
   context.mocks.api(
     connectorAccountsContract.connection,
     ({ params, query, respond }) => {
-      accountLookups += 1;
       if (
         accountStatus === "missing" ||
-        (options?.accountMissingOnActivate && accountLookups > 1) ||
+        options?.accountAvailable?.() === false ||
         params.connectionId !== EXACT_CONNECTION_ID ||
         query.kind !== "builtin" ||
         query.connectorSlug !== github
@@ -996,11 +994,15 @@ test("A connected exact account still allows explicit reconnection instead of us
 });
 
 test("A reconnect card rechecks an account that disappears before activation", async () => {
+  let accountAvailable = true;
   mockExactReconnectAccount("reconnect-required", {
-    accountMissingOnActivate: true,
+    accountAvailable: () => {
+      return accountAvailable;
+    },
   });
   await setupChat(exactReconnectUrl().toString());
   const card = await screen.findByTestId("connector-action-card");
+  accountAvailable = false;
   click(queryAllByRoleFast("button", card)[0]!);
 
   await expect(

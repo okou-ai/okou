@@ -164,8 +164,10 @@ export const disconnectWechat$ = command(
     await set(refreshWechat$, signal);
   },
 );
-export const initWechat$ = command(async ({ set }, signal: AbortSignal) => {
+export const initWechat$ = command(({ set }) => {
   set(flow$, { open: false, attempt: null, status: "waiting" });
   set(code$, "");
-  await set(refreshWechat$, signal);
+  set(reload$, (n) => {
+    return n + 1;
+  });
 });

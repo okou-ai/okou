@@ -184,12 +184,11 @@ function createArtifactShareSession(source: ShareSource) {
       }
     }
   });
-  const refresh$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const refresh$ = command(({ set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     set(reload$, (value) => {
       return value + 1;
     });
-    await settle(get(details$), signal);
   });
   const copy$ = command(async ({ get, set }, signal: AbortSignal) => {
     const details = await get(details$);

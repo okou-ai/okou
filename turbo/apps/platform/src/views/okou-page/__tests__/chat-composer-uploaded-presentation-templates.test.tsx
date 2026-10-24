@@ -17,7 +17,6 @@ import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-te
 import {
   buttonContainingText,
   expectTextBefore,
-  trackTemplatePreviewImagePreloads,
 } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
@@ -149,7 +148,6 @@ async function openUploadedPresentationPicker() {
     pageCount: 3,
   });
   mockPresentationTemplateLibrary([uploaded]);
-  trackTemplatePreviewImagePreloads();
   const user = userEvent.setup();
 
   await setupPage({
@@ -251,7 +249,6 @@ async function openWorkspaceTemplateLibrary(includePublished: boolean) {
       updatedAt: "2026-08-01T00:03:00.000Z",
     },
   ]);
-  trackTemplatePreviewImagePreloads();
   const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
@@ -500,7 +497,6 @@ test("Imported visibility saves once and closes even on the current value", asyn
     canManage: true,
   });
   const library = mockPresentationTemplateLibrary([uploaded]);
-  trackTemplatePreviewImagePreloads();
   const user = userEvent.setup();
   await setupPage({
     context,

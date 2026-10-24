@@ -549,12 +549,17 @@ async function finalizeConnectorStateChangeAfterCommit(
 ): Promise<void> {
   let postCommitAbort = args.postCommitAbort;
   if (args.pendingTokenRevoke) {
-    await revokePendingConnectorToken(
-      {
-        pending: args.pendingTokenRevoke,
-      },
-      signal,
+    const revoked = await settleIncludingAbort(
+      revokePendingConnectorToken(
+        {
+          pending: args.pendingTokenRevoke,
+        },
+        signal,
+      ),
     );
+    if (!revoked.ok) {
+      postCommitAbort ??= revoked.error;
+    }
     if (signal.aborted) {
       postCommitAbort ??= signal.reason;
     }

@@ -32,12 +32,16 @@ import type { PlatformConnectorCatalogStatusItem } from "../connector-domain.ts"
 import type { ConnectorAccountMutationOptions } from "../okou-page/settings/connector-account-dialogs.ts";
 import { completeDirectedConnectorAction$ } from "./directed-connector-callback.ts";
 import { routeChatActionCallback$ } from "../chat-page/action-callback.ts";
-import { connectorCatalogItemForSlug } from "../external/connectors.ts";
+import {
+  connectorCatalogItemForSlug,
+  builtinConnectorsReloadVersion$,
+} from "../external/connectors.ts";
 import { customConnectors$ } from "../okou-page/settings/custom-connectors.ts";
 import { createConnectorAccountListSignals } from "../okou-page/connector-accounts.ts";
 
 const directedConnectAccounts = createConnectorAccountListSignals({
   includeBuiltinScopeMismatch: true,
+  refreshVersion$: builtinConnectorsReloadVersion$,
 });
 export const directedConnectAccounts$ = directedConnectAccounts.accounts$;
 export const reloadDirectedConnectAccounts$ = directedConnectAccounts.reload$;
@@ -150,6 +154,7 @@ export const directedConnectExactAccount$ = computed(
     if (target.kind !== "exact" || !connectorSlug) {
       return null;
     }
+    get(builtinConnectorsReloadVersion$);
     const result = await accept(
       get(apiClient$)(connectorAccountsContract).connection({
         params: { connectionId: target.connectionId },
@@ -276,7 +281,6 @@ export const connectDirectedConnector$ = command(
       ...accountOptions,
     };
     const onSuccess = (_connectionId: string, attemptSignal: AbortSignal) => {
-      set(reloadDirectedConnectAccounts$, attemptSignal);
       return set(
         completeDirectedConnectorAction$,
         agentId,

@@ -211,6 +211,9 @@ function installCustomConnectorApi(args: {
     ({ body, respond }) => {
       args.authorizationUpdates?.push([...body.grants]);
       grants = [...body.grants];
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: CAPABILITY_AGENT_ID,
+      });
       return respond(200, { grants });
     },
   );
@@ -821,7 +824,7 @@ test("Connect a single available connector without an unnecessary chooser", asyn
   });
 });
 
-test("Authorize a healthy canonical builtin only after reading its target default", async () => {
+test("Authorize a healthy canonical builtin using its target default", async () => {
   const sends: CapturedChatSend[] = [];
   const slug = "canonical-drive";
   const item = catalogConnector({
@@ -834,11 +837,9 @@ test("Authorize a healthy canonical builtin only after reading its target defaul
   context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
     return respond(200, { connector: definition });
   });
-  let accountReads = 0;
   context.mocks.api(
     connectorAccountsContract.connections,
     ({ query, respond }) => {
-      accountReads += 1;
       expect(query).toMatchObject({
         kind: "builtin",
         connectorSlug: slug,
@@ -874,6 +875,9 @@ test("Authorize a healthy canonical builtin only after reading its target defaul
     ({ body, respond }) => {
       expect(body.enabledConnectorSlugs).toStrictEqual([slug]);
       authorized = true;
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: CAPABILITY_AGENT_ID,
+      });
       return respond(200, { enabledConnectorSlugs: [slug] });
     },
   );
@@ -890,10 +894,9 @@ test("Authorize a healthy canonical builtin only after reading its target defaul
   await readyChat();
   const card = await screen.findByTestId("connector-action-card");
   await waitFor(() => {
-    expect(getButton("Connect", card)).toBeEnabled();
+    expect(getButton("Authorize", card)).toBeEnabled();
   });
-  expect(accountReads).toBe(0);
-  click(getButton("Connect", card));
+  click(getButton("Authorize", card));
   await waitFor(() => {
     expect(authorized).toBeTruthy();
     expect(sentPrompts(sends)).toStrictEqual(["Resume canonical drive"]);
@@ -903,7 +906,44 @@ test("Authorize a healthy canonical builtin only after reading its target defaul
   });
   expect(getButton("Authorized", card)).toBeDisabled();
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(accountReads).toBe(1);
+});
+
+test("A connector card observes a connection completed elsewhere", async () => {
+  const slug = "shared-drive";
+  let connected = false;
+  installCatalogLookup((requestedSlug) => {
+    return requestedSlug === slug
+      ? catalogConnector({
+          slug,
+          label: "Shared Drive",
+          method: browserAuthMethod(),
+          hasAccount: connected,
+        })
+      : null;
+  });
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
+    return respond(200, { enabledConnectorSlugs: [slug] });
+  });
+  mockConnectorAgentAccess(context, () => {
+    return { enabledConnectorSlugs: [slug] };
+  });
+  installActionConversation({ lines: [connectorActionUrl({ slug })] });
+
+  await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
+  await readyChat();
+  const card = await screen.findByTestId("connector-action-card");
+  await waitFor(() => {
+    expect(getButton("Connect", card)).toBeEnabled();
+    expect(
+      context.mocks.ably.hasSubscription("connector:changed"),
+    ).toBeTruthy();
+  });
+
+  connected = true;
+  context.mocks.ably.trigger("connector:changed", { connectorSlug: slug });
+  await waitFor(() => {
+    expect(getButton("Authorized", card)).toBeDisabled();
+  });
 });
 
 test("Enable a single no-auth connector without an unnecessary dialog", async () => {
@@ -1131,7 +1171,7 @@ test("Reconnect an expired connector before resuming the task", async () => {
     ),
   ).toBeVisible();
   const card = await screen.findByTestId("connector-action-card");
-  click(getButton("Connect", card));
+  click(getButton("Reconnect", card));
   await waitFor(() => {
     expect(popup.navigations).toContain(
       "https://provider.example.test/reconnect-drive",

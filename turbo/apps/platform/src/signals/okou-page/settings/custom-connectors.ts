@@ -31,6 +31,7 @@ import { reloadUserConnectedConnectors$ } from "../connector-overview.ts";
 import { customConnectorAccountProjectionVersion$ } from "../connector-account-projection.ts";
 import {
   connectorAgentAccess$,
+  connectorAuthorizationVersion$,
   reloadConnectorAgentAccess$,
 } from "./connector-agent-access.ts";
 import { resetSignal, waitLoopUntil, withCleanup } from "../../utils.ts";
@@ -49,14 +50,12 @@ import type {
 } from "./connector-account-dialogs.ts";
 
 const internalReload$ = state(0);
-const internalAuthorizedAgentsReload$ = state(0);
 
 export type CustomConnectorAuthMethodType =
   "none" | "api" | "automatic" | "oauth2";
 
-export const customConnectorAuthorizationReloadVersion$ = computed((get) => {
-  return get(internalAuthorizedAgentsReload$);
-});
+export const customConnectorAuthorizationReloadVersion$ =
+  connectorAuthorizationVersion$;
 
 /**
  * List of org custom connectors with canonical connection status.
@@ -131,16 +130,12 @@ export const customConnectorAuthorizedAgentsById$ = computed(
   },
 );
 
-export const reloadCustomConnectorAuthorizedAgents$ = command(({ set }) => {
-  set(internalAuthorizedAgentsReload$, (value) => {
-    return value + 1;
-  });
-  set(reloadConnectorAgentAccess$);
-});
+export const reloadCustomConnectorAuthorizedAgents$ =
+  reloadConnectorAgentAccess$;
 
 export const setCustomConnectorAgentAuthorization$ = command(
   async (
-    { get, set },
+    { get },
     args: {
       readonly agentId: string;
       readonly connectorId: string;
@@ -153,30 +148,22 @@ export const setCustomConnectorAgentAuthorization$ = command(
       return false;
     }
     const client = get(apiClient$)(agentCustomConnectorsContract);
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    await withCleanup(
-      accept(
-        client.update({
-          params: { id: args.agentId },
-          body: {
-            grants: [
-              {
-                customConnectorId: args.connectorId,
-                permissionNames: [],
-              },
-            ],
-            operation: args.authorized ? "add" : "remove",
-          },
-          fetchOptions: { signal },
-        }),
-        [200],
-      ),
-      () => {
-        set(reloadCustomConnectorAuthorizedAgents$);
-      },
+    await accept(
+      client.update({
+        params: { id: args.agentId },
+        body: {
+          grants: [
+            {
+              customConnectorId: args.connectorId,
+              permissionNames: [],
+            },
+          ],
+          operation: args.authorized ? "add" : "remove",
+        },
+        fetchOptions: { signal },
+      }),
+      [200],
     );
-    signal.throwIfAborted();
-    await get(customConnectorAgentAuthorizations$);
     signal.throwIfAborted();
     return true;
   },
@@ -199,7 +186,7 @@ type CustomConnectorAuthorizationTarget =
 
 const authorizeCustomConnectorForTarget$ = command(
   async (
-    { get, set },
+    { get },
     args: {
       readonly connectorId: string;
       readonly target: CustomConnectorAuthorizationTarget;
@@ -214,31 +201,25 @@ const authorizeCustomConnectorForTarget$ = command(
           });
     signal.throwIfAborted();
     const client = get(apiClient$)(agentCustomConnectorsContract);
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    await withCleanup(
-      Promise.all(
-        agentIds.map(async (agentId) => {
-          await accept(
-            client.update({
-              params: { id: agentId },
-              body: {
-                grants: [
-                  {
-                    customConnectorId: args.connectorId,
-                    permissionNames: [],
-                  },
-                ],
-                operation: "add",
-              },
-              fetchOptions: { signal },
-            }),
-            args.target.kind === "agent" ? [200] : [200, 404],
-          );
-        }),
-      ),
-      () => {
-        set(reloadCustomConnectorAuthorizedAgents$);
-      },
+    await Promise.all(
+      agentIds.map(async (agentId) => {
+        await accept(
+          client.update({
+            params: { id: agentId },
+            body: {
+              grants: [
+                {
+                  customConnectorId: args.connectorId,
+                  permissionNames: [],
+                },
+              ],
+              operation: "add",
+            },
+            fetchOptions: { signal },
+          }),
+          args.target.kind === "agent" ? [200] : [200, 404],
+        );
+      }),
     );
     signal.throwIfAborted();
   },

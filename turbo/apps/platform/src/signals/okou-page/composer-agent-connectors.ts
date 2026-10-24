@@ -1,26 +1,23 @@
-import { command, computed, state } from "ccstate";
+import { command, computed } from "ccstate";
 import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
-import { composerAgentConnectorsChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { setAblyPayloadLoop$ } from "../realtime.ts";
-
-const revisions$ = state<ReadonlyMap<string, number>>(new Map());
+import { setAblyInvalidationLoop$ } from "../realtime.ts";
+import {
+  connectorAuthorizationVersion$,
+  reloadConnectorAgentAccess$,
+} from "./settings/connector-agent-access.ts";
 
 export const invalidateAgentConnectorAccess$ = command(
-  ({ set }, agentId: string) => {
-    set(revisions$, (current) => {
-      const next = new Map(current);
-      next.set(agentId, (current.get(agentId) ?? 0) + 1);
-      return next;
-    });
+  ({ set }, _agentId: string) => {
+    set(reloadConnectorAgentAccess$);
   },
 );
 
 export function composerAgentConnectors(agentId: string) {
   return computed(async (get) => {
-    get(revisions$).get(agentId);
+    get(connectorAuthorizationVersion$);
     const createClient = get(apiClient$);
     const result = await accept(
       createClient(agentConnectorAccessContract).agent({
@@ -32,21 +29,14 @@ export function composerAgentConnectors(agentId: string) {
   });
 }
 
-const reloadFromRealtime$ = command(({ set }, payload: unknown): boolean => {
-  const parsed = composerAgentConnectorsChangedPayloadSchema.safeParse(payload);
-  if (parsed.success) {
-    set(invalidateAgentConnectorAccess$, parsed.data.agentId);
-  }
-  return false;
-});
-
 export const subscribeAgentConnectorAccess$ = command(
   ({ set }, signal: AbortSignal) => {
     set(
-      setAblyPayloadLoop$,
+      setAblyInvalidationLoop$,
       {
         topic: "composerAgentConnectorsChanged",
-        loopCommand$: reloadFromRealtime$,
+        invalidations: [reloadConnectorAgentAccess$],
+        options: { runOnSubscribe: true },
       },
       signal,
     );

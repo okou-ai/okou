@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { http, HttpResponse } from "msw";
+import {
+  agentsByIdContract,
+  agentsMainContract,
+} from "@okouai/api-contracts/contracts/agents";
 import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -12,6 +16,7 @@ import { server } from "../../../mocks/server";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { connectorAccountRoutes } from "../connector-accounts";
+import { agentsRoutes } from "../agents";
 import { mockAutomaticMcpOAuthProvider } from "./helpers/api-bdd-connectors";
 import { automaticMcpCatalogFixture } from "./helpers/connector-automatic-catalog";
 
@@ -258,6 +263,75 @@ describe("builtin MCP automatic authentication", () => {
     mocks.clerk.session(`user_${randomUUID()}`, f.orgId);
     await accept(receipt(f, started.oauthAttemptId), [404]);
     mocks.clerk.session(f.userId, f.orgId);
+  });
+
+  it("notifies account readers when the authorization target is deleted during OAuth", async () => {
+    const f = fixture();
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+    });
+    context.mocks.s3.send.mockResolvedValue({});
+    const agentApi = setupApp({ context, routes: agentsRoutes });
+    const agent = await accept(
+      agentApi(agentsMainContract).create({
+        headers,
+        body: { displayName: "OAuth target", visibility: "private" },
+      }),
+      [201],
+    );
+    const started = await accept(
+      automatic().start({
+        headers,
+        params: { connectorSlug: f.slug },
+        body: {
+          authMethod: f.methodId,
+          account: { intent: "add" },
+          agentId: agent.body.agentId,
+        },
+      }),
+      [200],
+    );
+    if (started.body.result !== "authorization") {
+      throw new Error("Expected authorization handoff");
+    }
+    const state = new URL(started.body.authorizationUrl).searchParams.get(
+      "state",
+    );
+    if (!state) {
+      throw new Error("Expected authorization state");
+    }
+    await accept(
+      agentApi(agentsByIdContract).delete({
+        headers,
+        params: { id: agent.body.agentId },
+      }),
+      [204],
+    );
+    context.mocks.ably.publish.mockClear();
+    context.mocks.ably.channelGet.mockClear();
+
+    expect((await callback(state, provider.issuer)).body).toStrictEqual({
+      status: "error",
+      message: `Agent not found: ${agent.body.agentId}`,
+    });
+    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
+      `user:${f.userId}`,
+    );
+    expect(context.mocks.ably.publish).toHaveBeenCalledExactlyOnceWith(
+      "connector:changed",
+      { connectorSlug: f.slug },
+    );
+    const saved = await accept(
+      accounts().connections({ headers, query: f.target }),
+      [200],
+    );
+    expect(saved.body.connections).toHaveLength(1);
+    expect(saved.body.connections[0]).toMatchObject({
+      authMethod: f.methodId,
+      connectionStatus: "connected",
+    });
+    await accept(receipt(f, started.body.oauthAttemptId), [404]);
+    expect(context.mocks.ably.publish).toHaveBeenCalledTimes(1);
   });
 
   it("persists a verified OIDC identity without expanding scopes", async () => {

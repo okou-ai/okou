@@ -78,6 +78,7 @@ function storeConnectedConnector(
     updatedAt: "2026-01-01T00:00:00.000Z",
   } satisfies BuiltinConnectorResponse;
   context.mocks.data.connectors([connector]);
+  context.mocks.ably.trigger("connector:changed", { connectorSlug: slug });
   return connector;
 }
 
@@ -131,6 +132,9 @@ function mockAgentConnectorAccess(connectorSlug: ConnectorSlug): void {
           authorizedAgentIds.delete(params.id);
         }
       }
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: params.id,
+      });
       return respond(200, {
         enabledConnectorSlugs: authorizedAgentIds.has(params.id)
           ? [connectorSlug]

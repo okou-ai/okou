@@ -7,6 +7,7 @@ import { updatePage$ } from "../react-router.ts";
 import { pathParams$ } from "../route.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { initializeDirectedAuthorizeAccounts$ } from "./directed-authorize-slug.ts";
+import { subscribeBuiltinConnectorChanges$ } from "../external/connectors.ts";
 
 export const setupDirectedAuthorizePage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -14,6 +15,7 @@ export const setupDirectedAuthorizePage$ = command(
     const connectorSlug =
       typeof params?.connectorSlug === "string" ? params.connectorSlug : "";
 
+    set(subscribeBuiltinConnectorChanges$, signal);
     set(initializeDirectedAuthorizeAccounts$, signal);
     set(updatePage$, createElement(DirectedAuthorizePage), "standalone");
     set(
