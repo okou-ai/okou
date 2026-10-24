@@ -1378,8 +1378,8 @@ importers:
         specifier: ^2.0.7
         version: 2.0.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       tailwind-merge:
-        specifier: ^3.0.2
-        version: 3.5.0
+        specifier: ^3.7.0
+        version: 3.7.0
     devDependencies:
       '@okouai/eslint-config':
         specifier: workspace:*
@@ -5867,7 +5867,7 @@ packages:
     resolution: {integrity: sha512-BVjo1I5GMsCuSzsFftSVMrXAYxzJrNoRy+kQuzymlOM42N4YqKLy+1/0hlGcp6OSFstkJY3ZUACnEegxJMdGCg==}
 
   cdp-viewer@https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/7c199156edb57cfdc80de636a4a99c106fc60847:
-    resolution: {gitHosted: true, integrity: sha512-xKT0JM1m78PnVRfMA8cUatQUPYgA3iCWehhZGfuT65QYswXHXWC6iFSCRUvhWt5C58gu0U8V2ue63OK5Q5D+tg==, tarball: https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/7c199156edb57cfdc80de636a4a99c106fc60847}
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/7c199156edb57cfdc80de636a4a99c106fc60847}
     version: 0.0.0
     engines: {node: '>=22.12.0'}
     peerDependencies:
@@ -9027,8 +9027,8 @@ packages:
       '@eslint/css':
         optional: true
 
-  tailwind-merge@3.5.0:
-    resolution: {integrity: sha512-I8K9wewnVDkL1NTGoqWmVEIlUcB9gFriAEkXkfCjX5ib8ezGxtR3xD7iZIxrfArjEsH7F1CHD4RFUtxefdqV/A==}
+  tailwind-merge@3.7.0:
+    resolution: {integrity: sha512-XPPUyAc+cvspz3lHTcR/QgPfW2A0lv/xQNIjX3HGhLR+Nq2lHaLq5MtTesHn8GUr3W3DguT2KT5x3NVgRtYwmA==}
 
   tailwindcss@4.3.3:
     resolution: {integrity: sha512-gOhV3P7ufE62QDGg1zVaTgCR+EtPv92k2nIhVcVKcLmxT1sUBsQGhnZj175j+MqRt4zLF7ic+sCYjfhxMxj7YQ==}
@@ -17701,7 +17701,7 @@ snapshots:
     optionalDependencies:
       '@eslint/css': 2.0.0
 
-  tailwind-merge@3.5.0: {}
+  tailwind-merge@3.7.0: {}
 
   tailwindcss@4.3.3: {}
 
