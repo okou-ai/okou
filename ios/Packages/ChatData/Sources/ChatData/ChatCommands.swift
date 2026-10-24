@@ -22,7 +22,7 @@ public actor ChatCommands {
 
   public func createThread(
     agentID: String? = nil, modelSelection: ChatModelSelection? = nil,
-    reasoningEffort: String? = nil
+    reasoningEffort: String? = nil, composerOptions: ChatComposerOptions? = nil
   ) async throws -> ChatThread {
     async let agentsRequest: [AgentRecord] = client.request("/api/agents")
     let selection: ThreadModelSelection
@@ -50,7 +50,7 @@ public actor ChatCommands {
       agentId: agent.agentId, clientThreadId: UUID().uuidString,
       eventId: UUID().uuidString, model: selection.model,
       serviceTier: selection.serviceTier,
-      reasoningEffort: selection.reasoningEffort)
+      reasoningEffort: selection.reasoningEffort, composerOptions: composerOptions)
     let created: CreatedThread = try await client.request(
       "/api/chat-threads", method: "POST", body: JSONEncoder().encode(body))
     return ChatThread(
@@ -88,6 +88,7 @@ public actor ChatCommands {
     clientEventID: String = UUID().uuidString,
     chatThreadSortEventID: String = UUID().uuidString,
     modelSelection: ChatModelSelection? = nil, reasoningEffort: String? = nil,
+    computerAccess: ChatComputerAccess? = nil,
     expectedAgentID: String? = nil
   )
     async throws -> SendReceipt
@@ -104,7 +105,7 @@ public actor ChatCommands {
     }
     defer { sendingThreads.remove(thread.id) }
 
-    let metadata = try await normalizeMobileSettings(
+    let metadata = try await loadThreadSettings(
       threadID: thread.id, expectedAgentID: expectedAgentID)
     if let expectedAgentID, metadata.agentId.lowercased() != expectedAgentID.lowercased() {
       throw ChatError.agentUnavailable
@@ -129,7 +130,11 @@ public actor ChatCommands {
             }),
       hasTextContent: !prompt.isEmpty || document?.hasTextContent == true,
       modelSelection: modelSelection,
-      reasoningEffort: reasoningEffort)
+      reasoningEffort: reasoningEffort,
+      computerAccess: computerAccess
+        ?? ChatComputerAccess(
+          computerUseHostId: metadata.computerUseHostId,
+          cloudBrowserEnabled: metadata.cloudBrowserEnabled))
     do {
       let result: ChatSendResponse = try await client.request(
         "/api/chat/events", method: "POST", body: JSONEncoder().encode(body))
@@ -235,7 +240,7 @@ public actor ChatCommands {
     try await client.data("/api/chat-threads/\(threadID)/rename", method: "POST", body: body)
   }
 
-  private func normalizeMobileSettings(threadID: String, expectedAgentID: String?) async throws
+  private func loadThreadSettings(threadID: String, expectedAgentID: String?) async throws
     -> ThreadMetadata
   {
     let path = "/api/chat-threads/\(threadID)"
@@ -243,16 +248,7 @@ public actor ChatCommands {
     if let expectedAgentID, metadata.agentId.lowercased() != expectedAgentID.lowercased() {
       throw ChatError.agentUnavailable
     }
-    if metadata.computerUseHostId != nil || metadata.cloudBrowserEnabled {
-      try await client.data(
-        path + "/computer-use-host", method: "POST",
-        body: JSONEncoder().encode(ComputerAccessBody()))
-    }
-    let settings: ThreadMetadata = try await client.request(path + "/metadata")
-    guard settings.computerUseHostId == nil, !settings.cloudBrowserEnabled else {
-      throw ChatError.settingsChanged
-    }
-    return settings
+    return metadata
   }
 
   private struct CreateThreadBody: Encodable {
@@ -263,9 +259,11 @@ public actor ChatCommands {
     let model: String?
     let serviceTier: String?
     let reasoningEffort: String?
+    let composerOptions: ChatComposerOptions?
 
     enum CodingKeys: String, CodingKey {
       case agentId, clientThreadId, eventId, model, serviceTier, reasoningEffort
+      case connectorSelections, initialRemoteAccessOverrides
     }
 
     func encode(to encoder: Encoder) throws {
@@ -276,15 +274,11 @@ public actor ChatCommands {
       try container.encode(model, forKey: .model)
       try container.encodeIfPresent(serviceTier, forKey: .serviceTier)
       try container.encodeIfPresent(reasoningEffort, forKey: .reasoningEffort)
+      try container.encodeIfPresent(
+        composerOptions?.connectorSelections, forKey: .connectorSelections)
+      try container.encodeIfPresent(
+        composerOptions?.initialRemoteAccessOverrides, forKey: .initialRemoteAccessOverrides)
     }
-  }
-  private struct ComputerAccessBody: Encodable {
-    func encode(to encoder: Encoder) throws {
-      var container = encoder.container(keyedBy: Keys.self)
-      try container.encodeNil(forKey: .computerUseHostId)
-      try container.encode(false, forKey: .cloudBrowserEnabled)
-    }
-    enum Keys: String, CodingKey { case computerUseHostId, cloudBrowserEnabled }
   }
   private struct SendBody: Encodable {
     let agentId: String
@@ -296,6 +290,7 @@ public actor ChatCommands {
     let hasTextContent: Bool
     let modelSelection: ChatModelSelection?
     let reasoningEffort: String?
+    let computerAccess: ChatComputerAccess
     enum Keys: String, CodingKey {
       case agentId, threadId, prompt, clientEventId, chatThreadSortEventId, userMessage
       case hasTextContent, computerUseHostId, cloudBrowserEnabled, model, runOptions
@@ -316,8 +311,8 @@ public actor ChatCommands {
         if let reasoningEffort { options["reasoningEffort"] = reasoningEffort }
         if !options.isEmpty { try container.encode(options, forKey: .runOptions) }
       }
-      try container.encodeNil(forKey: .computerUseHostId)
-      try container.encode(false, forKey: .cloudBrowserEnabled)
+      try container.encode(computerAccess.computerUseHostId, forKey: .computerUseHostId)
+      try container.encode(computerAccess.cloudBrowserEnabled, forKey: .cloudBrowserEnabled)
     }
   }
   private struct InterruptBody: Encodable {

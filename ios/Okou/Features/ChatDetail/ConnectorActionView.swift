@@ -221,7 +221,7 @@ struct ConnectorAuthorizationSheet: View {
   }
 }
 
-private struct ConnectorSafariView: UIViewControllerRepresentable {
+struct ConnectorSafariView: UIViewControllerRepresentable {
   let url: URL
   let onDone: () -> Void
   func makeCoordinator() -> Coordinator { Coordinator(onDone: onDone) }

@@ -10,6 +10,7 @@ final class ThreadListStore {
   private(set) var agents: [AgentRecord] = []
   private(set) var pinnedAgentIDs: [String] = []
   private(set) var unreadAgentIDs: Set<String> = []
+  private(set) var canUseComposerConnectors = false
   private(set) var canArchiveChats = false
   private(set) var canMuteChats = false
   var onlyUnread = false
@@ -127,6 +128,7 @@ final class ThreadListStore {
       switches = nil
     }
     guard !closed, !Task.isCancelled else { return }
+    canUseComposerConnectors = switches?.effectiveSwitches["iosComposerConnectors"] == true
     canArchiveChats = switches?.effectiveSwitches["chatThreadArchiving"] == true
     canMuteChats = switches?.effectiveSwitches["chatThreadMuting"] == true
   }
