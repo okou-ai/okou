@@ -50,17 +50,22 @@ jobs:
           -----END CERTIFICATE-----
           CERTIFICATE
           archive="$RUNNER_TEMP/Xcode-27.1-27A9275.zip"
-          ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
+          password_file="$RUNNER_TEMP/xcode-transfer-password.txt"
+          umask 077
+          trap 'rm -f "$archive" "$password_file"' EXIT
+          ditto -c -k --sequesterRsrc --keepParent --zlibCompressionLevel 1 "$app" "$archive"
           shasum -a 256 "$archive" | awk '{print $1}' > "$RUNNER_TEMP/xcode-export/archive.sha256"
           xcodebuild -version > "$RUNNER_TEMP/xcode-export/xcode-version.txt"
           xcodebuild -showsdks > "$RUNNER_TEMP/xcode-export/sdks.txt"
-          openssl_bin="$(brew --prefix openssl@3)/bin/openssl"
-          "$openssl_bin" cms -encrypt -aes-256-cbc -binary -outform DER -stream -in "$archive" -out "$RUNNER_TEMP/xcode-export/Xcode-27.1-27A9275.cms" "$RUNNER_TEMP/xcode-recipient.pem"
-          rm "$archive"
+          openssl_bin=/usr/bin/openssl
+          "$openssl_bin" rand -hex 32 > "$password_file"
+          "$openssl_bin" pkeyutl -encrypt -certin -inkey "$RUNNER_TEMP/xcode-recipient.pem" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 -in "$password_file" -out "$RUNNER_TEMP/xcode-export/transfer-key.enc"
+          "$openssl_bin" enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -md sha256 -pass "file:$password_file" -in "$archive" -out "$RUNNER_TEMP/xcode-export/Xcode-27.1-27A9275.enc"
+          rm "$archive" "$password_file"
       - name: Transfer encrypted toolchain
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: macincloud-xcode-27.1-27A9275-encrypted
+          name: macincloud-xcode-27.1-27A9275-encrypted-v2
           path: ${{ runner.temp }}/xcode-export
           compression-level: 0
           retention-days: 1
