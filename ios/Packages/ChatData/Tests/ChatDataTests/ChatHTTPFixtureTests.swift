@@ -42,6 +42,39 @@ final class ChatHTTPFixtureTests: XCTestCase {
     }
   }
 
+  func testClosingFixtureCancelsItsRequestWithoutContaminatingAnotherFixture() async throws {
+    let reports = Mutex<[String]>([])
+    let started = expectation(description: "Retiring fixture request started")
+    let (responses, continuation) = AsyncStream<Void>.makeStream()
+    defer { continuation.finish() }
+    var retiring: ChatHTTPFixture? = ChatHTTPFixture(
+      onUnhandledRequest: { message in reports.withLock { $0.append(message) } },
+      handler: { _ in
+        started.fulfill()
+        for await _ in responses { break }
+        return ChatHTTPResponse(body: "{}")
+      })
+    let session = try XCTUnwrap(retiring).session
+    let url = try XCTUnwrap(retiring).baseURL.appending(path: "api/retiring")
+    let request = Task { try await session.data(from: url) }
+    defer { request.cancel() }
+    await fulfillment(of: [started], timeout: 3)
+
+    let active = ChatHTTPFixture(
+      onUnhandledRequest: { message in reports.withLock { $0.append(message) } },
+      handler: { _ in ChatHTTPResponse(body: "Active fixture") })
+    retiring = nil
+    do {
+      _ = try await request.value
+      XCTFail("Closing the fixture must cancel its outstanding request")
+    } catch let error as URLError {
+      XCTAssertEqual(error.code, .cancelled)
+    }
+    let (data, _) = try await active.session.data(from: active.baseURL)
+    XCTAssertEqual(data, Data("Active fixture".utf8))
+    XCTAssertTrue(reports.withLock { $0.isEmpty })
+  }
+
   func testFixtureSessionCanReadFilesFromItsLoopbackServer() async throws {
     let body = Data("Fixture-owned file".utf8)
     let server = try ChatFileHTTPServer { _ in .init(body: body) }

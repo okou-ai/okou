@@ -37,7 +37,7 @@ struct ChatDetailView: View {
     let items = conversation.visibleItems
     var result: [ConversationCollectionRow] = []
     if conversation.hasEarlierMessages {
-      result.append(.earlier(isLoading: conversation.isLoadingEarlier))
+      result.append(.earlier)
     }
     for (index, item) in items.enumerated() {
       let continuesGroup =
@@ -88,6 +88,7 @@ struct ChatDetailView: View {
       sendTransition: scrolling.sendTransition,
       isLoadingHistory: conversation.isLoading && conversation.history == nil,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
+      rowsPresented: scrolling.rowsPresented,
       refresh: {
         await conversation.refresh()
         await conversation.connectorActions.refreshKnown()
@@ -232,21 +233,8 @@ struct ChatDetailView: View {
         select: conversation.composer.editor.selectOrAppendText
       )
       .padding(.top, 24)
-    case .earlier(let isLoading):
-      Button {
-        scrolling.loadEarlierMessages()
-      } label: {
-        HStack {
-          Spacer()
-          if isLoading { ProgressView().controlSize(.small) }
-          Text("Load earlier messages")
-          Spacer()
-        }
-      }
-      .disabled(isLoading)
-      .accessibilityIdentifier("load-earlier-messages")
-      .padding(.horizontal, 20)
-      .padding(.vertical, 12)
+    case .earlier:
+      ConversationEarlierMessagesButton(conversation: conversation, scrolling: scrolling)
     case .work(let section, let expanded, let showsAvatar, let topSpacing):
       VStack(alignment: .leading, spacing: 8) {
         if showsAvatar { assistantAvatar }
@@ -417,4 +405,29 @@ struct ChatDetailView: View {
       .frame(maxWidth: .infinity, alignment: .trailing)
   }
 
+}
+
+private struct ConversationEarlierMessagesButton: View {
+  let conversation: ConversationStore
+  let scrolling: ConversationScrollCoordinator
+
+  var body: some View {
+    // Update the mounted indicator without waiting for the next measured snapshot.
+    let isLoading = scrolling.isLoadingEarlier || conversation.isLoadingEarlier
+    Button {
+      scrolling.loadEarlierMessages()
+    } label: {
+      ProgressView()
+        .controlSize(.small)
+        .opacity(isLoading ? 1 : 0)
+        .frame(maxWidth: .infinity)
+        .frame(height: 44)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .disabled(isLoading)
+    .accessibilityLabel(isLoading ? "Loading earlier messages" : "Load earlier messages")
+    .accessibilityIdentifier("load-earlier-messages")
+    .padding(.horizontal, 20)
+  }
 }
