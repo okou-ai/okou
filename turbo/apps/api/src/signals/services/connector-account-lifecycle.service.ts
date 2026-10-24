@@ -19,6 +19,8 @@ import {
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectorAuthMethodHasRequiredScopes } from "@okouai/connectors/connector-auth-method";
 import { connectors } from "@okouai/db/schema/connector";
+import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
@@ -39,11 +41,13 @@ import {
   desc,
   eq,
   exists,
+  gte,
   ilike,
   inArray,
   isNotNull,
   isNull,
   lt,
+  max,
   ne,
   notInArray,
   or,
@@ -53,12 +57,15 @@ import {
 import { z } from "zod";
 
 import type { Tx } from "../../lib/db-types";
-import { pgTextDecoder } from "../../lib/db-structured-result";
+import {
+  pgIntegerDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
 import { isUniqueViolation, safeSqlStateCode } from "../../lib/pg-errors";
-import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
+import { googleFormsAccountProjectionUpdate } from "./google-forms-automation-account.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import {
   notionPendingEventsReconnectScope,
@@ -1334,32 +1341,78 @@ export const setDefaultGoogleFormsAccount$ = command(
     signal: AbortSignal,
   ): Promise<Date | "conflict" | null> => {
     const db = set(writeDb$);
-    return await settleDefaultChange(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0111; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        const owner = connectorAccountOwnerCondition({
+    const owner = connectorAccountOwnerCondition({
+      orgId: args.orgId,
+      userId: args.userId,
+      target: { kind: "builtin", connectorSlug: "google-forms" },
+    });
+    const cleared = db.$with("cleared_forms_defaults").as(
+      db
+        .update(connectors)
+        .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+        .where(clearOtherDefaultsSql(owner, args.connectionId))
+        .returning({ id: connectors.id }),
+    );
+    const chosen = db.$with("chosen_forms_default").as(
+      db
+        .update(connectors)
+        .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+        .where(
+          and(
+            owner,
+            eq(connectors.id, args.connectionId),
+            gte(db.select({ value: count() }).from(cleared), 0),
+          ),
+        )
+        .returning({ id: connectors.id, updatedAt: connectors.updatedAt }),
+    );
+    const projected = db
+      .$with("projected_forms_accounts", { id: workflowAutomations.id })
+      .as(
+        googleFormsAccountProjectionUpdate({
           orgId: args.orgId,
           userId: args.userId,
-          target: { kind: "builtin", connectorSlug: "google-forms" },
-        });
-        await tx
-          .update(connectors)
-          .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
-          .where(clearOtherDefaultsSql(owner, args.connectionId));
-        const [updated] = await tx
-          .update(connectors)
-          .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
-          .where(and(owner, eq(connectors.id, args.connectionId)))
-          .returning({ updatedAt: connectors.updatedAt });
-        if (!updated) {
-          throw new DefaultConnectorAccountMissing();
-        }
-        const updatedAt = updated.updatedAt;
-        await tx.execute(googleFormsAccountProjectionStatement(args));
-        signal.throwIfAborted();
-        return updatedAt;
-      }),
+          defaultConnectorId: sql`${db.select({ id: chosen.id }).from(chosen)}`,
+        }),
+      );
+    const discarded = db.$with("discarded_forms_cursors").as(
+      db
+        .delete(googleFormsAutomationCursors)
+        .where(
+          inArray(
+            googleFormsAutomationCursors.automationId,
+            db.select({ id: projected.id }).from(projected),
+          ),
+        )
+        .returning({ id: googleFormsAutomationCursors.automationId }),
     );
+    signal.throwIfAborted();
+    const changed = await settle(
+      db
+        .with(cleared, chosen, projected, discarded)
+        .select({
+          updatedAt: max(chosen.updatedAt),
+          // A missing target must also undo clearing the previous default.
+          targetExists: sql`(1 / ${count()})::int`.mapWith(pgIntegerDecoder),
+        })
+        .from(chosen)
+        .where(gte(db.select({ value: count() }).from(discarded), 0)),
+    );
+    signal.throwIfAborted();
+    if (!changed.ok) {
+      if (safeSqlStateCode(changed.error) === "22012") {
+        return null;
+      }
+      if (isConnectorAccountDefaultConflict(changed.error)) {
+        return "conflict";
+      }
+      throw changed.error;
+    }
+    const [updated] = changed.value;
+    if (!updated?.updatedAt) {
+      throw new Error("Google Forms default update returned no timestamp");
+    }
+    return updated.updatedAt;
   },
 );
 
