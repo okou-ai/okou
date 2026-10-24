@@ -298,6 +298,12 @@ animations for each participating test and restores the previous setting through
 that test's teardown, including after failures. Existing readiness waits, native
 input operations and assertions remain in use. Automatic runs retain animations.
 
+For a manual predicate-wait experiment, dispatch with
+`poll_native_run_loop=true`. Shared predicate observation waits for main-loop
+idle instead of two display-link callbacks per retry. Initial native-host and
+focus presentation waits, predicates, deadlines and assertions remain in use.
+The one-shot run-loop observer is retained until it fires and then retires.
+
 `ios-build-cache.yml` refreshes shared caches after iOS changes reach main and
 after a same-repository iOS workflow actually starts its native `build-test`
 job, including failed or cancelled builds. A Linux check filters out workflows

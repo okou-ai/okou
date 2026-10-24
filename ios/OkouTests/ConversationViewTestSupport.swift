@@ -1,3 +1,4 @@
+import CoreFoundation
 import SwiftUI
 import XCTest
 
@@ -44,6 +45,29 @@ func unmount(_ window: UIWindow) {
 }
 
 @MainActor
+private enum NativePredicatePolling {
+  static let usesRunLoop: Bool = {
+    let enabled = ProcessInfo.processInfo.environment["IOS_NATIVE_RUN_LOOP_POLLING"] == "true"
+    if enabled { print("iOS native predicate polling: main run loop") }
+    return enabled
+  }()
+}
+
+@MainActor
+private func nativeObservationTurn() async {
+  await withCheckedContinuation { continuation in
+    // Observe after the current main-loop work, without awaiting GPU presentation.
+    let observer = CFRunLoopObserverCreateWithHandler(
+      kCFAllocatorDefault, CFRunLoopActivity.beforeWaiting.rawValue, false, CFIndex.max
+    ) { _, _ in
+      continuation.resume()
+    }
+    precondition(observer != nil, "Unable to observe the main run loop")
+    CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+  }
+}
+
+@MainActor
 func eventually(
   timeout: Duration = .seconds(3), file: StaticString = #filePath, line: UInt = #line,
   message: @autoclosure () -> String = "",
@@ -53,7 +77,11 @@ func eventually(
 {
   let deadline = ContinuousClock.now + timeout
   while !predicate() && ContinuousClock.now < deadline {
-    await hostingPresentationFrame()
+    if NativePredicatePolling.usesRunLoop {
+      await nativeObservationTurn()
+    } else {
+      await hostingPresentationFrame()
+    }
   }
   _ = try XCTUnwrap(predicate() ? true : nil, message(), file: file, line: line)
 }
