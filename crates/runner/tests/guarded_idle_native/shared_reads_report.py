@@ -82,18 +82,11 @@ def validate(directory):
             "accounting": unknown["accounting"]}, "shared readers bypassed initial Unknown")
         actual = accepted.get("samples")
         cancellation.samples(actual, events[0]["monotonic_ns"], events[2]["monotonic_ns"], policy)
-        fresh = []
-        for observed in actual:
-            if (pressure.integer(observed["available_bytes"], policy["recovery_available_bytes"])
-                    and observed["age_ns"]+events[2]["monotonic_ns"]-observed["finished_ns"] < policy["max_sample_age_millis"]*1_000_000):
-                fresh.append(observed)
-            else:
-                fresh = []
+        fresh = pressure.sustained_ready_samples(actual, events[2]["monotonic_ns"], policy)
         available = accepted.get("available_bytes")
         required = policy["operating_floor_bytes"]+policy["cleanup_reserve_bytes"]+2*growth
-        if (not pressure.integer(available, max(required, policy["recovery_available_bytes"])) or len(fresh) < 2
-                or not any(v["available_bytes"] == available for v in fresh)
-                or fresh[-1]["read_start_offset_ns"]-fresh[0]["read_start_offset_ns"] < policy["pressure_recovery_sustain_millis"]*1_000_000):
+        if (not pressure.integer(available, max(required, policy["recovery_available_bytes"]))
+                or not any(v["available_bytes"] == available for v in fresh)):
             raise ValueError("shared reads lack sustained fresh Ready/aggregate headroom")
         accounting(accepted.get("accounting"), 2, growth)
         startup.exact(accepted, {"state": "Ready", "available_bytes": available, "samples": actual,
