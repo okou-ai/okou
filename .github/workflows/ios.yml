@@ -17,6 +17,10 @@ on:
         type: choice
         options: [preboot, xcodebuild]
         default: preboot
+      disable_test_system_logs:
+        description: Measure test-host OS activity logging overhead while retaining XCTest results
+        type: boolean
+        default: false
       archive_cache_experiment:
         description: Compare fresh Release archives with and without native caches
         type: boolean
@@ -184,6 +188,7 @@ jobs:
       IOS_BUILD_CACHE_ENABLED: "true"
       IOS_XCODE_STARTUP_SAMPLING: ${{ github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup && 'true' || 'false' }}
       IOS_SIMULATOR_BOOT_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.simulator_boot_mode || 'preboot' }}
+      IOS_DISABLE_TEST_SYSTEM_LOGS: ${{ github.event_name == 'workflow_dispatch' && inputs.disable_test_system_logs && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

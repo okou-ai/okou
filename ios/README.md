@@ -286,6 +286,12 @@ App suite. The default `preboot` mode and all automatic PR/queue runs retain
 explicit simulator boot and readiness. Compare complete workflow durations with
 sampling disabled, since boot cost moves into the test command in this mode.
 
+For a manual test-host logging experiment, dispatch with
+`disable_test_system_logs=true`. Xcode's supported `TEST_RUNNER_` environment
+forwarding sets `OS_ACTIVITY_MODE=disable` in the test host, suppressing its OS
+activity messages. XCTest output, assertions, exit status and the result bundle
+are retained. Automatic runs keep their existing logging configuration.
+
 `ios-build-cache.yml` refreshes shared caches after iOS changes reach main and
 after a same-repository iOS workflow actually starts its native `build-test`
 job, including failed or cancelled builds. A Linux check filters out workflows

@@ -292,6 +292,7 @@ class CIProcessTests(unittest.TestCase):
     ):
         self.env["CI_PROCESS_SCENARIO"] = "test-failure"
         self.env["IOS_XCODE_STARTUP_SAMPLING"] = "true"
+        self.env["IOS_DISABLE_TEST_SYSTEM_LOGS"] = "true"
         result = self.invoke()
         self.assertEqual(result.returncode, 65, result.stderr)
         bundle = self.root / "work/okou-ios-ci/Tests.xcresult"
