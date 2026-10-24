@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.12](https://github.com/okou-ai/okou/compare/ios-v0.18.11...ios-v0.18.12) (2026-10-24)
+
+
+### Bug Fixes
+
+* **ios:** align thinking indicator with conversation content ([#42746](https://github.com/okou-ai/okou/issues/42746)) ([761394c](https://github.com/okou-ai/okou/commit/761394cb8f8f94b4fc197f17e86ea5ac4319bc76))
+
+
+### CI
+
+* **ios:** measure release archive cache on clean runners ([#42747](https://github.com/okou-ai/okou/issues/42747)) ([8352e4a](https://github.com/okou-ai/okou/commit/8352e4a6a41982130f8cdcadff9485f5352320af))
+
 ## [0.18.11](https://github.com/okou-ai/okou/compare/ios-v0.18.10...ios-v0.18.11) (2026-10-24)
 
 

@@ -9,6 +9,20 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.3.1](https://github.com/okou-ai/okou/compare/api-v2.3.0...api-v2.3.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **api:** leave two hours between nightly learning and planning ([#42749](https://github.com/okou-ai/okou/issues/42749)) ([161f48b](https://github.com/okou-ai/okou/commit/161f48bcb97206902cdcdf88af09010e2bc4d1ce))
+
+
+### Refactoring
+
+* **api:** admit mail notifications atomically ([#42742](https://github.com/okou-ai/okou/issues/42742)) ([d7339af](https://github.com/okou-ai/okou/commit/d7339afd962a69405a2ad055799d9a43336a2ff0))
+* **api:** publish Atom member credit grants atomically ([#42751](https://github.com/okou-ai/okou/issues/42751)) ([9ff8e20](https://github.com/okou-ai/okou/commit/9ff8e20f8f18583272fcea6ea2bbb4d01639f4c8))
+* **app:** keep async state in owned requests and server reads ([#42745](https://github.com/okou-ai/okou/issues/42745)) ([d24618e](https://github.com/okou-ai/okou/commit/d24618e29baf061b061b64454aa538e8ea8a74a3))
+
 ## [2.3.0](https://github.com/okou-ai/okou/compare/api-v2.2.0...api-v2.3.0) (2026-10-24)
 
 
