@@ -2674,7 +2674,8 @@ describe("Morning Brief catalog reconciliation", () => {
     // Keep the same S3 object store installed for the entire lifecycle.
     // setupWorkflowOrg would replace send with a permissive response.
     const actor = bdd.user();
-    const { defaultAgentId } = await runs.grantProEntitlement(actor);
+    const { defaultAgentId, customerId, subscriptionId } =
+      await runs.grantProEntitlement(actor);
     await bdd.updateUserTimezone(actor, "Asia/Tokyo");
     await runs.ensurePersonalSubscriptionModel(actor);
     if (!actor.orgId) {
@@ -2849,6 +2850,8 @@ describe("Morning Brief catalog reconciliation", () => {
       source,
       bindings,
       reconciled,
+      customerId,
+      subscriptionId,
     };
   }
 
@@ -2962,13 +2965,25 @@ describe("Morning Brief catalog reconciliation", () => {
 
   it("keeps the Official identity through a Webhook transition and removes its credentials when returning to a schedule", async () => {
     await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
-      const { actor, installation, initial, first, blueprint, source } =
-        await prepareReconciledSchedule({
-          definitionName: "morning-brief",
-          paused: false,
-          withBindings: false,
-        });
-      await runs.grantProEntitlement(actor, { tier: "team" });
+      const {
+        actor,
+        installation,
+        initial,
+        first,
+        blueprint,
+        source,
+        customerId,
+        subscriptionId,
+      } = await prepareReconciledSchedule({
+        definitionName: "morning-brief",
+        paused: false,
+        withBindings: false,
+      });
+      await runs.grantProEntitlement(actor, {
+        customerId,
+        subscriptionId,
+        tier: "team",
+      });
       const eventBlueprint: OfficialWorkflowBlueprint = {
         key: "daily-delivery",
         parameters: [],
