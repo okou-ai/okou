@@ -1,0 +1,26 @@
+name: Format connector display (one-off)
+
+on:
+  push:
+    branches: [fix/ios-connector-row-display]
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    runs-on: xcode-27
+    timeout-minutes: 5
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Apply the Xcode Swift formatter
+        run: |
+          xcrun swift-format format --in-place ios/Okou/Features/ChatDetail/ComposerConnectorSheet.swift
+          git diff --binary > "$RUNNER_TEMP/formatted.patch"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ios-connector-display-format-${{ github.sha }}
+          path: ${{ runner.temp }}/formatted.patch
+          if-no-files-found: error

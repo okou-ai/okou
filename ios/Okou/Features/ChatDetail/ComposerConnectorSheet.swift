@@ -26,6 +26,7 @@ struct ComposerConnectorButton: View {
 struct ComposerConnectorSheet: View {
   @Bindable var store: ComposerConnectorStore
   @State private var search = ""
+  @State private var destination: ConnectorDestination?
   @Environment(\.dismiss) private var dismiss
   @Environment(\.scenePhase) private var scenePhase
 
@@ -72,6 +73,9 @@ struct ComposerConnectorSheet: View {
       .searchable(text: $search, prompt: "Find connectors")
       .navigationTitle("Connectors")
       .navigationBarTitleDisplayMode(.inline)
+      .navigationDestination(item: $destination) { destination in
+        connectorDestination(destination)
+      }
       .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
       .task { await store.refresh() }
       .refreshable { await store.refresh() }
@@ -103,44 +107,90 @@ struct ComposerConnectorSheet: View {
   }
 
   private func connectorRow(_ connector: ChatComposerConnector) -> some View {
-    HStack {
-      Label(
-        connector.label,
-        systemImage: connector.target.kind == "custom" ? "puzzlepiece.extension" : "powerplug")
-      Spacer(minLength: 8)
-      if connector.authorized && !connector.managed {
-        NavigationLink {
-          ComposerConnectorAccounts(store: store, connector: connector)
-        } label: {
-          Image(systemName: "person.crop.circle").frame(minWidth: 36, minHeight: 44)
-        }
-        .accessibilityLabel("Account for \(connector.label)")
-        .buttonStyle(.plain)
+    VStack(alignment: .leading, spacing: 0) {
+      HStack {
+        Label(
+          connector.label,
+          systemImage: connector.target.kind == "custom" ? "puzzlepiece.extension" : "powerplug")
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .layoutPriority(1)
+        Spacer(minLength: 8)
+        Toggle(
+          connector.label,
+          isOn: Binding(
+            get: { connector.authorized },
+            set: { enabled in
+              if enabled && connector.permissionBundleRef != nil {
+                store.openWeb(path: "connectors")
+              } else {
+                Task { await store.setAuthorized(connector, enabled: enabled) }
+              }
+            })
+        )
+        .toggleStyle(.switch)
+        .tint(.green)
+        .fixedSize(horizontal: true, vertical: false)
+        .labelsHidden().disabled(store.isSaving)
+        .accessibilityLabel("Allow \(connector.label) for this Agent")
       }
-      if connector.authorized && connector.hasPermissions, let slug = connector.target.connectorSlug
-      {
-        NavigationLink {
-          ComposerConnectorPermissions(store: store, slug: slug, label: connector.label)
-        } label: {
-          Image(systemName: "slider.horizontal.3").frame(minWidth: 36, minHeight: 44)
-        }
-        .accessibilityLabel("Permissions for \(connector.label)")
-        .buttonStyle(.plain)
-      }
-      Toggle(
-        connector.label,
-        isOn: Binding(
-          get: { connector.authorized },
-          set: { enabled in
-            if enabled && connector.permissionBundleRef != nil {
-              store.openWeb(path: "connectors")
-            } else {
-              Task { await store.setAuthorized(connector, enabled: enabled) }
+      .frame(minHeight: 44)
+      if connector.authorized && (!connector.managed || connector.hasPermissions) {
+        HStack(spacing: 16) {
+          if !connector.managed {
+            Button {
+              destination = .accounts(connector.id)
+            } label: {
+              Label("Account", systemImage: "person.crop.circle")
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
-          })
-      )
-      .labelsHidden().disabled(store.isSaving)
-      .accessibilityLabel("Allow \(connector.label) for this Agent")
+            .accessibilityLabel("Account for \(connector.label)")
+          }
+          if connector.hasPermissions && connector.target.connectorSlug != nil {
+            Button {
+              destination = .permissions(connector.id)
+            } label: {
+              Label("Permissions", systemImage: "slider.horizontal.3")
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Permissions for \(connector.label)")
+          }
+        }
+        .font(.subheadline)
+        .buttonStyle(.borderless)
+        .padding(.leading, 32)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func connectorDestination(_ destination: ConnectorDestination) -> some View {
+    if let connector = store.connectors.first(where: { $0.id == destination.connectorID }) {
+      switch destination {
+      case .accounts:
+        ComposerConnectorAccounts(store: store, connector: connector)
+      case .permissions:
+        if let slug = connector.target.connectorSlug {
+          ComposerConnectorPermissions(store: store, slug: slug, label: connector.label)
+        }
+      }
+    } else {
+      ContentUnavailableView(
+        "Connector unavailable", systemImage: "powerplug",
+        description: Text("Return to Connectors and refresh to choose an available service."))
+    }
+  }
+
+  private enum ConnectorDestination: Hashable {
+    case accounts(String)
+    case permissions(String)
+
+    var connectorID: String {
+      switch self {
+      case .accounts(let id), .permissions(let id): id
+      }
     }
   }
 }
@@ -177,6 +227,8 @@ private struct ComposerRemoteControls: View {
                 }
               })
           )
+          .toggleStyle(.switch)
+          .tint(.green)
           .disabled(store.isSaving || !remotes.cloudBrowserAvailable)
           if !remotes.cloudBrowserAvailable {
             Text("Cloud Browser is not available for this workspace.").font(.footnote)
@@ -201,7 +253,10 @@ private struct ComposerRemoteControls: View {
                   Text("Offline").font(.caption).foregroundStyle(.secondary)
                 }
               }
-            }.disabled(store.isSaving)
+            }
+            .toggleStyle(.switch)
+            .tint(.green)
+            .disabled(store.isSaving)
           }
           if remotes.computerUseHosts.isEmpty {
             Text("No computers connected").foregroundStyle(.secondary)
