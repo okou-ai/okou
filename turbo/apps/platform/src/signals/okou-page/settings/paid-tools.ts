@@ -50,7 +50,9 @@ function createPaidToolsSignals(
   const imageModel = createImageModelSignals(createClient, assertCurrent);
   function createTool<T extends PaidToolId>(toolId: T, family?: PaidToolId) {
     const familyEnabled$ = computed(async (get) => {
-      if (!family) return true;
+      if (!family) {
+        return true;
+      }
       const changes = get(confirmedChanges$);
       const disabled = await get(disabledTools$);
       return !(changes[family] ?? disabled.includes(family));

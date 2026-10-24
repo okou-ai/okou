@@ -544,7 +544,7 @@ test("A Router tool can be hidden independently while legacy family preferences 
   await waitFor(() => {
     return expect(quote).not.toBeChecked();
   });
-  expect(await readySwitch("Finance Search")).toBeChecked();
+  await expect(readySwitch("Finance Search")).resolves.toBeChecked();
   expect(family).toBeChecked();
   expect(updates).toStrictEqual([
     { toolId: "finance", disabled: false },
