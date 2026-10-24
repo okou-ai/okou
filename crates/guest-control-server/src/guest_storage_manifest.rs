@@ -527,7 +527,8 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
         || true,
     );
     let cancellation_observed = connection_cancel.load(Ordering::Acquire);
-    let cleanup_mode = cleanup_mode_for_wait_outcome(&outcome, cancellation_observed);
+    let cleanup_mode =
+        ProcessContainmentCleanupMode::for_wait_outcome(&outcome, cancellation_observed);
     let containment_result =
         process_containment.cleanup_with_storage_resources(cleanup_mode, resources);
     let stdin_result = stdin_writer.join();
@@ -596,21 +597,6 @@ fn abort_spawned(
         started,
         append_cleanup_failure(diagnostic.to_string(), cleanup.err().as_ref()),
     )
-}
-
-fn cleanup_mode_for_wait_outcome(
-    outcome: &WaitOutcome,
-    cancellation_observed: bool,
-) -> ProcessContainmentCleanupMode {
-    if cancellation_observed {
-        return ProcessContainmentCleanupMode::Forced;
-    }
-    match outcome {
-        WaitOutcome::Exited(_) => ProcessContainmentCleanupMode::Graceful,
-        WaitOutcome::TimedOut | WaitOutcome::Cancelled | WaitOutcome::WaitFailed(_) => {
-            ProcessContainmentCleanupMode::Forced
-        }
-    }
 }
 
 fn append_cleanup_failure(diagnostic: String, error: Option<&ProcessContainmentError>) -> String {
