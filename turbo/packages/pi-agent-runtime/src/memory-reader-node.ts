@@ -57,7 +57,7 @@ function segments(path: string, rootAllowed: boolean): string[] {
   if (
     Buffer.byteLength(path) > LIMITS.pathBytes ||
     path.includes("\\") ||
-    path.includes(":") ||
+    /^[A-Za-z]:/u.test(path) ||
     [...path].some((character) => {
       const code = character.charCodeAt(0);
       return code < 32 || code === 127;

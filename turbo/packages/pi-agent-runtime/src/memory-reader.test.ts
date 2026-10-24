@@ -208,10 +208,10 @@ describe("personal Memory session reader", () => {
     await mkdir(join(f.memory, "custom-details"));
     await writeFile(
       join(f.memory, "MEMORY.md"),
-      "Project alpha: custom-details/fact.md",
+      "Project alpha: custom-details/fact:2026.md",
     );
     await writeFile(
-      join(f.memory, "custom-details/fact.md"),
+      join(f.memory, "custom-details/fact:2026.md"),
       "Source: prior Run\nAlpha fact 🐱\nThird line",
     );
     const session = await f.session();
@@ -226,10 +226,10 @@ describe("personal Memory session reader", () => {
     ).toContain("MEMORY.md:1: Project alpha");
     expect(
       await call(session, "memories_search", { path: "", query: "Alpha fact" }),
-    ).toContain("custom-details/fact.md:2:");
+    ).toContain("custom-details/fact:2026.md:2:");
     expect(
       await call(session, "memories_read", {
-        path: "custom-details/fact.md",
+        path: "custom-details/fact:2026.md",
         query: "",
         start_line: 2,
         line_count: 1,
@@ -245,6 +245,7 @@ describe("personal Memory session reader", () => {
     "/etc/passwd",
     "notes/../../outside",
     "notes\\outside",
+    "C:/outside",
     "link",
     "linked-dir/outside",
   ])("rejects escaping or symlink paths: %s", async (path) => {
