@@ -1210,14 +1210,18 @@ const recordIngressFailure$ = command(async function recordIngressFailure(
           }).row,
         }
       : null;
-  const [committed] = parseRawRows(
+  const outcomes = parseRawRows(
     ingressFailureCommitSchema,
     await db.execute(
       discordIngressFailureSql({ ...args, ...plan, publication }),
     ),
   );
   signal.throwIfAborted();
-  if (!committed?.claimed || !claimed || !message) {
+  const [committed] = outcomes;
+  if (outcomes.length !== 1 || !committed) {
+    throw new Error("Expected one Discord ingress failure outcome");
+  }
+  if (!committed.claimed || !claimed || !message) {
     return null;
   }
   return terminalIngressFailureResult(
