@@ -74,6 +74,9 @@ final class WorkspaceStoreTests: XCTestCase {
   func testBackgroundWarmingIncludesRecentAndActiveUnopenedChats() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
+    let warmingScheduled = expectation(description: "History warming is scheduled")
+    let releaseWarming = HTTPResponseGate()
+    defer { releaseWarming.open() }
     let ids = (1...102).map { String(format: "72000000-0000-4000-8000-%012d", $0) }
     let activeID = ids[0]
     let batchStarted = expectation(description: "Unopened chats are warmed in one batch")
@@ -102,10 +105,17 @@ final class WorkspaceStoreTests: XCTestCase {
       cache: ChatCache(
         scope: ChatCacheScope(
           apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"),
-        directory: directory))
+        directory: directory),
+      historyWarmingSleep: { _ in
+        warmingScheduled.fulfill()
+        await releaseWarming.wait()
+        try Task.checkCancellation()
+      })
     defer { store.close() }
     await store.refresh()
     XCTAssertNil(store.selectedConversation)
+    await fulfillment(of: [warmingScheduled], timeout: 3)
+    releaseWarming.open()
     await fulfillment(of: [batchStarted], timeout: 3)
     XCTAssertEqual(Set(observed.withLock { $0 }), Set([activeID] + Array(ids.suffix(100))))
     XCTAssertNil(store.selectedConversation)
@@ -115,6 +125,9 @@ final class WorkspaceStoreTests: XCTestCase {
   func testBackgroundUpgradeResponseBlocksFurtherWorkspaceReads() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
+    let warmingScheduled = expectation(description: "History warming is scheduled")
+    let releaseWarming = HTTPResponseGate()
+    defer { releaseWarming.open() }
     let requests = Mutex<[String]>([])
     let fixture = ChatHTTPFixture { request in
       requests.withLock { $0.append(request.url?.path ?? "") }
@@ -134,9 +147,16 @@ final class WorkspaceStoreTests: XCTestCase {
       cache: ChatCache(
         scope: ChatCacheScope(
           apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"),
-        directory: directory))
+        directory: directory),
+      historyWarmingSleep: { _ in
+        warmingScheduled.fulfill()
+        await releaseWarming.wait()
+        try Task.checkCancellation()
+      })
     defer { store.close() }
     await store.refresh()
+    await fulfillment(of: [warmingScheduled], timeout: 3)
+    releaseWarming.open()
     try await eventually { store.needsUpgrade }
     let before = requests.withLock { $0 }
     await store.refresh()

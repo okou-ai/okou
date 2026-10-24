@@ -12,6 +12,7 @@ final class WorkspaceStore {
   private let commands: ChatCommands
   private let conversationLimit: Int
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
+  private let historyWarmingSleep: @Sendable (Duration) async throws -> Void
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
   private(set) var needsUpgrade = false
@@ -86,10 +87,14 @@ final class WorkspaceStore {
     draftStorage: ChatDraftStorage? = nil,
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
+    },
+    historyWarmingSleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
     }
   ) {
     self.client = client
     self.readRetrySleep = readRetrySleep
+    self.historyWarmingSleep = historyWarmingSleep
     self.draftStorage = draftStorage
     draftRepository = draftStorage.map { _ in ChatDraftRepository(client: client) }
     let sync = ChatSync(client: client, cache: cache)
@@ -326,7 +331,7 @@ final class WorkspaceStore {
       }
       repeat {
         // Coalesce startup, indicator updates and bursts of realtime messages.
-        do { try await Task.sleep(for: .seconds(1)) } catch { return }
+        do { try await historyWarmingSleep(.seconds(1)) } catch { return }
         warmAgain = false
         let recent = list.threads.sorted {
           $0.sortAt == $1.sortAt ? $0.id > $1.id : $0.sortAt > $1.sortAt
