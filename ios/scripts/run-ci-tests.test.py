@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise real CI scripts with controlled external compiler/simulator processes."""
 
+import json
 import os
 import shutil
 import signal
@@ -238,6 +239,20 @@ class CIProcessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 65, result.stderr)
         bundle = self.root / "work/okou-ios-ci/Tests.xcresult"
         self.assertEqual((bundle / "failure.txt").read_text(), "First failed assertion")
+
+    def test_sampled_native_failure_keeps_both_phase_reports_and_the_failure_bundle(
+        self,
+    ):
+        self.env["CI_PROCESS_SCENARIO"] = "test-failure"
+        self.env["IOS_XCODE_STARTUP_SAMPLING"] = "true"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 65, result.stderr)
+        bundle = self.root / "work/okou-ios-ci/Tests.xcresult"
+        self.assertEqual((bundle / "failure.txt").read_text(), "First failed assertion")
+        reports = self.root / "work/okou-ios-ci/startup-samples"
+        for phase, status in (("compile", 0), ("run", 65)):
+            summary = json.loads((reports / phase / "summary.json").read_text())
+            self.assertEqual(summary["exit_code"], status)
 
     def test_cancellation_retires_resolution_without_starting_the_simulator(self):
         self.env["CI_PROCESS_SCENARIO"] = "cancel"

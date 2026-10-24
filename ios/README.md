@@ -248,24 +248,26 @@ Release-only merge groups can reuse App test evidence only when exact input fing
 the verified prior result; missing evidence and mixed groups run the tests.
 See [archive promotion](ARCHIVE_PROMOTION.md).
 
-For a slow compile-phase Xcode launch, manually dispatch `ios.yml` with
+For a slow compile or test-phase Xcode launch, manually dispatch `ios.yml` with
 `sample_xcode_startup=true`. The opt-in observer records UTC and monotonic
-timing, first output and command-banner milestones, process-name/CPU/memory
-snapshots, disk activity, and up to three bounded compiler stack samples.
-It observes at most the first four minutes and stops at the command banner;
-normal builds do not enable it. Reports omit process arguments and environment
-variables and retain the original compiler exit status. Unavailable diagnostic
-tools are recorded as unavailable. Download the seven-day
-`ios-xcode-startup-<run-id>-<attempt>` artifact; `summary.json` and `events.jsonl`
-relate each report to the run, PID and startup window. The first `iostat` row is
+timing, process creation, first output, command-banner and first-test milestones,
+process-name/CPU/memory snapshots, disk activity, and up to four bounded Xcode
+stack samples. Compilation observations stop at the command banner; test startup
+observations continue until the first XCTest suite starts. Each phase observes at
+most its first four minutes; normal builds do not enable it. Reports omit process
+arguments and environment variables and retain the original build/test exit
+status. Unavailable diagnostic tools are recorded as unavailable. Download the seven-day
+`ios-xcode-startup-<run-id>-<attempt>` artifact; the separate `compile/` and `run/`
+directories each contain `summary.json` and `events.jsonl`, relating each report
+to the run, PID and startup window. The first `iostat` row is
 since boot; its second row covers one second. Each report is capped at 256 KiB.
 Sampling adds observation overhead and does not establish an optimization result.
-Stack attempts start after 15 seconds, then in rounds after 60 and 120 seconds.
+Stack attempts start after 15 seconds, then in rounds after 60, 120 and 180 seconds.
 Each stack attempt allows 45 seconds for tool startup, sampling and symbolization;
 the actual sampling interval is one second at 20 ms. Process enumeration allows
 20 seconds. Slow tools delay later rounds; rounds never catch up in a burst.
-Sampled compile-script entry, observer launch/readiness and compiler creation
-are separate milestones, so shell/Python startup is visible as well.
+Sampled script entry, test-command readiness, observer launch/readiness and Xcode
+creation are separate milestones, so shell/Python startup is visible as well.
 
 `ios-build-cache.yml` refreshes shared caches after iOS changes reach main and
 after a same-repository iOS workflow actually starts its native `build-test`
@@ -305,9 +307,9 @@ unknown HTTP origins locally instead of falling through to DNS, while preserving
 the loopback HTTP servers used by attachment integration tests.
 Production services, PR preview provisioning, and deployed end-to-end tests are
 outside this scope. Passing suites do not establish live-server contracts or
-physical-device visual acceptance. CI resolves locked dependencies before starting
-its configured simulator, then waits for system boot readiness before asset and
-App compilation. This keeps cold system-service startup out of asset-tool discovery.
+physical-device visual acceptance. CI resolves locked dependencies and compiles
+before starting its configured simulator, then waits for system boot readiness
+before running App tests. This keeps cold system-service startup out of compilation.
 When App test execution is required, `build-for-testing` produces the test
 specification and `test-without-building` runs the complete in-process App suite.
 Package suites execute separately. Test results and attachments remain in

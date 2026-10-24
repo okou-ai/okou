@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Observe an opt-in Xcode startup without changing the compiler's exit status.
+"""Observe an opt-in Xcode startup without changing the command's exit status.
 
 Usage: sample-xcode-startup.py [--delay SECONDS] [--window SECONDS] OUTPUT -- xcodebuild ARGS
 macOS provides ps, vm_stat, iostat and sample. Diagnostics stop at Xcode's
-command banner or the bounded observation deadline; compilation continues.
+command banner (or --until first-test) or the bounded observation deadline.
+The build or test command continues after observations stop.
 OUTPUT must be a new directory. Reports contain process names, not argv/env.
 """
 
@@ -47,8 +48,11 @@ def observe(args):
         "run_id": os.environ.get("GITHUB_RUN_ID"),
         "attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
         "head": os.environ.get("GITHUB_SHA"),
+        "until": args.until,
+        "spawn_seconds": None,
         "first_output_seconds": None,
         "command_banner_seconds": None,
+        "first_test_seconds": None,
     }
 
     def record(event, **fields):
@@ -99,7 +103,9 @@ def observe(args):
                                 "observation_interrupted",
                                 tool=command[0],
                                 file=path.name,
-                                reason="startup_finished" if stop.is_set() else "deadline",
+                                reason="startup_finished"
+                                if stop.is_set()
+                                else "deadline",
                                 timeout_seconds=timeout,
                             )
                             return False
@@ -121,7 +127,7 @@ def observe(args):
     def collect(process):
         try:
             round_number = 0
-            stack_offsets = iter((args.delay, 60, 120))
+            stack_offsets = iter((args.delay, 60, 120, 180))
             next_stack = next(stack_offsets)
             next_sample = started + args.delay
             deadline = started + args.window
@@ -134,10 +140,12 @@ def observe(args):
                 round_number += 1
                 prefix = f"{round_number:02d}"
                 record("snapshot", round=round_number, target_pid=process.pid)
-                # Sample the owned compiler first: a saturated host may take
+                # Sample the owned Xcode process first: a saturated host may take
                 # many seconds even to enumerate processes or launch a tool.
                 if time.monotonic() - started >= next_stack:
-                    report = args.output / f"{prefix}-xcodebuild-{process.pid}.sample.txt"
+                    report = (
+                        args.output / f"{prefix}-xcodebuild-{process.pid}.sample.txt"
+                    )
                     capture(
                         f"{prefix}-xcodebuild-{process.pid}-sampler",
                         ["sample", str(process.pid), "1", "20", "-file", str(report)],
@@ -155,8 +163,8 @@ def observe(args):
                 capture(prefix + "-disk-cpu", ["iostat", "-w", "1", "-c", "2"], 8)
                 # Do not burst-launch missed rounds on an already overloaded host.
                 next_sample = time.monotonic() + 15
-        except Exception as error:
-            # Optional diagnostics cannot turn a compiler failure into a success.
+        except (OSError, subprocess.SubprocessError) as error:
+            # Optional diagnostics cannot turn a command failure into a success.
             record("observation_unavailable", tool="collector", error=str(error))
         finally:
             record("observer_stopped")
@@ -173,14 +181,19 @@ def observe(args):
     tail = b""
     try:
         record("observer_ready")
+        spawn_started = time.monotonic()
+        record("command_launch_started")
         process = subprocess.Popen(
             args.command,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
+        summary["spawn_seconds"] = round(time.monotonic() - spawn_started, 3)
         summary["target_pid"] = process.pid
-        record("compiler_started", pid=process.pid)
+        record(
+            "command_started", pid=process.pid, spawn_seconds=summary["spawn_seconds"]
+        )
         observer = threading.Thread(target=collect, args=(process,))
         observer.start()
         output_open = True
@@ -197,7 +210,9 @@ def observe(args):
                     output_open = False
                     continue
                 if summary["first_output_seconds"] is None:
-                    summary["first_output_seconds"] = round(time.monotonic() - started, 3)
+                    summary["first_output_seconds"] = round(
+                        time.monotonic() - started, 3
+                    )
                     record("first_output")
                 sys.stdout.buffer.write(chunk)
                 sys.stdout.buffer.flush()
@@ -210,6 +225,14 @@ def observe(args):
                         time.monotonic() - started, 3
                     )
                     record("command_banner")
+                    if args.until == "command-banner":
+                        stop.set()
+                if (
+                    summary["first_test_seconds"] is None
+                    and b"Test Suite 'All tests' started at" in tail
+                ):
+                    summary["first_test_seconds"] = round(time.monotonic() - started, 3)
+                    record("first_test")
                     stop.set()
                 tail = tail[-128:]
             elif process.poll() is not None:
@@ -222,7 +245,7 @@ def observe(args):
             if result < 0:
                 result = 128 - result
         summary["exit_code"] = result
-        record("compiler_finished", exit_code=result)
+        record("command_finished", exit_code=result)
         return result
     finally:
         stop.set()
@@ -244,6 +267,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--delay", type=float, default=15)
     parser.add_argument("--window", type=float, default=240)
+    parser.add_argument(
+        "--until", choices=("command-banner", "first-test"), default="command-banner"
+    )
     parser.add_argument("output", type=Path)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()

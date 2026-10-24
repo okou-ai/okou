@@ -65,6 +65,11 @@ if command == 'xcodebuild':
         if scenario == 'unavailable':
             wait_for(lambda: event_exists('observation', 'sample'))
         print('Command line invocation:', flush=True)
+        if scenario == 'first-test':
+            wait_for(lambda: event_exists('command_banner'))
+            if event_exists('observer_stopped'):
+                sys.exit('Test-startup observation stopped at the command banner')
+            print("Test Suite 'All tests' started at 2026-10-24 00:00:00.000", flush=True)
         wait_for(lambda: event_exists('observer_stopped'))
         print('build continues after observations stop', flush=True)
 elif command == 'ps':
@@ -162,11 +167,9 @@ class StartupSamplingTests(unittest.TestCase):
         self.assertIsNotNone(self.summary()["command_banner_seconds"])
         events = self.events()
         names = [event["event"] for event in events]
+        self.assertLess(names.index("command_banner"), names.index("observer_stopped"))
         self.assertLess(
-            names.index("command_banner"), names.index("observer_stopped")
-        )
-        self.assertLess(
-            names.index("observer_stopped"), names.index("compiler_finished")
+            names.index("observer_stopped"), names.index("command_finished")
         )
         self.assertTrue(
             all("utc" in event and "elapsed_seconds" in event for event in events)
@@ -176,6 +179,28 @@ class StartupSamplingTests(unittest.TestCase):
         self.assertIn("startup_wait", report.read_text())
         self.assertLessEqual(report.stat().st_size, 256 * 1024)
         self.assertIn("report_truncated", names)
+
+    def test_test_startup_observation_continues_after_the_banner_until_tests_start(
+        self,
+    ):
+        self.env["SAMPLING_TEST_SCENARIO"] = "first-test"
+        result = self.invoke("--until", "first-test")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("build continues after observations stop", result.stdout)
+        names = [event["event"] for event in self.events()]
+        self.assertLess(
+            names.index("command_launch_started"), names.index("command_started")
+        )
+        self.assertLess(names.index("command_banner"), names.index("first_test"))
+        self.assertLess(names.index("first_test"), names.index("observer_stopped"))
+        self.assertLess(
+            names.index("observer_stopped"), names.index("command_finished")
+        )
+        summary = self.summary()
+        self.assertIsNotNone(summary["spawn_seconds"])
+        self.assertLessEqual(
+            summary["command_banner_seconds"], summary["first_test_seconds"]
+        )
 
     def test_diagnostic_failure_is_visible_without_failing_the_compiler(self):
         self.env["SAMPLING_TEST_SCENARIO"] = "unavailable"

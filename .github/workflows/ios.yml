@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       sample_xcode_startup:
-        description: Sample the compile-phase Xcode startup
+        description: Sample Xcode startup during compilation and before the first App test
         type: boolean
         default: false
       archive_cache_experiment:
