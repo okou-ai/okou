@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.5](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.4...guest-storage-apply-v0.26.5) (2026-10-24)
+
+
+### Performance Improvements
+
+* **runner:** reuse directory handles for decoded guest files ([#42713](https://github.com/okou-ai/okou/issues/42713)) ([f7d7952](https://github.com/okou-ai/okou/commit/f7d7952e30af7350db2376a3bc41d08410d1bb73))
+
 ## [0.26.4](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.3...guest-storage-apply-v0.26.4) (2026-10-23)
 
 

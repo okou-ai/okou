@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.47](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.46...guest-control-client-v0.23.47) (2026-10-24)
+
+
+### Refactoring
+
+* **guest-control:** own codec producer terminal retirement ([#42672](https://github.com/okou-ai/okou/issues/42672)) ([d99bccf](https://github.com/okou-ai/okou/commit/d99bccf5b9bf6bd9f4d2cc1e837c26e280fb9cbc))
+
 ## [0.23.46](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.45...guest-control-client-v0.23.46) (2026-10-23)
 
 ## [0.23.45](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.44...guest-control-client-v0.23.45) (2026-10-23)

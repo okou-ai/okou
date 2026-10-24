@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.1.0](https://github.com/okou-ai/okou/compare/cli-v10.0.4...cli-v10.1.0) (2026-10-24)
+
+
+### Features
+
+* add proactive agent learning and planning workflows ([#42724](https://github.com/okou-ai/okou/issues/42724)) ([3a23824](https://github.com/okou-ai/okou/commit/3a23824fb8b9ac3ffd76b65cd463bb687f15269e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.2.0
+    * @okouai/core bumped to 8.784.0
+    * @okouai/pi-agent-runtime bumped to 1.50.65
+
 ## [10.0.4](https://github.com/okou-ai/okou/compare/cli-v10.0.3...cli-v10.0.4) (2026-10-23)
 
 

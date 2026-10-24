@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.24.40](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.39...guest-control-server-v0.24.40) (2026-10-24)
+
+
+### Refactoring
+
+* **guest-control:** encode file stream codec metadata ([#42733](https://github.com/okou-ai/okou/issues/42733)) ([894f847](https://github.com/okou-ai/okou/commit/894f847e9a9ea1251372e5e2912958c4f8d13711))
+* **guest-control:** share bounded output pair completion ([#42714](https://github.com/okou-ai/okou/issues/42714)) ([a97b5b7](https://github.com/okou-ai/okou/commit/a97b5b783a1ad3d504ef057d034d45f22067bc14))
+
 ## [0.24.39](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.38...guest-control-server-v0.24.39) (2026-10-23)
 
 
