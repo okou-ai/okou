@@ -120,8 +120,7 @@ function addAnalysisOptions(command: Command): Command {
 Locations:
   Use a supported country or region name, or its ISO country code.
   Examples: "United States", US/USA, "United Kingdom", GB/UK.
-  City and state locations are not supported.
-  Supported locations: https://docs.dataforseo.com/v3/dataforseo_labs_locations_and_languages/`,
+  City and state locations are not supported.`,
     );
 }
 
@@ -173,11 +172,8 @@ Compatibility:
 Languages:
   Use the exact provider language_code for the selected engine, including
   region and case (for example, zh-CN). The default is en.
-  Common codes in both provider lists: en, es, fr, de, ja, ko, zh-CN, zh-TW.
-  Published full language lists (provider CSV, 2026-04-06):
-    google, google_maps, google_news: https://cdn.dataforseo.com/v3/languages/languages_serp_google_2026_04_06.csv
-    bing: https://cdn.dataforseo.com/v3/languages/languages_serp_bing_2026_04_06.csv
-  Latest provider reference: https://docs.dataforseo.com/v3/serp-se-languages/
+  Common codes: en, es, fr, de, ja, ko, zh-CN, zh-TW.
+  Data Router validates support for the selected engine and language.
 
 Examples:
   okou data seo serp "best ai agents" --json

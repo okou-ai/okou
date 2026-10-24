@@ -72,7 +72,7 @@ export const seoSerpRequestSchema = z
       context.addIssue({
         code: "custom",
         path: ["device"],
-        message: "DataForSEO Google News supports only the desktop device",
+        message: "Google News supports only the desktop device",
       });
     }
   });

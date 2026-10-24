@@ -1,7 +1,7 @@
 import {
-  socialKitRequestSchema,
-  type ManagedSocialKitToolName,
-  type SocialKitRequest,
+  socialToolRequestSchema,
+  type SocialToolName,
+  type SocialToolRequest,
 } from "@okouai/api-contracts/contracts/social";
 import { InvalidArgumentError } from "commander";
 
@@ -22,7 +22,7 @@ export interface SocialUrlTarget {
   readonly canonicalUrl: string;
 }
 
-export type SocialIntent = SocialKitRequest;
+export type SocialIntent = SocialToolRequest;
 
 interface InspectOptions {
   readonly requireViews?: boolean;
@@ -59,10 +59,10 @@ interface SummarizeOptions extends TranscriptOptions {
 }
 
 function socialRequest(
-  tool: ManagedSocialKitToolName,
+  tool: SocialToolName,
   input: Readonly<Record<string, unknown>>,
-): SocialKitRequest {
-  const parsed = socialKitRequestSchema.safeParse({ tool, input });
+): SocialToolRequest {
+  const parsed = socialToolRequestSchema.safeParse({ tool, input });
   if (!parsed.success) {
     throw new InvalidArgumentError(
       parsed.error.issues[0]?.message ?? "Okou Social input is invalid",
@@ -464,7 +464,7 @@ export function parseSocialTarget(input: string): SocialUrlTarget {
 
 /**
  * These platforms are served only by saved data jobs, so they are accepted
- * here but have no SocialKit tool binding.
+ * here but have no direct tool binding.
  */
 export const SOCIAL_JOB_ONLY_PLATFORMS = [
   "douyin",
@@ -530,7 +530,7 @@ const JOB_ONLY_HOSTS: ReadonlyMap<string, SocialJobOnlyPlatform> = new Map([
 
 /**
  * Returns the platform and URL when it belongs to a job-only platform.
- * SocialKit target parsing does not recognise them, so job commands check
+ * Direct Social tool target parsing does not recognise them, so job commands check
  * this first.
  */
 export function parseJobOnlyTarget(
@@ -576,9 +576,7 @@ function contentTarget(target: SocialUrlTarget, operation: string): void {
   }
 }
 
-function linkedInInspectionTool(
-  targetKind: SocialTargetKind,
-): ManagedSocialKitToolName {
+function linkedInInspectionTool(targetKind: SocialTargetKind): SocialToolName {
   switch (targetKind) {
     case "company": {
       return "linkedin_company";
@@ -600,7 +598,7 @@ function linkedInInspectionTool(
 function twitterInspectionTool(
   targetKind: SocialTargetKind,
   thread: boolean,
-): ManagedSocialKitToolName {
+): SocialToolName {
   if (targetKind === "profile") {
     return thread
       ? unsupported("--thread requires an X post URL")
@@ -615,10 +613,10 @@ function twitterInspectionTool(
 function channelOrContentInspectionTool(
   target: SocialUrlTarget,
   channelKind: SocialTargetKind,
-  channelTool: ManagedSocialKitToolName,
-  contentTool: ManagedSocialKitToolName,
+  channelTool: SocialToolName,
+  contentTool: SocialToolName,
   invalidTargetMessage: string,
-): ManagedSocialKitToolName {
+): SocialToolName {
   if (target.targetKind === "unknown") {
     return unsupported(invalidTargetMessage);
   }
@@ -628,7 +626,7 @@ function channelOrContentInspectionTool(
 function inspectionTool(
   target: SocialUrlTarget,
   thread: boolean,
-): ManagedSocialKitToolName {
+): SocialToolName {
   switch (target.platform) {
     case "linkedin": {
       return linkedInInspectionTool(target.targetKind);
@@ -787,7 +785,7 @@ export function postsIntent(
 }
 
 interface SearchRequest {
-  readonly tool: ManagedSocialKitToolName;
+  readonly tool: SocialToolName;
   readonly input: Readonly<Record<string, unknown>>;
 }
 
@@ -946,7 +944,7 @@ export function transcriptIntent(
   if (options.refresh && target.platform !== "youtube") {
     return unsupported("--refresh is supported only for YouTube videos");
   }
-  let tool: ManagedSocialKitToolName;
+  let tool: SocialToolName;
   switch (target.platform) {
     case "linkedin": {
       tool = "linkedin_transcript";
@@ -992,7 +990,7 @@ export function summarizeIntent(
       `${target.platform} summaries are not currently supported`,
     );
   }
-  let tool: ManagedSocialKitToolName;
+  let tool: SocialToolName;
   switch (target.platform) {
     case "facebook": {
       tool = "facebook_summarize";

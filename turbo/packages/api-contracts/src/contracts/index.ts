@@ -1238,10 +1238,10 @@ export {
   type WebSearchRequest,
 } from "./web-search";
 export {
-  SOCIALKIT_MAX_INPUT_VALUE_CHARS,
-  socialKitRequestSchema,
-  type ManagedSocialKitToolName,
-  type SocialKitRequest,
+  SOCIAL_MAX_INPUT_VALUE_CHARS,
+  socialToolRequestSchema,
+  type SocialToolName,
+  type SocialToolRequest,
 } from "./social";
 export {
   usageMembersContract,

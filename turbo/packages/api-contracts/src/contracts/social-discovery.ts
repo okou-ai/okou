@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { ManagedSocialKitToolName } from "./social-tools";
+import type { SocialToolName } from "./social-tools";
 
 export const socialPlatformSchema = z.enum([
   "linkedin",
@@ -28,13 +28,13 @@ export const SOCIAL_INSTAGRAM_POST_KINDS = ["posts", "reels"] as const;
 interface SocialOperationBinding {
   readonly operation: SocialOperation;
   readonly variant: string;
-  readonly tool: ManagedSocialKitToolName | null;
+  readonly tool: SocialToolName | null;
   /** Only input fields actually exposed by the intent-oriented CLI. */
   readonly inputs: Readonly<Record<string, string>>;
 }
 
 function binding(
-  tool: ManagedSocialKitToolName,
+  tool: SocialToolName,
   operation: SocialOperation,
   variant: string,
   inputs: Readonly<Record<string, string>> = {},

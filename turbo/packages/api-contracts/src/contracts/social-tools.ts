@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-export const SOCIALKIT_MAX_INPUT_VALUE_CHARS = 4_096;
+export const SOCIAL_MAX_INPUT_VALUE_CHARS = 4_096;
 
-export interface ManagedSocialKitToolDefinition<
+export interface SocialToolDefinition<
   Name extends string = string,
   InputSchema extends z.ZodType = z.ZodType,
 > {
@@ -11,8 +11,8 @@ export interface ManagedSocialKitToolDefinition<
 }
 
 function defineTool<const Name extends string, InputSchema extends z.ZodType>(
-  definition: ManagedSocialKitToolDefinition<Name, InputSchema>,
-): ManagedSocialKitToolDefinition<Name, InputSchema> {
+  definition: SocialToolDefinition<Name, InputSchema>,
+): SocialToolDefinition<Name, InputSchema> {
   return definition;
 }
 
@@ -21,14 +21,11 @@ function hasNoEmbeddedCredentials(value: string): boolean {
   return !url.username && !url.password;
 }
 
-const inputStringSchema = z
-  .string()
-  .min(1)
-  .max(SOCIALKIT_MAX_INPUT_VALUE_CHARS);
+const inputStringSchema = z.string().min(1).max(SOCIAL_MAX_INPUT_VALUE_CHARS);
 const urlSchema = z
   .url({ protocol: /^https?$/ })
   .min(1)
-  .max(SOCIALKIT_MAX_INPUT_VALUE_CHARS)
+  .max(SOCIAL_MAX_INPUT_VALUE_CHARS)
   .refine(hasNoEmbeddedCredentials, {
     message: "url must be an HTTP(S) URL without embedded credentials",
   });
@@ -50,11 +47,11 @@ function urlCollectionInput(maxLimit: number) {
     .strict();
 }
 
-export const socialKitSummaryFieldsSchema = z
+export const socialSummaryFieldsSchema = z
   .record(z.string().min(1).max(64), inputStringSchema)
   .refine(
     (value) => {
-      return JSON.stringify(value).length <= SOCIALKIT_MAX_INPUT_VALUE_CHARS;
+      return JSON.stringify(value).length <= SOCIAL_MAX_INPUT_VALUE_CHARS;
     },
     { message: "custom_response is too large" },
   );
@@ -62,12 +59,12 @@ export const socialKitSummaryFieldsSchema = z
 const summaryInputSchema = z
   .object({
     url: urlSchema,
-    custom_response: socialKitSummaryFieldsSchema.optional(),
+    custom_response: socialSummaryFieldsSchema.optional(),
     custom_prompt: inputStringSchema.optional(),
   })
   .strict();
 
-export const MANAGED_SOCIALKIT_TOOLS = [
+export const SOCIAL_TOOLS = [
   defineTool({
     name: "linkedin_profile",
     inputSchema: urlInput(),
@@ -290,17 +287,17 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   }),
 ] as const;
 
-export type ManagedSocialKitTool = (typeof MANAGED_SOCIALKIT_TOOLS)[number];
-export type ManagedSocialKitToolName = ManagedSocialKitTool["name"];
+export type SocialTool = (typeof SOCIAL_TOOLS)[number];
+export type SocialToolName = SocialTool["name"];
 
-type SocialKitRequestFor<Tool extends ManagedSocialKitTool> =
-  Tool extends ManagedSocialKitToolDefinition<infer Name, infer InputSchema>
+type SocialToolRequestFor<Tool extends SocialTool> =
+  Tool extends SocialToolDefinition<infer Name, infer InputSchema>
     ? { readonly tool: Name; readonly input: z.infer<InputSchema> }
     : never;
 
-export type SocialKitRequest = SocialKitRequestFor<ManagedSocialKitTool>;
+export type SocialToolRequest = SocialToolRequestFor<SocialTool>;
 
-function requestVariant<Tool extends ManagedSocialKitTool>(tool: Tool) {
+function requestVariant<Tool extends SocialTool>(tool: Tool) {
   return z
     .object({
       tool: z.literal(tool.name),
@@ -309,25 +306,19 @@ function requestVariant<Tool extends ManagedSocialKitTool>(tool: Tool) {
     .strict();
 }
 
-type SocialKitRequestSchemaFor<Tool extends ManagedSocialKitTool> = z.ZodType<
-  SocialKitRequestFor<Tool>
+type SocialToolRequestSchemaFor<Tool extends SocialTool> = z.ZodType<
+  SocialToolRequestFor<Tool>
 >;
 
-type SocialKitRequestSchemas<Tools extends readonly ManagedSocialKitTool[]> = {
-  readonly [Index in keyof Tools]: SocialKitRequestSchemaFor<Tools[Index]>;
+type SocialToolRequestSchemas<Tools extends readonly SocialTool[]> = {
+  readonly [Index in keyof Tools]: SocialToolRequestSchemaFor<Tools[Index]>;
 };
 
 function requestSchemas<
-  const Tools extends readonly [
-    ManagedSocialKitTool,
-    ManagedSocialKitTool,
-    ...ManagedSocialKitTool[],
-  ],
->(tools: Tools): SocialKitRequestSchemas<Tools> {
+  const Tools extends readonly [SocialTool, SocialTool, ...SocialTool[]],
+>(tools: Tools): SocialToolRequestSchemas<Tools> {
   // Array.map cannot retain a const tuple's per-index generic relationship.
-  return tools.map(requestVariant) as SocialKitRequestSchemas<Tools>;
+  return tools.map(requestVariant) as SocialToolRequestSchemas<Tools>;
 }
 
-export const socialKitRequestSchema = z.union(
-  requestSchemas(MANAGED_SOCIALKIT_TOOLS),
-);
+export const socialToolRequestSchema = z.union(requestSchemas(SOCIAL_TOOLS));

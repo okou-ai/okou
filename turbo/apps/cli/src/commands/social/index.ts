@@ -2,10 +2,10 @@ import { readFile } from "node:fs/promises";
 import { Command, InvalidArgumentError } from "commander";
 import { z } from "zod";
 import {
-  socialKitDownloadRequestSchema,
-  socialKitDownloadListQuerySchema,
-  socialKitSummaryFieldsSchema,
-  SOCIALKIT_MAX_INPUT_VALUE_CHARS,
+  socialDownloadRequestSchema,
+  socialDownloadListQuerySchema,
+  socialSummaryFieldsSchema,
+  SOCIAL_MAX_INPUT_VALUE_CHARS,
 } from "@okouai/api-contracts/contracts/social";
 import { SOCIAL_DEFAULT_COLLECTION_LIMIT as DEFAULT_COLLECTION_LIMIT } from "@okouai/api-contracts/contracts/social-discovery";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -370,10 +370,10 @@ async function summaryFields(
       `${options.fieldsFile === undefined ? "--fields" : "--fields-file"} must contain valid JSON`,
     );
   }
-  const parsed = socialKitSummaryFieldsSchema.safeParse(value);
+  const parsed = socialSummaryFieldsSchema.safeParse(value);
   if (!parsed.success) {
     throw new InvalidArgumentError(
-      `Summary fields must be a JSON object with field names of 1-64 characters and nonempty string descriptions; compact JSON must not exceed ${SOCIALKIT_MAX_INPUT_VALUE_CHARS} characters`,
+      `Summary fields must be a JSON object with field names of 1-64 characters and nonempty string descriptions; compact JSON must not exceed ${SOCIAL_MAX_INPUT_VALUE_CHARS} characters`,
     );
   }
   const fields = Object.entries(parsed.data);
@@ -420,7 +420,7 @@ Notes:
   - Supported on Facebook, Instagram, TikTok, and YouTube
   - Use either --fields or --fields-file with a nonempty JSON object
   - Field names must be nonblank and 1-64 characters; descriptions must be nonblank strings
-  - Compact serialized JSON must not exceed ${SOCIALKIT_MAX_INPUT_VALUE_CHARS} characters
+  - Compact serialized JSON must not exceed ${SOCIAL_MAX_INPUT_VALUE_CHARS} characters
   - --prompt adds analysis instructions alongside the requested field descriptions
   - Field descriptions guide extraction; they do not enforce strict JSON Schema
   - Returned custom fields are preserved in data; this does not select output columns`,
@@ -465,7 +465,7 @@ const downloadsCommand = new Command("downloads")
       }) => {
         await printDataRouterTool(
           "social_download_list",
-          socialKitDownloadListQuerySchema.parse(options),
+          socialDownloadListQuerySchema.parse(options),
           options.json,
         );
       },
@@ -517,7 +517,7 @@ const downloadCommand = new Command("download")
             "Provide a media URL or --resume <download-id>",
           );
         const target = parseSocialTarget(url);
-        const request = socialKitDownloadRequestSchema.parse({
+        const request = socialDownloadRequestSchema.parse({
           platform: downloadPlatform(target),
           url: target.canonicalUrl,
           maxDuration: options.maxDuration,

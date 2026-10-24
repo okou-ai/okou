@@ -1,19 +1,19 @@
 import { z } from "zod";
 export {
-  socialKitRequestSchema,
-  socialKitSummaryFieldsSchema,
-  SOCIALKIT_MAX_INPUT_VALUE_CHARS,
-  type SocialKitRequest,
-  type ManagedSocialKitToolName,
+  socialToolRequestSchema,
+  socialSummaryFieldsSchema,
+  SOCIAL_MAX_INPUT_VALUE_CHARS,
+  type SocialToolRequest,
+  type SocialToolName,
 } from "./social-tools";
-export const socialKitDownloadPlatformSchema = z.enum([
+export const socialDownloadPlatformSchema = z.enum([
   "youtube",
   "tiktok",
   "instagram",
   "facebook",
 ]);
 
-export const socialKitDownloadQualitySchema = z.enum([
+export const socialDownloadQualitySchema = z.enum([
   "240p",
   "360p",
   "480p",
@@ -21,11 +21,11 @@ export const socialKitDownloadQualitySchema = z.enum([
   "1080p",
 ]);
 
-export const socialKitDownloadFormatSchema = z.enum(["mp4", "m4a", "mp3"]);
+export const socialDownloadFormatSchema = z.enum(["mp4", "m4a", "mp3"]);
 
-export const socialKitDownloadRequestSchema = z
+export const socialDownloadRequestSchema = z
   .object({
-    platform: socialKitDownloadPlatformSchema,
+    platform: socialDownloadPlatformSchema,
     url: z
       .url()
       .max(4096)
@@ -38,12 +38,12 @@ export const socialKitDownloadRequestSchema = z
         );
       }, "URL must use HTTPS without embedded credentials"),
     maxDuration: z.number().int().positive().max(86_400),
-    quality: socialKitDownloadQualitySchema.default("720p"),
-    format: socialKitDownloadFormatSchema.default("mp4"),
+    quality: socialDownloadQualitySchema.default("720p"),
+    format: socialDownloadFormatSchema.default("mp4"),
   })
   .strict();
 
-export const socialKitDownloadStatusSchema = z.enum([
+export const socialDownloadStatusSchema = z.enum([
   "queued",
   "processing",
   "link_failed",
@@ -51,10 +51,8 @@ export const socialKitDownloadStatusSchema = z.enum([
   "completed",
 ]);
 
-export const socialKitDownloadListQuerySchema = z.object({
+export const socialDownloadListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().uuid().optional(),
-  status: z
-    .enum([...socialKitDownloadStatusSchema.options, "active"])
-    .optional(),
+  status: z.enum([...socialDownloadStatusSchema.options, "active"]).optional(),
 });
