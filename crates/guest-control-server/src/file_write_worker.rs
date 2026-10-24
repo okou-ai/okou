@@ -152,7 +152,8 @@ impl FileWriteWorker {
                         Arc::clone(&self.connection_cancel),
                         crate::file_stream::decode_begin(payload)
                             .map_err(|_| FileWriteSubmitError::Disconnected)?
-                            .encoded_size,
+                            .codec
+                            .encoded_size(),
                     )
                     .map_err(|_| FileWriteSubmitError::Disconnected)?,
             ),
