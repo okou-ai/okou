@@ -1963,16 +1963,18 @@ async function prepareBriefMember({
   actor = bdd.user(),
   createdAt = new Date("2030-01-01T00:00:00.000Z"),
   catalogAvailable = true,
+  catalogSync = syncDeployedCatalog,
   bootstrap = true,
 }: {
   readonly actor?: ApiTestUser;
   readonly createdAt?: Date;
   readonly catalogAvailable?: boolean;
+  readonly catalogSync?: typeof syncDeployedCatalog;
   readonly bootstrap?: boolean;
 } = {}) {
   installCatalogStorageFixture(context);
   if (catalogAvailable) {
-    await syncDeployedCatalog();
+    await catalogSync();
   }
   mockBriefMemberships([{ actor, createdAt }]);
   if (bootstrap) {
@@ -2020,7 +2022,12 @@ describe("Official Workflow failure recovery", () => {
     name: "agent-suggestions" | "morning-brief",
   ) {
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
-    const { actor } = await prepareBriefMember();
+    const { actor } = await prepareBriefMember({
+      catalogSync:
+        name === "morning-brief"
+          ? syncMorningBriefCatalog
+          : syncDeployedCatalog,
+    });
     await initializeBriefMember(actor, "UTC");
     if (!actor.orgId) {
       throw new Error("Expected an organization");
