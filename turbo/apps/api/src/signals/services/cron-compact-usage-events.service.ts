@@ -553,10 +553,7 @@ const compactUsageEventBatch$ = command(
     const query = compactUsageEventsSql({ cutoff, rawSeedLimit });
     const executed = await settle(
       (async () => {
-        return parseRawRows(
-          compactionRowSchema,
-          await db.execute(query),
-        );
+        return parseRawRows(compactionRowSchema, await db.execute(query));
       })(),
     );
     signal.throwIfAborted();
