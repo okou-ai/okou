@@ -46,6 +46,7 @@ const neonBase = "https://console.neon.tech/api/v2/projects/test-project";
 const cfBase = `https://api.cloudflare.com/client/v4/accounts/${"a".repeat(32)}`;
 const prUrl = "https://api.github.com/repos/example/repository/pulls/123";
 const neon = (method, route) => request(neonBase, "test-token", method, route);
+const startupBenchmark = require("../../ops/worker-startup/run-workflow-schema-bench.cjs");
 
 test("Worker consumes the exact prepared shared branch through a direct GET-only connection", async () => {
   const branch = {
@@ -478,4 +479,459 @@ test("control-plane failures withhold credentials and never replay uncertain req
       !error.message.includes(secret) && error.message.includes("not retried"),
   );
   assert.equal(attempts, 1);
+});
+
+test("startup experiment opts in only the exact PR and excludes staging and other branches", () => {
+  const env = {
+    API_WORKER_STARTUP_BENCH: "workflow-schema-reuse",
+    GITHUB_EVENT_NAME: "pull_request",
+    GITHUB_HEAD_REF: "perf/worker-domain-split",
+  };
+  assert.equal(startupBenchmark.enabled({}, "pr-42640", "deploy"), false);
+  assert.equal(startupBenchmark.enabled(env, "pr-42640", "deploy"), true);
+  for (const [values, ref, mode] of [
+    [env, "staging", "deploy"],
+    [env, "pr-123", "deploy"],
+    [env, "pr-42640", "cleanup"],
+    [{ ...env, GITHUB_HEAD_REF: "other" }, "pr-42640", "deploy"],
+    [{ ...env, GITHUB_EVENT_NAME: "push" }, "pr-42640", "deploy"],
+  ])
+    assert.throws(() => startupBenchmark.enabled(values, ref, mode));
+});
+
+function benchmarkFixture(t) {
+  const outputDirectory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "startup-receipts-"),
+  );
+  t.after(() => fs.rmSync(outputDirectory, { recursive: true, force: true }));
+  operationEnvironment(t, { GITHUB_STEP_SUMMARY: undefined });
+  const worker = "okou-api-preview-pr-42640";
+  const requests = [];
+  let deploymentReads = 0;
+  const deployments = { deployments: [{ id: "deployed-placeholder" }] };
+  const options = {
+    variants: {
+      baseline: {
+        bytes: Buffer.from("export default {}"),
+        sha256: "a".repeat(64),
+      },
+      optimized: {
+        bytes: Buffer.from("export default {fetch(){}}"),
+        sha256: "b".repeat(64),
+      },
+    },
+    sourceRevision: "1".repeat(40),
+    config: {
+      name: worker,
+      preview_urls: false,
+      compatibility_date: "2026-09-02",
+      compatibility_flags: ["nodejs_compat"],
+    },
+    bindings: [
+      {
+        name: "HYPERDRIVE",
+        type: "hyperdrive",
+        id: "469d16da6a4848e485434be430b1b523",
+      },
+      { name: "API_ENV_JSON_PARTS", type: "secret_text" },
+      ...[0, 1, 2, 3].map((index) => ({
+        name: `API_ENV_JSON_${index}`,
+        type: "secret_text",
+      })),
+    ],
+    worker,
+    account: "a".repeat(32),
+    token: "private-token",
+    outputDirectory,
+    rounds: 2,
+    seed: 20261024,
+    async cf(method, route) {
+      return (await request(cfBase, "private-token", method, route)).result;
+    },
+    async assertCurrentPreview() {
+      requests.push("check-current-pr");
+    },
+  };
+  server.use(
+    http.get(`${cfBase}/workers/scripts/${worker}/subdomain`, () => {
+      requests.push("subdomain");
+      return HttpResponse.json({
+        success: true,
+        result: { previews_enabled: false },
+      });
+    }),
+    http.get(`${cfBase}/workers/scripts/${worker}/deployments`, () => {
+      deploymentReads++;
+      return HttpResponse.json({ success: true, result: deployments });
+    }),
+    http.get(`${cfBase}/workers/scripts/${worker}/settings`, () => {
+      requests.push("settings");
+      return HttpResponse.json({
+        success: true,
+        result: { ...options.config, bindings: options.bindings },
+      });
+    }),
+  );
+  return {
+    options,
+    requests,
+    deployments,
+    deploymentReads: () => deploymentReads,
+    results: () =>
+      JSON.parse(
+        fs.readFileSync(path.join(outputDirectory, "results.json"), "utf8"),
+      ),
+    summary: () =>
+      JSON.parse(
+        fs.readFileSync(path.join(outputDirectory, "summary.json"), "utf8"),
+      ),
+  };
+}
+
+test("paired startup uploads keep active deployment and secrets private while retaining CPU rejections", async (t) => {
+  const fixture = benchmarkFixture(t);
+  let attempts = 0;
+  server.use(
+    http.post(
+      `${cfBase}/workers/scripts/${fixture.options.worker}/versions`,
+      async ({ request: incoming }) => {
+        attempts++;
+        assert.equal(new URL(incoming.url).search, "?bindings_inherit=strict");
+        assert.equal(
+          incoming.headers.get("authorization"),
+          "Bearer private-token",
+        );
+        const form = await incoming.formData();
+        const metadata = JSON.parse(await form.get("metadata").text());
+        assert.deepEqual(
+          metadata.bindings,
+          fixture.options.bindings.map(({ name }) => ({
+            name,
+            type: "inherit",
+          })),
+        );
+        assert.equal(metadata.compatibility_date, "2026-09-02");
+        assert.equal(metadata.main_module, "worker.js");
+        assert.ok(form.has("worker.js"));
+        if (attempts === 2)
+          return HttpResponse.json(
+            {
+              success: false,
+              errors: [
+                {
+                  code: 10021,
+                  message:
+                    "Script startup exceeded CPU time limit private-runtime-secret",
+                },
+              ],
+            },
+            { status: 400 },
+          );
+        return HttpResponse.json({
+          success: true,
+          result: {
+            id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            startup_time_ms: 600 + attempts,
+            secret: "private-runtime-secret",
+          },
+        });
+      },
+    ),
+  );
+  await startupBenchmark.runBenchmark(fixture.options);
+  assert.equal(attempts, 4);
+  assert.equal(fixture.deploymentReads(), 2);
+  const { rows, order } = fixture.results();
+  assert.deepEqual(order.map((item) => item.variant).sort(), [
+    "baseline",
+    "baseline",
+    "optimized",
+    "optimized",
+  ]);
+  assert.equal(
+    rows.filter((row) => row.status === "startup-cpu-exceeded").length,
+    1,
+  );
+  assert.equal(fixture.summary().deploymentUnchanged, true);
+  assert.equal(fixture.summary().completed, true);
+  for (const file of fs.readdirSync(fixture.options.outputDirectory)) {
+    const text = fs.readFileSync(
+      path.join(fixture.options.outputDirectory, file),
+      "utf8",
+    );
+    assert.doesNotMatch(text, /private-runtime-secret|private-token/);
+  }
+});
+
+test("uncertain startup upload stops after one attempt and retains partial receipts", async (t) => {
+  const fixture = benchmarkFixture(t);
+  let attempts = 0;
+  server.use(
+    http.post(
+      `${cfBase}/workers/scripts/${fixture.options.worker}/versions`,
+      () => {
+        attempts++;
+        return HttpResponse.error();
+      },
+    ),
+  );
+  await assert.rejects(
+    startupBenchmark.runBenchmark(fixture.options),
+    /unknown; stopped without retry/,
+  );
+  assert.equal(attempts, 1);
+  assert.equal(fixture.results().rows[0].status, "unknown-outcome");
+  assert.equal(fixture.summary().completed, false);
+  assert.equal(fixture.summary().deploymentUnchanged, true);
+  assert.equal(fixture.summary().settingsIdentityUnchanged, true);
+});
+
+test("final settings drift or an unavailable verification read cannot mark sampling complete", async (t) => {
+  for (const unavailable of [false, true]) {
+    const fixture = benchmarkFixture(t);
+    fixture.options.rounds = 1;
+    server.use(
+      http.get(
+        `${cfBase}/workers/scripts/${fixture.options.worker}/settings`,
+        () =>
+          unavailable
+            ? HttpResponse.error()
+            : HttpResponse.json({
+                success: true,
+                result: {
+                  ...fixture.options.config,
+                  compatibility_date: "changed",
+                  bindings: fixture.options.bindings,
+                },
+              }),
+      ),
+      http.post(
+        `${cfBase}/workers/scripts/${fixture.options.worker}/versions`,
+        () =>
+          HttpResponse.json({
+            success: true,
+            result: {
+              id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+              startup_time_ms: 600,
+            },
+          }),
+      ),
+    );
+    await assert.rejects(
+      startupBenchmark.runBenchmark(fixture.options),
+      /identities were not confirmed unchanged/,
+    );
+    assert.equal(fixture.summary().uploadsCompleted, true);
+    assert.equal(fixture.summary().completed, false);
+    assert.equal(
+      fixture.summary().settingsIdentityUnchanged,
+      unavailable ? null : false,
+    );
+  }
+});
+
+test("permission errors and other 10021 errors stop sampling instead of counting as CPU rejection", async (t) => {
+  for (const [status, code, message] of [
+    [403, 10000, "private permission failure"],
+    [400, 10021, "Uncaught TypeError: private-runtime-secret"],
+  ]) {
+    const fixture = benchmarkFixture(t);
+    let attempts = 0;
+    server.use(
+      http.post(
+        `${cfBase}/workers/scripts/${fixture.options.worker}/versions`,
+        () => {
+          attempts++;
+          return HttpResponse.json(
+            { success: false, errors: [{ code, message }] },
+            { status },
+          );
+        },
+      ),
+    );
+    await assert.rejects(
+      startupBenchmark.runBenchmark(fixture.options),
+      /Unexpected startup upload response/,
+    );
+    assert.equal(attempts, 1);
+    assert.equal(fixture.results().rows[0].status, "unexpected-response");
+  }
+});
+
+test("benchmark rejects enabled version previews before any upload", async (t) => {
+  const fixture = benchmarkFixture(t);
+  server.use(
+    http.get(
+      `${cfBase}/workers/scripts/${fixture.options.worker}/subdomain`,
+      () =>
+        HttpResponse.json({
+          success: true,
+          result: { previews_enabled: true },
+        }),
+    ),
+  );
+  await assert.rejects(
+    startupBenchmark.runBenchmark(fixture.options),
+    /preview URLs must be disabled/,
+  );
+  assert.deepEqual(fs.readdirSync(fixture.options.outputDirectory), []);
+});
+
+test("benchmark detects an active-deployment change and refuses to replay completed receipts", async (t) => {
+  const fixture = benchmarkFixture(t);
+  fixture.options.rounds = 1;
+  let reads = 0;
+  server.use(
+    http.get(
+      `${cfBase}/workers/scripts/${fixture.options.worker}/deployments`,
+      () =>
+        HttpResponse.json({
+          success: true,
+          result: {
+            deployments: [
+              {
+                id:
+                  ++reads === 2 ? "changed-deployment" : "original-deployment",
+              },
+            ],
+          },
+        }),
+    ),
+  );
+  let uploads = 0;
+  server.use(
+    http.post(
+      `${cfBase}/workers/scripts/${fixture.options.worker}/versions`,
+      () => {
+        uploads++;
+        return HttpResponse.json({
+          success: true,
+          result: {
+            id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            startup_time_ms: 600,
+          },
+        });
+      },
+    ),
+  );
+  await assert.rejects(
+    startupBenchmark.runBenchmark(fixture.options),
+    /Active preview deployment changed/,
+  );
+  assert.equal(fixture.summary().deploymentUnchanged, false);
+  await assert.rejects(
+    startupBenchmark.runBenchmark(fixture.options),
+    /receipts must not be replayed/,
+  );
+  assert.equal(uploads, 2);
+});
+
+test("benchmark refuses a baseline bundle that differs from the frozen complete API", (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "startup-bundle-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(directory, "baseline"));
+  fs.writeFileSync(path.join(directory, "baseline/worker.js"), "changed");
+  fs.writeFileSync(
+    path.join(directory, "manifest.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      baselineRevision: "197b2bc9d1e88e777dfe0882c503eba06bbb2012",
+      sourceRevision: "1".repeat(40),
+      variants: {
+        baseline: {
+          file: "baseline/worker.js",
+          bytes: 7,
+          sha256: "a".repeat(64),
+        },
+      },
+    }),
+  );
+  assert.throws(
+    () => startupBenchmark.loadVariants(directory, "unused", "1".repeat(40)),
+    /bundle hash mismatch/,
+  );
+});
+
+test("existing Worker bindings must match the isolated preview exactly without reading secret values", (t) => {
+  const fixture = benchmarkFixture(t);
+  const settings = {
+    ...fixture.options.config,
+    bindings: fixture.options.bindings,
+  };
+  const safe = startupBenchmark.existingBindings(settings);
+  assert.equal(safe.length, 6);
+  for (const changed of [
+    { ...settings, compatibility_flags: [] },
+    { ...settings, bindings: settings.bindings.slice(1) },
+    {
+      ...settings,
+      bindings: [...settings.bindings, { name: "other", type: "secret_text" }],
+    },
+    {
+      ...settings,
+      bindings: settings.bindings.map((binding) =>
+        binding.type === "hyperdrive"
+          ? { ...binding, id: "b".repeat(32) }
+          : binding,
+      ),
+    },
+  ])
+    assert.throws(() => startupBenchmark.existingBindings(changed));
+  assert.doesNotMatch(
+    JSON.stringify(
+      startupBenchmark.existingBindings({
+        ...settings,
+        bindings: settings.bindings.map((binding) => ({
+          ...binding,
+          secret: "private-runtime-secret",
+        })),
+      }),
+    ),
+    /private-runtime-secret/,
+  );
+});
+
+test("experiment mode checks the existing Worker before any Neon, Hyperdrive or deploy operation", async (t) => {
+  operationEnvironment(t, {
+    API_WORKER_STARTUP_BENCH: "workflow-schema-reuse",
+    GITHUB_EVENT_NAME: "pull_request",
+    GITHUB_HEAD_REF: "perf/worker-domain-split",
+    JOB_REF: "pr-42640",
+    CLOUDFLARE_ACCOUNT_ID: "a".repeat(32),
+    CLOUDFLARE_API_TOKEN: "test-token",
+    GH_TOKEN: "test-token",
+    GITHUB_REPOSITORY: "example/repository",
+    EXPECTED_PR_HEAD_SHA: "1".repeat(40),
+    NEON_API_KEY: undefined,
+    NEON_PROJECT_ID: undefined,
+    API_ENV_FILE: undefined,
+  });
+  server.use(
+    http.get(
+      "https://api.github.com/repos/example/repository/pulls/42640",
+      () =>
+        HttpResponse.json({
+          state: "open",
+          head: {
+            sha: "1".repeat(40),
+            repo: { full_name: "example/repository" },
+          },
+        }),
+    ),
+    http.get(
+      `${cfBase}/workers/scripts/okou-api-preview-pr-42640/settings`,
+      () =>
+        HttpResponse.json({
+          success: true,
+          result: { compatibility_date: "unexpected" },
+        }),
+    ),
+  );
+  t.mock.method(childProcess, "spawnSync", () => {
+    assert.fail("No build or deploy may precede identity validation");
+  });
+  await assert.rejects(
+    main("deploy"),
+    /Existing Worker compatibility or bindings/,
+  );
 });

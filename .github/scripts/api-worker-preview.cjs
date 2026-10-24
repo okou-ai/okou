@@ -12,6 +12,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { createRequire } = require("node:module");
 const childProcess = require("node:child_process");
+const startupBenchmark = require("../../ops/worker-startup/run-workflow-schema-bench.cjs");
 
 // Locally created errors carry only reviewed diagnostics; native failures do not.
 class Error extends globalThis.Error {}
@@ -217,6 +218,7 @@ async function sharedPreviewDatabase(neon, branchName) {
 async function main(mode) {
   const ref = required("JOB_REF");
   const names = identities(ref);
+  const benchmark = startupBenchmark.enabled(process.env, ref, mode);
   if (!["deploy", "cleanup"].includes(mode))
     throw new Error("Usage: api-worker-preview.cjs deploy|cleanup");
   if (mode === "cleanup" && ref === "staging")
@@ -261,6 +263,75 @@ async function main(mode) {
       throw new Error("Superseded PR revision cannot deploy a Worker preview");
   };
   await assertCurrentPreview();
+
+  if (benchmark) {
+    // This opt-in branch deliberately does not deploy, reconcile Hyperdrive or
+    // read Neon/runtime secrets. The existing PR Worker must already exist.
+    const settingsPath = `/workers/scripts/${names.worker}/settings`;
+    const settings = await cf("GET", settingsPath);
+    const bindings = startupBenchmark.existingBindings(settings);
+    const root = process.cwd();
+    const temporary = fs.mkdtempSync(
+      path.join(os.tmpdir(), "worker-startup-bench-"),
+    );
+    try {
+      command(
+        "Build API Worker",
+        ["--dir", "turbo/apps/api", "build:worker"],
+        {},
+        root,
+      );
+      command(
+        "Build startup benchmark variants",
+        [
+          "exec",
+          "node",
+          "ops/worker-startup/build-workflow-schema-bench.mjs",
+          "--out",
+          temporary,
+        ],
+        {},
+        root,
+      );
+      const { variants, provenance } = startupBenchmark.loadVariants(
+        temporary,
+        path.join(root, "turbo/apps/api/dist-worker/worker.js"),
+        required("GITHUB_SHA"),
+      );
+      const assertUnchangedPreview = async () => {
+        await assertCurrentPreview();
+        const current = startupBenchmark.existingBindings(
+          await cf("GET", settingsPath),
+        );
+        if (JSON.stringify(current) !== JSON.stringify(bindings))
+          throw new Error("Preview bindings changed during startup benchmark");
+      };
+      await startupBenchmark.runBenchmark({
+        variants,
+        provenance,
+        bindings,
+        sourceRevision: required("GITHUB_SHA"),
+        config: {
+          name: names.worker,
+          preview_urls: false,
+          compatibility_date: settings.compatibility_date,
+          compatibility_flags: settings.compatibility_flags,
+        },
+        worker: names.worker,
+        account,
+        token: cfToken,
+        cf,
+        assertCurrentPreview: assertUnchangedPreview,
+        outputDirectory: path.join(root, "generated/worker-startup-benchmark"),
+      });
+      console.log(
+        "Startup benchmark completed; no preview deployment, Hyperdrive mutation or Worker requests",
+      );
+    } finally {
+      fs.rmSync(temporary, { recursive: true, force: true });
+    }
+    return;
+  }
 
   const hyperdrives = await cf("GET", "/hyperdrive/configs");
   if (!Array.isArray(hyperdrives))
