@@ -5,18 +5,13 @@ use bytes::Bytes;
 use guest_contracts::storage_files::{self, StorageFile};
 use runner_host::paths::HomePaths;
 use std::io::{self, Read};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
 mod disk;
-mod migration;
 
 const CAPACITY: usize = 64 * 1024 * 1024;
-// Persisted v1 entries cross Runner releases. Activation requires #42504's
-// deployed readers, disabled admission and finished foreground preparation on
-// incompatible Runners, plus a compatible Runner rollback floor.
 const MAX_COMPRESSED_BYTES: usize = 4 * 1024 * 1024;
 pub(super) const MAX_ADMITTED_FILES: usize = 4096;
 pub(super) const MAX_ADMITTED_STORAGE_BYTES: usize = 8 * 1024 * 1024;
@@ -49,13 +44,6 @@ struct Inner {
     workers: Arc<Semaphore>,
     tasks: TaskTracker,
     cancel: CancellationToken,
-    migration_started: AtomicBool,
-}
-
-impl Drop for Inner {
-    fn drop(&mut self) {
-        self.cancel.cancel();
-    }
 }
 
 #[derive(Clone)]
@@ -70,22 +58,7 @@ impl DecodedCache {
             workers: Arc::new(Semaphore::new(2)),
             tasks: TaskTracker::new(),
             cancel: CancellationToken::new(),
-            migration_started: AtomicBool::new(false),
         }))
-    }
-
-    /// Start the temporary retained-v1 sweep after Runner startup succeeds.
-    /// Its task and blocking batches share this owner's joined shutdown.
-    /// Remove together with the v1 reader after #42702's inventory gate.
-    pub fn start_migration(&self) {
-        let closed = self.0.closed.lock().unwrap_or_else(|e| e.into_inner());
-        if *closed || self.0.migration_started.swap(true, Ordering::Relaxed) {
-            return;
-        }
-        self.0.tasks.spawn(migration::run(
-            Arc::downgrade(&self.0),
-            self.0.cancel.clone(),
-        ));
     }
 
     pub async fn shutdown(&self) {
