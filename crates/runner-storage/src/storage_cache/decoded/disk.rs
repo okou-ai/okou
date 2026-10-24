@@ -156,7 +156,7 @@ impl EntryKey {
     }
 }
 
-fn open_directory(path: &Path) -> io::Result<File> {
+pub(super) fn open_directory(path: &Path) -> io::Result<File> {
     OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
@@ -256,8 +256,8 @@ pub(super) fn read_with_budget(
     // Persisted v1 entries can be the only remaining local source after archive
     // retirement. Keep their original locks and checks; corrupt v2 data must
     // never be hidden by trying a different representation.
-    // Remove this cross-Runner cache compatibility only after old producers exit
-    // and retained v1 entries are migrated or safely retired (#42702).
+    // Remove this reader and the temporary migrator after accepted old writers
+    // finish and complete retained-root inventories contain no positive v1 (#42702).
     for kind in [EntryKind::Positive, EntryKind::LegacyPositive] {
         if let Some(files) = read_entry(
             home,
@@ -405,7 +405,31 @@ fn read_locked_entry(
     file_budget: usize,
     cancel: &CancellationToken,
 ) -> io::Result<LookupOutcome> {
-    let path = EntryKey::new(name, version, kind).directory(home);
+    let outcome = read_locked_contents(
+        home,
+        name,
+        version,
+        kind,
+        content_budget,
+        file_budget,
+        cancel,
+    )?;
+    if !matches!(outcome, LookupOutcome::Miss) {
+        touch_mtime(&EntryKey::new(name, version, kind).directory(home));
+    }
+    Ok(outcome)
+}
+
+/// Migration validation must not count as foreground use in the LRU policy.
+fn read_locked_contents(
+    home: &HomePaths,
+    name: &str,
+    version: &str,
+    kind: EntryKind,
+    content_budget: usize,
+    file_budget: usize,
+    cancel: &CancellationToken,
+) -> io::Result<LookupOutcome> {
     let root = match open_entry(home, name, version, kind) {
         Ok(root) => root,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(LookupOutcome::Miss),
@@ -422,7 +446,6 @@ fn read_locked_entry(
         return Err(invalid("decoded cache identity or admission mismatch"));
     }
     let Some(metadata) = index.files else {
-        touch_mtime(&path);
         return Ok(LookupOutcome::Rejected);
     };
     if index.compressed_bytes == 0
@@ -512,7 +535,6 @@ fn read_locked_entry(
         return Err(invalid("decoded cache payload grew during read"));
     }
     check_cancel(cancel)?;
-    touch_mtime(&path);
     Ok(LookupOutcome::Ready(files))
 }
 
@@ -694,6 +716,20 @@ pub(super) fn publish(
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),
     }
+    publish_locked(home, name, version, compressed_bytes, files, kind, cancel)
+}
+
+/// Caller owns the selected format's exclusive publication/GC lock.
+fn publish_locked(
+    home: &HomePaths,
+    name: &str,
+    version: &str,
+    compressed_bytes: usize,
+    files: Option<&[StorageFile]>,
+    kind: EntryKind,
+    cancel: &CancellationToken,
+) -> io::Result<()> {
+    let path = EntryKey::new(name, version, kind).directory(home);
     let parent = path
         .parent()
         .ok_or_else(|| invalid("missing decoded cache parent"))?;
@@ -742,14 +778,184 @@ pub(super) fn publish(
         output.write_all(&index)?;
         output.sync_all()?;
         check_cancel(cancel)?;
+        open_directory(&staging)?.sync_all()?;
         fs::rename(&staging, &path)?;
+        open_directory(parent)?.sync_all()?;
         Ok(())
     })();
-    if operation.is_err() {
-        // A failed optional fill must not leave live work after its lock drops.
-        if let Err(error) = fs::remove_dir_all(&staging) {
-            tracing::warn!(%error, "failed to clean extracted cache staging; storage GC will retry");
-        }
+    // A failed optional fill must not leave live work after its lock drops.
+    if operation.is_err()
+        && let Err(error) = fs::remove_dir_all(&staging)
+        && error.kind() != io::ErrorKind::NotFound
+    {
+        tracing::warn!(%error, "failed to clean extracted cache staging; storage GC will retry");
     }
     operation
+}
+
+pub(super) enum MigrationOutcome {
+    Gone,
+    Busy,
+    Converted,
+}
+
+pub(super) fn open_child_directory(parent: &File, name: &str) -> io::Result<File> {
+    openat(
+        parent,
+        name,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .map(File::from)
+    .map_err(io::Error::from)
+}
+
+/// Convert one discovered positive entry without requiring its retired archive.
+/// Directory hashes are validated by the scanner; index identity is revalidated
+/// under both formats' real locks before any publication or source deletion.
+pub(super) fn migrate_legacy(
+    home: &HomePaths,
+    name_hash: &str,
+    version_hash: &str,
+    cancel: &CancellationToken,
+) -> io::Result<MigrationOutcome> {
+    use std::os::fd::AsRawFd;
+
+    check_cancel(cancel)?;
+    let legacy_key = format!("decoded-v1-{version_hash}");
+    let packed_key = format!("decoded-v2-{version_hash}");
+    let source_lock = home.storage_lock_for_cache_key(name_hash, &legacy_key);
+    let source = match lock::try_acquire_existing_shared_or_missing_blocking(&source_lock)
+        .map_err(io::Error::other)?
+    {
+        ExistingTryLock::Acquired(lock) => lock,
+        ExistingTryLock::Busy => return Ok(MigrationOutcome::Busy),
+        ExistingTryLock::Missing => {
+            match lock::try_acquire_or_busy_blocking(&source_lock).map_err(io::Error::other)? {
+                TryLock::Acquired(lock) => lock,
+                TryLock::Busy => return Ok(MigrationOutcome::Busy),
+            }
+        }
+    };
+    let _destination = match lock::try_acquire_or_busy_blocking(
+        &home.storage_lock_for_cache_key(name_hash, &packed_key),
+    )
+    .map_err(io::Error::other)?
+    {
+        TryLock::Acquired(lock) => lock,
+        TryLock::Busy => return Ok(MigrationOutcome::Busy),
+    };
+    let parent = match open_directory(&home.storages_dir())
+        .and_then(|root| open_child_directory(&root, name_hash))
+    {
+        Ok(parent) => parent,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(MigrationOutcome::Gone),
+        Err(error) => return Err(error),
+    };
+    let legacy = match open_child_directory(&parent, &legacy_key) {
+        Ok(legacy) => legacy,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(MigrationOutcome::Gone),
+        Err(error) => return Err(error),
+    };
+    let source_metadata = legacy.metadata()?;
+    let packed = match open_child_directory(&parent, &packed_key) {
+        Ok(packed) => Some(packed),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error),
+    };
+    // Prefer the destination index when it exists: interrupted source cleanup
+    // can remove v1's index before all its members, while valid v2 remains usable.
+    let encoded = read_file(
+        packed.as_ref().unwrap_or(&legacy),
+        "index.json",
+        INDEX_LIMIT,
+    )?;
+    let index: Index = serde_json::from_slice(&encoded).map_err(io::Error::other)?;
+    if index.name.len() > 4096
+        || index.version.len() > 4096
+        || short_digest(&index.name) != name_hash
+        || short_digest(&index.version) != version_hash
+    {
+        return Err(invalid("decoded migration identity mismatch"));
+    }
+    let Index {
+        name,
+        version,
+        compressed_bytes,
+        ..
+    } = index;
+    drop(encoded);
+    let published = packed.is_none();
+    if published {
+        let files = read_locked_contents(
+            home,
+            &name,
+            &version,
+            EntryKind::LegacyPositive,
+            storage_files::MAX_STORAGE_BYTES,
+            storage_files::MAX_FILES,
+            cancel,
+        )?
+        .into_ready_files()?
+        .ok_or_else(|| invalid("decoded migration source disappeared"))?;
+        publish_locked(
+            home,
+            &name,
+            &version,
+            compressed_bytes,
+            Some(&files),
+            EntryKind::Positive,
+            cancel,
+        )?;
+        // The verification below must not retain a second whole-storage body.
+        drop(files);
+    }
+    let verified = read_locked_contents(
+        home,
+        &name,
+        &version,
+        EntryKind::Positive,
+        storage_files::MAX_STORAGE_BYTES,
+        storage_files::MAX_FILES,
+        cancel,
+    )?
+    .into_ready_files()?
+    .ok_or_else(|| invalid("decoded migration replacement disappeared"))?;
+    drop(verified);
+    let packed = open_child_directory(&parent, &packed_key)?;
+    if published {
+        packed.set_times(std::fs::FileTimes::new().set_modified(legacy.metadata()?.modified()?))?;
+    }
+    packed.sync_all()?;
+    parent.sync_all()?;
+    check_cancel(cancel)?;
+    // Do not upgrade a live shared flock or wait behind foreground readers.
+    // Keep v2 pinned while reacquiring exclusive source access for cleanup.
+    drop(source);
+    let _source =
+        match lock::try_acquire_or_busy_blocking(&source_lock).map_err(io::Error::other)? {
+            TryLock::Acquired(lock) => lock,
+            TryLock::Busy => return Ok(MigrationOutcome::Busy),
+        };
+    let current = match open_child_directory(&parent, &legacy_key) {
+        Ok(current) => current.metadata()?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(MigrationOutcome::Gone),
+        Err(error) => return Err(error),
+    };
+    if current.dev() != source_metadata.dev() || current.ino() != source_metadata.ino() {
+        return Ok(MigrationOutcome::Busy);
+    }
+    if published {
+        // Include real reads that completed while the source's shared lock was held.
+        packed.set_times(std::fs::FileTimes::new().set_modified(current.modified()?))?;
+        packed.sync_all()?;
+    }
+    check_cancel(cancel)?;
+    // Anchor recursive removal to the already opened name directory on Linux
+    // Runner hosts, so no cache-parent symlink can redirect source retirement.
+    let source_path =
+        PathBuf::from(format!("/proc/self/fd/{}", parent.as_raw_fd())).join(legacy_key);
+    fs::remove_dir_all(source_path)?;
+    parent.sync_all()?;
+    Ok(MigrationOutcome::Converted)
 }

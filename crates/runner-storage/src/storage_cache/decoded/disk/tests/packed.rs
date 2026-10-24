@@ -152,3 +152,188 @@ fn legacy_reader_preserves_parent_leaf_and_integrity_checks() {
         );
     }
 }
+
+#[test]
+fn migration_persists_verified_payload_and_metadata_without_an_archive() {
+    let root = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(root.path().to_owned());
+    let (legacy, _) = seed_legacy(&home);
+    let old_time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(123);
+    File::open(&legacy)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(old_time))
+        .unwrap();
+    let cancel = CancellationToken::new();
+    assert!(matches!(
+        migrate_legacy(&home, &short_digest("name"), &short_digest("v1"), &cancel).unwrap(),
+        MigrationOutcome::Converted
+    ));
+    let (packed, _) = paths(&home, "name", "v1");
+    assert!(!legacy.exists());
+    assert_eq!(fs::read(packed.join("data.bin")).unwrap(), b"hello");
+    assert_eq!(fs::metadata(&packed).unwrap().modified().unwrap(), old_time);
+    let index: serde_json::Value =
+        serde_json::from_slice(&fs::read(packed.join("index.json")).unwrap()).unwrap();
+    assert_eq!(index["compressed_bytes"], 100);
+    assert_eq!(
+        read(&home, "name", "v1", &cancel).unwrap().unwrap(),
+        files()
+    );
+    assert!(matches!(
+        migrate_legacy(&home, &short_digest("name"), &short_digest("v1"), &cancel).unwrap(),
+        MigrationOutcome::Gone
+    ));
+}
+
+#[test]
+fn migration_finishes_partial_source_cleanup_using_existing_verified_v2() {
+    let (_root, home, packed, _) = setup();
+    let old_time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(123);
+    File::open(&packed)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(old_time))
+        .unwrap();
+    let (legacy, _) = seed_legacy(&home);
+    fs::remove_file(legacy.join("index.json")).unwrap();
+    fs::remove_file(legacy.join("files/nested/file")).unwrap();
+    assert!(matches!(
+        migrate_legacy(
+            &home,
+            &short_digest("name"),
+            &short_digest("v1"),
+            &CancellationToken::new()
+        )
+        .unwrap(),
+        MigrationOutcome::Converted
+    ));
+    assert!(!legacy.exists());
+    assert_eq!(fs::metadata(&packed).unwrap().modified().unwrap(), old_time);
+    assert_eq!(fs::read(packed.join("data.bin")).unwrap(), b"hello");
+}
+
+#[test]
+fn migration_keeps_index_order_empty_members_and_distinct_metadata() {
+    let root = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(root.path().to_owned());
+    let (legacy, _) = persisted_paths(&home, "name", "v1", false);
+    let members = vec![
+        StorageFile {
+            path: "z/last".into(),
+            mode: 0o751,
+            mtime: 1234,
+            content: b"last".to_vec(),
+        },
+        StorageFile {
+            path: "a/empty".into(),
+            mode: 0o600,
+            mtime: 0,
+            content: Vec::new(),
+        },
+        StorageFile {
+            path: "a/first".into(),
+            mode: 0o640,
+            mtime: 4321,
+            content: b"first".to_vec(),
+        },
+    ];
+    for member in &members {
+        let path = legacy.join("files").join(&member.path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, &member.content).unwrap();
+    }
+    fs::write(
+        legacy.join("index.json"),
+        encode_index("name", "v1", 100, Some(&members)).unwrap(),
+    )
+    .unwrap();
+    let cancel = CancellationToken::new();
+    assert!(matches!(
+        migrate_legacy(&home, &short_digest("name"), &short_digest("v1"), &cancel).unwrap(),
+        MigrationOutcome::Converted
+    ));
+    let (packed, _) = paths(&home, "name", "v1");
+    assert_eq!(fs::read(packed.join("data.bin")).unwrap(), b"lastfirst");
+    assert_eq!(
+        read(&home, "name", "v1", &cancel).unwrap().unwrap(),
+        members
+    );
+}
+
+#[test]
+fn migration_preserves_sources_on_corruption_publication_failure_and_cancellation() {
+    for failure in ["source", "replacement", "identity", "staging", "cancel"] {
+        let root = tempfile::tempdir().unwrap();
+        let home = HomePaths::with_root(root.path().to_owned());
+        let (legacy, _) = seed_legacy(&home);
+        let (packed, _) = paths(&home, "name", "v1");
+        let cancel = CancellationToken::new();
+        match failure {
+            "source" => fs::write(legacy.join("files/nested/file"), b"wrong").unwrap(),
+            "replacement" => {
+                publish_locked(
+                    &home,
+                    "name",
+                    "v1",
+                    100,
+                    Some(&files()),
+                    EntryKind::Positive,
+                    &cancel,
+                )
+                .unwrap();
+                fs::write(packed.join("data.bin"), b"wrong").unwrap();
+            }
+            "identity" => fs::write(
+                legacy.join("index.json"),
+                encode_index("other", "v1", 100, Some(&files())).unwrap(),
+            )
+            .unwrap(),
+            "staging" => fs::write(packed.with_extension("tmp"), b"occupied").unwrap(),
+            "cancel" => cancel.cancel(),
+            _ => panic!("unexpected migration failure case"),
+        }
+        assert!(
+            migrate_legacy(&home, &short_digest("name"), &short_digest("v1"), &cancel).is_err(),
+            "{failure}"
+        );
+        assert!(legacy.join("index.json").exists(), "{failure}");
+        if failure != "source" {
+            assert_eq!(
+                fs::read(legacy.join("files/nested/file")).unwrap(),
+                b"hello"
+            );
+        }
+    }
+}
+
+#[test]
+fn migration_keeps_shared_readers_and_actual_destination_gc_locks_protected() {
+    let root = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(root.path().to_owned());
+    let (legacy, legacy_lock) = seed_legacy(&home);
+    let (packed, packed_lock) = paths(&home, "name", "v1");
+    let cancel = CancellationToken::new();
+    let destination = lock::try_acquire_or_busy_blocking(&packed_lock).unwrap();
+    assert!(matches!(
+        migrate_legacy(&home, &short_digest("name"), &short_digest("v1"), &cancel).unwrap(),
+        MigrationOutcome::Busy
+    ));
+    assert!(!packed.exists());
+    drop(destination);
+    let reader = lock::try_acquire_existing_shared_or_missing_blocking(&legacy_lock).unwrap();
+    assert!(matches!(reader, ExistingTryLock::Acquired(_)));
+    assert!(matches!(
+        migrate_legacy(&home, &short_digest("name"), &short_digest("v1"), &cancel).unwrap(),
+        MigrationOutcome::Busy
+    ));
+    assert!(legacy.exists());
+    assert_eq!(
+        read(&home, "name", "v1", &cancel).unwrap().unwrap(),
+        files()
+    );
+    drop(reader);
+    assert!(matches!(
+        migrate_legacy(&home, &short_digest("name"), &short_digest("v1"), &cancel).unwrap(),
+        MigrationOutcome::Converted
+    ));
+    assert!(!legacy.exists());
+}
