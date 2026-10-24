@@ -109,7 +109,7 @@ Examples:
 Notes:
   - Authenticates via OKOU_TOKEN (requires people-search:read capability) or a CLI token
   - Successful requests use managed credits, including searches with no matches
-  - Queries are sent to Okou's managed Perplexity provider; never include secrets or private context
+  - Queries are sent to external providers through Data Router; never include secrets or private context
   - Profile fields are model-extracted from public professional sources and are not verified facts
   - Verify important claims using the provider-backed source URLs shown with each profile
   - Use only for legitimate professional research; never for harassment, doxxing, stalking, unauthorized background screening, or unlawful employment/privacy decisions

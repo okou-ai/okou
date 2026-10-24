@@ -86,7 +86,7 @@ Examples:
 
 Notes:
   - Authenticates via OKOU_TOKEN (requires maps:read capability) or a CLI token
-  - Search uses Gemini with Google Maps grounding through Okou's managed Google Cloud identity
+  - Search runs through Data Router with Google Maps grounding
   - No location is inferred from server IP or headers; use --lat and --lng only when the user supplied them
   - Output is the unchanged Router JSON, including its answer and Google Maps sources
   - Queries are sent to Google; never include secrets or private internal context`,

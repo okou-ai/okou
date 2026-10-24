@@ -75,6 +75,6 @@ Examples:
 
 Notes:
   - Authenticates via OKOU_TOKEN (requires scrape:read capability) or a CLI token
-  - Data Router calls Firecrawl and determines final credits; Okou settles the charge
-  - Enhanced mode is explicit because it uses a higher billing category`,
+  - Data Router selects the source and determines final credits; Okou settles the charge
+  - Use --mode to select the scrape mode; available behavior and prices are owned by Data Router`,
   );

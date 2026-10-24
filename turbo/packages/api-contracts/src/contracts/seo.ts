@@ -56,7 +56,6 @@ const seoDomainSchema = z
 export const seoSerpRequestSchema = z
   .object({
     query: z.string().trim().min(1).max(SEO_MAX_QUERY_CHARS),
-    provider: z.literal("dataforseo").default("dataforseo"),
     engine: seoEngineSchema.default("google"),
     location: seoLocationSchema.default(SEO_DEFAULT_LOCATION),
     languageCode: seoLanguageCodeSchema.default(SEO_DEFAULT_LANGUAGE_CODE),

@@ -382,7 +382,7 @@ export const DATA_ROUTER_TOOLS = [
   },
   {
     name: "social_data_create",
-    description: "Submit a reviewed Monid social data operation.",
+    description: "Submit a reviewed public social data operation.",
     title: "Social Data Create",
     family: "social",
   },
