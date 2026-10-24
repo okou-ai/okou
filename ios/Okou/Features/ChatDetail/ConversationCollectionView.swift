@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Presentation revisions include every input that can change a row's measured size.
 enum ConversationCollectionRow: Equatable, Identifiable {
-  case earlier(isLoading: Bool)
+  case earlier
   case message(
     ChatMessage, showsAvatar: Bool, topSpacing: CGFloat, pendingRetry: Bool?, isSending: Bool,
     isWorkHistory: Bool = false)
