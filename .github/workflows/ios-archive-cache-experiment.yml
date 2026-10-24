@@ -1,0 +1,74 @@
+name: iOS Release Archive Cache Experiment
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        type: string
+        required: true
+      label:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  npm_config_audit: "false"
+
+jobs:
+  measure:
+    name: ${{ inputs.label }}
+    runs-on: xcode-27
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+      IOS_ARCHIVE_CACHE_MODE: ${{ inputs.mode }}
+      IOS_ARCHIVE_CACHE_LABEL: ${{ inputs.label }}
+      IOS_ARCHIVE_CACHE_ENABLED: ${{ inputs.mode != 'baseline' && 'true' || 'false' }}
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: http.version
+      GIT_CONFIG_VALUE_0: HTTP/1.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Pin archive inputs and start measurement
+        run: python3 ops/ios-archive-cache/measure.py prepare
+      - name: Receive same-run Release cache
+        if: inputs.mode == 'warm'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ios-release-cache-payload-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ios-archive-cache-seed
+      - name: Verify and restore Release cache
+        if: inputs.mode == 'warm'
+        run: python3 ops/ios-archive-cache/measure.py restore
+      - name: Build and validate a fresh device Release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ios/scripts/build-archive.sh 2>&1 | tee "$IOS_ARCHIVE_MEASUREMENT_DIR/build.log"
+          python3 ops/ios-archive-cache/measure.py report
+      - name: Export native compiler and dependency caches
+        if: inputs.mode == 'seed'
+        run: python3 ops/ios-archive-cache/measure.py seed
+      - name: Retain same-run Release cache
+        if: inputs.mode == 'seed'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-release-cache-payload-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ios-archive-cache-seed
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+      - name: Retain archive measurements
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-release-cache-${{ inputs.label }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ios-archive-cache-measurement
+          if-no-files-found: error
+          retention-days: 7
