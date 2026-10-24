@@ -1,10 +1,9 @@
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use guest_control_proto::{
@@ -14,6 +13,7 @@ use guest_control_proto::{
 
 use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::error::to_io_error;
+use crate::helper_input::FixedInputWriter;
 use crate::log::log;
 use crate::process::{extract_exit_code, kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
@@ -320,7 +320,7 @@ fn run_restore(input: RunRestoreInput<'_>) -> GuestStateRestoreOutput {
             );
         }
     };
-    let stdin_writer = match spawn_stdin(stdin, entropy) {
+    let stdin_writer = match FixedInputWriter::spawn(stdin, entropy, THREAD_STDIN) {
         Ok(writer) => writer,
         Err(error) => {
             drain_cancel.cancel();
@@ -391,29 +391,6 @@ fn run_restore(input: RunRestoreInput<'_>) -> GuestStateRestoreOutput {
 fn abort_spawned(child: Child, started: Instant, diagnostic: &str) -> GuestStateRestoreOutput {
     kill_and_reap_child(child);
     failed_output(ExecTermination::WaitFailed, started, diagnostic.to_string())
-}
-
-struct StdinWriter {
-    handle: JoinHandle<io::Result<()>>,
-}
-
-impl StdinWriter {
-    fn join(self) -> io::Result<()> {
-        self.handle
-            .join()
-            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
-    }
-}
-
-fn spawn_stdin(mut stdin: ChildStdin, entropy: Vec<u8>) -> io::Result<StdinWriter> {
-    let handle = thread::Builder::new()
-        .name(THREAD_STDIN.to_string())
-        .spawn(move || {
-            let result = stdin.write_all(&entropy);
-            drop(stdin);
-            result
-        })?;
-    Ok(StdinWriter { handle })
 }
 
 fn failed_output(

@@ -1,12 +1,10 @@
 use guest_contracts::storage_resources::StorageResourceUsage;
 use serde::{Serialize, Serializer};
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
-use std::process::ChildStdin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use guest_control_proto::{
@@ -18,6 +16,7 @@ use crate::contained_command::{
 };
 use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::error::to_io_error;
+use crate::helper_input::FixedInputWriter;
 use crate::log::log;
 use crate::process::{extract_exit_code, kill_and_reap_child};
 use crate::process_containment::{
@@ -496,7 +495,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
             );
         }
     };
-    let stdin_writer = match spawn_stdin(stdin, manifest_json) {
+    let stdin_writer = match FixedInputWriter::spawn(stdin, manifest_json, THREAD_STDIN) {
         Ok(writer) => writer,
         Err(error) => {
             drain_cancel.cancel();
@@ -623,29 +622,6 @@ fn append_cleanup_failure(diagnostic: String, error: Option<&ProcessContainmentE
     } else {
         format!("{diagnostic}; failed to clean storage helper process containment: {error}")
     }
-}
-
-struct StdinWriter {
-    handle: JoinHandle<io::Result<()>>,
-}
-
-impl StdinWriter {
-    fn join(self) -> io::Result<()> {
-        self.handle
-            .join()
-            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
-    }
-}
-
-fn spawn_stdin(mut stdin: ChildStdin, manifest_json: Vec<u8>) -> io::Result<StdinWriter> {
-    let handle = thread::Builder::new()
-        .name(THREAD_STDIN.to_string())
-        .spawn(move || {
-            let result = stdin.write_all(&manifest_json);
-            drop(stdin);
-            result
-        })?;
-    Ok(StdinWriter { handle })
 }
 
 fn failed_output(
