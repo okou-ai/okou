@@ -97,11 +97,6 @@
       "owner": "deleteChatThreadContent$"
     },
     {
-      "id": "TX-0111",
-      "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
-      "owner": "setDefaultGoogleFormsAccount$"
-    },
-    {
       "id": "TX-0112",
       "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
       "owner": "setDefaultConnectorAccount$"

@@ -3,7 +3,7 @@ import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 
 /**
  * Publish the selected business source and discard an incompatible cursor.
@@ -17,11 +17,31 @@ export function googleFormsAccountProjectionStatement(args: {
   readonly userId: string;
 }) {
   return sql`
-    WITH desired AS (
+    WITH changed AS (${googleFormsAccountProjectionUpdate(args)})
+    DELETE FROM ${googleFormsAutomationCursors}
+    WHERE ${googleFormsAutomationCursors.automationId} IN (SELECT id FROM changed)
+  `;
+}
+
+/** A default-changing statement supplies its returned account, not the old snapshot. */
+export function googleFormsAccountProjectionUpdate(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly defaultConnectorId?: SQL;
+}) {
+  const defaultConnectorId = args.defaultConnectorId ?? sql`${connectors.id}`;
+  return sql`
+      UPDATE ${workflowAutomations}
+      SET event_connector_id = desired.connector_id,
+        event_config = CASE WHEN desired.connector_id IS NOT NULL
+          AND ${workflowAutomations.eventConfig} ->> 'connectorId' IS DISTINCT FROM desired.connector_id::text
+          THEN jsonb_set(${workflowAutomations.eventConfig}, '{connectorId}', to_jsonb(desired.connector_id::text))
+          ELSE ${workflowAutomations.eventConfig} END
+      FROM (
       SELECT ${workflowAutomations.id} AS id,
         CASE WHEN ${chatThreadConnectorSelections.connectorSlug} IS NOT NULL
           THEN ${chatThreadConnectorSelections.connectorId}
-          ELSE ${connectors.id} END AS connector_id
+          ELSE ${defaultConnectorId} END AS connector_id
       FROM ${workflowAutomations}
       LEFT JOIN ${workflowUserAutomationThreads}
         ON ${workflowUserAutomationThreads.orgId} = ${workflowAutomations.orgId}
@@ -39,14 +59,7 @@ export function googleFormsAccountProjectionStatement(args: {
         AND ${workflowAutomations.ownerUserId} = ${args.userId}
         AND ${workflowAutomations.kind} = 'event'
         AND ${workflowAutomations.eventType} = 'google-forms-response-submitted'
-    ), changed AS (
-      UPDATE ${workflowAutomations}
-      SET event_connector_id = desired.connector_id,
-        event_config = CASE WHEN desired.connector_id IS NOT NULL
-          AND ${workflowAutomations.eventConfig} ->> 'connectorId' IS DISTINCT FROM desired.connector_id::text
-          THEN jsonb_set(${workflowAutomations.eventConfig}, '{connectorId}', to_jsonb(desired.connector_id::text))
-          ELSE ${workflowAutomations.eventConfig} END
-      FROM desired
+      ) AS desired
       WHERE ${workflowAutomations.id} = desired.id
         AND ${workflowAutomations.kind} = 'event'
         AND ${workflowAutomations.eventType} = 'google-forms-response-submitted'
@@ -54,8 +67,5 @@ export function googleFormsAccountProjectionStatement(args: {
           OR (desired.connector_id IS NOT NULL
             AND ${workflowAutomations.eventConfig} ->> 'connectorId' IS DISTINCT FROM desired.connector_id::text))
       RETURNING ${workflowAutomations.id}
-    )
-    DELETE FROM ${googleFormsAutomationCursors}
-    WHERE ${googleFormsAutomationCursors.automationId} IN (SELECT id FROM changed)
   `;
 }
