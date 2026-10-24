@@ -29,6 +29,14 @@ Runner shutdown; the shared shutdown helper joins delivery before cancelling and
 joining the peer. Tests that control response failure or timing use the
 explicit-URL variants and keep their supplied server alive through shutdown.
 
+For a native fixture whose measured unoptimized async polling exceeds libtest's
+default worker stack, keep any required larger stack in its owning test entry.
+Use a named, joined thread, construct its runtime and resources inside that
+worker, and resume worker panic payloads so assertions fail the ordinary Cargo
+test. Preserve the runtime type, cleanup ownership and test timeouts. A
+shell-only `RUST_MIN_STACK` workaround does not maintain that entry contract;
+a process-wide Cargo override also changes other Rust thread defaults.
+
 ## Running Tests
 
 Use the `local` profile for routine local validation. It retains source locations in
