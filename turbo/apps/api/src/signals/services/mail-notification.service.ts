@@ -1,5 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
-import { MORNING_BRIEF_PREFERENCES_PATH } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import {
+  MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+  MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
+  MORNING_BRIEF_PREFERENCES_PATH,
+} from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import type {
   NotificationResponse,
@@ -16,6 +20,8 @@ import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command, computed } from "ccstate";
 import { and, asc, count, eq, gte, inArray, sql } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import { z } from "zod";
 import {
   conflict,
   notConfigured,
@@ -23,6 +29,7 @@ import {
   resourceUnavailable,
 } from "../../lib/error";
 import { env, optionalEnv } from "../../lib/env";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { isMorningBriefNotificationSource } from "../../lib/morning-brief-notification-source";
 import { db$, writeDb$ } from "../external/db";
 import { emailSubscription$ } from "./email-subscription.service";
@@ -37,7 +44,10 @@ interface Owner {
   readonly userId: string;
   readonly orgId: string;
 }
-type Receipt = typeof mailNotifications.$inferSelect;
+type Receipt = Pick<
+  typeof mailNotifications.$inferSelect,
+  "id" | "payloadHash" | "status" | "reason"
+>;
 
 function response(
   receipt: Receipt,
@@ -101,48 +111,167 @@ function notificationTemplate(
     : { template: "agent-notification", props };
 }
 
-function notificationSkipReason(
-  unsubscribed: boolean,
-  email: string | null,
-  suppressed: boolean,
-) {
-  return unsubscribed
-    ? ("unsubscribed" as const)
-    : !email
-      ? ("no-email" as const)
-      : suppressed
-        ? ("suppressed" as const)
-        : null;
-}
-
-function notificationAdmissionReadPlan() {
-  return {
-    run: {
-      id: agentRuns.id,
-      workflowAutomationId: agentRuns.workflowAutomationId,
-      officialWorkflowProvenance: agentRuns.officialWorkflowProvenance,
-    },
-    source: {
-      automationId: workflowAutomations.id,
-      automationOrgId: workflowAutomations.orgId,
-      automationOwnerUserId: workflowAutomations.ownerUserId,
-      workflowOrgId: workflows.orgId,
-      workflowOwnerUserId: workflows.ownerUserId,
-      officialDefinitionName: workflows.officialDefinitionName,
-      officialBlueprintKey: workflowAutomations.officialBlueprintKey,
-    },
-    sourceJoin: eq(workflows.id, workflowAutomations.workflowId),
-  };
-}
-
 interface NotificationDelivery {
   readonly idempotencyKey: string;
   readonly payloadHash: string;
   readonly email: string | null;
+  readonly runSource: Pick<
+    typeof agentRuns.$inferSelect,
+    "workflowAutomationId" | "officialWorkflowProvenance"
+  >;
 }
 
 const MORNING_BRIEF_SOURCE_REQUIRED =
   "morning-brief notifications require a run from your official Morning Brief automation. Use --kind notification for ordinary updates.";
+
+const mailAdmissionSchema = z.strictObject({
+  active: z.boolean(),
+  sourceAllowed: z.boolean(),
+  reason: z.enum(["unsubscribed", "no-email", "suppressed"]).nullable(),
+  inserted: z.boolean(),
+  receipt: z
+    .strictObject({
+      id: z.string(),
+      payloadHash: z.string(),
+      status: z.enum(["queued", "sent", "skipped", "failed"]),
+      reason: z
+        .enum([
+          "unsubscribed",
+          "suppressed",
+          "no-email",
+          "expired",
+          "delivery-failed",
+        ])
+        .nullable(),
+    })
+    .nullable(),
+});
+
+function morningBriefSourceSql(owner: Owner) {
+  const query = new QueryBuilder();
+  const source = query
+    .select({ id: workflowAutomations.id })
+    .from(workflowAutomations)
+    .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
+    .where(
+      and(
+        eq(workflowAutomations.id, sql`active_run.workflow_automation_id`),
+        eq(workflowAutomations.orgId, owner.orgId),
+        eq(workflowAutomations.ownerUserId, owner.userId),
+        eq(workflows.orgId, owner.orgId),
+        eq(workflows.ownerUserId, owner.userId),
+        inArray(workflows.officialDefinitionName, [
+          ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
+        ]),
+        eq(
+          workflowAutomations.officialBlueprintKey,
+          MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+        ),
+      ),
+    );
+  const definitionName = sql`definition->>'name'`;
+  return sql`EXISTS (${source}) AND EXISTS (
+    SELECT 1 FROM jsonb_array_elements(
+      active_run.official_workflow_provenance->'definitions'
+    ) AS definition
+    WHERE ${inArray(definitionName, [...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES])}
+  )`;
+}
+
+function notificationOutboxSql(
+  owner: Owner & { readonly runId: string },
+  body: NotifyMailBody,
+  email: string | null,
+  configured: boolean,
+) {
+  if (!email || !configured) {
+    return sql`outbox AS (SELECT NULL::uuid AS id WHERE false)`;
+  }
+  return sql`outbox AS (
+    INSERT INTO ${emailOutbox} (
+      id, from_address, to_addresses, subject, headers, template, status, attempts
+    ) SELECT outbox_id,
+      ${sql.param(buildFromAddress(), emailOutbox.fromAddress)},
+      ${sql.param([email], emailOutbox.toAddresses)},
+      ${sql.param(body.subject, emailOutbox.subject)},
+      ${sql.param(buildUnsubscribeHeaders(buildOneClickUnsubscribeUrl(owner.userId)), emailOutbox.headers)},
+      ${sql.param(notificationTemplate(body, owner.runId), emailOutbox.template)},
+      'pending', 0
+    FROM inserted_receipt WHERE outbox_id IS NOT NULL
+    RETURNING id
+  )`;
+}
+
+function mailAdmissionSql(
+  owner: Owner & { readonly runId: string },
+  body: NotifyMailBody,
+  delivery: NotificationDelivery,
+  configured: boolean,
+  preparedSourceAllowed: boolean,
+) {
+  const query = new QueryBuilder();
+  const run = query
+    .select({
+      id: agentRuns.id,
+      workflowAutomationId: agentRuns.workflowAutomationId,
+      officialWorkflowProvenance: agentRuns.officialWorkflowProvenance,
+    })
+    .from(agentRuns)
+    .where(activeRunScope(owner))
+    .for("update");
+  const winner = query
+    .select()
+    .from(mailNotifications)
+    .where(notificationKeyScope(owner, delivery.idempotencyKey))
+    .limit(1);
+  const suppression = query
+    .select({ id: emailSuppressions.id })
+    .from(emailSuppressions)
+    .where(
+      eq(
+        sql`lower(${emailSuppressions.emailAddress})`,
+        delivery.email?.toLowerCase() ?? "",
+      ),
+    );
+  const sourceAllowed =
+    body.kind === "morning-brief" ? morningBriefSourceSql(owner) : sql`true`;
+  return sql`WITH active_run AS MATERIALIZED (${run}),
+    preference AS (
+      INSERT INTO ${users} (id) SELECT ${owner.userId} FROM active_run WHERE true
+      ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id
+      RETURNING email_unsubscribed
+    ), visible_winner AS MATERIALIZED (${winner}),
+    eligibility AS MATERIALIZED (
+      SELECT ${preparedSourceAllowed} AND (${sourceAllowed}) AS source_allowed,
+        CASE WHEN preference.email_unsubscribed THEN 'unsubscribed'
+          WHEN ${!delivery.email} THEN 'no-email'
+          WHEN EXISTS (${suppression}) THEN 'suppressed'
+          ELSE NULL END AS reason
+      FROM active_run CROSS JOIN preference
+    ), inserted_receipt AS (
+      INSERT INTO ${mailNotifications} (
+        org_id, user_id, source_run_id, idempotency_key, payload_hash,
+        outbox_id, status, reason
+      ) SELECT ${owner.orgId}, ${owner.userId}, ${owner.runId}::uuid,
+        ${delivery.idempotencyKey}, ${delivery.payloadHash},
+        CASE WHEN reason IS NULL THEN ${randomUUID()}::uuid ELSE NULL END,
+        CASE WHEN reason IS NULL THEN 'queued' ELSE 'skipped' END, reason
+      FROM eligibility
+      WHERE source_allowed AND (reason IS NOT NULL OR ${configured})
+        AND NOT EXISTS (SELECT 1 FROM visible_winner)
+      ON CONFLICT (org_id, user_id, idempotency_key) DO NOTHING
+      RETURNING id, payload_hash, status, reason, outbox_id
+    ), ${notificationOutboxSql(owner, body, delivery.email, configured)}
+    SELECT EXISTS (SELECT 1 FROM active_run) AS active,
+      COALESCE((SELECT source_allowed FROM eligibility), false) AS "sourceAllowed",
+      (SELECT reason FROM eligibility) AS reason,
+      EXISTS (SELECT 1 FROM inserted_receipt) AS inserted,
+      (SELECT jsonb_build_object('id', id, 'payloadHash', payload_hash,
+          'status', status, 'reason', reason)
+        FROM (SELECT id, payload_hash, status, reason FROM inserted_receipt
+          UNION ALL SELECT id, payload_hash, status, reason FROM visible_winner
+        ) AS receipt LIMIT 1) AS receipt`;
+}
 
 /**
  * Okou sends one Morning Brief email per automation event. The key comes from
@@ -182,130 +311,91 @@ const commitMailNotification$ = command(
     { set },
     owner: Owner & { readonly runId: string },
     body: NotifyMailBody,
-    { idempotencyKey, payloadHash, email }: NotificationDelivery,
+    delivery: NotificationDelivery,
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
+    const { idempotencyKey, payloadHash, runSource } = delivery;
     const keyScope = notificationKeyScope(owner, idempotencyKey);
-    const runScope = activeRunScope(owner);
-    const plan = notificationAdmissionReadPlan();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0176; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // Serialize admission with run termination and the user's opt-out writes.
-      const [activeRun] = await tx
-        .select(plan.run)
-        .from(agentRuns)
-        .where(runScope)
-        .for("update");
-      if (!activeRun) {
-        return resourceUnavailable(
-          "Mail notifications require an active run owned by you in this workspace.",
-        );
-      }
-      await tx.insert(users).values({ id: owner.userId }).onConflictDoNothing();
-      const [user] = await tx
-        .select({ unsubscribed: users.emailUnsubscribed })
-        .from(users)
-        .where(eq(users.id, owner.userId))
-        .for("update");
-      if (!user) {
-        throw new Error("Mail notification user preference row disappeared");
-      }
-      // Re-read the claim after acquiring locks: concurrent same-key requests
-      // return their winner even if preferences or provider configuration changed.
-      const [winner] = await tx
-        .select()
-        .from(mailNotifications)
-        .where(keyScope)
-        .limit(1);
-      if (winner) {
-        return replay(winner, body, payloadHash);
-      }
-      if (body.kind === "morning-brief") {
-        const [source] = activeRun.workflowAutomationId
-          ? await tx
-              .select(plan.source)
-              .from(workflowAutomations)
-              .innerJoin(workflows, plan.sourceJoin)
-              .where(eq(workflowAutomations.id, activeRun.workflowAutomationId))
-              .limit(1)
-          : [];
-        signal.throwIfAborted();
-        if (!isMorningBriefNotificationSource(owner, activeRun, source)) {
-          return resourceUnavailable(MORNING_BRIEF_SOURCE_REQUIRED);
-        }
-      }
-      const [suppression] = email
-        ? await tx
-            .select({ id: emailSuppressions.id })
-            .from(emailSuppressions)
-            .where(
-              eq(
-                sql`lower(${emailSuppressions.emailAddress})`,
-                email.toLowerCase(),
-              ),
+    let preparedSourceAllowed = true;
+    if (body.kind === "morning-brief") {
+      const [source] = runSource.workflowAutomationId
+        ? await db
+            .select({
+              automationId: workflowAutomations.id,
+              automationOrgId: workflowAutomations.orgId,
+              automationOwnerUserId: workflowAutomations.ownerUserId,
+              workflowOrgId: workflows.orgId,
+              workflowOwnerUserId: workflows.ownerUserId,
+              officialDefinitionName: workflows.officialDefinitionName,
+              officialBlueprintKey: workflowAutomations.officialBlueprintKey,
+            })
+            .from(workflowAutomations)
+            .innerJoin(
+              workflows,
+              eq(workflows.id, workflowAutomations.workflowId),
             )
+            .where(eq(workflowAutomations.id, runSource.workflowAutomationId))
             .limit(1)
         : [];
-      const reason = notificationSkipReason(
-        user.unsubscribed,
-        email,
-        suppression !== undefined,
-      );
-      if (!reason && !optionalEnv("RESEND_API_KEY")) {
-        return notConfigured(
-          "Okou email delivery is not configured. Retry with the same key after configuration is restored.",
-        );
-      }
-      const outboxId = reason ? null : randomUUID();
-      const [receipt] = await tx
-        .insert(mailNotifications)
-        .values({
-          orgId: owner.orgId,
-          userId: owner.userId,
-          sourceRunId: owner.runId,
-          idempotencyKey,
-          payloadHash,
-          outboxId,
-          status: reason ? "skipped" : "queued",
-          reason,
-        })
-        .onConflictDoNothing({
-          target: [
-            mailNotifications.orgId,
-            mailNotifications.userId,
-            mailNotifications.idempotencyKey,
-          ],
-        })
-        .returning();
-      if (!receipt) {
-        const [concurrent] = await tx
-          .select()
-          .from(mailNotifications)
-          .where(keyScope)
-          .limit(1);
-        if (!concurrent) {
-          throw new Error("Mail notification claim missing after conflict");
-        }
-        return replay(concurrent, body, payloadHash);
-      }
-      if (outboxId && email) {
-        await tx.insert(emailOutbox).values({
-          id: outboxId,
-          fromAddress: buildFromAddress(),
-          toAddresses: [email],
-          subject: body.subject,
-          headers: buildUnsubscribeHeaders(
-            buildOneClickUnsubscribeUrl(owner.userId),
-          ),
-          template: notificationTemplate(body, owner.runId),
-          status: "pending",
-          attempts: 0,
-        });
-      }
       signal.throwIfAborted();
-      return { status: 200 as const, body: response(receipt, false) };
-    });
+      preparedSourceAllowed = isMorningBriefNotificationSource(
+        owner,
+        runSource,
+        source,
+      );
+    }
+    const configured = Boolean(optionalEnv("RESEND_API_KEY"));
+    // The preference upsert returns the current opt-out after any row wait.
+    // Keep the existing Run -> user order; receipt and outbox commit together.
+    signal.throwIfAborted();
+    const rows = parseRawRows(
+      mailAdmissionSchema,
+      await db.execute(
+        mailAdmissionSql(
+          owner,
+          body,
+          delivery,
+          configured,
+          preparedSourceAllowed,
+        ),
+      ),
+    );
+    signal.throwIfAborted();
+    if (rows.length !== 1 || !rows[0]) {
+      throw new Error("Expected one mail notification admission outcome");
+    }
+    const result = rows[0];
+    if (!result.active) {
+      return resourceUnavailable(
+        "Mail notifications require an active run owned by you in this workspace.",
+      );
+    }
+    if (result.receipt) {
+      return result.inserted
+        ? { status: 200 as const, body: response(result.receipt, false) }
+        : replay(result.receipt, body, payloadHash);
+    }
+    // A uniqueness winner can commit while this statement waits for Run/user.
+    // Read a new snapshot before returning source/configuration errors too.
+    const [winner] = await db
+      .select()
+      .from(mailNotifications)
+      .where(keyScope)
+      .limit(1);
+    signal.throwIfAborted();
+    if (winner) {
+      return replay(winner, body, payloadHash);
+    }
+    if (!result.sourceAllowed) {
+      return resourceUnavailable(MORNING_BRIEF_SOURCE_REQUIRED);
+    }
+    if (!result.reason && !configured) {
+      return notConfigured(
+        "Okou email delivery is not configured. Retry with the same key after configuration is restored.",
+      );
+    }
+    throw new Error("Mail notification claim missing after conflict");
   },
 );
 
@@ -370,7 +460,10 @@ export const queueMailNotification$ = command(
 
     const runScope = activeRunScope(owner);
     const [run] = await db
-      .select({ id: agentRuns.id })
+      .select({
+        workflowAutomationId: agentRuns.workflowAutomationId,
+        officialWorkflowProvenance: agentRuns.officialWorkflowProvenance,
+      })
       .from(agentRuns)
       .where(runScope)
       .limit(1);
@@ -385,7 +478,12 @@ export const queueMailNotification$ = command(
       commitMailNotification$,
       owner,
       body,
-      { idempotencyKey, payloadHash, email: subscription.email },
+      {
+        idempotencyKey,
+        payloadHash,
+        email: subscription.email,
+        runSource: run,
+      },
       signal,
     );
   },

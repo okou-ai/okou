@@ -621,7 +621,7 @@ describe("Proactive nightly workflows", () => {
     ).toBeFalsy();
   });
 
-  it("keeps four preferences independent and schedules the nightly pair one hour apart in member time", async () => {
+  it("keeps four preferences independent and schedules the nightly pair two hours apart in member time", async () => {
     const app = await setupApp({
       context,
       routes: proactiveLearningRoutes,
@@ -639,7 +639,7 @@ describe("Proactive nightly workflows", () => {
     );
     expect(
       Date.parse(pair.planning.nextRunAt) - Date.parse(pair.learning.nextRunAt),
-    ).toBe(60 * 60_000);
+    ).toBe(2 * 60 * 60_000);
     expect(
       (
         await accept(
@@ -816,7 +816,7 @@ describe("Proactive nightly workflows", () => {
         throw new Error("Expected rescheduled nighttime occurrence");
       }
       expect(localClock(after.nextRunAt, "America/New_York")).toMatch(
-        name === "proactive-learning" ? /^02:[0-2][0-9]$/ : /^03:[0-2][0-9]$/,
+        name === "proactive-learning" ? /^02:[0-2][0-9]$/ : /^04:[0-2][0-9]$/,
       );
     }
     expect((await schedule(actor, "proactive-learning")).id).toBe(

@@ -19,6 +19,7 @@ mod guest_dns_readiness;
 mod guest_state_restore;
 mod guest_storage_manifest;
 mod handlers;
+mod helper_input;
 mod home_drive_mount;
 mod log;
 mod memory_snapshot;
