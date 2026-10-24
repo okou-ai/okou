@@ -23,7 +23,7 @@ final class ChatSyncRecoveryTests: XCTestCase {
     }
     await store.refresh([.threadList])
     store.selectChat(SyncRecoveryFixture.threadID)
-    fixture.state.withLock {
+    fixture.state.value.withLock {
       $0.listFailures = 1
       $0.title = "Updated chat"
     }
@@ -47,19 +47,19 @@ final class ChatSyncRecoveryTests: XCTestCase {
     defer { store.close() }
     await store.refresh([.threadList])
     store.selectChat(SyncRecoveryFixture.threadID)
-    let before = fixture.state.withLock { state in
+    let before = fixture.state.value.withLock { state in
       state.listOffline = true
       return state.listReads
     }
     await store.refresh([.threadList])
 
-    XCTAssertEqual(fixture.state.withLock { $0.listReads } - before, 3)
+    XCTAssertEqual(fixture.state.value.withLock { $0.listReads } - before, 3)
     XCTAssertEqual(store.list.threads.first?.title, "Saved chat")
     XCTAssertNotNil(store.selectedConversation)
     XCTAssertNotNil(store.list.syncError)
     XCTAssertNil(store.list.actionError)
 
-    fixture.state.withLock {
+    fixture.state.value.withLock {
       $0.listOffline = false
       $0.title = "Recovered chat"
     }
@@ -94,7 +94,7 @@ final class ChatSyncRecoveryTests: XCTestCase {
 
       let started = expectation(description: "HTTP read started: " + path)
       let cancelled = expectation(description: "HTTP read cancelled: " + path)
-      fixture.state.withLock {
+      fixture.state.value.withLock {
         $0.blockedPath = path
         $0.beforeResponse = {
           started.fulfill()
@@ -118,7 +118,7 @@ final class ChatSyncRecoveryTests: XCTestCase {
       XCTAssertNil(store.list.error)
       XCTAssertNil(conversation.error)
 
-      fixture.state.withLock {
+      fixture.state.value.withLock {
         $0.blockedPath = nil
         $0.beforeResponse = nil
         $0.title = "After foreground"
@@ -156,13 +156,13 @@ final class ChatSyncRecoveryTests: XCTestCase {
     }
     store.setForeground(true)
     await store.refresh([.threadList])
-    fixture.state.withLock { $0.listFailures = 1 }
+    fixture.state.value.withLock { $0.listFailures = 1 }
     let reading = Task { await store.refresh([.threadList]) }
     defer { reading.cancel() }
     await fulfillment(of: [waiting], timeout: 3)
     store.setForeground(false)
     await fulfillment(of: [cancelled], timeout: 3)
-    fixture.state.withLock { $0.title = "Fresh foreground read" }
+    fixture.state.value.withLock { $0.title = "Fresh foreground read" }
     store.setForeground(true)
     await store.refresh([.threadList])
     retry.open()
@@ -177,10 +177,10 @@ final class ChatSyncRecoveryTests: XCTestCase {
     defer { store.close() }
     await store.refresh([.threadList])
     let thread = try XCTUnwrap(store.list.threads.first)
-    fixture.state.withLock { $0.renameOffline = true }
+    fixture.state.value.withLock { $0.renameOffline = true }
     let renamed = await store.list.rename(thread, title: "New title")
     XCTAssertFalse(renamed)
-    XCTAssertEqual(fixture.state.withLock { $0.renameRequests }, 1)
+    XCTAssertEqual(fixture.state.value.withLock { $0.renameRequests }, 1)
     XCTAssertNotNil(store.list.actionError)
     XCTAssertNil(store.list.syncError)
 
@@ -197,7 +197,7 @@ private final class SyncRecoveryFixture: Sendable {
   private static let agentID = "61000000-0000-4000-8000-000000000002"
   private static let date = "2026-10-24T00:00:00Z"
 
-  struct State: Sendable {
+  struct Values: Sendable {
     var title = "Saved chat"
     var messages = ["Saved answer"]
     var listReads = 0
@@ -208,19 +208,22 @@ private final class SyncRecoveryFixture: Sendable {
     var blockedPath: String?
     var beforeResponse: (@Sendable () async throws -> Void)?
   }
-  let state = Mutex(State())
+  final class State: Sendable {
+    let value = Mutex(Values())
+  }
+  let state = State()
   private let fixture: ChatHTTPFixture
 
   init() {
     let state = state
     fixture = ChatHTTPFixture { request in
       let path = request.url?.path ?? ""
-      if let wait = state.withLock({ $0.blockedPath == path ? $0.beforeResponse : nil }) {
+      if let wait = state.value.withLock({ $0.blockedPath == path ? $0.beforeResponse : nil }) {
         try await wait()
       }
       switch path {
       case "/api/chat-threads/snapshot":
-        let result = state.withLock { value in
+        let result = state.value.withLock { value in
           value.listReads += 1
           let failing = value.listOffline || value.listFailures > 0
           value.listFailures = max(0, value.listFailures - 1)
@@ -246,7 +249,7 @@ private final class SyncRecoveryFixture: Sendable {
           Int(
             URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
               .queryItems?.first { $0.name == "sinceSeqId" }?.value ?? "0") ?? 0
-        let messages = state.withLock { $0.messages }
+        let messages = state.value.withLock { $0.messages }
         let rows = messages.enumerated().filter { $0.offset + 1 > after }.map { index, text in
           """
           {"id":"61000000-0000-4000-8000-\(String(format: "%012d", index + 1))",\
@@ -265,7 +268,7 @@ private final class SyncRecoveryFixture: Sendable {
       case "/api/chat-threads/\(Self.threadID)":
         return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
       case "/api/chat-threads/\(Self.threadID)/rename":
-        let offline = state.withLock {
+        let offline = state.value.withLock {
           $0.renameRequests += 1
           return $0.renameOffline
         }
