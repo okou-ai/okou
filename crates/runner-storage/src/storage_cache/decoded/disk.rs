@@ -10,7 +10,7 @@ use runner_host::paths::{HomePaths, short_digest, touch_mtime};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::io::{BufReader, BufWriter, Write};
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
@@ -109,15 +109,17 @@ pub(super) fn paths(home: &HomePaths, name: &str, version: &str) -> (PathBuf, Pa
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EntryKind {
     Positive,
+    LegacyPositive,
     Rejection,
 }
 
 fn version_key(version: &str, kind: EntryKind) -> String {
     let prefix = match kind {
-        EntryKind::Positive => "",
-        EntryKind::Rejection => "rejected-",
+        EntryKind::Positive => "decoded-v2-",
+        EntryKind::LegacyPositive => "decoded-v1-",
+        EntryKind::Rejection => "decoded-v1-rejected-",
     };
-    format!("decoded-v1-{prefix}{}", short_digest(version))
+    format!("{prefix}{}", short_digest(version))
 }
 
 fn entry_paths(home: &HomePaths, name: &str, version: &str, kind: EntryKind) -> (PathBuf, PathBuf) {
@@ -251,16 +253,25 @@ pub(super) fn read_with_budget(
     file_budget: usize,
     cancel: &CancellationToken,
 ) -> io::Result<Option<Vec<StorageFile>>> {
-    read_entry(
-        home,
-        name,
-        version,
-        EntryKind::Positive,
-        content_budget,
-        file_budget,
-        cancel,
-    )?
-    .into_ready_files()
+    // Persisted v1 entries can be the only remaining local source after archive
+    // retirement. Keep their original locks and checks; corrupt v2 data must
+    // never be hidden by trying a different representation.
+    for kind in [EntryKind::Positive, EntryKind::LegacyPositive] {
+        if let Some(files) = read_entry(
+            home,
+            name,
+            version,
+            kind,
+            content_budget,
+            file_budget,
+            cancel,
+        )?
+        .into_ready_files()?
+        {
+            return Ok(Some(files));
+        }
+    }
+    Ok(None)
 }
 
 enum LookupOutcome {
@@ -401,15 +412,10 @@ fn read_locked_entry(
     let encoded_index = read_file(&root, "index.json", INDEX_LIMIT)?;
     let index: Index = serde_json::from_slice(&encoded_index).map_err(io::Error::other)?;
     drop(encoded_index);
-    let index_kind = if index.files.is_some() {
-        EntryKind::Positive
-    } else {
-        EntryKind::Rejection
-    };
     if index.name != name
         || index.version != version
         || index.compressed_bytes > MAX_COMPRESSED_BYTES
-        || index_kind != kind
+        || index.files.is_none() != (kind == EntryKind::Rejection)
     {
         return Err(invalid("decoded cache identity or admission mismatch"));
     }
@@ -460,20 +466,48 @@ fn read_locked_entry(
     let data = File::from(
         openat(
             &root,
-            "files",
-            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            if kind == EntryKind::Positive {
+                "data.bin"
+            } else {
+                "files"
+            },
+            OFlag::O_RDONLY
+                | OFlag::O_NOFOLLOW
+                | OFlag::O_CLOEXEC
+                | if kind == EntryKind::Positive {
+                    OFlag::O_NONBLOCK
+                } else {
+                    OFlag::O_DIRECTORY
+                },
             Mode::empty(),
         )
         .map_err(io::Error::from)?,
     );
+    if kind == EntryKind::Positive {
+        let attributes = data.metadata()?;
+        if !attributes.is_file() || attributes.nlink() != 1 || attributes.len() != total as u64 {
+            return Err(invalid("invalid decoded cache payload type or size"));
+        }
+    }
+    // Keep one small read buffer, rather than a second storage-sized allocation.
+    // The v1 reader uses the same descriptor without consuming this buffer.
+    let mut data = BufReader::new(data);
     for (file, entry) in files.iter_mut().zip(metadata) {
         check_cancel(cancel)?;
-        file.content = read_file(&data, &file.path, entry.size)?;
+        if kind == EntryKind::Positive {
+            file.content = vec![0; entry.size];
+            data.read_exact(&mut file.content)?;
+        } else {
+            file.content = read_file(data.get_ref(), &file.path, entry.size)?;
+        }
         if file.content.len() != entry.size
             || hex::encode(Sha256::digest(&file.content)) != entry.sha256
         {
             return Err(invalid("decoded cache content mismatch"));
         }
+    }
+    if kind == EntryKind::Positive && data.read(&mut [0])? != 0 {
+        return Err(invalid("decoded cache payload grew during read"));
     }
     check_cancel(cancel)?;
     touch_mtime(&path);
@@ -535,28 +569,35 @@ pub(super) fn retire_archive(
             "retired storage archive is not a regular private file",
         ));
     }
-    let replacement_lock = EntryKey::new(name, version, EntryKind::Positive).lock(home);
-    let _replacement =
-        match lock::try_acquire_existing_shared_or_missing_blocking(&replacement_lock)
+    let mut replacement = None;
+    for kind in [EntryKind::Positive, EntryKind::LegacyPositive] {
+        let replacement_lock = EntryKey::new(name, version, kind).lock(home);
+        let guard = match lock::try_acquire_existing_shared_or_missing_blocking(&replacement_lock)
             .map_err(io::Error::other)?
         {
             ExistingTryLock::Acquired(lock) => lock,
-            ExistingTryLock::Busy | ExistingTryLock::Missing => return Ok(false),
+            ExistingTryLock::Busy => return Ok(false),
+            ExistingTryLock::Missing => continue,
         };
-    if read_locked_entry(
-        home,
-        name,
-        version,
-        EntryKind::Positive,
-        storage_files::MAX_STORAGE_BYTES,
-        storage_files::MAX_FILES,
-        cancel,
-    )?
-    .into_ready_files()?
-    .is_none()
-    {
-        return Ok(false);
+        if read_locked_entry(
+            home,
+            name,
+            version,
+            kind,
+            storage_files::MAX_STORAGE_BYTES,
+            storage_files::MAX_FILES,
+            cancel,
+        )?
+        .into_ready_files()?
+        .is_some()
+        {
+            replacement = Some(guard);
+            break;
+        }
     }
+    let Some(_replacement) = replacement else {
+        return Ok(false);
+    };
     check_cancel(cancel)?;
     // Both formats stay protected until deletion completes. Use directory FDs
     // so no cache-parent symlink can redirect the destructive operation.
@@ -623,6 +664,18 @@ pub(super) fn publish(
     cancel: &CancellationToken,
 ) -> io::Result<()> {
     check_cancel(cancel)?;
+    if files.is_some() {
+        // Like the current-format existence check below, this only skips an
+        // optional fill; foreground reads still validate the complete entry.
+        // Do not allocate another storage's contents beside the decoded input.
+        let legacy = EntryKey::new(name, version, EntryKind::LegacyPositive).directory(home);
+        match fs::symlink_metadata(legacy) {
+            Ok(metadata) if metadata.is_dir() => return Ok(()),
+            Ok(_) => return Err(invalid("decoded cache target is not a directory")),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
     let kind = if files.is_some() {
         EntryKind::Positive
     } else {
@@ -664,25 +717,19 @@ pub(super) fn publish(
         }
         let index = encode_index(name, version, compressed_bytes, files)?;
         if let Some(files) = files {
+            let output = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+                .open(staging.join("data.bin"))?;
+            let mut output = BufWriter::new(output);
             for file in files {
                 check_cancel(cancel)?;
-                let target = staging.join("files").join(&file.path);
-                host_file::ensure_dir(
-                    target
-                        .parent()
-                        .ok_or_else(|| invalid("missing file parent"))?,
-                    DirMode::Private,
-                    "decoded cache files",
-                )?;
-                let mut output = OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .mode(0o600)
-                    .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-                    .open(target)?;
                 output.write_all(&file.content)?;
-                output.sync_all()?;
             }
+            output.flush()?;
+            output.get_ref().sync_all()?;
         }
         let mut output = OpenOptions::new()
             .write(true)
