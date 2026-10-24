@@ -74,6 +74,7 @@ import {
   providerUnavailable,
 } from "../../lib/error";
 import { logger } from "../../lib/log";
+import { safeSqlStateCode } from "../../lib/pg-errors";
 
 import { monotonicNow, now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
@@ -274,6 +275,7 @@ import {
   eq,
   exists,
   TransactionRollbackError,
+  DrizzleQueryError,
   isNotNull,
   sql,
   type SQL,
@@ -373,7 +375,7 @@ function queueRejectionSortCtes(eventId: string): SQL {
   return sql`thread_reserved AS (
     INSERT INTO ${chatThreadEventSequences} (user_id, org_id, last_seq_id)
     SELECT touched.user_id,
-      (SELECT ${agents.orgId} FROM ${agents} WHERE ${agents.id} = touched.agent_id), 1
+      (SELECT ${agents.orgId} FROM ${agents} WHERE ${eq(agents.id, sql`touched.agent_id`)}), 1
     FROM touched
     ON CONFLICT (user_id, org_id) DO UPDATE
       SET last_seq_id = ${chatThreadEventSequences.lastSeqId} + 1
@@ -3107,6 +3109,14 @@ export function createThreadClaimRunObjects(
             .success
         ) {
           throw new TransactionRollbackError();
+        }
+        if (outcome.error instanceof DrizzleQueryError) {
+          const code = safeSqlStateCode(outcome.error);
+          // A compound failure must not add message payloads to diagnostics
+          // that formerly contained only a sort or lease statement.
+          throw new Error("Failed to commit queued input rejection", {
+            cause: code === undefined ? undefined : { code },
+          });
         }
         throw outcome.error;
       }
