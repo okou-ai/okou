@@ -187,7 +187,9 @@ private struct WorkspaceRootView: View {
               }
             }
           }
-          .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+          .onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+          } action: {
             topContentHeight = $0
           }
         }

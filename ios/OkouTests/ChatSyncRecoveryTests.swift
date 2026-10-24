@@ -242,9 +242,10 @@ private final class SyncRecoveryFixture: Sendable {
           status: 404,
           body: #"{"error":{"code":"CHAT_EVENT_SNAPSHOT_NOT_FOUND","message":"No snapshot"}}"#)
       case "/api/chat-threads/\(Self.threadID)/event-rows":
-        let after = Int(
-          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
-            .queryItems?.first { $0.name == "sinceSeqId" }?.value ?? "0") ?? 0
+        let after =
+          Int(
+            URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+              .queryItems?.first { $0.name == "sinceSeqId" }?.value ?? "0") ?? 0
         let messages = state.withLock { $0.messages }
         let rows = messages.enumerated().filter { $0.offset + 1 > after }.map { index, text in
           """
