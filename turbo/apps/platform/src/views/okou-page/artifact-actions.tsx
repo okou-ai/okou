@@ -38,10 +38,8 @@ import {
   BrandGoogleDrive,
 } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import type {
-  ChatThreadArtifactFile,
-  ChatThreadArtifactGoogleDriveRecovery,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { ChatThreadArtifactGoogleDriveRecovery } from "@okouai/api-contracts/contracts/artifact-google-drive-sync";
+import type { ChatThreadArtifactFile } from "@okouai/api-contracts/contracts/chat-threads";
 import { useGet, useLastResolved, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";

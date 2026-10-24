@@ -181,6 +181,38 @@ test("both Worker steps run only for same-repository PRs and main pushes", () =>
   }
 });
 
+test("startup baseline fetch and upload opt-in are restricted to the existing experiment PR", () => {
+  const fetch = stepNamed("Fetch frozen Worker startup benchmark baseline");
+  const worker = stepNamed(workerName);
+  const expression = field(worker, "API_WORKER_STARTUP_BENCH", 10).match(
+    /^\$\{\{(.*)\}\}$/,
+  )[1];
+  for (const [number, branch, event, expected] of [
+    [42640, "perf/worker-domain-split", "pull_request", true],
+    [42641, "perf/worker-domain-split", "pull_request", false],
+    [42640, "other", "pull_request", false],
+    [42640, "perf/worker-domain-split", "push", false],
+  ]) {
+    const data = context(event);
+    data.github.head_ref = branch;
+    data.github.event.pull_request.number = number;
+    assert.equal(evaluate(field(fetch, "if", 8), data), expected);
+    assert.equal(
+      evaluate(expression, data),
+      expected ? "workflow-schema-reuse" : "",
+    );
+  }
+  const fork = context("pull_request", false);
+  fork.github.head_ref = "perf/worker-domain-split";
+  fork.github.event.pull_request.number = 42640;
+  assert.equal(evaluate(field(fetch, "if", 8), fork), false);
+  assert.equal(evaluate(field(worker, "if", 8), fork), false);
+  assert.match(
+    field(fetch, "run", 8),
+    /^git fetch --no-tags --depth=1 origin 197b2bc9d1e88e777dfe0882c503eba06bbb2012$/,
+  );
+});
+
 test("Worker reuses API setup, environment and sole shared database owner", () => {
   for (const action of [
     "actions/checkout@",
@@ -362,37 +394,44 @@ test("trusted closed-PR cleanup shares the API preview lock without database cre
   assert.match(cleanupJobs["cleanup-database"], /action: "cleanup"/);
 });
 
-test("actual gate shell propagates API job failure and cancellation, retaining allowed skips", () => {
+test("actual gate shell requires selected native Worker tests and retains deployment skips", () => {
   assert.match(gate, /^    if: always\(\)/m);
   assert.ok(dependencies(gate).includes("deploy-api"));
+  assert.ok(dependencies(gate).includes("test-api-worker-domains"));
+  const nativeTests = turboJobs["test-api-worker-domains"];
+  assert.doesNotMatch(nativeTests, /^\s+continue-on-error: true/m);
   const script = field(gate, "run", 8);
   const envKeys = [...gate.matchAll(/^          (\w+): /gm)].map(
     ([, key]) => key,
   );
   for (const event of ["pull_request", "merge_group", "push"]) {
-    for (const [result, expectedStatus] of [
-      ["success", 0],
-      ["failure", 1],
-      ["cancelled", 1],
-      ["skipped", 0],
-    ]) {
-      const data = context(event);
-      data.needs["deploy-api"].result = result;
-      data.needs["detect-release"].outputs.skip = "false";
-      const env = Object.fromEntries(
-        envKeys.map((key) => [key, render(field(gate, key, 10), data)]),
-      );
-      const output = spawnSync("bash", ["-eu", "-c", render(script, data)], {
-        encoding: "utf8",
-        env: { ...process.env, ...env },
-      });
-      assert.equal(
-        output.status,
-        expectedStatus,
-        `${event}/${result}\n${output.stdout}\n${output.stderr}`,
-      );
-      if (expectedStatus !== 0)
-        assert.match(output.stdout, /::error::deploy-api:/);
+    for (const job of ["deploy-api", "test-api-worker-domains"]) {
+      for (const [result, expectedStatus] of [
+        ["success", 0],
+        ["failure", 1],
+        ["cancelled", 1],
+        ["skipped", job === "deploy-api" || event === "push" ? 0 : 1],
+      ]) {
+        const data = context(event);
+        data.needs[job].result = result;
+        data.needs["detect-release"].outputs.skip = "false";
+        data.needs["detect-turbo-ts-checks"].outputs["turbo-ts-checks-needed"] =
+          "true";
+        const env = Object.fromEntries(
+          envKeys.map((key) => [key, render(field(gate, key, 10), data)]),
+        );
+        const output = spawnSync("bash", ["-eu", "-c", render(script, data)], {
+          encoding: "utf8",
+          env: { ...process.env, ...env },
+        });
+        assert.equal(
+          output.status,
+          expectedStatus,
+          `${event}/${job}/${result}\n${output.stdout}\n${output.stderr}`,
+        );
+        if (expectedStatus !== 0)
+          assert.ok(output.stdout.includes(`::error::${job}:`));
+      }
     }
   }
 });

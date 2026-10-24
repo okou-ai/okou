@@ -24,7 +24,7 @@ for action in ['github/codeql-action/init@', 'github/codeql-action/analyze@']:
     assert any(step.get('uses', '').startswith(action) for step in security['codeql']['steps']), \
         'the required CodeQL job must initialize and execute its scanner'
 ts_jobs = ['lint-eslint', 'lint-style', 'lint-types', 'lint-type-app', 'lint-type-api',
-           'lint-format', 'lint-knip', 'test-cli', 'test-app', 'test-api',
+           'lint-format', 'lint-knip', 'test-cli', 'test-app', 'test-api', 'test-api-worker-domains',
            'test-other']
 artifacts = ['deploy-app']
 

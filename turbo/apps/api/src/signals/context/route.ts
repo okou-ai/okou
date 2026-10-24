@@ -34,7 +34,7 @@ export type JsonResponseObserver = (
 ) => void;
 
 interface HonoSignalHandlerOptions {
-  readonly initializeServices$: Command<void, []>;
+  readonly initializeServices$: Command<void, []> | undefined;
 
   readonly observeJsonResponse?: JsonResponseObserver;
 }
@@ -133,7 +133,9 @@ export function honoSignalHandler(
     const store = createStore();
     store.set(setRootSignal$, signal);
     store.set(initHono$, context, contract, apiStartTime);
-    store.set(initializeServices$);
+    if (initializeServices$) {
+      store.set(initializeServices$);
+    }
 
     // Mirror the contract client order: path/query validation
     // precedes auth and downstream services, so a malformed request returns

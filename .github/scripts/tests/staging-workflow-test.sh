@@ -25,7 +25,7 @@ benchmark = workflow('benchmark')
 jobs = turbo['jobs']
 ts_checks = [
     'lint-eslint', 'lint-style', 'lint-types', 'lint-type-app', 'lint-type-api',
-    'lint-format', 'lint-knip', 'test-cli', 'test-app', 'test-api', 'test-other',
+    'lint-format', 'lint-knip', 'test-cli', 'test-app', 'test-api', 'test-api-worker-domains', 'test-other',
 ]
 validation = ts_checks + ['file-size-check', 'test-migrate', 'lint-runtime-api-compat']
 deployed = [

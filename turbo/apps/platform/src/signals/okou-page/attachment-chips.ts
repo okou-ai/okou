@@ -25,10 +25,8 @@ import { onRef, resetSignal } from "../utils.ts";
 import { createObjectUrlResource } from "../object-url-resource.ts";
 import { createArtifactDiagramPreviewSignals } from "../artifact-diagram-preview.ts";
 import { rootSignal$ } from "../root-signal.ts";
-import type {
-  ChatThreadArtifactGoogleDriveRecovery,
-  ImageAnnotation,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { ChatThreadArtifactGoogleDriveRecovery } from "@okouai/api-contracts/contracts/artifact-google-drive-sync";
+import type { ImageAnnotation } from "@okouai/api-contracts/contracts/chat-threads";
 import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
 
 // ---------------------------------------------------------------------------

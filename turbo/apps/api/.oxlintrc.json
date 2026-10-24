@@ -13,7 +13,7 @@
       }
     },
     {
-      "files": ["src/lib/log.ts"],
+      "files": ["src/lib/log.ts", "src/worker-domains/processor.ts"],
       "rules": {
         "no-console": "allow"
       }
@@ -26,7 +26,13 @@
         "src/worker.ts",
         "src/worker-unsupported-pg-native.ts",
         "vite.config.ts",
-        "vitest.config.ts"
+        "vitest.config.ts",
+        "src/worker-domains/gateway.ts",
+        "src/worker-domains/core.ts",
+        "src/worker-domains/execution.ts",
+        "src/worker-domains/integrations.ts",
+        "src/worker-domains/data.ts",
+        "src/worker-domains/processor.ts"
       ],
       "rules": {
         "import/no-default-export": "off"
@@ -37,8 +43,18 @@
       "plugins": ["jest", "vitest"],
       "rules": {
         "no-restricted-imports": "allow",
-        "valid-expect": ["deny", { "maxArgs": 2 }],
-        "vitest/valid-expect": ["deny", { "maxArgs": 2 }],
+        "valid-expect": [
+          "deny",
+          {
+            "maxArgs": 2
+          }
+        ],
+        "vitest/valid-expect": [
+          "deny",
+          {
+            "maxArgs": 2
+          }
+        ],
         "consistent-test-it": "deny",
         "eslint/max-nested-callbacks": ["allow"],
         "expect-expect": "allow",
@@ -90,6 +106,23 @@
         "new-cap": "allow",
         "max-lines-per-function": ["allow"],
         "complexity": "allow"
+      }
+    },
+    {
+      "files": ["src/app-factory-base.ts", "src/worker-domains/gateway.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "deny",
+          {
+            "paths": [
+              {
+                "name": "@vercel/functions",
+                "importNames": ["waitUntil"],
+                "message": "Use waitUntil from signals/context/wait-until instead so detached promises stay tracked."
+              }
+            ]
+          }
+        ]
       }
     }
   ],

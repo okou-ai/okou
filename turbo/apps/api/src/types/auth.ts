@@ -1,5 +1,5 @@
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import type { WorkflowImportSource } from "@okouai/api-contracts/contracts/workflows";
+import type { WorkflowImportSource } from "@okouai/api-contracts/contracts/workflow-import-source";
 
 export type ApiOrgRole = "admin" | "member";
 

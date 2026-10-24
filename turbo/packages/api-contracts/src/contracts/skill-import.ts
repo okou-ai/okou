@@ -1,12 +1,14 @@
 import * as z from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { workflowImportSourceSchema } from "./workflow-import-source";
 import {
   RESERVED_SKILL_FILE,
-  workflowImportSourceSchema,
   workflowNameSchema,
   workflowSummarySchema,
 } from "./workflows";
+
+export { SKILL_IMPORT_SESSION_TTL_SECONDS } from "./skill-import-session";
 
 const c = initContract();
 
@@ -26,9 +28,6 @@ const c = initContract();
  * can add an explicit encoding to the upload body without touching the shared
  * workflow contract.
  */
-
-/** Session token lifetime, mirrored in the session response's `expiresAt`. */
-export const SKILL_IMPORT_SESSION_TTL_SECONDS = 24 * 60 * 60;
 
 /**
  * Upload limits for one session. They are returned with the session so the

@@ -336,6 +336,10 @@
         "$TURBO_ROOT$/packages/api-contracts/src/contracts/__tests__/fixtures/x-resource-observations.json"
       ]
     },
+    "api#test:worker-domains": {
+      "env": ["WORKER_BASELINE"],
+      "cache": false
+    },
     "dev": {
       "cache": false,
       "persistent": true

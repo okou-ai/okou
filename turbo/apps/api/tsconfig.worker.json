@@ -14,8 +14,10 @@
   },
   "include": [
     "src/worker.ts",
+    "src/worker-runtime.ts",
+    "src/worker-domains/**/*.ts",
     "src/__tests__/worker-lifecycle.test.ts",
-    "src/worker-runtime.d.ts",
+    "src/worker-cloudflare.d.ts",
     "src/worker-unsupported-*.ts"
   ],
   "exclude": ["node_modules", "dist", "dist-worker"],

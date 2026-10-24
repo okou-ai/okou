@@ -4,7 +4,7 @@ import { authHeadersSchema, initContract } from "./base";
 import {
   chatThreadArtifactGoogleDriveSyncSchema,
   type ChatThreadArtifactGoogleDriveSync,
-} from "./chat-threads";
+} from "./artifact-google-drive-sync";
 import { apiErrorSchema, type ApiErrorResponse } from "./errors";
 import type {
   AnyRouteTypeSlots,

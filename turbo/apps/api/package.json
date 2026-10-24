@@ -26,7 +26,10 @@
     "check-types:core": "bash scripts/check-types.sh core",
     "check-types:bootstrap": "bash scripts/check-types.sh bootstrap",
     "check-types:tests": "bash scripts/check-types.sh tests",
-    "check-types:bootstrap-wiring": "bash scripts/check-types.sh bootstrap-wiring"
+    "check-types:bootstrap-wiring": "bash scripts/check-types.sh bootstrap-wiring",
+    "build:worker-domains": "node scripts/build-worker-domains.mjs",
+    "test:worker-domains": "node --test --test-concurrency=1 scripts/test-worker-domains.node-test.mjs scripts/test-worker-processor.node-test.mjs scripts/worker-dev-env.node-test.mjs",
+    "dev:worker-domains": "node scripts/dev-worker-domains.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1149.0",

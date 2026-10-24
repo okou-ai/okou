@@ -678,6 +678,13 @@ export default [
     },
   },
   {
+    files: ["src/worker-domains/gateway.ts"],
+    rules: {
+      // The isolate owns one immutable route table and no request state.
+      "api/no-package-variable": ["error", { allowedConstructors: ["Hono"] }],
+    },
+  },
+  {
     files: ["src/**/*.ts", "vitest.config.ts"],
     plugins: { api: apiLintPlugin },
     rules: {

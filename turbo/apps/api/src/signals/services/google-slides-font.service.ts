@@ -1,5 +1,5 @@
 import { create, type Font } from "fontkit";
-import { settleIncludingAbort } from "../utils";
+import { settleIncludingAbort } from "../async-utils";
 
 export interface SlidesFontFace {
   readonly family: string;
@@ -84,7 +84,7 @@ export async function loadSlidesFont(
   url.searchParams.set("family", `${face.family}:${variant}`);
   const css = await fetch(url, {
     signal: fontSignal,
-    redirect: "error",
+    redirect: "manual",
     // The legacy stylesheet serves a complete static TrueType face instead
     // of browser-specific Unicode subsets or a variable-font default weight.
     headers: { "User-Agent": "Okou-Presentation-Import/1.0" },
@@ -112,7 +112,7 @@ export async function loadSlidesFont(
   }
   const response = await fetch(fontUrl, {
     signal: fontSignal,
-    redirect: "error",
+    redirect: "manual",
   });
   if (!response.ok) {
     throw new Error(`Google Fonts download failed: ${String(response.status)}`);
