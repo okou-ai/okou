@@ -4,6 +4,8 @@ import { builtInGenerationResponseSchema } from "@okouai/api-contracts/contracts
 import { http, HttpResponse } from "msw";
 
 import { testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { userModelPreferenceRoutes } from "../user-model-preference";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import {
@@ -34,8 +36,10 @@ beforeEach(() => {
   context.mocks.s3.send.mockResolvedValue({});
 });
 
-function createFixture(options: { readonly isolatePg?: boolean } = {}) {
-  return createDurableImageFixture(context, options);
+function createFixture(
+  preferences = setupApp({ context, routes: userModelPreferenceRoutes }),
+) {
+  return createDurableImageFixture(context, preferences);
 }
 
 describe("durable OpenAI Responses image generation", () => {
@@ -59,7 +63,12 @@ describe("durable OpenAI Responses image generation", () => {
   });
 
   it("queues without waiting for the image and polls the same response without a callback", async () => {
-    const fixture = await createFixture({ isolatePg: true });
+    const preferences = await setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+      isolatePg: true,
+    });
+    const fixture = await createFixture(preferences);
     await fixture.actor.run(async () => {
       const provider = mockOpenAiImageResponses();
       const response = await fixture.generate();
@@ -168,7 +177,12 @@ describe("durable OpenAI Responses image generation", () => {
   });
 
   it("delivers the provider-backed tool ledger through owner refresh and settles exactly once", async () => {
-    const fixture = await createFixture({ isolatePg: true });
+    const preferences = await setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+      isolatePg: true,
+    });
+    const fixture = await createFixture(preferences);
     await fixture.actor.run(async () => {
       const provider = mockOpenAiImageResponses();
       const response = await fixture.generate();
@@ -275,7 +289,12 @@ describe("durable OpenAI Responses image generation", () => {
   it.each(["missing-mainline", "image-total", "mainline-total"] as const)(
     "keeps a %s ledger recoverable without charging or storing an image",
     async (failure) => {
-      const fixture = await createFixture({ isolatePg: true });
+      const preferences = await setupApp({
+        context,
+        routes: userModelPreferenceRoutes,
+        isolatePg: true,
+      });
+      const fixture = await createFixture(preferences);
       await fixture.actor.run(async () => {
         const provider = mockOpenAiImageResponses();
         const response = await fixture.generate();
@@ -435,7 +454,12 @@ describe("durable OpenAI Responses image generation", () => {
   ] as const)(
     "preserves definitive provider rejection %s (%s)",
     async (code, stage, publicCode) => {
-      const fixture = await createFixture({ isolatePg: true });
+      const preferences = await setupApp({
+        context,
+        routes: userModelPreferenceRoutes,
+        isolatePg: true,
+      });
+      const fixture = await createFixture(preferences);
       await fixture.actor.run(async () => {
         const provider = mockOpenAiImageResponses({
           submit: () => {

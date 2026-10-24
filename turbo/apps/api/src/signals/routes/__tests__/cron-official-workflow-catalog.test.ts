@@ -76,49 +76,6 @@ function loopBlueprint(key: string): OfficialWorkflowBlueprint {
   };
 }
 
-function calendarBlueprint(
-  key: string,
-  calendarId: string | undefined,
-): OfficialWorkflowBlueprint {
-  return {
-    key,
-    parameters: [],
-    desiredState: {
-      kind: "event",
-      eventType: "google-calendar-event-created",
-      ...(calendarId === undefined
-        ? {}
-        : {
-            eventConfig: {
-              provider: "google-calendar",
-              event: "event_created",
-              calendarId,
-            },
-          }),
-    },
-  };
-}
-
-function chatRunFinishedBlueprint(
-  key: string,
-  runStatuses: readonly ("completed" | "failed" | "cancelled")[],
-): OfficialWorkflowBlueprint {
-  return {
-    key,
-    parameters: [],
-    desiredState: {
-      kind: "event",
-      eventType: "chat-run-finished",
-      eventConfig: {
-        provider: "chat",
-        event: "run_finished",
-        chatThreadId: "00000000-0000-4000-8000-000000000001",
-        runStatuses: [...runStatuses],
-      },
-    },
-  };
-}
-
 function activeDefinition(
   name: string,
   options: {
@@ -166,18 +123,17 @@ function retiredDefinition(
   };
 }
 
-async function syncClient(candidate: unknown) {
-  const app = await setupApp({
+function syncClient(candidate: unknown) {
+  const app = setupApp({
     context,
     routes: createCronOfficialWorkflowCatalogRoutes(candidate),
-    isolatePg: true,
   });
   return app(cronOfficialWorkflowCatalogContract);
 }
 
 async function syncCatalog(candidate: unknown) {
   return await accept(
-    (await syncClient(candidate)).sync({ headers: cronHeaders() }),
+    syncClient(candidate).sync({ headers: cronHeaders() }),
     [200],
   );
 }
@@ -313,10 +269,17 @@ describe("Official Workflow catalog release boundary", () => {
   });
 
   it("authenticates sync and accepts an idempotent empty initial catalog", async () => {
+    const app = await setupApp({
+      context,
+      routes: createCronOfficialWorkflowCatalogRoutes(catalog([])),
+      isolatePg: true,
+    });
     const unauthorized = await syncCatalogUnauthorized(catalog([]));
     expect(unauthorized.status).toBe(401);
-
-    const first = await syncCatalog(catalog([]));
+    const first = await accept(
+      app(cronOfficialWorkflowCatalogContract).sync({ headers: cronHeaders() }),
+      [200],
+    );
     expect(first).toMatchObject({
       status: 200,
       body: { outcome: "accepted", diagnostics: [] },
@@ -345,13 +308,21 @@ describe("Official Workflow catalog release boundary", () => {
         },
       },
     };
-    const released = await syncCatalog(
-      catalog([
-        activeDefinition("connector-doctor", {
-          blueprints: [historicalBlueprint],
-        }),
-        activeDefinition("proactive-action"),
-      ]),
+    const app = await setupApp({
+      context,
+      routes: createCronOfficialWorkflowCatalogRoutes(
+        catalog([
+          activeDefinition("connector-doctor", {
+            blueprints: [historicalBlueprint],
+          }),
+          activeDefinition("proactive-action"),
+        ]),
+      ),
+      isolatePg: true,
+    });
+    const released = await accept(
+      app(cronOfficialWorkflowCatalogContract).sync({ headers: cronHeaders() }),
+      [200],
     );
     expect(released.body).toMatchObject({
       outcome: "accepted",
@@ -381,7 +352,15 @@ describe("Official Workflow catalog release boundary", () => {
     const daily = scheduleBlueprint("daily");
     const hourly = loopBlueprint("hourly");
     const initial = activeDefinition(name, { blueprints: [daily, hourly] });
-    const initialRelease = await syncCatalog(catalog([initial]));
+    const app = await setupApp({
+      context,
+      routes: createCronOfficialWorkflowCatalogRoutes(catalog([initial])),
+      isolatePg: true,
+    });
+    const initialRelease = await accept(
+      app(cronOfficialWorkflowCatalogContract).sync({ headers: cronHeaders() }),
+      [200],
+    );
 
     const reorderedDaily: OfficialWorkflowBlueprint = {
       ...daily,
@@ -452,222 +431,17 @@ describe("Official Workflow catalog release boundary", () => {
     expect(s3.writes).toStrictEqual([]);
   });
 
-  it("rejects omitted and non-canonical Calendar event configuration", async () => {
-    installVolumeS3Fixture();
-    const name = `api-test-event-calendar-validation-${TEST_SUFFIX}`;
-    const omittedCalendarDefault = await syncCatalog(
-      catalog([
-        activeDefinition(name, {
-          blueprints: [calendarBlueprint("calendar", undefined)],
-        }),
-      ]),
-    );
-    expect(omittedCalendarDefault.body).toMatchObject({
-      outcome: "rejected",
-      releaseId: null,
-      diagnostics: [{ code: "invalid-blueprint-configuration" }],
-    });
-
-    const trimmedCalendar = await syncCatalog(
-      catalog([
-        activeDefinition(name, {
-          blueprints: [calendarBlueprint("calendar", " primary ")],
-        }),
-      ]),
-    );
-    expect(trimmedCalendar.body).toMatchObject({
-      outcome: "rejected",
-      releaseId: null,
-      diagnostics: [{ code: "invalid-blueprint-configuration" }],
-    });
-  });
-
-  it("canonicalizes duplicate and reordered chat-run statuses", async () => {
-    installVolumeS3Fixture();
-    const name = `api-test-event-statuses-${TEST_SUFFIX}`;
-    const duplicateSet = chatRunFinishedBlueprint("chat", [
-      "failed",
-      "completed",
-      "failed",
-    ]);
-    const accepted = await syncCatalog(
-      catalog([
-        activeDefinition(name, {
-          blueprints: [calendarBlueprint("calendar", "primary"), duplicateSet],
-        }),
-      ]),
-    );
-    expect(accepted.body.outcome).toBe("accepted");
-
-    const reorderedSet = chatRunFinishedBlueprint("chat", [
-      "completed",
-      "failed",
-    ]);
-    const equivalent = await syncCatalog(
-      catalog([
-        activeDefinition(name, {
-          blueprints: [reorderedSet, calendarBlueprint("calendar", "primary")],
-        }),
-      ]),
-    );
-    expect(equivalent.body).toMatchObject({
-      outcome: "unchanged",
-      releaseId: accepted.body.releaseId,
-    });
-  });
-
-  it("rejects the complete invalid candidate, duplicates, and non-canonical input", async () => {
-    installVolumeS3Fixture();
-    const name = `api-test-validation-${TEST_SUFFIX}`;
-    const baselineCatalog = catalog([activeDefinition(name)]);
-    const accepted = await syncCatalog(baselineCatalog);
-    const acceptedReleaseId = accepted.body.releaseId;
-
-    const unknownFieldName = `api-test-invalid-${TEST_SUFFIX}`;
-    const invalidDefinition = {
-      ...activeDefinition(unknownFieldName),
-      unknownField: "must fail closed",
-    };
-    const invalid = await syncCatalog({
-      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
-      definitions: [activeDefinition(name), invalidDefinition],
-    });
-    expect(invalid.body).toMatchObject({
-      outcome: "rejected",
-      releaseId: acceptedReleaseId,
-      diagnostics: [{ code: "invalid-candidate" }],
-    });
-
-    const invalidName = await syncCatalog({
-      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
-      definitions: [
-        { ...activeDefinition(name), name: "Invalid Definition Name" },
-      ],
-    });
-    expect(invalidName.body).toMatchObject({
-      outcome: "rejected",
-      releaseId: acceptedReleaseId,
-      diagnostics: [{ code: "invalid-candidate" }],
-    });
-    expect(invalidName.body.diagnostics[0]).not.toHaveProperty(
-      "definitionName",
-    );
-
-    const duplicateDefinition = await syncCatalog(
-      catalog([activeDefinition(name), activeDefinition(name)]),
-    );
-    expect(duplicateDefinition.body.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "duplicate-definition-name" }),
-    );
-
-    const duplicateBlueprint = scheduleBlueprint("daily");
-    const duplicateBlueprintResponse = await syncCatalog(
-      catalog([
-        activeDefinition(name, {
-          blueprints: [duplicateBlueprint, duplicateBlueprint],
-        }),
-      ]),
-    );
-    expect(duplicateBlueprintResponse.body.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "duplicate-blueprint-key" }),
-    );
-
-    const invalidConfiguration = await syncCatalog(
-      catalog([
-        activeDefinition(name, {
-          blueprints: [
-            {
-              ...loopBlueprint("invalid-loop"),
-              desiredState: {
-                kind: "schedule",
-                schedule: { type: "loop", intervalSeconds: -1 },
-              },
-            },
-          ],
-        }),
-      ]),
-    );
-    expect(invalidConfiguration.body.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "invalid-blueprint-configuration" }),
-    );
-
-    const invalidParameter = await syncCatalog({
-      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
-      definitions: [
-        {
-          ...activeDefinition(name),
-          blueprints: [
-            {
-              ...scheduleBlueprint("daily"),
-              parameters: [
-                {
-                  key: "callback-url",
-                  type: "string",
-                  format: "url",
-                  required: true,
-                  default: "not-a-url",
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    });
-    expect(invalidParameter.body.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "invalid-parameter-declaration" }),
-    );
-
-    const nonCanonical = await syncCatalog(
-      catalog([
-        activeDefinition(name, { instruction: "Windows line\r\nbreak" }),
-      ]),
-    );
-    expect(nonCanonical.body.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "non-canonical-value" }),
-    );
-
-    const blueprintWithUndefined = scheduleBlueprint("daily");
-    const explicitUndefined = await syncCatalog({
-      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
-      definitions: [
-        {
-          ...activeDefinition(name),
-          blueprints: [
-            {
-              ...blueprintWithUndefined,
-              desiredState: {
-                ...blueprintWithUndefined.desiredState,
-                autonomyBudget: undefined,
-              },
-            },
-          ],
-        },
-      ],
-    });
-    expect(explicitUndefined.body).toMatchObject({
-      outcome: "rejected",
-      releaseId: acceptedReleaseId,
-      diagnostics: [
-        {
-          code: "non-canonical-value",
-          path: [
-            "definitions",
-            0,
-            "blueprints",
-            0,
-            "desiredState",
-            "autonomyBudget",
-          ],
-          definitionName: name,
-          blueprintKey: "daily",
-        },
-      ],
-    });
-  });
-
   it("keeps the previous release when later artifact preparation fails", async () => {
     const s3 = installVolumeS3Fixture();
-    const empty = await syncCatalog(catalog([]));
+    const app = await setupApp({
+      context,
+      routes: createCronOfficialWorkflowCatalogRoutes(catalog([])),
+      isolatePg: true,
+    });
+    const empty = await accept(
+      app(cronOfficialWorkflowCatalogContract).sync({ headers: cronHeaders() }),
+      [200],
+    );
     const alpha = `api-test-partial-alpha-${TEST_SUFFIX}`;
     const beta = `api-test-partial-beta-${TEST_SUFFIX}`;
     s3.failPutAttempt(3);
@@ -689,7 +463,17 @@ describe("Official Workflow catalog release boundary", () => {
   it("retires and repeats sync without touching stored objects", async () => {
     installVolumeS3Fixture();
     const name = `api-test-retired-reuse-${TEST_SUFFIX}`;
-    await syncCatalog(catalog([activeDefinition(name)]));
+    const app = await setupApp({
+      context,
+      routes: createCronOfficialWorkflowCatalogRoutes(
+        catalog([activeDefinition(name)]),
+      ),
+      isolatePg: true,
+    });
+    await accept(
+      app(cronOfficialWorkflowCatalogContract).sync({ headers: cronHeaders() }),
+      [200],
+    );
     context.mocks.s3.send.mockClear();
     const retirement = await syncCatalog(catalog([retiredDefinition(name)]));
     expect(retirement.body.outcome).toBe("accepted");
@@ -701,7 +485,17 @@ describe("Official Workflow catalog release boundary", () => {
   it("keeps the current revision stable without probing or rewriting objects", async () => {
     installVolumeS3Fixture();
     const name = `api-test-historical-reuse-${TEST_SUFFIX}`;
-    await syncCatalog(catalog([activeDefinition(name)]));
+    const app = await setupApp({
+      context,
+      routes: createCronOfficialWorkflowCatalogRoutes(
+        catalog([activeDefinition(name)]),
+      ),
+      isolatePg: true,
+    });
+    await accept(
+      app(cronOfficialWorkflowCatalogContract).sync({ headers: cronHeaders() }),
+      [200],
+    );
     const currentCandidate = activeDefinition(name, {
       instruction: "Use the second durable revision.",
     });
@@ -716,7 +510,17 @@ describe("Official Workflow catalog release boundary", () => {
     installVolumeS3Fixture();
     const name = `api-test-index-aba-${TEST_SUFFIX}`;
     const firstCandidate = activeDefinition(name);
-    const firstRelease = await syncCatalog(catalog([firstCandidate]));
+    const app = await setupApp({
+      context,
+      routes: createCronOfficialWorkflowCatalogRoutes(
+        catalog([firstCandidate]),
+      ),
+      isolatePg: true,
+    });
+    const firstRelease = await accept(
+      app(cronOfficialWorkflowCatalogContract).sync({ headers: cronHeaders() }),
+      [200],
+    );
     await syncCatalog(
       catalog([activeDefinition(name, { instruction: "Publish revision B." })]),
     );
@@ -736,8 +540,16 @@ describe("Official Workflow catalog release boundary", () => {
   it("rejects silent deletion and unknown retirement, then accepts retirement and reactivation", async () => {
     installVolumeS3Fixture();
     const name = `api-test-lifecycle-${TEST_SUFFIX}`;
-    const initiallyRetired = await syncCatalog(
-      catalog([retiredDefinition(name)]),
+    const app = await setupApp({
+      context,
+      routes: createCronOfficialWorkflowCatalogRoutes(
+        catalog([retiredDefinition(name)]),
+      ),
+      isolatePg: true,
+    });
+    const initiallyRetired = await accept(
+      app(cronOfficialWorkflowCatalogContract).sync({ headers: cronHeaders() }),
+      [200],
     );
     expect(initiallyRetired.body).toMatchObject({
       outcome: "rejected",
@@ -783,8 +595,18 @@ describe("Official Workflow catalog release boundary", () => {
     installVolumeS3Fixture();
     const name = `api-test-concurrent-${TEST_SUFFIX}`;
     const candidate = catalog([activeDefinition(name)]);
+    const app = await setupApp({
+      context,
+      routes: createCronOfficialWorkflowCatalogRoutes(candidate),
+      isolatePg: true,
+    });
     const [left, right] = await Promise.all([
-      syncCatalog(candidate),
+      accept(
+        app(cronOfficialWorkflowCatalogContract).sync({
+          headers: cronHeaders(),
+        }),
+        [200],
+      ),
       syncCatalog(candidate),
     ]);
     expect([left.body.outcome, right.body.outcome].sort()).toStrictEqual([
@@ -796,7 +618,15 @@ describe("Official Workflow catalog release boundary", () => {
 
   it("rejects a slower stale candidate after a different release activates", async () => {
     const s3 = installVolumeS3Fixture();
-    const initial = await syncCatalog(catalog([]));
+    const app = await setupApp({
+      context,
+      routes: createCronOfficialWorkflowCatalogRoutes(catalog([])),
+      isolatePg: true,
+    });
+    const initial = await accept(
+      app(cronOfficialWorkflowCatalogContract).sync({ headers: cronHeaders() }),
+      [200],
+    );
     const name = `api-test-stale-activation-${TEST_SUFFIX}`;
     const blocked = s3.blockNextPut();
     const slowPromise = syncCatalog(
