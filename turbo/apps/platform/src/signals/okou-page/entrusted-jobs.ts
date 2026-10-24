@@ -19,7 +19,7 @@ import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { onRef } from "../utils.ts";
 
 export const entrustedJobsEnabled$ = computed(async (get) => {
-  if (!get(featureSwitch$)[FeatureSwitchKey.ProactiveJobs]) {
+  if (!get(featureSwitch$)[FeatureSwitchKey.ProactiveAgent]) {
     return false;
   }
   const [current, primary] = await Promise.all([
@@ -353,7 +353,7 @@ export const enterEntrustedJobs$ = command(({ set }) => {
 });
 export const subscribeEntrustedJobs$ = command(
   ({ get, set }, signal: AbortSignal) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.ProactiveJobs]) {
+    if (!get(featureSwitch$)[FeatureSwitchKey.ProactiveAgent]) {
       return;
     }
     set(

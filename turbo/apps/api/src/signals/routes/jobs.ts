@@ -11,9 +11,26 @@ import {
   createUserJob$,
   updateUserJob$,
   appendUserJobInput$,
+  appendUserJobObservation$,
   acknowledgeUserJobResult$,
   archiveUserJob$,
+  deriveUserJobIdentity,
 } from "../services/user-jobs.service";
+
+const identity$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const owner = await set(jobAccess$, signal);
+  if ("status" in owner) {
+    return owner;
+  }
+  const body = await get(bodyResultOf(jobsContract.identity));
+  signal.throwIfAborted();
+  return body.ok
+    ? {
+        status: 200 as const,
+        body: { id: deriveUserJobIdentity(owner, body.data.key) },
+      }
+    : body.response;
+});
 
 const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
@@ -96,6 +113,23 @@ const viewed$ = command(async ({ get, set }, signal: AbortSignal) => {
       )
     : body.response;
 });
+const observe$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const owner = await set(jobAccess$, signal);
+  if ("status" in owner) {
+    return owner;
+  }
+  const body = await get(bodyResultOf(jobsContract.observe));
+  signal.throwIfAborted();
+  return body.ok
+    ? await set(
+        appendUserJobObservation$,
+        owner,
+        get(pathParamsOf(jobsContract.observe)).id,
+        body.data,
+        signal,
+      )
+    : body.response;
+});
 const archive$ = command(async ({ get, set }, signal: AbortSignal) => {
   const owner = await set(jobAccess$, signal);
   return "status" in owner
@@ -119,11 +153,13 @@ const writeAuth = {
 } as const;
 const userAuth = { accept: ["session"], requireOrganization: true } as const;
 export const jobsRoutes: readonly RouteEntry[] = [
+  { route: jobsContract.identity, handler: authRoute(readAuth, identity$) },
   { route: jobsContract.list, handler: authRoute(readAuth, list$) },
   { route: jobsContract.get, handler: authRoute(readAuth, read$) },
   { route: jobsContract.create, handler: authRoute(writeAuth, create$) },
   { route: jobsContract.update, handler: authRoute(writeAuth, update$) },
   { route: jobsContract.input, handler: authRoute(userAuth, input$) },
+  { route: jobsContract.observe, handler: authRoute(writeAuth, observe$) },
   { route: jobsContract.viewed, handler: authRoute(userAuth, viewed$) },
   { route: jobsContract.archive, handler: authRoute(userAuth, archive$) },
 ];

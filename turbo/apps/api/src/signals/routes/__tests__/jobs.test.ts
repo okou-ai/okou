@@ -36,7 +36,7 @@ async function fixture(secondary = false) {
   await updateFeatureSwitchesForUser(
     context,
     { ...actor, orgId: actor.orgId },
-    { [FeatureSwitchKey.ProactiveJobs]: true },
+    { [FeatureSwitchKey.ProactiveAgent]: true },
   );
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
@@ -91,6 +91,55 @@ async function read(id: string, actor: ApiTestUser) {
 }
 
 describe("Entrusted Tasks", () => {
+  it("derives stable owner-scoped identities and rejects observations from ordinary Agent Runs", async () => {
+    const f = await fixture();
+    const key = "github:issue/123:prepare-response";
+    const first = (
+      await accept(
+        client().identity({ headers: f.headers, body: { key } }),
+        [200],
+      )
+    ).body;
+    const replay = (
+      await accept(
+        client().identity({ headers: human(f.actor), body: { key } }),
+        [200],
+      )
+    ).body;
+    expect(replay).toStrictEqual(first);
+    const other = createBddApi(context).user();
+    await createBddApi(context).completeOnboarding(other);
+    if (!other.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...other, orgId: other.orgId },
+      { [FeatureSwitchKey.ProactiveAgent]: true },
+    );
+    const unrelated = (
+      await accept(
+        client().identity({ headers: human(other), body: { key } }),
+        [200],
+      )
+    ).body;
+    expect(unrelated.id).not.toBe(first.id);
+    const task = await create(f.headers);
+    await accept(
+      client().observe({
+        headers: f.headers,
+        params: { id: task.id },
+        body: {
+          id: randomUUID(),
+          text: "Agent context",
+          sourceReferences: ["chat:123"],
+          sourceVersion: "v1",
+        },
+      }),
+      [403],
+    );
+  });
+
   it("preserves a stable creation identity and rejects reuse for different delegation", async () => {
     const f = await fixture();
     const job = await create(f.headers);
@@ -460,7 +509,7 @@ describe("Entrusted Tasks", () => {
     await updateFeatureSwitchesForUser(
       context,
       { ...other, orgId: other.orgId },
-      { [FeatureSwitchKey.ProactiveJobs]: true },
+      { [FeatureSwitchKey.ProactiveAgent]: true },
     );
     await accept(
       client().get({ headers: human(other), params: { id: job.id } }),
@@ -469,7 +518,7 @@ describe("Entrusted Tasks", () => {
     await updateFeatureSwitchesForUser(
       context,
       { ...f.actor, orgId: f.actor.orgId! },
-      { [FeatureSwitchKey.ProactiveJobs]: false },
+      { [FeatureSwitchKey.ProactiveAgent]: false },
     );
     const denied = await accept(
       client().get({ headers: human(f.actor), params: { id: job.id } }),

@@ -13,11 +13,11 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-test("hides Proactive Suggestions behind Agent Suggestion while retaining Morning Brief", async () => {
+test("hides Proactive Agent while retaining the released Morning Brief", async () => {
   await setupPage({
     context,
     path: "/agents?settings=preference",
-    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: false },
+    featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: false },
   });
   await expect(
     screen.findByRole("switch", { name: "Morning brief" }),
@@ -49,8 +49,8 @@ test("starts off, enables hourly checks independently of Morning Brief, and pres
   );
   await setupPage({
     context,
-    path: "/agents?settings=preference",
-    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: true },
+    path: "/agents?settings=proactive-agent",
+    featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: true },
   });
   const toggle = await screen.findByRole("switch", {
     name: "Proactive Suggestions",
@@ -59,17 +59,24 @@ test("starts off, enables hourly checks independently of Morning Brief, and pres
     return expect(toggle).toBeEnabled();
   });
   expect(toggle).not.toBeChecked();
-  const morning = screen.getByRole("switch", { name: "Morning brief" });
-  expect(morning).not.toBeChecked();
   click(toggle);
   await waitFor(() => {
     return expect(toggle).toBeChecked();
   });
-  expect(morning).not.toBeChecked();
   click(toggle);
   await waitFor(() => {
     return expect(toggle).not.toBeChecked();
   });
+  const preferenceButton = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Preference";
+  });
+  if (!preferenceButton) {
+    throw new Error("Expected Preference navigation");
+  }
+  click(preferenceButton);
+  await expect(
+    screen.findByRole("switch", { name: "Morning brief" }),
+  ).resolves.not.toBeChecked();
 });
 
 test("keeps a pending opt-in cancellable when the primary Agent is unavailable", async () => {
@@ -90,8 +97,8 @@ test("keeps a pending opt-in cancellable when the primary Agent is unavailable",
   );
   await setupPage({
     context,
-    path: "/agents?settings=preference",
-    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: true },
+    path: "/agents?settings=proactive-agent",
+    featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: true },
   });
   const card = await screen.findByTestId("proactive-suggestions-preference");
   await expect(
@@ -129,8 +136,8 @@ test("retries a failed opt-out without enabling proactive suggestions", async ()
   );
   await setupPage({
     context,
-    path: "/agents?settings=preference",
-    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: true },
+    path: "/agents?settings=proactive-agent",
+    featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: true },
   });
   const card = await screen.findByTestId("proactive-suggestions-preference");
   const retry = await waitFor(() => {
@@ -170,8 +177,8 @@ test("keeps suggestions opted in during platform recovery without asking the use
   );
   await setupPage({
     context,
-    path: "/agents?settings=preference",
-    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: true },
+    path: "/agents?settings=proactive-agent",
+    featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: true },
   });
   const card = await screen.findByTestId("proactive-suggestions-preference");
   await expect(

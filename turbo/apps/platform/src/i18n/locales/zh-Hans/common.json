@@ -1963,6 +1963,7 @@
       "retry": "重试",
       "saved": "已保存，等待下一轮评估",
       "saveReply": "保存回复",
+      "sourceUpdate": "来源更新",
       "states": {
         "active": "进行中",
         "archived": "已归档",
@@ -5120,6 +5121,10 @@
           "description": "个性化应用的外观和使用方式。",
           "title": "偏好设置"
         },
+        "proactiveAgent": {
+          "description": "选择 Okou 如何学习、规划、推进任务和提供建议。",
+          "title": "Proactive Agent"
+        },
         "tools": {
           "title": "工具"
         },
@@ -5526,15 +5531,37 @@
       "proactiveJobs": {
         "description": "自动推进你的任务，在需要你处理或任务完成时提醒你。",
         "missingDefaultAgent": "请先选择可用的默认 Agent。",
+        "missingTimezone": "请在偏好设置中设置时区。",
         "preparationFailed": "任务暂时无法推进；如果工作已暂停，可关闭后重新开启以重试。",
         "preparing": "正在准备任务，你可以随时关闭。",
         "retry": "重试",
         "retryMessage": "无法读取或更新任务设置，请重试。",
         "title": "自动推进任务"
       },
+      "proactiveLearning": {
+        "description": "夜间回顾你的信息和工作，整理个人记忆、更新理解。",
+        "missingDefaultAgent": "请先选择可用的默认 Agent。",
+        "missingTimezone": "请在偏好设置中设置时区。",
+        "preparationFailed": "此工作流暂不可用，Okou 会重试。",
+        "preparing": "正在准备此工作流。",
+        "retry": "重试",
+        "retryMessage": "无法加载或更新此设置，请重试。",
+        "title": "主动学习"
+      },
+      "proactivePlanning": {
+        "description": "在你明确交办的范围内规划并维护任务。开启 Tasks 后，新任务可立即推进。",
+        "missingDefaultAgent": "请先选择可用的默认 Agent。",
+        "missingTimezone": "请在偏好设置中设置时区。",
+        "preparationFailed": "此工作流暂不可用，Okou 会重试。",
+        "preparing": "正在准备此工作流。",
+        "retry": "重试",
+        "retryMessage": "无法加载或更新此设置，请重试。",
+        "title": "主动规划"
+      },
       "proactiveSuggestions": {
         "description": "让 Okou 每小时检查已连接的信息来源，并在主页推荐有用的下一步行动。",
         "missingDefaultAgent": "请选择可用的默认 Agent 以接收主动建议。",
+        "missingTimezone": "请在偏好设置中设置时区。",
         "preparationFailed": "暂时无法运行，Okou 会自动重试。",
         "preparing": "正在准备每小时建议，你可以随时关闭。",
         "retry": "重试",
