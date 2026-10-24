@@ -3,6 +3,7 @@
 use super::*;
 use crate::test_fixtures::{diagnostic_attempt, diagnostic_text, remote_inventory};
 use futures_util::{SinkExt, StreamExt};
+use tokio::net::TcpSocket;
 
 #[derive(Clone, Copy)]
 enum Scenario {
@@ -109,12 +110,18 @@ async fn exercise(scenario: Scenario) {
     } else {
         None
     };
-    if matches!(scenario, Scenario::RelayFailure) {
-        // Both advertised families target a physically closed external listener.
+    let refused_sockets = if matches!(scenario, Scenario::RelayFailure) {
+        // Keep both advertised families reserved without listening. Releasing
+        // the old listener's port lets unrelated fixtures turn refusal into TLS.
+        let sockets = reserve_refused_relay();
         let other = other.as_mut().unwrap();
         other.task.abort();
         assert!(matches!((&mut other.task).await, Err(error) if error.is_cancelled()));
-    }
+        other.address = sockets.0.local_addr().unwrap();
+        Some(sockets)
+    } else {
+        None
+    };
     let key = NodeKeyPair::random();
     let peer_key = key.public;
     let mut value: Value = serde_json::from_slice(&map(&home)).unwrap();
@@ -584,6 +591,14 @@ async fn exercise(scenario: Scenario) {
                 text.contains("Selected relay relay attempt: failed;"),
                 "{text}"
             );
+            for family in ["IPv4", "IPv6"] {
+                assert!(
+                    text.contains(&format!(
+                        "Relay {family} dial relay tcp: failed; detail: refused;"
+                    )),
+                    "{text}"
+                );
+            }
             assert!(
                 text.contains("Next step: Inspect the selected DERP"),
                 "{text}"
@@ -670,6 +685,27 @@ async fn exercise(scenario: Scenario) {
     dial.assert_closed(2);
     api.finish().await;
     control.finish().await;
+    drop(refused_sockets);
+}
+
+fn reserve_refused_relay() -> (TcpSocket, TcpSocket) {
+    // The chosen IPv4 port can already be occupied on IPv6. Publish it only
+    // after both non-listening sockets own their respective loopback endpoint.
+    for _ in 0..16 {
+        let ipv4 = TcpSocket::new_v4().unwrap();
+        ipv4.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let ipv6 = TcpSocket::new_v6().unwrap();
+        let address = std::net::SocketAddr::new(
+            std::net::Ipv6Addr::LOCALHOST.into(),
+            ipv4.local_addr().unwrap().port(),
+        );
+        match ipv6.bind(address) {
+            Ok(()) => return (ipv4, ipv6),
+            Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => continue,
+            Err(error) => panic!("could not reserve the IPv6 relay endpoint: {error}"),
+        }
+    }
+    panic!("could not reserve a shared loopback relay port");
 }
 
 fn observed(text: &str, name: &str) -> u32 {
