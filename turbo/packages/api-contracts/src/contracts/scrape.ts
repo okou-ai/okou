@@ -2,12 +2,6 @@ import { z } from "zod";
 
 export const scrapeFormatSchema = z.enum(["markdown", "links"]);
 export const scrapeModeSchema = z.enum(["standard", "enhanced"]);
-export const scrapeBillingCategorySchema = z.enum([
-  "standard.markdown",
-  "standard.links",
-  "enhanced.markdown",
-  "enhanced.links",
-]);
 
 export const scrapeRequestSchema = z.object({
   url: z.string().trim().url().max(2_048),
@@ -87,4 +81,3 @@ export type ScrapeRequest = z.infer<typeof scrapeRequestSchema>;
 export type ScrapeResponse = z.infer<typeof scrapeResponseSchema>;
 export type ScrapeFormat = z.infer<typeof scrapeFormatSchema>;
 export type ScrapeMode = z.infer<typeof scrapeModeSchema>;
-export type ScrapeBillingCategory = z.infer<typeof scrapeBillingCategorySchema>;

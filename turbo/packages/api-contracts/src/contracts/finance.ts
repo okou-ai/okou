@@ -77,5 +77,4 @@ export type FinanceSearchRequest = z.infer<typeof financeSearchRequestSchema>;
 export type FinanceProfileRequest = z.infer<typeof financeProfileRequestSchema>;
 export type FinanceQuoteRequest = z.infer<typeof financeQuoteRequestSchema>;
 export type FinanceChartRequest = z.infer<typeof financeChartRequestSchema>;
-export type FinanceOperation = z.infer<typeof financeOperationSchema>;
 export type FinanceResponse = z.infer<typeof financeResponseSchema>;

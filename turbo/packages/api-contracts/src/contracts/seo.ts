@@ -132,5 +132,4 @@ export type SeoRankedKeywordsRequest = z.infer<
 export type SeoBacklinksSummaryRequest = z.infer<
   typeof seoBacklinksSummaryRequestSchema
 >;
-export type SeoOperation = z.infer<typeof seoOperationSchema>;
 export type SeoResponse = z.infer<typeof seoResponseSchema>;

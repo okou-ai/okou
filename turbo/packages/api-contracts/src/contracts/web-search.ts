@@ -93,5 +93,4 @@ export const webSearchResponseSchema = z.object({
 
 export type WebSearchRecency = z.infer<typeof webSearchRecencySchema>;
 export type WebSearchRequest = z.infer<typeof webSearchRequestSchema>;
-export type WebSearchResult = z.infer<typeof webSearchResultSchema>;
 export type WebSearchResponse = z.infer<typeof webSearchResponseSchema>;

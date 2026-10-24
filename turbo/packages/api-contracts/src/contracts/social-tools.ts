@@ -9,16 +9,8 @@ export const socialKitTranscriptErrorReasonSchema = z.enum([
   "access_denied",
 ]);
 
-export type SocialKitTranscriptErrorReason = z.infer<
-  typeof socialKitTranscriptErrorReasonSchema
->;
-
-export type ManagedSocialKitToolAvailability = "transcript";
-
 export type ManagedSocialKitResultField =
   "comments" | "items" | "posts" | "results" | "tweets";
-
-export type ManagedSocialKitReportedTotalField = "commentCount" | "count";
 
 export type ManagedSocialKitPagination =
   | { readonly kind: "cursor" }
@@ -32,7 +24,6 @@ export interface ManagedSocialKitUnreliableEmptyResult {
 
 export interface ManagedSocialKitProviderControlledPageSize {
   readonly kind: "provider_controlled";
-  readonly mayDifferFromRequestLimit: true;
 }
 
 export interface ManagedSocialKitPublicResult {
@@ -54,7 +45,6 @@ export interface ManagedSocialKitCollection {
   readonly resultField: ManagedSocialKitResultField;
   readonly defaultLimit?: number;
   readonly effectiveLimit?: number;
-  readonly reportedTotalField?: ManagedSocialKitReportedTotalField;
   readonly pagination: ManagedSocialKitPagination;
   readonly emptyResult?: ManagedSocialKitUnreliableEmptyResult;
   readonly pageSize?: ManagedSocialKitProviderControlledPageSize;
@@ -72,7 +62,6 @@ export interface ManagedSocialKitToolDefinition<
   readonly resultSchema: ResultSchema;
   readonly maxLimit?: number;
   readonly collection?: ManagedSocialKitCollection;
-  readonly availability?: ManagedSocialKitToolAvailability;
   readonly publicResult?: ManagedSocialKitPublicResult;
 }
 
@@ -766,7 +755,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     description: "Extract the transcript from a LinkedIn video post.",
     inputSchema: urlInput(),
     resultSchema: linkedinTranscriptResultSchema,
-    availability: "transcript",
   }),
   defineTool({
     name: "twitter_profile",
@@ -803,7 +791,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     description: "Extract the transcript from an X/Twitter video post.",
     inputSchema: urlInput(),
     resultSchema: videoTranscriptResultSchema,
-    availability: "transcript",
   }),
   defineTool({
     name: "facebook_stats",
@@ -822,7 +809,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     description: "Extract the transcript from a Facebook video post.",
     inputSchema: urlInput(),
     resultSchema: facebookTranscriptResultSchema,
-    availability: "transcript",
   }),
   defineTool({
     name: "facebook_comments",
@@ -833,7 +819,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     collection: {
       resultField: "comments",
       defaultLimit: 10,
-      reportedTotalField: "commentCount",
       pagination: { kind: "cursor" },
     },
   }),
@@ -867,7 +852,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     description: "Extract the transcript from an Instagram video post.",
     inputSchema: urlInput(),
     resultSchema: videoTranscriptResultSchema,
-    availability: "transcript",
   }),
   defineTool({
     name: "instagram_comments",
@@ -885,7 +869,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     collection: {
       resultField: "comments",
       defaultLimit: 10,
-      reportedTotalField: "commentCount",
       pagination: { kind: "cursor" },
     },
   }),
@@ -960,7 +943,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     collection: {
       resultField: "comments",
       defaultLimit: 10,
-      reportedTotalField: "commentCount",
       pagination: { kind: "cursor" },
     },
   }),
@@ -969,7 +951,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     description: "Extract the transcript from a public TikTok video.",
     inputSchema: urlInput(),
     resultSchema: videoTranscriptResultSchema,
-    availability: "transcript",
   }),
   defineTool({
     name: "tiktok_channel_stats",
@@ -993,7 +974,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
       pagination: { kind: "cursor" },
       pageSize: {
         kind: "provider_controlled",
-        mayDifferFromRequestLimit: true,
       },
     },
   }),
@@ -1027,7 +1007,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
       },
       pageSize: {
         kind: "provider_controlled",
-        mayDifferFromRequestLimit: true,
       },
     },
   }),
@@ -1064,7 +1043,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
       },
       pageSize: {
         kind: "provider_controlled",
-        mayDifferFromRequestLimit: true,
       },
     },
   }),
@@ -1086,7 +1064,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
         ),
     }),
     resultSchema: videoTranscriptResultSchema,
-    availability: "transcript",
   }),
   defineTool({
     name: "youtube_stats",

@@ -71,9 +71,5 @@ export const mapsSearchResponseSchema = z.object({
   usage: mapsSearchUsageSchema,
 });
 
-export type MapsSearchLocation = z.infer<typeof mapsSearchLocationSchema>;
 export type MapsSearchRequest = z.infer<typeof mapsSearchRequestSchema>;
-export type MapsSearchSource = z.infer<typeof mapsSearchSourceSchema>;
-export type MapsSearchCitation = z.infer<typeof mapsSearchCitationSchema>;
-export type MapsSearchUsage = z.infer<typeof mapsSearchUsageSchema>;
 export type MapsSearchResponse = z.infer<typeof mapsSearchResponseSchema>;

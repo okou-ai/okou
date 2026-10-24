@@ -8,7 +8,6 @@ import {
   socialKitTranscriptErrorReasonSchema,
   socialKitCollectionSourceLimitSchema,
   type ManagedSocialKitTool,
-  type ManagedSocialKitToolName,
 } from "./social-tools";
 import { apiErrorSchema } from "./errors";
 
@@ -25,14 +24,11 @@ export {
   type ManagedSocialKitPagination,
   type ManagedSocialKitProviderControlledPageSize,
   type ManagedSocialKitPublicResult,
-  type ManagedSocialKitReportedTotalField,
   type ManagedSocialKitResultField,
   type ManagedSocialKitUnreliableEmptyResult,
   type ManagedSocialKitTool,
-  type ManagedSocialKitToolAvailability,
   type ManagedSocialKitToolDefinition,
   type ManagedSocialKitToolName,
-  type SocialKitTranscriptErrorReason,
   type SocialKitInstagramCommentsOutcome,
   type SocialKitRequest,
   type SocialKitCollectionSourceLimit,
@@ -297,17 +293,9 @@ export const socialKitCollectionProviderLimitedReasonSchema = z.enum([
   "provider_outcome_unknown",
 ]);
 
-export type SocialKitCollectionProviderLimitedReason = z.infer<
-  typeof socialKitCollectionProviderLimitedReasonSchema
->;
-
 export const socialKitCollectionUncertaintySchema = z
   .object({ reason: z.literal("unreliable_empty_result") })
   .strict();
-
-export type SocialKitCollectionUncertainty = z.infer<
-  typeof socialKitCollectionUncertaintySchema
->;
 
 const reportedTotalSchema = z
   .number()
@@ -344,19 +332,6 @@ const socialKitCollectionSchema = z
     }),
   ])
   .nullable();
-
-type ToolByName<Name extends ManagedSocialKitToolName> = Extract<
-  ManagedSocialKitTool,
-  { readonly name: Name }
->;
-
-export type SocialKitInput<Name extends ManagedSocialKitToolName> = z.infer<
-  ToolByName<Name>["inputSchema"]
->;
-
-export type SocialKitResult<Name extends ManagedSocialKitToolName> = z.infer<
-  ToolByName<Name>["resultSchema"]
->;
 
 type SocialKitResponseFor<Tool extends ManagedSocialKitTool> =
   Tool extends ManagedSocialKitTool

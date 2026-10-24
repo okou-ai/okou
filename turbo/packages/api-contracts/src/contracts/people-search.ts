@@ -56,6 +56,4 @@ export const peopleSearchResponseSchema = z.object({
 });
 
 export type PeopleSearchRequest = z.infer<typeof peopleSearchRequestSchema>;
-export type PeopleSearchSource = z.infer<typeof peopleSearchSourceSchema>;
-export type PeopleSearchProfile = z.infer<typeof peopleSearchProfileSchema>;
 export type PeopleSearchResponse = z.infer<typeof peopleSearchResponseSchema>;

@@ -66,15 +66,5 @@ export type DataSearchRequest = z.infer<typeof dataSearchRequestSchema>;
 export type DataSearchCreateRequest = z.infer<
   typeof dataSearchCreateRequestSchema
 >;
-export type DataSearchQuoteResponse = z.infer<
-  typeof dataSearchQuoteResponseSchema
->;
-export type DataSearchCapability = z.infer<typeof dataSearchCapabilitySchema>;
-export type DataSearchCapabilitiesResponse = z.infer<
-  typeof dataSearchCapabilitiesResponseSchema
->;
 export type DataSearchJobResponse = z.infer<typeof dataSearchJobResponseSchema>;
 export type DataSearchListQuery = z.infer<typeof dataSearchListQuerySchema>;
-export type DataSearchListResponse = z.infer<
-  typeof dataSearchListResponseSchema
->;
