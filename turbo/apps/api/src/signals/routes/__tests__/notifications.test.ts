@@ -303,6 +303,61 @@ describe("agent mail notifications", () => {
     );
   });
 
+  it("accepts only one payload when different content races for the same key", async () => {
+    const fixture = await runningAgent();
+    const input = body();
+    const inputs = [input, { ...input, text: "A different update" }];
+    const results = await Promise.all(
+      inputs.map((request) => {
+        return accept(
+          client().mail({ headers: fixture.headers, body: request }),
+          [200, 409],
+        );
+      }),
+    );
+    expect(
+      results
+        .map((result) => {
+          return result.status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 409]);
+    for (const [index, result] of results.entries()) {
+      if (result.status !== 200) {
+        expect(result.body.error.code).toBe("CONFLICT");
+        continue;
+      }
+      expect(result.body).toMatchObject({
+        status: "queued",
+        deduplicated: false,
+      });
+      const replayed = await accept(
+        client().mail({
+          headers: fixture.headers,
+          body: inputs[index]!,
+        }),
+        [200],
+      );
+      expect(replayed.body).toMatchObject({
+        notificationId: result.body.notificationId,
+        status: "queued",
+        deduplicated: true,
+      });
+      const stored = await accept(
+        client().get({
+          headers: fixture.headers,
+          params: { id: result.body.notificationId },
+        }),
+        [200],
+      );
+      expect(stored.body).toMatchObject({
+        notificationId: result.body.notificationId,
+        status: "queued",
+        reason: null,
+      });
+    }
+  });
+
   it("requires an Okou run token; human sessions cannot send", async () => {
     await runningAgent();
     const human = await accept(
