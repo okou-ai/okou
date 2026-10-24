@@ -57,11 +57,6 @@
       "owner": "linkAgentPhoneIdentity$"
     },
     {
-      "id": "TX-0064",
-      "file": "turbo/apps/api/src/signals/services/billing-restore.service.ts",
-      "owner": "restoreSubscription$"
-    },
-    {
       "id": "TX-0073",
       "file": "turbo/apps/api/src/signals/services/browser.service.ts",
       "owner": "claimExpiredInactiveBrowser$"
