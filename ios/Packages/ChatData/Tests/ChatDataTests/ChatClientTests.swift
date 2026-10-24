@@ -884,7 +884,7 @@ final class ChatClientTests: XCTestCase {
       ])
   }
 
-  func testSendPreservesConnectorSelectionsAndDisablesBrowserWithoutModelOverride() async throws {
+  func testSendPreservesConnectorSelectionsAndBrowserWithoutModelOverride() async throws {
     struct State: Sendable {
       var overridden = true
       var browserEnabled = true
@@ -908,15 +908,6 @@ final class ChatClientTests: XCTestCase {
       if path.hasSuffix("/metadata") {
         return ChatHTTPResponse(body: metadataJSON(browser: state.withLock { $0.browserEnabled }))
       }
-      if path.hasSuffix("/computer-use-host") {
-        let access = try JSONDecoder().decode(
-          CapturedComputerAccess.self, from: chatRequestBody(request))
-        guard access.hostIsExplicitNull && !access.cloudBrowserEnabled else {
-          throw URLError(.badServerResponse)
-        }
-        state.withLock { $0.browserEnabled = false }
-        return ChatHTTPResponse(status: 204, body: "")
-      }
       if path == "/api/chat/events" {
         let body = try JSONDecoder().decode(CapturedSend.self, from: chatRequestBody(request))
         state.withLock { $0.sends.append(body) }
@@ -936,7 +927,7 @@ final class ChatClientTests: XCTestCase {
     XCTAssertEqual(sent.prompt, "Steer this task")
     XCTAssertFalse(sent.hasModelOverride)
     XCTAssertTrue(sent.hostIsExplicitNull)
-    XCTAssertFalse(sent.cloudBrowserEnabled)
+    XCTAssertTrue(sent.cloudBrowserEnabled)
     XCTAssertTrue(state.withLock { $0.overridden })
   }
 

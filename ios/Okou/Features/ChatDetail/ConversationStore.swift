@@ -14,6 +14,7 @@ final class ConversationStore {
     var document: ChatDraftDocument? = nil
     var modelSelection: ChatModelSelection? = nil
     var reasoningEffort: String? = nil
+    var computerAccess: ChatComputerAccess? = nil
     var needsRetry = false
 
     var message: ChatMessage {
@@ -282,7 +283,8 @@ final class ConversationStore {
   /// A first send carries the selection acknowledged by thread creation. It must not
   /// wait for the new detail view's independent metadata read to become sendable.
   func send(
-    initialSelection: ChatModelSelection? = nil, willSend: (@MainActor (String) -> Void)? = nil
+    initialSelection: ChatModelSelection? = nil, initialComputerAccess: ChatComputerAccess? = nil,
+    willSend: (@MainActor (String) -> Void)? = nil
   ) async {
     guard composer.hasContent, composer.canSend, attachmentDraft.isReady,
       !isSending, !isRecoveringFailure, !closed, !needsUpgrade, !Task.isCancelled
@@ -304,6 +306,7 @@ final class ConversationStore {
       message.modelSelection = modelSelection?.selection
       message.reasoningEffort = modelSelection?.requestedEffort
     }
+    message.computerAccess = initialComputerAccess
     pending.append(message)
     rebuildMessages()
     composer.clear()
@@ -450,7 +453,7 @@ final class ConversationStore {
           thread: thread, text: message.text, attachments: message.attachments,
           document: message.document,
           clientEventID: message.id, modelSelection: message.modelSelection,
-          reasoningEffort: message.reasoningEffort)
+          reasoningEffort: message.reasoningEffort, computerAccess: message.computerAccess)
         try Task.checkCancellation()
         guard !closed else { return }
         workflowSource?.recordUse(workflowIDs)

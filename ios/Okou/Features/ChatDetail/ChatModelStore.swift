@@ -8,6 +8,8 @@ import Observation
 final class ChatModelStore {
   let webURL: URL
   let service: ChatModelService
+  let connectorAccess: ChatComposerAccess
+  let connectorAuthorization: ChatConnectorService
   let subscriptions: PersonalSubscriptionStore
   private(set) var configuration: ChatModelConfiguration?
   private(set) var error: String?
@@ -22,6 +24,8 @@ final class ChatModelStore {
   init(client: APIClient, webURL: URL, didFail: @escaping @MainActor (Error) -> Void) {
     self.webURL = webURL
     service = ChatModelService(client: client)
+    connectorAccess = ChatComposerAccess(client: client)
+    connectorAuthorization = ChatConnectorService(client: client)
     subscriptions = PersonalSubscriptionStore(client: client, didFail: didFail)
     self.didFail = didFail
     subscriptions.didMutate = { [weak self] in await self?.refresh() }
@@ -98,6 +102,7 @@ final class ChatModelStore {
 final class ChatModelSelectionStore {
   let models: ChatModelStore
   let threadID: String?
+  let connectors: ComposerConnectorStore
   private var stored: ChatModelSelection?
   private(set) var isSaving = false
   private(set) var isLoading = false
@@ -112,6 +117,9 @@ final class ChatModelSelectionStore {
 
   init(models: ChatModelStore, thread: ChatThread? = nil) {
     self.models = models
+    connectors = ComposerConnectorStore(
+      service: models.connectorAccess, authorizationService: models.connectorAuthorization,
+      webURL: models.webURL, thread: thread, didFail: models.report)
     threadID = thread?.id
     stored = thread.map(ChatModelSelection.init)
     hasLoaded = thread == nil
@@ -128,6 +136,7 @@ final class ChatModelSelectionStore {
   }
   var isBusy: Bool { isSaving || isLoading || isSending }
   var canSend: Bool {
+    guard connectors.canSend else { return false }
     guard models.active else { return true }
     guard models.configuration != nil else { return false }
     return !isSaving && !isLoading && hasLoaded && !uncertain
@@ -259,6 +268,7 @@ final class ChatModelSelectionStore {
     await finishSaving()
   }
   func close() {
+    connectors.close()
     closed = true
     revision += 1
     stored = nil
