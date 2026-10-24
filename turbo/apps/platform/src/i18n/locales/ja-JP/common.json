@@ -2355,6 +2355,7 @@
       "unknown": "不明",
       "unsupported": "手動リセットには対応していません。使用量は自動的に回復します。"
     },
+    "syncFailed": "チャットが最新ではない可能性があります",
     "taskChips": {
       "chooseTask": "タスクを選ぶ",
       "ideas": {

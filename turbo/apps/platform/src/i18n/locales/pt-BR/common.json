@@ -2412,6 +2412,7 @@
       "unknown": "Desconhecido",
       "unsupported": "A redefinição manual não é compatível; o uso se recupera automaticamente."
     },
+    "syncFailed": "Suas conversas podem estar desatualizadas",
     "taskChips": {
       "chooseTask": "Escolha uma tarefa",
       "ideas": {

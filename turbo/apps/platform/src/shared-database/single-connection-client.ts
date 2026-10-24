@@ -89,9 +89,12 @@ export class SingleConnectionSharedDatabaseBridge implements SharedDatabaseBridg
 
   async getComputed<TKey extends ComputedKey>(
     computedKey: TKey,
+    options?: { readonly refresh?: boolean },
+    signal?: AbortSignal,
   ): Promise<ComputedValue<TKey>> {
     const bridge = this.requireRegistered(this.bridge);
-    return await bridge.getComputed(computedKey);
+    signal?.throwIfAborted();
+    return await bridge.getComputed(computedKey, options, signal);
   }
 
   private bindOwner(signal: AbortSignal): void {

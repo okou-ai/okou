@@ -4,7 +4,7 @@ type SyncChatEventsCommand = Command<Promise<void>, [AbortSignal]>;
 
 interface ActiveChatEventSignals {
   readonly id: string;
-  readonly sync$: SyncChatEventsCommand;
+  readonly sync: (signal: AbortSignal) => Promise<void>;
 }
 
 const activeChatEventSignals$ = state(
@@ -42,7 +42,15 @@ export const registerActiveChatEventSignals$ = command(
     const id = crypto.randomUUID();
     const current = get(activeChatEventSignals$);
     const next = new Map(current);
-    next.set(threadId, [...(current.get(threadId) ?? []), { id, sync$ }]);
+    next.set(threadId, [
+      ...(current.get(threadId) ?? []),
+      {
+        id,
+        sync: (syncSignal) => {
+          return set(sync$, AbortSignal.any([signal, syncSignal]));
+        },
+      },
+    ]);
     set(activeChatEventSignals$, next);
     signal.addEventListener(
       "abort",
@@ -55,14 +63,22 @@ export const registerActiveChatEventSignals$ = command(
 );
 
 export const syncActiveChatEvents$ = command(
-  async (
-    { get, set },
-    threadId: string,
-    signal: AbortSignal,
-  ): Promise<void> => {
+  async ({ get }, threadId: string, signal: AbortSignal): Promise<void> => {
     await Promise.all(
       (get(activeChatEventSignals$).get(threadId) ?? []).map((registration) => {
-        return set(registration.sync$, signal);
+        return registration.sync(signal);
+      }),
+    );
+    signal.throwIfAborted();
+  },
+);
+
+/** Catch up every open conversation, including a second conversation pane. */
+export const syncAllActiveChatEvents$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    await Promise.all(
+      Array.from(get(activeChatEventSignals$).keys()).map((threadId) => {
+        return set(syncActiveChatEvents$, threadId, signal);
       }),
     );
     signal.throwIfAborted();

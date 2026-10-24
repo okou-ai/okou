@@ -2412,6 +2412,7 @@
       "unknown": "Sconosciuto",
       "unsupported": "Il ripristino manuale non è supportato; l’utilizzo si ripristina automaticamente."
     },
+    "syncFailed": "Le tue chat potrebbero non essere aggiornate",
     "taskChips": {
       "chooseTask": "Scegli un’attività",
       "ideas": {

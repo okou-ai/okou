@@ -2355,6 +2355,7 @@
       "unknown": "Tidak diketahui",
       "unsupported": "Reset manual tidak didukung; penggunaan akan pulih secara otomatis."
     },
+    "syncFailed": "Percakapan Anda mungkin belum diperbarui",
     "taskChips": {
       "chooseTask": "Pilih tugas",
       "ideas": {

@@ -18,6 +18,7 @@ import {
   reloadChatIndicatorsLocally$,
 } from "./chat-thread-list-reload.ts";
 import { installedSharedDatabaseBridge$ } from "./shared-database-bridge-state.ts";
+import { readChatWithRecovery } from "./chat-read-recovery.ts";
 
 const internalReloadQueueDataFromWorker$ = state(0);
 
@@ -124,7 +125,13 @@ const querySharedDatabaseCommand$ = command(
     query: SharedDatabaseQuery<SharedDatabaseDataKey>,
     signal: AbortSignal,
   ): Promise<SharedDatabaseQueryResult<SharedDatabaseDataKey>> => {
-    return await get(installedSharedDatabaseBridge$).query(query, signal);
+    const bridge = get(installedSharedDatabaseBridge$);
+    if (query.consistency === "cache-only") {
+      return await bridge.query(query, signal);
+    }
+    return await readChatWithRecovery((readSignal) => {
+      return bridge.query(query, readSignal);
+    }, signal);
   },
 );
 

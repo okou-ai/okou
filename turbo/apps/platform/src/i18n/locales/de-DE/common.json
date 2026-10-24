@@ -2366,6 +2366,7 @@
       "unknown": "Unbekannt",
       "unsupported": "Manuelles Zurücksetzen wird nicht unterstützt; die Nutzung erholt sich automatisch."
     },
+    "syncFailed": "Deine Chats sind möglicherweise nicht aktuell",
     "taskChips": {
       "chooseTask": "Aufgabe wählen",
       "ideas": {

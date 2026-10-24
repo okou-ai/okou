@@ -2366,6 +2366,7 @@
       "unknown": "Unknown",
       "unsupported": "Manual reset is not supported; usage recovers naturally."
     },
+    "syncFailed": "Your chats may be out of date",
     "taskChips": {
       "chooseTask": "Choose a task",
       "ideas": {

@@ -2355,6 +2355,7 @@
       "unknown": "未知",
       "unsupported": "不支援手動重設；用量將自然恢復。"
     },
+    "syncFailed": "聊天內容可能尚未更新",
     "taskChips": {
       "chooseTask": "選擇任務",
       "ideas": {
