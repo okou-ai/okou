@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.24.41](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.40...guest-control-server-v0.24.41) (2026-10-24)
+
+
+### Refactoring
+
+* **guest-control:** carry exec drain results through thread custody ([#42755](https://github.com/okou-ai/okou/issues/42755)) ([16ad675](https://github.com/okou-ai/okou/commit/16ad6759f3dd8f9d55b20be3f2d7afba0e3a839a))
+* **guest-control:** share fixed-helper stdin thread ownership ([#42748](https://github.com/okou-ai/okou/issues/42748)) ([f875241](https://github.com/okou-ai/okou/commit/f87524191c14e42e01f4559aef3a2b244c34d3e5))
+
 ## [0.24.40](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.39...guest-control-server-v0.24.40) (2026-10-24)
 
 
