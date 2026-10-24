@@ -265,7 +265,9 @@ struct ChatDetailView: View {
           VStack(alignment: .leading, spacing: 8) {
             if showsAvatar { assistantAvatar }
             ConversationActivityLabel(
-              summary: conversation.activitySummary, state: executionState)
+              summary: conversation.activitySummary, state: executionState
+            )
+            .padding(.leading, 6)
           }
         }
         Color.clear.frame(height: 1)
