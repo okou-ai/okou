@@ -568,12 +568,10 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       measurements = measurements.filter { ids.contains($0.key) }
       collection.layoutIfNeeded()
       updateLoading()
-      defer {
-        let firstItemID = rows.first(where: { $0.readingContentTopSpacing != nil })?.id
-        DispatchQueue.main.async { [weak self] in
-          guard let self, !stopped else { return }
-          source.rowsPresented(firstItemID)
-        }
+      let firstItemID = rows.first(where: { $0.readingContentTopSpacing != nil })?.id
+      DispatchQueue.main.async { [weak self] in
+        guard let self, !stopped else { return }
+        source.rowsPresented(firstItemID)
       }
       if isScrolling {
         publishMetrics()
