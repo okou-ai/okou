@@ -68,7 +68,8 @@ elif command == 'xcodebuild':
             wait_for('allow-prepare')
         mark('prepare-finished')
         sys.exit(0)
-    if 'build-for-testing' in args:
+    combined = 'test' in args
+    if 'build-for-testing' in args or combined:
         role = 'build'
         if not (state / 'prepare-finished').exists():
             sys.exit('Compilation started before locked dependency resolution finished')
@@ -88,14 +89,14 @@ elif command == 'xcodebuild':
         if scenario != 'missing-products':
             (products / 'Okou_iphonesimulator27.1-arm64.xctestrun').write_text('built tests')
         mark('build-finished')
-    elif 'test-without-building' in args:
+    if 'test-without-building' in args or combined:
         if not (state / 'build-finished').exists():
             sys.exit('Tests require built products')
-        if scenario != 'manual' and not (state / 'boot-finished').exists():
+        if not combined and scenario != 'manual' and not (state / 'boot-finished').exists():
             sys.exit('Tests started before simulator readiness')
         if (state / 'tests-ran').exists():
             sys.exit('Native tests ran twice')
-        specification = pathlib.Path(args[args.index('-xctestrun') + 1])
+        specification = products / 'Okou_iphonesimulator27.1-arm64.xctestrun' if combined else pathlib.Path(args[args.index('-xctestrun') + 1])
         if specification.read_text() != 'built tests':
             sys.exit('Tests require the current build specification')
         mark('tests-ran')
@@ -104,7 +105,7 @@ elif command == 'xcodebuild':
             bundle.mkdir(parents=True)
             (bundle / 'failure.txt').write_text('First failed assertion')
             sys.exit(65)
-    else:
+    elif 'build-for-testing' not in args:
         raise ValueError(args)
 else:
     raise ValueError(command)
@@ -230,6 +231,67 @@ class CIProcessTests(unittest.TestCase):
         result = self.invoke()
         self.assertEqual(result.returncode, 23, result.stderr)
         self.assertFalse((self.state / "boot-started").exists())
+        self.assertFalse((self.state / "tests-ran").exists())
+
+    def test_sampled_native_failure_preserves_results_and_both_phase_reports(self):
+        self.env["CI_PROCESS_SCENARIO"] = "test-failure"
+        self.env["IOS_XCODE_STARTUP_SAMPLING"] = "true"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 65, result.stderr)
+        build = self.root / "work/okou-ios-ci"
+        self.assertEqual((build / "Tests.xcresult/failure.txt").read_text(), "First failed assertion")
+        for phase in ("compile", "test"):
+            self.assertTrue((build / "startup-samples" / phase / "summary.json").exists())
+
+    def test_manual_single_process_mode_runs_the_complete_suite(self):
+        self.env["IOS_CI_TEST_MODE"] = "single"
+        self.env["GITHUB_EVENT_NAME"] = "workflow_dispatch"
+        packages = self.invoke("ci-package-test.sh")
+        self.assertEqual(packages.returncode, 0, packages.stderr)
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_complete_suite()
+
+    def test_single_process_mode_preserves_native_failure_and_result_bundle(self):
+        self.env["IOS_CI_TEST_MODE"] = "single"
+        self.env["GITHUB_EVENT_NAME"] = "workflow_dispatch"
+        self.env["CI_PROCESS_SCENARIO"] = "test-failure"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 65, result.stderr)
+        bundle = self.root / "work/okou-ios-ci/Tests.xcresult"
+        self.assertEqual((bundle / "failure.txt").read_text(), "First failed assertion")
+
+    def test_single_process_compilation_failure_reaches_the_caller(self):
+        self.env["IOS_CI_TEST_MODE"] = "single"
+        self.env["GITHUB_EVENT_NAME"] = "workflow_dispatch"
+        self.env["CI_PROCESS_SCENARIO"] = "build-failure"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 23, result.stderr)
+        self.assertFalse((self.state / "tests-ran").exists())
+
+    def test_single_process_mode_rejects_automatic_ci_events(self):
+        for event in ("pull_request", "merge_group", "push"):
+            with self.subTest(event=event):
+                self.env["IOS_CI_TEST_MODE"] = "single"
+                self.env["GITHUB_EVENT_NAME"] = event
+                result = self.invoke()
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("explicit manual run", result.stderr)
+                self.assertFalse((self.state / "prepare-started").exists())
+
+    def test_single_process_cancellation_retires_owned_compilation(self):
+        self.env["IOS_CI_TEST_MODE"] = "single"
+        self.env["GITHUB_EVENT_NAME"] = "workflow_dispatch"
+        self.env["CI_PROCESS_SCENARIO"] = "cancel-build"
+        with subprocess.Popen(
+            self.command(), cwd=self.repo, env=self.env, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        ) as process:
+            self.await_marker("build-started")
+            process.send_signal(signal.SIGTERM)
+            _, stderr = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 143, stderr)
+        self.await_marker("build-stopped")
         self.assertFalse((self.state / "tests-ran").exists())
 
     def test_native_failure_preserves_its_status_and_result_bundle(self):

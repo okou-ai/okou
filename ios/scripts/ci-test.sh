@@ -2,8 +2,10 @@
 set -euo pipefail
 shopt -s nullglob
 
-if [[ "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true && "${1:-all}" == compile ]]; then
-  echo "iOS sampled compile script started" >&2
+if [[ "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true ]]; then
+  case "${1:-all}" in
+    compile | run | combined) echo "iOS sampled $1 script started" >&2 ;;
+  esac
 fi
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
@@ -14,13 +16,14 @@ build_root="$RUNNER_TEMP/okou-ios-ci"
 mkdir -p "$build_root"
 resolved=ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 # CI resolves dependencies and compiles before simulator startup, then runs tests.
-# Prepare/compile/run phases belong to CI; build retains the combined build entry.
+# Prepare/compile/run phases belong to CI; combined is a manual experiment.
+# Build retains the supported combined prepare/compile entry.
 # Package CI has its own runner.
 # With no phase argument, supported manual callers still run every suite.
 ios_test_phase=${1:-all}
 case "$ios_test_phase" in
-  all | build | prepare | compile | run) ;;
-  *) echo "usage: ci-test.sh [all|build|prepare|compile|run]" >&2; exit 2 ;;
+  all | build | prepare | compile | run | combined) ;;
+  *) echo "usage: ci-test.sh [all|build|prepare|compile|run|combined]" >&2; exit 2 ;;
 esac
 
 xcode_args=(
@@ -54,6 +57,19 @@ if [[ "${IOS_BUILD_CACHE_ENABLED:-false}" == true ]]; then
   )
 fi
 
+ios_run_xcode() {
+  local ios_observation_phase=$1
+  shift
+  if [[ "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true ]]; then
+    mkdir -p -m 700 "$build_root/startup-samples"
+    echo "iOS starting $ios_observation_phase observer" >&2
+    python3 ios/scripts/sample-xcode-startup.py "$build_root/startup-samples/$ios_observation_phase" -- \
+      xcodebuild "$@"
+  else
+    xcodebuild "$@"
+  fi
+}
+
 if [[ "$ios_test_phase" == all ]]; then
   bash ios/scripts/ci-package-test.sh
 fi
@@ -75,8 +91,7 @@ export "GIT_CONFIG_VALUE_${git_config_index}=$build_root/package-sources.gitconf
 export GIT_CONFIG_COUNT=$((git_config_index + 1))
 
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == prepare ]]; then
-  # Resolve the locked graph before CI starts CoreSimulator so both cold
-  # initializations do not compete. Compilation still waits for system readiness.
+  # Resolve the locked graph before either compilation or simulator startup.
   xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
   cmp "$resolved" "$build_root/Package.resolved.before"
   for repository in "$build_root"/SourcePackages/repositories/*; do
@@ -91,13 +106,7 @@ fi
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == compile ]]; then
   ios_phase_started=$SECONDS
   cmp "$resolved" "$build_root/Package.resolved.before"
-  if [[ "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true ]]; then
-    echo "iOS starting compiler observer" >&2
-    python3 ios/scripts/sample-xcode-startup.py "$build_root/startup-samples" -- \
-      xcodebuild "${xcode_args[@]}" -showBuildTimingSummary build-for-testing
-  else
-    xcodebuild "${xcode_args[@]}" -showBuildTimingSummary build-for-testing
-  fi
+  ios_run_xcode compile "${xcode_args[@]}" -showBuildTimingSummary build-for-testing
   cmp "$resolved" "$build_root/Package.resolved.before"
   echo "iOS build-for-testing: $((SECONDS - ios_phase_started)) seconds"
 fi
@@ -112,7 +121,7 @@ if [[ "$ios_test_phase" == all || "$ios_test_phase" == run ]]; then
     exit 1
   fi
   # Keep test results and attachments without failure-triggered simulator sysdiagnoses.
-  xcodebuild -xctestrun "${test_runs[0]}" \
+  ios_run_xcode test -xctestrun "${test_runs[0]}" \
     -destination "$IOS_TEST_DESTINATION" \
     -parallel-testing-enabled NO \
     -maximum-concurrent-test-simulator-destinations 1 \
@@ -121,4 +130,17 @@ if [[ "$ios_test_phase" == all || "$ios_test_phase" == run ]]; then
     test-without-building
   cmp "$resolved" "$build_root/Package.resolved.before"
   echo "iOS test-without-building: $((SECONDS - ios_phase_started)) seconds"
+fi
+
+if [[ "$ios_test_phase" == combined ]]; then
+  ios_phase_started=$SECONDS
+  cmp "$resolved" "$build_root/Package.resolved.before"
+  ios_run_xcode combined "${xcode_args[@]}" \
+    -parallel-testing-enabled NO \
+    -maximum-concurrent-test-simulator-destinations 1 \
+    -collect-test-diagnostics never \
+    -resultBundlePath "$build_root/Tests.xcresult" \
+    -showBuildTimingSummary test
+  cmp "$resolved" "$build_root/Package.resolved.before"
+  echo "iOS single-process build and test: $((SECONDS - ios_phase_started)) seconds"
 fi

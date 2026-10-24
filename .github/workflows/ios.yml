@@ -9,9 +9,14 @@ on:
   workflow_dispatch:
     inputs:
       sample_xcode_startup:
-        description: Sample the compile-phase Xcode startup
+        description: Sample compiler and test-command Xcode startup
         type: boolean
         default: false
+      test_execution_mode:
+        description: Compare split commands with a single build-and-test command
+        type: choice
+        default: split
+        options: [split, single]
 
 permissions:
   contents: read
@@ -139,6 +144,7 @@ jobs:
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
       IOS_BUILD_CACHE_ENABLED: "true"
       IOS_XCODE_STARTUP_SAMPLING: ${{ github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup && 'true' || 'false' }}
+      IOS_CI_TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.test_execution_mode || 'split' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

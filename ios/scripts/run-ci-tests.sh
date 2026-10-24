@@ -22,12 +22,35 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+ios_test_mode=${IOS_CI_TEST_MODE:-split}
+case "$ios_test_mode" in
+  split) ;;
+  single)
+    if [[ -n "${GITHUB_EVENT_NAME:-}" && "${GITHUB_EVENT_NAME:-}" != workflow_dispatch ]]; then
+      echo 'Single-process experiments require an explicit manual run' >&2
+      exit 2
+    fi
+    ;;
+  *) echo "Unknown iOS test execution mode: $ios_test_mode" >&2; exit 2 ;;
+esac
+echo "iOS test execution mode: $ios_test_mode"
+
 ios_prepare_started=$SECONDS
 bash ios/scripts/ci-test.sh prepare &
 ios_phase_pid=$!
 wait "$ios_phase_pid"
 ios_phase_pid=""
 ios_dependency_seconds=$((SECONDS - ios_prepare_started))
+
+if [[ "$ios_test_mode" == single ]]; then
+  # Only the manual experiment delegates build, simulator startup and tests to Xcode.
+  echo 'iOS starting single-process build and test'
+  bash ios/scripts/ci-test.sh combined &
+  ios_phase_pid=$!
+  wait "$ios_phase_pid"
+  ios_phase_pid=""
+  exit 0
+fi
 
 echo "iOS starting build-for-testing"
 bash ios/scripts/ci-test.sh compile &
