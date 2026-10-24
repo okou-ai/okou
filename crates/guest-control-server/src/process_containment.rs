@@ -28,6 +28,7 @@ use guest_contracts::storage_resources::StorageResourceUsage;
 use guest_control_proto::ExecProcessRole;
 
 use crate::log::log;
+use crate::wait::WaitOutcome;
 
 mod managed_tasks;
 mod storage_resources;
@@ -67,6 +68,21 @@ pub(crate) struct ExecProcessContainment {
 pub(crate) enum ProcessContainmentCleanupMode {
     Graceful,
     Forced,
+}
+
+impl ProcessContainmentCleanupMode {
+    /// Select terminal cleanup using cancellation already observed by the caller.
+    pub(crate) fn for_wait_outcome(outcome: &WaitOutcome, cancellation_observed: bool) -> Self {
+        if cancellation_observed {
+            return Self::Forced;
+        }
+        match outcome {
+            WaitOutcome::Exited(_) => Self::Graceful,
+            WaitOutcome::TimedOut | WaitOutcome::Cancelled | WaitOutcome::WaitFailed(_) => {
+                Self::Forced
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy)]

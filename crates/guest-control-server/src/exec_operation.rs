@@ -1013,7 +1013,8 @@ impl RunningExec {
         }
         let cancellation_observed =
             connection_cancel.load(Ordering::Acquire) || exec_cancel.load(Ordering::Acquire);
-        let cleanup_mode = cleanup_mode_for_wait_outcome(&outcome, cancellation_observed);
+        let cleanup_mode =
+            ProcessContainmentCleanupMode::for_wait_outcome(&outcome, cancellation_observed);
         drop(placement_bootstrap);
         if !matches!(&outcome, WaitOutcome::Exited(status) if status.success()) {
             process_containment.capture_error();
@@ -1179,21 +1180,6 @@ fn emit_exec_stream_truncation_markers(
                 );
                 return;
             }
-        }
-    }
-}
-
-fn cleanup_mode_for_wait_outcome(
-    outcome: &WaitOutcome,
-    cancellation_observed: bool,
-) -> ProcessContainmentCleanupMode {
-    if cancellation_observed {
-        return ProcessContainmentCleanupMode::Forced;
-    }
-    match outcome {
-        WaitOutcome::Exited(_) => ProcessContainmentCleanupMode::Graceful,
-        WaitOutcome::TimedOut | WaitOutcome::Cancelled | WaitOutcome::WaitFailed(_) => {
-            ProcessContainmentCleanupMode::Forced
         }
     }
 }
@@ -2721,19 +2707,19 @@ mod tests {
     fn wait_outcome_selects_containment_cleanup_mode() {
         let status = Command::new("true").status().unwrap();
         assert_eq!(
-            cleanup_mode_for_wait_outcome(&WaitOutcome::Exited(status), false),
+            ProcessContainmentCleanupMode::for_wait_outcome(&WaitOutcome::Exited(status), false),
             ProcessContainmentCleanupMode::Graceful
         );
         assert_eq!(
-            cleanup_mode_for_wait_outcome(&WaitOutcome::TimedOut, false),
+            ProcessContainmentCleanupMode::for_wait_outcome(&WaitOutcome::TimedOut, false),
             ProcessContainmentCleanupMode::Forced
         );
         assert_eq!(
-            cleanup_mode_for_wait_outcome(&WaitOutcome::Cancelled, false),
+            ProcessContainmentCleanupMode::for_wait_outcome(&WaitOutcome::Cancelled, false),
             ProcessContainmentCleanupMode::Forced
         );
         assert_eq!(
-            cleanup_mode_for_wait_outcome(
+            ProcessContainmentCleanupMode::for_wait_outcome(
                 &WaitOutcome::WaitFailed("wait failed".to_string()),
                 false,
             ),
@@ -2741,7 +2727,7 @@ mod tests {
         );
         let status = Command::new("true").status().unwrap();
         assert_eq!(
-            cleanup_mode_for_wait_outcome(&WaitOutcome::Exited(status), true),
+            ProcessContainmentCleanupMode::for_wait_outcome(&WaitOutcome::Exited(status), true),
             ProcessContainmentCleanupMode::Forced
         );
     }
