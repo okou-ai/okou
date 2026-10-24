@@ -41,7 +41,8 @@ enum ConversationCollectionRow: Equatable, Identifiable {
   var readingContentTopSpacing: CGFloat? {
     switch self {
     case .message(_, _, let spacing, _, _, _), .work(_, _, _, let spacing),
-      .failure(_, _, let spacing): spacing
+      .failure(_, _, let spacing):
+      spacing
     case .usage: 0
     case .earlier, .footer, .followups: nil
     }
