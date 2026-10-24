@@ -259,7 +259,7 @@ pub(super) fn read_with_budget(
     // Remove this reader and the temporary migrator after accepted old writers
     // finish and complete retained-root inventories contain no positive v1 (#42702).
     for kind in [EntryKind::Positive, EntryKind::LegacyPositive] {
-        if let Some(files) = read_entry(
+        let outcome = read_entry(
             home,
             name,
             version,
@@ -267,10 +267,12 @@ pub(super) fn read_with_budget(
             content_budget,
             file_budget,
             cancel,
-        )?
-        .into_ready_files()?
-        {
-            return Ok(Some(files));
+        )?;
+        // An existing v2 can be busy or exceed this batch's remaining budget.
+        // Its v1 source may already be partially retired; only absence permits
+        // trying that older representation.
+        if !matches!(outcome, LookupOutcome::Miss) {
+            return outcome.into_ready_files();
         }
     }
     Ok(None)
@@ -278,6 +280,7 @@ pub(super) fn read_with_budget(
 
 enum LookupOutcome {
     Miss,
+    Unavailable,
     Rejected,
     Ready(Vec<StorageFile>),
 }
@@ -285,7 +288,7 @@ enum LookupOutcome {
 impl LookupOutcome {
     fn into_ready_files(self) -> io::Result<Option<Vec<StorageFile>>> {
         match self {
-            Self::Miss => Ok(None),
+            Self::Miss | Self::Unavailable => Ok(None),
             Self::Ready(files) => Ok(Some(files)),
             Self::Rejected => Err(invalid("decoded cache identity or admission mismatch")),
         }
@@ -299,7 +302,7 @@ pub(super) fn is_rejected(
     cancel: &CancellationToken,
 ) -> io::Result<bool> {
     match read_entry(home, name, version, EntryKind::Rejection, 0, 0, cancel)? {
-        LookupOutcome::Miss => Ok(false),
+        LookupOutcome::Miss | LookupOutcome::Unavailable => Ok(false),
         LookupOutcome::Rejected => Ok(true),
         LookupOutcome::Ready(_) => Err(invalid("decoded cache identity or admission mismatch")),
     }
@@ -373,14 +376,14 @@ fn read_entry(
         .map_err(io::Error::other)?
     {
         ExistingTryLock::Acquired(lock) => lock,
-        ExistingTryLock::Busy => return Ok(LookupOutcome::Miss),
+        ExistingTryLock::Busy => return Ok(LookupOutcome::Unavailable),
         ExistingTryLock::Missing => {
             // Existing Runner GC removes free lock files independently from
             // their cached data. Recreate for the observed entry, then reopen
             // it under the validated lock (GC may have removed it meanwhile).
             match lock::try_acquire_or_busy_blocking(&lock_path).map_err(io::Error::other)? {
                 TryLock::Acquired(lock) => lock,
-                TryLock::Busy => return Ok(LookupOutcome::Miss),
+                TryLock::Busy => return Ok(LookupOutcome::Unavailable),
             }
         }
     };
@@ -414,7 +417,7 @@ fn read_locked_entry(
         file_budget,
         cancel,
     )?;
-    if !matches!(outcome, LookupOutcome::Miss) {
+    if matches!(outcome, LookupOutcome::Ready(_) | LookupOutcome::Rejected) {
         touch_mtime(&EntryKey::new(name, version, kind).directory(home));
     }
     Ok(outcome)
@@ -486,7 +489,7 @@ fn read_locked_contents(
     if total > content_budget || files.len() > file_budget {
         // A valid optional entry can miss either batch budget without reading its
         // bodies. Later smaller entries may fit; malformed metadata remains an error.
-        return Ok(LookupOutcome::Miss);
+        return Ok(LookupOutcome::Unavailable);
     }
     let data = File::from(
         openat(

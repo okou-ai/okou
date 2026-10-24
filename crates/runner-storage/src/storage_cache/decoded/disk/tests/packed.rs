@@ -212,6 +212,43 @@ fn migration_finishes_partial_source_cleanup_using_existing_verified_v2() {
 }
 
 #[test]
+fn unavailable_packed_entry_does_not_probe_a_partially_retired_legacy_source() {
+    for reason in ["content-budget", "file-budget", "busy"] {
+        let (_root, home, packed, packed_lock) = setup();
+        let (legacy, _) = seed_legacy(&home);
+        // A previous migration durably published v2, then stopped during v1 cleanup.
+        fs::remove_file(legacy.join("index.json")).unwrap();
+        let writer =
+            (reason == "busy").then(|| lock::try_acquire_or_busy_blocking(&packed_lock).unwrap());
+        let result = read_with_budget(
+            &home,
+            "name",
+            "v1",
+            if reason == "content-budget" {
+                0
+            } else {
+                storage_files::MAX_STORAGE_BYTES
+            },
+            if reason == "file-budget" {
+                0
+            } else {
+                storage_files::MAX_FILES
+            },
+            &CancellationToken::new(),
+        );
+        assert!(matches!(result, Ok(None)), "{reason}: {result:?}");
+        drop(writer);
+        assert_eq!(fs::read(packed.join("data.bin")).unwrap(), b"hello");
+        assert_eq!(
+            read(&home, "name", "v1", &CancellationToken::new())
+                .unwrap()
+                .unwrap(),
+            files()
+        );
+    }
+}
+
+#[test]
 fn migration_keeps_index_order_empty_members_and_distinct_metadata() {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());
