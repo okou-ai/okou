@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.7...runner-storage-v0.6.8) (2026-10-24)
+
+
+### Refactoring
+
+* **runner:** remove decoded-v1 compatibility and migration ([#42753](https://github.com/okou-ai/okou/issues/42753)) ([cb66502](https://github.com/okou-ai/okou/commit/cb665021a8cd1b98cd493a9b34178145cfbc3456))
+
 ## [0.6.7](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.6...runner-storage-v0.6.7) (2026-10-24)
 
 

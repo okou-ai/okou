@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.785.0](https://github.com/okou-ai/okou/compare/core-v8.784.0...core-v8.785.0) (2026-10-24)
+
+
+### Features
+
+* **ios:** bring composer connector controls to native chat ([#42767](https://github.com/okou-ai/okou/issues/42767)) ([35daba9](https://github.com/okou-ai/okou/commit/35daba9e983a3c54fe75dabfef43b4d7fff6f30c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.1
+
 ## [8.784.0](https://github.com/okou-ai/okou/compare/core-v8.783.3...core-v8.784.0) (2026-10-24)
 
 
