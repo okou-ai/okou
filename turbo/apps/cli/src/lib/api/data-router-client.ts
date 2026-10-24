@@ -142,10 +142,14 @@ const dataRouterApi: ApiFetcher = async (args) => {
     querySchema && "safeParse" in querySchema
       ? querySchema.safeParse(query)
       : undefined;
-  const input = z
-    .record(z.string(), z.unknown())
-    .parse(typeof args.body === "string" ? JSON.parse(args.body) : {});
-  Object.assign(input, parsedQuery?.success ? parsedQuery.data : query);
+  const input = {
+    ...z
+      .record(z.string(), z.unknown())
+      .parse(typeof args.body === "string" ? JSON.parse(args.body) : {}),
+    ...z
+      .record(z.string(), z.unknown())
+      .parse(parsedQuery?.success ? parsedQuery.data : query),
+  };
   const actual = url.pathname.split("/");
   for (const [index, segment] of args.route.path.split("/").entries()) {
     if (segment.startsWith(":"))
