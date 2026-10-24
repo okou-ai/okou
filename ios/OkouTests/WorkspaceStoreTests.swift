@@ -267,6 +267,62 @@ final class WorkspaceStoreTests: XCTestCase {
     }
   }
 
+  func testNavigationFailureKeepsArchiveVisibilityUntilFeaturesRefreshSuccessfully() async {
+    let featureResponse = Mutex<Result<Bool, URLError>>(.success(true))
+    let archivedID = "40000000-0000-4000-8000-000000000004"
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/agents":
+        return ChatHTTPResponse(
+          body: """
+            [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"Okou"}]
+            """)
+      case "/api/user-preferences": return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
+      case "/api/feature-switches":
+        let enabled = try featureResponse.withLock { $0 }.get()
+        return ChatHTTPResponse(
+          body: "{\"effectiveSwitches\":{\"chatThreadArchiving\":\(enabled)}}")
+      case "/api/chat-threads/snapshot":
+        return ChatHTTPResponse(
+          body: """
+            {"chatThreads":[
+              {"id":"\(storeThreadID)","agentId":"\(storeAgentID)","title":"Recent chat",\
+            "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":false},
+              {"id":"\(archivedID)","agentId":"\(storeAgentID)","title":"Archived chat",\
+            "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":true}
+            ],"latestEventId":null,"latestSeqId":null}
+            """)
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { store.close() }
+    await store.refreshNavigation()
+    await store.refresh([.threadList])
+    XCTAssertEqual(
+      store.list.threads(agentID: storeAgentID, archived: false).map(\.title), ["Recent chat"])
+
+    featureResponse.withLock { $0 = .failure(URLError(.networkConnectionLost)) }
+    await store.refreshNavigation()
+    XCTAssertEqual(
+      store.list.threads(agentID: storeAgentID, archived: false).map(\.title), ["Recent chat"])
+
+    featureResponse.withLock { $0 = .success(false) }
+    await store.refreshNavigation()
+    XCTAssertEqual(
+      store.list.threads(agentID: storeAgentID, archived: false).map(\.title),
+      ["Archived chat", "Recent chat"])
+
+    featureResponse.withLock { $0 = .success(true) }
+    await store.refreshNavigation()
+    XCTAssertEqual(
+      store.list.threads(agentID: storeAgentID, archived: false).map(\.title), ["Recent chat"])
+  }
+
   func testClosingOrCancellingStartupStopsReadsDuringNavigation() async throws {
     for cancelStartup in [false, true] {
       let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
