@@ -9,12 +9,13 @@ import argparse
 import json
 import os
 import plistlib
+import posixpath
 import re
 import shutil
 import subprocess
 import tarfile
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 def write_json(path, value):
@@ -91,12 +92,42 @@ def main():
             raise ValueError("Release cache inputs do not match this archive")
         with tarfile.open(seed / "cache.tar") as archive:
             for member in archive.getmembers():
-                if not any(
-                    member.name == path or member.name.startswith(path + "/")
-                    for path in cache_paths
+                path = PurePosixPath(member.name)
+                if (
+                    path.is_absolute()
+                    or ".." in path.parts
+                    or not any(path.is_relative_to(root) for root in cache_paths)
+                    or not (
+                        member.isfile()
+                        or member.isdir()
+                        or member.issym()
+                        or member.islnk()
+                    )
                 ):
                     raise ValueError(f"Unexpected cache entry: {member.name}")
-            archive.extractall(work, filter="data")
+                if member.issym() or member.islnk():
+                    link = PurePosixPath(member.linkname)
+                    target = path.parent / link if member.issym() else link
+                    target = PurePosixPath(posixpath.normpath(str(target)))
+                    if link.is_absolute() or not any(
+                        target.is_relative_to(root) for root in cache_paths
+                    ):
+                        raise ValueError(
+                            f"Cache link escapes its namespace: {member.name}"
+                        )
+        # Native tar also rejects writes through archive-created symlink parents.
+        subprocess.run(
+            [
+                "tar",
+                "--no-same-owner",
+                "--no-same-permissions",
+                "-xf",
+                str(seed / "cache.tar"),
+                "-C",
+                str(work),
+            ],
+            check=True,
+        )
     elif operation == "seed":
         if mode != "seed" or not all((work / path).is_dir() for path in cache_paths):
             raise ValueError(

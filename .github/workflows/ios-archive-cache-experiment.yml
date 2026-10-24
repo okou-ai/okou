@@ -14,6 +14,9 @@ permissions:
   contents: read
   actions: read
 
+env:
+  npm_config_audit: "false"
+
 jobs:
   measure:
     name: ${{ inputs.label }}
@@ -38,7 +41,7 @@ jobs:
         if: inputs.mode == 'warm'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: ios-release-cache-seed-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ios-release-cache-payload-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/ios-archive-cache-seed
       - name: Verify and restore Release cache
         if: inputs.mode == 'warm'
@@ -56,7 +59,7 @@ jobs:
         if: inputs.mode == 'seed'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ios-release-cache-seed-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ios-release-cache-payload-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/ios-archive-cache-seed
           compression-level: 0
           if-no-files-found: error

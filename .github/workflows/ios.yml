@@ -105,7 +105,7 @@ jobs:
           node-version: 22.23.4
       - name: Verify CI change detection and promotion contracts
         run: |
-          python3 -m py_compile ops/ios-archive-cache/measure.py
+          python3 ops/ios-archive-cache/measure.test.py
           bash -n ios/scripts/*.sh
           shellcheck ios/scripts/*.sh
           bash ios/scripts/test-ci.sh
