@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { http, HttpResponse } from "msw";
+import { server } from "../../../mocks/server";
 import {
   orgInviteContract,
   orgMembersContract,
@@ -67,6 +69,14 @@ test.each([20, 50] as const)(
         });
         authenticateOrg(actor);
         mockClerkOrganization(actor);
+        server.use(
+          http.get(
+            `https://api.clerk.com/v1/organizations/${actor.orgId}/membership_requests`,
+            () => {
+              return HttpResponse.json({ data: [] });
+            },
+          ),
+        );
         context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
           {
             data: [
