@@ -171,6 +171,42 @@ final class ChatSyncRecoveryTests: XCTestCase {
     XCTAssertNil(store.list.error)
   }
 
+  func testLeavingOneCallerKeepsTheCoalescedHistoryRefreshAlive() async throws {
+    let fixture = SyncRecoveryFixture()
+    let store = fixture.workspace { _ in }
+    let response = SyncRecoveryGate()
+    defer {
+      store.close()
+      response.open()
+    }
+    await store.refresh([.threadList])
+    store.selectChat(SyncRecoveryFixture.threadID)
+    let conversation = try XCTUnwrap(store.selectedConversation)
+    await conversation.refresh()
+    let started = expectation(description: "View-owned history read started")
+    fixture.state.value.withLock {
+      $0.blockedPath = "/api/chat-threads/\(SyncRecoveryFixture.threadID)/event-rows"
+      $0.beforeResponse = {
+        started.fulfill()
+        await response.wait()
+      }
+    }
+    let viewRead = Task { await conversation.refresh() }
+    defer { viewRead.cancel() }
+    await fulfillment(of: [started], timeout: 3)
+    await store.refresh([.history(threadID: SyncRecoveryFixture.threadID)])
+    viewRead.cancel()
+    fixture.state.value.withLock {
+      $0.blockedPath = nil
+      $0.beforeResponse = nil
+      $0.messages.append("Answer received while leaving the view")
+    }
+    response.open()
+    await viewRead.value
+    XCTAssertEqual(conversation.messages.last?.text, "Answer received while leaving the view")
+    XCTAssertNil(conversation.error)
+  }
+
   func testActionFailureIsNotResubmittedOrErasedBySuccessfulAutomaticReads() async throws {
     let fixture = SyncRecoveryFixture()
     let store = fixture.workspace { _ in }

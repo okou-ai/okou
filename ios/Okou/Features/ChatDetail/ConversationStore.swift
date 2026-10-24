@@ -255,11 +255,7 @@ final class ConversationStore {
       } while refreshAgain && !closed && !needsUpgrade && !Task.isCancelled
     }
     refreshTask = task
-    await withTaskCancellationHandler {
-      await task.value
-    } onCancel: {
-      task.cancel()
-    }
+    await task.value
   }
 
   func setAutomaticReadSuppressed(_ suppressed: Bool, resetReadWatermark: Bool = false) {

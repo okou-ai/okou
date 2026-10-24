@@ -89,11 +89,7 @@ final class ThreadListStore {
       await loadNavigation()
     }
     navigationTask = task
-    await withTaskCancellationHandler {
-      await task.value
-    } onCancel: {
-      task.cancel()
-    }
+    await task.value
   }
 
   private func loadNavigation() async {
@@ -326,11 +322,7 @@ final class ThreadListStore {
       } while indicatorsAgain && !closed && !blocked && !Task.isCancelled
     }
     indicatorsTask = task
-    await withTaskCancellationHandler {
-      await task.value
-    } onCancel: {
-      task.cancel()
-    }
+    await task.value
   }
 
   func togglePinned(_ id: String) async {
