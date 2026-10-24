@@ -12,6 +12,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1059.0](https://github.com/okou-ai/okou/compare/app-v0.1058.3...app-v0.1059.0) (2026-10-24)
+
+
+### Features
+
+* add proactive agent learning and planning workflows ([#42724](https://github.com/okou-ai/okou/issues/42724)) ([3a23824](https://github.com/okou-ai/okou/commit/3a23824fb8b9ac3ffd76b65cd463bb687f15269e))
+
+
+### Bug Fixes
+
+* **app:** review batch connector permissions in a dialog ([#42686](https://github.com/okou-ai/okou/issues/42686)) ([af97702](https://github.com/okou-ai/okou/commit/af97702825932330016d6cf39bcf95ce24eee714))
+* recover chat sync after returning to the foreground ([#42693](https://github.com/okou-ai/okou/issues/42693)) ([c202d59](https://github.com/okou-ai/okou/commit/c202d594a57aca54f2fd6c6e666decda445c80b6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.0
+    * @okouai/core bumped to 8.784.0
+
 ## [0.1058.3](https://github.com/okou-ai/okou/compare/app-v0.1058.2...app-v0.1058.3) (2026-10-23)
 
 

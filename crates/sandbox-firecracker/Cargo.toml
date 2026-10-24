@@ -1,6 +1,6 @@
 [package]
 name = "sandbox-firecracker"
-version = "0.53.30"
+version = "0.53.31"
 edition.workspace = true
 
 [features]
