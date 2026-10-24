@@ -28,6 +28,7 @@
         "vite.config.ts",
         "vitest.config.ts",
         "src/worker-domains/gateway.ts",
+        "src/worker-domains/ingress.ts",
         "src/worker-domains/core.ts",
         "src/worker-domains/execution.ts",
         "src/worker-domains/integrations.ts",
