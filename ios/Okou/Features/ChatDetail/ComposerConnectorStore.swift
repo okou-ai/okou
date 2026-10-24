@@ -56,6 +56,8 @@ final class ComposerConnectorStore {
     if threadID == nil, let previous = self.agentID { pendingByAgent[previous] = pendingOptions }
     generation = UUID()
     authorization.cancel()
+    authorization.activationError = nil
+    webDestination = nil
     self.agentID = agentID
     pendingOptions = agentID.flatMap { pendingByAgent[$0] } ?? ChatComposerOptions()
     connectors = []
@@ -126,13 +128,14 @@ final class ComposerConnectorStore {
     }
   }
 
-  func perform(_ operation: () async throws -> Void) async {
+  func perform(_ operation: @MainActor () async throws -> Void) async {
     guard !closed, !isSaving, let agentID else { return }
     let request = generation
     isSaving = true
     defer { if request == generation { isSaving = false } }
     do {
       try await service.validate(agentID: agentID, threadID: threadID)
+      guard !closed, !Task.isCancelled, request == generation else { return }
       try await operation()
       guard !closed, !Task.isCancelled, request == generation else { return }
       await refresh()
@@ -218,6 +221,7 @@ final class ComposerConnectorStore {
   }
   func openWeb(path: String, query: [URLQueryItem] = []) {
     guard !closed else { return }
+    authorization.cancel()
     webDestination = WebDestination(url: webURL.appending(path: path).appending(queryItems: query))
   }
   func setupRemote(_ protocol: ChatRemoteProtocol) {
@@ -228,10 +232,10 @@ final class ComposerConnectorStore {
     if let threadID { query.append(URLQueryItem(name: "returnThread", value: threadID)) }
     openWeb(path: "connectors", query: query)
   }
-  func consumeNewChatOptions() {
+  func consumeNewChatOptions(agentID: String) {
     guard threadID == nil else { return }
-    if let agentID { pendingByAgent[agentID] = nil }
-    pendingOptions = ChatComposerOptions()
+    pendingByAgent[agentID] = nil
+    if self.agentID == agentID { pendingOptions = ChatComposerOptions() }
   }
   func close() {
     closed = true

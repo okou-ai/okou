@@ -78,7 +78,9 @@ extension ChatComposerAccess {
     async let grants: [ChatPermissionGrant] = client.request(
       "/api/user-permission-grants", query: [URLQueryItem(name: "agentId", value: agentID)])
     let (detail, current) = try await (metadata, grants)
-    guard detail.permissions.connectorSlug == slug else { throw APIClientError.invalidResponse }
+    guard detail.permissions.connectorSlug == slug,
+      current.allSatisfy({ $0.agentId.lowercased() == agentID.lowercased() })
+    else { throw APIClientError.invalidResponse }
     return ChatConnectorPermissionState(
       metadata: detail.permissions, grants: current.filter { $0.connectorSlug == slug })
   }

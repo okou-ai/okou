@@ -58,7 +58,7 @@ struct ComposerConnectorDirectory: View {
           }
         }
         Button("Create custom connector") {
-          store.openWeb(path: "connectors", query: [URLQueryItem(name: "tab", value: "custom")])
+          store.openWeb(path: "connectors", query: [URLQueryItem(name: "scope", value: "custom")])
         }
       }
       if !loading, error == nil,

@@ -43,6 +43,13 @@ struct ComposerConnectorAccounts: View {
           }
         }
         if loading { ProgressView("Loading accounts…") }
+        if !loading, selection != nil, !accounts.contains(where: { $0.id == selection }) {
+          Text("The selected account is unavailable. Choose an account or use default.")
+            .font(.footnote).foregroundStyle(.secondary)
+        }
+        if !loading, accounts.isEmpty, !search.isEmpty {
+          Text("No accounts found").foregroundStyle(.secondary)
+        }
         if let cursor {
           Button("Load more") { Task { await load(cursor: cursor) } }.disabled(
             loading || store.isSaving)

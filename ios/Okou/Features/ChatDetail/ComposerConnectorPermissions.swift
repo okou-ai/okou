@@ -8,6 +8,7 @@ struct ComposerConnectorPermissions: View {
   @State private var state: ChatConnectorPermissionState?
   @State private var search = ""
   @State private var duration = "1h"
+  @State private var category = ""
   @State private var error: String?
   @State private var loading = false
   @State private var confirmsReset = false
@@ -24,11 +25,17 @@ struct ComposerConnectorPermissions: View {
             Text("7 days").tag("7d")
             Text("Always").tag("always")
           }
-          Menu("Set all listed permissions") {
+          if let categories = state.metadata.categories {
+            Picker("Category", selection: $category) {
+              Text("All categories").tag("")
+              ForEach(categories.displayOrder, id: \.self) { Text($0).tag($0) }
+            }
+          }
+          Menu("Set listed permissions") {
             Button("Allow all") {
               Task {
                 await save(
-                  state.metadata.permissions.map {
+                  filteredPermissions(state.metadata).map {
                     ChatPermissionEdit(permission: $0.name, action: "allow", expiresIn: duration)
                   })
               }
@@ -36,21 +43,18 @@ struct ComposerConnectorPermissions: View {
             Button("Deny all") {
               Task {
                 await save(
-                  state.metadata.permissions.map {
+                  filteredPermissions(state.metadata).map {
                     ChatPermissionEdit(permission: $0.name, action: "deny")
                   })
               }
             }
-          }.disabled(store.isSaving)
+          }.disabled(store.isSaving || filteredPermissions(state.metadata).isEmpty)
         } footer: {
           Text("These permissions apply to this Agent across its conversations.")
         }
         Section("Permissions") {
           ForEach(
-            state.metadata.permissions.filter {
-              search.isEmpty || $0.name.localizedCaseInsensitiveContains(search)
-                || $0.description?.localizedCaseInsensitiveContains(search) == true
-            }, id: \.name
+            filteredPermissions(state.metadata), id: \.name
           ) { permission in
             permissionRow(permission.name, description: permission.description, state: state)
           }
@@ -77,6 +81,15 @@ struct ComposerConnectorPermissions: View {
       "Reset this connector's permissions for this Agent?", isPresented: $confirmsReset
     ) {
       Button("Reset to defaults", role: .destructive) { Task { await save([], reset: true) } }
+    }
+  }
+  private func filteredPermissions(_ metadata: ChatPermissionMetadata)
+    -> [ChatPermissionMetadata.Permission]
+  {
+    metadata.permissions.filter {
+      (category.isEmpty || metadata.categories?.categories[$0.name] == category)
+        && (search.isEmpty || $0.name.localizedCaseInsensitiveContains(search)
+          || $0.description?.localizedCaseInsensitiveContains(search) == true)
     }
   }
   private func permissionRow(

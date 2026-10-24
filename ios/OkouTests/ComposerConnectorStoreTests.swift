@@ -31,6 +31,11 @@ final class ComposerConnectorStoreTests: XCTestCase {
     store.configure(agentID: F.agentID)
     XCTAssertEqual(store.pendingOptions.initialRemoteAccessOverrides.first?.enabled, true)
     XCTAssertEqual(store.pendingOptions.computerAccess?.cloudBrowserEnabled, true)
+    store.configure(agentID: F.siblingID)
+    store.consumeNewChatOptions(agentID: F.agentID)
+    XCTAssertEqual(store.pendingOptions.initialRemoteAccessOverrides.first?.enabled, false)
+    store.configure(agentID: F.agentID)
+    XCTAssertTrue(store.pendingOptions.initialRemoteAccessOverrides.isEmpty)
   }
 
   func testUnknownRemoteWriteRequiresReadbackBeforeSendingAndIsNeverReplayed() async throws {
@@ -74,6 +79,44 @@ final class ComposerConnectorStoreTests: XCTestCase {
     XCTAssertEqual(server.withLock { $0.writes }, 1)
   }
 
+  func testRetiredComposerCannotBeginAWriteAfterItsContextReadCompletes() async throws {
+    let reading = ConnectorResponseGate()
+    let resume = ConnectorResponseGate()
+    let blocked = Mutex(false)
+    let writes = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path.hasSuffix("/metadata"), blocked.withLock({ $0 }) {
+        reading.open()
+        await resume.wait()
+      }
+      if request.httpMethod == "PUT" {
+        writes.withLock { $0 += 1 }
+        return ChatHTTPResponse(body: "{}")
+      }
+      return try composerResponse(request)
+    }
+    let thread = ChatThread(
+      id: F.threadID, agentID: F.agentID, title: "Remote work", selectedModel: nil,
+      createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
+      pinnedAt: nil, pinOrder: nil, indicator: nil)
+    let store = makeStore(fixture, thread: thread)
+    defer { store.close() }
+    await store.refresh()
+    let host = try XCTUnwrap(store.hosts(.ssh).first)
+    blocked.withLock { $0 = true }
+    let write = Task { await store.setRemote(host, protocol: .ssh, enabled: true) }
+    defer {
+      resume.open()
+      write.cancel()
+    }
+    await reading.wait()
+    store.configure(agentID: F.siblingID)
+    resume.open()
+    await write.value
+    XCTAssertEqual(writes.withLock { $0 }, 0)
+    XCTAssertTrue(store.canSend)
+  }
+
   private func makeStore(_ fixture: ChatHTTPFixture, thread: ChatThread? = nil)
     -> ComposerConnectorStore
   {
@@ -100,6 +143,28 @@ private func composerResponse(_ request: URLRequest) throws -> ChatHTTPResponse 
         """)
   case "/api/chat-threads/\(F.threadID)/metadata":
     return ChatHTTPResponse(body: F.metadata)
+  case "/api/chat-threads/\(F.threadID)/remote-access":
+    return ChatHTTPResponse(
+      body: """
+        {"ssh":[{"connectionId":"\(F.accountID)","displayName":"Build Mac","defaultEnabled":false,"overrideEnabled":null,"enabled":false}],"vnc":[]}
+        """)
   default: throw URLError(.unsupportedURL)
+  }
+}
+
+private final class ConnectorResponseGate: Sendable {
+  private let stream: AsyncStream<Void>
+  private let continuation: AsyncStream<Void>.Continuation
+
+  init() {
+    let pair = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    stream = pair.stream
+    continuation = pair.continuation
+  }
+
+  func wait() async { for await _ in stream { return } }
+  func open() {
+    continuation.yield()
+    continuation.finish()
   }
 }

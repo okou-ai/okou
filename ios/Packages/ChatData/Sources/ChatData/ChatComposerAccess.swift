@@ -88,6 +88,15 @@ public struct ChatConnectorAccounts: Decodable, Sendable {
   public let connections: [ChatConnectorAccount]
   public let nextCursor: String?
   public let defaultConnection: ChatConnectorAccount?
+
+  private enum CodingKeys: String, CodingKey { case connections, nextCursor, defaultConnection }
+
+  public init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    connections = try values.decode([ChatConnectorAccount].self, forKey: .connections)
+    nextCursor = try values.decode(String?.self, forKey: .nextCursor)
+    defaultConnection = try values.decode(ChatConnectorAccount?.self, forKey: .defaultConnection)
+  }
 }
 
 public struct ChatConnectorPreferences: Decodable, Sendable {

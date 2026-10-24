@@ -13,6 +13,7 @@ struct ComposerConnectorButton: View {
     }
     .accessibilityLabel("Connectors")
     .accessibilityIdentifier("composer-connectors")
+    .disabled(store.agentID == nil)
     .sheet(isPresented: $presented) {
       ComposerConnectorSheet(store: store)
         .presentationDetents([.medium, .large])

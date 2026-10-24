@@ -594,12 +594,14 @@ final class WorkspaceStore {
     else {
       return
     }
+    let sourceAgentID = selectedAgentID
+    newModelSelection.connectors.configure(agentID: sourceAgentID)
     let options = newModelSelection.connectors.pendingOptions
     guard let created = await createChat(agentID: selectedAgentID, composerOptions: options),
       !closed,
       let conversation = conversation(for: created.id)
     else { return }
-    newModelSelection.connectors.consumeNewChatOptions()
+    newModelSelection.connectors.consumeNewChatOptions(agentID: sourceAgentID ?? created.agentID)
     sourceComposer.move(to: conversation.composer)
     if wasAwaitingAgent && newComposer !== sourceComposer {
       newComposer.clear()
