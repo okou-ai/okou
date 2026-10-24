@@ -1,6 +1,7 @@
 use super::*;
 use guest_contracts::storage_files::StorageFile;
 use sha2::{Digest, Sha256};
+use std::io::{Seek, SeekFrom, Write};
 
 fn later_files(count: usize, bytes: usize) -> Vec<StorageFile> {
     (0..count)
@@ -13,12 +14,12 @@ fn later_files(count: usize, bytes: usize) -> Vec<StorageFile> {
         .collect()
 }
 
-fn seed_later_writer(home: &HomePaths, name: &str, count: usize, bytes: usize) {
+fn seed_packed_writer(home: &HomePaths, name: &str, count: usize, bytes: usize) {
     let files = later_files(count, bytes);
-    seed_later_files(home, name, &files, flate2::Compression::none());
+    seed_packed_files(home, name, &files, flate2::Compression::none());
 }
 
-fn seed_later_files(
+fn seed_packed_files(
     home: &HomePaths,
     name: &str,
     files: &[StorageFile],
@@ -27,7 +28,9 @@ fn seed_later_files(
     let entry = home
         .storages_dir()
         .join(short_digest(name))
-        .join(format!("decoded-v1-{}", short_digest("v1")));
+        .join(format!("decoded-v2-{}", short_digest("v1")));
+    std::fs::create_dir_all(&entry).unwrap();
+    let mut payload = std::fs::File::create(entry.join("data.bin")).unwrap();
     let encoder = flate2::write::GzEncoder::new(Vec::new(), compression);
     let mut tar = tar::Builder::new(encoder);
     for file in files {
@@ -38,9 +41,7 @@ fn seed_later_files(
         header.set_cksum();
         tar.append_data(&mut header, &file.path, &file.content[..])
             .unwrap();
-        let path = entry.join("files").join(&file.path);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, &file.content).unwrap();
+        payload.write_all(&file.content).unwrap();
     }
     let archive = tar.into_inner().unwrap().finish().unwrap();
     assert!(archive.len() <= 4 * 1024 * 1024);
@@ -58,7 +59,7 @@ fn seed_later_files(
 }
 
 #[tokio::test]
-async fn activated_policy_selects_newly_admitted_v1_entries() {
+async fn admitted_packed_entries_are_selected_for_delivery() {
     let root = tempfile::tempdir().unwrap();
     let home = home_at(&root);
     let cache = decoded::DecodedCache::new(home.clone());
@@ -89,7 +90,7 @@ async fn activated_policy_selects_newly_admitted_v1_entries() {
         ("expanded-paths", paths, uncompressed),
         ("expanded-index", index_files, uncompressed),
     ] {
-        seed_later_files(&home, name, &files, compression);
+        seed_packed_files(&home, name, &files, compression);
         let ready = cache.get_ready(name, "v1").await.unwrap().unwrap();
         assert_eq!(ready.files, files);
         drop(ready);
@@ -151,7 +152,7 @@ async fn alias_group_retains_archive_delivery_when_decoded_files_do_not_fit() {
     let root = tempfile::tempdir().unwrap();
     let home = home_at(&root);
     let files = later_files(decoded::MAX_ADMITTED_FILES, 1);
-    seed_later_files(&home, "name", &files, flate2::Compression::fast());
+    seed_packed_files(&home, "name", &files, flate2::Compression::fast());
     let cache = decoded::DecodedCache::new(home.clone());
     let ready = cache.get_ready("name", "v1").await.unwrap().unwrap();
     let fitting_groups = guest_contracts::storage_files::MAX_TOTAL_FILES / files.len();
@@ -212,7 +213,7 @@ async fn alias_group_retains_archive_delivery_when_decoded_files_do_not_fit() {
 }
 
 #[tokio::test]
-async fn preparation_selects_valid_larger_v1_positives_within_the_active_policy() {
+async fn preparation_selects_valid_packed_entries_within_the_active_policy() {
     let root = tempfile::tempdir().unwrap();
     let home = home_at(&root);
     let cache = decoded::DecodedCache::new(home.clone());
@@ -223,7 +224,7 @@ async fn preparation_selects_valid_larger_v1_positives_within_the_active_policy(
         ("gzip-overflow", 4, 256 * 1024),
         ("larger-content", 5, 256 * 1024),
     ] {
-        seed_later_writer(&home, name, count, bytes);
+        seed_packed_writer(&home, name, count, bytes);
         for fresh in [false, true] {
             let mut plan = plan_from_entries(
                 vec![storage_entry(
@@ -284,13 +285,15 @@ async fn positive_corruption_is_not_replaced_by_archive_delivery() {
     let root = tempfile::tempdir().unwrap();
     let home = home_at(&root);
     let count = decoded::MAX_ADMITTED_FILES / 2;
-    seed_later_writer(&home, "corrupt", count, 64);
+    seed_packed_writer(&home, "corrupt", count, 64);
     let file = home
         .storages_dir()
         .join(short_digest("corrupt"))
-        .join(format!("decoded-v1-{}", short_digest("v1")))
-        .join(format!("files/file-{}", count - 1));
-    std::fs::write(file, vec![b'z'; 64]).unwrap();
+        .join(format!("decoded-v2-{}", short_digest("v1")))
+        .join("data.bin");
+    let mut payload = std::fs::OpenOptions::new().write(true).open(file).unwrap();
+    payload.seek(SeekFrom::End(-64)).unwrap();
+    payload.write_all(&[b'z'; 64]).unwrap();
     let cache = decoded::DecodedCache::new(home.clone());
     let mut plan = plan_from_entries(
         vec![storage_entry(

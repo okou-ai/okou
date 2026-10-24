@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use super::super::super::*;
 use super::super::support::{
-    assert_run_exits_within, minimal_context, mock_run_config, mock_run_config_with_overrides,
-    push_job, seed_home_cache_state, shutdown, test_profiles, wait_status_mode,
+    assert_run_exits_within, minimal_context, mock_run_config_with_overrides, push_job,
+    seed_home_cache_state, test_profiles, wait_status_mode,
 };
 use crate::home_image_cache::{FsStats, HomeImagePrepareLockTestGate};
 
@@ -20,41 +20,6 @@ async fn wait_for_removal(path: &Path) {
     })
     .await
     .expect("background maintenance must remove the selected cache entry");
-}
-
-#[tokio::test]
-async fn running_reactor_migrates_cold_decoded_cache_without_a_job_or_source_archive() {
-    use runner_host::paths::short_digest;
-    use sha2::{Digest, Sha256};
-
-    let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
-    let home = config.paths.home.clone();
-    let legacy = home
-        .storages_dir()
-        .join(short_digest("cold"))
-        .join(format!("decoded-v1-{}", short_digest("v1")));
-    std::fs::create_dir_all(legacy.join("files/nested")).unwrap();
-    std::fs::write(legacy.join("files/nested/file"), b"hello").unwrap();
-    std::fs::write(
-        legacy.join("index.json"),
-        serde_json::to_vec(&serde_json::json!({
-            "name":"cold","version":"v1","compressed_bytes":100,
-            "files":[{"path":"nested/file","mode":0o751,"mtime":1234,
-                "size":5,"sha256":hex::encode(Sha256::digest(b"hello"))}]
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-    let runner = tokio::spawn(run(config));
-    wait_for_removal(&legacy).await;
-    shutdown(&env, runner).await;
-    let cache = crate::storage_cache::decoded::DecodedCache::new(home);
-    let files = cache.get_ready("cold", "v1").await.unwrap().unwrap();
-    assert_eq!(files.files[0].path, "nested/file");
-    assert_eq!(files.files[0].content, b"hello");
-    assert_eq!(files.files[0].mode, 0o751);
-    assert_eq!(files.files[0].mtime, 1234);
-    cache.shutdown().await;
 }
 
 async fn background_gc_lifecycle(pressure: bool, resume: bool) {
