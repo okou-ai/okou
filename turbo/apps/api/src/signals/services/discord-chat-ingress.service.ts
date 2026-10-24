@@ -72,12 +72,12 @@ export function discordIngressFailureSql(args: {
     RETURNING id`;
   if (!publication) {
     return sql`WITH failure_claim AS (${claim})
-      SELECT ${exists(sql`SELECT 1 FROM failure_claim`)} AS claimed,
+      SELECT ${exists(sql`(SELECT 1 FROM failure_claim)`)} AS claimed,
         false AS inserted`;
   }
   const { route, event } = publication;
   const touchCondition = and(
-    exists(sql`SELECT 1 FROM inserted`),
+    exists(sql`(SELECT 1 FROM inserted)`),
     eq(chatThreads.id, route.chatThreadId),
     isNotNull(chatThreads.agentId),
     eq(chatThreads.userId, route.userId),
@@ -87,7 +87,7 @@ export function discordIngressFailureSql(args: {
     ${canonicalChatEventAppendCtes(
       [event],
       "id",
-      exists(sql`SELECT 1 FROM failure_claim`),
+      exists(sql`(SELECT 1 FROM failure_claim)`),
     )}, failure_touched AS (
       UPDATE ${chatThreads}
       SET last_message_at = GREATEST(${chatThreads.lastMessageAt}, ${event.createdAt.toISOString()}::timestamp)
@@ -99,7 +99,7 @@ export function discordIngressFailureSql(args: {
       -- the claim and event just as the previous sort precondition did.
       INSERT INTO ${chatThreadEventSequences} (user_id, org_id, last_seq_id)
       SELECT (SELECT user_id FROM failure_touched), ${route.orgId}, 1
-      WHERE ${exists(sql`SELECT 1 FROM inserted`)}
+      WHERE ${exists(sql`(SELECT 1 FROM inserted)`)}
       ON CONFLICT (user_id, org_id) DO UPDATE
       SET last_seq_id = ${chatThreadEventSequences.lastSeqId} + 1
       RETURNING user_id, org_id, last_seq_id
@@ -114,8 +114,8 @@ export function discordIngressFailureSql(args: {
       ON CONFLICT (id) DO NOTHING
       RETURNING id
     )
-    SELECT ${exists(sql`SELECT 1 FROM failure_claim`)} AS claimed,
-      ${exists(sql`SELECT 1 FROM inserted`)} AS inserted`;
+    SELECT ${exists(sql`(SELECT 1 FROM failure_claim)`)} AS claimed,
+      ${exists(sql`(SELECT 1 FROM inserted)`)} AS inserted`;
 }
 
 interface DiscordChatThreadRouteKey {
