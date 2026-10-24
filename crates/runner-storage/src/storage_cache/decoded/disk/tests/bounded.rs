@@ -57,7 +57,7 @@ fn valid_path_envelope_can_still_fail_bounded_index_publication_cleanly() {
 #[test]
 fn content_budget_is_checked_before_opening_file_bodies() {
     let (_root, home, entry, _) = setup();
-    fs::remove_file(entry.join("files/nested/file")).unwrap();
+    fs::remove_file(entry.join("data.bin")).unwrap();
     assert!(
         read_with_budget(
             &home,
@@ -77,7 +77,7 @@ fn content_budget_is_checked_before_opening_file_bodies() {
 #[test]
 fn file_budget_is_checked_before_bodies_but_does_not_hide_invalid_metadata() {
     let (_root, home, entry, _) = setup();
-    fs::remove_file(entry.join("files/nested/file")).unwrap();
+    fs::remove_file(entry.join("data.bin")).unwrap();
     let cancel = CancellationToken::new();
     assert!(
         read_with_budget(

@@ -1041,6 +1041,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let mut jobs: JoinSet<JobResult> = JoinSet::new();
 
     if startup_mode == RunnerMode::Running {
+        exec_config.decoded_cache.start_migration();
         info!(
             runner_release = runner.release,
             group = %runner.group,
@@ -1196,6 +1197,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     "persist runner mode {mode:?}: {error}"
                 )));
                 break;
+            }
+            if mode == RunnerMode::Running {
+                exec_config.decoded_cache.start_migration();
             }
         }
         pending_candidate.clear_if_inactive(mode);
