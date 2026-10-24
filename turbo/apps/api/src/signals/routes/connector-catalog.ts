@@ -31,7 +31,7 @@ import {
   connectorCatalogConnectItemsFromSource,
   connectorCatalogListFromSnapshot,
   connectorCatalogDiscoveryFromSnapshot,
-  loadAcceptedConnectorCatalogSnapshot,
+  loadAcceptedDisplayConnectorCatalogSnapshot$,
   publicConnectorCatalogStatusFromSource,
   type ConnectorCatalogSlugSource,
 } from "../services/connector-catalog-external-reader.service";
@@ -87,7 +87,6 @@ const connectorCatalogRequestContext$ = command(async ({ get }) => {
     overrides,
   };
   return {
-    db: get(db$),
     featureStates: getAllFeatureStates(featureSwitchContext),
   };
 });
@@ -97,16 +96,13 @@ const listConnectorCatalogInner$ = command(
     const context = await set(connectorCatalogRequestContext$);
     signal.throwIfAborted();
 
-    const catalogReadDb = context.db;
     const catalogReadFeatureStates = context.featureStates;
     const catalog = await settleConnectorCatalogRead(
       (async () => {
         return await (async () => {
           const viewArgs = { featureStates: catalogReadFeatureStates };
-          const snapshot = await loadAcceptedConnectorCatalogSnapshot(
-            catalogReadDb,
-            undefined,
-            "display",
+          const snapshot = await set(
+            loadAcceptedDisplayConnectorCatalogSnapshot$,
           );
           return connectorCatalogListFromSnapshot({
             ...viewArgs,
@@ -129,7 +125,6 @@ const listConnectorCatalogStatusInner$ = command(
     const context = await set(connectorCatalogRequestContext$);
     signal.throwIfAborted();
 
-    const catalogStatusDb = context.db;
     const catalogStatusFeatureStates = context.featureStates;
     const catalog = await settleConnectorCatalogRead(
       (async () => {
@@ -138,10 +133,8 @@ const listConnectorCatalogStatusInner$ = command(
             featureStates: catalogStatusFeatureStates,
             referenceConnectorSlugs: [],
           };
-          const snapshot = await loadAcceptedConnectorCatalogSnapshot(
-            catalogStatusDb,
-            undefined,
-            "display",
+          const snapshot = await set(
+            loadAcceptedDisplayConnectorCatalogSnapshot$,
           );
           return connectorCatalogStatusFromSnapshot({
             ...viewArgs,
@@ -166,7 +159,7 @@ const listConnectorCatalogStatusInner$ = command(
  */
 export const listConnectorCatalogConnectItems$ = command(
   async (
-    { set },
+    { get, set },
     filter:
       | {
           readonly kind: "slugs";
@@ -180,7 +173,6 @@ export const listConnectorCatalogConnectItems$ = command(
 
     const catalog = await settleConnectorCatalogRead(
       (async () => {
-        const catalogDb = context.db;
         const featureStates = context.featureStates;
         let source: ConnectorCatalogSlugSource<ConnectorCatalogDisplayConnector>;
         if (filter.kind === "slugs") {
@@ -188,7 +180,7 @@ export const listConnectorCatalogConnectItems$ = command(
           if (slugs.length === 0) {
             source = { connectors: [], filteredMethodKeys: new Set<string>() };
           } else {
-            const rows = await catalogDb
+            const rows = await get(db$)
               .select({
                 current: {
                   schemaVersion: connectorCatalog.schemaVersion,
@@ -217,11 +209,7 @@ export const listConnectorCatalogConnectItems$ = command(
           }
         } else {
           source = catalogSource(
-            await loadAcceptedConnectorCatalogSnapshot(
-              catalogDb,
-              undefined,
-              "display",
-            ),
+            await set(loadAcceptedDisplayConnectorCatalogSnapshot$),
           );
         }
         return connectorCatalogConnectItemsFromSource({
@@ -258,7 +246,6 @@ const discoverConnectorCatalogInner$ = command(
     const savedConnectorSlugs = await get(savedBuiltinSlugs$);
     signal.throwIfAborted();
 
-    const catalogDiscoveryDb = context.db;
     const catalogDiscoveryFeatureStates = context.featureStates;
     const catalogDiscoveryKeyword = query.keyword;
     const catalogDiscoveryCategory = query.category;
@@ -272,10 +259,8 @@ const discoverConnectorCatalogInner$ = command(
             category: catalogDiscoveryCategory,
             referenceConnectorSlugs: [],
           };
-          const snapshot = await loadAcceptedConnectorCatalogSnapshot(
-            catalogDiscoveryDb,
-            undefined,
-            "display",
+          const snapshot = await set(
+            loadAcceptedDisplayConnectorCatalogSnapshot$,
           );
           return connectorCatalogDiscoveryFromSnapshot({
             ...viewArgs,

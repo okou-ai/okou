@@ -35,7 +35,7 @@ import {
   connectManualGrantBuiltinConnector$,
   connectNoAuthBuiltinConnector$,
   builtinConnectorList,
-  builtinConnectorSearch,
+  builtinConnectorSearch$,
 } from "../services/connector-data.service";
 import {
   connectorActionResolver,
@@ -185,17 +185,15 @@ const getBuiltinConnectorListInner$ = computed(async (get) => {
   return { status: 200 as const, body: result };
 });
 
-const searchBuiltinConnectorsInner$ = computed(async (get) => {
+const searchBuiltinConnectorsInner$ = command(async ({ get, set }) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(builtinConnectorsSearchContract.search));
   const connectors = await settle(
-    get(
-      builtinConnectorSearch({
-        orgId: auth.orgId,
-        userId: auth.userId,
-        keyword: query.keyword,
-      }),
-    ),
+    set(builtinConnectorSearch$, {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      keyword: query.keyword,
+    }),
   );
   if (!connectors.ok) {
     if (isConnectorCatalogUnavailableError(connectors.error)) {

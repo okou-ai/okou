@@ -20,9 +20,10 @@ import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
+import { command } from "ccstate";
 
 import { singleton } from "../../lib/singleton";
-import type { ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import type {
   ConnectorCatalogArtifactConnector,
   ConnectorCatalogAuthMethod,
@@ -218,16 +219,6 @@ function identityKey(identity: ExternalCatalogIdentity): string {
   ].join("\0");
 }
 
-async function measureCatalogLoad<T>(
-  timing: ConnectorCatalogLoadTiming | undefined,
-  actionType: ApiDispatchTimingActionType,
-  operation: () => T | Promise<T>,
-): Promise<T> {
-  return timing
-    ? await timing.measure(actionType, operation)
-    : await operation();
-}
-
 function measureCatalogLoadSync<T>(
   timing: ConnectorCatalogLoadTiming | undefined,
   actionType: ApiDispatchTimingActionType,
@@ -279,20 +270,19 @@ function materializeAcceptedConnectorCatalog<
   );
 }
 
-async function readCachedConnectorCatalogSnapshot<
+function readCachedConnectorCatalogSnapshot<
   Catalog extends { readonly identity: ExternalCatalogIdentity },
 >(args: {
   readonly cache: PreparedExternalCatalogCache<Catalog>;
-  readonly load: () => Promise<Catalog>;
   readonly identity: ExternalCatalogIdentity;
   readonly timing: ConnectorCatalogLoadTiming | undefined;
-}): Promise<Catalog> {
+}): { readonly key: string; readonly catalog: Catalog | undefined } {
   const { identity: currentIdentity, timing, cache } = args;
   const currentKey = identityKey(currentIdentity);
   if (cache.completed?.key === currentKey) {
     timing?.recordAcceptedCacheOutcome("hit");
     timing?.recordValidationResult({ outcome: "not_run" });
-    return cache.completed.catalog;
+    return { key: currentKey, catalog: cache.completed.catalog };
   }
 
   const completedIdentity = cache.completed?.catalog.identity;
@@ -306,116 +296,102 @@ async function readCachedConnectorCatalogSnapshot<
         : "capability_identity_changed",
   );
   timing?.recordAcceptedCacheOutcome("miss");
-  const catalog = await args.load();
-  cache.completed = { key: currentKey, catalog };
-  return catalog;
+  return { key: currentKey, catalog: undefined };
 }
 
-export function loadAcceptedConnectorCatalogSnapshot(
-  db: ReadonlyDb,
-  timing: ConnectorCatalogLoadTiming | undefined,
-  projection: "display",
-): Promise<AcceptedDisplayCatalogSnapshot>;
-export function loadAcceptedConnectorCatalogSnapshot(
-  db: ReadonlyDb,
-  timing?: ConnectorCatalogLoadTiming,
-  projection?: "runtime",
-): Promise<AcceptedConnectorCatalogSnapshot>;
-export async function loadAcceptedConnectorCatalogSnapshot(
-  db: ReadonlyDb,
-  timing?: ConnectorCatalogLoadTiming,
-  projection: "display" | "runtime" = "runtime",
-): Promise<AcceptedDisplayCatalogSnapshot | AcceptedConnectorCatalogSnapshot> {
+const readAcceptedConnectorCatalogIdentity$ = command(async ({ get }) => {
   const capability = connectorCatalogExecutableCapabilityState();
-  const identityReadDb = db;
-  const identityReadCapabilityDigest = capability.digest;
-  const identityReadTiming = timing === undefined ? undefined : timing;
-  const identity = await (async () => {
-    const [row] = await measureCatalogLoad(
-      identityReadTiming,
-      "api_dispatch_connector_catalog_query_identity",
-      async () => {
-        const plan = acceptedCatalogIdentityReadPlan();
-        return await identityReadDb
-          .select(plan.columns)
-          .from(connectorCatalog)
-          .where(plan.condition)
-          .limit(1);
-      },
-    );
-    return row
-      ? catalogIdentityFromCapture(row, identityReadCapabilityDigest)
-      : undefined;
-  })();
+  const capabilityDigest = capability.digest;
+  const plan = acceptedCatalogIdentityReadPlan();
+  const [row] = await get(db$)
+    .select(plan.columns)
+    .from(connectorCatalog)
+    .where(plan.condition)
+    .limit(1);
+  const identity = row
+    ? catalogIdentityFromCapture(row, capabilityDigest)
+    : undefined;
   if (!identity) {
     throw new ExternalConnectorCatalogUnavailableError(
       "missing_current_identity",
     );
   }
-  // Entries are immutable and retained by hash. A later pointer switch cannot
-  // strand this capture, so the legacy mutable-snapshot retry is unnecessary.
-  // Display reads keep a narrow cache and never materialize runtime entries.
-  if (projection === "display") {
-    return await readCachedConnectorCatalogSnapshot({
-      cache: preparedDisplayCatalogCache(),
+  return { identity, capability };
+});
+
+export const loadAcceptedDisplayConnectorCatalogSnapshot$ = command(
+  async ({ get, set }): Promise<AcceptedDisplayCatalogSnapshot> => {
+    const { identity, capability } = await set(
+      readAcceptedConnectorCatalogIdentity$,
+    );
+    const cache = preparedDisplayCatalogCache();
+    const { key, catalog: cached } = readCachedConnectorCatalogSnapshot({
+      cache,
       identity,
-      timing,
-      load: async () => {
-        const plan = acceptedCatalogEntriesReadPlan(identity.catalogDigest);
-        const rows = await db
-          .select(plan.displayColumns)
-          .from(connectorCatalogEntries)
-          .where(plan.condition)
-          .orderBy(plan.orderBy);
-        if (rows.length === 0) {
-          throw new ExternalConnectorCatalogUnavailableError("missing_entries");
-        }
-        return materializeAcceptedConnectorCatalog({
-          identity,
-          capability,
-          ...(timing === undefined ? {} : { timing }),
-          connectors: rows.map(materializeConnectorCatalogDisplayRow),
-        });
-      },
+      timing: undefined,
     });
-  }
-  return await readCachedConnectorCatalogSnapshot({
-    cache: preparedCatalogCache(),
-    identity,
-    timing,
-    load: async () => {
-      return await (async () => {
-        const rows = await (async () => {
-          return await measureCatalogLoad(
-            timing,
-            "api_dispatch_connector_catalog_query_payload",
-            async () => {
-              const plan = acceptedCatalogEntriesReadPlan(
-                identity.catalogDigest,
-              );
-              return await db
-                .select(plan.runtimeColumns)
-                .from(connectorCatalogEntries)
-                .where(plan.condition)
-                .orderBy(plan.orderBy);
-            },
-          );
-        })();
-        // A published artifact contains at least one connector. A whole-catalog
-        // read must not turn an unavailable generation into a successful empty list.
-        if (rows.length === 0) {
-          throw new ExternalConnectorCatalogUnavailableError("missing_entries");
-        }
-        return materializeAcceptedConnectorCatalog({
-          identity,
-          capability,
-          ...(timing === undefined ? {} : { timing }),
-          connectors: rows.map(materializeConnectorCatalogRuntimeRow),
-        });
-      })();
-    },
-  });
-}
+    if (cached) {
+      return cached;
+    }
+    // Entries are immutable and retained by hash. A later pointer switch cannot
+    // strand this capture. Display reads never materialize runtime entries.
+    const catalog = await (async () => {
+      const plan = acceptedCatalogEntriesReadPlan(identity.catalogDigest);
+      const rows = await get(db$)
+        .select(plan.displayColumns)
+        .from(connectorCatalogEntries)
+        .where(plan.condition)
+        .orderBy(plan.orderBy);
+      if (rows.length === 0) {
+        throw new ExternalConnectorCatalogUnavailableError("missing_entries");
+      }
+      return materializeAcceptedConnectorCatalog({
+        identity,
+        capability,
+        connectors: rows.map(materializeConnectorCatalogDisplayRow),
+      });
+    })();
+    cache.completed = { key, catalog };
+    return catalog;
+  },
+);
+
+export const loadAcceptedConnectorCatalogSnapshot$ = command(
+  async ({ get, set }): Promise<AcceptedConnectorCatalogSnapshot> => {
+    const { identity, capability } = await set(
+      readAcceptedConnectorCatalogIdentity$,
+    );
+    const cache = preparedCatalogCache();
+    const { key, catalog: cached } = readCachedConnectorCatalogSnapshot({
+      cache,
+      identity,
+      timing: undefined,
+    });
+    if (cached) {
+      return cached;
+    }
+    const catalog = await (async () => {
+      const plan = acceptedCatalogEntriesReadPlan(identity.catalogDigest);
+      const rows = await get(db$)
+        .select(plan.runtimeColumns)
+        .from(connectorCatalogEntries)
+        .where(plan.condition)
+        .orderBy(plan.orderBy);
+      // A whole-catalog read must not turn an unavailable generation into a
+      // successful empty list.
+      if (rows.length === 0) {
+        throw new ExternalConnectorCatalogUnavailableError("missing_entries");
+      }
+      return materializeAcceptedConnectorCatalog({
+        identity,
+        capability,
+        connectors: rows.map(materializeConnectorCatalogRuntimeRow),
+      });
+    })();
+    cache.completed = { key, catalog };
+    return catalog;
+  },
+);
 
 /**
  * Applies rollout policy to discovery projections only. Feature switches must
