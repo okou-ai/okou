@@ -75,6 +75,10 @@ struct ComposerConnectorDirectory: View {
     .navigationBarTitleDisplayMode(.inline)
     .searchable(text: $search, prompt: "Find connectors")
     .task(id: "\(tab)/\(search)/\(category)") { await load() }
+    .refreshable { await load() }
+    .onChange(of: store.webDestination?.id) { _, destinationID in
+      if destinationID == nil { Task { await load() } }
+    }
   }
   private func openConnector(_ slug: String) {
     guard let agentID = store.agentID else { return }

@@ -64,6 +64,10 @@ struct ComposerConnectorAccounts: View {
     .navigationTitle(connector.label)
     .navigationBarTitleDisplayMode(.inline)
     .task(id: search) { await load() }
+    .refreshable { await load() }
+    .onChange(of: store.authorization.active?.id) { _, flowID in
+      if flowID == nil { Task { await load() } }
+    }
   }
 
   private func accountLabel(_ label: String, detail: String, checked: Bool) -> some View {
