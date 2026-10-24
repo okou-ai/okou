@@ -5,7 +5,9 @@ import { emptyEnvironment, type Environment } from "./run-environment";
 export function dataRouterEnvironment(): Environment {
   const url = env("OKOU_DATA_ROUTER_URL");
   const token = env("OKOU_DATA_TOKEN");
-  if (!url || !token) return emptyEnvironment();
+  if (!url || !token) {
+    return emptyEnvironment();
+  }
   const endpoint = new URL(url);
   return {
     ...emptyEnvironment(),
@@ -21,7 +23,7 @@ export function dataRouterEnvironment(): Environment {
               base: endpoint.toString(),
               auth: {
                 headers: {
-                  Authorization: "Bearer ${{ secrets.OKOU_DATA_TOKEN }}",
+                  Authorization: `Bearer \${{ secrets.OKOU_DATA_TOKEN }}`,
                 },
               },
               permissions: [{ name: "call", rules: ["ANY /{path*}"] }],

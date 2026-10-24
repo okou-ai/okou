@@ -1,12 +1,10 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { randomUUID } from "node:crypto";
 
-import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv } from "../../../lib/env";
-import { server } from "../../../mocks/server";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";

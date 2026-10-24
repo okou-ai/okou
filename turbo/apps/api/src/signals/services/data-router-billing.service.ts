@@ -28,14 +28,18 @@ export const settleDataRouterRun$ = command(
   async ({ set }, runId: string, signal: AbortSignal) => {
     const url = env("OKOU_DATA_ROUTER_URL");
     const token = env("OKOU_DATA_TOKEN");
-    if (!url || !token) return;
+    if (!url || !token) {
+      return;
+    }
     const db = set(writeDb$);
     const requests = await db
       .select({ requestId: dataRouterRequests.requestId })
       .from(dataRouterRequests)
       .where(eq(dataRouterRequests.runId, runId));
     signal.throwIfAborted();
-    if (requests.length === 0) return;
+    if (requests.length === 0) {
+      return;
+    }
     const [owner] = await db
       .select({
         orgId: billingRunAttribution.orgId,
@@ -44,7 +48,9 @@ export const settleDataRouterRun$ = command(
       .from(billingRunAttribution)
       .where(eq(billingRunAttribution.runId, runId));
     signal.throwIfAborted();
-    if (!owner) throw new Error("Missing Data Router Run attribution");
+    if (!owner) {
+      throw new Error("Missing Data Router Run attribution");
+    }
     const requestIds = new Set(
       requests.map((request) => {
         return request.requestId;
@@ -71,10 +77,11 @@ export const settleDataRouterRun$ = command(
           }),
           signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
         });
-        if (!response.ok)
+        if (!response.ok) {
           throw new Error(
             `Data Router billing lookup failed: ${response.status}`,
           );
+        }
         return billingResponse.parse(await response.json());
       })(),
     );
@@ -98,10 +105,13 @@ export const settleDataRouterRun$ = command(
       }
       observed.add(receipt.requestId);
       credits += receipt.credits;
-      if (!Number.isSafeInteger(credits))
+      if (!Number.isSafeInteger(credits)) {
         throw new Error("Data Router credits exceed the supported range");
+      }
     }
-    if (credits === 0) return;
+    if (credits === 0) {
+      return;
+    }
     await set(
       recordManagedUsage$,
       {

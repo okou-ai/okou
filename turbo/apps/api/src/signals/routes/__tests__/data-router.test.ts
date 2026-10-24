@@ -99,10 +99,10 @@ async function finish(run: Awaited<ReturnType<typeof createRun>>) {
 describe("Data Router completion accounting", () => {
   it("charges returned credits once at completion and keeps the service token out of the sandbox environment", async () => {
     const run = await createRun();
-    expect(run.claim.environment?.OKOU_DATA_ROUTER_URL).toBe(ROUTER);
-    expect(JSON.stringify(run.claim.environment)).not.toContain(
-      "router-test-service-token",
-    );
+    expect(run.claim.platformEnvironment.OKOU_DATA_ROUTER_URL).toBe(ROUTER);
+    expect(
+      JSON.stringify([run.claim.environment, run.claim.platformEnvironment]),
+    ).not.toContain("router-test-service-token");
     const requestId = randomUUID();
     const unfinished = randomUUID();
     await accept(register(run, requestId), [200]);
@@ -130,10 +130,10 @@ describe("Data Router completion accounting", () => {
       }),
     );
     await finish(run);
-    expect(await credits(run.actor)).toBe(before - 7);
+    await expect(credits(run.actor)).resolves.toBe(before - 7);
     await finish(run);
     expect(lookups).toBe(1);
-    expect(await credits(run.actor)).toBe(before - 7);
+    await expect(credits(run.actor)).resolves.toBe(before - 7);
   });
 
   it("does not retry a failed completion lookup", async () => {
@@ -150,7 +150,7 @@ describe("Data Router completion accounting", () => {
     await finish(run);
     await finish(run);
     expect(lookups).toBe(1);
-    expect(await credits(run.actor)).toBe(before);
+    await expect(credits(run.actor)).resolves.toBe(before);
   });
 
   it("does not charge again when another completion redrives an undelivered chat callback", async () => {
@@ -200,7 +200,7 @@ describe("Data Router completion accounting", () => {
     await first;
     await flushWaitUntilForTest();
     expect(lookups).toBe(1);
-    expect(await credits(run.actor)).toBe(before - 5);
+    await expect(credits(run.actor)).resolves.toBe(before - 5);
   });
 
   it("settles a fresh cancellation once without charging again on cancellation recovery", async () => {
@@ -223,11 +223,11 @@ describe("Data Router completion accounting", () => {
     );
     await runs.requestCancelRun(run.actor, run.runId, [200]);
     await flushWaitUntilForTest();
-    expect(await credits(run.actor)).toBe(before - 3);
+    await expect(credits(run.actor)).resolves.toBe(before - 3);
     await runs.requestCancelRun(run.actor, run.runId, [200]);
     await finish(run);
     expect(lookups).toBe(1);
-    expect(await credits(run.actor)).toBe(before - 3);
+    await expect(credits(run.actor)).resolves.toBe(before - 3);
   });
 
   it("returns only the authenticated user's request history and rejects another Run token", async () => {

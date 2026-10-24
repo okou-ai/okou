@@ -68,8 +68,9 @@ export async function readGetStartedRewardPost(
     }
     throw fetched.error;
   }
-  if (!fetched.value.ok)
+  if (!fetched.value.ok) {
     return { kind: "retry", reason: "verification_unavailable" };
+  }
   const response = z
     .object({
       result: z.object({
@@ -83,8 +84,9 @@ export async function readGetStartedRewardPost(
     })
     .safeParse(await fetched.value.json());
   signal.throwIfAborted();
-  if (!response.success)
+  if (!response.success) {
     return { kind: "retry", reason: "incomplete_response" };
+  }
   const result = response.data.result.structuredContent.data.body;
   const tweet = z
     .object({

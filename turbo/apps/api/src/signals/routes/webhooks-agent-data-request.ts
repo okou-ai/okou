@@ -17,9 +17,13 @@ const body$ = bodyResultOf(dataRouterRequestContract.register);
 const register$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = await get(body$);
   signal.throwIfAborted();
-  if (!body.ok) return body.response;
+  if (!body.ok) {
+    return body.response;
+  }
   const auth = getSandboxAuthForRun(body.data.runId, get(authorization$));
-  if (!auth) return unauthorizedRunMismatch;
+  if (!auth) {
+    return unauthorizedRunMismatch;
+  }
   const db = set(writeDb$);
   const [run] = await db
     .select({ id: agentRuns.id })
@@ -33,14 +37,18 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
       ),
     );
   signal.throwIfAborted();
-  if (!run) return notFound("Active Run not found");
+  if (!run) {
+    return notFound("Active Run not found");
+  }
   const [registered] = await db
     .insert(dataRouterRequests)
     .values({ requestId: body.data.requestId, runId: run.id })
     .onConflictDoNothing()
     .returning({ requestId: dataRouterRequests.requestId });
   signal.throwIfAborted();
-  if (!registered) return conflict("Data Router request already registered");
+  if (!registered) {
+    return conflict("Data Router request already registered");
+  }
   return { status: 200 as const, body: { success: true as const } };
 });
 
