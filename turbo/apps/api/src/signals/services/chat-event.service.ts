@@ -1059,12 +1059,11 @@ export function requireChatEventReplacementTarget(
   return target;
 }
 
-/** Append a replacement for a target already loaded by an authoritative read. */
-export function chatEventReplacementInsertSql(
+/** Pure replacement preparation for a target loaded by an authoritative read. */
+export function prepareChatEventReplacement(
   target: LoadedChatEventReplacementTarget,
   replacement: NewChatEvent,
-  relationSource?: ChatEventRelationSource,
-): SQL {
+): PreparedChatEvent {
   if (target.chatThreadId !== replacement.chatThreadId) {
     throw new Error("Cannot revoke a chat event from another thread");
   }
@@ -1113,6 +1112,16 @@ export function chatEventReplacementInsertSql(
     },
     displayContext: undefined,
   };
+  return prepared;
+}
+
+/** Append a prepared replacement while preserving the existing default SQL. */
+export function chatEventReplacementInsertSql(
+  target: LoadedChatEventReplacementTarget,
+  replacement: NewChatEvent,
+  relationSource?: ChatEventRelationSource,
+): SQL {
+  const prepared = prepareChatEventReplacement(target, replacement);
   return appendCanonicalChatEventsSql(
     [prepared.row],
     "any",
