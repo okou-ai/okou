@@ -116,7 +116,8 @@ for upload_attempt, download_attempt in [(1, 1), (1, 2), (2, 2)]:
     assert uploaded == downloaded
 assert source_upload['overwrite'] is True
 assert test_job['env']['IOS_BUILD_CACHE_ENABLED'] == 'true'
-assert {key: value for key, value in test_job['env'].items() if key not in {'IOS_BUILD_CACHE_ENABLED', 'IOS_XCODE_STARTUP_SAMPLING'}} == archive_job['env'] == package_job['env']
+assert archive_job['env']['IOS_ARCHIVE_CACHE_ENABLED'] == 'true'
+assert {key: value for key, value in test_job['env'].items() if key not in {'IOS_BUILD_CACHE_ENABLED', 'IOS_XCODE_STARTUP_SAMPLING'}} == {key: value for key, value in archive_job['env'].items() if key != 'IOS_ARCHIVE_CACHE_ENABLED'} == package_job['env']
 # Startup observations are confined to explicit manual runs, not native release evidence.
 assert ios['on']['workflow_dispatch']['inputs']['sample_xcode_startup']['default'] is False
 sampling = test_job['env']['IOS_XCODE_STARTUP_SAMPLING'].removeprefix('${{').removesuffix('}}').strip()

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Measure same-source Release archives; only same-run native caches are restored.
+"""Measure Release archives using the production persistent cache path.
 
-Run prepare/restore/report/seed from the repository root in the diagnostic workflow.
+Run prepare/report from the repository root in the diagnostic workflow.
 Requires RUNNER_TEMP, GITHUB_ENV, IOS_ARCHIVE_CACHE_MODE and IOS_ARCHIVE_CACHE_LABEL.
 """
 
@@ -9,13 +9,10 @@ import argparse
 import json
 import os
 import plistlib
-import posixpath
 import re
-import shutil
 import subprocess
-import tarfile
 import time
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 
 def write_json(path, value):
@@ -24,7 +21,7 @@ def write_json(path, value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=["prepare", "restore", "report", "seed"])
+    parser.add_argument("operation", choices=["prepare", "report"])
     operation = parser.parse_args().operation
     mode = os.environ["IOS_ARCHIVE_CACHE_MODE"]
     label = os.environ["IOS_ARCHIVE_CACHE_LABEL"]
@@ -33,9 +30,7 @@ def main():
     temporary = Path(os.environ["RUNNER_TEMP"])
     work = temporary / "okou-ios-promotion"
     output = temporary / "ios-archive-cache-measurement"
-    seed = temporary / "ios-archive-cache-seed"
     identity = output / "identity.json"
-    cache_paths = ["SourcePackages", "DerivedData/CompilationCache.noindex"]
 
     if operation == "prepare":
         output.mkdir()
@@ -84,61 +79,6 @@ def main():
             environment.write(
                 f"IOS_ARCHIVE_DIR={work}\nIOS_ARCHIVE_MEASUREMENT_DIR={output}\n"
             )
-    elif operation == "restore":
-        if (
-            mode != "warm"
-            or identity.read_bytes() != (seed / "identity.json").read_bytes()
-        ):
-            raise ValueError("Release cache inputs do not match this archive")
-        with tarfile.open(seed / "cache.tar") as archive:
-            for member in archive.getmembers():
-                path = PurePosixPath(member.name)
-                if (
-                    path.is_absolute()
-                    or ".." in path.parts
-                    or not any(path.is_relative_to(root) for root in cache_paths)
-                    or not (
-                        member.isfile()
-                        or member.isdir()
-                        or member.issym()
-                        or member.islnk()
-                    )
-                ):
-                    raise ValueError(f"Unexpected cache entry: {member.name}")
-                if member.issym() or member.islnk():
-                    link = PurePosixPath(member.linkname)
-                    target = path.parent / link if member.issym() else link
-                    target = PurePosixPath(posixpath.normpath(str(target)))
-                    if link.is_absolute() or not any(
-                        target.is_relative_to(root) for root in cache_paths
-                    ):
-                        raise ValueError(
-                            f"Cache link escapes its namespace: {member.name}"
-                        )
-        # Native tar also rejects writes through archive-created symlink parents.
-        subprocess.run(
-            [
-                "tar",
-                "--no-same-owner",
-                "--no-same-permissions",
-                "-xf",
-                str(seed / "cache.tar"),
-                "-C",
-                str(work),
-            ],
-            check=True,
-        )
-    elif operation == "seed":
-        if mode != "seed" or not all((work / path).is_dir() for path in cache_paths):
-            raise ValueError(
-                "Expected dependency and native compiler caches from a successful seed"
-            )
-        seed.mkdir()
-        shutil.copy2(identity, seed / "identity.json")
-        with tarfile.open(seed / "cache.tar", "w") as archive:
-            for path in cache_paths:
-                archive.add(work / path, arcname=path)
-        print(f"Release cache payload: {(seed / 'cache.tar').stat().st_size} bytes")
     else:
         elapsed = time.monotonic() - json.loads((output / "started.json").read_text())
         log = (output / "build.log").read_text(errors="replace")
@@ -156,7 +96,7 @@ def main():
         summary = {
             "label": label,
             "mode": mode,
-            "elapsedSecondsIncludingCacheRestore": round(elapsed, 3),
+            "elapsedSecondsIncludingCacheIO": round(elapsed, 3),
             "phaseSeconds": {name: int(value) for name, value in phases.items()},
             "archiveSHA256": (work / "archive-sha256.txt").read_text().strip(),
             "application": {
@@ -168,9 +108,14 @@ def main():
                     "CFBundleSupportedPlatforms",
                 ]
             },
-            "cacheStatistics": [
-                line for line in log.splitlines() if "cache hit rate" in line
-            ][-20:],
+            "dependenciesExactHit": os.environ["IOS_CACHE_DEPENDENCIES_HIT"] == "true",
+            "compilationExactHit": os.environ["IOS_CACHE_COMPILATION_HIT"] == "true",
+            "replayHits": len(
+                re.findall(r"^note: replay cache hit\b", log, re.MULTILINE)
+            ),
+            "replayMisses": len(
+                re.findall(r"^note: replay cache miss\b", log, re.MULTILINE)
+            ),
         }
         write_json(output / "summary.json", summary)
         print(json.dumps(summary, indent=2))

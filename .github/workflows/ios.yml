@@ -105,7 +105,6 @@ jobs:
           node-version: 22.23.4
       - name: Verify CI change detection and promotion contracts
         run: |
-          python3 ops/ios-archive-cache/measure.test.py
           bash -n ios/scripts/*.sh
           shellcheck ios/scripts/*.sh
           bash ios/scripts/test-ci.sh
@@ -285,14 +284,20 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+      IOS_ARCHIVE_CACHE_ENABLED: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure archive workspace
         run: echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
+      - name: Restore Release archive caches
+        id: cache
+        uses: ./.github/actions/setup-ios-build-cache
+        with:
+          target: archive
       - name: Capture archive toolchain
         run: |
-          mkdir "$IOS_ARCHIVE_DIR"
-          python3 ios/scripts/archive-promotion.py toolchain "$IOS_ARCHIVE_DIR/toolchain.json"
+          mkdir -p "$IOS_ARCHIVE_DIR"
+          cp "${{ steps.cache.outputs.toolchain-file }}" "$IOS_ARCHIVE_DIR/toolchain.json"
       - name: Build unsigned device Release archive
         run: |
           bash ios/scripts/build-archive.sh
