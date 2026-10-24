@@ -749,8 +749,8 @@ importers:
         specifier: 3.31.4
         version: 3.31.4(@tiptap/core@3.31.4(@tiptap/pm@3.31.4))
       '@tiptap/extension-text':
-        specifier: 3.31.4
-        version: 3.31.4(@tiptap/core@3.31.4(@tiptap/pm@3.31.4))
+        specifier: 3.32.0
+        version: 3.32.0(@tiptap/core@3.31.4(@tiptap/pm@3.31.4))
       '@tiptap/extension-underline':
         specifier: 3.31.4
         version: 3.31.4(@tiptap/core@3.31.4(@tiptap/pm@3.31.4))
@@ -4935,10 +4935,10 @@ packages:
     peerDependencies:
       '@tiptap/core': 3.31.4
 
-  '@tiptap/extension-text@3.31.4':
-    resolution: {integrity: sha512-WL2ZRpFksgQcXJN05/UQH09YCH9LlhdLrSEcviASvEH/aAfsKiJlDrouN8PET+YAWK/F5xFc5/Q1z0xj+I23jw==}
+  '@tiptap/extension-text@3.32.0':
+    resolution: {integrity: sha512-sF0jIK67IHdZMnzv2mz5vPTyK7R0ui6/YZgFg+/bLnFCNmweVAoYcHZLlC7ISRnwu0mqJr+epNtzJepY1ZDCjg==}
     peerDependencies:
-      '@tiptap/core': 3.31.4
+      '@tiptap/core': 3.32.0
 
   '@tiptap/extension-underline@3.31.4':
     resolution: {integrity: sha512-0iFGPIqmqGkCrOFh1OPo7Dzv5s86dVN3bZaugsz0jK04otkb8bn04ZDKP2/6Wq+lcK0M9DfJ0QqfW5hC2nBZxQ==}
@@ -5867,7 +5867,7 @@ packages:
     resolution: {integrity: sha512-BVjo1I5GMsCuSzsFftSVMrXAYxzJrNoRy+kQuzymlOM42N4YqKLy+1/0hlGcp6OSFstkJY3ZUACnEegxJMdGCg==}
 
   cdp-viewer@https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/7c199156edb57cfdc80de636a4a99c106fc60847:
-    resolution: {gitHosted: true, integrity: sha512-xKT0JM1m78PnVRfMA8cUatQUPYgA3iCWehhZGfuT65QYswXHXWC6iFSCRUvhWt5C58gu0U8V2ue63OK5Q5D+tg==, tarball: https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/7c199156edb57cfdc80de636a4a99c106fc60847}
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/7c199156edb57cfdc80de636a4a99c106fc60847}
     version: 0.0.0
     engines: {node: '>=22.12.0'}
     peerDependencies:
@@ -13096,7 +13096,7 @@ snapshots:
     dependencies:
       '@tiptap/core': 3.31.4(@tiptap/pm@3.31.4)
 
-  '@tiptap/extension-text@3.31.4(@tiptap/core@3.31.4(@tiptap/pm@3.31.4))':
+  '@tiptap/extension-text@3.32.0(@tiptap/core@3.31.4(@tiptap/pm@3.31.4))':
     dependencies:
       '@tiptap/core': 3.31.4(@tiptap/pm@3.31.4)
 
