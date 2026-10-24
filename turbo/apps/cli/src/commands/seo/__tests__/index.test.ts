@@ -288,7 +288,6 @@ describe("okou data seo command", () => {
 
     expect(help).toContain("Provider:");
     expect(help).toContain("DataForSEO is the only managed SEO provider");
-    expect(help).toContain("provider-reported cost +25%");
     expect(help).toContain("google_news  desktop only");
     expect(help).toContain("google_maps returns at most 20 results on mobile");
   });

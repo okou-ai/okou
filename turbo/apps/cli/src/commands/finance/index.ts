@@ -172,7 +172,7 @@ Examples:
 
 Notes:
   - Authenticates via OKOU_TOKEN (requires finance:read capability) or a CLI token
-  - Each successful command consumes 1 credit
+  - Data Router determines final credits using its current pricing
   - Data is returned from APIDojo's Yahoo Finance API on RapidAPI without Okou-side caching`,
     );
   return financeCommand;

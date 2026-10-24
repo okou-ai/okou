@@ -108,6 +108,6 @@ Examples:
 
 Notes:
   - Authenticates via OKOU_TOKEN (requires scrape:read capability) or a CLI token
-  - Firecrawl calls and credit billing happen on the Okou API server
+  - Data Router calls Firecrawl and determines final credits; Okou settles the charge
   - Enhanced mode is explicit because it uses a higher billing category`,
   );

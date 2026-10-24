@@ -810,5 +810,5 @@ Examples:
 Notes:
   - Authenticates via OKOU_TOKEN (requires weather:read capability) or a CLI token
   - Each command makes one Google Weather or Air Quality API request; use page tokens for additional weather pages
-  - Calls are recorded for usage analytics and currently charge 0 credits`,
+  - Data Router determines final credits using its current pricing`,
   );
