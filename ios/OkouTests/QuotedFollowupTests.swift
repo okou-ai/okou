@@ -143,7 +143,9 @@ final class QuotedFollowupTests: XCTestCase {
       isError: false)
   }
   private func mount<V: View>(_ host: UIHostingController<V>) async throws -> UIWindow {
-    let window = try await mountNativeHost(host) { _ in !self.textViews(in: host.view).isEmpty }
+    let window = try await mountNativeHost(host, for: self) { _ in
+      !self.textViews(in: host.view).isEmpty
+    }
     return window
   }
   private func textViews(in view: UIView) -> [UITextView] {

@@ -292,6 +292,12 @@ forwarding sets `OS_ACTIVITY_MODE=disable` in the test host, suppressing its OS
 activity messages. XCTest output, assertions, exit status and the result bundle
 are retained. Automatic runs keep their existing logging configuration.
 
+For a manual native animation experiment, dispatch with
+`disable_test_animations=true`. Shared native-host setup disables UIKit
+animations for each participating test and restores the previous setting through
+that test's teardown, including after failures. Existing readiness waits, native
+input operations and assertions remain in use. Automatic runs retain animations.
+
 `ios-build-cache.yml` refreshes shared caches after iOS changes reach main and
 after a same-repository iOS workflow actually starts its native `build-test`
 job, including failed or cancelled builds. A Linux check filters out workflows

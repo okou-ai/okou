@@ -9,7 +9,7 @@ final class ConversationSendTransitionTests: XCTestCase {
   func testSendingCommitsMarkedTextToTheRequestAndEndsNativeEditing() async throws {
     let fixture = SendTransitionFixture()
     defer { fixture.close() }
-    try await fixture.mount()
+    try await fixture.mount(for: self)
     let input = try XCTUnwrap(fixture.inputs.first)
     try await focusMentionInput(input)
     input.insertText("A multiline message\nwith a second line")
@@ -46,9 +46,9 @@ private final class SendTransitionFixture {
 
   var inputs: [ComposerTextView] { mentionInputs(in: host.view) }
 
-  func mount() async throws {
+  func mount(for test: XCTestCase) async throws {
     await conversation.refresh()
-    window = try await mountNativeHost(host) { window in
+    window = try await mountNativeHost(host, for: test) { window in
       self.inputs.first?.window === window
     }
   }

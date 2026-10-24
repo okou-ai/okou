@@ -12,7 +12,7 @@ final class RecommendedFollowupTests: XCTestCase {
     defer { conversation.close() }
     await conversation.refresh()
     let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
-    let window = try await mountNativeHost(host)
+    let window = try await mountNativeHost(host, for: self)
     defer { unmount(window) }
     try await eventually { self.rail(in: host.view)?.subviews.contains { $0 is UIButton } == true }
     let input = try XCTUnwrap(input(in: host.view))

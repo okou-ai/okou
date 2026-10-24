@@ -16,7 +16,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let workspace = try await fixture.workspace()
     defer { workspace.close() }
     let host = UIHostingController(rootView: WorkflowNewChatHost(workspace: workspace))
-    let window = try await mountMentionHost(host)
+    let window = try await mountMentionHost(host, for: self)
     defer { unmount(window) }
     let input = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(input)
@@ -68,7 +68,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
       source.close()
     }
     let host = UIHostingController(rootView: composer(conversation))
-    let window = try await mountMentionHost(host)
+    let window = try await mountMentionHost(host, for: self)
     defer { unmount(window) }
     let input = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(input)
@@ -106,7 +106,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
       source.close()
     }
     let host = UIHostingController(rootView: composer(conversation))
-    let window = try await mountMentionHost(host)
+    let window = try await mountMentionHost(host, for: self)
     defer { unmount(window) }
     let input = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(input)
@@ -149,7 +149,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
       source.close()
     }
     let host = UIHostingController(rootView: composer(conversation))
-    let window = try await mountMentionHost(host)
+    let window = try await mountMentionHost(host, for: self)
     defer { unmount(window) }
     let input = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(input)
@@ -207,7 +207,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     }
     await workspace.refreshNavigation()
     let host = UIHostingController(rootView: WorkflowNewChatHost(workspace: workspace))
-    let window = try await mountMentionHost(host)
+    let window = try await mountMentionHost(host, for: self)
     defer { unmount(window) }
     let old = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(old)
@@ -247,7 +247,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
       source.close()
     }
     let host = UIHostingController(rootView: composer(conversation))
-    let window = try await mountMentionHost(host)
+    let window = try await mountMentionHost(host, for: self)
     defer { unmount(window) }
     let input = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(input)
@@ -303,7 +303,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
         message: message, range: NSRange(location: 0, length: message.text.utf16.count)))
     conversation.composer.addFeedback(selection)
     let host = UIHostingController(rootView: composer(conversation))
-    let window = try await mountMentionHost(host)
+    let window = try await mountMentionHost(host, for: self)
     defer { unmount(window) }
     try await eventually { self.inputs(in: host.view).contains(where: \.isFirstResponder) }
     let input = try XCTUnwrap(inputs(in: host.view).first(where: \.isFirstResponder))
@@ -342,7 +342,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     workspace.setForeground(true)
     await workspace.refreshNavigation()
     let host = UIHostingController(rootView: WorkflowNewChatHost(workspace: workspace))
-    let window = try await mountMentionHost(host)
+    let window = try await mountMentionHost(host, for: self)
     let input = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(input)
     input.insertText("Summarize /mor")

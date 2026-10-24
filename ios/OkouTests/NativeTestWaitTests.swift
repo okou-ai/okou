@@ -28,7 +28,7 @@ final class NativeTestWaitTests: XCTestCase {
         issue.compactDescription.contains("The native host did not become ready")
       })
     do {
-      _ = try await mountNativeHost(host, timeout: .zero) { _ in false }
+      _ = try await mountNativeHost(host, for: self, timeout: .zero) { _ in false }
       XCTFail("A failed prerequisite must throw")
     } catch {
       XCTAssertNil(host.view.window)

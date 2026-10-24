@@ -352,7 +352,7 @@ final class ChatComposerPasteTests: XCTestCase {
   }
 
   private func mount<V: View>(_ host: UIHostingController<V>) async throws -> UIWindow {
-    let window = try await mountNativeHost(host) { window in
+    let window = try await mountNativeHost(host, for: self) { window in
       self.textView(in: host.view)?.window === window
     }
     // SwiftUI can lay out the editor before presenting its initial unfocused state.

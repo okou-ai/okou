@@ -14,7 +14,7 @@ final class ChatComposerMentionTests: XCTestCase {
     let workspace = try await navigation.workspace()
     defer { workspace.close() }
     let host = UIHostingController(rootView: MentionComposerHarness(workspace: workspace))
-    let window = try await mountMentionHost(host)
+    let window = try await mountMentionHost(host, for: self)
     defer { unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
     try await focusMentionInput(input)
@@ -79,7 +79,7 @@ final class ChatComposerMentionTests: XCTestCase {
     let workspace = try await navigation.workspace()
     defer { workspace.close() }
     let host = UIHostingController(rootView: MentionComposerHarness(workspace: workspace))
-    let window = try await mountMentionHost(host)
+    let window = try await mountMentionHost(host, for: self)
     defer { unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
     try await focusMentionInput(input)
@@ -157,7 +157,7 @@ final class ChatComposerMentionTests: XCTestCase {
     let workspace = try await navigation.workspace()
     defer { workspace.close() }
     let host = UIHostingController(rootView: MentionComposerHarness(workspace: workspace))
-    let window = try await mountMentionHost(host)
+    let window = try await mountMentionHost(host, for: self)
     defer { unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
     try await focusMentionInput(input)
@@ -197,7 +197,7 @@ final class ChatComposerMentionTests: XCTestCase {
     let host = UIHostingController(
       rootView: MentionComposerHarness(
         conversation: conversation, source: workspace.mentionTestSource))
-    let window = try await mountMentionHost(host)
+    let window = try await mountMentionHost(host, for: self)
     defer { unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
     try await focusMentionInput(input)
@@ -246,7 +246,7 @@ final class ChatComposerMentionTests: XCTestCase {
     let host = UIHostingController(
       rootView: MentionComposerHarness(
         conversation: conversation, source: workspace.mentionTestSource))
-    let window = try await mountMentionHost(host)
+    let window = try await mountMentionHost(host, for: self)
     defer { unmount(window) }
     let message = ChatMessage(
       id: "quoted-event", role: .assistant, text: "A passage to compare", createdAt: .now,
@@ -314,7 +314,7 @@ final class ChatComposerMentionTests: XCTestCase {
     }
     let host = UIHostingController(
       rootView: MentionComposerHarness(workspace: workspace, source: candidates.mentionTestSource))
-    let window = try await mountMentionHost(host)
+    let window = try await mountMentionHost(host, for: self)
     defer { unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
     try await focusMentionInput(input)
@@ -355,7 +355,7 @@ final class ChatComposerMentionTests: XCTestCase {
     let workspace = try await navigation.workspace()
     defer { workspace.close() }
     let host = UIHostingController(rootView: MentionComposerHarness(workspace: workspace))
-    let window = try await mountMentionHost(host)
+    let window = try await mountMentionHost(host, for: self)
     defer { unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
     try await focusMentionInput(input)

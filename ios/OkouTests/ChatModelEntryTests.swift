@@ -23,6 +23,7 @@ final class ChatModelEntryTests: XCTestCase {
     let workspace = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
     defer { workspace.close() }
     let host = UIHostingController(rootView: ModelEntryComposer(workspace: workspace))
+    configureNativeHostAnimations(for: self)
     let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
     let window = UIWindow(windowScene: scene)
     window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
