@@ -1,4 +1,5 @@
-import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import { z } from "zod";
+import { discordIngressFailureSql } from "./discord-chat-ingress.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { discordGatewayEnvelopeSchema } from "@okouai/api-contracts/contracts/discord-gateway";
 import { MAX_DISCORD_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/integrations-discord-files";
@@ -60,15 +61,10 @@ import {
   type CanonicalInputAsset,
 } from "./canonical-asset.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import {
-  chatThreadLastMessageTouchSql,
-  chatThreadLastMessageTouchSchema,
-  chatThreadLastMessageSortSql,
-} from "./chat-event-shared.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import {
   type DiscordChatEventContext,
-  chatEventInsertSql,
+  prepareChatEvent,
 } from "./chat-event.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import {
@@ -1144,82 +1140,66 @@ function terminalIngressFailureResult(
   };
 }
 
-// Keep the existing named owner and lock order: a failed event/sort append
-// must roll back the terminal transition so the claimed attempt can recover.
-const recordIngressFailure$ = command(function recordIngressFailure(
+const ingressFailureCommitSchema = z.object({
+  claimed: z.boolean(),
+  inserted: z.boolean(),
+});
+
+// Context preparation writes nothing. Only the same processing claim can
+// publish; a reclaimed attempt performs no dependent write.
+const recordIngressFailure$ = command(async function recordIngressFailure(
   { set },
   args: IngressFailureArgs,
   signal: AbortSignal,
 ): Promise<RecordedIngressFailure | null> {
   const plan = ingressFailurePlan(args);
   const db = set(writeDb$);
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0088; new non-billing transactions are prohibited.
-  return db.transaction(async (tx) => {
-    const [claimed] = await tx
-      .update(discordChatIngress)
-      .set(plan.values)
-      .where(
-        and(
-          eq(discordChatIngress.id, args.ingressId),
-          eq(discordChatIngress.status, "processing"),
-          eq(discordChatIngress.claimToken, args.claimToken),
-        ),
-      )
-      .returning({
-        connectionId: discordChatIngress.connectionId,
-        routeId: discordChatIngress.routeId,
-        payload: discordChatIngress.payload,
-      });
-    signal.throwIfAborted();
-    if (!claimed) {
-      return null;
-    }
-    if (!plan.notify) {
-      return null;
-    }
-    const message = terminalIngressMessage(claimed.payload);
-    if (!message) {
-      return null;
-    }
-    const [route] =
-      claimed.routeId === null
-        ? []
-        : await tx
-            .select(terminalIngressRouteSelection)
-            .from(discordChatThreadRoutes)
-            .innerJoin(
-              discordOrgConnections,
-              eq(
-                discordOrgConnections.id,
-                discordChatThreadRoutes.connectionId,
-              ),
-            )
-            .innerJoin(
-              discordOauthStates,
-              eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
-            )
-            .where(
-              and(
-                eq(discordChatThreadRoutes.id, claimed.routeId),
-                eq(discordChatThreadRoutes.connectionId, claimed.connectionId),
-              ),
-            )
-            .limit(1);
-    signal.throwIfAborted();
-    const resultArgs = {
-      ingressId: args.ingressId,
-      connectionId: claimed.connectionId,
-      message,
-      route,
-    };
-    if (!route?.destinationChannelId) {
-      return terminalIngressFailureResult(resultArgs, false);
-    }
-    const inserted = parseRawRows(
-      chatEventCommandResultSchema,
-      await tx.execute(
-        chatEventInsertSql(
-          {
+  const [claimed] = plan.notify
+    ? await db
+        .select({
+          connectionId: discordChatIngress.connectionId,
+          routeId: discordChatIngress.routeId,
+          payload: discordChatIngress.payload,
+        })
+        .from(discordChatIngress)
+        .where(
+          and(
+            eq(discordChatIngress.id, args.ingressId),
+            eq(discordChatIngress.status, "processing"),
+            eq(discordChatIngress.claimToken, args.claimToken),
+          ),
+        )
+        .limit(1)
+    : [];
+  signal.throwIfAborted();
+  const message = claimed ? terminalIngressMessage(claimed.payload) : null;
+  const [route] =
+    message && claimed?.routeId
+      ? await db
+          .select(terminalIngressRouteSelection)
+          .from(discordChatThreadRoutes)
+          .innerJoin(
+            discordOrgConnections,
+            eq(discordOrgConnections.id, discordChatThreadRoutes.connectionId),
+          )
+          .innerJoin(
+            discordOauthStates,
+            eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
+          )
+          .where(
+            and(
+              eq(discordChatThreadRoutes.id, claimed.routeId),
+              eq(discordChatThreadRoutes.connectionId, claimed.connectionId),
+            ),
+          )
+          .limit(1)
+      : [];
+  signal.throwIfAborted();
+  const publication =
+    route?.destinationChannelId && message
+      ? {
+          route,
+          event: prepareChatEvent({
             id: args.ingressId,
             chatThreadId: route.chatThreadId,
             eventType: "output.error",
@@ -1227,37 +1207,28 @@ const recordIngressFailure$ = command(function recordIngressFailure(
             content: TERMINAL_INGRESS_CONTENT,
             error: TERMINAL_INGRESS_CONTENT,
             createdAt: plan.currentTime,
-          },
-          "id",
-        ),
-      ),
-    )[0];
-    signal.throwIfAborted();
-    if (inserted) {
-      const scope = { userId: route.userId, orgId: route.orgId };
-      const touchRows = parseRawRows(
-        chatThreadLastMessageTouchSchema,
-        await tx.execute(
-          chatThreadLastMessageTouchSql(
-            route.chatThreadId,
-            plan.currentTime,
-            scope,
-          ),
-        ),
-      );
-      signal.throwIfAborted();
-      const sortSql = chatThreadLastMessageSortSql(
-        touchRows,
-        args.ingressId,
-        scope,
-      );
-      if (sortSql) {
-        await tx.execute(sortSql);
-      }
-      signal.throwIfAborted();
-    }
-    return terminalIngressFailureResult(resultArgs, inserted !== undefined);
-  });
+          }).row,
+        }
+      : null;
+  const [committed] = parseRawRows(
+    ingressFailureCommitSchema,
+    await db.execute(
+      discordIngressFailureSql({ ...args, ...plan, publication }),
+    ),
+  );
+  signal.throwIfAborted();
+  if (!committed?.claimed || !claimed || !message) {
+    return null;
+  }
+  return terminalIngressFailureResult(
+    {
+      ingressId: args.ingressId,
+      connectionId: claimed.connectionId,
+      message,
+      route,
+    },
+    committed.inserted,
+  );
 });
 
 const finishRecordedIngressFailure$ = command(

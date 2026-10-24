@@ -1326,6 +1326,19 @@ describe("canonical Discord ingress", () => {
       channel_id: channel.id,
       content,
     });
+    const chat = createChatFilesBddApi(context);
+    const lifecycle = await chat.requestThreadEvents(actor.actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected the routed failure's sidebar activity");
+    }
+    expect(lifecycle.body.events).toContainEqual(
+      expect.objectContaining({
+        id: errors[0]?.id,
+        kind: "sort_touched",
+        chatThreadId: thread.id,
+        agentId: thread.agentId,
+      }),
+    );
 
     provider.messages.set(message.id, message);
     expect(
@@ -1340,6 +1353,8 @@ describe("canonical Discord ingress", () => {
     await flushWaitUntilForTest();
     await expect(events(actor, thread.id)).resolves.toStrictEqual(original);
     expect(provider.sentMessages).toHaveLength(1);
+    const replayed = await chat.requestThreadEvents(actor.actor, {}, [200]);
+    expect(replayed.body).toStrictEqual(lifecycle.body);
   });
 
   // Discord's CREATE_PUBLIC_THREADS bit, independent of ordinary conversation

@@ -21,6 +21,7 @@ import {
   isNull,
   isNotNull,
   notExists,
+  exists,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -34,6 +35,88 @@ import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { writeDb$ } from "../external/db";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import type { DefaultModelFirstPin } from "./model-selection.service";
+import {
+  canonicalChatEventAppendCtes,
+  type PreparedChatEventRow,
+} from "./chat-event-append.service";
+import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
+
+/** The existing claim transition gates every dependent failure publication. */
+export function discordIngressFailureSql(args: {
+  readonly ingressId: string;
+  readonly claimToken: string;
+  readonly values: Pick<
+    typeof discordChatIngress.$inferSelect,
+    "status" | "retryAt" | "lastErrorClass" | "lastError" | "updatedAt"
+  >;
+  readonly publication: {
+    readonly event: PreparedChatEventRow;
+    readonly route: {
+      readonly chatThreadId: string;
+      readonly userId: string;
+      readonly orgId: string;
+    };
+  } | null;
+}): SQL {
+  const { values, publication } = args;
+  const claim = sql`UPDATE ${discordChatIngress}
+    SET status = ${values.status}, claim_token = NULL, claimed_at = NULL,
+      retry_at = ${sql.param(values.retryAt, discordChatIngress.retryAt)},
+      last_error_class = ${values.lastErrorClass}, last_error = ${values.lastError},
+      updated_at = ${sql.param(values.updatedAt, discordChatIngress.updatedAt)}
+    WHERE ${and(
+      eq(discordChatIngress.id, args.ingressId),
+      eq(discordChatIngress.status, "processing"),
+      eq(discordChatIngress.claimToken, args.claimToken),
+    )}
+    RETURNING id`;
+  if (!publication) {
+    return sql`WITH failure_claim AS (${claim})
+      SELECT ${exists(sql`SELECT 1 FROM failure_claim`)} AS claimed,
+        false AS inserted`;
+  }
+  const { route, event } = publication;
+  const touchCondition = and(
+    exists(sql`SELECT 1 FROM inserted`),
+    eq(chatThreads.id, route.chatThreadId),
+    isNotNull(chatThreads.agentId),
+    eq(chatThreads.userId, route.userId),
+    chatThreadOrganizationCondition(route.orgId),
+  );
+  return sql`WITH failure_claim AS (${claim}),
+    ${canonicalChatEventAppendCtes(
+      [event],
+      "id",
+      exists(sql`SELECT 1 FROM failure_claim`),
+    )}, failure_touched AS (
+      UPDATE ${chatThreads}
+      SET last_message_at = GREATEST(${chatThreads.lastMessageAt}, ${event.createdAt.toISOString()}::timestamp)
+      WHERE ${touchCondition}
+      RETURNING id, user_id, agent_id, last_message_at
+    ), failure_sort_reserved AS (
+      -- A published error requires the authorized touch identity. Its missing
+      -- scalar fails the existing user_id NOT NULL constraint, rolling back
+      -- the claim and event just as the previous sort precondition did.
+      INSERT INTO ${chatThreadEventSequences} (user_id, org_id, last_seq_id)
+      SELECT (SELECT user_id FROM failure_touched), ${route.orgId}, 1
+      WHERE ${exists(sql`SELECT 1 FROM inserted`)}
+      ON CONFLICT (user_id, org_id) DO UPDATE
+      SET last_seq_id = ${chatThreadEventSequences.lastSeqId} + 1
+      RETURNING user_id, org_id, last_seq_id
+    ), failure_sort_inserted AS (
+      INSERT INTO ${chatThreadEvents}
+        (id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
+         cloud_browser_enabled, created_at)
+      SELECT ${event.id}::uuid, reserved.user_id, reserved.org_id,
+        reserved.last_seq_id, touched.id, 'sort_touched', touched.agent_id,
+        false, date_trunc('milliseconds', touched.last_message_at)
+      FROM failure_sort_reserved AS reserved CROSS JOIN failure_touched AS touched
+      ON CONFLICT (id) DO NOTHING
+      RETURNING id
+    )
+    SELECT ${exists(sql`SELECT 1 FROM failure_claim`)} AS claimed,
+      ${exists(sql`SELECT 1 FROM inserted`)} AS inserted`;
+}
 
 interface DiscordChatThreadRouteKey {
   readonly connectionId: string;
