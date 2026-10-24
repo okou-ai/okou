@@ -20,11 +20,22 @@ xcode_args=(
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM=
   MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION=1
 )
+if [[ "${IOS_ARCHIVE_CACHE_ENABLED:-false}" == true ]]; then
+  xcode_args+=(
+    COMPILATION_CACHE_ENABLE_CACHING=YES
+    COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES
+  )
+fi
 xcodebuild -version
+ios_archive_phase_started=$SECONDS
 xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
 cmp "$resolved" "$work/Package.resolved.before"
+echo "iOS archive dependency preparation: $((SECONDS - ios_archive_phase_started)) seconds"
+ios_archive_phase_started=$SECONDS
 xcodebuild "${xcode_args[@]}" -archivePath "$work/Original.xcarchive" -showBuildTimingSummary archive
 cmp "$resolved" "$work/Package.resolved.before"
+echo "iOS archive compilation: $((SECONDS - ios_archive_phase_started)) seconds"
+ios_archive_phase_started=$SECONDS
 python3 ios/scripts/archive-proof.py validate "$work/Original.xcarchive" --version "$version"
 tar -czf "$work/archive.tar.gz" -C "$work" Original.xcarchive
 python3 - "$work" <<'PY'
@@ -34,3 +45,4 @@ with (work / 'archive.tar.gz').open('rb') as archive:
     checksum = hashlib.file_digest(archive, 'sha256').hexdigest()
 (work / 'archive-sha256.txt').write_text(checksum + '\n')
 PY
+echo "iOS archive validation and packaging: $((SECONDS - ios_archive_phase_started)) seconds"

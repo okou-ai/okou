@@ -12,6 +12,10 @@ on:
         description: Sample the compile-phase Xcode startup
         type: boolean
         default: false
+      archive_cache_experiment:
+        description: Compare fresh Release archives with and without native caches
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -29,6 +33,41 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  archive-cache-seed:
+    if: github.event_name == 'workflow_dispatch' && inputs.archive_cache_experiment
+    uses: ./.github/workflows/ios-archive-cache-experiment.yml
+    with:
+      mode: seed
+      label: seed
+
+  archive-cache-baseline-before:
+    needs: archive-cache-seed
+    uses: ./.github/workflows/ios-archive-cache-experiment.yml
+    with:
+      mode: baseline
+      label: baseline-before
+
+  archive-cache-warm-one:
+    needs: archive-cache-baseline-before
+    uses: ./.github/workflows/ios-archive-cache-experiment.yml
+    with:
+      mode: warm
+      label: warm-one
+
+  archive-cache-warm-two:
+    needs: archive-cache-warm-one
+    uses: ./.github/workflows/ios-archive-cache-experiment.yml
+    with:
+      mode: warm
+      label: warm-two
+
+  archive-cache-baseline-after:
+    needs: archive-cache-warm-two
+    uses: ./.github/workflows/ios-archive-cache-experiment.yml
+    with:
+      mode: baseline
+      label: baseline-after
+
   detect:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -66,6 +105,7 @@ jobs:
           node-version: 22.23.4
       - name: Verify CI change detection and promotion contracts
         run: |
+          python3 -m py_compile ops/ios-archive-cache/measure.py
           bash -n ios/scripts/*.sh
           shellcheck ios/scripts/*.sh
           bash ios/scripts/test-ci.sh
