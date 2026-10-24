@@ -667,16 +667,18 @@ describe("POST /api/image-io/generate", () => {
           }),
           expect.objectContaining({
             credits: fundedBalance,
-            threadId: null,
+            threadId: expect.any(String),
             breakdown: [
               {
                 kind: "other",
                 credits: fundedBalance,
                 providers: [
                   {
-                    provider: "dataforseo",
+                    provider: "data-router",
                     credits: fundedBalance,
-                    usageKinds: [{ kind: "seo", credits: fundedBalance }],
+                    usageKinds: [
+                      { kind: "data-search", credits: fundedBalance },
+                    ],
                   },
                 ],
               },
