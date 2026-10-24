@@ -1,4 +1,4 @@
-name: Temporary MacinCloud Xcode transfer
+name: Inspect cached Xcode components
 on:
   push:
     branches:
@@ -6,67 +6,43 @@ on:
 permissions:
   contents: read
 jobs:
-  export:
+  inspect:
     runs-on: xcode-27
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
-      - name: Verify and encrypt the installed Apple toolchain
+      - name: Inspect preinstalled Apple toolchains
         shell: bash
         run: |
           set -euo pipefail
           export DEVELOPER_DIR=/Applications/Xcode_27.1.app/Contents/Developer
-          app=$(cd "$DEVELOPER_DIR/../.." && pwd -P)
-          build=$(/usr/libexec/PlistBuddy -c 'Print :ProductBuildVersion' "$app/Contents/version.plist")
-          [ "$build" = "27A9275" ]
           xcodebuild -version
-          xcodebuild -showsdks
-          codesign --verify --deep --strict --verbose=2 "$app"
-          mkdir -p "$RUNNER_TEMP/xcode-export"
-          cat > "$RUNNER_TEMP/xcode-recipient.pem" <<'CERTIFICATE'
-          -----BEGIN CERTIFICATE-----
-          MIIEMTCCApmgAwIBAgIUQ3Mn/mX97muAGXWcYetUmW8QtCswDQYJKoZIhvcNAQEL
-          BQAwKDEmMCQGA1UEAwwdT2tvdSB0ZW1wb3JhcnkgWGNvZGUgdHJhbnNmZXIwHhcN
-          MjYxMDI0MTEyNTA2WhcNMjYxMDI2MTEyNTA2WjAoMSYwJAYDVQQDDB1Pa291IHRl
-          bXBvcmFyeSBYY29kZSB0cmFuc2ZlcjCCAaIwDQYJKoZIhvcNAQEBBQADggGPADCC
-          AYoCggGBALTmPbkgAOrWB9WoU057QpfjBC4OwYi0Wcbj+cIUW5dQko6cI5VhpuqY
-          z7G8CNTTOMtJMcbNhE310ltxUE+9OohPuiasiI+3+sy/E8E0r0528lrSqoNce/pL
-          OG8/734PjSv9sCj0ZNyjxyC/karMRzblR8Rgsm9BpXj8SS4p3+MWtq4T+JQ4Tvjp
-          kHvrQlXuWMX+K9LRRYb86FSi7ZJNAxSIJ9aj+Bra1CzHsTojtwyuGk2/QWZr0bxM
-          XCkXom7TsYax0ExToVtZMlef34dsF/BhYVWsujU+SkM6FtDsg5ug6xFA2arYggCG
-          4Hr1dCle/Tau6gOyhRFX79WZEopdqYIXPXhJNXZLodV2PnVrK80qkOwzxLh9ngB3
-          xyS87+DxjbVpU0zN5ZInBtfWvL7Ht0AVj8AILHLLq+8Q2YZ+6scnys7gIc92Aqhp
-          0+tPvORyh+5iOL8hGpZWPneHsdEMHOvRjQLvrqEiOlXUSVgWpXkLh5UYlNn8d4Jb
-          Gi8mvsYVVQIDAQABo1MwUTAdBgNVHQ4EFgQUuUfukOGKWgU8TLHdgYMQnQJHK1Ew
-          HwYDVR0jBBgwFoAUuUfukOGKWgU8TLHdgYMQnQJHK1EwDwYDVR0TAQH/BAUwAwEB
-          /zANBgkqhkiG9w0BAQsFAAOCAYEANWQkqNfKno2nW22NQRTvsF6+qMGyHSaWNMfM
-          sjXy0wyqDEv2U/qXop8wBytCrWvmrKGfNxqcDmtU7b/7tkTeTj0iOXox4y3X4M5j
-          Mdhm2P2R7RcAkipqfUyrwqDC7j5vd16tfupztGJatHUIUXZQW7CTXKiFG30iLMxl
-          uOchJ+3sF7AyMZvA7/YEQLizYXq1EqFcM9BQpk7gZK6UoW42Na2Vzg5YU0o+YJi4
-          6XhOFkegLYzGNz0JrnczMDXoJrtXbnF2qHPPzFJo89ZX7KFUOyFSKeM5LI0KSfqQ
-          DfSsvxAdEziOPydsxrIMUrGp+TFJb2U+HQFdmv7YVXruuQNEYue4iqM11Qe3rgNN
-          3SS5uy5J6vL02qBU1GBbfIH5jpeQWFo3Auut8dQZ3oMYNy8QRgrjSHTQBvEMPj0i
-          JzSYgWbuvlL5WjtaEBkc+aCIIeRI/m52Yb8QII1OXh4nFf205BBDV1ppdfCoiakS
-          u1t4aP5cR+vg6CZOruPqB7nw6/rv
-          -----END CERTIFICATE-----
-          CERTIFICATE
-          archive="$RUNNER_TEMP/Xcode-27.1-27A9275.zip"
-          password_file="$RUNNER_TEMP/xcode-transfer-password.txt"
-          umask 077
-          trap 'rm -f "$archive" "$password_file"' EXIT
-          ditto -c -k --sequesterRsrc --keepParent --zlibCompressionLevel 1 "$app" "$archive"
-          shasum -a 256 "$archive" | awk '{print $1}' > "$RUNNER_TEMP/xcode-export/archive.sha256"
-          xcodebuild -version > "$RUNNER_TEMP/xcode-export/xcode-version.txt"
-          xcodebuild -showsdks > "$RUNNER_TEMP/xcode-export/sdks.txt"
-          openssl_bin=/usr/bin/openssl
-          "$openssl_bin" rand -hex 32 > "$password_file"
-          "$openssl_bin" pkeyutl -encrypt -certin -inkey "$RUNNER_TEMP/xcode-recipient.pem" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 -in "$password_file" -out "$RUNNER_TEMP/xcode-export/transfer-key.enc"
-          "$openssl_bin" enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -md sha256 -pass "file:$password_file" -in "$archive" -out "$RUNNER_TEMP/xcode-export/Xcode-27.1-27A9275.enc"
-          rm "$archive" "$password_file"
-      - name: Transfer encrypted toolchain
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: macincloud-xcode-27.1-27A9275-encrypted-v2
-          path: ${{ runner.temp }}/xcode-export
-          compression-level: 0
-          retention-days: 1
-          if-no-files-found: error
+          xcrun metal --version
+          printf 'RUNNER_SWIFT_LINK\n'
+          ls -l "$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+          printf 'COMPONENT_OPTIONS\n'
+          xcodebuild -help 2>&1 | sed -n '/downloadComponent/,+12p'
+          printf 'CACHED_METAL_ASSETS\n'
+          sudo python3 - <<'PY'
+          from pathlib import Path
+          import json,os,plistlib
+          base=Path('/System/Library/AssetsV2/com_apple_MobileAsset_MetalToolchain')
+          for asset in sorted(base.glob('*.asset')):
+           result={'asset':str(asset),'metadata':{}}
+           info=asset/'Info.plist'
+           if info.exists():
+            data=plistlib.loads(info.read_bytes())
+            result['top_keys']=list(data)
+            def select(obj,prefix=''):
+             if isinstance(obj,dict):
+              for k,v in obj.items(): select(v,prefix+'.'+k)
+             elif isinstance(obj,(str,int,float,bool)) and any(k in prefix.lower() for k in ['version','build','baseurl','relativepath','format','assettype']): result['metadata'][prefix]=obj
+            select(data)
+           files=[]
+           for parent,dirs,names in os.walk(asset):
+            if len(Path(parent).relative_to(asset).parts)>=4: dirs[:]=[]
+            for name in names:
+             p=Path(parent)/name
+             files.append({'path':str(p.relative_to(asset)),'bytes':p.stat().st_size})
+           result['files']=files[:60]
+           print(json.dumps(result))
+          PY
