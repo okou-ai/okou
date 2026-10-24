@@ -13,12 +13,12 @@ export interface ProactiveNightlyOccurrence {
   readonly learningMemoryVersion: string | null;
 }
 
-/** Paired owner minutes keep a one-hour nominal gap in the member's timezone. */
+/** Paired owner minutes keep a two-hour nominal gap in the member's timezone. */
 export function proactiveNightlyCron(
   kind: ProactiveNightlyKind,
   owner: ProactiveWorkflowOwner,
 ) {
-  return `${officialScheduleOwnerHash(owner) % 30} ${kind === "learning" ? 2 : 3} * * *`;
+  return `${officialScheduleOwnerHash(owner) % 30} ${kind === "learning" ? 2 : 4} * * *`;
 }
 
 export function proactiveReviewDate(at: Date, timezone: string) {
