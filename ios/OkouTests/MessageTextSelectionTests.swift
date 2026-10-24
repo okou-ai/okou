@@ -33,9 +33,9 @@ final class MessageTextSelectionTests: XCTestCase {
   }
 
   private func mount<V: View>(_ host: UIHostingController<V>) async throws -> UIWindow {
-    let window = try await mountNativeHost(host) { _ in
+    let window = try await mountNativeHost(host) { window in
       guard let input = self.textView(in: host.view) else { return false }
-      return input.window != nil && input.bounds.height > 0 && input.contentSize.height > 0
+      return input.window === window
     }
     return window
   }
