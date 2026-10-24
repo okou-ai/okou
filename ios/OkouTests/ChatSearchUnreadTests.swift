@@ -1,6 +1,7 @@
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
+import Observation
 import Synchronization
 import XCTest
 
@@ -220,8 +221,10 @@ final class ChatSearchUnreadTests: XCTestCase {
 
   func testStaleIndicatorRefreshCannotUndoConfirmedRead() async throws {
     let started = expectation(description: "Old indicator request has captured unread state")
+    let reconciling = expectation(
+      description: "Fresh indicators requested after the stale response")
     let gate = SearchResponseGate()
-    defer { gate.open() }
+    let freshGate = SearchResponseGate()
     let count = Mutex(0)
     let read = Mutex(false)
     let fixture = ChatHTTPFixture { request in
@@ -242,6 +245,9 @@ final class ChatSearchUnreadTests: XCTestCase {
         if attempt == 2 {
           started.fulfill()
           await gate.wait()
+        } else if attempt == 3 {
+          reconciling.fulfill()
+          await freshGate.wait()
         }
         if alreadyRead {
           return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
@@ -257,14 +263,50 @@ final class ChatSearchUnreadTests: XCTestCase {
       }
     }
     let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
-    defer { store.close() }
+    addTeardownBlock { @MainActor in
+      gate.open()
+      freshGate.open()
+      withExtendedLifetime(fixture) { store.close() }
+    }
     await store.list.refresh()
     let thread = try XCTUnwrap(store.list.threads.first)
+    XCTAssertTrue(thread.isUnread)
     let stale = Task { await store.list.refreshIndicators() }
+    addTeardownBlock {
+      stale.cancel()
+      gate.open()
+      freshGate.open()
+      await stale.value
+    }
     await fulfillment(of: [started], timeout: 2)
-    await store.setRead(thread, read: true)
-    XCTAssertFalse(store.list.threads.first?.isUnread == true)
+    let confirmedRead = Task {
+      for await unread in Observations({ store.list.threads.first?.isUnread }) {
+        if unread == false { return }
+      }
+    }
+    addTeardownBlock {
+      confirmedRead.cancel()
+      await confirmedRead.value
+    }
+    let markingRead = Task {
+      await store.setRead(thread, read: true)
+      confirmedRead.cancel()
+    }
+    addTeardownBlock {
+      markingRead.cancel()
+      gate.open()
+      freshGate.open()
+      await markingRead.value
+    }
+    await confirmedRead.value
+    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
+    // Release the stale response before waiting for the read operation that joins it.
     gate.open()
+    await fulfillment(of: [reconciling], timeout: 2)
+    // A fresh response must not conceal a stale overwrite of the confirmed read.
+    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
+    freshGate.open()
+    await markingRead.value
     await stale.value
     XCTAssertFalse(store.list.threads.first?.isUnread == true)
     XCTAssertNil(store.list.error)

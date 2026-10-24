@@ -72,11 +72,6 @@
       "owner": "completeClaimedSession$"
     },
     {
-      "id": "TX-0088",
-      "file": "turbo/apps/api/src/signals/services/canonical-discord-ingress-processor.service.ts",
-      "owner": "recordIngressFailure"
-    },
-    {
       "id": "TX-0091",
       "file": "turbo/apps/api/src/signals/services/chat-events.command.ts",
       "owner": "appendNormalSendInput$"
@@ -220,11 +215,6 @@
       "id": "TX-0171",
       "file": "turbo/apps/api/src/signals/services/host.service.ts",
       "owner": "deleteHostedSite$"
-    },
-    {
-      "id": "TX-0176",
-      "file": "turbo/apps/api/src/signals/services/mail-notification.service.ts",
-      "owner": "commitMailNotification$"
     },
     {
       "id": "TX-0178",
@@ -395,11 +385,6 @@
       "id": "TX-0320",
       "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
       "owner": "cancelUserRuns"
-    },
-    {
-      "id": "TX-0324",
-      "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
-      "owner": "grantAtomMemberCredits$"
     },
     {
       "id": "TX-0325",

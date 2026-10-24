@@ -6,8 +6,6 @@ import { apiClient$ } from "../../api-client.ts";
 import { agents$ } from "../../agent.ts";
 import { accept } from "../../../lib/accept.ts";
 import { userPermissionGrantsByAgentIfExists } from "../../permission-allow/permission-allow-signals.ts";
-import { reloadAgentConnectorAuthorizations$ } from "../agent-connector-authorizations.ts";
-import { withCleanup } from "../../utils.ts";
 import { firewallPermissionMetadataByConnector } from "../../firewall-permission-metadata.ts";
 import type { PlatformUserPermissionGrant } from "../../connector-domain.ts";
 import { connectorAgentAccess$ } from "./connector-agent-access.ts";
@@ -131,30 +129,22 @@ function createManagedConnectorAccessSignals(connectorSlug: ConnectorSlug) {
   });
   const setAuthorization$ = command(
     async (
-      { get, set },
+      { get },
       params: { readonly agentId: string; readonly authorized: boolean },
       signal: AbortSignal,
     ): Promise<void> => {
       const client = get(apiClient$)(userBuiltinConnectorsContract);
-      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-      await withCleanup(
-        accept(
-          client.update({
-            params: { id: params.agentId },
-            body: {
-              enabledConnectorSlugs: [connectorSlug],
-              operation: params.authorized ? "add" : "remove",
-            },
-            fetchOptions: { signal },
-          }),
-          [200],
-        ),
-        () => {
-          set(reloadAgentConnectorAuthorizations$);
-        },
+      await accept(
+        client.update({
+          params: { id: params.agentId },
+          body: {
+            enabledConnectorSlugs: [connectorSlug],
+            operation: params.authorized ? "add" : "remove",
+          },
+          fetchOptions: { signal },
+        }),
+        [200],
       );
-      signal.throwIfAborted();
-      await get(rows$);
       signal.throwIfAborted();
     },
   );

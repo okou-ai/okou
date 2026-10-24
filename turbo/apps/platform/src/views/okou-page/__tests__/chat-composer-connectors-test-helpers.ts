@@ -974,7 +974,13 @@ export function createComposerConnectorHelpers(context: TestContext) {
         builtinAuthorizations.set(request.agentId, [
           ...new Set([...current, request.connectorSlug]),
         ]);
+        context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+          agentId: request.agentId,
+        });
       }
+      context.mocks.ably.trigger("connector:changed", {
+        connectorSlug: request.connectorSlug,
+      });
       return {
         ...connectorResponse(
           request.connectorSlug,

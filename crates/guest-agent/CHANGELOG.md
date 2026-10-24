@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.108.8...guest-agent-v0.109.0) (2026-10-24)
+
+
+### Features
+
+* add proactive agent learning and planning workflows ([#42724](https://github.com/okou-ai/okou/issues/42724)) ([3a23824](https://github.com/okou-ai/okou/commit/3a23824fb8b9ac3ffd76b65cd463bb687f15269e))
+
 ## [0.108.8](https://github.com/okou-ai/okou/compare/guest-agent-v0.108.7...guest-agent-v0.108.8) (2026-10-23)
 
 ## [0.108.7](https://github.com/okou-ai/okou/compare/guest-agent-v0.108.6...guest-agent-v0.108.7) (2026-10-23)

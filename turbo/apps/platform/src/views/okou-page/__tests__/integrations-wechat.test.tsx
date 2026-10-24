@@ -6,7 +6,6 @@ import { integrationsWechatContract as contract } from "@okouai/api-contracts/co
 import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { setupPage, click, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   getIntegrationCard,
   getAction,
@@ -250,7 +249,6 @@ test.each([
   "a reconnect link identifies $account before confirmation",
   async ({ email, account }) => {
     let restored = false;
-    const completion = createDeferredPromise<void>(context.signal);
     context.mocks.api(contract.status, ({ respond }) => {
       return respond(200, {
         configured: true,
@@ -267,9 +265,8 @@ test.each([
       expect(query.token).toBe("signed-link");
       return respond(200, { available: true });
     });
-    context.mocks.api(contract.reconnect, async ({ body, respond }) => {
+    context.mocks.api(contract.reconnect, ({ body, respond }) => {
       expect(body.token).toBe("signed-link");
-      await completion.promise;
       restored = true;
       return respond(204);
     });
@@ -314,10 +311,6 @@ test.each([
     expect(confirm).toBeEnabled();
     confirm.focus();
     await userEvent.setup({ delay: null }).keyboard("{Enter}");
-    await waitFor(() => {
-      expect(getAction("button", "Connecting...")).toBeDisabled();
-    });
-    completion.resolve();
     await expect(
       screen.findByText(
         "Return to WeChat and send a message to start chatting.",

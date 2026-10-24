@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.18.11](https://github.com/okou-ai/okou/compare/ios-v0.18.10...ios-v0.18.11) (2026-10-24)
+
+
+### Bug Fixes
+
+* **ios:** align chat activity indicators with pwa ([#42731](https://github.com/okou-ai/okou/issues/42731)) ([8d988ba](https://github.com/okou-ai/okou/commit/8d988ba77e5baff30a57f17b52ef0a47172d7481))
+* **ios:** align running indicator with pwa thinking text ([#42718](https://github.com/okou-ai/okou/issues/42718)) ([45eef06](https://github.com/okou-ai/okou/commit/45eef06ac80622c6321a34f05196930d290dd58c))
+* **ios:** preserve reading position when loading earlier messages ([#42723](https://github.com/okou-ai/okou/issues/42723)) ([3349633](https://github.com/okou-ai/okou/commit/33496339eab82c7cf59984986998f53a39e0ad58))
+* recover chat sync after returning to the foreground ([#42693](https://github.com/okou-ai/okou/issues/42693)) ([c202d59](https://github.com/okou-ai/okou/commit/c202d594a57aca54f2fd6c6e666decda445c80b6))
+
+
+### CI
+
+* **ios:** profile startup and compile before simulator boot ([#42679](https://github.com/okou-ai/okou/issues/42679)) ([b4a6621](https://github.com/okou-ai/okou/commit/b4a6621c65cbe139b468ae774536e54b63114341))
+
 ## [0.18.10](https://github.com/okou-ai/okou/compare/ios-v0.18.9...ios-v0.18.10) (2026-10-23)
 
 

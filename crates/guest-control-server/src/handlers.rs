@@ -207,7 +207,7 @@ fn wait_write_input<S: ThreadSpawner>(
     let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
     let stderr_handle = {
         let drain_cancel = cancel.clone();
-        match spawner.spawn_vec(
+        match spawner.spawn(
             THREAD_WRITE_STDERR,
             Box::new(move || {
                 let buf = drain_into_vec_cancellable(stderr_pipe, &drain_cancel);

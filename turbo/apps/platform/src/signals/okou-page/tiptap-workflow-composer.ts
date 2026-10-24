@@ -90,10 +90,6 @@ import {
   TEMPLATE_ATTACHMENT_NODE_NAME,
   type EditorDocumentSnapshot,
 } from "./user-message-document-codec.ts";
-import {
-  createTemplatePreviewRuntime,
-  type TemplatePreviewRuntime,
-} from "./template-preview-runtime.ts";
 import { createComposerWorkflows } from "./composer-workflows.ts";
 import type { OpenTemplatePickerDialogCommand } from "./chat-composer.ts";
 import { reloadWorkflowData$ } from "../workflows-page/workflow-reload.ts";
@@ -214,7 +210,6 @@ export interface WorkflowComposerSubmissionSnapshot {
 
 export interface WorkflowComposerSignals {
   readonly editor: Editor;
-  readonly templatePreview: TemplatePreviewRuntime;
   readonly setContainerRef$: Command<
     (() => void) | undefined,
     [HTMLElement | null]
@@ -3327,7 +3322,6 @@ export function createWorkflowComposerSignals<
     options.feedbackPlaceholder ?? feedbackPlaceholder,
   );
   const agentMentionAvatarRuntime = createAgentMentionAvatarRuntime();
-  const templatePreview = createTemplatePreviewRuntime();
   const compositionGate = createCompositionGate();
   const editor = createWorkflowEditor(runtime, agentMentionAvatarRuntime);
   const mountComposition$ = createMountCompositionCommand(
@@ -3405,7 +3399,6 @@ export function createWorkflowComposerSignals<
   );
   return {
     editor,
-    templatePreview,
     setContainerRef$,
     focus$,
     hasInput$: computed((get) => {

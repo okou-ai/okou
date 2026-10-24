@@ -17,7 +17,6 @@ import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-te
 import {
   buttonContainingText,
   expectTextBefore,
-  trackTemplatePreviewImagePreloads,
 } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
@@ -111,35 +110,6 @@ function sentTemplate(capture: ReturnType<typeof mockTemplateChat>) {
   return templatePart(message).template;
 }
 
-test("A closed composer does not load uploaded template covers", async () => {
-  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
-  mockTemplateChat();
-  const uploaded = createUploadedTemplate({
-    id: UPLOADED_TEMPLATE_ID,
-    title: "Quarterly Board Review",
-  });
-  mockPresentationTemplateLibrary([uploaded]);
-  const user = userEvent.setup();
-
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    host: "app.okou.ai",
-  });
-
-  await screen.findByLabelText("Add");
-  expect(
-    document.querySelector(`img[src*="${uploaded.id}"]`),
-  ).not.toBeInTheDocument();
-
-  await openTemplatePicker(user, "Presentation");
-  await waitFor(() => {
-    expect(
-      importedTemplateMedia(uploaded.id).querySelector("img"),
-    ).toHaveAttribute("src", expect.stringContaining(uploaded.id));
-  });
-});
-
 async function openUploadedPresentationPicker() {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   const capture = mockTemplateChat();
@@ -149,7 +119,6 @@ async function openUploadedPresentationPicker() {
     pageCount: 3,
   });
   mockPresentationTemplateLibrary([uploaded]);
-  trackTemplatePreviewImagePreloads();
   const user = userEvent.setup();
 
   await setupPage({
@@ -251,7 +220,6 @@ async function openWorkspaceTemplateLibrary(includePublished: boolean) {
       updatedAt: "2026-08-01T00:03:00.000Z",
     },
   ]);
-  trackTemplatePreviewImagePreloads();
   const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
@@ -500,7 +468,6 @@ test("Imported visibility saves once and closes even on the current value", asyn
     canManage: true,
   });
   const library = mockPresentationTemplateLibrary([uploaded]);
-  trackTemplatePreviewImagePreloads();
   const user = userEvent.setup();
   await setupPage({
     context,

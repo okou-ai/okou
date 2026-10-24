@@ -230,7 +230,7 @@ export const updateUserBuiltinConnectors$ = command(
     const operation = args.operation ?? "replace";
 
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0308; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
+    const committed = await db.transaction(async (tx) => {
       const [agent] = await tx
         .select({ id: agents.id })
         .from(agents)
@@ -244,7 +244,7 @@ export const updateUserBuiltinConnectors$ = command(
         .for("update")
         .limit(1);
       if (agent === undefined) {
-        return { status: "agentNotFound" };
+        return { status: "agentNotFound" } as const;
       }
 
       const connectorScope = and(
@@ -286,7 +286,7 @@ export const updateUserBuiltinConnectors$ = command(
       }
 
       if (operation === "replace") {
-        return { status: "updated", enabledConnectorSlugs };
+        return { status: "updated", enabledConnectorSlugs } as const;
       }
 
       const rows = await tx
@@ -301,6 +301,13 @@ export const updateUserBuiltinConnectors$ = command(
       } as const;
       return result;
     });
+    if (committed.status === "updated") {
+      // Register invalidation before callers observe cancellation after commit.
+      await publishUserSignal([args.userId], "composerAgentConnectorsChanged", {
+        agentId: args.agentId,
+      });
+    }
+    return committed;
   },
 );
 
@@ -540,6 +547,26 @@ function customConnectorGrantScopeCondition(
   );
 }
 
+const readCustomConnectorDefinitions$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly connectorIds: readonly string[];
+    },
+  ): Promise<CustomConnectorDefinitions> => {
+    if (args.connectorIds.length === 0) {
+      return { missingIds: [], permissionBundleRefs: new Map() };
+    }
+    const rows: CustomConnectorDefinitionRow[] = await set(writeDb$)
+      .select(customConnectorDefinitionSelection())
+      .from(orgCustomConnectors)
+      .leftJoin(orgCustomConnectorOauthConfigs, customConnectorDefinitionJoin())
+      .where(customConnectorDefinitionWhere(args));
+    return customConnectorDefinitions(rows, args.connectorIds);
+  },
+);
+
 const persistUserCustomConnectors$ = command(
   async (
     { set },
@@ -549,6 +576,7 @@ const persistUserCustomConnectors$ = command(
       readonly grantByConnectorId: ReadonlyMap<string, readonly string[]>;
       readonly operation: UserCustomConnectorUpdateOperation;
       readonly readsConnectorCatalog: boolean;
+      readonly deferClientInvalidationUntilOuterCommit?: boolean;
     },
   ): Promise<UserCustomConnectorUpdateOutcome> => {
     const db = set(writeDb$);
@@ -580,6 +608,8 @@ const persistUserCustomConnectors$ = command(
           agentId: args.request.agentId,
           grants: args.grants,
           operation: args.operation,
+          deferClientInvalidationUntilOuterCommit:
+            args.deferClientInvalidationUntilOuterCommit,
         }),
         changedConnectorIds: changedCustomConnectorIds(
           previousRows,
@@ -588,26 +618,10 @@ const persistUserCustomConnectors$ = command(
         ),
       };
     }
-    const definitionDb = db;
-    const definitionArgs = { orgId: args.request.orgId, connectorIds };
-    const definitions =
-      await (async (): Promise<CustomConnectorDefinitions> => {
-        if (definitionArgs.connectorIds.length === 0) {
-          return {
-            missingIds: [],
-            permissionBundleRefs: new Map(),
-          };
-        }
-        const rows: CustomConnectorDefinitionRow[] = await definitionDb
-          .select(customConnectorDefinitionSelection())
-          .from(orgCustomConnectors)
-          .leftJoin(
-            orgCustomConnectorOauthConfigs,
-            customConnectorDefinitionJoin(),
-          )
-          .where(customConnectorDefinitionWhere(definitionArgs));
-        return customConnectorDefinitions(rows, definitionArgs.connectorIds);
-      })();
+    const definitions = await set(readCustomConnectorDefinitions$, {
+      orgId: args.request.orgId,
+      connectorIds,
+    });
     if (definitions.missingIds.length > 0) {
       return {
         result: {
@@ -661,6 +675,8 @@ const persistUserCustomConnectors$ = command(
         agentId: args.request.agentId,
         grants: validatedGrants,
         operation: args.operation,
+        deferClientInvalidationUntilOuterCommit:
+          args.deferClientInvalidationUntilOuterCommit,
       }),
       changedConnectorIds: changedCustomConnectorIds(
         previousRows,
@@ -689,6 +705,8 @@ export const updateUserCustomConnectors$ = command(
       grants,
       grantByConnectorId,
       operation,
+      deferClientInvalidationUntilOuterCommit:
+        options.deferRuntimeWakeupUntilOuterCommit,
       readsConnectorCatalog:
         args.permissionIntent === "exact" &&
         operation !== "remove" &&
@@ -779,15 +797,6 @@ export const addUserCustomConnector$ = command(
       options,
     );
     if (result.status === "updated") {
-      if (!options.deferRuntimeWakeupUntilOuterCommit) {
-        await publishUserSignal(
-          [args.userId],
-          "composerAgentConnectorsChanged",
-          {
-            agentId: args.agentId,
-          },
-        );
-      }
       return { status: "added" };
     }
     return result;

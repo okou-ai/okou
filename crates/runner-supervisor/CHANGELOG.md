@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.24](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.23...runner-supervisor-v0.20.24) (2026-10-24)
+
+
+### Performance Improvements
+
+* **runner:** pack and migrate decoded cache payloads ([#42706](https://github.com/okou-ai/okou/issues/42706)) ([794505c](https://github.com/okou-ai/okou/commit/794505c65589d18c4900e40e90fd9d678e54c0d5))
+
 ## [0.20.23](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.22...runner-supervisor-v0.20.23) (2026-10-23)
 
 ## [0.20.22](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.21...runner-supervisor-v0.20.22) (2026-10-23)

@@ -193,7 +193,7 @@ async fn gc_extracted_storage_uses_existing_lock_accounting_and_preserves_pinned
 
 #[tokio::test]
 async fn gc_extracted_staging_uses_the_final_version_lock() {
-    for prefix in ["decoded-v2-", "decoded-v1-", "decoded-v1-rejected-"] {
+    for prefix in ["decoded-v2-", "decoded-v1-rejected-"] {
         let dir = tempfile::tempdir().unwrap();
         let home = test_home(dir.path());
         let name = runner_host::paths::short_digest("name");

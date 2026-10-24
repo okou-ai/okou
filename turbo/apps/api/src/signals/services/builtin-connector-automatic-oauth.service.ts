@@ -26,6 +26,7 @@ import {
 } from "../../lib/connector-oauth-state";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
 import { safeJsonParse, safeSync, settle } from "../utils";
 import {
   automaticAccountExists$,
@@ -436,16 +437,23 @@ export const startBuiltinConnectorAutomatic$ = command(
         signal,
       );
       if (connected) {
-        await set(
-          publishConnectorRuntimeSyncWakeups$,
-          {
-            scope: { orgId: args.orgId, userId: args.userId },
-            targets: [
-              { kind: "builtin", connectorSlug: contract.connectorSlug },
-            ],
-          },
-          signal,
-        );
+        // Both notifications belong to the committed account, even if the
+        // runtime wakeup observes cancellation or later authorization fails.
+        await Promise.all([
+          publishUserSignal([args.userId], "connector:changed", {
+            connectorSlug: contract.connectorSlug,
+          }),
+          set(
+            publishConnectorRuntimeSyncWakeups$,
+            {
+              scope: { orgId: args.orgId, userId: args.userId },
+              targets: [
+                { kind: "builtin", connectorSlug: contract.connectorSlug },
+              ],
+            },
+            signal,
+          ),
+        ]);
       }
       signal.throwIfAborted();
       return connected
@@ -613,14 +621,20 @@ const finishAutomaticOAuth$ = command(
     if (!published) {
       return { kind: "error", reason: "invalid-account" } as const;
     }
-    await set(
-      publishConnectorRuntimeSyncWakeups$,
-      {
-        scope: { orgId: stored.orgId, userId: stored.userId },
-        targets: [{ kind: "builtin", connectorSlug: stored.connectorSlug }],
-      },
-      signal,
-    );
+    await Promise.all([
+      publishUserSignal([stored.userId], "connector:changed", {
+        connectorSlug: stored.connectorSlug,
+      }),
+      set(
+        publishConnectorRuntimeSyncWakeups$,
+        {
+          scope: { orgId: stored.orgId, userId: stored.userId },
+          targets: [{ kind: "builtin", connectorSlug: stored.connectorSlug }],
+        },
+        signal,
+      ),
+    ]);
+    signal.throwIfAborted();
     return {
       kind: "connected",
       connectorSlug: stored.connectorSlug,

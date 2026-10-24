@@ -16,7 +16,7 @@ import {
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 import type { PresentationTemplateItem } from "@okouai/core";
 import { screen, waitFor } from "@testing-library/react";
-import { expect, vi } from "vitest";
+import { expect } from "vitest";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
@@ -107,37 +107,6 @@ function billingStatus(
     concurrencyLimit: 0,
     concurrencySubscriptions: [],
   };
-}
-
-export function trackTemplatePreviewImagePreloads(): {
-  readonly srcs: readonly string[];
-} {
-  const srcs: string[] = [];
-
-  class TestImagePreload {
-    decoding = "";
-    loading = "";
-    fetchPriority = "";
-    #src = "";
-
-    decode(): Promise<void> {
-      return Promise.resolve();
-    }
-
-    get src(): string {
-      return this.#src;
-    }
-
-    set src(value: string) {
-      this.#src = value;
-      srcs.push(value);
-    }
-  }
-
-  const imageConstructor = TestImagePreload as unknown as typeof Image;
-  vi.stubGlobal("Image", imageConstructor);
-
-  return { srcs };
 }
 
 /**

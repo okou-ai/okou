@@ -103,6 +103,9 @@ test("Authorize one agent without changing another agent", async () => {
       } else {
         authorized.delete(params.id);
       }
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: params.id,
+      });
       return respond(200, {
         enabledConnectorSlugs: authorized.has(params.id) ? ["github"] : [],
       });

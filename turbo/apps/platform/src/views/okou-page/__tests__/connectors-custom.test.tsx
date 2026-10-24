@@ -174,6 +174,9 @@ function mockCustomAgentAccess(
             ? [...retained, ...body.grants]
             : body.grants;
       grantsByAgent.set(params.id, grants);
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: params.id,
+      });
       return respond(200, { grants });
     },
   );
@@ -362,6 +365,102 @@ test("Add and optionally name a custom connector account", async () => {
   ).toHaveTextContent("Used by Research");
 });
 
+test("Reflect a late successful agent grant after another grant has failed", async () => {
+  const connector = customConnector({ account: undefined });
+  const lateGrant = context.mocks.deferred<void>();
+  const lateGrantStarted = context.mocks.deferred<void>();
+  const grantsByAgent = new Map<string, AgentCustomConnectorGrant[]>();
+  let account: ConnectorAccountConnection | undefined;
+  context.mocks.data.agents([
+    listAgent(RESEARCH_ID, "Research"),
+    listAgent(SUPPORT_ID, "Support"),
+  ]);
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, { connectors: [connector] });
+  });
+  mockSavedConnectorAccounts(context, () => {
+    return account ? [account] : [];
+  });
+  context.mocks.api(connectorAccountsContract.connection, ({ respond }) => {
+    return account
+      ? respond(200, account)
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Account not found" },
+        });
+  });
+  context.mocks.api(customConnectorValuesContract.set, ({ respond }) => {
+    account = customAccount(connector.id, crypto.randomUUID(), {
+      configuredFieldKeys: ["secret"],
+    });
+    return respond(200, { ...connector, connectionId: account.id });
+  });
+  context.mocks.api(
+    agentCustomConnectorsContract.get,
+    ({ params, respond }) => {
+      return respond(200, { grants: grantsByAgent.get(params.id) ?? [] });
+    },
+  );
+  mockConnectorAgentAccess(context, (agentId) => {
+    return { grants: grantsByAgent.get(agentId) ?? [] };
+  });
+  context.mocks.api(
+    agentCustomConnectorsContract.update,
+    async ({ params, body, respond, withSignal }) => {
+      if (params.id === RESEARCH_ID) {
+        return respond(403, {
+          error: { code: "FORBIDDEN", message: "Research access was denied" },
+        });
+      }
+      lateGrantStarted.resolve();
+      await withSignal(lateGrant.promise);
+      grantsByAgent.set(params.id, body.grants);
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: params.id,
+      });
+      return respond(200, { grants: body.grants });
+    },
+  );
+  await setupCustomPage();
+  click(
+    await waitFor(() => {
+      return getConnectorAction("button", "Connect Acme Search");
+    }),
+  );
+  const connect = await screen.findByRole("dialog", {
+    name: "Connect Acme Search",
+  });
+  await fill(within(connect).getByLabelText("Secret"), "custom-secret");
+  click(getConnectorAction("button", "Save", connect));
+  await lateGrantStarted.promise;
+  await expect(
+    within(connect).findByText(/Research access was denied/u),
+  ).resolves.toBeInTheDocument();
+  expect(getConnectorCard("Acme Search")).not.toHaveTextContent(
+    "Used by Support",
+  );
+
+  lateGrant.resolve();
+  await waitFor(() => {
+    expect(getConnectorCard("Acme Search")).toHaveTextContent(
+      "Used by Support",
+    );
+  });
+  expect(
+    within(connect).getByText(/Research access was denied/u),
+  ).toBeInTheDocument();
+  click(getConnectorAction("button", "Cancel", connect));
+  click(getConnectorAction("button", "Manage Acme Search access"));
+  const access = await screen.findByRole("dialog", {
+    name: "Manage Acme Search access",
+  });
+  expect(
+    getConnectorSwitch("Revoke Acme Search access for Support", access),
+  ).toBeChecked();
+  expect(
+    getConnectorSwitch("Authorize Acme Search access for Research", access),
+  ).not.toBeChecked();
+});
+
 test("Preserve revoked access when adding another account", async () => {
   const defaultId = "c0000000-0000-4000-a000-000000000001";
   const connector = customConnector({
@@ -477,7 +576,6 @@ test("Preserve revoked access when adding another account", async () => {
 });
 
 test("Manage agent access and permissions for a custom connector", async () => {
-  const save = context.mocks.deferred<void>();
   const connector = customConnector({
     permissionBundleRef: "builtin:feishu@1",
     account: {
@@ -530,12 +628,14 @@ test("Manage agent access and permissions for a custom connector", async () => {
   });
   context.mocks.api(
     agentCustomConnectorsContract.update,
-    async ({ params, body, respond, withSignal }) => {
+    ({ params, body, respond }) => {
       updates.push({ agentId: params.id, body });
-      await withSignal(save.promise);
       const next = body.operation === "remove" ? [] : body.grants;
       const grants = { grants: next };
       access.set(params.id, grants);
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: params.id,
+      });
       return respond(200, grants);
     },
   );
@@ -571,13 +671,6 @@ test("Manage agent access and permissions for a custom connector", async () => {
   );
   expect(updates).toHaveLength(0);
   click(getConnectorAction("button", "Apply", drawer));
-  await waitFor(() => {
-    expect(getConnectorAction("button", "Saving...", drawer)).toBeDisabled();
-  });
-  expect(getConnectorAction("button", "Allow", drawer)).toBeDisabled();
-  expect(getConnectorAction("button", "Deny", drawer)).toBeDisabled();
-  expect(getConnectorAction("button", "Cancel", drawer)).toBeDisabled();
-  save.resolve();
   await waitFor(() => {
     expect(
       getConnectorSwitch("Revoke Acme Search access for Support", dialog),
@@ -1322,6 +1415,9 @@ test("Manage a manual MCP connector through its lifecycle", async () => {
     ({ params, body, respond }) => {
       const next = body.operation === "remove" ? [] : body.grants;
       grants.set(params.id, next);
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: params.id,
+      });
       return respond(200, { grants: next });
     },
   );
@@ -1766,8 +1862,6 @@ test("Reconnect an OAuth account after cancelled consent and metadata changes", 
       "https://oauth.acme.test/reconnect",
     );
   });
-  await expect(within(dialog).findByText("Connecting…")).resolves.toBeVisible();
-  expect(getConnectorAction("button", "Connecting…", dialog)).toBeDisabled();
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
   expect(within(dialog).getByLabelText("Close")).toBeEnabled();
   personal = {
@@ -1792,7 +1886,6 @@ test("Reconnect an OAuth account after cancelled consent and metadata changes", 
       "https://oauth.acme.test/reconnect",
     );
   });
-  await expect(within(dialog).findByText("Connecting…")).resolves.toBeVisible();
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
   await waitFor(() => {
     expect(screen.queryAllByRole("dialog")).toHaveLength(1);

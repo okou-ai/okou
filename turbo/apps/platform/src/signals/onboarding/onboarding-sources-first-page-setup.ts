@@ -14,7 +14,10 @@ import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { captureSourceOnboardingStepViewed$ } from "../bootstrap/source-onboarding-telemetry.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
-import { builtinConnectors$ } from "../external/connectors.ts";
+import {
+  builtinConnectors$,
+  subscribeBuiltinConnectorChanges$,
+} from "../external/connectors.ts";
 import { sendEvent$ } from "../marketing/events.ts";
 import {
   setAgentPhoneConnectDialogOpen$,
@@ -149,10 +152,14 @@ function createSourcesFirstPageSetup(
     const flow = status.isAdmin ? "owner" : "member";
     set(setSourcesFirstFlow$, flow);
 
+    if (config.step !== "industry") {
+      set(subscribeBuiltinConnectorChanges$, signal);
+    }
+
     const draft = get(sourcesFirstDraft$);
     if (config.step !== "industry" && config.step !== "sources") {
-      // The user's own connections, reloaded on connect, decide whether any
-      // source is there yet; the catalog is not needed for that.
+      // The user's own connections, invalidated by server notifications,
+      // decide whether any source is there; the catalog is not needed.
       const { connectors } = await get(builtinConnectors$);
       signal.throwIfAborted();
       const hasSource = connectors.length > 0;

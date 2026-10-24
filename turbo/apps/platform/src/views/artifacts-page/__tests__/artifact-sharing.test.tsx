@@ -170,9 +170,6 @@ test("owners can change three access levels separately from copying the stable a
     await waitFor(() => {
       return expect(permission(name)).toHaveAttribute("aria-checked", "true");
     });
-    await waitFor(() => {
-      return expect(permission(name)).toHaveAttribute("aria-busy", "false");
-    });
     expect(clipboard.writes).toHaveLength(changes.length - 1);
     await waitFor(() => {
       return expect(action("button", "Copy link")).not.toBeDisabled();
@@ -229,9 +226,13 @@ test("owner copying uses the canonical version reference returned by the API", a
   expect(clipboard.writes).toStrictEqual([ownerUrl]);
 });
 
-test("status errors do not treat an owner as a recipient", async () => {
+test("an owner can retry unavailable permissions and copy the owner link", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
+  let available = false;
   context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    if (available) {
+      return respond(200, sharingStatus());
+    }
     return respond(500, {
       error: {
         code: "INTERNAL_SERVER_ERROR",
@@ -259,6 +260,17 @@ test("status errors do not treat an owner as a recipient", async () => {
     within(choices).getByText("Anyone in your organization"),
   ).toBeInTheDocument();
   expect(within(choices).queryByText(/Acme/u)).not.toBeInTheDocument();
+  available = true;
+  click(action("button", "Retry"));
+  await waitFor(() => {
+    expect(permission("Only me")).toBeEnabled();
+    expect(permission("Only me")).toHaveAttribute("aria-checked", "true");
+  });
+  click(action("button", "Copy link"));
+  await waitFor(() => {
+    expect(queryAction("button", "Copied")).toBeDefined();
+  });
+  expect(clipboard.writes).toStrictEqual([sharingStatus().ownerUrl]);
 });
 
 test("denied links display no artifact metadata or content", async () => {

@@ -43,7 +43,7 @@ import {
 import { materializeConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
   ExternalConnectorCatalogUnavailableError,
-  loadAcceptedConnectorCatalogSnapshot,
+  loadAcceptedConnectorCatalogSnapshot$,
 } from "./connector-catalog-external-reader.service";
 import { publishCatalogRuntimeWakeups$ } from "./connector-catalog-runtime-wakeup.service";
 
@@ -304,11 +304,11 @@ export const syncConnectorCatalog$ = command(
 
     // Compare permission bundles against the generation serving before the
     // switch. A cold catalog has no previous runtime snapshot.
-    const db = set(writeDb$);
+    set(writeDb$);
     const previousSnapshotResult = await settle(
       (async () => {
         return materializeConnectorRuntimeSnapshot(
-          await loadAcceptedConnectorCatalogSnapshot(db),
+          await set(loadAcceptedConnectorCatalogSnapshot$),
         );
       })(),
       signal,
