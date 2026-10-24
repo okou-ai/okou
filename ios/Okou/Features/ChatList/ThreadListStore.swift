@@ -89,7 +89,11 @@ final class ThreadListStore {
       await loadNavigation()
     }
     navigationTask = task
-    await task.value
+    await withTaskCancellationHandler {
+      await task.value
+    } onCancel: {
+      task.cancel()
+    }
   }
 
   private func loadNavigation() async {
@@ -191,11 +195,7 @@ final class ThreadListStore {
       } while refreshAgain && !closed && !blocked && !Task.isCancelled
     }
     refreshTask = task
-    await withTaskCancellationHandler {
-      await task.value
-    } onCancel: {
-      task.cancel()
-    }
+    await task.value
   }
 
   func insertCreated(_ thread: ChatThread) {
