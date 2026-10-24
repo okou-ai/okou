@@ -1,8 +1,5 @@
 import { chatEventAppendResultSchema } from "./chat-event-append.service";
-import {
-  parseRawRows,
-  pgTimestampWithoutTimezoneToDateSchema,
-} from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -20,7 +17,6 @@ import {
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { writeDb$ } from "../external/db";
-import { z } from "zod";
 import { settleIncludingAbort } from "../utils";
 import {
   publishChatThreadMessageCreatedSafely,
@@ -348,62 +344,6 @@ export const touchSentChatThreadSort$ = command(
     );
   },
 );
-
-/** The caller executes this on its own transaction and decodes the returned identity. */
-export function chatThreadLastMessageTouchSql(
-  threadId: string,
-  touchedAt: Date,
-  authorizedScope?: AuthorizedChatThreadTouchScope,
-): SQL {
-  const condition = and(
-    eq(chatThreads.id, threadId),
-    isNotNull(chatThreads.agentId),
-    authorizedScope
-      ? and(
-          eq(chatThreads.userId, authorizedScope.userId),
-          chatThreadOrganizationCondition(authorizedScope.orgId),
-        )
-      : undefined,
-  );
-  if (!condition) {
-    throw new Error("Thread touch predicate is empty");
-  }
-  return sql`UPDATE ${chatThreads}
-    SET last_message_at = GREATEST(${chatThreads.lastMessageAt}, ${touchedAt.toISOString()}::timestamp)
-    WHERE ${condition}
-    RETURNING id, user_id AS "userId", agent_id AS "agentId", last_message_at::text AS "lastMessageAt"`;
-}
-
-export const chatThreadLastMessageTouchSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string(),
-  agentId: z.string().uuid().nullable(),
-  lastMessageAt: pgTimestampWithoutTimezoneToDateSchema,
-});
-
-/** SQL-only continuation; a missing unscoped thread is a no-op, as before. */
-export function chatThreadLastMessageSortSql(
-  rows: readonly z.output<typeof chatThreadLastMessageTouchSchema>[],
-  eventId?: string,
-  authorizedScope?: AuthorizedChatThreadTouchScope,
-): SQL | null {
-  const thread = rows[0];
-  if (!thread?.agentId) {
-    if (authorizedScope) {
-      throw new Error("Authorized chat thread changed before sort touch");
-    }
-    return null;
-  }
-  return chatThreadEventInsertSql({
-    kind: "sort_touched",
-    userId: thread.userId,
-    ...(authorizedScope ? { orgId: authorizedScope.orgId } : {}),
-    chatThreadId: thread.id,
-    agentId: thread.agentId,
-    eventId,
-    createdAt: thread.lastMessageAt,
-  });
-}
 
 export function visibleChatEventCondition(): SQL | undefined {
   return visibleChatEventPredicate();
