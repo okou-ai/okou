@@ -272,11 +272,6 @@
       "owner": "finalizeAutomationStructureTransition$"
     },
     {
-      "id": "TX-0204",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "reserveDormantIdentity$"
-    },
-    {
       "id": "TX-0218",
       "file": "turbo/apps/api/src/signals/services/org-limited-free-bootstrap.service.ts",
       "owner": "ensureOrgLimitedFreeBootstrap$/bootstrap"
