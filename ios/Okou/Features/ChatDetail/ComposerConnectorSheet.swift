@@ -111,7 +111,8 @@ struct ComposerConnectorSheet: View {
       HStack {
         Label(
           connector.label,
-          systemImage: connector.target.kind == "custom" ? "puzzlepiece.extension" : "powerplug")
+          systemImage: connector.target.kind == "custom" ? "puzzlepiece.extension" : "powerplug"
+        )
         .lineLimit(1)
         .truncationMode(.tail)
         .layoutPriority(1)
