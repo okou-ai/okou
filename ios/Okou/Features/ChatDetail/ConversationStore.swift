@@ -108,6 +108,8 @@ final class ConversationStore {
   private let didSettle: @MainActor () -> Void
   private var refreshAgain = false
   private var refreshTask: Task<Void, Never>?
+  private var refreshGeneration = UUID()
+  private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private var sendTask: Task<Void, Never>?
   private var stopTask: Task<Void, Never>?
   private var expansionTask: Task<Void, Never>?
@@ -133,11 +135,15 @@ final class ConversationStore {
       try await Task.sleep(for: $0)
     },
     draftRepository: ChatDraftRepository? = nil, draftStorage: ChatDraftStorage? = nil,
-    didRequestNewChat: @escaping @MainActor () -> Void = {}
+    didRequestNewChat: @escaping @MainActor () -> Void = {},
+    readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
+    }
   ) {
     self.modelSelection = modelSelection
     self.workflowSource = workflowSource
     self.didRequestNewChat = didRequestNewChat
+    self.readRetrySleep = readRetrySleep
     self.runUsage = ConversationRunUsageStore(sync: sync, threadID: thread.id, didFail: didFail)
     self.activitySummary = ConversationActivitySummary(
       sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep)
@@ -186,13 +192,17 @@ final class ConversationStore {
       return
     }
     isLoading = true
+    let generation = refreshGeneration
     let task = Task { [weak self] in
       guard let self else { return }
       defer {
-        isLoading = false
-        refreshTask = nil
+        if refreshGeneration == generation {
+          isLoading = false
+          refreshTask = nil
+        }
         didSettle()
       }
+      guard !Task.isCancelled, refreshGeneration == generation else { return }
       if history == nil, let cached = await sync.cachedHistory(threadID: thread.id) {
         await messageMarkdown.prepareLatest(cached.messages)
         guard !closed, !Task.isCancelled else { return }
@@ -202,14 +212,17 @@ final class ConversationStore {
       repeat {
         refreshAgain = false
         do {
-          let result = try await sync.history(threadID: thread.id)
+          let result = try await ChatReadRecovery.read("chat history", sleep: readRetrySleep) {
+            try await sync.history(threadID: thread.id)
+          }
           await messageMarkdown.prepareLatest(result.messages)
           try Task.checkCancellation()
-          guard !closed else { return }
+          guard !closed, refreshGeneration == generation else { return }
           if history != result { history = result }
           pending.removeAll { result.persistedEventIDs.contains($0.id) }
           rebuildMessages()
           await permissionActions.refresh()
+          guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
           if !pending.contains(where: \.needsRetry) { error = nil }
           let unreadThrough = [result.latestRunFinishAt, thread.unreadAt].compactMap { $0 }.max()
           if suppressAutomaticRead, let unreadThrough {
@@ -236,12 +249,17 @@ final class ConversationStore {
         } catch is CancellationError {
           return
         } catch {
+          guard !Task.isCancelled, refreshGeneration == generation else { return }
           show(error)
         }
       } while refreshAgain && !closed && !needsUpgrade && !Task.isCancelled
     }
     refreshTask = task
-    await task.value
+    await withTaskCancellationHandler {
+      await task.value
+    } onCancel: {
+      task.cancel()
+    }
   }
 
   func setAutomaticReadSuppressed(_ suppressed: Bool, resetReadWatermark: Bool = false) {
@@ -518,7 +536,7 @@ final class ConversationStore {
     activitySummary.stop()
     runUsage.close()
     modelSelection?.close()
-    refreshTask?.cancel()
+    cancelRefresh()
     sendTask?.cancel()
     stopTask?.cancel()
     expansionTask?.cancel()
@@ -530,6 +548,14 @@ final class ConversationStore {
     artifacts.close()
     connectorActions.close()
     permissionActions.close()
+  }
+
+  func cancelRefresh() {
+    refreshGeneration = UUID()
+    refreshTask?.cancel()
+    refreshTask = nil
+    refreshAgain = false
+    isLoading = false
   }
 
   func artifactImageSources(for messageID: String) -> [String] {

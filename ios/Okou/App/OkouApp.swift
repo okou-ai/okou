@@ -94,6 +94,7 @@ private struct WorkspaceRootView: View {
   let userID: String
   @State private var store: WorkspaceStore
   @State private var sidebar = SidebarInteraction()
+  @State private var topContentHeight: CGFloat = 60
   @Binding private var accountError: String?
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -150,7 +151,7 @@ private struct WorkspaceRootView: View {
         Group {
           if let conversation = store.selectedConversation {
             ChatDetailView(
-              conversation: conversation, topContentInset: headerHeight, sidebar: sidebar,
+              conversation: conversation, topContentInset: topContentHeight, sidebar: sidebar,
               mentionSource: ComposerMentionSource(
                 agentID: conversation.thread.agentID, agents: store.list.agents,
                 threads: store.list.threads)
@@ -164,7 +165,7 @@ private struct WorkspaceRootView: View {
                   draft: $composer.text, isBusy: store.isCreating,
                   showsProgress: store.isCreating, canStop: false,
                   needsUpgrade: store.needsUpgrade,
-                  error: store.error ?? store.list.error, attachmentURL: store.webURL,
+                  error: store.error ?? store.list.actionError, attachmentURL: store.webURL,
                   attachments: composer.attachments,
                   draftState: composer,
                   submit: { await store.sendNewChat() }, refresh: nil,
@@ -178,7 +179,17 @@ private struct WorkspaceRootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .safeAreaBar(edge: .top, spacing: 0) {
-          mainHeader
+          VStack(spacing: 0) {
+            mainHeader
+            if let error = store.list.syncError {
+              ChatSyncFailureView(message: error, isRefreshing: store.list.isLoading) {
+                await store.refresh()
+              }
+            }
+          }
+          .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+            topContentHeight = $0
+          }
         }
         .frame(width: geometry.size.width, height: geometry.size.height)
         .accessibilityHidden(sidebar.isOpen)
@@ -262,7 +273,7 @@ private struct WorkspaceRootView: View {
       "Unable to update chats",
       isPresented: Binding(
         get: {
-          store.selectedConversation != nil && store.list.error != nil
+          store.selectedConversation != nil && store.list.actionError != nil
             && store.list.renameRequest == nil && !store.list.isSavingRename
         },
         set: { if !$0 { store.list.dismissError() } }
@@ -270,7 +281,7 @@ private struct WorkspaceRootView: View {
     ) {
       Button("OK") { store.list.dismissError() }
     } message: {
-      Text(store.list.error ?? "")
+      Text(store.list.actionError ?? "")
     }
     .fullScreenCover(isPresented: Binding(get: { store.needsUpgrade }, set: { _ in })) {
       ContentUnavailableView {
