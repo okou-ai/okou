@@ -1073,6 +1073,7 @@
       "loadFailed": "Impossible de vérifier toutes les autorisations demandées. Aucune autorisation ne peut être modifiée.",
       "loading": "Chargement des autorisations",
       "notNow": "Pas maintenant",
+      "review": "Examiner les autorisations",
       "scopeNote": "S’applique à cet agent, pas uniquement à la tâche en cours.",
       "title": "Accorder les autorisations suivantes"
     }

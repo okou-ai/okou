@@ -1053,6 +1053,7 @@
       "loadFailed": "Could not verify all requested permissions. No permissions can be changed.",
       "loading": "Loading permissions",
       "notNow": "Not now",
+      "review": "Review permissions",
       "scopeNote": "Applies to this agent, not only the current task.",
       "title": "Allow the following permissions"
     }

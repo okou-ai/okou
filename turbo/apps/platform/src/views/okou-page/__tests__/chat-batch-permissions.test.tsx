@@ -11,7 +11,9 @@ import {
   type UserPermissionGrantResponse,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -86,6 +88,16 @@ function getButton(name: string, container: ParentNode): HTMLElement {
     throw new Error(`Expected button named "${name}"`);
   }
   return button;
+}
+
+async function openPermissions(
+  card: HTMLElement,
+  name = "Review permissions",
+): Promise<HTMLElement> {
+  click(getButton(name, card));
+  return await screen.findByRole("dialog", {
+    name: "Allow the following permissions",
+  });
 }
 
 function activeGrant(
@@ -170,9 +182,20 @@ function installGrants(initial: readonly UserPermissionGrantResponse[] = []) {
 }
 
 test("Review full scopes grouped by connector and apply the selected duration together", async () => {
+  const user = userEvent.setup();
   installMetadata();
   const applied = installGrants();
-  installConversation(batchUrl());
+  installConversation(
+    batchUrl({
+      rows: [
+        ...items,
+        {
+          connectorSlug: "reports-service",
+          permission: UNKNOWN_PERMISSION_GRANT,
+        },
+      ],
+    }),
+  );
 
   await setupPage({
     context,
@@ -182,16 +205,17 @@ test("Review full scopes grouped by connector and apply the selected duration to
   });
   await readyChat();
   const card = await screen.findByTestId("permission-batch-action-card");
+  const dialog = await openPermissions(card);
   await waitFor(() => {
-    expect(getButton("Allow all 3 permissions", card)).toBeEnabled();
+    expect(getButton("Allow all 4 permissions", dialog)).toBeEnabled();
   });
   for (const label of ["Calendar Service", "Reports Service"]) {
     expect(
-      within(card).getByRole("heading", { name: label }),
+      within(dialog).getByRole("heading", { name: label }),
     ).toBeInTheDocument();
   }
   for (const item of items) {
-    const scope = within(card).getByText(item.permission, { exact: true });
+    const scope = within(dialog).getByText(item.permission, { exact: true });
     const group = scope.closest("section");
     expect(group).not.toBeNull();
     expect(group).toHaveTextContent(
@@ -200,17 +224,29 @@ test("Review full scopes grouped by connector and apply the selected duration to
         : "Reports Service",
     );
     expect(
-      within(card).getByText(`Use ${item.permission}.`),
+      within(dialog).getByText(`Use ${item.permission}.`),
     ).toBeInTheDocument();
   }
+  expect(within(dialog).getByText("other endpoints")).toBeInTheDocument();
+  expect(within(dialog).getByText("Other endpoints")).toBeInTheDocument();
 
-  click(within(card).getByRole("combobox", { name: "Permission duration" }));
+  click(within(dialog).getByRole("combobox", { name: "Permission duration" }));
   click(await screen.findByRole("option", { name: "24 hours" }));
-  click(getButton("Allow all 3 permissions", card));
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(getButton("Review permissions", card)).toHaveFocus();
+  });
+
+  const reopened = await openPermissions(card);
+  expect(
+    within(reopened).getByRole("combobox", { name: "Permission duration" }),
+  ).toHaveTextContent("24 hours");
+  click(getButton("Allow all 4 permissions", reopened));
 
   await expect(
     within(card).findByText("Permissions allowed"),
   ).resolves.toBeInTheDocument();
+  expect(within(reopened).getByText("Permissions allowed")).toBeInTheDocument();
   expect(applied).toStrictEqual([
     {
       agentId: CAPABILITY_AGENT_ID,
@@ -227,17 +263,23 @@ test("Review full scopes grouped by connector and apply the selected duration to
         },
         {
           connectorSlug: "reports-service",
-          grants: [
+          grants: expect.arrayContaining([
             {
               permission: items[2]!.permission,
               action: "allow",
               expiresIn: "24h",
             },
-          ],
+            {
+              permission: UNKNOWN_PERMISSION_GRANT,
+              action: "allow",
+              expiresIn: "24h",
+            },
+          ]),
         },
       ],
     },
   ]);
+  expect(applied[0]!.groups[1]!.grants).toHaveLength(2);
 });
 
 test("Review every scope in a large batch as metadata and grants arrive separately", async () => {
@@ -271,10 +313,20 @@ test("Review every scope in a large batch as metadata and grants arrive separate
       });
     },
   );
+  let grants: UserPermissionGrantResponse[] = [];
+  const applied: ApplyUserPermissionGrantsBatchRequest[] = [];
   context.mocks.api(userPermissionGrantsContract.list, async ({ respond }) => {
     await grantsResponse.promise;
-    return respond(200, []);
+    return respond(200, grants);
   });
+  context.mocks.api(
+    userPermissionGrantsContract.applyBatch,
+    ({ body, respond }) => {
+      applied.push(body);
+      grants = largeBatch.map(activeGrant);
+      return respond(200, grants);
+    },
+  );
   installConversation(batchUrl({ rows: largeBatch }));
 
   await setupPage({
@@ -285,47 +337,77 @@ test("Review every scope in a large batch as metadata and grants arrive separate
   });
   await readyChat();
   const card = await screen.findByTestId("permission-batch-action-card");
+  const dialog = await openPermissions(card);
   await expect(
-    within(card).findByLabelText("Loading permissions"),
+    within(dialog).findByLabelText("Loading permissions"),
   ).resolves.toBeInTheDocument();
-  expect(getButton("Allow all 20 permissions", card)).toBeDisabled();
+  expect(getButton("Allow all 20 permissions", dialog)).toBeDisabled();
 
   metadataResponse.resolve(undefined);
-  const scopes = within(card).getByRole("region", {
-    name: "Applies to this agent, not only the current task.",
-  });
   await expect(
-    within(scopes).findByText(largeBatch[19]!.permission, { exact: true }),
+    within(dialog).findByText(largeBatch[19]!.permission, { exact: true }),
   ).resolves.toBeInTheDocument();
   for (const item of largeBatch) {
     expect(
-      within(scopes).getByText(item.permission, { exact: true }),
+      within(dialog).getByText(item.permission, { exact: true }),
     ).toBeInTheDocument();
     expect(
-      within(scopes).getByText(`Use ${item.permission}.`),
+      within(dialog).getByText(`Use ${item.permission}.`),
     ).toBeInTheDocument();
   }
-  expect(getButton("Allow all 20 permissions", card)).toBeDisabled();
+  expect(getButton("Allow all 20 permissions", dialog)).toBeDisabled();
 
   grantsResponse.resolve(undefined);
   await waitFor(() => {
-    expect(getButton("Allow all 20 permissions", card)).toBeEnabled();
+    expect(getButton("Allow all 20 permissions", dialog)).toBeEnabled();
   });
-  const duration = within(card).getByRole("combobox", {
+  const duration = within(dialog).getByRole("combobox", {
     name: "Permission duration",
   });
   click(duration);
   click(await screen.findByRole("option", { name: "Always" }));
   await expect(
-    within(card).findByText(
+    within(dialog).findByText(
       "These permissions stay allowed until you change or revoke them.",
     ),
   ).resolves.toBeInTheDocument();
   expect(duration).toHaveTextContent("Always");
-  expect(getButton("Allow all 20 permissions", card)).toBeEnabled();
+  click(getButton("Allow all 20 permissions", dialog));
+
+  await expect(
+    within(card).findByText("Permissions allowed"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).getByText("Permissions allowed")).toBeInTheDocument();
+  expect(applied).toStrictEqual([
+    {
+      agentId: CAPABILITY_AGENT_ID,
+      groups: ["calendar-service", "reports-service"].map((connectorSlug) => {
+        return {
+          connectorSlug,
+          grants: expect.arrayContaining(
+            largeBatch
+              .filter((item) => {
+                return item.connectorSlug === connectorSlug;
+              })
+              .map((item) => {
+                return {
+                  permission: item.permission,
+                  action: "allow",
+                  expiresIn: "always",
+                };
+              }),
+          ),
+        };
+      }),
+    },
+  ]);
+  for (const group of applied[0]!.groups) {
+    expect(group.grants).toHaveLength(10);
+  }
 });
 
-test("Retry only the callback after batch approval succeeds but sending fails", async () => {
+test("Reopen approved permissions and retry only the failed callback", async () => {
+  const user = userEvent.setup();
   installMetadata();
   const saveResponse = context.mocks.deferred<void>();
   const callbackResponse = context.mocks.deferred<void>();
@@ -366,38 +448,66 @@ test("Retry only the callback after batch approval succeeds but sending fails", 
   });
   await readyChat();
   const card = await screen.findByTestId("permission-batch-action-card");
+  const dialog = await openPermissions(card);
   await waitFor(() => {
-    expect(getButton("Allow all 3 permissions", card)).toBeEnabled();
+    expect(getButton("Allow all 3 permissions", dialog)).toBeEnabled();
   });
-  click(getButton("Allow all 3 permissions", card));
+  click(getButton("Allow all 3 permissions", dialog));
   await waitFor(() => {
-    expect(getButton("Saving...", card)).toBeDisabled();
+    expect(getButton("Saving...", dialog)).toBeDisabled();
   });
-  expect(within(card).getByText(items[2]!.permission)).toBeInTheDocument();
+  expect(within(dialog).getByText(items[2]!.permission)).toBeInTheDocument();
 
   saveResponse.resolve(undefined);
   await expect(
     within(card).findByText("Permissions allowed"),
   ).resolves.toBeInTheDocument();
-  expect(getButton("Continuing…", card)).toBeDisabled();
-  expect(within(card).getByText(items[2]!.permission)).toBeInTheDocument();
+  expect(getButton("Continuing…", dialog)).toBeDisabled();
+  expect(within(dialog).getByText(items[2]!.permission)).toBeInTheDocument();
 
   callbackResponse.resolve(undefined);
   await expect(
-    within(card).findByText(
+    within(dialog).findByText(
       "Permissions allowed, but could not continue. Try continuing again.",
     ),
   ).resolves.toBeInTheDocument();
-  expect(within(card).getByText("Permissions allowed")).toBeInTheDocument();
+  expect(within(dialog).getByText("Permissions allowed")).toBeInTheDocument();
+  expect(
+    within(card).getByText(
+      "Permissions allowed, but could not continue. Try continuing again.",
+    ),
+  ).toBeInTheDocument();
   expect(applied).toHaveLength(1);
   expect(sends).toHaveLength(1);
 
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(getButton("View permission details", card)).toHaveFocus();
+  });
+  const reopened = await openPermissions(card, "View permission details");
+  expect(
+    within(reopened).getByText(
+      "Permissions allowed, but could not continue. Try continuing again.",
+    ),
+  ).toBeInTheDocument();
+  expect(getButton("Continue", reopened)).toBeEnabled();
+
   available = true;
-  click(getButton("Continue", card));
+  click(getButton("Continue", reopened));
 
   await expect(
-    within(card).findByText("The conversation has continued."),
+    within(reopened).findByText("The conversation has continued."),
   ).resolves.toBeInTheDocument();
+  expect(
+    within(card).getByText("The conversation has continued."),
+  ).toBeInTheDocument();
+  for (const container of [card, reopened]) {
+    expect(
+      within(container).queryByText(
+        "Permissions allowed, but could not continue. Try continuing again.",
+      ),
+    ).not.toBeInTheDocument();
+  }
   expect(applied).toHaveLength(1);
   expect(sends).toHaveLength(2);
   expect(sends[1]).toMatchObject({
@@ -453,26 +563,27 @@ test("Reauthorize revoked scopes after a callback failure instead of retrying wi
   });
   await readyChat();
   const card = await screen.findByTestId("permission-batch-action-card");
+  const dialog = await openPermissions(card);
   await waitFor(() => {
-    expect(getButton("Allow all 3 permissions", card)).toBeEnabled();
+    expect(getButton("Allow all 3 permissions", dialog)).toBeEnabled();
   });
-  click(getButton("Allow all 3 permissions", card));
+  click(getButton("Allow all 3 permissions", dialog));
   await expect(
-    within(card).findByText(
+    within(dialog).findByText(
       "Permissions allowed, but could not continue. Try continuing again.",
     ),
   ).resolves.toBeInTheDocument();
-  expect(getButton("Continue", card)).toBeEnabled();
+  expect(getButton("Continue", dialog)).toBeEnabled();
 
   grants = grants.filter((grant) => {
     return grant.connectorSlug !== "reports-service";
   });
   context.mocks.ably.trigger("connectorPermissionUpdated");
   await waitFor(() => {
-    expect(getButton("Allow all 3 permissions", card)).toBeEnabled();
+    expect(getButton("Allow all 3 permissions", dialog)).toBeEnabled();
   });
   expect(
-    queryAllByRoleFast("button", card).some((button) => {
+    queryAllByRoleFast("button", dialog).some((button) => {
       return button.textContent?.trim() === "Continue";
     }),
   ).toBeFalsy();
@@ -480,10 +591,10 @@ test("Reauthorize revoked scopes after a callback failure instead of retrying wi
   expect(applied).toHaveLength(1);
 
   available = true;
-  click(getButton("Allow all 3 permissions", card));
+  click(getButton("Allow all 3 permissions", dialog));
 
   await expect(
-    within(card).findByText("The conversation has continued."),
+    within(dialog).findByText("The conversation has continued."),
   ).resolves.toBeInTheDocument();
   expect(applied).toHaveLength(2);
   expect(applied[1]).toStrictEqual({
@@ -520,10 +631,11 @@ test("Approve only missing scopes without reapplying or extending active grants"
   });
   await readyChat();
   const card = await screen.findByTestId("permission-batch-action-card");
+  const dialog = await openPermissions(card);
   await waitFor(() => {
-    expect(getButton("Allow all 3 permissions", card)).toBeEnabled();
+    expect(getButton("Allow all 3 permissions", dialog)).toBeEnabled();
   });
-  click(getButton("Allow all 3 permissions", card));
+  click(getButton("Allow all 3 permissions", dialog));
 
   await expect(
     within(card).findByText("Permissions allowed"),
@@ -583,22 +695,23 @@ test("Keep the whole batch unavailable when one connector's delayed authoritativ
   });
   await readyChat();
   const card = await screen.findByTestId("permission-batch-action-card");
+  const dialog = await openPermissions(card);
   await expect(
-    within(card).findByLabelText("Loading permissions"),
+    within(dialog).findByLabelText("Loading permissions"),
   ).resolves.toBeInTheDocument();
-  expect(getButton("Allow all 3 permissions", card)).toBeDisabled();
+  expect(getButton("Allow all 3 permissions", dialog)).toBeDisabled();
 
   metadataResponse.resolve(undefined);
-  await expect(within(card).findByRole("alert")).resolves.toBeInTheDocument();
+  await expect(within(dialog).findByRole("alert")).resolves.toBeInTheDocument();
   expect(
-    within(card).getByText("Allow the following permissions"),
+    within(dialog).getByText("Allow the following permissions"),
   ).toBeInTheDocument();
   expect(
-    queryAllByRoleFast("link", card).find((link) => {
+    queryAllByRoleFast("link", dialog).find((link) => {
       return link.textContent?.trim() === "View permission details";
     }),
   ).toBeInTheDocument();
-  expect(getButton("Allow all 3 permissions", card)).toBeDisabled();
+  expect(getButton("Allow all 3 permissions", dialog)).toBeDisabled();
   expect(applied).toHaveLength(0);
 });
 
@@ -625,12 +738,13 @@ test("Reload from persisted grants with independent callback continuation and no
   });
   await readyChat();
   const firstCard = await screen.findByTestId("permission-batch-action-card");
+  const firstDialog = await openPermissions(firstCard);
   await waitFor(() => {
-    expect(getButton("Allow all 3 permissions", firstCard)).toBeEnabled();
+    expect(getButton("Allow all 3 permissions", firstDialog)).toBeEnabled();
   });
-  click(getButton("Allow all 3 permissions", firstCard));
+  click(getButton("Allow all 3 permissions", firstDialog));
   await expect(
-    within(firstCard).findByText(
+    within(firstDialog).findByText(
       "Permissions allowed, but could not continue. Try continuing again.",
     ),
   ).resolves.toBeInTheDocument();
@@ -652,13 +766,14 @@ test("Reload from persisted grants with independent callback continuation and no
   await expect(
     within(card).findByText("Permissions allowed"),
   ).resolves.toBeInTheDocument();
-  expect(getButton("Continue", card)).toBeEnabled();
+  const dialog = await openPermissions(card, "View permission details");
+  expect(getButton("Continue", dialog)).toBeEnabled();
   expect(prompts).toStrictEqual(["Continue after reload"]);
 
-  click(getButton("Continue", card));
+  click(getButton("Continue", dialog));
 
   await expect(
-    within(card).findByText("The conversation has continued."),
+    within(dialog).findByText("The conversation has continued."),
   ).resolves.toBeInTheDocument();
   expect(prompts).toStrictEqual([
     "Continue after reload",
@@ -740,18 +855,24 @@ test("A batch save does not empty sibling permission cards during a grants reloa
   const batch = await screen.findByTestId("permission-batch-action-card");
   const sibling = await screen.findByTestId("permission-action-card");
   await waitFor(() => {
-    expect(getButton("Allow all 3 permissions", batch)).toBeEnabled();
     expect(getButton("Confirm", sibling)).toBeEnabled();
   });
-  click(getButton("Allow all 3 permissions", batch));
+  const dialog = await openPermissions(batch);
+  await waitFor(() => {
+    expect(getButton("Allow all 3 permissions", dialog)).toBeEnabled();
+  });
+  click(getButton("Allow all 3 permissions", dialog));
   await reloadStarted.promise;
   await expect(
     within(batch).findByText("Permissions allowed"),
   ).resolves.toBeInTheDocument();
+  click(getButton("Close", dialog));
+  await waitFor(() => {
+    expect(getButton("Confirm", sibling)).toBeEnabled();
+  });
   expect(
     within(sibling).getByText(`Allow ${items[2]!.permission}`, { exact: true }),
   ).toBeInTheDocument();
-  expect(getButton("Confirm", sibling)).toBeEnabled();
   reloadResponse.resolve(undefined);
   await expect(
     within(sibling).findByText("Already allowed"),

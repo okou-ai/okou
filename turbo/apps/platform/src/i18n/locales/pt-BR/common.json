@@ -1073,6 +1073,7 @@
       "loadFailed": "Não foi possível verificar todas as permissões solicitadas. Nenhuma permissão pode ser alterada.",
       "loading": "Carregando permissões",
       "notNow": "Agora não",
+      "review": "Revisar permissões",
       "scopeNote": "Aplica-se a este agente, não apenas à tarefa atual.",
       "title": "Conceder as seguintes permissões"
     }
