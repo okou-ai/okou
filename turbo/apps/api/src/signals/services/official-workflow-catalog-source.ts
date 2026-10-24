@@ -197,7 +197,7 @@ function nightlyDefinition(
             type: "string",
             required: true,
             format: "text",
-            default: learning ? "0 2 * * *" : "0 3 * * *",
+            default: learning ? "0 2 * * *" : "0 4 * * *",
           },
         ],
         desiredState: {
