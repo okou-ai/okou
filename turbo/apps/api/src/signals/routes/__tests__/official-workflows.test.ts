@@ -285,7 +285,8 @@ async function executeAutomationCron() {
 
 async function fireOfficialSchedule(
   actor: ApiTestUser,
-  automation: Pick<WorkflowAutomationSummary, "id" | "nextRunAt">,
+  automation: Pick<WorkflowAutomationSummary, "id" | "nextRunAt"> &
+    Partial<Pick<WorkflowAutomationSummary, "chatThreadId">>,
 ) {
   if (!automation.nextRunAt) {
     throw new Error("Expected a scheduled Official Automation");
@@ -297,14 +298,17 @@ async function fireOfficialSchedule(
       await flushWaitUntilForTest();
     },
   );
-  const current = await accept(
-    automationClient().get({
-      headers: authHeaders(actor),
-      params: { id: automation.id },
-    }),
-    [200],
-  );
-  const chatThreadId = current.body.chatThreadId;
+  const chatThreadId =
+    automation.chatThreadId ??
+    (
+      await accept(
+        automationClient().get({
+          headers: authHeaders(actor),
+          params: { id: automation.id },
+        }),
+        [200],
+      )
+    ).body.chatThreadId;
   if (!chatThreadId) {
     throw new Error("Expected the Official Automation thread");
   }
@@ -2018,11 +2022,11 @@ describe("Official Workflow failure recovery", () => {
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
     const { actor } = await prepareBriefMember();
     await initializeBriefMember(actor, "UTC");
-    await bdd.completeOnboarding(actor, { timezone: "UTC" });
     if (!actor.orgId) {
       throw new Error("Expected an organization");
     }
     if (name === "agent-suggestions") {
+      await bdd.completeOnboarding(actor, { timezone: "UTC" });
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId: actor.orgId },
@@ -2035,7 +2039,6 @@ describe("Official Workflow failure recovery", () => {
         [200],
       );
     } else {
-      await connectBriefSource(actor);
       await accept(
         morningBriefPreferenceClient().update({
           headers: authHeaders(actor),
@@ -2045,26 +2048,18 @@ describe("Official Workflow failure recovery", () => {
       );
     }
     const listed = await accept(
-      workflowCollectionClient().list({
+      automationClient().listWorkspace({
         headers: authHeaders(actor),
-        query: {},
       }),
       [200],
     );
-    const installation = listed.body.find((workflow) => {
+    const installation = listed.body.find(({ workflow }) => {
       return workflow.official?.definitionName === name;
     });
     if (!installation) {
       throw new Error("Expected the Official installation");
     }
-    const detail = await accept(
-      workflowClient().get({
-        headers: authHeaders(actor),
-        params: { workflowId: installation.id },
-      }),
-      [200],
-    );
-    let automation = detail.body.automations[0];
+    let automation = installation.automation;
     if (!automation) {
       throw new Error("Expected an Official schedule");
     }
