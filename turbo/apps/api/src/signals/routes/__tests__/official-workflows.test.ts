@@ -2960,6 +2960,84 @@ describe("Morning Brief catalog reconciliation", () => {
     });
   });
 
+  it("keeps the Official identity through a Webhook transition and removes its credentials when returning to a schedule", async () => {
+    await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+      const { actor, installation, initial, first, blueprint, source } =
+        await prepareReconciledSchedule({
+          definitionName: "morning-brief",
+          paused: false,
+          withBindings: false,
+        });
+      await runs.grantProEntitlement(actor, { tier: "team" });
+      const eventBlueprint: OfficialWorkflowBlueprint = {
+        key: "daily-delivery",
+        parameters: [],
+        desiredState: { kind: "event", eventType: "webhook-received" },
+      };
+      expect((await syncCatalog(source([eventBlueprint]))).body.outcome).toBe(
+        "accepted",
+      );
+      await executeAutomationCron();
+      await flushWaitUntilForTest();
+      const [current] = await listMorningBriefAutomations(
+        actor,
+        installation.id,
+      );
+      expect(current).toMatchObject({
+        id: initial.id,
+        kind: "event",
+        eventType: "webhook-received",
+        chatThreadId: first.chatThreadId,
+        enabled: true,
+        official: { intendedEnabled: true, reconciliationStatus: "current" },
+      });
+      const revealed = await accept(
+        automationClient().revealWebhookSecret({
+          headers: authHeaders(actor),
+          params: { id: initial.id },
+          body: undefined,
+        }),
+        [200],
+      );
+      expect(revealed.body.webhookSecret).toBeTruthy();
+      await executeAutomationCron();
+      await flushWaitUntilForTest();
+      const repeated = await accept(
+        automationClient().revealWebhookSecret({
+          headers: authHeaders(actor),
+          params: { id: initial.id },
+          body: undefined,
+        }),
+        [200],
+      );
+      expect(repeated.body).toStrictEqual(revealed.body);
+      expect((await syncCatalog(source([blueprint(false)]))).body.outcome).toBe(
+        "accepted",
+      );
+      await executeAutomationCron();
+      await flushWaitUntilForTest();
+      await expect(
+        listMorningBriefAutomations(actor, installation.id),
+      ).resolves.toMatchObject([
+        {
+          id: initial.id,
+          kind: "schedule",
+          chatThreadId: first.chatThreadId,
+          enabled: true,
+          official: { intendedEnabled: true, reconciliationStatus: "current" },
+        },
+      ]);
+      await accept(
+        automationClient().revealWebhookSecret({
+          headers: authHeaders(actor),
+          params: { id: initial.id },
+          body: undefined,
+        }),
+        [404],
+      );
+    });
+  });
+
   it.each([false, true])(
     "retains identity and pause intent through schedule/event transitions (paused=%s)",
     async (paused) => {
