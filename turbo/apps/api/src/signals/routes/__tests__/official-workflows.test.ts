@@ -1386,13 +1386,23 @@ async function connectBriefSource(actor: ApiTestUser): Promise<void> {
 async function connectBriefSourceForAgent(
   actor: ApiTestUser,
   defaultAgentId: string,
+  options: { readonly reconnect?: boolean } = {},
 ): Promise<void> {
   mockGmailConnectorOAuth();
+  const account = options.reconnect
+    ? {
+        intent: "reconnect" as const,
+        connectionId: (
+          await connectors.readDefaultBuiltinAccount(actor, "gmail")
+        ).id,
+      }
+    : undefined;
   const start = await connectors.startOauth(
     actor,
     "gmail",
     "oauth",
     defaultAgentId,
+    account,
   );
   const state = new URL(start.authorizationUrl).searchParams.get("state");
   if (!state) {
@@ -2853,7 +2863,9 @@ describe("Morning Brief catalog reconciliation", () => {
       if (!reconciled) {
         throw new Error("Expected the reconciled Official schedule");
       }
-      await connectBriefSourceForAgent(actor, installation.agentId);
+      await connectBriefSourceForAgent(actor, installation.agentId, {
+        reconnect: true,
+      });
       mockOptionalEnv(
         "GMAIL_PUBSUB_TOPIC_NAME",
         "projects/official-workflow-test/topics/gmail-events",
