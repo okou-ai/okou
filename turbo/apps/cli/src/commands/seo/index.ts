@@ -1,5 +1,5 @@
+import { printDataRouterTool } from "../data/print-result";
 import { Command, InvalidArgumentError, Option } from "commander";
-import chalk from "chalk";
 import {
   SEO_DEFAULT_ANALYSIS_LIMIT,
   SEO_DEFAULT_LANGUAGE_CODE,
@@ -16,15 +16,7 @@ import {
   seoSerpRequestSchema,
   type SeoDevice,
   type SeoEngine,
-  type SeoResponse,
 } from "@okouai/api-contracts/contracts/seo";
-
-import {
-  callSeoBacklinksSummary,
-  callSeoKeywordIdeas,
-  callSeoRankedKeywords,
-  callSeoSerp,
-} from "../../lib/api/domains/seo";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 
 interface JsonOption {
@@ -103,33 +95,6 @@ function parseLanguage(value: string): string {
   );
 }
 
-function renderResponse(response: SeoResponse, json?: boolean): void {
-  if (json) {
-    console.log(JSON.stringify(response));
-    return;
-  }
-
-  if (response.partialResults) {
-    console.log(
-      chalk.yellow(
-        `⚠ SEO ${response.operation} completed with partial results; some requested pages could not be retrieved.`,
-      ),
-    );
-  } else {
-    console.log(chalk.green(`✓ SEO ${response.operation} completed`));
-  }
-  console.log(JSON.stringify(response.result, null, 2));
-  console.log(chalk.dim(`Provider: ${response.provider}`));
-  console.log(
-    chalk.dim(`Provider cost: $${response.providerCostUsd.toFixed(6)}`),
-  );
-  console.log(
-    chalk.dim(
-      `Credits charged: ${response.creditsCharged === null ? "pending" : response.creditsCharged}`,
-    ),
-  );
-}
-
 function addAnalysisOptions(command: Command): Command {
   return command
     .addOption(
@@ -148,7 +113,7 @@ function addAnalysisOptions(command: Command): Command {
         .default(SEO_DEFAULT_ANALYSIS_LIMIT)
         .argParser(parseLimit(SEO_MAX_ANALYSIS_LIMIT)),
     )
-    .option("--json", "Print the raw Okou SEO response as JSON")
+    .option("--json", "Print compact JSON")
     .addHelpText(
       "after",
       `
@@ -192,7 +157,7 @@ const serpCommand = new Command()
       .default(SEO_DEFAULT_SERP_LIMIT)
       .argParser(parseLimit(SEO_MAX_SERP_LIMIT)),
   )
-  .option("--json", "Print the raw Okou SEO response as JSON")
+  .option("--json", "Print compact JSON")
   .addHelpText(
     "after",
     `
@@ -236,7 +201,7 @@ Notes:
       if (!request.success) {
         throw new InvalidArgumentError(firstIssueMessage(request));
       }
-      renderResponse(await callSeoSerp(request.data), options.json);
+      await printDataRouterTool("seo_serp", request.data, options.json);
     }),
   );
 
@@ -256,7 +221,7 @@ const keywordIdeasCommand = addAnalysisOptions(
     if (!request.success) {
       throw new InvalidArgumentError(firstIssueMessage(request));
     }
-    renderResponse(await callSeoKeywordIdeas(request.data), options.json);
+    await printDataRouterTool("seo_keyword_ideas", request.data, options.json);
   }),
 );
 
@@ -276,7 +241,11 @@ const rankedKeywordsCommand = addAnalysisOptions(
     if (!request.success) {
       throw new InvalidArgumentError(firstIssueMessage(request));
     }
-    renderResponse(await callSeoRankedKeywords(request.data), options.json);
+    await printDataRouterTool(
+      "seo_ranked_keywords",
+      request.data,
+      options.json,
+    );
   }),
 );
 
@@ -285,7 +254,7 @@ const backlinksSummaryCommand = new Command()
   .description("Fetch backlink totals and authority metrics through DataForSEO")
   .argument("<target>", "Domain, subdomain, or absolute page URL")
   .option("--exclude-subdomains", "Exclude backlinks to subdomains")
-  .option("--json", "Print the raw Okou SEO response as JSON")
+  .option("--json", "Print compact JSON")
   .action(
     withErrorHandler(
       async (target: string, options: BacklinksSummaryOptions) => {
@@ -296,8 +265,9 @@ const backlinksSummaryCommand = new Command()
         if (!request.success) {
           throw new InvalidArgumentError(firstIssueMessage(request));
         }
-        renderResponse(
-          await callSeoBacklinksSummary(request.data),
+        await printDataRouterTool(
+          "seo_backlinks_summary",
+          request.data,
           options.json,
         );
       },

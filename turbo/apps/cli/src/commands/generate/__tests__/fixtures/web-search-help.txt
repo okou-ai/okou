@@ -9,7 +9,7 @@ Options:
   --limit <count>     Maximum results (default: 5)
   --recency <period>  Publication recency filter
   --domain <domain>   Allow results from this domain (repeatable) (default: [])
-  --json              Print the raw web-search response as JSON
+  --json              Print compact JSON
   -h, --help          display help for command
 
 Examples:

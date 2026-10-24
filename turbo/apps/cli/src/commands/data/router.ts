@@ -5,7 +5,7 @@ import {
 import { Command, Help, InvalidArgumentError } from "commander";
 import { z } from "zod";
 
-import { callDataRouterTool } from "../../lib/api/data-router-client";
+import { printDataRouterTool } from "./print-result";
 import { isDataRouterToolEnabled } from "../../lib/command/paid-tools";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 
@@ -69,11 +69,7 @@ export function registerRouterCommands(parent: Command): void {
           options: { input: Record<string, unknown>; json?: boolean },
         ) => {
           // Settings filter discovery; an explicit known-tool call is allowed.
-          const result = await callDataRouterTool(name, options.input);
-          console.log(
-            JSON.stringify(result.body, null, options.json ? undefined : 2),
-          );
-          if (result.status >= 400) process.exitCode = 1;
+          await printDataRouterTool(name, options.input, options.json);
         },
       ),
     );

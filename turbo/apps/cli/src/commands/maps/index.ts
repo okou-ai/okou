@@ -1,11 +1,6 @@
-import {
-  mapsSearchRequestSchema,
-  type MapsSearchResponse,
-} from "@okouai/api-contracts/contracts/maps";
+import { printDataRouterTool } from "../data/print-result";
+import { mapsSearchRequestSchema } from "@okouai/api-contracts/contracts/maps";
 import { Command, InvalidArgumentError } from "commander";
-import chalk from "chalk";
-
-import { callMapsSearch } from "../../lib/api/domains/maps";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 
 interface MapsSearchOptions {
@@ -33,34 +28,6 @@ function parseLongitude(value: string): number {
   return longitude;
 }
 
-function renderSources(response: MapsSearchResponse): void {
-  if (response.sources.length === 0) {
-    console.log(chalk.dim("No Google Maps sources were returned."));
-    return;
-  }
-
-  console.log(chalk.bold("Google Maps sources:"));
-  for (const [index, source] of response.sources.entries()) {
-    console.log(`${index + 1}. ${source.title}`);
-    console.log(`   ${source.uri}`);
-  }
-}
-
-function renderMetadata(response: MapsSearchResponse): void {
-  console.log(chalk.dim(`  Provider: ${response.provider}`));
-  console.log(chalk.dim(`  Model: ${response.model}`));
-  console.log(chalk.dim(`  Billing category: ${response.billingCategory}`));
-  console.log(chalk.dim(`  Billing quantity: ${response.billingQuantity}`));
-  console.log(
-    chalk.dim(`  Provider cost: $${response.providerCostUsd.toFixed(6)}`),
-  );
-  console.log(
-    chalk.dim(
-      `  Credits charged: ${response.creditsCharged === null ? "pending" : response.creditsCharged}`,
-    ),
-  );
-}
-
 const searchCommand = new Command()
   .name("search")
   .description("Search places and routes with Google Maps grounding")
@@ -71,7 +38,7 @@ const searchCommand = new Command()
     "--language <code>",
     "Optional Maps result language, such as en or en_US",
   )
-  .option("--json", "Print the raw grounded maps response as JSON")
+  .option("--json", "Print compact JSON")
   .action(
     withErrorHandler(
       async (query: string, options: MapsSearchOptions): Promise<void> => {
@@ -99,17 +66,7 @@ const searchCommand = new Command()
           );
         }
 
-        const response = await callMapsSearch(request.data);
-        if (options.json) {
-          console.log(JSON.stringify(response));
-          return;
-        }
-
-        console.log(chalk.green("✓ Maps search completed"));
-        console.log(response.answer);
-        // Grounded content and its required attribution stay adjacent.
-        renderSources(response);
-        renderMetadata(response);
+        await printDataRouterTool("maps_search", request.data, options.json);
       },
     ),
   );
@@ -131,6 +88,6 @@ Notes:
   - Authenticates via OKOU_TOKEN (requires maps:read capability) or a CLI token
   - Search uses Gemini with Google Maps grounding through Okou's managed Google Cloud identity
   - No location is inferred from server IP or headers; use --lat and --lng only when the user supplied them
-  - Human-readable output keeps the grounded answer and its Google Maps sources together
+  - Output is the unchanged Router JSON, including its answer and Google Maps sources
   - Queries are sent to Google; never include secrets or private internal context`,
   );

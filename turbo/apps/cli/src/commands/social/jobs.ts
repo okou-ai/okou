@@ -1,45 +1,31 @@
+import {
+  printDataRouterTool,
+  printDataRouterSubmission,
+} from "../data/print-result";
+import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { randomUUID } from "node:crypto";
-import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   socialDataCreateRequestSchema,
   socialDataListQuerySchema,
   socialDataPlatformSchema,
   socialDataRequestSchema,
-  type SocialDataJobResponse,
   type SocialDataOperation,
   type SocialDataRequest,
 } from "@okouai/api-contracts/contracts/social-data";
 import type { SocialCommandPlatform } from "./intents";
 import { Command, InvalidArgumentError } from "commander";
-
-import {
-  cancelSocialDataJob,
-  continueSocialDataJob,
-  createSocialDataJob,
-  getSocialDataJob,
-  listSocialDataJobs,
-  quoteSocialData,
-  quoteSocialDataContinuation,
-  SocialDataRecoveryError,
-} from "../../lib/api/domains/social-data";
 import {
   parseJobOnlyTarget,
   parseSocialTarget,
   SOCIAL_JOB_ONLY_PLATFORMS,
 } from "./intents";
-import {
-  addSocialExportOptions,
-  withSocialOutput,
-  type SocialExportOptions,
-} from "./output";
 
-export interface SocialJobOptions extends SocialExportOptions {
+export interface SocialJobOptions {
+  readonly json?: boolean;
   readonly dryRun?: boolean;
   readonly maxCredits?: number;
-  readonly async?: boolean;
   readonly requestId?: string;
-  readonly checkpoint?: string;
   readonly platform?: SocialCommandPlatform;
   readonly limit?: number;
   readonly kind?: string;
@@ -70,80 +56,30 @@ function uuid(value: string): string {
   }
   return parsed.data;
 }
-
-export function addSocialJobOptions(
-  command: Command,
-  continuation = false,
-): void {
+export function addSocialJobOptions(command: Command): void {
   command
-    .option("--dry-run", "Quote this bounded data operation without billing")
+    .option("--dry-run", "Quote without submitting")
     .option(
       "--max-credits <credits>",
-      "Maximum quote accepted before submitting a saved data job",
+      "Maximum quote accepted before submission",
       positiveInteger,
     )
-    .option("--async", "Start a saved data job and return its ID immediately")
     .option(
       "--request-id <uuid>",
-      "Set the client request label; repeated submissions can charge again",
+      "Client request label; not a replay guarantee",
       uuid,
     )
     .addHelpText(
       "after",
-      `
-Saved data jobs:
-  ${
-    continuation
-      ? "--dry-run quotes for free; creating a successor requires its own --max-credits."
-      : "--dry-run, --max-credits, --async, or --request-id select the saved data job API. Without these controls, existing Social command behavior is unchanged."
-  }
-  Job capabilities differ by platform; unsupported operations and inputs fail before execution.
-  ${
-    continuation
-      ? "The original total --limit (maximum 1000) cannot be overridden. Exports contain this page only; collection metadata reports cumulative progress."
-      : "--limit bounds the total results (maximum 1000); quotes estimate the credit cost."
-  }
-  --dry-run is free. When supplied, --max-credits rejects a higher quote before submission.
-  The quote is an estimate; Router records final credits from actual usage and current prices.
-  --stream and --checkpoint are unavailable for saved jobs. --dry-run and --async do not accept export options.
-  Synchronous saved jobs support the command's existing export formats.
-  --request-id is a client label, not a replay guarantee. If submission is uncertain, inspect okou data social jobs list --json before another paid command.
-  Read a saved job with okou data social jobs get <job-id> --wait --json; reading does not start another collection.
-  Interrupting the CLI leaves server work running. Cancel explicitly with okou data social jobs cancel <job-id>.`,
+      "\nSaved jobs return the Router receipt unchanged. Read results with okou data social jobs get <job-id>. Quotes are estimates; Router owns final pricing. Do not repeat an uncertain paid submission.",
     );
 }
-
 export function usesSocialJobs(options: SocialJobOptions): boolean {
   return (
     options.dryRun === true ||
     options.maxCredits !== undefined ||
-    options.async === true ||
     options.requestId !== undefined
   );
-}
-
-function validateOptions(options: SocialJobOptions): void {
-  if (options.stream || options.checkpoint !== undefined) {
-    throw new InvalidArgumentError(
-      "Saved data jobs do not support --stream or --checkpoint; use okou data social jobs get to recover saved results",
-    );
-  }
-  if (options.dryRun && (options.async || options.requestId !== undefined)) {
-    throw new InvalidArgumentError(
-      "--dry-run cannot be combined with --async or --request-id",
-    );
-  }
-  if (
-    (options.dryRun || options.async) &&
-    (options.output !== undefined ||
-      options.select !== undefined ||
-      options.format !== undefined ||
-      options.overwrite)
-  ) {
-    throw new InvalidArgumentError(
-      "--dry-run and --async do not support --output, --select, --format, or --overwrite",
-    );
-  }
 }
 
 function dataRequest(
@@ -193,305 +129,101 @@ function dataRequest(
   }
   return parsed.data;
 }
-
-function printJson(value: unknown, compact: boolean): void {
-  console.log(JSON.stringify(value, null, compact ? 0 : 2));
-}
-
-function recoveryCommand(jobId: string): string {
-  return `okou data social jobs get ${jobId} --wait --json`;
-}
-
-function terminal(job: SocialDataJobResponse): boolean {
-  return (
-    job.status !== "pending" &&
-    job.status !== "running" &&
-    (job.status !== "completed" || job.billing.state === "settled")
-  );
-}
-
-async function waitForJob(
-  initial: SocialDataJobResponse,
-  signal: AbortSignal,
-): Promise<SocialDataJobResponse> {
-  let job = initial;
-  for (let attempt = 0; attempt < 900; attempt += 1) {
-    signal.throwIfAborted();
-    if (terminal(job)) return job;
-    await sleep(2_000, undefined, { signal });
-    try {
-      job = await getSocialDataJob(job.jobId, signal);
-    } catch (error) {
-      signal.throwIfAborted();
-      throw new SocialDataRecoveryError(
-        `The job status could not be read. Recover the saved job with: ${recoveryCommand(job.jobId)}`,
-        { jobId: job.jobId, command: recoveryCommand(job.jobId) },
-        { cause: error },
-      );
-    }
-  }
-  throw new SocialDataRecoveryError(
-    `The job is still running. Read it with: ${recoveryCommand(job.jobId)}`,
-    { jobId: job.jobId, command: recoveryCommand(job.jobId) },
-  );
-}
-
-async function withJobInterruption(
-  job: SocialDataJobResponse,
-  compact: boolean,
-  action: (signal: AbortSignal) => Promise<void>,
-): Promise<void> {
-  const controller = new AbortController();
-  let interrupted = false;
-  const interrupt = (signal: "SIGINT" | "SIGTERM") => {
-    interrupted = true;
-    process.exitCode = signal === "SIGINT" ? 130 : 143;
-    console.error(
-      compact
-        ? JSON.stringify({
-            status: "interrupted",
-            jobId: job.jobId,
-            recoveryCommand: recoveryCommand(job.jobId),
-            message: "The saved job continues on the server",
-          })
-        : `The saved job continues on the server. Read it with: ${recoveryCommand(job.jobId)}`,
-    );
-    controller.abort();
-  };
-  const onSigint = () => {
-    return interrupt("SIGINT");
-  };
-  const onSigterm = () => {
-    return interrupt("SIGTERM");
-  };
-  process.once("SIGINT", onSigint);
-  process.once("SIGTERM", onSigterm);
-  try {
-    await action(controller.signal);
-  } catch (error) {
-    if (!interrupted) throw error;
-  } finally {
-    process.removeListener("SIGINT", onSigint);
-    process.removeListener("SIGTERM", onSigterm);
-  }
-}
-
 export async function printSocialJob(
   operation: SocialDataOperation,
   input: string,
   options: SocialJobOptions,
 ): Promise<void> {
-  validateOptions(options);
   const request = dataRequest(operation, input, options);
-  const compact = options.json === true;
   if (options.dryRun) {
-    const quote = await quoteSocialData(request);
-    printJson(
-      {
-        kind: "quote",
-        ...quote,
-        ...(options.maxCredits === undefined
-          ? {}
-          : {
-              budget: {
-                maxCredits: options.maxCredits,
-                fits: quote.maxCredits <= options.maxCredits,
-              },
-            }),
-      },
-      compact,
-    );
+    await printDataRouterTool("social_data_quote", request, options.json);
     return;
   }
-  const createRequest = socialDataCreateRequestSchema.parse({
+  const body = socialDataCreateRequestSchema.parse({
     ...request,
     requestId: options.requestId ?? randomUUID(),
     maxCredits: options.maxCredits,
   });
-  const mode =
-    operation === "transcript"
-      ? "transcript"
-      : operation === "inspect"
-        ? "single"
-        : "collection";
-  await withSocialOutput(options, mode, async (write) => {
-    console.error(
-      compact
-        ? JSON.stringify({
-            kind: "submission",
-            requestId: createRequest.requestId,
-          })
-        : `Social job request ID: ${createRequest.requestId}`,
-    );
-    const created = await createSocialDataJob(createRequest);
-    if (options.async) {
-      printJson(
-        { ...created, recoveryCommand: recoveryCommand(created.jobId) },
-        compact,
-      );
-      return;
-    }
-    await withJobInterruption(created, compact, async (signal) => {
-      const result = await waitForJob(created, signal);
-      if (result.status !== "completed") process.exitCode = 1;
-      if (result.data === null) {
-        printJson(result, compact);
-      } else {
-        await write({ kind: "result", ...result });
-      }
-    });
-  });
+  await printDataRouterSubmission(
+    "social_data_create",
+    body,
+    options.json === true,
+    options.maxCredits === undefined
+      ? undefined
+      : {
+          name: "social_data_quote",
+          input: request,
+          maxCredits: options.maxCredits,
+        },
+  );
 }
-
-type RunAction = (
-  machineReadable: boolean,
-  action: () => Promise<void>,
-) => Promise<void>;
-
-export function createSocialJobsCommand(runAction: RunAction): Command {
-  const list = new Command("list")
-    .description(
-      "List saved data jobs without starting or billing another operation",
-    )
-    .option(
-      "--limit <count>",
-      "Maximum saved jobs (1-100)",
-      positiveInteger,
-      20,
-    )
-    .option("--cursor <uuid>", "Continue after the last job ID", uuid)
+export function createSocialJobsCommand(): Command {
+  const jobs = new Command("jobs").description(
+    "Read and manage saved Social jobs",
+  );
+  jobs
+    .command("list")
+    .option("--limit <count>", "Maximum jobs", positiveInteger, 20)
+    .option("--cursor <uuid>", "Page cursor", uuid)
     .option("--json", "Print compact JSON")
     .action(
-      async (options: { limit: number; cursor?: string; json?: boolean }) => {
-        await runAction(options.json === true, async () => {
-          const query = socialDataListQuerySchema.safeParse({
-            limit: options.limit,
-            cursor: options.cursor,
-          });
-          if (!query.success) {
-            throw new InvalidArgumentError("--limit must be between 1 and 100");
-          }
-          printJson(
-            await listSocialDataJobs(query.data),
-            options.json === true,
-          );
-        });
-      },
+      withErrorHandler(async (options) => {
+        await printDataRouterTool(
+          "social_data_list",
+          socialDataListQuerySchema.parse(options),
+          options.json,
+        );
+      }),
     );
-  const get = new Command("get")
-    .description("Read saved results; waiting never starts another operation")
-    .argument("<job-id>", "Saved Social job UUID", uuid)
-    .option("--wait", "Wait for the saved job to finish")
-    .option("--json", "Print compact JSON")
-    .action(
-      async (jobId: string, options: { wait?: boolean; json?: boolean }) => {
-        await runAction(options.json === true, async () => {
-          const job = await getSocialDataJob(
-            jobId,
-            new AbortController().signal,
+  for (const operation of ["get", "cancel"]) {
+    jobs
+      .command(operation)
+      .argument("<job-id>", "Saved job UUID", uuid)
+      .option("--json", "Print compact JSON")
+      .action(
+        withErrorHandler(async (jobId: string, options: { json?: boolean }) => {
+          await printDataRouterTool(
+            `social_data_${operation}`,
+            { jobId },
+            options.json,
           );
-          if (!options.wait) {
-            printJson(job, options.json === true);
-            return;
-          }
-          await withJobInterruption(
-            job,
-            options.json === true,
-            async (signal) => {
-              const result = await waitForJob(job, signal);
-              if (result.status !== "completed") process.exitCode = 1;
-              printJson(result, options.json === true);
-            },
-          );
-        });
-      },
-    );
-  const continuation = new Command("continue")
-    .description(
-      "Continue one saved collection page with an independent budget and request ID",
-    )
-    .argument("<job-id>", "Saved Social job UUID", uuid)
-    .option("--json", "Print compact JSON")
-    .addHelpText(
-      "after",
-      "\nThe target, filters, and original total limit are immutable. Quote first with --dry-run. Creating a successor is a separately billed operation, not reading the original job. Creation requires an independent --max-credits. Exports contain this successor page only, not an aggregate of earlier jobs; collection metadata reports cumulative progress. No automatic continuation, recursion, or retry. If submission is uncertain, inspect saved jobs; repeating a continuation can create another paid job.",
-    )
-    .action(async (jobId: string, options: SocialJobOptions) => {
-      await runAction(options.json === true, async () => {
-        validateOptions(options);
-        if (!options.dryRun && options.maxCredits === undefined) {
-          throw new InvalidArgumentError(
-            "Continuation creation requires an independent --max-credits; use --dry-run for a free quote",
-          );
-        }
-        const compact = options.json === true;
-        if (options.dryRun) {
-          const quote = await quoteSocialDataContinuation(jobId);
-          printJson(
-            {
-              kind: "quote",
-              ...quote,
-              ...(options.maxCredits === undefined
-                ? {}
-                : {
-                    budget: {
-                      maxCredits: options.maxCredits,
-                      fits: quote.maxCredits <= options.maxCredits,
-                    },
-                  }),
-            },
-            compact,
-          );
-          return;
-        }
-        const body = {
+        }),
+      );
+  }
+  const continuation = jobs
+    .command("continue")
+    .argument("<job-id>", "Saved job UUID", uuid)
+    .option("--json", "Print compact JSON");
+  addSocialJobOptions(continuation);
+  continuation.action(
+    withErrorHandler(async (jobId: string, options: SocialJobOptions) => {
+      if (options.dryRun) {
+        await printDataRouterTool(
+          "social_data_quote_continuation",
+          { jobId },
+          options.json,
+        );
+        return;
+      }
+      if (options.maxCredits === undefined)
+        throw new InvalidArgumentError(
+          "Continuation requires --max-credits; use --dry-run for a quote",
+        );
+      await printDataRouterSubmission(
+        "social_data_continue",
+        {
+          jobId,
           requestId: options.requestId ?? randomUUID(),
-          ...(options.maxCredits === undefined
-            ? {}
-            : { maxCredits: options.maxCredits }),
-        };
-        await withSocialOutput(options, "collection", async (write) => {
-          console.error(
-            compact
-              ? JSON.stringify({
-                  kind: "submission",
-                  requestId: body.requestId,
-                })
-              : `Social continuation request ID: ${body.requestId}`,
-          );
-          const created = await continueSocialDataJob(jobId, body);
-          if (options.async) {
-            printJson(
-              { ...created, recoveryCommand: recoveryCommand(created.jobId) },
-              compact,
-            );
-            return;
-          }
-          await withJobInterruption(created, compact, async (signal) => {
-            const result = await waitForJob(created, signal);
-            if (result.status !== "completed") process.exitCode = 1;
-            if (result.data === null) printJson(result, compact);
-            else await write({ kind: "result", ...result });
-          });
-        });
-      });
-    });
-  addSocialJobOptions(continuation, true);
-  addSocialExportOptions(continuation, "collection");
-
-  const cancel = new Command("cancel")
-    .description("Stop a saved data job and retain delivered results")
-    .argument("<job-id>", "Saved Social job UUID", uuid)
-    .option("--json", "Print compact JSON")
-    .action(async (jobId: string, options: { json?: boolean }) => {
-      await runAction(options.json === true, async () => {
-        printJson(await cancelSocialDataJob(jobId), options.json === true);
-      });
-    });
-  return new Command("jobs")
-    .description("Find, recover, and cancel saved Social data jobs")
-    .addCommand(list)
-    .addCommand(get)
-    .addCommand(continuation)
-    .addCommand(cancel);
+          maxCredits: options.maxCredits,
+        },
+        options.json === true,
+        {
+          name: "social_data_quote_continuation",
+          input: { jobId },
+          maxCredits: options.maxCredits,
+        },
+      );
+    }),
+  );
+  return jobs;
 }

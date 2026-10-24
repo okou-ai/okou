@@ -13,20 +13,16 @@ export const socialPlatformSchema = z.enum([
 
 export type SocialPlatform = z.infer<typeof socialPlatformSchema>;
 
-const socialOperationSchema = z.enum([
-  "comments",
-  "download",
-  "inspect",
-  "posts",
-  "search",
-  "summarize",
-  "transcript",
-]);
-
-export type SocialOperation = z.infer<typeof socialOperationSchema>;
+export type SocialOperation =
+  | "comments"
+  | "download"
+  | "inspect"
+  | "posts"
+  | "search"
+  | "summarize"
+  | "transcript";
 
 export const SOCIAL_DEFAULT_COLLECTION_LIMIT = 10;
-export const SOCIAL_MAX_COLLECTION_PAGES = 100;
 export const SOCIAL_INSTAGRAM_POST_KINDS = ["posts", "reels"] as const;
 
 interface SocialOperationBinding {
@@ -150,41 +146,3 @@ export function socialOperationBindings(platform?: SocialPlatform) {
     });
   });
 }
-
-const socialHealthSchema = z.enum([
-  "healthy",
-  "degraded",
-  "unavailable",
-  "unknown",
-]);
-
-const socialStatusReasonSchema = z.enum([
-  "status_unavailable",
-  "network_error",
-  "invalid_response",
-  "missing_entry",
-  "duplicate_entry",
-  "stale",
-  "invalid_timestamp",
-]);
-
-const socialHealthObservationSchema = z.object({
-  status: socialHealthSchema,
-  updatedAt: z.iso.datetime({ offset: true }).nullable(),
-  reason: socialStatusReasonSchema.nullable(),
-});
-
-export const socialStatusResponseSchema = z.object({
-  observedAt: z.iso.datetime(),
-  staleAfterSeconds: z.number().int().positive(),
-  overall: socialHealthObservationSchema,
-  operations: z.array(
-    socialHealthObservationSchema.extend({
-      platform: socialPlatformSchema,
-      operation: socialOperationSchema,
-      variant: z.string(),
-    }),
-  ),
-});
-
-export type SocialStatusResponse = z.infer<typeof socialStatusResponseSchema>;

@@ -1,11 +1,6 @@
 import { z } from "zod";
 
 export const MAPS_SEARCH_MAX_QUERY_CHARS = 4_096;
-export const MAPS_SEARCH_MAX_ANSWER_CHARS = 32_768;
-export const MAPS_SEARCH_MAX_SOURCES = 64;
-export const MAPS_SEARCH_MAX_SOURCE_TITLE_CHARS = 512;
-export const MAPS_SEARCH_MAX_SOURCE_URL_CHARS = 2_048;
-export const MAPS_SEARCH_MAX_CITATIONS = 128;
 
 export const mapsSearchLocationSchema = z.object({
   latitude: z.number().finite().min(-90).max(90),
@@ -29,47 +24,4 @@ export const mapsSearchRequestSchema = z.object({
   languageCode: mapsSearchLanguageCodeSchema.optional(),
 });
 
-const mapsSearchSourceUrlSchema = z
-  .string()
-  .max(MAPS_SEARCH_MAX_SOURCE_URL_CHARS)
-  .url()
-  .regex(/^https:\/\//u, "Google Maps source URL must use https");
-
-export const mapsSearchSourceSchema = z.object({
-  title: z.string().min(1).max(MAPS_SEARCH_MAX_SOURCE_TITLE_CHARS),
-  uri: mapsSearchSourceUrlSchema,
-});
-
-export const mapsSearchCitationSchema = z.object({
-  startByte: z.number().int().nonnegative(),
-  endByte: z.number().int().nonnegative(),
-  text: z.string().min(1).max(MAPS_SEARCH_MAX_ANSWER_CHARS),
-  sourceIndices: z.array(z.number().int().nonnegative()).min(1).max(64),
-});
-
-export const mapsSearchUsageSchema = z.object({
-  inputTokens: z.number().int().nonnegative(),
-  outputTokens: z.number().int().nonnegative(),
-  cachedInputTokens: z.number().int().nonnegative().safe().optional(),
-  mapsQueries: z.number().int().nonnegative().safe().optional(),
-});
-
-export const mapsSearchResponseSchema = z.object({
-  query: z.string().max(MAPS_SEARCH_MAX_QUERY_CHARS),
-  location: mapsSearchLocationSchema.optional(),
-  languageCode: mapsSearchLanguageCodeSchema.optional(),
-  provider: z.literal("google-maps-grounding"),
-  model: z.string().min(1),
-  billingCategory: z.literal("provider_cost_usd_micros"),
-  billingQuantity: z.number().int().nonnegative(),
-  providerCostUsd: z.number().finite().nonnegative(),
-  creditsCharged: z.number().int().nonnegative().nullable(),
-  answer: z.string().min(1).max(MAPS_SEARCH_MAX_ANSWER_CHARS),
-  sources: z.array(mapsSearchSourceSchema).max(MAPS_SEARCH_MAX_SOURCES),
-  citations: z.array(mapsSearchCitationSchema).max(MAPS_SEARCH_MAX_CITATIONS),
-  attribution: z.literal("Google Maps").optional(),
-  usage: mapsSearchUsageSchema,
-});
-
 export type MapsSearchRequest = z.infer<typeof mapsSearchRequestSchema>;
-export type MapsSearchResponse = z.infer<typeof mapsSearchResponseSchema>;

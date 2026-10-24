@@ -1,5 +1,5 @@
+import { printDataRouterTool } from "../data/print-result";
 import { Command, InvalidArgumentError, Option } from "commander";
-import chalk from "chalk";
 import {
   WEB_SEARCH_DEFAULT_LIMIT,
   WEB_SEARCH_MAX_DOMAINS,
@@ -7,11 +7,8 @@ import {
   webSearchDomainSchema,
   webSearchRecencySchema,
   webSearchRequestSchema,
-  type WebSearchResponse,
   type WebSearchRecency,
 } from "@okouai/api-contracts/contracts/web-search";
-
-import { callWebSearch } from "../../lib/api/domains/web-search";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { isPaidToolEnabled } from "../../lib/command/paid-tools";
 
@@ -67,46 +64,6 @@ function collectDomain(
   return [...previous, result.data];
 }
 
-function renderMetadata(response: WebSearchResponse): void {
-  console.log(chalk.dim(`  Provider: ${response.provider}`));
-  console.log(chalk.dim(`  Billing category: ${response.billingCategory}`));
-  console.log(chalk.dim(`  Billing quantity: ${response.billingQuantity}`));
-  console.log(
-    chalk.dim(
-      `  Credits charged: ${response.creditsCharged === null ? "pending" : response.creditsCharged}`,
-    ),
-  );
-}
-
-function renderResult(result: WebSearchResponse["results"][number]): void {
-  console.log(`${result.rank}. ${result.title || "(untitled)"}`);
-  console.log(`   ${result.url}`);
-  if (result.snippet) {
-    console.log(`   ${result.snippet}`);
-  }
-  if (result.publishedDate) {
-    console.log(chalk.dim(`   Published: ${result.publishedDate}`));
-  }
-  if (result.lastUpdatedDate) {
-    console.log(chalk.dim(`   Updated: ${result.lastUpdatedDate}`));
-  }
-}
-
-function renderResults(response: WebSearchResponse): void {
-  if (response.results.length === 0) {
-    console.log(
-      chalk.dim(
-        "No web results found. Try a broader query or remove recency/domain filters.",
-      ),
-    );
-    return;
-  }
-
-  for (const result of response.results) {
-    renderResult(result);
-  }
-}
-
 export const webSearchCommand = new Command()
   .name("search")
   .description("Search the public web through managed Okou web search")
@@ -129,7 +86,7 @@ export const webSearchCommand = new Command()
       .default([] as string[])
       .argParser(collectDomain),
   )
-  .option("--json", "Print the raw web-search response as JSON")
+  .option("--json", "Print compact JSON")
   .action(
     withErrorHandler(async (query: string, options: WebSearchOptions) => {
       const request = webSearchRequestSchema.safeParse({
@@ -144,15 +101,7 @@ export const webSearchCommand = new Command()
         );
       }
 
-      const response = await callWebSearch(request.data);
-      if (options.json) {
-        console.log(JSON.stringify(response));
-        return;
-      }
-
-      console.log(chalk.green("✓ Web search completed"));
-      renderMetadata(response);
-      renderResults(response);
+      await printDataRouterTool("web_search", request.data, options.json);
     }),
   )
   .addHelpText("after", () => {

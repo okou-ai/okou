@@ -257,45 +257,6 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     expect(requests).toEqual([]);
   });
 
-  it.each(["discover", "capabilities"])(
-    "filters disabled families from data %s without hiding independent enrichment",
-    async (operation) => {
-      vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["finance","people-search"]');
-      const capabilities = [
-        "finance.company-profile",
-        "people.search",
-        "people.enrich",
-        "company.search",
-      ].map((id) => {
-        return {
-          id,
-          description: id,
-          inputSchema: {},
-          limits: { default: 1, max: 10 },
-          status: "available",
-        };
-      });
-      server.use(
-        dataRouterTool("data_capabilities", () => {
-          return HttpResponse.json({ capabilities });
-        }),
-      );
-      await run(["data", operation, "--json"]);
-      expect(JSON.parse(output)).toEqual({
-        capabilities: capabilities.slice(2),
-      });
-      output = "";
-      await expect(run(["data", "people", "--help"])).rejects.toMatchObject({
-        code: "commander.helpDisplayed",
-      });
-      expect(output).toContain("enrich");
-      expect(output).toContain("enrich business profiles");
-      expect(output).not.toContain("Research professionals");
-      expect(output).not.toContain("okou data people search");
-      expect(requests).toEqual([]);
-    },
-  );
-
   it("exposes only connector image options and preserves other generation commands", async () => {
     vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["image-generation"]');
     for (const args of [

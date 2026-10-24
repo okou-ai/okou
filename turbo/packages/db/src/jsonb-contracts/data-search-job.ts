@@ -1,12 +1,17 @@
 import type {
   DataSearchCreateRequest,
   DataSearchRequest,
-  DataSearchJobResponse,
 } from "@okouai/api-contracts/contracts/data-search";
 
 export type DataSearchJobRequest = DataSearchCreateRequest;
-export type DataSearchJobResult = NonNullable<DataSearchJobResponse["data"]>;
-export type DataSearchJobError = NonNullable<DataSearchJobResponse["error"]>;
+/** Historical persisted results; the Router owns new execution results. */
+export interface DataSearchJobResult {
+  readonly items: DataSearchRequest["input"][string][];
+}
+export interface DataSearchJobError {
+  readonly code: string;
+  readonly message: string;
+}
 /** Audited immutable routing snapshot, not a public provider passthrough. */
 export interface DataSearchJobPlan {
   readonly capability: string;

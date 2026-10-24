@@ -1,5 +1,5 @@
+import { printDataRouterTool } from "../data/print-result";
 import { Command, InvalidArgumentError, Option } from "commander";
-import chalk from "chalk";
 import {
   FINANCE_DEFAULT_INTERVAL,
   FINANCE_DEFAULT_RANGE,
@@ -9,17 +9,9 @@ import {
   financeQuoteRequestSchema,
   financeRangeSchema,
   financeSearchRequestSchema,
-  type FinanceResponse,
   type FinanceInterval,
   type FinanceRange,
 } from "@okouai/api-contracts/contracts/finance";
-
-import {
-  callFinanceChart,
-  callFinanceProfile,
-  callFinanceQuote,
-  callFinanceSearch,
-} from "../../lib/api/domains/finance";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 
 interface JsonOption {
@@ -63,35 +55,19 @@ function parseInterval(value: string): FinanceInterval {
   );
 }
 
-function renderResponse(response: FinanceResponse, json?: boolean): void {
-  if (json) {
-    console.log(JSON.stringify(response));
-    return;
-  }
-
-  console.log(chalk.green(`✓ Finance ${response.operation} completed`));
-  console.log(JSON.stringify(response.result, null, 2));
-  console.log(chalk.dim(`Provider: ${response.provider}`));
-  console.log(
-    chalk.dim(
-      `Credits charged: ${response.creditsCharged === null ? "pending" : response.creditsCharged}`,
-    ),
-  );
-}
-
 export function createFinanceCommand(): Command {
   const searchCommand = new Command()
     .name("search")
     .description("Search for a financial instrument")
     .argument("<query>", "Company name, symbol, or instrument")
-    .option("--json", "Print the raw Okou Finance response as JSON")
+    .option("--json", "Print compact JSON")
     .action(
       withErrorHandler(async (query: string, options: JsonOption) => {
         const request = financeSearchRequestSchema.safeParse({ query });
         if (!request.success) {
           throw new InvalidArgumentError(firstIssueMessage(request));
         }
-        renderResponse(await callFinanceSearch(request.data), options.json);
+        await printDataRouterTool("finance_search", request.data, options.json);
       }),
     );
 
@@ -99,14 +75,18 @@ export function createFinanceCommand(): Command {
     .name("profile")
     .description("Fetch a company profile")
     .argument("<symbol>", "Yahoo Finance symbol, such as AAPL or 0700.HK")
-    .option("--json", "Print the raw Okou Finance response as JSON")
+    .option("--json", "Print compact JSON")
     .action(
       withErrorHandler(async (symbol: string, options: JsonOption) => {
         const request = financeProfileRequestSchema.safeParse({ symbol });
         if (!request.success) {
           throw new InvalidArgumentError(firstIssueMessage(request));
         }
-        renderResponse(await callFinanceProfile(request.data), options.json);
+        await printDataRouterTool(
+          "finance_profile",
+          request.data,
+          options.json,
+        );
       }),
     );
 
@@ -114,14 +94,14 @@ export function createFinanceCommand(): Command {
     .name("quote")
     .description("Fetch the latest available market quote")
     .argument("<symbol>", "Yahoo Finance symbol, such as AAPL or 0700.HK")
-    .option("--json", "Print the raw Okou Finance response as JSON")
+    .option("--json", "Print compact JSON")
     .action(
       withErrorHandler(async (symbol: string, options: JsonOption) => {
         const request = financeQuoteRequestSchema.safeParse({ symbol });
         if (!request.success) {
           throw new InvalidArgumentError(firstIssueMessage(request));
         }
-        renderResponse(await callFinanceQuote(request.data), options.json);
+        await printDataRouterTool("finance_quote", request.data, options.json);
       }),
     );
 
@@ -139,7 +119,7 @@ export function createFinanceCommand(): Command {
         .default(FINANCE_DEFAULT_INTERVAL)
         .argParser(parseInterval),
     )
-    .option("--json", "Print the raw Okou Finance response as JSON")
+    .option("--json", "Print compact JSON")
     .action(
       withErrorHandler(async (symbol: string, options: ChartOptions) => {
         const request = financeChartRequestSchema.safeParse({
@@ -150,7 +130,7 @@ export function createFinanceCommand(): Command {
         if (!request.success) {
           throw new InvalidArgumentError(firstIssueMessage(request));
         }
-        renderResponse(await callFinanceChart(request.data), options.json);
+        await printDataRouterTool("finance_chart", request.data, options.json);
       }),
     );
 
@@ -177,5 +157,3 @@ Notes:
     );
   return financeCommand;
 }
-
-export const financeCommand = createFinanceCommand();

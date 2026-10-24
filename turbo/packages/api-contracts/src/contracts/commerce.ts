@@ -1,19 +1,5 @@
 import { z } from "zod";
 
-/** Explicit Amazon marketplace, country and locale pairs; never provider URLs. */
-export const AMAZON_MARKETPLACES = {
-  "amazon.com": { country: "US", locationCode: 2840, languageCode: "en_US" },
-  "amazon.co.uk": { country: "GB", locationCode: 2826, languageCode: "en_GB" },
-  "amazon.de": { country: "DE", locationCode: 2276, languageCode: "de_DE" },
-  "amazon.fr": { country: "FR", locationCode: 2250, languageCode: "fr_FR" },
-  "amazon.it": { country: "IT", locationCode: 2380, languageCode: "it_IT" },
-  "amazon.es": { country: "ES", locationCode: 2724, languageCode: "es_ES" },
-  // DataForSEO lists en_US, not en_CA; location and domain remain Canadian.
-  "amazon.ca": { country: "CA", locationCode: 2124, languageCode: "en_US" },
-  "amazon.co.jp": { country: "JP", locationCode: 2392, languageCode: "ja_JP" },
-  "amazon.in": { country: "IN", locationCode: 2356, languageCode: "en_IN" },
-} as const;
-
 export const amazonMarketplaceSchema = z.enum([
   "amazon.com",
   "amazon.co.uk",
@@ -25,9 +11,9 @@ export const amazonMarketplaceSchema = z.enum([
   "amazon.co.jp",
   "amazon.in",
 ]);
+
 export type AmazonMarketplace = z.infer<typeof amazonMarketplaceSchema>;
 
-/** Parse only recognized HTTPS product paths; URLs are never fetched directly. */
 export function parseAmazonProductTarget(target: string): {
   asin: string;
   marketplace?: AmazonMarketplace;
@@ -108,33 +94,8 @@ export const commerceInspectRequestSchema = z
     }
   });
 
-export const commerceResponseSchema = z.object({
-  operation: z.enum(["search", "inspect"]),
-  provider: z.literal("dataforseo"),
-  marketplace: amazonMarketplaceSchema,
-  billingCategory: z.literal("provider_cost_usd_micros"),
-  billingQuantity: z.number().int().nonnegative(),
-  providerCostUsd: z.number().nonnegative(),
-  creditsCharged: z.number().int().nonnegative().nullable(),
-  result: z.object({
-    items: z.array(z.unknown()).max(48),
-    source: z.unknown(),
-  }),
-});
-
-export const commerceJobSchema = z.object({
-  id: z.uuid(),
-  status: z.enum(["pending", "running", "completed", "failed"]),
-  operation: z.enum(["search", "inspect"]),
-  provider: z.literal("dataforseo"),
-  marketplace: amazonMarketplaceSchema,
-  result: commerceResponseSchema.nullable(),
-  error: z.object({ code: z.string(), message: z.string() }).nullable(),
-});
-export type CommerceJob = z.infer<typeof commerceJobSchema>;
-
 export type CommerceSearchRequest = z.infer<typeof commerceSearchRequestSchema>;
+
 export type CommerceInspectRequest = z.infer<
   typeof commerceInspectRequestSchema
 >;
-export type CommerceResponse = z.infer<typeof commerceResponseSchema>;

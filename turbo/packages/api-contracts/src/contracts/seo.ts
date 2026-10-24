@@ -1,14 +1,23 @@
 import { z } from "zod";
 
 export const SEO_DEFAULT_LOCATION = "United States" as const;
+
 export const SEO_DEFAULT_LANGUAGE_CODE = "en" as const;
+
 export const SEO_DEFAULT_SERP_LIMIT = 10;
+
 export const SEO_DEFAULT_ANALYSIS_LIMIT = 100;
+
 export const SEO_MAX_SERP_LIMIT = 100;
+
 export const SEO_MAX_ANALYSIS_LIMIT = 100;
+
 export const SEO_MAX_QUERY_CHARS = 512;
+
 export const SEO_MAX_KEYWORD_CHARS = 512;
+
 export const SEO_MAX_TARGET_CHARS = 2048;
+
 export const SEO_MAX_LOCATION_CHARS = 256;
 
 export const seoEngineSchema = z.enum([
@@ -98,38 +107,20 @@ export const seoBacklinksSummaryRequestSchema = z.object({
   includeSubdomains: z.boolean().default(true),
 });
 
-export const seoOperationSchema = z.enum([
-  "serp",
-  "keyword-ideas",
-  "ranked-keywords",
-  "backlinks-summary",
-]);
-
-const seoResponseBaseSchema = z.object({
-  operation: seoOperationSchema,
-  creditsCharged: z.number().int().nonnegative().nullable(),
-  result: z.unknown(),
-  // Present only for usable SERP 40106 results; raw provider metadata is retained.
-  partialResults: z.literal(true).optional(),
-});
-
-export const seoResponseSchema = seoResponseBaseSchema.extend({
-  provider: z.literal("dataforseo"),
-  billingCategory: z.literal("provider_cost_usd_micros"),
-  billingQuantity: z.number().int().nonnegative(),
-  providerCostUsd: z.number().nonnegative(),
-});
-
 export type SeoEngine = z.infer<typeof seoEngineSchema>;
+
 export type SeoDevice = z.infer<typeof seoDeviceSchema>;
+
 export type SeoSerpRequest = z.infer<typeof seoSerpRequestSchema>;
+
 export type SeoKeywordIdeasRequest = z.infer<
   typeof seoKeywordIdeasRequestSchema
 >;
+
 export type SeoRankedKeywordsRequest = z.infer<
   typeof seoRankedKeywordsRequestSchema
 >;
+
 export type SeoBacklinksSummaryRequest = z.infer<
   typeof seoBacklinksSummaryRequestSchema
 >;
-export type SeoResponse = z.infer<typeof seoResponseSchema>;

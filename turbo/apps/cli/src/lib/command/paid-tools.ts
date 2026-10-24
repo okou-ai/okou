@@ -95,12 +95,6 @@ function researchTool(
   return tool.success ? tool.data : undefined;
 }
 
-export function isDataCapabilityEnabled(id: string): boolean {
-  const [family, operation] = id.split(".");
-  const tool = researchTool(family, operation);
-  return isPaidToolEnabled("data-search") && (!tool || isPaidToolEnabled(tool));
-}
-
 function isAdvancedDataAction(path: Command[], action: Command): boolean {
   if (path[0]?.name() !== "data") return false;
   const family = path[1]?.name();

@@ -70,20 +70,27 @@ export async function callDataRouterTool(
   const requestOptions = { signal, timeout: 300_000, maxTotalTimeout: 300_000 };
   try {
     await client.connect(transport, requestOptions);
-    const result = await client.request(
-      {
-        method: "tools/call",
-        params: {
-          name,
-          arguments: argumentsSchema.parse(JSON.parse(JSON.stringify(args))),
+    const result = await client
+      .request(
+        {
+          method: "tools/call",
+          params: {
+            name,
+            arguments: argumentsSchema.parse(JSON.parse(JSON.stringify(args))),
+          },
         },
-      },
-      requestOptions,
-    );
+        requestOptions,
+      )
+      .catch((cause: unknown) => {
+        throw new Error(
+          "Data Router did not return a complete response; a paid operation may have executed. Do not resubmit automatically; inspect saved jobs when available.",
+          { cause },
+        );
+      });
     const parsed = envelopeSchema.safeParse(result.structuredContent);
     if (!parsed.success)
       throw new ApiRequestError(
-        "Data Router returned an invalid tool response",
+        "Data Router returned an invalid tool response; a paid operation may have executed. Do not resubmit automatically; inspect saved jobs when available.",
         "INVALID_DATA_RESPONSE",
         502,
       );
