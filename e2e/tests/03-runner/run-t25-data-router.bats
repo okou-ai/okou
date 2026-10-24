@@ -63,8 +63,15 @@ EOF
         "$RUN_ID" \
         data-router \
         okou-data-router-staging.vm0.workers.dev \
-        '["OKOU_DATA_TOKEN"]' \
-        false
+        '["OKOU_DATA_TOKEN"]'
+    assert_success
+    # Unused rewrite metadata is omitted; also verify the actual destination.
+    run jq -e 'any(.[];
+        .firewall_name == "data-router" and
+        .url == "https://okou-data-router-staging.vm0.workers.dev/mcp" and
+        .status == 200 and
+        .auth_url_rewrite != true
+    )' <<<"$output"
     assert_success
 
     run runner_api_curl "/api/data/router/requests"

@@ -56,6 +56,8 @@ export async function chargePublicDataUsage(
   actor: ApiTestUser,
   credits: number,
 ): Promise<void> {
+  const memberships =
+    context.mocks.clerk.organizations.getOrganizationMembershipList.getMockImplementation();
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   bdd.acceptAgentStorageWrites();
@@ -73,6 +75,13 @@ export async function chargePublicDataUsage(
   });
   await runs.heartbeatRunner(runnerGroup);
   const claim = await runs.claimRunnerJob(run.runId);
+  // Run setup authenticates its actor and installs a single-member directory.
+  // Restore the caller's provider fixture before the debit refreshes membership.
+  if (memberships) {
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
+      memberships,
+    );
+  }
   await registerPublicDataUsage(
     context,
     run.runId,
