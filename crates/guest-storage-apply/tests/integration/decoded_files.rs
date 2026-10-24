@@ -205,6 +205,71 @@ fn existing_hardlink_is_replaced_without_modifying_its_other_name() {
 }
 
 #[test]
+pub(super) fn shared_and_wide_parents_preserve_complete_decoded_outputs() {
+    let root = tempfile::tempdir().unwrap();
+    for directories in [4, 80] {
+        let target = root.path().join(format!("mount-{directories}"));
+        let entries = (0..directories * 2)
+            .map(|index| StorageFile {
+                path: format!("parent-{}/nested/file-{index}", index % directories),
+                mode: if index % 2 == 0 { 0o751 } else { 0o640 },
+                mtime: index as u64,
+                content: if index % 3 == 0 {
+                    Vec::new()
+                } else {
+                    format!("file-{index}").into_bytes()
+                },
+            })
+            .collect::<Vec<_>>();
+        for _ in 0..2 {
+            assert!(guest_storage_apply::run_storage_files_bytes(
+                &input(&target, true, &entries).unwrap()
+            ));
+            for entry in &entries {
+                let path = target.join(&entry.path);
+                assert_eq!(fs::read(&path).unwrap(), entry.content);
+                let metadata = fs::metadata(path).unwrap();
+                assert_eq!(metadata.mode() & 0o777, entry.mode);
+                assert_eq!(metadata.mtime() as u64, entry.mtime.max(1));
+            }
+        }
+    }
+}
+
+#[test]
+fn allowed_parent_links_and_replaced_leaves_keep_later_writes_contained() {
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("mount");
+    fs::create_dir_all(target.join("actual")).unwrap();
+    symlink("actual", target.join("nested")).unwrap();
+    fs::write(root.path().join("outside"), b"keep").unwrap();
+    symlink(root.path().join("outside"), target.join("empty")).unwrap();
+    let mut entries = files();
+    entries.push(StorageFile {
+        path: "actual/after".into(),
+        mode: 0o644,
+        mtime: 2,
+        content: b"after".to_vec(),
+    });
+    assert!(guest_storage_apply::run_storage_files_bytes(
+        &input(&target, false, &entries).unwrap()
+    ));
+    assert_eq!(
+        fs::read(target.join("actual/tool")).unwrap(),
+        b"final-content"
+    );
+    assert_eq!(fs::read(target.join("actual/after")).unwrap(), b"after");
+    assert_eq!(fs::read(target.join("empty")).unwrap(), b"");
+    assert!(
+        !fs::symlink_metadata(target.join("empty"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(fs::read(root.path().join("outside")).unwrap(), b"keep");
+}
+
+#[test]
 fn escaping_parent_is_skipped_like_archive_extraction() {
     let root = tempfile::tempdir().unwrap();
     let target = root.path().join("mount");

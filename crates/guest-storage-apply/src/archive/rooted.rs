@@ -21,7 +21,7 @@ const MAX_DIRECTORY_HANDLES: usize = 64;
 const DIRECTORY_FLAGS: libc::c_int =
     libc::O_PATH | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
 
-pub(super) struct RootedWriter<'a> {
+pub(crate) struct RootedWriter<'a> {
     target: &'a Path,
     root: Option<File>,
     root_path_bytes: usize,
@@ -29,7 +29,7 @@ pub(super) struct RootedWriter<'a> {
 }
 
 impl<'a> RootedWriter<'a> {
-    pub(super) fn new(target: &'a Path) -> Self {
+    pub(crate) fn new(target: &'a Path) -> Self {
         Self {
             target,
             root: None,
@@ -38,7 +38,7 @@ impl<'a> RootedWriter<'a> {
         }
     }
 
-    pub(super) fn invalidate(&mut self) {
+    pub(crate) fn invalidate(&mut self) {
         self.parents.clear();
         // Release even the root before checked tar extraction: under FD pressure
         // it can occupy the last slot needed to create the output file.
@@ -108,6 +108,47 @@ impl<'a> RootedWriter<'a> {
         Ok(Some(previous))
     }
 
+    /// Only creates fresh leaves. Before a caller uses its checked replacement
+    /// or link path, it must release these handles with invalidate().
+    pub(crate) fn create_new(&mut self, relative: &Path) -> io::Result<Option<File>> {
+        // Descriptor-relative syscalls can exceed the full-path limit. Retain
+        // the existing path-based behavior rather than accepting new spellings.
+        let path_bytes = relative.as_os_str().as_bytes();
+        if path_bytes.contains(&0)
+            || self.root_path_bytes + 1 + path_bytes.len() >= libc::PATH_MAX as usize
+            || !relative
+                .components()
+                .all(|part| matches!(part, Component::Normal(_)))
+        {
+            return Ok(None);
+        }
+        let Some(name) = relative.file_name() else {
+            return Ok(None);
+        };
+        let Ok(name) = CString::new(name.as_bytes()) else {
+            return Ok(None);
+        };
+        let Some(parent) = relative.parent() else {
+            return Ok(None);
+        };
+        let Some(parent) = self.parent_fd(parent)? else {
+            return Ok(None);
+        };
+        let flags =
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+        match open_at(parent, &name, flags, 0o666) {
+            Ok(file) => Ok(Some(file)),
+            // Never truncate an existing inode: tar unlinks/recreates it, which
+            // also preserves other hardlinks to that inode.
+            Err(error)
+                if error.kind() == io::ErrorKind::AlreadyExists || descriptor_limit(&error) =>
+            {
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     /// False leaves payload unread: invalidate parents before checked tar unpack.
     /// Once a leaf is created, any payload or metadata failure is returned, never
     /// retried. Tar's default mode/mtime behavior is reproduced only for plain files.
@@ -121,23 +162,6 @@ impl<'a> RootedWriter<'a> {
         if entry.header().as_ustar().is_none() && entry.path_bytes().ends_with(b"/") {
             return Ok(false);
         }
-        // Descriptor-relative syscalls can exceed the full-path limit. Retain
-        // the existing path-based behavior rather than accepting new spellings.
-        let path_bytes = relative.as_os_str().as_bytes();
-        if path_bytes.contains(&0)
-            || self.root_path_bytes + 1 + path_bytes.len() >= libc::PATH_MAX as usize
-            || !relative
-                .components()
-                .all(|part| matches!(part, Component::Normal(_)))
-        {
-            return Ok(false);
-        }
-        let Some(name) = relative.file_name() else {
-            return Ok(false);
-        };
-        let Ok(name) = CString::new(name.as_bytes()) else {
-            return Ok(false);
-        };
         let (Ok(mode), Ok(mtime)) = (entry.header().mode(), entry.header().mtime()) else {
             return Ok(false);
         };
@@ -148,24 +172,8 @@ impl<'a> RootedWriter<'a> {
         let Some(modified) = UNIX_EPOCH.checked_add(Duration::from_secs(mtime.max(1))) else {
             return Ok(false);
         };
-        let Some(parent) = relative.parent() else {
+        let Some(mut file) = self.create_new(relative)? else {
             return Ok(false);
-        };
-        let Some(parent) = self.parent_fd(parent)? else {
-            return Ok(false);
-        };
-        let flags =
-            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC;
-        let mut file = match open_at(parent, &name, flags, 0o666) {
-            Ok(file) => file,
-            // Never truncate an existing inode: tar unlinks/recreates it, which
-            // also preserves other hardlinks to that inode.
-            Err(error)
-                if error.kind() == io::ErrorKind::AlreadyExists || descriptor_limit(&error) =>
-            {
-                return Ok(false);
-            }
-            Err(error) => return Err(error),
         };
         let expected = entry.size();
         if io::copy(entry, &mut file)? != expected {
