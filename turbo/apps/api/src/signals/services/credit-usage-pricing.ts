@@ -37,9 +37,6 @@ export interface UsageEventRecord {
   readonly provider: string;
   readonly category: string;
   readonly quantity: number;
-  readonly pricingUnitPrice: number | null;
-  readonly pricingUnitSize: number | null;
-  readonly pricingCreditsLimit: number | null;
   readonly createdAt: Date;
 }
 type UsagePricingRecord = typeof usagePricing.$inferSelect;
@@ -69,23 +66,6 @@ export function priceUsageEvents(
       pricedEvents.push({
         record,
         grossCredits: record.quantity,
-        billingError: null,
-      });
-      continue;
-    }
-    if (
-      record.pricingUnitPrice !== null &&
-      record.pricingUnitSize !== null &&
-      record.pricingCreditsLimit !== null
-    ) {
-      const numerator =
-        BigInt(record.quantity) * BigInt(record.pricingUnitPrice);
-      const denominator = BigInt(record.pricingUnitSize);
-      const credits = (numerator + denominator - 1n) / denominator;
-      const limit = BigInt(record.pricingCreditsLimit);
-      pricedEvents.push({
-        record,
-        grossCredits: Number(credits < limit ? credits : limit),
         billingError: null,
       });
       continue;

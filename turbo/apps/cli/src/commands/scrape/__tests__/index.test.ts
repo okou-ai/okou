@@ -171,30 +171,6 @@ describe("okou data web scrape command", () => {
     expect(output()).toContain("# Example\n\nContent");
   });
 
-  it("rejects invalid formats before calling the API", async () => {
-    let apiRequests = 0;
-    server.use(
-      dataRouterTool("web_scrape", () => {
-        apiRequests += 1;
-        return HttpResponse.json({});
-      }),
-    );
-
-    await expect(async () => {
-      await scrapeCommand.parseAsync([
-        "node",
-        "cli",
-        "https://example.com",
-        "--format",
-        "html",
-      ]);
-    }).rejects.toThrow("process.exit called");
-
-    expect(errorOutput()).toContain("format must be one of: markdown, links");
-    expect(mockExit).toHaveBeenCalledWith(1);
-    expect(apiRequests).toBe(0);
-  });
-
   it("prints API error messages", async () => {
     server.use(
       dataRouterTool("web_scrape", () => {

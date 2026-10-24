@@ -18,10 +18,6 @@ import {
  *
  *   creditsCharged = ceil(quantity × unit_price / unit_size)
  *
- * Sources that report native credits instead of USD can configure their
- * procurement cost in `source_cost_usd_micros_per_credit`. Admission snapshots
- * that conversion together with the usage price; NULL means unconfigured.
- *
  * `unit_price` is the credit cost of one pricing unit; `unit_size` is how
  * many `usage_event.quantity` items make up one unit.  Each row picks the
  * natural granularity for its category:
@@ -35,10 +31,6 @@ import {
  *   image      fal-ai/qwen-image         output_megapixel 24        1          $0.024 per output megapixel
  *   video      fal-ai/veo3.1/fast        output_video_seconds.audio 180 1      generated video seconds
  *   video      bytedance/seedance-2.0    output_video_tokens 1680   100000     generated video tokens
- *   maps       google-maps-grounding     provider_cost_usd_micros 1250 1000000 actual Google cost + 25% markup
- *   scrape     firecrawl                 standard.markdown 4        1          fixed per-request scrape pricing
- *   web-search perplexity                request        5           1          $0.005 per search request
- *   people-search perplexity             request        20          1          fixed per-request people search pricing
  */
 export const usagePricing = pgTable(
   "usage_pricing",

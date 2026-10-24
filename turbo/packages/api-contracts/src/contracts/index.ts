@@ -1278,11 +1278,9 @@ export {
 } from "./web-search";
 export {
   findManagedSocialKitTool,
-  managedSocialKitToolCatalog,
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
   MANAGED_SOCIALKIT_TOOLS,
   SOCIALKIT_MAX_INPUT_VALUE_CHARS,
-  SOCIALKIT_TRANSCRIPT_ERROR_CODES,
   socialKitCollectionProviderLimitedReasonSchema,
   socialKitErrorSchema,
   publicSocialErrorCode,
@@ -1297,7 +1295,6 @@ export {
   type ManagedSocialKitTool,
   type ManagedSocialKitToolAvailability,
   type ManagedSocialKitToolDefinition,
-  type ManagedSocialKitToolCatalogEntry,
   type ManagedSocialKitToolName,
   type ManagedSocialKitReportedTotalField,
   type SocialKitCollectionProviderLimitedReason,
@@ -1306,7 +1303,6 @@ export {
   type SocialKitRequest,
   type SocialKitResult,
   type SocialKitResponse,
-  type SocialKitTranscriptErrorCode,
   type SocialKitTranscriptErrorReason,
 } from "./social";
 export {

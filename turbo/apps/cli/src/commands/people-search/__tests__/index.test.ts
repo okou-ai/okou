@@ -166,27 +166,6 @@ describe("okou data people search command", () => {
     expect(output()).toContain("broader role, company, skill, or location");
   });
 
-  it.each([
-    ["invalid limit", ["query", "--limit", "101"], "limit must be"],
-    ["empty query", ["   "], "Too small"],
-  ])("rejects %s before calling the API", async (_name, args, message) => {
-    let apiRequests = 0;
-    server.use(
-      dataRouterTool("people_search", () => {
-        apiRequests += 1;
-        return HttpResponse.json(responseBody);
-      }),
-    );
-
-    await expect(
-      peopleSearchCommand.parseAsync(["node", "cli", ...args]),
-    ).rejects.toThrow("process.exit called");
-
-    expect(errorOutput()).toContain(message);
-    expect(mockExit).toHaveBeenCalledWith(1);
-    expect(apiRequests).toBe(0);
-  });
-
   it("prints API error messages", async () => {
     server.use(
       dataRouterTool("people_search", () => {

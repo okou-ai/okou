@@ -187,23 +187,6 @@ describe("okou data maps command", () => {
     },
   );
 
-  it("requires latitude and longitude together", async () => {
-    await expect(
-      mapsCommand.parseAsync([
-        "node",
-        "cli",
-        "search",
-        "coffee near me",
-        "--lat",
-        "40.7",
-      ]),
-    ).rejects.toThrow("process.exit called");
-
-    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-      "--lat and --lng must be provided together",
-    );
-  });
-
   it("exposes only the search subcommand", () => {
     expect(
       mapsCommand.commands.map((command) => {

@@ -3,15 +3,6 @@ import { z } from "zod";
 export const SOCIALKIT_MAX_INPUT_VALUE_CHARS = 4_096;
 export const MANAGED_SOCIALKIT_BILLING_CATEGORY = "request";
 
-export const SOCIALKIT_TRANSCRIPT_ERROR_CODES = {
-  TRANSCRIPT_UNAVAILABLE: "SOCIALKIT_TRANSCRIPT_UNAVAILABLE",
-  AVAILABILITY_UNKNOWN: "SOCIALKIT_TRANSCRIPT_AVAILABILITY_UNKNOWN",
-  ACCESS_DENIED: "SOCIALKIT_TRANSCRIPT_ACCESS_DENIED",
-} as const;
-
-export type SocialKitTranscriptErrorCode =
-  (typeof SOCIALKIT_TRANSCRIPT_ERROR_CODES)[keyof typeof SOCIALKIT_TRANSCRIPT_ERROR_CODES];
-
 export const socialKitTranscriptErrorReasonSchema = z.enum([
   "transcript_unavailable",
   "availability_unknown",
@@ -37,9 +28,6 @@ export type ManagedSocialKitPagination =
 
 export interface ManagedSocialKitUnreliableEmptyResult {
   readonly reliability: "unreliable";
-  readonly outcome: "provider_limited";
-  readonly retry: "none";
-  readonly billing: "successful_request";
 }
 
 export interface ManagedSocialKitProviderControlledPageSize {
@@ -49,7 +37,6 @@ export interface ManagedSocialKitProviderControlledPageSize {
 
 export interface ManagedSocialKitPublicResult {
   readonly kind: "tiktok_video_collection";
-  readonly schema: z.ZodType;
 }
 
 export const socialKitCollectionSourceLimitSchema = z
@@ -67,7 +54,6 @@ export interface ManagedSocialKitCollection {
   readonly resultField: ManagedSocialKitResultField;
   readonly defaultLimit?: number;
   readonly effectiveLimit?: number;
-  readonly itemsPerBillingUnit?: number;
   readonly reportedTotalField?: ManagedSocialKitReportedTotalField;
   readonly pagination: ManagedSocialKitPagination;
   readonly emptyResult?: ManagedSocialKitUnreliableEmptyResult;
@@ -82,7 +68,6 @@ export interface ManagedSocialKitToolDefinition<
 > {
   readonly name: Name;
   readonly description: string;
-  readonly path: string;
   readonly inputSchema: InputSchema;
   readonly resultSchema: ResultSchema;
   readonly maxLimit?: number;
@@ -652,53 +637,6 @@ const tiktokHashtagSearchResultSchema = providerObject({
   cursor: paginationCursorResultSchema.nullable(),
 });
 
-const tiktokPublicAuthorSchema = providerObject({
-  id: z.string(),
-  username: z.string(),
-  displayName: z.string(),
-  avatar: z.string(),
-  verified: z.boolean(),
-});
-
-const tiktokPublicVideoItemSchema = providerObject({
-  videoId: z.string(),
-  description: z.string(),
-  url: z.string(),
-  thumbnail: z.string(),
-  duration: metricSchema,
-  publishedAt: z.string(),
-  views: countSchema,
-  likes: countSchema,
-  comments: countSchema,
-  shares: countSchema,
-  collects: countSchema,
-  author: tiktokPublicAuthorSchema,
-  language: z.string(),
-  subtitles: z.array(z.json()),
-});
-
-const tiktokPublicChannelVideosResultSchema = providerObject({
-  profileUrl: z.string(),
-  channelName: z.string(),
-  results: z.array(tiktokPublicVideoItemSchema),
-  hasMore: z.boolean(),
-  cursor: paginationCursorResultSchema.nullable(),
-});
-
-const tiktokPublicSearchResultSchema = providerObject({
-  query: z.string(),
-  results: z.array(tiktokPublicVideoItemSchema),
-  hasMore: z.boolean(),
-  cursor: paginationCursorResultSchema.nullable(),
-});
-
-const tiktokPublicHashtagSearchResultSchema = providerObject({
-  hashtag: z.string(),
-  results: z.array(tiktokPublicVideoItemSchema),
-  hasMore: z.boolean(),
-  cursor: paginationCursorResultSchema.nullable(),
-});
-
 const youtubeStatsResultSchema = providerObject({
   url: z.string(),
   videoId: z.string(),
@@ -790,21 +728,18 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "linkedin_profile",
     description: "Get public profile details for a LinkedIn member.",
-    path: "/linkedin/profile",
     inputSchema: urlInput(),
     resultSchema: linkedinProfileResultSchema,
   }),
   defineTool({
     name: "linkedin_company",
     description: "Get public profile details for a LinkedIn company.",
-    path: "/linkedin/company",
     inputSchema: urlInput(),
     resultSchema: linkedinCompanyResultSchema,
   }),
   defineTool({
     name: "linkedin_company_posts",
     description: "List recent public posts from a LinkedIn company.",
-    path: "/linkedin/company-posts",
     inputSchema: z
       .object({
         url: urlSchema,
@@ -823,14 +758,12 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "linkedin_post",
     description: "Get one public LinkedIn post.",
-    path: "/linkedin/post",
     inputSchema: urlInput(),
     resultSchema: linkedinPostResultSchema,
   }),
   defineTool({
     name: "linkedin_transcript",
     description: "Extract the transcript from a LinkedIn video post.",
-    path: "/linkedin/transcript",
     inputSchema: urlInput(),
     resultSchema: linkedinTranscriptResultSchema,
     availability: "transcript",
@@ -838,14 +771,12 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "twitter_profile",
     description: "Get public profile details for an X/Twitter account.",
-    path: "/twitter/profile",
     inputSchema: urlInput(),
     resultSchema: twitterProfileResultSchema,
   }),
   defineTool({
     name: "twitter_tweets",
     description: "List public tweets from an X/Twitter account.",
-    path: "/twitter/tweets",
     inputSchema: cachedUrlCollectionInput(100),
     resultSchema: twitterTweetsResultSchema,
     maxLimit: 100,
@@ -858,21 +789,18 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "twitter_tweet",
     description: "Get one public X/Twitter post.",
-    path: "/twitter/tweet",
     inputSchema: urlInput(),
     resultSchema: twitterTweetResultSchema,
   }),
   defineTool({
     name: "twitter_thread",
     description: "Get a public X/Twitter thread and its combined text.",
-    path: "/twitter/thread",
     inputSchema: urlInput(),
     resultSchema: twitterThreadResultSchema,
   }),
   defineTool({
     name: "twitter_transcript",
     description: "Extract the transcript from an X/Twitter video post.",
-    path: "/twitter/transcript",
     inputSchema: urlInput(),
     resultSchema: videoTranscriptResultSchema,
     availability: "transcript",
@@ -880,21 +808,18 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "facebook_stats",
     description: "Get engagement statistics for a public Facebook post.",
-    path: "/facebook/stats",
     inputSchema: urlInput(),
     resultSchema: facebookStatsResultSchema,
   }),
   defineTool({
     name: "facebook_channel_stats",
     description: "Get public profile statistics for a Facebook page.",
-    path: "/facebook/channel-stats",
     inputSchema: urlInput(),
     resultSchema: facebookChannelStatsResultSchema,
   }),
   defineTool({
     name: "facebook_transcript",
     description: "Extract the transcript from a Facebook video post.",
-    path: "/facebook/transcript",
     inputSchema: urlInput(),
     resultSchema: facebookTranscriptResultSchema,
     availability: "transcript",
@@ -902,14 +827,12 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "facebook_comments",
     description: "List comments on a public Facebook post.",
-    path: "/facebook/comments",
     inputSchema: urlCollectionInput(100),
     resultSchema: facebookCommentsResultSchema,
     maxLimit: 100,
     collection: {
       resultField: "comments",
       defaultLimit: 10,
-      itemsPerBillingUnit: 50,
       reportedTotalField: "commentCount",
       pagination: { kind: "cursor" },
     },
@@ -917,14 +840,12 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "facebook_summarize",
     description: "Summarize a public Facebook video post.",
-    path: "/facebook/summarize",
     inputSchema: summaryInputSchema,
     resultSchema: summaryResultSchema,
   }),
   defineTool({
     name: "instagram_stats",
     description: "Get engagement statistics for a public Instagram post.",
-    path: "/instagram/stats",
     inputSchema: urlInput().extend({
       requireViews: z
         .boolean()
@@ -938,14 +859,12 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "instagram_channel_stats",
     description: "Get public profile statistics for an Instagram account.",
-    path: "/instagram/channel-stats",
     inputSchema: urlInput(),
     resultSchema: instagramChannelStatsResultSchema,
   }),
   defineTool({
     name: "instagram_transcript",
     description: "Extract the transcript from an Instagram video post.",
-    path: "/instagram/transcript",
     inputSchema: urlInput(),
     resultSchema: videoTranscriptResultSchema,
     availability: "transcript",
@@ -953,7 +872,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "instagram_comments",
     description: "List comments on a public Instagram post.",
-    path: "/instagram/comments",
     inputSchema: z
       .object({
         url: urlSchema,
@@ -967,7 +885,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     collection: {
       resultField: "comments",
       defaultLimit: 10,
-      itemsPerBillingUnit: 50,
       reportedTotalField: "commentCount",
       pagination: { kind: "cursor" },
     },
@@ -975,28 +892,24 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "instagram_channel_posts",
     description: "List public posts from an Instagram account.",
-    path: "/instagram/channel-posts",
     inputSchema: urlCollectionInput(100),
     resultSchema: instagramFeedResult(instagramPostSchema),
     maxLimit: 100,
     collection: {
       resultField: "items",
       defaultLimit: 12,
-      itemsPerBillingUnit: 20,
       pagination: { kind: "cursor" },
     },
   }),
   defineTool({
     name: "instagram_channel_reels",
     description: "List public reels from an Instagram account.",
-    path: "/instagram/channel-reels",
     inputSchema: urlCollectionInput(100),
     resultSchema: instagramFeedResult(instagramReelSchema),
     maxLimit: 100,
     collection: {
       resultField: "items",
       defaultLimit: 12,
-      itemsPerBillingUnit: 20,
       pagination: { kind: "cursor" },
     },
   }),
@@ -1004,7 +917,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     name: "instagram_reels_search",
     description:
       "Search public Instagram reels by keyword or hashtag in one anonymous batch of up to 12 results.",
-    path: "/instagram/reels-search",
     inputSchema: z
       .object({
         query: z
@@ -1030,28 +942,24 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "instagram_summarize",
     description: "Summarize a public Instagram video post.",
-    path: "/instagram/summarize",
     inputSchema: summaryInputSchema,
     resultSchema: summaryResultSchema,
   }),
   defineTool({
     name: "tiktok_stats",
     description: "Get engagement statistics for a public TikTok video.",
-    path: "/tiktok/stats",
     inputSchema: urlInput(),
     resultSchema: tiktokStatsResultSchema,
   }),
   defineTool({
     name: "tiktok_comments",
     description: "List comments on a public TikTok video.",
-    path: "/tiktok/comments",
     inputSchema: urlCollectionInput(100),
     resultSchema: tiktokCommentsResultSchema,
     maxLimit: 100,
     collection: {
       resultField: "comments",
       defaultLimit: 10,
-      itemsPerBillingUnit: 50,
       reportedTotalField: "commentCount",
       pagination: { kind: "cursor" },
     },
@@ -1059,7 +967,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "tiktok_transcript",
     description: "Extract the transcript from a public TikTok video.",
-    path: "/tiktok/transcript",
     inputSchema: urlInput(),
     resultSchema: videoTranscriptResultSchema,
     availability: "transcript",
@@ -1067,19 +974,16 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "tiktok_channel_stats",
     description: "Get public profile statistics for a TikTok account.",
-    path: "/tiktok/channel-stats",
     inputSchema: urlInput(),
     resultSchema: tiktokChannelStatsResultSchema,
   }),
   defineTool({
     name: "tiktok_channel_videos",
     description: "List recent public videos from a TikTok account.",
-    path: "/tiktok/channel-videos",
     inputSchema: cachedUrlCollectionInput(100),
     resultSchema: tiktokChannelVideosResultSchema,
     publicResult: {
       kind: "tiktok_video_collection",
-      schema: tiktokPublicChannelVideosResultSchema,
     },
     maxLimit: 100,
     collection: {
@@ -1096,7 +1000,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "tiktok_search",
     description: "Search public TikTok videos by keyword.",
-    path: "/tiktok/search",
     inputSchema: z
       .object({
         query: inputStringSchema,
@@ -1112,20 +1015,15 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     resultSchema: tiktokSearchResultSchema,
     publicResult: {
       kind: "tiktok_video_collection",
-      schema: tiktokPublicSearchResultSchema,
     },
     maxLimit: 100,
     collection: {
       resultField: "results",
       defaultLimit: 10,
       effectiveLimit: 10,
-      itemsPerBillingUnit: 50,
       pagination: { kind: "cursor" },
       emptyResult: {
         reliability: "unreliable",
-        outcome: "provider_limited",
-        retry: "none",
-        billing: "successful_request",
       },
       pageSize: {
         kind: "provider_controlled",
@@ -1136,7 +1034,6 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "tiktok_hashtag_search",
     description: "Search public TikTok videos by hashtag.",
-    path: "/tiktok/hashtag-search",
     inputSchema: z
       .object({
         hashtag: inputStringSchema.refine(
@@ -1155,20 +1052,15 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     resultSchema: tiktokHashtagSearchResultSchema,
     publicResult: {
       kind: "tiktok_video_collection",
-      schema: tiktokPublicHashtagSearchResultSchema,
     },
     maxLimit: 100,
     collection: {
       resultField: "results",
       defaultLimit: 20,
       effectiveLimit: 20,
-      itemsPerBillingUnit: 50,
       pagination: { kind: "cursor" },
       emptyResult: {
         reliability: "unreliable",
-        outcome: "provider_limited",
-        retry: "none",
-        billing: "successful_request",
       },
       pageSize: {
         kind: "provider_controlled",
@@ -1179,14 +1071,12 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "tiktok_summarize",
     description: "Summarize a public TikTok video.",
-    path: "/tiktok/summarize",
     inputSchema: summaryInputSchema,
     resultSchema: tiktokSummaryResultSchema,
   }),
   defineTool({
     name: "youtube_transcript",
     description: "Extract the transcript from a public YouTube video.",
-    path: "/youtube/transcript",
     inputSchema: urlInput().extend({
       no_cache: z
         .boolean()
@@ -1201,14 +1091,12 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   defineTool({
     name: "youtube_stats",
     description: "Get engagement statistics for a public YouTube video.",
-    path: "/youtube/stats",
     inputSchema: urlInput(),
     resultSchema: youtubeStatsResultSchema,
   }),
   defineTool({
     name: "youtube_comments",
     description: "List comments on a public YouTube video.",
-    path: "/youtube/comments",
     inputSchema: z
       .object({
         url: urlSchema,
@@ -1221,21 +1109,18 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     collection: {
       resultField: "comments",
       defaultLimit: 10,
-      itemsPerBillingUnit: 50,
       pagination: { kind: "none" },
     },
   }),
   defineTool({
     name: "youtube_channel_stats",
     description: "Get public statistics for a YouTube channel.",
-    path: "/youtube/channel-stats",
     inputSchema: urlInput(),
     resultSchema: youtubeChannelStatsResultSchema,
   }),
   defineTool({
     name: "youtube_search",
     description: "Search public YouTube videos by keyword.",
-    path: "/youtube/search",
     inputSchema: z
       .object({
         query: inputStringSchema,
@@ -1253,14 +1138,12 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     collection: {
       resultField: "results",
       defaultLimit: 10,
-      itemsPerBillingUnit: 50,
       pagination: { kind: "none" },
     },
   }),
   defineTool({
     name: "youtube_videos",
     description: "List public videos from a YouTube channel or playlist.",
-    path: "/youtube/videos",
     inputSchema: z
       .object({
         url: urlSchema,
@@ -1274,14 +1157,12 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     collection: {
       resultField: "results",
       defaultLimit: 10,
-      itemsPerBillingUnit: 50,
       pagination: { kind: "none" },
     },
   }),
   defineTool({
     name: "youtube_summarize",
     description: "Summarize a public YouTube video.",
-    path: "/youtube/summarize",
     inputSchema: summaryInputSchema.extend({
       no_cache: z
         .boolean()
@@ -1347,173 +1228,3 @@ function requestSchemas<
 export const socialKitRequestSchema = z.union(
   requestSchemas(MANAGED_SOCIALKIT_TOOLS),
 );
-
-export type ManagedSocialKitCatalogRetrieval =
-  | { readonly kind: "cursor" }
-  | { readonly kind: "page"; readonly maxPage: number }
-  | { readonly kind: "provider_limited" };
-
-export type ManagedSocialKitCatalogProviderLimit =
-  | { readonly kind: "no_pagination" }
-  | { readonly kind: "max_page"; readonly maxPage: number };
-
-export type ManagedSocialKitCatalogBilling =
-  | { readonly kind: "request" }
-  | {
-      readonly kind: "items";
-      readonly itemsPerUnit: number;
-      readonly quantityBasis: "effective_request_limit" | "items_returned";
-    };
-
-export interface ManagedSocialKitToolCatalogEntry {
-  readonly name: ManagedSocialKitToolName;
-  readonly description: string;
-  readonly inputSchema: z.core.JSONSchema.BaseSchema;
-  readonly outputSchema: z.core.JSONSchema.BaseSchema;
-  readonly availability?: ManagedSocialKitToolAvailability;
-  readonly collection: {
-    readonly resultField: ManagedSocialKitResultField;
-    readonly retrieval: ManagedSocialKitCatalogRetrieval;
-    readonly defaultLimit?: number;
-    readonly requestMaxLimit?: number;
-    readonly effectiveLimit?: number;
-    readonly reportedTotalField?: ManagedSocialKitReportedTotalField;
-    readonly providerLimit?: ManagedSocialKitCatalogProviderLimit;
-    readonly emptyResult?: ManagedSocialKitUnreliableEmptyResult;
-    readonly pageSize?: ManagedSocialKitProviderControlledPageSize;
-    readonly sourceLimit?: SocialKitCollectionSourceLimit;
-    readonly itemContract?: "tiktok_video";
-  } | null;
-  readonly billing: ManagedSocialKitCatalogBilling;
-}
-
-export interface ManagedSocialUnsupportedCapability {
-  readonly platform: "tiktok";
-  readonly capability: "comment_replies" | "follower_list" | "following_list";
-  readonly status: "unsupported";
-  readonly availablePaths: {
-    readonly managedApi: false;
-    readonly scrape: false;
-    readonly browser: false;
-  };
-  readonly guidance: string;
-}
-
-export const MANAGED_SOCIAL_UNSUPPORTED_CAPABILITIES = [
-  {
-    platform: "tiktok",
-    capability: "follower_list",
-    status: "unsupported",
-    availablePaths: { managedApi: false, scrape: false, browser: false },
-    guidance:
-      "No reviewed managed API, scrape, or browser path is available. Do not retry these paths.",
-  },
-  {
-    platform: "tiktok",
-    capability: "following_list",
-    status: "unsupported",
-    availablePaths: { managedApi: false, scrape: false, browser: false },
-    guidance:
-      "No reviewed managed API, scrape, or browser path is available. Do not retry these paths.",
-  },
-  {
-    platform: "tiktok",
-    capability: "comment_replies",
-    status: "unsupported",
-    availablePaths: { managedApi: false, scrape: false, browser: false },
-    guidance:
-      "No reviewed managed API, scrape, or browser path is available. Do not retry these paths.",
-  },
-] as const satisfies readonly ManagedSocialUnsupportedCapability[];
-
-function catalogRetrieval(
-  pagination: ManagedSocialKitPagination,
-): ManagedSocialKitCatalogRetrieval {
-  switch (pagination.kind) {
-    case "cursor":
-    case "next_cursor": {
-      return { kind: "cursor" };
-    }
-    case "page": {
-      return { kind: "page", maxPage: pagination.maxPage };
-    }
-    case "none": {
-      return { kind: "provider_limited" };
-    }
-  }
-}
-
-function catalogProviderLimit(
-  pagination: ManagedSocialKitPagination,
-): ManagedSocialKitCatalogProviderLimit | undefined {
-  switch (pagination.kind) {
-    case "none": {
-      return { kind: "no_pagination" };
-    }
-    case "page": {
-      return { kind: "max_page", maxPage: pagination.maxPage };
-    }
-    case "cursor":
-    case "next_cursor": {
-      return undefined;
-    }
-  }
-}
-
-export function managedSocialKitToolCatalog(): readonly ManagedSocialKitToolCatalogEntry[] {
-  return MANAGED_SOCIALKIT_TOOLS.map((tool) => {
-    const collection = tool.collection;
-    const providerLimit = collection
-      ? catalogProviderLimit(collection.pagination)
-      : undefined;
-    return {
-      name: tool.name,
-      description: tool.description,
-      inputSchema: z.toJSONSchema(tool.inputSchema),
-      outputSchema: z.toJSONSchema(
-        tool.publicResult?.schema ?? tool.resultSchema,
-      ),
-      ...(tool.availability ? { availability: tool.availability } : {}),
-      collection: collection
-        ? {
-            resultField: collection.resultField,
-            retrieval: catalogRetrieval(collection.pagination),
-            ...(collection.defaultLimit === undefined
-              ? {}
-              : { defaultLimit: collection.defaultLimit }),
-            ...(tool.maxLimit === undefined
-              ? {}
-              : { requestMaxLimit: tool.maxLimit }),
-            ...(collection.effectiveLimit === undefined
-              ? {}
-              : { effectiveLimit: collection.effectiveLimit }),
-            ...(collection.reportedTotalField
-              ? { reportedTotalField: collection.reportedTotalField }
-              : {}),
-            ...(providerLimit ? { providerLimit } : {}),
-            ...(collection.emptyResult
-              ? { emptyResult: collection.emptyResult }
-              : {}),
-            ...(collection.pageSize ? { pageSize: collection.pageSize } : {}),
-            ...(collection.sourceLimit
-              ? { sourceLimit: collection.sourceLimit }
-              : {}),
-            ...(tool.publicResult?.kind === "tiktok_video_collection"
-              ? { itemContract: "tiktok_video" as const }
-              : {}),
-          }
-        : null,
-      billing:
-        collection?.itemsPerBillingUnit === undefined
-          ? { kind: "request" }
-          : {
-              kind: "items",
-              itemsPerUnit: collection.itemsPerBillingUnit,
-              quantityBasis:
-                collection.pageSize?.kind === "provider_controlled"
-                  ? "effective_request_limit"
-                  : "items_returned",
-            },
-    };
-  });
-}

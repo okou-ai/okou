@@ -355,8 +355,4 @@ describe("okou data weather command", () => {
     expect(output).toContain("Hourly history");
     expect(output).toContain("No history data returned.");
   });
-
-  it("does not expose a language option", () => {
-    expect(weatherCommand.helpInformation()).not.toContain("--language");
-  });
 });

@@ -30,7 +30,7 @@ export async function readGetStartedRewardPost(
       readonly kind: "post";
       readonly id: string;
       readonly text: string;
-      /** Lowercased author handle, or null when SocialKit gave no usable profile URL. */
+      /** Lowercased author handle, or null when Router gave no usable profile URL. */
       readonly authorHandle: string | null;
     }
   | { readonly kind: "retry"; readonly reason: string }

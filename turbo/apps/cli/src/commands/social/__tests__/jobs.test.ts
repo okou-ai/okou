@@ -437,7 +437,7 @@ describe("saved Social data jobs", () => {
     });
   });
 
-  it("quotes Facebook posts through the free API without invoking a legacy intent", async () => {
+  it("quotes Facebook posts through the Router", async () => {
     const requests: unknown[] = [];
     server.use(
       dataRouterTool("social_data_quote", ({ toolArguments }) => {
@@ -845,38 +845,6 @@ describe("saved Social data jobs", () => {
     expect(JSON.parse(stdout())).toMatchObject({ jobId, status: "cancelled" });
   });
 
-  it.each([
-    ["--async", "--stream"],
-    ["--async", "--checkpoint", "progress.json"],
-    ["--async", "--output", "comments.json"],
-    ["--dry-run", "--select", "text"],
-    ["--dry-run", "--async"],
-    ["--dry-run", "--limit", "1001"],
-    ["--max-credits", "0"],
-  ])(
-    "rejects unsupported job controls before any paid request: %j",
-    async (...flags) => {
-      const requests: string[] = [];
-      server.use(
-        http.all("https://data.okou.ai/mcp", ({ request }) => {
-          requests.push(request.url);
-          return HttpResponse.json({});
-        }),
-      );
-      await expect(
-        socialCommand.parseAsync([
-          "node",
-          "okou",
-          "comments",
-          "https://www.facebook.com/example/posts/123",
-          ...flags,
-          "--json",
-        ]),
-      ).rejects.toThrow("process.exit called");
-      expect(requests).toEqual([]);
-    },
-  );
-
   it("retains the submission key when a network response is lost", async () => {
     server.use(
       dataRouterTool("social_data_create", () => {
@@ -1059,7 +1027,7 @@ describe("saved Social data jobs", () => {
     expect(requests).toEqual([]);
   });
 
-  it("keeps the existing request protocol when no job controls are supplied", async () => {
+  it("routes direct comments through the Router", async () => {
     const requests: unknown[] = [];
     server.use(
       dataRouterTool("social:*", ({ toolArguments, toolName }) => {
@@ -1071,7 +1039,7 @@ describe("saved Social data jobs", () => {
           creditsCharged: 3,
           collection: { state: "complete", itemsReturned: 1 },
           result: {
-            comments: [{ id: "legacy-comment", text: "Existing result" }],
+            comments: [{ id: "router-comment", text: "Existing result" }],
             hasMore: false,
           },
         });

@@ -14,20 +14,14 @@ import { apiErrorSchema } from "./errors";
 
 export {
   findManagedSocialKitTool,
-  managedSocialKitToolCatalog,
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
-  MANAGED_SOCIAL_UNSUPPORTED_CAPABILITIES,
   MANAGED_SOCIALKIT_TOOLS,
   socialKitInstagramCommentsOutcomeSchema,
   SOCIALKIT_MAX_INPUT_VALUE_CHARS,
-  SOCIALKIT_TRANSCRIPT_ERROR_CODES,
   socialKitTranscriptErrorReasonSchema,
   socialKitRequestSchema,
   socialKitSummaryFieldsSchema,
   type ManagedSocialKitCollection,
-  type ManagedSocialKitCatalogBilling,
-  type ManagedSocialKitCatalogProviderLimit,
-  type ManagedSocialKitCatalogRetrieval,
   type ManagedSocialKitPagination,
   type ManagedSocialKitProviderControlledPageSize,
   type ManagedSocialKitPublicResult,
@@ -37,10 +31,7 @@ export {
   type ManagedSocialKitTool,
   type ManagedSocialKitToolAvailability,
   type ManagedSocialKitToolDefinition,
-  type ManagedSocialKitToolCatalogEntry,
   type ManagedSocialKitToolName,
-  type ManagedSocialUnsupportedCapability,
-  type SocialKitTranscriptErrorCode,
   type SocialKitTranscriptErrorReason,
   type SocialKitInstagramCommentsOutcome,
   type SocialKitRequest,
@@ -82,9 +73,8 @@ export type SocialKitErrorResponse = z.infer<typeof socialKitErrorSchema>;
 /**
  * Keep upstream implementation details out of agent-visible diagnostics.
  *
- * The API still accepts and stores the internal provider codes for server-side
- * accounting and backwards-compatible handling. Callers that render data to
- * an agent should pass codes and messages through these projections first.
+ * Router responses can include upstream codes and messages. Project them
+ * before displaying CLI errors.
  */
 export function publicSocialErrorCode(code: string): string {
   return code.replace(/socialkit/giu, "SOCIAL");
@@ -372,8 +362,7 @@ type SocialKitResponseFor<Tool extends ManagedSocialKitTool> =
   Tool extends ManagedSocialKitTool
     ? {
         /**
-         * The provider discriminator is retained for session/API compatibility.
-         * Agent-facing routes project it out before serialization.
+         * Router can include its provider discriminator; CLI output projects it out.
          */
         readonly provider?: "socialkit";
         readonly tool: Tool["name"];
@@ -389,8 +378,7 @@ export type SocialKitResponse = SocialKitResponseFor<ManagedSocialKitTool>;
 
 function responseVariant<Tool extends ManagedSocialKitTool>(tool: Tool) {
   return z.object({
-    // Optional so the agent boundary can remove the internal discriminator
-    // while older session clients may continue sending/receiving it.
+    // Accept Router responses before and after CLI output projection.
     provider: z.literal("socialkit").optional(),
     tool: z.literal(tool.name),
     billingCategory: z.literal(MANAGED_SOCIALKIT_BILLING_CATEGORY),
@@ -534,8 +522,8 @@ function projectPublicTikTokVideoCollection(
 }
 
 /**
- * Build the permanent provider-neutral response used by agent, sandbox, and
- * CLI callers. Raw session/PAT responses remain unchanged.
+ * Project Router results into the CLI response: canonical collection fields,
+ * source limitations, and provider-neutral diagnostics.
  */
 export function projectPublicSocialResponse(
   response: SocialKitResponse,

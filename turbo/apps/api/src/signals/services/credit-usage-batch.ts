@@ -23,21 +23,13 @@ export function usageSnapshotCondition(rows: readonly PendingUsageSnapshot[]) {
   );
 }
 export function settlementPricingKeys(rows: readonly PendingUsageSnapshot[]) {
-  return rows
-    .filter(({ event }) => {
-      return (
-        event.pricingUnitPrice === null ||
-        event.pricingUnitSize === null ||
-        event.pricingCreditsLimit === null
-      );
-    })
-    .map(({ event }) => {
-      return {
-        kind: event.kind,
-        provider: event.provider,
-        category: event.category,
-      };
-    });
+  return rows.map(({ event }) => {
+    return {
+      kind: event.kind,
+      provider: event.provider,
+      category: event.category,
+    };
+  });
 }
 export function settlementPricingCondition(
   keys: ReturnType<typeof settlementPricingKeys>,

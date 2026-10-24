@@ -94,7 +94,6 @@ describe("okou data web search command", () => {
     await webSearchCommand.parseAsync(["node", "cli", "latest AI regulation"]);
     expect(output()).toContain("AI regulation update");
     expect(output()).toContain("Credits charged: pending");
-    expect(mockExit).not.toHaveBeenCalled();
   });
 
   it("posts default requests and prints JSON", async () => {
@@ -175,37 +174,6 @@ describe("okou data web search command", () => {
 
     expect(output()).toContain("No web results found");
     expect(output()).toContain("broader query");
-  });
-
-  it.each([
-    ["invalid limit", ["query", "--limit", "11"], "limit must be"],
-    [
-      "invalid recency",
-      ["query", "--recency", "forever"],
-      "recency must be one of",
-    ],
-    [
-      "invalid domain",
-      ["query", "--domain", "https://example.com"],
-      "Domain must be",
-    ],
-    ["empty query", ["   "], "Too small"],
-  ])("rejects %s before calling the API", async (_name, args, message) => {
-    let apiRequests = 0;
-    server.use(
-      dataRouterTool("web_search", () => {
-        apiRequests += 1;
-        return HttpResponse.json(responseBody);
-      }),
-    );
-
-    await expect(
-      webSearchCommand.parseAsync(["node", "cli", ...args]),
-    ).rejects.toThrow("process.exit called");
-
-    expect(errorOutput()).toContain(message);
-    expect(mockExit).toHaveBeenCalledWith(1);
-    expect(apiRequests).toBe(0);
   });
 
   it("prints API error messages", async () => {

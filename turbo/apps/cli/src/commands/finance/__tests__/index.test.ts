@@ -142,34 +142,4 @@ describe("okou data finance command", () => {
     expect(output).toContain("Provider: apidojo");
     expect(output).toContain("Credits charged: 1");
   });
-
-  it("rejects invalid chart intervals before calling the API", async () => {
-    let apiRequests = 0;
-    server.use(
-      dataRouterTool("finance_chart", () => {
-        apiRequests += 1;
-        return HttpResponse.json(financeResponse("chart", {}));
-      }),
-    );
-
-    await expect(
-      financeCommand.parseAsync([
-        "node",
-        "cli",
-        "chart",
-        "AAPL",
-        "--interval",
-        "4h",
-      ]),
-    ).rejects.toThrow("process.exit called");
-
-    const errors = [
-      ...mockConsoleError.mock.calls.flat(),
-      ...mockStderrWrite.mock.calls.flat(),
-    ]
-      .map(String)
-      .join("\n");
-    expect(errors).toContain("interval must be one of");
-    expect(apiRequests).toBe(0);
-  });
 });

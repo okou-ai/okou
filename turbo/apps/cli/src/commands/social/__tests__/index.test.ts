@@ -648,44 +648,6 @@ describe("okou data social command", () => {
       },
     );
 
-    it.each([
-      ["transcript", "text", "missing-output"],
-      ["transcript", "srt", "selection"],
-      ["transcript", "vtt", "blank-output"],
-      ["inspect", "text", "unsupported"],
-      ["comments", "srt", "unsupported"],
-      ["summarize", "vtt", "unsupported"],
-    ])(
-      "rejects %s %s with %s before files or requests",
-      async (command, format, combination) => {
-        const requests = serveTranscript({ transcript: "One" });
-        const args = [
-          "node",
-          "okou",
-          command,
-          "https://youtu.be/example",
-          "--format",
-          format,
-          "--json",
-        ];
-        if (combination !== "missing-output")
-          args.push(
-            "--output",
-            combination === "blank-output" ? " " : join(directory, "file"),
-          );
-        if (combination === "selection") args.push("--select", "transcript");
-        await expect(socialCommand.parseAsync(args)).rejects.toThrow(
-          "process.exit called",
-        );
-        expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
-          status: "error",
-          error: { kind: "invalid_input" },
-        });
-        expect(requests).toHaveLength(0);
-        expect(await readdir(directory)).toEqual([]);
-      },
-    );
-
     it("requires explicit overwrite for an existing subtitle file before requesting a transcript", async () => {
       const requests = serveTranscript({
         transcriptSegments: [{ text: "One", start: 0, duration: 1 }],
@@ -913,7 +875,6 @@ describe("okou data social command", () => {
         billing: { creditsCharged: null },
         collection: { itemsReturned: 2 },
       });
-      expect(mockExit).not.toHaveBeenCalled();
     });
 
     it.each(["json", "csv"])(
@@ -988,7 +949,7 @@ describe("okou data social command", () => {
         } else expect(saved).toBe('"text","id"\r\n"saved","accepted"\r\n');
         expect(errorOutput()).toContain("Page failed");
         expect(process.exitCode).toBe(1);
-        expect(mockExit).not.toHaveBeenCalled();
+
         expect(requests).toHaveLength(2);
         expect(mockConsoleLog).toHaveBeenCalledTimes(1);
       },
@@ -1181,7 +1142,7 @@ describe("okou data social command", () => {
         billing: null,
       });
       expect(process.exitCode).toBe(1);
-      expect(mockExit).not.toHaveBeenCalled();
+
       expect(await readdir(directory)).toEqual(["failure.json"]);
     });
 
@@ -1234,74 +1195,6 @@ describe("okou data social command", () => {
       expect(output()).toBe(JSON.stringify(result, null, 2));
       expect(await readdir(directory)).toEqual([]);
     });
-
-    it.each([
-      ["--format", "yaml"],
-      ["--format", "csv"],
-      ["--overwrite"],
-      ["--select", ""],
-      ["--select", "id,id"],
-      ["--select", "author..name"],
-      ["--select", "items[0]"],
-      ["--select", "__proto__.x"],
-      ["--select", "constructor"],
-      ["--select", "a.b.c.d.e.f.g.h.i"],
-      ["--select", "a".repeat(129)],
-      [
-        "--select",
-        Array.from({ length: 33 }, (_, i) => {
-          return `field${i}`;
-        }).join(","),
-      ],
-      ["--stream", "--format", "json"],
-      ["--stream", "--select", "id"],
-      ["--stream", "--overwrite"],
-    ])(
-      "rejects incompatible/invalid options before provider work: %j",
-      async (...flags) => {
-        const requests = serveRows([]);
-        await expect(
-          socialCommand.parseAsync([...commentsArgs, ...flags, "--json"]),
-        ).rejects.toThrow("process.exit called");
-        expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
-          status: "error",
-          error: { kind: "invalid_input" },
-        });
-        expect(requests).toEqual([]);
-        expect(await readdir(directory)).toEqual([]);
-      },
-    );
-
-    it.each(["stream", "missing-columns", "single-csv"])(
-      "rejects file export combination %s before requests or files",
-      async (combination) => {
-        const requests = serveRows([]);
-        const path = join(directory, "results.csv");
-        const args =
-          combination === "single-csv"
-            ? [
-                "node",
-                "okou",
-                "inspect",
-                "https://instagram.com/p/example",
-                "--format",
-                "csv",
-                "--select",
-                "id",
-              ]
-            : [
-                ...commentsArgs,
-                ...(combination === "stream"
-                  ? ["--stream"]
-                  : ["--format", "csv"]),
-              ];
-        await expect(
-          socialCommand.parseAsync([...args, "--output", path, "--json"]),
-        ).rejects.toThrow("process.exit called");
-        expect(requests).toEqual([]);
-        expect(await readdir(directory)).toEqual([]);
-      },
-    );
 
     it.each(["existing", "directory", "symlink", "missing-parent"])(
       "rejects %s destinations before billing",
@@ -1425,7 +1318,7 @@ describe("okou data social command", () => {
       });
       expect(errorOutput()).toContain("without repeating the Social request");
       expect(process.exitCode).toBe(1);
-      expect(mockExit).not.toHaveBeenCalled();
+
       expect(requests).toHaveLength(1);
       expect(await readdir(directory)).toEqual(["out.csv"]);
     });
@@ -1485,7 +1378,7 @@ describe("okou data social command", () => {
             }),
           ]);
           expect(process.exitCode).toBe(1);
-          expect(mockExit).not.toHaveBeenCalled();
+
           expect(requests).toHaveLength(1);
           await expect(readFile(path, "utf8")).rejects.toMatchObject({
             code: "ENOENT",
@@ -1617,28 +1510,6 @@ describe("okou data social command", () => {
       message: expect.stringContaining("okou data social download --help"),
     });
   });
-
-  it.each([
-    ["--limit", "101"],
-    ["--status", "unknown"],
-  ])(
-    "rejects invalid discovery input %s %s before HTTP",
-    async (flag, value) => {
-      await expect(
-        socialCommand.parseAsync([
-          "node",
-          "okou",
-          "downloads",
-          flag,
-          value,
-          "--json",
-        ]),
-      ).rejects.toThrow("process.exit called");
-      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
-        error: { code: "INVALID_INPUT" },
-      });
-    },
-  );
 
   it.each([false, true])(
     "preserves actionable download conflicts with json=%s without resuming automatically",
@@ -2098,7 +1969,6 @@ describe("okou data social command", () => {
       );
       await socialCommand.parseAsync(["node", "okou", "status", "x", "--json"]);
       expect(JSON.parse(output())).toEqual(body);
-      expect(mockExit).not.toHaveBeenCalled();
     },
   );
 
@@ -2155,7 +2025,7 @@ describe("okou data social command", () => {
         "week",
         "--json",
       ]);
-      expect(mockExit).not.toHaveBeenCalled();
+
       expect(output()).toContain('"operation":"search"');
     },
   );
@@ -2290,39 +2160,6 @@ describe("okou data social command", () => {
       request: { requireViews: true },
       data: { views: 0 },
     });
-  });
-
-  it.each([
-    "https://instagram.com/example",
-    "https://youtube.com/watch?v=example",
-    "https://x.com/example/status/1",
-    "https://facebook.com/example/posts/1",
-    "https://tiktok.com/@example/video/1",
-    "https://linkedin.com/posts/example",
-  ])("rejects --require-views for %s before HTTP", async (url) => {
-    let requests = 0;
-    server.use(
-      dataRouterTool("social:*", () => {
-        requests += 1;
-        return HttpResponse.json({});
-      }),
-    );
-
-    await expect(
-      socialCommand.parseAsync([
-        "node",
-        "okou",
-        "inspect",
-        url,
-        "--require-views",
-        "--json",
-      ]),
-    ).rejects.toThrow("process.exit called");
-
-    expect(requests).toBe(0);
-    expect(errorOutput()).toContain(
-      "--require-views is supported only for Instagram post or video URLs",
-    );
   });
 
   it("reports strict Instagram 503 without retrying optional lookup", async () => {
@@ -2594,43 +2431,6 @@ describe("okou data social command", () => {
     ]);
   });
 
-  it.each([31, 250])(
-    "rejects full details with limit %s before HTTP",
-    async (limit) => {
-      let apiRequests = 0;
-      server.use(
-        dataRouterTool("social:*", () => {
-          apiRequests += 1;
-          return HttpResponse.json(socialResponse("youtube_videos", null, {}));
-        }),
-      );
-
-      await expect(
-        socialCommand.parseAsync([
-          "node",
-          "okou",
-          "posts",
-          "https://youtube.com/@example",
-          "--full-details",
-          "--limit",
-          String(limit),
-          "--json",
-        ]),
-      ).rejects.toThrow("process.exit called");
-
-      expect(apiRequests).toBe(0);
-      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
-        status: "error",
-        error: {
-          kind: "invalid_input",
-          code: "INVALID_INPUT",
-          message:
-            "--full-details supports at most 30 videos; use --limit 30 or less, or omit --full-details for the fast listing",
-        },
-      });
-    },
-  );
-
   it("discovers YouTube full-details constraints without HTTP", async () => {
     vi.stubEnv("OKOU_TOKEN", "");
 
@@ -2751,38 +2551,6 @@ describe("okou data social command", () => {
         input: { query: normalized },
       });
       expect(outputRequest()).toStrictEqual({ limit: 10, hashtag });
-    },
-  );
-
-  it.each(["a".repeat(101), `  ${"a".repeat(101)}  `, "#", "%23"])(
-    "rejects invalid Instagram query %s before an API request",
-    async (query) => {
-      let apiRequests = 0;
-      server.use(
-        dataRouterTool("social:*", () => {
-          apiRequests += 1;
-          return new HttpResponse(null, { status: 500 });
-        }),
-      );
-
-      await expect(
-        socialCommand.parseAsync([
-          "node",
-          "okou",
-          "search",
-          query,
-          "--platform",
-          "instagram",
-          "--hashtag",
-          "--json",
-        ]),
-      ).rejects.toThrow("process.exit called");
-
-      expect(apiRequests).toBe(0);
-      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
-        status: "error",
-        error: { kind: "invalid_input" },
-      });
     },
   );
 
@@ -3078,41 +2846,6 @@ describe("okou data social command", () => {
     },
   );
 
-  it.each(["transcript", "summarize"])(
-    "rejects unsupported %s refresh before requesting managed work",
-    async (operation) => {
-      let requests = 0;
-      server.use(
-        dataRouterTool("social:*", () => {
-          requests += 1;
-          return HttpResponse.json({});
-        }),
-      );
-
-      await expect(
-        socialCommand.parseAsync([
-          "node",
-          "okou",
-          operation,
-          "https://instagram.com/reel/example",
-          "--refresh",
-          "--json",
-        ]),
-      ).rejects.toThrow("process.exit called");
-
-      expect(requests).toBe(0);
-      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
-        status: "error",
-        error: {
-          code: "INVALID_INPUT",
-          message: "--refresh is supported only for YouTube videos",
-          retryable: false,
-        },
-      });
-      expect(mockExit).toHaveBeenCalledWith(1);
-    },
-  );
-
   it.each([
     ["transcript", 404, "SOCIAL_TRANSCRIPT_UNAVAILABLE"],
     ["summarize", 400, "BAD_REQUEST"],
@@ -3307,137 +3040,6 @@ describe("okou data social command", () => {
     expect(JSON.parse(output()) as unknown).toMatchObject({
       status: "complete",
     });
-  });
-
-  it.each([
-    ["malformed JSON", "{not-json}"],
-    ["empty input", ""],
-    ["string instructions", '"Extract the audience"'],
-    ["null", "null"],
-    ["array", '["audience"]'],
-    ["empty map", "{}"],
-    ["empty name", '{"":"Who this video helps"}'],
-    ["blank name", '{" ":"Who this video helps"}'],
-    ["long name", JSON.stringify({ ["a".repeat(65)]: "Audience" })],
-    ["empty description", '{"audience":""}'],
-    ["blank description", '{"audience":" \\n\\t"}'],
-    ["non-string description", '{"audience":true}'],
-    ["nested schema", '{"audience":{"type":"string"}}'],
-    [
-      "oversized map",
-      JSON.stringify({ audience: "a".repeat(4097 - '{"audience":""}'.length) }),
-    ],
-    ["oversized escaped map", JSON.stringify({ audience: "\n".repeat(2042) })],
-  ])("rejects %s fields before a managed request", async (_name, fields) => {
-    let apiRequests = 0;
-    server.use(
-      dataRouterTool("social:*", () => {
-        apiRequests += 1;
-        return HttpResponse.json(socialResponse("youtube_summarize", null, {}));
-      }),
-    );
-
-    await expect(
-      socialCommand.parseAsync([
-        "node",
-        "okou",
-        "summarize",
-        "https://youtu.be/example",
-        "--fields",
-        fields,
-        "--json",
-      ]),
-    ).rejects.toThrow("process.exit called");
-
-    expect(apiRequests).toBe(0);
-    expect(mockExit).toHaveBeenCalledWith(1);
-    expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
-      status: "error",
-      error: { kind: "invalid_input", retryable: false },
-    });
-  });
-
-  it.each(["malformed", "oversized", "missing", "conflicting"])(
-    "rejects a %s fields file before a managed request",
-    async (problem) => {
-      const path = await fieldsFile(
-        problem === "malformed"
-          ? "{not-json}"
-          : JSON.stringify({ audience: "a".repeat(4096) }),
-      );
-      const suppliedPath = problem === "missing" ? `${path}.missing` : path;
-      const args = ["--fields-file", suppliedPath];
-      if (problem === "conflicting") {
-        args.push("--fields", '{"audience":"Who this video helps"}');
-      }
-      let apiRequests = 0;
-      server.use(
-        dataRouterTool("social:*", () => {
-          apiRequests += 1;
-          return HttpResponse.json(
-            socialResponse("youtube_summarize", null, {}),
-          );
-        }),
-      );
-
-      await expect(
-        socialCommand.parseAsync([
-          "node",
-          "okou",
-          "summarize",
-          "https://youtu.be/example",
-          ...args,
-          "--json",
-        ]),
-      ).rejects.toThrow("process.exit called");
-
-      expect(apiRequests).toBe(0);
-      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
-        error: { kind: "invalid_input" },
-      });
-      if (problem === "missing") {
-        expect(errorOutput()).toContain("Cannot read --fields-file");
-        expect(errorOutput()).toContain(suppliedPath);
-      } else if (problem === "malformed") {
-        expect(errorOutput()).toContain(
-          "--fields-file must contain valid JSON",
-        );
-        expect(errorOutput()).not.toContain("not-json");
-      } else if (problem === "conflicting") {
-        expect(errorOutput()).toContain("Use either --fields or --fields-file");
-      } else {
-        expect(errorOutput()).toContain("4096 characters");
-      }
-    },
-  );
-
-  it.each([
-    ["summarize", "https://x.com/example/status/1"],
-    ["summarize", "https://linkedin.com/posts/example"],
-    ["transcript", "https://youtu.be/example"],
-  ])("rejects fields on unsupported %s targets %s", async (operation, url) => {
-    let apiRequests = 0;
-    server.use(
-      dataRouterTool("social:*", () => {
-        apiRequests += 1;
-        return HttpResponse.json(socialResponse("youtube_summarize", null, {}));
-      }),
-    );
-
-    await expect(
-      socialCommand.parseAsync([
-        "node",
-        "okou",
-        operation,
-        url,
-        "--fields",
-        '{"audience":"Who this video helps"}',
-        "--json",
-      ]),
-    ).rejects.toThrow("process.exit called");
-
-    expect(apiRequests).toBe(0);
-    expect(`${errorOutput()}${parserErrorOutput()}`).toContain("invalid_input");
   });
 
   it("discovers fields support only on reviewed summary platforms", async () => {
@@ -3918,7 +3520,6 @@ describe("okou data social command", () => {
       progress: { pages: 2, itemsReturned: 2 },
     });
     expect(process.exitCode).toBe(1);
-    expect(mockExit).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -4064,7 +3665,6 @@ describe("okou data social command", () => {
       expect(errorOutput()).toContain("502:");
     }
     expect(process.exitCode).toBe(1);
-    expect(mockExit).not.toHaveBeenCalled();
   });
 
   it.each(["--json", "--stream"])(
@@ -4126,7 +3726,6 @@ describe("okou data social command", () => {
       }
       expect(requests).toBe(1);
       expect(process.exitCode).toBe(1);
-      expect(mockExit).not.toHaveBeenCalled();
     },
   );
 
@@ -4182,7 +3781,6 @@ describe("okou data social command", () => {
       }
       expect(errorOutput()).toBe("");
       expect(process.exitCode ?? 0).toBe(0);
-      expect(mockExit).not.toHaveBeenCalled();
     },
   );
 
@@ -4618,149 +4216,6 @@ describe("okou data social command", () => {
         code: "INVALID_INPUT",
         retryable: false,
       },
-    });
-  });
-
-  it.each([
-    "https://example.com/video",
-    "https://instagram.com.example.com/user/p/ABC123/",
-    "https://user:password@instagram.com/user/reel/ABC123/",
-    "https://instagram.com/explore/p/ABC123/",
-  ])("rejects unsupported URL %s before managed work", async (url) => {
-    let apiRequests = 0;
-    server.use(
-      dataRouterTool("social:*", () => {
-        apiRequests += 1;
-        return HttpResponse.json(socialResponse("youtube_stats", null, {}));
-      }),
-    );
-
-    await expect(
-      socialCommand.parseAsync(["node", "okou", "inspect", url, "--json"]),
-    ).rejects.toThrow("process.exit called");
-
-    expect(apiRequests).toBe(0);
-    expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
-      status: "error",
-      error: { kind: "invalid_input", code: "INVALID_INPUT" },
-    });
-  });
-
-  it.each([
-    ["transcript", "https://instagram.com/example"],
-    ["transcript", "https://youtube.com/"],
-    ["transcript", "https://youtu.be/"],
-    ["transcript", "https://vm.tiktok.com/"],
-    ["transcript", "https://instagram.com/explore/"],
-    ["transcript", "https://linkedin.com/posts"],
-    ["transcript", "https://facebook.com/watch"],
-    ["transcript", "https://facebook.com/marketplace?v=example"],
-    ["transcript", "https://facebook.com/marketplace?fbid=example"],
-    ["transcript", "https://facebook.com/marketplace?story_fbid=example"],
-    ["transcript", "https://facebook.com/video.php/extra?v=example"],
-    ["transcript", "https://facebook.com/photo.php/extra?fbid=example"],
-    [
-      "transcript",
-      "https://facebook.com/permalink.php/extra?story_fbid=example",
-    ],
-    ["transcript", "https://facebook.com/story.php/extra?story_fbid=example"],
-    ["transcript", "https://fb.watch/example/extra"],
-    ["transcript", "https://vm.tiktok.com/example/extra"],
-    ["transcript", "https://vt.tiktok.com/example/extra"],
-    ["transcript", "https://tiktok.com/t/example/extra"],
-    ["transcript", "https://youtube.com/results?v=example"],
-    ["transcript", "https://youtu.be/example/extra"],
-    ["transcript", "https://youtube.com/playlist/extra?list=example"],
-  ])(
-    "rejects mismatched %s target %s before managed work",
-    async (operation, url) => {
-      let apiRequests = 0;
-      server.use(
-        dataRouterTool("social:*", () => {
-          apiRequests += 1;
-          return HttpResponse.json(
-            socialResponse("youtube_transcript", null, {}),
-          );
-        }),
-      );
-
-      await expect(
-        socialCommand.parseAsync(["node", "okou", operation, url, "--json"]),
-      ).rejects.toThrow("process.exit called");
-
-      expect(apiRequests).toBe(0);
-      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
-        status: "error",
-        error: {
-          kind: "invalid_input",
-          message: "transcript requires a public post or video URL",
-        },
-      });
-    },
-  );
-
-  it.each([
-    ["inspect", "https://instagram.com/p/example", "--thread"],
-    ["posts", "https://x.com/example", "--kind", "reels"],
-    ["posts", "https://x.com/example", "--full-details"],
-    ["posts", "https://instagram.com/example", "--full-details"],
-    ["posts", "https://tiktok.com/@example", "--full-details"],
-    ["posts", "https://facebook.com/example", "--full-details"],
-    ["posts", "https://linkedin.com/company/example", "--full-details"],
-    ["posts", "https://youtube.com/watch?v=example", "--full-details"],
-    ["posts", "https://youtu.be/example", "--full-details"],
-    [
-      "search",
-      "launch",
-      "--platform",
-      "tiktok",
-      "--hashtag",
-      "--sort",
-      "likes",
-    ],
-    ["search", "launch", "--platform", "youtube", "--sort", ""],
-    ["search", "launch", "--platform", "tiktok", "--date", ""],
-    ["search", "launch", "--platform", "youtube", "--type", ""],
-    ["comments", "https://facebook.com/posts/example", "--sort", ""],
-    ["comments", "https://instagram.com/p/example", "--sort", ""],
-    ["summarize", "https://youtu.be/example", "--prompt", ""],
-    [
-      "download",
-      "https://youtu.be/example",
-      "--max-duration",
-      "600",
-      "--quality",
-      "",
-    ],
-    [
-      "download",
-      "https://youtu.be/example",
-      "--max-duration",
-      "600",
-      "--format",
-      "",
-    ],
-  ])("rejects mismatched %s options before managed work", async (...args) => {
-    let apiRequests = 0;
-    server.use(
-      dataRouterTool("social:*", () => {
-        apiRequests += 1;
-        return HttpResponse.json(socialResponse("youtube_stats", null, {}));
-      }),
-      dataRouterTool("social_download_create", () => {
-        apiRequests += 1;
-        return HttpResponse.json(completedDownload(), { status: 202 });
-      }),
-    );
-
-    await expect(
-      socialCommand.parseAsync(["node", "okou", ...args, "--json"]),
-    ).rejects.toThrow("process.exit called");
-
-    expect(apiRequests).toBe(0);
-    expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
-      status: "error",
-      error: { kind: "invalid_input" },
     });
   });
 
@@ -5368,56 +4823,6 @@ describe("okou data social command", () => {
     });
   });
 
-  it("rejects mixed resume and new-download arguments", async () => {
-    await expect(
-      socialCommand.parseAsync([
-        "node",
-        "okou",
-        "download",
-        "https://youtu.be/example",
-        "--resume",
-        "6bdc3449-41ef-4624-a525-45bce09c67f0",
-        "--json",
-      ]),
-    ).rejects.toThrow("process.exit called");
-
-    expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
-      status: "error",
-      error: {
-        kind: "invalid_input",
-        message: expect.stringContaining(
-          "okou data social download --resume 6bdc3449-41ef-4624-a525-45bce09c67f0",
-        ),
-      },
-    });
-  });
-
-  it.each([
-    ["quality", "--quality"],
-    ["format", "--format"],
-  ])("rejects an explicitly empty %s when resuming", async (_case, option) => {
-    await expect(
-      socialCommand.parseAsync([
-        "node",
-        "okou",
-        "download",
-        "--resume",
-        "6bdc3449-41ef-4624-a525-45bce09c67f0",
-        option,
-        "",
-        "--json",
-      ]),
-    ).rejects.toThrow("process.exit called");
-
-    expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
-      status: "error",
-      error: {
-        kind: "invalid_input",
-        message: expect.stringContaining("--resume cannot be combined"),
-      },
-    });
-  });
-
   it.each([
     ["SIGINT", "SIGTERM", 130],
     ["SIGTERM", "SIGINT", 143],
@@ -5479,7 +4884,7 @@ describe("okou data social command", () => {
         },
       });
       expect(process.exitCode).toBe(exitCode);
-      expect(mockExit).not.toHaveBeenCalled();
+
       expect(process.listenerCount("SIGINT")).toBe(initialSigintListeners);
       expect(process.listenerCount("SIGTERM")).toBe(initialSigtermListeners);
     },

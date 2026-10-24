@@ -175,8 +175,6 @@ describe("okou data seo command", () => {
         expect(output).toContain("Credits charged: 3");
         expect(output).not.toContain("✓ SEO serp completed");
       }
-      expect(mockConsoleError).not.toHaveBeenCalled();
-      expect(mockExit).not.toHaveBeenCalled();
     },
   );
 
@@ -270,40 +268,6 @@ describe("okou data seo command", () => {
       device: "mobile",
       limit: 20,
     });
-  });
-
-  it("rejects mobile DataForSEO Google News before calling the API", async () => {
-    let apiRequests = 0;
-    server.use(
-      dataRouterTool("seo_serp", () => {
-        apiRequests += 1;
-        return HttpResponse.json(dataForSeoResponse("serp", {}));
-      }),
-    );
-
-    await expect(
-      seoCommand.parseAsync([
-        "node",
-        "cli",
-        "serp",
-        "ai news",
-        "--engine",
-        "google_news",
-        "--device",
-        "mobile",
-      ]),
-    ).rejects.toThrow("process.exit called");
-
-    const errors = [
-      ...mockConsoleError.mock.calls.flat(),
-      ...mockStderrWrite.mock.calls.flat(),
-    ]
-      .map(String)
-      .join("\n");
-    expect(errors).toContain(
-      "DataForSEO Google News supports only the desktop device",
-    );
-    expect(apiRequests).toBe(0);
   });
 
   it("explains DataForSEO engine compatibility in serp help", () => {

@@ -30,9 +30,6 @@ type ManagedUsageReceipt = Pick<
   | "provider"
   | "category"
   | "quantity"
-  | "pricingUnitPrice"
-  | "pricingUnitSize"
-  | "pricingCreditsLimit"
   | "billingError"
   | "creditsCharged"
 >;
@@ -48,10 +45,7 @@ export function managedUsageReceiptCredits(
       processed.kind !== args.resource.kind ||
       processed.provider !== args.resource.provider ||
       processed.category !== args.resource.category ||
-      processed.quantity !== (args.resource.quantity ?? 1) ||
-      processed.pricingUnitPrice !== null ||
-      processed.pricingUnitSize !== null ||
-      processed.pricingCreditsLimit !== null)
+      processed.quantity !== (args.resource.quantity ?? 1))
   ) {
     throw new Error(`${args.label} usage idempotency key collision`);
   }
