@@ -68,6 +68,7 @@ const getComputedRequestSchema = z
     type: z.literal("get-computed"),
     requestId: requestIdSchema,
     computedKey: computedKeySchema,
+    refresh: z.boolean().optional(),
   })
   .strict();
 

@@ -2356,6 +2356,7 @@
       "unknown": "알 수 없음",
       "unsupported": "수동 초기화는 지원되지 않으며 사용량은 자동으로 복구됩니다."
     },
+    "syncFailed": "채팅이 최신 상태가 아닐 수 있습니다",
     "taskChips": {
       "chooseTask": "작업 선택",
       "ideas": {

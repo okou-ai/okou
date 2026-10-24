@@ -2413,6 +2413,7 @@
       "unknown": "Inconnu",
       "unsupported": "La réinitialisation manuelle n’est pas prise en charge ; l’utilisation se rétablit naturellement."
     },
+    "syncFailed": "Vos conversations ne sont peut-être pas à jour",
     "taskChips": {
       "chooseTask": "Choisir une tâche",
       "ideas": {

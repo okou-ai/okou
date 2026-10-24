@@ -31,6 +31,7 @@ import {
 } from "./chat-thread-list-reload.ts";
 import { syncActiveChatEvents$ } from "./chat-page/chat-event-signal-registry.ts";
 import { catchUpChatThreadEventSource$ } from "./chat-page/chat-thread-event-sourcing.ts";
+import { requestChatSync$ } from "./chat-sync.ts";
 import { reportForceUpgradeRequired } from "./force-upgrade.ts";
 import {
   installSharedDatabaseBridge$,
@@ -226,7 +227,13 @@ const prepareSharedDatabaseBridge$ = command(
       },
       events: {
         databaseInvalidated: async (dataKey) => {
+          if (document.visibilityState !== "visible") {
+            return;
+          }
           await set(syncSharedDatabaseInvalidation$, dataKey, signal);
+        },
+        realtimeResynced: () => {
+          set(requestChatSync$, signal);
         },
         workerUnavailable: (reason) => {
           handleSharedDatabaseWorkerUnavailable(reason);

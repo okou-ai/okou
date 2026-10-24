@@ -3,6 +3,7 @@ import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
 import { setAuthenticatedIdentity$ } from "./auth-context.ts";
 import { clerk$, clerkUser$, setupClerk$ } from "./auth.ts";
 import { initializeChatThreadEventSource$ } from "./chat-page/chat-thread-event-sourcing.ts";
+import { setupChatSyncRecovery$ } from "./chat-sync.ts";
 import { subscribeCloudflareAccessChanged$ } from "./cloudflare-access.ts";
 import { subscribeTailscaleChanged$ } from "./tailscale.ts";
 import { setupRunModelRealtime$ } from "./external/run-model-realtime.ts";
@@ -119,5 +120,7 @@ export const setupAuthenticatedBootstrapData$ = command(
     await get(bridgeConnected$);
     signal.throwIfAborted();
     await set(initializeChatThreadEventSource$, signal);
+    signal.throwIfAborted();
+    set(setupChatSyncRecovery$, signal);
   },
 );

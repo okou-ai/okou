@@ -2413,6 +2413,7 @@
       "unknown": "Desconocido",
       "unsupported": "No se admite el restablecimiento manual; el uso se recupera automáticamente."
     },
+    "syncFailed": "Puede que tus chats no estén actualizados",
     "taskChips": {
       "chooseTask": "Elegir una tarea",
       "ideas": {
