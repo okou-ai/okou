@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio::io::{AsyncReadExt, BufReader};
 use tokio::time::{Instant, timeout_at};
 use tracing::{error, info, warn};
 
@@ -12,6 +12,10 @@ use crate::network_log_transport::{
     NetworkLogHttpClient, NetworkLogRequestContext, NetworkLogTransportFailure,
 };
 use runner_types::ids::RunId;
+
+mod line;
+
+use line::{BoundedLogLine, LineContent};
 
 /// Network log entry from the per-run JSONL file.
 ///
@@ -417,7 +421,10 @@ async fn upload_network_logs_inner(
 
     let source_is_larger_than_limit = source_file_bytes > NETWORK_LOG_UPLOAD_MAX_SOURCE_BYTES;
     let mut reader = BufReader::new(file.take(NETWORK_LOG_UPLOAD_MAX_SOURCE_BYTES));
-    let mut line = Vec::new();
+    let max_record_bytes = NETWORK_LOG_UPLOAD_MAX_BATCH_BYTES
+        - empty_batch_estimated_bytes(&uploader.run_id)
+        - NETWORK_LOG_UPLOAD_ENTRY_OVERHEAD_BYTES;
+    let mut line = BoundedLogLine::new(max_record_bytes);
     let mut source_limit_reached = false;
 
     loop {
@@ -425,8 +432,7 @@ async fn upload_network_logs_inner(
             return UploadOutcome::Truncated(UploadTruncationReason::Deadline);
         }
 
-        line.clear();
-        let bytes_read = match reader.read_until(b'\n', &mut line).await {
+        let bytes_read = match line.read(&mut reader).await {
             Ok(0) => break,
             Ok(bytes_read) => bytes_read,
             Err(e) => {
@@ -441,7 +447,7 @@ async fn upload_network_logs_inner(
 
         let reached_capped_source_end = source_is_larger_than_limit
             && uploader.progress.source_bytes_examined >= NETWORK_LOG_UPLOAD_MAX_SOURCE_BYTES;
-        if reached_capped_source_end && !line.ends_with(b"\n") {
+        if reached_capped_source_end && !line.terminated() {
             uploader.progress.partial_source_line = true;
             source_limit_reached = true;
             break;
@@ -451,45 +457,52 @@ async fn upload_network_logs_inner(
             return UploadOutcome::Truncated(UploadTruncationReason::Deadline);
         }
 
-        let line = match std::str::from_utf8(&line) {
-            Ok(line) => line.trim(),
-            Err(e) => {
+        // Apply the existing admission size before building a discarded JSON
+        // tree. Whitespace-only padding was trimmed without retaining its body.
+        let upload = match line.content() {
+            LineContent::InvalidUtf8 => {
                 uploader.progress.malformed_input = true;
-                warn!(run_id = %uploader.run_id, error = %e, "malformed network log line");
+                warn!(run_id = %uploader.run_id, error = "invalid UTF-8 in network log line", "malformed network log line");
                 if reached_capped_source_end {
                     source_limit_reached = true;
                     break;
                 }
                 continue;
             }
-        };
-        if line.is_empty() {
-            if reached_capped_source_end {
-                source_limit_reached = true;
-                break;
-            }
-            continue;
-        }
-
-        let log = match serde_json::from_str(line) {
-            Ok(log) => log,
-            Err(e) => {
-                uploader.progress.malformed_input = true;
-                warn!(run_id = %uploader.run_id, error = %e, "malformed network log line");
+            LineContent::Value("") => {
                 if reached_capped_source_end {
                     source_limit_reached = true;
                     break;
                 }
                 continue;
             }
+            LineContent::Oversized(bytes) => {
+                uploader
+                    .skip_oversized_entry(
+                        bytes.saturating_add(NETWORK_LOG_UPLOAD_ENTRY_OVERHEAD_BYTES),
+                    )
+                    .await
+            }
+            LineContent::Value(value) => {
+                let log = match serde_json::from_str(value) {
+                    Ok(log) => log,
+                    Err(e) => {
+                        uploader.progress.malformed_input = true;
+                        warn!(run_id = %uploader.run_id, error = %e, "malformed network log line");
+                        if reached_capped_source_end {
+                            source_limit_reached = true;
+                            break;
+                        }
+                        continue;
+                    }
+                };
+                if Instant::now() >= deadline {
+                    return UploadOutcome::Truncated(UploadTruncationReason::Deadline);
+                }
+                uploader.push(log, estimated_entry_bytes(value)).await
+            }
         };
-        let entry_bytes = estimated_entry_bytes(line);
-
-        if Instant::now() >= deadline {
-            return UploadOutcome::Truncated(UploadTruncationReason::Deadline);
-        }
-
-        match uploader.push(log, entry_bytes).await {
+        match upload {
             BatchUploadOutcome::Continue => {}
             BatchUploadOutcome::BatchLimit => {
                 return UploadOutcome::Truncated(UploadTruncationReason::BatchCount);
@@ -552,19 +565,7 @@ impl<'a> NetworkLogBatchUploader<'a> {
 
     async fn push(&mut self, log: NetworkLog, entry_bytes: usize) -> BatchUploadOutcome {
         if self.is_oversized_entry(entry_bytes) {
-            self.progress.oversized_entries = self.progress.oversized_entries.saturating_add(1);
-            self.progress.oversized_estimated_bytes = self
-                .progress
-                .oversized_estimated_bytes
-                .saturating_add(entry_bytes);
-
-            if !self.batch.is_empty() {
-                let outcome = self.flush().await;
-                if outcome != BatchUploadOutcome::Continue {
-                    return outcome;
-                }
-            }
-            return BatchUploadOutcome::Continue;
+            return self.skip_oversized_entry(entry_bytes).await;
         }
 
         if !self.can_attempt_more_batches() {
@@ -591,6 +592,15 @@ impl<'a> NetworkLogBatchUploader<'a> {
         }
 
         BatchUploadOutcome::Continue
+    }
+
+    async fn skip_oversized_entry(&mut self, entry_bytes: usize) -> BatchUploadOutcome {
+        self.progress.oversized_entries = self.progress.oversized_entries.saturating_add(1);
+        self.progress.oversized_estimated_bytes = self
+            .progress
+            .oversized_estimated_bytes
+            .saturating_add(entry_bytes);
+        self.flush().await
     }
 
     async fn finish(&mut self) -> BatchUploadOutcome {
@@ -2258,6 +2268,56 @@ mod tests {
         assert_event_field(event, "observed_dropped_entries", "0");
         assert_event_field(event, "remaining_source_bytes", "0");
         assert_eq!(tokio::fs::read_to_string(&path).await.unwrap(), content);
+    }
+
+    #[tokio::test]
+    async fn upload_network_logs_preserves_exact_trimmed_record_admission() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_id = RunId::from(uuid::Uuid::nil());
+        let empty_record_bytes = serde_json::to_string(&json!({"body":""})).unwrap().len();
+        let body_bytes = NETWORK_LOG_UPLOAD_MAX_BATCH_BYTES
+            - empty_batch_estimated_bytes(&run_id)
+            - NETWORK_LOG_UPLOAD_ENTRY_OVERHEAD_BYTES
+            - empty_record_bytes;
+        for overflow in [0, 1] {
+            let path = dir.path().join(format!("boundary-{overflow}.jsonl"));
+            let record = json!({"body":"x".repeat(body_bytes + overflow)});
+            let after = json!({"sequence":1});
+            let content = format!("\u{2003}{record}\u{2028}\r\n{after}");
+            tokio::fs::write(&path, content.as_bytes()).await.unwrap();
+            let server = MockServer::start_async().await;
+            let mut uploads = Vec::new();
+            let batches = if overflow == 0 {
+                vec![vec![record], vec![after]]
+            } else {
+                vec![vec![after]]
+            };
+            for batch in batches {
+                let expected = json!({"runId":run_id.to_string(),"networkLogs":batch});
+                uploads.push(
+                    server
+                        .mock_async(move |when, then| {
+                            when.method(POST)
+                                .path("/api/webhooks/agent/telemetry")
+                                .json_body(expected);
+                            then.status(200);
+                        })
+                        .await,
+                );
+            }
+            let http = http_for_server(&server);
+            let outcome = upload_network_logs(&http, run_id, SANDBOX_TOKEN, &path).await;
+            let expected_outcome = if overflow == 0 {
+                NetworkLogUploadSessionOutcome::Success
+            } else {
+                NetworkLogUploadSessionOutcome::Excluded
+            };
+            assert_eq!(outcome, expected_outcome, "overflow={overflow}");
+            for upload in uploads {
+                upload.assert_calls_async(1).await;
+            }
+            assert_eq!(tokio::fs::read(&path).await.unwrap(), content.as_bytes());
+        }
     }
 
     #[tokio::test(start_paused = true)]
