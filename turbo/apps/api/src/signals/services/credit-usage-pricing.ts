@@ -60,6 +60,19 @@ export function priceUsageEvents(
   const pricingByKey = usagePricingByKey(pricingRecords);
   const pricedEvents: PricedUsageEvent[] = [];
   for (const record of records) {
+    // Data Router has already priced these credits; the main wallet settles 1:1.
+    if (
+      record.kind === "data-search" &&
+      record.provider === "data-router" &&
+      record.category === "credits"
+    ) {
+      pricedEvents.push({
+        record,
+        grossCredits: record.quantity,
+        billingError: null,
+      });
+      continue;
+    }
     if (
       record.pricingUnitPrice !== null &&
       record.pricingUnitSize !== null &&

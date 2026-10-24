@@ -1,3 +1,4 @@
+import { getDataClientConfig as getClientConfig } from "../data-router-client";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -8,11 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/commerce";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 
-import {
-  ApiRequestError,
-  getClientConfig,
-  handleError,
-} from "../core/client-factory";
+import { ApiRequestError, handleError } from "../core/client-factory";
 
 // Bound each HTTP request; the durable job owns provider execution.
 const REQUEST_TIMEOUT_MS = 90_000;

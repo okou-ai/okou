@@ -1,3 +1,4 @@
+import { getDataClientConfig as getClientConfig } from "../data-router-client";
 import {
   findManagedSocialKitTool,
   projectPublicSocialResponse,
@@ -24,7 +25,7 @@ import type {
   SocialStatusResponse,
 } from "@okouai/api-contracts/contracts/social-discovery";
 
-import { ApiRequestError, getClientConfig } from "../core/client-factory";
+import { ApiRequestError } from "../core/client-factory";
 
 const SOCIALKIT_API_TIMEOUT_MS = 280_000;
 

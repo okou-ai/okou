@@ -78,7 +78,6 @@ import { cronProjectChatEventSearchRoutes } from "./routes/cron-project-chat-eve
 import { cronPruneStoragePresignedUrlsRoutes } from "./routes/cron-prune-storage-presigned-urls";
 import { cronReconcileArtifactCatalogRoutes } from "./routes/cron-reconcile-artifact-catalog";
 import { cronReconcileBillingEntitlementsRoutes } from "./routes/cron-reconcile-billing-entitlements";
-import { cronReconcileSocialKitDownloadRoutes } from "./routes/cron-reconcile-socialkit-downloads";
 import { cronRenewGmailWatchesRoutes } from "./routes/cron-renew-gmail-watches";
 import { cronRenewGoogleCalendarWatchesRoutes } from "./routes/cron-renew-google-calendar-watches";
 import { cronRenewGoogleFormsWatchesRoutes } from "./routes/cron-renew-google-forms-watches";
@@ -105,7 +104,6 @@ import { feishuBrowserConnectRoutes } from "./routes/feishu-browser-connect";
 import { feishuConnectRoutes } from "./routes/feishu-connect";
 import { feishuEventsRoutes } from "./routes/feishu-events";
 import { feishuOauthRoutes } from "./routes/feishu-oauth";
-import { financeRoutes } from "./routes/finance";
 import { getStartedRoutes } from "./routes/get-started";
 import { githubOauthRoutes } from "./routes/github-oauth";
 import { healthRoutes } from "./routes/health";
@@ -142,7 +140,6 @@ import { integrationsTelegramUploadCompleteRoutes } from "./routes/integrations-
 import { integrationsTelegramUploadInitRoutes } from "./routes/integrations-telegram-upload-init";
 import { logsRoutes } from "./routes/logs";
 import { mailRoutes } from "./routes/mail";
-import { mapsRoutes } from "./routes/maps";
 import { mcpConnectorsRoutes } from "./routes/mcp-connectors";
 import { mcpOAuthClientMetadataRoutes } from "./routes/mcp-oauth-client-metadata";
 import { mcpServerRoutes } from "./routes/mcp-server";
@@ -172,7 +169,6 @@ import { orgMembershipRequestsRoutes } from "./routes/org-membership-requests";
 import { orgReadRoutes } from "./routes/org-read";
 import { orgOpenrouterPresetRoutes } from "./routes/org-openrouter-preset";
 import { paidToolsRoutes } from "./routes/paid-tools";
-import { peopleSearchRoutes } from "./routes/people-search";
 import { presentationTemplatesRoutes } from "./routes/presentation-templates";
 import { pushSubscriptionsRoutes } from "./routes/push-subscriptions";
 import { realtimeTokenRoutes } from "./routes/realtime-token";
@@ -185,10 +181,6 @@ import { runnerVncRoutes } from "./routes/runner-vnc";
 import { runnersRoutes } from "./routes/runners";
 import { runsRoutes } from "./routes/runs";
 import { runsCancelRoutes } from "./routes/runs-cancel";
-import { scrapeRoutes } from "./routes/scrape";
-import { seoRoutes } from "./routes/seo";
-import { commerceRoutes } from "./routes/commerce";
-import { cronReconcileCommerceJobRoutes } from "./routes/cron-reconcile-commerce-jobs";
 import { sharedThreadRoutes } from "./routes/shared-threads";
 import { skillImportRoutes } from "./routes/skill-import";
 import { slackChannelsRoutes } from "./routes/slack-channels";
@@ -197,9 +189,6 @@ import { slackConnectRoutes } from "./routes/slack-connect";
 import { slackEventsRoutes } from "./routes/slack-events";
 import { slackInteractiveRoutes } from "./routes/slack-interactive";
 import { slackOauthRoutes } from "./routes/slack-oauth";
-import { socialRoutes } from "./routes/social";
-import { socialDataRoutes } from "./routes/social-data";
-import { dataSearchRoutes } from "./routes/data-search";
 import { sshAccessRoutes } from "./routes/ssh-access";
 import { sshConnectionsRoutes } from "./routes/ssh-connections";
 import { teamsBotRoutes } from "./routes/teams-bot";
@@ -221,10 +210,10 @@ import { vncConnectionsRoutes } from "./routes/vnc-connections";
 import { voiceIoPolishRoutes } from "./routes/voice-io-polish";
 import { voiceIoQuotaRoutes } from "./routes/voice-io-quota";
 import { voiceIoTranscribeRoutes } from "./routes/voice-io-transcribe";
-import { weatherRoutes } from "./routes/weather";
 import { webFileUrlRoutes } from "./routes/web-file-url";
-import { webSearchRoutes } from "./routes/web-search";
 
+import { dataRouterHistoryRoutes } from "./routes/data-router-history";
+import { webhooksAgentDataRequestRoutes } from "./routes/webhooks-agent-data-request";
 import { webhooksAgentCompleteRoutes } from "./routes/webhooks-agent-complete";
 import { webhooksAgentEventsRoutes } from "./routes/webhooks-agent-events";
 import { webhooksAgentFirewallAuthRoutes } from "./routes/webhooks-agent-firewall-auth";
@@ -272,6 +261,8 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webhooksStripeConnectRoutes,
   ...webhooksAgentHealthUsageTelemetryRoutes,
   ...webhooksAgentCompleteRoutes,
+  ...webhooksAgentDataRequestRoutes,
+  ...dataRouterHistoryRoutes,
   ...webhooksAgentEventsRoutes,
   ...webhooksAgentSessionOutputRoutes,
   ...webhooksAgentFirewallAuthRoutes,
@@ -299,7 +290,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronRenewGoogleCalendarWatchesRoutes,
   ...cronRenewGoogleWorkspaceEventSubscriptionsRoutes,
   ...cronProcessUsageEventsRoutes,
-  ...cronReconcileSocialKitDownloadRoutes,
   ...cronReconcileBillingEntitlementsRoutes,
   ...cronPruneStoragePresignedUrlsRoutes,
   ...cronMaterializePiResourceIndexesRoutes,
@@ -352,10 +342,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...customConnectorsRoutes,
   ...emailInboundRoutes,
   ...featureSwitchesRoutes,
-  ...financeRoutes,
-  ...seoRoutes,
-  ...commerceRoutes,
-  ...cronReconcileCommerceJobRoutes,
   ...hostRoutes,
   ...artifactShareRoutes,
   ...artifactReferenceRoutes,
@@ -365,17 +351,9 @@ export const ROUTES: readonly RouteEntry[] = [
   ...imageIoGenerateRoutes,
   ...logsRoutes,
   ...mailRoutes,
-  ...mapsRoutes,
   ...mcpConnectorsRoutes,
   ...mcpOAuthClientMetadataRoutes,
   ...mcpServerRoutes,
-  ...weatherRoutes,
-  ...scrapeRoutes,
-  ...peopleSearchRoutes,
-  ...webSearchRoutes,
-  ...socialRoutes,
-  ...socialDataRoutes,
-  ...dataSearchRoutes,
   ...sshConnectionsRoutes,
   ...vncConnectionsRoutes,
   ...chatRemoteAccessRoutes,

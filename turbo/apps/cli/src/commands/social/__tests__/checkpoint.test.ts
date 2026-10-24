@@ -1,3 +1,4 @@
+import { dataRouterTool } from "../../../mocks/data-router";
 import { createHmac, randomBytes } from "node:crypto";
 import {
   mkdir,
@@ -12,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -104,7 +105,7 @@ describe("social collection checkpoints through the CLI", () => {
   it("rejects an explicitly empty checkpoint path before provider work", async () => {
     let requests = 0;
     server.use(
-      http.post(endpoint, () => {
+      dataRouterTool("social:*", endpoint, () => {
         requests += 1;
         return HttpResponse.json(response(["one", "two", "three"], "next"));
       }),
@@ -129,7 +130,7 @@ describe("social collection checkpoints through the CLI", () => {
     async (format) => {
       let requests = 0;
       server.use(
-        http.post(endpoint, () => {
+        dataRouterTool("social:*", endpoint, () => {
           requests += 1;
           const page = response(["one", "two", "three"], "next");
           return HttpResponse.json({
@@ -186,7 +187,7 @@ describe("social collection checkpoints through the CLI", () => {
   it("retains Instagram provider outcome through checkpoint resume", async () => {
     let requests = 0;
     server.use(
-      http.post(endpoint, () => {
+      dataRouterTool("social:*", endpoint, () => {
         requests += 1;
         const page = response(["one", "two"], "next");
         const providerOutcome = {
@@ -225,7 +226,7 @@ describe("social collection checkpoints through the CLI", () => {
   it("exports one partial receipt and resumes the failed page", async () => {
     let requests = 0;
     server.use(
-      http.post(endpoint, () => {
+      dataRouterTool("social:*", endpoint, () => {
         requests += 1;
         if (requests === 2) return HttpResponse.error();
         return HttpResponse.json(
@@ -254,7 +255,7 @@ describe("social collection checkpoints through the CLI", () => {
     const output = join(directory, "results.json");
     let requests = 0;
     server.use(
-      http.post(endpoint, async () => {
+      dataRouterTool("social:*", endpoint, async () => {
         requests += 1;
         await mkdir(output);
         return HttpResponse.json(response(["one", "two", "three"], "next"));
@@ -288,7 +289,7 @@ describe("social collection checkpoints through the CLI", () => {
     async (kind) => {
       let requests = 0;
       server.use(
-        http.post(endpoint, () => {
+        dataRouterTool("social:*", endpoint, () => {
           requests += 1;
           return HttpResponse.json(response(["one", "two", "three"]));
         }),
@@ -316,7 +317,7 @@ describe("social collection checkpoints through the CLI", () => {
     const text = "A多字节🙂".repeat(20_000);
     let requests = 0;
     server.use(
-      http.post(endpoint, () => {
+      dataRouterTool("social:*", endpoint, () => {
         requests += 1;
         return HttpResponse.json({
           ...response(["one", "two"]),
@@ -346,7 +347,7 @@ describe("social collection checkpoints through the CLI", () => {
   it("rejects oversized checkpoint files before reading provider data", async () => {
     let requests = 0;
     server.use(
-      http.post(endpoint, () => {
+      dataRouterTool("social:*", endpoint, () => {
         requests += 1;
         return HttpResponse.json(response([]));
       }),
@@ -362,7 +363,7 @@ describe("social collection checkpoints through the CLI", () => {
   it("preserves the buffered page context when a later page overshoots", async () => {
     let requests = 0;
     server.use(
-      http.post(endpoint, () => {
+      dataRouterTool("social:*", endpoint, () => {
         requests += 1;
         const first = requests === 1;
         const page = response(
@@ -397,7 +398,7 @@ describe("social collection checkpoints through the CLI", () => {
       const requests: unknown[] = [];
       const posts = operation === "posts";
       server.use(
-        http.post(endpoint, async ({ request }) => {
+        dataRouterTool("social:*", endpoint, async ({ request }) => {
           requests.push(await request.json());
           const first = requests.length === 1;
           return HttpResponse.json({
@@ -480,7 +481,7 @@ describe("social collection checkpoints through the CLI", () => {
     "does not invent recovery after %s",
     async (kind) => {
       server.use(
-        http.post(endpoint, () => {
+        dataRouterTool("social:*", endpoint, () => {
           return kind === "empty"
             ? HttpResponse.json(response([]))
             : HttpResponse.json(
@@ -510,7 +511,7 @@ describe("social collection checkpoints through the CLI", () => {
   it("preserves accepted output when the checkpoint cannot be published", async () => {
     let requests = 0;
     server.use(
-      http.post(endpoint, async () => {
+      dataRouterTool("social:*", endpoint, async () => {
         requests += 1;
         await mkdir(checkpoint);
         return HttpResponse.json(response(["one", "two", "three"], "next"));
@@ -540,7 +541,7 @@ describe("social collection checkpoints through the CLI", () => {
     "preserves accepted output when checkpoint publication and lock cleanup both fail (stream: %s)",
     async (stream) => {
       server.use(
-        http.post(endpoint, async () => {
+        dataRouterTool("social:*", endpoint, async () => {
           await mkdir(checkpoint);
           await rm(`${checkpoint}.lock`);
           await mkdir(`${checkpoint}.lock`);
@@ -571,7 +572,7 @@ describe("social collection checkpoints through the CLI", () => {
     async (hasMore) => {
       const requests: unknown[] = [];
       server.use(
-        http.post(endpoint, async ({ request }) => {
+        dataRouterTool("social:*", endpoint, async ({ request }) => {
           requests.push(await request.json());
           return HttpResponse.json(
             requests.length === 1
@@ -661,7 +662,7 @@ describe("social collection checkpoints through the CLI", () => {
   it("preserves an unknown cumulative charge through checkpoint tail replay and another billed page", async () => {
     const requests: unknown[] = [];
     server.use(
-      http.post(endpoint, async ({ request }) => {
+      dataRouterTool("social:*", endpoint, async ({ request }) => {
         requests.push(await request.json());
         return HttpResponse.json(
           requests.length === 1
@@ -709,7 +710,7 @@ describe("social collection checkpoints through the CLI", () => {
 
   it("reports lock cleanup failure even when collection and checkpoint publication succeed", async () => {
     server.use(
-      http.post(endpoint, async () => {
+      dataRouterTool("social:*", endpoint, async () => {
         await rm(`${checkpoint}.lock`);
         await mkdir(`${checkpoint}.lock`);
         return HttpResponse.json(response(["one", "two"]));
@@ -731,7 +732,7 @@ describe("social collection checkpoints through the CLI", () => {
   it("retains a tail across several resumes and preserves the exact target and filters", async () => {
     const requests: unknown[] = [];
     server.use(
-      http.post(endpoint, async ({ request }) => {
+      dataRouterTool("social:*", endpoint, async ({ request }) => {
         requests.push(await request.json());
         return HttpResponse.json(
           requests.length === 1
@@ -775,7 +776,7 @@ describe("social collection checkpoints through the CLI", () => {
     async (failure) => {
       const requests: unknown[] = [];
       server.use(
-        http.post(endpoint, async ({ request }) => {
+        dataRouterTool("social:*", endpoint, async ({ request }) => {
           requests.push(await request.json());
           if (requests.length === 2) {
             if (failure === "network") return HttpResponse.error();
@@ -835,7 +836,7 @@ describe("social collection checkpoints through the CLI", () => {
     async (failure) => {
       let requests = 0;
       server.use(
-        http.post(endpoint, () => {
+        dataRouterTool("social:*", endpoint, () => {
           requests += 1;
           if (requests === 2 && failure === "malformed")
             return HttpResponse.json({ invalid: true });
@@ -875,7 +876,7 @@ describe("social collection checkpoints through the CLI", () => {
   it("does not fabricate continuation for a cursorless operation", async () => {
     let requests = 0;
     server.use(
-      http.post(endpoint, () => {
+      dataRouterTool("social:*", endpoint, () => {
         requests += 1;
         return HttpResponse.json({});
       }),
@@ -898,7 +899,7 @@ describe("social collection checkpoints through the CLI", () => {
   it("drains a provider-limited tail without advancing the source", async () => {
     let requests = 0;
     server.use(
-      http.post(endpoint, () => {
+      dataRouterTool("social:*", endpoint, () => {
         requests += 1;
         return HttpResponse.json({
           ...response(["one", "two", "three"]),
@@ -941,7 +942,7 @@ describe("social collection checkpoints through the CLI", () => {
   ])("rejects %s checkpoints before network access", async (kind) => {
     let requests = 0;
     server.use(
-      http.post(endpoint, () => {
+      dataRouterTool("social:*", endpoint, () => {
         requests += 1;
         return HttpResponse.json(response(["one", "two", "three"], "next"));
       }),
@@ -995,7 +996,7 @@ describe("social collection checkpoints through the CLI", () => {
   it("rejects a locked, existing, or symlinked checkpoint without another request", async () => {
     let requests = 0;
     server.use(
-      http.post(endpoint, () => {
+      dataRouterTool("social:*", endpoint, () => {
         requests += 1;
         return HttpResponse.json(response(["one", "two", "three"]));
       }),

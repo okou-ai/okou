@@ -1,3 +1,4 @@
+import { getDataClientConfig as getClientConfig } from "../data-router-client";
 import {
   socialDataContract,
   type SocialDataCreateRequest,
@@ -10,11 +11,7 @@ import {
 } from "@okouai/api-contracts/contracts/social-data";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 
-import {
-  ApiRequestError,
-  getClientConfig,
-  handleError,
-} from "../core/client-factory";
+import { ApiRequestError, handleError } from "../core/client-factory";
 
 const REQUEST_TIMEOUT_MS = 60_000;
 

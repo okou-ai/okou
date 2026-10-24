@@ -2020,6 +2020,7 @@ const scheduleClaimFailedSideEffects$ = command(
           dispatchCompleteSideEffects$,
           {
             kind: "terminal",
+            firstTerminalTransition: true,
             runId: args.runId,
             orgId: args.orgId,
             status: "failed",

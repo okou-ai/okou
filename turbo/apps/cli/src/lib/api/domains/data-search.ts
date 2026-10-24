@@ -1,3 +1,4 @@
+import { getDataClientConfig as getClientConfig } from "../data-router-client";
 import {
   dataSearchContract,
   type DataSearchRequest,
@@ -6,11 +7,7 @@ import {
 } from "@okouai/api-contracts/contracts/data-search";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 
-import {
-  ApiRequestError,
-  getClientConfig,
-  handleError,
-} from "../core/client-factory";
+import { ApiRequestError, handleError } from "../core/client-factory";
 
 const REQUEST_TIMEOUT_MS = 60_000;
 

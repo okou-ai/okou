@@ -1,3 +1,4 @@
+import { getDataClientConfig as getClientConfig } from "../data-router-client";
 import {
   financeContract,
   type FinanceChartRequest,
@@ -8,7 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/finance";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 
-import { getClientConfig, handleError } from "../core/client-factory";
+import { handleError } from "../core/client-factory";
 
 export async function callFinanceSearch(
   body: FinanceSearchRequest,

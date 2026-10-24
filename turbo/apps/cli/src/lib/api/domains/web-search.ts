@@ -1,3 +1,4 @@
+import { getDataClientConfig as getClientConfig } from "../data-router-client";
 import {
   webSearchContract,
   type WebSearchRequest,
@@ -5,7 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/web-search";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 
-import { getClientConfig, handleError } from "../core/client-factory";
+import { handleError } from "../core/client-factory";
 
 export async function callWebSearch(
   body: WebSearchRequest,

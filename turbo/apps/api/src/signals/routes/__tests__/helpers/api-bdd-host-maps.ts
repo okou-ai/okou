@@ -10,16 +10,10 @@ import {
   type HostedSitePrepareRequest,
   type HostedSitePrepareResponse,
 } from "@okouai/api-contracts/contracts/host";
-import {
-  mapsContract,
-  type MapsSearchRequest,
-} from "@okouai/api-contracts/contracts/maps";
 
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
-import type { RouteEntry } from "../../../route-entry";
 import { hostRoutes } from "../../host";
-import { mapsRoutes } from "../../maps";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 
@@ -42,7 +36,6 @@ type HostCompleteStatus = 200 | 400 | 401 | 402 | 403 | 404 | 409 | 500;
 type HostFilesStatus = 200 | 400 | 401 | 403 | 404 | 409 | 500;
 type HostDeploymentsStatus = 200 | 400 | 401 | 403 | 404 | 500;
 type HostDeleteStatus = 200 | 400 | 401 | 403 | 404 | 409 | 500;
-type MapsStatus = 200 | 400 | 401 | 402 | 403 | 502 | 503;
 
 interface HostedSitesS3Capture {
   readonly puts: { readonly key: string; readonly body: string }[];
@@ -140,22 +133,13 @@ function objectPreconditionFails(
   );
 }
 
-const hostMapsRoutes: readonly RouteEntry[] = [...hostRoutes, ...mapsRoutes];
-
 export function createHostMapsBddApi(context: TestContext) {
   function hostClient() {
     return setupAppWithRoutes({
       context,
-      routes: hostMapsRoutes,
+      routes: hostRoutes,
       baseUrl: "https://api.okou.ai",
     })(hostContract);
-  }
-
-  function mapsClient() {
-    return setupAppWithRoutes({
-      context,
-      routes: hostMapsRoutes,
-    })(mapsContract);
   }
 
   return {
@@ -386,20 +370,6 @@ export function createHostMapsBddApi(context: TestContext) {
         hostClient().deleteSite({
           headers: authenticate(context, actor),
           params: { publicSlug },
-        }),
-        statuses,
-      );
-    },
-
-    async requestMapsSearchWithBearer(
-      token: string,
-      body: MapsSearchRequest,
-      statuses: readonly MapsStatus[],
-    ) {
-      return await accept(
-        mapsClient().search({
-          headers: { authorization: `Bearer ${token}` },
-          body,
         }),
         statuses,
       );

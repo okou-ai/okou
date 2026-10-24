@@ -1,6 +1,7 @@
+import { dataRouterTool } from "../../../mocks/data-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import chalk from "chalk";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 
 import { server } from "../../../mocks/server";
 import { weatherCommand } from "../index";
@@ -32,7 +33,8 @@ describe("okou data weather command", () => {
   it("posts current-condition requests and renders a readable summary", async () => {
     let requestBody: unknown;
     server.use(
-      http.post(
+      dataRouterTool(
+        "weather_current",
         "http://localhost:3000/api/weather/current",
         async ({ request }) => {
           requestBody = await request.json();
@@ -80,7 +82,8 @@ describe("okou data weather command", () => {
   it("renders daily forecasts with the useful weather fields", async () => {
     let requestBody: unknown;
     server.use(
-      http.post(
+      dataRouterTool(
+        "weather_forecast_daily",
         "http://localhost:3000/api/weather/forecast/daily",
         async ({ request }) => {
           requestBody = await request.json();
@@ -169,7 +172,8 @@ describe("okou data weather command", () => {
   it("passes hourly forecast range and pagination without aggregating pages", async () => {
     let requestBody: unknown;
     server.use(
-      http.post(
+      dataRouterTool(
+        "weather_forecast_hourly",
         "http://localhost:3000/api/weather/forecast/hourly",
         async ({ request }) => {
           requestBody = await request.json();
@@ -237,7 +241,8 @@ describe("okou data weather command", () => {
   it("posts compact current air quality requests", async () => {
     let requestBody: unknown;
     server.use(
-      http.post(
+      dataRouterTool(
+        "weather_air_quality_current",
         "http://localhost:3000/api/weather/air-quality/current",
         async ({ request }) => {
           requestBody = await request.json();
@@ -282,7 +287,8 @@ describe("okou data weather command", () => {
   it("posts daily forecast options to the daily endpoint", async () => {
     let requestBody: unknown;
     server.use(
-      http.post(
+      dataRouterTool(
+        "weather_forecast_daily",
         "http://localhost:3000/api/weather/forecast/daily",
         async ({ request }) => {
           requestBody = await request.json();
@@ -328,7 +334,8 @@ describe("okou data weather command", () => {
   it("posts recent hourly history options to the history endpoint", async () => {
     let requestBody: unknown;
     server.use(
-      http.post(
+      dataRouterTool(
+        "weather_history_hourly",
         "http://localhost:3000/api/weather/history/hourly",
         async ({ request }) => {
           requestBody = await request.json();

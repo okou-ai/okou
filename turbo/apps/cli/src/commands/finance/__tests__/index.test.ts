@@ -1,5 +1,6 @@
+import { dataRouterTool } from "../../../mocks/data-router";
 import chalk from "chalk";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import {
   afterAll,
   afterEach,
@@ -89,7 +90,8 @@ describe("okou data finance command", () => {
     let requestBody: unknown;
     const response = financeResponse(example.operation, example.result);
     server.use(
-      http.post(
+      dataRouterTool(
+        `finance_${example.operation}`,
         `http://localhost:3000/api/finance/${example.operation}`,
         async ({ request }) => {
           requestBody = await request.json();
@@ -116,7 +118,8 @@ describe("okou data finance command", () => {
       chart: { result: [{ meta: { symbol: "AAPL" }, timestamp: [1, 2] }] },
     };
     server.use(
-      http.post(
+      dataRouterTool(
+        "finance_chart",
         "http://localhost:3000/api/finance/chart",
         async ({ request }) => {
           requestBody = await request.json();
@@ -151,10 +154,14 @@ describe("okou data finance command", () => {
   it("rejects invalid chart intervals before calling the API", async () => {
     let apiRequests = 0;
     server.use(
-      http.post("http://localhost:3000/api/finance/chart", () => {
-        apiRequests += 1;
-        return HttpResponse.json(financeResponse("chart", {}));
-      }),
+      dataRouterTool(
+        "finance_chart",
+        "http://localhost:3000/api/finance/chart",
+        () => {
+          apiRequests += 1;
+          return HttpResponse.json(financeResponse("chart", {}));
+        },
+      ),
     );
 
     await expect(

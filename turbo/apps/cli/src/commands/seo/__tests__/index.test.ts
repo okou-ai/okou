@@ -1,5 +1,6 @@
+import { dataRouterTool } from "../../../mocks/data-router";
 import chalk from "chalk";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import {
   afterAll,
   afterEach,
@@ -82,10 +83,14 @@ describe("okou data seo command", () => {
       tasks: [{ result: [{ title: "Coffee" }] }],
     });
     server.use(
-      http.post("http://localhost:3000/api/seo/serp", async ({ request }) => {
-        requestBody = await request.json();
-        return HttpResponse.json(response);
-      }),
+      dataRouterTool(
+        "seo_serp",
+        "http://localhost:3000/api/seo/serp",
+        async ({ request }) => {
+          requestBody = await request.json();
+          return HttpResponse.json(response);
+        },
+      ),
     );
 
     await seoCommand.parseAsync([
@@ -144,7 +149,7 @@ describe("okou data seo command", () => {
         partialResults: true,
       };
       server.use(
-        http.post("http://localhost:3000/api/seo/serp", () => {
+        dataRouterTool("seo_serp", "http://localhost:3000/api/seo/serp", () => {
           return HttpResponse.json(response);
         }),
       );
@@ -177,7 +182,7 @@ describe("okou data seo command", () => {
 
   it("keeps provider failures unsuccessful instead of reporting partial success", async () => {
     server.use(
-      http.post("http://localhost:3000/api/seo/serp", () => {
+      dataRouterTool("seo_serp", "http://localhost:3000/api/seo/serp", () => {
         return HttpResponse.json(
           {
             error: {
@@ -207,7 +212,8 @@ describe("okou data seo command", () => {
       tasks: [{ result: [{ keyword: "seo audit" }] }],
     });
     server.use(
-      http.post(
+      dataRouterTool(
+        "seo_keyword_ideas",
         "http://localhost:3000/api/seo/keyword-ideas",
         async ({ request }) => {
           requestBody = await request.json();
@@ -240,10 +246,14 @@ describe("okou data seo command", () => {
   it("posts supported DataForSEO search engines", async () => {
     let requestBody: unknown;
     server.use(
-      http.post("http://localhost:3000/api/seo/serp", async ({ request }) => {
-        requestBody = await request.json();
-        return HttpResponse.json(dataForSeoResponse("serp", {}));
-      }),
+      dataRouterTool(
+        "seo_serp",
+        "http://localhost:3000/api/seo/serp",
+        async ({ request }) => {
+          requestBody = await request.json();
+          return HttpResponse.json(dataForSeoResponse("serp", {}));
+        },
+      ),
     );
 
     await seoCommand.parseAsync([
@@ -273,7 +283,7 @@ describe("okou data seo command", () => {
   it("rejects mobile DataForSEO Google News before calling the API", async () => {
     let apiRequests = 0;
     server.use(
-      http.post("http://localhost:3000/api/seo/serp", () => {
+      dataRouterTool("seo_serp", "http://localhost:3000/api/seo/serp", () => {
         apiRequests += 1;
         return HttpResponse.json(dataForSeoResponse("serp", {}));
       }),
@@ -360,13 +370,17 @@ describe("okou data seo command", () => {
       'Use a supported country or region, such as "United States" or "US". City and state locations are not supported.';
     let apiRequests = 0;
     server.use(
-      http.post("http://localhost:3000/api/seo/keyword-ideas", () => {
-        apiRequests += 1;
-        return HttpResponse.json(
-          { error: { code: "DATAFORSEO_INVALID_REQUEST", message } },
-          { status: 400 },
-        );
-      }),
+      dataRouterTool(
+        "seo_keyword_ideas",
+        "http://localhost:3000/api/seo/keyword-ideas",
+        () => {
+          apiRequests += 1;
+          return HttpResponse.json(
+            { error: { code: "DATAFORSEO_INVALID_REQUEST", message } },
+            { status: 400 },
+          );
+        },
+      ),
     );
 
     await expect(

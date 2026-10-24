@@ -1,3 +1,4 @@
+import { isDataRouterToolEnabled } from "../../lib/command/paid-tools";
 import { z } from "zod";
 import {
   findManagedSocialKitTool,
@@ -416,21 +417,34 @@ function jobSection(selected: SocialCommandPlatform) {
     platform: selected === "twitter" ? "x" : selected,
     controls: ["--dry-run", "--max-credits", "--async", "--request-id"],
     maxResults: SOCIAL_DATA_MAX_RESULTS,
-    details: jobCapabilities[selected] ?? [],
+    details: isDataRouterToolEnabled("social_data_create")
+      ? (jobCapabilities[selected] ?? [])
+      : [],
     note: "Explicit job controls select these capabilities. Existing commands without them use the standard capabilities above. Deployment availability is checked by the free quote API; unsupported inputs fail before execution.",
-    recovery: "okou data social jobs get <job-id> --wait --json",
+    ...(isDataRouterToolEnabled("social_data_get")
+      ? { recovery: "okou data social jobs get <job-id> --wait --json" }
+      : {}),
     ...(selected === "douyin" || selected === "weibo"
       ? {
           targetConstraints:
             selected === "douyin"
               ? "Full public HTTPS douyin.com/user/<id> or douyin.com/video/<numeric-id>; no query strings, fragments, or share links"
               : "Full public HTTPS weibo.com/u/<numeric-id>, weibo.com/n/<name> (inspect only), or weibo.com/<numeric-user-id>/<numeric-post-id>; no query strings, fragments, or share links",
-          continuation: {
-            quote: "okou data social jobs continue <job-id> --dry-run --json",
-            create:
-              "okou data social jobs continue <job-id> --max-credits <credits> [--async] --json",
-            note: "Explicit one-page successor job only when continuationAvailable; immutable target, filters, and total collection limit; independent budget and request ID. No automatic recursion or retries.",
-          },
+          ...(isDataRouterToolEnabled("social_data_continue")
+            ? {
+                continuation: {
+                  ...(isDataRouterToolEnabled("social_data_quote_continuation")
+                    ? {
+                        quote:
+                          "okou data social jobs continue <job-id> --dry-run --json",
+                      }
+                    : {}),
+                  create:
+                    "okou data social jobs continue <job-id> --max-credits <credits> [--async] --json",
+                  note: "Explicit one-page successor job only when continuationAvailable; immutable target, filters, and total collection limit; independent budget and request ID. No automatic recursion or retries.",
+                },
+              }
+            : {}),
           downloads: false,
         }
       : {}),
@@ -441,31 +455,52 @@ export function socialCapabilities(platform?: SocialCommandPlatform) {
   const platforms: readonly SocialCommandPlatform[] = platform
     ? [platform]
     : [...socialPlatformSchema.options, ...SOCIAL_JOB_ONLY_PLATFORMS];
-  return platforms.map((selected) => {
-    if (isJobOnlyPlatform(selected)) {
+  return platforms
+    .filter((selected) => {
+      return (
+        isDataRouterToolEnabled("social_data_create") ||
+        (!isJobOnlyPlatform(selected) &&
+          socialOperationBindings(selected).some((entry) => {
+            return isDataRouterToolEnabled(
+              entry.tool ?? "social_download_create",
+            );
+          }))
+      );
+    })
+    .map((selected) => {
+      if (isJobOnlyPlatform(selected)) {
+        return {
+          platform: selected,
+          operations: [],
+          notes: [
+            "Saved data jobs are the only protocol for this platform; the standard Social commands have no tool for it",
+          ],
+          details: [],
+          ...(isDataRouterToolEnabled("social_data_create")
+            ? { jobs: jobSection(selected) }
+            : {}),
+        };
+      }
+      const bindings = socialOperationBindings(selected);
+      const entries = bindings.filter((entry) => {
+        return isDataRouterToolEnabled(entry.tool ?? "social_download_create");
+      });
       return {
         platform: selected,
-        operations: [],
-        notes: [
-          "Saved data jobs are the only protocol for this platform; the standard Social commands have no tool for it",
-        ],
-        details: [],
-        jobs: jobSection(selected),
+        operations: [
+          ...new Set(
+            entries.map((entry) => {
+              return entry.operation;
+            }),
+          ),
+        ].sort(),
+        ...(notes[selected] && entries.length === bindings.length
+          ? { notes: notes[selected] }
+          : {}),
+        details: entries.map(detailsFor),
+        ...(isDataRouterToolEnabled("social_data_create")
+          ? { jobs: jobSection(selected) }
+          : {}),
       };
-    }
-    const entries = socialOperationBindings(selected);
-    return {
-      platform: selected,
-      operations: [
-        ...new Set(
-          entries.map((entry) => {
-            return entry.operation;
-          }),
-        ),
-      ].sort(),
-      ...(notes[selected] ? { notes: notes[selected] } : {}),
-      details: entries.map(detailsFor),
-      jobs: jobSection(selected),
-    };
-  });
+    });
 }

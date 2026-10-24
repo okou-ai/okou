@@ -1,4 +1,8 @@
 import {
+  DATA_ROUTER_TOOLS,
+  type DataRouterToolName,
+} from "@okouai/api-contracts/contracts/data-router-tools";
+import {
   DISABLED_PAID_TOOLS_ENV_VAR,
   paidToolIdSchema,
   type PaidToolId,
@@ -27,6 +31,17 @@ function readPolicy(): ReadonlySet<string> | null {
 export function isPaidToolEnabled(tool: PaidToolId): boolean {
   const policy = readPolicy();
   return policy !== null && !policy.has(tool);
+}
+
+export function isDataRouterToolEnabled(name: DataRouterToolName): boolean {
+  const tool = DATA_ROUTER_TOOLS.find((entry) => {
+    return entry.name === name;
+  });
+  return Boolean(
+    tool &&
+    isPaidToolEnabled(tool.family) &&
+    isPaidToolEnabled(`data:${tool.name}`),
+  );
 }
 
 /** Whole managed families are absent from the run's command tree. */

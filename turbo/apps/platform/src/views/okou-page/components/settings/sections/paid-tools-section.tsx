@@ -33,6 +33,7 @@ import {
   type ImageModelSettings,
   type PaidToolsSettings,
   type PaidToolSettings,
+  type DataRouterToolSettings,
 } from "../../../../../signals/okou-page/settings/paid-tools.ts";
 import { currentOrgInfo$ } from "../../../../../signals/auth.ts";
 import { settingsActionSignal$ } from "../../../../../signals/okou-page/settings/settings-dialog.ts";
@@ -57,16 +58,20 @@ function PaidToolRow({
   tool,
   grouped = false,
 }: {
-  readonly tool: PaidToolSettings;
+  readonly tool: PaidToolSettings | DataRouterToolSettings;
   readonly grouped?: boolean;
 }) {
   const { t } = useTranslation();
   const enabled = useLoadable(tool.enabled$);
+  const familyEnabled = useLoadable(tool.familyEnabled$);
   const [save, update] = useLoadableSet(tool.update$);
   const signal = useGet(settingsActionSignal$);
-  const title = t(($) => {
-    return $.settings.paidTools.tools[tool.toolId].name;
-  });
+  const title =
+    "definition" in tool
+      ? tool.definition.title
+      : t(($) => {
+          return $.settings.paidTools.tools[tool.toolId].name;
+        });
   const pending = save.state === "loading";
   const current = enabled.state === "hasData" ? enabled.data : false;
   const toggle = (checked: boolean) => {
@@ -76,12 +81,18 @@ function PaidToolRow({
   };
   return (
     <PreferenceCardRow
-      icon={TOOL_ICONS[tool.toolId]}
+      icon={
+        TOOL_ICONS["definition" in tool ? tool.definition.family : tool.toolId]
+      }
       grouped={grouped}
       title={title}
-      description={t(($) => {
-        return $.settings.paidTools.tools[tool.toolId].description;
-      })}
+      description={
+        "definition" in tool
+          ? tool.definition.description
+          : t(($) => {
+              return $.settings.paidTools.tools[tool.toolId].description;
+            })
+      }
       status={
         pending ? (
           <p role="status" className="text-sm text-muted-foreground">
@@ -115,7 +126,12 @@ function PaidToolRow({
         aria-label={title}
         checked={current}
         disabled={
-          enabled.state !== "hasData" || pending || !signal || signal.aborted
+          enabled.state !== "hasData" ||
+          familyEnabled.state !== "hasData" ||
+          !familyEnabled.data ||
+          pending ||
+          !signal ||
+          signal.aborted
         }
         onCheckedChange={toggle}
       />
@@ -328,7 +344,20 @@ function PaidToolsContent({
                   imageModel={settings.imageModel}
                 />
               ) : (
-                <PaidToolRow key={tool.toolId} tool={tool} />
+                <div key={tool.toolId} className="flex flex-col gap-2">
+                  <PaidToolRow tool={tool} />
+                  <div className="ml-4 flex flex-col gap-2">
+                    {settings.dataTools
+                      .filter((dataTool) => {
+                        return dataTool.definition.family === tool.toolId;
+                      })
+                      .map((dataTool) => {
+                        return (
+                          <PaidToolRow key={dataTool.toolId} tool={dataTool} />
+                        );
+                      })}
+                  </div>
+                </div>
               );
             })}
           </div>

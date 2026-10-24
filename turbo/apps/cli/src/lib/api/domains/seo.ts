@@ -1,3 +1,4 @@
+import { getDataClientConfig as getClientConfig } from "../data-router-client";
 import {
   seoContract,
   type SeoBacklinksSummaryRequest,
@@ -8,7 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/seo";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 
-import { getClientConfig, handleError } from "../core/client-factory";
+import { handleError } from "../core/client-factory";
 
 export async function callSeoSerp(body: SeoSerpRequest): Promise<SeoResponse> {
   const config = await getClientConfig();

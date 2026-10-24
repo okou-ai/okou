@@ -11,7 +11,7 @@ import { publishUserSignal } from "../external/realtime";
 import { safeUrlParse } from "../utils";
 import { grantGetStartedClaim$ } from "./get-started-member-reward.service";
 import type { GetStartedClaimRow } from "./get-started-rewards.service";
-import { readGetStartedRewardPost } from "./social.service";
+import { readGetStartedRewardPost } from "./get-started-reward-post";
 
 export function normalizeGetStartedPostUrl(
   input: string,

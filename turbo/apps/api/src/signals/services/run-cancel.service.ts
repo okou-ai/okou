@@ -13,6 +13,7 @@ import { tapError } from "../utils";
 import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
 import type { CancelRunResult } from "./agent-run-terminal-transition.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
+import { settleDataRouterRun$ } from "./data-router-billing.service";
 
 const L = logger("RunCancel");
 
@@ -167,6 +168,13 @@ export const dispatchCancelSideEffects$ = command(
 
     // A fresh cancellation always came from pending or running, so the
     // cancelled run may have accumulated usage events.
+    await tapError(set(settleDataRouterRun$, result.runId, signal), (error) => {
+      L.error("Data Router cancellation billing failed; no retry scheduled", {
+        runId: result.runId,
+        error,
+      });
+    });
+    signal.throwIfAborted();
     await set(processOrgUsageEvents$, result.orgId, signal);
     signal.throwIfAborted();
   },

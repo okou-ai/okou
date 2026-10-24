@@ -1,3 +1,4 @@
+import { dataRouterTool } from "../mocks/data-router";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -69,18 +70,22 @@ describe("managed research through the canonical CLI entry point", () => {
   it("uses the managed web API through okou data web search", async () => {
     let requestBody: unknown;
     server.use(
-      http.post("http://localhost:3000/api/web-search", async ({ request }) => {
-        requestBody = await request.json();
-        return HttpResponse.json({
-          query: "business productivity",
-          limit: 5,
-          provider: "perplexity",
-          billingCategory: "request",
-          billingQuantity: 1,
-          creditsCharged: 5,
-          results: [],
-        });
-      }),
+      dataRouterTool(
+        "web_search",
+        "http://localhost:3000/api/web-search",
+        async ({ request }) => {
+          requestBody = await request.json();
+          return HttpResponse.json({
+            query: "business productivity",
+            limit: 5,
+            provider: "perplexity",
+            billingCategory: "request",
+            billingQuantity: 1,
+            creditsCharged: 5,
+            results: [],
+          });
+        },
+      ),
     );
     await run(["data", "web", "search", "business productivity", "--json"]);
     expect(requestBody).toMatchObject({
@@ -93,7 +98,8 @@ describe("managed research through the canonical CLI entry point", () => {
   it("keeps research people search on its existing API", async () => {
     let requestBody: unknown;
     server.use(
-      http.post(
+      dataRouterTool(
+        "people_search",
         "http://localhost:3000/api/people-search",
         async ({ request }) => {
           requestBody = await request.json();

@@ -1,5 +1,6 @@
+import { dataRouterTool } from "../../../mocks/data-router";
 import chalk from "chalk";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import {
   afterAll,
   afterEach,
@@ -64,19 +65,23 @@ describe("okou data web scrape command", () => {
   it("posts default markdown scrape requests and prints JSON", async () => {
     let requestBody: unknown;
     server.use(
-      http.post("http://localhost:3000/api/scrape", async ({ request }) => {
-        requestBody = await request.json();
-        return HttpResponse.json({
-          requestedUrl: "https://example.com",
-          format: "markdown",
-          mode: "standard",
-          provider: "firecrawl",
-          creditsCharged: 4,
-          billingCategory: "standard.markdown",
-          billingQuantity: 1,
-          result: { markdown: "# Example" },
-        });
-      }),
+      dataRouterTool(
+        "web_scrape",
+        "http://localhost:3000/api/scrape",
+        async ({ request }) => {
+          requestBody = await request.json();
+          return HttpResponse.json({
+            requestedUrl: "https://example.com",
+            format: "markdown",
+            mode: "standard",
+            provider: "firecrawl",
+            creditsCharged: 4,
+            billingCategory: "standard.markdown",
+            billingQuantity: 1,
+            result: { markdown: "# Example" },
+          });
+        },
+      ),
     );
 
     await scrapeCommand.parseAsync([
@@ -108,21 +113,25 @@ describe("okou data web scrape command", () => {
   it("posts enhanced link scrape requests and prints links", async () => {
     let requestBody: unknown;
     server.use(
-      http.post("http://localhost:3000/api/scrape", async ({ request }) => {
-        requestBody = await request.json();
-        return HttpResponse.json({
-          requestedUrl: "https://example.com",
-          format: "links",
-          mode: "enhanced",
-          provider: "firecrawl",
-          creditsCharged: 20,
-          billingCategory: "enhanced.links",
-          billingQuantity: 1,
-          result: {
-            links: ["https://example.com/a", "https://example.com/b"],
-          },
-        });
-      }),
+      dataRouterTool(
+        "web_scrape",
+        "http://localhost:3000/api/scrape",
+        async ({ request }) => {
+          requestBody = await request.json();
+          return HttpResponse.json({
+            requestedUrl: "https://example.com",
+            format: "links",
+            mode: "enhanced",
+            provider: "firecrawl",
+            creditsCharged: 20,
+            billingCategory: "enhanced.links",
+            billingQuantity: 1,
+            result: {
+              links: ["https://example.com/a", "https://example.com/b"],
+            },
+          });
+        },
+      ),
     );
 
     await scrapeCommand.parseAsync([
@@ -150,7 +159,7 @@ describe("okou data web scrape command", () => {
 
   it("prints markdown in human-readable mode", async () => {
     server.use(
-      http.post("http://localhost:3000/api/scrape", () => {
+      dataRouterTool("web_scrape", "http://localhost:3000/api/scrape", () => {
         return HttpResponse.json({
           requestedUrl: "https://example.com",
           format: "markdown",
@@ -175,7 +184,7 @@ describe("okou data web scrape command", () => {
   it("rejects invalid formats before calling the API", async () => {
     let apiRequests = 0;
     server.use(
-      http.post("http://localhost:3000/api/scrape", () => {
+      dataRouterTool("web_scrape", "http://localhost:3000/api/scrape", () => {
         apiRequests += 1;
         return HttpResponse.json({});
       }),
@@ -198,7 +207,7 @@ describe("okou data web scrape command", () => {
 
   it("prints API error messages", async () => {
     server.use(
-      http.post("http://localhost:3000/api/scrape", () => {
+      dataRouterTool("web_scrape", "http://localhost:3000/api/scrape", () => {
         return HttpResponse.json(
           {
             error: {

@@ -87,7 +87,9 @@ test("Members manage Paid tools in Tools, separately from Chat", async () => {
   click(button("Tools", dialog));
   const toggle = await readySwitch("Web search");
   expect(toggle).toBeChecked();
-  expect(within(dialog).getAllByRole("switch")).toHaveLength(9);
+  expect(
+    within(dialog).getByRole("switch", { name: "Finance Quote" }),
+  ).toBeInTheDocument();
   expect(
     within(dialog).getByText(
       "These settings apply only to you in Research team.",
@@ -520,3 +522,32 @@ test.each(["preference read", "write token"] as const)(
     expect(updates).toStrictEqual([]);
   },
 );
+
+test("A Router tool can be hidden independently while legacy family preferences still apply", async () => {
+  const updates: { toolId: string; disabled: boolean }[] = [];
+  context.mocks.api(paidToolsContract.get, ({ respond }) => {
+    return respond(200, { disabledTools: ["finance"] });
+  });
+  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
+    updates.push({ toolId: params.toolId, disabled: body.disabled });
+    return respond(200, { toolId: params.toolId, disabled: body.disabled });
+  });
+  await openPaidTools();
+  const family = await readySwitch("Financial data");
+  const quote = await screen.findByRole("switch", { name: "Finance Quote" });
+  expect(quote).not.toBeChecked();
+  expect(quote).toHaveAttribute("aria-disabled", "true");
+  click(family);
+  await readySwitch("Finance Quote");
+  expect(quote).toBeChecked();
+  click(quote);
+  await waitFor(() => {
+    return expect(quote).not.toBeChecked();
+  });
+  expect(await readySwitch("Finance Search")).toBeChecked();
+  expect(family).toBeChecked();
+  expect(updates).toStrictEqual([
+    { toolId: "finance", disabled: false },
+    { toolId: "data:finance_quote", disabled: true },
+  ]);
+});

@@ -1,3 +1,4 @@
+import { getDataClientConfig as getClientConfig } from "../data-router-client";
 import {
   peopleSearchContract,
   type PeopleSearchRequest,
@@ -5,7 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/people-search";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 
-import { getClientConfig, handleError } from "../core/client-factory";
+import { handleError } from "../core/client-factory";
 
 export async function callPeopleSearch(
   body: PeopleSearchRequest,

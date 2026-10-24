@@ -274,6 +274,7 @@ const redriveTerminalLifecycle$ = command(
       dispatchCompleteSideEffects$,
       {
         kind: "terminal",
+        firstTerminalTransition: false,
         runId: candidate.runId,
         orgId: candidate.orgId,
         status: candidate.status === "completed" ? "completed" : "failed",

@@ -1,18 +1,13 @@
 import { randomUUID } from "node:crypto";
 
 import { imageIoGenerateContract } from "@okouai/api-contracts/contracts/image-io-generate";
-import { webSearchContract } from "@okouai/api-contracts/contracts/web-search";
-import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { imageIoGenerateRoutes } from "../image-io-generate";
-import { webSearchRoutes } from "../web-search";
 import { createBddApi } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -33,7 +28,6 @@ async function fundedFreeRuns() {
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     pi.mockPiObjectStore();
-    mockEnv("OKOU_WEB_SEARCH_PERPLEXITY_TOKEN", "test-runtime-search");
     const runnerGroup = runs.configureRunnerGroup();
     const { actor } = fixture;
     const granted = await fixture.fund(actor, 100_000);
@@ -155,36 +149,11 @@ describe("current credit balance during an active free Run", () => {
         expect(funded.body.expiresAt).toBeGreaterThanOrEqual(before + 25);
         expect(funded.body.expiresAt).toBeLessThanOrEqual(before + 35);
 
-        server.use(
-          http.post("https://api.perplexity.ai/search", () => {
-            return HttpResponse.json({
-              results: [
-                {
-                  title: "Funded search",
-                  url: "https://example.com/runtime-credit",
-                  snippet: "A search while credits remain.",
-                },
-              ],
-            });
-          }),
-        );
-        const search = setupApp({ context, routes: webSearchRoutes })(
-          webSearchContract,
-        );
         const toolToken = active.claim.platformEnvironment.OKOU_TOKEN;
         if (!toolToken) {
           throw new Error("Expected the real managed Run's Okou token");
         }
         const toolHeaders = { authorization: `Bearer ${toolToken}` };
-        const searched = await accept(
-          search.search({
-            headers: toolHeaders,
-            body: { query: "funded runtime request", limit: 1 },
-          }),
-          [200],
-        );
-        expect(searched.body.results[0]?.title).toBe("Funded search");
-
         await scenario.settleBalance(remainingCredits);
         const denied = await fw.requestFirewallAuth(
           active.headers,
@@ -194,14 +163,6 @@ describe("current credit balance during an active free Run", () => {
         expect(denied.body).toMatchObject({
           error: { code: "INSUFFICIENT_CREDITS" },
         });
-        const toolDenied = await accept(
-          search.search({
-            headers: toolHeaders,
-            body: { query: "request after exhaustion", limit: 1 },
-          }),
-          [402],
-        );
-        expect(toolDenied.body.error.code).toBe("INSUFFICIENT_CREDITS");
         const imageDenied = await accept(
           setupApp({ context, routes: imageIoGenerateRoutes })(
             imageIoGenerateContract,

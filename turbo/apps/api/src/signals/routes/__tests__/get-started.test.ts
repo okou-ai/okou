@@ -52,7 +52,8 @@ function signedInSession(
 }
 
 beforeEach(() => {
-  mockEnv("OKOU_SOCIAL_SOCIALKIT_TOKEN", "synthetic-socialkit-token");
+  mockEnv("OKOU_DATA_ROUTER_URL", "https://data.okou.ai/mcp");
+  mockEnv("OKOU_DATA_TOKEN", "synthetic-data-token");
   signedInSession(`user_${randomUUID()}`, `org_${randomUUID()}`);
 });
 
@@ -217,7 +218,7 @@ test("x submission returns canonical pending state and deduplicates without call
   const id = postId();
   let providerCalls = 0;
   server.use(
-    http.get("https://api.socialkit.dev/twitter/tweet", () => {
+    http.post("https://data.okou.ai/mcp", () => {
       providerCalls++;
       throw new Error("Submission must not call the provider");
     }),
