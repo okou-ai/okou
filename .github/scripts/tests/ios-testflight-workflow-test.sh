@@ -116,10 +116,12 @@ for upload_attempt, download_attempt in [(1, 1), (1, 2), (2, 2)]:
     assert uploaded == downloaded
 assert source_upload['overwrite'] is True
 assert test_job['env']['IOS_BUILD_CACHE_ENABLED'] == 'true'
-assert {key: value for key, value in test_job['env'].items() if key not in {'IOS_BUILD_CACHE_ENABLED', 'IOS_XCODE_STARTUP_SAMPLING'}} == archive_job['env'] == package_job['env']
+assert {key: value for key, value in test_job['env'].items() if key not in {'IOS_BUILD_CACHE_ENABLED', 'IOS_XCODE_STARTUP_SAMPLING', 'IOS_SIMULATOR_STARTUP'}} == archive_job['env'] == package_job['env']
 # Startup observations are confined to explicit manual runs, not native release evidence.
 assert ios['on']['workflow_dispatch']['inputs']['sample_xcode_startup']['default'] is False
+assert ios['on']['workflow_dispatch']['inputs']['simulator_startup']['default'] == 'preboot'
 sampling = test_job['env']['IOS_XCODE_STARTUP_SAMPLING'].removeprefix('${{').removesuffix('}}').strip()
+mode = test_job['env']['IOS_SIMULATOR_STARTUP'].removeprefix('${{').removesuffix('}}').strip()
 upload = next(step for step in native if step.get('name') == 'Upload Xcode startup observations')
 for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
     for enabled in [False, True]:
@@ -131,6 +133,11 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
         expected = event == 'workflow_dispatch' and enabled
         assert evaluate(sampling) == ('true' if expected else 'false')
         assert evaluate(upload['if']) is expected
+        for selected_mode in ['preboot', 'xcode']:
+            expression = (mode.replace('github.event_name', repr(event))
+                .replace('inputs.simulator_startup', repr(selected_mode))
+                .replace('&&', 'and').replace('||', 'or'))
+            assert eval(expression, {'__builtins__': {}}, {}) == (selected_mode if event == 'workflow_dispatch' else 'preboot')
 assert ios['jobs']['publish-archive']['needs'] == ['detect', 'script-checks', 'test-packages', 'build-test', 'build-archive']
 assert 'script-checks' in ios['jobs']['ci-gate-ios']['needs']
 assert 'test-packages' in ios['jobs']['ci-gate-ios']['needs']

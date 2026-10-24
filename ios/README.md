@@ -233,11 +233,11 @@ test fingerprints, so the merge group must produce fresh matching evidence.
 The App build uses the system Git provider for locked package resolution and
 reports build timings. Formatting includes both package manifests, sources,
 and tests. Swift packages must match `Package.resolved`; CI checks that it
-remains unchanged. Explicit locked resolution and compilation finish before
+remains unchanged. In ordinary CI, locked resolution and compilation finish before
 simulator startup, keeping post-boot system initialization out of compilation.
 CI reports dependency, compilation, simulator, and test durations separately.
-Total preparation sums dependency and simulator setup; startup before tests also
-includes compilation. Cache hits still validate
+Total preparation sums dependency and explicit simulator setup; startup before
+the test command also includes compilation. Cache hits still validate
 current inputs and never replace test execution.
 Standalone package tests run on a separate macOS runner from the App build and
 simulator suite. Both package and App results are required by the gate. App
@@ -248,24 +248,38 @@ Release-only merge groups can reuse App test evidence only when exact input fing
 the verified prior result; missing evidence and mixed groups run the tests.
 See [archive promotion](ARCHIVE_PROMOTION.md).
 
-For a slow compile-phase Xcode launch, manually dispatch `ios.yml` with
+For a slow compiler or test-command Xcode launch, manually dispatch `ios.yml` with
 `sample_xcode_startup=true`. The opt-in observer records UTC and monotonic
 timing, first output and command-banner milestones, process-name/CPU/memory
-snapshots, disk activity, and up to three bounded compiler stack samples.
+snapshots, disk activity, and up to three bounded Xcode stack samples per phase.
 It observes at most the first four minutes and stops at the command banner;
 normal builds do not enable it. Reports omit process arguments and environment
-variables and retain the original compiler exit status. Unavailable diagnostic
+variables and retain the original command exit status. Unavailable diagnostic
 tools are recorded as unavailable. Download the seven-day
-`ios-xcode-startup-<run-id>-<attempt>` artifact; `summary.json` and `events.jsonl`
-relate each report to the run, PID and startup window. The first `iostat` row is
+`ios-xcode-startup-<run-id>-<attempt>` artifact; the `compile/` and `test/` folders
+each contain `summary.json` and `events.jsonl`, relating the reports to the run,
+PID and startup window. The first `iostat` row is
 since boot; its second row covers one second. Each report is capped at 256 KiB.
 Sampling adds observation overhead and does not establish an optimization result.
 Stack attempts start after 15 seconds, then in rounds after 60 and 120 seconds.
 Each stack attempt allows 45 seconds for tool startup, sampling and symbolization;
 the actual sampling interval is one second at 20 ms. Process enumeration allows
 20 seconds. Slow tools delay later rounds; rounds never catch up in a burst.
-Sampled compile-script entry, observer launch/readiness and compiler creation
+Sampled phase-script entry, observer launch/readiness and Xcode creation
 are separate milestones, so shell/Python startup is visible as well.
+
+Manual runs can also select the experimental `simulator_startup=xcode`.
+Both modes resolve locked packages and run `build-for-testing` first. The
+experiment then starts `test-without-building` on the shutdown simulator and
+lets Xcode own boot/readiness, so Xcode can initialize before simulator services
+compete for resources. The default `preboot` mode retains explicit boot readiness
+before launching the test command. PRs, merge groups, and main pushes always
+select `preboot`; the experimental mode cannot supply release evidence.
+The complete App/package suites, runner, cache settings, and timeouts stay the
+same. Compare unprofiled complete workflow execution on matched inputs and cache
+states; profiling runs are diagnostic evidence only. In Xcode mode, simulator
+startup is included in the test-command duration, not explicit preparation.
+This experiment does not establish a performance benefit.
 
 `ios-build-cache.yml` refreshes shared caches after iOS changes reach main and
 after a same-repository iOS workflow actually starts its native `build-test`

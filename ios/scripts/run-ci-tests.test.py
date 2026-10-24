@@ -89,15 +89,24 @@ elif command == 'xcodebuild':
             (products / 'Okou_iphonesimulator27.1-arm64.xctestrun').write_text('built tests')
         mark('build-finished')
     elif 'test-without-building' in args:
+        role = 'test'
         if not (state / 'build-finished').exists():
             sys.exit('Tests require built products')
-        if scenario != 'manual' and not (state / 'boot-finished').exists():
+        xcode_startup = os.environ.get('IOS_SIMULATOR_STARTUP') == 'xcode'
+        if xcode_startup and (state / 'boot-started').exists():
+            sys.exit('Manual Xcode startup unexpectedly prebooted the simulator')
+        if not xcode_startup and scenario != 'manual' and not (state / 'boot-finished').exists():
             sys.exit('Tests started before simulator readiness')
         if (state / 'tests-ran').exists():
             sys.exit('Native tests ran twice')
         specification = pathlib.Path(args[args.index('-xctestrun') + 1])
         if specification.read_text() != 'built tests':
             sys.exit('Tests require the current build specification')
+        mark('test-started')
+        if scenario == 'cancel-test':
+            wait_for('allow-test')
+        if scenario == 'xcode-startup-failure':
+            sys.exit(68)
         mark('tests-ran')
         if scenario == 'test-failure':
             bundle = pathlib.Path(args[args.index('-resultBundlePath') + 1])
@@ -238,6 +247,60 @@ class CIProcessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 65, result.stderr)
         bundle = self.root / "work/okou-ios-ci/Tests.xcresult"
         self.assertEqual((bundle / "failure.txt").read_text(), "First failed assertion")
+
+    def test_manual_xcode_startup_runs_current_built_products_and_every_suite(self):
+        self.env["IOS_SIMULATOR_STARTUP"] = "xcode"
+        self.env["GITHUB_EVENT_NAME"] = "workflow_dispatch"
+        packages = self.invoke("ci-package-test.sh")
+        self.assertEqual(packages.returncode, 0, packages.stderr)
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_complete_suite()
+
+    def test_xcode_startup_failure_blocks_tests_and_reaches_the_caller(self):
+        self.env["IOS_SIMULATOR_STARTUP"] = "xcode"
+        self.env["GITHUB_EVENT_NAME"] = "workflow_dispatch"
+        self.env["CI_PROCESS_SCENARIO"] = "xcode-startup-failure"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 68, result.stderr)
+        self.assertFalse((self.state / "tests-ran").exists())
+
+    def test_sampled_xcode_mode_preserves_native_failure_and_both_reports(self):
+        self.env["IOS_SIMULATOR_STARTUP"] = "xcode"
+        self.env["GITHUB_EVENT_NAME"] = "workflow_dispatch"
+        self.env["IOS_XCODE_STARTUP_SAMPLING"] = "true"
+        self.env["CI_PROCESS_SCENARIO"] = "test-failure"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 65, result.stderr)
+        build = self.root / "work/okou-ios-ci"
+        self.assertEqual((build / "Tests.xcresult/failure.txt").read_text(), "First failed assertion")
+        for phase in ("compile", "test"):
+            self.assertTrue((build / "startup-samples" / phase / "summary.json").exists())
+
+    def test_xcode_startup_rejects_automatic_ci_events(self):
+        for event in ("pull_request", "merge_group", "push"):
+            with self.subTest(event=event):
+                self.env["IOS_SIMULATOR_STARTUP"] = "xcode"
+                self.env["GITHUB_EVENT_NAME"] = event
+                result = self.invoke()
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("explicit manual run", result.stderr)
+                self.assertFalse((self.state / "prepare-started").exists())
+
+    def test_cancellation_retires_the_xcode_startup_and_test_process(self):
+        self.env["IOS_SIMULATOR_STARTUP"] = "xcode"
+        self.env["GITHUB_EVENT_NAME"] = "workflow_dispatch"
+        self.env["CI_PROCESS_SCENARIO"] = "cancel-test"
+        with subprocess.Popen(
+            self.command(), cwd=self.repo, env=self.env, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        ) as process:
+            self.await_marker("test-started")
+            process.send_signal(signal.SIGTERM)
+            _, stderr = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 143, stderr)
+        self.await_marker("test-stopped")
+        self.assertFalse((self.state / "tests-ran").exists())
 
     def test_cancellation_retires_resolution_without_starting_the_simulator(self):
         self.env["CI_PROCESS_SCENARIO"] = "cancel"

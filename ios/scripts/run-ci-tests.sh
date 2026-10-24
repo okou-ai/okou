@@ -22,6 +22,19 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+ios_simulator_startup=${IOS_SIMULATOR_STARTUP:-preboot}
+case "$ios_simulator_startup" in
+  preboot) ;;
+  xcode)
+    if [[ -n "${GITHUB_EVENT_NAME:-}" && "${GITHUB_EVENT_NAME:-}" != workflow_dispatch ]]; then
+      echo 'Xcode-owned simulator startup requires an explicit manual run' >&2
+      exit 2
+    fi
+    ;;
+  *) echo "Unknown simulator startup mode: $ios_simulator_startup" >&2; exit 2 ;;
+esac
+echo "iOS simulator startup mode: $ios_simulator_startup"
+
 ios_prepare_started=$SECONDS
 bash ios/scripts/ci-test.sh prepare &
 ios_phase_pid=$!
@@ -35,15 +48,20 @@ ios_phase_pid=$!
 wait "$ios_phase_pid"
 ios_phase_pid=""
 
-ios_boot_started=$SECONDS
-python3 ios/scripts/preboot-simulator.py &
-ios_preboot_pid=$!
-wait "$ios_preboot_pid"
-ios_preboot_pid=""
-ios_boot_seconds=$((SECONDS - ios_boot_started))
-echo "iOS simulator preparation: $ios_boot_seconds seconds"
+ios_boot_seconds=0
+if [[ "$ios_simulator_startup" == preboot ]]; then
+  ios_boot_started=$SECONDS
+  python3 ios/scripts/preboot-simulator.py &
+  ios_preboot_pid=$!
+  wait "$ios_preboot_pid"
+  ios_preboot_pid=""
+  ios_boot_seconds=$((SECONDS - ios_boot_started))
+  echo "iOS simulator preparation: $ios_boot_seconds seconds"
+else
+  echo 'iOS simulator preparation: delegated to test-without-building'
+fi
 echo "iOS total preparation: $((ios_dependency_seconds + ios_boot_seconds)) seconds"
-echo "iOS startup before tests: $((SECONDS - ios_prepare_started)) seconds"
+echo "iOS startup before test command: $((SECONDS - ios_prepare_started)) seconds"
 
 echo "iOS starting test-without-building"
 bash ios/scripts/ci-test.sh run &

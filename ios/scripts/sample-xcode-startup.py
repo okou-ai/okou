@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Observe an opt-in Xcode startup without changing the compiler's exit status.
+"""Observe an opt-in Xcode startup without changing the command's exit status.
 
 Usage: sample-xcode-startup.py [--delay SECONDS] [--window SECONDS] OUTPUT -- xcodebuild ARGS
 macOS provides ps, vm_stat, iostat and sample. Diagnostics stop at Xcode's
-command banner or the bounded observation deadline; compilation continues.
+command banner or the bounded observation deadline; Xcode continues.
 OUTPUT must be a new directory. Reports contain process names, not argv/env.
 """
 
@@ -134,7 +134,7 @@ def observe(args):
                 round_number += 1
                 prefix = f"{round_number:02d}"
                 record("snapshot", round=round_number, target_pid=process.pid)
-                # Sample the owned compiler first: a saturated host may take
+                # Sample the owned Xcode process first: a saturated host may take
                 # many seconds even to enumerate processes or launch a tool.
                 if time.monotonic() - started >= next_stack:
                     report = args.output / f"{prefix}-xcodebuild-{process.pid}.sample.txt"
@@ -156,7 +156,7 @@ def observe(args):
                 # Do not burst-launch missed rounds on an already overloaded host.
                 next_sample = time.monotonic() + 15
         except Exception as error:
-            # Optional diagnostics cannot turn a compiler failure into a success.
+            # Optional diagnostics cannot turn an Xcode failure into a success.
             record("observation_unavailable", tool="collector", error=str(error))
         finally:
             record("observer_stopped")
@@ -180,7 +180,7 @@ def observe(args):
             start_new_session=True,
         )
         summary["target_pid"] = process.pid
-        record("compiler_started", pid=process.pid)
+        record("xcode_started", pid=process.pid)
         observer = threading.Thread(target=collect, args=(process,))
         observer.start()
         output_open = True
@@ -222,7 +222,7 @@ def observe(args):
             if result < 0:
                 result = 128 - result
         summary["exit_code"] = result
-        record("compiler_finished", exit_code=result)
+        record("xcode_finished", exit_code=result)
         return result
     finally:
         stop.set()
