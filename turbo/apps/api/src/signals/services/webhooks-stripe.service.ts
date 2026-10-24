@@ -13,7 +13,10 @@ import {
   refundDuplicateSubscriptionInvoice,
 } from "./billing-duplicate-subscription.service";
 import { retireMarketingMetadata } from "../../lib/marketing-metadata";
-import { invoiceUsagePackCreditGrantSql } from "./usage-pack-credit-grant-sql";
+import {
+  eligibleInvoiceUsagePackCreditGrantSql,
+  invoiceUsagePackCreditGrantSql,
+} from "./usage-pack-credit-grant-sql";
 import {
   orgCreditInvoiceGrantSql,
   pendingOrgCreditExpirationQuery,
@@ -52,7 +55,9 @@ import {
 import { env } from "../../lib/env";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
-import { now, nowDate } from "../../lib/time";
+import { now, nowDate, nowDateSql } from "../../lib/time";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { z } from "zod";
 import { clerk$ } from "../external/clerk";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
@@ -1265,46 +1270,73 @@ const grantAtomMemberCredits$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     const { invoiceId, details } = args;
-    const grant = invoiceUsagePackCreditGrantSql({
-      orgId: details.orgId,
-      userId: details.userId,
-      grantType: "bonus",
-      idempotencyKey: `atom-usage-pack:${invoiceId}:${details.userId}`,
-      amount: details.credits,
-      expiresAt: details.creditsExpiresAt,
-    });
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0324; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      const [wallet] = await tx
-        .select({ customerId: orgMetadata.stripeCustomerId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, details.orgId))
-        .for("update");
-      const [activePlan] = await tx
-        .select({ orgId: orgPlanEntitlements.orgId })
-        .from(orgPlanEntitlements)
-        .where(
-          and(
-            eq(orgPlanEntitlements.orgId, details.orgId),
-            inArray(orgPlanEntitlements.planKey, ["pro", "team"]),
-            eq(orgPlanEntitlements.status, "active"),
-            or(
-              isNull(orgPlanEntitlements.expiresAt),
-              gt(orgPlanEntitlements.expiresAt, nowDate()),
+    const wallet = db
+      .select({ customerId: orgMetadata.stripeCustomerId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, details.orgId))
+      .for("update");
+    const activePlan = db
+      .select({ orgId: orgPlanEntitlements.orgId })
+      .from(orgPlanEntitlements)
+      .where(
+        and(
+          eq(orgPlanEntitlements.orgId, details.orgId),
+          inArray(orgPlanEntitlements.planKey, ["pro", "team"]),
+          eq(orgPlanEntitlements.status, "active"),
+          or(
+            isNull(orgPlanEntitlements.expiresAt),
+            gt(
+              orgPlanEntitlements.expiresAt,
+              sql`(SELECT admitted_at FROM atom_member_clock)`,
             ),
           ),
-        )
-        .for("update");
-      if (!activePlan || wallet?.customerId !== details.customerId) {
-        throw new Error(
-          `Atom usage pack grant ${invoiceId} requires an active Pro or Team plan`,
-        );
-      }
-      if ((await tx.execute(grant)).rowCount !== 1) {
-        throw new Error("Atom member grant invoice identity changed");
-      }
-      signal.throwIfAborted();
-    });
+          // Even an unexpiring plan takes its existing lock after the wallet.
+          sql`(SELECT count(*) FROM atom_member_clock) = 1`,
+        ),
+      )
+      .for("update");
+    const eligibility = sql`EXISTS (
+      SELECT 1 FROM atom_member_wallet
+      WHERE stripe_customer_id = ${details.customerId}
+    ) AND EXISTS (SELECT 1 FROM atom_member_plan)`;
+    const grant = eligibleInvoiceUsagePackCreditGrantSql(
+      {
+        orgId: details.orgId,
+        userId: details.userId,
+        grantType: "bonus",
+        idempotencyKey: `atom-usage-pack:${invoiceId}:${details.userId}`,
+        amount: details.credits,
+        expiresAt: details.creditsExpiresAt,
+      },
+      eligibility,
+    );
+    // Keep wallet -> entitlement -> grant order. The clock is sampled only
+    // after the wallet lock, including a wait; nowDateSql retains mock clocks.
+    // A newly visible plan can require a webhook retry, never an unpaid grant.
+    const results = parseRawRows(
+      z.object({ eligible: z.boolean(), granted: z.boolean() }).strict(),
+      await db.execute(sql`WITH atom_member_wallet AS MATERIALIZED (${wallet.getSQL()}),
+        atom_member_clock AS MATERIALIZED (
+          SELECT ${nowDateSql()} AS admitted_at
+          FROM (SELECT count(*) AS observed_count FROM atom_member_wallet) AS observed_wallet
+          WHERE observed_wallet.observed_count >= 0
+        ), atom_member_plan AS MATERIALIZED (${activePlan.getSQL()}),
+        atom_member_grant AS (${grant})
+        SELECT ${eligibility} AS eligible,
+          EXISTS (SELECT 1 FROM atom_member_grant) AS granted`),
+    );
+    const [result] = results;
+    if (results.length !== 1 || !result) {
+      throw new Error("Atom member grant result is missing");
+    }
+    if (!result.eligible) {
+      throw new Error(
+        `Atom usage pack grant ${invoiceId} requires an active Pro or Team plan`,
+      );
+    }
+    if (!result.granted) {
+      throw new Error("Atom member grant invoice identity changed");
+    }
     signal.throwIfAborted();
   },
 );
