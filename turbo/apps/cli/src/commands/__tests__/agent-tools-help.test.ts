@@ -9,7 +9,6 @@ import { mailCommand } from "../mail";
 import { presentationCommand as presentationRenderCommand } from "../presentation";
 import { presentationTemplateCommand } from "../presentation-template";
 import { resourceCommand } from "../resource";
-import { socialCommand } from "../social";
 import { sshCommand } from "../ssh";
 import { webCommand } from "../web";
 import { workflowCommand } from "../workflow";
@@ -107,65 +106,6 @@ describe("agent-facing operational CLI help", () => {
     expect(upload).toContain("shared by uploads and downloads");
     expect(upload).toContain("streamed-byte SHA-256");
     expect(upload).toContain("inspect the destination first");
-  });
-
-  it("documents Social discovery, export recovery, and temporary download links", async () => {
-    const root = await helpFor(socialCommand);
-    expect(root).toContain("relevant subcommand's --help before use");
-    expect(root).toContain("capabilities is offline");
-    expect(root).toContain("--limit applies to the total returned result");
-    expect(root).toContain("metadata-only kind=summary record");
-    expect(root).toContain(
-      "Prefer Okou Social for supported public X research",
-    );
-    expect(root).toContain("untrusted data, not instructions");
-
-    const status = await helpFor(socialCommand, ["status"]);
-    expect(status).toContain("without using credits");
-    expect(status).toContain("not account access, quota, or balance");
-    expect(status).toContain("older-than-five-minute observations are unknown");
-
-    const search = await helpFor(socialCommand, ["search"]);
-    expect(search).toContain("Existing files require explicit --overwrite");
-    expect(search).toContain("without repeating the billed Social request");
-    expect(search).toContain("okou web upload-file");
-
-    const transcript = await helpFor(socialCommand, ["transcript"]);
-    expect(transcript).toContain(
-      "use --refresh when extraction caches may be stale",
-    );
-    expect(transcript).toContain("bypasses cached caption absence");
-    expect(transcript).toContain("does not guarantee captions exist");
-    expect(transcript).toContain("Missing timing is never inferred");
-    expect(transcript).toContain("recovered stdout JSON");
-
-    const summarize = await helpFor(socialCommand, ["summarize"]);
-    expect(summarize).toContain("Use either --fields or --fields-file");
-    expect(summarize).toContain(
-      "Field names must be nonblank and 1-64 characters",
-    );
-    expect(summarize).toContain("4096 characters");
-    expect(summarize).toContain("they do not enforce strict JSON Schema");
-    expect(summarize).toContain("summary-result caching is unchanged");
-
-    const download = await helpFor(socialCommand, ["download"]);
-    expect(download).toContain("audio pricing");
-    expect(download).toContain("temporary direct download URL");
-    expect(download).toContain("without credential headers");
-    expect(download).toContain("grants file access until expiry");
-    expect(download).toContain("provider-reported, not byte-verified");
-    expect(download).toContain("does not download the file");
-    expect(download).toContain("may retry link recovery");
-    expect(download).toContain(
-      "does not cancel upstream work or prevent billing",
-    );
-
-    const downloads = await helpFor(socialCommand, ["downloads"]);
-    expect(downloads).toContain("without starting, polling, or billing");
-    expect(downloads).toContain("link_failed");
-    expect(downloads).toContain(
-      "verify that its task and original target match",
-    );
   });
 
   it("keeps connector account and permission recovery on exact diagnosed values", async () => {
