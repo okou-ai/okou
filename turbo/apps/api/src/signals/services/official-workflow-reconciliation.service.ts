@@ -41,13 +41,18 @@ import {
   isNotNull,
   ne,
   notExists,
+  or,
   sql,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
 import { nowDate, nowDateSql, timestampWithoutTimeZone } from "../../lib/time";
-import { pgNullDecoder, pgTextDecoder } from "../../lib/db-structured-result";
+import {
+  pgBooleanDecoder,
+  pgNullDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 
 import {
   webhookTierLockStatement,
@@ -2792,166 +2797,203 @@ const markActiveAutomationFailed$ = command(
 );
 
 interface DormantIdentityReservation {
-  readonly kind: "reserved" | "busy" | "active";
+  readonly kind: "reserved";
   readonly id: string;
   readonly intendedEnabled: boolean;
 }
-function resolveDormantReservationChoice(args: {
-  readonly identity:
-    typeof officialWorkflowAutomationIdentities.$inferSelect | undefined;
+
+interface DormantReservationArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly workflowId: string;
+  readonly definitionName: string;
+  readonly blueprint: OfficialWorkflowAcceptedBlueprint;
+  readonly activeDefinitionOnly: boolean;
+  readonly bindings: readonly OfficialWorkflowParameterBinding[];
   readonly fallbackIntendedEnabled: boolean;
-}): { readonly id: string | null; readonly intendedEnabled: boolean } {
-  return {
-    id: args.identity?.id ?? null,
-    intendedEnabled:
-      args.identity?.retainedIntendedEnabled ?? args.fallbackIntendedEnabled,
-  };
 }
 
-function dormantReservationValues(
-  args: {
-    readonly bindings: readonly OfficialWorkflowParameterBinding[];
-    readonly blueprint: OfficialWorkflowAcceptedBlueprint;
-  },
-  intendedEnabled: boolean,
-  currentTime: Date,
+function dormantReservationOwnership(
+  args: DormantReservationArgs,
+  releaseId: string,
 ) {
+  const builder = new QueryBuilder();
+  const catalog = builder.$with("reserve_catalog_fence").as(
+    builder
+      .select({ authority: officialWorkflowCatalogState.authority })
+      .from(officialWorkflowCatalogState)
+      .where(
+        and(
+          eq(officialWorkflowCatalogState.authority, "official"),
+          eq(officialWorkflowCatalogState.acceptedReleaseId, releaseId),
+        ),
+      )
+      .for("share"),
+  );
+  const installed = builder.$with("reserve_installed_workflow").as(
+    builder
+      .select({ id: workflows.id })
+      .from(workflows)
+      .where(
+        and(
+          installedWorkflowCondition(args, args.workflowId),
+          exists(builder.select().from(catalog)),
+        ),
+      )
+      .for("update")
+      .limit(1),
+  );
+  const active = builder.$with("reserve_keyed_automation").as(
+    builder
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.workflowId, args.workflowId),
+          eq(workflowAutomations.officialBlueprintKey, args.blueprint.key),
+          exists(builder.select().from(installed)),
+        ),
+      )
+      .for("update")
+      .limit(1),
+  );
+  const identities = officialWorkflowAutomationIdentities;
+  const locked = builder.$with("reserve_locked_identity").as(
+    builder
+      .select({ id: identities.id })
+      .from(identities)
+      .where(
+        and(
+          eq(identities.workflowId, args.workflowId),
+          eq(identities.blueprintKey, args.blueprint.key),
+          exists(builder.select().from(installed)),
+          gte(builder.select({ count: count() }).from(active), 0),
+        ),
+      )
+      .for("update")
+      .limit(1),
+  );
+  // The volatile clock depends on the existing lock chain. A lock wait must
+  // not consume the new lease before this statement can publish it.
+  const clock = builder.$with("reserve_lease_clock").as(
+    builder
+      .select({
+        workflowId: installed.id,
+        currentTime: nowDateSql().mapWith(identities.updatedAt).as("at"),
+      })
+      .from(installed)
+      .where(gte(builder.select({ count: count() }).from(locked), 0)),
+  );
+  return { catalog, installed, active, locked, clock };
+}
+
+function dormantReservationProjection(
+  args: DormantReservationArgs,
+  ownership: ReturnType<typeof dormantReservationOwnership>,
+) {
+  const identity = officialWorkflowAutomationIdentities;
   return {
-    automationId: null,
-    state: "reconciling" as const,
-    retainedParameterBindings: [...args.bindings],
-    retainedIntendedEnabled: intendedEnabled,
-    retainedAppliedFingerprint: args.blueprint.fingerprint,
-    updatedAt: currentTime,
+    id: sql`gen_random_uuid()`.mapWith(identity.id).as("id"),
+    workflowId: ownership.clock.workflowId,
+    automationId: sql`NULL::uuid`.mapWith(pgNullDecoder).as("automation_id"),
+    blueprintKey: sql`${args.blueprint.key}::varchar`
+      .mapWith(identity.blueprintKey)
+      .as("blueprint_key"),
+    state: sql`'reconciling'`.mapWith(identity.state).as("state"),
+    retainedParameterBindings:
+      sql`${sql.param([...args.bindings], identity.retainedParameterBindings)}::jsonb`
+        .mapWith(identity.retainedParameterBindings)
+        .as("retained_parameter_bindings"),
+    retainedIntendedEnabled: sql`${args.fallbackIntendedEnabled}::boolean`
+      .mapWith(identity.retainedIntendedEnabled)
+      .as("retained_intended_enabled"),
+    retainedAppliedFingerprint: sql`${args.blueprint.fingerprint}::varchar`
+      .mapWith(identity.retainedAppliedFingerprint)
+      .as("retained_applied_fingerprint"),
+    createdAt: ownership.clock.currentTime,
+    updatedAt: ownership.clock.currentTime,
   };
 }
 
 const reserveDormantIdentity$ = command(
   async (
     { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly workflowId: string;
-      readonly definitionName: string;
-      readonly blueprint: OfficialWorkflowAcceptedBlueprint;
-      readonly activeDefinitionOnly: boolean;
-      readonly bindings: readonly OfficialWorkflowParameterBinding[];
-      readonly fallbackIntendedEnabled: boolean;
-    },
+    args: DormantReservationArgs,
     signal: AbortSignal,
   ): Promise<DormantIdentityReservation | null> => {
     const db = set(writeDb$);
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0204; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
-      await tx.execute(acceptedCatalogLockStatement());
-      const [catalogRow] = parseRawRows(
-        acceptedCatalogRowSchema,
-        await tx.execute(acceptedCatalogReadStatement()),
-      );
-      signal.throwIfAborted();
-      const catalogIdentity = blueprintAuthorityIdentity(args);
-      const acceptedDefinition = matchingAcceptedBlueprintDefinition(
-        acceptedCatalogFromRow(catalogRow),
-        catalogIdentity,
-      );
-      if (!acceptedDefinition) {
-        return null;
-      }
-      const [revisionRow] = parseRawRows(
-        acceptedRevisionRowSchema,
-        await tx.execute(acceptedRevisionReadStatement(acceptedDefinition)),
-      );
-      signal.throwIfAborted();
-      if (!acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)) {
-        return null;
-      }
-      const [installedWorkflow] = await tx
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(installedWorkflowCondition(args, args.workflowId))
-        .for("update")
-        .limit(1);
-      if (!installedWorkflow) {
-        return null;
-      }
-      const [automation] = await tx
-        .select({ id: workflowAutomations.id })
-        .from(workflowAutomations)
-        .where(
-          and(
-            eq(workflowAutomations.workflowId, args.workflowId),
-            eq(workflowAutomations.officialBlueprintKey, args.blueprint.key),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      if (automation) {
-        return {
-          kind: "active" as const,
-          id: automation.id,
-          intendedEnabled: args.fallbackIntendedEnabled,
-        };
-      }
-      const [identity] = await tx
-        .select()
-        .from(officialWorkflowAutomationIdentities)
-        .where(
-          and(
-            eq(
-              officialWorkflowAutomationIdentities.workflowId,
-              args.workflowId,
-            ),
-            eq(
-              officialWorkflowAutomationIdentities.blueprintKey,
-              args.blueprint.key,
+    const [catalogRow] = parseRawRows(
+      acceptedCatalogRowSchema,
+      await db.execute(acceptedCatalogReadStatement()),
+    );
+    signal.throwIfAborted();
+    const catalog = acceptedCatalogFromRow(catalogRow);
+    const authority = blueprintAuthorityIdentity(args);
+    const definition = matchingAcceptedBlueprintDefinition(catalog, authority);
+    if (!catalog || !definition) {
+      return null;
+    }
+    const [revisionRow] = parseRawRows(
+      acceptedRevisionRowSchema,
+      await db.execute(acceptedRevisionReadStatement(definition)),
+    );
+    signal.throwIfAborted();
+    if (!acceptedRevisionBlueprintMatches(revisionRow, authority)) {
+      return null;
+    }
+
+    const identity = officialWorkflowAutomationIdentities;
+    const ownership = dormantReservationOwnership(args, catalog.releaseId);
+    const { catalog: fence, installed, active, locked, clock } = ownership;
+    const [reserved] = await db
+      .with(fence, installed, active, locked, clock)
+      .insert(identity)
+      .select(
+        db
+          .select(dormantReservationProjection(args, ownership))
+          .from(clock)
+          .where(notExists(db.select().from(active))),
+      )
+      .onConflictDoUpdate({
+        target: [identity.workflowId, identity.blueprintKey],
+        set: {
+          automationId: null,
+          state: "reconciling",
+          retainedParameterBindings: sql`excluded.retained_parameter_bindings`,
+          retainedIntendedEnabled: sql`COALESCE(${identity.retainedIntendedEnabled}, excluded.retained_intended_enabled)`,
+          retainedAppliedFingerprint: sql`excluded.retained_applied_fingerprint`,
+          updatedAt: sql`excluded.updated_at`,
+        },
+        setWhere: and(
+          exists(db.select().from(locked).where(eq(locked.id, identity.id))),
+          isNull(identity.automationId),
+          ne(identity.state, "active"),
+          or(
+            ne(identity.state, "reconciling"),
+            gte(
+              sql`excluded.updated_at - date_trunc('milliseconds', ${identity.updatedAt})`,
+              sql`${DORMANT_CREATION_LEASE_MS} * interval '1 millisecond'`,
             ),
           ),
-        )
-        .for("update")
-        .limit(1);
-      const currentTime = nowDate();
-      const choice = resolveDormantReservationChoice({
-        identity,
-        fallbackIntendedEnabled: args.fallbackIntendedEnabled,
+        ),
+      })
+      .returning({
+        id: identity.id,
+        intendedEnabled: sql`${identity.retainedIntendedEnabled}`.mapWith(
+          pgBooleanDecoder,
+        ),
       });
-      const intendedEnabled = choice.intendedEnabled;
-      const values = dormantReservationValues(
-        args,
-        intendedEnabled,
-        currentTime,
-      );
-      if (
-        identity?.state === "reconciling" &&
-        currentTime.getTime() - identity.updatedAt.getTime() <
-          DORMANT_CREATION_LEASE_MS
-      ) {
-        return { kind: "busy", id: identity.id, intendedEnabled };
-      }
-      if (identity) {
-        await tx
-          .update(officialWorkflowAutomationIdentities)
-          .set(values)
-          .where(eq(officialWorkflowAutomationIdentities.id, identity.id));
-        return { kind: "reserved", id: identity.id, intendedEnabled };
-      }
-      const [inserted] = await tx
-        .insert(officialWorkflowAutomationIdentities)
-        .values({
-          ...values,
-          ...(choice.id === null ? {} : { id: choice.id }),
-          workflowId: args.workflowId,
-          blueprintKey: args.blueprint.key,
-          createdAt: currentTime,
-        })
-        .returning({ id: officialWorkflowAutomationIdentities.id });
-      if (!inserted) {
-        throw new Error("Failed to reserve Official Automation identity");
-      }
-      return { kind: "reserved", id: inserted.id, intendedEnabled };
-    });
+    // Active/busy/changed ownership all reach the caller's existing retry.
+    // Cancellation after autocommit skips the response, not the committed lease.
+    signal.throwIfAborted();
+    return reserved
+      ? {
+          kind: "reserved",
+          id: reserved.id,
+          intendedEnabled: reserved.intendedEnabled,
+        }
+      : null;
   },
 );
 
