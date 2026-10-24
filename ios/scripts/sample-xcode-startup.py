@@ -140,19 +140,8 @@ def observe(args):
                 round_number += 1
                 prefix = f"{round_number:02d}"
                 record("snapshot", round=round_number, target_pid=process.pid)
-                # Sample the owned Xcode process first: a saturated host may take
-                # many seconds even to enumerate processes or launch a tool.
-                if time.monotonic() - started >= next_stack:
-                    report = (
-                        args.output / f"{prefix}-xcodebuild-{process.pid}.sample.txt"
-                    )
-                    capture(
-                        f"{prefix}-xcodebuild-{process.pid}-sampler",
-                        ["sample", str(process.pid), "1", "20", "-file", str(report)],
-                        45,
-                    )
-                    cap_report(report)
-                    next_stack = next(stack_offsets, float("inf"))
+                # Keep resource evidence even if stack collection/symbolization
+                # stalls on a saturated host.
                 capture(
                     prefix + "-processes",
                     ["ps", "-axo", "pid=,ppid=,pcpu=,pmem=,rss=,state=,time=,comm="],
@@ -161,6 +150,17 @@ def observe(args):
                 capture(prefix + "-memory", ["vm_stat"], 6)
                 # The first iostat row is since boot; the second covers one second.
                 capture(prefix + "-disk-cpu", ["iostat", "-w", "1", "-c", "2"], 8)
+                if time.monotonic() - started >= next_stack:
+                    report = (
+                        args.output / f"{prefix}-xcodebuild-{process.pid}.sample.txt"
+                    )
+                    capture(
+                        f"{prefix}-xcodebuild-{process.pid}-sampler",
+                        ["sample", str(process.pid), "1", "100", "-file", str(report)],
+                        90,
+                    )
+                    cap_report(report)
+                    next_stack = next(stack_offsets, float("inf"))
                 # Do not burst-launch missed rounds on an already overloaded host.
                 next_sample = time.monotonic() + 15
         except (OSError, subprocess.SubprocessError) as error:

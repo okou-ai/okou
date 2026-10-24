@@ -263,9 +263,12 @@ to the run, PID and startup window. The first `iostat` row is
 since boot; its second row covers one second. Each report is capped at 256 KiB.
 Sampling adds observation overhead and does not establish an optimization result.
 Stack attempts start after 15 seconds, then in rounds after 60, 120 and 180 seconds.
-Each stack attempt allows 45 seconds for tool startup, sampling and symbolization;
-the actual sampling interval is one second at 20 ms. Process enumeration allows
-20 seconds. Slow tools delay later rounds; rounds never catch up in a burst.
+Each round collects resource snapshots before attempting a stack report, so a
+slow stack tool cannot erase the round's resource evidence. Each stack attempt
+allows 90 seconds for tool startup, sampling and symbolization, bounded by the
+four-minute window and stopped when startup finishes. The actual sampling
+interval is one second at 100 ms (10 Hz). Process enumeration allows 20 seconds.
+Slow tools delay later rounds; rounds never catch up in a burst.
 Sampled script entry, test-command readiness, observer launch/readiness and Xcode
 creation are separate milestones, so shell/Python startup is visible as well.
 
