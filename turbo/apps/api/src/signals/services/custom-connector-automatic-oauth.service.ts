@@ -23,6 +23,7 @@ import {
   prepareMcpAutomaticOAuthAuthorization,
   prepareMcpAutomaticOAuthReauthorization,
   exchangeMcpAutomaticOAuthCode,
+  refreshMcpAutomaticOAuthToken,
   type McpAutomaticNoAuth,
   type McpAutomaticOAuthAuthorization,
   type McpAutomaticOAuthContext,
@@ -330,7 +331,7 @@ export function retireCustomConnectorDcrRegistrationSql(
     AND (SELECT ${count()} FROM deleted_bindings) >= 0`;
 }
 
-export function customDcrBoundClientCondition(
+function customDcrBoundClientCondition(
   registrationId: string,
   customConnectorId: string,
 ) {
@@ -340,7 +341,7 @@ export function customDcrBoundClientCondition(
   );
 }
 
-export async function customDcrClientFromRegistration(
+async function customDcrClientFromRegistration(
   registration: PersistedDcrRegistration | undefined,
   featureContext: FeatureSwitchContext,
 ) {
@@ -613,6 +614,37 @@ export const exchangeCustomConnectorAutomaticOAuthCode$ = command(
             return await set(readCustomDcrBoundClient$, {
               registrationId,
               customConnectorId: args.context.connectorId,
+              featureContext: args.featureContext,
+            });
+          },
+        },
+      },
+      signal,
+    );
+  },
+);
+
+export const refreshCustomConnectorAutomaticOAuthToken$ = command(
+  async (
+    { set },
+    args: {
+      readonly binding: CustomConnectorAutomaticOAuthBinding;
+      readonly endpoint: string;
+      readonly redirectUri: string;
+      readonly cimdClientId: string;
+      readonly refreshToken: string;
+      readonly featureContext: FeatureSwitchContext;
+    },
+    signal: AbortSignal,
+  ) => {
+    return await refreshMcpAutomaticOAuthToken(
+      {
+        ...args,
+        dcrStore: {
+          readBoundClient: async (registrationId) => {
+            return await set(readCustomDcrBoundClient$, {
+              registrationId,
+              customConnectorId: args.binding.customConnectorId,
               featureContext: args.featureContext,
             });
           },

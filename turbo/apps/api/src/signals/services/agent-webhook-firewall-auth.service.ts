@@ -98,7 +98,7 @@ import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import { safeSync, settle, settleIncludingAbort, tapError } from "../utils";
 import { resolveBuiltinConnectorAutomaticMcpCredential } from "./builtin-connector-automatic-oauth.service";
@@ -136,7 +136,7 @@ import {
 } from "./crypto.utils";
 import {
   CustomConnectorOAuth2TokenRefreshError,
-  resolveCurrentCustomConnectorOAuth2AccessToken,
+  resolveCurrentCustomConnectorOAuth2AccessToken$,
 } from "./custom-connector-oauth2.service";
 import { CUSTOM_CONNECTOR_OAUTH_ACCESS_TOKEN_RUNTIME_KEY } from "./custom-connector.service";
 import {
@@ -5244,77 +5244,83 @@ const prepareCurrentCustomConnectorFirewallAuth$ = command(
   },
 );
 
-async function resolveCurrentCustomConnectorSecrets(args: {
-  readonly db: Db;
-  readonly auth: SandboxAuth;
-  readonly prepared: PreparedCustomFirewallAuth;
-  readonly forceRefresh: boolean;
-  readonly referencedSecretKeys: ReadonlySet<string>;
-}): Promise<CurrentCustomConnectorSecretsResolution> {
-  const refsByAlias = new Map(
-    args.prepared.authRefs.map((ref) => {
-      return [ref.secretName, ref] as const;
-    }),
-  );
-  const currentSecrets = { ...args.prepared.currentSecrets };
-  let expiresAt: number | null = null;
-  const refreshedConnectors: string[] = [];
-  const refreshedSecrets: string[] = [];
-  for (const alias of args.referencedSecretKeys) {
-    const ref = refsByAlias.get(alias);
-    if (!ref) {
-      return { kind: "unavailable" };
-    }
-    if (!isCurrentCustomConnectorOAuthAccessTokenRef(ref)) {
-      continue;
-    }
-    const accessToken = await settle(
-      resolveCurrentCustomConnectorOAuth2AccessToken(
-        {
-          db: args.db,
-          orgId: args.auth.orgId,
-          userId: args.auth.userId,
-          customConnectorId: args.prepared.customConnectorId,
-          memberConnectorId: ref.memberConnectorId,
-          featureContext: args.prepared.featureSwitchContext,
-          forceRefresh: args.forceRefresh,
-        },
-        AbortSignal.timeout(firewallAuthRefreshTimeoutMs()),
-      ),
+const resolveCurrentCustomConnectorSecrets$ = command(
+  async (
+    { set },
+    args: {
+      readonly auth: SandboxAuth;
+      readonly prepared: PreparedCustomFirewallAuth;
+      readonly forceRefresh: boolean;
+      readonly referencedSecretKeys: ReadonlySet<string>;
+    },
+  ): Promise<CurrentCustomConnectorSecretsResolution> => {
+    const refsByAlias = new Map(
+      args.prepared.authRefs.map((ref) => {
+        return [ref.secretName, ref] as const;
+      }),
     );
-    if (!accessToken.ok) {
-      if (accessToken.error instanceof CustomConnectorOAuth2TokenRefreshError) {
-        return { kind: "refresh-failed" };
+    const currentSecrets = { ...args.prepared.currentSecrets };
+    let expiresAt: number | null = null;
+    const refreshedConnectors: string[] = [];
+    const refreshedSecrets: string[] = [];
+    for (const alias of args.referencedSecretKeys) {
+      const ref = refsByAlias.get(alias);
+      if (!ref) {
+        return { kind: "unavailable" };
       }
-      throw accessToken.error;
+      if (!isCurrentCustomConnectorOAuthAccessTokenRef(ref)) {
+        continue;
+      }
+      const accessToken = await settle(
+        set(
+          resolveCurrentCustomConnectorOAuth2AccessToken$,
+          {
+            orgId: args.auth.orgId,
+            userId: args.auth.userId,
+            customConnectorId: args.prepared.customConnectorId,
+            memberConnectorId: ref.memberConnectorId,
+            featureContext: args.prepared.featureSwitchContext,
+            forceRefresh: args.forceRefresh,
+          },
+          AbortSignal.timeout(firewallAuthRefreshTimeoutMs()),
+        ),
+      );
+      if (!accessToken.ok) {
+        if (
+          accessToken.error instanceof CustomConnectorOAuth2TokenRefreshError
+        ) {
+          return { kind: "refresh-failed" };
+        }
+        throw accessToken.error;
+      }
+      if (accessToken.value.kind === "unavailable") {
+        return { kind: "unavailable" };
+      }
+      if (accessToken.value.kind === "reconnect-required") {
+        return { kind: "reconnect-required" };
+      }
+      const encryptedValue = accessToken.value.encryptedAccessToken;
+      expiresAt = accessToken.value.tokenExpiresAt
+        ? Math.floor(accessToken.value.tokenExpiresAt.getTime() / 1000)
+        : null;
+      if (accessToken.value.status === "refreshed") {
+        refreshedConnectors.push(args.prepared.customConnectorId);
+        refreshedSecrets.push(alias);
+      }
+      currentSecrets[alias] = await decryptStoredSecretValue(
+        encryptedValue,
+        args.prepared.featureSwitchContext,
+      );
     }
-    if (accessToken.value.kind === "unavailable") {
-      return { kind: "unavailable" };
-    }
-    if (accessToken.value.kind === "reconnect-required") {
-      return { kind: "reconnect-required" };
-    }
-    const encryptedValue = accessToken.value.encryptedAccessToken;
-    expiresAt = accessToken.value.tokenExpiresAt
-      ? Math.floor(accessToken.value.tokenExpiresAt.getTime() / 1000)
-      : null;
-    if (accessToken.value.status === "refreshed") {
-      refreshedConnectors.push(args.prepared.customConnectorId);
-      refreshedSecrets.push(alias);
-    }
-    currentSecrets[alias] = await decryptStoredSecretValue(
-      encryptedValue,
-      args.prepared.featureSwitchContext,
-    );
-  }
-  return {
-    kind: "available",
-    secrets: currentSecrets,
-    expiresAt,
-    refreshedConnectors,
-    refreshedSecrets,
-  };
-}
+    return {
+      kind: "available",
+      secrets: currentSecrets,
+      expiresAt,
+      refreshedConnectors,
+      refreshedSecrets,
+    };
+  },
+);
 
 function applyCustomConnectorRoutingVariables(args: {
   readonly currentSecrets: Record<string, string>;
@@ -5533,55 +5539,58 @@ const prepareNonCustomFirewallAuth$ = command(
   },
 );
 
-async function resolveCustomFirewallAuthMaterial(args: {
-  readonly db: Db;
-  readonly auth: SandboxAuth;
-  readonly body: FirewallAuthBody;
-  readonly referenced: ReferencedAuthKeys;
-  readonly prepared: PreparedCustomFirewallAuth;
-}): Promise<FirewallAuthMaterialResolution> {
-  const currentSecrets = await resolveCurrentCustomConnectorSecrets({
-    db: args.db,
-    auth: args.auth,
-    prepared: args.prepared,
-    forceRefresh: args.body.forceRefresh === true,
-    referencedSecretKeys: args.referenced.secrets,
-  });
-  if (currentSecrets.kind === "unavailable") {
-    return { ok: false, response: connectorNotConfigured() };
-  }
-  if (currentSecrets.kind === "refresh-failed") {
-    return {
-      ok: false,
-      response: tokenRefreshFailed(
-        [args.prepared.customConnectorId],
-        "upstream_provider",
-      ),
-    };
-  }
-  if (currentSecrets.kind === "reconnect-required") {
-    return {
-      ok: false,
-      response: connectorReconnectRequired([args.prepared.customConnectorId]),
-    };
-  }
-  const effectiveSecrets = applyCustomConnectorRoutingVariables({
-    currentSecrets: currentSecrets.secrets,
-    authRefs: args.prepared.authRefs,
-    routingVariables: args.prepared.routingVariables,
-  });
-  return {
-    ok: true,
-    material: {
-      secrets: effectiveSecrets,
-      vars: args.body.vars ?? {},
-      expiresAt: currentSecrets.expiresAt,
-      refreshedConnectors: currentSecrets.refreshedConnectors,
-      refreshedSecrets: currentSecrets.refreshedSecrets,
-      missingSecretFailure: { kind: "connector-not-configured" },
+const resolveCustomFirewallAuthMaterial$ = command(
+  async (
+    { set },
+    args: {
+      readonly auth: SandboxAuth;
+      readonly body: FirewallAuthBody;
+      readonly referenced: ReferencedAuthKeys;
+      readonly prepared: PreparedCustomFirewallAuth;
     },
-  };
-}
+  ): Promise<FirewallAuthMaterialResolution> => {
+    const currentSecrets = await set(resolveCurrentCustomConnectorSecrets$, {
+      auth: args.auth,
+      prepared: args.prepared,
+      forceRefresh: args.body.forceRefresh === true,
+      referencedSecretKeys: args.referenced.secrets,
+    });
+    if (currentSecrets.kind === "unavailable") {
+      return { ok: false, response: connectorNotConfigured() };
+    }
+    if (currentSecrets.kind === "refresh-failed") {
+      return {
+        ok: false,
+        response: tokenRefreshFailed(
+          [args.prepared.customConnectorId],
+          "upstream_provider",
+        ),
+      };
+    }
+    if (currentSecrets.kind === "reconnect-required") {
+      return {
+        ok: false,
+        response: connectorReconnectRequired([args.prepared.customConnectorId]),
+      };
+    }
+    const effectiveSecrets = applyCustomConnectorRoutingVariables({
+      currentSecrets: currentSecrets.secrets,
+      authRefs: args.prepared.authRefs,
+      routingVariables: args.prepared.routingVariables,
+    });
+    return {
+      ok: true,
+      material: {
+        secrets: effectiveSecrets,
+        vars: args.body.vars ?? {},
+        expiresAt: currentSecrets.expiresAt,
+        refreshedConnectors: currentSecrets.refreshedConnectors,
+        refreshedSecrets: currentSecrets.refreshedSecrets,
+        missingSecretFailure: { kind: "connector-not-configured" },
+      },
+    };
+  },
+);
 
 const readMatchedFirewallVariables$ = command(
   async (
@@ -5746,7 +5755,6 @@ const resolveFirewallAuthMaterial$ = command(
     },
     signal: AbortSignal,
   ): Promise<FirewallAuthMaterialResolution> => {
-    const db = set(writeDb$);
     if (args.prepared.kind === "connector-automatic") {
       if (args.prepared.catalogAuth === "none") {
         return {
@@ -5831,9 +5839,8 @@ const resolveFirewallAuthMaterial$ = command(
       };
     }
     if (args.prepared.kind === "custom") {
-      const resolution = await resolveCustomFirewallAuthMaterial({
+      const resolution = await set(resolveCustomFirewallAuthMaterial$, {
         ...args,
-        db,
         prepared: args.prepared,
       });
       signal.throwIfAborted();
