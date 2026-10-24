@@ -13,7 +13,7 @@ cd "$repo_root"
 build_root="$RUNNER_TEMP/okou-ios-ci"
 mkdir -p "$build_root"
 resolved=ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
-# CI resolves dependencies before simulator startup, then compiles and runs.
+# CI resolves dependencies and compiles before simulator startup, then runs tests.
 # Prepare/compile/run phases belong to CI; build retains the combined build entry.
 # Package CI has its own runner.
 # With no phase argument, supported manual callers still run every suite.

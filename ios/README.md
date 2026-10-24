@@ -233,9 +233,11 @@ test fingerprints, so the merge group must produce fresh matching evidence.
 The App build uses the system Git provider for locked package resolution and
 reports build timings. Formatting includes both package manifests, sources,
 and tests. Swift packages must match `Package.resolved`; CI checks that it
-remains unchanged. Explicit locked resolution finishes before simulator startup
-so both cold system-service initializations do not compete. CI reports dependency,
-simulator, and total preparation durations separately. Cache hits still validate
+remains unchanged. Explicit locked resolution and compilation finish before
+simulator startup, keeping post-boot system initialization out of compilation.
+CI reports dependency, compilation, simulator, and test durations separately.
+Total preparation sums dependency and simulator setup; startup before tests also
+includes compilation. Cache hits still validate
 current inputs and never replace test execution.
 Standalone package tests run on a separate macOS runner from the App build and
 simulator suite. Both package and App results are required by the gate. App
