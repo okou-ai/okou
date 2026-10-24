@@ -59,6 +59,13 @@ runs:
         toolchain=$(shasum -a 256 "$toolchain_file" | cut -d ' ' -f 1)
         lock=$(shasum -a 256 ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved | cut -d ' ' -f 1)
         sources=$(git rev-parse HEAD:ios)
+        if [[ "$IOS_CACHE_TARGET" == archive ]]; then
+          inputs_file="$RUNNER_TEMP/ios-cache-inputs.json"
+          python3 ios/scripts/archive-promotion.py inputs --toolchain "$toolchain_file" --output "$inputs_file"
+          # The existing native-input identity normalizes release versions only.
+          # Xcode still checks each compilation's complete inputs on replay.
+          sources=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["testInputSha256"])' "$inputs_file")
+        fi
         {
           echo "dependencies-path=$cache_root/SourcePackages"
           echo "compilation-path=$cache_root/DerivedData/CompilationCache.noindex"

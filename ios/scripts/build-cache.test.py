@@ -53,6 +53,10 @@ class BuildCacheTests(unittest.TestCase):
         )
         self.resolved.parent.mkdir(parents=True)
         self.resolved.write_text('{"pins": []}\n')
+        (self.repo / "ios/version.txt").write_text("0.1.0\n")
+        config = self.repo / "ios/Config/Shared.xcconfig"
+        config.parent.mkdir()
+        config.write_text("MARKETING_VERSION = 0.1.0 // x-release-please-version\n")
         self.git("init", "-q")
         self.git("config", "user.name", "Cache Test")
         self.git("config", "user.email", "cache@example.invalid")
@@ -147,6 +151,25 @@ class BuildCacheTests(unittest.TestCase):
             )
             self.assertNotEqual(simulator[key], archive[key])
         self.assertEqual(simulator["toolchain-file"], archive["toolchain-file"])
+
+    def test_release_cache_reuses_version_changes_but_tracks_compiler_inputs(self):
+        self.env["IOS_CACHE_TARGET"] = "archive"
+        before = self.identity()
+        (self.repo / "ios/version.txt").write_text("0.1.1\n")
+        config = self.repo / "ios/Config/Shared.xcconfig"
+        config.write_text("MARKETING_VERSION = 0.1.1 // x-release-please-version\n")
+        self.commit()
+        self.assertEqual(before, self.identity())
+        (self.repo / "ios/App.swift").write_text("let value = 1\n")
+        self.commit()
+        source = self.identity()
+        self.assertNotEqual(before["compilation-key"], source["compilation-key"])
+        self.assertEqual(before["dependencies-key"], source["dependencies-key"])
+        config.write_text(config.read_text() + "SWIFT_OPTIMIZATION_LEVEL = -Osize\n")
+        self.commit()
+        self.assertNotEqual(
+            source["compilation-key"], self.identity()["compilation-key"]
+        )
 
     def test_only_selected_main_jobs_can_write_caches(self):
         workflow = yaml(ROOT / ".github/workflows/ios-build-cache.yml")
