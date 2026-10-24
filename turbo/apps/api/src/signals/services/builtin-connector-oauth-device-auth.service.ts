@@ -67,7 +67,11 @@ import {
   prepareBuiltinConnectorTokenConnection$,
   builtinConnectorTokenMutationValues,
 } from "./connector-data.service";
-import { resolveConnectorConnectionMutation } from "./connector-connection-write.service";
+import {
+  connectorConnectionMutationReadPlan,
+  connectorConnectionMutationReadResult,
+  type ConnectorConnectionMutationArgs,
+} from "./connector-connection-write.service";
 import { resolveOAuthRequestedScopeSnapshot } from "./connector-oauth-scope-snapshot.service";
 import { normalizeDeviceAuthStartOptionsWithMethod } from "./connector-catalog-form-fields.service";
 import {
@@ -780,10 +784,29 @@ const completeClaimedSession$ = command(
           .values(slackRewardWalletEntitlement(prepared.orgId))
           .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
       }
-      const resolution = await resolveConnectorConnectionMutation(
-        tx,
-        builtinConnectorTokenMutationValues(prepared),
-      );
+      const mutationReadDb = tx;
+      const mutationReadArgs: ConnectorConnectionMutationArgs =
+        builtinConnectorTokenMutationValues(prepared);
+      const resolution = await (async () => {
+        let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+        for (;;) {
+          const rows = await mutationReadDb
+            .select(read.columns)
+            .from(read.from)
+            .where(read.where)
+            .orderBy(...read.orderBy)
+            .limit(read.limit);
+          const result = connectorConnectionMutationReadResult(
+            mutationReadArgs,
+            read,
+            rows,
+          );
+          if (result.kind === "resolved") {
+            return result.resolution;
+          }
+          read = result.read;
+        }
+      })();
       signal.throwIfAborted();
       // Keep the exact polling claim through credential persistence and completion.
       // A replacement session or reclaimed provider poll must not publish credentials.
