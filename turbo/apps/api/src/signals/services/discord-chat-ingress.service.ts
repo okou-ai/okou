@@ -530,8 +530,8 @@ interface DiscordIngressAdmissionArgs {
 const discordIngressInsertResultSchema = z
   .object({
     inserted: z.boolean(),
-    id: z.string().uuid(),
-    connectionId: z.string().uuid(),
+    id: nativeUuidSchema,
+    connectionId: nativeUuidSchema,
     status: z.enum([
       "pending",
       "processing",
