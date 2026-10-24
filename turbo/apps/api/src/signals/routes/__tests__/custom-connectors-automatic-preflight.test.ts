@@ -319,4 +319,44 @@ describe("Automatic custom connector preflight", () => {
       connectors.listCustomConnectorAccounts(actor, connector.id),
     ).resolves.toStrictEqual([]);
   });
+
+  it("rejects consent for a reconnect account deleted after authorization starts", async () => {
+    const { actor, connector, provider } = await fixture("cimd");
+    await complete(
+      await connectors.startCustomConnectorOAuth2(actor, connector.id),
+      provider.issuer,
+    );
+    const [account] = await connectors.listCustomConnectorAccounts(
+      actor,
+      connector.id,
+    );
+    if (!account) {
+      throw new Error("Expected the publicly connected account");
+    }
+    const authorizationUrl = await connectors.startCustomConnectorOAuth2(
+      actor,
+      connector.id,
+      undefined,
+      { intent: "reconnect", connectionId: account.id },
+    );
+    const state = new URL(authorizationUrl).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected an OAuth authorization state");
+    }
+    await connectors.deleteCustomConnectorAccount(
+      actor,
+      connector.id,
+      account.id,
+    );
+    const callback =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        state,
+        code: randomUUID(),
+        iss: provider.issuer,
+      });
+    expect(callback.body).toMatchObject({ status: "error" });
+    await expect(
+      connectors.listCustomConnectorAccounts(actor, connector.id),
+    ).resolves.toStrictEqual([]);
+  });
 });

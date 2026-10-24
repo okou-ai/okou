@@ -14,6 +14,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
 import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   mcpOAuthScopeListSchema,
   mcpOAuthScopeTokenSchema,
@@ -32,7 +33,6 @@ import {
 } from "@okouai/connectors/auth-providers/oauth/error";
 import { connectors } from "@okouai/db/schema/connector";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
@@ -116,6 +116,8 @@ import {
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 import {
   customConnectorOAuthStartFromRow,
+  customConnectorOAuthStartResultSchema,
+  customConnectorOAuthStartSql,
   customConnectorOAuthConnectionReadPlan,
   customConnectorOAuthConnectionTokenReadPlan,
   customConnectorRefreshReconnectCondition,
@@ -893,68 +895,53 @@ const persistCustomConnectorOAuthStart$ = command(
     const db = set(writeDb$);
     const { connector, args, prepared } = context;
     const expiresAt = connectorOAuthStateExpiresAt();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0138; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const credentialContractDb = tx;
-      const contractRef = {
-        orgId: args.orgId,
-        connectorId: connector.id,
-        storageVersion: connector.storageVersion,
-        authMode: prepared.authMode,
-      };
-      await (async () => {
-        const plan =
-          customConnectorOAuth2CredentialContractReadPlan(contractRef);
-        const rows = await credentialContractDb
-          .select(plan.columns)
-          .from(plan.from)
-          .leftJoin(plan.join.table, plan.join.on)
-          .where(plan.where)
-          .for("update", { of: plan.from })
-          .limit(1);
-        return customConnectorOAuth2CredentialContractFromRows(
-          rows,
-          contractRef,
-        );
-      })();
-      const resolution = await resolveConnectorConnectionMutation(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        target: { kind: "custom", customConnectorId: connector.id },
-        mutation: args.account,
-        allowSiblings: !isIntegrationManagedCustomConnector(connector),
-      });
-      if (resolution.kind !== "ready") {
-        return resolution;
-      }
-      const [oauthState] = await tx
-        .insert(connectorOauthStates)
-        .values({
-          state: prepared.state,
-          customConnectorId: connector.id,
-          storageVersion: connector.storageVersion,
-          authMethod: "oauth",
-          userId: args.userId,
-          orgId: args.orgId,
-          agentId: args.agentId,
-          authorizeAgent: args.agentId !== undefined,
-          redirectUri: prepared.redirectUri,
-          authorizationUrl: prepared.authorizationUrl,
-          oauthRequestedScopes: prepared.oauthRequestedScopes,
-          codeVerifier: prepared.codeVerifier,
-          oauthContext: JSON.stringify(prepared.context),
-          accountMutation: args.account,
-          expiresAt,
-        })
-        .returning({ id: connectorOauthStates.id });
-      return customConnectorOAuthStartFromRow(
-        oauthState,
-        args.account,
-        expiresAt,
-      );
+    const allowSiblings = !isIntegrationManagedCustomConnector(connector);
+    const query = customConnectorOAuthStartSql({
+      orgId: args.orgId,
+      userId: args.userId,
+      connectorId: connector.id,
+      storageVersion: connector.storageVersion,
+      authMode: prepared.authMode,
+      allowSiblings,
+      account: args.account,
+      state: prepared.state,
+      agentId: args.agentId,
+      redirectUri: prepared.redirectUri,
+      authorizationUrl: prepared.authorizationUrl,
+      oauthRequestedScopes: prepared.oauthRequestedScopes,
+      codeVerifier: prepared.codeVerifier,
+      oauthContext: JSON.stringify(prepared.context),
+      expiresAt,
     });
     signal.throwIfAborted();
-    return result;
+    const [result] = parseRawRows(
+      customConnectorOAuthStartResultSchema,
+      await db.execute(query),
+    );
+    signal.throwIfAborted();
+    if (!result) {
+      throw new Error("Failed to create connector OAuth state");
+    }
+    if (!result.contractValid) {
+      throw new Error(
+        "Custom connector credential contract changed during OAuth connection",
+      );
+    }
+    if (args.account.intent === "reconnect" && !result.accountPresent) {
+      return { kind: "missing" as const };
+    }
+    if (
+      args.account.intent !== "reconnect" &&
+      !allowSiblings &&
+      result.accountPresent
+    ) {
+      return { kind: "sibling-disabled" as const };
+    }
+    return customConnectorOAuthStartFromRow(
+      result.oauthStateId === null ? undefined : { id: result.oauthStateId },
+      args.account,
+      expiresAt,
+    );
   },
 );
 
