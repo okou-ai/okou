@@ -117,13 +117,17 @@ export function createPublicRunnerMemory(
     });
     return agent.agentId;
   }
-  async function claim(agentId: string, prompt: string) {
+  async function claim(
+    agentId: string,
+    prompt: string,
+    model = "claude-fable-5-1",
+  ) {
     const run = await api.createThreadRun(fixture.actor, {
       agentId,
       prompt,
-      // The Memory owner selects their own connected native subscription;
+      // The Memory owner selects their own connected subscription;
       // the organization admin's personal credentials are never borrowed.
-      model: "claude-fable-5-1",
+      model,
     });
     fixture.registerRun(run.runId);
     const execution = await api.claimRunnerJob(run.runId);
