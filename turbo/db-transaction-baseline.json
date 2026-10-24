@@ -272,11 +272,6 @@
       "owner": "persistReconfigurationPatch$"
     },
     {
-      "id": "TX-0198",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "restoreFailedReconfiguration$"
-    },
-    {
       "id": "TX-0202",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "finalizeAutomationStructureTransition$"

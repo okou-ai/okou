@@ -94,7 +94,10 @@ import {
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { reconcileOfficialGoogleFormsConfiguration$ } from "./official-google-forms-reconfiguration.service";
 import { observedWorkflowAutomationCondition } from "./workflow-automation-snapshot";
-import { notionConfigWithConnectorId } from "./notion-automation-account.service";
+import {
+  notionConfigConnectorId,
+  notionConfigWithConnectorId,
+} from "./notion-automation-account.service";
 import {
   acceptedCatalogFromRow,
   OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
@@ -128,8 +131,6 @@ import {
   type OfficialAutomationEventPreparation,
 } from "./workflow-automation.service";
 import type { WorkflowMember } from "./workflow-data.service";
-
-import { workflowAutomationAccountConnectorSlug } from "./workflow-automation-account-classification.service";
 
 const DORMANT_CREATION_LEASE_MS = 5 * 60 * 1000;
 
@@ -881,20 +882,6 @@ const persistReconfigurationPatch$ = command(
   },
 );
 
-function restoredNotionEventConfig(
-  projection: OfficialAutomationAccountProjection,
-  previous: OfficialAutomationRow,
-) {
-  return projection.kind === "projected" &&
-    projection.eventConnectorId !== null &&
-    workflowAutomationAccountConnectorSlug(previous.eventType) === "notion"
-    ? notionConfigWithConnectorId(
-        previous.eventType,
-        previous.eventConfig,
-        projection.eventConnectorId,
-      )
-    : null;
-}
 const reconcileRestoredAutomationWatch$ = command(
   async (
     { set },
@@ -915,113 +902,262 @@ const reconcileRestoredAutomationWatch$ = command(
 );
 
 function restoredAutomationAccountFields(
-  projection: OfficialAutomationAccountProjection,
   previous: OfficialAutomationRow,
+  required: boolean,
+  connectorId: ReturnType<typeof sql>,
 ) {
-  const notion = restoredNotionEventConfig(projection, previous);
-  return projection.kind === "projected"
-    ? {
-        eventConnectorId: projection.eventConnectorId,
-        ...(notion === null ? {} : { eventConfig: notion }),
-      }
-    : {};
+  if (!required) {
+    return {};
+  }
+  const previousConnectorId = notionConfigConnectorId(
+    previous.eventType,
+    previous.eventConfig,
+  );
+  const notion =
+    previousConnectorId === null
+      ? null
+      : notionConfigWithConnectorId(
+          previous.eventType,
+          previous.eventConfig,
+          previousConnectorId,
+        );
+  return {
+    eventConnectorId: connectorId,
+    ...(notion === null
+      ? {}
+      : {
+          eventConfig: sql`CASE WHEN ${connectorId} IS NULL
+        THEN ${sql.param(previous.eventConfig, workflowAutomations.eventConfig)}
+        ELSE ${sql.param(notion, workflowAutomations.eventConfig)}
+          || jsonb_build_object('connectorId', ${connectorId}::text) END`,
+        }),
+  };
+}
+
+interface FailedReconfigurationArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly definitionName: string;
+  readonly persisted: PersistedReconfiguration;
+}
+
+function failedReconfigurationRestorePlan(
+  args: FailedReconfigurationArgs,
+  currentTime: Date,
+) {
+  const previous = args.persisted.previous;
+  const current = args.persisted.current;
+  const accountPlan = officialAccountProjectionReadPlan({
+    orgId: args.orgId,
+    userId: args.userId,
+    workflowId: previous.workflowId,
+    currentEventType: current.eventType,
+    nextEventType: previous.eventType,
+  });
+  const builder = new QueryBuilder();
+  const catalogFence = builder
+    .$with("restore_catalog_fence")
+    .as(
+      builder
+        .select({ authority: officialWorkflowCatalogState.authority })
+        .from(officialWorkflowCatalogState)
+        .where(
+          eq(
+            officialWorkflowCatalogState.authority,
+            OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+          ),
+        )
+        .for("share"),
+    );
+  const installation = builder.$with("restore_installed_workflow").as(
+    builder
+      .select({ id: workflows.id })
+      .from(workflows)
+      .where(
+        and(
+          installedWorkflowCondition(args, previous.workflowId),
+          gte(builder.select({ count: count() }).from(catalogFence), 0),
+        ),
+      )
+      .for("update")
+      .limit(1),
+  );
+  // Keep the original catalog -> installation -> exact observed automation
+  // lock order. A changed tuple cannot be restored from this compensation.
+  const locked = builder.$with("restore_locked_automation").as(
+    builder
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(
+        and(
+          observedWorkflowAutomationCondition(current),
+          eq(
+            sql`date_trunc('milliseconds', ${workflowAutomations.updatedAt})`,
+            sql`${timestampWithoutTimeZone(current.updatedAt)}::timestamp`,
+          ),
+          exists(builder.select().from(installation)),
+        ),
+      )
+      .for("update")
+      .limit(1),
+  );
+  const projection = builder.$with("restore_account_projection").as(
+    builder
+      .select({
+        connectorId: accountPlan.columns.connectorId.as("connector_id"),
+      })
+      .from(accountPlan.source),
+  );
+  const projectedConnectorId = sql`(${builder
+    .select({ connectorId: projection.connectorId })
+    .from(projection)})`;
+  const restorePatch = officialAutomationRestorePatch(
+    previous,
+    previous.nextRunAt,
+    currentTime,
+  );
+  const restoredValues = {
+    ...restorePatch,
+    nextRunAt: reconciledScheduleAnchor(current, restorePatch.nextRunAt),
+    ...restoredAutomationAccountFields(
+      previous,
+      accountPlan.required,
+      projectedConnectorId,
+    ),
+    enabled: previous.enabled,
+    officialIntendedEnabled: previous.officialIntendedEnabled,
+    officialReconciliationStatus: "failed" as const,
+  };
+  const resetForConfiguration = googleFormsCursorMustReset(current, {
+    ...current,
+    ...restorePatch,
+    eventConnectorId: current.eventConnectorId,
+    enabled: previous.enabled,
+    officialIntendedEnabled: previous.officialIntendedEnabled,
+  });
+  const resetForAccount = accountPlan.required
+    ? sql`${current.eventConnectorId}::uuid IS DISTINCT FROM ${projectedConnectorId}`
+    : sql`${current.eventConnectorId}::uuid IS DISTINCT FROM ${previous.eventConnectorId}::uuid`;
+  const formsChanged =
+    current.eventType === "google-forms-response-submitted" ||
+    previous.eventType === "google-forms-response-submitted";
+  return {
+    catalogFence,
+    installation,
+    locked,
+    projection,
+    restoredValues,
+    cursorReset: resetForConfiguration
+      ? sql`true`
+      : formsChanged
+        ? resetForAccount
+        : sql`false`,
+  };
 }
 
 const restoreFailedReconfiguration$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly definitionName: string;
-      readonly persisted: PersistedReconfiguration;
-    },
-  ): Promise<void> => {
+  async ({ set }, args: FailedReconfigurationArgs): Promise<void> => {
     const db = set(writeDb$);
     const cleanupSignal = new AbortController().signal;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0198; new non-billing transactions are prohibited.
-    const restored = await db.transaction(async (tx) => {
-      // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
-      await tx.execute(acceptedCatalogLockStatement());
-      const projectionArgs = {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.persisted.previous.workflowId,
-        currentEventType: args.persisted.current.eventType,
-        nextEventType: args.persisted.previous.eventType,
-      };
-      const accountPlan = officialAccountProjectionReadPlan(projectionArgs);
-      const accountRows = accountPlan.required
-        ? await tx.select(accountPlan.columns).from(accountPlan.source)
-        : [];
-      if (accountPlan.required) {
-        cleanupSignal.throwIfAborted();
-      }
-      const accountProjection = officialAccountProjectionFromRow(
-        accountPlan,
-        accountRows[0],
-      );
-      const [installationLockedRow] = await tx
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(
-          installedWorkflowCondition(args, args.persisted.previous.workflowId),
-        )
-        .for("update")
-        .limit(1);
-      const installationLocked = installationLockedRow !== undefined;
-      if (!installationLocked) {
-        return null;
-      }
-      const [current] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(observedWorkflowAutomationCondition(args.persisted.current))
-        .for("update")
-        .limit(1);
-      if (
-        !current ||
-        current.updatedAt.getTime() !==
-          args.persisted.current.updatedAt.getTime()
-      ) {
-        return null;
-      }
-      const currentTime = nowDate();
-      const restorePatch = officialAutomationRestorePatch(
-        args.persisted.previous,
-        args.persisted.previous.nextRunAt,
-        currentTime,
-      );
-      const [row] = await tx
+    const previous = args.persisted.previous;
+    const current = args.persisted.current;
+    if (!Number.isFinite(current.updatedAt.getTime())) {
+      return;
+    }
+    if (!previous.officialBlueprintKey) {
+      throw new Error("Official Workflow automation identity is incomplete");
+    }
+    const {
+      catalogFence,
+      installation,
+      locked,
+      projection,
+      restoredValues,
+      cursorReset,
+    } = failedReconfigurationRestorePlan(args, nowDate());
+    const columns = workflowAutomationColumns();
+    const updated = db.$with("restore_updated_automation").as(
+      db
         .update(workflowAutomations)
-        .set({
-          ...restorePatch,
-          nextRunAt: reconciledScheduleAnchor(current, restorePatch.nextRunAt),
-          ...restoredAutomationAccountFields(
-            accountProjection,
-            args.persisted.previous,
+        .set(restoredValues)
+        .from(locked)
+        .where(eq(workflowAutomations.id, locked.id))
+        .returning({
+          ...columns,
+          observedUpdatedAt: columns.observedUpdatedAt.as("observedUpdatedAt"),
+          observedXmin: columns.observedXmin.as("observedXmin"),
+        }),
+    );
+    const removedCursor = db.$with("restore_removed_forms_cursor").as(
+      db
+        .delete(googleFormsAutomationCursors)
+        .where(
+          and(
+            eq(googleFormsAutomationCursors.automationId, current.id),
+            exists(db.select().from(updated)),
+            cursorReset,
           ),
-          enabled: args.persisted.previous.enabled,
-          officialIntendedEnabled:
-            args.persisted.previous.officialIntendedEnabled,
-          officialReconciliationStatus: "failed",
+        )
+        .returning({ automationId: googleFormsAutomationCursors.automationId }),
+    );
+    const identities = officialWorkflowAutomationIdentities;
+    const identity = db.$with("restore_updated_identity").as(
+      db
+        .insert(identities)
+        .select(
+          db
+            .select({
+              id: updated.id,
+              workflowId: updated.workflowId,
+              automationId: updated.id,
+              blueprintKey: updated.officialBlueprintKey,
+              state: sql`'active'`.mapWith(identities.state).as("state"),
+              retainedParameterBindings: sql`NULL`
+                .mapWith(pgNullDecoder)
+                .as("retained_parameter_bindings"),
+              retainedIntendedEnabled: sql`NULL`
+                .mapWith(pgNullDecoder)
+                .as("retained_intended_enabled"),
+              retainedAppliedFingerprint: sql`NULL`
+                .mapWith(pgNullDecoder)
+                .as("retained_applied_fingerprint"),
+              createdAt: updated.updatedAt,
+              updatedAt: updated.updatedAt,
+            })
+            .from(updated)
+            .where(gte(db.select({ count: count() }).from(removedCursor), 0)),
+        )
+        .onConflictDoUpdate({
+          target: [identities.workflowId, identities.blueprintKey],
+          set: {
+            automationId: sql`excluded.automation_id`,
+            state: "active",
+            retainedParameterBindings: null,
+            retainedIntendedEnabled: null,
+            retainedAppliedFingerprint: null,
+            updatedAt: sql`excluded.updated_at`,
+          },
         })
-        .where(eq(workflowAutomations.id, current.id))
-        .returning(workflowAutomationColumns());
-      if (!row) {
-        return null;
-      }
-      if (googleFormsCursorMustReset(current, row)) {
-        await tx
-          .delete(googleFormsAutomationCursors)
-          .where(eq(googleFormsAutomationCursors.automationId, current.id));
-      }
-      await tx
-        .insert(officialWorkflowAutomationIdentities)
-        .values(activeIdentityValues(row, currentTime))
-        .onConflictDoUpdate(activeIdentityConflict(row, currentTime));
-      return row;
-    });
+        .returning({ automationId: identities.automationId }),
+    );
+    const [result] = await db
+      .with(
+        catalogFence,
+        installation,
+        locked,
+        projection,
+        updated,
+        removedCursor,
+        identity,
+      )
+      .select({
+        restored: automationMaterializationColumns(
+          "restore_updated_automation",
+        ),
+      })
+      .from(updated)
+      .innerJoin(identity, eq(identity.automationId, updated.id));
+    const restored = result?.restored;
     if (restored) {
       await set(
         reconcileRestoredAutomationWatch$,
