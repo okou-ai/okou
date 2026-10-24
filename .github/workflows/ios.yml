@@ -7,6 +7,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      sample_xcode_startup:
+        description: Sample the compile-phase Xcode startup
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -70,6 +75,7 @@ jobs:
           python3 ios/scripts/preboot-simulator.test.py
           python3 ios/scripts/prepare-package-sources.test.py
           python3 ios/scripts/run-ci-tests.test.py
+          python3 ios/scripts/sample-xcode-startup.test.py
           python3 ios/scripts/build-cache.test.py
 
   test-packages:
@@ -132,6 +138,7 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
       IOS_BUILD_CACHE_ENABLED: "true"
+      IOS_XCODE_STARTUP_SAMPLING: ${{ github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -196,6 +203,14 @@ jobs:
       - name: Build app and run isolated simulator tests
         if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
         run: bash ios/scripts/run-ci-tests.sh
+      - name: Upload Xcode startup observations
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-xcode-startup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/okou-ios-ci/startup-samples
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Record simulator inputs and test decision
         if: github.event_name == 'merge_group'
         run: |

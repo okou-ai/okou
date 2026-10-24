@@ -2,6 +2,9 @@
 set -euo pipefail
 shopt -s nullglob
 
+if [[ "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true && "${1:-all}" == compile ]]; then
+  echo "iOS sampled compile script started" >&2
+fi
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
@@ -10,7 +13,7 @@ cd "$repo_root"
 build_root="$RUNNER_TEMP/okou-ios-ci"
 mkdir -p "$build_root"
 resolved=ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
-# CI resolves dependencies before simulator startup, then compiles and runs.
+# CI resolves dependencies and compiles before simulator startup, then runs tests.
 # Prepare/compile/run phases belong to CI; build retains the combined build entry.
 # Package CI has its own runner.
 # With no phase argument, supported manual callers still run every suite.
@@ -88,7 +91,13 @@ fi
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == compile ]]; then
   ios_phase_started=$SECONDS
   cmp "$resolved" "$build_root/Package.resolved.before"
-  xcodebuild "${xcode_args[@]}" -showBuildTimingSummary build-for-testing
+  if [[ "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true ]]; then
+    echo "iOS starting compiler observer" >&2
+    python3 ios/scripts/sample-xcode-startup.py "$build_root/startup-samples" -- \
+      xcodebuild "${xcode_args[@]}" -showBuildTimingSummary build-for-testing
+  else
+    xcodebuild "${xcode_args[@]}" -showBuildTimingSummary build-for-testing
+  fi
   cmp "$resolved" "$build_root/Package.resolved.before"
   echo "iOS build-for-testing: $((SECONDS - ios_phase_started)) seconds"
 fi
