@@ -119,18 +119,19 @@ final class ThreadListStore {
       didFail(error)
     }
     guard !closed, !blocked, !Task.isCancelled else { return }
-    let switches: SidebarFeatureSwitches?
+    let switches: SidebarFeatureSwitches
     do {
       switches = try await client.request("/api/feature-switches")
     } catch {
       guard !closed, !Task.isCancelled else { return }
       didFail(error)
-      switches = nil
+      return
     }
     guard !closed, !Task.isCancelled else { return }
-    canUseComposerConnectors = switches?.effectiveSwitches["iosComposerConnectors"] == true
-    canArchiveChats = switches?.effectiveSwitches["chatThreadArchiving"] == true
-    canMuteChats = switches?.effectiveSwitches["chatThreadMuting"] == true
+    // Keep this workspace's last successful flags until a new response replaces them.
+    canUseComposerConnectors = switches.effectiveSwitches["iosComposerConnectors"] == true
+    canArchiveChats = switches.effectiveSwitches["chatThreadArchiving"] == true
+    canMuteChats = switches.effectiveSwitches["chatThreadMuting"] == true
   }
 
   var visiblePinnedAgents: [AgentRecord] {
