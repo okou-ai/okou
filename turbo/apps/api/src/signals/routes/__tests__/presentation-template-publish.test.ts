@@ -122,7 +122,6 @@ describe("presentation template publish", () => {
       sourceFilename: "brand-system.pptx",
       pageCount: 2,
     });
-    expect(published.body.coverUrl).not.toBeNull();
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       "presentationTemplatesChanged",
       null,

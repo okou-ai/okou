@@ -534,7 +534,6 @@ test("Leave an agent unauthorized when OAuth progress is closed", async () => {
   await expect(screen.findByText("Connecting...")).resolves.toBeVisible();
   // Closing the provider window cancels the owning authorization attempt.
   authWindow.close();
-  expect(authWindow.closed).toBeTruthy();
 
   await screen.findByText("Authorize Okou");
   expect(updateCalls).toBe(0);

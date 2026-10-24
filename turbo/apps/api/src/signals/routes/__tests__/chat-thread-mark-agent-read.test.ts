@@ -277,8 +277,6 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
     for (const threadId of fixture.threadIds) {
       const first = firstRead.get(threadId);
       const second = secondRead.get(threadId);
-      expect(first).not.toBeNull();
-      expect(second).not.toBeNull();
       expect(Date.parse(second ?? "")).toBeGreaterThan(Date.parse(first ?? ""));
     }
     const unreads = await chat.listThreadUnreads(

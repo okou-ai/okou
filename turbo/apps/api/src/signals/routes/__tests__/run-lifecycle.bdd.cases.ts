@@ -12964,31 +12964,27 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           expect(rawFailures).toHaveLength(1);
           expect(rawFailures[0]?.failureReason).toBe(args.failureReason);
-          return { failures, rawFailures };
+          return { failures };
         }
 
         it.each(terminalFailureReasons)(
           "publishes %s as the terminal failure reason",
           async (failureReason) => {
-            const { failures, rawFailures } = await completePublicFailure({
+            const { failures } = await completePublicFailure({
               failureReason,
             });
             expect(failures[0]?.failureReason).toBe(failureReason);
-            expect(rawFailures[0]?.failureReason).toBe(failureReason);
           },
         );
 
         it.each(["claude-code-oauth-token"] as const)(
           "preserves failed completion when sandbox root storage fills on %s",
           async (modelProvider) => {
-            const { failures, rawFailures } = await completePublicFailure({
+            const { failures } = await completePublicFailure({
               modelProvider,
               failureReason: "guest_root_filesystem_full",
             });
             expect(failures[0]?.failureReason).toBe(
-              "guest_root_filesystem_full",
-            );
-            expect(rawFailures[0]?.failureReason).toBe(
               "guest_root_filesystem_full",
             );
           },
