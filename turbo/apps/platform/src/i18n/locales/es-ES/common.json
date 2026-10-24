@@ -1073,6 +1073,7 @@
       "loadFailed": "No se han podido verificar todos los permisos solicitados. No se puede cambiar ningún permiso.",
       "loading": "Cargando permisos",
       "notNow": "Ahora no",
+      "review": "Revisar permisos",
       "scopeNote": "Se aplica a este agente, no solo a la tarea actual.",
       "title": "Conceder los siguientes permisos"
     }

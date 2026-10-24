@@ -335,7 +335,7 @@ export function MarkdownCardView({
       return (
         <ChatCard
           data-testid="permission-batch-action-card"
-          className="h-[640px] w-full p-4"
+          className={cn("w-full", CHAT_ACTION_CARD_HEIGHT_CLASS)}
         >
           <PermissionBatchContent signals={card.signals} />
         </ChatCard>

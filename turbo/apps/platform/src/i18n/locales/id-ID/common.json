@@ -1051,6 +1051,7 @@
       "loadFailed": "Tidak dapat memverifikasi semua izin yang diminta. Tidak ada izin yang dapat diubah.",
       "loading": "Memuat izin",
       "notNow": "Tidak sekarang",
+      "review": "Tinjau izin",
       "scopeNote": "Berlaku untuk agen ini, bukan hanya tugas saat ini.",
       "title": "Berikan izin berikut"
     }

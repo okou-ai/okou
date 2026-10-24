@@ -1073,6 +1073,7 @@
       "loadFailed": "Impossibile verificare tutte le autorizzazioni richieste. Nessuna autorizzazione può essere modificata.",
       "loading": "Caricamento delle autorizzazioni",
       "notNow": "Non ora",
+      "review": "Esamina autorizzazioni",
       "scopeNote": "Si applica a questo agente, non solo all’attività corrente.",
       "title": "Concedi le seguenti autorizzazioni"
     }

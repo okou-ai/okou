@@ -1053,6 +1053,7 @@
       "loadFailed": "Nicht alle angeforderten Berechtigungen konnten überprüft werden. Es können keine Berechtigungen geändert werden.",
       "loading": "Berechtigungen werden geladen",
       "notNow": "Nicht jetzt",
+      "review": "Berechtigungen prüfen",
       "scopeNote": "Gilt für diesen Agenten, nicht nur für die aktuelle Aufgabe.",
       "title": "Folgende Berechtigungen erlauben"
     }
