@@ -2853,6 +2853,7 @@ describe("Morning Brief catalog reconciliation", () => {
       if (!reconciled) {
         throw new Error("Expected the reconciled Official schedule");
       }
+      await connectBriefSourceForAgent(actor, installation.agentId);
       mockOptionalEnv(
         "GMAIL_PUBSUB_TOPIC_NAME",
         "projects/official-workflow-test/topics/gmail-events",
