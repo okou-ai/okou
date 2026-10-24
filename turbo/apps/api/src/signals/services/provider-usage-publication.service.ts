@@ -288,6 +288,7 @@ export const recordProviderUsageBatch$ = command(
         run,
         attribution,
       );
+      signal.throwIfAborted();
       if (capture) {
         const expectedInsert = providerBatchInsertionExpected(values);
         const captured = db.$with("provider_captured_attribution").as(
