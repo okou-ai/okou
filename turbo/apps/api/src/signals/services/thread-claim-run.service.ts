@@ -105,7 +105,11 @@ import {
   prepareModelUsageContext,
   runRoutePricingFromSnapshot,
 } from "./built-in-route-pricing";
-import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import {
+  canonicalChatEventInputCtes,
+  canonicalChatEventInsertSql,
+  type PreparedChatEventRow,
+} from "./chat-event-append.service";
 import { recordThreadRunActivationMarkers } from "./chat-first-assistant-event-metric.service";
 import type {
   QueuedUserMessage,
@@ -114,7 +118,12 @@ import type {
   QueueFirstRunClaimResult,
 } from "./chat-queued-event.service";
 import { finalizeClaimedRunUserMessage } from "./chat-run-event.service";
-import { chatThreadEventInsertSql } from "./chat-thread-event.service";
+import { randomUUID } from "node:crypto";
+import {
+  chatThreadEventSequences,
+  chatThreadEvents,
+} from "@okouai/db/schema/chat-thread-event";
+import { agents } from "@okouai/db/schema/agent";
 import {
   type ExecutionCallback,
   prepareCallbacks$ as prepareExecutionCallbacks$,
@@ -188,8 +197,8 @@ import {
   parseCanonicalChatEventRequiredOfficialWorkflowIds,
 } from "./canonical-chat-event-read.service";
 import {
-  chatEventInsertSql,
-  chatEventReplacementInsertSql,
+  prepareChatEvent,
+  prepareChatEventReplacement,
 } from "./chat-event.service";
 import { chatInputEnqueueCommits$ } from "./chat-input-enqueue-observation";
 import type {
@@ -261,7 +270,10 @@ import type { PersistedStorageMount } from "@okouai/db/types";
 import { command, type Command, computed, type Computed, state } from "ccstate";
 import {
   and,
+  count,
   eq,
+  exists,
+  TransactionRollbackError,
   isNotNull,
   sql,
   type SQL,
@@ -330,6 +342,88 @@ export interface ThreadClaim {
   readonly orgId: string;
   readonly chatThreadId: string;
   readonly claimId: string;
+}
+
+const queueHeadRejectionResultSchema = z.strictObject({
+  rejected: z.boolean(),
+  assistantEventId: z.uuid().nullable(),
+});
+const queueRejectionLeaseFailureSchema = z.object({
+  code: z.literal("23502"),
+  table: z.literal("chat_events"),
+  column: z.literal("chat_thread_id"),
+});
+
+function queueRejectionLeaseCte(lease: ThreadClaim | undefined): SQL {
+  if (!lease) {
+    return sql`rejection_lease AS (SELECT true AS released)`;
+  }
+  return sql`rejection_lease AS (
+    UPDATE ${queuedChatThreads} SET claim_id = NULL, claim_expires_at = NULL
+    WHERE ${and(
+      eq(queuedChatThreads.orgId, lease.orgId),
+      eq(queuedChatThreads.chatThreadId, lease.chatThreadId),
+      eq(queuedChatThreads.claimId, lease.claimId),
+    )} AND (SELECT ${count()} FROM reserved) >= 0
+    RETURNING true AS released
+  )`;
+}
+
+function queueRejectionSortCtes(eventId: string): SQL {
+  return sql`thread_reserved AS (
+    INSERT INTO ${chatThreadEventSequences} (user_id, org_id, last_seq_id)
+    SELECT touched.user_id,
+      (SELECT ${agents.orgId} FROM ${agents} WHERE ${agents.id} = touched.agent_id), 1
+    FROM touched
+    ON CONFLICT (user_id, org_id) DO UPDATE
+      SET last_seq_id = ${chatThreadEventSequences.lastSeqId} + 1
+    RETURNING user_id, org_id, last_seq_id
+  ), sort_inserted AS (
+    INSERT INTO ${chatThreadEvents}
+      (id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
+       cloud_browser_enabled, created_at)
+    SELECT ${eventId}::uuid, thread_reserved.user_id, thread_reserved.org_id,
+      thread_reserved.last_seq_id, touched.id, 'sort_touched', touched.agent_id,
+      false, date_trunc('milliseconds', touched.last_message_at)
+    FROM touched CROSS JOIN thread_reserved
+    ON CONFLICT (id) DO NOTHING RETURNING id
+  )`;
+}
+
+function queueHeadRejectionSql(args: {
+  readonly events: readonly [PreparedChatEventRow, PreparedChatEventRow];
+  readonly threadId: string;
+  readonly lease: ThreadClaim | undefined;
+}): SQL {
+  // Keep the event sequence as the first lock. A lost existing lease fails
+  // the rejected event's required thread identity, rolling back reservation
+  // and lease changes together. The lease UPDATE moves before event writes.
+  const rejection = canonicalChatEventInsertSql("any", {
+    eligibility: eq(sql`input.ordinal`, 0),
+    sequenceOffset: sql`input.ordinal + 1`,
+    threadIdentity: sql`CASE WHEN EXISTS (SELECT 1 FROM rejection_lease)
+      THEN input."chatThreadId" ELSE NULL END`,
+  });
+  const assistant = canonicalChatEventInsertSql("none", {
+    eligibility: and(
+      eq(sql`input.ordinal`, 1),
+      exists(sql`(SELECT 1 FROM rejected)`),
+    ),
+    sequenceOffset: sql`input.ordinal + 1`,
+  });
+  return sql`WITH ${canonicalChatEventInputCtes(args.events)},
+    ${queueRejectionLeaseCte(args.lease)},
+    rejected AS (${rejection}), assistant AS (${assistant}),
+    touched AS (
+      UPDATE ${chatThreads}
+      SET last_message_at = GREATEST(${chatThreads.lastMessageAt}, assistant.created_at)
+      FROM assistant
+      WHERE ${and(eq(chatThreads.id, args.threadId), isNotNull(chatThreads.agentId))}
+      RETURNING ${chatThreads.id} AS id, ${chatThreads.userId} AS user_id,
+        ${chatThreads.agentId} AS agent_id, ${chatThreads.lastMessageAt} AS last_message_at
+    ), ${queueRejectionSortCtes(randomUUID())}
+    SELECT ${exists(sql`(SELECT 1 FROM rejected)`)} AS rejected,
+      (SELECT id FROM assistant) AS "assistantEventId"`;
 }
 
 interface QueuedPromptGraphInput {
@@ -2976,103 +3070,61 @@ export function createThreadClaimRunObjects(
       const rejectedAt = new Date(
         Math.max(nowDate().getTime(), source.createdAt.getTime() + 1),
       );
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0261; new non-billing transactions are prohibited.
-      return await set(writeDb$).transaction(async (tx) => {
-        const rejected =
-          parseRawRows(
-            chatEventCommandResultSchema,
-            await tx.execute(
-              chatEventReplacementInsertSql(source, {
-                chatThreadId: source.chatThreadId,
-                eventType: "input.rejected",
-                userMessage: source.userMessage,
-                runId: null,
-                error: args.errorMarker,
-                createdAt: rejectedAt,
-              }),
-            ),
-          )[0] ?? null;
-        signal.throwIfAborted();
-        let appended: {
-          readonly assistantEventId: string;
-          readonly contextType: string | null;
-          readonly contextId: string | null;
-        } | null = null;
-        if (rejected) {
-          const assistant =
-            parseRawRows(
-              chatEventCommandResultSchema,
-              await tx.execute(
-                chatEventInsertSql({
-                  chatThreadId: source.chatThreadId,
-                  eventType: "output.error",
-                  content: args.displayError,
-                  runId: null,
-                  error: args.errorMarker,
-                  createdAt: new Date(rejectedAt.getTime() + 1),
-                }),
-              ),
-            )[0] ?? null;
-          signal.throwIfAborted();
-          if (!assistant) {
-            throw new Error("Failed to append queued input rejection");
-          }
-          const [thread] = await tx
-            .update(chatThreads)
-            .set({
-              lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${assistant.createdAt.toISOString()}::timestamp)`,
-            })
-            .where(
-              and(
-                eq(chatThreads.id, source.chatThreadId),
-                isNotNull(chatThreads.agentId),
-              ),
-            )
-            .returning({
-              id: chatThreads.id,
-              userId: chatThreads.userId,
-              agentId: chatThreads.agentId,
-              lastMessageAt: chatThreads.lastMessageAt,
-            });
-          signal.throwIfAborted();
-          if (thread?.agentId) {
-            await tx.execute(
-              chatThreadEventInsertSql({
-                kind: "sort_touched",
-                userId: thread.userId,
-                chatThreadId: thread.id,
-                agentId: thread.agentId,
-                createdAt: thread.lastMessageAt,
-              }),
-            );
-            signal.throwIfAborted();
-          }
-          appended = {
-            assistantEventId: assistant.id,
-            contextType: source.contextType,
-            contextId: source.contextId,
-          };
-        }
-        if (args.lease) {
-          const { lease } = args;
-          const [released] = await tx
-            .update(queuedChatThreads)
-            .set({ claimId: null, claimExpiresAt: null })
-            .where(
-              and(
-                eq(queuedChatThreads.orgId, lease.orgId),
-                eq(queuedChatThreads.chatThreadId, lease.chatThreadId),
-                eq(queuedChatThreads.claimId, lease.claimId),
-              ),
-            )
-            .returning({ chatThreadId: queuedChatThreads.chatThreadId });
-          signal.throwIfAborted();
-          if (!released) {
-            tx.rollback();
-          }
-        }
-        return appended;
+      const rejected = prepareChatEventReplacement(source, {
+        chatThreadId: source.chatThreadId,
+        eventType: "input.rejected",
+        userMessage: source.userMessage,
+        runId: null,
+        error: args.errorMarker,
+        createdAt: rejectedAt,
       });
+      const assistant = prepareChatEvent({
+        chatThreadId: source.chatThreadId,
+        eventType: "output.error",
+        content: args.displayError,
+        runId: null,
+        error: args.errorMarker,
+        createdAt: new Date(rejectedAt.getTime() + 1),
+      });
+      const statement = queueHeadRejectionSql({
+        events: [rejected.row, assistant.row],
+        threadId: source.chatThreadId,
+        lease: args.lease,
+      });
+      const db = set(writeDb$);
+      const schema = queueHeadRejectionResultSchema;
+      const outcome = await settle(
+        (async () => {
+          return parseRawRows(schema, await db.execute(statement));
+        })(),
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!outcome.ok) {
+        if (
+          outcome.error instanceof Error &&
+          queueRejectionLeaseFailureSchema.safeParse(outcome.error.cause)
+            .success
+        ) {
+          throw new TransactionRollbackError();
+        }
+        throw outcome.error;
+      }
+      const [result] = outcome.value;
+      if (!result || outcome.value.length !== 1) {
+        throw new Error("Queued input rejection returned no summary row");
+      }
+      if (!result.rejected) {
+        return null;
+      }
+      if (result.assistantEventId === null) {
+        throw new Error("Failed to append queued input rejection");
+      }
+      return {
+        assistantEventId: result.assistantEventId,
+        contextType: source.contextType,
+        contextId: source.contextId,
+      };
     },
   );
 
