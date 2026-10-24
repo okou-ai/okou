@@ -2934,6 +2934,8 @@ describe("Morning Brief catalog reconciliation", () => {
       ]);
 
       gmailUnavailable = false;
+      // A failed catalog pass becomes eligible after its one-second backoff.
+      mockNow(now() + 1000);
       await executeAutomationCron();
       await flushWaitUntilForTest();
       const [recovered] = await listMorningBriefAutomations(
