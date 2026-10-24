@@ -218,6 +218,7 @@ fn low_descriptor_limit_keeps_supported_archives_extractable() {
     const CHILD: &str = "OKOU_GUEST_ARCHIVE_LOW_NOFILE_CHILD";
     if std::env::var_os(CHILD).is_some() {
         many_distinct_parents_and_repeated_attempts_release_descriptors();
+        crate::decoded_files::shared_and_wide_parents_preserve_complete_decoded_outputs();
         for _ in 0..16 {
             truncated_ordinary_payload_fails_with_partial_output();
         }
