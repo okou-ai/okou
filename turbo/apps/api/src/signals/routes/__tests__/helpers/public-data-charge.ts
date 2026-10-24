@@ -63,6 +63,7 @@ export async function chargePublicDataUsage(
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
+  await bdd.completeOnboarding(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Data billing fixture",
     visibility: "private",
