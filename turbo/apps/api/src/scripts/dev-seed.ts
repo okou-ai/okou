@@ -5,7 +5,6 @@ import { pathToFileURL } from "node:url";
 import { and, count, eq, gte, inArray, sql, type SQL } from "drizzle-orm";
 import { escapeLiteral } from "pg";
 import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
-import { MANAGED_SOCIALKIT_BILLING_CATEGORY } from "@okouai/api-contracts/contracts/social";
 import { resolveSkillRef } from "@okouai/core/github-url";
 import {
   getSkillStorageName,
@@ -587,74 +586,6 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
     // for the cheapest known bucket.
     ["__fallback__", usd(0.005), 1],
   ]),
-
-  // Firecrawl single-page scrape fixed Okou product pricing. Requests disable
-  // document parsers so provider cost stays bounded to the exposed modes.
-  ...usageGroup("scrape", "firecrawl", [
-    ["standard.markdown", usd(0.004), 1],
-    ["standard.links", usd(0.004), 1],
-    ["enhanced.markdown", usd(0.02), 1],
-    ["enhanced.links", usd(0.02), 1],
-  ]),
-
-  // Perplexity Search API — https://docs.perplexity.ai/docs/getting-started/pricing
-  // Raw provider cost is $5 per 1,000 requests with no token charge.
-  ...usageGroup("web-search", "perplexity", [["request", usd(0.005), 1]]),
-  // Runtime reports one aggregate Google provider cost in micro-USD; this
-  // converts it once at 1,250 credits/USD (the required 25% markup).
-  ...usageGroup("maps", "google-maps-grounding", [
-    ["provider_cost_usd_micros", 1250, 1_000_000],
-  ]),
-  // SocialKit Growth costs $95 per 50,000 requests. A 25% markup is
-  // $0.002375, rounded up to 3 whole Okou credits per successful request.
-  ...usageGroup("social", "socialkit", [
-    [MANAGED_SOCIALKIT_BILLING_CATEGORY, usd(0.003), 1],
-  ]),
-  ...[
-    "similarweb",
-    "upspring",
-    "firecrawl-trends",
-    "oriane",
-    "web-archive-org",
-    "affiliate-com",
-    "play-google-com",
-    "particle",
-    "fiscal-ai",
-  ].flatMap((provider) => {
-    return usageGroup("data-search", `firecrawl/alexandria/${provider}`, [
-      ["provider_cost_usd_micros", 1250, 1_000_000],
-    ]);
-  }),
-  ...usageGroup("data-search", "monid/apollo", [
-    ["provider_cost_usd_micros", 1250, 1_000_000],
-  ]),
-  ...usageGroup("data-search", "monid/hunterio", [
-    ["provider_cost_usd_micros", 1250, 1_000_000],
-  ]),
-  ...["xiaohongshu", "threads", "wechat", "douyin", "weibo"].flatMap(
-    (platform) => {
-      return usageGroup("social", `monid/${platform}`, [
-        ["provider_cost_usd_micros", 1250, 1_000_000],
-      ]);
-    },
-  ),
-  ...usageGroup("commerce", "dataforseo", [
-    ["provider_cost_usd_micros", 1250, 1_000_000],
-  ]),
-  // APIDojo Yahoo Finance — https://rapidapi.com/apidojo/api/yahoo-finance1/pricing
-  // Pro is $10 per 10,000 requests, so one successful request costs 1 credit.
-  ...usageGroup("finance", "apidojo", [["request", usd(0.001), 1]]),
-
-  // Managed SEO provider costs with a 25% markup. DataForSEO reports the
-  // actual USD cost per response.
-  ...usageGroup("seo", "dataforseo", [
-    ["provider_cost_usd_micros", 1250, 1_000_000],
-  ]),
-
-  // Perplexity Agent API People Search fixed Okou product pricing, reviewed
-  // 2026-07-23. The $0.020 retail price covers the $0.005 tool invocation,
-  // gpt-5-mini model tokens, and operating margin.
-  ...usageGroup("people-search", "perplexity", [["request", usd(0.02), 1]]),
 
   // OpenAI GPT Image 2.5 token pricing, in credits per million tokens.
   // https://developers.openai.com/api/docs/pricing

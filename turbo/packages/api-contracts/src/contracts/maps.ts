@@ -1,10 +1,5 @@
 import { z } from "zod";
 
-import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
-
-const c = initContract();
-
 export const MAPS_SEARCH_MAX_QUERY_CHARS = 4_096;
 export const MAPS_SEARCH_MAX_ANSWER_CHARS = 32_768;
 export const MAPS_SEARCH_MAX_SOURCES = 64;
@@ -76,32 +71,5 @@ export const mapsSearchResponseSchema = z.object({
   usage: mapsSearchUsageSchema,
 });
 
-export type MapsSearchLocation = z.infer<typeof mapsSearchLocationSchema>;
 export type MapsSearchRequest = z.infer<typeof mapsSearchRequestSchema>;
-export type MapsSearchSource = z.infer<typeof mapsSearchSourceSchema>;
-export type MapsSearchCitation = z.infer<typeof mapsSearchCitationSchema>;
-export type MapsSearchUsage = z.infer<typeof mapsSearchUsageSchema>;
 export type MapsSearchResponse = z.infer<typeof mapsSearchResponseSchema>;
-
-const mapsSearchResponses = {
-  200: mapsSearchResponseSchema,
-  400: apiErrorSchema,
-  401: apiErrorSchema,
-  402: apiErrorSchema,
-  403: apiErrorSchema,
-  502: apiErrorSchema,
-  503: apiErrorSchema,
-} as const;
-
-export const mapsContract = c.router({
-  search: {
-    method: "POST",
-    path: "/api/maps/search",
-    headers: authHeadersSchema,
-    body: mapsSearchRequestSchema,
-    responses: mapsSearchResponses,
-    summary: "Search places and routes with Google Maps grounding",
-  },
-});
-
-export type MapsContract = typeof mapsContract;

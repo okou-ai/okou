@@ -22,7 +22,6 @@ import { cronDrainEmailOutboxRoutes } from "../cron-drain-email-outbox";
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import { cronRenewGmailWatchesRoutes } from "../cron-renew-gmail-watches";
 import { cronReconcileBillingEntitlementsRoutes } from "../cron-reconcile-billing-entitlements";
-import { cronReconcileSocialKitDownloadRoutes } from "../cron-reconcile-socialkit-downloads";
 import { cronSyncSkillsRoutes } from "../cron-sync-skills";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -240,15 +239,6 @@ describe("production-global sweep route contracts", () => {
       context,
       cronReconcileBillingEntitlementsRoutes,
       "/api/cron/reconcile-billing-entitlements",
-    );
-  });
-
-  it("rejects SocialKit download reconciliation without authorization", async () => {
-    expect.hasAssertions();
-    await expectGlobalSweepMissingAuth(
-      context,
-      cronReconcileSocialKitDownloadRoutes,
-      "/api/cron/reconcile-socialkit-downloads",
     );
   });
 

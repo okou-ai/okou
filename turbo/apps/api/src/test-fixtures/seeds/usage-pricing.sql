@@ -190,34 +190,5 @@ VALUES
   ('model', 'openai/gpt-4.1-mini', 'tokens.output', 1600, 1000000),
   ('model', 'google/gemini-3.5-flash', 'tokens.input', 1500, 1000000),
   ('model', 'google/gemini-3.5-flash', 'tokens.cache_read', 150, 1000000),
-  ('model', 'google/gemini-3.5-flash', 'tokens.output', 9000, 1000000),
-  ('scrape', 'firecrawl', 'standard.markdown', 4, 1),
-  ('scrape', 'firecrawl', 'standard.links', 4, 1),
-  ('scrape', 'firecrawl', 'enhanced.markdown', 20, 1),
-  ('scrape', 'firecrawl', 'enhanced.links', 20, 1),
-  ('web-search', 'perplexity', 'request', 5, 1),
-  ('social', 'socialkit', 'request', 3, 1),
-  ('data-search', 'monid/apollo', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'monid/hunterio', 'provider_cost_usd_micros', 1250, 1000000),
-  ('social', 'monid/xiaohongshu', 'provider_cost_usd_micros', 1250, 1000000),
-  ('social', 'monid/threads', 'provider_cost_usd_micros', 1250, 1000000),
-  ('social', 'monid/wechat', 'provider_cost_usd_micros', 1250, 1000000),
-  ('social', 'monid/douyin', 'provider_cost_usd_micros', 1250, 1000000),
-  ('social', 'monid/weibo', 'provider_cost_usd_micros', 1250, 1000000),
-  ('commerce', 'dataforseo', 'provider_cost_usd_micros', 1250, 1000000),
-  ('people-search', 'perplexity', 'request', 20, 1)
-ON CONFLICT (kind, provider, category) DO NOTHING;
-
--- Fixed Firecrawl test baseline: USD 0.001 per source credit, not a production tariff.
-INSERT INTO usage_pricing (kind, provider, category, unit_price, unit_size, source_cost_usd_micros_per_credit)
-VALUES
-  ('data-search', 'firecrawl/alexandria/similarweb', 'provider_cost_usd_micros', 1250, 1000000, 1000),
-  ('data-search', 'firecrawl/alexandria/upspring', 'provider_cost_usd_micros', 1250, 1000000, 1000),
-  ('data-search', 'firecrawl/alexandria/firecrawl-trends', 'provider_cost_usd_micros', 1250, 1000000, 1000),
-  ('data-search', 'firecrawl/alexandria/oriane', 'provider_cost_usd_micros', 1250, 1000000, 1000),
-  ('data-search', 'firecrawl/alexandria/web-archive-org', 'provider_cost_usd_micros', 1250, 1000000, 1000),
-  ('data-search', 'firecrawl/alexandria/affiliate-com', 'provider_cost_usd_micros', 1250, 1000000, 1000),
-  ('data-search', 'firecrawl/alexandria/play-google-com', 'provider_cost_usd_micros', 1250, 1000000, 1000),
-  ('data-search', 'firecrawl/alexandria/particle', 'provider_cost_usd_micros', 1250, 1000000, 1000),
-  ('data-search', 'firecrawl/alexandria/fiscal-ai', 'provider_cost_usd_micros', 1250, 1000000, 1000)
+  ('model', 'google/gemini-3.5-flash', 'tokens.output', 9000, 1000000)
 ON CONFLICT (kind, provider, category) DO NOTHING;

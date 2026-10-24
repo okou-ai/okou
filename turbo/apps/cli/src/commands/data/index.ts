@@ -10,8 +10,12 @@ import { socialCommand } from "../social";
 import { weatherCommand } from "../weather";
 import { webSearchCommand } from "../web-search";
 import { registerDataSearchCommands } from "./query";
+import { filterRouterCommandHelp, registerRouterCommands } from "./router";
 
-import { isPaidToolEnabled } from "../../lib/command/paid-tools";
+import {
+  isDataRouterToolEnabled,
+  isPaidToolEnabled,
+} from "../../lib/command/paid-tools";
 
 function createWebResearchCommand(
   searchEnabled: boolean,
@@ -50,17 +54,17 @@ export function createDataCommand(): Command {
   if (isPaidToolEnabled("seo")) command.addCommand(seoCommand);
   command.addCommand(commerceCommand);
   const examples = [
-    ...(searchEnabled
+    ...(isDataRouterToolEnabled("web_search")
       ? [
           '  Search the web:       okou data web search "small business AI tools" --json',
         ]
       : []),
-    ...(scrapeEnabled
+    ...(isDataRouterToolEnabled("web_scrape")
       ? [
           "  Extract a page:       okou data web scrape https://example.com --json",
         ]
       : []),
-    ...(peopleEnabled
+    ...(isDataRouterToolEnabled("people_search")
       ? [
           '  Find professionals:   okou data people search "marketing leaders in London" --json',
         ]
@@ -81,5 +85,7 @@ Chat and session search remain under okou search. Web-chat file delivery remains
   );
 
   if (dataEnabled) registerDataSearchCommands(command);
+  registerRouterCommands(command);
+  filterRouterCommandHelp(command);
   return command;
 }

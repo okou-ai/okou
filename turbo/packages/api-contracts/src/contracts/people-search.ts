@@ -1,10 +1,5 @@
 import { z } from "zod";
 
-import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
-
-const c = initContract();
-
 export const PEOPLE_SEARCH_DEFAULT_LIMIT = 5;
 export const PEOPLE_SEARCH_MAX_LIMIT = 20;
 export const PEOPLE_SEARCH_MAX_QUERY_CHARS = 2_048;
@@ -61,27 +56,4 @@ export const peopleSearchResponseSchema = z.object({
 });
 
 export type PeopleSearchRequest = z.infer<typeof peopleSearchRequestSchema>;
-export type PeopleSearchSource = z.infer<typeof peopleSearchSourceSchema>;
-export type PeopleSearchProfile = z.infer<typeof peopleSearchProfileSchema>;
 export type PeopleSearchResponse = z.infer<typeof peopleSearchResponseSchema>;
-
-export const peopleSearchContract = c.router({
-  search: {
-    method: "POST",
-    path: "/api/people-search",
-    headers: authHeadersSchema,
-    body: peopleSearchRequestSchema,
-    responses: {
-      200: peopleSearchResponseSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      402: apiErrorSchema,
-      403: apiErrorSchema,
-      502: apiErrorSchema,
-      503: apiErrorSchema,
-    },
-    summary: "Find professionals through Okou-managed People Search",
-  },
-});
-
-export type PeopleSearchContract = typeof peopleSearchContract;

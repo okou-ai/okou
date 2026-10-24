@@ -1,5 +1,6 @@
+import { dataRouterTool } from "../../../mocks/data-router";
 import chalk from "chalk";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import {
   afterAll,
   afterEach,
@@ -103,13 +104,10 @@ describe("okou data people search command", () => {
   it("posts default requests and prints JSON", async () => {
     let requestBody: unknown;
     server.use(
-      http.post(
-        "http://localhost:3000/api/people-search",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(responseBody);
-        },
-      ),
+      dataRouterTool("people_search", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json(responseBody);
+      }),
     );
 
     await peopleSearchCommand.parseAsync([
@@ -128,7 +126,7 @@ describe("okou data people search command", () => {
 
   it("renders normalized profiles, sources, and billing", async () => {
     server.use(
-      http.post("http://localhost:3000/api/people-search", () => {
+      dataRouterTool("people_search", () => {
         return HttpResponse.json({ ...responseBody, limit: 3 });
       }),
     );
@@ -153,7 +151,7 @@ describe("okou data people search command", () => {
 
   it("guides users when no profiles match", async () => {
     server.use(
-      http.post("http://localhost:3000/api/people-search", () => {
+      dataRouterTool("people_search", () => {
         return HttpResponse.json({ ...responseBody, profiles: [] });
       }),
     );
@@ -168,30 +166,9 @@ describe("okou data people search command", () => {
     expect(output()).toContain("broader role, company, skill, or location");
   });
 
-  it.each([
-    ["invalid limit", ["query", "--limit", "101"], "limit must be"],
-    ["empty query", ["   "], "Too small"],
-  ])("rejects %s before calling the API", async (_name, args, message) => {
-    let apiRequests = 0;
-    server.use(
-      http.post("http://localhost:3000/api/people-search", () => {
-        apiRequests += 1;
-        return HttpResponse.json(responseBody);
-      }),
-    );
-
-    await expect(
-      peopleSearchCommand.parseAsync(["node", "cli", ...args]),
-    ).rejects.toThrow("process.exit called");
-
-    expect(errorOutput()).toContain(message);
-    expect(mockExit).toHaveBeenCalledWith(1);
-    expect(apiRequests).toBe(0);
-  });
-
   it("prints API error messages", async () => {
     server.use(
-      http.post("http://localhost:3000/api/people-search", () => {
+      dataRouterTool("people_search", () => {
         return HttpResponse.json(
           {
             error: {

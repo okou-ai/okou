@@ -14,14 +14,8 @@ import {
 } from "./helpers/public-runner-memory";
 
 import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
-import { weatherContract } from "@okouai/api-contracts/contracts/weather";
 import { usageMembersRoutes } from "../usage-members";
-import { weatherRoutes } from "../weather";
 import { mockClerkUsers } from "./helpers/clerk-users";
-import {
-  VERTEX_MAPS_URL,
-  vertexMapsResponse,
-} from "./helpers/google-maps-grounding";
 import { VERTEX_VOICE_URL, vertexVoiceResponse } from "./helpers/google-voice";
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -13713,7 +13707,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
   // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
   if (group === "billing") {
     describe("BILL: public usage member access", () => {
-      it("keeps member totals independent of display groups and retains zero-charge members", async () => {
+      it("keeps member totals consistent with image-provider breakdowns", async () => {
         const bdd = createBddApi(context);
         const runs = createRunsApi(context);
         const billing = createBillingMediaApi(context);
@@ -13747,10 +13741,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [200],
         );
         const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
-        const freeMember = bdd.user({
-          orgId: admin.orgId,
-          orgRole: "org:member",
-        });
         await bdd.completeOnboarding(member);
         await runs.ensurePersonalSubscriptionModel(member, NATIVE_RUNNER_ROUTE);
         const memberAgent = await bdd.createAgent(member, {
@@ -13759,11 +13749,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         // Keep the existing ceil-to-hour billing-period boundary observable.
         mockNow(periodStart + 3_600_000);
-        billing.configureMapsProvider();
         server.use(
-          http.post(VERTEX_MAPS_URL, () => {
-            return vertexMapsResponse();
-          }),
           http.post(VERTEX_VOICE_URL, () => {
             return vertexVoiceResponse("Image usage");
           }),
@@ -13775,7 +13761,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ]) {
           const run = await runs.createThreadRun(owner.actor, {
             agentId: owner.agentId,
-            prompt: "generate images and find a cafe",
+            prompt: "generate images",
           });
           await runs.heartbeatRunner(runnerGroup);
           const claim = await runs.claimRunnerJob(run.runId);
@@ -13819,46 +13805,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect((await runs.readRun(owner.actor, run.runId)).status).toBe(
             "failed",
           );
-          const maps = await billing.requestMapsSearch(
-            owner.actor,
-            { query: "a nearby cafe" },
-            [200],
-          );
-          if (maps.status !== 200 || maps.body.creditsCharged === null) {
-            throw new Error("Expected the maps response to report its charge");
-          }
-          expectedCredits.set(
-            owner.actor.userId,
-            108 + maps.body.creditsCharged,
-          );
+          expectedCredits.set(owner.actor.userId, 108);
         }
-
-        mockEnv("OKOU_WEATHER_GOOGLE_WEATHER_TOKEN", "test-google-weather-key");
-        server.use(
-          http.get(
-            "https://weather.googleapis.com/v1/currentConditions:lookup",
-            () => {
-              return HttpResponse.json({
-                temperature: { degrees: 28, unit: "CELSIUS" },
-              });
-            },
-          ),
-        );
-        createRouteMocks(context).clerk.session(
-          freeMember.userId,
-          freeMember.orgId,
-          freeMember.orgRole,
-        );
-        const weather = await accept(
-          setupApp({ context, routes: weatherRoutes })(weatherContract).current(
-            {
-              headers: { authorization: "Bearer clerk-session" },
-              body: { lat: 39.9042, lng: 116.4074 },
-            },
-          ),
-          [200],
-        );
-        expect(weather.body.creditsCharged).toBe(0);
 
         // Clerk remains outside the usage snapshot; supply the real directory boundary.
         createRouteMocks(context).clerk.session(
@@ -13868,7 +13816,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         mockClerkUsers(
           context,
-          [admin, member, freeMember].map((actor) => {
+          [admin, member].map((actor) => {
             return {
               id: actor.userId,
               primaryEmailAddressId: `email_${actor.userId}`,
@@ -13907,7 +13855,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(row).toMatchObject({
             email: row.userId === admin.userId ? admin.email : member.email,
             creditsCharged: credits,
-            // Image and Maps tokens are not model-token usage quantities.
+            // Image units are not model-token usage quantities.
             inputTokens: 0,
             outputTokens: 0,
             cacheReadInputTokens: 0,
@@ -13930,35 +13878,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 },
               ],
             },
-            {
-              kind: "other",
-              credits: credits - 108,
-              providers: [
-                {
-                  provider: "google-maps-grounding",
-                  credits: credits - 108,
-                  usageKinds: [
-                    {
-                      kind: "maps",
-                      credits: credits - 108,
-                    },
-                  ],
-                },
-              ],
-            },
           ]);
         }
-        expect(report.body.members[2]).toStrictEqual({
-          userId: freeMember.userId,
-          email: freeMember.email,
-          creditsCharged: 0,
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheReadInputTokens: 0,
-          cacheCreationInputTokens: 0,
-          breakdown: [],
-        });
-        expect(report.body.members).toHaveLength(3);
+        expect(report.body.members).toHaveLength(2);
         const billingPeriod = await accept(
           usage.get({
             headers: { authorization: "Bearer clerk-session" },

@@ -1048,3 +1048,17 @@ async def fetch_firewall_headers(
         _raise_firewall_auth_http_error(response, url)
     decoded: object = json.loads(response.body)
     return _parse_firewall_auth_success(decoded, request)
+
+
+async def post_platform_json(url: str, body: bytes, sandbox_token: str) -> None:
+    """Perform one bounded authenticated registration using the shared transport.
+
+    No retry: upstream is not admitted unless registration is acknowledged.
+    """
+    req = platform_api.make_api_request(url, body, sandbox_token)
+    plan = _build_connection_plan(req)
+    progress = _FirewallAuthFetchProgress()
+    async with asyncio.timeout(FIREWALL_AUTH_FETCH_DEADLINE_SECONDS):
+        response = await _perform_http_request(req, plan, body, progress)
+    if not _HTTP_STATUS_SUCCESS_MIN <= response.status < _HTTP_STATUS_REDIRECTION_MIN:
+        _raise_firewall_auth_http_error(response, url)

@@ -1,5 +1,8 @@
+import { callDataRouterTool } from "../data-router-client";
 import {
-  socialDataContract,
+  socialDataQuoteResponseSchema,
+  socialDataJobResponseSchema,
+  socialDataListResponseSchema,
   type SocialDataCreateRequest,
   type SocialDataContinueRequest,
   type SocialDataJobResponse,
@@ -8,13 +11,8 @@ import {
   type SocialDataQuoteResponse,
   type SocialDataRequest,
 } from "@okouai/api-contracts/contracts/social-data";
-import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 
-import {
-  ApiRequestError,
-  getClientConfig,
-  handleError,
-} from "../core/client-factory";
+import { ApiRequestError, handleError } from "../core/client-factory";
 
 const REQUEST_TIMEOUT_MS = 60_000;
 
@@ -34,36 +32,40 @@ export class SocialDataRecoveryError extends ApiRequestError {
 export async function quoteSocialData(
   body: SocialDataRequest,
 ): Promise<SocialDataQuoteResponse> {
-  const client = initClient(socialDataContract, {
-    ...(await getClientConfig()),
-    validateResponse: true,
-  });
-  const result = await client.quote({
-    headers: {},
+  const result = await callDataRouterTool(
+    "social_data_quote",
     body,
-    fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
-  });
-  if (result.status === 200) return result.body;
+    AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  );
+  if (result.status === 200)
+    return socialDataQuoteResponseSchema.parse(result.body);
   handleError(result, "Okou Social could not quote this operation");
 }
 
 export async function createSocialDataJob(
   body: SocialDataCreateRequest,
 ): Promise<SocialDataJobResponse> {
-  const client = initClient(socialDataContract, {
-    ...(await getClientConfig()),
-    validateResponse: true,
-  });
+  const { requestId: _requestId, maxCredits, ...request } = body;
+  if (maxCredits !== undefined) {
+    const quote = await quoteSocialData(request);
+    if (quote.maxCredits > maxCredits) {
+      throw new ApiRequestError(
+        `Quoted cost ${quote.maxCredits} credits exceeds --max-credits ${maxCredits}; no job was submitted.`,
+        "SOCIAL_QUOTE_EXCEEDS_BUDGET",
+        400,
+      );
+    }
+  }
   let result;
   try {
-    result = await client.create({
-      headers: {},
+    result = await callDataRouterTool(
+      "social_data_create",
       body,
-      fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
-    });
+      AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    );
   } catch (error) {
     throw new SocialDataRecoveryError(
-      `The job submission response was not received. Check saved jobs, or repeat the original command with --request-id ${body.requestId} to recover the same submission. Do not use a new request ID.`,
+      `The job submission response was not received (client request ID ${body.requestId}). Inspect okou data social jobs list --json. Do not resubmit: a repeated command can start another paid job.`,
       {
         requestId: body.requestId,
         command: "okou data social jobs list --json",
@@ -71,24 +73,21 @@ export async function createSocialDataJob(
       { cause: error },
     );
   }
-  if (result.status === 202) return result.body;
+  if (result.status === 202)
+    return socialDataJobResponseSchema.parse(result.body);
   handleError(result, "Okou Social could not create this job");
 }
 
 export async function quoteSocialDataContinuation(
   jobId: string,
 ): Promise<SocialDataQuoteResponse> {
-  const client = initClient(socialDataContract, {
-    ...(await getClientConfig()),
-    validateResponse: true,
-  });
-  const result = await client.quoteContinuation({
-    headers: {},
-    params: { jobId },
-    body: {},
-    fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
-  });
-  if (result.status === 200) return result.body;
+  const result = await callDataRouterTool(
+    "social_data_quote_continuation",
+    { jobId },
+    AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  );
+  if (result.status === 200)
+    return socialDataQuoteResponseSchema.parse(result.body);
   handleError(result, "Okou Social could not quote this next page");
 }
 
@@ -96,21 +95,26 @@ export async function continueSocialDataJob(
   jobId: string,
   body: SocialDataContinueRequest,
 ): Promise<SocialDataJobResponse> {
-  const client = initClient(socialDataContract, {
-    ...(await getClientConfig()),
-    validateResponse: true,
-  });
+  if (body.maxCredits !== undefined) {
+    const quote = await quoteSocialDataContinuation(jobId);
+    if (quote.maxCredits > body.maxCredits) {
+      throw new ApiRequestError(
+        `Quoted cost ${quote.maxCredits} credits exceeds --max-credits ${body.maxCredits}; no continuation was submitted.`,
+        "SOCIAL_QUOTE_EXCEEDS_BUDGET",
+        400,
+      );
+    }
+  }
   let result;
   try {
-    result = await client.continue({
-      headers: {},
-      params: { jobId },
-      body,
-      fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
-    });
+    result = await callDataRouterTool(
+      "social_data_continue",
+      { ...body, jobId },
+      AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    );
   } catch (error) {
     throw new SocialDataRecoveryError(
-      `The next-page submission response was not received. Repeat the same continuation with --request-id ${body.requestId}; do not use a new request ID.`,
+      `The next-page submission response was not received (client request ID ${body.requestId}). Inspect okou data social jobs list --json. Do not repeat the continuation: it can start another paid job.`,
       {
         requestId: body.requestId,
         command: "okou data social jobs list --json",
@@ -118,24 +122,21 @@ export async function continueSocialDataJob(
       { cause: error },
     );
   }
-  if (result.status === 202) return result.body;
+  if (result.status === 202)
+    return socialDataJobResponseSchema.parse(result.body);
   handleError(result, "Okou Social could not continue this collection");
 }
 
 export async function listSocialDataJobs(
   query: SocialDataListQuery,
 ): Promise<SocialDataListResponse> {
-  const client = initClient(socialDataContract, {
-    ...(await getClientConfig()),
-    validateResponse: true,
-  });
-  const result = await client.list({
-    headers: {},
-    // A new CLI can still reach an API rollback target that filters these jobs.
-    query: { ...query, includeExpanded: "true" },
-    fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
-  });
-  if (result.status === 200) return result.body;
+  const result = await callDataRouterTool(
+    "social_data_list",
+    query,
+    AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  );
+  if (result.status === 200)
+    return socialDataListResponseSchema.parse(result.body);
   handleError(result, "Okou Social could not list saved jobs");
 }
 
@@ -143,37 +144,25 @@ export async function getSocialDataJob(
   jobId: string,
   signal: AbortSignal,
 ): Promise<SocialDataJobResponse> {
-  const client = initClient(socialDataContract, {
-    ...(await getClientConfig()),
-    validateResponse: true,
-  });
-  const result = await client.get({
-    headers: {},
-    params: { jobId },
-    fetchOptions: {
-      signal: AbortSignal.any([
-        signal,
-        AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      ]),
-    },
-  });
-  if (result.status === 200) return result.body;
+  const result = await callDataRouterTool(
+    "social_data_get",
+    { jobId },
+    AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
+  );
+  if (result.status === 200)
+    return socialDataJobResponseSchema.parse(result.body);
   handleError(result, "Okou Social could not read this saved job");
 }
 
 export async function cancelSocialDataJob(
   jobId: string,
 ): Promise<SocialDataJobResponse> {
-  const client = initClient(socialDataContract, {
-    ...(await getClientConfig()),
-    validateResponse: true,
-  });
-  const result = await client.cancel({
-    headers: {},
-    params: { jobId },
-    body: {},
-    fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
-  });
-  if (result.status === 200) return result.body;
+  const result = await callDataRouterTool(
+    "social_data_cancel",
+    { jobId },
+    AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  );
+  if (result.status === 200)
+    return socialDataJobResponseSchema.parse(result.body);
   handleError(result, "Okou Social could not cancel this job");
 }

@@ -1,3 +1,4 @@
+import { dataRouterTool } from "../mocks/data-router";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -225,7 +226,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     await expect(run(["data", "--help"])).rejects.toMatchObject({
       code: "commander.helpDisplayed",
     });
-    expect(output).toContain("weather");
+    expect(output).not.toContain("weather");
     expect(output).toContain("commerce");
     expect(output).toContain("okou data web search");
     expect(output).not.toContain("capabilities");
@@ -275,7 +276,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
         };
       });
       server.use(
-        http.get("http://localhost:3000/api/data/capabilities", () => {
+        dataRouterTool("data_capabilities", () => {
           return HttpResponse.json({ capabilities });
         }),
       );
@@ -499,7 +500,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, policy);
     let paidRequests = 0;
     server.use(
-      http.post("http://localhost:3000/api/web-search", () => {
+      dataRouterTool("web_search", () => {
         paidRequests += 1;
         return HttpResponse.json({
           query: "example",

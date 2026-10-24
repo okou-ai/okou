@@ -1,3 +1,4 @@
+import { DATA_ROUTER_TOOLS } from "@okouai/api-contracts/contracts/data-router-tools";
 import { command, computed, state } from "ccstate";
 import {
   AVAILABLE_PAID_TOOL_IDS,
@@ -47,11 +48,22 @@ function createPaidToolsSignals(
     });
   });
   const imageModel = createImageModelSignals(createClient, assertCurrent);
-  const tools = AVAILABLE_PAID_TOOL_IDS.map((toolId) => {
+  function createTool<T extends PaidToolId>(toolId: T, family?: PaidToolId) {
+    const familyEnabled$ = computed(async (get) => {
+      if (!family) {
+        return true;
+      }
+      const changes = get(confirmedChanges$);
+      const disabled = await get(disabledTools$);
+      return !(changes[family] ?? disabled.includes(family));
+    });
     const enabled$ = computed(async (get) => {
       const changes = get(confirmedChanges$);
       const disabledTools = await get(disabledTools$);
-      return !(changes[toolId] ?? disabledTools.includes(toolId));
+      return (
+        (await get(familyEnabled$)) &&
+        !(changes[toolId] ?? disabledTools.includes(toolId))
+      );
     });
     const update$ = command(
       async ({ set }, enabled: boolean, signal: AbortSignal) => {
@@ -82,12 +94,22 @@ function createPaidToolsSignals(
         set(reloadDisabledPaidTools$);
       },
     );
-    return { toolId, enabled$, update$ };
+    return { toolId, enabled$, familyEnabled$, update$ };
+  }
+  const tools = AVAILABLE_PAID_TOOL_IDS.map((toolId) => {
+    return createTool(toolId);
+  });
+  const dataTools = DATA_ROUTER_TOOLS.map((definition) => {
+    return {
+      ...createTool(`data:${definition.name}`, definition.family),
+      definition,
+    };
   });
   return {
     disabledTools$,
     retry$,
     tools,
+    dataTools,
     imageModel,
   };
 }
@@ -202,3 +224,5 @@ export type PaidToolsSettings = ReturnType<typeof createPaidToolsSignals> & {
 };
 export type PaidToolSettings = PaidToolsSettings["tools"][number];
 export type ImageModelSettings = PaidToolsSettings["imageModel"];
+
+export type DataRouterToolSettings = PaidToolsSettings["dataTools"][number];

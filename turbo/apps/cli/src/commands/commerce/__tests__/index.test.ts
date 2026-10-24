@@ -8,7 +8,8 @@ import type {
   CommerceResponse,
 } from "@okouai/api-contracts/contracts/commerce";
 import type { Command } from "commander";
-import { http, HttpResponse } from "msw";
+import { HttpResponse } from "msw";
+import { dataRouterTool } from "../../../mocks/data-router";
 import {
   afterAll,
   afterEach,
@@ -22,7 +23,6 @@ import {
 import { server } from "../../../mocks/server";
 import { commerceCommand } from "../index";
 
-const api = "http://localhost:3000/api/commerce";
 const product = { asin: "B0D1XD1ZV3", title: "Standing desk", price: 149.99 };
 
 const jobId = "06a77350-1ee0-44db-9305-07d366bab7dc";
@@ -132,22 +132,13 @@ describe("managed Commerce commands", () => {
   it("searches one explicitly selected marketplace and preserves billing and source metadata", async () => {
     let body: unknown;
     server.use(
-      http.post(`${api}/search`, async ({ request }) => {
-        body = await request.json();
-        // Supported rollback APIs still choose synchronous execution by default.
-        if (
-          typeof body !== "object" ||
-          body === null ||
-          !("async" in body) ||
-          body.async !== true
-        ) {
-          return HttpResponse.json(response("search", "amazon.co.uk"));
-        }
+      dataRouterTool("commerce_search", ({ toolArguments }) => {
+        body = toolArguments;
         return HttpResponse.json(job("running", "search", "amazon.co.uk"), {
           status: 202,
         });
       }),
-      http.get(`${api}/jobs/${jobId}`, () => {
+      dataRouterTool("commerce_get", () => {
         return HttpResponse.json(job("completed", "search", "amazon.co.uk"));
       }),
     );
@@ -168,7 +159,6 @@ describe("managed Commerce commands", () => {
       query: "standing desk",
       marketplace: "amazon.co.uk",
       limit: 20,
-      async: true,
       requestId: expect.any(String),
     });
     expect(output()).toMatchObject({
@@ -185,16 +175,8 @@ describe("managed Commerce commands", () => {
     async (target) => {
       let body: unknown;
       server.use(
-        http.post(`${api}/inspect`, async ({ request }) => {
-          body = await request.json();
-          if (
-            typeof body !== "object" ||
-            body === null ||
-            !("async" in body) ||
-            body.async !== true
-          ) {
-            return HttpResponse.json(response("inspect"));
-          }
+        dataRouterTool("commerce_inspect", ({ toolArguments }) => {
+          body = toolArguments;
           return HttpResponse.json(
             job(
               "running",
@@ -204,7 +186,7 @@ describe("managed Commerce commands", () => {
             { status: 202 },
           );
         }),
-        http.get(`${api}/jobs/${jobId}`, () => {
+        dataRouterTool("commerce_get", () => {
           return HttpResponse.json(
             job(
               "completed",
@@ -225,7 +207,6 @@ describe("managed Commerce commands", () => {
       ]);
       expect(body).toEqual({
         target,
-        async: true,
         requestId: expect.any(String),
       });
       expect(output()).toMatchObject({
@@ -238,10 +219,10 @@ describe("managed Commerce commands", () => {
 
   it("writes selected product rows to a local CSV and leaves billing in the stdout receipt", async () => {
     server.use(
-      http.post(`${api}/search`, () => {
+      dataRouterTool("commerce_search", () => {
         return HttpResponse.json(job("running"), { status: 202 });
       }),
-      http.get(`${api}/jobs/${jobId}`, () => {
+      dataRouterTool("commerce_get", () => {
         return HttpResponse.json(job("completed"));
       }),
     );
@@ -278,10 +259,10 @@ describe("managed Commerce commands", () => {
 
   it("saves a full inspect JSON envelope with source and billing intact", async () => {
     server.use(
-      http.post(`${api}/inspect`, () => {
+      dataRouterTool("commerce_inspect", () => {
         return HttpResponse.json(job("running", "inspect"), { status: 202 });
       }),
-      http.get(`${api}/jobs/${jobId}`, () => {
+      dataRouterTool("commerce_get", () => {
         return HttpResponse.json(job("completed", "inspect"));
       }),
     );
@@ -312,10 +293,10 @@ describe("managed Commerce commands", () => {
     "waits for an asynchronous %s and preserves the existing final result envelope",
     async (operation) => {
       server.use(
-        http.post(`${api}/${operation}`, () => {
+        dataRouterTool(`commerce_${operation}`, () => {
           return HttpResponse.json(job("pending", operation), { status: 202 });
         }),
-        http.get(`${api}/jobs/${jobId}`, () => {
+        dataRouterTool("commerce_get", () => {
           return HttpResponse.json(job("completed", operation));
         }),
       );
@@ -339,7 +320,7 @@ describe("managed Commerce commands", () => {
 
   it("returns an async job receipt with its recovery command", async () => {
     server.use(
-      http.post(`${api}/search`, () => {
+      dataRouterTool("commerce_search", () => {
         return HttpResponse.json(job("pending"), { status: 202 });
       }),
     );
@@ -363,7 +344,7 @@ describe("managed Commerce commands", () => {
 
   it("reads a saved job without starting a new paid operation", async () => {
     server.use(
-      http.get(`${api}/jobs/${jobId}`, () => {
+      dataRouterTool("commerce_get", () => {
         return HttpResponse.json(job("completed"));
       }),
     );
@@ -378,7 +359,7 @@ describe("managed Commerce commands", () => {
   it("keeps polling running checkpoints until a saved job settles", async () => {
     let reads = 0;
     server.use(
-      http.get(`${api}/jobs/${jobId}`, () => {
+      dataRouterTool("commerce_get", () => {
         reads += 1;
         return HttpResponse.json(job(reads < 3 ? "running" : "completed"));
       }),
@@ -400,10 +381,10 @@ describe("managed Commerce commands", () => {
 
   it("exports the settled asynchronous result using the existing CSV contract", async () => {
     server.use(
-      http.post(`${api}/search`, () => {
+      dataRouterTool("commerce_search", () => {
         return HttpResponse.json(job("running"), { status: 202 });
       }),
-      http.get(`${api}/jobs/${jobId}`, () => {
+      dataRouterTool("commerce_get", () => {
         return HttpResponse.json(job("completed"));
       }),
     );
@@ -453,13 +434,13 @@ describe("managed Commerce commands", () => {
     });
   });
 
-  it("recovers an uncertain transport submission by its generated request UUID", async () => {
+  it("reports a lost submission without presenting the client label as a saved job ID", async () => {
     let requestId = "";
     let submissions = 0;
     server.use(
-      http.post(`${api}/inspect`, async ({ request }) => {
+      dataRouterTool("commerce_inspect", ({ toolArguments }) => {
         submissions += 1;
-        const body: unknown = await request.json();
+        const body: unknown = toolArguments;
         if (
           typeof body === "object" &&
           body !== null &&
@@ -486,16 +467,14 @@ describe("managed Commerce commands", () => {
     expect(JSON.parse(stderr.mock.calls.flat().join("\n"))).toMatchObject({
       error: {
         code: "COMMERCE_SUBMISSION_UNCERTAIN",
-        message: expect.stringContaining(
-          `okou data commerce job ${requestId} --wait --json`,
-        ),
+        message: expect.stringContaining(`client request ID ${requestId}`),
       },
     });
   });
 
   it("reports an uncertain provider submission as failed with read-only recovery guidance", async () => {
     server.use(
-      http.post(`${api}/search`, () => {
+      dataRouterTool("commerce_search", () => {
         return HttpResponse.json(
           {
             ...job("failed"),
@@ -532,7 +511,7 @@ describe("managed Commerce commands", () => {
 
   it("prints a failed saved job and exits unsuccessfully when waiting", async () => {
     server.use(
-      http.get(`${api}/jobs/${jobId}`, () => {
+      dataRouterTool("commerce_get", () => {
         return HttpResponse.json(job("failed"));
       }),
     );
@@ -554,10 +533,10 @@ describe("managed Commerce commands", () => {
 
   it("retains the job ID when a status read fails", async () => {
     server.use(
-      http.post(`${api}/search`, () => {
+      dataRouterTool("commerce_search", () => {
         return HttpResponse.json(job("pending"), { status: 202 });
       }),
-      http.get(`${api}/jobs/${jobId}`, () => {
+      dataRouterTool("commerce_get", () => {
         return HttpResponse.json(
           {
             error: {
@@ -591,10 +570,10 @@ describe("managed Commerce commands", () => {
 
   it("interrupts local waiting while preserving read-only recovery guidance", async () => {
     server.use(
-      http.post(`${api}/search`, () => {
+      dataRouterTool("commerce_search", () => {
         return HttpResponse.json(job("pending"), { status: 202 });
       }),
-      http.get(`${api}/jobs/${jobId}`, () => {
+      dataRouterTool("commerce_get", () => {
         process.emit("SIGINT");
         return HttpResponse.json(job("running"));
       }),
@@ -618,7 +597,7 @@ describe("managed Commerce commands", () => {
 
   it("surfaces a managed billing rejection without retrying or claiming results", async () => {
     server.use(
-      http.post(`${api}/search`, () => {
+      dataRouterTool("commerce_search", () => {
         return HttpResponse.json(
           {
             error: {

@@ -6,7 +6,7 @@ The private CLI package exposes only the canonical `okou` entry point. Command
 tests are integration tests that enter through Commander with
 `command.parseAsync()`.
 
-- Mock the Web API with MSW.
+- Mock external HTTP boundaries, including the Web API and Data Router MCP, with MSW.
 - Keep command parsing, validation, formatting, and filesystem behavior real.
 - Use temporary directories for filesystem state.
 - Do not mock internal CLI modules.
@@ -52,6 +52,20 @@ afterEach(() => {
 Do not create a local authentication config file or mock the config module.
 Tests for missing authentication should leave `OKOU_TOKEN` unset and assert the
 resulting guidance.
+
+## Managed Data requests
+
+Data commands call the MCP endpoint in `OKOU_DATA_ROUTER_URL` (default:
+`https://data.okou.ai/mcp`). The privileged sandbox proxy supplies Router
+service authentication; the CLI never sends `OKOU_TOKEN` to that endpoint.
+The token remains required for local authentication and for the main API's
+user-owned Data request history, which scopes saved-job lists.
+
+Use `src/mocks/data-router.ts` to mock the external MCP boundary. Its handlers
+receive the actual tool name and arguments. Keep argument validation, command
+formatting, output files, and saved-job polling real; do not recreate retired
+HTTP routes in the mock. Test transport failures without automatically
+resubmitting a potentially paid tool call.
 
 ## Command integration pattern
 

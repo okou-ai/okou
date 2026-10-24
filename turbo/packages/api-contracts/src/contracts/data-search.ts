@@ -1,9 +1,5 @@
 import { z } from "zod";
 
-import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
-
-const c = initContract();
 const safeInteger = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const dataSearchRequestSchema = z
   .object({
@@ -70,80 +66,5 @@ export type DataSearchRequest = z.infer<typeof dataSearchRequestSchema>;
 export type DataSearchCreateRequest = z.infer<
   typeof dataSearchCreateRequestSchema
 >;
-export type DataSearchQuoteResponse = z.infer<
-  typeof dataSearchQuoteResponseSchema
->;
-export type DataSearchCapability = z.infer<typeof dataSearchCapabilitySchema>;
-export type DataSearchCapabilitiesResponse = z.infer<
-  typeof dataSearchCapabilitiesResponseSchema
->;
 export type DataSearchJobResponse = z.infer<typeof dataSearchJobResponseSchema>;
 export type DataSearchListQuery = z.infer<typeof dataSearchListQuerySchema>;
-export type DataSearchListResponse = z.infer<
-  typeof dataSearchListResponseSchema
->;
-const errors = {
-  400: apiErrorSchema,
-  401: apiErrorSchema,
-  402: apiErrorSchema,
-  403: apiErrorSchema,
-  404: apiErrorSchema,
-  409: apiErrorSchema,
-  422: apiErrorSchema,
-  429: apiErrorSchema,
-  500: apiErrorSchema,
-  502: apiErrorSchema,
-  503: apiErrorSchema,
-};
-const jobParams = z.object({ jobId: z.uuid() });
-export const dataSearchContract = c.router({
-  capabilities: {
-    method: "GET",
-    path: "/api/data/capabilities",
-    headers: authHeadersSchema,
-    query: z.object({ query: z.string().optional() }),
-    responses: { 200: dataSearchCapabilitiesResponseSchema, ...errors },
-    summary: "List reviewed business data capabilities",
-  },
-  quote: {
-    method: "POST",
-    path: "/api/data/quote",
-    headers: authHeadersSchema,
-    body: dataSearchRequestSchema,
-    responses: { 200: dataSearchQuoteResponseSchema, ...errors },
-    summary: "Quote a bounded Data Search operation",
-  },
-  create: {
-    method: "POST",
-    path: "/api/data/jobs",
-    headers: authHeadersSchema,
-    body: dataSearchCreateRequestSchema,
-    responses: { 202: dataSearchJobResponseSchema, ...errors },
-    summary: "Create an idempotent budgeted Data Search job",
-  },
-  list: {
-    method: "GET",
-    path: "/api/data/jobs",
-    headers: authHeadersSchema,
-    query: dataSearchListQuerySchema,
-    responses: { 200: dataSearchListResponseSchema, ...errors },
-    summary: "List your saved Data Search jobs",
-  },
-  get: {
-    method: "GET",
-    path: "/api/data/jobs/:jobId",
-    headers: authHeadersSchema,
-    pathParams: jobParams,
-    responses: { 200: dataSearchJobResponseSchema, ...errors },
-    summary: "Read a saved Data Search job",
-  },
-  cancel: {
-    method: "POST",
-    path: "/api/data/jobs/:jobId/cancel",
-    headers: authHeadersSchema,
-    pathParams: jobParams,
-    body: z.object({}).strict(),
-    responses: { 200: dataSearchJobResponseSchema, ...errors },
-    summary: "Cancel a Data Search job without promising a refund",
-  },
-});

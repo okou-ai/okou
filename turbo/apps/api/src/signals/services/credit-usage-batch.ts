@@ -1,6 +1,3 @@
-import type { CommerceSettlementJob } from "./commerce-job-settlement";
-import type { PreparedSocialSettlement } from "./social-data-settlement-plan";
-import type { PreparedDataSearchSettlement } from "./data-search-settlement-plan";
 import {
   priceUsageEvents,
   type PricedUsageEvent,
@@ -26,21 +23,13 @@ export function usageSnapshotCondition(rows: readonly PendingUsageSnapshot[]) {
   );
 }
 export function settlementPricingKeys(rows: readonly PendingUsageSnapshot[]) {
-  return rows
-    .filter(({ event }) => {
-      return (
-        event.pricingUnitPrice === null ||
-        event.pricingUnitSize === null ||
-        event.pricingCreditsLimit === null
-      );
-    })
-    .map(({ event }) => {
-      return {
-        kind: event.kind,
-        provider: event.provider,
-        category: event.category,
-      };
-    });
+  return rows.map(({ event }) => {
+    return {
+      kind: event.kind,
+      provider: event.provider,
+      category: event.category,
+    };
+  });
 }
 export function settlementPricingCondition(
   keys: ReturnType<typeof settlementPricingKeys>,
@@ -57,58 +46,14 @@ export function settlementPricingCondition(
     ) ?? sql`false`
   );
 }
-export function requireCompleteUsageClaim(
-  expected: number,
-  actual: number,
-  social: boolean,
-) {
-  if (!social && expected !== actual) {
+export function requireCompleteUsageClaim(expected: number, actual: number) {
+  if (expected !== actual) {
     throw new UsageSettlementSnapshotConflict(
       "Usage batch changed during settlement preparation",
     );
   }
 }
 
-export function preparedSettlementPrices(
-  args: {
-    readonly orgId: string;
-    readonly social?: unknown;
-    readonly dataSearchJobId?: string;
-  },
-  batch: {
-    readonly prices: readonly (typeof usagePricing.$inferSelect)[];
-    readonly priced: PricedUsageEvent[];
-    readonly freeOfficialRunOwners: ReadonlyMap<string, string>;
-    readonly social?: PreparedSocialSettlement;
-    readonly dataSearch?: PreparedDataSearchSettlement;
-  },
-  events: readonly UsageEventRecord[],
-) {
-  if (!args.social && !args.dataSearchJobId) {
-    return batch.priced;
-  }
-  const job = args.dataSearchJobId ? batch.dataSearch : batch.social;
-  if (!job) {
-    // The job plan already rejected a job without a prepared snapshot.
-    throw new Error("Job settlement has no prepared price");
-  }
-  return events.map((record) => {
-    const actor = job.plan.usage?.actor;
-    const free =
-      actor?.runId &&
-      batch.freeOfficialRunOwners.get(actor.runId) === actor.userId;
-    return {
-      record: {
-        ...record,
-        creditChargePolicy: free
-          ? ("official_workflow_free" as const)
-          : ("standard" as const),
-      },
-      grossCredits: job.grossCredits,
-      billingError: null,
-    };
-  });
-}
 export function reportCommittedSettlementPricing(
   orgId: string,
   batch: {
@@ -120,10 +65,6 @@ export function reportCommittedSettlementPricing(
 }
 
 export interface PreparedUsageBatch {
-  readonly commerce: readonly CommerceSettlementJob[];
-  readonly social?: PreparedSocialSettlement;
-  readonly dataSearch?: PreparedDataSearchSettlement;
-  readonly freeOfficialRunOwners: ReadonlyMap<string, string>;
   readonly events: PendingUsageSnapshot[];
   readonly prices: (typeof usagePricing.$inferSelect)[];
   readonly records: (typeof usageEvent.$inferSelect)[];

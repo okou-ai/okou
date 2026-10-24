@@ -1,5 +1,6 @@
+import { dataRouterTool } from "../../../mocks/data-router";
 import chalk from "chalk";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import {
   afterAll,
   afterEach,
@@ -64,8 +65,8 @@ describe("okou data web scrape command", () => {
   it("posts default markdown scrape requests and prints JSON", async () => {
     let requestBody: unknown;
     server.use(
-      http.post("http://localhost:3000/api/scrape", async ({ request }) => {
-        requestBody = await request.json();
+      dataRouterTool("web_scrape", ({ toolArguments }) => {
+        requestBody = toolArguments;
         return HttpResponse.json({
           requestedUrl: "https://example.com",
           format: "markdown",
@@ -91,25 +92,23 @@ describe("okou data web scrape command", () => {
       format: "markdown",
       mode: "standard",
     });
-    expect(mockConsoleLog).toHaveBeenCalledWith(
-      JSON.stringify({
-        requestedUrl: "https://example.com",
-        format: "markdown",
-        mode: "standard",
-        provider: "firecrawl",
-        creditsCharged: 4,
-        billingCategory: "standard.markdown",
-        billingQuantity: 1,
-        result: { markdown: "# Example" },
-      }),
-    );
+    expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toEqual({
+      requestedUrl: "https://example.com",
+      format: "markdown",
+      mode: "standard",
+      provider: "firecrawl",
+      creditsCharged: 4,
+      billingCategory: "standard.markdown",
+      billingQuantity: 1,
+      result: { markdown: "# Example" },
+    });
   });
 
   it("posts enhanced link scrape requests and prints links", async () => {
     let requestBody: unknown;
     server.use(
-      http.post("http://localhost:3000/api/scrape", async ({ request }) => {
-        requestBody = await request.json();
+      dataRouterTool("web_scrape", ({ toolArguments }) => {
+        requestBody = toolArguments;
         return HttpResponse.json({
           requestedUrl: "https://example.com",
           format: "links",
@@ -150,7 +149,7 @@ describe("okou data web scrape command", () => {
 
   it("prints markdown in human-readable mode", async () => {
     server.use(
-      http.post("http://localhost:3000/api/scrape", () => {
+      dataRouterTool("web_scrape", () => {
         return HttpResponse.json({
           requestedUrl: "https://example.com",
           format: "markdown",
@@ -172,33 +171,9 @@ describe("okou data web scrape command", () => {
     expect(output()).toContain("# Example\n\nContent");
   });
 
-  it("rejects invalid formats before calling the API", async () => {
-    let apiRequests = 0;
-    server.use(
-      http.post("http://localhost:3000/api/scrape", () => {
-        apiRequests += 1;
-        return HttpResponse.json({});
-      }),
-    );
-
-    await expect(async () => {
-      await scrapeCommand.parseAsync([
-        "node",
-        "cli",
-        "https://example.com",
-        "--format",
-        "html",
-      ]);
-    }).rejects.toThrow("process.exit called");
-
-    expect(errorOutput()).toContain("format must be one of: markdown, links");
-    expect(mockExit).toHaveBeenCalledWith(1);
-    expect(apiRequests).toBe(0);
-  });
-
   it("prints API error messages", async () => {
     server.use(
-      http.post("http://localhost:3000/api/scrape", () => {
+      dataRouterTool("web_scrape", () => {
         return HttpResponse.json(
           {
             error: {

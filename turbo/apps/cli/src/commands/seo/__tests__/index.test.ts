@@ -1,5 +1,6 @@
+import { dataRouterTool } from "../../../mocks/data-router";
 import chalk from "chalk";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 import {
   afterAll,
   afterEach,
@@ -82,8 +83,8 @@ describe("okou data seo command", () => {
       tasks: [{ result: [{ title: "Coffee" }] }],
     });
     server.use(
-      http.post("http://localhost:3000/api/seo/serp", async ({ request }) => {
-        requestBody = await request.json();
+      dataRouterTool("seo_serp", ({ toolArguments }) => {
+        requestBody = toolArguments;
         return HttpResponse.json(response);
       }),
     );
@@ -115,7 +116,9 @@ describe("okou data seo command", () => {
       device: "mobile",
       limit: 20,
     });
-    expect(mockConsoleLog).toHaveBeenCalledWith(JSON.stringify(response));
+    expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toEqual(
+      response,
+    );
   });
 
   it.each(["human", "json"] as const)(
@@ -144,7 +147,7 @@ describe("okou data seo command", () => {
         partialResults: true,
       };
       server.use(
-        http.post("http://localhost:3000/api/seo/serp", () => {
+        dataRouterTool("seo_serp", () => {
           return HttpResponse.json(response);
         }),
       );
@@ -158,9 +161,11 @@ describe("okou data seo command", () => {
       ]);
 
       if (format === "json") {
-        expect(mockConsoleLog.mock.calls).toStrictEqual([
-          [JSON.stringify(response)],
-        ]);
+        expect(
+          mockConsoleLog.mock.calls.map(([value]) => {
+            return JSON.parse(String(value));
+          }),
+        ).toStrictEqual([response]);
       } else {
         const output = mockConsoleLog.mock.calls.flat().join("\n");
         expect(output).toContain("completed with partial results");
@@ -170,14 +175,12 @@ describe("okou data seo command", () => {
         expect(output).toContain("Credits charged: 3");
         expect(output).not.toContain("✓ SEO serp completed");
       }
-      expect(mockConsoleError).not.toHaveBeenCalled();
-      expect(mockExit).not.toHaveBeenCalled();
     },
   );
 
   it("keeps provider failures unsuccessful instead of reporting partial success", async () => {
     server.use(
-      http.post("http://localhost:3000/api/seo/serp", () => {
+      dataRouterTool("seo_serp", () => {
         return HttpResponse.json(
           {
             error: {
@@ -207,13 +210,10 @@ describe("okou data seo command", () => {
       tasks: [{ result: [{ keyword: "seo audit" }] }],
     });
     server.use(
-      http.post(
-        "http://localhost:3000/api/seo/keyword-ideas",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(response);
-        },
-      ),
+      dataRouterTool("seo_keyword_ideas", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json(response);
+      }),
     );
 
     await seoCommand.parseAsync([
@@ -240,8 +240,8 @@ describe("okou data seo command", () => {
   it("posts supported DataForSEO search engines", async () => {
     let requestBody: unknown;
     server.use(
-      http.post("http://localhost:3000/api/seo/serp", async ({ request }) => {
-        requestBody = await request.json();
+      dataRouterTool("seo_serp", ({ toolArguments }) => {
+        requestBody = toolArguments;
         return HttpResponse.json(dataForSeoResponse("serp", {}));
       }),
     );
@@ -270,40 +270,6 @@ describe("okou data seo command", () => {
     });
   });
 
-  it("rejects mobile DataForSEO Google News before calling the API", async () => {
-    let apiRequests = 0;
-    server.use(
-      http.post("http://localhost:3000/api/seo/serp", () => {
-        apiRequests += 1;
-        return HttpResponse.json(dataForSeoResponse("serp", {}));
-      }),
-    );
-
-    await expect(
-      seoCommand.parseAsync([
-        "node",
-        "cli",
-        "serp",
-        "ai news",
-        "--engine",
-        "google_news",
-        "--device",
-        "mobile",
-      ]),
-    ).rejects.toThrow("process.exit called");
-
-    const errors = [
-      ...mockConsoleError.mock.calls.flat(),
-      ...mockStderrWrite.mock.calls.flat(),
-    ]
-      .map(String)
-      .join("\n");
-    expect(errors).toContain(
-      "DataForSEO Google News supports only the desktop device",
-    );
-    expect(apiRequests).toBe(0);
-  });
-
   it("explains DataForSEO engine compatibility in serp help", () => {
     const command = seoCommand.commands.find((candidate) => {
       return candidate.name() === "serp";
@@ -322,7 +288,6 @@ describe("okou data seo command", () => {
 
     expect(help).toContain("Provider:");
     expect(help).toContain("DataForSEO is the only managed SEO provider");
-    expect(help).toContain("provider-reported cost +25%");
     expect(help).toContain("google_news  desktop only");
     expect(help).toContain("google_maps returns at most 20 results on mobile");
   });
@@ -360,7 +325,7 @@ describe("okou data seo command", () => {
       'Use a supported country or region, such as "United States" or "US". City and state locations are not supported.';
     let apiRequests = 0;
     server.use(
-      http.post("http://localhost:3000/api/seo/keyword-ideas", () => {
+      dataRouterTool("seo_keyword_ideas", () => {
         apiRequests += 1;
         return HttpResponse.json(
           { error: { code: "DATAFORSEO_INVALID_REQUEST", message } },

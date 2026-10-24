@@ -1,10 +1,5 @@
 import { z } from "zod";
 
-import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
-
-const c = initContract();
-
 export const FINANCE_DEFAULT_RANGE = "1y" as const;
 export const FINANCE_DEFAULT_INTERVAL = "1d" as const;
 export const FINANCE_MAX_QUERY_CHARS = 512;
@@ -82,52 +77,4 @@ export type FinanceSearchRequest = z.infer<typeof financeSearchRequestSchema>;
 export type FinanceProfileRequest = z.infer<typeof financeProfileRequestSchema>;
 export type FinanceQuoteRequest = z.infer<typeof financeQuoteRequestSchema>;
 export type FinanceChartRequest = z.infer<typeof financeChartRequestSchema>;
-export type FinanceOperation = z.infer<typeof financeOperationSchema>;
 export type FinanceResponse = z.infer<typeof financeResponseSchema>;
-
-const financeResponses = {
-  200: financeResponseSchema,
-  400: apiErrorSchema,
-  401: apiErrorSchema,
-  402: apiErrorSchema,
-  403: apiErrorSchema,
-  502: apiErrorSchema,
-  503: apiErrorSchema,
-} as const;
-
-export const financeContract = c.router({
-  search: {
-    method: "POST",
-    path: "/api/finance/search",
-    headers: authHeadersSchema,
-    body: financeSearchRequestSchema,
-    responses: financeResponses,
-    summary: "Search financial instruments through managed Okou Finance",
-  },
-  profile: {
-    method: "POST",
-    path: "/api/finance/profile",
-    headers: authHeadersSchema,
-    body: financeProfileRequestSchema,
-    responses: financeResponses,
-    summary: "Fetch a company profile through managed Okou Finance",
-  },
-  quote: {
-    method: "POST",
-    path: "/api/finance/quote",
-    headers: authHeadersSchema,
-    body: financeQuoteRequestSchema,
-    responses: financeResponses,
-    summary: "Fetch a market quote through managed Okou Finance",
-  },
-  chart: {
-    method: "POST",
-    path: "/api/finance/chart",
-    headers: authHeadersSchema,
-    body: financeChartRequestSchema,
-    responses: financeResponses,
-    summary: "Fetch market chart data through managed Okou Finance",
-  },
-});
-
-export type FinanceContract = typeof financeContract;

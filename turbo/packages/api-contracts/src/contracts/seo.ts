@@ -1,10 +1,5 @@
 import { z } from "zod";
 
-import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
-
-const c = initContract();
-
 export const SEO_DEFAULT_LOCATION = "United States" as const;
 export const SEO_DEFAULT_LANGUAGE_CODE = "en" as const;
 export const SEO_DEFAULT_SERP_LIMIT = 10;
@@ -137,52 +132,4 @@ export type SeoRankedKeywordsRequest = z.infer<
 export type SeoBacklinksSummaryRequest = z.infer<
   typeof seoBacklinksSummaryRequestSchema
 >;
-export type SeoOperation = z.infer<typeof seoOperationSchema>;
 export type SeoResponse = z.infer<typeof seoResponseSchema>;
-
-const seoResponses = {
-  200: seoResponseSchema,
-  400: apiErrorSchema,
-  401: apiErrorSchema,
-  402: apiErrorSchema,
-  403: apiErrorSchema,
-  502: apiErrorSchema,
-  503: apiErrorSchema,
-} as const;
-
-export const seoContract = c.router({
-  serp: {
-    method: "POST",
-    path: "/api/seo/serp",
-    headers: authHeadersSchema,
-    body: seoSerpRequestSchema,
-    responses: seoResponses,
-    summary: "Fetch live search engine results through managed Okou SEO",
-  },
-  keywordIdeas: {
-    method: "POST",
-    path: "/api/seo/keyword-ideas",
-    headers: authHeadersSchema,
-    body: seoKeywordIdeasRequestSchema,
-    responses: seoResponses,
-    summary: "Find related keyword ideas through managed Okou SEO",
-  },
-  rankedKeywords: {
-    method: "POST",
-    path: "/api/seo/ranked-keywords",
-    headers: authHeadersSchema,
-    body: seoRankedKeywordsRequestSchema,
-    responses: seoResponses,
-    summary: "List ranked keywords for a domain through managed Okou SEO",
-  },
-  backlinksSummary: {
-    method: "POST",
-    path: "/api/seo/backlinks-summary",
-    headers: authHeadersSchema,
-    body: seoBacklinksSummaryRequestSchema,
-    responses: seoResponses,
-    summary: "Fetch a backlink summary through managed Okou SEO",
-  },
-});
-
-export type SeoContract = typeof seoContract;

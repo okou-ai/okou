@@ -7,6 +7,7 @@ import {
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
 import { expandVariables } from "@okouai/core/variable-expander";
 import { computed, type Computed } from "ccstate";
+import { dataRouterEnvironment } from "./data-router-environment";
 import { env } from "../../lib/env";
 import { badRequestMessage } from "../../lib/error";
 import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypass";
@@ -259,9 +260,10 @@ export function createEnvironmentSignals(
     if (isEnvironmentError(modelProvider)) {
       return modelProvider;
     }
+    const dataRouter = dataRouterEnvironment();
     return mergeEnvironments(
-      [connector, modelProvider, platform, paidTools],
-      [modelProvider, connector, platform, paidTools],
+      [connector, modelProvider, platform, paidTools, dataRouter],
+      [dataRouter, modelProvider, connector, platform, paidTools],
     );
   });
 }

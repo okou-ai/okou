@@ -415,6 +415,9 @@ runs:
           add_secret "OKOU_${suffix}" "OKOU_${suffix}"
         done
         if [[ "$INPUT_APP" == "api" ]]; then
+          # Data Router credentials are configured per deployment.
+          add_secret OKOU_DATA_ROUTER_URL OKOU_DATA_ROUTER_URL
+          add_secret OKOU_DATA_TOKEN OKOU_DATA_TOKEN
           add_secret OKOU_SOCIAL_MONID_API_KEY OKOU_SOCIAL_MONID_API_KEY
           add_secret OKOU_SOCIAL_SOCIALKIT_TOKEN OKOU_SOCIAL_SOCIALKIT_TOKEN
           add_secret OKOU_SEO_DATAFORSEO_LOGIN OKOU_SEO_DATAFORSEO_LOGIN

@@ -90,11 +90,6 @@ const cronProcessUsageEventsResponseSchema = z.object({
   processed: z.number(),
 });
 
-const cronReconcileSocialKitDownloadsResponseSchema = z.object({
-  success: z.literal(true),
-  processed: z.number().int().nonnegative(),
-});
-
 const cronCompactChatThreadSnapshotsResponseSchema = z.object({
   // Compaction completed; inspect gc.failed independently for cleanup failures.
   success: z.literal(true),
@@ -300,35 +295,6 @@ export const cronProcessUsageEventsContract = c.router({
       401: apiErrorSchema,
     },
     summary: "Process pending usage events",
-  },
-});
-
-export const cronReconcileCommerceJobsContract = c.router({
-  reconcile: {
-    method: "GET",
-    path: "/api/cron/reconcile-commerce-jobs",
-    headers: authHeadersSchema,
-    responses: {
-      200: z.object({
-        success: z.literal(true),
-        processed: z.number().int().nonnegative(),
-      }),
-      401: apiErrorSchema,
-    },
-    summary: "Advance a bounded batch of managed Commerce jobs",
-  },
-});
-
-export const cronReconcileSocialKitDownloadsContract = c.router({
-  reconcile: {
-    method: "GET",
-    path: "/api/cron/reconcile-socialkit-downloads",
-    headers: authHeadersSchema,
-    responses: {
-      200: cronReconcileSocialKitDownloadsResponseSchema,
-      401: apiErrorSchema,
-    },
-    summary: "Reconcile managed SocialKit downloads",
   },
 });
 
@@ -659,8 +625,6 @@ export const cronMaterializePiResourceIndexesContract = c.router({
 
 export type CronProcessUsageEventsContract =
   typeof cronProcessUsageEventsContract;
-export type CronReconcileSocialKitDownloadsContract =
-  typeof cronReconcileSocialKitDownloadsContract;
 export type CronCompactChatThreadSnapshotsContract =
   typeof cronCompactChatThreadSnapshotsContract;
 export type CronMonitorChatEventQueueContract =
@@ -695,7 +659,6 @@ export {
   cleanupResultSchema,
   cronSnapshotChatEventsResponseSchema,
   cronProcessUsageEventsResponseSchema,
-  cronReconcileSocialKitDownloadsResponseSchema,
   cronReconcileBillingEntitlementsResponseSchema,
   cronTelegramCleanupResponseSchema,
   cronConnectorOauthStateCleanupResponseSchema,

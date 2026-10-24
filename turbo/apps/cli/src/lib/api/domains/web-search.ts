@@ -1,21 +1,18 @@
+import { callDataRouterTool } from "../data-router-client";
 import {
-  webSearchContract,
+  webSearchResponseSchema,
   type WebSearchRequest,
   type WebSearchResponse,
 } from "@okouai/api-contracts/contracts/web-search";
-import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 
-import { getClientConfig, handleError } from "../core/client-factory";
+import { handleError } from "../core/client-factory";
 
 export async function callWebSearch(
   body: WebSearchRequest,
 ): Promise<WebSearchResponse> {
-  const config = await getClientConfig();
-  const client = initClient(webSearchContract, config);
-
-  const result = await client.search({ headers: {}, body });
+  const result = await callDataRouterTool("web_search", body);
   if (result.status === 200) {
-    return result.body;
+    return webSearchResponseSchema.parse(result.body);
   }
   handleError(result, "Failed to search the web");
 }

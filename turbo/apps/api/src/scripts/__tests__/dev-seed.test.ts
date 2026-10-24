@@ -142,23 +142,6 @@ describe("usage pricing", () => {
     },
   );
 
-  it.each(["xiaohongshu", "threads", "wechat"])(
-    "seeds the %s provider-cost conversion for preview",
-    (platform) => {
-      expect(
-        devSeedUsagePricing("preview")
-          .filter((row) => {
-            return (
-              row.kind === "social" && row.provider === `monid/${platform}`
-            );
-          })
-          .map((row) => {
-            return [row.category, row.unitPrice, row.unitSize];
-          }),
-      ).toStrictEqual([["provider_cost_usd_micros", 1250, 1_000_000]]);
-    },
-  );
-
   it("seeds the Claude Opus 5.5 public token schedule", () => {
     expect(
       USAGE_PRICING.filter((row) => {

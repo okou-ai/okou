@@ -1,19 +1,16 @@
+import { callDataRouterTool } from "../data-router-client";
 import {
-  scrapeContract,
+  scrapeResponseSchema,
   type ScrapeRequest,
   type ScrapeResponse,
 } from "@okouai/api-contracts/contracts/scrape";
-import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 
-import { getClientConfig, handleError } from "../core/client-factory";
+import { handleError } from "../core/client-factory";
 
 export async function callScrape(body: ScrapeRequest): Promise<ScrapeResponse> {
-  const config = await getClientConfig();
-  const client = initClient(scrapeContract, config);
-
-  const result = await client.scrape({ headers: {}, body });
+  const result = await callDataRouterTool("web_scrape", body);
   if (result.status === 200) {
-    return result.body;
+    return scrapeResponseSchema.parse(result.body);
   }
   handleError(result, "Failed to scrape page");
 }

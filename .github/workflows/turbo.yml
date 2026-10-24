@@ -62,6 +62,10 @@ on:
         required: false
       OFFICIAL_RUNNER_SECRET:
         required: false
+      OKOU_DATA_ROUTER_URL:
+        required: false
+      OKOU_DATA_TOKEN:
+        required: false
       OKOU_BROWSER_USE_API_KEY:
         required: false
       OKOU_FINANCE_APIDOJO_TOKEN:

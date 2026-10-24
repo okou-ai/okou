@@ -8,52 +8,31 @@ import {
   socialKitTranscriptErrorReasonSchema,
   socialKitCollectionSourceLimitSchema,
   type ManagedSocialKitTool,
-  type ManagedSocialKitToolName,
-  socialKitRequestSchema,
 } from "./social-tools";
-import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import {
-  socialPlatformSchema,
-  socialStatusResponseSchema,
-} from "./social-discovery";
 
 export {
   findManagedSocialKitTool,
-  managedSocialKitToolCatalog,
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
-  MANAGED_SOCIAL_UNSUPPORTED_CAPABILITIES,
   MANAGED_SOCIALKIT_TOOLS,
   socialKitInstagramCommentsOutcomeSchema,
   SOCIALKIT_MAX_INPUT_VALUE_CHARS,
-  SOCIALKIT_TRANSCRIPT_ERROR_CODES,
   socialKitTranscriptErrorReasonSchema,
   socialKitRequestSchema,
   socialKitSummaryFieldsSchema,
   type ManagedSocialKitCollection,
-  type ManagedSocialKitCatalogBilling,
-  type ManagedSocialKitCatalogProviderLimit,
-  type ManagedSocialKitCatalogRetrieval,
   type ManagedSocialKitPagination,
   type ManagedSocialKitProviderControlledPageSize,
   type ManagedSocialKitPublicResult,
-  type ManagedSocialKitReportedTotalField,
   type ManagedSocialKitResultField,
   type ManagedSocialKitUnreliableEmptyResult,
   type ManagedSocialKitTool,
-  type ManagedSocialKitToolAvailability,
   type ManagedSocialKitToolDefinition,
-  type ManagedSocialKitToolCatalogEntry,
   type ManagedSocialKitToolName,
-  type ManagedSocialUnsupportedCapability,
-  type SocialKitTranscriptErrorCode,
-  type SocialKitTranscriptErrorReason,
   type SocialKitInstagramCommentsOutcome,
   type SocialKitRequest,
   type SocialKitCollectionSourceLimit,
 } from "./social-tools";
-
-const c = initContract();
 
 export const socialErrorReasonSchema = z.enum([
   ...socialKitTranscriptErrorReasonSchema.options,
@@ -90,9 +69,8 @@ export type SocialKitErrorResponse = z.infer<typeof socialKitErrorSchema>;
 /**
  * Keep upstream implementation details out of agent-visible diagnostics.
  *
- * The API still accepts and stores the internal provider codes for server-side
- * accounting and backwards-compatible handling. Callers that render data to
- * an agent should pass codes and messages through these projections first.
+ * Router responses can include upstream codes and messages. Project them
+ * before displaying CLI errors.
  */
 export function publicSocialErrorCode(code: string): string {
   return code.replace(/socialkit/giu, "SOCIAL");
@@ -315,17 +293,9 @@ export const socialKitCollectionProviderLimitedReasonSchema = z.enum([
   "provider_outcome_unknown",
 ]);
 
-export type SocialKitCollectionProviderLimitedReason = z.infer<
-  typeof socialKitCollectionProviderLimitedReasonSchema
->;
-
 export const socialKitCollectionUncertaintySchema = z
   .object({ reason: z.literal("unreliable_empty_result") })
   .strict();
-
-export type SocialKitCollectionUncertainty = z.infer<
-  typeof socialKitCollectionUncertaintySchema
->;
 
 const reportedTotalSchema = z
   .number()
@@ -363,25 +333,11 @@ const socialKitCollectionSchema = z
   ])
   .nullable();
 
-type ToolByName<Name extends ManagedSocialKitToolName> = Extract<
-  ManagedSocialKitTool,
-  { readonly name: Name }
->;
-
-export type SocialKitInput<Name extends ManagedSocialKitToolName> = z.infer<
-  ToolByName<Name>["inputSchema"]
->;
-
-export type SocialKitResult<Name extends ManagedSocialKitToolName> = z.infer<
-  ToolByName<Name>["resultSchema"]
->;
-
 type SocialKitResponseFor<Tool extends ManagedSocialKitTool> =
   Tool extends ManagedSocialKitTool
     ? {
         /**
-         * The provider discriminator is retained for session/API compatibility.
-         * Agent-facing routes project it out before serialization.
+         * Router can include its provider discriminator; CLI output projects it out.
          */
         readonly provider?: "socialkit";
         readonly tool: Tool["name"];
@@ -397,8 +353,7 @@ export type SocialKitResponse = SocialKitResponseFor<ManagedSocialKitTool>;
 
 function responseVariant<Tool extends ManagedSocialKitTool>(tool: Tool) {
   return z.object({
-    // Optional so the agent boundary can remove the internal discriminator
-    // while older session clients may continue sending/receiving it.
+    // Accept Router responses before and after CLI output projection.
     provider: z.literal("socialkit").optional(),
     tool: z.literal(tool.name),
     billingCategory: z.literal(MANAGED_SOCIALKIT_BILLING_CATEGORY),
@@ -542,8 +497,8 @@ function projectPublicTikTokVideoCollection(
 }
 
 /**
- * Build the permanent provider-neutral response used by agent, sandbox, and
- * CLI callers. Raw session/PAT responses remain unchanged.
+ * Project Router results into the CLI response: canonical collection fields,
+ * source limitations, and provider-neutral diagnostics.
  */
 export function projectPublicSocialResponse(
   response: SocialKitResponse,
@@ -589,89 +544,3 @@ export function projectPublicSocialResponse(
     ? { ok: true, response: parsed.data as SocialKitResponse }
     : { ok: false };
 }
-
-export const socialContract = c.router({
-  status: {
-    method: "GET",
-    path: "/api/social/status",
-    headers: authHeadersSchema,
-    query: z.object({ platform: socialPlatformSchema.optional() }).strict(),
-    responses: {
-      200: socialStatusResponseSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-    },
-    summary: "Get reported Social service health without billing",
-  },
-  request: {
-    method: "POST",
-    path: "/api/social/request",
-    headers: authHeadersSchema,
-    body: socialKitRequestSchema,
-    responses: {
-      200: socialKitResponseSchema,
-      400: socialKitErrorSchema,
-      401: socialKitErrorSchema,
-      402: socialKitErrorSchema,
-      403: socialKitErrorSchema,
-      404: socialKitErrorSchema,
-      422: socialKitErrorSchema,
-      429: socialKitErrorSchema,
-      502: socialKitErrorSchema,
-      503: socialKitErrorSchema,
-    },
-    summary: "Call a typed Okou Social tool",
-  },
-  createDownload: {
-    method: "POST",
-    path: "/api/social/downloads",
-    headers: authHeadersSchema,
-    body: socialKitDownloadRequestSchema,
-    responses: {
-      202: socialKitDownloadResponseSchema,
-      400: socialKitErrorSchema,
-      401: apiErrorSchema,
-      402: apiErrorSchema,
-      403: apiErrorSchema,
-      404: socialKitErrorSchema,
-      409: socialKitDownloadConflictSchema,
-      422: socialKitErrorSchema,
-      429: socialKitErrorSchema,
-      500: apiErrorSchema,
-      502: socialKitErrorSchema,
-      503: socialKitErrorSchema,
-    },
-    summary: "Start an Okou Social media download",
-  },
-  listDownloads: {
-    method: "GET",
-    path: "/api/social/downloads",
-    headers: authHeadersSchema,
-    query: socialKitDownloadListQuerySchema,
-    responses: {
-      200: socialKitDownloadListResponseSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "List saved downloads for the current user and organization",
-  },
-  getDownload: {
-    method: "GET",
-    path: "/api/social/downloads/:downloadId",
-    headers: authHeadersSchema,
-    pathParams: z.object({ downloadId: z.string().uuid() }),
-    responses: {
-      200: socialKitDownloadResponseSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Get an Okou Social media download",
-  },
-});
-
-export type SocialContract = typeof socialContract;

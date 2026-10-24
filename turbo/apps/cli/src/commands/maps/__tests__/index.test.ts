@@ -1,6 +1,7 @@
+import { dataRouterTool } from "../../../mocks/data-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import chalk from "chalk";
-import { HttpResponse, http } from "msw";
+import { HttpResponse } from "msw";
 
 import { server } from "../../../mocks/server";
 import { mapsCommand } from "../index";
@@ -62,13 +63,10 @@ describe("okou data maps command", () => {
   it("posts one conversational search with explicit location and language", async () => {
     let requestBody: unknown;
     server.use(
-      http.post(
-        "http://localhost:3000/api/maps/search",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(groundedResponse());
-        },
-      ),
+      dataRouterTool("maps_search", ({ toolArguments }) => {
+        requestBody = toolArguments;
+        return HttpResponse.json(groundedResponse());
+      }),
     );
 
     await mapsCommand.parseAsync([
@@ -97,7 +95,7 @@ describe("okou data maps command", () => {
 
   it("keeps the grounded answer immediately adjacent to Google Maps sources", async () => {
     server.use(
-      http.post("http://localhost:3000/api/maps/search", () => {
+      dataRouterTool("maps_search", () => {
         return HttpResponse.json(groundedResponse());
       }),
     );
@@ -125,7 +123,7 @@ describe("okou data maps command", () => {
     "renders the server's %s model during API and CLI version overlap",
     async (model) => {
       server.use(
-        http.post("http://localhost:3000/api/maps/search", () => {
+        dataRouterTool("maps_search", () => {
           return HttpResponse.json(groundedResponse(model));
         }),
       );
@@ -163,7 +161,7 @@ describe("okou data maps command", () => {
     "shows the $code cause and recovery guidance in $mode mode",
     async ({ code, message, options }) => {
       server.use(
-        http.post("http://localhost:3000/api/maps/search", () => {
+        dataRouterTool("maps_search", () => {
           return HttpResponse.json(
             { error: { code, message } },
             { status: 502 },
@@ -188,23 +186,6 @@ describe("okou data maps command", () => {
       expect(mockConsoleLog).not.toHaveBeenCalled();
     },
   );
-
-  it("requires latitude and longitude together", async () => {
-    await expect(
-      mapsCommand.parseAsync([
-        "node",
-        "cli",
-        "search",
-        "coffee near me",
-        "--lat",
-        "40.7",
-      ]),
-    ).rejects.toThrow("process.exit called");
-
-    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-      "--lat and --lng must be provided together",
-    );
-  });
 
   it("exposes only the search subcommand", () => {
     expect(

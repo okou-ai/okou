@@ -1,23 +1,21 @@
+import { callDataRouterTool } from "../data-router-client";
 import {
-  financeContract,
+  financeResponseSchema,
   type FinanceChartRequest,
   type FinanceProfileRequest,
   type FinanceQuoteRequest,
   type FinanceResponse,
   type FinanceSearchRequest,
 } from "@okouai/api-contracts/contracts/finance";
-import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 
-import { getClientConfig, handleError } from "../core/client-factory";
+import { handleError } from "../core/client-factory";
 
 export async function callFinanceSearch(
   body: FinanceSearchRequest,
 ): Promise<FinanceResponse> {
-  const config = await getClientConfig();
-  const client = initClient(financeContract, config);
-  const result = await client.search({ headers: {}, body });
+  const result = await callDataRouterTool("finance_search", body);
   if (result.status === 200) {
-    return result.body;
+    return financeResponseSchema.parse(result.body);
   }
   handleError(result, "Failed to search financial instruments");
 }
@@ -25,11 +23,9 @@ export async function callFinanceSearch(
 export async function callFinanceProfile(
   body: FinanceProfileRequest,
 ): Promise<FinanceResponse> {
-  const config = await getClientConfig();
-  const client = initClient(financeContract, config);
-  const result = await client.profile({ headers: {}, body });
+  const result = await callDataRouterTool("finance_profile", body);
   if (result.status === 200) {
-    return result.body;
+    return financeResponseSchema.parse(result.body);
   }
   handleError(result, "Failed to fetch finance profile");
 }
@@ -37,11 +33,9 @@ export async function callFinanceProfile(
 export async function callFinanceQuote(
   body: FinanceQuoteRequest,
 ): Promise<FinanceResponse> {
-  const config = await getClientConfig();
-  const client = initClient(financeContract, config);
-  const result = await client.quote({ headers: {}, body });
+  const result = await callDataRouterTool("finance_quote", body);
   if (result.status === 200) {
-    return result.body;
+    return financeResponseSchema.parse(result.body);
   }
   handleError(result, "Failed to fetch finance quote");
 }
@@ -49,11 +43,9 @@ export async function callFinanceQuote(
 export async function callFinanceChart(
   body: FinanceChartRequest,
 ): Promise<FinanceResponse> {
-  const config = await getClientConfig();
-  const client = initClient(financeContract, config);
-  const result = await client.chart({ headers: {}, body });
+  const result = await callDataRouterTool("finance_chart", body);
   if (result.status === 200) {
-    return result.body;
+    return financeResponseSchema.parse(result.body);
   }
   handleError(result, "Failed to fetch finance chart");
 }

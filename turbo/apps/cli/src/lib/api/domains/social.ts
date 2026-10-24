@@ -1,7 +1,10 @@
+import { callDataRouterTool } from "../data-router-client";
 import {
   findManagedSocialKitTool,
   projectPublicSocialResponse,
-  socialContract,
+  socialKitResponseSchema,
+  socialKitDownloadResponseSchema,
+  socialKitDownloadListResponseSchema,
   socialKitErrorSchema,
   socialErrorReasonSchema,
   socialRetryAfterSecondsSchema,
@@ -18,13 +21,13 @@ import {
   type SocialKitResponse,
   type SocialKitErrorResponse,
 } from "@okouai/api-contracts/contracts/social";
-import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
-import type {
-  SocialPlatform,
-  SocialStatusResponse,
+import {
+  socialStatusResponseSchema,
+  type SocialPlatform,
+  type SocialStatusResponse,
 } from "@okouai/api-contracts/contracts/social-discovery";
 
-import { ApiRequestError, getClientConfig } from "../core/client-factory";
+import { ApiRequestError } from "../core/client-factory";
 
 const SOCIALKIT_API_TIMEOUT_MS = 280_000;
 
@@ -68,15 +71,13 @@ export class SocialTransportError extends Error {
 export async function getSocialStatus(
   platform?: SocialPlatform,
 ): Promise<SocialStatusResponse> {
-  const config = await getClientConfig();
-  const client = initClient(socialContract, config);
-  const result = await client.status({
-    headers: {},
-    query: platform ? { platform } : {},
-    fetchOptions: { signal: AbortSignal.timeout(20_000) },
-  });
+  const result = await callDataRouterTool(
+    "social_status",
+    platform ? { platform } : {},
+    AbortSignal.timeout(20_000),
+  );
   if (result.status === 200) {
-    return result.body;
+    return socialStatusResponseSchema.parse(result.body);
   }
   handlePublicSocialError(
     result,
@@ -167,31 +168,30 @@ function effectivePublicSocialRequest(
 export async function callSocialKit(
   body: SocialKitRequest,
 ): Promise<SocialKitResponse> {
-  const config = await getClientConfig();
-  const client = initClient(socialContract, {
-    ...config,
-    api: async (args) => {
-      try {
-        return await config.api(args);
-      } catch (error) {
-        if (
-          error instanceof TypeError ||
-          (error instanceof Error &&
-            (error.name === "TimeoutError" || error.name === "AbortError"))
-        ) {
-          throw new SocialTransportError(error);
-        }
-        throw error;
-      }
-    },
-  });
-  const result = await client.request({
-    headers: {},
-    body: effectivePublicSocialRequest(body),
-    fetchOptions: { signal: AbortSignal.timeout(SOCIALKIT_API_TIMEOUT_MS) },
-  });
+  const request = effectivePublicSocialRequest(body);
+  let result;
+  try {
+    result = await callDataRouterTool(
+      request.tool,
+      request.input,
+      AbortSignal.timeout(SOCIALKIT_API_TIMEOUT_MS),
+    );
+  } catch (error) {
+    if (
+      error instanceof TypeError ||
+      (error instanceof Error &&
+        (error.name === "TimeoutError" || error.name === "AbortError"))
+    ) {
+      throw new SocialTransportError(error);
+    }
+    throw error;
+  }
   if (result.status === 200) {
-    const projection = projectPublicSocialResponse(result.body);
+    const parsed = socialKitResponseSchema.safeParse(result.body);
+    if (!parsed.success) {
+      throw new Error("Okou Social returned an inconsistent result");
+    }
+    const projection = projectPublicSocialResponse(parsed.data);
     if (!projection.ok) {
       throw new Error("Okou Social returned an inconsistent result");
     }
@@ -203,15 +203,15 @@ export async function callSocialKit(
 export async function createSocialKitDownload(
   body: SocialKitDownloadRequest,
 ): Promise<SocialKitDownloadResponse> {
-  const config = await getClientConfig();
-  const client = initClient(socialContract, config);
-  const result = await client.createDownload({
-    headers: {},
+  const result = await callDataRouterTool(
+    "social_download_create",
     body,
-    fetchOptions: { signal: AbortSignal.timeout(SOCIALKIT_API_TIMEOUT_MS) },
-  });
+    AbortSignal.timeout(SOCIALKIT_API_TIMEOUT_MS),
+  );
   if (result.status === 202) {
-    return publicSocialDownloadResponse(result.body);
+    return publicSocialDownloadResponse(
+      socialKitDownloadResponseSchema.parse(result.body),
+    );
   }
   if (result.status === 409) {
     const conflict = socialKitDownloadConflictSchema.parse(result.body);
@@ -231,17 +231,16 @@ export async function createSocialKitDownload(
 export async function listSocialKitDownloads(
   query: SocialKitDownloadListQuery,
 ): Promise<SocialKitDownloadListResponse> {
-  const config = await getClientConfig();
-  const client = initClient(socialContract, config);
-  const result = await client.listDownloads({
-    headers: {},
+  const result = await callDataRouterTool(
+    "social_download_list",
     query,
-    fetchOptions: { signal: AbortSignal.timeout(SOCIALKIT_API_TIMEOUT_MS) },
-  });
+    AbortSignal.timeout(SOCIALKIT_API_TIMEOUT_MS),
+  );
   if (result.status === 200) {
+    const response = socialKitDownloadListResponseSchema.parse(result.body);
     return {
-      ...result.body,
-      downloads: result.body.downloads.map((download) => {
+      ...response,
+      downloads: response.downloads.map((download) => {
         return publicSocialDownloadResponse(download);
       }),
     };
@@ -253,20 +252,15 @@ export async function getSocialKitDownload(
   downloadId: string,
   signal: AbortSignal,
 ): Promise<SocialKitDownloadResponse> {
-  const config = await getClientConfig();
-  const client = initClient(socialContract, config);
-  const result = await client.getDownload({
-    headers: {},
-    params: { downloadId },
-    fetchOptions: {
-      signal: AbortSignal.any([
-        signal,
-        AbortSignal.timeout(SOCIALKIT_API_TIMEOUT_MS),
-      ]),
-    },
-  });
+  const result = await callDataRouterTool(
+    "social_download_get",
+    { downloadId },
+    AbortSignal.any([signal, AbortSignal.timeout(SOCIALKIT_API_TIMEOUT_MS)]),
+  );
   if (result.status === 200) {
-    return publicSocialDownloadResponse(result.body);
+    return publicSocialDownloadResponse(
+      socialKitDownloadResponseSchema.parse(result.body),
+    );
   }
   handlePublicSocialError(result, "Okou Social download status failed");
 }

@@ -1,9 +1,10 @@
+import { dataRouterTool } from "../../../mocks/data-router";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { Command } from "commander";
-import { http, HttpResponse } from "msw";
+import { HttpResponse } from "msw";
 import {
   afterEach,
   beforeEach,
@@ -70,6 +71,17 @@ describe("Data Search business commands", () => {
       throw new Error("exit");
     });
     process.exitCode = undefined;
+    server.use(
+      dataRouterTool("data_quote", ({ toolArguments }) => {
+        return HttpResponse.json({
+          capability: toolArguments.capability,
+          estimatedCredits: 20,
+          maxCredits: 30,
+          quantity: 1,
+          unit: "request",
+        });
+      }),
+    );
     for (const option of peopleSearchCommand.options) {
       peopleSearchCommand.setOptionValue(
         option.attributeName(),
@@ -93,11 +105,29 @@ describe("Data Search business commands", () => {
     return log.mock.calls.flat().join("\n");
   }
 
+  it("rejects a quote above the requested budget before submitting a job", async () => {
+    await expect(
+      parse([
+        "company",
+        "search",
+        "--domains",
+        "example.com",
+        "--max-credits",
+        "10",
+        "--json",
+      ]),
+    ).rejects.toThrow("exit");
+
+    expect(vi.mocked(console.error).mock.calls.flat().join("\n")).toContain(
+      "Quoted cost 30 credits exceeds --max-credits 10; no job was submitted",
+    );
+  });
+
   it("quotes structured company filters for free", async () => {
     let body: unknown;
     server.use(
-      http.post(`${origin}/api/data/quote`, async ({ request }) => {
-        body = await request.json();
+      dataRouterTool("data_quote", ({ toolArguments }) => {
+        body = toolArguments;
         return HttpResponse.json({
           capability: "company.search",
           estimatedCredits: 20,
@@ -133,8 +163,8 @@ describe("Data Search business commands", () => {
   it("quotes one company inspection by domain", async () => {
     let body: unknown;
     server.use(
-      http.post(`${origin}/api/data/quote`, async ({ request }) => {
-        body = await request.json();
+      dataRouterTool("data_quote", ({ toolArguments }) => {
+        body = toolArguments;
         return HttpResponse.json({
           capability: "company.inspect",
           estimatedCredits: 33,
@@ -163,8 +193,8 @@ describe("Data Search business commands", () => {
   it("defaults enrichment to one profile and sends an explicit idempotency key and budget", async () => {
     let body: unknown;
     server.use(
-      http.post(`${origin}/api/data/jobs`, async ({ request }) => {
-        body = await request.json();
+      dataRouterTool("data_create", ({ toolArguments }) => {
+        body = toolArguments;
         return HttpResponse.json(
           { ...completed, capability: "people.enrich" },
           { status: 202 },
@@ -200,8 +230,8 @@ describe("Data Search business commands", () => {
   it("requires explicit work-email selection and sends only named employer matching inputs", async () => {
     let body: unknown;
     server.use(
-      http.post(`${origin}/api/data/quote`, async ({ request }) => {
-        body = await request.json();
+      dataRouterTool("data_quote", ({ toolArguments }) => {
+        body = toolArguments;
         return HttpResponse.json({
           capability: "people.enrich",
           estimatedCredits: 20,
@@ -240,8 +270,8 @@ describe("Data Search business commands", () => {
   it("routes the prospect backend through the people.search business capability", async () => {
     let body: unknown;
     server.use(
-      http.post(`${origin}/api/data/jobs`, async ({ request }) => {
-        body = await request.json();
+      dataRouterTool("data_create", ({ toolArguments }) => {
+        body = toolArguments;
         return HttpResponse.json(
           { ...completed, capability: "people.search" },
           { status: 202 },
@@ -282,8 +312,8 @@ describe("Data Search business commands", () => {
   it("quotes structured prospects without requiring a free-text query", async () => {
     let body: unknown;
     server.use(
-      http.post(`${origin}/api/data/quote`, async ({ request }) => {
-        body = await request.json();
+      dataRouterTool("data_quote", ({ toolArguments }) => {
+        body = toolArguments;
         return HttpResponse.json({
           capability: "people.search",
           estimatedCredits: 0,
@@ -314,7 +344,7 @@ describe("Data Search business commands", () => {
   it("returns async jobs immediately and prints recovery guidance", async () => {
     let creates = 0;
     server.use(
-      http.post(`${origin}/api/data/jobs`, () => {
+      dataRouterTool("data_create", () => {
         creates += 1;
         return HttpResponse.json(
           {
@@ -348,14 +378,14 @@ describe("Data Search business commands", () => {
     let creates = 0;
     let reads = 0;
     server.use(
-      http.post(`${origin}/api/data/jobs`, () => {
+      dataRouterTool("data_create", () => {
         creates += 1;
         return HttpResponse.json(
           { ...completed, status: "running", data: null },
           { status: 202 },
         );
       }),
-      http.get(`${origin}/api/data/jobs/${jobId}`, () => {
+      dataRouterTool("data_get", () => {
         reads += 1;
         return HttpResponse.json(completed);
       }),
@@ -378,7 +408,7 @@ describe("Data Search business commands", () => {
 
   it("honors a zero-second bound and leaves a recoverable saved job", async () => {
     server.use(
-      http.post(`${origin}/api/data/jobs`, () => {
+      dataRouterTool("data_create", () => {
         return HttpResponse.json(
           { ...completed, status: "pending", data: null },
           { status: 202 },
@@ -404,7 +434,7 @@ describe("Data Search business commands", () => {
     directories.push(directory);
     const destination = join(directory, "companies.csv");
     server.use(
-      http.get(`${origin}/api/data/jobs/${jobId}`, () => {
+      dataRouterTool("data_get", () => {
         return HttpResponse.json(completed);
       }),
     );
@@ -432,10 +462,10 @@ describe("Data Search business commands", () => {
   });
 
   it("lists saved jobs with cursor/status filters and exposes the next cursor", async () => {
-    let query: string | undefined;
+    let query: unknown;
     server.use(
-      http.get(`${origin}/api/data/jobs`, ({ request }) => {
-        query = new URL(request.url).search;
+      dataRouterTool("data_list", ({ toolArguments }) => {
+        query = toolArguments;
         return HttpResponse.json({ jobs: [completed], nextCursor: jobId });
       }),
     );
@@ -450,8 +480,9 @@ describe("Data Search business commands", () => {
       requestId,
       "--json",
     ]);
-    expect(Object.fromEntries(new URLSearchParams(query))).toEqual({
-      limit: "5",
+    expect(query).toEqual({
+      requestIds: [],
+      limit: 5,
       status: "completed",
       cursor: requestId,
     });
@@ -600,8 +631,8 @@ describe("Data Search business commands", () => {
     async ({ args, capability, input, limit }) => {
       let body: unknown;
       server.use(
-        http.post(`${origin}/api/data/quote`, async ({ request }) => {
-          body = await request.json();
+        dataRouterTool("data_quote", ({ toolArguments }) => {
+          body = toolArguments;
           return HttpResponse.json({
             capability,
             estimatedCredits: 5,
@@ -622,7 +653,7 @@ describe("Data Search business commands", () => {
 
   it("discovers exact business capability schemas", async () => {
     server.use(
-      http.get(`${origin}/api/data/capabilities`, () => {
+      dataRouterTool("data_capabilities", () => {
         return HttpResponse.json({
           capabilities: [
             {
