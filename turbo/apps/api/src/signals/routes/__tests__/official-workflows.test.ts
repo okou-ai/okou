@@ -61,7 +61,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
@@ -2841,6 +2841,109 @@ describe("Morning Brief catalog reconciliation", () => {
       reconciled,
     };
   }
+
+  it("restores the Official schedule after a Gmail watch failure and retries the same identity", async () => {
+    await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+      const { actor, installation, initial, first, source, reconciled } =
+        await prepareReconciledSchedule({
+          definitionName: "morning-brief",
+          paused: false,
+          withBindings: false,
+        });
+      if (!reconciled) {
+        throw new Error("Expected the reconciled Official schedule");
+      }
+      mockOptionalEnv(
+        "GMAIL_PUBSUB_TOPIC_NAME",
+        "projects/official-workflow-test/topics/gmail-events",
+      );
+      let gmailUnavailable = true;
+      server.use(
+        http.get(
+          "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+          () => {
+            return HttpResponse.json({
+              emailAddress: "bdd-gmail@example.test",
+              historyId: "100",
+            });
+          },
+        ),
+        http.post(
+          "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+          () => {
+            return gmailUnavailable
+              ? HttpResponse.json(
+                  {
+                    error: {
+                      code: 503,
+                      message: "Mailbox temporarily unavailable",
+                    },
+                  },
+                  { status: 503 },
+                )
+              : HttpResponse.json({
+                  historyId: "100",
+                  expiration: String(now() + 7 * 24 * 60 * 60 * 1000),
+                });
+          },
+        ),
+      );
+      const eventBlueprint: OfficialWorkflowBlueprint = {
+        key: "daily-delivery",
+        parameters: [],
+        desiredState: {
+          kind: "event",
+          eventType: "gmail-new-message",
+          eventConfig: { provider: "gmail", event: "new_message" },
+        },
+      };
+      expect((await syncCatalog(source([eventBlueprint]))).body.outcome).toBe(
+        "accepted",
+      );
+      await executeAutomationCron();
+      await flushWaitUntilForTest();
+      await expect(
+        listMorningBriefAutomations(actor, installation.id),
+      ).resolves.toMatchObject([
+        {
+          id: initial.id,
+          kind: "schedule",
+          chatThreadId: first.chatThreadId,
+          enabled: true,
+          schedule: reconciled.schedule,
+          nextRunAt: reconciled.nextRunAt,
+          official: {
+            appliedFingerprint: reconciled.official?.appliedFingerprint,
+            intendedEnabled: true,
+            reconciliationStatus: "failed",
+          },
+        },
+      ]);
+
+      gmailUnavailable = false;
+      await executeAutomationCron();
+      await flushWaitUntilForTest();
+      const [recovered] = await listMorningBriefAutomations(
+        actor,
+        installation.id,
+      );
+      expect(recovered).toMatchObject({
+        id: initial.id,
+        kind: "event",
+        eventType: "gmail-new-message",
+        eventConfig: { provider: "gmail", event: "new_message" },
+        chatThreadId: first.chatThreadId,
+        enabled: true,
+        nextRunAt: null,
+        official: { intendedEnabled: true, reconciliationStatus: "current" },
+      });
+      await executeAutomationCron();
+      await flushWaitUntilForTest();
+      await expect(
+        listMorningBriefAutomations(actor, installation.id),
+      ).resolves.toStrictEqual([recovered]);
+    });
+  });
 
   it.each([false, true])(
     "retains identity and pause intent through schedule/event transitions (paused=%s)",
