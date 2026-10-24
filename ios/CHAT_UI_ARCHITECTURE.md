@@ -179,10 +179,11 @@ view's latest-message task retains SwiftUI cancellation ownership. Native sizing
 reuse, motion completion, and actual offset correction remain with the existing
 collection and anchor.
 
-Scrolling near the top loads an
-earlier page after scrolling settles; the accessible Load earlier messages
-button also works when a short window cannot be scrolled. Initial positioning
-follows the latest message. Reading history pins the window boundary, and
+Scrolling near the top loads one earlier page after each user scroll settles;
+layout and restoration callbacks cannot request another page without a new gesture.
+The fixed-height loading row shows only a spinner while preparing and presenting
+the page, and retains its accessible Load earlier messages action for short windows.
+Initial positioning follows the latest message. Reading history pins the window boundary, and
 incoming messages preserve the reading position. A local send follows its new
 row. The explicit bottom button shrinks the window after reaching the bottom.
 Resident stores retain their expanded window and reading position; an evicted
@@ -202,9 +203,12 @@ the resulting resize preserves the visible row or follows the bottom. Closing
 the controller cancels preparation, resize, and refresh tasks. This bounds live
 measurement views without eagerly retaining the whole expanded history.
 
-ConversationScrollAnchor registers weak markers for mounted message rows and
-records a message ID plus its offset from the usable viewport top. The collection
-accepts only markers inside the current native cell for that message. Marker
+The collection captures a message ID and its content offset from native row
+geometry, including row spacing, without waiting for SwiftUI markers to mount.
+It freezes the reading anchor before applying a snapshot and restores the native
+offset immediately after layout. ConversationScrollAnchor registers weak markers
+for mounted message rows and verifies the position on subsequent display frames.
+The collection accepts only markers inside the current native cell for that message. Marker
 readiness and geometry publish reading-position changes on a display frame even
 when the scroll metrics have not changed. Capture waits until the measured
 snapshot matches the native viewport width and content-size category, so a

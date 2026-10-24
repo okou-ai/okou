@@ -37,7 +37,8 @@ struct ChatDetailView: View {
     let items = conversation.visibleItems
     var result: [ConversationCollectionRow] = []
     if conversation.hasEarlierMessages {
-      result.append(.earlier(isLoading: conversation.isLoadingEarlier))
+      result.append(
+        .earlier(isLoading: scrolling.isLoadingEarlier || conversation.isLoadingEarlier))
     }
     for (index, item) in items.enumerated() {
       let continuesGroup =
@@ -85,6 +86,7 @@ struct ChatDetailView: View {
       sendTransition: scrolling.sendTransition,
       isLoadingHistory: conversation.isLoading && conversation.history == nil,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
+      rowsPresented: scrolling.rowsPresented,
       refresh: {
         await conversation.refresh()
         await conversation.connectorActions.refreshKnown()
@@ -233,17 +235,18 @@ struct ChatDetailView: View {
       Button {
         scrolling.loadEarlierMessages()
       } label: {
-        HStack {
-          Spacer()
-          if isLoading { ProgressView().controlSize(.small) }
-          Text("Load earlier messages")
-          Spacer()
-        }
+        ProgressView()
+          .controlSize(.small)
+          .opacity(isLoading ? 1 : 0)
+          .frame(maxWidth: .infinity)
+          .frame(height: 44)
+          .contentShape(Rectangle())
       }
+      .buttonStyle(.plain)
       .disabled(isLoading)
+      .accessibilityLabel(isLoading ? "Loading earlier messages" : "Load earlier messages")
       .accessibilityIdentifier("load-earlier-messages")
       .padding(.horizontal, 20)
-      .padding(.vertical, 12)
     case .work(let section, let expanded, let showsAvatar, let topSpacing):
       VStack(alignment: .leading, spacing: 8) {
         if showsAvatar { assistantAvatar }
