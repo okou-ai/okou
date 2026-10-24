@@ -35,7 +35,11 @@ import { command } from "ccstate";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  pgIntegerDecoder,
+} from "../../lib/db-structured-result";
+import { safeSqlStateCode } from "../../lib/pg-errors";
 import {
   clerk$,
   createClerkReadContext,
@@ -1159,35 +1163,31 @@ const persistInvitation$ = command(
   ): Promise<boolean> => {
     signal?.throwIfAborted();
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0277; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // Allocation publication and the purchase transition commit together;
-      // a lost status transition rolls back the allocation.
-      const [current] = await tx
-        .select()
-        .from(usagePackInvitationPurchases)
-        .where(eq(usagePackInvitationPurchases.id, purchase.id))
-        .limit(1);
-      if (!current) {
+    const [current] = await db
+      .select()
+      .from(usagePackInvitationPurchases)
+      .where(eq(usagePackInvitationPurchases.id, purchase.id))
+      .limit(1);
+    signal?.throwIfAborted();
+    if (!current) {
+      throw new Error(`Unknown usage pack invitation purchase ${purchase.id}`);
+    }
+    if (current.clerkInvitationId) {
+      if (current.clerkInvitationId !== invitationId) {
         throw new Error(
-          `Unknown usage pack invitation purchase ${purchase.id}`,
+          "Invitation purchase resolved a different Clerk invite",
         );
       }
-      if (current.clerkInvitationId) {
-        if (current.clerkInvitationId !== invitationId) {
-          throw new Error(
-            "Invitation purchase resolved a different Clerk invite",
-          );
-        }
-        return true;
-      }
-      if (
-        current.status !== "creating_invitation" ||
-        current.updatedAt.getTime() !== purchase.updatedAt.getTime()
-      ) {
-        return false;
-      }
-      const [inserted] = await tx
+      return true;
+    }
+    if (
+      current.status !== "creating_invitation" ||
+      current.updatedAt.getTime() !== purchase.updatedAt.getTime()
+    ) {
+      return false;
+    }
+    const inserted = db.$with("invitation_inserted_allocation").as(
+      db
         .insert(usagePackAllocations)
         .values({
           usagePackSubscriptionId: current.usagePackSubscriptionId,
@@ -1200,11 +1200,14 @@ const persistInvitation$ = command(
           currentPeriodEnd: current.currentPeriodEnd,
         })
         .onConflictDoNothing()
-        .returning({ id: usagePackAllocations.id });
-      const allocation =
-        inserted ??
-        (
-          await tx
+        .returning({ id: usagePackAllocations.id }),
+    );
+    const allocation = db.$with("invitation_selected_allocation").as(
+      db
+        .select({ id: inserted.id })
+        .from(inserted)
+        .unionAll(
+          db
             .select({ id: usagePackAllocations.id })
             .from(usagePackAllocations)
             .where(
@@ -1213,13 +1216,12 @@ const persistInvitation$ = command(
                 eq(usagePackAllocations.invitationId, invitationId),
                 eq(usagePackAllocations.status, "paid_pending_invitation"),
               ),
-            )
-            .limit(1)
-        )[0];
-      if (!allocation) {
-        throw new Error("Failed to create paid pending invitation allocation");
-      }
-      const [published] = await tx
+            ),
+        )
+        .limit(1),
+    );
+    const published = db.$with("invitation_published_purchase").as(
+      db
         .update(usagePackInvitationPurchases)
         .set({
           allocationId: allocation.id,
@@ -1227,6 +1229,7 @@ const persistInvitation$ = command(
           status: "invitation_pending",
           updatedAt: nowDate(),
         })
+        .from(allocation)
         .where(
           and(
             eq(usagePackInvitationPurchases.id, current.id),
@@ -1234,15 +1237,35 @@ const persistInvitation$ = command(
             isNull(usagePackInvitationPurchases.clerkInvitationId),
           ),
         )
-        .returning({ id: usagePackInvitationPurchases.id });
-      if (!published) {
-        // Roll back the allocation; the caller re-reads the purchase.
+        .returning({ id: usagePackInvitationPurchases.id }),
+    );
+    signal?.throwIfAborted();
+    const publication = await settle(
+      (async () => {
+        // An aggregate always emits one row. Zero winners aborts the entire
+        // statement, including an allocation inserted before a lost purchase.
+        await db
+          .with(inserted, allocation, published)
+          .select({
+            guard: sql`(1 / ${count()})::int`.mapWith(pgIntegerDecoder),
+          })
+          .from(published);
+      })(),
+    );
+    signal?.throwIfAborted();
+    if (!publication.ok) {
+      if (safeSqlStateCode(publication.error) === "22012") {
         throw new Error(
           "Invitation purchase changed during invite publication",
+          {
+            cause: publication.error,
+          },
         );
       }
-      return true;
-    });
+      throw publication.error;
+    }
+    signal?.throwIfAborted();
+    return true;
   },
 );
 
