@@ -9,6 +9,43 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.2.0](https://github.com/okou-ai/okou/compare/api-v2.1.3...api-v2.2.0) (2026-10-23)
+
+
+### Features
+
+* **api:** export preview worker telemetry through native otel ([#42579](https://github.com/okou-ai/okou/issues/42579)) ([0dad423](https://github.com/okou-ai/okou/commit/0dad4239bc7035a3c4ed26afbccf91f31559386b))
+
+
+### Refactoring
+
+* **api:** activate official installations atomically ([#42642](https://github.com/okou-ai/okou/issues/42642)) ([c897378](https://github.com/okou-ai/okou/commit/c8973784eeaef356e8f74465938dcd9d00dcbeb5))
+* **api:** admit export jobs atomically ([#42661](https://github.com/okou-ai/okou/issues/42661)) ([e1ef436](https://github.com/okou-ai/okou/commit/e1ef4368da4da7ad12b4fa091b439ed5664f3a08))
+* **api:** commit export collection in one atomic statement ([#42653](https://github.com/okou-ai/okou/issues/42653)) ([e5bf313](https://github.com/okou-ai/okou/commit/e5bf31381575b78473beba53efc53ef1d2352429))
+* **api:** create browser action requests atomically ([#42678](https://github.com/okou-ai/okou/issues/42678)) ([70fad9a](https://github.com/okou-ai/okou/commit/70fad9a627dd3029ac36e6119f5854a0f7dcb9f3))
+* **api:** enable workflow automations in one statement ([#42657](https://github.com/okou-ai/okou/issues/42657)) ([98ec370](https://github.com/okou-ai/okou/commit/98ec370dbf39247fc9e09858fecaeb0bc4c3d443))
+* **api:** enqueue integration inputs atomically ([#42664](https://github.com/okou-ai/okou/issues/42664)) ([f6df09b](https://github.com/okou-ai/okou/commit/f6df09bf383bc2bd95a6e7e40849dfa8f1a25975))
+* **api:** finalize dormant official automations atomically ([#42649](https://github.com/okou-ai/okou/issues/42649)) ([5c0c306](https://github.com/okou-ai/okou/commit/5c0c306431cd1b74018b1bce69eee927867f77ea))
+* **api:** localize automatic oauth refresh client reads ([#42639](https://github.com/okou-ai/okou/issues/42639)) ([280e85d](https://github.com/okou-ai/okou/commit/280e85de0e652c51544cac19a17a224013cf71a8))
+* **api:** localize catalog runtime wakeup ownership ([#42651](https://github.com/okou-ai/okou/issues/42651)) ([1b7765c](https://github.com/okou-ai/okou/commit/1b7765c037bf550ee82d0f930d48ccf15b694a65))
+* **api:** localize custom connector grant persistence ([#42665](https://github.com/okou-ai/okou/issues/42665)) ([92c45b4](https://github.com/okou-ai/okou/commit/92c45b4e9015180f5915ab0750bbd494b1930798))
+* **api:** publish official forms reconfiguration atomically ([#42638](https://github.com/okou-ai/okou/issues/42638)) ([20c37fa](https://github.com/okou-ai/okou/commit/20c37fa2afc0b278a720db6e05d91b98b98c5ff1))
+* **api:** publish storage commits in one statement ([#42674](https://github.com/okou-ai/okou/issues/42674)) ([2393470](https://github.com/okou-ai/okou/commit/23934706c1d2891b93f4e862c0a5eabbc5e35905))
+* **api:** publish workflows in one atomic statement ([#42667](https://github.com/okou-ai/okou/issues/42667)) ([fabc408](https://github.com/okou-ai/okou/commit/fabc4086fba1e2d2e9e86f70c7619a3979047aa5))
+* **api:** sync file artifact projections atomically ([#42655](https://github.com/okou-ai/okou/issues/42655)) ([e0b8035](https://github.com/okou-ai/okou/commit/e0b8035d2ce5a5d05a69adfc9e2ddcbf63f1c0ab))
+* **api:** sync hosted artifact catalog in one statement ([#42670](https://github.com/okou-ai/okou/issues/42670)) ([df16274](https://github.com/okou-ai/okou/commit/df16274de31a1b9d794b532281ad4e0fa972fdf0))
+* remove expired deployment compatibility ([#42668](https://github.com/okou-ai/okou/issues/42668)) ([84f655c](https://github.com/okou-ai/okou/commit/84f655c516454ae8e596de430cdcdd569db67b7f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.1.2
+    * @okouai/core bumped to 8.783.3
+    * @okouai/db bumped to 2.1.3
+    * @okouai/pi-agent-runtime bumped to 1.50.64
+
 ## [2.1.3](https://github.com/okou-ai/okou/compare/api-v2.1.2...api-v2.1.3) (2026-10-23)
 
 

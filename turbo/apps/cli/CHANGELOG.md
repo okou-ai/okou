@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.0.4](https://github.com/okou-ai/okou/compare/cli-v10.0.3...cli-v10.0.4) (2026-10-23)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#42668](https://github.com/okou-ai/okou/issues/42668)) ([84f655c](https://github.com/okou-ai/okou/commit/84f655c516454ae8e596de430cdcdd569db67b7f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.1.2
+    * @okouai/core bumped to 8.783.3
+    * @okouai/pi-agent-runtime bumped to 1.50.64
+
 ## [10.0.3](https://github.com/okou-ai/okou/compare/cli-v10.0.2...cli-v10.0.3) (2026-10-23)
 
 

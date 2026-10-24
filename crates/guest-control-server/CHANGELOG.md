@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.24.39](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.38...guest-control-server-v0.24.39) (2026-10-23)
+
+
+### Refactoring
+
+* **guest-control:** pair eager file-write worker lifetime custody ([#42659](https://github.com/okou-ai/okou/issues/42659)) ([02da916](https://github.com/okou-ai/okou/commit/02da916d6718a4176312ffed2aa37d8446ad090f))
+* **guest-control:** return bounded capture results through thread custody ([#42646](https://github.com/okou-ai/okou/issues/42646)) ([5f7af61](https://github.com/okou-ai/okou/commit/5f7af617da846312a9c9d1e90c7df18decab1485))
+
 ## [0.24.38](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.37...guest-control-server-v0.24.38) (2026-10-23)
 
 
