@@ -8,7 +8,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     ChatMessage, showsAvatar: Bool, topSpacing: CGFloat, pendingRetry: Bool?, isSending: Bool,
     isWorkHistory: Bool = false)
   case work(ChatWorkSection, expanded: Bool, showsAvatar: Bool, topSpacing: CGFloat)
-  case footer(ChatExecutionState)
+  case footer(ChatExecutionState, showsAvatar: Bool)
   case failure(ChatMessage, AssistantFailureState, topSpacing: CGFloat)
   case followups(ChatRecommendedFollowupSource, finishedAt: Date?)
   case usage(runID: String, state: ConversationRunUsageState)

@@ -69,7 +69,10 @@ struct ChatDetailView: View {
     if let source = history.recommendedFollowups, conversation.pending.isEmpty {
       result.append(.followups(source, finishedAt: history.latestRunFinishAt))
     }
-    result.append(.footer(history.executionState))
+    let showsActivityAvatar =
+      history.executionState.isActive
+      && items.last(where: { $0.message?.isQueued != true })?.role != .assistant
+    result.append(.footer(history.executionState, showsAvatar: showsActivityAvatar))
     return result
   }
 
@@ -268,11 +271,14 @@ struct ChatDetailView: View {
         if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }
       }
       .padding(EdgeInsets(top: topSpacing, leading: 20, bottom: 0, trailing: 20))
-    case .footer(let executionState):
+    case .footer(let executionState, let showsAvatar):
       VStack(alignment: .leading, spacing: 24) {
         if executionState.isActive {
-          ConversationActivityLabel(
-            summary: conversation.activitySummary, state: executionState)
+          VStack(alignment: .leading, spacing: 8) {
+            if showsAvatar { assistantAvatar }
+            ConversationActivityLabel(
+              summary: conversation.activitySummary, state: executionState)
+          }
         }
         Color.clear.frame(height: 1)
       }
