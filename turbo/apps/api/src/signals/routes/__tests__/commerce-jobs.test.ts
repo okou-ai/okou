@@ -382,7 +382,7 @@ describe("Commerce async jobs", () => {
     });
   });
 
-  it("recovers the same job after a transient provider GET failure and bills once", async () => {
+  it("recovers the same job after failed and malformed provider reads and bills once", async () => {
     const user = await fundedActor();
     configureProvider();
     const beforeCredits = await credits(user);
@@ -400,13 +400,14 @@ describe("Commerce async jobs", () => {
       }),
       http.get(`${BASE}/products/task_get/advanced/${providerId}`, () => {
         polls++;
-        return polls === 1
-          ? new HttpResponse(null, { status: 503 })
-          : HttpResponse.json(
-              providerResponse(providerId, 20_000, 0, [
-                { type: "products", items: [product] },
-              ]),
-            );
+        if (polls === 1) {
+          return new HttpResponse(null, { status: 503 });
+        }
+        return HttpResponse.json(
+          providerResponse(providerId, 20_000, 0, [
+            { type: "products", items: polls === 2 ? null : [product] },
+          ]),
+        );
       }),
     );
     const created = await accept(
@@ -416,11 +417,13 @@ describe("Commerce async jobs", () => {
       }),
       [202],
     );
-    await expect(getJob(user, created.body.id)).resolves.toStrictEqual(
-      created.body,
-    );
-    expect(polls).toBe(1);
-    await expect(credits(user)).resolves.toBe(beforeCredits);
+    for (const attempt of [1, 2]) {
+      await expect(getJob(user, created.body.id)).resolves.toStrictEqual(
+        created.body,
+      );
+      expect(polls).toBe(attempt);
+      await expect(credits(user)).resolves.toBe(beforeCredits);
+    }
     const completed = await completeJob(user, created.body);
     expect(completed.job.id).toBe(created.body.id);
     expect(completed.result.result.items).toStrictEqual([product]);
@@ -441,7 +444,7 @@ describe("Commerce async jobs", () => {
       beforeUsage.totalCredits + charged,
     );
     expect(submissions).toBe(1);
-    expect(polls).toBe(2);
+    expect(polls).toBe(3);
   });
 
   it("completes and settles through independent cron requests without user polling", async () => {
@@ -1057,9 +1060,16 @@ describe("Commerce async jobs", () => {
   it("completes a billable empty search when DataForSEO reports no results", async () => {
     const user = await fundedActor();
     configureProvider();
+    const beforeCredits = await credits(user);
+    const beforeUsage = await personalUsage(user);
     const providerId = randomUUID();
-    const empty = providerResponse(providerId, 40_102, 0, null);
+    const empty = providerResponse(providerId, 40_102, 0, [
+      { keyword: "no matching product", items_count: 0, items: null },
+    ]);
     empty.tasks_error = 1;
+    empty.tasks = empty.tasks.map((task) => {
+      return { ...task, status_message: "No Search Results.", result_count: 0 };
+    });
     server.use(
       http.post(`${BASE}/products/task_post`, () => {
         return HttpResponse.json(
@@ -1078,8 +1088,90 @@ describe("Commerce async jobs", () => {
       [202],
     );
     const completed = await completeJob(user, created.body);
+    expect(completed.result).toMatchObject({
+      billingQuantity: 2400,
+      providerCostUsd: 0.0024,
+      result: { items: [], source: empty },
+    });
     expect(completed.result.result.items).toStrictEqual([]);
-    expect(completed.result.billingQuantity).toBe(2400);
-    expect(completed.result.creditsCharged).toBeGreaterThan(0);
+    const charged = completed.result.creditsCharged;
+    expect(charged).toBeGreaterThan(0);
+    if (charged === null) {
+      throw new Error("Expected empty Commerce search billing receipt");
+    }
+    await expect(credits(user)).resolves.toBe(beforeCredits - charged);
+    expect((await personalUsage(user)).totalCredits).toBe(
+      beforeUsage.totalCredits + charged,
+    );
+    await expect(getJob(user, created.body.id)).resolves.toStrictEqual(
+      completed.job,
+    );
+    await expect(credits(user)).resolves.toBe(beforeCredits - charged);
+    expect((await personalUsage(user)).totalCredits).toBe(
+      beforeUsage.totalCredits + charged,
+    );
+  });
+
+  it("fails an unavailable ASIN and settles its accepted submission fee once", async () => {
+    const user = await fundedActor();
+    configureProvider();
+    const beforeCredits = await credits(user);
+    const beforeUsage = await personalUsage(user);
+    const providerId = randomUUID();
+    const empty = providerResponse(providerId, 40_102, 0, [
+      { asin: "B0BTF6T8FV", items_count: 0, items: null },
+    ]);
+    empty.tasks_error = 1;
+    empty.tasks = empty.tasks.map((task) => {
+      return { ...task, status_message: "No Search Results.", result_count: 0 };
+    });
+    server.use(
+      http.post(`${BASE}/asin/task_post`, () => {
+        return HttpResponse.json(
+          providerResponse(providerId, 20_100, 0.003, null),
+        );
+      }),
+      http.get(`${BASE}/asin/task_get/advanced/${providerId}`, () => {
+        return HttpResponse.json(empty);
+      }),
+    );
+    const created = await accept(
+      client()(commerceContract).inspect({
+        headers: authenticate(user),
+        body: { target: "B0BTF6T8FV", async: true },
+      }),
+      [202],
+    );
+    const checkpoint = await getJob(user, created.body.id);
+    expect(checkpoint.status).toBe("running");
+    await expect(credits(user)).resolves.toBe(beforeCredits);
+    const failed = await getJob(user, created.body.id);
+    expect(failed).toMatchObject({
+      status: "failed",
+      operation: "inspect",
+      error: {
+        code: "COMMERCE_TASK_ERROR",
+        message: expect.any(String),
+      },
+      result: {
+        billingQuantity: 3000,
+        providerCostUsd: 0.003,
+        result: { items: [], source: empty },
+      },
+    });
+    const charged = failed.result?.creditsCharged;
+    expect(charged).toBeGreaterThan(0);
+    if (charged === null || charged === undefined) {
+      throw new Error("Expected unavailable ASIN billing receipt");
+    }
+    await expect(credits(user)).resolves.toBe(beforeCredits - charged);
+    expect((await personalUsage(user)).totalCredits).toBe(
+      beforeUsage.totalCredits + charged,
+    );
+    await expect(getJob(user, created.body.id)).resolves.toStrictEqual(failed);
+    await expect(credits(user)).resolves.toBe(beforeCredits - charged);
+    expect((await personalUsage(user)).totalCredits).toBe(
+      beforeUsage.totalCredits + charged,
+    );
   });
 });
