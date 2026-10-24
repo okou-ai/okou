@@ -233,10 +233,32 @@ impl ExecOperationTimeout {
     }
 }
 
+enum ExecOperationProcess {
+    Workload,
+    Agent,
+    SessionHistoryIdentityVerifier(
+        guest_contracts::session_history_identity::SessionHistoryIdentityVerifyRequest,
+    ),
+    CodexSessionCleanup(guest_contracts::codex_session_cleanup::CodexSessionCleanupRequest),
+}
+
+impl ExecOperationProcess {
+    fn role(&self) -> ExecProcessRole {
+        match self {
+            Self::Workload => ExecProcessRole::Workload,
+            Self::Agent => ExecProcessRole::Agent,
+            Self::SessionHistoryIdentityVerifier(_) => {
+                ExecProcessRole::SessionHistoryIdentityVerifier
+            }
+            Self::CodexSessionCleanup(_) => ExecProcessRole::CodexSessionCleanup,
+        }
+    }
+}
+
 pub(crate) struct ExecOperationWorkerRequest {
     seq: u32,
     lifecycle: ExecOperationLifecycle,
-    role: ExecProcessRole,
+    process: ExecOperationProcess,
     timeout: ExecOperationTimeout,
     command: String,
     env: Vec<(String, String)>,
@@ -250,17 +272,13 @@ pub(crate) struct ExecOperationWorkerRequest {
     exec_control_guard: Option<ExecControlGuard>,
     exec_control_bootstrap_endpoint: Option<String>,
     guest_agent_program: GuestAgentProgram,
-    session_history_identity_verify_request:
-        Option<guest_contracts::session_history_identity::SessionHistoryIdentityVerifyRequest>,
-    codex_session_cleanup_request:
-        Option<guest_contracts::codex_session_cleanup::CodexSessionCleanupRequest>,
     process_containment_mode: ProcessContainmentMode,
     drain_deadline: Duration,
 }
 
 impl ExecOperationWorkerRequest {
     fn process_class(&self) -> &'static str {
-        self.role.process_class()
+        self.process.role().process_class()
     }
 
     fn operation_kind(&self) -> &'static str {
@@ -268,7 +286,7 @@ impl ExecOperationWorkerRequest {
             ExecOperationLifecycle::OneShot => ExecLifecyclePolicy::OneShot,
             ExecOperationLifecycle::Supervised => ExecLifecyclePolicy::Supervised,
         };
-        self.role.operation_kind(lifecycle)
+        self.process.role().operation_kind(lifecycle)
     }
 
     pub(crate) fn from_decoded(
@@ -316,32 +334,31 @@ impl ExecOperationWorkerRequest {
                 "exec control policy requires supervised lifecycle",
             ));
         }
-        let (session_history_identity_verify_request, codex_session_cleanup_request) =
-            match decoded.role {
-                ExecProcessRole::Agent => {
-                    if !decoded.command.is_empty() {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "Agent process cannot select a command",
-                        ));
-                    }
-                    if decoded.sudo {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "Agent process cannot select sudo execution",
-                        ));
-                    }
-                    if decoded.stdin_bytes.is_some() {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "Agent process cannot provide stdin",
-                        ));
-                    }
-                    (None, None)
+        let process = match decoded.role {
+            ExecProcessRole::Agent => {
+                if !decoded.command.is_empty() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Agent process cannot select a command",
+                    ));
                 }
-                ExecProcessRole::SessionHistoryIdentityVerifier => {
-                    validate_session_history_identity_verifier_contract(&decoded)?;
-                    let request = serde_json::from_str::<
+                if decoded.sudo {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Agent process cannot select sudo execution",
+                    ));
+                }
+                if decoded.stdin_bytes.is_some() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Agent process cannot provide stdin",
+                    ));
+                }
+                ExecOperationProcess::Agent
+            }
+            ExecProcessRole::SessionHistoryIdentityVerifier => {
+                validate_session_history_identity_verifier_contract(&decoded)?;
+                let request = serde_json::from_str::<
                     guest_contracts::session_history_identity::SessionHistoryIdentityVerifyRequest,
                 >(decoded.command)
                 .map_err(|_| {
@@ -350,40 +367,40 @@ impl ExecOperationWorkerRequest {
                         "session history identity verifier payload is invalid",
                     )
                 })?;
-                    request.validate().map_err(|_| {
-                        io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "session history identity verifier payload is invalid",
-                        )
-                    })?;
-                    (Some(request), None)
-                }
-                ExecProcessRole::CodexSessionCleanup => {
-                    validate_codex_session_cleanup_contract(&decoded)?;
-                    let request = serde_json::from_str::<
-                        guest_contracts::codex_session_cleanup::CodexSessionCleanupRequest,
-                    >(decoded.command)
-                    .map_err(|_| {
-                        io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "Codex session cleanup payload is invalid",
-                        )
-                    })?;
-                    request.validate().map_err(|_| {
-                        io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "Codex session cleanup payload is invalid",
-                        )
-                    })?;
-                    (None, Some(request))
-                }
-                ExecProcessRole::Workload => (None, None),
-            };
+                request.validate().map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "session history identity verifier payload is invalid",
+                    )
+                })?;
+                ExecOperationProcess::SessionHistoryIdentityVerifier(request)
+            }
+            ExecProcessRole::CodexSessionCleanup => {
+                validate_codex_session_cleanup_contract(&decoded)?;
+                let request = serde_json::from_str::<
+                    guest_contracts::codex_session_cleanup::CodexSessionCleanupRequest,
+                >(decoded.command)
+                .map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Codex session cleanup payload is invalid",
+                    )
+                })?;
+                request.validate().map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Codex session cleanup payload is invalid",
+                    )
+                })?;
+                ExecOperationProcess::CodexSessionCleanup(request)
+            }
+            ExecProcessRole::Workload => ExecOperationProcess::Workload,
+        };
 
         Ok(Self {
             seq,
             lifecycle,
-            role: decoded.role,
+            process,
             timeout,
             command: decoded.command.to_owned(),
             env: decoded
@@ -401,8 +418,6 @@ impl ExecOperationWorkerRequest {
             exec_control_guard: None,
             exec_control_bootstrap_endpoint: None,
             guest_agent_program,
-            session_history_identity_verify_request,
-            codex_session_cleanup_request,
             process_containment_mode,
             drain_deadline,
         })
@@ -429,7 +444,10 @@ impl ExecOperationWorkerRequest {
     }
 
     pub(crate) fn validate_control_attachment(&self) -> io::Result<()> {
-        match (self.role, self.exec_control_bootstrap_endpoint.is_some()) {
+        match (
+            self.process.role(),
+            self.exec_control_bootstrap_endpoint.is_some(),
+        ) {
             (ExecProcessRole::Workload, false)
             | (ExecProcessRole::Agent, true)
             | (ExecProcessRole::SessionHistoryIdentityVerifier, false)
@@ -1421,7 +1439,7 @@ fn run_exec_operation_worker<S>(
     let process_containment = match ExecProcessContainment::create(
         request.seq,
         request.process_containment_mode,
-        request.role,
+        request.process.role(),
     ) {
         Ok(process_containment) => process_containment,
         Err(error) => {
@@ -1477,38 +1495,27 @@ fn run_exec_operation_worker<S>(
         env_refs.as_slice()
     };
     let shell_spawn_started = Instant::now();
-    let spawn_result = match request.role {
-        ExecProcessRole::Workload => spawn_shell_command_with_pipes(
+    let spawn_result = match &request.process {
+        ExecOperationProcess::Workload => spawn_shell_command_with_pipes(
             &request.command,
             effective_env,
             request.sudo,
             pipe_stdin,
             process_containment,
         ),
-        ExecProcessRole::Agent => spawn_agent_command_with_pipes(
+        ExecOperationProcess::Agent => spawn_agent_command_with_pipes(
             effective_env,
             process_containment,
             &request.guest_agent_program,
         ),
-        ExecProcessRole::SessionHistoryIdentityVerifier => {
-            let Some(verify_request) = request.session_history_identity_verify_request.as_ref()
-            else {
-                let _ = process_containment.cleanup(ProcessContainmentCleanupMode::Forced);
-                completion.start_failed("session history identity verifier payload is missing");
-                return;
-            };
+        ExecOperationProcess::SessionHistoryIdentityVerifier(verify_request) => {
             spawn_session_history_identity_verifier_with_pipes(
                 verify_request,
                 process_containment,
                 &request.guest_agent_program,
             )
         }
-        ExecProcessRole::CodexSessionCleanup => {
-            let Some(cleanup_request) = request.codex_session_cleanup_request.as_ref() else {
-                let _ = process_containment.cleanup(ProcessContainmentCleanupMode::Forced);
-                completion.start_failed("Codex session cleanup payload is missing");
-                return;
-            };
+        ExecOperationProcess::CodexSessionCleanup(cleanup_request) => {
             spawn_codex_session_cleanup_with_pipes(
                 cleanup_request,
                 process_containment,
@@ -1519,7 +1526,7 @@ fn run_exec_operation_worker<S>(
     let spawned = match spawn_result {
         Ok(spawned) => spawned,
         Err(e) => {
-            let diagnostic = match request.role {
+            let diagnostic = match request.process.role() {
                 ExecProcessRole::Workload => format!(
                     "Failed to execute: {e} ({})",
                     format_env_diagnostics(&request.command, &env_refs)
@@ -1656,7 +1663,7 @@ fn run_exec_operation_worker<S>(
         }
     };
 
-    if request.role == ExecProcessRole::Agent {
+    if request.process.role() == ExecProcessRole::Agent {
         let stages = AgentStartStages {
             containment_create,
             placement_broker_setup,
@@ -2504,7 +2511,7 @@ mod tests {
         ExecOperationWorkerRequest {
             seq,
             lifecycle: ExecOperationLifecycle::OneShot,
-            role: ExecProcessRole::Workload,
+            process: ExecOperationProcess::Workload,
             timeout: ExecOperationTimeout::Duration { timeout_ms: 0 },
             command: command.to_string(),
             env: Vec::new(),
@@ -2518,8 +2525,6 @@ mod tests {
             exec_control_guard: None,
             exec_control_bootstrap_endpoint: None,
             guest_agent_program: GuestAgentProgram::production(),
-            session_history_identity_verify_request: None,
-            codex_session_cleanup_request: None,
             process_containment_mode: ProcessContainmentMode::BuildConfigured,
             drain_deadline: EXEC_OUTPUT_DRAIN_DEADLINE,
         }
@@ -2591,7 +2596,7 @@ mod tests {
         );
 
         let mut agent = request(2, "true");
-        agent.role = ExecProcessRole::Agent;
+        agent.process = ExecOperationProcess::Agent;
         agent.lifecycle = ExecOperationLifecycle::Supervised;
         agent.control = ExecControlPolicy::Enabled {
             control_nonce: [2; guest_control_proto::EXEC_CONTROL_NONCE_LEN],
@@ -3115,7 +3120,7 @@ mod tests {
     #[test]
     fn contained_tool_oom_terminal_logging_keeps_failures_actionable() {
         let mut request = request(7, "private command must not be logged");
-        request.role = ExecProcessRole::Agent;
+        request.process = ExecOperationProcess::Agent;
         request.lifecycle = ExecOperationLifecycle::Supervised;
         // Production records that proved containment exited 1 and 124. Those
         // codes reach this branch only when the request declares them expected;
@@ -3213,7 +3218,7 @@ mod tests {
         ))
         .unwrap();
         let mut request = request(7, "private command must not be logged");
-        request.role = ExecProcessRole::Agent;
+        request.process = ExecOperationProcess::Agent;
         request.lifecycle = ExecOperationLifecycle::Supervised;
         for (known_runtime_counter, expected) in
             [(true, "agent_oom_kill"), (false, "unproven_containment")]
