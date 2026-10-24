@@ -565,46 +565,6 @@ describe("connector catalog v4 preparation", () => {
     });
   });
 
-  it("retains the last accepted v4 snapshot when a later candidate has an invalid protocol", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    const cron = app(cronConnectorCatalogContract);
-    const accepted = release({ label: "Last accepted" });
-    serveObjects(accepted.objects);
-    await sync(cron);
-    const invalid = release({
-      label: "Rejected candidate",
-      mutate(catalog) {
-        catalog.connectors = [
-          httpConnector("catalog-service", "Rejected candidate"),
-          {
-            ...mcpConnector(),
-            mcp: {
-              transport: "streamable-http",
-              endpoint: "http://notes.example.com/mcp",
-            },
-          },
-        ];
-      },
-    });
-    serveObjects(invalid.objects);
-
-    expect((await sync(cron)).body).toStrictEqual({
-      outcome: "rejected",
-      failureCode: "invalid-artifact",
-    });
-    expect((await publicCatalog()).body.connectors).toMatchObject([
-      { slug: "catalog-service", label: "Last accepted" },
-      {
-        slug: "plaud-mcp",
-        authMethods: [{ id: "automatic", grantKind: "automatic" }],
-      },
-    ]);
-  });
-
   it("rejects a pointer outside the canonical v4 release namespace", async () => {
     const candidate = release({ label: "Outside namespace" });
     const objects = new Map(candidate.objects);

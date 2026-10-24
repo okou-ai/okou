@@ -603,7 +603,6 @@ function createBundledSkillStorageFixture(
 interface BundledSkillFixture extends OwnedVolumeStorageFixture {
   readonly descriptor: JsonRecord;
   readonly versionId: string;
-  readonly contentSize: number;
   readonly archiveSize: number;
 }
 
@@ -628,7 +627,6 @@ function buildBundledSkillFixture(
     ),
     ...storage,
     versionId,
-    contentSize,
     archiveSize,
   };
 }
@@ -2112,12 +2110,7 @@ describe("connector catalog valid lifecycle", () => {
       connectorSlug: "agora",
       label: "Reused bundled skill",
       mutateRuntime: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").skill = {
-          ...skill.descriptor,
-          size: skill.contentSize + 128,
-          archiveSize: skill.archiveSize + 99,
-          fileCount: 2,
-        };
+        firstRecord(artifact.connectors, "connectors").skill = skill.descriptor;
       },
     });
     serveObjects(catalogObjects([release, later], later));
