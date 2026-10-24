@@ -61,7 +61,8 @@ ios_run_xcode() {
   local ios_observation_phase=$1
   shift
   if [[ "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true ]]; then
-    mkdir -p -m 700 "$build_root/startup-samples"
+    mkdir -p "$build_root/startup-samples"
+    chmod 700 "$build_root/startup-samples"
     echo "iOS starting $ios_observation_phase observer" >&2
     python3 ios/scripts/sample-xcode-startup.py "$build_root/startup-samples/$ios_observation_phase" -- \
       xcodebuild "$@"
