@@ -123,6 +123,11 @@ import {
   connectorCredentialStorageCursorDeletionPlan,
   connectorOwnedSecretWrite,
   connectorOwnedVariableWrite,
+  manualGrantConnectionMetadata,
+  manualGrantCredentialArgs,
+  manualGrantSecretWrite,
+  manualGrantVariableWrite,
+  requireManualGrantWrite,
   manualGrantUserSecretDeletion,
   manualGrantUserVariableDeletion,
 } from "./connector-credential-storage-write.service";
@@ -1438,69 +1443,6 @@ export const deleteBuiltinConnectorLocalState$ = command(
   },
 );
 
-async function writeManualGrantCredentials(
-  db: Db,
-  args: {
-    readonly connectorId: string;
-    readonly encryptedSecrets: readonly EncryptedManualGrantSecret[];
-    readonly method: ConnectorRuntimeMethod["method"];
-    readonly orgId: string;
-    readonly userId: string;
-    readonly variableValues: readonly PreparedManualGrantField[];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  for (const field of args.encryptedSecrets) {
-    const credential = {
-      connectorId: args.connectorId,
-      storage: args.method.storage,
-      orgId: args.orgId,
-      userId: args.userId,
-      name: field.name,
-      encryptedValue: field.encryptedValue,
-      description: null,
-      updatedDescription: null,
-    };
-    const write = connectorOwnedSecretWrite(credential);
-    const [row] = await db
-      .insert(secrets)
-      .values(write.values)
-      .onConflictDoUpdate(write.conflict)
-      .returning({ id: secrets.id });
-    if (!row) {
-      throw new Error(
-        `Connector secret ${credential.name} is owned by another row`,
-      );
-    }
-    signal.throwIfAborted();
-  }
-
-  for (const field of args.variableValues) {
-    const credential = {
-      connectorId: args.connectorId,
-      storage: args.method.storage,
-      orgId: args.orgId,
-      userId: args.userId,
-      name: field.name,
-      value: field.value,
-      description: null,
-      updatedDescription: null,
-    };
-    const write = connectorOwnedVariableWrite(credential);
-    const [row] = await db
-      .insert(variables)
-      .values(write.values)
-      .onConflictDoUpdate(write.conflict)
-      .returning({ id: variables.id });
-    if (!row) {
-      throw new Error(
-        `Connector variable ${credential.name} is owned by another row`,
-      );
-    }
-    signal.throwIfAborted();
-  }
-}
-
 interface CommitManualGrantConnectorArgs {
   readonly orgId: string;
   readonly userId: string;
@@ -1560,7 +1502,7 @@ function localTokenRevokeValues(
   };
 }
 
-function manualGrantUserCredentialCleanupValues(
+function manualGrantCleanupValues(
   args: Pick<CommitManualGrantConnectorArgs, "orgId" | "userId" | "prepared">,
   kind: "secret" | "variable",
 ) {
@@ -1637,33 +1579,37 @@ async function commitManualGrantConnector(
   const written = await replaceConnectorConnectionOutcome(
     db,
     {
-      orgId: args.orgId,
-      userId: args.userId,
-      authMethod: args.runtimeMethod.authMethodId,
-      storageVersion: args.runtimeMethod.method.storage.version,
-      tokenExpiresAt: null,
-      target: {
-        kind: "builtin",
-        connectorSlug: args.runtimeMethod.connectorSlug,
-        identity: { kind: "local" },
-      },
+      ...manualGrantConnectionMetadata(args),
       resolution: resolution.mutation,
       writeCredentials: async (
         { db: credentialDb, connectorId },
         writeSignal,
       ) => {
-        await writeManualGrantCredentials(
-          credentialDb,
-          {
-            connectorId,
-            encryptedSecrets: args.encryptedSecrets,
-            method: args.runtimeMethod.method,
-            orgId: args.orgId,
-            userId: args.userId,
-            variableValues: args.prepared.variableValues,
-          },
-          writeSignal,
-        );
+        const credentialArgs = manualGrantCredentialArgs(args, connectorId);
+        const credentialSignal = writeSignal;
+        await (async (): Promise<void> => {
+          for (const field of credentialArgs.encryptedSecrets) {
+            const write = manualGrantSecretWrite(credentialArgs, field);
+            const [row] = await credentialDb
+              .insert(secrets)
+              .values(write.values)
+              .onConflictDoUpdate(write.conflict)
+              .returning({ id: secrets.id });
+            requireManualGrantWrite(row, "secret", write.values.name);
+            credentialSignal.throwIfAborted();
+          }
+
+          for (const field of credentialArgs.variableValues) {
+            const write = manualGrantVariableWrite(credentialArgs, field);
+            const [row] = await credentialDb
+              .insert(variables)
+              .values(write.values)
+              .onConflictDoUpdate(write.conflict)
+              .returning({ id: variables.id });
+            requireManualGrantWrite(row, "variable", write.values.name);
+            credentialSignal.throwIfAborted();
+          }
+        })();
       },
     },
     signal,
@@ -1672,7 +1618,7 @@ async function commitManualGrantConnector(
     return connectorConnectionMutationFailure(written);
   }
   const connectorRow = written.row;
-  const secretCleanup = manualGrantUserCredentialCleanupValues(args, "secret");
+  const secretCleanup = manualGrantCleanupValues(args, "secret");
   const secretCleanupSignal = signal;
   await (async (): Promise<void> => {
     for (const name of secretCleanup.names) {
@@ -1685,10 +1631,7 @@ async function commitManualGrantConnector(
       secretCleanupSignal.throwIfAborted();
     }
   })();
-  const variableCleanup = manualGrantUserCredentialCleanupValues(
-    args,
-    "variable",
-  );
+  const variableCleanup = manualGrantCleanupValues(args, "variable");
   const variableCleanupSignal = signal;
   await (async (): Promise<void> => {
     for (const name of variableCleanup.names) {
