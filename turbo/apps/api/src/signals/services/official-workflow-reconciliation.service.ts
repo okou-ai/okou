@@ -43,10 +43,10 @@ import {
   notExists,
   sql,
 } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
-import { nowDate, timestampWithoutTimeZone } from "../../lib/time";
+import { nowDate, nowDateSql, timestampWithoutTimeZone } from "../../lib/time";
 import { pgNullDecoder, pgTextDecoder } from "../../lib/db-structured-result";
 
 import {
@@ -1532,43 +1532,64 @@ function automationStructureChanged(
   );
 }
 
-const stageAutomationStructureTransition$ = command(
-  async (
-    { set },
-    args: ExistingAutomationReconciliationArgs,
-    signal: AbortSignal,
-  ): Promise<PersistedReconfiguration | null> => {
-    const db = set(writeDb$);
+function structureTransitionBaselineCondition(expected: OfficialAutomationRow) {
+  const current = alias(workflowAutomations, "stage_locked_automation");
+  if (expected.atTime !== null && !Number.isFinite(expected.atTime.getTime())) {
+    return sql`false`;
+  }
+  return and(
+    eq(current.id, expected.id),
+    eq(current.workflowId, expected.workflowId),
+    eq(current.kind, expected.kind),
+    sql`${current.eventType} IS NOT DISTINCT FROM ${expected.eventType}`,
+    sql`COALESCE(${current.eventConfig}, 'null'::jsonb) = ${JSON.stringify(expected.eventConfig)}::jsonb`,
+    sql`${current.scheduleType} IS NOT DISTINCT FROM ${expected.scheduleType}`,
+    sql`${current.cronExpression} IS NOT DISTINCT FROM ${expected.cronExpression}`,
+    sql`${current.intervalSeconds} IS NOT DISTINCT FROM ${expected.intervalSeconds}`,
+    expected.atTime === null
+      ? isNull(current.atTime)
+      : eq(
+          sql`date_trunc('milliseconds', ${current.atTime})`,
+          sql`${timestampWithoutTimeZone(expected.atTime)}::timestamp`,
+        ),
+    eq(current.timezone, expected.timezone),
+    eq(current.autonomyBudget, expected.autonomyBudget),
+    sql`${current.officialBlueprintKey} IS NOT DISTINCT FROM ${expected.officialBlueprintKey}`,
+    sql`${current.officialAppliedFingerprint} IS NOT DISTINCT FROM ${expected.officialAppliedFingerprint}`,
+    sql`${current.officialReconciliationStatus} IS NOT DISTINCT FROM ${expected.officialReconciliationStatus}`,
+    sql`COALESCE(${current.officialParameterBindings}, 'null'::jsonb) = ${JSON.stringify(expected.officialParameterBindings)}::jsonb`,
+  );
+}
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0201; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
-      await tx.execute(acceptedCatalogLockStatement());
-      const [catalogRow] = parseRawRows(
-        acceptedCatalogRowSchema,
-        await tx.execute(acceptedCatalogReadStatement()),
-      );
-      signal.throwIfAborted();
-      const catalogIdentity = blueprintAuthorityIdentity(args);
-      const acceptedDefinition = matchingAcceptedBlueprintDefinition(
-        acceptedCatalogFromRow(catalogRow),
-        catalogIdentity,
-      );
-      if (!acceptedDefinition) {
-        return null;
-      }
-      const [revisionRow] = parseRawRows(
-        acceptedRevisionRowSchema,
-        await tx.execute(acceptedRevisionReadStatement(acceptedDefinition)),
-      );
-      signal.throwIfAborted();
-      if (!acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)) {
-        return null;
-      }
-      const [installedWorkflow] = await tx
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(
+function structureTransitionOwnership(
+  args: ExistingAutomationReconciliationArgs,
+  releaseId: string,
+  acceptedDefinition: OfficialWorkflowAcceptedDefinition,
+) {
+  const builder = new QueryBuilder();
+  const catalogFence = builder.$with("stage_catalog_fence").as(
+    builder
+      .select({ authority: officialWorkflowCatalogState.authority })
+      .from(officialWorkflowCatalogState)
+      .where(
+        and(
+          eq(
+            officialWorkflowCatalogState.authority,
+            OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+          ),
+          eq(officialWorkflowCatalogState.acceptedReleaseId, releaseId),
+        ),
+      )
+      .for("share"),
+  );
+  const revisionPlan =
+    acceptedOfficialWorkflowRevisionReadPlan(acceptedDefinition);
+  const installed = builder.$with("stage_installed_workflow").as(
+    builder
+      .select({ id: workflows.id })
+      .from(workflows)
+      .where(
+        and(
           installedWorkflowCondition(
             {
               orgId: args.orgId,
@@ -1577,47 +1598,173 @@ const stageAutomationStructureTransition$ = command(
             },
             args.automation.workflowId,
           ),
-        )
-        .for("update")
-        .limit(1);
-      if (!installedWorkflow) {
-        return null;
-      }
-      const [current] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(reconfigurationSourceCondition(args.automation))
-        .for("update")
-        .limit(1);
-      if (
-        !current ||
-        !sameAutomationConfigurationBaseline(args.automation, current)
-      ) {
-        return null;
-      }
-      const currentTime = nowDate();
-      const [staged] = await tx
+          exists(builder.select().from(catalogFence)),
+          exists(
+            builder
+              .select(revisionPlan.columns)
+              .from(officialWorkflowDefinitionRevisions)
+              .innerJoin(storages, revisionPlan.storageJoin)
+              .innerJoin(storageVersions, revisionPlan.storageVersionJoin)
+              .where(revisionPlan.condition),
+          ),
+        ),
+      )
+      .for("update")
+      .limit(1),
+  );
+  const columns = workflowAutomationColumns();
+  const selectedColumns = {
+    ...columns,
+    observedUpdatedAt: columns.observedUpdatedAt.as("observedUpdatedAt"),
+    observedXmin: columns.observedXmin.as("observedXmin"),
+  };
+  // Retain the existing catalog -> installation -> automation lock order.
+  // The locked tuple supplies both the baseline and the compensation receipt.
+  const locked = builder.$with("stage_locked_automation").as(
+    builder
+      .select(selectedColumns)
+      .from(workflowAutomations)
+      .where(
+        and(
+          reconfigurationSourceCondition(args.automation),
+          exists(builder.select().from(installed)),
+        ),
+      )
+      .for("update")
+      .limit(1),
+  );
+  const owned = builder
+    .$with("stage_owned_automation")
+    .as(
+      builder
+        .select()
+        .from(locked)
+        .where(structureTransitionBaselineCondition(args.automation)),
+    );
+  return { catalogFence, installed, locked, owned };
+}
+
+const stageAutomationStructureTransition$ = command(
+  async (
+    { set },
+    args: ExistingAutomationReconciliationArgs,
+    signal: AbortSignal,
+  ): Promise<PersistedReconfiguration | null> => {
+    const db = set(writeDb$);
+    // Parse immutable publication payloads before mutation. A replacement of the
+    // accepted pointer makes the final statement decline this prepared revision.
+    const [catalogRow] = parseRawRows(
+      acceptedCatalogRowSchema,
+      await db.execute(acceptedCatalogReadStatement()),
+    );
+    signal.throwIfAborted();
+    const catalogIdentity = blueprintAuthorityIdentity(args);
+    const catalog = acceptedCatalogFromRow(catalogRow);
+    const acceptedDefinition = matchingAcceptedBlueprintDefinition(
+      catalog,
+      catalogIdentity,
+    );
+    if (!catalog || !acceptedDefinition) {
+      return null;
+    }
+    const [revisionRow] = parseRawRows(
+      acceptedRevisionRowSchema,
+      await db.execute(acceptedRevisionReadStatement(acceptedDefinition)),
+    );
+    signal.throwIfAborted();
+    if (!acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)) {
+      return null;
+    }
+
+    const { catalogFence, installed, locked, owned } =
+      structureTransitionOwnership(args, catalog.releaseId, acceptedDefinition);
+    const columns = workflowAutomationColumns();
+    const selectedColumns = {
+      ...columns,
+      observedUpdatedAt: columns.observedUpdatedAt.as("observedUpdatedAt"),
+      observedXmin: columns.observedXmin.as("observedXmin"),
+    };
+    const staged = db.$with("stage_updated_automation").as(
+      db
         .update(workflowAutomations)
         .set({
           enabled: false,
           nextRunAt: null,
           officialReconciliationStatus: "reconciling",
-          updatedAt: currentTime,
+          updatedAt: nowDateSql(),
         })
-        .where(eq(workflowAutomations.id, current.id))
-        .returning(workflowAutomationColumns());
-      if (!staged) {
-        throw new Error("Official Workflow automation disappeared");
-      }
-      await tx
-        .insert(officialWorkflowAutomationIdentities)
-        .values(activeIdentityValues(staged, currentTime))
-        .onConflictDoUpdate(activeIdentityConflict(staged, currentTime));
-      return {
-        previous: current,
-        current: staged,
-      };
-    });
+        .from(owned)
+        .where(
+          and(
+            eq(workflowAutomations.id, owned.id),
+            isNotNull(owned.officialBlueprintKey),
+            ne(owned.officialBlueprintKey, ""),
+          ),
+        )
+        .returning(selectedColumns),
+    );
+    const identities = officialWorkflowAutomationIdentities;
+    const identity = db.$with("stage_updated_identity").as(
+      db
+        .insert(identities)
+        .select(
+          db
+            .select({
+              id: staged.id,
+              workflowId: staged.workflowId,
+              automationId: staged.id,
+              blueprintKey: staged.officialBlueprintKey,
+              state: sql`'active'`.mapWith(identities.state).as("state"),
+              retainedParameterBindings: sql`NULL`
+                .mapWith(pgNullDecoder)
+                .as("retained_parameter_bindings"),
+              retainedIntendedEnabled: sql`NULL`
+                .mapWith(pgNullDecoder)
+                .as("retained_intended_enabled"),
+              retainedAppliedFingerprint: sql`NULL`
+                .mapWith(pgNullDecoder)
+                .as("retained_applied_fingerprint"),
+              createdAt: staged.updatedAt,
+              updatedAt: staged.updatedAt,
+            })
+            .from(staged),
+        )
+        .onConflictDoUpdate({
+          target: [identities.workflowId, identities.blueprintKey],
+          set: {
+            automationId: sql`excluded.automation_id`,
+            state: "active",
+            retainedParameterBindings: null,
+            retainedIntendedEnabled: null,
+            retainedAppliedFingerprint: null,
+            updatedAt: sql`excluded.updated_at`,
+          },
+        })
+        .returning({ automationId: identities.automationId }),
+    );
+    const [row] = await db
+      .with(catalogFence, installed, locked, owned, staged, identity)
+      .select({
+        previous: automationMaterializationColumns("stage_owned_automation"),
+        current: automationMaterializationColumns("stage_updated_automation"),
+        identityId: identity.automationId,
+      })
+      .from(owned)
+      .leftJoin(staged, eq(staged.id, owned.id))
+      .leftJoin(identity, eq(identity.automationId, staged.id));
+    signal.throwIfAborted();
+    if (!row) {
+      return null;
+    }
+    const previous = row.previous;
+    const current = row.current;
+    if (!previous.officialBlueprintKey) {
+      throw new Error("Official Workflow automation identity is incomplete");
+    }
+    if (!current || !row.identityId) {
+      throw new Error("Official Workflow automation disappeared");
+    }
+    return { previous, current };
   },
 );
 
@@ -3331,7 +3478,7 @@ const finalizeDormantMaterialization$ = command(
   },
 );
 /** Schema columns decode both committed tuples; the CTE retains xmin as text. */
-function discardedMaterializationColumns(name: string) {
+function automationMaterializationColumns(name: string) {
   const automation = alias(workflowAutomations, name);
   return {
     ...getTableColumns(automation),
@@ -3494,8 +3641,8 @@ const persistDiscardedMaterialization$ = command(
         failedIdentity,
       )
       .select({
-        previous: discardedMaterializationColumns("discard_locked_automation"),
-        current: discardedMaterializationColumns("discard_failed_automation"),
+        previous: automationMaterializationColumns("discard_locked_automation"),
+        current: automationMaterializationColumns("discard_failed_automation"),
         identityId: failedIdentity.id,
       })
       .from(owned)

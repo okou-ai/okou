@@ -2842,6 +2842,95 @@ describe("Morning Brief catalog reconciliation", () => {
     };
   }
 
+  it.each([false, true])(
+    "retains identity and pause intent through schedule/event transitions (paused=%s)",
+    async (paused) => {
+      await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+        const { actor, installation, initial, first, blueprint, source } =
+          await prepareReconciledSchedule({
+            definitionName: "morning-brief",
+            paused,
+            withBindings: false,
+          });
+        const watched = await accept(
+          setupApp({ context, routes: chatThreadRoutes })(
+            chatThreadsContract,
+          ).create({
+            headers: authHeaders(actor),
+            body: { agentId: installation.agentId },
+          }),
+          [201],
+        );
+        const eventBlueprint: OfficialWorkflowBlueprint = {
+          key: "daily-delivery",
+          parameters: [],
+          desiredState: {
+            kind: "event",
+            eventType: "chat-run-finished",
+            eventConfig: {
+              provider: "chat",
+              event: "run_finished",
+              chatThreadId: watched.body.id,
+            },
+          },
+        };
+        expect((await syncCatalog(source([eventBlueprint]))).body.outcome).toBe(
+          "accepted",
+        );
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        await expect(
+          listMorningBriefAutomations(actor, installation.id),
+        ).resolves.toMatchObject([
+          {
+            id: initial.id,
+            kind: "event",
+            eventType: "chat-run-finished",
+            eventConfig: { chatThreadId: watched.body.id },
+            chatThreadId: first.chatThreadId,
+            enabled: !paused,
+            nextRunAt: null,
+            official: {
+              blueprintKey: "daily-delivery",
+              intendedEnabled: !paused,
+              reconciliationStatus: "current",
+            },
+          },
+        ]);
+        expect(
+          (await syncCatalog(source([blueprint(false)]))).body.outcome,
+        ).toBe("accepted");
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        const [restored] = await listMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        expect(restored).toMatchObject({
+          id: initial.id,
+          kind: "schedule",
+          chatThreadId: first.chatThreadId,
+          enabled: !paused,
+          schedule: {
+            type: "cron",
+            cronExpression: "0 8 * * *",
+            timezone: "Asia/Tokyo",
+          },
+          official: {
+            blueprintKey: "daily-delivery",
+            intendedEnabled: !paused,
+            reconciliationStatus: "current",
+          },
+        });
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        await expect(
+          listMorningBriefAutomations(actor, installation.id),
+        ).resolves.toStrictEqual([restored]);
+      });
+    },
+  );
+
   it.each(scenarios)(
     "reconciles, removes and restores a schedule without replacing identities ($definitionName, paused=$paused, bindings=$withBindings)",
     async ({ definitionName, paused, withBindings }) => {
