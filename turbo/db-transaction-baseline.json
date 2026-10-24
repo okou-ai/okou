@@ -137,11 +137,6 @@
       "owner": "commitStaleRunTimeout"
     },
     {
-      "id": "TX-0129",
-      "file": "turbo/apps/api/src/signals/services/cron-compact-usage-events.service.ts",
-      "owner": "compactUsageEventBatch$"
-    },
-    {
       "id": "TX-0130",
       "file": "turbo/apps/api/src/signals/services/cron-project-chat-event-search.service.ts",
       "owner": "projectThread"
