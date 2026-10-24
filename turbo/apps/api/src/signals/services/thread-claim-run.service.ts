@@ -3025,8 +3025,9 @@ export function createThreadClaimRunObjects(
    * and its error message, settle an automation tick, publish the realtime
    * event and deliver the failure to the source integration. With `lease`, the
    * rejection and the release of that lease commit together, and only while
-   * the claim still holds it; otherwise the transaction rolls back and nothing
-   * changes. The queue row is locked last, as enqueue does.
+   * the claim still holds it; otherwise the statement rolls back every write.
+   * The event sequence is reserved first, then the queue lease is released
+   * before the rejection events and thread sort writes.
    */
   const rejectionInput$ = command(
     async ({ get }, head: RejectedQueueHead, signal: AbortSignal) => {
