@@ -55,7 +55,7 @@ import {
   type ConnectorRuntimeSnapshot,
   type ConnectorRuntimeMethod,
 } from "./connector-catalog-runtime.service";
-import { loadAcceptedConnectorCatalogSnapshot } from "./connector-catalog-external-reader.service";
+import { loadAcceptedConnectorCatalogSnapshot$ } from "./connector-catalog-external-reader.service";
 import {
   resolveConnectorRuntimeDiagnosticTargets$,
   type ConnectorRuntimeDiagnosticResult,
@@ -1604,7 +1604,7 @@ export const resolveConnectorCheck$ = command(
       return { kind: "ok", diagnostic: parsed };
     }
 
-    const db = set(writeDb$);
+    set(writeDb$);
     let runRegistration: RunDiagnosticRegistration | undefined;
     if (args.stateSource.kind === "run") {
       const registration = await set(readRunDiagnosticRegistration$, {
@@ -1626,7 +1626,7 @@ export const resolveConnectorCheck$ = command(
     }
 
     const snapshot = materializeConnectorRuntimeSnapshot(
-      await loadAcceptedConnectorCatalogSnapshot(db),
+      await set(loadAcceptedConnectorCatalogSnapshot$),
     );
     signal.throwIfAborted();
     let timeline: ConnectorCheckTimeline;

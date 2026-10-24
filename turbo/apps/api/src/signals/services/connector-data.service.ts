@@ -88,7 +88,7 @@ import {
 import { normalizeManualGrantSubmittedValuesWithMethod } from "./connector-catalog-form-fields.service";
 import {
   connectorCatalogSearchFromSnapshot,
-  loadAcceptedConnectorCatalogSnapshot,
+  loadAcceptedDisplayConnectorCatalogSnapshot$,
 } from "./connector-catalog-external-reader.service";
 import { isConnectorCatalogUnavailableError } from "./connector-catalog-reader.service";
 import type {
@@ -2912,12 +2912,15 @@ export function builtinConnectorScopeDiff(
   });
 }
 
-export function builtinConnectorSearch(args: {
-  readonly orgId: string | undefined;
-  readonly userId: string;
-  readonly keyword: string | undefined;
-}): Computed<Promise<BuiltinConnectorSearchItem[]>> {
-  return computed(async (get) => {
+export const builtinConnectorSearch$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly orgId: string | undefined;
+      readonly userId: string;
+      readonly keyword: string | undefined;
+    },
+  ): Promise<BuiltinConnectorSearchItem[]> => {
     const overrides = args.orgId
       ? await get(userFeatureSwitchOverrides(args.orgId, args.userId))
       : {};
@@ -2926,15 +2929,13 @@ export function builtinConnectorSearch(args: {
       orgId: args.orgId,
       overrides,
     });
-    const catalogSearchDb = get(db$);
+    get(db$);
     const catalogSearchKeyword = args.keyword;
     return (async () => {
       return await (async () => {
         const viewArgs = { keyword: catalogSearchKeyword, featureStates };
-        const snapshot = await loadAcceptedConnectorCatalogSnapshot(
-          catalogSearchDb,
-          undefined,
-          "display",
+        const snapshot = await set(
+          loadAcceptedDisplayConnectorCatalogSnapshot$,
         );
         return connectorCatalogSearchFromSnapshot({
           ...viewArgs,
@@ -2942,5 +2943,5 @@ export function builtinConnectorSearch(args: {
         });
       })();
     })();
-  });
-}
+  },
+);
