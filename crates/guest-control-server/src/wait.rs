@@ -5,7 +5,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::drain::DrainCancellation;
+use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::process::{
     ChildProcess, kill_and_reap_child, kill_owned_child_process_group, process_signal_pid,
 };
@@ -58,6 +58,34 @@ pub(crate) fn await_drain_deadline(
     }
     cancel.cancel();
     completed
+}
+
+/// Collect both fixed-helper output streams after cancelling lagging readers.
+/// A completion notification does not replace either physical thread join.
+pub(crate) fn collect_bounded_output(
+    stdout_drain: BoundedDrainHandle,
+    stderr_drain: BoundedDrainHandle,
+    done_rx: &mpsc::Receiver<()>,
+    cancel: &DrainCancellation,
+    drain_deadline: Duration,
+) -> (BoundedDrainResult, BoundedDrainResult) {
+    let completed = await_drain_deadline(done_rx, 2, cancel, drain_deadline);
+    let stdout_result = stdout_drain.join();
+    let stderr_result = stderr_drain.join();
+    let drains_incomplete = completed < 2 || stdout_result.is_err() || stderr_result.is_err();
+    let mut stdout = stdout_result.unwrap_or_default();
+    let mut stderr = stderr_result.unwrap_or_default();
+    if drains_incomplete {
+        stdout.capture_truncated = true;
+        stderr.capture_truncated = true;
+    }
+    if stdout.captured.is_none() {
+        stdout.captured = Some(Vec::new());
+    }
+    if stderr.captured.is_none() {
+        stderr.captured = Some(Vec::new());
+    }
+    (stdout, stderr)
 }
 
 /// Wait for `child` while observing its owning connection cancellation flag
