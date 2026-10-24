@@ -242,11 +242,6 @@
       "owner": "recordRunnerUsageBatch$"
     },
     {
-      "id": "TX-0235",
-      "file": "turbo/apps/api/src/signals/services/provider-usage-publication.service.ts",
-      "owner": "recordProviderUsageBatch$"
-    },
-    {
       "id": "TX-0236",
       "file": "turbo/apps/api/src/signals/services/run-built-in-admission.service.ts",
       "owner": "startRunBuiltInAdmission$"
