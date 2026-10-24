@@ -42,7 +42,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   completedGetStartedQuestSql,
@@ -115,7 +115,9 @@ import {
   builtinConnectorCredentialStatusWithMethod,
 } from "./connector-credential-status.service";
 import {
-  deleteConnectorCredentialStorageConnection,
+  connectorCredentialStorageConnectionDeletionPlan,
+  connectorCredentialStorageSelectionDeletionPlan,
+  connectorCredentialStorageCursorDeletionPlan,
   connectorOwnedSecretWrite,
   connectorOwnedVariableWrite,
   manualGrantUserSecretDeletion,
@@ -955,15 +957,34 @@ const prepareDeletedConnectorMeetCleanup$ = command(
   },
 );
 
-async function deleteBuiltinConnectorAccountLocalState(
-  tx: Tx,
-  args: DeleteBuiltinConnectorLocalStateArgs & {
+type DeleteBuiltinConnectorAccountLocalStateArgs =
+  DeleteBuiltinConnectorLocalStateArgs & {
     readonly account: { readonly connectionId: string };
     readonly deletion: Extract<
       Awaited<ReturnType<typeof prepareBuiltinConnectorAccountDeletion>>,
       { kind: "ready" }
     >;
-  },
+  };
+
+function builtinConnectorLocalAccountDeletionResult(args: {
+  readonly pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null;
+  readonly deletion: DeleteBuiltinConnectorAccountLocalStateArgs["deletion"];
+  readonly lateSelectionCount: number;
+}) {
+  return {
+    kind: "deleted" as const,
+    pendingTokenRevoke: args.pendingTokenRevoke,
+    deletion: {
+      ...args.deletion,
+      resolvedSelectionCount:
+        args.deletion.resolvedSelectionCount + args.lateSelectionCount,
+    },
+  };
+}
+
+async function deleteBuiltinConnectorAccountLocalState(
+  tx: Tx,
+  args: DeleteBuiltinConnectorAccountLocalStateArgs,
   snapshot: ConnectorRuntimeSelection | null,
   featureSwitchContext: FeatureSwitchContext | null,
   signal: AbortSignal,
@@ -1040,20 +1061,65 @@ async function deleteBuiltinConnectorAccountLocalState(
   }
   signal.throwIfAborted();
 
-  const lateSelectionCount = await deleteConnectorCredentialStorageConnection(
-    tx,
-    { connectorId: existing.id },
-    signal,
-  );
-  return {
-    kind: "deleted" as const,
+  /**
+   * Use the caller's transaction to delete the account, then resolve references
+   * in the next SQL snapshot. The existing deferred account FK is checked at commit. A selection
+   * committed before the deletion's ordinary parent-row mutation is included in
+   * the child DELETE; a later insert fails its FK check. No lock-only write or
+   * SELECT lock is used, and the exact returned count includes late references.
+   */
+  const storageDeletionDb = tx;
+  const storageDeletionArgs = { connectorId: existing.id };
+  const lateSelectionCount = await (async () => {
+    const plan =
+      connectorCredentialStorageConnectionDeletionPlan(storageDeletionArgs);
+    await storageDeletionDb.delete(plan.secrets.from).where(plan.secrets.where);
+    signal.throwIfAborted();
+    await storageDeletionDb
+      .delete(plan.variables.from)
+      .where(plan.variables.where);
+    signal.throwIfAborted();
+    await storageDeletionDb.execute(plan.deferSelections);
+    const deleted = await storageDeletionDb
+      .delete(plan.account.from)
+      .where(plan.account.where)
+      .returning(plan.account.returning);
+    let lateSelectionCount = 0;
+    if (deleted.length > 0) {
+      const selection =
+        connectorCredentialStorageSelectionDeletionPlan(deleted);
+      const selections = await storageDeletionDb
+        .delete(selection.from)
+        .where(selection.where)
+        .returning(selection.returning);
+      lateSelectionCount = selections.length;
+    }
+    await storageDeletionDb.execute(plan.enforceSelections);
+    if (deleted.length > 0) {
+      // FK deletion has already cleared event_connector_id. Use the retained
+      // source config to invalidate only cursors belonging to deleted accounts.
+      // A subsequent projection onto a new account is a different source.
+      const cursor = connectorCredentialStorageCursorDeletionPlan(deleted);
+      await storageDeletionDb
+        .delete(cursor.from)
+        .where(
+          inArray(
+            cursor.automationId,
+            storageDeletionDb
+              .select(cursor.automations.columns)
+              .from(cursor.automations.from)
+              .where(cursor.automations.where),
+          ),
+        );
+    }
+    signal.throwIfAborted();
+    return lateSelectionCount;
+  })();
+  return builtinConnectorLocalAccountDeletionResult({
     pendingTokenRevoke,
-    deletion: {
-      ...deletion,
-      resolvedSelectionCount:
-        deletion.resolvedSelectionCount + lateSelectionCount,
-    },
-  };
+    deletion,
+    lateSelectionCount,
+  });
 }
 
 const stopDeletedWatches$ = command(

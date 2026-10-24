@@ -91,7 +91,9 @@ import {
 import {
   connectorOwnedSecretWrite,
   connectorOwnedVariableWrite,
-  deleteConnectorCredentialStorageConnection,
+  connectorCredentialStorageConnectionDeletionPlan,
+  connectorCredentialStorageSelectionDeletionPlan,
+  connectorCredentialStorageCursorDeletionPlan,
 } from "./connector-credential-storage-write.service";
 import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
 import {
@@ -3495,16 +3497,11 @@ export const setCustomConnectorValues$ = command(
   },
 );
 
-export const deleteCustomConnectorAccount$ = command(
-  async (
-    { set },
-    args: DeleteCustomConnectorAccountArgs,
-    signal: AbortSignal,
-  ) => {
+const deleteCustomConnectorAccount$ = command(
+  ({ set }, args: DeleteCustomConnectorAccountArgs, signal: AbortSignal) => {
     const writeDb = set(writeDb$);
-    let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0148; new non-billing transactions are prohibited.
-    const deletion = writeDb.transaction(
+    return writeDb.transaction(
       async (tx) => {
         const [connector] = await tx
           .select({
@@ -3556,12 +3553,67 @@ export const deleteCustomConnectorAccount$ = command(
           if (deletion.kind !== "ready") {
             return deletion;
           }
-          const lateSelectionCount =
-            await deleteConnectorCredentialStorageConnection(
-              memberDeletionDb,
-              { connectorId: memberDeletionArgs.memberConnectorId },
-              signal,
-            );
+          /**
+           * Use the caller's transaction to delete the account, then resolve references
+           * in the next SQL snapshot. The existing deferred account FK is checked at commit. A selection
+           * committed before the deletion's ordinary parent-row mutation is included in
+           * the child DELETE; a later insert fails its FK check. No lock-only write or
+           * SELECT lock is used, and the exact returned count includes late references.
+           */
+          const storageDeletionDb = memberDeletionDb;
+          const storageDeletionArgs = {
+            connectorId: memberDeletionArgs.memberConnectorId,
+          };
+          const lateSelectionCount = await (async () => {
+            const plan =
+              connectorCredentialStorageConnectionDeletionPlan(
+                storageDeletionArgs,
+              );
+            await storageDeletionDb
+              .delete(plan.secrets.from)
+              .where(plan.secrets.where);
+            signal.throwIfAborted();
+            await storageDeletionDb
+              .delete(plan.variables.from)
+              .where(plan.variables.where);
+            signal.throwIfAborted();
+            await storageDeletionDb.execute(plan.deferSelections);
+            const deleted = await storageDeletionDb
+              .delete(plan.account.from)
+              .where(plan.account.where)
+              .returning(plan.account.returning);
+            let lateSelectionCount = 0;
+            if (deleted.length > 0) {
+              const selection =
+                connectorCredentialStorageSelectionDeletionPlan(deleted);
+              const selections = await storageDeletionDb
+                .delete(selection.from)
+                .where(selection.where)
+                .returning(selection.returning);
+              lateSelectionCount = selections.length;
+            }
+            await storageDeletionDb.execute(plan.enforceSelections);
+            if (deleted.length > 0) {
+              // FK deletion has already cleared event_connector_id. Use the retained
+              // source config to invalidate only cursors belonging to deleted accounts.
+              // A subsequent projection onto a new account is a different source.
+              const cursor =
+                connectorCredentialStorageCursorDeletionPlan(deleted);
+              await storageDeletionDb
+                .delete(cursor.from)
+                .where(
+                  inArray(
+                    cursor.automationId,
+                    storageDeletionDb
+                      .select(cursor.automations.columns)
+                      .from(cursor.automations.from)
+                      .where(cursor.automations.where),
+                  ),
+                );
+            }
+            signal.throwIfAborted();
+            return lateSelectionCount;
+          })();
           return {
             kind: "deleted",
             resolvedSelectionCount:
@@ -3572,6 +3624,18 @@ export const deleteCustomConnectorAccount$ = command(
       },
       { isolationLevel: "read committed" },
     );
+  },
+);
+
+export const deleteCustomConnectorAccountAndPublish$ = command(
+  async (
+    { set },
+    args: DeleteCustomConnectorAccountArgs,
+    signal: AbortSignal,
+  ) => {
+    const writeDb = set(writeDb$);
+    let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
+    const deletion = set(deleteCustomConnectorAccount$, args, signal);
     const result = await (async () => {
       const result = await deletion;
       const wakeup: ConnectorRuntimeWakeupBusinessArgs | undefined =
