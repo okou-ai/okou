@@ -9,6 +9,35 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.3.1](https://github.com/okou-ai/okou/compare/api-v2.3.0...api-v2.3.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **api:** define the proactive learning memory writing contract ([#42761](https://github.com/okou-ai/okou/issues/42761)) ([137d8e9](https://github.com/okou-ai/okou/commit/137d8e942617dde170230570fd24f2b0540a1e9a))
+* **api:** leave two hours between nightly learning and planning ([#42749](https://github.com/okou-ai/okou/issues/42749)) ([161f48b](https://github.com/okou-ai/okou/commit/161f48bcb97206902cdcdf88af09010e2bc4d1ce))
+* **pi:** restore personal memory recall for ordinary conversations ([#42763](https://github.com/okou-ai/okou/issues/42763)) ([ea40a8f](https://github.com/okou-ai/okou/commit/ea40a8f507b736cf2f2f04ea4d7614a1cacc2088))
+
+
+### Refactoring
+
+* **api:** admit discord messages atomically ([#42760](https://github.com/okou-ai/okou/issues/42760)) ([4f23c4d](https://github.com/okou-ai/okou/commit/4f23c4d9c2d994dc8b2ebb0a766138dcbe83d27f))
+* **api:** admit mail notifications atomically ([#42742](https://github.com/okou-ai/okou/issues/42742)) ([d7339af](https://github.com/okou-ai/okou/commit/d7339afd962a69405a2ad055799d9a43336a2ff0))
+* **api:** localize connector account resolution queries ([#42762](https://github.com/okou-ai/okou/issues/42762)) ([8c31ddd](https://github.com/okou-ai/okou/commit/8c31ddd0d2439a74ab044cce18cbab4a5c81da4c))
+* **api:** publish Atom member credit grants atomically ([#42751](https://github.com/okou-ai/okou/issues/42751)) ([9ff8e20](https://github.com/okou-ai/okou/commit/9ff8e20f8f18583272fcea6ea2bbb4d01639f4c8))
+* **api:** publish queued rejections atomically ([#42770](https://github.com/okou-ai/okou/issues/42770)) ([dacfc3b](https://github.com/okou-ai/okou/commit/dacfc3b88f5973e7c48cdef8a53e0f6eb08ad23e))
+* **app:** keep async state in owned requests and server reads ([#42745](https://github.com/okou-ai/okou/issues/42745)) ([d24618e](https://github.com/okou-ai/okou/commit/d24618e29baf061b061b64454aa538e8ea8a74a3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.1
+    * @okouai/core bumped to 8.785.0
+    * @okouai/db bumped to 2.2.1
+    * @okouai/pi-agent-runtime bumped to 1.50.66
+
 ## [2.3.0](https://github.com/okou-ai/okou/compare/api-v2.2.0...api-v2.3.0) (2026-10-24)
 
 
