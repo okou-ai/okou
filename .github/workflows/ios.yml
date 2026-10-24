@@ -12,23 +12,6 @@ on:
         description: Sample Xcode startup during compilation and before the first App test
         type: boolean
         default: false
-      simulator_boot_mode:
-        description: Compare explicit simulator preboot with Xcode-managed test startup
-        type: choice
-        options: [preboot, xcodebuild]
-        default: preboot
-      disable_test_system_logs:
-        description: Measure test-host OS activity logging overhead while retaining XCTest results
-        type: boolean
-        default: false
-      disable_test_animations:
-        description: Measure native test-host UIKit animation overhead with per-test restoration
-        type: boolean
-        default: false
-      poll_native_run_loop:
-        description: Compare native predicate observation at main-loop idle with display-frame polling
-        type: boolean
-        default: false
       archive_cache_experiment:
         description: Compare fresh Release archives with and without native caches
         type: boolean
@@ -195,10 +178,6 @@ jobs:
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
       IOS_BUILD_CACHE_ENABLED: "true"
       IOS_XCODE_STARTUP_SAMPLING: ${{ github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup && 'true' || 'false' }}
-      IOS_SIMULATOR_BOOT_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.simulator_boot_mode || 'preboot' }}
-      IOS_DISABLE_TEST_SYSTEM_LOGS: ${{ github.event_name == 'workflow_dispatch' && inputs.disable_test_system_logs && 'true' || 'false' }}
-      IOS_DISABLE_TEST_ANIMATIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.disable_test_animations && 'true' || 'false' }}
-      IOS_NATIVE_RUN_LOOP_POLLING: ${{ github.event_name == 'workflow_dispatch' && inputs.poll_native_run_loop && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

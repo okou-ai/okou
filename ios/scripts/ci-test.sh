@@ -113,20 +113,6 @@ if [[ "$ios_test_phase" == all || "$ios_test_phase" == run ]]; then
     exit 1
   fi
   # Keep test results and attachments without failure-triggered simulator sysdiagnoses.
-  if [[ "${IOS_NATIVE_RUN_LOOP_POLLING:-false}" == true ]]; then
-    export TEST_RUNNER_IOS_NATIVE_RUN_LOOP_POLLING=true
-    echo "iOS native predicate polling experiment: enabled"
-  fi
-  if [[ "${IOS_DISABLE_TEST_ANIMATIONS:-false}" == true ]]; then
-    export TEST_RUNNER_IOS_DISABLE_NATIVE_ANIMATIONS=true
-    echo "iOS test-host UIKit animation experiment: enabled"
-  fi
-  if [[ "${IOS_DISABLE_TEST_SYSTEM_LOGS:-false}" == true ]]; then
-    # Xcode forwards TEST_RUNNER_ variables to the test host without the prefix.
-    # XCTest output, failures and the result bundle retain their normal paths.
-    export TEST_RUNNER_OS_ACTIVITY_MODE=disable
-    echo "iOS test-host OS activity logging: disabled"
-  fi
   test_command=(
     xcodebuild -xctestrun "${test_runs[0]}"
     -destination "$IOS_TEST_DESTINATION"

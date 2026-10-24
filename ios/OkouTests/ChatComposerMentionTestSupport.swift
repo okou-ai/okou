@@ -211,10 +211,8 @@ func mentionTable(in view: UIView) -> UITableView? {
 }
 
 @MainActor
-func mountMentionHost<V: View>(
-  _ host: UIHostingController<V>, for test: XCTestCase
-) async throws -> UIWindow {
-  let window = try await mountNativeHost(host, for: test) { window in
+func mountMentionHost<V: View>(_ host: UIHostingController<V>) async throws -> UIWindow {
+  let window = try await mountNativeHost(host) { window in
     guard let input = mentionInputs(in: host.view).first else { return false }
     return input.window === window
   }

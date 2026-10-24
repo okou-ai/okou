@@ -37,7 +37,7 @@ final class ComposerDraftTests: XCTestCase {
     defer { workspace.close() }
     let host = UIHostingController(
       rootView: MentionComposerHarness(state: composer, source: workspace.mentionTestSource))
-    let window = try await mountMentionHost(host, for: self)
+    let window = try await mountMentionHost(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(
       mentionInputs(in: host.view).first { $0.text.hasPrefix("Review this") })
@@ -83,7 +83,7 @@ final class ComposerDraftTests: XCTestCase {
     defer { reopened.close() }
     XCTAssertEqual(reopened.value, saved)
     let reopenedHost = UIHostingController(rootView: MentionComposerHarness(state: reopened))
-    let reopenedWindow = try await mountMentionHost(reopenedHost, for: self)
+    let reopenedWindow = try await mountMentionHost(reopenedHost)
     defer { unmount(reopenedWindow) }
     let restoredNote = try XCTUnwrap(
       mentionInputs(in: reopenedHost.view).first {

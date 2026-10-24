@@ -4,21 +4,14 @@
 IOS_TEST_DESTINATION must specify platform=iOS Simulator, name and OS.
 Callers own when startup occurs. Missing/ambiguous devices and boot or
 readiness failures fail CI.
-With --select-only, validate the same device and print its UDID without booting;
-the caller's test command then owns boot and readiness.
 """
 
-import argparse
 import json
 import os
 import subprocess
-import sys
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--select-only", action="store_true")
-    args = parser.parse_args()
     destination = dict(
         item.split("=", 1) for item in os.environ["IOS_TEST_DESTINATION"].split(",")
     )
@@ -43,23 +36,14 @@ def main():
     if len(devices) != 1:
         raise ValueError("Expected one available simulator matching the CI name and OS")
     device = devices[0]
-    if device["state"] not in ("Shutdown", "Booted"):
-        raise ValueError(f"Simulator cannot start from state {device['state']}")
-    if args.select_only:
-        print(
-            f"Selected {device['name']} ({destination['OS']}), state={device['state']}",
-            file=sys.stderr,
-            flush=True,
-        )
-        print(device["udid"], flush=True)
-        return
     print(
-        f"Prebooting {device['name']} ({destination['OS']}): "
-        f"{device['udid']}, state={device['state']}",
+        f"Prebooting {device['name']} ({destination['OS']}): {device['udid']}",
         flush=True,
     )
     if device["state"] == "Shutdown":
         subprocess.run(["xcrun", "simctl", "boot", device["udid"]], check=True)
+    elif device["state"] != "Booted":
+        raise ValueError(f"Simulator cannot start from state {device['state']}")
     subprocess.run(["xcrun", "simctl", "bootstatus", device["udid"]], check=True)
 
 

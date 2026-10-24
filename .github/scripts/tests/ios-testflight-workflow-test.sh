@@ -117,7 +117,7 @@ for upload_attempt, download_attempt in [(1, 1), (1, 2), (2, 2)]:
 assert source_upload['overwrite'] is True
 assert test_job['env']['IOS_BUILD_CACHE_ENABLED'] == 'true'
 assert archive_job['env']['IOS_ARCHIVE_CACHE_ENABLED'] == 'true'
-assert {key: value for key, value in test_job['env'].items() if key not in {'IOS_BUILD_CACHE_ENABLED', 'IOS_XCODE_STARTUP_SAMPLING', 'IOS_SIMULATOR_BOOT_MODE', 'IOS_DISABLE_TEST_SYSTEM_LOGS', 'IOS_DISABLE_TEST_ANIMATIONS', 'IOS_NATIVE_RUN_LOOP_POLLING'}} == {key: value for key, value in archive_job['env'].items() if key != 'IOS_ARCHIVE_CACHE_ENABLED'} == package_job['env']
+assert {key: value for key, value in test_job['env'].items() if key not in {'IOS_BUILD_CACHE_ENABLED', 'IOS_XCODE_STARTUP_SAMPLING'}} == {key: value for key, value in archive_job['env'].items() if key != 'IOS_ARCHIVE_CACHE_ENABLED'} == package_job['env']
 # Startup observations are confined to explicit manual runs, not native release evidence.
 assert ios['on']['workflow_dispatch']['inputs']['sample_xcode_startup']['default'] is False
 sampling = test_job['env']['IOS_XCODE_STARTUP_SAMPLING'].removeprefix('${{').removesuffix('}}').strip()
@@ -132,43 +132,6 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
         expected = event == 'workflow_dispatch' and enabled
         assert evaluate(sampling) == ('true' if expected else 'false')
         assert evaluate(upload['if']) is expected
-# Experimental boot ownership never changes PR/queue/release behavior.
-assert ios['on']['workflow_dispatch']['inputs']['simulator_boot_mode']['default'] == 'preboot'
-boot_mode = test_job['env']['IOS_SIMULATOR_BOOT_MODE'].removeprefix('${{').removesuffix('}}').strip()
-for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
-    for mode in ['preboot', 'xcodebuild']:
-        expression = (boot_mode.replace('github.event_name', repr(event))
-            .replace('inputs.simulator_boot_mode', repr(mode))
-            .replace('&&', 'and').replace('||', 'or'))
-        assert eval(expression, {'__builtins__': {}}, {}) == (mode if event == 'workflow_dispatch' else 'preboot')
-# OS logging experiments also require an explicit manual opt-in.
-assert ios['on']['workflow_dispatch']['inputs']['disable_test_system_logs']['default'] is False
-system_logs = test_job['env']['IOS_DISABLE_TEST_SYSTEM_LOGS'].removeprefix('${{').removesuffix('}}').strip()
-for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
-    for disabled in [False, True]:
-        expression = (system_logs.replace('github.event_name', repr(event))
-            .replace('inputs.disable_test_system_logs', repr(disabled))
-            .replace('&&', 'and').replace('||', 'or'))
-        expected = event == 'workflow_dispatch' and disabled
-        assert eval(expression, {'__builtins__': {}}, {}) == ('true' if expected else 'false')
-assert ios['on']['workflow_dispatch']['inputs']['disable_test_animations']['default'] is False
-animations = test_job['env']['IOS_DISABLE_TEST_ANIMATIONS'].removeprefix('${{').removesuffix('}}').strip()
-for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
-    for disabled in [False, True]:
-        expression = (animations.replace('github.event_name', repr(event))
-            .replace('inputs.disable_test_animations', repr(disabled))
-            .replace('&&', 'and').replace('||', 'or'))
-        expected = event == 'workflow_dispatch' and disabled
-        assert eval(expression, {'__builtins__': {}}, {}) == ('true' if expected else 'false')
-assert ios['on']['workflow_dispatch']['inputs']['poll_native_run_loop']['default'] is False
-polling = test_job['env']['IOS_NATIVE_RUN_LOOP_POLLING'].removeprefix('${{').removesuffix('}}').strip()
-for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
-    for enabled in [False, True]:
-        expression = (polling.replace('github.event_name', repr(event))
-            .replace('inputs.poll_native_run_loop', repr(enabled))
-            .replace('&&', 'and').replace('||', 'or'))
-        expected = event == 'workflow_dispatch' and enabled
-        assert eval(expression, {'__builtins__': {}}, {}) == ('true' if expected else 'false')
 assert ios['jobs']['publish-archive']['needs'] == ['detect', 'script-checks', 'test-packages', 'build-test', 'build-archive']
 assert 'script-checks' in ios['jobs']['ci-gate-ios']['needs']
 assert 'test-packages' in ios['jobs']['ci-gate-ios']['needs']
