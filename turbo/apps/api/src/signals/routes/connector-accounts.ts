@@ -29,7 +29,7 @@ import {
   builtinConnectorScopeDiff,
   deleteBuiltinConnectorLocalState$,
 } from "../services/connector-data.service";
-import { deleteCustomConnectorAccount$ } from "../services/custom-connector.service";
+import { deleteCustomConnectorAccountAndPublish$ } from "../services/custom-connector.service";
 import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-watch.service";
 import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-watch.service";
 import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-watch.service";
@@ -456,7 +456,7 @@ const deleteInner$ = command(
           )
         : await settle(
             set(
-              deleteCustomConnectorAccount$,
+              deleteCustomConnectorAccountAndPublish$,
               {
                 orgId: auth.orgId,
                 userId: auth.userId,
