@@ -10,21 +10,13 @@ export type CommerceRequest =
 
 const taskSchema = z
   .object({
+    id: z.string().min(1),
     status_code: z.number().int(),
     status_message: z.string(),
     cost: z.number().finite().nonnegative(),
-    result: z
-      .array(
-        z
-          .object({
-            items: z.array(z.object({ type: z.string() }).passthrough()),
-          })
-          .passthrough(),
-      )
-      .nullable(),
   })
   .passthrough();
-export const commerceProviderResponseSchema = z
+export const commerceProviderStatusSchema = z
   .object({
     status_code: z.number().int(),
     status_message: z.string(),
@@ -34,6 +26,24 @@ export const commerceProviderResponseSchema = z
     tasks: z.array(taskSchema).length(1),
   })
   .passthrough();
+export const commerceProviderResponseSchema =
+  commerceProviderStatusSchema.extend({
+    tasks: z
+      .array(
+        taskSchema.extend({
+          result: z
+            .array(
+              z
+                .object({
+                  items: z.array(z.object({ type: z.string() }).passthrough()),
+                })
+                .passthrough(),
+            )
+            .nullable(),
+        }),
+      )
+      .length(1),
+  });
 
 type ProviderBody = z.infer<typeof commerceProviderResponseSchema>;
 
