@@ -292,10 +292,10 @@ export const prepareChatThreadConnectorSelections$ = command(
     }
 
     const selections = [...byTarget.values()];
-    // No account row is locked here. The selection insert's FK checks on the
-    // thread and account arbitrate a concurrent deletion: the loser of that race
-    // receives a deterministic invalid/omitted result (see
-    // selectionParentMissing), never a stale selection.
+    // No account row is locked here. INSERT SELECT omits an account already
+    // missing from its snapshot; FK checks arbitrate a later deletion. Selection
+    // updates translate missing parents below, while thread initialization
+    // propagates the failure and rolls back its entire transaction.
     const scope = await set(readAgentConnectorScope$, {
       orgId: args.orgId,
       userId: args.userId,
@@ -664,7 +664,7 @@ export const clearChatThreadConnectorSelection$ = command(
   },
 );
 
-/** Pure, stably ordered statements. The creation owner executes savepoints. */
+/** Pure, stably ordered statements inside the thread initialization owner. */
 export function initialChatThreadConnectorSelectionStatements(args: {
   readonly chatThreadId: string;
   readonly selections: readonly PreparedChatThreadConnectorSelection[];

@@ -56,7 +56,6 @@ import {
   sql,
 } from "drizzle-orm";
 
-import { settle } from "../utils";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { chatThreadSshAccessOverrides } from "@okouai/db/schema/chat-thread-ssh-access-override";
 import { chatThreadVncAccessOverrides } from "@okouai/db/schema/chat-thread-vnc-access-override";
@@ -80,7 +79,6 @@ import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifec
 import { threadBoundWorkflowAutomationsPredicate } from "./workflow-user-automation-thread.service";
 import {
   initialChatThreadConnectorSelectionStatements,
-  selectionParentMissing,
   prepareChatThreadConnectorSelections$,
   type PreparedChatThreadConnectorSelection,
 } from "./chat-thread-connector-selection.service";
@@ -1038,20 +1036,10 @@ export const createChatThread$ = command(
         preparedConnectorSelections.selections,
       );
       for (const statement of initialWrites.connectors) {
-        const inserted = await settle(
-          // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0096; new non-billing transactions are prohibited.
-          tx.transaction(async (sp) => {
-            await sp.execute(statement);
-            signal.throwIfAborted();
-          }),
-        );
+        // INSERT SELECT omits an account already absent from its snapshot.
+        // A later FK failure aborts initialization with all its earlier writes.
+        await tx.execute(statement);
         signal.throwIfAborted();
-        if (
-          !inserted.ok &&
-          selectionParentMissing(inserted.error) !== "account"
-        ) {
-          throw inserted.error;
-        }
       }
       const remoteValues = initialWrites.remote;
       if (remoteValues.ssh.length) {
