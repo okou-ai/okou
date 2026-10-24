@@ -12,7 +12,7 @@ import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   mcpOAuthScopeListSchema,
@@ -1651,9 +1651,9 @@ async function replaceConnectionTokens(args: {
     args.token.userInfo,
   );
   const encrypted = await encryptTokenValues(args);
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0140; new non-billing transactions are prohibited.
-  return await args.db.transaction(async (tx) => {
-    const [claimed] = await tx
+  const db = args.db;
+  const claimed = db.$with("claimed_custom_oauth_refresh").as(
+    db
       .update(connectors)
       .set({
         tokenExpiresAt: args.token.expiresAt,
@@ -1683,22 +1683,46 @@ async function replaceConnectionTokens(args: {
           ),
         ),
       )
-      .returning({ id: connectors.id });
-    if (!claimed) {
-      return { kind: "publication-lost" } as const;
-    }
-    await tx.delete(secrets).where(eq(secrets.connectorId, args.connectionId));
-    await tx.insert(secrets).values(
-      connectionTokenRows({
-        ...args,
-        encrypted,
-      }),
-    );
-    return {
-      kind: "replaced",
-      encryptedAccessToken: encrypted.accessToken,
-    } as const;
-  });
+      .returning({ id: connectors.id }),
+  );
+  const removed = db.$with("removed_custom_oauth_secrets").as(
+    db
+      .delete(secrets)
+      .where(
+        inArray(
+          secrets.connectorId,
+          db.select({ id: claimed.id }).from(claimed),
+        ),
+      )
+      .returning({ id: secrets.id }),
+  );
+  const tokenRows = connectionTokenRows({ ...args, encrypted });
+  const values = sql.join(
+    tokenRows.map((row) => {
+      return sql`(${row.name}, ${row.encryptedValue})`;
+    }),
+    sql`, `,
+  );
+  // Keep database defaults for secret IDs/timestamps. Exhaust deletion before
+  // inserting the replacement names, and gate every credential on the CAS winner.
+  const inserted = db.$with("inserted_custom_oauth_secrets", {
+    id: secrets.id,
+  }).as(sql`INSERT INTO ${secrets}
+      (name, encrypted_value, type, connector_id, user_id, org_id)
+    SELECT token.name, token.encrypted_value, 'connector', ${claimed.id},
+      ${args.userId}, ${args.orgId}
+    FROM ${claimed}
+    CROSS JOIN (VALUES ${values}) AS token(name, encrypted_value)
+    WHERE ${gte(db.select({ count: count() }).from(removed), 0)}
+    RETURNING id`);
+  const [published] = await db
+    .with(claimed, removed, inserted)
+    .select({ id: claimed.id })
+    .from(claimed)
+    .where(gte(db.select({ count: count() }).from(inserted), 0));
+  return published
+    ? { kind: "replaced", encryptedAccessToken: encrypted.accessToken }
+    : { kind: "publication-lost" };
 }
 
 export function customConnectorOAuth2CredentialContractReadPlan(args: {
