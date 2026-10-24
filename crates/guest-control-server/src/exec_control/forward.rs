@@ -71,7 +71,7 @@ where
         Err(error) => return Some(error),
     };
 
-    match spawner.spawn_unit(
+    match spawner.spawn(
         THREAD_EXEC_CONTROL_FORWARD,
         Box::new(move || forward_control_request(sink, pending_slot, request, writer)),
     ) {
