@@ -1349,6 +1349,28 @@ describe("usage pack subscription Stripe lifecycle", () => {
       await postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200);
       await postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200);
 
+      await Promise.all([
+        postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200),
+        postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200),
+        postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200),
+      ]);
+      await postStripeEvent(
+        stripeEvent("invoice.paid", {
+          ...grantInvoice,
+          metadata: { ...grantInvoice.metadata, creditsAmount: "6001" },
+        }),
+        500,
+      );
+      await postStripeEvent(
+        stripeEvent("invoice.paid", {
+          ...grantInvoice,
+          id: `in_wrong_customer_${randomUUID()}`,
+          customer: `cus_${randomUUID()}`,
+        }),
+        500,
+      );
+      await postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200);
+
       const grantedState = await readLifecycleSnapshot(fixture);
       expect(grantedState.grants).toHaveLength(3);
       expect(grantedState.grants).toStrictEqual(
