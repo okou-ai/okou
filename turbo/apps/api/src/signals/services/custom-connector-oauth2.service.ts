@@ -74,7 +74,9 @@ import {
   connectorConnectionWrittenRow,
   existingConnectorConnectionSelection,
   replaceConnectorConnectionOutcome,
-  resolveConnectorConnectionMutation,
+  connectorConnectionMutationReadPlan,
+  connectorConnectionMutationReadResult,
+  type ConnectorConnectionMutationArgs,
 } from "./connector-connection-write.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import {
@@ -1063,13 +1065,34 @@ const commitAutomaticNoAuthConnection$ = command(
           contractRef,
         );
       })();
-      const resolution = await resolveConnectorConnectionMutation(tx, {
+      const mutationReadDb = tx;
+      const mutationReadArgs: ConnectorConnectionMutationArgs = {
         orgId: args.orgId,
         userId: args.userId,
         target: { kind: "custom", customConnectorId: connector.id },
         mutation: args.account,
         allowSiblings: true,
-      });
+      };
+      const resolution = await (async () => {
+        let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+        for (;;) {
+          const rows = await mutationReadDb
+            .select(read.columns)
+            .from(read.from)
+            .where(read.where)
+            .orderBy(...read.orderBy)
+            .limit(read.limit);
+          const result = connectorConnectionMutationReadResult(
+            mutationReadArgs,
+            read,
+            rows,
+          );
+          if (result.kind === "resolved") {
+            return result.resolution;
+          }
+          read = result.read;
+        }
+      })();
       if (resolution.kind !== "ready") {
         return { resolution, connection: null };
       }
@@ -1804,6 +1827,40 @@ interface StoreCustomConnectorOAuth2ConnectionArgs {
   };
 }
 
+function customOAuth2CredentialContractRef(
+  args: Pick<
+    StoreCustomConnectorOAuth2ConnectionArgs,
+    "orgId" | "connectorId" | "storageVersion" | "automaticOAuthBinding"
+  >,
+) {
+  return {
+    orgId: args.orgId,
+    connectorId: args.connectorId,
+    storageVersion: args.storageVersion,
+    authMode: args.automaticOAuthBinding
+      ? ("automatic" as const)
+      : ("oauth" as const),
+  };
+}
+
+function customOAuthConnectionMutationValues(
+  args: Pick<
+    StoreCustomConnectorOAuth2ConnectionArgs,
+    "orgId" | "userId" | "connectorId" | "account"
+  >,
+  contract: ReturnType<typeof customConnectorOAuth2CredentialContractFromRows>,
+): ConnectorConnectionMutationArgs {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    target: { kind: "custom", customConnectorId: args.connectorId },
+    mutation: args.account,
+    allowSiblings: !isIntegrationManagedCustomConnectorProviderAdapter(
+      contract.providerAdapter,
+    ),
+  };
+}
+
 export const storeCustomConnectorOAuth2Connection$ = command(
   async function storeCustomConnectorOAuth2Connection(
     { set },
@@ -1831,14 +1888,7 @@ export const storeCustomConnectorOAuth2Connection$ = command(
           .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
       }
       const credentialContractDb = tx;
-      const contractRef = {
-        orgId: args.orgId,
-        connectorId: args.connectorId,
-        storageVersion: args.storageVersion,
-        authMode: args.automaticOAuthBinding
-          ? ("automatic" as const)
-          : ("oauth" as const),
-      };
+      const contractRef = customOAuth2CredentialContractRef(args);
       const contract = await (async () => {
         const plan =
           customConnectorOAuth2CredentialContractReadPlan(contractRef);
@@ -1855,15 +1905,29 @@ export const storeCustomConnectorOAuth2Connection$ = command(
         );
       })();
       signal.throwIfAborted();
-      const resolution = await resolveConnectorConnectionMutation(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        target: { kind: "custom", customConnectorId: args.connectorId },
-        mutation: args.account,
-        allowSiblings: !isIntegrationManagedCustomConnectorProviderAdapter(
-          contract.providerAdapter,
-        ),
-      });
+      const mutationReadDb = tx;
+      const mutationReadArgs: ConnectorConnectionMutationArgs =
+        customOAuthConnectionMutationValues(args, contract);
+      const resolution = await (async () => {
+        let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+        for (;;) {
+          const rows = await mutationReadDb
+            .select(read.columns)
+            .from(read.from)
+            .where(read.where)
+            .orderBy(...read.orderBy)
+            .limit(read.limit);
+          const result = connectorConnectionMutationReadResult(
+            mutationReadArgs,
+            read,
+            rows,
+          );
+          if (result.kind === "resolved") {
+            return result.resolution;
+          }
+          read = result.read;
+        }
+      })();
       signal.throwIfAborted();
       if (resolution.kind !== "ready") {
         return resolution;

@@ -104,7 +104,9 @@ import {
 import { publishBuiltinConnectorInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import {
   replaceConnectorConnectionOutcome,
-  resolveConnectorConnectionMutation,
+  connectorConnectionMutationReadPlan,
+  connectorConnectionMutationReadResult,
+  type ConnectorConnectionMutationArgs,
   type ConnectorConnectionMutationResolution,
   type StoredConnectorConnectionRow as StoredConnectorRow,
 } from "./connector-connection-write.service";
@@ -1517,19 +1519,13 @@ interface CommitManualGrantConnectorArgs {
   readonly featureSwitchContext: FeatureSwitchContext;
 }
 
-async function commitManualGrantConnector(
-  db: Tx,
-  args: CommitManualGrantConnectorArgs,
-  signal: AbortSignal,
-): Promise<
-  | {
-      readonly status: "connected";
-      readonly connectorRow: StoredConnectorRow;
-      readonly pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null;
-    }
-  | ConnectorConnectionMutationFailure
-> {
-  const resolution = await resolveConnectorConnectionMutation(db, {
+function builtinConnectorLocalMutationValues(
+  args: Pick<
+    CommitManualGrantConnectorArgs,
+    "orgId" | "userId" | "runtimeMethod" | "account"
+  >,
+): ConnectorConnectionMutationArgs {
+  return {
     orgId: args.orgId,
     userId: args.userId,
     target: {
@@ -1538,7 +1534,45 @@ async function commitManualGrantConnector(
     },
     mutation: args.account,
     allowSiblings: true,
-  });
+  };
+}
+
+type ManualGrantConnectorCommitResult =
+  | {
+      readonly status: "connected";
+      readonly connectorRow: StoredConnectorRow;
+      readonly pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null;
+    }
+  | ConnectorConnectionMutationFailure;
+
+async function commitManualGrantConnector(
+  db: Tx,
+  args: CommitManualGrantConnectorArgs,
+  signal: AbortSignal,
+): Promise<ManualGrantConnectorCommitResult> {
+  const mutationReadDb = db;
+  const mutationReadArgs: ConnectorConnectionMutationArgs =
+    builtinConnectorLocalMutationValues(args);
+  const resolution = await (async () => {
+    let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+    for (;;) {
+      const rows = await mutationReadDb
+        .select(read.columns)
+        .from(read.from)
+        .where(read.where)
+        .orderBy(...read.orderBy)
+        .limit(read.limit);
+      const result = connectorConnectionMutationReadResult(
+        mutationReadArgs,
+        read,
+        rows,
+      );
+      if (result.kind === "resolved") {
+        return result.resolution;
+      }
+      read = result.read;
+    }
+  })();
   signal.throwIfAborted();
   if (resolution.kind !== "ready") {
     return connectorConnectionMutationFailure(resolution);
@@ -1742,16 +1776,29 @@ export const connectNoAuthBuiltinConnector$ = command(
 
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0118; new non-billing transactions are prohibited.
     await writeDb.transaction(async (tx) => {
-      const resolution = await resolveConnectorConnectionMutation(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        target: {
-          kind: "builtin",
-          connectorSlug: args.runtimeMethod.connectorSlug,
-        },
-        mutation: args.account,
-        allowSiblings: true,
-      });
+      const mutationReadDb = tx;
+      const mutationReadArgs: ConnectorConnectionMutationArgs =
+        builtinConnectorLocalMutationValues(args);
+      const resolution = await (async () => {
+        let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+        for (;;) {
+          const rows = await mutationReadDb
+            .select(read.columns)
+            .from(read.from)
+            .where(read.where)
+            .orderBy(...read.orderBy)
+            .limit(read.limit);
+          const result = connectorConnectionMutationReadResult(
+            mutationReadArgs,
+            read,
+            rows,
+          );
+          if (result.kind === "resolved") {
+            return result.resolution;
+          }
+          read = result.read;
+        }
+      })();
       signal.throwIfAborted();
       if (resolution.kind !== "ready") {
         mutationFailure = connectorConnectionMutationFailure(resolution);
@@ -2480,7 +2527,7 @@ export function builtinConnectorTokenMutationValues(
     | "matchExistingExternalIdentity"
     | "userInfo"
   >,
-): Parameters<typeof resolveConnectorConnectionMutation>[1] {
+): ConnectorConnectionMutationArgs {
   return {
     orgId: args.orgId,
     userId: args.userId,
@@ -2804,10 +2851,29 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
       const mutationSignal = signal;
       const resolution = await (async () => {
         const { db, ...connection } = mutationInput;
-        const resolution = await resolveConnectorConnectionMutation(
-          db,
-          builtinConnectorTokenMutationValues(connection),
-        );
+        const mutationReadDb = db;
+        const mutationReadArgs: ConnectorConnectionMutationArgs =
+          builtinConnectorTokenMutationValues(connection);
+        const resolution = await (async () => {
+          let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+          for (;;) {
+            const rows = await mutationReadDb
+              .select(read.columns)
+              .from(read.from)
+              .where(read.where)
+              .orderBy(...read.orderBy)
+              .limit(read.limit);
+            const result = connectorConnectionMutationReadResult(
+              mutationReadArgs,
+              read,
+              rows,
+            );
+            if (result.kind === "resolved") {
+              return result.resolution;
+            }
+            read = result.read;
+          }
+        })();
         mutationSignal.throwIfAborted();
         return resolution;
       })();

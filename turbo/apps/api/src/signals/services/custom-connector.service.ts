@@ -61,7 +61,9 @@ import type { CapturedConnectorClientInvalidationAbort } from "./connector-clien
 import {
   connectorConnectionWrittenRow,
   replaceConnectorConnectionOutcome,
-  resolveConnectorConnectionMutation,
+  connectorConnectionMutationReadPlan,
+  connectorConnectionMutationReadResult,
+  type ConnectorConnectionMutationArgs,
   writeConnectorConnectionMetadataOutcome,
   type ConnectorConnectionMetadataArgs,
   type ReadyConnectorConnectionMutation,
@@ -3137,7 +3139,8 @@ async function prepareCustomConnectorValueWrite(args: {
     );
   }
 
-  const resolution = await resolveConnectorConnectionMutation(args.tx, {
+  const mutationReadDb = args.tx;
+  const mutationReadArgs: ConnectorConnectionMutationArgs = {
     orgId: args.request.orgId,
     userId: args.request.userId,
     target: {
@@ -3146,7 +3149,27 @@ async function prepareCustomConnectorValueWrite(args: {
     },
     mutation: args.request.account,
     allowSiblings: true,
-  });
+  };
+  const resolution = await (async () => {
+    let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+    for (;;) {
+      const rows = await mutationReadDb
+        .select(read.columns)
+        .from(read.from)
+        .where(read.where)
+        .orderBy(...read.orderBy)
+        .limit(read.limit);
+      const result = connectorConnectionMutationReadResult(
+        mutationReadArgs,
+        read,
+        rows,
+      );
+      if (result.kind === "resolved") {
+        return result.resolution;
+      }
+      read = result.read;
+    }
+  })();
   if (resolution.kind !== "ready") {
     return resolution.kind === "missing"
       ? notFound("Connector account not found")
