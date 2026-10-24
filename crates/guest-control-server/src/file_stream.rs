@@ -184,8 +184,8 @@ pub(crate) fn decode_begin(
         return Err(ProtocolError::InvalidPayload("invalid zstd stream begin"));
     };
     let size = u32::from_be_bytes([*a, *b, *c, *d]);
-    let (encoded_size, crc32, metadata) = match codec {
-        1 => (None, None, rest),
+    let (codec, metadata) = match codec {
+        1 => (StreamCodec::Zstd, rest),
         2 => {
             let [a, b, c, d, rest @ ..] = rest else {
                 return Err(ProtocolError::InvalidPayload("invalid source stream begin"));
@@ -200,23 +200,25 @@ pub(crate) fn decode_begin(
                 return Err(ProtocolError::InvalidPayload("missing source CRC"));
             };
             (
-                Some(encoded_size),
-                Some(u32::from_be_bytes([*a, *b, *c, *d])),
+                StreamCodec::ZstdSource {
+                    encoded_size,
+                    crc32: u32::from_be_bytes([*a, *b, *c, *d]),
+                },
                 metadata,
             )
         }
         _ => return Err(ProtocolError::InvalidPayload("invalid zstd stream codec")),
     };
-    let raw_limit = if encoded_size.is_some() {
-        guest_control_proto::MAX_ZSTD_SOURCE_BYTES
-    } else {
-        15 * 1024 * 1024
+    let raw_limit = match codec {
+        StreamCodec::Zstd => 15 * 1024 * 1024,
+        StreamCodec::ZstdSource { .. } => guest_control_proto::MAX_ZSTD_SOURCE_BYTES,
     };
     if size as usize > raw_limit {
         return Err(ProtocolError::InvalidPayload("stream raw length too large"));
     }
     let (path, content, sudo, append, private) = guest_control_proto::decode_write_file(metadata)?;
-    if !content.is_empty() || private || (encoded_size.is_some() && append) {
+    if !content.is_empty() || private || (matches!(codec, StreamCodec::ZstdSource { .. }) && append)
+    {
         return Err(ProtocolError::InvalidPayload(
             "unsupported stream flags/content",
         ));
@@ -226,8 +228,7 @@ pub(crate) fn decode_begin(
         path,
         sudo,
         append,
-        encoded_size,
-        crc32,
+        codec,
     })
 }
 
@@ -236,8 +237,21 @@ pub(crate) struct StreamBegin<'a> {
     pub(crate) path: &'a str,
     pub(crate) sudo: bool,
     pub(crate) append: bool,
-    pub(crate) encoded_size: Option<usize>,
-    pub(crate) crc32: Option<u32>,
+    pub(crate) codec: StreamCodec,
+}
+
+pub(crate) enum StreamCodec {
+    Zstd,
+    ZstdSource { encoded_size: usize, crc32: u32 },
+}
+
+impl StreamCodec {
+    pub(crate) fn encoded_size(&self) -> Option<usize> {
+        match self {
+            Self::Zstd => None,
+            Self::ZstdSource { encoded_size, .. } => Some(*encoded_size),
+        }
+    }
 }
 
 #[cfg(test)]
