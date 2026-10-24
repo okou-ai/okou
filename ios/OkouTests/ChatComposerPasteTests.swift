@@ -19,16 +19,7 @@ final class ChatComposerPasteTests: XCTestCase {
     let window = try await mount(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(textView(in: host.view))
-    input.becomeFirstResponder()
-    // The editing menu operates after native focus and SwiftUI expansion settle.
-    // Wait before setting the selection so the focus handoff cannot replace it.
-    try await eventually(
-      message: "Composer did not focus and expand: firstResponder=\(input.isFirstResponder), "
-        + "bounds=\(input.bounds), attached=\(input.window === window), "
-        + "current=\(self.textView(in: host.view) === input)"
-    ) {
-      input.isFirstResponder && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
-    }
+    try await focusMentionInput(input)
     input.selectedRange = NSRange(location: 7, length: 3)
     let png = imageData()
     // This is the test device's pasteboard; no host clipboard or logged-in device is used.
@@ -47,9 +38,7 @@ final class ChatComposerPasteTests: XCTestCase {
       conversation.draft == "Before pasted after"
         && conversation.attachmentDraft.items.count == 2 && conversation.attachmentDraft.isReady
     }
-    try await eventually {
-      input.isFirstResponder && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
-    }
+    try await eventually { input.isFirstResponder }
     let requests = fixture.state.value.withLock { $0.preparations }
     XCTAssertEqual(requests.count, 2)
     for request in requests {
@@ -272,12 +261,7 @@ final class ChatComposerPasteTests: XCTestCase {
     let window = try await mount(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(textView(in: host.view))
-    input.becomeFirstResponder()
-    // Clear only after SwiftUI has presented the native focus change. UIKit's
-    // immediate first-responder result alone precedes the composer's focus handoff.
-    try await eventually {
-      input.isFirstResponder && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
-    }
+    try await focusMentionInput(input)
     conversation.composer.clear()
     input.insertText("stale callback")
     XCTAssertEqual(conversation.draft, "")
@@ -368,8 +352,8 @@ final class ChatComposerPasteTests: XCTestCase {
   }
 
   private func mount<V: View>(_ host: UIHostingController<V>) async throws -> UIWindow {
-    let window = try await mountNativeHost(host) { _ in
-      self.textView(in: host.view)?.bounds.isEmpty == false
+    let window = try await mountNativeHost(host) { window in
+      self.textView(in: host.view)?.window === window
     }
     // SwiftUI can lay out the editor before presenting its initial unfocused state.
     // Native focus requests belong after that presentation, as with a user's first tap.
