@@ -335,6 +335,7 @@
     "src/signals/services/mcp-oauth-client-metadata.service.ts",
     "src/signals/services/mcp-oauth-identity.service.ts",
     "src/signals/services/mcp-oauth-safe-fetch.service.ts",
+    "src/signals/services/model-provider-account-identity.ts",
     "src/signals/services/model-provider-account.service.ts",
     "src/signals/services/model-provider-subscription-usage.types.ts",
     "src/signals/services/vnc-client-identity.service.ts",
