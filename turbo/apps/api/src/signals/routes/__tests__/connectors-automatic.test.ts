@@ -149,6 +149,47 @@ describe("builtin MCP automatic authentication", () => {
     expect((await begin(f, connectionId)).body).toStrictEqual(connected.body);
   });
 
+  it("publishes two concurrent no-auth accounts with exactly one default", async () => {
+    const f = fixture();
+    mockAutomaticMcpOAuthProvider(context, {
+      registration: "none",
+      authentication: "none",
+    });
+    const attempts = await Promise.allSettled([begin(f), begin(f)]);
+    const ids = attempts.map((attempt) => {
+      if (attempt.status === "rejected") {
+        throw attempt.reason;
+      }
+      if (attempt.value.body.result !== "connected") {
+        throw new Error("Expected immediate no-auth completion");
+      }
+      return attempt.value.body.connectionId;
+    });
+    expect(new Set(ids).size).toBe(2);
+    const listed = await accept(
+      accounts().connections({ headers, query: f.target }),
+      [200],
+    );
+    expect(
+      listed.body.connections
+        .map((account) => {
+          return account.id;
+        })
+        .sort(),
+    ).toStrictEqual([...ids].sort());
+    expect(
+      listed.body.connections.filter((account) => {
+        return account.isDefault;
+      }),
+    ).toHaveLength(1);
+    for (const account of listed.body.connections) {
+      expect(account).toMatchObject({
+        authMethod: f.methodId,
+        connectionStatus: "connected",
+      });
+    }
+  });
+
   it("rejects discovery metadata whose issuer differs from the requested issuer", async () => {
     const f = await fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {

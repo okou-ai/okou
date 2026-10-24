@@ -67,11 +67,6 @@
       "owner": "claimExpiredInactiveBrowser$"
     },
     {
-      "id": "TX-0077",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-connection.service.ts",
-      "owner": "publishAutomaticConnection$"
-    },
-    {
       "id": "TX-0084",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-oauth-device-auth.service.ts",
       "owner": "completeClaimedSession$"
