@@ -108,9 +108,12 @@ public struct ChatVncConnection: Decodable, Sendable {
   }
   public struct Kdc: Decodable, Sendable { public let transport: Transport }
   public var sshDependencies: [String] {
-    Array(Set([transport, security.kdc?.transport].compactMap {
-      $0?.type == "ssh" ? $0?.connectionId : nil
-    })).sorted()
+    Array(
+      Set(
+        [transport, security.kdc?.transport].compactMap {
+          $0?.type == "ssh" ? $0?.connectionId : nil
+        })
+    ).sorted()
   }
 }
 
@@ -147,33 +150,45 @@ public struct ChatComposerAccess: Sendable {
         target: .builtin($0.slug), label: $0.label, hasPermissions: $0.hasPermissions,
         permissionBundleRef: nil, managed: false,
         authorized: grants.enabledConnectorSlugs.contains($0.slug))
-    } + list.customConnectors.map {
-      ChatComposerConnector(
-        target: .custom($0.id), label: $0.displayName, hasPermissions: false,
-        permissionBundleRef: $0.permissionBundleRef, managed: $0.integrationManaged,
-        authorized: grants.customConnectorIds.contains($0.id))
     }
+      + list.customConnectors.map {
+        ChatComposerConnector(
+          target: .custom($0.id), label: $0.displayName, hasPermissions: false,
+          permissionBundleRef: $0.permissionBundleRef, managed: $0.integrationManaged,
+          authorized: grants.customConnectorIds.contains($0.id))
+      }
   }
 
   public func setAuthorized(
     _ connector: ChatComposerConnector, agentID: String, enabled: Bool
   ) async throws {
     if let slug = connector.target.connectorSlug {
-      struct Body: Encodable { let enabledConnectorSlugs: [String]; let operation: String }
+      struct Body: Encodable {
+        let enabledConnectorSlugs: [String]
+        let operation: String
+      }
       try await client.data(
         "/api/agents/\(agentID)/user-connectors", method: "PUT",
         body: JSONEncoder().encode(
           Body(enabledConnectorSlugs: [slug], operation: enabled ? "add" : "remove")))
     } else if let id = connector.target.customConnectorId {
       guard !enabled || connector.permissionBundleRef == nil else {
-        throw ChatError.invalidContract("Configure this connector's permissions before enabling it.")
+        throw ChatError.invalidContract(
+          "Configure this connector's permissions before enabling it.")
       }
-      struct Grant: Encodable { let customConnectorId: String; let permissionNames: [String] }
-      struct Body: Encodable { let grants: [Grant]; let operation: String }
+      struct Grant: Encodable {
+        let customConnectorId: String
+        let permissionNames: [String]
+      }
+      struct Body: Encodable {
+        let grants: [Grant]
+        let operation: String
+      }
       try await client.data(
         "/api/agents/\(agentID)/custom-connectors", method: "PUT",
         body: JSONEncoder().encode(
-          Body(grants: [Grant(customConnectorId: id, permissionNames: [])],
+          Body(
+            grants: [Grant(customConnectorId: id, permissionNames: [])],
             operation: enabled ? "add" : "remove")))
     }
   }
@@ -199,9 +214,11 @@ public struct ChatComposerAccess: Sendable {
       body: try enabled.map { try JSONEncoder().encode(Body(enabled: $0)) })
   }
   public func computerAccess(threadID: String) async throws -> ChatComputerAccess {
-    let metadata: ThreadMetadata = try await client.request("/api/chat-threads/\(threadID)/metadata")
+    let metadata: ThreadMetadata = try await client.request(
+      "/api/chat-threads/\(threadID)/metadata")
     return ChatComputerAccess(
-      computerUseHostId: metadata.computerUseHostId, cloudBrowserEnabled: metadata.cloudBrowserEnabled)
+      computerUseHostId: metadata.computerUseHostId,
+      cloudBrowserEnabled: metadata.cloudBrowserEnabled)
   }
   public func setComputerAccess(_ access: ChatComputerAccess, threadID: String) async throws {
     struct Body: Encodable {
@@ -216,8 +233,10 @@ public struct ChatComposerAccess: Sendable {
     }
     try await client.data(
       "/api/chat-threads/\(threadID)/computer-use-host", method: "POST",
-      body: JSONEncoder().encode(Body(
-        computerUseHostId: access.computerUseHostId, cloudBrowserEnabled: access.cloudBrowserEnabled)))
+      body: JSONEncoder().encode(
+        Body(
+          computerUseHostId: access.computerUseHostId,
+          cloudBrowserEnabled: access.cloudBrowserEnabled)))
   }
   public func preferences(threadID: String) async throws -> ChatConnectorPreferences {
     try await client.request("/api/chat-threads/\(threadID)/connector-selections")
@@ -230,9 +249,11 @@ public struct ChatComposerAccess: Sendable {
       query.append(URLQueryItem(name: "search", value: search))
     }
     if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
-    let response: ChatConnectorAccounts = try await client.request("/api/connector-accounts/connections", query: query)
+    let response: ChatConnectorAccounts = try await client.request(
+      "/api/connector-accounts/connections", query: query)
     guard response.connections.allSatisfy({ $0.target == target }),
-      response.defaultConnection.map({ $0.target == target }) ?? true else {
+      response.defaultConnection.map({ $0.target == target }) ?? true
+    else {
       throw APIClientError.invalidResponse
     }
     return response
@@ -240,9 +261,10 @@ public struct ChatComposerAccess: Sendable {
   public func selectAccount(
     target: ChatConnectorTarget, connectionID: String?, threadID: String
   ) async throws {
-    let body = try connectionID.map {
-      try JSONEncoder().encode(ChatConnectorSelection(target: target, connectionId: $0))
-    } ?? JSONEncoder().encode(target)
+    let body =
+      try connectionID.map {
+        try JSONEncoder().encode(ChatConnectorSelection(target: target, connectionId: $0))
+      } ?? JSONEncoder().encode(target)
     try await client.data(
       "/api/chat-threads/\(threadID)/connector-selections",
       method: connectionID == nil ? "DELETE" : "PUT", body: body)

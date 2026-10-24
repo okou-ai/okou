@@ -133,8 +133,11 @@ final class ConnectorActionStore {
       await refresh(action)
       guard !closed, !Task.isCancelled else { return }
       guard case .ready(let status) = states[action.id] else {
-        if case .failed(let message) = states[action.id] { activationError = message }
-        else { activationError = "This connector is no longer available. Refresh and try again." }
+        if case .failed(let message) = states[action.id] {
+          activationError = message
+        } else {
+          activationError = "This connector is no longer available. Refresh and try again."
+        }
         return
       }
       notices[action.id] = nil
@@ -324,7 +327,9 @@ final class ConnectorActionStore {
   private func finish(_ flow: ConnectorAuthorizationFlow, status: ChatConnectorStatus) async throws
   {
     try check(flow)
-    guard let verified = try await service.status(flow.action.confirming(accountID: flow.operatedID)) else {
+    guard
+      let verified = try await service.status(flow.action.confirming(accountID: flow.operatedID))
+    else {
       throw APIClientError.invalidResponse
     }
     if case .select = flow.action.kind {

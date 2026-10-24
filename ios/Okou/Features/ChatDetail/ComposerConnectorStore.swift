@@ -28,7 +28,10 @@ final class ComposerConnectorStore {
   private var generation = UUID()
   private var closed = false
 
-  struct WebDestination: Identifiable { let id = UUID(); let url: URL }
+  struct WebDestination: Identifiable {
+    let id = UUID()
+    let url: URL
+  }
   var webDestination: WebDestination?
   @ObservationIgnored lazy var authorization = ConnectorActionStore(
     service: authorizationService,
@@ -77,7 +80,10 @@ final class ComposerConnectorStore {
     async let remote: Void = loadRemotes(request: request)
     _ = await (connected, remote)
     guard !closed, request == generation else { return }
-    if connectorError == nil, remoteError == nil { uncertain = false; error = nil }
+    if connectorError == nil, remoteError == nil {
+      uncertain = false
+      error = nil
+    }
   }
 
   private func loadConnectors(agentID: String, request: UUID) async {
@@ -162,7 +168,8 @@ final class ComposerConnectorStore {
     if let threadID {
       await perform {
         try await service.setRemote(
-          threadID: threadID, protocol: `protocol`, connectionID: host.connectionId, enabled: enabled)
+          threadID: threadID, protocol: `protocol`, connectionID: host.connectionId,
+          enabled: enabled)
       }
     } else {
       pendingOptions.initialRemoteAccessOverrides.removeAll {
@@ -170,7 +177,8 @@ final class ComposerConnectorStore {
       }
       if let enabled {
         pendingOptions.initialRemoteAccessOverrides.append(
-          ChatRemoteOverride(protocol: `protocol`, connectionId: host.connectionId, enabled: enabled))
+          ChatRemoteOverride(
+            protocol: `protocol`, connectionId: host.connectionId, enabled: enabled))
       }
     }
   }
@@ -191,7 +199,8 @@ final class ComposerConnectorStore {
     guard !closed, !isSaving else { return }
     if let threadID {
       await perform {
-        try await service.selectAccount(target: target, connectionID: connectionID, threadID: threadID)
+        try await service.selectAccount(
+          target: target, connectionID: connectionID, threadID: threadID)
       }
     } else {
       pendingOptions.connectorSelections.removeAll { $0.target == target }
@@ -203,16 +212,19 @@ final class ComposerConnectorStore {
   }
   func connect(target: ChatConnectorTarget, accountID: String? = nil) {
     guard let agentID, !closed else { return }
-    authorization.activate(.configuration(
-      target: target, agentID: agentID, threadID: threadID, connectionID: accountID))
+    authorization.activate(
+      .configuration(
+        target: target, agentID: agentID, threadID: threadID, connectionID: accountID))
   }
   func openWeb(path: String, query: [URLQueryItem] = []) {
     guard !closed else { return }
     webDestination = WebDestination(url: webURL.appending(path: path).appending(queryItems: query))
   }
   func setupRemote(_ protocol: ChatRemoteProtocol) {
-    var query = [URLQueryItem(name: "scope", value: "remote-control"),
-      URLQueryItem(name: "type", value: `protocol`.rawValue)]
+    var query = [
+      URLQueryItem(name: "scope", value: "remote-control"),
+      URLQueryItem(name: "type", value: `protocol`.rawValue),
+    ]
     if let threadID { query.append(URLQueryItem(name: "returnThread", value: threadID)) }
     openWeb(path: "connectors", query: query)
   }

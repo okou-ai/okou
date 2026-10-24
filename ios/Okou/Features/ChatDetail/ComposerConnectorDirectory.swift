@@ -22,7 +22,9 @@ struct ComposerConnectorDirectory: View {
       if tab == "discover", !categories.isEmpty {
         Picker("Category", selection: $category) {
           Text("All categories").tag("")
-          ForEach(categories, id: \.self) { Text($0.replacingOccurrences(of: "-", with: " ").capitalized).tag($0) }
+          ForEach(categories, id: \.self) {
+            Text($0.replacingOccurrences(of: "-", with: " ").capitalized).tag($0)
+          }
         }
       }
       if let error { ConnectorLoadError(error: error) { await load() } }
@@ -39,13 +41,20 @@ struct ComposerConnectorDirectory: View {
           }
         }
       } else {
-        ForEach(custom.filter { search.isEmpty || $0.displayName.localizedCaseInsensitiveContains(search) }, id: \.id) { connector in
+        ForEach(
+          custom.filter {
+            search.isEmpty || $0.displayName.localizedCaseInsensitiveContains(search)
+          }, id: \.id
+        ) { connector in
           Button {
             if connector.managed || connector.permissionBundleRef != nil {
               openConnector(connector.slug)
-            } else { store.connect(target: .custom(connector.id)) }
+            } else {
+              store.connect(target: .custom(connector.id))
+            }
           } label: {
-            Label(connector.displayName, systemImage: "puzzlepiece.extension").foregroundStyle(.primary)
+            Label(connector.displayName, systemImage: "puzzlepiece.extension").foregroundStyle(
+              .primary)
           }
         }
         Button("Create custom connector") {
@@ -53,7 +62,7 @@ struct ComposerConnectorDirectory: View {
         }
       }
       if !loading, error == nil,
-        (tab == "discover" ? catalog.isEmpty : custom.isEmpty)
+        tab == "discover" ? catalog.isEmpty : custom.isEmpty
       {
         ContentUnavailableView.search(text: search)
       }
@@ -69,7 +78,8 @@ struct ComposerConnectorDirectory: View {
   }
   private func openConnector(_ slug: String) {
     guard let agentID = store.agentID else { return }
-    store.openWeb(path: "connectors/\(slug)/connect", query: [URLQueryItem(name: "agentId", value: agentID)])
+    store.openWeb(
+      path: "connectors/\(slug)/connect", query: [URLQueryItem(name: "agentId", value: agentID)])
   }
   private func load() async {
     let request = UUID()
@@ -78,7 +88,8 @@ struct ComposerConnectorDirectory: View {
     defer { if requestID == request { loading = false } }
     do {
       if tab == "discover" {
-        let result = try await store.service.discover(keyword: search, category: category.isEmpty ? nil : category)
+        let result = try await store.service.discover(
+          keyword: search, category: category.isEmpty ? nil : category)
         guard !Task.isCancelled, requestID == request else { return }
         catalog = result.connectors
         if let counts = result.categoryConnectorCounts { categories = counts.keys.sorted() }
@@ -106,7 +117,9 @@ private struct ComposerConnectorDetail: View {
         ForEach(connector.authMethods) { method in
           VStack(alignment: .leading, spacing: 5) {
             Text(method.label)
-            if let description = method.description { Text(description).font(.caption).foregroundStyle(.secondary) }
+            if let description = method.description {
+              Text(description).font(.caption).foregroundStyle(.secondary)
+            }
           }
         }
       }
@@ -115,7 +128,8 @@ private struct ComposerConnectorDetail: View {
           if connector.authMethods.contains(where: { $0.grantKind != "managed" }) {
             store.connect(target: .builtin(connector.slug))
           } else if let agentID = store.agentID {
-            store.openWeb(path: "connectors/\(connector.slug)/connect",
+            store.openWeb(
+              path: "connectors/\(connector.slug)/connect",
               query: [URLQueryItem(name: "agentId", value: agentID)])
           }
         }

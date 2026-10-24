@@ -131,9 +131,10 @@ public actor ChatCommands {
       hasTextContent: !prompt.isEmpty || document?.hasTextContent == true,
       modelSelection: modelSelection,
       reasoningEffort: reasoningEffort,
-      computerAccess: computerAccess ?? ChatComputerAccess(
-        computerUseHostId: metadata.computerUseHostId,
-        cloudBrowserEnabled: metadata.cloudBrowserEnabled))
+      computerAccess: computerAccess
+        ?? ChatComputerAccess(
+          computerUseHostId: metadata.computerUseHostId,
+          cloudBrowserEnabled: metadata.cloudBrowserEnabled))
     do {
       let result: ChatSendResponse = try await client.request(
         "/api/chat/events", method: "POST", body: JSONEncoder().encode(body))
@@ -273,8 +274,10 @@ public actor ChatCommands {
       try container.encode(model, forKey: .model)
       try container.encodeIfPresent(serviceTier, forKey: .serviceTier)
       try container.encodeIfPresent(reasoningEffort, forKey: .reasoningEffort)
-      try container.encodeIfPresent(composerOptions?.connectorSelections, forKey: .connectorSelections)
-      try container.encodeIfPresent(composerOptions?.initialRemoteAccessOverrides, forKey: .initialRemoteAccessOverrides)
+      try container.encodeIfPresent(
+        composerOptions?.connectorSelections, forKey: .connectorSelections)
+      try container.encodeIfPresent(
+        composerOptions?.initialRemoteAccessOverrides, forKey: .initialRemoteAccessOverrides)
     }
   }
   private struct SendBody: Encodable {

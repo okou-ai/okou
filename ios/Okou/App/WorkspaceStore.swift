@@ -545,7 +545,9 @@ final class WorkspaceStore {
   }
 
   @discardableResult
-  func createChat(agentID: String? = nil, composerOptions: ChatComposerOptions? = nil) async -> ChatThread? {
+  func createChat(agentID: String? = nil, composerOptions: ChatComposerOptions? = nil) async
+    -> ChatThread?
+  {
     guard !isCreating, !needsUpgrade, !closed, !Task.isCancelled else { return nil }
     guard newModelSelection.canSend else { return nil }
     let selection = modelStore.configuration.map { _ in
@@ -593,7 +595,8 @@ final class WorkspaceStore {
       return
     }
     let options = newModelSelection.connectors.pendingOptions
-    guard let created = await createChat(agentID: selectedAgentID, composerOptions: options), !closed,
+    guard let created = await createChat(agentID: selectedAgentID, composerOptions: options),
+      !closed,
       let conversation = conversation(for: created.id)
     else { return }
     newModelSelection.connectors.consumeNewChatOptions()
@@ -604,7 +607,8 @@ final class WorkspaceStore {
     }
     sourceComposer.requestSync()
     await conversation.send(
-      initialSelection: ChatModelSelection(thread: created), initialComputerAccess: options.computerAccess)
+      initialSelection: ChatModelSelection(thread: created),
+      initialComputerAccess: options.computerAccess)
   }
 
   func reduceMemory() async {

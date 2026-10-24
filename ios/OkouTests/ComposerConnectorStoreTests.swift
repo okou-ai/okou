@@ -34,18 +34,27 @@ final class ComposerConnectorStoreTests: XCTestCase {
   }
 
   func testUnknownRemoteWriteRequiresReadbackBeforeSendingAndIsNeverReplayed() async throws {
-    struct Server: Sendable { var enabled = true; var writes = 0 }
+    struct Server: Sendable {
+      var enabled = true
+      var writes = 0
+    }
     let server = Mutex(Server())
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path.hasSuffix("/remote-access/ssh/\(F.accountID)"), request.httpMethod == "PUT" {
-        server.withLock { $0.enabled = false; $0.writes += 1 }
+      if request.url!.path.hasSuffix("/remote-access/ssh/\(F.accountID)"),
+        request.httpMethod == "PUT"
+      {
+        server.withLock {
+          $0.enabled = false
+          $0.writes += 1
+        }
         throw URLError(.networkConnectionLost)
       }
       if request.url!.path.hasSuffix("/remote-access") {
         let enabled = server.withLock { $0.enabled }
-        return ChatHTTPResponse(body: """
-          {"ssh":[{"connectionId":"\(F.accountID)","displayName":"Build Mac","defaultEnabled":true,"overrideEnabled":\(enabled),"enabled":\(enabled)}],"vnc":[]}
-          """)
+        return ChatHTTPResponse(
+          body: """
+            {"ssh":[{"connectionId":"\(F.accountID)","displayName":"Build Mac","defaultEnabled":true,"overrideEnabled":\(enabled),"enabled":\(enabled)}],"vnc":[]}
+            """)
       }
       return try composerResponse(request)
     }
@@ -65,7 +74,9 @@ final class ComposerConnectorStoreTests: XCTestCase {
     XCTAssertEqual(server.withLock { $0.writes }, 1)
   }
 
-  private func makeStore(_ fixture: ChatHTTPFixture, thread: ChatThread? = nil) -> ComposerConnectorStore {
+  private func makeStore(_ fixture: ChatHTTPFixture, thread: ChatThread? = nil)
+    -> ComposerConnectorStore
+  {
     ComposerConnectorStore(
       service: ChatComposerAccess(client: fixture.client),
       authorizationService: ChatConnectorService(client: fixture.client),
@@ -83,9 +94,10 @@ private func composerResponse(_ request: URLRequest) throws -> ChatHTTPResponse 
   case "/api/agents/\(F.agentID)/connector-access":
     return ChatHTTPResponse(body: "{\"enabledConnectorSlugs\":[],\"customConnectorIds\":[]}")
   case "/api/remotes/overview":
-    return ChatHTTPResponse(body: """
-      {"computerUseHosts":[],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[{"connectionId":"\(F.accountID)","displayName":"Build Mac","defaultEnabled":false}],"vncHosts":[]}
-      """)
+    return ChatHTTPResponse(
+      body: """
+        {"computerUseHosts":[],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[{"connectionId":"\(F.accountID)","displayName":"Build Mac","defaultEnabled":false}],"vncHosts":[]}
+        """)
   case "/api/chat-threads/\(F.threadID)/metadata":
     return ChatHTTPResponse(body: F.metadata)
   default: throw URLError(.unsupportedURL)

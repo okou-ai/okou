@@ -40,9 +40,11 @@ extension ChatComposerAccess {
 
   public func validate(agentID: String, threadID: String?) async throws {
     if let threadID {
-      let metadata: ThreadMetadata = try await client.request("/api/chat-threads/\(threadID)/metadata")
+      let metadata: ThreadMetadata = try await client.request(
+        "/api/chat-threads/\(threadID)/metadata")
       guard metadata.agentId.lowercased() == agentID.lowercased() else {
-        throw APIClientError.http(status: 409, message: "This chat's Agent changed. Close and reopen Connectors.")
+        throw APIClientError.http(
+          status: 409, message: "This chat's Agent changed. Close and reopen Connectors.")
       }
     } else {
       struct Agent: Decodable, Sendable { let agentId: String }
@@ -68,7 +70,9 @@ extension ChatComposerAccess {
     return result.connectors
   }
 
-  public func permissions(slug: String, agentID: String) async throws -> ChatConnectorPermissionState {
+  public func permissions(slug: String, agentID: String) async throws
+    -> ChatConnectorPermissionState
+  {
     struct Metadata: Decodable, Sendable { let permissions: ChatPermissionMetadata }
     async let metadata: Metadata = client.request("/api/connector-catalog/\(slug)/permissions")
     async let grants: [ChatPermissionGrant] = client.request(
@@ -90,7 +94,8 @@ extension ChatComposerAccess {
     }
     try await client.data(
       "/api/user-permission-grants/apply", method: "PUT",
-      body: JSONEncoder().encode(Body(
-        agentId: agentID, connectorSlug: slug, mode: reset ? "replace" : "patch", grants: edits)))
+      body: JSONEncoder().encode(
+        Body(
+          agentId: agentID, connectorSlug: slug, mode: reset ? "replace" : "patch", grants: edits)))
   }
 }

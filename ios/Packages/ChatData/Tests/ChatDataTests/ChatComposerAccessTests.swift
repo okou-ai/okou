@@ -27,18 +27,21 @@ final class ChatComposerAccessTests: XCTestCase {
       }
       if path.hasSuffix("/remote-access") {
         let value = override.withLock { $0 }
-        return ChatHTTPResponse(body: """
-          {"ssh":[{"connectionId":"\(F.accountID)","displayName":"Build Mac","defaultEnabled":true,"overrideEnabled":\(value.map { $0 ? "true" : "false" } ?? "null"),"enabled":\(value ?? true)}],"vnc":[]}
-          """)
+        return ChatHTTPResponse(
+          body: """
+            {"ssh":[{"connectionId":"\(F.accountID)","displayName":"Build Mac","defaultEnabled":true,"overrideEnabled":\(value.map { $0 ? "true" : "false" } ?? "null"),"enabled":\(value ?? true)}],"vnc":[]}
+            """)
       }
       throw URLError(.unsupportedURL)
     }
     let service = ChatComposerAccess(client: fixture.client)
-    try await service.setRemote(threadID: F.threadID, protocol: .ssh, connectionID: F.accountID, enabled: false)
+    try await service.setRemote(
+      threadID: F.threadID, protocol: .ssh, connectionID: F.accountID, enabled: false)
     let disabled = try await service.remoteAccess(threadID: F.threadID)
     XCTAssertEqual(disabled.ssh.first?.overrideEnabled, false)
     XCTAssertEqual(disabled.ssh.first?.enabled, false)
-    try await service.setRemote(threadID: F.threadID, protocol: .ssh, connectionID: F.accountID, enabled: nil)
+    try await service.setRemote(
+      threadID: F.threadID, protocol: .ssh, connectionID: F.accountID, enabled: nil)
     let inherited = try await service.remoteAccess(threadID: F.threadID)
     XCTAssertNil(inherited.ssh.first?.overrideEnabled)
     XCTAssertEqual(inherited.ssh.first?.enabled, true)
@@ -59,19 +62,25 @@ final class ChatComposerAccessTests: XCTestCase {
           }
         }
         let value = try JSONDecoder().decode(Body.self, from: chatRequestBody(request))
-        selected.withLock { $0 = ChatComputerAccess(computerUseHostId: value.computerUseHostId, cloudBrowserEnabled: value.cloudBrowserEnabled) }
+        selected.withLock {
+          $0 = ChatComputerAccess(
+            computerUseHostId: value.computerUseHostId,
+            cloudBrowserEnabled: value.cloudBrowserEnabled)
+        }
         return ChatHTTPResponse(status: 204, body: "")
       }
       if request.url!.path.hasSuffix("/metadata") {
         let value = try XCTUnwrap(selected.withLock { $0 })
-        return ChatHTTPResponse(body: """
-          {"id":"\(F.threadID)","agentId":"\(F.agentID)","computerUseHostId":null,"cloudBrowserEnabled":\(value.cloudBrowserEnabled)}
-          """)
+        return ChatHTTPResponse(
+          body: """
+            {"id":"\(F.threadID)","agentId":"\(F.agentID)","computerUseHostId":null,"cloudBrowserEnabled":\(value.cloudBrowserEnabled)}
+            """)
       }
       throw URLError(.unsupportedURL)
     }
     let service = ChatComposerAccess(client: fixture.client)
-    try await service.setComputerAccess(ChatComputerAccess(cloudBrowserEnabled: true), threadID: F.threadID)
+    try await service.setComputerAccess(
+      ChatComputerAccess(cloudBrowserEnabled: true), threadID: F.threadID)
     let value = try await service.computerAccess(threadID: F.threadID)
     XCTAssertTrue(value.cloudBrowserEnabled)
     XCTAssertNil(value.computerUseHostId)
@@ -86,13 +95,15 @@ final class ChatComposerAccessTests: XCTestCase {
       XCTAssertTrue(query.contains(URLQueryItem(name: "search", value: "Work")))
       let isSecond = query.contains(URLQueryItem(name: "cursor", value: "page-two"))
       let account = F.account(id: isSecond ? F.siblingID : F.accountID)
-      return ChatHTTPResponse(body: """
-        {"connections":[\(account)],"nextCursor":\(isSecond ? "null" : "\"page-two\""),"defaultConnection":\(F.account())}
-        """)
+      return ChatHTTPResponse(
+        body: """
+          {"connections":[\(account)],"nextCursor":\(isSecond ? "null" : "\"page-two\""),"defaultConnection":\(F.account())}
+          """)
     }
     let service = ChatComposerAccess(client: fixture.client)
     let first = try await service.accounts(target: .builtin("slack"), search: "Work")
-    let second = try await service.accounts(target: .builtin("slack"), search: "Work", cursor: first.nextCursor)
+    let second = try await service.accounts(
+      target: .builtin("slack"), search: "Work", cursor: first.nextCursor)
     XCTAssertEqual(first.connections.map(\.id), [F.accountID])
     XCTAssertEqual(second.connections.map(\.id), [F.siblingID])
     XCTAssertNil(second.nextCursor)
@@ -105,8 +116,15 @@ final class ChatComposerAccessTests: XCTestCase {
       case "/api/agents/\(F.agentID)":
         return ChatHTTPResponse(body: "{\"agentId\":\"\(F.agentID)\"}")
       case "/api/connectors/slack/no-auth":
-        struct Account: Decodable { let intent: String; let connectionId: String? }
-        struct Body: Decodable { let account: Account; let agentId: String; let authorizeAgent: Bool }
+        struct Account: Decodable {
+          let intent: String
+          let connectionId: String?
+        }
+        struct Body: Decodable {
+          let account: Account
+          let agentId: String
+          let authorizeAgent: Bool
+        }
         let body = try JSONDecoder().decode(Body.self, from: chatRequestBody(request))
         XCTAssertEqual(body.account.intent, "add")
         XCTAssertNil(body.account.connectionId)
@@ -119,18 +137,24 @@ final class ChatComposerAccessTests: XCTestCase {
       }
     }
     let service = ChatConnectorService(client: fixture.client)
-    let action = ChatConnectorAction.configuration(target: .builtin("slack"), agentID: F.agentID, threadID: nil)
+    let action = ChatConnectorAction.configuration(
+      target: .builtin("slack"), agentID: F.agentID, threadID: nil)
     let loaded = try await service.status(action)
     let status = try XCTUnwrap(loaded)
     XCTAssertNil(status.account)
-    let result = try await service.start(action, status: status, method: status.builtin?.authMethods.first, values: [:], options: [:])
+    let result = try await service.start(
+      action, status: status, method: status.builtin?.authMethods.first, values: [:], options: [:])
     XCTAssertEqual(try result.operatedID, F.accountID)
   }
 
   func testNewConversationCarriesPendingAccountAndRemoteChoices() async throws {
     var options = ChatComposerOptions()
-    options.connectorSelections = [ChatConnectorSelection(target: .builtin("slack"), connectionId: F.accountID)]
-    options.initialRemoteAccessOverrides = [ChatRemoteOverride(protocol: .vnc, connectionId: F.siblingID, enabled: true)]
+    options.connectorSelections = [
+      ChatConnectorSelection(target: .builtin("slack"), connectionId: F.accountID)
+    ]
+    options.initialRemoteAccessOverrides = [
+      ChatRemoteOverride(protocol: .vnc, connectionId: F.siblingID, enabled: true)
+    ]
     let fixture = ChatHTTPFixture { request in
       if request.url!.path == "/api/agents" {
         return ChatHTTPResponse(body: "[{\"agentId\":\"\(F.agentID)\",\"isDefaultAgent\":true}]")
@@ -144,12 +168,17 @@ final class ChatComposerAccessTests: XCTestCase {
         XCTAssertEqual(body.connectorSelections.first?.connectionId, F.accountID)
         XCTAssertEqual(body.initialRemoteAccessOverrides.first?.protocol, .vnc)
         XCTAssertEqual(body.initialRemoteAccessOverrides.first?.enabled, true)
-        return ChatHTTPResponse(status: 201, body: "{\"id\":\"\(F.threadID)\",\"createdAt\":\"2026-10-24T00:00:00Z\",\"selectedModel\":null}")
+        return ChatHTTPResponse(
+          status: 201,
+          body:
+            "{\"id\":\"\(F.threadID)\",\"createdAt\":\"2026-10-24T00:00:00Z\",\"selectedModel\":null}"
+        )
       }
       throw URLError(.unsupportedURL)
     }
     let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
-    let thread = try await commands.createThread(agentID: F.agentID, modelSelection: ChatModelSelection(), composerOptions: options)
+    let thread = try await commands.createThread(
+      agentID: F.agentID, modelSelection: ChatModelSelection(), composerOptions: options)
     XCTAssertEqual(thread.id, F.threadID)
   }
 }

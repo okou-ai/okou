@@ -20,26 +20,38 @@ struct ComposerConnectorAccounts: View {
         Button {
           Task { await choose(nil) }
         } label: {
-          accountLabel("Use default", detail: defaultAccount?.label ?? "No usable default account", checked: selection == nil)
+          accountLabel(
+            "Use default", detail: defaultAccount?.label ?? "No usable default account",
+            checked: selection == nil)
         }.disabled(store.isSaving || loading)
         ForEach(accounts) { account in
           VStack(alignment: .leading, spacing: 6) {
-            Button { Task { await choose(account.id) } } label: {
-              accountLabel(account.label,
-                detail: account.ready ? "Connected" : "Reconnect required", checked: selection == account.id)
+            Button {
+              Task { await choose(account.id) }
+            } label: {
+              accountLabel(
+                account.label,
+                detail: account.ready ? "Connected" : "Reconnect required",
+                checked: selection == account.id)
             }.disabled(store.isSaving || loading)
             if !account.ready {
-              Button("Reconnect this account") { store.connect(target: connector.target, accountID: account.id) }
-                .font(.footnote).disabled(store.isSaving)
+              Button("Reconnect this account") {
+                store.connect(target: connector.target, accountID: account.id)
+              }
+              .font(.footnote).disabled(store.isSaving)
             }
           }
         }
         if loading { ProgressView("Loading accounts…") }
         if let cursor {
-          Button("Load more") { Task { await load(cursor: cursor) } }.disabled(loading || store.isSaving)
+          Button("Load more") { Task { await load(cursor: cursor) } }.disabled(
+            loading || store.isSaving)
         }
         Button("Add account") { store.connect(target: connector.target) }.disabled(store.isSaving)
-      } footer: { Text("This account choice applies to this conversation. The default account stays unchanged.") }
+      } footer: {
+        Text(
+          "This account choice applies to this conversation. The default account stays unchanged.")
+      }
     }
     .searchable(text: $search, prompt: "Find accounts")
     .navigationTitle(connector.label)
@@ -65,7 +77,8 @@ struct ComposerConnectorAccounts: View {
     loading = true
     defer { if requestID == request { loading = false } }
     do {
-      let page = try await store.service.accounts(target: connector.target, search: search, cursor: cursor)
+      let page = try await store.service.accounts(
+        target: connector.target, search: search, cursor: cursor)
       let selected: ChatConnectorSelection?
       var explicitAccount: ChatConnectorAccount?
       if let threadID = store.threadID {
@@ -93,7 +106,10 @@ struct ComposerConnectorAccounts: View {
   }
   private func choose(_ id: String?) async {
     await store.selectAccount(target: connector.target, connectionID: id)
-    if !store.uncertain { await load() }
-    else { error = store.error ?? "Refresh Connectors to confirm the saved choice." }
+    if !store.uncertain {
+      await load()
+    } else {
+      error = store.error ?? "Refresh Connectors to confirm the saved choice."
+    }
   }
 }

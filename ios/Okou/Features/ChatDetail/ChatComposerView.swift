@@ -161,24 +161,24 @@ struct ChatComposerView: View {
       }
       .overlay(alignment: expandsInput ? .bottomLeading : .leading) {
         HStack(spacing: 0) {
-        Menu {
-          Button("Photo Library", systemImage: "photo.on.rectangle") { showsPhotos = true }
-          Button("Choose Files", systemImage: "folder") { showsFiles = true }
-          if let state = draftState, state.hasContent || state.error != nil {
-            Divider()
-            Button("Clear draft", role: .destructive) { state.clear() }
+          Menu {
+            Button("Photo Library", systemImage: "photo.on.rectangle") { showsPhotos = true }
+            Button("Choose Files", systemImage: "folder") { showsFiles = true }
+            if let state = draftState, state.hasContent || state.error != nil {
+              Divider()
+              Button("Clear draft", role: .destructive) { state.clear() }
+            }
+          } label: {
+            Image(systemName: "plus")
+              .font(.system(size: 22, weight: .regular))
+              .frame(width: 44, height: 44)
           }
-        } label: {
-          Image(systemName: "plus")
-            .font(.system(size: 22, weight: .regular))
-            .frame(width: 44, height: 44)
-        }
-        .accessibilityLabel("Attachments")
-        .disabled(isBusy || needsUpgrade)
-        if let connectorSelection {
-          ComposerConnectorButton(store: connectorSelection)
-            .disabled(isBusy || needsUpgrade)
-        }
+          .accessibilityLabel("Attachments")
+          .disabled(isBusy || needsUpgrade)
+          if let connectorSelection {
+            ComposerConnectorButton(store: connectorSelection)
+              .disabled(isBusy || needsUpgrade)
+          }
         }
         .padding(.leading, 8)
         .padding(.bottom, expandsInput ? 8 : 0)

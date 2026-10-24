@@ -35,13 +35,15 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
   public static func configuration(
     target: ChatConnectorTarget, agentID: String, threadID: String?, connectionID: String? = nil
   ) -> Self {
-    Self(id: UUID().uuidString, kind: .configuration(target: target, connectionID: connectionID),
+    Self(
+      id: UUID().uuidString, kind: .configuration(target: target, connectionID: connectionID),
       agentID: agentID, threadID: threadID, callbackPrompt: nil)
   }
 
   public func confirming(accountID: String?) -> Self {
     guard case .configuration(let target, _) = kind, let accountID else { return self }
-    return Self(id: id, kind: .configuration(target: target, connectionID: accountID),
+    return Self(
+      id: id, kind: .configuration(target: target, connectionID: accountID),
       agentID: agentID, threadID: threadID, callbackPrompt: nil)
   }
 

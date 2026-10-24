@@ -171,7 +171,8 @@ private struct WorkspaceRootView: View {
                   draftState: composer,
                   submit: { await store.sendNewChat() }, refresh: nil,
                   modelSelection: store.newModelSelection,
-                  connectorSelection: store.list.canUseComposerConnectors ? store.newModelSelection.connectors : nil,
+                  connectorSelection: store.list.canUseComposerConnectors
+                    ? store.newModelSelection.connectors : nil,
                   mentionSource: ComposerMentionSource(
                     agentID: store.selectedAgentID, agents: store.list.agents,
                     threads: store.list.threads),

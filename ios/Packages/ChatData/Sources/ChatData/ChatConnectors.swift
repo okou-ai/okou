@@ -297,7 +297,8 @@ public struct ChatConnectorService: Sendable {
   }
   public func select(_ action: ChatConnectorAction, status: ChatConnectorStatus) async throws {
     guard case .select(let target, let id) = action.kind, target == status.target,
-      let threadID = action.threadID else {
+      let threadID = action.threadID
+    else {
       throw APIClientError.invalidResponse
     }
     struct Body: Encodable {
