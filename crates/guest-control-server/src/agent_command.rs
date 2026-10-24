@@ -17,7 +17,7 @@ use crate::contained_command::{CommandStdio, ContainedCommand as Command, Contai
 use guest_contracts::codex_session_cleanup::CodexSessionCleanupRequest;
 use guest_contracts::session_history_identity::SessionHistoryIdentityVerifyRequest;
 
-use crate::process_containment::{ExecProcessContainment, ProcessContainmentCleanupMode};
+use crate::process_containment::ExecProcessContainment;
 use crate::shell_command::SpawnedCommand;
 
 #[derive(Clone)]
@@ -82,17 +82,7 @@ pub(crate) fn spawn_session_history_identity_verifier_with_pipes(
         command.spawn(false, &process_containment)
     })();
 
-    match spawn_result {
-        Ok(child) => Ok(SpawnedCommand {
-            child,
-            env_script: None,
-            process_containment,
-        }),
-        Err(error) => {
-            let _ = process_containment.cleanup(ProcessContainmentCleanupMode::Forced);
-            Err(error)
-        }
-    }
+    SpawnedCommand::from_spawn_result(spawn_result.map(|child| (child, None)), process_containment)
 }
 
 pub(crate) fn spawn_codex_session_cleanup_with_pipes(
@@ -117,17 +107,7 @@ pub(crate) fn spawn_codex_session_cleanup_with_pipes(
         command.spawn(false, &process_containment)
     })();
 
-    match spawn_result {
-        Ok(child) => Ok(SpawnedCommand {
-            child,
-            env_script: None,
-            process_containment,
-        }),
-        Err(error) => {
-            let _ = process_containment.cleanup(ProcessContainmentCleanupMode::Forced);
-            Err(error)
-        }
-    }
+    SpawnedCommand::from_spawn_result(spawn_result.map(|child| (child, None)), process_containment)
 }
 
 fn spawn_agent_executable_with_pipes(
@@ -156,17 +136,7 @@ fn spawn_agent_executable_with_pipes(
         Ok(child)
     })();
 
-    match spawn_result {
-        Ok(child) => Ok(SpawnedCommand {
-            child,
-            env_script: None,
-            process_containment,
-        }),
-        Err(error) => {
-            let _ = process_containment.cleanup(ProcessContainmentCleanupMode::Forced);
-            Err(error)
-        }
-    }
+    SpawnedCommand::from_spawn_result(spawn_result.map(|child| (child, None)), process_containment)
 }
 
 fn validate_agent_executable(executable: &Path) -> io::Result<()> {
