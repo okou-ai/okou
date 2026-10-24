@@ -2,6 +2,9 @@
 set -euo pipefail
 shopt -s nullglob
 
+if [[ "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true && "${1:-all}" == compile ]]; then
+  echo "iOS sampled compile script started" >&2
+fi
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
@@ -89,6 +92,7 @@ if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase
   ios_phase_started=$SECONDS
   cmp "$resolved" "$build_root/Package.resolved.before"
   if [[ "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true ]]; then
+    echo "iOS starting compiler observer" >&2
     python3 ios/scripts/sample-xcode-startup.py "$build_root/startup-samples" -- \
       xcodebuild "${xcode_args[@]}" -showBuildTimingSummary build-for-testing
   else

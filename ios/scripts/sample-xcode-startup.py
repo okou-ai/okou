@@ -70,10 +70,11 @@ def observe(args):
             record("report_truncated", file=path.name)
 
     def capture(name, command, timeout):
-        if stop.is_set():
+        if stop.is_set() or time.monotonic() >= started + args.window:
             return False
         path = args.output / (name + ".txt")
         deadline = min(started + args.window, time.monotonic() + timeout)
+        spawn_started = time.monotonic()
         try:
             with path.open("wb") as output:
                 child = subprocess.Popen(
@@ -84,6 +85,13 @@ def observe(args):
                     env=os.environ | {"LC_ALL": "C"},
                 )
                 try:
+                    record(
+                        "observation_spawned",
+                        tool=command[0],
+                        file=path.name,
+                        pid=child.pid,
+                        spawn_seconds=round(time.monotonic() - spawn_started, 3),
+                    )
                     while child.poll() is None:
                         if stop.wait(0.1) or time.monotonic() >= deadline:
                             terminate(child)
@@ -91,6 +99,8 @@ def observe(args):
                                 "observation_interrupted",
                                 tool=command[0],
                                 file=path.name,
+                                reason="startup_finished" if stop.is_set() else "deadline",
+                                timeout_seconds=timeout,
                             )
                             return False
                     record(
@@ -111,6 +121,8 @@ def observe(args):
     def collect(process):
         try:
             round_number = 0
+            stack_offsets = iter((args.delay, 60, 120))
+            next_stack = next(stack_offsets)
             next_sample = started + args.delay
             deadline = started + args.window
             while not stop.wait(max(0, min(next_sample, deadline) - time.monotonic())):
@@ -122,38 +134,27 @@ def observe(args):
                 round_number += 1
                 prefix = f"{round_number:02d}"
                 record("snapshot", round=round_number, target_pid=process.pid)
-                processes = capture(
+                # Sample the owned compiler first: a saturated host may take
+                # many seconds even to enumerate processes or launch a tool.
+                if time.monotonic() - started >= next_stack:
+                    report = args.output / f"{prefix}-xcodebuild-{process.pid}.sample.txt"
+                    capture(
+                        f"{prefix}-xcodebuild-{process.pid}-sampler",
+                        ["sample", str(process.pid), "1", "20", "-file", str(report)],
+                        45,
+                    )
+                    cap_report(report)
+                    next_stack = next(stack_offsets, float("inf"))
+                capture(
                     prefix + "-processes",
                     ["ps", "-axo", "pid=,ppid=,pcpu=,pmem=,rss=,state=,time=,comm="],
-                    3,
+                    20,
                 )
-                capture(prefix + "-memory", ["vm_stat"], 3)
+                capture(prefix + "-memory", ["vm_stat"], 6)
                 # The first iostat row is since boot; the second covers one second.
-                capture(prefix + "-disk-cpu", ["iostat", "-w", "1", "-c", "2"], 4)
-                if round_number in (1, 4, 8) and not stop.is_set():
-                    targets = [(process.pid, "xcodebuild")]
-                    if processes:
-                        lines = (args.output / (prefix + "-processes.txt")).read_text()
-                        for line in lines.splitlines():
-                            fields = line.split(None, 7)
-                            if len(fields) == 8:
-                                name = Path(fields[7]).name
-                                if name.split(".")[-1] in (
-                                    "CoreSimulatorService",
-                                    "XCBBuildService",
-                                ):
-                                    targets.append((int(fields[0]), name))
-                    for pid, name in targets[:3]:
-                        if process.poll() is not None or stop.is_set():
-                            break
-                        report = args.output / f"{prefix}-{name}-{pid}.sample.txt"
-                        capture(
-                            f"{prefix}-{name}-{pid}-sampler",
-                            ["sample", str(pid), "1", "10", "-file", str(report)],
-                            6,
-                        )
-                        cap_report(report)
-                next_sample += 15
+                capture(prefix + "-disk-cpu", ["iostat", "-w", "1", "-c", "2"], 8)
+                # Do not burst-launch missed rounds on an already overloaded host.
+                next_sample = time.monotonic() + 15
         except Exception as error:
             # Optional diagnostics cannot turn a compiler failure into a success.
             record("observation_unavailable", tool="collector", error=str(error))
@@ -171,6 +172,7 @@ def observe(args):
     observer = None
     tail = b""
     try:
+        record("observer_ready")
         process = subprocess.Popen(
             args.command,
             stdout=subprocess.PIPE,
@@ -241,7 +243,7 @@ def observe(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--delay", type=float, default=15)
-    parser.add_argument("--window", type=float, default=180)
+    parser.add_argument("--window", type=float, default=240)
     parser.add_argument("output", type=Path)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()

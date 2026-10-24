@@ -61,6 +61,7 @@ if command == 'xcodebuild':
         sys.exit(65)
     else:
         wait_for(lambda: (state / 'sample-finished').exists())
+        wait_for(lambda: event_exists('observation', 'iostat'))
         if scenario == 'unavailable':
             wait_for(lambda: event_exists('observation', 'sample'))
         print('Command line invocation:', flush=True)

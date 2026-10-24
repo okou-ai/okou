@@ -249,8 +249,8 @@ See [archive promotion](ARCHIVE_PROMOTION.md).
 For a slow compile-phase Xcode launch, manually dispatch `ios.yml` with
 `sample_xcode_startup=true`. The opt-in observer records UTC and monotonic
 timing, first output and command-banner milestones, process-name/CPU/memory
-snapshots, disk activity, and bounded Xcode/CoreSimulator/build-service stacks.
-It observes at most the first three minutes and stops at the command banner;
+snapshots, disk activity, and up to three bounded compiler stack samples.
+It observes at most the first four minutes and stops at the command banner;
 normal builds do not enable it. Reports omit process arguments and environment
 variables and retain the original compiler exit status. Unavailable diagnostic
 tools are recorded as unavailable. Download the seven-day
@@ -258,6 +258,12 @@ tools are recorded as unavailable. Download the seven-day
 relate each report to the run, PID and startup window. The first `iostat` row is
 since boot; its second row covers one second. Each report is capped at 256 KiB.
 Sampling adds observation overhead and does not establish an optimization result.
+Stack attempts start after 15 seconds, then in rounds after 60 and 120 seconds.
+Each stack attempt allows 45 seconds for tool startup, sampling and symbolization;
+the actual sampling interval is one second at 20 ms. Process enumeration allows
+20 seconds. Slow tools delay later rounds; rounds never catch up in a burst.
+Sampled compile-script entry, observer launch/readiness and compiler creation
+are separate milestones, so shell/Python startup is visible as well.
 
 `ios-build-cache.yml` refreshes shared caches after iOS changes reach main and
 after a same-repository iOS workflow actually starts its native `build-test`
