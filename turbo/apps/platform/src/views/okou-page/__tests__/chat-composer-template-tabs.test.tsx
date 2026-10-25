@@ -189,7 +189,13 @@ test("Unavailable categories stay hidden and the ordinary picker opens the Prese
     queryAllByRoleFast("tab", list).map((tab) => {
       return tab.textContent;
     }),
-  ).toStrictEqual(["Presentation", "Website", "Illustration", "Workflow"]);
+  ).toStrictEqual([
+    "Presentation",
+    "Document",
+    "Website",
+    "Illustration",
+    "Workflow",
+  ]);
   expect(
     within(dialog).getByRole("combobox", { name: "Template category" }),
   ).toHaveTextContent("Presentation");

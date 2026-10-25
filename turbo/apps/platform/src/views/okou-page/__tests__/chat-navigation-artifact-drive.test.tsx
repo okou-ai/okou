@@ -30,7 +30,7 @@ import { expect, test, describe, it } from "vitest";
 import {
   click,
   queryAllByRoleFast,
-  setupPage,
+  setupPage as setupPlatformPage,
 } from "../../../__tests__/page-helper.ts";
 import {
   findNamedLink,
@@ -56,6 +56,16 @@ import {
 } from "./chat-navigation-artifact-test-helpers.ts";
 
 const context = testContext();
+
+function setupPage(options: Parameters<typeof setupPlatformPage>[0]) {
+  return setupPlatformPage({
+    ...options,
+    featureSwitches: {
+      [FeatureSwitchKey.ChatResourcePanel]: false,
+      ...options.featureSwitches,
+    },
+  });
+}
 
 const DRIVE_ARTIFACT_ID = "a0000000-0000-4000-a000-000000000940";
 const DRIVE_FILE_ID = "f0000000-0000-4000-a000-000000000940";

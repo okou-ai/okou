@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.9...runner-storage-v0.6.10) (2026-10-25)
+
+
+### Performance Improvements
+
+* **runner:** index decoded mount ownership checks ([#42773](https://github.com/okou-ai/okou/issues/42773)) ([41e0886](https://github.com/okou-ai/okou/commit/41e088645e693f25d23daad3ad2ca4627e6ae4b1))
+
 ## [0.6.9](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.8...runner-storage-v0.6.9) (2026-10-25)
 
 ## [0.6.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.7...runner-storage-v0.6.8) (2026-10-24)

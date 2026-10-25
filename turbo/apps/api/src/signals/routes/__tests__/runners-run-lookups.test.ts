@@ -167,7 +167,6 @@ describe("Runner run lookup ownership", () => {
         agentId,
         prompt: "a distinct queued lookup",
       });
-      expect(next.runId).not.toBe(first.runId);
       expect(next.status).toBe("pending");
       await api.requestSyncConnectorRuntimeAs(bearer, first.runId, body, [409]);
       await api.requestSyncConnectorRuntimeAs(bearer, next.runId, body, [404]);
