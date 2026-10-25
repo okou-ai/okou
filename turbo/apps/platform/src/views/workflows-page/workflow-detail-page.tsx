@@ -129,7 +129,7 @@ import {
   editingGithubPullRequestAction$,
   editingGmailMatchConditions$,
   editingGoogleCalendarId$,
-  editingWorkflowAutomationId$,
+  editingWorkflowAutomation$,
   isGoogleCalendarWorkflowAutomation,
   patchWorkflowMetadataForm$,
   openWorkflowChat$,
@@ -147,7 +147,7 @@ import {
   setEditingGmailMatchConditions$,
   setEditingGoogleCalendarId$,
   setEditingScheduleCronFields$,
-  setEditingWorkflowAutomationId$,
+  setEditingWorkflowAutomation$,
   setRevealWebhookSecretAutomationId$,
   setSelectedWorkflowFilePath$,
   setWorkflowActionDialog$,
@@ -160,9 +160,7 @@ import {
   setWorkflowAutomationCreateDialog$,
   setWorkflowAutomationEnabled$,
   scrollTargetedWorkflowAutomationIntoViewRef$,
-  updateWorkflowAutomationEventConfig$,
-  updateWorkflowGoogleCalendarAutomationEventConfig$,
-  updateWorkflowScheduleAutomation$,
+  saveWorkflowAutomation$,
   updateWorkflow$,
   workflowActionDialog$,
   workflowDemoteConfirmOpen$,
@@ -7938,10 +7936,10 @@ function AutomationRow({
 }: AutomationRowProps) {
   const targetedAutomationId = useGet(targetedWorkflowAutomationId$);
   const scrollRef = useSet(scrollTargetedWorkflowAutomationIntoViewRef$);
-  const editingAutomationId = useGet(editingWorkflowAutomationId$);
-  const setEditingAutomationId = useSet(setEditingWorkflowAutomationId$);
+  const editingAutomation = useGet(editingWorkflowAutomation$);
+  const setEditingAutomation = useSet(setEditingWorkflowAutomation$);
   const setEditingGoogleCalendarId = useSet(setEditingGoogleCalendarId$);
-  const editing = editingAutomationId === automation.id;
+  const editing = editingAutomation?.id === automation.id;
   const targeted = targetedAutomationId === automation.id;
   const title = workflowScheduleTitle(automation, displayTimezone);
   const subtitle = workflowAutomationSubtitle(automation);
@@ -7993,7 +7991,7 @@ function AutomationRow({
               setEditingGoogleCalendarId(
                 calendarAutomation.eventConfig.calendarId,
               );
-              setEditingAutomationId(calendarAutomation.id);
+              setEditingAutomation(calendarAutomation);
             }}
           />
         ) : null}
@@ -8003,12 +8001,16 @@ function AutomationRow({
       ) : null}
       {canEditStructure ? (
         <EditWorkflowAutomationDialog
-          automation={automation}
+          automation={
+            editingAutomation?.id === automation.id
+              ? editingAutomation
+              : automation
+          }
           displayTimezone={displayTimezone}
           open={editing}
           onOpenChange={(open) => {
             if (!open) {
-              setEditingAutomationId(null);
+              setEditingAutomation(null);
             }
           }}
         />
@@ -8139,7 +8141,7 @@ function AutomationEditButton({
   readonly busy: boolean;
 }) {
   const copy = automationActionCopy();
-  const setEditingAutomationId = useSet(setEditingWorkflowAutomationId$);
+  const setEditingAutomation = useSet(setEditingWorkflowAutomation$);
   const setEditingGoogleCalendarId = useSet(setEditingGoogleCalendarId$);
   const setEditingScheduleCronFields = useSet(setEditingScheduleCronFields$);
 
@@ -8166,7 +8168,7 @@ function AutomationEditButton({
               if (isGoogleCalendarWorkflowAutomation(automation)) {
                 setEditingGoogleCalendarId(automation.eventConfig.calendarId);
               }
-              setEditingAutomationId(automation.id);
+              setEditingAutomation(automation);
             }}
           >
             <Pencil size={14} />
@@ -8589,7 +8591,7 @@ function UpdateScheduleAutomationForm({
   const setCronFields = useSet(setEditingScheduleCronFields$);
   const pageSignal = useGet(pageSignal$);
   const [updateLoadable, updateScheduleAutomation] = useLoadableSet(
-    updateWorkflowScheduleAutomation$,
+    saveWorkflowAutomation$,
   );
   const saving = updateLoadable.state === "loading";
   const schedule = automation.schedule;
@@ -8616,16 +8618,13 @@ function UpdateScheduleAutomationForm({
           return;
         }
         detach(
-          (async () => {
-            await updateScheduleAutomation(
-              {
-                automationId: automation.id,
-                schedule: scheduleValue,
-              },
-              pageSignal,
-            );
-            onCancel();
-          })(),
+          updateScheduleAutomation(
+            {
+              automationId: automation.id,
+              schedule: scheduleValue,
+            },
+            pageSignal,
+          ),
           Reason.DomCallback,
         );
       }}
@@ -8672,7 +8671,7 @@ function UpdateGoogleCalendarAutomationForm({
   const calendarId = useGet(editingGoogleCalendarId$);
   const setCalendarId = useSet(setEditingGoogleCalendarId$);
   const [updateLoadable, updateGoogleCalendarAutomation] = useLoadableSet(
-    updateWorkflowGoogleCalendarAutomationEventConfig$,
+    saveWorkflowAutomation$,
   );
   const saving = updateLoadable.state === "loading";
 
@@ -8689,19 +8688,16 @@ function UpdateGoogleCalendarAutomationForm({
           return;
         }
         detach(
-          (async () => {
-            await updateGoogleCalendarAutomation(
-              {
-                automationId: automation.id,
-                eventConfig: updatedGoogleCalendarEventConfig(
-                  automation,
-                  submittedCalendarId,
-                ),
-              },
-              pageSignal,
-            );
-            onCancel();
-          })(),
+          updateGoogleCalendarAutomation(
+            {
+              automationId: automation.id,
+              eventConfig: updatedGoogleCalendarEventConfig(
+                automation,
+                submittedCalendarId,
+              ),
+            },
+            pageSignal,
+          ),
           Reason.DomCallback,
         );
       }}
@@ -8769,7 +8765,7 @@ function UpdateGmailNewMessageAutomationForm({
 }) {
   const pageSignal = useGet(pageSignal$);
   const [updateLoadable, updateGmailAutomation] = useLoadableSet(
-    updateWorkflowAutomationEventConfig$,
+    saveWorkflowAutomation$,
   );
   const matchConditionsByAutomationId = useGet(editingGmailMatchConditions$);
   const setMatchConditions = useSet(setEditingGmailMatchConditions$);
@@ -8788,19 +8784,16 @@ function UpdateGmailNewMessageAutomationForm({
         event.preventDefault();
         const form = new FormData(event.currentTarget);
         detach(
-          (async () => {
-            await updateGmailAutomation(
-              {
-                automationId: automation.id,
-                eventConfig: buildGmailNewMessageEventConfig(
-                  form,
-                  automation.eventConfig,
-                ),
-              },
-              pageSignal,
-            );
-            onCancel();
-          })(),
+          updateGmailAutomation(
+            {
+              automationId: automation.id,
+              eventConfig: buildGmailNewMessageEventConfig(
+                form,
+                automation.eventConfig,
+              ),
+            },
+            pageSignal,
+          ),
           Reason.DomCallback,
         );
       }}
@@ -8840,7 +8833,7 @@ function UpdateGmailLabelAppliedAutomationForm({
 }) {
   const pageSignal = useGet(pageSignal$);
   const [updateLoadable, updateGmailLabelAutomation] = useLoadableSet(
-    updateWorkflowAutomationEventConfig$,
+    saveWorkflowAutomation$,
   );
   const saving = updateLoadable.state === "loading";
 
@@ -8858,16 +8851,13 @@ function UpdateGmailLabelAppliedAutomationForm({
           return;
         }
         detach(
-          (async () => {
-            await updateGmailLabelAutomation(
-              {
-                automationId: automation.id,
-                eventConfig,
-              },
-              pageSignal,
-            );
-            onCancel();
-          })(),
+          updateGmailLabelAutomation(
+            {
+              automationId: automation.id,
+              eventConfig,
+            },
+            pageSignal,
+          ),
           Reason.DomCallback,
         );
       }}
@@ -8918,7 +8908,7 @@ function UpdateGithubWorkflowRunCompletedAutomationForm({
 }) {
   const pageSignal = useGet(pageSignal$);
   const [updateLoadable, updateGithubWorkflowRunAutomation] = useLoadableSet(
-    updateWorkflowAutomationEventConfig$,
+    saveWorkflowAutomation$,
   );
   const saving = updateLoadable.state === "loading";
   return (
@@ -8933,16 +8923,13 @@ function UpdateGithubWorkflowRunCompletedAutomationForm({
           new FormData(event.currentTarget),
         );
         detach(
-          (async () => {
-            await updateGithubWorkflowRunAutomation(
-              {
-                automationId: automation.id,
-                eventConfig,
-              },
-              pageSignal,
-            );
-            onCancel();
-          })(),
+          updateGithubWorkflowRunAutomation(
+            {
+              automationId: automation.id,
+              eventConfig,
+            },
+            pageSignal,
+          ),
           Reason.DomCallback,
         );
       }}
@@ -8976,7 +8963,7 @@ function UpdateGithubWebhookAutomationForm({
 }) {
   const pageSignal = useGet(pageSignal$);
   const [updateLoadable, updateGithubWebhookAutomation] = useLoadableSet(
-    updateWorkflowAutomationEventConfig$,
+    saveWorkflowAutomation$,
   );
   const saving = updateLoadable.state === "loading";
   return (
@@ -8995,13 +8982,10 @@ function UpdateGithubWebhookAutomationForm({
           new FormData(event.currentTarget),
         );
         detach(
-          (async () => {
-            await updateGithubWebhookAutomation(
-              { automationId: automation.id, eventConfig },
-              pageSignal,
-            );
-            onCancel();
-          })(),
+          updateGithubWebhookAutomation(
+            { automationId: automation.id, eventConfig },
+            pageSignal,
+          ),
           Reason.DomCallback,
         );
       }}

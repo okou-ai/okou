@@ -4187,3 +4187,49 @@ test("Open a workflow from the workspace", async () => {
     expect(screen.getAllByText("Sales Research").length).toBeGreaterThan(0);
   });
 });
+test("A completed automation update preserves a reopened editor draft", async () => {
+  const automation: WorkflowScheduleAutomationSummary = {
+    ...weekdayWorkflowAutomation(),
+    schedule: { type: "loop", intervalSeconds: 3600 },
+    scheduleSummary: "Every 1 hour",
+  };
+  const workflow = { ...salesResearch(), automations: [automation] };
+  mockWorkflowApis([workflow]);
+  const started = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  context.mocks.api(workflowAutomationsContract.update, async ({ respond }) => {
+    started.resolve();
+    await response.promise;
+    const saved: WorkflowScheduleAutomationSummary = {
+      ...automation,
+      schedule: { type: "loop", intervalSeconds: 18_000 },
+      scheduleSummary: "Every 5 hours",
+    };
+    workflow.automations = [saved];
+    return respond(200, saved);
+  });
+  await setupWorkflowDetailPage(workflowDetailPath("automations"));
+  click(await waitFor(() => {return buttonByText("Edit automation")}));
+  const first = screen.getByRole("form", {
+    name: "Update schedule automation",
+  });
+  fireEvent.submit(first);
+  await started.promise;
+  click(buttonByText("Close", screen.getByRole("dialog")));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  click(buttonByText("Edit automation"));
+  const draft = screen.getByRole("form", {
+    name: "Update schedule automation",
+  });
+  selectOptionByLabel("Every", "30 minutes", draft);
+  response.resolve();
+  await screen.findByText("Every 5 hours");
+  await expect(
+    screen.findByRole("form", { name: "Update schedule automation" }),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(draft).getByRole("combobox", { name: "Every" }),
+  ).toHaveTextContent("30 minutes");
+});

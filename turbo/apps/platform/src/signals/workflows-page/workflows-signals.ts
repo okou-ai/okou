@@ -247,7 +247,9 @@ const internalWorkflowCopyForm$ = state<WorkflowCopyFormState>(
 );
 const internalWorkflowFileDraft$ = state<WorkflowDetailFileDraft | null>(null);
 const internalWorkflowFileEditorRevision$ = state(0);
-const internalEditingWorkflowAutomationId$ = state<string | null>(null);
+const internalWorkflowAutomationEditor$ = state<{
+  readonly automation: WorkflowAutomationSummary;
+} | null>(null);
 const internalEditingGoogleCalendarId$ = state("");
 const internalWorkflowMetadataPatch$ = state<WorkflowMetadataPatch | null>(
   null,
@@ -463,7 +465,7 @@ export const resetWorkflowDetailUiState$ = command(({ set }) => {
   set(internalWorkflowCopyForm$, defaultWorkflowCopyForm());
   set(internalWorkflowFileDraft$, null);
   set(internalWorkflowFileEditorRevision$, 0);
-  set(internalEditingWorkflowAutomationId$, null);
+  set(internalWorkflowAutomationEditor$, null);
   set(internalEditingGoogleCalendarId$, "");
   set(internalWorkflowMetadataPatch$, null);
   set(internalWorkflowAutomationCreateDialog$, null);
@@ -500,17 +502,20 @@ export const setWorkflowDetailActiveTab$ = command(
   },
 );
 
-export const editingWorkflowAutomationId$ = computed((get) => {
-  return get(internalEditingWorkflowAutomationId$);
+export const editingWorkflowAutomation$ = computed((get) => {
+  return get(internalWorkflowAutomationEditor$)?.automation ?? null;
 });
 
-export const setEditingWorkflowAutomationId$ = command(
-  ({ set }, automationId: string | null) => {
-    if (automationId) {
+export const setEditingWorkflowAutomation$ = command(
+  ({ set }, automation: WorkflowAutomationSummary | null) => {
+    if (automation) {
       set(internalEditingGithubPullRequestAction$, null);
       set(internalEditingGmailMatchConditions$, {});
     }
-    set(internalEditingWorkflowAutomationId$, automationId);
+    set(
+      internalWorkflowAutomationEditor$,
+      automation === null ? null : { automation },
+    );
   },
 );
 
@@ -1465,7 +1470,7 @@ export const revealWorkflowWebhookSecret$ = command(
   },
 );
 
-export const updateWorkflowAutomationEventConfig$ = command(
+const updateWorkflowAutomationEventConfig$ = command(
   async (
     { get, set },
     input: { readonly automationId: string } & Extract<
@@ -1489,7 +1494,7 @@ export const updateWorkflowAutomationEventConfig$ = command(
   },
 );
 
-export const updateWorkflowGoogleCalendarAutomationEventConfig$ = command(
+const updateWorkflowGoogleCalendarAutomationEventConfig$ = command(
   async (
     { get, set },
     input: {
@@ -1524,7 +1529,7 @@ export const updateWorkflowGoogleCalendarAutomationEventConfig$ = command(
   },
 );
 
-export const updateWorkflowScheduleAutomation$ = command(
+const updateWorkflowScheduleAutomation$ = command(
   async (
     { get, set },
     input: {
@@ -1544,6 +1549,36 @@ export const updateWorkflowScheduleAutomation$ = command(
     );
     signal.throwIfAborted();
     set(reloadWorkflows$);
+  },
+);
+
+export const saveWorkflowAutomation$ = command(
+  async (
+    { get, set },
+    input: { readonly automationId: string } & WorkflowAutomationUpdateRequest,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const editor = get(internalWorkflowAutomationEditor$);
+    if ("eventConfig" in input) {
+      if (input.eventConfig.provider === "google-calendar") {
+        await set(
+          updateWorkflowGoogleCalendarAutomationEventConfig$,
+          {
+            automationId: input.automationId,
+            eventConfig: input.eventConfig,
+          },
+          signal,
+        );
+      } else {
+        await set(updateWorkflowAutomationEventConfig$, input, signal);
+      }
+    } else {
+      await set(updateWorkflowScheduleAutomation$, input, signal);
+    }
+    signal.throwIfAborted();
+    if (editor && get(internalWorkflowAutomationEditor$) === editor) {
+      set(setEditingWorkflowAutomation$, null);
+    }
   },
 );
 
