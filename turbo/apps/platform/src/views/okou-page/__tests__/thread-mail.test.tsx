@@ -232,7 +232,10 @@ async function openChat(
     context,
     path,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ThreadEmailManager]: enabled },
+    featureSwitches: {
+      [FeatureSwitchKey.ThreadEmailManager]: enabled,
+      [FeatureSwitchKey.ChatResourcePanel]: false,
+    },
   });
   await waitFor(() => {
     expect(screen.getAllByRole("textbox", { name: "Message" })).toHaveLength(
