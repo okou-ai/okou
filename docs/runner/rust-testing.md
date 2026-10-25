@@ -84,6 +84,12 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-network -- --test-threads=1
 
+# Public network-log upload allocation regression, isolated from other tests.
+# Measures allocation requests for real file/HTTP work; it is not a process-RSS
+# or aggregate concurrent-upload bound.
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-network --test network_log_memory -- --test-threads=1
+
 # Extracted Runner guest RPC, usage, SSH, and VNC owner tests.
 # Includes native TLS/Noise/DERP/TCP and common SSH tests with synthetic external
 # services, real encrypted traffic, binary transfers and physical IO retirement.
