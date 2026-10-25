@@ -1213,13 +1213,7 @@ function FeishuSetupWizard({
       return;
     }
     if (step === "tokens" && !readOnly) {
-      detach(
-        (async () => {
-          await setup(feishuSetupRequest(form, data), signal);
-          advanceStep();
-        })(),
-        Reason.DomCallback,
-      );
+      detach(setup(feishuSetupRequest(form, data), signal), Reason.DomCallback);
       return;
     }
     if (step === "publish") {
