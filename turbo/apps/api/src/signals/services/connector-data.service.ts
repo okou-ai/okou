@@ -40,8 +40,6 @@ import {
 } from "@okouai/db/runtime/connector-catalog";
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { gmailWatchStates } from "@okouai/db/schema/gmail-event";
-import { googleCalendarWatchStates } from "@okouai/db/schema/google-calendar-event";
 import { mailDrafts } from "@okouai/db/schema/mail-draft";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { secrets } from "@okouai/db/schema/secret";
@@ -94,9 +92,10 @@ import {
   type BuiltinDeletionAccount,
 } from "./connector-account-resolution.service";
 import {
-  connectorAccountEmailWhere,
+  connectorAccountEmailWrite as accountEmailWrite,
+  connectorAccountRewatchWrite as rewatchWrite,
   connectorAccountPrincipalWatchTables,
-  connectorAccountReconciliationIdentity,
+  connectorAccountReconciliationIdentity as connectionIdentity,
 } from "./connector-account-state.service";
 import { normalizeManualGrantSubmittedValuesWithMethod } from "./connector-catalog-form-fields.service";
 import {
@@ -116,12 +115,15 @@ import {
 } from "./connector-catalog-slug-source.service";
 import { publishBuiltinConnectorInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import {
-  connectorConnectionMutationReadPlan,
-  connectorConnectionMutationReadResult,
+  connectorConnectionMutationReadPlan as connectionMutationReadPlan,
+  connectorConnectionMutationReadResult as connectionMutationReadResult,
   type ConnectorConnectionMutationArgs,
   type ConnectorConnectionMutationResolution,
   type StoredConnectorConnectionRow as StoredConnectorRow,
-  writeConnectorConnectionMetadataOutcome as writeConnectionMetadata,
+  connectorConnectionMetadataWritePlan as connectionMetadataWritePlan,
+  connectorConnectionMetadataWriteResult as connectionMetadataWriteResult,
+  connectorConnectionSelection as connectionSelection,
+  type ConnectorConnectionMetadataQuery,
   type ConnectorConnectionWriteArgs,
 } from "./connector-connection-write.service";
 import {
@@ -136,8 +138,8 @@ import {
   connectorOwnedVariableWrite,
   manualGrantConnectionMetadata,
   manualGrantCredentialArgs,
-  manualGrantSecretWrite,
-  manualGrantVariableWrite,
+  manualGrantCredentialFields,
+  manualGrantCredentialWrite,
   requireManualGrantWrite,
   manualGrantUserSecretDeletion,
   manualGrantUserVariableDeletion,
@@ -154,7 +156,7 @@ import { reconcileGmailWatchesForUser$ } from "./gmail-automation-watch.service"
 import { gmailAutomationResolvedLabelInvalidationWrite } from "./gmail-automation-account.service";
 import {
   notionPendingEventsReconnectScope,
-  notionPendingEventsSkipWrite,
+  notionPendingEventsSkipWrite as pendingEventsSkipWrite,
 } from "./notion-automation-account.service";
 import {
   prepareGoogleCalendarWatchStopForConnector$,
@@ -980,10 +982,7 @@ async function prepareBuiltinConnectorAccountDeletion(
       await (async () => {
         const scope = notionPendingEventsReconnectScope(invalidatedConnectorId);
         await (async () => {
-          const write = notionPendingEventsSkipWrite(
-            scope.condition,
-            scope.reason,
-          );
+          const write = pendingEventsSkipWrite(scope.condition, scope.reason);
           await pendingEventDb
             .update(write.table)
             .set(write.values)
@@ -1604,10 +1603,9 @@ async function commitManualGrantConnector(
   args: CommitManualGrantConnectorArgs,
   signal: AbortSignal,
 ): Promise<ManualGrantConnectorCommitResult> {
-  const mutationReadArgs: ConnectorConnectionMutationArgs =
-    builtinConnectorLocalMutationValues(args);
+  const mutationReadArgs = builtinConnectorLocalMutationValues(args);
   const resolution = await (async () => {
-    let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+    let read = connectionMutationReadPlan(mutationReadArgs);
     for (;;) {
       const rows = await db
         .select(read.columns)
@@ -1615,11 +1613,7 @@ async function commitManualGrantConnector(
         .where(read.where)
         .orderBy(...read.orderBy)
         .limit(read.limit);
-      const result = connectorConnectionMutationReadResult(
-        mutationReadArgs,
-        read,
-        rows,
-      );
+      const result = connectionMutationReadResult(mutationReadArgs, read, rows);
       if (result.kind === "resolved") {
         return result.resolution;
       }
@@ -1631,44 +1625,61 @@ async function commitManualGrantConnector(
     return connectorConnectionMutationFailure(resolution);
   }
 
-  const revokeReadDb = db;
-  const revokeReadArgs: BuiltinConnectorPendingTokenRevokeArgs =
-    localTokenRevokeValues(
-      args,
-      resolution.mutation,
-      args.featureSwitchContext,
-    );
-  const revokeReadSignal = signal;
-  const pendingTokenRevoke =
-    await (async (): Promise<PendingBuiltinConnectorTokenRevoke | null> => {
-      const preparation = prepareBuiltinTokenRevoke(revokeReadArgs);
-      if (!preparation) {
-        return null;
+  const revokeReadArgs = localTokenRevokeValues(
+    args,
+    resolution.mutation,
+    args.featureSwitchContext,
+  );
+  const pendingTokenRevoke = await (async () => {
+    const preparation = prepareBuiltinTokenRevoke(revokeReadArgs);
+    if (!preparation) {
+      return null;
+    }
+    return await (async () => {
+      const read = builtinConnectorTokenRevokeReadPlan(preparation.access);
+      if (read.kind !== "read") {
+        return builtinTokenRevokeFromRows(preparation, read, []);
       }
-      return await (async () => {
-        const read = builtinConnectorTokenRevokeReadPlan(preparation.access);
-        if (read.kind !== "read") {
-          return builtinTokenRevokeFromRows(preparation, read, []);
-        }
-        const secretRows = await revokeReadDb
-          .select(read.columns)
-          .from(read.from)
-          .where(read.where);
-        revokeReadSignal.throwIfAborted();
-        return builtinTokenRevokeFromRows(preparation, read, secretRows);
-      })();
+      const secretRows = await db
+        .select(read.columns)
+        .from(read.from)
+        .where(read.where);
+      signal.throwIfAborted();
+      return builtinTokenRevokeFromRows(preparation, read, secretRows);
     })();
+  })();
   const writeArgs = manualGrantWriteArgs(args, resolution);
   const written = await (async () => {
-    const outcome = await writeConnectionMetadata(db, writeArgs);
+    const outcome = await (async () => {
+      let write = connectionMetadataWritePlan(writeArgs);
+      for (;;) {
+        const query: ConnectorConnectionMetadataQuery =
+          write.kind === "update"
+            ? db.update(connectors).set(write.values).where(write.where)
+            : write.conflict
+              ? db
+                  .insert(connectors)
+                  .values(write.values)
+                  .onConflictDoNothing(write.conflict)
+              : db.insert(connectors).values(write.values);
+        const [row] = await query.returning(connectionSelection());
+        const result = connectionMetadataWriteResult(write, row);
+        if (result.kind === "resolved") {
+          return write.phase === "existing"
+            ? result.outcome
+            : await Promise.resolve(result.outcome);
+        }
+        write = result.write;
+      }
+    })();
     signal.throwIfAborted();
     if (outcome.kind !== "written") {
       return outcome;
     }
     const connection = outcome.row;
-    const credentialDeletion = { connectorId: connection.id, connection };
+
     for (const kind of connectorCredentialDeletionKinds) {
-      const deletion = connectorCredentialDeletion(kind, credentialDeletion);
+      const deletion = connectorCredentialDeletion(kind, connection);
       await db.delete(deletion.from).where(deletion.where);
       if (kind !== "builtin-oauth") {
         signal.throwIfAborted();
@@ -1678,24 +1689,14 @@ async function commitManualGrantConnector(
     await (async () => {
       const credentialArgs = manualGrantCredentialArgs(args, connectorId);
       await (async (): Promise<void> => {
-        for (const field of credentialArgs.encryptedSecrets) {
-          const write = manualGrantSecretWrite(credentialArgs, field);
+        for (const entry of manualGrantCredentialFields(credentialArgs)) {
+          const write = manualGrantCredentialWrite(credentialArgs, entry);
           const [row] = await db
-            .insert(secrets)
+            .insert(write.table)
             .values(write.values)
             .onConflictDoUpdate(write.conflict)
-            .returning({ id: secrets.id });
-          requireManualGrantWrite(row, "secret", write.values.name);
-          signal.throwIfAborted();
-        }
-        for (const field of credentialArgs.variableValues) {
-          const write = manualGrantVariableWrite(credentialArgs, field);
-          const [row] = await db
-            .insert(variables)
-            .values(write.values)
-            .onConflictDoUpdate(write.conflict)
-            .returning({ id: variables.id });
-          requireManualGrantWrite(row, "variable", write.values.name);
+            .returning({ id: write.table.id });
+          requireManualGrantWrite(row, entry.kind, write.values.name);
           signal.throwIfAborted();
         }
       })();
@@ -1718,10 +1719,7 @@ async function commitManualGrantConnector(
   const variableRef = manualGrantCleanupValues(args, "variable");
   await (async (): Promise<void> => {
     for (const name of variableRef.names) {
-      const deletion = manualGrantUserVariableDeletion({
-        ...variableRef,
-        name,
-      });
+      const deletion = manualGrantUserVariableDeletion(variableRef, name);
       await db.delete(deletion.from).where(deletion.where);
       signal.throwIfAborted();
     }
@@ -1811,16 +1809,31 @@ export const connectManualGrantBuiltinConnector$ = command(
   },
 );
 
+interface ConnectNoAuthBuiltinConnectorArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly runtimeMethod: ConnectorRuntimeMethod;
+  readonly snapshot: ConnectorRuntimeSelection;
+  readonly account: ConnectorAccountMutationIntent;
+}
+
+function noAuthFinalizationArgs(
+  args: ConnectNoAuthBuiltinConnectorArgs,
+  pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null,
+  postCommitAbort: unknown,
+) {
+  return {
+    userId: args.userId,
+    connectorSlug: args.runtimeMethod.connectorSlug,
+    pendingTokenRevoke,
+    postCommitAbort,
+  };
+}
+
 export const connectNoAuthBuiltinConnector$ = command(
   async (
     { get, set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly runtimeMethod: ConnectorRuntimeMethod;
-      readonly snapshot: ConnectorRuntimeSelection;
-      readonly account: ConnectorAccountMutationIntent;
-    },
+    args: ConnectNoAuthBuiltinConnectorArgs,
     signal: AbortSignal,
   ): Promise<ConnectNoAuthConnectorResult> => {
     const featureSwitchContext = await get(
@@ -1836,19 +1849,17 @@ export const connectNoAuthBuiltinConnector$ = command(
 
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0118; new non-billing transactions are prohibited.
     await writeDb.transaction(async (tx) => {
-      const mutationReadDb = tx;
-      const mutationReadArgs: ConnectorConnectionMutationArgs =
-        builtinConnectorLocalMutationValues(args);
+      const mutationReadArgs = builtinConnectorLocalMutationValues(args);
       const resolution = await (async () => {
-        let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+        let read = connectionMutationReadPlan(mutationReadArgs);
         for (;;) {
-          const rows = await mutationReadDb
+          const rows = await tx
             .select(read.columns)
             .from(read.from)
             .where(read.where)
             .orderBy(...read.orderBy)
             .limit(read.limit);
-          const result = connectorConnectionMutationReadResult(
+          const result = connectionMutationReadResult(
             mutationReadArgs,
             read,
             rows,
@@ -1865,45 +1876,60 @@ export const connectNoAuthBuiltinConnector$ = command(
         return;
       }
 
-      const revokeReadDb = tx;
-      const revokeReadArgs: BuiltinConnectorPendingTokenRevokeArgs =
-        localTokenRevokeValues(args, resolution.mutation, featureSwitchContext);
-      const revokeReadSignal = signal;
-      pendingTokenRevoke =
-        await (async (): Promise<PendingBuiltinConnectorTokenRevoke | null> => {
-          const preparation = prepareBuiltinTokenRevoke(revokeReadArgs);
-          if (!preparation) {
-            return null;
+      const revokeReadArgs = localTokenRevokeValues(
+        args,
+        resolution.mutation,
+        featureSwitchContext,
+      );
+      pendingTokenRevoke = await (async () => {
+        const preparation = prepareBuiltinTokenRevoke(revokeReadArgs);
+        if (!preparation) {
+          return null;
+        }
+        return await (async () => {
+          const read = builtinConnectorTokenRevokeReadPlan(preparation.access);
+          if (read.kind !== "read") {
+            return builtinTokenRevokeFromRows(preparation, read, []);
           }
-          return await (async () => {
-            const read = builtinConnectorTokenRevokeReadPlan(
-              preparation.access,
-            );
-            if (read.kind !== "read") {
-              return builtinTokenRevokeFromRows(preparation, read, []);
-            }
-            const secretRows = await revokeReadDb
-              .select(read.columns)
-              .from(read.from)
-              .where(read.where);
-            revokeReadSignal.throwIfAborted();
-            return builtinTokenRevokeFromRows(preparation, read, secretRows);
-          })();
+          const secretRows = await tx
+            .select(read.columns)
+            .from(read.from)
+            .where(read.where);
+          signal.throwIfAborted();
+          return builtinTokenRevokeFromRows(preparation, read, secretRows);
         })();
+      })();
       const writeArgs = noAuthWriteArgs(args, resolution);
       const written = await (async () => {
-        const outcome = await writeConnectionMetadata(tx, writeArgs);
+        const outcome = await (async () => {
+          let write = connectionMetadataWritePlan(writeArgs);
+          for (;;) {
+            const query: ConnectorConnectionMetadataQuery =
+              write.kind === "update"
+                ? tx.update(connectors).set(write.values).where(write.where)
+                : write.conflict
+                  ? tx
+                      .insert(connectors)
+                      .values(write.values)
+                      .onConflictDoNothing(write.conflict)
+                  : tx.insert(connectors).values(write.values);
+            const [row] = await query.returning(connectionSelection());
+            const result = connectionMetadataWriteResult(write, row);
+            if (result.kind === "resolved") {
+              return write.phase === "existing"
+                ? result.outcome
+                : await Promise.resolve(result.outcome);
+            }
+            write = result.write;
+          }
+        })();
         signal.throwIfAborted();
         if (outcome.kind !== "written") {
           return outcome;
         }
-        const connection = outcome.row;
-        const credentialDeletion = { connectorId: connection.id, connection };
+
         for (const kind of connectorCredentialDeletionKinds) {
-          const deletion = connectorCredentialDeletion(
-            kind,
-            credentialDeletion,
-          );
+          const deletion = connectorCredentialDeletion(kind, outcome.row);
           await tx.delete(deletion.from).where(deletion.where);
           if (kind !== "builtin-oauth") {
             signal.throwIfAborted();
@@ -1935,12 +1961,7 @@ export const connectNoAuthBuiltinConnector$ = command(
     }
 
     await finalizeConnectorStateChangeAfterCommit(
-      {
-        userId: args.userId,
-        connectorSlug: args.runtimeMethod.connectorSlug,
-        pendingTokenRevoke,
-        postCommitAbort,
-      },
+      noAuthFinalizationArgs(args, pendingTokenRevoke, postCommitAbort),
       signal,
     );
     signal.throwIfAborted();
@@ -2342,16 +2363,16 @@ async function upsertPreparedConnectorTokenState(
   })();
 }
 
-function isExplicitReconnectIdentityMismatch(args: {
-  readonly account: ConnectorAccountMutationIntent;
-  readonly existing: StoredConnectorRow | null;
-  readonly nextExternalId: string;
-}): boolean {
+function isExplicitReconnectIdentityMismatch(
+  account: ConnectorAccountMutationIntent,
+  existing: StoredConnectorRow | null,
+  nextExternalId: string,
+): boolean {
   return (
-    args.account.intent === "reconnect" &&
-    args.existing?.externalId !== null &&
-    args.existing?.externalId !== undefined &&
-    args.existing.externalId !== args.nextExternalId
+    account.intent === "reconnect" &&
+    existing?.externalId !== null &&
+    existing?.externalId !== undefined &&
+    existing.externalId !== nextExternalId
   );
 }
 
@@ -2570,11 +2591,11 @@ export async function commitBuiltinConnectorTokenConnection(
   const existingConnector =
     resolution.mutation.kind === "update" ? resolution.mutation.existing : null;
   if (
-    isExplicitReconnectIdentityMismatch({
-      account: args.account,
-      existing: existingConnector,
-      nextExternalId: args.userInfo.id,
-    })
+    isExplicitReconnectIdentityMismatch(
+      args.account,
+      existingConnector,
+      args.userInfo.id,
+    )
   ) {
     return { status: "identityMismatch" };
   }
@@ -2585,51 +2606,33 @@ export async function commitBuiltinConnectorTokenConnection(
   );
   if (existingConnector !== null) {
     const db = args.db;
-    const ref = connectorAccountReconciliationIdentity(
-      existingConnector,
-      args.userInfo,
-    );
+    const ref = connectionIdentity(existingConnector, args.userInfo);
     await (async () => {
       if (ref.previousPrincipalId === ref.nextPrincipalId) {
         if (ref.nextEmail !== null && ref.previousEmail !== ref.nextEmail) {
-          await db
-            .update(gmailWatchStates)
-            .set({ emailAddress: ref.nextEmail, updatedAt: nowDate() })
-            .where(eq(gmailWatchStates.connectorId, ref.connectorId));
+          const write = accountEmailWrite(ref.connectorId, ref.nextEmail);
+          await db.update(write.table).set(write.values).where(write.where);
           signal.throwIfAborted();
           if (ref.previousEmail !== null) {
-            await db
-              .update(googleCalendarWatchStates)
-              .set({ needsRewatch: true, updatedAt: nowDate() })
-              .where(
-                connectorAccountEmailWhere(ref.connectorId, ref.previousEmail),
-              );
+            const write = rewatchWrite(ref.connectorId, ref.previousEmail);
+            await db.update(write.table).set(write.values).where(write.where);
             signal.throwIfAborted();
           }
         }
         return;
       }
-      const labelDb = db;
-      const labelConnectorId = ref.connectorId;
       await (async () => {
-        const write =
-          gmailAutomationResolvedLabelInvalidationWrite(labelConnectorId);
-        await labelDb.update(write.table).set(write.values).where(write.where);
+        const write = gmailAutomationResolvedLabelInvalidationWrite(
+          ref.connectorId,
+        );
+        await db.update(write.table).set(write.values).where(write.where);
       })();
       signal.throwIfAborted();
-      const pendingEventDb = db;
-      const invalidatedConnectorId = ref.connectorId;
       await (async () => {
-        const scope = notionPendingEventsReconnectScope(invalidatedConnectorId);
+        const scope = notionPendingEventsReconnectScope(ref.connectorId);
         await (async () => {
-          const write = notionPendingEventsSkipWrite(
-            scope.condition,
-            scope.reason,
-          );
-          await pendingEventDb
-            .update(write.table)
-            .set(write.values)
-            .where(write.where);
+          const write = pendingEventsSkipWrite(scope.condition, scope.reason);
+          await db.update(write.table).set(write.values).where(write.where);
         })();
       })();
       signal.throwIfAborted();
@@ -2648,15 +2651,36 @@ export async function commitBuiltinConnectorTokenConnection(
   const values = builtinConnectorTokenConnectionValues(connection);
   const writeArgs = tokenWriteArgs(values, resolution, args.insertConnectionId);
   const written = await (async () => {
-    const outcome = await writeConnectionMetadata(db, writeArgs);
+    const outcome = await (async () => {
+      let write = connectionMetadataWritePlan(writeArgs);
+      for (;;) {
+        const query: ConnectorConnectionMetadataQuery =
+          write.kind === "update"
+            ? db.update(connectors).set(write.values).where(write.where)
+            : write.conflict
+              ? db
+                  .insert(connectors)
+                  .values(write.values)
+                  .onConflictDoNothing(write.conflict)
+              : db.insert(connectors).values(write.values);
+        const [row] = await query.returning(connectionSelection());
+        const result = connectionMetadataWriteResult(write, row);
+        if (result.kind === "resolved") {
+          return write.phase === "existing"
+            ? result.outcome
+            : await Promise.resolve(result.outcome);
+        }
+        write = result.write;
+      }
+    })();
     signal.throwIfAborted();
     if (outcome.kind !== "written") {
       return outcome;
     }
     const connection = outcome.row;
-    const credentialDeletion = { connectorId: connection.id, connection };
+
     for (const kind of connectorCredentialDeletionKinds) {
-      const deletion = connectorCredentialDeletion(kind, credentialDeletion);
+      const deletion = connectorCredentialDeletion(kind, connection);
       await db.delete(deletion.from).where(deletion.where);
       if (kind !== "builtin-oauth") {
         signal.throwIfAborted();
@@ -2675,7 +2699,6 @@ export async function commitBuiltinConnectorTokenConnection(
   if (written.kind !== "written") {
     return connectorConnectionMutationFailure(written);
   }
-  const connectorRow = written.row;
   if (isOneClickConnectorGrantKind(args.runtimeMethod.method.grant.kind)) {
     await args.db.execute(completedGetStartedQuestSql(values.quest, nowDate()));
   }
@@ -2683,7 +2706,7 @@ export async function commitBuiltinConnectorTokenConnection(
     { ...args, connectorSlug: args.runtimeMethod.connectorSlug },
     signal,
   );
-  return tokenConnected(connectorRow, existingConnector, cleanup);
+  return tokenConnected(written.row, existingConnector, cleanup);
 }
 export const prepareBuiltinConnectorTokenConnection$ = command(
   async (
@@ -2869,7 +2892,7 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
         const mutationReadArgs: ConnectorConnectionMutationArgs =
           builtinConnectorTokenMutationValues(connection);
         const resolution = await (async () => {
-          let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+          let read = connectionMutationReadPlan(mutationReadArgs);
           for (;;) {
             const rows = await mutationReadDb
               .select(read.columns)
@@ -2877,7 +2900,7 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
               .where(read.where)
               .orderBy(...read.orderBy)
               .limit(read.limit);
-            const result = connectorConnectionMutationReadResult(
+            const result = connectionMutationReadResult(
               mutationReadArgs,
               read,
               rows,

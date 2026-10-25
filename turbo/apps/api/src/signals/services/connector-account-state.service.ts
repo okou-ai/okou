@@ -4,6 +4,30 @@ import { googleFormsWatchStates } from "@okouai/db/schema/google-forms-event";
 import { googleWorkspaceEventSubscriptionStates } from "@okouai/db/schema/google-workspace-event";
 import { and, eq } from "drizzle-orm";
 
+import { nowDate } from "../../lib/time";
+
+export function connectorAccountEmailWrite(
+  connectorId: string,
+  emailAddress: string,
+) {
+  return {
+    table: gmailWatchStates,
+    values: { emailAddress, updatedAt: nowDate() },
+    where: eq(gmailWatchStates.connectorId, connectorId),
+  };
+}
+
+export function connectorAccountRewatchWrite(
+  connectorId: string,
+  previousEmail: string,
+) {
+  return {
+    table: googleCalendarWatchStates,
+    values: { needsRewatch: true, updatedAt: nowDate() },
+    where: connectorAccountEmailWhere(connectorId, previousEmail),
+  };
+}
+
 export function connectorAccountReconciliationIdentity(
   previous: {
     readonly id: string;
@@ -21,7 +45,7 @@ export function connectorAccountReconciliationIdentity(
   };
 }
 
-export function connectorAccountEmailWhere(
+function connectorAccountEmailWhere(
   connectorId: string,
   previousEmail: string,
 ) {
