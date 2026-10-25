@@ -319,6 +319,7 @@ export const updateCustomConnector$ = command(
     },
     signal: AbortSignal,
   ): Promise<CustomConnectorResponse> => {
+    const dialog = get(internalDialog$);
     const createClient = get(apiClient$);
     const client = createClient(customConnectorByIdContract);
     const result = await accept(
@@ -340,6 +341,9 @@ export const updateCustomConnector$ = command(
         { connector: connector.displayName },
       ),
     );
+    if (get(internalDialog$) === dialog) {
+      set(closeCustomConnectorDialog$);
+    }
     return connector;
   },
 );
