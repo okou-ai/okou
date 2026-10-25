@@ -47,6 +47,7 @@ def observe(args):
         "run_id": os.environ.get("GITHUB_RUN_ID"),
         "attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
         "head": os.environ.get("GITHUB_SHA"),
+        "stack_sampling_enabled": not args.no_stack,
         "first_output_seconds": None,
         "command_banner_seconds": None,
     }
@@ -136,7 +137,7 @@ def observe(args):
                 record("snapshot", round=round_number, target_pid=process.pid)
                 # Sample the owned compiler first: a saturated host may take
                 # many seconds even to enumerate processes or launch a tool.
-                if time.monotonic() - started >= next_stack:
+                if not args.no_stack and time.monotonic() - started >= next_stack:
                     report = args.output / f"{prefix}-xcodebuild-{process.pid}.sample.txt"
                     capture(
                         f"{prefix}-xcodebuild-{process.pid}-sampler",
@@ -244,6 +245,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--delay", type=float, default=15)
     parser.add_argument("--window", type=float, default=240)
+    parser.add_argument("--no-stack", action="store_true")
     parser.add_argument("output", type=Path)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()

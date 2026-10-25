@@ -122,7 +122,7 @@ if [[ "$ios_test_phase" == all || "$ios_test_phase" == run ]]; then
     test-without-building
   )
   if [[ "${IOS_TEST_STARTUP_SAMPLING:-false}" == true ]]; then
-    python3 ios/scripts/sample-xcode-startup.py "$build_root/test-startup-samples" -- \
+    python3 ios/scripts/sample-xcode-startup.py --no-stack "$build_root/test-startup-samples" -- \
       "${test_command[@]}"
   else
     "${test_command[@]}"
