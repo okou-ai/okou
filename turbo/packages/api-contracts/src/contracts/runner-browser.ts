@@ -12,7 +12,6 @@ const browserWindowSchema = z.strictObject({
   state: z.enum(["creating", "active", "closing"]),
   expiresAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   primaryWindowId: nativeWindowId.nullable(),
-  auxiliaryWindowIds: z.array(nativeWindowId).readonly(),
 });
 
 const actionSchema = z.discriminatedUnion("kind", [
@@ -28,12 +27,6 @@ const actionSchema = z.discriminatedUnion("kind", [
     timeoutAt: z.iso.datetime(),
   }),
   z.strictObject({ kind: z.literal("admit"), ...instanceIdentity }),
-  z.strictObject({
-    kind: z.literal("registerAuxiliaryWindow"),
-    ...windowIdentity,
-    nativeWindowId,
-    openerWindowId: nativeWindowId,
-  }),
   z.strictObject({
     kind: z.literal("activate"),
     ...windowIdentity,

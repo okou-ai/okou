@@ -1,5 +1,5 @@
 {
-  "id": "ef53790f-4f6b-4cff-9322-40a2a44f4038",
+  "id": "5b4dd886-4346-48dd-84a0-c14dcdd9cbb3",
   "prevId": "d2149a80-1ef2-451d-a3fd-88fbef1675b3",
   "version": "7",
   "dialect": "postgresql",
@@ -4451,161 +4451,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.browser_owner_instances": {
-      "name": "browser_owner_instances",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "owner_profile_id": {
-          "name": "owner_profile_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider_session_id": {
-          "name": "provider_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "windows": {
-          "name": "windows",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "creation_expires_at": {
-          "name": "creation_expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "timeout_at": {
-          "name": "timeout_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "uq_browser_owner_instances_live_owner": {
-          "name": "uq_browser_owner_instances_live_owner",
-          "columns": [
-            {
-              "expression": "owner_profile_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"browser_owner_instances\".\"status\" IN ('creating', 'active', 'stopping')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uq_browser_owner_instances_provider": {
-          "name": "uq_browser_owner_instances_provider",
-          "columns": [
-            {
-              "expression": "provider_session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_browser_owner_instances_reconcile": {
-          "name": "idx_browser_owner_instances_reconcile",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "updated_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "browser_owner_instances_owner_profile_id_browser_owner_profiles_id_fk": {
-          "name": "browser_owner_instances_owner_profile_id_browser_owner_profiles_id_fk",
-          "tableFrom": "browser_owner_instances",
-          "tableTo": "browser_owner_profiles",
-          "columnsFrom": [
-            "owner_profile_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "browser_owner_instances_status_check": {
-          "name": "browser_owner_instances_status_check",
-          "value": "\"browser_owner_instances\".\"status\" IN ('creating', 'active', 'stopping', 'stopped')"
-        },
-        "browser_owner_instances_provider_check": {
-          "name": "browser_owner_instances_provider_check",
-          "value": "(\"browser_owner_instances\".\"status\" <> 'active' OR \"browser_owner_instances\".\"provider_session_id\" IS NOT NULL)\n        AND (\"browser_owner_instances\".\"status\" <> 'creating' OR \"browser_owner_instances\".\"provider_session_id\" IS NULL)"
-        },
-        "browser_owner_instances_windows_check": {
-          "name": "browser_owner_instances_windows_check",
-          "value": "jsonb_typeof(\"browser_owner_instances\".\"windows\") = 'object'"
-        },
-        "browser_owner_instances_deadline_check": {
-          "name": "browser_owner_instances_deadline_check",
-          "value": "\"browser_owner_instances\".\"creation_expires_at\" > \"browser_owner_instances\".\"created_at\"\n        AND \"browser_owner_instances\".\"timeout_at\" >= \"browser_owner_instances\".\"creation_expires_at\""
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.browser_owner_profiles": {
       "name": "browser_owner_profiles",
       "schema": "",
@@ -4632,6 +4477,36 @@
         "provider_profile_id": {
           "name": "provider_profile_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instance_id": {
+          "name": "instance_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_session_id": {
+          "name": "provider_session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "creation_expires_at": {
+          "name": "creation_expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timeout_at": {
+          "name": "timeout_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": true
         },
@@ -4686,13 +4561,275 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "uq_browser_owner_profiles_instance": {
+          "name": "uq_browser_owner_profiles_instance",
+          "columns": [
+            {
+              "expression": "instance_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_browser_owner_profiles_session": {
+          "name": "uq_browser_owner_profiles_session",
+          "columns": [
+            {
+              "expression": "provider_session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_browser_owner_profiles_reconcile": {
+          "name": "idx_browser_owner_profiles_reconcile",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_browser_owner_profiles_instance_state": {
+          "name": "uq_browser_owner_profiles_instance_state",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "instance_id",
+            "status"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "browser_owner_profiles_status_check": {
+          "name": "browser_owner_profiles_status_check",
+          "value": "\"browser_owner_profiles\".\"status\" IN ('creating', 'active', 'stopping', 'stopped')"
+        },
+        "browser_owner_profiles_provider_check": {
+          "name": "browser_owner_profiles_provider_check",
+          "value": "(\"browser_owner_profiles\".\"status\" <> 'active' OR \"browser_owner_profiles\".\"provider_session_id\" IS NOT NULL)\n          AND (\"browser_owner_profiles\".\"status\" <> 'creating' OR \"browser_owner_profiles\".\"provider_session_id\" IS NULL)"
+        },
+        "browser_owner_profiles_deadline_check": {
+          "name": "browser_owner_profiles_deadline_check",
+          "value": "\"browser_owner_profiles\".\"creation_expires_at\" > \"browser_owner_profiles\".\"created_at\"\n          AND \"browser_owner_profiles\".\"timeout_at\" >= \"browser_owner_profiles\".\"creation_expires_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.browser_owner_windows": {
+      "name": "browser_owner_windows",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "owner_profile_id": {
+          "name": "owner_profile_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instance_id": {
+          "name": "instance_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "primary_window_id": {
+          "name": "primary_window_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "live_browser_status": {
+          "name": "live_browser_status",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "as": "CASE WHEN state IN ('creating', 'active') THEN 'active' END",
+            "type": "stored"
+          }
+        }
+      },
+      "indexes": {
+        "uq_browser_owner_windows_chat": {
+          "name": "uq_browser_owner_windows_chat",
+          "columns": [
+            {
+              "expression": "owner_profile_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_browser_owner_windows_native_window": {
+          "name": "uq_browser_owner_windows_native_window",
+          "columns": [
+            {
+              "expression": "instance_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "primary_window_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_browser_owner_windows_expiry": {
+          "name": "idx_browser_owner_windows_expiry",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "browser_owner_windows_owner_profile_id_browser_owner_profiles_id_fk": {
+          "name": "browser_owner_windows_owner_profile_id_browser_owner_profiles_id_fk",
+          "tableFrom": "browser_owner_windows",
+          "tableTo": "browser_owner_profiles",
+          "columnsFrom": [
+            "owner_profile_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "browser_owner_windows_active_instance_fk": {
+          "name": "browser_owner_windows_active_instance_fk",
+          "tableFrom": "browser_owner_windows",
+          "tableTo": "browser_owner_profiles",
+          "columnsFrom": [
+            "owner_profile_id",
+            "instance_id",
+            "live_browser_status"
+          ],
+          "columnsTo": [
+            "id",
+            "instance_id",
+            "status"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "browser_owner_windows_state_check": {
+          "name": "browser_owner_windows_state_check",
+          "value": "\"browser_owner_windows\".\"state\" IN ('creating', 'active', 'closing')"
+        },
+        "browser_owner_windows_primary_check": {
+          "name": "browser_owner_windows_primary_check",
+          "value": "(\"browser_owner_windows\".\"primary_window_id\" IS NULL OR\n          \"browser_owner_windows\".\"primary_window_id\" BETWEEN 0 AND 9007199254740991)\n          AND (\"browser_owner_windows\".\"state\" <> 'active' OR \"browser_owner_windows\".\"primary_window_id\" IS NOT NULL)\n          AND (\"browser_owner_windows\".\"state\" <> 'creating' OR \"browser_owner_windows\".\"primary_window_id\" IS NULL)"
+        },
+        "browser_owner_windows_deadline_check": {
+          "name": "browser_owner_windows_deadline_check",
+          "value": "\"browser_owner_windows\".\"expires_at\" > \"browser_owner_windows\".\"created_at\""
+        }
+      },
       "isRLSEnabled": false
     },
     "public.browser_authorization_requests": {

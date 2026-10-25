@@ -1,17 +1,19 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   check,
+  foreignKey,
   index,
-  jsonb,
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
-import type { BrowserOwnerWindows } from "../jsonb-contracts/browser-owner";
 
+/** One persistent profile and its single current physical Browser lifetime. */
 export const browserOwnerProfiles = pgTable(
   "browser_owner_profiles",
   {
@@ -19,6 +21,13 @@ export const browserOwnerProfiles = pgTable(
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
     providerProfileId: uuid("provider_profile_id").notNull(),
+    instanceId: uuid("instance_id").notNull(),
+    providerSessionId: uuid("provider_session_id"),
+    status: varchar("status", { length: 16 })
+      .$type<"creating" | "active" | "stopping" | "stopped">()
+      .notNull(),
+    creationExpiresAt: timestamp("creation_expires_at").notNull(),
+    timeoutAt: timestamp("timeout_at").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -31,13 +40,40 @@ export const browserOwnerProfiles = pgTable(
       uniqueIndex("uq_browser_owner_profiles_provider").on(
         table.providerProfileId,
       ),
+      uniqueIndex("uq_browser_owner_profiles_instance").on(table.instanceId),
+      uniqueIndex("uq_browser_owner_profiles_session").on(
+        table.providerSessionId,
+      ),
+      unique("uq_browser_owner_profiles_instance_state").on(
+        table.id,
+        table.instanceId,
+        table.status,
+      ),
+      index("idx_browser_owner_profiles_reconcile").on(
+        table.status,
+        table.updatedAt,
+      ),
+      check(
+        "browser_owner_profiles_status_check",
+        sql`${table.status} IN ('creating', 'active', 'stopping', 'stopped')`,
+      ),
+      check(
+        "browser_owner_profiles_provider_check",
+        sql`(${table.status} <> 'active' OR ${table.providerSessionId} IS NOT NULL)
+          AND (${table.status} <> 'creating' OR ${table.providerSessionId} IS NULL)`,
+      ),
+      check(
+        "browser_owner_profiles_deadline_check",
+        sql`${table.creationExpiresAt} > ${table.createdAt}
+          AND ${table.timeoutAt} >= ${table.creationExpiresAt}`,
+      ),
     ];
   },
 );
 
-/** The immutable instance UUID is also its physical Browser generation. */
-export const browserOwnerInstances = pgTable(
-  "browser_owner_instances",
+/** Page membership comes from Chrome after source-window consolidation. */
+export const browserOwnerWindows = pgTable(
+  "browser_owner_windows",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     ownerProfileId: uuid("owner_profile_id")
@@ -45,48 +81,64 @@ export const browserOwnerInstances = pgTable(
       .references(() => {
         return browserOwnerProfiles.id;
       }),
-    providerSessionId: uuid("provider_session_id"),
-    status: varchar("status", { length: 16 })
-      .$type<"creating" | "active" | "stopping" | "stopped">()
+    instanceId: uuid("instance_id").notNull(),
+    chatThreadId: uuid("chat_thread_id").notNull(),
+    state: varchar("state", { length: 16 })
+      .$type<"creating" | "active" | "closing">()
       .notNull(),
-    windows: jsonb("windows")
-      .$type<BrowserOwnerWindows>()
-      .default(sql`'{}'::jsonb`)
-      .notNull(),
-    creationExpiresAt: timestamp("creation_expires_at").notNull(),
-    timeoutAt: timestamp("timeout_at").notNull(),
+    primaryWindowId: bigint("primary_window_id", { mode: "number" }),
+    expiresAt: timestamp("expires_at").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    // Live windows require an active parent. Closing windows retain cleanup
+    // identities without preventing a final whole-provider stop.
+    liveBrowserStatus: varchar("live_browser_status", { length: 16 })
+      .$type<"active">()
+      .generatedAlwaysAs(
+        sql`CASE WHEN state IN ('creating', 'active') THEN 'active' END`,
+      ),
   },
   (table) => {
     return [
-      uniqueIndex("uq_browser_owner_instances_live_owner")
-        .on(table.ownerProfileId)
-        .where(sql`${table.status} IN ('creating', 'active', 'stopping')`),
-      uniqueIndex("uq_browser_owner_instances_provider").on(
-        table.providerSessionId,
+      foreignKey({
+        name: "browser_owner_windows_active_instance_fk",
+        columns: [
+          table.ownerProfileId,
+          table.instanceId,
+          table.liveBrowserStatus,
+        ],
+        foreignColumns: [
+          browserOwnerProfiles.id,
+          browserOwnerProfiles.instanceId,
+          browserOwnerProfiles.status,
+        ],
+      }),
+      uniqueIndex("uq_browser_owner_windows_chat").on(
+        table.ownerProfileId,
+        table.chatThreadId,
       ),
-      index("idx_browser_owner_instances_reconcile").on(
-        table.status,
-        table.updatedAt,
+      uniqueIndex("uq_browser_owner_windows_native_window").on(
+        table.instanceId,
+        table.primaryWindowId,
+      ),
+      index("idx_browser_owner_windows_expiry").on(
+        table.state,
+        table.expiresAt,
       ),
       check(
-        "browser_owner_instances_status_check",
-        sql`${table.status} IN ('creating', 'active', 'stopping', 'stopped')`,
+        "browser_owner_windows_state_check",
+        sql`${table.state} IN ('creating', 'active', 'closing')`,
       ),
       check(
-        "browser_owner_instances_provider_check",
-        sql`(${table.status} <> 'active' OR ${table.providerSessionId} IS NOT NULL)
-        AND (${table.status} <> 'creating' OR ${table.providerSessionId} IS NULL)`,
+        "browser_owner_windows_primary_check",
+        sql`(${table.primaryWindowId} IS NULL OR
+          ${table.primaryWindowId} BETWEEN 0 AND 9007199254740991)
+          AND (${table.state} <> 'active' OR ${table.primaryWindowId} IS NOT NULL)
+          AND (${table.state} <> 'creating' OR ${table.primaryWindowId} IS NULL)`,
       ),
       check(
-        "browser_owner_instances_windows_check",
-        sql`jsonb_typeof(${table.windows}) = 'object'`,
-      ),
-      check(
-        "browser_owner_instances_deadline_check",
-        sql`${table.creationExpiresAt} > ${table.createdAt}
-        AND ${table.timeoutAt} >= ${table.creationExpiresAt}`,
+        "browser_owner_windows_deadline_check",
+        sql`${table.expiresAt} > ${table.createdAt}`,
       ),
     ];
   },

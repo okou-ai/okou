@@ -4,14 +4,13 @@ import type {
   RunnerBrowserRequest,
   RunnerBrowserResponse,
 } from "@okouai/api-contracts/contracts/runner-browser";
-import { parseBrowserOwnerWindows } from "@okouai/db/jsonb-contracts/browser-owner";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { runnerState } from "@okouai/db/runtime/runner-state";
 import { agents } from "@okouai/db/schema/agent";
 import {
-  browserOwnerInstances,
   browserOwnerProfiles,
+  browserOwnerWindows,
 } from "@okouai/db/schema/browser-owner";
 import {
   browserProfiles,
@@ -27,35 +26,34 @@ import {
   gt,
   inArray,
   lte,
-  ne,
   notExists,
   or,
   sql,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
+import { settle } from "../utils";
 
 const SETUP_MS = 60_000;
 const IDLE_MS = 10 * 60_000;
 const MAX_BROWSER_MS = 240 * 60_000;
-const instances = browserOwnerInstances;
 const profiles = browserOwnerProfiles;
-const liveStates = ["creating", "active", "stopping"] as const;
-type InstanceRow = typeof instances.$inferSelect & {
-  readonly providerProfileId: string;
-};
-function instanceSelection() {
-  return {
-    ...getTableColumns(instances),
-    providerProfileId: sql`(${new QueryBuilder()
-      .select({ id: profiles.providerProfileId })
-      .from(profiles)
-      .where(eq(profiles.id, instances.ownerProfileId))})`
-      .mapWith(profiles.providerProfileId)
-      .as("provider_profile_id"),
-  };
+const windows = browserOwnerWindows;
+type ProfileRow = typeof profiles.$inferSelect;
+type WindowView = Pick<
+  typeof windows.$inferSelect,
+  "id" | "chatThreadId" | "state" | "expiresAt" | "primaryWindowId"
+>;
+interface BrowserView {
+  readonly profile: ProfileRow;
+  readonly window?: WindowView | null;
 }
+type BrowserAction<K extends RunnerBrowserAction["kind"]> = Extract<
+  RunnerBrowserAction,
+  { kind: K }
+>;
 
 interface RunnerBrowserIdentity {
   readonly runId: string;
@@ -133,20 +131,10 @@ function authorityStillCurrent(owner: BrowserOwnerAuthority) {
 
 function ownedInstance(owner: BrowserOwnerAuthority, instanceId: string) {
   return and(
-    eq(instances.id, instanceId),
+    eq(profiles.instanceId, instanceId),
+    eq(profiles.orgId, owner.orgId),
+    eq(profiles.userId, owner.userId),
     authorityStillCurrent(owner),
-    exists(
-      new QueryBuilder()
-        .select({ id: profiles.id })
-        .from(profiles)
-        .where(
-          and(
-            eq(profiles.id, instances.ownerProfileId),
-            eq(profiles.orgId, owner.orgId),
-            eq(profiles.userId, owner.userId),
-          ),
-        ),
-    ),
   );
 }
 
@@ -157,87 +145,65 @@ function activeInstance(
 ) {
   return and(
     ownedInstance(owner, instanceId),
-    eq(instances.status, "active"),
-    gt(instances.timeoutAt, now),
+    eq(profiles.status, "active"),
+    gt(profiles.timeoutAt, now),
   );
 }
 
-function windowValue(windowSessionId: string) {
-  return sql`${instances.windows} -> ${windowSessionId}`;
-}
-
-function ownedWindow(owner: BrowserOwnerAuthority, windowSessionId: string) {
-  return eq(
-    sql`${windowValue(windowSessionId)} ->> 'chatThreadId'`,
-    owner.chatThreadId,
-  );
-}
-
-function windowState(windowSessionId: string) {
-  return sql`${windowValue(windowSessionId)} ->> 'state'`;
-}
-
-function windowExpiry(windowSessionId: string) {
-  return sql`(${windowValue(windowSessionId)} ->> 'expiresAt')::bigint`;
-}
-
-function hardDeadlineMs() {
-  return sql`floor(extract(epoch FROM ${instances.timeoutAt}) * 1000)::bigint`;
-}
-
-function nativeWindowInSession(
-  windowSessionId: string,
-  nativeWindowId: number,
+function ownedWindow(
+  owner: BrowserOwnerAuthority,
+  action: { readonly instanceId: string; readonly windowSessionId: string },
+  now?: Date,
 ) {
-  return or(
-    eq(
-      sql`(${windowValue(windowSessionId)} ->> 'primaryWindowId')::bigint`,
-      sql`${nativeWindowId}::bigint`,
+  return and(
+    eq(windows.id, action.windowSessionId),
+    eq(windows.instanceId, action.instanceId),
+    eq(windows.chatThreadId, owner.chatThreadId),
+    exists(
+      new QueryBuilder()
+        .select({ id: profiles.id })
+        .from(profiles)
+        .where(
+          and(
+            eq(profiles.id, windows.ownerProfileId),
+            now === undefined
+              ? ownedInstance(owner, action.instanceId)
+              : activeInstance(owner, action.instanceId, now),
+          ),
+        ),
     ),
-    sql`(${windowValue(windowSessionId)} -> 'auxiliaryWindowIds')
-      @> jsonb_build_array(${nativeWindowId}::bigint)`,
   );
 }
 
-function nativeWindowUnclaimed(
-  windowSessionId: string,
-  nativeWindowId: number,
-) {
-  return notExists(sql`(SELECT 1 FROM jsonb_each(${instances.windows}) AS other
-    WHERE other.key <> ${windowSessionId}
-      AND ((other.value ->> 'primaryWindowId')::bigint = ${nativeWindowId}::bigint
-        OR (other.value -> 'auxiliaryWindowIds')
-          @> jsonb_build_array(${nativeWindowId}::bigint)))`);
+function windowHardDeadline() {
+  return sql`(${new QueryBuilder().select({ timeoutAt: profiles.timeoutAt }).from(profiles).where(eq(profiles.id, windows.ownerProfileId))})`;
 }
 
-function lifetime(windowSessionId: string, patch: ReturnType<typeof sql>) {
-  return sql`jsonb_set(${instances.windows}, ARRAY[${windowSessionId}]::text[],
-    ${windowValue(windowSessionId)} || ${patch})`;
-}
-
-function response(
-  row: InstanceRow | undefined,
-  chatThreadId: string,
-): RunnerBrowserResponse {
+function response(row: BrowserView | undefined): RunnerBrowserResponse {
   if (!row) {
     return { outcome: "unavailable" };
   }
-  const windows = parseBrowserOwnerWindows(row.windows);
+  const { profile, window } = row;
   return {
     outcome: "accepted",
     instance: {
-      id: row.id,
-      ownerProfileId: row.ownerProfileId,
-      providerProfileId: row.providerProfileId,
-      providerSessionId: row.providerSessionId,
-      status: row.status,
-      creationExpiresAt: row.creationExpiresAt.toISOString(),
-      timeoutAt: row.timeoutAt.toISOString(),
-      windows: Object.fromEntries(
-        Object.entries(windows).filter(([, window]) => {
-          return window.chatThreadId === chatThreadId;
-        }),
-      ),
+      id: profile.instanceId,
+      ownerProfileId: profile.id,
+      providerProfileId: profile.providerProfileId,
+      providerSessionId: profile.providerSessionId,
+      status: profile.status,
+      creationExpiresAt: profile.creationExpiresAt.toISOString(),
+      timeoutAt: profile.timeoutAt.toISOString(),
+      windows: window
+        ? {
+            [window.id]: {
+              chatThreadId: window.chatThreadId,
+              state: window.state,
+              expiresAt: window.expiresAt.getTime(),
+              primaryWindowId: window.primaryWindowId,
+            },
+          }
+        : {},
     },
   };
 }
@@ -264,41 +230,60 @@ export function createRunnerBrowserAuthority(
   });
 }
 
-/** Each accepted lifecycle transition is one statement over current stored business state. */
-type BrowserAction<K extends RunnerBrowserAction["kind"]> = Extract<
-  RunnerBrowserAction,
-  { kind: K }
->;
-
 export function createRunnerBrowserInspection(
   owner$: Computed<Promise<BrowserOwnerAuthority | null>>,
   action$: Computed<Promise<BrowserAction<"inspect"> | null>>,
 ) {
   return computed(async (get): Promise<RunnerBrowserResponse> => {
-    const owner = await get(owner$);
-    const action = await get(action$);
+    const owner = await get(owner$),
+      action = await get(action$);
     if (!owner || !action) {
       return { outcome: "unavailable" };
     }
     const [row] = await get(db$)
       .select({
-        ...getTableColumns(instances),
-        providerProfileId: profiles.providerProfileId,
+        profile: getTableColumns(profiles),
+        window: {
+          id: windows.id,
+          chatThreadId: windows.chatThreadId,
+          state: windows.state,
+          expiresAt: windows.expiresAt,
+          primaryWindowId: windows.primaryWindowId,
+        },
       })
-      .from(instances)
-      .innerJoin(profiles, eq(profiles.id, instances.ownerProfileId))
+      .from(profiles)
+      .leftJoin(
+        windows,
+        and(
+          eq(windows.ownerProfileId, profiles.id),
+          eq(windows.chatThreadId, owner.chatThreadId),
+        ),
+      )
       .where(
         and(
           eq(profiles.orgId, owner.orgId),
           eq(profiles.userId, owner.userId),
           authorityStillCurrent(owner),
           action.instanceId === undefined
-            ? inArray(instances.status, liveStates)
-            : eq(instances.id, action.instanceId),
+            ? inArray(profiles.status, ["creating", "active", "stopping"])
+            : eq(profiles.instanceId, action.instanceId),
         ),
       );
-    return response(row, owner.chatThreadId);
+    return response(row);
   });
+}
+
+/** Only the named business-key competitions are normal unavailable outcomes. */
+function lifecycleCompetition(error: unknown): boolean {
+  return (
+    isUniqueViolation(error, "uq_browser_owner_windows_native_window") ||
+    (isForeignKeyViolation(error) &&
+      error instanceof Error &&
+      typeof error.cause === "object" &&
+      error.cause !== null &&
+      "constraint" in error.cause &&
+      error.cause.constraint === "browser_owner_windows_active_instance_fk")
+  );
 }
 
 const allocateOwnerBrowser$ = command(
@@ -308,13 +293,17 @@ const allocateOwnerBrowser$ = command(
     action: BrowserAction<"allocate">,
     now: Date,
     signal: AbortSignal,
-  ): Promise<InstanceRow[]> => {
+  ): Promise<BrowserView[]> => {
     const db = set(writeDb$);
     const nowMs = now.getTime();
-    // A losing candidate must be reconciled by its exact ID by the provider
-    // preparation owner. Never overwrite the accepted profile on conflict.
-    const chosenProfile = db.$with("chosen_browser_owner_profile").as(
-      db
+
+    const instanceId = randomUUID();
+    const creationExpiresAt = new Date(nowMs + SETUP_MS);
+    const timeoutAt = new Date(nowMs + MAX_BROWSER_MS);
+    // A losing provider candidate is reconciled by exact ID; it must never
+    // overwrite the accepted persistent profile.
+    const rows = (
+      await db
         .insert(profiles)
         .select(
           new QueryBuilder()
@@ -325,6 +314,21 @@ const allocateOwnerBrowser$ = command(
               providerProfileId: sql`${action.providerProfileId}::uuid`
                 .mapWith(profiles.providerProfileId)
                 .as("provider_profile_id"),
+              instanceId: sql`${instanceId}::uuid`
+                .mapWith(profiles.instanceId)
+                .as("instance_id"),
+              providerSessionId: sql`NULL::uuid`
+                .mapWith(profiles.providerSessionId)
+                .as("provider_session_id"),
+              status: sql`'creating'`.mapWith(profiles.status).as("status"),
+              creationExpiresAt:
+                sql`${sql.param(creationExpiresAt, profiles.creationExpiresAt)}::timestamp`
+                  .mapWith(profiles.creationExpiresAt)
+                  .as("creation_expires_at"),
+              timeoutAt:
+                sql`${sql.param(timeoutAt, profiles.timeoutAt)}::timestamp`
+                  .mapWith(profiles.timeoutAt)
+                  .as("timeout_at"),
               createdAt: sql`${sql.param(now, profiles.createdAt)}::timestamp`
                 .mapWith(profiles.createdAt)
                 .as("created_at"),
@@ -363,55 +367,23 @@ const allocateOwnerBrowser$ = command(
         )
         .onConflictDoUpdate({
           target: [profiles.orgId, profiles.userId],
-          set: { orgId: profiles.orgId },
+          set: {
+            instanceId,
+            providerSessionId: null,
+            status: "creating",
+            creationExpiresAt,
+            timeoutAt,
+            updatedAt: now,
+          },
+          setWhere: and(
+            eq(profiles.status, "stopped"),
+            authorityStillCurrent(owner),
+          ),
         })
-        .returning({
-          id: profiles.id,
-          providerProfileId: profiles.providerProfileId,
-        }),
-    );
-    const rows = await db
-      .with(chosenProfile)
-      .insert(instances)
-      .select(
-        new QueryBuilder()
-          .select({
-            id: sql`${randomUUID()}::uuid`.mapWith(instances.id).as("id"),
-            ownerProfileId: chosenProfile.id,
-            providerSessionId: sql`NULL::uuid`
-              .mapWith(instances.providerSessionId)
-              .as("provider_session_id"),
-            status: sql`'creating'`.mapWith(instances.status).as("status"),
-            windows: sql`'{}'::jsonb`.mapWith(instances.windows).as("windows"),
-            creationExpiresAt:
-              sql`${sql.param(new Date(nowMs + SETUP_MS), instances.creationExpiresAt)}::timestamp`
-                .mapWith(instances.creationExpiresAt)
-                .as("creation_expires_at"),
-            timeoutAt:
-              sql`${sql.param(new Date(nowMs + MAX_BROWSER_MS), instances.timeoutAt)}::timestamp`
-                .mapWith(instances.timeoutAt)
-                .as("timeout_at"),
-            createdAt: sql`${sql.param(now, instances.createdAt)}::timestamp`
-              .mapWith(instances.createdAt)
-              .as("created_at"),
-            updatedAt: sql`${sql.param(now, instances.updatedAt)}::timestamp`
-              .mapWith(instances.updatedAt)
-              .as("updated_at"),
-          })
-          .from(chosenProfile),
-      )
-      .onConflictDoNothing({
-        target: instances.ownerProfileId,
-        where: sql`${instances.status} IN ('creating', 'active', 'stopping')`,
-      })
-      .returning({
-        ...getTableColumns(instances),
-        providerProfileId: sql`(${new QueryBuilder()
-          .select({ id: chosenProfile.providerProfileId })
-          .from(chosenProfile)})`
-          .mapWith(profiles.providerProfileId)
-          .as("provider_profile_id"),
-      });
+        .returning()
+    ).map((profile) => {
+      return { profile };
+    });
     signal.throwIfAborted();
     return rows;
   },
@@ -424,10 +396,10 @@ const publishOwnerBrowser$ = command(
     action: BrowserAction<"publish">,
     now: Date,
     signal: AbortSignal,
-  ): Promise<InstanceRow[]> => {
+  ): Promise<BrowserView[]> => {
     const db = set(writeDb$);
     const nowMs = now.getTime();
-    const scoped = ownedInstance(owner, action.instanceId);
+
     const timeout = new Date(action.timeoutAt);
     if (
       timeout.getTime() <= nowMs ||
@@ -435,36 +407,39 @@ const publishOwnerBrowser$ = command(
     ) {
       return [];
     }
-    const rows = await db
-      .update(instances)
-      .set({
-        status: "active",
-        providerSessionId: action.providerSessionId,
-        timeoutAt: sql`least(${instances.timeoutAt}, ${sql.param(timeout, instances.timeoutAt)}::timestamp)`,
-        creationExpiresAt: sql`least(${instances.creationExpiresAt}, ${sql.param(timeout, instances.creationExpiresAt)}::timestamp)`,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          scoped,
-          eq(instances.status, "creating"),
-          gt(instances.creationExpiresAt, now),
-          gt(instances.timeoutAt, now),
-          // Provider preparation may not adopt an old thread Browser either.
-          notExists(
-            new QueryBuilder()
-              .select({ id: browserSessionInstances.providerSessionId })
-              .from(browserSessionInstances)
-              .where(
-                eq(
-                  browserSessionInstances.providerSessionId,
-                  action.providerSessionId,
+    const rows = (
+      await db
+        .update(profiles)
+        .set({
+          status: "active",
+          providerSessionId: action.providerSessionId,
+          timeoutAt: sql`least(${profiles.timeoutAt}, ${sql.param(timeout, profiles.timeoutAt)}::timestamp)`,
+          creationExpiresAt: sql`least(${profiles.creationExpiresAt}, ${sql.param(timeout, profiles.creationExpiresAt)}::timestamp)`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            ownedInstance(owner, action.instanceId),
+            eq(profiles.status, "creating"),
+            gt(profiles.creationExpiresAt, now),
+            gt(profiles.timeoutAt, now),
+            notExists(
+              new QueryBuilder()
+                .select({ id: browserSessionInstances.providerSessionId })
+                .from(browserSessionInstances)
+                .where(
+                  eq(
+                    browserSessionInstances.providerSessionId,
+                    action.providerSessionId,
+                  ),
                 ),
-              ),
+            ),
           ),
-        ),
-      )
-      .returning(instanceSelection());
+        )
+        .returning()
+    ).map((profile) => {
+      return { profile };
+    });
     signal.throwIfAborted();
     return rows;
   },
@@ -477,78 +452,62 @@ const admitOwnerBrowserWindow$ = command(
     action: BrowserAction<"admit">,
     now: Date,
     signal: AbortSignal,
-  ): Promise<InstanceRow[]> => {
+  ): Promise<BrowserView[]> => {
     const db = set(writeDb$);
     const nowMs = now.getTime();
-    const active = activeInstance(owner, action.instanceId, now);
-    const windowSessionId = randomUUID();
-    const rows = await db
-      .update(instances)
-      .set({
-        windows: sql`${instances.windows} || jsonb_build_object(${windowSessionId}::text,
-              jsonb_build_object('chatThreadId', ${owner.chatThreadId}::text,
-                'state', 'creating', 'expiresAt', least(${nowMs + SETUP_MS}::bigint, ${hardDeadlineMs()}),
-                'primaryWindowId', NULL, 'auxiliaryWindowIds', '[]'::jsonb))`,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          active,
-          notExists(sql`(SELECT 1 FROM jsonb_each(${instances.windows}) AS entry
-              WHERE entry.value ->> 'chatThreadId' = ${owner.chatThreadId}
-                AND entry.value ->> 'state' IN ('creating', 'active'))`),
-        ),
-      )
-      .returning(instanceSelection());
-    signal.throwIfAborted();
-    return rows;
-  },
-);
 
-const registerOwnerBrowserAuxiliaryWindow$ = command(
-  async (
-    { set },
-    owner: BrowserOwnerAuthority,
-    action: BrowserAction<"registerAuxiliaryWindow">,
-    now: Date,
-    signal: AbortSignal,
-  ): Promise<InstanceRow[]> => {
-    const db = set(writeDb$);
-    const nowMs = now.getTime();
-    const windowSessionId = action.windowSessionId;
-    // The trusted Runner verifies Chrome's opener before binding a new window.
-    // Membership and uniqueness are checked against the current stored aggregate.
+    const changed = db.$with("admitted_browser_window").as(
+      db
+        .insert(windows)
+        // Drizzle's INSERT SELECT key check includes generated columns;
+        // compile the typed source while INSERT omits its derived status.
+        .select(
+          new QueryBuilder()
+            .select({
+              id: sql`${randomUUID()}::uuid`.mapWith(windows.id).as("id"),
+              ownerProfileId: profiles.id,
+              instanceId: profiles.instanceId,
+              chatThreadId: sql`${owner.chatThreadId}::uuid`
+                .mapWith(windows.chatThreadId)
+                .as("chat_thread_id"),
+              state: sql`'creating'`.mapWith(windows.state).as("state"),
+              primaryWindowId: sql`NULL::bigint`
+                .mapWith(windows.primaryWindowId)
+                .as("primary_window_id"),
+              expiresAt:
+                sql`least(${profiles.timeoutAt}, ${sql.param(new Date(nowMs + SETUP_MS), windows.expiresAt)}::timestamp)`
+                  .mapWith(windows.expiresAt)
+                  .as("expires_at"),
+              createdAt: sql`${sql.param(now, windows.createdAt)}::timestamp`
+                .mapWith(windows.createdAt)
+                .as("created_at"),
+              updatedAt: sql`${sql.param(now, windows.updatedAt)}::timestamp`
+                .mapWith(windows.updatedAt)
+                .as("updated_at"),
+            })
+            .from(profiles)
+            .where(activeInstance(owner, action.instanceId, now))
+            .getSQL(),
+        )
+        .onConflictDoNothing({
+          target: [windows.ownerProfileId, windows.chatThreadId],
+        })
+        .returning(),
+    );
     const rows = await db
-      .update(instances)
-      .set({
-        windows: lifetime(
-          windowSessionId,
-          sql`jsonb_build_object('auxiliaryWindowIds',
-            CASE WHEN (${windowValue(windowSessionId)} -> 'auxiliaryWindowIds')
-              @> jsonb_build_array(${action.nativeWindowId}::bigint)
-            THEN ${windowValue(windowSessionId)} -> 'auxiliaryWindowIds'
-            ELSE (${windowValue(windowSessionId)} -> 'auxiliaryWindowIds')
-              || jsonb_build_array(${action.nativeWindowId}::bigint) END,
-            'expiresAt', least(${hardDeadlineMs()},
-              greatest(${windowExpiry(windowSessionId)}, ${nowMs + IDLE_MS}::bigint)))`,
-        ),
-        updatedAt: now,
+      .with(changed)
+      .select({
+        profile: getTableColumns(profiles),
+        window: {
+          id: changed.id,
+          chatThreadId: changed.chatThreadId,
+          state: changed.state,
+          expiresAt: changed.expiresAt,
+          primaryWindowId: changed.primaryWindowId,
+        },
       })
-      .where(
-        and(
-          activeInstance(owner, action.instanceId, now),
-          ownedWindow(owner, windowSessionId),
-          eq(windowState(windowSessionId), "active"),
-          gt(windowExpiry(windowSessionId), nowMs),
-          nativeWindowInSession(windowSessionId, action.openerWindowId),
-          ne(
-            sql`(${windowValue(windowSessionId)} ->> 'primaryWindowId')::bigint`,
-            sql`${action.nativeWindowId}::bigint`,
-          ),
-          nativeWindowUnclaimed(windowSessionId, action.nativeWindowId),
-        ),
-      )
-      .returning(instanceSelection());
+      .from(changed)
+      .innerJoin(profiles, eq(profiles.id, changed.ownerProfileId));
     signal.throwIfAborted();
     return rows;
   },
@@ -561,32 +520,42 @@ const activateOwnerBrowserWindow$ = command(
     action: BrowserAction<"activate">,
     now: Date,
     signal: AbortSignal,
-  ): Promise<InstanceRow[]> => {
+  ): Promise<BrowserView[]> => {
     const db = set(writeDb$);
     const nowMs = now.getTime();
-    const active = activeInstance(owner, action.instanceId, now);
-    const windowSessionId = action.windowSessionId;
+
+    const changed = db.$with("activated_browser_window").as(
+      db
+        .update(windows)
+        .set({
+          state: "active",
+          primaryWindowId: action.nativeWindowId,
+          expiresAt: sql`least(${windowHardDeadline()}, ${sql.param(new Date(nowMs + IDLE_MS), windows.expiresAt)}::timestamp)`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            ownedWindow(owner, action, now),
+            eq(windows.state, "creating"),
+            gt(windows.expiresAt, now),
+          ),
+        )
+        .returning(),
+    );
     const rows = await db
-      .update(instances)
-      .set({
-        windows: lifetime(
-          windowSessionId,
-          sql`jsonb_build_object('state', 'active',
-              'expiresAt', least(${nowMs + IDLE_MS}::bigint, ${hardDeadlineMs()}),
-              'primaryWindowId', ${action.nativeWindowId}::bigint)`,
-        ),
-        updatedAt: now,
+      .with(changed)
+      .select({
+        profile: getTableColumns(profiles),
+        window: {
+          id: changed.id,
+          chatThreadId: changed.chatThreadId,
+          state: changed.state,
+          expiresAt: changed.expiresAt,
+          primaryWindowId: changed.primaryWindowId,
+        },
       })
-      .where(
-        and(
-          active,
-          ownedWindow(owner, windowSessionId),
-          eq(windowState(windowSessionId), "creating"),
-          gt(windowExpiry(windowSessionId), nowMs),
-          nativeWindowUnclaimed(windowSessionId, action.nativeWindowId),
-        ),
-      )
-      .returning(instanceSelection());
+      .from(changed)
+      .innerJoin(profiles, eq(profiles.id, changed.ownerProfileId));
     signal.throwIfAborted();
     return rows;
   },
@@ -599,30 +568,40 @@ const renewOwnerBrowserWindow$ = command(
     action: BrowserAction<"renew">,
     now: Date,
     signal: AbortSignal,
-  ): Promise<InstanceRow[]> => {
+  ): Promise<BrowserView[]> => {
     const db = set(writeDb$);
     const nowMs = now.getTime();
-    const active = activeInstance(owner, action.instanceId, now);
-    const windowSessionId = action.windowSessionId;
+
+    const changed = db.$with("renewed_browser_window").as(
+      db
+        .update(windows)
+        .set({
+          expiresAt: sql`least(${windowHardDeadline()}, greatest(${windows.expiresAt}, ${sql.param(new Date(nowMs + IDLE_MS), windows.expiresAt)}::timestamp))`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            ownedWindow(owner, action, now),
+            eq(windows.state, "active"),
+            gt(windows.expiresAt, now),
+          ),
+        )
+        .returning(),
+    );
     const rows = await db
-      .update(instances)
-      .set({
-        windows: lifetime(
-          windowSessionId,
-          sql`jsonb_build_object('expiresAt',
-              least(${hardDeadlineMs()}, greatest(${windowExpiry(windowSessionId)}, ${nowMs + IDLE_MS}::bigint)))`,
-        ),
-        updatedAt: now,
+      .with(changed)
+      .select({
+        profile: getTableColumns(profiles),
+        window: {
+          id: changed.id,
+          chatThreadId: changed.chatThreadId,
+          state: changed.state,
+          expiresAt: changed.expiresAt,
+          primaryWindowId: changed.primaryWindowId,
+        },
       })
-      .where(
-        and(
-          active,
-          ownedWindow(owner, windowSessionId),
-          eq(windowState(windowSessionId), "active"),
-          gt(windowExpiry(windowSessionId), nowMs),
-        ),
-      )
-      .returning(instanceSelection());
+      .from(changed)
+      .innerJoin(profiles, eq(profiles.id, changed.ownerProfileId));
     signal.throwIfAborted();
     return rows;
   },
@@ -635,29 +614,38 @@ const retireOwnerBrowserWindow$ = command(
     action: BrowserAction<"retire">,
     now: Date,
     signal: AbortSignal,
-  ): Promise<InstanceRow[]> => {
+  ): Promise<BrowserView[]> => {
     const db = set(writeDb$);
-    const nowMs = now.getTime();
-    const scoped = ownedInstance(owner, action.instanceId);
-    const windowSessionId = action.windowSessionId;
+
+    const changed = db.$with("retired_browser_window").as(
+      db
+        .update(windows)
+        .set({ state: "closing", updatedAt: now })
+        .where(
+          and(
+            ownedWindow(owner, action),
+            inArray(windows.state, ["creating", "active"]),
+            action.reason === "expired"
+              ? lte(windows.expiresAt, now)
+              : undefined,
+          ),
+        )
+        .returning(),
+    );
     const rows = await db
-      .update(instances)
-      .set({
-        windows: lifetime(windowSessionId, sql`'{"state":"closing"}'::jsonb`),
-        updatedAt: now,
+      .with(changed)
+      .select({
+        profile: getTableColumns(profiles),
+        window: {
+          id: changed.id,
+          chatThreadId: changed.chatThreadId,
+          state: changed.state,
+          expiresAt: changed.expiresAt,
+          primaryWindowId: changed.primaryWindowId,
+        },
       })
-      .where(
-        and(
-          scoped,
-          inArray(instances.status, ["active", "stopping"]),
-          ownedWindow(owner, windowSessionId),
-          inArray(windowState(windowSessionId), ["creating", "active"]),
-          action.reason === "expired"
-            ? lte(windowExpiry(windowSessionId), nowMs)
-            : undefined,
-        ),
-      )
-      .returning(instanceSelection());
+      .from(changed)
+      .innerJoin(profiles, eq(profiles.id, changed.ownerProfileId));
     signal.throwIfAborted();
     return rows;
   },
@@ -670,23 +658,20 @@ const completeOwnerBrowserWindowClose$ = command(
     action: BrowserAction<"completeWindowClose">,
     now: Date,
     signal: AbortSignal,
-  ): Promise<InstanceRow[]> => {
+  ): Promise<BrowserView[]> => {
     const db = set(writeDb$);
-    const scoped = ownedInstance(owner, action.instanceId);
+
+    const changed = db.$with("closed_browser_window").as(
+      db
+        .delete(windows)
+        .where(and(ownedWindow(owner, action), eq(windows.state, "closing")))
+        .returning({ ownerProfileId: windows.ownerProfileId }),
+    );
     const rows = await db
-      .update(instances)
-      .set({
-        windows: sql`${instances.windows} - ${action.windowSessionId}::text`,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          scoped,
-          ownedWindow(owner, action.windowSessionId),
-          eq(windowState(action.windowSessionId), "closing"),
-        ),
-      )
-      .returning(instanceSelection());
+      .with(changed)
+      .select({ profile: getTableColumns(profiles) })
+      .from(changed)
+      .innerJoin(profiles, eq(profiles.id, changed.ownerProfileId));
     signal.throwIfAborted();
     return rows;
   },
@@ -699,37 +684,73 @@ const beginOwnerBrowserStop$ = command(
     action: BrowserAction<"beginStop">,
     now: Date,
     signal: AbortSignal,
-  ): Promise<InstanceRow[]> => {
+  ): Promise<BrowserView[]> => {
     const db = set(writeDb$);
-    const nowMs = now.getTime();
-    const scoped = ownedInstance(owner, action.instanceId);
-    // This UPDATE competes with admission/renewal on the same current
-    // aggregate. A snapshot-only scan of separate target rows cannot.
-    const rows = await db
-      .update(instances)
-      .set({
-        status: "stopping",
-        windows: sql`(SELECT coalesce(jsonb_object_agg(entry.key,
-              entry.value || '{"state":"closing"}'::jsonb), '{}'::jsonb)
-              FROM jsonb_each(${instances.windows}) AS entry)`,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          scoped,
-          or(
-            eq(instances.status, "active"),
-            and(
-              eq(instances.status, "creating"),
-              lte(instances.creationExpiresAt, now),
+
+    // The live-window/active-instance FK also arbitrates a concurrent
+    // INSERT invisible to this statement's initial NOT EXISTS snapshot.
+    const stopping = db.$with("stopping_browser").as(
+      db
+        .update(profiles)
+        .set({ status: "stopping", updatedAt: now })
+        .where(
+          and(
+            ownedInstance(owner, action.instanceId),
+            or(
+              eq(profiles.status, "active"),
+              and(
+                eq(profiles.status, "creating"),
+                lte(profiles.creationExpiresAt, now),
+              ),
+            ),
+            notExists(
+              new QueryBuilder()
+                .select({ id: windows.id })
+                .from(windows)
+                .where(
+                  and(
+                    eq(windows.ownerProfileId, profiles.id),
+                    inArray(windows.state, ["creating", "active"]),
+                  ),
+                ),
             ),
           ),
-          notExists(sql`(SELECT 1 FROM jsonb_each(${instances.windows}) AS entry
-              WHERE entry.value ->> 'state' IN ('creating', 'active')
-                AND (entry.value ->> 'expiresAt')::bigint > ${nowMs})`),
+        )
+        .returning(),
+    );
+    const rows = await db
+      .with(stopping)
+      .select({
+        profile: {
+          id: stopping.id,
+          orgId: stopping.orgId,
+          userId: stopping.userId,
+          providerProfileId: stopping.providerProfileId,
+          instanceId: stopping.instanceId,
+          providerSessionId: stopping.providerSessionId,
+          status: stopping.status,
+          creationExpiresAt: stopping.creationExpiresAt,
+          timeoutAt: stopping.timeoutAt,
+          createdAt: stopping.createdAt,
+          updatedAt: stopping.updatedAt,
+        },
+        window: {
+          id: windows.id,
+          chatThreadId: windows.chatThreadId,
+          state: windows.state,
+          expiresAt: windows.expiresAt,
+          primaryWindowId: windows.primaryWindowId,
+        },
+      })
+      .from(stopping)
+      .leftJoin(
+        windows,
+        and(
+          eq(windows.ownerProfileId, stopping.id),
+          eq(windows.instanceId, stopping.instanceId),
+          eq(windows.chatThreadId, owner.chatThreadId),
         ),
-      )
-      .returning(instanceSelection());
+      );
     signal.throwIfAborted();
     return rows;
   },
@@ -742,20 +763,102 @@ const completeOwnerBrowserStop$ = command(
     action: BrowserAction<"completeStop">,
     now: Date,
     signal: AbortSignal,
-  ): Promise<InstanceRow[]> => {
+  ): Promise<BrowserView[]> => {
     const db = set(writeDb$);
-    const scoped = ownedInstance(owner, action.instanceId);
-    const rows = await db
-      .update(instances)
-      .set({ status: "stopped", windows: {}, updatedAt: now })
-      .where(and(scoped, eq(instances.status, "stopping")))
-      .returning(instanceSelection());
+
+    const stopped = db.$with("stopped_browser").as(
+      db
+        .update(profiles)
+        .set({ status: "stopped", updatedAt: now })
+        .where(
+          and(
+            ownedInstance(owner, action.instanceId),
+            eq(profiles.status, "stopping"),
+          ),
+        )
+        .returning(),
+    );
+    // Exact provider-stop acknowledgement completes all remaining native
+    // cleanup for this instance, including an uncertain per-page close.
+    const closed = db.$with("closed_stopped_browser_windows").as(
+      db
+        .delete(windows)
+        .where(
+          and(
+            eq(windows.instanceId, action.instanceId),
+            eq(windows.state, "closing"),
+            exists(
+              new QueryBuilder()
+                .select({ id: stopped.id })
+                .from(stopped)
+                .where(eq(stopped.id, windows.ownerProfileId)),
+            ),
+          ),
+        )
+        .returning({ id: windows.id }),
+    );
+    const rows = (await db.with(stopped, closed).select().from(stopped)).map(
+      (profile) => {
+        return { profile };
+      },
+    );
     signal.throwIfAborted();
     return rows;
   },
 );
+/** Each action owns one atomic statement; provider effects stay on the host. */
+const mutateBrowserOwner$ = command(
+  async (
+    { set },
+    owner: BrowserOwnerAuthority,
+    action: Exclude<RunnerBrowserAction, { kind: "inspect" }>,
+    signal: AbortSignal,
+  ): Promise<BrowserView[]> => {
+    const now = nowDate();
+    switch (action.kind) {
+      case "allocate": {
+        return await set(allocateOwnerBrowser$, owner, action, now, signal);
+      }
+      case "publish": {
+        return await set(publishOwnerBrowser$, owner, action, now, signal);
+      }
+      case "admit": {
+        return await set(admitOwnerBrowserWindow$, owner, action, now, signal);
+      }
+      case "activate": {
+        return await set(
+          activateOwnerBrowserWindow$,
+          owner,
+          action,
+          now,
+          signal,
+        );
+      }
+      case "renew": {
+        return await set(renewOwnerBrowserWindow$, owner, action, now, signal);
+      }
+      case "retire": {
+        return await set(retireOwnerBrowserWindow$, owner, action, now, signal);
+      }
+      case "completeWindowClose": {
+        return await set(
+          completeOwnerBrowserWindowClose$,
+          owner,
+          action,
+          now,
+          signal,
+        );
+      }
+      case "beginStop": {
+        return await set(beginOwnerBrowserStop$, owner, action, now, signal);
+      }
+      case "completeStop": {
+        return await set(completeOwnerBrowserStop$, owner, action, now, signal);
+      }
+    }
+  },
+);
 
-/** Each transition owns one statement over the current stored business state. */
 export const controlBrowserOwner$ = command(
   async (
     { set },
@@ -763,69 +866,16 @@ export const controlBrowserOwner$ = command(
     action: Exclude<RunnerBrowserAction, { kind: "inspect" }>,
     signal: AbortSignal,
   ): Promise<RunnerBrowserResponse> => {
-    const now = nowDate();
-    let rows: InstanceRow[];
-    switch (action.kind) {
-      case "allocate": {
-        rows = await set(allocateOwnerBrowser$, owner, action, now, signal);
-        break;
-      }
-      case "publish": {
-        rows = await set(publishOwnerBrowser$, owner, action, now, signal);
-        break;
-      }
-      case "admit": {
-        rows = await set(admitOwnerBrowserWindow$, owner, action, now, signal);
-        break;
-      }
-      case "registerAuxiliaryWindow": {
-        rows = await set(
-          registerOwnerBrowserAuxiliaryWindow$,
-          owner,
-          action,
-          now,
-          signal,
-        );
-        break;
-      }
-      case "activate": {
-        rows = await set(
-          activateOwnerBrowserWindow$,
-          owner,
-          action,
-          now,
-          signal,
-        );
-        break;
-      }
-      case "renew": {
-        rows = await set(renewOwnerBrowserWindow$, owner, action, now, signal);
-        break;
-      }
-      case "retire": {
-        rows = await set(retireOwnerBrowserWindow$, owner, action, now, signal);
-        break;
-      }
-      case "completeWindowClose": {
-        rows = await set(
-          completeOwnerBrowserWindowClose$,
-          owner,
-          action,
-          now,
-          signal,
-        );
-        break;
-      }
-      case "beginStop": {
-        rows = await set(beginOwnerBrowserStop$, owner, action, now, signal);
-        break;
-      }
-      case "completeStop": {
-        rows = await set(completeOwnerBrowserStop$, owner, action, now, signal);
-        break;
-      }
-    }
+    const result = await settle(
+      set(mutateBrowserOwner$, owner, action, signal),
+    );
     signal.throwIfAborted();
-    return response(rows[0], owner.chatThreadId);
+    if (!result.ok) {
+      if (lifecycleCompetition(result.error)) {
+        return { outcome: "unavailable" };
+      }
+      throw result.error;
+    }
+    return response(result.value[0]);
   },
 );
