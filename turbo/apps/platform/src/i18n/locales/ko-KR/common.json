@@ -5761,6 +5761,9 @@
         "logo": {
           "description": "앱 전반에 표시되는 워크스페이스 아바타",
           "fallbackAlt": "워크스페이스",
+          "loadError": "워크스페이스 로고를 불러오지 못했습니다.",
+          "loading": "워크스페이스 로고 불러오는 중",
+          "retry": "다시 시도",
           "title": "로고",
           "upload": "로고 업로드"
         },

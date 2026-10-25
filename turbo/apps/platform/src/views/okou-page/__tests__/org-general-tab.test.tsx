@@ -2,6 +2,7 @@ import {
   orgContract,
   orgDeleteContract,
 } from "@okouai/api-contracts/contracts/org-routes";
+import { orgLogoContract } from "@okouai/api-contracts/contracts/org-logo";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -42,6 +43,196 @@ async function openGeneralTab(): Promise<void> {
     ).toBeInTheDocument();
   });
 }
+
+async function reopenGeneralTab(): Promise<HTMLElement> {
+  const rail = await screen.findByTestId("labeled-nav-rail");
+  click(within(rail).getByLabelText("Test User"));
+  click(within(await screen.findByRole("menu")).getByText("Settings"));
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  click(buttonWithText(settings, "General"));
+  await within(settings).findByRole("heading", { name: "General" });
+  return settings;
+}
+
+test("Retry a failed workspace logo load without closing Settings", async () => {
+  const retryResponse = context.mocks.deferred<void>();
+  const logoUrl = "https://cdn.okou.test/orgs/acme/logo.png";
+  let unavailable = true;
+  context.mocks.data.org({ id: "org_1", name: "Acme", role: "admin" });
+  context.mocks.api(orgLogoContract.get, async ({ respond }) => {
+    if (unavailable) {
+      return respond(500, {
+        error: { message: "Logo unavailable", code: "INTERNAL_SERVER_ERROR" },
+      });
+    }
+    await retryResponse.promise;
+    return respond(200, { logoUrl, hasImage: true });
+  });
+  await openGeneralTab();
+  const settings = screen.getByRole("dialog", { name: "Settings" });
+  await expect(
+    within(settings).findByText("Could not load workspace logo."),
+  ).resolves.toBeInTheDocument();
+  await fill(screen.getByDisplayValue("Acme"), "Acme team");
+  expect(
+    within(settings).queryByRole("status", { name: "Loading workspace logo" }),
+  ).not.toBeInTheDocument();
+  unavailable = false;
+  click(buttonWithText(settings, "Retry"));
+  await expect(
+    within(settings).findByRole("status", { name: "Loading workspace logo" }),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(settings).queryByText("Could not load workspace logo."),
+  ).not.toBeInTheDocument();
+  click(buttonWithText(settings, "Preference"));
+  await within(settings).findByRole("heading", { name: "Preference" });
+  click(buttonWithText(settings, "General"));
+  await expect(
+    within(settings).findByRole("status", { name: "Loading workspace logo" }),
+  ).resolves.toBeInTheDocument();
+  retryResponse.resolve();
+  await waitFor(() => {
+    expect(within(settings).getByRole("img", { name: "Acme" })).toHaveAttribute(
+      "src",
+      logoUrl,
+    );
+    expect(
+      within(settings).queryByRole("status", {
+        name: "Loading workspace logo",
+      }),
+    ).not.toBeInTheDocument();
+  });
+  expect(screen.getByDisplayValue("Acme team")).toBeInTheDocument();
+});
+
+test("Finish loading when the workspace has no logo", async () => {
+  const response = context.mocks.deferred<void>();
+  context.mocks.data.org({ id: "org_1", name: "Acme", role: "admin" });
+  context.mocks.api(orgLogoContract.get, async ({ respond }) => {
+    await response.promise;
+    return respond(200, { logoUrl: null, hasImage: false });
+  });
+  await openGeneralTab();
+  const settings = screen.getByRole("dialog", { name: "Settings" });
+  await within(settings).findByRole("status", {
+    name: "Loading workspace logo",
+  });
+  response.resolve();
+  await waitFor(() => {
+    expect(
+      within(settings).queryByRole("status", {
+        name: "Loading workspace logo",
+      }),
+    ).not.toBeInTheDocument();
+  });
+  expect(
+    within(settings).queryByText("Could not load workspace logo."),
+  ).not.toBeInTheDocument();
+  expect(within(settings).getByLabelText("Upload logo")).toBeEnabled();
+});
+
+test("Cancel a pending logo load on close and load the current logo on reopen", async () => {
+  const started = context.mocks.deferred<AbortSignal>();
+  const staleResponse = context.mocks.deferred<void>();
+  const freshLogoUrl = "https://cdn.okou.test/orgs/acme/current.png";
+  let stale = true;
+  context.mocks.data.org({ id: "org_1", name: "Acme", role: "admin" });
+  context.mocks.api(orgLogoContract.get, async ({ request, respond }) => {
+    if (stale) {
+      started.resolve(request.signal);
+      await staleResponse.promise;
+      return respond(200, {
+        logoUrl: "https://cdn.okou.test/orgs/acme/stale.png",
+        hasImage: true,
+      });
+    }
+    return respond(200, { logoUrl: freshLogoUrl, hasImage: true });
+  });
+  await openGeneralTab();
+  const requestSignal = await started.promise;
+  const settings = screen.getByRole("dialog", { name: "Settings" });
+  click(within(settings).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Settings" }),
+    ).not.toBeInTheDocument();
+    expect(requestSignal.aborted).toBeTruthy();
+  });
+  stale = false;
+  const reopened = await reopenGeneralTab();
+  await waitFor(() => {
+    expect(within(reopened).getByRole("img", { name: "Acme" })).toHaveAttribute(
+      "src",
+      freshLogoUrl,
+    );
+  });
+  staleResponse.resolve();
+  expect(
+    within(reopened).queryByText("Could not load workspace logo."),
+  ).not.toBeInTheDocument();
+});
+
+test("Show a saved upload while the initial logo load is pending and refresh on reopening", async () => {
+  const user = userEvent.setup({ delay: null });
+  const started = context.mocks.deferred<AbortSignal>();
+  const initialResponse = context.mocks.deferred<void>();
+  const uploadedLogoUrl = "https://cdn.okou.test/orgs/acme/uploaded.png";
+  const currentLogoUrl = "https://cdn.okou.test/orgs/acme/current.png";
+  let initial = true;
+  context.mocks.browser.imageDimensions({ width: 512, height: 512 });
+  context.mocks.data.org({ id: "org_1", name: "Acme", role: "admin" });
+  context.mocks.api(orgLogoContract.get, async ({ request, respond }) => {
+    if (initial) {
+      started.resolve(request.signal);
+      await initialResponse.promise;
+      return respond(200, { logoUrl: null, hasImage: false });
+    }
+    return respond(200, { logoUrl: currentLogoUrl, hasImage: true });
+  });
+  context.mocks.http.post("*/api/org/logo", () => {
+    return Response.json({ logoUrl: uploadedLogoUrl, hasImage: true });
+  });
+  await openGeneralTab();
+  const requestSignal = await started.promise;
+  const settings = screen.getByRole("dialog", { name: "Settings" });
+  await within(settings).findByRole("status", {
+    name: "Loading workspace logo",
+  });
+  await user.upload(
+    within(settings).getByLabelText("Upload logo"),
+    new File(["logo"], "logo.png", { type: "image/png" }),
+  );
+  click(
+    await waitFor(() => {
+      return buttonWithText(settings, "Save changes");
+    }),
+  );
+  await screen.findByText("Workspace updated");
+  expect(requestSignal.aborted).toBeTruthy();
+  initialResponse.resolve();
+  expect(within(settings).getByRole("img", { name: "Acme" })).toHaveAttribute(
+    "src",
+    uploadedLogoUrl,
+  );
+  expect(
+    within(settings).queryByRole("status", { name: "Loading workspace logo" }),
+  ).not.toBeInTheDocument();
+  click(within(settings).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Settings" }),
+    ).not.toBeInTheDocument();
+  });
+  initial = false;
+  const reopened = await reopenGeneralTab();
+  await waitFor(() => {
+    expect(within(reopened).getByRole("img", { name: "Acme" })).toHaveAttribute(
+      "src",
+      currentLogoUrl,
+    );
+  });
+});
 
 test("Edit, save, and discard workspace profile details", async () => {
   let capturedBody: unknown = null;

@@ -5776,6 +5776,9 @@
         "logo": {
           "description": "Workspace avatar displayed across the app",
           "fallbackAlt": "Workspace",
+          "loadError": "Could not load workspace logo.",
+          "loading": "Loading workspace logo",
+          "retry": "Retry",
           "title": "Logo",
           "upload": "Upload logo"
         },

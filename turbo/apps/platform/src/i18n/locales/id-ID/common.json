@@ -5761,6 +5761,9 @@
         "logo": {
           "description": "Avatar ruang kerja ditampilkan di seluruh aplikasi",
           "fallbackAlt": "Ruang kerja",
+          "loadError": "Logo ruang kerja tidak dapat dimuat.",
+          "loading": "Memuat logo ruang kerja",
+          "retry": "Coba lagi",
           "title": "Logo",
           "upload": "Unggah logo"
         },

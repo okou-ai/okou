@@ -5761,6 +5761,9 @@
         "logo": {
           "description": "在應用各處顯示的工作區頭像",
           "fallbackAlt": "工作區",
+          "loadError": "無法載入工作區標誌。",
+          "loading": "正在載入工作區標誌",
+          "retry": "重試",
           "title": "標識",
           "upload": "上傳標識"
         },
