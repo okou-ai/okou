@@ -72,6 +72,7 @@ import {
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
 import type { CapturedConnectorClientInvalidationAbort } from "./connector-client-invalidation.service";
+import type { ConnectorConnectionMetadataArgs } from "./connector-account-mutation.service";
 import {
   connectorConnectionWrittenRow,
   replaceConnectorConnectionOutcome,
@@ -79,7 +80,6 @@ import {
   connectorConnectionMutationReadResult,
   type ConnectorConnectionMutationArgs,
   writeConnectorConnectionMetadataOutcome,
-  type ConnectorConnectionMetadataArgs,
   type ReadyConnectorConnectionMutation,
 } from "./connector-connection-write.service";
 import {
