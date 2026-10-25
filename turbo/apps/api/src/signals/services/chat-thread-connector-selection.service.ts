@@ -12,16 +12,7 @@ import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
-import {
-  and,
-  asc,
-  count,
-  eq,
-  gte,
-  inArray,
-  ne,
-  sql,
-} from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, ne, sql } from "drizzle-orm";
 import type { WithSubquery } from "drizzle-orm/subquery";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";

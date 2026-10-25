@@ -172,18 +172,16 @@ const publishUpdatedFormsSelection$ = command(
   ): Promise<boolean> => {
     const db = set(writeDb$);
     const insert = updatedThreadSelectionPlan(args);
-    const updated = db
-      .$with("updated_thread_connector_selection")
-      .as(
-        db
-          .with(insert.account)
-          .insert(chatThreadConnectorSelections)
-          .select(insert.source)
-          .onConflictDoUpdate(insert.conflict)
-          .returning({
-            connectorId: chatThreadConnectorSelections.connectorId,
-          }),
-      );
+    const updated = db.$with("updated_thread_connector_selection").as(
+      db
+        .with(insert.account)
+        .insert(chatThreadConnectorSelections)
+        .select(insert.source)
+        .onConflictDoUpdate(insert.conflict)
+        .returning({
+          connectorId: chatThreadConnectorSelections.connectorId,
+        }),
+    );
     const changed = db
       .$with("changed_thread_forms_automations", { id: workflowAutomations.id })
       .as(
@@ -230,18 +228,16 @@ const publishUpdatedGenericSelection$ = command(
   ): Promise<boolean> => {
     const db = set(writeDb$);
     const insert = updatedThreadSelectionPlan(args);
-    const updated = db
-      .$with("updated_thread_connector_selection")
-      .as(
-        db
-          .with(insert.account)
-          .insert(chatThreadConnectorSelections)
-          .select(insert.source)
-          .onConflictDoUpdate(insert.conflict)
-          .returning({
-            connectorId: chatThreadConnectorSelections.connectorId,
-          }),
-      );
+    const updated = db.$with("updated_thread_connector_selection").as(
+      db
+        .with(insert.account)
+        .insert(chatThreadConnectorSelections)
+        .select(insert.source)
+        .onConflictDoUpdate(insert.conflict)
+        .returning({
+          connectorId: chatThreadConnectorSelections.connectorId,
+        }),
+    );
     const ctes: WithSubquery[] = [updated];
     let completed = gte(db.select({ value: count() }).from(updated), 0);
     if (projections.length > 0) {
