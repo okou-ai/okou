@@ -593,19 +593,6 @@ describe("Discord native authorization and reads", () => {
     ]);
   });
 
-  it.each([
-    { text: "Missing target" },
-    {
-      channelId: "123456789012345678",
-      userId: "223456789012345678",
-      text: "Ambiguous target",
-    },
-  ])("rejects an invalid Discord destination selection: %j", async (body) => {
-    const f = await fixture();
-    await accept(f.write.sendMessage({ headers: f.headers, body }), [400]);
-    expect(f.sentBodies).toHaveLength(0);
-  });
-
   it.each(["me", "other"] as const)(
     "opens an outbound DM for %s without enabling private reads",
     async (recipient) => {

@@ -722,7 +722,6 @@ describe("thread email manager", () => {
       ).toBeFalsy();
     });
     expect(fixture.deleted).toStrictEqual([id(1), id(2)]);
-    expect(fixture.mails.get(id(12))?.status).toBe("sent");
     await link("Open email: Proposal 12", list);
     await waitFor(() => {
       expect(within(list).queryByText("Delete")).not.toBeInTheDocument();

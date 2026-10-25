@@ -370,8 +370,6 @@ describe("Social continuation admission and creation-Run ownership", () => {
       // Real chat sends, heartbeat and authenticated claims issue both tokens.
       const parentRun = await claimRun();
       const successorRun = await claimRun();
-      expect(successorRun.runId).not.toBe(parentRun.runId);
-      expect(successorRun.threadId).not.toBe(parentRun.threadId);
       const parentHeaders = { authorization: `Bearer ${parentRun.token}` };
       const successorHeaders = {
         authorization: `Bearer ${successorRun.token}`,

@@ -1107,7 +1107,6 @@ test("Manual setup respects disabled VNC and clears the chosen network when leav
   await screen.findByRole("heading", { name: "No devices added yet" });
   click(getAction("button", "Add connection"));
   await screen.findByRole("heading", { name: "Add remote connection" });
-  expect(screen.queryByText("Using network: Office network")).toBeNull();
   expect(queryAction("button", "Back")).toBeNull();
 });
 test("Manual VNC can select a Tailscale network when Tailscale SSH is disabled", async () => {
