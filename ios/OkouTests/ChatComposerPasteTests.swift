@@ -52,7 +52,6 @@ final class ChatComposerPasteTests: XCTestCase {
       XCTAssertNotNil(item.file.thumbnail)
     }
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
-    attach(window, name: "Mixed image paste in the native composer")
     await conversation.send()
     XCTAssertEqual(fixture.state.value.withLock { $0.messages.count }, 1)
     XCTAssertFalse(conversation.attachmentDraft.hasAttachments)
@@ -390,16 +389,6 @@ final class ChatComposerPasteTests: XCTestCase {
   private func textView(in view: UIView) -> ComposerTextView? {
     if let input = view as? ComposerTextView { return input }
     return view.subviews.lazy.compactMap { self.textView(in: $0) }.first
-  }
-
-  private func attach(_ window: UIWindow, name: String) {
-    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-      window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-    }
-    let attachment = XCTAttachment(image: image)
-    attachment.name = name
-    attachment.lifetime = .keepAlways
-    add(attachment)
   }
 }
 

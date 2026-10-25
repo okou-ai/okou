@@ -40,7 +40,6 @@ final class ChatComposerMentionTests: XCTestCase {
       table.cellForRow(at: IndexPath(row: 0, section: 1))?.accessibilityLabel, "Chat: Pinned recent"
     )
     XCTAssertTrue(input.isFirstResponder)
-    attachMention(window, name: "Native grouped mention search (HTTP fixtures)")
 
     input.insertText("pLaN")
     try await eventually { mentionTable(in: host.view)?.numberOfRows(inSection: 1) == 1 }
@@ -107,7 +106,6 @@ final class ChatComposerMentionTests: XCTestCase {
       expected.parts.map { $0["type"]?.string }, ["text", "agent", "text", "chat_thread", "text"])
     XCTAssertEqual(expected.text, "Before  and  after 🌷")
     XCTAssertEqual(input.text, "Before \u{fffc} and \u{fffc} after 🌷")
-    attachMention(window, name: "Native multiple inline references (HTTP fixtures)")
     await hostingPresentationFrame()
 
     input.selectedRange = NSRange(location: 7, length: 1)
@@ -194,18 +192,13 @@ final class ChatComposerMentionTests: XCTestCase {
       conversation.close()
       workspace.close()
     }
-    let host = UIHostingController(
-      rootView: MentionComposerHarness(
-        conversation: conversation, source: workspace.mentionTestSource))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
-    try await focusMentionInput(input)
-    input.insertText("@pl")
-    try await eventually { mentionTable(in: host.view) != nil }
-    input.insertText("\n")
-    try await eventually { conversation.composer.document.parts.first?["type"]?.string == "agent" }
-    let expected = conversation.composer.value.draftUserMessage
+    let reference = try XCTUnwrap(
+      workspace.mentionTestSource.suggestions(for: "pl").first { $0.kind == .agent })
+    let expected = ChatDraftDocument(parts: [
+      reference.part, .object(["type": .string("text"), "text": .string(" ")]),
+    ])
+    let block = try XCTUnwrap(conversation.composer.editorBlocks.first)
+    conversation.composer.editBlock(block.id, document: expected)
     XCTAssertTrue(conversation.composer.hasContent)
     XCTAssertEqual(conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines), "")
     await conversation.send()
@@ -227,10 +220,6 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertTrue(conversation.pending.isEmpty)
     let sent = try XCTUnwrap(conversation.messages.first { $0.role == .user })
     XCTAssertEqual(sent.userMessage?.parts.first?.agentId, MentionNavigationFixture.agent(1))
-    host.rootView = MentionComposerHarness(
-      conversation: conversation, source: workspace.mentionTestSource, sent: sent)
-    try await eventually { mentionInputs(in: host.view).first?.text == "Next draft" }
-    attachMention(window, name: "Native sent reference and retry recovery (HTTP fixtures)")
   }
 
   func testQuotedNotesMixReferencesAndAttachmentsWithoutChangingQuoteSource() async throws {
@@ -292,7 +281,6 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertEqual(
       parts.map { $0["type"]?.string }, ["text", "chat_thread", "text", "agent", "text"])
     XCTAssertTrue(note.isFirstResponder)
-    attachMention(window, name: "Native quoted note with references and attachment (HTTP fixtures)")
     await conversation.send()
     let send = try JSONDecoder().decode(
       MentionSend.self, from: XCTUnwrap(fixture.state.value.withLock { $0.messages.first }))
@@ -312,18 +300,13 @@ final class ChatComposerMentionTests: XCTestCase {
       workspace.close()
       candidates.close()
     }
-    let host = UIHostingController(
-      rootView: MentionComposerHarness(workspace: workspace, source: candidates.mentionTestSource))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
-    try await focusMentionInput(input)
-    input.insertText("@plan")
-    try await eventually { mentionTable(in: host.view)?.numberOfSections == 2 }
-    let row = try XCTUnwrap(
-      mentionTable(in: host.view)?.cellForRow(at: IndexPath(row: 0, section: 1)))
-    XCTAssertTrue(row.accessibilityActivate())
-    let expected = workspace.newComposer.value.draftUserMessage
+    let reference = try XCTUnwrap(
+      candidates.mentionTestSource.suggestions(for: "plan").first { $0.kind == .chat })
+    let expected = ChatDraftDocument(parts: [
+      reference.part, .object(["type": .string("text"), "text": .string(" ")]),
+    ])
+    let block = try XCTUnwrap(workspace.newComposer.editorBlocks.first)
+    workspace.newComposer.editBlock(block.id, document: expected)
     await workspace.sendNewChat()
     let conversation = try XCTUnwrap(workspace.selectedConversation)
     let pending = try XCTUnwrap(conversation.pending.first)

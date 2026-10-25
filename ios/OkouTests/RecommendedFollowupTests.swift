@@ -131,14 +131,4 @@ final class RecommendedFollowupTests: XCTestCase {
   private func input(in view: UIView) -> ComposerTextView? {
     (view as? ComposerTextView) ?? view.subviews.lazy.compactMap { self.input(in: $0) }.first
   }
-
-  private func attach(_ window: UIWindow, name: String) {
-    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-      window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-    }
-    let attachment = XCTAttachment(image: image)
-    attachment.name = name
-    attachment.lifetime = .keepAlways
-    add(attachment)
-  }
 }

@@ -28,7 +28,6 @@ final class QuotedFollowupTests: XCTestCase {
     let range = (message.text as NSString).range(of: "  Selected 🌷 é passage.  ")
     selection.selectedRange = range
     await hostingPresentationFrame()
-    attach(window, name: "Native assistant text selection")
     let menu = try XCTUnwrap(
       selection.delegate?.textView?(
         selection, editMenuForTextIn: range, suggestedActions: []))
@@ -149,15 +148,6 @@ final class QuotedFollowupTests: XCTestCase {
   private func textViews(in view: UIView) -> [UITextView] {
     if let input = view as? UITextView { return [input] }
     return view.subviews.flatMap { textViews(in: $0) }
-  }
-  private func attach(_ window: UIWindow, name: String) {
-    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-      window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-    }
-    let attachment = XCTAttachment(image: image)
-    attachment.name = name
-    attachment.lifetime = .keepAlways
-    add(attachment)
   }
 }
 
