@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.4.2](https://github.com/okou-ai/okou/compare/api-v2.4.1...api-v2.4.2) (2026-10-25)
+
+
+### Refactoring
+
+* **api:** claim email outbox items without a transaction ([#42908](https://github.com/okou-ai/okou/issues/42908)) ([d6d32bc](https://github.com/okou-ai/okou/commit/d6d32bce5fd68f405e73dddf98d9c213b9609d3d))
+* **api:** localize connector account insertion arbitration ([#42902](https://github.com/okou-ai/okou/issues/42902)) ([31cbb22](https://github.com/okou-ai/okou/commit/31cbb22d79e4b0651bd38f91e1e4b7466a1b5a49))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.787.0
+    * @okouai/db bumped to 2.2.5
+    * @okouai/pi-agent-runtime bumped to 1.50.69
+
 ## [2.4.1](https://github.com/okou-ai/okou/compare/api-v2.4.0...api-v2.4.1) (2026-10-25)
 
 

@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1061.0](https://github.com/okou-ai/okou/compare/app-v0.1060.1...app-v0.1061.0) (2026-10-25)
+
+
+### Features
+
+* **browser:** enable okou viewer for staff ([#42910](https://github.com/okou-ai/okou/issues/42910)) ([e45694f](https://github.com/okou-ai/okou/commit/e45694f5bbb2c30369ed48e188e6a75e9ab4b024))
+* **browser:** show cdp viewer settings menu ([#42904](https://github.com/okou-ai/okou/issues/42904)) ([b4cf1ac](https://github.com/okou-ai/okou/commit/b4cf1acf0888f0d028d92b3eae6b28d7b884d4c8))
+
+
+### Refactoring
+
+* **app:** remove json tree preview feature switch ([#42911](https://github.com/okou-ai/okou/issues/42911)) ([2ed0f18](https://github.com/okou-ai/okou/commit/2ed0f180ffd7ee1db828f447a7da171cdb6df3b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.787.0
+
 ## [0.1060.1](https://github.com/okou-ai/okou/compare/app-v0.1060.0...app-v0.1060.1) (2026-10-25)
 
 
