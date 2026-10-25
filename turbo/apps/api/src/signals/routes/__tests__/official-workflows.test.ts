@@ -286,7 +286,8 @@ async function executeAutomationCron() {
 
 async function fireOfficialSchedule(
   actor: ApiTestUser,
-  automation: Pick<WorkflowAutomationSummary, "id" | "nextRunAt">,
+  automation: Pick<WorkflowAutomationSummary, "id" | "nextRunAt"> &
+    Partial<Pick<WorkflowAutomationSummary, "chatThreadId">>,
 ) {
   if (!automation.nextRunAt) {
     throw new Error("Expected a scheduled Official Automation");
@@ -298,14 +299,17 @@ async function fireOfficialSchedule(
       await flushWaitUntilForTest();
     },
   );
-  const current = await accept(
-    automationClient().get({
-      headers: authHeaders(actor),
-      params: { id: automation.id },
-    }),
-    [200],
-  );
-  const chatThreadId = current.body.chatThreadId;
+  const chatThreadId =
+    automation.chatThreadId ??
+    (
+      await accept(
+        automationClient().get({
+          headers: authHeaders(actor),
+          params: { id: automation.id },
+        }),
+        [200],
+      )
+    ).body.chatThreadId;
   if (!chatThreadId) {
     throw new Error("Expected the Official Automation thread");
   }
@@ -522,8 +526,10 @@ describe("Proactive nightly workflows", () => {
 
   async function nightlyMember() {
     mockNow(new Date("2030-01-01T12:00:00.000Z"));
-    const { actor } = await prepareBriefMember();
-    await bdd.completeOnboarding(actor);
+    const { actor } = await prepareBriefMember({
+      bootstrap: false,
+    });
+    await runs.grantProEntitlement(actor);
     await initializeBriefMember(actor, "Asia/Shanghai");
     if (!actor.orgId) {
       throw new Error("Expected organization");
@@ -538,7 +544,6 @@ describe("Proactive nightly workflows", () => {
     const runnerGroup = runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    await runs.grantProEntitlement(actor);
     await selectPersonalDefaultModel(actor);
     await runs.heartbeatRunner(runnerGroup);
     return { actor, runnerGroup };
@@ -1968,13 +1973,15 @@ async function prepareBriefMember({
   readonly bootstrap?: boolean;
 } = {}) {
   installCatalogStorageFixture(context);
-  if (catalogAvailable) {
-    await syncDeployedCatalog();
-  }
   mockBriefMemberships([{ actor, createdAt }]);
-  if (bootstrap) {
-    await deliverClerkOrganizationCreated(actor, createdAt);
-  }
+  // Catalog publication and organization bootstrap own independent resources.
+  // Both must finish before preference initialization can install the Brief.
+  await Promise.all([
+    catalogAvailable ? syncDeployedCatalog() : Promise.resolve(),
+    bootstrap
+      ? deliverClerkOrganizationCreated(actor, createdAt)
+      : Promise.resolve(),
+  ]);
   return { actor, createdAt };
 }
 
@@ -1988,9 +1995,13 @@ describe("Official Workflow failure recovery", () => {
       throw new Error("Expected the next schedule occurrence");
     }
     const scheduledAt = new Date(automation.nextRunAt).getTime();
-    const fired = await fireOfficialSchedule(actor, automation);
+    // The scheduler and heartbeat own separate clock scopes. Complete both
+    // before claiming the same genuine scheduled Run.
+    const [fired] = await Promise.all([
+      fireOfficialSchedule(actor, automation),
+      runs.heartbeatRunner(runnerGroup),
+    ]);
     mockNow(scheduledAt + 1000);
-    await runs.heartbeatRunner(runnerGroup);
     const claim = await runs.claimRunnerJob(fired.runId);
     await webhooks.requestAgentComplete(
       {
@@ -2019,11 +2030,11 @@ describe("Official Workflow failure recovery", () => {
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
     const { actor } = await prepareBriefMember();
     await initializeBriefMember(actor, "UTC");
-    await bdd.completeOnboarding(actor, { timezone: "UTC" });
     if (!actor.orgId) {
       throw new Error("Expected an organization");
     }
     if (name === "agent-suggestions") {
+      await bdd.completeOnboarding(actor, { timezone: "UTC" });
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId: actor.orgId },
@@ -2036,7 +2047,6 @@ describe("Official Workflow failure recovery", () => {
         [200],
       );
     } else {
-      await connectBriefSource(actor);
       await accept(
         morningBriefPreferenceClient().update({
           headers: authHeaders(actor),
@@ -2046,26 +2056,18 @@ describe("Official Workflow failure recovery", () => {
       );
     }
     const listed = await accept(
-      workflowCollectionClient().list({
+      automationClient().listWorkspace({
         headers: authHeaders(actor),
-        query: {},
       }),
       [200],
     );
-    const installation = listed.body.find((workflow) => {
+    const installation = listed.body.find(({ workflow }) => {
       return workflow.official?.definitionName === name;
     });
     if (!installation) {
       throw new Error("Expected the Official installation");
     }
-    const detail = await accept(
-      workflowClient().get({
-        headers: authHeaders(actor),
-        params: { workflowId: installation.id },
-      }),
-      [200],
-    );
-    let automation = detail.body.automations[0];
+    let automation = installation.automation;
     if (!automation) {
       throw new Error("Expected an Official schedule");
     }
@@ -2191,6 +2193,77 @@ describe("Official Workflow failure recovery", () => {
       expect(stopped.body.enabled).toBeFalsy();
     },
   );
+
+  it("completes an in-flight user schedule using its edited recurrence", async () => {
+    mockNow(new Date("2030-01-01T00:00:00.000Z"));
+    const client = (
+      await setupApp({
+        context,
+        routes: workflowAutomationsRoutes,
+        isolatePg: true,
+      })
+    )(workflowAutomationsContract);
+    const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
+      timezone: "UTC",
+    });
+    const workflowId = await workflowBdd.createWorkflow(actor, {
+      agentId: defaultAgentId,
+      name: "edited-in-flight-schedule",
+    });
+    const automation = (
+      await accept(
+        client.create({
+          headers: authHeaders(actor),
+          params: { workflowId },
+          body: { schedule: { type: "loop", intervalSeconds: 600 } },
+        }),
+        [201],
+      )
+    ).body;
+    const runnerGroup = runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    const [fired] = await Promise.all([
+      fireOfficialSchedule(actor, automation),
+      runs.heartbeatRunner(runnerGroup),
+    ]);
+    const claim = await runs.claimRunnerJob(fired.runId);
+    expect(claim.cliAgentType).toBe("claude-code");
+    mockNow(new Date("2030-01-01T00:10:00.000Z"));
+    const schedule = {
+      type: "cron" as const,
+      cronExpression: "*/5 * * * *",
+      timezone: "UTC",
+    };
+    const edited = await accept(
+      client.update({
+        headers: authHeaders(actor),
+        params: { id: automation.id },
+        body: { schedule },
+      }),
+      [200],
+    );
+    expect(edited.body).toMatchObject({
+      schedule,
+      nextRunAt: "2030-01-01T00:15:00.000Z",
+    });
+    mockNow(new Date("2030-01-01T00:16:00.000Z"));
+    await createChatEventsFixture(context).completeChatRunOk(fired.runId, {
+      authorization: `Bearer ${claim.sandboxToken}`,
+    });
+    await flushWaitUntilForTest();
+    const completed = await accept(
+      client.get({
+        headers: authHeaders(actor),
+        params: { id: automation.id },
+      }),
+      [200],
+    );
+    expect(completed.body).toMatchObject({
+      enabled: true,
+      schedule,
+      nextRunAt: "2030-01-01T00:20:00.000Z",
+    });
+  });
 
   it("keeps user-created schedules stopped after three failures", async () => {
     mockNow(new Date("2030-01-01T00:00:00.000Z"));

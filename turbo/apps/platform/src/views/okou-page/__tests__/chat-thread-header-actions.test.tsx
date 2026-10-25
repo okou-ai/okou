@@ -73,6 +73,7 @@ async function setupHeaderPage(
     featureSwitches: {
       [FeatureSwitchKey.ChatThreadArchiving]: archiveEnabled,
       [FeatureSwitchKey.ChatThreadMuting]: mutingEnabled,
+      [FeatureSwitchKey.ChatResourcePanel]: false,
     },
   });
   await screen.findByText("Review the header layout");

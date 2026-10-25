@@ -11,6 +11,8 @@
 //! JSON array and classify each incoming mount back into one of them. A mount with
 //! `writeback: true` is an artifact; `writeback: false` or an absent `writeback` identifies a
 //! read-only storage.
+//! Serialization borrows mount fields and emits that array lazily, without a second owned mount
+//! collection. Any encoded output buffer still belongs to the caller.
 //!
 //! During deserialization, read-only mounts cannot set `empty: true` or contain
 //! `missingRootPolicy`. Duplicate `mountPath` values are rejected across the complete canonical
@@ -65,10 +67,33 @@ struct ManifestWire {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CanonicalManifest<'a> {
-    storage_mounts: Vec<StorageMountEntry>,
+    storage_mounts: BorrowedStorageMounts<'a>,
     cleanup_paths: &'a [String],
     #[serde(skip_serializing_if = "instruction_cleanup_slice_is_empty")]
     instruction_cleanups: &'a [InstructionCleanupEntry],
+}
+
+struct BorrowedStorageMounts<'a> {
+    storages: &'a [StorageEntry],
+    artifacts: &'a [ArtifactEntry],
+}
+
+impl Serialize for BorrowedStorageMounts<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_seq(
+            self.storages
+                .iter()
+                .map(BorrowedStorageMountEntry::from_storage)
+                .chain(
+                    self.artifacts
+                        .iter()
+                        .map(BorrowedStorageMountEntry::from_artifact),
+                ),
+        )
+    }
 }
 
 fn instruction_cleanup_slice_is_empty(value: &&[InstructionCleanupEntry]) -> bool {
@@ -80,14 +105,11 @@ impl Serialize for Manifest {
     where
         S: serde::Serializer,
     {
-        let storage_mounts = self
-            .storages
-            .iter()
-            .map(StorageMountEntry::from_storage)
-            .chain(self.artifacts.iter().map(StorageMountEntry::from_artifact))
-            .collect();
         CanonicalManifest {
-            storage_mounts,
+            storage_mounts: BorrowedStorageMounts {
+                storages: &self.storages,
+                artifacts: &self.artifacts,
+            },
             cleanup_paths: &self.cleanup_paths,
             instruction_cleanups: &self.instruction_cleanups,
         }
@@ -261,14 +283,35 @@ pub struct StorageMountEntry {
     pub writeback: bool,
 }
 
-impl StorageMountEntry {
-    fn from_storage(entry: &StorageEntry) -> Self {
+// Match the owned wire type's Serde identity, field order and omission rules.
+#[derive(Serialize)]
+#[serde(rename = "StorageMountEntry", rename_all = "camelCase")]
+struct BorrowedStorageMountEntry<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    storage_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version_id: Option<&'a str>,
+    mount_path: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    archive_url: Option<&'a str>,
+    cached: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    empty: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    missing_root_policy: Option<&'a str>,
+    writeback: bool,
+}
+
+impl<'a> BorrowedStorageMountEntry<'a> {
+    fn from_storage(entry: &'a StorageEntry) -> Self {
         Self {
-            name: entry.vas_storage_name.clone(),
+            name: entry.vas_storage_name.as_deref(),
             storage_id: None,
-            version_id: entry.vas_version_id.clone(),
-            mount_path: entry.mount_path.clone(),
-            archive_url: entry.archive_url.clone(),
+            version_id: entry.vas_version_id.as_deref(),
+            mount_path: &entry.mount_path,
+            archive_url: entry.archive_url.as_deref(),
             cached: entry.cached,
             empty: false,
             missing_root_policy: None,
@@ -276,16 +319,16 @@ impl StorageMountEntry {
         }
     }
 
-    fn from_artifact(entry: &ArtifactEntry) -> Self {
+    fn from_artifact(entry: &'a ArtifactEntry) -> Self {
         Self {
-            name: entry.vas_storage_name.clone(),
-            storage_id: entry.vas_storage_id.clone(),
-            version_id: entry.vas_version_id.clone(),
-            mount_path: entry.mount_path.clone(),
-            archive_url: entry.archive_url.clone(),
+            name: entry.vas_storage_name.as_deref(),
+            storage_id: entry.vas_storage_id.as_deref(),
+            version_id: entry.vas_version_id.as_deref(),
+            mount_path: &entry.mount_path,
+            archive_url: entry.archive_url.as_deref(),
             cached: entry.cached,
             empty: entry.empty,
-            missing_root_policy: entry.missing_root_policy.clone(),
+            missing_root_policy: entry.missing_root_policy.as_deref(),
             writeback: true,
         }
     }

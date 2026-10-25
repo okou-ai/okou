@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test, vi } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -37,6 +38,7 @@ async function openResizableSidebar(): Promise<{
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: false },
   });
   click(buttonNamed("Open artifacts"));
   const handle = await screen.findByRole("separator", {

@@ -96,16 +96,22 @@ export const activatePersonalOAuthCredentialAccount$ = command(
   },
 );
 
-export const deletePersonalOAuthCredentialAccount$ = command(
-  async ({ set }, id: string, signal: AbortSignal) => {
-    await set(deletePersonalModelProviderAccount$, id, signal);
+export const confirmPersonalAccountDisconnect$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const dialog = get(internalPersonalAccountDisconnectDialog$);
+    if (!dialog) {
+      return;
+    }
+    await set(deletePersonalModelProviderAccount$, dialog.account.id, signal);
     signal.throwIfAborted();
+    if (get(internalPersonalAccountDisconnectDialog$) === dialog) {
+      set(setPersonalAccountDisconnectDialog$, null);
+    }
     toast.success(
       i18n.t(($) => {
         return $.settings.models.toasts.accountDisconnected;
       }),
     );
-    signal.throwIfAborted();
   },
 );
 

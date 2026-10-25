@@ -1,4 +1,5 @@
-import { sql, type SQL } from "drizzle-orm";
+import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
+import { lte, sql, type SQL } from "drizzle-orm";
 
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { nowDate } from "../../lib/time";
@@ -6,6 +7,10 @@ import { nowDate } from "../../lib/time";
 interface RunnerJobQueueTimestamps {
   readonly createdAt: Date;
   readonly expiresAt: SQL;
+}
+
+export function runnerJobQueueExpiredCondition() {
+  return lte(runnerJobQueue.expiresAt, sql`now()`);
 }
 
 /**

@@ -5761,6 +5761,9 @@
         "logo": {
           "description": "在应用各处显示的工作区头像",
           "fallbackAlt": "工作区",
+          "loadError": "无法加载工作区徽标。",
+          "loading": "正在加载工作区徽标",
+          "retry": "重试",
           "title": "标识",
           "upload": "上传标识"
         },

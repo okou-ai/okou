@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.19.4](https://github.com/okou-ai/okou/compare/ios-v0.19.3...ios-v0.19.4) (2026-10-25)
+
+
+### Bug Fixes
+
+* **ios:** restore custom headers and align floating controls ([#42884](https://github.com/okou-ai/okou/issues/42884)) ([e4af90e](https://github.com/okou-ai/okou/commit/e4af90e9f1fefeb1dcce25f12814fa464b889efc))
+* **ios:** retain fixture ownership across request cancellation ([#42873](https://github.com/okou-ai/okou/issues/42873)) ([2d0fa3c](https://github.com/okou-ai/okou/commit/2d0fa3c8717cd32670b03dbe64ed55b462453da0))
+* **ios:** reuse attachment thumbnails across scrolling ([#42890](https://github.com/okou-ai/okou/issues/42890)) ([18dfd26](https://github.com/okou-ai/okou/commit/18dfd2650e4a4b8b169de9e93c1ae890cdc4e3da))
+
+## [0.19.3](https://github.com/okou-ai/okou/compare/ios-v0.19.2...ios-v0.19.3) (2026-10-25)
+
+
+### Bug Fixes
+
+* **ios:** align navigation and refine composer geometry ([#42857](https://github.com/okou-ai/okou/issues/42857)) ([8fa7a9b](https://github.com/okou-ai/okou/commit/8fa7a9b462dba2b895a085fca0ef1923573036d7))
+
 ## [0.19.2](https://github.com/okou-ai/okou/compare/ios-v0.19.1...ios-v0.19.2) (2026-10-25)
 
 

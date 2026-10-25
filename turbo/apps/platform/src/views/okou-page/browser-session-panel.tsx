@@ -156,6 +156,7 @@ function BrowserCdpViewer({
       <CdpViewer
         cdpUrl={connection.data.cdpUrl}
         interactive
+        showSettingsMenu={false}
         windowSizeSync="live"
         extensions={[browserUse()]}
         colorScheme={theme}

@@ -127,10 +127,7 @@ test("Keep forwarding suggestions isolated during preview navigation", async () 
   ).toHaveLength(1);
   expect(editor).toHaveFocus();
   await user.keyboard("{ArrowUp}");
-  expect(queryButton("Illustration", menu)).toHaveAttribute(
-    "data-active",
-    "true",
-  );
+  expect(queryButton("Document", menu)).toHaveAttribute("data-active", "true");
   expect(dialog).toBeInTheDocument();
   expect(editor).toHaveTextContent("Forward draft /");
   expect(editor).toHaveFocus();

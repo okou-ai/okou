@@ -56,7 +56,6 @@ test("Keep an empty chat closed through presses while it loads, then show its hi
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
   await screen.findByTestId("chat-thread-header-title");
   // The saved default asks for the panel; the button breathes until it answers.

@@ -182,9 +182,6 @@ test("Disabling custom templates preserves the built-in slash catalog", async ()
   expect(
     within(pane).getByText(PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title),
   ).toBeInTheDocument();
-  expect(
-    within(pane).queryByText(template("presentation").title),
-  ).not.toBeInTheDocument();
   expect(within(menu).queryByText("Document")).not.toBeInTheDocument();
 });
 

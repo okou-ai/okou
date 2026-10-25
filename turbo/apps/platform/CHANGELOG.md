@@ -12,6 +12,49 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1060.1](https://github.com/okou-ai/okou/compare/app-v0.1060.0...app-v0.1060.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **platform:** make workspace logo loading recoverable ([#42872](https://github.com/okou-ai/okou/issues/42872)) ([60cea25](https://github.com/okou-ai/okou/commit/60cea259b395664d54716c6f98f592439899b797))
+* preserve new drafts when custom connector creation completes ([#42885](https://github.com/okou-ai/okou/issues/42885)) ([7fbb795](https://github.com/okou-ai/okou/commit/7fbb7958c7aa8faa9230a6cd319efe401d0c9e61))
+* preserve newer custom connector drafts after an edit ([#42883](https://github.com/okou-ai/okou/issues/42883)) ([d4e90fc](https://github.com/okou-ai/okou/commit/d4e90fc679a17bbd865e8780f736af148f54c84b))
+* preserve newer custom connector drafts after deletion ([#42886](https://github.com/okou-ai/okou/issues/42886)) ([e3d6756](https://github.com/okou-ai/okou/commit/e3d67561022e1e67830945c711960bd5da6bf92f))
+
+
+### Refactoring
+
+* **platform:** own agent creation completion in signals ([#42868](https://github.com/okou-ai/okou/issues/42868)) ([c1d72a8](https://github.com/okou-ai/okou/commit/c1d72a81ac68249c1aa19bd7801e97928daf3eb8))
+* **platform:** own connector account disconnect completion ([#42870](https://github.com/okou-ai/okou/issues/42870)) ([c1f768a](https://github.com/okou-ai/okou/commit/c1f768a4747b97262320383f331c3c40d6ce6ecd))
+* **platform:** own connector account naming completion ([#42871](https://github.com/okou-ai/okou/issues/42871)) ([29d717a](https://github.com/okou-ai/okou/commit/29d717acb22c0f27a18712d05b91661ca76e86d6))
+* **platform:** own personal account disconnect completion ([#42869](https://github.com/okou-ai/okou/issues/42869)) ([aec4206](https://github.com/okou-ai/okou/commit/aec4206cacf8a00615ca9d4f93378784c6fab6e3))
+
+## [0.1060.0](https://github.com/okou-ai/okou/compare/app-v0.1059.2...app-v0.1060.0) (2026-10-25)
+
+
+### Features
+
+* **core:** enable built-in document templates for everyone ([#42580](https://github.com/okou-ai/okou/issues/42580)) ([f61c808](https://github.com/okou-ai/okou/commit/f61c808adf249d8ef7767548df0893e99d0246ff))
+* **core:** enable chat resource panel for everyone ([#42581](https://github.com/okou-ai/okou/issues/42581)) ([269f6e5](https://github.com/okou-ai/okou/commit/269f6e5bb47c134a266d7078c788645183bab399))
+
+
+### Bug Fixes
+
+* **app:** preserve table bounds and text layout in message pdf exports ([#42607](https://github.com/okou-ai/okou/issues/42607)) ([c78a494](https://github.com/okou-ai/okou/commit/c78a49413f2aa7f1452f30a841b5ceb428f4c22a))
+
+
+### Performance Improvements
+
+* reduce resource and workflow publication overhead ([#42783](https://github.com/okou-ai/okou/issues/42783)) ([efca2a9](https://github.com/okou-ai/okou/commit/efca2a9ee30dcb5bad41396943784b3714e9e69f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.786.0
+
 ## [0.1059.2](https://github.com/okou-ai/okou/compare/app-v0.1059.1...app-v0.1059.2) (2026-10-25)
 
 

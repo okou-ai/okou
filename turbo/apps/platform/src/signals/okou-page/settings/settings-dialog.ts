@@ -23,6 +23,8 @@ import {
   billingSubPage$,
   clearBillingScrollTarget$,
   clearPendingLogo$,
+  resetOrgLogo$,
+  startOrgLogoLoading$,
   initProfileName$,
   requestBuyCreditsScroll$,
   resetDeleteConfirm$,
@@ -115,11 +117,14 @@ export const settingsActiveSection$ = computed((get) => {
 });
 
 export const setSettingsActiveSection$ = command(
-  ({ get, set }, section: SettingsSection) => {
+  ({ get, set }, section: SettingsSection, signal: AbortSignal) => {
     if (section === "debug" && get(internalActiveSection$) !== "debug") {
       set(reloadIndexedDbDiagnosticsFromWorker$);
     }
     set(internalActiveSection$, section);
+    if (section === "general") {
+      set(startOrgLogoLoading$, signal);
+    }
     if (section !== "billing") {
       set(clearBillingScrollTarget$);
       set(resetUsagePackPricing$);
@@ -199,6 +204,7 @@ const releaseSettingsDialogSession$ = command(({ set }) => {
   set(internalSettingsDialogSignal$, null);
   set(internalSettingsDialogSessionActive$, false);
   set(clearPendingLogo$);
+  set(resetOrgLogo$);
   set(resetDeleteConfirm$);
   set(resetUsagePackPricing$);
   // The billing sub-page belongs to the session, not to the tab: a closed
@@ -263,7 +269,7 @@ export const setSettingsDialogOpen$ = command(
     }
     if (get(internalSettingsDialogSessionActive$)) {
       set(internalSettingsDialogOpen$, true);
-      set(setSettingsActiveSection$, get(internalActiveSection$));
+      set(setSettingsActiveSection$, get(internalActiveSection$), pageSignal);
       return;
     }
 
@@ -276,6 +282,9 @@ export const setSettingsDialogOpen$ = command(
       { once: true },
     );
     set(internalSettingsDialogSignal$, modalSignal);
+    if (get(internalActiveSection$) === "general") {
+      set(startOrgLogoLoading$, modalSignal);
+    }
     set(observeWalletConnection$, modalSignal);
     set(internalSettingsDialogSessionActive$, true);
     // A plans sub-page that is already open when the session starts was opened
