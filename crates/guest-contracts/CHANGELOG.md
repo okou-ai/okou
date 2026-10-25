@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.3...guest-contracts-v0.27.4) (2026-10-25)
+
+
+### Performance Improvements
+
+* **runner:** index decoded mount ownership checks ([#42773](https://github.com/okou-ai/okou/issues/42773)) ([41e0886](https://github.com/okou-ai/okou/commit/41e088645e693f25d23daad3ad2ca4627e6ae4b1))
+
 ## [0.27.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.2...guest-contracts-v0.27.3) (2026-10-25)
 
 
