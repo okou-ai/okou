@@ -16,11 +16,6 @@ on:
         description: Compare first and warm test startup on one runner using identical build products
         type: boolean
         default: false
-      test_process_mode:
-        description: Compare split invocations with sequential build-for-testing and test-without-building actions
-        type: choice
-        options: [split, chained]
-        default: split
       archive_cache_experiment:
         description: Compare fresh Release archives with and without native caches
         type: boolean
@@ -188,7 +183,6 @@ jobs:
       IOS_BUILD_CACHE_ENABLED: "true"
       IOS_XCODE_STARTUP_SAMPLING: ${{ github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup && 'true' || 'false' }}
       IOS_REPEAT_TEST_STARTUP: ${{ github.event_name == 'workflow_dispatch' && inputs.repeat_test_startup && 'true' || 'false' }}
-      IOS_TEST_PROCESS_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.test_process_mode || 'split' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

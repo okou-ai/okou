@@ -89,13 +89,9 @@ elif command == 'xcodebuild':
         if scenario != 'missing-products':
             (products / 'Okou_iphonesimulator27.1-arm64.xctestrun').write_text('built tests')
         mark('build-finished')
-    if 'test-without-building' in args:
+    elif 'test-without-building' in args:
         if not (state / 'build-finished').exists():
             sys.exit('Tests require built products')
-        chained = 'build-for-testing' in args
-        if chained:
-            mark('boot-started')
-            mark('boot-finished')
         if scenario != 'manual' and not (state / 'boot-finished').exists():
             sys.exit('Tests started before simulator readiness')
         if (state / 'tests-ran').exists():
@@ -107,8 +103,7 @@ elif command == 'xcodebuild':
             if scenario == 'cancel-repeat':
                 mark('repeat-started')
                 wait_for('allow-repeat')
-        specification = (products / 'Okou_iphonesimulator27.1-arm64.xctestrun' if chained
-                         else pathlib.Path(args[args.index('-xctestrun') + 1]))
+        specification = pathlib.Path(args[args.index('-xctestrun') + 1])
         if specification.read_text() != 'built tests':
             sys.exit('Tests require the current build specification')
         mark('tests-ran')
@@ -117,7 +112,7 @@ elif command == 'xcodebuild':
         if scenario == 'test-failure' or (scenario == 'repeat-failure' and (state / 'tests-ran-again').exists()):
             (bundle / 'failure.txt').write_text('First failed assertion')
             sys.exit(65)
-    elif 'build-for-testing' not in args:
+    else:
         raise ValueError(args)
 else:
     raise ValueError(command)
@@ -251,37 +246,6 @@ class CIProcessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 65, result.stderr)
         bundle = self.root / "work/okou-ios-ci/Tests.xcresult"
         self.assertEqual((bundle / "failure.txt").read_text(), "First failed assertion")
-
-    def test_chained_actions_build_and_run_the_full_native_suite(self):
-        self.env.update(
-            IOS_TEST_PROCESS_MODE="chained", GITHUB_EVENT_NAME="workflow_dispatch"
-        )
-        result = self.invoke()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue((self.state / "build-finished").exists())
-        self.assertTrue((self.state / "tests-ran").exists())
-
-    def test_chained_native_failure_preserves_status_and_bundle(self):
-        self.env.update(
-            IOS_TEST_PROCESS_MODE="chained", GITHUB_EVENT_NAME="workflow_dispatch"
-        )
-        self.env["CI_PROCESS_SCENARIO"] = "test-failure"
-        result = self.invoke()
-        self.assertEqual(result.returncode, 65, result.stderr)
-        self.assertEqual(
-            (self.root / "work/okou-ios-ci/Tests.xcresult/failure.txt").read_text(),
-            "First failed assertion",
-        )
-
-    def test_chained_compile_failure_does_not_boot_or_run_tests(self):
-        self.env.update(
-            IOS_TEST_PROCESS_MODE="chained", GITHUB_EVENT_NAME="workflow_dispatch"
-        )
-        self.env["CI_PROCESS_SCENARIO"] = "build-failure"
-        result = self.invoke()
-        self.assertEqual(result.returncode, 23, result.stderr)
-        self.assertFalse((self.state / "boot-started").exists())
-        self.assertFalse((self.state / "tests-ran").exists())
 
     def test_startup_repetition_runs_full_suites_on_the_same_built_specification(self):
         self.env.update(

@@ -117,7 +117,7 @@ for upload_attempt, download_attempt in [(1, 1), (1, 2), (2, 2)]:
 assert source_upload['overwrite'] is True
 assert test_job['env']['IOS_BUILD_CACHE_ENABLED'] == 'true'
 assert archive_job['env']['IOS_ARCHIVE_CACHE_ENABLED'] == 'true'
-assert {key: value for key, value in test_job['env'].items() if key not in {'IOS_BUILD_CACHE_ENABLED', 'IOS_XCODE_STARTUP_SAMPLING', 'IOS_REPEAT_TEST_STARTUP', 'IOS_TEST_PROCESS_MODE'}} == {key: value for key, value in archive_job['env'].items() if key != 'IOS_ARCHIVE_CACHE_ENABLED'} == package_job['env']
+assert {key: value for key, value in test_job['env'].items() if key not in {'IOS_BUILD_CACHE_ENABLED', 'IOS_XCODE_STARTUP_SAMPLING', 'IOS_REPEAT_TEST_STARTUP'}} == {key: value for key, value in archive_job['env'].items() if key != 'IOS_ARCHIVE_CACHE_ENABLED'} == package_job['env']
 # Startup observations are confined to explicit manual runs, not native release evidence.
 assert ios['on']['workflow_dispatch']['inputs']['sample_xcode_startup']['default'] is False
 sampling = test_job['env']['IOS_XCODE_STARTUP_SAMPLING'].removeprefix('${{').removesuffix('}}').strip()
@@ -141,14 +141,6 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
             .replace('inputs.repeat_test_startup', repr(enabled))
             .replace('&&', 'and').replace('||', 'or'))
         assert eval(expression, {'__builtins__': {}}, {}) == ('true' if event == 'workflow_dispatch' and enabled else 'false')
-assert ios['on']['workflow_dispatch']['inputs']['test_process_mode']['default'] == 'split'
-mode = test_job['env']['IOS_TEST_PROCESS_MODE'].removeprefix('${{').removesuffix('}}').strip()
-for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
-    for value in ['split', 'chained']:
-        expression = (mode.replace('github.event_name', repr(event))
-            .replace('inputs.test_process_mode', repr(value))
-            .replace('&&', 'and').replace('||', 'or'))
-        assert eval(expression, {'__builtins__': {}}, {}) == (value if event == 'workflow_dispatch' else 'split')
 assert ios['jobs']['publish-archive']['needs'] == ['detect', 'script-checks', 'test-packages', 'build-test', 'build-archive']
 assert 'script-checks' in ios['jobs']['ci-gate-ios']['needs']
 assert 'test-packages' in ios['jobs']['ci-gate-ios']['needs']

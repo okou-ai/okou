@@ -22,18 +22,6 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-ios_process_mode=${IOS_TEST_PROCESS_MODE:-split}
-case "$ios_process_mode" in
-  split) ;;
-  chained)
-    if [[ "${GITHUB_EVENT_NAME:-}" != workflow_dispatch || "${IOS_REPEAT_TEST_STARTUP:-false}" == true ]]; then
-      echo 'Chained test actions require a manual run without startup repetition' >&2
-      exit 2
-    fi
-    ;;
-  *) echo "Unknown iOS test process mode: $ios_process_mode" >&2; exit 2 ;;
-esac
-echo "iOS test process mode: $ios_process_mode"
 ios_repeat_startup=${IOS_REPEAT_TEST_STARTUP:-false}
 if [[ "$ios_repeat_startup" == true ]]; then
   if [[ "${GITHUB_EVENT_NAME:-}" != workflow_dispatch || "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true ]]; then
@@ -52,15 +40,6 @@ ios_phase_pid=$!
 wait "$ios_phase_pid"
 ios_phase_pid=""
 ios_dependency_seconds=$((SECONDS - ios_prepare_started))
-
-if [[ "$ios_process_mode" == chained ]]; then
-  echo 'iOS starting chained build-for-testing and test-without-building'
-  bash ios/scripts/ci-test.sh chained &
-  ios_phase_pid=$!
-  wait "$ios_phase_pid"
-  ios_phase_pid=""
-  exit 0
-fi
 
 echo "iOS starting build-for-testing"
 bash ios/scripts/ci-test.sh compile &

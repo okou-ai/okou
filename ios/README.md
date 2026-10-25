@@ -254,14 +254,6 @@ Release-only merge groups can reuse App test evidence only when exact input fing
 the verified prior result; missing evidence and mixed groups run the tests.
 See [archive promotion](ARCHIVE_PROMOTION.md).
 
-To compare sequential Xcode actions in one process, manually dispatch `ios.yml`
-with `test_process_mode=chained`. Xcode receives `build-for-testing` followed by
-`test-without-building` in the same invocation, using the normal project, scheme,
-locked dependencies and complete test selection. Compare against `split` on the
-same commit with sampling and repetition disabled. Automatic runs retain the
-split process order. This manual experiment is separate from the earlier single
-`test` action experiment; neither timing nor boot ordering is assumed equivalent.
-
 To compare first and warm test startup, manually dispatch `ios.yml` with
 `repeat_test_startup=true` and sampling disabled. The diagnostic compiles once,
 boots one simulator, and runs the complete App suite twice with identical built
@@ -269,6 +261,10 @@ test specifications. The first result is retained as `ColdTests.xcresult` before
 the second invocation. A first-run failure stops the diagnostic; a second-run
 failure preserves both results and fails the job. This measures startup reuse on
 one runner; the longer diagnostic job is not an optimized admission workflow.
+
+HTTP fixture failures identify a missing owner route, a mismatched origin, or
+rejection by the owning handler. The request owner and reporting fixture help
+distinguish an unconfigured endpoint from a request that outlives its fixture.
 
 For a slow compile or test-phase Xcode launch, manually dispatch `ios.yml` with
 `sample_xcode_startup=true`. The opt-in observer records UTC and monotonic

@@ -19,8 +19,8 @@ resolved=ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.res
 # With no phase argument, supported manual callers still run every suite.
 ios_test_phase=${1:-all}
 case "$ios_test_phase" in
-  all | build | prepare | compile | run | chained) ;;
-  *) echo "usage: ci-test.sh [all|build|prepare|compile|run|chained]" >&2; exit 2 ;;
+  all | build | prepare | compile | run) ;;
+  *) echo "usage: ci-test.sh [all|build|prepare|compile|run]" >&2; exit 2 ;;
 esac
 
 xcode_args=(
@@ -132,26 +132,4 @@ if [[ "$ios_test_phase" == all || "$ios_test_phase" == run ]]; then
   fi
   cmp "$resolved" "$build_root/Package.resolved.before"
   echo "iOS test-without-building: $((SECONDS - ios_phase_started)) seconds"
-fi
-
-if [[ "$ios_test_phase" == chained ]]; then
-  ios_phase_started=$SECONDS
-  cmp "$resolved" "$build_root/Package.resolved.before"
-  chained_command=(
-    xcodebuild "${xcode_args[@]}"
-    -parallel-testing-enabled NO
-    -maximum-concurrent-test-simulator-destinations 1
-    -collect-test-diagnostics never
-    -resultBundlePath "$build_root/Tests.xcresult"
-    -showBuildTimingSummary build-for-testing test-without-building
-  )
-  if [[ "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true ]]; then
-    mkdir -p "$build_root/startup-samples"
-    python3 ios/scripts/sample-xcode-startup.py --until first-test \
-      "$build_root/startup-samples/chained" -- "${chained_command[@]}"
-  else
-    "${chained_command[@]}"
-  fi
-  cmp "$resolved" "$build_root/Package.resolved.before"
-  echo "iOS chained build and test: $((SECONDS - ios_phase_started)) seconds"
 fi
