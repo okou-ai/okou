@@ -450,20 +450,17 @@ const uploadOrgLogo$ = command(
   },
 );
 
-const readOrgLogo$ = command(async ({ get }, signal: AbortSignal) => {
-  const result = await accept(
-    get(apiClient$)(orgLogoContract).get({ fetchOptions: { signal } }),
-    [200],
-    signal,
-  );
-  signal.throwIfAborted();
-  return result.body.logoUrl;
-});
-
-export const loadOrgLogo$ = command(({ set }, signal: AbortSignal) => {
+export const loadOrgLogo$ = command(({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   signal = set(resetLogoRequest$, signal);
-  const request = set(readOrgLogo$, signal);
+  const request = (async () => {
+    const result = await accept(
+      get(apiClient$)(orgLogoContract).get({ fetchOptions: { signal } }),
+      [200],
+      signal,
+    );
+    return result.body.logoUrl;
+  })();
   set(internalProfileLogoRequest$, request);
   return request;
 });

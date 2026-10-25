@@ -3,7 +3,7 @@
 import { useLoadable, useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Building2, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import {
   Input,
   Button,
@@ -65,6 +65,9 @@ function ProfileSection({
 
   const pendingLogoFile = useGet(pendingLogoFile$);
   const pendingLogoPreview = useGet(pendingLogoPreview$);
+  const displayedLogoUrl = pendingLogoPreview ?? logoUrl;
+  const logoLoading = logoLoadable.state === "loading";
+  const logoFailed = logoLoadable.state === "hasError" && !pendingLogoPreview;
   const setPendingLogo = useSet(setPendingLogo$);
   const clearPendingLogo = useSet(clearPendingLogo$);
 
@@ -155,36 +158,33 @@ function ProfileSection({
                 return $.settings.workspace.profile.logo.title;
               })}
             </p>
-            <p className="text-[13px] text-muted-foreground mt-0.5">
+            <p
+              role={logoFailed ? "alert" : undefined}
+              className="text-[13px] text-muted-foreground mt-0.5"
+            >
               {t(($) => {
-                return $.settings.workspace.profile.logo.description;
+                return logoFailed
+                  ? $.settings.workspace.profile.logo.loadError
+                  : $.settings.workspace.profile.logo.description;
               })}
             </p>
-            {logoLoadable.state === "hasError" && !pendingLogoPreview && (
-              <div className="mt-2 flex items-center gap-2">
-                <p role="alert" className="text-sm text-destructive">
-                  {t(($) => {
-                    return $.settings.workspace.profile.logo.loadError;
-                  })}
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (modalSignal) {
-                      detach(loadLogo(modalSignal), Reason.DomCallback);
-                    }
-                  }}
-                >
-                  {t(($) => {
-                    return $.settings.workspace.profile.logo.retry;
-                  })}
-                </Button>
-              </div>
-            )}
           </div>
           <div className="flex items-center gap-3 shrink-0">
+            {logoFailed && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (modalSignal) {
+                    detach(loadLogo(modalSignal), Reason.DomCallback);
+                  }
+                }}
+              >
+                {t(($) => {
+                  return $.settings.workspace.profile.logo.retry;
+                })}
+              </Button>
+            )}
             <label
               className={cn(
                 buttonVariants({ variant: "quiet", size: "icon" }),
@@ -207,9 +207,9 @@ function ProfileSection({
                   e.target.value = "";
                 }}
               />
-              {(pendingLogoPreview ?? logoUrl) ? (
+              {displayedLogoUrl ? (
                 <img
-                  src={(pendingLogoPreview ?? logoUrl)!}
+                  src={displayedLogoUrl}
                   alt={
                     org.name ||
                     t(($) => {
@@ -218,19 +218,20 @@ function ProfileSection({
                   }
                   className="h-full w-full object-cover"
                 />
-              ) : logoLoadable.state === "loading" ? (
-                <span
-                  role="status"
-                  aria-label={t(($) => {
-                    return $.settings.workspace.profile.logo.loading;
-                  })}
-                  className="block h-full w-full bg-muted/50 animate-pulse"
-                />
               ) : (
-                <Building2
-                  size={20}
-                  aria-hidden="true"
-                  className="text-muted-foreground"
+                <span
+                  role={logoLoading ? "status" : undefined}
+                  aria-label={
+                    logoLoading
+                      ? t(($) => {
+                          return $.settings.workspace.profile.logo.loading;
+                        })
+                      : undefined
+                  }
+                  className={cn(
+                    "block h-full w-full bg-muted/50",
+                    logoLoading && "animate-pulse",
+                  )}
                 />
               )}
               {isAdmin && (
