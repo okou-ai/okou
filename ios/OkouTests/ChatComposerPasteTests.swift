@@ -176,7 +176,7 @@ final class ChatComposerPasteTests: XCTestCase {
     XCTAssertFalse(workspace.newAttachmentDraft.hasAttachments)
   }
 
-  func testSwitchingConversationsKeepsPendingImageInItsOriginalDraft() async throws {
+  func testPendingImageStaysWithItsConversationWhileAnotherDraftIsSent() async throws {
     let originalFixture = AttachmentFlowFixture()
     let nextFixture = AttachmentFlowFixture()
     let original = originalFixture.conversation()
@@ -185,10 +185,6 @@ final class ChatComposerPasteTests: XCTestCase {
       original.close()
       next.close()
     }
-    let host = UIHostingController(rootView: composer(original))
-    let window = try await mount(host)
-    defer { unmount(window) }
-    let input = try XCTUnwrap(textView(in: host.view))
     let file = try makeImage()
     defer { try? FileManager.default.removeItem(at: file) }
     let started = expectation(description: "Image requested in original conversation")
@@ -206,10 +202,10 @@ final class ChatComposerPasteTests: XCTestCase {
       }
       return Progress(totalUnitCount: 1)
     }
-    input.paste(itemProviders: [provider])
+    original.attachmentDraft.importPastedImages([provider])
     await fulfillment(of: [started], timeout: 3)
-    host.rootView = composer(next)
-    try await eventually { self.textView(in: host.view) !== input }
+    next.draft = "Next conversation"
+    await next.send()
     continuation.yield()
     try await eventually {
       original.attachmentDraft.hasAttachments && original.attachmentDraft.isReady
@@ -218,6 +214,17 @@ final class ChatComposerPasteTests: XCTestCase {
     XCTAssertEqual(originalFixture.state.value.withLock { $0.preparations.count }, 1)
     XCTAssertTrue(nextFixture.state.value.withLock { $0.preparations.isEmpty })
     XCTAssertTrue(originalFixture.state.value.withLock { $0.messages.isEmpty })
+    await original.send()
+    let originalSend = try JSONDecoder().decode(
+      AttachmentFlowFixture.Message.self,
+      from: XCTUnwrap(originalFixture.state.value.withLock { $0.messages.first }))
+    let nextSend = try JSONDecoder().decode(
+      AttachmentFlowFixture.Message.self,
+      from: XCTUnwrap(nextFixture.state.value.withLock { $0.messages.first }))
+    XCTAssertEqual(originalSend.userMessage.parts.map(\.type), ["file"])
+    XCTAssertEqual(originalSend.userMessage.parts.first?.fileId, AttachmentFlowFixture.fileID)
+    XCTAssertEqual(nextSend.userMessage.parts.map(\.type), ["text"])
+    XCTAssertEqual(nextSend.userMessage.parts.first?.text, "Next conversation")
   }
 
   func testOversizedPastedImagePreservesSelectionAndDoesNotAllocateUpload() async throws {
@@ -309,9 +316,6 @@ final class ChatComposerPasteTests: XCTestCase {
       conversation.composer.clear()
       conversation.close()
     }
-    let host = UIHostingController(rootView: composer(conversation))
-    let window = try await mount(host)
-    defer { unmount(window) }
     let synchronization = Task { await conversation.composer.synchronize() }
     await fulfillment(of: [reading], timeout: 3)
     let file = try makeImage()
@@ -327,8 +331,7 @@ final class ChatComposerPasteTests: XCTestCase {
       }
       return Progress(totalUnitCount: 1)
     }
-    let input = try XCTUnwrap(textView(in: host.view))
-    input.paste(itemProviders: [provider])
+    conversation.attachmentDraft.importPastedImages([provider])
     await fulfillment(of: [loading], timeout: 3)
     readGate.yield()
     await synchronization.value
