@@ -8,8 +8,26 @@ struct MessageAttachmentView: View {
   let attachment: ChatMessageAttachment
   let viewer: MessageAttachmentStore
   let loadsThumbnail: Bool
-  @State private var thumbnail: UIImage?
-  @State private var thumbnailMessage: String?
+  private struct LoadKey: Hashable {
+    let fileID: String
+    let owner: ObjectIdentifier
+    let enabled: Bool
+  }
+  private struct Prepared {
+    let key: LoadKey
+    let image: UIImage?
+    let message: String?
+  }
+  @State private var prepared: Prepared?
+
+  private var loadKey: LoadKey {
+    LoadKey(fileID: attachment.downloadID, owner: ObjectIdentifier(viewer), enabled: loadsThumbnail)
+  }
+  private var thumbnail: UIImage? {
+    guard loadsThumbnail else { return nil }
+    return viewer.cachedThumbnail(attachment) ?? (prepared?.key == loadKey ? prepared?.image : nil)
+  }
+  private var thumbnailMessage: String? { prepared?.key == loadKey ? prepared?.message : nil }
   private var thumbnailFailed: Bool { thumbnailMessage != nil }
 
   private var isMedia: Bool {
@@ -68,18 +86,17 @@ struct MessageAttachmentView: View {
       thumbnailMessage ?? metadata
     )
     .accessibilityIdentifier("message-attachment-\(attachment.id)")
-    .task(id: loadsThumbnail ? attachment.downloadID : nil) {
-      thumbnail = nil
-      thumbnailMessage = nil
+    .task(id: loadKey) {
       guard loadsThumbnail, isMedia else { return }
+      let key = loadKey
       do {
-        let data = try await viewer.thumbnail(attachment)
+        let image = try await viewer.thumbnail(attachment)
         guard !Task.isCancelled else { return }
-        thumbnail = data.flatMap(UIImage.init(data:))
-        thumbnailMessage = thumbnail == nil ? "Tap to download preview" : nil
+        prepared = Prepared(
+          key: key, image: image, message: image == nil ? "Tap to download preview" : nil)
       } catch {
         guard !Task.isCancelled else { return }
-        thumbnailMessage = MessageAttachmentStore.message(for: error)
+        prepared = Prepared(key: key, image: nil, message: MessageAttachmentStore.message(for: error))
       }
     }
   }

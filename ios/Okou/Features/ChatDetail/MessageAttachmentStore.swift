@@ -2,10 +2,18 @@ import ChatData
 import ChatDomain
 import Foundation
 import Observation
+import UIKit
 
 /// Detail-scoped downloads. Leaving the detail or closing its workspace cancels all work.
 @MainActor @Observable
 final class MessageAttachmentStore {
+  @MainActor
+  private final class Thumbnail {
+    let image: UIImage?
+
+    init(image: UIImage?) { self.image = image }
+  }
+
   struct Preview: Identifiable {
     let id = UUID()
     let attachment: ChatMessageAttachment
@@ -17,6 +25,13 @@ final class MessageAttachmentStore {
   private let commands: ChatCommands
   private let didFail: @MainActor (Error) -> Void
   private var downloads: [UUID: Task<ChatAttachmentFile?, Error>] = [:]
+  private let thumbnails: NSCache<NSString, Thumbnail> = {
+    let cache = NSCache<NSString, Thumbnail>()
+    cache.totalCostLimit = 16 * 1024 * 1024
+    cache.countLimit = 64
+    return cache
+  }()
+  private var thumbnailTasks: [String: Task<Thumbnail, Error>] = [:]
   private var previewTask: Task<Void, Never>?
   private var generation = UUID()
   private var closed = false
@@ -26,13 +41,44 @@ final class MessageAttachmentStore {
     self.didFail = didFail
   }
 
-  func thumbnail(_ attachment: ChatMessageAttachment) async throws -> Data? {
+  func cachedThumbnail(_ attachment: ChatMessageAttachment) -> UIImage? {
+    guard !closed else { return nil }
+    return thumbnails.object(forKey: attachment.downloadID as NSString)?.image
+  }
+
+  func thumbnail(_ attachment: ChatMessageAttachment) async throws -> UIImage? {
+    try Task.checkCancellation()
+    guard !closed else { throw CancellationError() }
+    let id = attachment.downloadID
+    if let cached = thumbnails.object(forKey: id as NSString) { return cached.image }
     let scope = generation
-    guard let file = try await download(attachment, thumbnail: true) else { return nil }
-    let data = await AttachmentFileImporter.shared.thumbnail(file.url, maximumPixelSize: 600)
+    let task: Task<Thumbnail, Error>
+    if let existing = thumbnailTasks[id] {
+      task = existing
+    } else {
+      task = Task {
+        defer { if generation == scope { thumbnailTasks[id] = nil } }
+        let file = try await download(attachment, thumbnail: true)
+        let data: Data?
+        if let file {
+          data = await AttachmentFileImporter.shared.thumbnail(file.url, maximumPixelSize: 600)
+        } else {
+          data = nil
+        }
+        try Task.checkCancellation()
+        guard !closed, generation == scope else { throw CancellationError() }
+        let thumbnail = Thumbnail(image: data.flatMap(UIImage.init(data:)))
+        let cost = thumbnail.image?.cgImage.map { $0.bytesPerRow * $0.height } ?? 1
+        thumbnails.setObject(thumbnail, forKey: id as NSString, cost: cost)
+        return thumbnail
+      }
+      thumbnailTasks[id] = task
+    }
+    // A disappearing cell cancels its waiter, not the detail-owned shared download.
+    let thumbnail = try await task.value
     try Task.checkCancellation()
     guard !closed, generation == scope else { throw CancellationError() }
-    return data
+    return thumbnail.image
   }
 
   func open(_ attachment: ChatMessageAttachment) {
@@ -62,6 +108,9 @@ final class MessageAttachmentStore {
   func deactivate() {
     generation = UUID()
     dismiss()
+    for task in thumbnailTasks.values { task.cancel() }
+    thumbnailTasks.removeAll()
+    thumbnails.removeAllObjects()
     for task in downloads.values { task.cancel() }
     downloads.removeAll()
   }
