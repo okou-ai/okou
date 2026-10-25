@@ -254,6 +254,14 @@ Release-only merge groups can reuse App test evidence only when exact input fing
 the verified prior result; missing evidence and mixed groups run the tests.
 See [archive promotion](ARCHIVE_PROMOTION.md).
 
+The manual `wait_startup_headroom=true` experiment observes recent host CPU
+windows after simulator boot and before starting the test Xcode process. It
+proceeds after two consecutive windows with at least 25% idle CPU, or after a
+90-second budget. Unavailable observations explicitly retain normal execution.
+This scheduling policy does not establish App readiness; full native prerequisites
+and assertions remain required. Include the entire observation interval in the
+App/job/workflow comparison before selecting this experimental policy.
+
 To compare first and warm test startup, manually dispatch `ios.yml` with
 `repeat_test_startup=true` and sampling disabled. The diagnostic compiles once,
 boots one simulator, and runs the complete App suite twice with identical built

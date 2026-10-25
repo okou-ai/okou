@@ -117,7 +117,7 @@ for upload_attempt, download_attempt in [(1, 1), (1, 2), (2, 2)]:
 assert source_upload['overwrite'] is True
 assert test_job['env']['IOS_BUILD_CACHE_ENABLED'] == 'true'
 assert archive_job['env']['IOS_ARCHIVE_CACHE_ENABLED'] == 'true'
-assert {key: value for key, value in test_job['env'].items() if key not in {'IOS_BUILD_CACHE_ENABLED', 'IOS_XCODE_STARTUP_SAMPLING', 'IOS_REPEAT_TEST_STARTUP'}} == {key: value for key, value in archive_job['env'].items() if key != 'IOS_ARCHIVE_CACHE_ENABLED'} == package_job['env']
+assert {key: value for key, value in test_job['env'].items() if key not in {'IOS_BUILD_CACHE_ENABLED', 'IOS_XCODE_STARTUP_SAMPLING', 'IOS_REPEAT_TEST_STARTUP', 'IOS_WAIT_STARTUP_HEADROOM'}} == {key: value for key, value in archive_job['env'].items() if key != 'IOS_ARCHIVE_CACHE_ENABLED'} == package_job['env']
 # Startup observations are confined to explicit manual runs, not native release evidence.
 assert ios['on']['workflow_dispatch']['inputs']['sample_xcode_startup']['default'] is False
 sampling = test_job['env']['IOS_XCODE_STARTUP_SAMPLING'].removeprefix('${{').removesuffix('}}').strip()
@@ -134,6 +134,14 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
         assert evaluate(upload['if']) is expected
 # Repeated full-suite diagnostics never enter automatic admission or release work.
 assert ios['on']['workflow_dispatch']['inputs']['repeat_test_startup']['default'] is False
+assert ios['on']['workflow_dispatch']['inputs']['wait_startup_headroom']['default'] is False
+headroom = test_job['env']['IOS_WAIT_STARTUP_HEADROOM'].removeprefix('${{').removesuffix('}}').strip()
+for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
+    for enabled in [False, True]:
+        expression = (headroom.replace('github.event_name', repr(event))
+            .replace('inputs.wait_startup_headroom', repr(enabled))
+            .replace('&&', 'and').replace('||', 'or'))
+        assert eval(expression, {'__builtins__': {}}, {}) == ('true' if event == 'workflow_dispatch' and enabled else 'false')
 repeat = test_job['env']['IOS_REPEAT_TEST_STARTUP'].removeprefix('${{').removesuffix('}}').strip()
 for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
     for enabled in [False, True]:

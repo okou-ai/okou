@@ -57,6 +57,15 @@ echo "iOS simulator preparation: $ios_boot_seconds seconds"
 echo "iOS total preparation: $((ios_dependency_seconds + ios_boot_seconds)) seconds"
 echo "iOS startup before tests: $((SECONDS - ios_prepare_started)) seconds"
 
+if [[ "${IOS_WAIT_STARTUP_HEADROOM:-false}" == true ]]; then
+  [[ "${GITHUB_EVENT_NAME:-}" == workflow_dispatch ]]
+  python3 ios/scripts/wait-startup-headroom.py &
+  ios_phase_pid=$!
+  wait "$ios_phase_pid"
+  ios_phase_pid=""
+fi
+echo "iOS startup including headroom: $((SECONDS - ios_prepare_started)) seconds"
+
 if [[ "$ios_repeat_startup" == true ]]; then
   echo 'iOS test startup round: cold'
   shasum -a 256 "$RUNNER_TEMP/okou-ios-ci/DerivedData/Build/Products/"*.xctestrun
