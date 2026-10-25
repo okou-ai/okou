@@ -317,11 +317,6 @@
       "owner": "publishLegacyPlanSubscription$"
     },
     {
-      "id": "TX-0332",
-      "file": "turbo/apps/api/src/signals/services/workflow-automation-run-callback.service.ts",
-      "owner": "attemptUnjournaledWorkflowAutomationCallbackSettlement$"
-    },
-    {
       "id": "TX-0333",
       "file": "turbo/apps/api/src/signals/services/workflow-automation-run.service.ts",
       "owner": "commitWorkflowInput$"
