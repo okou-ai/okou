@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { eq } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-export interface ManagedUsageResource {
+interface ManagedUsageResource {
   readonly kind: string;
   readonly provider: string;
   readonly category: string;
@@ -15,18 +15,11 @@ interface ManagedUsageActor {
   readonly runId?: string;
 }
 
-export interface ManagedUsagePricingSnapshot {
-  readonly unitPrice: number;
-  readonly unitSize: number;
-  readonly creditsLimit: number;
-}
-
 export interface ManagedUsageRecordArgs {
   readonly actor: ManagedUsageActor;
   readonly resource: ManagedUsageResource;
   readonly label: string;
   readonly idempotencyKey?: string;
-  readonly pricingSnapshot?: ManagedUsagePricingSnapshot;
 }
 
 type ManagedUsageReceipt = Pick<
@@ -37,9 +30,6 @@ type ManagedUsageReceipt = Pick<
   | "provider"
   | "category"
   | "quantity"
-  | "pricingUnitPrice"
-  | "pricingUnitSize"
-  | "pricingCreditsLimit"
   | "billingError"
   | "creditsCharged"
 >;
@@ -48,11 +38,6 @@ export function managedUsageReceiptCredits(
   args: ManagedUsageRecordArgs,
   processed: ManagedUsageReceipt | undefined,
 ): number {
-  const pricingSnapshot = args.pricingSnapshot ?? {
-    unitPrice: null,
-    unitSize: null,
-    creditsLimit: null,
-  };
   if (
     processed &&
     (processed.orgId !== args.actor.orgId ||
@@ -60,10 +45,7 @@ export function managedUsageReceiptCredits(
       processed.kind !== args.resource.kind ||
       processed.provider !== args.resource.provider ||
       processed.category !== args.resource.category ||
-      processed.quantity !== (args.resource.quantity ?? 1) ||
-      processed.pricingUnitPrice !== pricingSnapshot.unitPrice ||
-      processed.pricingUnitSize !== pricingSnapshot.unitSize ||
-      processed.pricingCreditsLimit !== pricingSnapshot.creditsLimit)
+      processed.quantity !== (args.resource.quantity ?? 1))
   ) {
     throw new Error(`${args.label} usage idempotency key collision`);
   }
@@ -93,9 +75,6 @@ export function managedValues(
     provider: args.resource.provider,
     category: args.resource.category,
     quantity: args.resource.quantity ?? 1,
-    pricingUnitPrice: args.pricingSnapshot?.unitPrice,
-    pricingUnitSize: args.pricingSnapshot?.unitSize,
-    pricingCreditsLimit: args.pricingSnapshot?.creditsLimit,
   };
 }
 

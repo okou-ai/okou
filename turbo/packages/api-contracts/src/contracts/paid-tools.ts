@@ -24,7 +24,10 @@ export const PAID_TOOL_IDS = [
   "avatar-video-generation",
 ] as const;
 
-export const paidToolIdSchema = z.enum(PAID_TOOL_IDS);
+export const paidToolIdSchema = z.union([
+  z.enum(PAID_TOOL_IDS),
+  z.string().regex(/^data:[a-zA-Z0-9_.-]{1,128}$/),
+]);
 export type PaidToolId = z.infer<typeof paidToolIdSchema>;
 
 export const DISABLED_PAID_TOOLS_ENV_VAR = "OKOU_DISABLED_PAID_TOOLS";

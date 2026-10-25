@@ -1,3 +1,4 @@
+import * as dataRouterRequestSchema from "./schema/data-router-request";
 import * as wechatSchema from "./schema/wechat";
 import * as getStartedClaimSchema from "./schema/get-started-claim";
 import * as mailNotificationSchema from "./schema/mail-notification";
@@ -229,6 +230,7 @@ export const schema = {
   ...builtinConnectorOauthDeviceAuthorizationSessionSchema,
   ...connectorOauthStateSchema,
   ...billingRunAttributionSchema,
+  ...dataRouterRequestSchema,
   ...usageEventSchema,
   ...xResourceUsageSchema,
   ...usageEventHourlyRollupSchema,

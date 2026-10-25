@@ -62,9 +62,11 @@ on:
         required: false
       OFFICIAL_RUNNER_SECRET:
         required: false
-      OKOU_BROWSER_USE_API_KEY:
+      OKOU_DATA_ROUTER_URL:
         required: false
-      OKOU_FINANCE_APIDOJO_TOKEN:
+      OKOU_DATA_TOKEN:
+        required: false
+      OKOU_BROWSER_USE_API_KEY:
         required: false
       OKOU_GITHUB_APP_CLIENT_SECRET:
         required: false
@@ -73,20 +75,6 @@ on:
       OKOU_GITHUB_APP_WEBHOOK_SECRET:
         required: false
       OKOU_MACHINE_SECRET_KEY:
-        required: false
-      OKOU_SCRAPE_FIRECRAWL_TOKEN:
-        required: false
-      OKOU_SEO_DATAFORSEO_LOGIN:
-        required: false
-      OKOU_SEO_DATAFORSEO_PASSWORD:
-        required: false
-      OKOU_SOCIAL_MONID_API_KEY:
-        required: false
-      OKOU_SOCIAL_SOCIALKIT_TOKEN:
-        required: false
-      OKOU_WEATHER_GOOGLE_WEATHER_TOKEN:
-        required: false
-      OKOU_WEB_SEARCH_PERPLEXITY_TOKEN:
         required: false
       OPENAI_API_KEY:
         required: false

@@ -1,12 +1,24 @@
-import type {
-  DataSearchCreateRequest,
-  DataSearchRequest,
-  DataSearchJobResponse,
-} from "@okouai/api-contracts/contracts/data-search";
+import type { JsonObject, JsonValue } from "./shared";
 
-export type DataSearchJobRequest = DataSearchCreateRequest;
-export type DataSearchJobResult = NonNullable<DataSearchJobResponse["data"]>;
-export type DataSearchJobError = NonNullable<DataSearchJobResponse["error"]>;
+/** Historical request fields retained with their database owner. */
+interface DataSearchRequest {
+  readonly capability: string;
+  readonly input: JsonObject;
+  readonly limit: number;
+}
+
+export interface DataSearchJobRequest extends DataSearchRequest {
+  readonly requestId: string;
+  readonly maxCredits: number;
+}
+/** Historical persisted results; the Router owns new execution results. */
+export interface DataSearchJobResult {
+  readonly items: JsonValue[];
+}
+export interface DataSearchJobError {
+  readonly code: string;
+  readonly message: string;
+}
 /** Audited immutable routing snapshot, not a public provider passthrough. */
 export interface DataSearchJobPlan {
   readonly capability: string;

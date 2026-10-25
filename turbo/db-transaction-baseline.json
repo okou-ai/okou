@@ -212,11 +212,6 @@
       "owner": "commitSlackWorkspaceConnection$"
     },
     {
-      "id": "TX-0249",
-      "file": "turbo/apps/api/src/signals/services/social-data.service.ts",
-      "owner": "createSocialDataJob$/result"
-    },
-    {
       "id": "TX-0263",
       "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
       "owner": "commitPreparedPendingLaunch$"

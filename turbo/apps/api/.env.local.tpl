@@ -137,26 +137,6 @@ GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL=op://Development/gmail/GMAIL_PUBSUB_PUSH
 GOOGLE_ADS_DEVELOPER_TOKEN=op://Development/google/GOOGLE_ADS_DEVELOPER_TOKEN
 GOOGLE_ADS_LOGIN_CUSTOMER_ID=op://Development/google/GOOGLE_ADS_LOGIN_CUSTOMER_ID
 
-# Optional: Google Weather and Air Quality APIs
-OKOU_WEATHER_GOOGLE_WEATHER_TOKEN=op://Development/google/OKOU_WEATHER_GOOGLE_WEATHER_TOKEN
-
-# Optional: Okou Scrape provider (Firecrawl)
-OKOU_SCRAPE_FIRECRAWL_TOKEN=op://Development/Firecrawl/FIRECRAWL_API_TOKEN
-
-# Optional: Okou Web Search provider (Perplexity)
-OKOU_WEB_SEARCH_PERPLEXITY_TOKEN=op://Development/Perplexity/PERPLEXITY_API_TOKEN
-
-# Optional: Okou Finance provider (APIDojo via RapidAPI)
-# 1Password: Development vault > APIDojo item > RAPIDAPI_KEY concealed field
-OKOU_FINANCE_APIDOJO_TOKEN=op://Development/APIDojo/RAPIDAPI_KEY
-
-# Optional: Okou SEO provider (DataForSEO)
-OKOU_SEO_DATAFORSEO_LOGIN=op://Development/DataForSEO/LOGIN
-OKOU_SEO_DATAFORSEO_PASSWORD=op://Development/DataForSEO/PASSWORD
-
-# Optional: Saved public Social data jobs
-OKOU_SOCIAL_MONID_API_KEY=
-
 # Optional: Managed browser provider (Browser Use)
 OKOU_BROWSER_USE_API_KEY=op://Development/browser-use/OKOU_BROWSER_USE_API_KEY
 

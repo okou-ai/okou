@@ -260,6 +260,7 @@ const dispatchMaintenanceTerminalSideEffects$ = command(
       dispatchCompleteSideEffects$,
       {
         kind: "terminal",
+        firstTerminalTransition: true,
         runId: input.runId,
         orgId: input.orgId,
         status: "failed",

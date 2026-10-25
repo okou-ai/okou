@@ -778,46 +778,10 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
   });
 });
 
-describe("BILL-02: maps and banking visible boundaries", () => {
-  it("covers maps provider/pricing errors and banking credential gating through public routes", async () => {
+describe("BILL-02: banking credential boundary", () => {
+  it("rejects a browser session on the banking API credential boundary", async () => {
     const { api, admin } = testActors();
     await completeVisibleOnboarding(admin);
-
-    const missingMapsProvider = await api.requestMapsSearch(
-      admin,
-      { query: "coffee near 1 Market Street, San Francisco" },
-      [503],
-    );
-    expect(missingMapsProvider.headers.get("cache-control")).toBe(
-      "private, no-store",
-    );
-    expectApiError(missingMapsProvider.body);
-    expect(missingMapsProvider.body.error.code).toBe("NOT_CONFIGURED");
-
-    const unauthenticatedSearch = await api.requestMapsSearch(
-      null,
-      { query: "How do I get from San Francisco to Oakland?" },
-      [401],
-    );
-    expect(unauthenticatedSearch.headers.get("cache-control")).toBe(
-      "private, no-store",
-    );
-    expectApiError(unauthenticatedSearch.body);
-    expect(unauthenticatedSearch.body.error.code).toBe("UNAUTHORIZED");
-
-    api.configureMapsProvider();
-    const insufficientMapsCredits = await api.requestMapsSearch(
-      admin,
-      { query: "coffee near 1 Market Street, San Francisco" },
-      [402],
-    );
-    expect(insufficientMapsCredits.headers.get("cache-control")).toBe(
-      "private, no-store",
-    );
-    expectApiError(insufficientMapsCredits.body);
-    expect(insufficientMapsCredits.body.error.code).toBe(
-      "INSUFFICIENT_CREDITS",
-    );
 
     const bankingWithSession = await api.requestBankingAccounts(admin, [403]);
     expectApiError(bankingWithSession.body);

@@ -9,8 +9,9 @@ import { imageIoGenerateRoutes } from "../image-io-generate";
 import { builtInGenerationRoutes } from "../built-in-generation";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { chatEventsRoutes } from "../chat-events";
-import { webSearchContract } from "@okouai/api-contracts/contracts/web-search";
-import { webSearchRoutes } from "../web-search";
+import { dataRouterRequestContract } from "@okouai/api-contracts/contracts/data-router";
+import { webhooksAgentDataRequestRoutes } from "../webhooks-agent-data-request";
+import { registerPublicDataUsage } from "./helpers/public-data-charge";
 import { HttpResponse, http } from "msw";
 import { server } from "../../../mocks/server";
 import { notificationsContract } from "@okouai/api-contracts/contracts/notifications";
@@ -3981,7 +3982,7 @@ describe("Official Workflow credit policy", () => {
   it("settles late Official usage for free while refusing new work from completed Runs", async () => {
     const app = await setupApp({
       context,
-      routes: webSearchRoutes,
+      routes: webhooksAgentDataRequestRoutes,
       isolatePg: true,
     });
     const { actor, automation } = await enabledOfficialWorkflow();
@@ -3997,13 +3998,12 @@ describe("Official Workflow credit policy", () => {
       { cliAgentType: "pi", cliAgentSessionId: claim.piSessionId },
     );
     await flushWaitUntilForTest();
-    mockEnv("OKOU_WEB_SEARCH_PERPLEXITY_TOKEN", "official-search-provider");
     await accept(
-      app(webSearchContract).search({
-        headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
-        body: { query: "A new task after the Official Run ended", limit: 1 },
+      app(dataRouterRequestContract).register({
+        headers: { authorization: `Bearer ${claim.sandboxToken}` },
+        body: { runId: started.runId, requestId: randomUUID() },
       }),
-      [403],
+      [404],
     );
     await accept(
       setupApp({ context, routes: imageIoGenerateRoutes })(
@@ -4182,9 +4182,9 @@ describe("Official Workflow credit policy", () => {
   });
 
   it("runs models, search and image generation at zero credits and settles retries for free", async () => {
-    const app = await setupApp({
+    await setupApp({
       context,
-      routes: webSearchRoutes,
+      routes: webhooksAgentDataRequestRoutes,
       isolatePg: true,
     });
     const { actor, installation, automation, runnerGroup } =
@@ -4251,31 +4251,12 @@ describe("Official Workflow credit policy", () => {
       },
       [200],
     );
-    mockEnv("OKOU_WEB_SEARCH_PERPLEXITY_TOKEN", "official-search-provider");
-    server.use(
-      http.post("https://api.perplexity.ai/search", () => {
-        return HttpResponse.json({
-          results: [
-            {
-              title: "Official search",
-              url: "https://example.com/official",
-              snippet: "Verified task context",
-            },
-          ],
-        });
-      }),
+    await registerPublicDataUsage(
+      context,
+      started.runId,
+      claim.sandboxToken,
+      5,
     );
-    const searched = await accept(
-      app(webSearchContract).search({
-        headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
-        body: { query: "Official briefing context", limit: 1 },
-      }),
-      [200],
-    );
-    expect(searched.body).toMatchObject({
-      creditsCharged: 0,
-      results: [{ title: "Official search" }],
-    });
     context.mocks.ably.createTokenRequest.mockResolvedValue(tokenRequest);
     let imageRequestUrl: string | null = null;
     server.use(

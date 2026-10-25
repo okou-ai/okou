@@ -1,7 +1,7 @@
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
-import { chargePublicSeoUsage } from "./helpers/public-seo-charge";
+import { chargePublicDataUsage } from "./helpers/public-data-charge";
 import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { purchaseToolCredits } from "./helpers/public-tool-actor";
 import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
@@ -645,7 +645,7 @@ async function spendToOrgDebt(
     rewardAmount: 100,
     rewardTarget: "user",
   });
-  await chargePublicSeoUsage(context, spender, before.credits + 100 - debt);
+  await chargePublicDataUsage(context, spender, before.credits + 100 - debt);
   await expect(readBillingStatus(fixture)).resolves.toMatchObject({
     credits: debt,
   });
