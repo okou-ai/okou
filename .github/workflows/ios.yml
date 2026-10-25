@@ -16,6 +16,10 @@ on:
         description: Compare first and warm test startup on one runner using identical build products
         type: boolean
         default: false
+      inspect_test_debugger:
+        description: Inspect whether scheme debugger settings change generated native test launch metadata
+        type: boolean
+        default: false
       archive_cache_experiment:
         description: Compare fresh Release archives with and without native caches
         type: boolean
@@ -244,6 +248,17 @@ jobs:
           xcodebuild -version
           xcrun swift-format lint --strict --recursive ios/Okou ios/OkouTests
           plutil -lint ios/Okou/Resources/Info.plist ios/Okou.xcodeproj/project.pbxproj
+      - name: Inspect native test debugger configuration
+        if: github.event_name == 'workflow_dispatch' && inputs.inspect_test_debugger
+        run: python3 ops/ios-test-launch-probe.py
+      - name: Upload native launch metadata
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.inspect_test_debugger
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-launch-metadata-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/okou-ios-ci/launch-probe
+          if-no-files-found: error
+          retention-days: 7
       - name: Build app and run isolated simulator tests
         if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
         run: bash ios/scripts/run-ci-tests.sh
