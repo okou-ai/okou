@@ -9,6 +9,14 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.4.1](https://github.com/okou-ai/okou/compare/api-v2.4.0...api-v2.4.1) (2026-10-25)
+
+
+### Refactoring
+
+* **api:** guard workflow callback publication without a transaction ([#42888](https://github.com/okou-ai/okou/issues/42888)) ([8bd8f19](https://github.com/okou-ai/okou/commit/8bd8f19f9827be7cd46cc75567bc0e0a572d75a7))
+* **api:** publish phone identity and reward atomically ([#42880](https://github.com/okou-ai/okou/issues/42880)) ([97779e2](https://github.com/okou-ai/okou/commit/97779e23c6fd30b0444c026a6eb19f42b1dec0bd))
+
 ## [2.4.0](https://github.com/okou-ai/okou/compare/api-v2.3.3...api-v2.4.0) (2026-10-25)
 
 
