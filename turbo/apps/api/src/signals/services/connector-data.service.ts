@@ -35,6 +35,7 @@ import {
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
 import { connectors } from "@okouai/db/schema/connector";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { gmailWatchStates } from "@okouai/db/schema/gmail-event";
 import { googleCalendarWatchStates } from "@okouai/db/schema/google-calendar-event";
 import { mailDrafts } from "@okouai/db/schema/mail-draft";
@@ -42,7 +43,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   completedGetStartedQuestSql,
@@ -70,7 +71,12 @@ import {
 } from "./builtin-connector-credential-access.service";
 import {
   connectorAccountFieldMarkers,
-  prepareConnectorAccountDeletionWithTargetLocked,
+  connectorAccountOwnerCondition,
+  connectorAccountById,
+  connectorAccountSibling,
+  connectorAccountDeletionResult,
+  type ConnectorAccountDeletionScope,
+  type PreparedConnectorAccountDeletion,
 } from "./connector-account-lifecycle.service";
 import {
   connectorAccountSetup,
@@ -909,16 +915,88 @@ async function prepareBuiltinConnectorAccountDeletion(
   },
   signal: AbortSignal,
 ) {
-  return await prepareConnectorAccountDeletionWithTargetLocked(
-    db,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      target: { kind: "builtin", connectorSlug: args.connectorSlug },
-      connectionId: args.connectionId,
-    },
-    signal,
-  );
+  const deletionDb = db;
+  const deletionArgs: ConnectorAccountDeletionScope = {
+    orgId: args.orgId,
+    userId: args.userId,
+    target: { kind: "builtin", connectorSlug: args.connectorSlug },
+    connectionId: args.connectionId,
+  };
+  const deletionSignal = signal;
+  return await (async (): Promise<PreparedConnectorAccountDeletion> => {
+    const owner = connectorAccountOwnerCondition(deletionArgs);
+    const [account] = await deletionDb
+      .select({ isDefault: connectors.isDefault })
+      .from(connectors)
+      .where(connectorAccountById(owner, deletionArgs.connectionId))
+      .limit(1);
+    if (!account) {
+      return { kind: "missing" };
+    }
+    let promotedDefaultConnectionId: string | null = null;
+    if (account.isDefault) {
+      const [sibling] = await deletionDb
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(connectorAccountSibling(owner, deletionArgs.connectionId))
+        .orderBy(asc(connectors.createdAt), asc(connectors.id))
+        .limit(1);
+      if (sibling) {
+        await deletionDb
+          .update(connectors)
+          .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+          .where(eq(connectors.id, deletionArgs.connectionId));
+        await deletionDb
+          .update(connectors)
+          .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+          .where(eq(connectors.id, sibling.id));
+        promotedDefaultConnectionId = sibling.id;
+      }
+    }
+
+    const resolvedSelectionCount =
+      (
+        await deletionDb
+          .delete(chatThreadConnectorSelections)
+          .where(
+            eq(
+              chatThreadConnectorSelections.connectorId,
+              deletionArgs.connectionId,
+            ),
+          )
+      ).rowCount ?? 0;
+
+    if (
+      deletionArgs.target.kind === "builtin" &&
+      deletionArgs.target.connectorSlug === "notion"
+    ) {
+      const pendingEventDb = deletionDb;
+      const invalidatedConnectorId = deletionArgs.connectionId;
+      await (async () => {
+        const scope = notionPendingEventsReconnectScope(invalidatedConnectorId);
+        await (async () => {
+          const write = notionPendingEventsSkipWrite(
+            scope.condition,
+            scope.reason,
+          );
+          await pendingEventDb
+            .update(write.table)
+            .set(write.values)
+            .where(write.where);
+        })();
+      })();
+    }
+    await reprojectWorkflowAutomationsForOwner(
+      deletionDb,
+      deletionArgs,
+      deletionSignal,
+    );
+
+    return connectorAccountDeletionResult(
+      resolvedSelectionCount,
+      promotedDefaultConnectionId,
+    );
+  })();
 }
 
 type DeleteBuiltinConnectorLocalStateResult =

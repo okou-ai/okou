@@ -24,6 +24,7 @@ import {
   canonicalizeFirewallBaseUrl,
   expandHostWildcardsInBaseUrl,
 } from "@okouai/connectors/firewall-types";
+import { connectors } from "@okouai/db/schema/connector";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
@@ -40,6 +41,7 @@ import {
 import { command, computed, type Computed } from "ccstate";
 import {
   and,
+  asc,
   count,
   eq,
   exists,
@@ -103,11 +105,19 @@ import {
 import {
   connectorOwnedSecretWrite,
   connectorOwnedVariableWrite,
-  connectorCredentialStorageConnectionDeletionPlan,
-  connectorCredentialStorageSelectionDeletionPlan,
-  connectorCredentialStorageCursorDeletionPlan,
+  connectorCredentialStorageConnectionDeletionPlan as connectionDeletionPlan,
+  connectorCredentialStorageSelectionDeletionPlan as selectionDeletionPlan,
+  connectorCredentialStorageCursorDeletionPlan as cursorDeletionPlan,
 } from "./connector-credential-storage-write.service";
-import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
+import {
+  connectorAccountOwnerCondition,
+  connectorAccountById,
+  connectorAccountSibling,
+  connectorAccountDeletionResult,
+  customConnectorAccountDeletionScope,
+  type PreparedConnectorAccountDeletion as PreparedDeletion,
+} from "./connector-account-lifecycle.service";
+import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import {
   customConnectorStorageDeclaration,
   type CustomConnectorMemberConnectionDeletionResult,
@@ -3648,6 +3658,39 @@ export const setCustomConnectorValues$ = command(
   },
 );
 
+function customConnectorAccountDeletionColumns() {
+  return {
+    oauthProviderAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
+  };
+}
+
+function customConnectorAccountDeletionWhere(args: {
+  readonly connectorId: string;
+  readonly orgId: string;
+}) {
+  return customConnectorMutationDefinitionScope(args.connectorId, args.orgId);
+}
+
+function customConnectorAccountDeletionBlocker(
+  connector:
+    | {
+        readonly oauthProviderAdapter: OrgCustomConnectorOAuthProviderAdapter | null;
+      }
+    | undefined,
+): { readonly kind: "missing" } | { readonly kind: "managed" } | null {
+  if (!connector) {
+    return { kind: "missing" };
+  }
+  if (
+    isIntegrationManagedCustomConnectorProviderAdapter(
+      connector.oauthProviderAdapter,
+    )
+  ) {
+    return { kind: "managed" };
+  }
+  return null;
+}
+
 const deleteCustomConnectorAccount$ = command(
   ({ set }, args: DeleteCustomConnectorAccountArgs, signal: AbortSignal) => {
     const writeDb = set(writeDb$);
@@ -3655,51 +3698,74 @@ const deleteCustomConnectorAccount$ = command(
     return writeDb.transaction(
       async (tx) => {
         const [connector] = await tx
-          .select({
-            oauthProviderAdapter:
-              orgCustomConnectorOauthConfigs.providerAdapter,
-          })
+          .select(customConnectorAccountDeletionColumns())
           .from(orgCustomConnectors)
           .leftJoin(
             orgCustomConnectorOauthConfigs,
             customConnectorMutationOAuthJoin(),
           )
-          .where(
-            customConnectorMutationDefinitionScope(
-              args.connectorId,
-              args.orgId,
-            ),
-          )
+          .where(customConnectorAccountDeletionWhere(args))
           .for("update", { of: orgCustomConnectors })
           .limit(1);
         signal.throwIfAborted();
-        if (!connector) {
-          return { kind: "missing" as const };
-        }
-        if (
-          isIntegrationManagedCustomConnectorProviderAdapter(
-            connector.oauthProviderAdapter,
-          )
-        ) {
-          return { kind: "managed" as const };
+        const blocker = customConnectorAccountDeletionBlocker(connector);
+        if (blocker) {
+          return blocker;
         }
         const memberDeletionDb = tx;
         const memberDeletionArgs = args;
         return await (async (): Promise<CustomConnectorMemberConnectionDeletionResult> => {
-          const deletion =
-            await prepareConnectorAccountDeletionWithTargetLocked(
-              memberDeletionDb,
-              {
-                orgId: memberDeletionArgs.orgId,
-                userId: memberDeletionArgs.userId,
-                target: {
-                  kind: "custom",
-                  customConnectorId: memberDeletionArgs.connectorId,
-                },
-                connectionId: memberDeletionArgs.memberConnectorId,
-              },
-              signal,
-            );
+          const db = memberDeletionDb;
+          const scope = customConnectorAccountDeletionScope(memberDeletionArgs);
+          const abort = signal;
+          const deletion = await (async (): Promise<PreparedDeletion> => {
+            const { connectionId } = scope;
+            const owner = connectorAccountOwnerCondition(scope);
+            const [account] = await db
+              .select({ isDefault: connectors.isDefault })
+              .from(connectors)
+              .where(connectorAccountById(owner, connectionId))
+              .limit(1);
+            if (!account) {
+              return { kind: "missing" };
+            }
+            let promotedId: string | null = null;
+            if (account.isDefault) {
+              const [sibling] = await db
+                .select({ id: connectors.id })
+                .from(connectors)
+                .where(connectorAccountSibling(owner, connectionId))
+                .orderBy(asc(connectors.createdAt), asc(connectors.id))
+                .limit(1);
+              if (sibling) {
+                await db
+                  .update(connectors)
+                  .set({
+                    isDefault: false,
+                    updatedAt: sql`clock_timestamp()`,
+                  })
+                  .where(eq(connectors.id, connectionId));
+                await db
+                  .update(connectors)
+                  .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+                  .where(eq(connectors.id, sibling.id));
+                promotedId = sibling.id;
+              }
+            }
+
+            const selectionCount =
+              (
+                await db
+                  .delete(chatThreadConnectorSelections)
+                  .where(
+                    eq(chatThreadConnectorSelections.connectorId, connectionId),
+                  )
+              ).rowCount ?? 0;
+
+            await reprojectWorkflowAutomationsForOwner(db, scope, abort);
+
+            return connectorAccountDeletionResult(selectionCount, promotedId);
+          })();
           signal.throwIfAborted();
           if (deletion.kind !== "ready") {
             return deletion;
@@ -3711,51 +3777,44 @@ const deleteCustomConnectorAccount$ = command(
            * the child DELETE; a later insert fails its FK check. No lock-only write or
            * SELECT lock is used, and the exact returned count includes late references.
            */
-          const storageDeletionDb = memberDeletionDb;
-          const storageDeletionArgs = {
+          const storageDb = memberDeletionDb;
+          const storageArgs = {
             connectorId: memberDeletionArgs.memberConnectorId,
           };
-          const lateSelectionCount = await (async () => {
-            const plan =
-              connectorCredentialStorageConnectionDeletionPlan(
-                storageDeletionArgs,
-              );
-            await storageDeletionDb
-              .delete(plan.secrets.from)
-              .where(plan.secrets.where);
+          const lateCount = await (async () => {
+            const plan = connectionDeletionPlan(storageArgs);
+            await storageDb.delete(plan.secrets.from).where(plan.secrets.where);
             signal.throwIfAborted();
-            await storageDeletionDb
+            await storageDb
               .delete(plan.variables.from)
               .where(plan.variables.where);
             signal.throwIfAborted();
-            await storageDeletionDb.execute(plan.deferSelections);
-            const deleted = await storageDeletionDb
+            await storageDb.execute(plan.deferSelections);
+            const deleted = await storageDb
               .delete(plan.account.from)
               .where(plan.account.where)
               .returning(plan.account.returning);
             let lateSelectionCount = 0;
             if (deleted.length > 0) {
-              const selection =
-                connectorCredentialStorageSelectionDeletionPlan(deleted);
-              const selections = await storageDeletionDb
+              const selection = selectionDeletionPlan(deleted);
+              const selections = await storageDb
                 .delete(selection.from)
                 .where(selection.where)
                 .returning(selection.returning);
               lateSelectionCount = selections.length;
             }
-            await storageDeletionDb.execute(plan.enforceSelections);
+            await storageDb.execute(plan.enforceSelections);
             if (deleted.length > 0) {
               // FK deletion has already cleared event_connector_id. Use the retained
               // source config to invalidate only cursors belonging to deleted accounts.
               // A subsequent projection onto a new account is a different source.
-              const cursor =
-                connectorCredentialStorageCursorDeletionPlan(deleted);
-              await storageDeletionDb
+              const cursor = cursorDeletionPlan(deleted);
+              await storageDb
                 .delete(cursor.from)
                 .where(
                   inArray(
                     cursor.automationId,
-                    storageDeletionDb
+                    storageDb
                       .select(cursor.automations.columns)
                       .from(cursor.automations.from)
                       .where(cursor.automations.where),
@@ -3767,8 +3826,7 @@ const deleteCustomConnectorAccount$ = command(
           })();
           return {
             kind: "deleted",
-            resolvedSelectionCount:
-              deletion.resolvedSelectionCount + lateSelectionCount,
+            resolvedSelectionCount: deletion.resolvedSelectionCount + lateCount,
             promotedDefaultConnectionId: deletion.promotedDefaultConnectionId,
           };
         })();
