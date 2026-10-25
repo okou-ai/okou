@@ -89,27 +89,39 @@ final class ChatHTTPFixtureTests: XCTestCase {
     XCTAssertEqual(data, body)
   }
 
-  func testRetiringRequestsCannotReportToAnotherLiveFixtureBeforeLoadingStarts() async throws {
+  func testRetiringStartedRequestsCannotReportToAnotherLiveFixture() async throws {
     let reports = Mutex<[String]>([])
     let active = ChatHTTPFixture(
       onUnhandledRequest: { message in reports.withLock { $0.append(message) } },
       handler: { _ in ChatHTTPResponse(body: "Active fixture") })
     try await withThrowingTaskGroup(of: Void.self) { group in
       for _ in 0..<40 {
-        var retiring: ChatHTTPFixture? = ChatHTTPFixture(
-          onUnhandledRequest: { message in reports.withLock { $0.append(message) } },
-          handler: { _ in ChatHTTPResponse(body: "Retiring fixture") })
-        let session = try XCTUnwrap(retiring).session
-        let url = try XCTUnwrap(retiring).baseURL.appending(path: "api/retiring-before-load")
         group.addTask {
+          var retiring: ChatHTTPFixture? = ChatHTTPFixture(
+            onUnhandledRequest: { message in reports.withLock { $0.append(message) } },
+            handler: { _ in ChatHTTPResponse(body: "Retiring fixture") })
+          let session = try XCTUnwrap(retiring).session
+          let url = try XCTUnwrap(retiring).baseURL.appending(path: "api/retiring-started")
           do {
-            let (data, _) = try await session.data(from: url)
+            let data: Data = try await withCheckedThrowingContinuation { continuation in
+              let request = session.dataTask(with: url) { data, _, error in
+                if let error {
+                  continuation.resume(throwing: error)
+                } else if let data {
+                  continuation.resume(returning: data)
+                } else {
+                  continuation.resume(throwing: URLError(.badServerResponse))
+                }
+              }
+              request.resume()
+              // Construct and start the SDK task while its fixture is still live.
+              retiring = nil
+            }
             XCTAssertEqual(data, Data("Retiring fixture".utf8))
           } catch let error as URLError {
             XCTAssertEqual(error.code, .cancelled, error.localizedDescription)
           }
         }
-        retiring = nil
       }
       try await group.waitForAll()
     }
