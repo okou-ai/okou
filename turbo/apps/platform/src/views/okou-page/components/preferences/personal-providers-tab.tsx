@@ -33,7 +33,7 @@ import { openCodexDeviceAuthDialogPersonal$ } from "../../../../signals/okou-pag
 import {
   activatePersonalOAuthCredentialAccount$,
   confirmSettingsCodexUsageReset$,
-  deletePersonalOAuthCredentialAccount$,
+  confirmPersonalAccountDisconnect$,
   personalAccountDisconnectDialog$,
   personalConfiguredProviders$,
   setPersonalAccountDisconnectDialog$,
@@ -738,8 +738,8 @@ function PersonalAccountDisconnectDialogController() {
   const { t } = useTranslation();
   const dialog = useGet(personalAccountDisconnectDialog$);
   const setDialog = useSet(setPersonalAccountDisconnectDialog$);
-  const [operation, deleteAccount] = useLoadableSet(
-    deletePersonalOAuthCredentialAccount$,
+  const [operation, disconnectAccount] = useLoadableSet(
+    confirmPersonalAccountDisconnect$,
   );
   const actionPending = operation.state === "loading";
   const pageSignal = useGet(pageSignal$);
@@ -759,13 +759,7 @@ function PersonalAccountDisconnectDialogController() {
     );
 
   const confirmDisconnect = () => {
-    detach(
-      (async () => {
-        await deleteAccount(dialog.account.id, pageSignal);
-        setDialog(null);
-      })(),
-      Reason.DomCallback,
-    );
+    detach(disconnectAccount(pageSignal), Reason.DomCallback);
   };
 
   return (
