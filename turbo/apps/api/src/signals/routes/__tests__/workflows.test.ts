@@ -1328,7 +1328,18 @@ describe("workflows", () => {
       const winningEntered = createDeferredPromise<void>(signal);
       const winningReleased = createDeferredPromise<void>(signal);
       let rejectedArchiveKey: string | undefined;
-      s3.beforeNextArchiveWrite(async (key) => {
+      let winningArchiveKey: string | undefined;
+      function beforeNextVolumeWrite(callback: (key: string) => Promise<void>) {
+        const onWrite = async (key: string) => {
+          if (key.startsWith("workflow-attachments/")) {
+            s3.beforeNextArchiveWrite(onWrite);
+            return;
+          }
+          await callback(key);
+        };
+        s3.beforeNextArchiveWrite(onWrite);
+      }
+      beforeNextVolumeWrite(async (key) => {
         rejectedArchiveKey = key;
         rejectedEntered.resolve();
         await rejectedReleased.promise;
@@ -1341,9 +1352,9 @@ describe("workflows", () => {
       );
       const winning = (async () => {
         await rejectedEntered.promise;
-        s3.beforeNextArchiveWrite(async (key) => {
+        beforeNextVolumeWrite(async (key) => {
+          winningArchiveKey = key;
           winningEntered.resolve();
-          expect(key).toBe(rejectedArchiveKey);
           await winningReleased.promise;
         });
         return await updateWorkflow(actor, workflow.body.id, {
@@ -1351,11 +1362,16 @@ describe("workflows", () => {
         });
       })();
       onTestFinished(async () => {
-        rejectedReleased.resolve();
-        winningReleased.resolve();
+        if (!rejectedReleased.settled()) {
+          rejectedReleased.resolve();
+        }
+        if (!winningReleased.settled()) {
+          winningReleased.resolve();
+        }
         await Promise.all([rejected, winning]);
       });
       await winningEntered.promise;
+      expect(winningArchiveKey).toBe(rejectedArchiveKey);
       rejectedReleased.resolve();
       expect((await rejected).body.error.message).toBe(
         "Workflow changed during update; retry the request",
