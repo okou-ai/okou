@@ -129,6 +129,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run isolated Swift package tests
         run: bash ios/scripts/ci-package-test.sh
+      - name: Repeat HTTP fixture lifetime contracts
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          for repetition in 2 3 4 5; do
+            echo "Fixture lifetime repetition $repetition of 5"
+            swift test --package-path ios/Packages/ChatData \
+              --scratch-path "$RUNNER_TEMP/okou-ios-ci/ChatData" \
+              --skip-build --filter ChatHTTPFixtureTests
+          done
       - name: Capture package test inputs
         if: github.event_name == 'merge_group'
         run: |
@@ -178,6 +187,7 @@ jobs:
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
       IOS_BUILD_CACHE_ENABLED: "true"
       IOS_XCODE_STARTUP_SAMPLING: ${{ github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup && 'true' || 'false' }}
+      IOS_TEST_STARTUP_SAMPLING: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -242,6 +252,14 @@ jobs:
       - name: Build app and run isolated simulator tests
         if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
         run: bash ios/scripts/run-ci-tests.sh
+      - name: Upload test startup observations
+        if: always() && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-test-startup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/okou-ios-ci/test-startup-samples
+          if-no-files-found: error
+          retention-days: 7
       - name: Upload Xcode startup observations
         if: always() && github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
