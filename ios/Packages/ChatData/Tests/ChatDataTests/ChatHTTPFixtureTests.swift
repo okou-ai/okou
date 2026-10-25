@@ -88,4 +88,33 @@ final class ChatHTTPFixtureTests: XCTestCase {
     XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
     XCTAssertEqual(data, body)
   }
+
+  func testRetiringRequestsCannotReportToAnotherLiveFixtureBeforeLoadingStarts() async throws {
+    let reports = Mutex<[String]>([])
+    let active = ChatHTTPFixture(
+      onUnhandledRequest: { message in reports.withLock { $0.append(message) } },
+      handler: { _ in ChatHTTPResponse(body: "Active fixture") })
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      for _ in 0..<40 {
+        var retiring: ChatHTTPFixture? = ChatHTTPFixture(
+          onUnhandledRequest: { message in reports.withLock { $0.append(message) } },
+          handler: { _ in ChatHTTPResponse(body: "Retiring fixture") })
+        let session = try XCTUnwrap(retiring).session
+        let url = try XCTUnwrap(retiring).baseURL.appending(path: "api/retiring-before-load")
+        group.addTask {
+          do {
+            let (data, _) = try await session.data(from: url)
+            XCTAssertEqual(data, Data("Retiring fixture".utf8))
+          } catch let error as URLError {
+            XCTAssertEqual(error.code, .cancelled)
+          }
+        }
+        retiring = nil
+      }
+      try await group.waitForAll()
+    }
+    let (data, _) = try await active.session.data(from: active.baseURL)
+    XCTAssertEqual(data, Data("Active fixture".utf8))
+    XCTAssertTrue(reports.withLock { $0.isEmpty })
+  }
 }
