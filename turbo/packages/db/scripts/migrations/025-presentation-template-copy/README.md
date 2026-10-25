@@ -64,6 +64,6 @@ CLI against disposable local PostgreSQL and an in-memory HTTP S3 fixture. It is
 also part of `test:migration-consistency`. It covers unchanged legacy data and
 objects, new package identity and bytes, permissions/audit/page preservation,
 independent edits and replay, missing/mismatched packages, target collisions,
-source changes during upload, and failed object publication. No production copy
-is performed by CI or the normal schema-migration runner. Retire this operator
-after the production copy is accepted.
+source changes during upload, and failed object publication. Ordinary PR CI and
+the normal schema-migration runner never perform production copies. Retire this
+operator and its manual workflow after the production copy is accepted.
