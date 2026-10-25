@@ -185,6 +185,7 @@ class CIProcessTests(unittest.TestCase):
             (self.state / "packages").read_text().splitlines(),
             ["ios/Packages/ChatDomain", "ios/Packages/ChatData"],
         )
+        self.assertTrue((self.state / "tests-ran").exists())
 
     def test_xcode_owns_boot_for_the_uniquely_selected_device(self):
         self.env["IOS_XCODE_OWNS_SIMULATOR_BOOT"] = "true"
@@ -200,7 +201,6 @@ class CIProcessTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Xcode boot rejected", result.stderr)
         self.assertFalse((self.state / "tests-ran").exists())
-        self.assertTrue((self.state / "tests-ran").exists())
 
     def test_resolution_and_compilation_finish_before_boot_and_the_complete_suite(
         self,
