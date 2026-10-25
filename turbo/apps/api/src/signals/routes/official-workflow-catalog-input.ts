@@ -3,7 +3,7 @@ import {
   PROACTIVE_SUGGESTIONS_DEFINITION_NAME,
   PROACTIVE_SUGGESTIONS_BLUEPRINT_KEY,
 } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { RETIRED_PROACTIVE_DEFINITION_NAME } from "./proactive-workflow-definitions";
+import { RETIRED_PROACTIVE_DEFINITION_NAME } from "../services/proactive-workflow-definitions";
 import {
   PROACTIVE_LEARNING_DEFINITION_NAME,
   PROACTIVE_LEARNING_BLUEPRINT_KEY,
@@ -13,7 +13,7 @@ import {
 import {
   PROACTIVE_LEARNING_INSTRUCTION,
   PROACTIVE_PLANNING_INSTRUCTION,
-} from "./proactive-nightly-instructions";
+} from "../services/proactive-nightly-instructions";
 import {
   PROACTIVE_JOBS_BLUEPRINT_KEY,
   PROACTIVE_JOBS_DEFINITION_NAME,
