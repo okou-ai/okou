@@ -15,6 +15,9 @@ on:
 permissions:
   contents: read
 
+env:
+  npm_config_audit: "false"
+
 concurrency:
   group: production-presentation-template-copy
   cancel-in-progress: false
