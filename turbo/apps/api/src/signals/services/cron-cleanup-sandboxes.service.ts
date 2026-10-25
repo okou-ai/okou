@@ -7,7 +7,6 @@ import { exportJobs } from "@okouai/db/schema/export-job";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { command } from "ccstate";
 import { and, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
-import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
@@ -21,11 +20,7 @@ import { settle, settleIncludingAbort, tapError } from "../utils";
 import { expireRunTimeBudgetInput$ } from "./active-input-delivery.service";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
-import {
-  releaseRunSlots,
-  transitionAgentRunsToTerminal,
-  type ReleasedRunSlot,
-} from "./agent-run-terminal-transition.service";
+import { commitStaleRunTimeout$ } from "./agent-run-terminal-transition.service";
 import { drainStaleCanonicalDiscordIngress$ } from "./canonical-discord-ingress-processor.service";
 import { drainStaleCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
 import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
@@ -100,31 +95,6 @@ interface MaintenanceTerminalSideEffectsInput {
   };
 }
 
-interface LockedTimeoutRun {
-  readonly launchSnapshot: AgentRunLaunchSnapshot | null;
-  readonly status: string;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly sandboxId: string | null;
-  readonly runnerGroup: string | null;
-  readonly chatThreadId: string | null;
-}
-
-interface CommittedTimeout {
-  readonly previousStatus: "pending" | "running";
-  readonly orgId: string;
-  readonly userId: string;
-  readonly sandboxId: string | null;
-  readonly runnerGroup: string | null;
-  readonly chatThreadId: string | null;
-  readonly releasedSlots: readonly ReleasedRunSlot[];
-}
-
-type TimeoutTransactionResult =
-  | { readonly kind: "retry"; readonly chatThreadId: string | null }
-  | { readonly kind: "skipped" }
-  | { readonly kind: "committed"; readonly timeout: CommittedTimeout };
-
 function staleRunCutoff(run: StaleRun, cutoffs: CleanupCutoffs): Date {
   if (run.status === "pending") {
     return cutoffs.pending;
@@ -136,27 +106,6 @@ function staleRunCutoff(run: StaleRun, cutoffs: CleanupCutoffs): Date {
 
 function isExpiredRun(run: StaleRun, cutoffs: CleanupCutoffs): boolean {
   return run.lastHeartbeatAt < staleRunCutoff(run, cutoffs);
-}
-
-async function lockTimeoutRun(
-  tx: Tx,
-  runId: string,
-): Promise<LockedTimeoutRun | null> {
-  const [run] = await tx
-    .select({
-      status: agentRuns.status,
-      launchSnapshot: agentRuns.launchSnapshot,
-      orgId: agentRuns.orgId,
-      userId: agentRuns.userId,
-      sandboxId: agentRuns.sandboxId,
-      runnerGroup: agentRuns.runnerGroup,
-      chatThreadId: agentRuns.chatThreadId,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId))
-    .for("update", { of: agentRuns })
-    .limit(1);
-  return run ?? null;
 }
 
 const cleanupExportJobs$ = command(
@@ -275,97 +224,9 @@ const dispatchMaintenanceTerminalSideEffects$ = command(
   },
 );
 
-async function commitStaleRunTimeout(
-  db: Db,
-  run: StaleRun,
-  cutoff: Date,
-  timeoutReason: string,
-  signal: AbortSignal,
-): Promise<CommittedTimeout | undefined> {
-  let expectedChatThreadId = run.chatThreadId;
-  while (true) {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0128; new non-billing transactions are prohibited.
-    const result = await db.transaction(
-      async (tx): Promise<TimeoutTransactionResult> => {
-        const lockedRun = await lockTimeoutRun(tx, run.id);
-        signal.throwIfAborted();
-        if (!lockedRun) {
-          return { kind: "skipped" };
-        }
-        if (lockedRun.chatThreadId !== expectedChatThreadId) {
-          return { kind: "retry", chatThreadId: lockedRun.chatThreadId };
-        }
-        if (
-          lockedRun.status !== run.status ||
-          (lockedRun.status !== "pending" && lockedRun.status !== "running")
-        ) {
-          return { kind: "skipped" };
-        }
-        // Heartbeats no longer lock agent_runs. Lock their narrow row for the
-        // timeout transaction so a heartbeat cannot commit after this check
-        // but before the final release of the active slot.
-        const [active] = await tx
-          .select({ lastHeartbeatAt: activeAgentRuns.lastHeartbeatAt })
-          .from(activeAgentRuns)
-          .where(eq(activeAgentRuns.runId, run.id))
-          .for("update", { of: activeAgentRuns });
-        signal.throwIfAborted();
-        if (!active || active.lastHeartbeatAt >= cutoff) {
-          return { kind: "skipped" };
-        }
-
-        const [updatedRun] = await transitionAgentRunsToTerminal(tx, {
-          values: {
-            status: "timeout",
-            runnerCancellationMode: "hard",
-            completedAt: nowDate(),
-            error: timeoutReason,
-          },
-          conditions: [
-            eq(agentRuns.id, run.id),
-            eq(agentRuns.status, lockedRun.status),
-          ],
-        });
-        signal.throwIfAborted();
-        if (!updatedRun) {
-          throw new Error("Locked stale run lost its timeout transition");
-        }
-
-        await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, run.id));
-        signal.throwIfAborted();
-
-        // The runner is considered dead and will not report completion, so
-        // release the active row whether or not the run started.
-        const releasedSlots = await releaseRunSlots(tx, [run.id]);
-        signal.throwIfAborted();
-
-        return {
-          kind: "committed",
-          timeout: {
-            previousStatus: lockedRun.status,
-            orgId: lockedRun.orgId,
-            userId: lockedRun.userId,
-            sandboxId: lockedRun.sandboxId,
-            runnerGroup: lockedRun.runnerGroup,
-            chatThreadId: lockedRun.chatThreadId,
-            releasedSlots,
-          },
-        };
-      },
-    );
-    signal.throwIfAborted();
-    if (result.kind === "retry") {
-      expectedChatThreadId = result.chatThreadId;
-      continue;
-    }
-    return result.kind === "committed" ? result.timeout : undefined;
-  }
-}
-
 const cleanupSingleRun$ = command(
   async (
     { set },
-    db: Db,
     run: StaleRun,
     cutoffs: CleanupCutoffs,
     signal: AbortSignal,
@@ -375,8 +236,8 @@ const cleanupSingleRun$ = command(
         ? "Run timed out while pending (never started)"
         : "Run timed out (no heartbeat)";
     const cutoff = staleRunCutoff(run, cutoffs);
-    const committed = await commitStaleRunTimeout(
-      db,
+    const committed = await set(
+      commitStaleRunTimeout$,
       run,
       cutoff,
       timeoutReason,
@@ -457,7 +318,6 @@ const cleanupSingleRun$ = command(
 const cleanupExpiredRuns$ = command(
   async (
     { set },
-    db: Db,
     runs: readonly StaleRun[],
     cutoffs: CleanupCutoffs,
     signal: AbortSignal,
@@ -465,7 +325,7 @@ const cleanupExpiredRuns$ = command(
     const results: CleanupResult[] = [];
     for (const run of runs) {
       const cleanupResult = await settle(
-        set(cleanupSingleRun$, db, run, cutoffs, signal),
+        set(cleanupSingleRun$, run, cutoffs, signal),
       );
       signal.throwIfAborted();
 
@@ -631,7 +491,6 @@ export const cleanupSandboxes$ = command(
 
     const results = await set(
       cleanupExpiredRuns$,
-      db,
       expiredRuns,
       cutoffs,
       signal,
