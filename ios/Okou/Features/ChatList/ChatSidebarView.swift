@@ -101,7 +101,7 @@ struct ChatSidebarView: View {
     .environment(\.defaultMinListRowHeight, 0)
     .environment(\.defaultMinListHeaderHeight, 0)
     .scrollContentBackground(.hidden)
-    .scrollEdgeEffectStyle(.soft, for: .vertical)
+    .scrollEdgeEffectStyle(.soft, for: .bottom)
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
     .background(Color(uiColor: .systemBackground))
     .sheet(
