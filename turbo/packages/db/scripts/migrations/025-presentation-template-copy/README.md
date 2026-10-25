@@ -16,6 +16,13 @@ Legacy `public` maps to `organization`.
 
 ## Run
 
+The manual **Copy Production Presentation Templates** GitHub workflow runs this
+operator from `main` inside the protected `production` environment. It defaults
+to `dry-run`; `copy` inspects before writing, verifies every destination package,
+and compares legacy row/Storage/HEAD fingerprints afterward. It stops if the
+inventory exceeds 100 records. It retains identifier-only receipts and refuses
+an apply job rerun; reconcile any uncertain result before dispatching again.
+
 Run from `turbo/packages/db` with locked workspace dependencies. Set
 `DATABASE_URL_FILE` to a private file containing the database URL. Supply
 `R2_ENDPOINT`, `R2_USER_STORAGES_BUCKET_NAME`, `R2_ACCESS_KEY_ID` and
@@ -57,6 +64,6 @@ CLI against disposable local PostgreSQL and an in-memory HTTP S3 fixture. It is
 also part of `test:migration-consistency`. It covers unchanged legacy data and
 objects, new package identity and bytes, permissions/audit/page preservation,
 independent edits and replay, missing/mismatched packages, target collisions,
-source changes during upload, and failed object publication. No production copy
-is performed by CI or the normal schema-migration runner. Retire this operator
-after the production copy is accepted.
+source changes during upload, and failed object publication. Ordinary PR CI and
+the normal schema-migration runner never perform production copies. Retire this
+operator and its manual workflow after the production copy is accepted.
