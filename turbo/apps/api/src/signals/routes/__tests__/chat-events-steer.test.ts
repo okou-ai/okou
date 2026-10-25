@@ -76,6 +76,9 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       type: "document",
       selection: { documentTemplateId: "document-template:simple-invoice" },
     });
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BuiltinDocumentTemplates]: false,
+    });
     await chat.requestSendEvent(
       actor,
       {
