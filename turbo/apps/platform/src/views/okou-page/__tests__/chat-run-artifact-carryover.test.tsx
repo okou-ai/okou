@@ -115,6 +115,7 @@ async function setupArtifactRun(
     path: RUN_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebarPreviews,
+      [FeatureSwitchKey.ChatResourcePanel]: false,
     },
   });
   await readyChat();

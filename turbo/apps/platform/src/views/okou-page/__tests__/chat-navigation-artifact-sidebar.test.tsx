@@ -16,7 +16,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   queryAllByRoleFast,
-  setupPage,
+  setupPage as setupPlatformPage,
 } from "../../../__tests__/page-helper.ts";
 import {
   testContext,
@@ -36,6 +36,16 @@ import {
 } from "./chat-navigation-artifact-test-helpers.ts";
 
 const context = testContext();
+
+function setupPage(options: Parameters<typeof setupPlatformPage>[0]) {
+  return setupPlatformPage({
+    ...options,
+    featureSwitches: {
+      [FeatureSwitchKey.ChatResourcePanel]: false,
+      ...options.featureSwitches,
+    },
+  });
+}
 
 const EMPTY_CSV_ID = "a0000000-0000-4000-a000-000000000930";
 const UNAVAILABLE_CSV_ID = "a0000000-0000-4000-a000-000000000931";

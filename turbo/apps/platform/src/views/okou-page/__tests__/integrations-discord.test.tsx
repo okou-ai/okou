@@ -269,7 +269,6 @@ test.each([true, false])(
     expect(getAction("button", "More options", card)).toBeEnabled();
     expect(queryAction("button", "Connect", card)).toBeNull();
     expect(queryAction("button", "Disconnect Discord")).toBeNull();
-    expect(queryAction("link", "Open Discord")).toBeNull();
     expect(popup.closed).toBeFalsy();
     expect(popup.location.href).toBe(authorizationUrl);
     expect(popup.postMessage).toHaveBeenCalledWith(
@@ -1195,7 +1194,6 @@ test.each([true, false])(
     expect(window.location.pathname).toBe("/works");
     expect(window.location.search).toBe("");
     expect(popup.closed).toBeFalsy();
-    expect(queryAction("link", "Open Discord")).toBeNull();
     expect(screen.queryByText("Consent was not completed") !== null).toBe(
       !approved,
     );

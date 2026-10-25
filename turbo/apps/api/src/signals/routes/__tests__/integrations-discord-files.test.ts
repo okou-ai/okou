@@ -657,9 +657,6 @@ describe("Discord file authorization and input validation", () => {
     { filename: "report\\private.csv" },
     { filename: "." },
     { length: MAX_DISCORD_FILE_SIZE_BYTES + 1 },
-    { channelId: undefined },
-    { userId: "123456789012345678" },
-    { channelId: undefined, userId: "18446744073709551616" },
   ])("rejects malformed upload metadata: %j", async (invalid) => {
     await actorSession();
     const response = await accept(

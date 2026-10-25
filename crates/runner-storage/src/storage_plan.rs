@@ -33,6 +33,7 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use api_contracts::generated::{
     constants::runners::paths::{
@@ -60,6 +61,7 @@ pub struct StoragePlan {
     instruction_cleanups: Vec<InstructionCleanup>,
     reused_entries: usize,
     decoded_prepared: bool,
+    decoded_mount_conflicts: OnceLock<HashSet<usize>>,
     decoded: Vec<(
         String,
         std::sync::Arc<crate::storage_cache::decoded::CachedFiles>,
@@ -376,6 +378,7 @@ pub fn build_storage_plan(
         instruction_cleanups,
         reused_entries,
         decoded_prepared: false,
+        decoded_mount_conflicts: OnceLock::new(),
         decoded: Vec::new(),
     })
 }
@@ -458,20 +461,23 @@ impl StoragePlan {
     }
 
     pub(crate) fn decoded_mount(&self, handle: ArchiveHandle) -> Option<&str> {
-        let mount_path = match handle.kind {
+        let (mount_path, position) = match handle.kind {
             ArchiveKind::Storage => {
                 let entry = self.storages.get(handle.index)?;
                 if !matches!(entry.action, StorageAction::Download { .. }) {
                     return None;
                 }
-                entry.mount_path.as_str()
+                (entry.mount_path.as_str(), handle.index)
             }
             ArchiveKind::Artifact => {
                 let entry = self.artifacts.get(handle.index)?;
                 if !entry.is_decoded_download() {
                     return None;
                 }
-                entry.mount_path.as_str()
+                (
+                    entry.mount_path.as_str(),
+                    self.storages.len() + handle.index,
+                )
             }
         };
         let target = PathBuf::from(mount_path);
@@ -486,27 +492,25 @@ impl StoragePlan {
         {
             return None;
         }
-        for (index, other) in self.storages.iter().enumerate() {
-            if matches!(handle.kind, ArchiveKind::Storage) && index == handle.index {
-                continue;
-            }
-            if guest_contracts::storage_files::decoded_mount_conflicts(
-                &target,
-                std::path::Path::new(&other.mount_path),
-            ) {
-                return None;
-            }
-        }
-        for (index, other) in self.artifacts.iter().enumerate() {
-            if matches!(handle.kind, ArchiveKind::Artifact) && index == handle.index {
-                continue;
-            }
-            if guest_contracts::storage_files::decoded_mount_conflicts(
-                &target,
-                std::path::Path::new(&other.mount_path),
-            ) {
-                return None;
-            }
+        // Mount identities/order are immutable; archive staging only refines
+        // source actions. Reused plans never pay for this derived lookup.
+        let conflicts = self.decoded_mount_conflicts.get_or_init(|| {
+            let mounts = self
+                .storages
+                .iter()
+                .map(|entry| entry.mount_path.as_str())
+                .chain(self.artifacts.iter().map(|entry| entry.mount_path.as_str()))
+                .collect::<Vec<_>>();
+            let conflicting =
+                guest_contracts::storage_files::conflicting_mounts(mounts.iter().copied());
+            mounts
+                .into_iter()
+                .enumerate()
+                .filter_map(|(position, mount)| conflicting.contains(mount).then_some(position))
+                .collect()
+        });
+        if conflicts.contains(&position) {
+            return None;
         }
         Some(mount_path)
     }

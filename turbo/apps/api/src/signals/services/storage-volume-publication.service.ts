@@ -307,7 +307,7 @@ const resolveCanonicalVolumeStorage$ = command(
     signal: AbortSignal,
   ): Promise<ServerSideVolumeStorage> => {
     const db = set(writeDb$);
-    await db
+    const [created] = await db
       .insert(storages)
       .values(
         canonicalVolumeStorageValues({
@@ -315,8 +315,12 @@ const resolveCanonicalVolumeStorage$ = command(
           ...newStorageS3Location(args.orgId),
         }),
       )
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ id: storages.id, s3Prefix: storages.s3Prefix });
     signal.throwIfAborted();
+    if (created) {
+      return created;
+    }
 
     const [storage] = await get(db$)
       .select({ id: storages.id, s3Prefix: storages.s3Prefix })

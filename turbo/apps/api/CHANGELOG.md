@@ -9,6 +9,36 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.4.0](https://github.com/okou-ai/okou/compare/api-v2.3.3...api-v2.4.0) (2026-10-25)
+
+
+### Features
+
+* **core:** enable built-in document templates for everyone ([#42580](https://github.com/okou-ai/okou/issues/42580)) ([f61c808](https://github.com/okou-ai/okou/commit/f61c808adf249d8ef7767548df0893e99d0246ff))
+
+
+### Refactoring
+
+* **api:** localize permission grant agent preflight ([#42858](https://github.com/okou-ai/okou/issues/42858)) ([506e50b](https://github.com/okou-ai/okou/commit/506e50b97eb2d7715a5c6f1629630652b105a955))
+* **api:** localize runner poison-job preflight ([#42878](https://github.com/okou-ai/okou/issues/42878)) ([97d2177](https://github.com/okou-ai/okou/commit/97d21771fcf186a088ee5b142f94a92e30560daa))
+* **api:** publish prepared volumes atomically ([#42854](https://github.com/okou-ai/okou/issues/42854)) ([7e737d8](https://github.com/okou-ai/okou/commit/7e737d85d7f763583336bacf44b4c988a0bb8f40))
+* **api:** publish webhook automation atomically ([#42866](https://github.com/okou-ai/okou/issues/42866)) ([e6728df](https://github.com/okou-ai/okou/commit/e6728df818d2352e17e3fa40cc2dd448d612fd32))
+
+
+### Performance Improvements
+
+* **api:** narrow catalog queries to consumer fields ([#42864](https://github.com/okou-ai/okou/issues/42864)) ([66854c5](https://github.com/okou-ai/okou/commit/66854c5fd1bd2b5109e1fbe25272fe693902bf99))
+* reduce resource and workflow publication overhead ([#42783](https://github.com/okou-ai/okou/issues/42783)) ([efca2a9](https://github.com/okou-ai/okou/commit/efca2a9ee30dcb5bad41396943784b3714e9e69f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.786.0
+    * @okouai/db bumped to 2.2.4
+    * @okouai/pi-agent-runtime bumped to 1.50.68
+
 ## [2.3.3](https://github.com/okou-ai/okou/compare/api-v2.3.2...api-v2.3.3) (2026-10-25)
 
 

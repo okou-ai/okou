@@ -2,6 +2,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import {
@@ -80,7 +81,11 @@ test("A chat with no artifacts shows an empty artifact inbox", async () => {
     ],
   });
 
-  await setupPage({ context, path: `/chats/${context.resourceId}` });
+  await setupPage({
+    context,
+    path: `/chats/${context.resourceId}`,
+    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: false },
+  });
 
   await expect(
     screen.findByText("The launch brief is complete."),

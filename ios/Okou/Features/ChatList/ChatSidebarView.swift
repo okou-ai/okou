@@ -53,6 +53,21 @@ struct ChatSidebarView: View {
   }
 
   var body: some View {
+    NavigationStack {
+      sidebarList
+        .navigationTitle(workspaceName)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleMenu { workspaceActions }
+        .toolbar {
+          ToolbarItem(placement: .topBarTrailing) {
+            Button("Search", systemImage: "magnifyingglass") { store.search.present() }
+              .accessibilityIdentifier("search-chats")
+          }
+        }
+    }
+  }
+
+  private var sidebarList: some View {
     List {
       pinnedAgentsSection
       if let error = store.list.navigationError {
@@ -85,12 +100,7 @@ struct ChatSidebarView: View {
     .environment(\.defaultMinListRowHeight, 0)
     .environment(\.defaultMinListHeaderHeight, 0)
     .scrollContentBackground(.hidden)
-    .scrollEdgeEffectStyle(.soft, for: .vertical)
-    .safeAreaBar(edge: .top, spacing: 0) {
-      header
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-    }
+    .scrollEdgeEffectStyle(.soft, for: .bottom)
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
     .background(Color(uiColor: .systemBackground))
     .sheet(
@@ -103,48 +113,23 @@ struct ChatSidebarView: View {
     }
   }
 
-  private var header: some View {
-    HStack {
-      workspaceSwitcher.frame(maxWidth: .infinity, alignment: .leading)
-      Button("Search", systemImage: "magnifyingglass") { store.search.present() }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.glass)
-        .accessibilityIdentifier("search-chats")
-    }
-    .frame(height: 44)
-  }
-
-  private var workspaceSwitcher: some View {
-    Menu {
-      ForEach(authentication.workspaces) { workspace in
-        Button {
-          Task {
-            do { try await authentication.switchWorkspace(workspace.id) } catch {
-              accountError = error.localizedDescription
-            }
-          }
-        } label: {
-          if workspace.id == workspaceID {
-            Label(workspace.name, systemImage: "checkmark")
-          } else {
-            Text(workspace.name)
+  private var workspaceActions: some View {
+    ForEach(authentication.workspaces) { workspace in
+      Button {
+        Task {
+          do { try await authentication.switchWorkspace(workspace.id) } catch {
+            accountError = error.localizedDescription
           }
         }
+      } label: {
+        if workspace.id == workspaceID {
+          Label(workspace.name, systemImage: "checkmark")
+        } else {
+          Text(workspace.name)
+        }
       }
-    } label: {
-      HStack(spacing: 9) {
-        Text(workspaceName)
-          .font(.system(size: 22, weight: .semibold))
-          .lineLimit(1)
-        Image(systemName: "chevron.down")
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(.secondary)
-      }
-      .contentShape(Rectangle())
+      .disabled(authentication.isSwitchingWorkspace)
     }
-    .buttonStyle(.plain)
-    .disabled(authentication.isSwitchingWorkspace || authentication.workspaces.isEmpty)
-    .accessibilityLabel("Workspace: \(workspaceName)")
   }
 
   private var pinnedAgentsSection: some View {
