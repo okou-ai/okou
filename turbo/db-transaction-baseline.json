@@ -52,11 +52,6 @@
       "owner": "createAgentRunCompletion/complete$"
     },
     {
-      "id": "TX-0052",
-      "file": "turbo/apps/api/src/signals/services/agentphone-link.service.ts",
-      "owner": "linkAgentPhoneIdentity$"
-    },
-    {
       "id": "TX-0073",
       "file": "turbo/apps/api/src/signals/services/browser.service.ts",
       "owner": "claimExpiredInactiveBrowser$"

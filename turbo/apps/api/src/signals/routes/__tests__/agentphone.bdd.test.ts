@@ -4,7 +4,10 @@ import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
-import { testContext } from "../../../__tests__/test-context";
+import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
@@ -926,6 +929,85 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await expect(
       integrations.getAgentPhoneLinkStatus(actor),
     ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
+  });
+
+  it("binds one sender and grants one reward when a connection code is consumed concurrently", async () => {
+    const bdd = createBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    const actor = bdd.user({ orgRole: "org:member" });
+    const phones = [uniquePhoneHandle(), uniquePhoneHandle()];
+    integrations.configureAgentPhoneProvider();
+    integrations.configureAgentPhoneWebhook();
+    const sends = ap.captureAgentPhoneSends();
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    const issued = await integrations.requestCreateAgentPhoneLinkCode(
+      actor,
+      [200],
+    );
+
+    await Promise.all(
+      phones.map(async (phone) => {
+        await ap.postAgentPhoneInboundMessage({
+          channel: "imessage",
+          from: phone,
+          body: issued.body.code,
+          conversationId: uniqueConversationId(),
+          isGroup: false,
+        });
+      }),
+    );
+
+    const linked = await integrations.getAgentPhoneLinkStatus(actor);
+    if (!linked.linked) {
+      throw new Error("Expected exactly one sender to be linked");
+    }
+    expect(phones).toContain(linked.phoneHandle);
+    expectConnectedWelcome(
+      sends.messages.filter((send) => {
+        return send.toNumber === linked.phoneHandle;
+      }),
+    );
+    const loser = phones.find((phone) => {
+      return phone !== linked.phoneHandle;
+    });
+    expect(
+      sends.messages
+        .filter((send) => {
+          return send.toNumber === loser;
+        })
+        .map((send) => {
+          return send.body;
+        }),
+    ).toStrictEqual([expect.stringContaining("invalid or expired")]);
+    const status = await readGetStartedStatus(context, actor);
+    expect(
+      status.quests.find((quest) => {
+        return quest.key === "imessage";
+      }),
+    ).toMatchObject({
+      claimedCount: 1,
+      earnedCredits: 1000,
+      pendingCount: 0,
+      canEarnMore: false,
+    });
+    const balance = await accept(
+      setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+        billingUsagePackCreditsContract,
+      ).get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(balance.body.bonusCredits).toBe(1000);
+    expect(balance.body.creditGrants).toStrictEqual([
+      expect.objectContaining({
+        grantType: "bonus",
+        amount: 1000,
+        remaining: 1000,
+      }),
+    ]);
+    await expect(
+      integrations.getAgentPhoneLinkStatus(actor),
+    ).resolves.toStrictEqual(linked);
   });
 
   it("sends proactive messages and private files to an email-linked iMessage handle", async () => {
