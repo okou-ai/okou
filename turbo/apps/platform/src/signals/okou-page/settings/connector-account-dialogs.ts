@@ -456,10 +456,7 @@ export const connectorAccountDeletionDraft$ = computed((get) => {
 export const prepareConnectorAccountDeletion$ = command(
   async (
     { get, set },
-    args: {
-      readonly target: ConnectorAccountConnection["target"];
-      readonly account: ConnectorAccountConnection;
-    },
+    account: ConnectorAccountConnection,
     signal: AbortSignal,
   ): Promise<void> => {
     const generation = get(internalConnectorAccountManagerDraftGeneration$) + 1;
@@ -468,7 +465,7 @@ export const prepareConnectorAccountDeletion$ = command(
     set(internalConnectorAccountDeletionDraft$, null);
     const impact = await set(
       connectorAccountDeletionImpact$,
-      { target: args.target, connectionId: args.account.id },
+      { target: account.target, connectionId: account.id },
       signal,
     );
     signal.throwIfAborted();
@@ -476,7 +473,7 @@ export const prepareConnectorAccountDeletion$ = command(
       return;
     }
     set(internalConnectorAccountDeletionDraft$, {
-      account: args.account,
+      account,
       explicitSelectionCount: impact.explicitSelectionCount,
     });
   },
@@ -487,17 +484,16 @@ export const clearConnectorAccountDeletion$ = command(({ set }) => {
 });
 
 export const confirmConnectorAccountDeletion$ = command(
-  async ({ get, set }, target: ConnectorAccountTarget, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
     const draft = get(internalConnectorAccountDeletionDraft$);
     if (!draft) {
       return;
     }
     await set(
       deleteConnectorAccount$,
-      { target, connectionId: draft.account.id },
+      { target: draft.account.target, connectionId: draft.account.id },
       signal,
     );
-    signal.throwIfAborted();
     if (get(internalConnectorAccountDeletionDraft$) === draft) {
       set(clearConnectorAccountDeletion$);
     }

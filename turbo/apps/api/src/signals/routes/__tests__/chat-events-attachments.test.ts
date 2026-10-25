@@ -1485,6 +1485,11 @@ describe("CHAT-02: generation templates and attachments", () => {
       selection: { documentTemplateId: "document-template:simple-invoice" },
     };
     const clientEventId = randomUUID();
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId },
+      { [FeatureSwitchKey.BuiltinDocumentTemplates]: false },
+    );
     const response = await chat.requestSendEvent(
       actor,
       {

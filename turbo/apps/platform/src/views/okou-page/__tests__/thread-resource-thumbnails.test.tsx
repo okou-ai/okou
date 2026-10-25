@@ -3,9 +3,14 @@ import {
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { fireEvent, screen, within } from "@testing-library/react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  setupPage as setupPlatformPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import {
@@ -17,6 +22,17 @@ import {
 } from "./chat-navigation-artifact-test-helpers.ts";
 
 const context = testContext();
+
+function setupPage(options: Parameters<typeof setupPlatformPage>[0]) {
+  return setupPlatformPage({
+    ...options,
+    featureSwitches: {
+      [FeatureSwitchKey.ChatResourcePanel]: false,
+      ...options.featureSwitches,
+    },
+  });
+}
+
 const ARTIFACT_ID = "a0000000-0000-4000-a000-000000000940";
 const IMAGE_ID = "f0000000-0000-4000-a000-000000000940";
 const SEARCH_LABEL = "Search workspace...";

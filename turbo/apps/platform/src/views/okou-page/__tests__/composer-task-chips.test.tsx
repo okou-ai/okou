@@ -89,6 +89,7 @@ test("The start page shows only task choices until one is selected", async () =>
   ).toStrictEqual([
     "Workflow",
     "Presentation",
+    "Document",
     "Image",
     "Website",
     "Visualization",

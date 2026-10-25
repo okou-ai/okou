@@ -637,6 +637,10 @@ test("A failed setup request after creation leaves the Agent visible without a r
 
   const createdCard = await waitForAgentCard(CREATED_AGENT_ID);
   expect(createdCard).toHaveTextContent("Pipeline Analyst");
+  expect(screen.getByText("Setup temporarily unavailable")).toBeInTheDocument();
+  expect(
+    screen.queryByText("Pipeline Analyst created successfully"),
+  ).not.toBeInTheDocument();
   expect(dialog).not.toBeInTheDocument();
   expect(pathname()).toBe("/agents");
   expect(

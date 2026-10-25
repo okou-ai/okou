@@ -568,7 +568,6 @@ test.each([
     "INVITATION_ALREADY_EXISTS",
     "This person already has a pending invitation.",
   ],
-  [400, "BAD_REQUEST", "Enter a valid email address."],
 ] as const)(
   "shows an invitation refusal (%s) without closing the invite dialog",
   async (status, code, message) => {

@@ -126,14 +126,7 @@ test("The viewer switch replaces the provider iframe with the interactive Okou v
   ).resolves.toBeEnabled();
   expect(screen.getByLabelText("New tab")).toBeInTheDocument();
   expect(screen.queryByTitle("Live browser: booking")).not.toBeInTheDocument();
-  click(screen.getByLabelText("Browser menu"));
-  const menu = await screen.findByRole("menu");
-  const continuousSync = queryAllByRoleFast("menuitemradio", menu).find(
-    (item) => {
-      return item.textContent?.trim() === "Sync continuously";
-    },
-  );
-  expect(continuousSync).toHaveAttribute("aria-checked", "true");
+  expect(screen.queryByLabelText("Browser menu")).not.toBeInTheDocument();
 });
 
 test("A reclaimed connection shows an unavailable state without opening the provider iframe", async () => {

@@ -2818,6 +2818,14 @@ async function main(): Promise<void> {
     await runMigrations(dbUrl1);
     console.log("   ✅ Consecutive database resets completed successfully\n");
 
+    console.log("=== Presentation template copy CLI ===");
+    console.log(
+      execCommand(
+        "node --import tsx scripts/migrations/025-presentation-template-copy/test-copy.ts",
+        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
+      ),
+    );
+
     await validateCanonicalIntegrationIdentitySchema(dbUrl1);
     await validatePermanentTriggerAndFunctionInventory(dbUrl1);
     await validateCanonicalBillingSources(dbUrl1);

@@ -291,23 +291,22 @@ function ResourceOutputRow({
         </span>
         <HoverScrollTitle title={artifact.title} />
       </Button>
-      <TooltipProvider delay={200}>
-        <TooltipTrigger
-          render={
-            <Button
-              variant="quiet"
-              size="icon-xs"
-              aria-label={copyLabel}
-              className="shrink-0 hover:bg-state-hover focus-visible:bg-state-hover [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-has-[:focus-visible]/resource-row:opacity-100 [&_svg]:size-3.5"
-              onClick={() => {
-                onCopy(artifact.id);
-              }}
-            >
-              {copyGlyph}
-            </Button>
-          }
-        />
-      </TooltipProvider>
+      <TooltipTrigger
+        delay={200}
+        render={
+          <Button
+            variant="quiet"
+            size="icon-xs"
+            aria-label={copyLabel}
+            className="shrink-0 hover:bg-state-hover focus-visible:bg-state-hover [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-has-[:focus-visible]/resource-row:opacity-100 [&_svg]:size-3.5"
+            onClick={() => {
+              onCopy(artifact.id);
+            }}
+          >
+            {copyGlyph}
+          </Button>
+        }
+      />
     </li>
   );
 }

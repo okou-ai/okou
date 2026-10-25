@@ -157,12 +157,10 @@ function AccountDefaultRadio({
 }
 
 function AccountActions({
-  target,
   account,
   onReconnect,
   onReviewScopes,
 }: {
-  readonly target: ConnectorAccountTarget;
   readonly account: ConnectorAccountConnection;
   readonly onReconnect: (account: ConnectorAccountConnection) => void;
   readonly onReviewScopes?: (account: ConnectorAccountConnection) => void;
@@ -242,10 +240,7 @@ function AccountActions({
         <DropdownMenuItem
           className="text-destructive focus:text-destructive"
           onClick={() => {
-            detach(
-              prepareDisconnect({ target, account }, signal),
-              Reason.DomCallback,
-            );
+            detach(prepareDisconnect(account, signal), Reason.DomCallback);
           }}
         >
           {t(($) => {
@@ -320,7 +315,6 @@ function AccountRow({
       <div className="flex shrink-0 items-center gap-3">
         <AccountDefaultRadio account={account} />
         <AccountActions
-          target={target}
           account={account}
           onReconnect={onReconnect}
           onReviewScopes={onReviewScopes}
@@ -503,11 +497,7 @@ function RenameAccountForm({
   );
 }
 
-function DisconnectAccountConfirmation({
-  target,
-}: {
-  readonly target: ConnectorAccountTarget;
-}) {
+function DisconnectAccountConfirmation() {
   const { t } = useTranslation();
   const draft = useGet(connectorAccountDeletionDraft$);
   const accountLabel = useConnectorAccountLabel();
@@ -519,14 +509,14 @@ function DisconnectAccountConfirmation({
   if (!draft) {
     return null;
   }
-  const disconnect = () => {
-    detach(deleteAccount(target, signal), Reason.DomCallback);
-  };
+  const disconnecting = disconnectLoadable.state === "loading";
   return (
     <Dialog
       open
       onOpenChange={(open) => {
-        return !open && clear();
+        if (!open) {
+          clear();
+        }
       }}
     >
       <DialogContent maxWidth="md">
@@ -561,10 +551,12 @@ function DisconnectAccountConfirmation({
           <Button
             type="button"
             variant="destructive"
-            disabled={disconnectLoadable.state === "loading"}
-            onClick={disconnect}
+            disabled={disconnecting}
+            onClick={() => {
+              detach(deleteAccount(signal), Reason.DomCallback);
+            }}
           >
-            {disconnectLoadable.state === "loading"
+            {disconnecting
               ? t(($) => {
                   return $.connectors.actions.disconnecting;
                 })
@@ -762,7 +754,7 @@ export function ConnectorAccountManagerDialog({
             </Button>
           </DialogFooter>
         ) : null}
-        <DisconnectAccountConfirmation target={target} />
+        <DisconnectAccountConfirmation />
       </DialogContent>
     </Dialog>
   );

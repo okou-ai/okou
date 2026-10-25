@@ -15,8 +15,9 @@ import {
   officialWorkflowReconciliationWork,
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { and, eq } from "drizzle-orm";
+import { storages } from "@okouai/db/schema/storage";
+import { and, eq, sql } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
   type AcceptedOfficialWorkflowCatalog,
@@ -27,6 +28,7 @@ import {
   type ValidatedOfficialWorkflowCatalog,
 } from "./official-workflow-catalog-validation.service";
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
+import { preparedVolumePublicationPlan } from "./storage-volume-publication-sql";
 export class OfficialWorkflowCatalogRegistrationError extends Error {
   readonly definitionName: string | undefined;
 
@@ -349,17 +351,7 @@ export function catalogPublicationCondition(previousReleaseId: string) {
     eq(officialWorkflowCatalogState.acceptedReleaseId, previousReleaseId),
   );
 }
-export function preparedStorageVersionCondition(
-  artifact: OfficialWorkflowArtifactReference,
-) {
-  return and(
-    eq(storageVersions.storageId, storages.id),
-    eq(storageVersions.id, artifact.storageVersion),
-  );
-}
-export function preparedStorageCondition(
-  artifact: OfficialWorkflowArtifactReference,
-) {
+function preparedStorageCondition(artifact: OfficialWorkflowArtifactReference) {
   return and(
     eq(storages.id, artifact.storageId),
     eq(storages.orgId, SYSTEM_ORG_ID),
@@ -367,62 +359,39 @@ export function preparedStorageCondition(
     eq(storages.name, artifact.storageName),
   );
 }
-export function preparedStorageMatches(
-  row:
-    | { readonly storageId: string; readonly storageVersion: string | null }
-    | undefined,
-  artifact: OfficialWorkflowArtifactReference,
-) {
-  return (
-    row !== undefined &&
-    row.storageId === artifact.storageId &&
-    (row.storageVersion === null ||
-      row.storageVersion === artifact.storageVersion)
-  );
-}
-export function definitionRevisionValues(
+/** Publish the owned volume and its exact immutable definition together. */
+export function preparedDefinitionPublicationSql(
   prepared: PreparedOfficialWorkflowDefinition,
+  publishedAt: Date,
 ) {
-  return {
-    definitionName: prepared.definition.name,
-    revision: prepared.definition.revision,
-    payload: prepared.definition,
-    storageName: prepared.artifact.storageName,
-    storageId: prepared.artifact.storageId,
-    storageVersion: prepared.artifact.storageVersion,
-  };
-}
-export function definitionRevisionCondition(
-  prepared: PreparedOfficialWorkflowDefinition,
-) {
-  return and(
-    eq(
-      officialWorkflowDefinitionRevisions.definitionName,
-      prepared.definition.name,
-    ),
-    eq(
-      officialWorkflowDefinitionRevisions.revision,
-      prepared.definition.revision,
-    ),
+  const volume = preparedVolumePublicationPlan(
+    prepared.volume,
+    publishedAt,
+    preparedStorageCondition(prepared.artifact),
   );
-}
-export function definitionRevisionMatches(
-  row:
-    | Pick<
-        typeof officialWorkflowDefinitionRevisions.$inferSelect,
-        "payload" | "storageName" | "storageId" | "storageVersion"
-      >
-    | undefined,
-  prepared: PreparedOfficialWorkflowDefinition,
-) {
-  return (
-    row !== undefined &&
-    canonicalJsonString(row.payload) ===
-      canonicalJsonString(prepared.definition) &&
-    row.storageName === prepared.artifact.storageName &&
-    row.storageId === prepared.artifact.storageId &&
-    row.storageVersion === prepared.artifact.storageVersion
-  );
+  const query = new QueryBuilder();
+  const table = officialWorkflowDefinitionRevisions;
+  const registered = query.$with("registered_definition", {
+    definitionName: table.definitionName,
+  }).as(sql`INSERT INTO ${table}
+      (definition_name, revision, payload, storage_name, storage_id, storage_version)
+    SELECT ${prepared.definition.name}, ${prepared.definition.revision},
+      ${sql.param(prepared.definition, table.payload)}, ${prepared.artifact.storageName},
+      ${prepared.artifact.storageId}, ${prepared.artifact.storageVersion}
+    FROM ${volume.published}
+    WHERE true
+    ON CONFLICT (definition_name, revision) DO UPDATE
+      SET definition_name = EXCLUDED.definition_name
+    WHERE ${table.payload} = EXCLUDED.payload
+      AND ${table.storageName} = EXCLUDED.storage_name
+      AND ${table.storageId} = EXCLUDED.storage_id
+      AND ${table.storageVersion} = EXCLUDED.storage_version
+    RETURNING definition_name`);
+  return query
+    .with(...volume.ctes, registered)
+    .select({ definitionName: registered.definitionName })
+    .from(registered)
+    .getSQL();
 }
 
 export function changedWorkflowDefinitions(
