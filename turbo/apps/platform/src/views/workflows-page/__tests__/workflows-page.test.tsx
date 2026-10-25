@@ -4187,3 +4187,85 @@ test("Open a workflow from the workspace", async () => {
     expect(screen.getAllByText("Sales Research").length).toBeGreaterThan(0);
   });
 });
+
+test("A completed automation creation preserves a reopened creation draft", async () => {
+  const workflow = {
+    ...salesResearch(),
+    automations: [] as WorkflowAutomationSummary[],
+  };
+  mockWorkflowApis([workflow]);
+  const started = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  context.mocks.api(workflowAutomationsContract.create, async ({ respond }) => {
+    started.resolve();
+    await response.promise;
+    const automation: WorkflowScheduleAutomationSummary = {
+      ...weekdayWorkflowAutomation(),
+      schedule: { type: "loop", intervalSeconds: 18_000 },
+      scheduleSummary: "Every 5 hours",
+    };
+    workflow.automations.push(automation);
+    return respond(201, automation);
+  });
+  await setupWorkflowDetailPage(workflowDetailPath("automations"));
+  click(await waitFor(() => {return buttonByText("Add automation")}));
+  pickAutomation("Schedule", /^Interval/u);
+  const first = await screen.findByRole("form", {
+    name: "Add interval automation",
+  });
+  click(buttonByText("Add interval", first));
+  await started.promise;
+  click(buttonByText("Close", screen.getByRole("dialog")));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  click(buttonByText("Add automation"));
+  pickAutomation("Schedule", /^Scheduled time/u);
+  const draft = await screen.findByRole("form", {
+    name: "Add schedule automation",
+  });
+  selectOptionByLabel("Hour", "16", draft);
+  response.resolve();
+  await screen.findByText("Every 5 hours");
+  await expect(
+    screen.findByRole("form", { name: "Add schedule automation" }),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(draft).getByRole("combobox", { name: "Hour" }),
+  ).toHaveTextContent("16");
+});
+
+test("An earlier webhook response preserves a reopened creation form", async () => {
+  mockWorkflowApis([salesResearch()]);
+  const started = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  context.mocks.api(workflowAutomationsContract.create, async ({ respond }) => {
+    started.resolve();
+    await response.promise;
+    return respond(201, {
+      ...webhookWorkflowAutomation(),
+      webhookSecret: "first-webhook-secret",
+    });
+  });
+  await setupWorkflowDetailPage(workflowDetailPath("automations"), {}, "pro", {
+    workflowWebhookAutomationAllowed: true,
+  });
+  click(await waitFor(() => {return buttonByText("Add automation")}));
+  pickAutomation("Integrations", /^Webhook/u);
+  click(buttonByText("Create webhook"));
+  await started.promise;
+  click(buttonByText("Close", screen.getByRole("dialog")));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  click(buttonByText("Add automation"));
+  pickAutomation("Integrations", /^Webhook/u);
+  await screen.findByRole("dialog", { name: "Add webhook automation" });
+  await act(() => {
+    response.resolve();
+    return response.promise;
+  });
+  await waitFor(() => {
+    expect(buttonByText("Create webhook")).toBeEnabled();
+  });
+});
