@@ -42,11 +42,6 @@
       "owner": "deleteAgentRows$"
     },
     {
-      "id": "TX-0049",
-      "file": "turbo/apps/api/src/signals/services/agent-run-terminal-transition.service.ts",
-      "owner": "cancelRun$"
-    },
-    {
       "id": "TX-0050",
       "file": "turbo/apps/api/src/signals/services/agent-webhook-complete.service.ts",
       "owner": "createAgentRunCompletion/complete$"
