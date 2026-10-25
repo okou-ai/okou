@@ -749,15 +749,29 @@ const publishClearedThreadSelection$ = command(
       args.target.kind === "builtin" &&
       args.target.connectorSlug === "google-forms"
     ) {
-      const changed = googleFormsAccountProjectionUpdate({
-        orgId: args.orgId,
-        userId: args.userId,
-        excludedChatThreadId: args.chatThreadId,
-      });
-      await db.execute(sql`WITH ${cleared} AS (${deletion}), changed AS (${changed})
-        DELETE FROM ${googleFormsAutomationCursors}
-        WHERE ${googleFormsAutomationCursors.automationId} IN (SELECT id FROM changed)
-          AND (SELECT ${count()} FROM ${cleared}) >= 0`);
+      const changed = db
+        .$with("changed_thread_forms_automations", {
+          id: workflowAutomations.id,
+        })
+        .as(
+          googleFormsAccountProjectionUpdate({
+            orgId: args.orgId,
+            userId: args.userId,
+            excludedChatThreadId: args.chatThreadId,
+          }),
+        );
+      await db
+        .with(cleared, changed)
+        .delete(googleFormsAutomationCursors)
+        .where(
+          and(
+            inArray(
+              googleFormsAutomationCursors.automationId,
+              db.select({ id: changed.id }).from(changed),
+            ),
+            gte(db.select({ value: count() }).from(cleared), 0),
+          ),
+        );
       signal.throwIfAborted();
       return;
     }
