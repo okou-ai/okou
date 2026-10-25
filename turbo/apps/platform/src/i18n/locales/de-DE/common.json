@@ -5778,6 +5778,9 @@
         "logo": {
           "description": "Arbeitsbereichs-Avatar, der in der gesamten App angezeigt wird",
           "fallbackAlt": "Arbeitsbereich",
+          "loadError": "Das Workspace-Logo konnte nicht geladen werden.",
+          "loading": "Workspace-Logo wird geladen",
+          "retry": "Erneut versuchen",
           "title": "Logo",
           "upload": "Logo hochladen"
         },

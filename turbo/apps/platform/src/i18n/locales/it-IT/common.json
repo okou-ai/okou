@@ -5841,6 +5841,9 @@
         "logo": {
           "description": "Avatar dell'area di lavoro visualizzato nell'app",
           "fallbackAlt": "Area di lavoro",
+          "loadError": "Impossibile caricare il logo dello spazio di lavoro.",
+          "loading": "Caricamento del logo dello spazio di lavoro",
+          "retry": "Riprova",
           "title": "Marchio",
           "upload": "Carica il logo"
         },

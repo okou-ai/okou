@@ -3,7 +3,7 @@
 import { useLoadable, useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Upload } from "lucide-react";
+import { Building2, Upload } from "lucide-react";
 import {
   Input,
   Button,
@@ -31,12 +31,10 @@ import {
   pendingLogoFile$,
   pendingLogoPreview$,
   setPendingLogo$,
-  logoLoaded$,
-  setLogoLoaded$,
+  loadOrgLogo$,
   deleteConfirm$,
   setDeleteConfirm$,
   resetDeleteConfirm$,
-  loadOrgLogo$,
   saveOrgProfile$,
   leaveOrg$,
   deleteOrg$,
@@ -61,7 +59,9 @@ function ProfileSection({
   const [saveLoadable, saveProfile] = useLoadableSet(saveOrgProfile$);
   const saving = saveLoadable.state === "loading";
 
-  const logoUrl = useGet(profileLogoUrl$);
+  const logoLoadable = useLoadable(profileLogoUrl$);
+  const logoUrl = logoLoadable.state === "hasData" ? logoLoadable.data : null;
+  const loadLogo = useSet(loadOrgLogo$);
 
   const pendingLogoFile = useGet(pendingLogoFile$);
   const pendingLogoPreview = useGet(pendingLogoPreview$);
@@ -70,9 +70,6 @@ function ProfileSection({
 
   const modalSignal = useGet(settingsDialogSignal$);
 
-  const logoLoaded = useGet(logoLoaded$);
-  const setLogoLoaded = useSet(setLogoLoaded$);
-  const loadOrgLogo = useSet(loadOrgLogo$);
   const hasNameChange = name !== (org.name ?? "");
   const hasChanges = hasNameChange || !!pendingLogoFile;
 
@@ -142,14 +139,6 @@ function ProfileSection({
     );
   };
 
-  const handleLogoLoad = () => {
-    if (logoLoaded || !modalSignal) {
-      return;
-    }
-    setLogoLoaded(true);
-    detach(loadOrgLogo(modalSignal), Reason.DomCallback);
-  };
-
   return (
     <section className="flex flex-col gap-3">
       <h3 className="text-sm font-medium text-foreground">
@@ -171,14 +160,32 @@ function ProfileSection({
                 return $.settings.workspace.profile.logo.description;
               })}
             </p>
+            {logoLoadable.state === "hasError" && !pendingLogoPreview && (
+              <div className="mt-2 flex items-center gap-2">
+                <p role="alert" className="text-sm text-destructive">
+                  {t(($) => {
+                    return $.settings.workspace.profile.logo.loadError;
+                  })}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (modalSignal) {
+                      detach(loadLogo(modalSignal), Reason.DomCallback);
+                    }
+                  }}
+                >
+                  {t(($) => {
+                    return $.settings.workspace.profile.logo.retry;
+                  })}
+                </Button>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-3 shrink-0">
             <label
-              ref={(el) => {
-                if (el) {
-                  handleLogoLoad();
-                }
-              }}
               className={cn(
                 buttonVariants({ variant: "quiet", size: "icon" }),
                 "group relative h-9 w-9 shrink-0 overflow-hidden has-[:disabled]:pointer-events-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
@@ -211,8 +218,20 @@ function ProfileSection({
                   }
                   className="h-full w-full object-cover"
                 />
+              ) : logoLoadable.state === "loading" ? (
+                <span
+                  role="status"
+                  aria-label={t(($) => {
+                    return $.settings.workspace.profile.logo.loading;
+                  })}
+                  className="block h-full w-full bg-muted/50 animate-pulse"
+                />
               ) : (
-                <span className="block h-full w-full bg-muted/50 animate-pulse" />
+                <Building2
+                  size={20}
+                  aria-hidden="true"
+                  className="text-muted-foreground"
+                />
               )}
               {isAdmin && (
                 <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100">

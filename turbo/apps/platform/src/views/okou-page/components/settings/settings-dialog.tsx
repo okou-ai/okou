@@ -32,6 +32,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
+import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
   closeSettingsModal$,
   completeSettingsModalClose$,
@@ -153,6 +154,7 @@ function SettingsDialog({
   const { t } = useTranslation();
   const activeSection = useGet(settingsActiveSection$);
   const setActiveSection = useSet(setSettingsActiveSection$);
+  const signal = useGet(pageSignal$);
   const features = useGet(featureSwitch$);
   const isAdminLoadable = useLoadable(isOrgAdmin$);
   const isAdmin =
@@ -380,7 +382,7 @@ function SettingsDialog({
   const meta = sectionMeta[resolvedSection];
 
   const handleSectionChange = (section: SettingsSection) => {
-    setActiveSection(section);
+    setActiveSection(section, signal);
   };
 
   return (

@@ -1,6 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { animationFrame } from "signal-timers";
-import { onRef } from "../../utils.ts";
+import { detach, onRef, Reason, resetSignal } from "../../utils.ts";
 import {
   orgContract,
   orgDeleteContract,
@@ -80,10 +80,16 @@ export const setProfileName$ = command(({ set }, value: string) => {
   set(internalProfileName$, value);
 });
 
-const internalProfileLogoUrl$ = state<string | null>(null);
+const internalProfileLogoRequest$ = state<Promise<string | null> | null>(null);
+const resetLogoRequest$ = resetSignal();
 
 export const profileLogoUrl$ = computed((get) => {
-  return get(internalProfileLogoUrl$);
+  return get(internalProfileLogoRequest$);
+});
+
+export const resetOrgLogo$ = command(({ set }) => {
+  set(resetLogoRequest$);
+  set(internalProfileLogoRequest$, null);
 });
 
 const internalPendingLogoFile$ = state<File | null>(null);
@@ -119,24 +125,12 @@ export const clearPendingLogo$ = command(({ set }) => {
   set(internalPendingLogoPreview$, null);
 });
 
-const internalLogoLoaded$ = state(false);
-
-export const logoLoaded$ = computed((get) => {
-  return get(internalLogoLoaded$);
-});
-
-export const setLogoLoaded$ = command(({ set }, value: boolean) => {
-  set(internalLogoLoaded$, value);
-});
-
 export const initProfileName$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const org = await get(org$);
     signal.throwIfAborted();
     set(internalProfileName$, org?.name ?? "");
-    set(internalProfileLogoUrl$, null);
     set(clearPendingLogo$);
-    set(internalLogoLoaded$, false);
   },
 );
 
@@ -456,17 +450,31 @@ const uploadOrgLogo$ = command(
   },
 );
 
-export const loadOrgLogo$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const client = get(apiClient$)(orgLogoContract);
-    const result = await accept(
-      client.get({
-        fetchOptions: { signal },
-      }),
-      [200],
-    );
-    signal.throwIfAborted();
-    set(internalProfileLogoUrl$, result.body.logoUrl);
+const readOrgLogo$ = command(async ({ get }, signal: AbortSignal) => {
+  const result = await accept(
+    get(apiClient$)(orgLogoContract).get({ fetchOptions: { signal } }),
+    [200],
+    signal,
+  );
+  signal.throwIfAborted();
+  return result.body.logoUrl;
+});
+
+export const loadOrgLogo$ = command(({ set }, signal: AbortSignal) => {
+  signal.throwIfAborted();
+  signal = set(resetLogoRequest$, signal);
+  const request = set(readOrgLogo$, signal);
+  set(internalProfileLogoRequest$, request);
+  return request;
+});
+
+export const startOrgLogoLoading$ = command(
+  ({ get, set }, signal: AbortSignal) => {
+    if (get(internalProfileLogoRequest$) !== null) {
+      return;
+    }
+    // The dialog owns this background read across General tab remounts.
+    detach(set(loadOrgLogo$, signal), Reason.Daemon, "Load workspace logo");
   },
 );
 
@@ -487,7 +495,8 @@ export const saveOrgProfile$ = command(
     if (input.logoFile) {
       const result = await set(uploadOrgLogo$, input.logoFile, signal);
       signal.throwIfAborted();
-      set(internalProfileLogoUrl$, result.logoUrl);
+      set(resetLogoRequest$);
+      set(internalProfileLogoRequest$, Promise.resolve(result.logoUrl));
     }
 
     if (hasNameChange) {
