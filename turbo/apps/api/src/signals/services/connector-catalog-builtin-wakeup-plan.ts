@@ -1,16 +1,16 @@
 import { isDeepStrictEqual } from "node:util";
-import type {
-  ConnectorCatalogArtifact,
-  ConnectorCatalogArtifactConnector,
-} from "@okouai/connectors/connector-catalog/artifacts/artifacts";
+import type { ConnectorCatalogArtifactConnector } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { connectors } from "@okouai/db/schema/connector";
 import { and, inArray, isNull, sql } from "drizzle-orm";
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
 
-function builtinRuntimeConfig(
-  connector: ConnectorCatalogArtifactConnector | undefined,
-) {
+type BuiltinRuntimeConnector = Pick<
+  ConnectorCatalogArtifactConnector,
+  "slug" | "mcp" | "authMethods" | "firewall"
+>;
+
+function builtinRuntimeConfig(connector: BuiltinRuntimeConnector | undefined) {
   return connector
     ? {
         mcp: connector.mcp,
@@ -22,8 +22,10 @@ function builtinRuntimeConfig(
 
 export function builtinCatalogWakeupReadPlan(args: {
   readonly previousArtifact:
-    Pick<ConnectorCatalogArtifact, "connectors"> | undefined;
-  readonly currentArtifact: Pick<ConnectorCatalogArtifact, "connectors">;
+    { readonly connectors: readonly BuiltinRuntimeConnector[] } | undefined;
+  readonly currentArtifact: {
+    readonly connectors: readonly BuiltinRuntimeConnector[];
+  };
 }) {
   const previous = new Map(
     args.previousArtifact?.connectors.map((connector) => {
