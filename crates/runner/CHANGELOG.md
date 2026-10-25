@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.237.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.37...runner-rs-v0.237.0) (2026-10-25)
+
+
+### Features
+
+* cut over data tools to dynamic router discovery ([#42695](https://github.com/okou-ai/okou/issues/42695)) ([28d1842](https://github.com/okou-ai/okou/commit/28d18426d6282b443344e3a3cabdec11ee13bc03))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.236.37](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.36...runner-rs-v0.236.37) (2026-10-25)
 
 ### Release Dependencies
