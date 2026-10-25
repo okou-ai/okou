@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.48](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.47...guest-control-client-v0.23.48) (2026-10-25)
+
+
+### Refactoring
+
+* **guest-control:** share received exec wait completion ([#42821](https://github.com/okou-ai/okou/issues/42821)) ([13e04f8](https://github.com/okou-ai/okou/commit/13e04f835d74b1089fb6975b67e8ec0cefc83f53))
+
 ## [0.23.47](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.46...guest-control-client-v0.23.47) (2026-10-24)
 
 

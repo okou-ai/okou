@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.2...guest-contracts-v0.27.3) (2026-10-25)
+
+
+### Performance Improvements
+
+* **storage:** avoid repeated decoded file path parsing ([#42778](https://github.com/okou-ai/okou/issues/42778)) ([d110db6](https://github.com/okou-ai/okou/commit/d110db669b585905b4a1a0eb811944c78ef16d4b))
+
 ## [0.27.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.1...guest-contracts-v0.27.2) (2026-10-23)
 
 ## [0.27.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.0...guest-contracts-v0.27.1) (2026-10-23)
