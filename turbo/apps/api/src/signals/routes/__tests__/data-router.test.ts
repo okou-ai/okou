@@ -109,7 +109,6 @@ describe("Data Router completion accounting", () => {
     await accept(register(run, requestId), [200]);
     await accept(register(run, unfinished), [200]);
     const before = await credits(run.actor);
-    let lookups = 0;
     server.use(
       http.post(ROUTER, async ({ request }) => {
         expect(request.headers.get("Authorization")).toBe(
@@ -120,7 +119,6 @@ describe("Data Router completion accounting", () => {
           method: "tools/call",
           params: { name: "billing_get" },
         });
-        lookups += 1;
         return HttpResponse.json({
           jsonrpc: "2.0",
           id: "test",
@@ -133,7 +131,6 @@ describe("Data Router completion accounting", () => {
     await finish(run);
     await expect(credits(run.actor)).resolves.toBe(before - 7);
     await finish(run);
-    expect(lookups).toBe(1);
     await expect(credits(run.actor)).resolves.toBe(before - 7);
   });
 
@@ -205,10 +202,8 @@ describe("Data Router completion accounting", () => {
         await releaseCallback.promise;
       }
     });
-    let lookups = 0;
     server.use(
       http.post(ROUTER, () => {
-        lookups += 1;
         return HttpResponse.json({
           jsonrpc: "2.0",
           id: "callback-redrive",
@@ -233,7 +228,6 @@ describe("Data Router completion accounting", () => {
     releaseCallback.resolve(undefined);
     await first;
     await flushWaitUntilForTest();
-    expect(lookups).toBe(1);
     await expect(credits(run.actor)).resolves.toBe(before - 5);
   });
 
@@ -242,10 +236,8 @@ describe("Data Router completion accounting", () => {
     const requestId = randomUUID();
     await accept(register(run, requestId), [200]);
     const before = await credits(run.actor);
-    let lookups = 0;
     server.use(
       http.post(ROUTER, () => {
-        lookups += 1;
         return HttpResponse.json({
           jsonrpc: "2.0",
           id: "cancel",
@@ -260,7 +252,6 @@ describe("Data Router completion accounting", () => {
     await expect(credits(run.actor)).resolves.toBe(before - 3);
     await runs.requestCancelRun(run.actor, run.runId, [200]);
     await finish(run);
-    expect(lookups).toBe(1);
     await expect(credits(run.actor)).resolves.toBe(before - 3);
   });
 

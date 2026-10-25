@@ -27,7 +27,7 @@ import {
   installHostedUploadTransport,
   uploadHostedTextFiles,
 } from "./helpers/api-bdd-host-files";
-import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
+import { createHostBddApi } from "./helpers/api-bdd-host";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
@@ -37,7 +37,7 @@ const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
-const host = createHostMapsBddApi(context);
+const host = createHostBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const routeMocks = createRouteMocks(context);
 const sharedThreadTestRoutes: readonly RouteEntry[] = [

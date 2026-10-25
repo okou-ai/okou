@@ -3,12 +3,12 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { testContext } from "../../../__tests__/test-context";
 import { createBddApi } from "./helpers/api-bdd";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
-import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
+import { createHostBddApi } from "./helpers/api-bdd-host";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const api = createHostMapsBddApi(context);
+const api = createHostBddApi(context);
 
 async function fixture() {
   const actor = bdd.user();

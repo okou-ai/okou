@@ -17,7 +17,7 @@ export const recordDataRouterUsage$ = command(
     attribution: BillingAttribution,
     credits: number,
     signal: AbortSignal,
-  ): Promise<number> => {
+  ): Promise<void> => {
     const db = set(writeDb$);
     const idempotencyKey = randomUUID();
     const [run] = await db
@@ -37,11 +37,7 @@ export const recordDataRouterUsage$ = command(
     const inserted = db
       .$with("data_router_inserted_usage")
       .as(
-        db
-          .insert(usageEvent)
-          .values(values)
-          .onConflictDoNothing({ target: usageEvent.idempotencyKey })
-          .returning({ id: usageEvent.id }),
+        db.insert(usageEvent).values(values).returning({ id: usageEvent.id }),
       );
     const observed = db.$with("data_router_observed_attribution").as(
       db
@@ -67,21 +63,13 @@ export const recordDataRouterUsage$ = command(
     );
     signal.throwIfAborted();
     const [processed] = await db
-      .select()
+      .select({
+        creditsCharged: usageEvent.creditsCharged,
+        billingError: usageEvent.billingError,
+      })
       .from(usageEvent)
       .where(eq(usageEvent.idempotencyKey, idempotencyKey));
     signal.throwIfAborted();
-    if (
-      processed &&
-      (processed.orgId !== values.orgId ||
-        processed.userId !== values.userId ||
-        processed.kind !== values.kind ||
-        processed.provider !== values.provider ||
-        processed.category !== values.category ||
-        processed.quantity !== credits)
-    ) {
-      throw new Error("Data Search usage idempotency key collision");
-    }
     if (!processed || processed.creditsCharged === null) {
       throw new Error("Failed to process Data Search usage event");
     }
@@ -90,6 +78,5 @@ export const recordDataRouterUsage$ = command(
         `Failed to bill Data Search usage event: ${processed.billingError}`,
       );
     }
-    return processed.creditsCharged;
   },
 );

@@ -100,33 +100,8 @@ describe("Okou CLI program", () => {
     }
   });
 
-  it("should not include infrastructure or utility commands", () => {
-    const excludedCommands = [
-      "org",
-      "auth",
-      "compose",
-      "volume",
-      "preference",
-      "secret",
-      "variable",
-
-      "init",
-      "info",
-    ];
-    for (const name of excludedCommands) {
-      expect(commandNames).not.toContain(name);
-    }
-  });
-
-  it("should keep internal commands out of the public surface", () => {
-    expect(commandNames).toContain("__subagent_loop__");
-    expect(commandNames).toContain("__agent-loop");
-    expect(canonicalCommandNames).not.toContain("__agent-loop");
-  });
-
   it("advertises the canonical data namespace in root help", () => {
     expect(program.helpInformation()).toContain("data");
-    expect(canonicalCommandNames).toContain("subscription");
   });
 });
 

@@ -9,7 +9,7 @@ import { hostRoutes } from "../host";
 import { createDeferredPromise } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
-import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
+import { createHostBddApi } from "./helpers/api-bdd-host";
 
 const context = testContext();
 const referenceSchema = z.object({
@@ -49,7 +49,7 @@ test("rejects malformed pointer identities at the anonymous request boundary", a
 
 test("denies late immutable writes after deletion even when R2 loses the response", async () => {
   const bdd = createBddApi(context);
-  const api = createHostMapsBddApi(context);
+  const api = createHostBddApi(context);
   const owner = bdd.user();
   const capture = api.captureHostedSitesS3();
   const site = `delivery-loss-${randomUUID().slice(0, 8)}`;
@@ -121,7 +121,7 @@ test("denies late immutable writes after deletion even when R2 loses the respons
 
 test("waits for SQL readiness when the public pointer already exists", async () => {
   const bdd = createBddApi(context);
-  const api = createHostMapsBddApi(context);
+  const api = createHostBddApi(context);
   const owner = bdd.user();
   const capture = api.captureHostedSitesS3();
   const site = `delivery-pending-${randomUUID().slice(0, 8)}`;
@@ -178,7 +178,7 @@ test("waits for SQL readiness when the public pointer already exists", async () 
 
 test("authorizes ready owned identities, keeps immutable history and denies deleted content", async () => {
   const bdd = createBddApi(context);
-  const api = createHostMapsBddApi(context);
+  const api = createHostBddApi(context);
   const owner = bdd.user();
   const other = bdd.user();
   const capture = api.captureHostedSitesS3();

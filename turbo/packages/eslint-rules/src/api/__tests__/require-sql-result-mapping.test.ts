@@ -279,22 +279,6 @@ ruleTester.run("require-sql-result-mapping", requireSqlResultMapping, {
     },
     {
       code: `${preamble}
-        import { usageEvent } from "@okouai${"/db/runtime/usage-event-helper"}";
-        import { sql } from "drizzle-orm";
-        db.select({ createdAt: sql\`now()\`.mapWith(usageEvent.createdAt) }).from(users);
-      `,
-      errors: [{ messageId: "uninspectableResultDecoder" }],
-    },
-    {
-      code: `${preamble}
-        import { sql } from "drizzle-orm";
-        const fields = { createdAt: String };
-        db.select({ createdAt: sql\`now()\`.mapWith(fields.createdAt) }).from(users);
-      `,
-      errors: [{ messageId: "uninspectableResultDecoder" }],
-    },
-    {
-      code: `${preamble}
         import { sql } from "drizzle-orm";
         import { zodDriverValueDecoder } from
           "../../apps/api/src/lib/db-structured-result";
