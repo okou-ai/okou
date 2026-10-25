@@ -1,12 +1,53 @@
 import { connectorAccountMutationIntentSchema } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectors } from "@okouai/db/schema/connector";
-import { sql, type SQLWrapper } from "drizzle-orm";
+import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
+import { secrets } from "@okouai/db/schema/secret";
+import { variables } from "@okouai/db/schema/variable";
+import { eq, sql, type SQLWrapper } from "drizzle-orm";
 
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 
 const storedConnectorAccountMutationDecoder = zodDriverValueDecoder(
   connectorAccountMutationIntentSchema,
 );
+
+export const connectorCredentialDeletionKinds = [
+  "secret",
+  "variable",
+  "builtin-oauth",
+] as const;
+
+export function connectorCredentialDeletion(
+  kind: (typeof connectorCredentialDeletionKinds)[number],
+  scope: {
+    readonly connectorId: string;
+    readonly connection: { readonly id: string };
+  },
+) {
+  switch (kind) {
+    case "secret": {
+      return {
+        from: secrets,
+        where: eq(secrets.connectorId, scope.connectorId),
+      };
+    }
+    case "variable": {
+      return {
+        from: variables,
+        where: eq(variables.connectorId, scope.connectorId),
+      };
+    }
+    case "builtin-oauth": {
+      return {
+        from: builtinConnectorAccountOauthBindings,
+        where: eq(
+          builtinConnectorAccountOauthBindings.connectorAccountId,
+          scope.connection.id,
+        ),
+      };
+    }
+  }
+}
 
 export function storedConnectorAccountMutationSelection(
   accountMutation: SQLWrapper,

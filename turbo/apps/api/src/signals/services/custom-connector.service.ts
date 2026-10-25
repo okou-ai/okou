@@ -1,3 +1,8 @@
+import {
+  connectorCredentialDeletion,
+  connectorCredentialDeletionKinds,
+  type ConnectorConnectionMetadataArgs,
+} from "./connector-account-mutation.service";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   isIntegrationManagedCustomConnector,
@@ -72,14 +77,13 @@ import {
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
 import type { CapturedConnectorClientInvalidationAbort } from "./connector-client-invalidation.service";
-import type { ConnectorConnectionMetadataArgs } from "./connector-account-mutation.service";
 import {
   connectorConnectionWrittenRow,
-  replaceConnectorConnectionOutcome,
+  awaitConnectorConnectionRow,
   connectorConnectionMutationReadPlan,
   connectorConnectionMutationReadResult,
   type ConnectorConnectionMutationArgs,
-  writeConnectorConnectionMetadataOutcome,
+  writeConnectorConnectionMetadataOutcome as writeConnectionMetadata,
   type ReadyConnectorConnectionMutation,
 } from "./connector-connection-write.service";
 import {
@@ -3396,10 +3400,6 @@ interface CustomConnectorValuePersistenceArgs {
   readonly preparedValues: readonly PreparedCustomConnectorValue[];
 }
 
-type CustomConnectorReplacementArgs = Parameters<
-  typeof replaceConnectorConnectionOutcome
->[1];
-
 function customConnectorValueCredentialScope(
   preparedWrite: {
     readonly connectionId: string;
@@ -3425,11 +3425,10 @@ async function persistCustomConnectorValues(
     return state;
   }
   const writeValues = async (
-    tx: Tx,
     connectionId: string,
     writeSignal: AbortSignal,
   ) => {
-    const credentialDb = tx;
+    const credentialDb = args.tx;
     const preparedWrite = {
       connectionId,
       fields: state.connector.fields,
@@ -3503,34 +3502,40 @@ async function persistCustomConnectorValues(
     };
     const connection = await (async () => {
       return connectorConnectionWrittenRow(
-        await writeConnectorConnectionMetadataOutcome(
-          connectionDb,
-          metadataArgs,
-        ),
+        await writeConnectionMetadata(connectionDb, metadataArgs),
       );
     })();
     connectedAccountId = connection.id;
     signal.throwIfAborted();
-    await writeValues(args.tx, connection.id, signal);
+    await writeValues(connection.id, signal);
   } else {
-    const connectionDb = args.tx;
-    const replacementArgs: CustomConnectorReplacementArgs = {
-      ...connectionArgs,
-      resolution: state.resolution,
-      writeCredentials: async ({ db, connectorId }, writeSignal) => {
-        await writeValues(db, connectorId, writeSignal);
-      },
-    };
-    const connectionSignal = signal;
-    const connection = await (async () => {
-      return connectorConnectionWrittenRow(
-        await replaceConnectorConnectionOutcome(
-          connectionDb,
-          replacementArgs,
-          connectionSignal,
-        ),
-      );
-    })();
+    const tx = args.tx;
+    const replacementArgs = { ...connectionArgs, resolution: state.resolution };
+
+    const connection = await awaitConnectorConnectionRow(
+      (async () => {
+        const outcome = await writeConnectionMetadata(tx, replacementArgs);
+        signal.throwIfAborted();
+        if (outcome.kind !== "written") {
+          return outcome;
+        }
+        const connection = outcome.row;
+        const cleanup = { connectorId: connection.id, connection };
+        for (const kind of connectorCredentialDeletionKinds) {
+          const deletion = connectorCredentialDeletion(kind, cleanup);
+          await tx.delete(deletion.from).where(deletion.where);
+          if (kind !== "builtin-oauth") {
+            signal.throwIfAborted();
+          }
+        }
+        const connectorId = connection.id;
+        await (async () => {
+          await writeValues(connectorId, signal);
+        })();
+        signal.throwIfAborted();
+        return outcome;
+      })(),
+    );
     connectedAccountId = connection.id;
   }
   return {
