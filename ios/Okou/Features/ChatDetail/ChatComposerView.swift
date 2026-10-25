@@ -28,6 +28,10 @@ struct ChatComposerView: View {
   @State private var showsFiles = false
   @State private var selectedPhotos: [PhotosPickerItem] = []
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  private let cornerRadius: CGFloat = 28
+  private let actionSize: CGFloat = 44
+
+  private var actionInset: CGFloat { cornerRadius - actionSize / 2 }
 
   private var hasText: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
   private var hasContent: Bool {
@@ -151,8 +155,11 @@ struct ChatComposerView: View {
       .padding(.trailing, expandsInput ? 18 : (modelSelection == nil ? 58 : 106))
       .padding(.top, expandsInput ? 17 : 10)
       .padding(.bottom, expandsInput ? 62 : 10)
-      .frame(minHeight: expandsInput ? 116 : 44, alignment: expandsInput ? .topLeading : .leading)
-      .glassEffect(.regular, in: RoundedRectangle(cornerRadius: expandsInput ? 28 : 30))
+      .frame(
+        minHeight: expandsInput ? 116 : cornerRadius * 2,
+        alignment: expandsInput ? .topLeading : .leading
+      )
+      .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
       .overlay(alignment: .top) {
         if let workflows = draftState?.editor.workflows, workflows.query != nil {
           ComposerWorkflowMenu(suggestions: workflows)
@@ -171,7 +178,7 @@ struct ChatComposerView: View {
           } label: {
             Image(systemName: "plus")
               .font(.system(size: 22, weight: .regular))
-              .frame(width: 44, height: 44)
+              .frame(width: actionSize, height: actionSize)
           }
           .accessibilityLabel("Attachments")
           .disabled(isBusy || needsUpgrade)
@@ -180,8 +187,8 @@ struct ChatComposerView: View {
               .disabled(isBusy || needsUpgrade)
           }
         }
-        .padding(.leading, 8)
-        .padding(.bottom, expandsInput ? 8 : 0)
+        .padding(.leading, actionInset)
+        .padding(.bottom, expandsInput ? actionInset : 0)
       }
       .overlay(alignment: expandsInput ? .bottomTrailing : .trailing) {
         HStack(spacing: 4) {
@@ -220,11 +227,11 @@ struct ChatComposerView: View {
           )
           .accessibilityLabel(showsStop ? "Stop" : "Send message")
           .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
-          .frame(width: 44, height: 44)
+          .frame(width: actionSize, height: actionSize)
           .contentShape(Circle())
         }
-        .padding(.trailing, 7)
-        .padding(.bottom, expandsInput ? 8 : 0)
+        .padding(.trailing, actionInset)
+        .padding(.bottom, expandsInput ? actionInset : 0)
       }
       .animation(
         reduceMotion ? nil : sendTransition?.composerAnimation ?? .easeInOut(duration: 0.22),
@@ -232,6 +239,7 @@ struct ChatComposerView: View {
     }
     .padding(.horizontal, 16)
     .padding(.top, 8)
+    .padding(.bottom, isFocused ? 8 : 0)
     .onChange(of: "\(agentID ?? "")/\(connectorSelection != nil)", initial: true) { _, _ in
       connectorSelection?.configure(agentID: agentID)
     }

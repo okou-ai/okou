@@ -1,5 +1,6 @@
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
+import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -441,6 +442,68 @@ test("Disconnect an active personal subscription account", async () => {
     ).toBeNull();
   });
   expect(screen.getByText("Account disconnected")).toBeInTheDocument();
+});
+
+test("Keep a failed disconnect open and finish a successful retry", async () => {
+  const account = connectedPersonalCodexAccount({
+    id: "00000000-0000-4000-a000-000000000311",
+    email: "account-a@example.com",
+    isActive: true,
+    createdAt: "2026-03-01T00:00:00Z",
+  });
+  context.mocks.data.personalModelProviders([account]);
+  const response = context.mocks.deferred<void>();
+  let failDisconnect = true;
+  context.mocks.api(
+    personalModelProviderAccountsByIdContract.delete,
+    async ({ respond }) => {
+      await response.promise;
+      if (failDisconnect) {
+        failDisconnect = false;
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Disconnect failed",
+          },
+        });
+      }
+      context.mocks.data.personalModelProviders([]);
+      return respond(204);
+    },
+  );
+
+  await openModelSettings("Use more models");
+  const row = await screen.findByTestId(`oauth-account-${account.id}`);
+  click(within(row).getByLabelText("More options"));
+  click(await screen.findByText("Disconnect account"));
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Disconnect account-a@example.com?",
+  });
+  click(activationButton("Disconnect account", confirmation));
+  await waitFor(() => {
+    expect(activationButton("Disconnecting…", confirmation)).toBeDisabled();
+    expect(activationButton("Cancel", confirmation)).toBeDisabled();
+  });
+  response.resolve();
+  await expect(
+    screen.findByText("Disconnect failed"),
+  ).resolves.toBeInTheDocument();
+  expect(confirmation).toBeInTheDocument();
+  expect(row).toBeInTheDocument();
+  await waitFor(() => {
+    expect(activationButton("Disconnect account", confirmation)).toBeEnabled();
+  });
+
+  click(activationButton("Disconnect account", confirmation));
+  await expect(
+    screen.findByText("Account disconnected"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(confirmation).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId(`oauth-account-${account.id}`),
+    ).not.toBeInTheDocument();
+  });
 });
 
 test("Review personal subscriptions through account switching", async () => {

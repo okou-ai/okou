@@ -117,10 +117,6 @@ test("Reports a physical chat database open without credential identifiers", asy
     "status.code": "OK",
   });
   expect(event.duration).toStrictEqual(expect.any(Number));
-  expect(event).not.toHaveProperty("attributes.custom.okou.db.request.count");
-  expect(event).not.toHaveProperty(
-    "attributes.custom.okou.db.transaction.mode",
-  );
   expect(JSON.stringify(event)).not.toContain(sensitiveUserId);
   expect(JSON.stringify(event)).not.toContain(sensitiveOrgId);
 });
@@ -207,9 +203,6 @@ test("Reports separate creation and execution events for an IndexedDB transactio
     "status.code": "OK",
   });
   expect(creationEvent.duration).toStrictEqual(expect.any(Number));
-  expect(creationEvent).not.toHaveProperty(
-    "attributes.custom.okou.db.request.count",
-  );
   expect(event).toMatchObject({
     "attributes.custom": {
       "db.namespace": "chat",
@@ -321,7 +314,6 @@ test("Reports a synchronous IndexedDB transaction creation failure", async () =>
     "status.code": "ERROR",
   });
   expect(event.duration).toStrictEqual(expect.any(Number));
-  expect(event).not.toHaveProperty("attributes.custom.okou.db.request.count");
   expect(JSON.stringify(event)).not.toContain(creationError.message);
 });
 

@@ -1,5 +1,7 @@
 import { command } from "ccstate";
 import { agentSetupPromptsContract } from "@okouai/api-contracts/contracts/agent-setup-prompts";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { reloadAgents$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -7,14 +9,18 @@ import { sendNewThread$ } from "../chat-page/optimistic-chat-thread-page.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { createDraftSignals } from "./chat-draft.ts";
 import { createAgent } from "./create-agent.ts";
-import { setJobsDialogOpen$ } from "./jobs-page.ts";
+import { setJobsActiveTab$, setJobsDialogOpen$ } from "./jobs-page.ts";
 import { setAgentPinned$ } from "./pinned-agents.ts";
 
-const sendAgentSetupThread$ = command(
+const finishAgentCreation$ = command(
   async (
     { set },
     agentId: string,
     prompt: string,
+    args: {
+      readonly displayName: string;
+      readonly visibility: "public" | "private";
+    },
     signal: AbortSignal,
   ): Promise<void> => {
     const sent = await set(
@@ -32,6 +38,15 @@ const sendAgentSetupThread$ = command(
     if (!sent) {
       throw new Error("Unable to start the Agent setup thread");
     }
+    set(setJobsActiveTab$, args.visibility);
+    toast.success(
+      i18n.t(
+        ($) => {
+          return $.list.create.success;
+        },
+        { ns: "agents", agentName: args.displayName },
+      ),
+    );
   },
 );
 
@@ -95,10 +110,11 @@ export const createSubagentWithSetupThread$ = command(
     signal.throwIfAborted();
 
     // Navigation aborts the page signal; the root-owned send must finish.
-    await set(
-      sendAgentSetupThread$,
+    return set(
+      finishAgentCreation$,
       agent.agentId,
       setupPrompt.value.body.prompt,
+      args,
       get(rootSignal$),
     );
   },

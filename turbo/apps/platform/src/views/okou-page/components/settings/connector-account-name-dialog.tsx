@@ -69,17 +69,13 @@ export function ConnectorAccountNameDialog() {
               })}
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="new-connector-account-name"
-              className="text-sm font-medium"
-            >
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium">
               {t(($) => {
                 return $.connectors.accounts.accountName;
               })}
-            </label>
+            </span>
             <Input
-              id="new-connector-account-name"
               autoFocus
               value={value}
               onChange={(event) => {
@@ -88,7 +84,7 @@ export function ConnectorAccountNameDialog() {
               placeholder={accountLabel(prompt.account)}
               maxLength={255}
             />
-          </div>
+          </label>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={close}>
               {t(($) => {
@@ -97,9 +93,7 @@ export function ConnectorAccountNameDialog() {
             </Button>
             <Button
               type="submit"
-              disabled={
-                value.trim().length === 0 || renameLoadable.state === "loading"
-              }
+              disabled={!value.trim() || renameLoadable.state === "loading"}
             >
               {t(($) => {
                 return $.connectors.actions.save;

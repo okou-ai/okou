@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.3](https://github.com/okou-ai/okou/compare/ios-v0.19.2...ios-v0.19.3) (2026-10-25)
+
+
+### Bug Fixes
+
+* **ios:** align navigation and refine composer geometry ([#42857](https://github.com/okou-ai/okou/issues/42857)) ([8fa7a9b](https://github.com/okou-ai/okou/commit/8fa7a9b462dba2b895a085fca0ef1923573036d7))
+
 ## [0.19.2](https://github.com/okou-ai/okou/compare/ios-v0.19.1...ios-v0.19.2) (2026-10-25)
 
 

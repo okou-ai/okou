@@ -20,6 +20,7 @@ struct ChatWorkspaceHeader: ViewModifier {
           ToolbarItem(placement: .topBarTrailing) {
             ChatThreadMoreButton(store: store, threadID: thread.id)
           }
+          .sharedBackgroundVisibility(.hidden)
         }
       }
   }

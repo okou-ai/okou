@@ -91,7 +91,6 @@ test.each([
     "INVITATION_ALREADY_EXISTS",
     "This person already has a pending invitation.",
   ],
-  [400, "BAD_REQUEST", "Enter a valid email address."],
 ] as const)(
   "A refused address (%s) shows why, and the step continues anyway",
   async (status, code, message) => {

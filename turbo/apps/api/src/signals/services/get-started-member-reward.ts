@@ -6,7 +6,7 @@ import {
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
-import { and, eq, isNull, notInArray, or, sql } from "drizzle-orm";
+import { and, eq, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { GetStartedClaimRow } from "./get-started-rewards.service";
 
@@ -121,6 +121,21 @@ export function completedGetStartedQuestSql(
   },
   at: Date,
 ) {
+  const publication = completedGetStartedQuestPublication(args, at);
+  return sql`WITH claim AS (${publication.claim}) ${publication.grant}`;
+}
+
+/** Pure statement parts allow an owning publication to gate its automatic award. */
+export function completedGetStartedQuestPublication(
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly questKey: "connector" | "checkin" | "imessage";
+    readonly sourceKey: string;
+  },
+  at: Date,
+  acceptedSource?: SQL,
+) {
   if (args.questKey === "imessage" && args.sourceKey !== "agentphone-link") {
     throw new Error("Unexpected iMessage quest source");
   }
@@ -130,22 +145,27 @@ export function completedGetStartedQuestSql(
   const rewardKey = `${args.questKey}:${args.userId}:${args.sourceKey}`;
   const rewardSlot = args.questKey === "imessage" ? 1 : null;
   const expiresAt = new Date(at.getTime() + GET_STARTED_REWARD_TTL_MS);
-  // Concurrent duplicates can collide on the source, reward key, or reward slot.
-  // Arbitrate every unique index: targeting only the source can still raise a
-  // uniqueness error on another index instead of returning the existing award.
-  return sql`WITH claim AS (
-    INSERT INTO ${getStartedClaims} (id, org_id, actor_user_id, beneficiary_user_id, quest_key, source_key,
-      reward_amount, reward_target, status, reward_key, reward_slot, member_credit_grant_id,
-      completed_at, granted_at, expires_at, next_attempt_at, created_at, updated_at)
-    VALUES (${claimId}::uuid, ${args.orgId}, ${args.userId}, ${args.userId}, ${args.questKey}, ${args.sourceKey},
+  const values = sql`${claimId}::uuid, ${args.orgId}, ${args.userId}, ${args.userId}, ${args.questKey}, ${args.sourceKey},
       ${reward.amount}, 'user', 'granted', ${rewardKey}, ${rewardSlot}, ${grantId}::uuid,
       ${sql.param(at, getStartedClaims.completedAt)}, ${sql.param(at, getStartedClaims.grantedAt)},
       ${sql.param(expiresAt, getStartedClaims.expiresAt)}, ${sql.param(at, getStartedClaims.nextAttemptAt)},
-      ${sql.param(at, getStartedClaims.createdAt)}, ${sql.param(at, getStartedClaims.updatedAt)})
-    ON CONFLICT DO NOTHING RETURNING id
-  ) INSERT INTO ${usagePackCreditGrants} (id, org_id, user_id, grant_type, idempotency_key, original_amount, remaining_amount, expires_at)
+      ${sql.param(at, getStartedClaims.createdAt)}, ${sql.param(at, getStartedClaims.updatedAt)}`;
+  const source = acceptedSource
+    ? sql`SELECT ${values} FROM (${acceptedSource}) AS accepted_source WHERE true`
+    : sql`VALUES (${values})`;
+  // Concurrent duplicates can collide on the source, reward key, or reward slot.
+  // Arbitrate every unique index: targeting only the source can still raise a
+  // uniqueness error on another index instead of returning the existing award.
+  return {
+    claim: sql`INSERT INTO ${getStartedClaims} (id, org_id, actor_user_id, beneficiary_user_id, quest_key, source_key,
+      reward_amount, reward_target, status, reward_key, reward_slot, member_credit_grant_id,
+      completed_at, granted_at, expires_at, next_attempt_at, created_at, updated_at)
+    ${source}
+    ON CONFLICT DO NOTHING RETURNING id`,
+    grant: sql`INSERT INTO ${usagePackCreditGrants} (id, org_id, user_id, grant_type, idempotency_key, original_amount, remaining_amount, expires_at)
     SELECT ${grantId}::uuid, ${args.orgId}, ${args.userId}, 'bonus', ${`get-started:${claimId}`}, ${reward.amount}, ${reward.amount},
-      ${sql.param(expiresAt, usagePackCreditGrants.expiresAt)} FROM claim`;
+      ${sql.param(expiresAt, usagePackCreditGrants.expiresAt)} FROM claim`,
+  };
 }
 
 function memberRewardEvidenceSql(evidenceText: string, at: Date) {

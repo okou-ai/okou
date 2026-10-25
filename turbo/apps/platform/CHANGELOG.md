@@ -12,6 +12,31 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1060.0](https://github.com/okou-ai/okou/compare/app-v0.1059.2...app-v0.1060.0) (2026-10-25)
+
+
+### Features
+
+* **core:** enable built-in document templates for everyone ([#42580](https://github.com/okou-ai/okou/issues/42580)) ([f61c808](https://github.com/okou-ai/okou/commit/f61c808adf249d8ef7767548df0893e99d0246ff))
+* **core:** enable chat resource panel for everyone ([#42581](https://github.com/okou-ai/okou/issues/42581)) ([269f6e5](https://github.com/okou-ai/okou/commit/269f6e5bb47c134a266d7078c788645183bab399))
+
+
+### Bug Fixes
+
+* **app:** preserve table bounds and text layout in message pdf exports ([#42607](https://github.com/okou-ai/okou/issues/42607)) ([c78a494](https://github.com/okou-ai/okou/commit/c78a49413f2aa7f1452f30a841b5ceb428f4c22a))
+
+
+### Performance Improvements
+
+* reduce resource and workflow publication overhead ([#42783](https://github.com/okou-ai/okou/issues/42783)) ([efca2a9](https://github.com/okou-ai/okou/commit/efca2a9ee30dcb5bad41396943784b3714e9e69f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.786.0
+
 ## [0.1059.2](https://github.com/okou-ai/okou/compare/app-v0.1059.1...app-v0.1059.2) (2026-10-25)
 
 

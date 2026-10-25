@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.24.44](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.43...guest-control-server-v0.24.44) (2026-10-25)
+
+
+### Refactoring
+
+* **guest-control:** carry exec stdin result through thread custody ([#42862](https://github.com/okou-ai/okou/issues/42862)) ([ae70ee3](https://github.com/okou-ai/okou/commit/ae70ee330377013447701593a605c47b714d2333))
+* **guest-control:** centralize setup abort retirement ([#42852](https://github.com/okou-ai/okou/issues/42852)) ([b58667b](https://github.com/okou-ai/okou/commit/b58667bbf0509d6ee1566ce07f5bba5b4b6956ea))
+
 ## [0.24.43](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.42...guest-control-server-v0.24.43) (2026-10-25)
 
 

@@ -144,6 +144,80 @@ fn decoded_artifact_admission_requires_complete_fresh_identity() {
 }
 
 #[test]
+fn decoded_selection_retains_mount_ownership_after_cloning_and_source_staging() {
+    let source = manifest(
+        vec![
+            storage("/ordinary", "ordinary", "v1"),
+            storage("/blocked", "blocked", "v1"),
+        ],
+        vec![artifact("/blocked/child", "artifact", "v1", false)],
+    );
+    let plan = build_storage_plan(&source, None).unwrap();
+    let candidates = plan.cache_candidates();
+    let selected: Vec<_> = candidates
+        .iter()
+        .map(|candidate| plan.decoded_mount(candidate.handle))
+        .collect();
+    assert_eq!(selected, [Some("/ordinary"), None, None]);
+    let mut cloned = plan.clone();
+    let candidate = &candidates[0];
+    assert!(cloned.stage_archive(
+        candidate.handle,
+        &candidate.name,
+        &candidate.version,
+        &candidate.archive_url,
+        "file:///staged-ordinary.tar.gz".into(),
+    ));
+    for candidate in &candidates {
+        assert_eq!(
+            cloned.decoded_mount(candidate.handle),
+            plan.decoded_mount(candidate.handle)
+        );
+    }
+}
+
+#[test]
+fn decoded_selection_matches_pairwise_conflicts_for_mixed_entries() {
+    use std::path::{Component, Path};
+    let paths = [
+        "/a", "/a/b", "/a/c", "/a-b", "/a/./b", "/a//b/", "/", "relative", "/a/../b",
+    ];
+    let valid = |raw: &str| {
+        Path::new(raw).is_absolute()
+            && !raw.as_bytes().contains(&0)
+            && Path::new(raw)
+                .components()
+                .all(|part| matches!(part, Component::RootDir | Component::Normal(_)))
+    };
+    for first in paths {
+        for second in paths {
+            for third in paths {
+                let mounts = [first, second, third];
+                let source = manifest(
+                    vec![
+                        storage(first, "first", "v1"),
+                        storage(second, "second", "v1"),
+                    ],
+                    vec![artifact(third, "artifact", "v1", false)],
+                );
+                let plan = build_storage_plan(&source, None).unwrap();
+                for (index, candidate) in plan.cache_candidates().iter().enumerate() {
+                    let conflict = mounts.iter().enumerate().any(|(other_index, other)| {
+                        index != other_index
+                            && (!valid(mounts[index])
+                                || !valid(other)
+                                || Path::new(mounts[index]).starts_with(other)
+                                || Path::new(other).starts_with(mounts[index]))
+                    });
+                    let expected = (valid(mounts[index]) && !conflict).then_some(mounts[index]);
+                    assert_eq!(plan.decoded_mount(candidate.handle), expected, "{mounts:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn changed_storage_name_or_version_requires_replacement() {
     let manifest = manifest(vec![storage("/data", "data", "v2")], Vec::new());
 

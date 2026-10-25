@@ -256,7 +256,6 @@ export const saveConnectorAccountNamePrompt$ = command(
       },
       signal,
     );
-    signal.throwIfAborted();
     if (get(internalConnectorAccountNamePrompt$) === prompt) {
       set(closeConnectorAccountNamePrompt$);
     }
