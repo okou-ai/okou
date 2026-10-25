@@ -172,14 +172,3 @@ private func previewController(in controller: UIViewController) -> QLPreviewCont
   }
   return controller.children.lazy.compactMap { previewController(in: $0) }.first
 }
-
-@MainActor
-private func attachScreenshot(_ window: UIWindow, name: String) {
-  let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-  }
-  let attachment = XCTAttachment(image: image)
-  attachment.name = name
-  attachment.lifetime = .keepAlways
-  XCTContext.runActivity(named: name) { $0.add(attachment) }
-}
