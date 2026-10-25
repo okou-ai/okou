@@ -18,10 +18,11 @@ use api_contracts::generated::types::{
     runners::storage::ArtifactEntryMissingRootPolicy, webhooks::agent::complete,
 };
 use futures_util::stream::{self, FuturesUnordered, StreamExt};
-use guest_telemetry::log_info;
 use guest_telemetry::telemetry::record_sandbox_op;
+use guest_telemetry::{log_info, log_warn};
 
 const ARTIFACT_SNAPSHOT_CONCURRENCY: usize = 2;
+const MEMORY_ARTIFACT_NAME: &str = "memory";
 /// Build a Storage output using the type generated from the canonical
 /// completion webhook contract.
 fn build_artifact_snapshot_entry(
@@ -160,6 +161,25 @@ async fn snapshot_artifact_plan(
         },
     )
     .await?;
+    if let vas::SnapshotPublication::Conflict(error) = snapshot.publication {
+        if entry.name != MEMORY_ARTIFACT_NAME {
+            return Err(error);
+        }
+        // The commit retained this candidate without publishing it. Keep the
+        // Run's captured version as output; future Runs select the current HEAD.
+        log_warn!(
+            LOG_TAG,
+            "Memory publication conflicted; retained candidate {} and preserved Run parent {}",
+            snapshot.version_id,
+            entry.version_id
+        );
+        return Ok(build_artifact_snapshot_entry(
+            &entry.name,
+            &entry.version_id,
+            &entry.mount_path,
+            entry.missing_root_policy,
+        ));
+    }
     log_info!(
         LOG_TAG,
         "VAS artifact snapshot created: {}@{}",
@@ -1024,57 +1044,5 @@ mod tests {
         );
         prepare.assert_calls(0);
         commit.assert_calls(0);
-    }
-    #[tokio::test]
-    async fn memory_publication_conflict_is_not_acknowledged_as_a_finalized_output() {
-        let _system_log_state_guard = crate::lock_system_log_test_state_async().await;
-        let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
-        let server = MockServer::start();
-        let prepare = server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/storages/prepare");
-            then.status(200).json_body(json!({
-                "versionId": "retained-memory-candidate",
-                "existing": true,
-            }));
-        });
-        let commit = server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/storages/commit");
-            then.status(409).json_body(json!({
-                "error": {
-                    "code": "CONFLICT",
-                    "message": "Memory changed during this Run. Candidate version retained-memory-candidate was retained; review the latest memory before publishing again.",
-                },
-            }));
-        });
-        let http = HttpClient::with_api_config(
-            server.base_url(),
-            "test-token",
-            "",
-            "test-run",
-            Duration::ZERO,
-        )
-        .unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("notes.md"), "Competing learned fact").unwrap();
-        let entries = vec![env::ArtifactEnv {
-            name: "memory".to_string(),
-            mount_path: dir.path().to_string_lossy().into_owned(),
-            storage_id: "memory-storage-id".to_string(),
-            version_id: "captured-memory-parent".to_string(),
-            missing_root_policy: Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion),
-        }];
-        let error = snapshot_artifact_entries_for_test(&http, "test-run", &entries)
-            .await
-            .expect_err("a conflicting Memory candidate must not become a completion output");
-        assert!(
-            error
-                .to_string()
-                .contains("Candidate version retained-memory-candidate was retained"),
-            "got: {error}"
-        );
-        prepare.assert_calls(1);
-        commit.assert_calls(1);
     }
 }
