@@ -217,7 +217,7 @@ test("Arrowing to a type opens its preview too", async () => {
   await user.keyboard("{ArrowUp>2/}");
 
   await waitFor(() => {
-    expect(detailPane()).toHaveAttribute("data-category", "illustration");
+    expect(detailPane()).toHaveAttribute("data-category", "document");
   });
 });
 
@@ -429,6 +429,7 @@ test.each(COMPOSER_PATHS)(
     await waitFor(() => {
       expect(slashMenuButtonNames()).toStrictEqual([
         "Presentation",
+        "Document",
         "Illustration",
         "Website",
         `/${WORKFLOW_NAME}`,
@@ -458,7 +459,7 @@ test.each(COMPOSER_PATHS)(
 
     await user.keyboard("{ArrowDown}");
     expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
-    await user.keyboard("{ArrowDown>5/}");
+    await user.keyboard("{ArrowDown>6/}");
     expect(slashButton(`/${THIRD_WORKFLOW_NAME}`)).toHaveAttribute(
       "data-active",
       "true",
@@ -468,7 +469,7 @@ test.each(COMPOSER_PATHS)(
       "data-active",
       "true",
     );
-    await user.keyboard("{ArrowUp>4/}{Enter}");
+    await user.keyboard("{ArrowUp>5/}{Enter}");
     await screen.findByRole("dialog");
     expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
@@ -488,6 +489,7 @@ test.each(COMPOSER_PATHS)(
         `/${THIRD_WORKFLOW_NAME}`,
         "Website",
         "Illustration",
+        "Document",
         "Presentation",
         "Browse all templates",
       ]);
@@ -500,13 +502,13 @@ test.each(COMPOSER_PATHS)(
     await user.keyboard("{ArrowUp}");
     expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
     await user.keyboard("{ArrowUp}");
-    expect(slashButton("Illustration")).toHaveAttribute("data-active", "true");
+    expect(slashButton("Document")).toHaveAttribute("data-active", "true");
   },
 );
 
 test.each([
-  { desktop: true, keys: "{ArrowUp>4/}", workflow: THIRD_WORKFLOW_NAME },
-  { desktop: false, keys: "{ArrowDown>4/}", workflow: WORKFLOW_NAME },
+  { desktop: true, keys: "{ArrowUp>5/}", workflow: THIRD_WORKFLOW_NAME },
+  { desktop: false, keys: "{ArrowDown>5/}", workflow: WORKFLOW_NAME },
 ])(
   "Keyboard navigation crosses from categories into workflows with desktop=$desktop",
   async ({ desktop, keys, workflow }) => {
@@ -613,7 +615,7 @@ test.each([true, false])(
     const user = userEvent.setup();
     const editor = await openManyWorkflows();
 
-    await user.keyboard(desktop ? "{ArrowDown>4/}" : "{ArrowDown>7/}");
+    await user.keyboard(desktop ? "{ArrowDown>4/}" : "{ArrowDown>8/}");
     expect(slashButton("/daily-12")).toHaveAttribute("data-active", "true");
     expect(querySlashButton("/daily-2")).toBeNull();
 
@@ -707,7 +709,7 @@ test.each(COMPOSER_PATHS)(
 
     await user.keyboard("{ArrowUp}");
     expect(
-      within(menu).getByRole("region", { name: "Illustration" }),
+      within(menu).getByRole("region", { name: "Document" }),
     ).toBeInTheDocument();
     const website = slashButton("Website");
     fireEvent.mouseOver(website);
