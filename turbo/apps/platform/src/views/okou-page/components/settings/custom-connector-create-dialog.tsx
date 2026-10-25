@@ -1451,11 +1451,7 @@ export function CustomConnectorCreateDialog({
       return;
     }
     detach(
-      (async () => {
-        const created = await createConnector(buildCreateBody(form), signal);
-        close();
-        onCreated?.(created);
-      })(),
+      createConnector(buildCreateBody(form), onCreated, signal),
       Reason.DomCallback,
     );
   };
