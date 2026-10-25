@@ -1989,18 +1989,12 @@ describe("Official Workflow failure recovery", () => {
   async function failScheduleOccurrence(
     actor: ApiTestUser,
     automation: WorkflowAutomationSummary,
-    runnerGroup: ReturnType<typeof runs.configureRunnerGroup>,
   ) {
     if (!automation.nextRunAt) {
       throw new Error("Expected the next schedule occurrence");
     }
     const scheduledAt = new Date(automation.nextRunAt).getTime();
-    // The scheduler and heartbeat own separate clock scopes. Complete both
-    // before claiming the same genuine scheduled Run.
-    const [fired] = await Promise.all([
-      fireOfficialSchedule(actor, automation),
-      runs.heartbeatRunner(runnerGroup),
-    ]);
+    const fired = await fireOfficialSchedule(actor, automation);
     mockNow(scheduledAt + 1000);
     const claim = await runs.claimRunnerJob(fired.runId);
     await webhooks.requestAgentComplete(
@@ -2073,8 +2067,10 @@ describe("Official Workflow failure recovery", () => {
     }
     const runnerGroup = runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
+    // One live Runner handles all three sequential failed occurrences.
+    await runs.heartbeatRunner(runnerGroup);
     for (let failure = 0; failure < 3; failure += 1) {
-      automation = await failScheduleOccurrence(actor, automation, runnerGroup);
+      automation = await failScheduleOccurrence(actor, automation);
     }
     expect(automation).toMatchObject({
       enabled: false,
@@ -2295,8 +2291,9 @@ describe("Official Workflow failure recovery", () => {
     ).body;
     const runnerGroup = runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
+    await runs.heartbeatRunner(runnerGroup);
     for (let failure = 0; failure < 3; failure += 1) {
-      automation = await failScheduleOccurrence(actor, automation, runnerGroup);
+      automation = await failScheduleOccurrence(actor, automation);
     }
     expect(automation).toMatchObject({ enabled: false, nextRunAt: null });
     mockNow(new Date("2030-01-02T00:00:00.000Z"));
