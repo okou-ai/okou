@@ -55,11 +55,10 @@ struct ChatSidebarView: View {
   var body: some View {
     NavigationStack {
       sidebarList
+        .navigationTitle(workspaceName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleMenu { workspaceActions }
         .toolbar {
-          ToolbarItem(placement: .topBarLeading) {
-            workspaceSwitcher
-          }
           ToolbarItem(placement: .topBarTrailing) {
             Button("Search", systemImage: "magnifyingglass") { store.search.present() }
               .accessibilityIdentifier("search-chats")
@@ -114,37 +113,23 @@ struct ChatSidebarView: View {
     }
   }
 
-  private var workspaceSwitcher: some View {
-    Menu {
-      ForEach(authentication.workspaces) { workspace in
-        Button {
-          Task {
-            do { try await authentication.switchWorkspace(workspace.id) } catch {
-              accountError = error.localizedDescription
-            }
-          }
-        } label: {
-          if workspace.id == workspaceID {
-            Label(workspace.name, systemImage: "checkmark")
-          } else {
-            Text(workspace.name)
+  private var workspaceActions: some View {
+    ForEach(authentication.workspaces) { workspace in
+      Button {
+        Task {
+          do { try await authentication.switchWorkspace(workspace.id) } catch {
+            accountError = error.localizedDescription
           }
         }
+      } label: {
+        if workspace.id == workspaceID {
+          Label(workspace.name, systemImage: "checkmark")
+        } else {
+          Text(workspace.name)
+        }
       }
-    } label: {
-      HStack(spacing: 9) {
-        Text(workspaceName)
-          .font(.system(size: 22, weight: .semibold))
-          .lineLimit(1)
-        Image(systemName: "chevron.down")
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(.secondary)
-      }
-      .contentShape(Rectangle())
+      .disabled(authentication.isSwitchingWorkspace)
     }
-    .buttonStyle(.plain)
-    .disabled(authentication.isSwitchingWorkspace || authentication.workspaces.isEmpty)
-    .accessibilityLabel("Workspace: \(workspaceName)")
   }
 
   private var pinnedAgentsSection: some View {
