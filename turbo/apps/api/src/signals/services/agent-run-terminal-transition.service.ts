@@ -9,6 +9,7 @@ import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account"
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { command } from "ccstate";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import {
   and,
   count,
@@ -121,13 +122,6 @@ const cancelledRunFields = Object.freeze({
   startedAt: agentRuns.startedAt,
 });
 
-function cancellableRunConditions(run: {
-  readonly id: string;
-  readonly status: string;
-}): readonly [SQL, ...SQL[]] {
-  return [eq(agentRuns.id, run.id), eq(agentRuns.status, run.status)];
-}
-
 function cancellationOwnerCondition(
   runId: string,
   owner: Pick<CancelRunArgs, "userId" | "orgId" | "userRequested">,
@@ -148,101 +142,328 @@ function cancellationOwnerCondition(
   );
 }
 
-/**
- * The cancellation mutation owner. Classify under the existing tenant-scoped
- * Run lock, then commit terminal state, attached cleanup and queue deletion
- * together. Never-started slot release is the last SQL statement; started
- * Runs retain their slots until Runner completion. Recovery and hard-upgrade
- * behavior remain distinct from the post-commit side-effect dispatcher.
- */
+const cancellationLockedRows = alias(agentRuns, "cancellation_locked_run");
+const cancellationTerminalRows = alias(agentRuns, "cancellation_terminal_runs");
+
+function cancellationTerminalValues(
+  apiStartTime: number,
+  mode: RunnerCancellationMode,
+) {
+  return {
+    status: "cancelled" as const,
+    completedAt: new Date(apiStartTime),
+    runnerCancellationMode: sql`CASE WHEN ${isNull(cancellationLockedRows.cancellationRecoveryCompleted)} THEN 'hard' ELSE ${mode} END`,
+  };
+}
+
+function cancellationTerminalCondition() {
+  // Use the locking CTE's returned state. A target-status predicate can discard
+  // an older snapshot tuple before EvalPlanQual visits its updated version.
+  return and(
+    eq(agentRuns.id, cancellationLockedRows.id),
+    inArray(cancellationLockedRows.status, ["pending", "running"]),
+  );
+}
+
+function cancellationHardUpgradeCondition(
+  args: Pick<
+    CancelRunArgs,
+    "preserveExistingCancellation" | "runnerCancellationMode"
+  >,
+) {
+  return and(
+    eq(agentRuns.id, cancellationLockedRows.id),
+    eq(cancellationLockedRows.status, "cancelled"),
+    !args.preserveExistingCancellation && args.runnerCancellationMode === "hard"
+      ? or(
+          isNull(cancellationLockedRows.runnerCancellationMode),
+          notInArray(cancellationLockedRows.runnerCancellationMode, ["hard"]),
+        )
+      : sql`false`,
+  );
+}
+
+function cancellationAccountCleanupCondition() {
+  const query = new QueryBuilder();
+  return and(
+    isNotNull(modelProviderAccounts.disconnectedAt),
+    gte(
+      query.select({ count: count() }).from(sql`cancellation_run_billing`),
+      0,
+    ),
+    gte(
+      query
+        .select({ count: count() })
+        .from(sql`cancellation_removed_diagnostics`),
+      0,
+    ),
+    sql`EXISTS (
+    SELECT 1 FROM cancellation_terminal_runs
+    WHERE cancellation_terminal_runs.model_provider_id = ${modelProviderAccounts.id}
+      AND cancellation_terminal_runs.org_id = ${modelProviderAccounts.orgId}
+      AND cancellation_terminal_runs.user_id = ${modelProviderAccounts.userId}
+  ) AND NOT EXISTS (
+    SELECT 1 FROM ${agentRuns}
+    WHERE ${eq(agentRuns.modelProviderId, modelProviderAccounts.id)}
+      AND ${eq(agentRuns.orgId, modelProviderAccounts.orgId)}
+      AND ${eq(agentRuns.userId, modelProviderAccounts.userId)}
+      AND ${agentRuns.status} IN ('pending', 'running')
+      AND NOT EXISTS (
+        SELECT 1 FROM cancellation_terminal_runs
+        WHERE cancellation_terminal_runs.id = ${agentRuns.id}
+      )
+  )`,
+  );
+}
+
+function cancellationProviderCleanupCondition() {
+  return sql`${modelProviders.id} IN (
+    SELECT model_provider_id FROM cancellation_removed_accounts
+  ) AND NOT EXISTS (
+    SELECT 1 FROM ${modelProviderAccounts}
+    WHERE ${eq(modelProviderAccounts.modelProviderId, modelProviders.id)}
+      AND NOT EXISTS (
+        SELECT 1 FROM cancellation_removed_accounts
+        WHERE cancellation_removed_accounts.id = ${modelProviderAccounts.id}
+      )
+  )`;
+}
+
+function cancellationJobCleanupCondition() {
+  const query = new QueryBuilder();
+  return and(
+    inArray(
+      runnerJobQueue.runId,
+      query
+        .select({
+          id: sql`${cancellationTerminalRows.id}`.mapWith(agentRuns.id),
+        })
+        .from(sql`cancellation_terminal_runs`),
+    ),
+    gte(
+      query.select({ count: count() }).from(sql`cancellation_run_billing`),
+      0,
+    ),
+    gte(
+      query
+        .select({ count: count() })
+        .from(sql`cancellation_removed_diagnostics`),
+      0,
+    ),
+    gte(
+      query
+        .select({ count: count() })
+        .from(sql`cancellation_removed_providers`),
+      0,
+    ),
+  );
+}
+
+function cancellationSlotReleaseCondition() {
+  const query = new QueryBuilder();
+  return and(
+    inArray(
+      activeAgentRuns.runId,
+      query
+        .select({
+          id: sql`${cancellationTerminalRows.id}`.mapWith(agentRuns.id),
+        })
+        .from(sql`cancellation_terminal_runs`)
+        .where(isNull(cancellationTerminalRows.startedAt)),
+    ),
+    gte(
+      query.select({ count: count() }).from(sql`cancellation_run_billing`),
+      0,
+    ),
+    gte(
+      query
+        .select({ count: count() })
+        .from(sql`cancellation_removed_diagnostics`),
+      0,
+    ),
+    gte(
+      query
+        .select({ count: count() })
+        .from(sql`cancellation_removed_providers`),
+      0,
+    ),
+    gte(
+      query.select({ count: count() }).from(sql`cancellation_removed_jobs`),
+      0,
+    ),
+  );
+}
+
+type CommittedCancellationRow = LockedCancellationRun & {
+  readonly runnerCancellationMode: RunnerCancellationMode | null;
+  readonly terminalRunId: string | null;
+  readonly upgradedRunId: string | null;
+  readonly releasedOrgId: string | null;
+};
+
+function committedCancellationResult(
+  run: CommittedCancellationRow | undefined,
+  args: CancelRunArgs,
+  apiStartTime: number,
+) {
+  if (!run) {
+    return notFound(`No such run: '${args.runId}'`);
+  }
+  if (run.status === "cancelled") {
+    const changed = run.upgradedRunId !== null;
+    return cancellationResult(
+      run,
+      apiStartTime,
+      changed ? "hard" : run.runnerCancellationMode,
+      changed,
+      true,
+    );
+  }
+  if (!isActiveStatus(run.status)) {
+    return runNotCancellable(
+      `Run cannot be cancelled: current status is '${run.status}'`,
+    );
+  }
+  if (run.terminalRunId === null) {
+    throw new Error("Locked cancellable run was not updated");
+  }
+  const mode =
+    run.cancellationRecoveryCompleted === null
+      ? "hard"
+      : args.runnerCancellationMode;
+  return cancellationResult(run, apiStartTime, mode, true, false);
+}
+
+/** The original tenant-scoped Run lock classifies current state, followed by
+ * one atomic terminal/billing/cleanup/queue/slot statement. Started slots remain
+ * held. The entry's existing post-commit abort and scheduling order is retained. */
 export const cancelRun$ = command(
-  async (
-    { set },
-    args: CancelRunArgs,
-    signal: AbortSignal,
-  ): Promise<
-    | ReturnType<typeof notFound>
-    | ReturnType<typeof runNotCancellable>
-    | CancelRunResult
-  > => {
+  async ({ set }, args: CancelRunArgs, signal: AbortSignal) => {
     const apiStartTime = args.apiStartTime ?? now();
-    const runId = args.runId.toLowerCase();
     const writeDb = set(writeDb$);
-    let releasedSlots: readonly ReleasedRunSlot[] = [];
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0049; new non-billing transactions are prohibited.
-    const transition = writeDb.transaction(async (tx) => {
-      const [run] = await tx
-        .select(lockedCancellationRunFields)
-        .from(agentRuns)
-        .where(cancellationOwnerCondition(runId, args))
-        .for("update");
-      if (!run) {
-        return notFound(`No such run: '${args.runId}'`);
-      }
-      if (run.status === "cancelled") {
-        const runnerCancellationChanged =
-          !args.preserveExistingCancellation &&
-          args.runnerCancellationMode === "hard" &&
-          run.runnerCancellationMode !== "hard";
-        if (runnerCancellationChanged) {
-          await tx
-            .update(agentRuns)
-            .set({ runnerCancellationMode: "hard" })
-            .where(eq(agentRuns.id, run.id));
-        }
-        return cancellationResult(
-          run,
-          apiStartTime,
-          runnerCancellationChanged ? "hard" : run.runnerCancellationMode,
-          runnerCancellationChanged,
-          true,
-        );
-      }
-      if (!isActiveStatus(run.status)) {
-        return runNotCancellable(
-          `Run cannot be cancelled: current status is '${run.status}'`,
-        );
-      }
-      const runnerCancellationMode =
-        run.cancellationRecoveryCompleted === null
-          ? "hard"
-          : args.runnerCancellationMode;
-      // The shared terminal transition also captures billing facts and
-      // removes attached diagnostics and disconnected personal accounts.
-      const transitions = await transitionAgentRunsToTerminal(tx, {
-        values: {
+    const locked = writeDb
+      .$with("cancellation_locked_run")
+      .as(
+        writeDb
+          .select(lockedCancellationRunFields)
+          .from(agentRuns)
+          .where(cancellationOwnerCondition(args.runId.toLowerCase(), args))
+          .for("update"),
+      );
+    const terminal = writeDb.$with("cancellation_terminal_runs").as(
+      writeDb
+        .update(agentRuns)
+        .set(
+          cancellationTerminalValues(apiStartTime, args.runnerCancellationMode),
+        )
+        .from(locked)
+        .where(cancellationTerminalCondition())
+        .returning({ ...cancelledRunFields }),
+    );
+    const hardUpgrade = writeDb
+      .$with("cancellation_hard_upgrade")
+      .as(
+        writeDb
+          .update(agentRuns)
+          .set({ runnerCancellationMode: "hard" })
+          .from(locked)
+          .where(cancellationHardUpgradeCondition(args))
+          .returning({ id: agentRuns.id }),
+      );
+    const billing = writeDb
+      .$with("cancellation_run_billing", { runId: billingRunAttribution.runId })
+      .as(
+        captureBillingRunTerminalSql({
+          condition: inArray(
+            agentRuns.id,
+            writeDb.select({ id: terminal.runId }).from(terminal),
+          ),
           status: "cancelled",
           completedAt: new Date(apiStartTime),
-          runnerCancellationMode,
-        },
-        conditions: cancellableRunConditions(run),
-      });
-      if (transitions.length === 0) {
-        throw new Error("Locked cancellable run was not updated");
-      }
-      await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, run.id));
-      // The active-row DELETE is the last SQL statement. A started Run keeps its slot.
-      const releasableRunIds = neverStartedRunIds(transitions);
-      if (releasableRunIds.length > 0) {
-        releasedSlots = await tx
-          .delete(activeAgentRuns)
-          .where(inArray(activeAgentRuns.runId, [...releasableRunIds]))
-          .returning({
-            runId: activeAgentRuns.runId,
-            orgId: activeAgentRuns.orgId,
-          });
-      }
-      return cancellationResult(
-        run,
-        apiStartTime,
-        runnerCancellationMode,
-        true,
-        false,
+        }),
       );
-    });
-    const result = await transition;
+    const diagnostics = writeDb.$with("cancellation_removed_diagnostics").as(
+      writeDb
+        .delete(agentRunConnectorDiagnosticRegistrations)
+        .where(
+          inArray(
+            agentRunConnectorDiagnosticRegistrations.runId,
+            writeDb.select({ id: terminal.runId }).from(terminal),
+          ),
+        )
+        .returning({ runId: agentRunConnectorDiagnosticRegistrations.runId }),
+    );
+    const accounts = writeDb.$with("cancellation_removed_accounts").as(
+      writeDb
+        .delete(modelProviderAccounts)
+        .where(cancellationAccountCleanupCondition())
+        .returning({
+          id: modelProviderAccounts.id,
+          modelProviderId: modelProviderAccounts.modelProviderId,
+        }),
+    );
+    const providers = writeDb
+      .$with("cancellation_removed_providers")
+      .as(
+        writeDb
+          .delete(modelProviders)
+          .where(cancellationProviderCleanupCondition())
+          .returning({ id: modelProviders.id }),
+      );
+    const jobs = writeDb
+      .$with("cancellation_removed_jobs")
+      .as(
+        writeDb
+          .delete(runnerJobQueue)
+          .where(cancellationJobCleanupCondition())
+          .returning({ runId: runnerJobQueue.runId }),
+      );
+    const released = writeDb.$with("cancellation_released_slots").as(
+      writeDb
+        .delete(activeAgentRuns)
+        .where(cancellationSlotReleaseCondition())
+        .returning({
+          runId: activeAgentRuns.runId,
+          orgId: activeAgentRuns.orgId,
+        }),
+    );
+    const [run] = await writeDb
+      .with(
+        locked,
+        terminal,
+        hardUpgrade,
+        billing,
+        diagnostics,
+        accounts,
+        providers,
+        jobs,
+        released,
+      )
+      .select({
+        id: locked.id,
+        status: locked.status,
+        userId: locked.userId,
+        orgId: locked.orgId,
+        sandboxId: locked.sandboxId,
+        runnerGroup: locked.runnerGroup,
+        runnerCancellationMode: locked.runnerCancellationMode,
+        chatThreadId: locked.chatThreadId,
+        cancellationRecoveryCompleted: locked.cancellationRecoveryCompleted,
+        terminalRunId: terminal.runId,
+        upgradedRunId: hardUpgrade.id,
+        releasedOrgId: released.orgId,
+      })
+      .from(locked)
+      .leftJoin(terminal, eq(terminal.runId, locked.id))
+      .leftJoin(hardUpgrade, eq(hardUpgrade.id, locked.id))
+      .leftJoin(released, eq(released.runId, locked.id));
     signal.throwIfAborted();
+    const result = committedCancellationResult(run, args, apiStartTime);
     // Only committed slot releases schedule picks, before other side effects.
+    const releasedSlots =
+      run === undefined || run.releasedOrgId === null
+        ? []
+        : [{ runId: run.id, orgId: run.releasedOrgId }];
     set(scheduleReleasedSlotPicks$, releasedSlots, signal);
     return result;
   },
