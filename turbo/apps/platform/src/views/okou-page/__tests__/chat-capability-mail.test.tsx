@@ -735,3 +735,60 @@ test("Open a trusted email card with safe, complete details", async () => {
   ).not.toBeInTheDocument();
   expect(Reflect.get(globalThis, "__privateMailExecuted")).toBeUndefined();
 });
+
+test("Deleting an earlier mail draft preserves the currently open mail", async () => {
+  const firstSubject = "First pending deletion";
+  const secondSubject = "Second current email";
+  const drafts = new Map<string, MailDraft>([
+    [FIRST_MAIL_ID, mailDraft(FIRST_MAIL_ID, { subject: firstSubject })],
+    [
+      SECOND_MAIL_ID,
+      mailDraft(SECOND_MAIL_ID, {
+        subject: secondSubject,
+        body: "Keep this email open.",
+      }),
+    ],
+  ]);
+  installCapabilityChat({
+    events: completedConversation(
+      `${mailCard(FIRST_MAIL_ID, firstSubject)}\n\n${mailCard(SECOND_MAIL_ID, secondSubject)}`,
+    ),
+  });
+  context.mocks.api(mailContract.getDraft, ({ params, respond }) => {
+    const draft = drafts.get(params.mailDraftId);
+    return draft
+      ? respond(200, mailResponse(params.mailDraftId, draft))
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Email not found" },
+        });
+  });
+  const started = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  context.mocks.api(mailContract.deleteDraft, async ({ params, respond }) => {
+    started.resolve();
+    await response.promise;
+    drafts.delete(params.mailDraftId);
+    return respond(204);
+  });
+  await setupPage({ context, path: RUN_PATH, host: APP_HOST });
+  await readyChat();
+  click(await findMailCard(firstSubject));
+  const first = await screen.findByRole("complementary", {
+    name: "Email details",
+  });
+  click(await findControl("button", "Delete", first));
+  await started.promise;
+  click(await findMailCard(secondSubject));
+  await screen.findByText("Keep this email open.");
+  response.resolve();
+  await waitFor(() => {
+    expect(screen.queryByText(firstSubject)).not.toBeInTheDocument();
+  });
+  const current = await screen.findByRole("complementary", {
+    name: "Email details",
+  });
+  expect(
+    within(current).getByText("Keep this email open."),
+  ).toBeInTheDocument();
+  expect(within(current).getByText(secondSubject)).toBeInTheDocument();
+});
