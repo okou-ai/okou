@@ -59,7 +59,9 @@ describe("Concurrency invoice publication", () => {
           type: "customer.subscription.updated",
           data: { object: canceling },
         };
-        context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+        context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+          event,
+        );
         await accept(
           setupApp({ context, routes: webhooksStripeRoutes })(
             webhookStripeContract,

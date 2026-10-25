@@ -114,7 +114,6 @@ import {
   useLastResolved,
   useLoadable,
   useLoadableState,
-  useResolved,
   useSet,
   type Loadable,
 } from "ccstate-react";
@@ -227,7 +226,6 @@ import {
   type ConnectorConnectSuccess,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { savePermissionDraftPolicies } from "../../signals/okou-page/settings/permission-grant-save.ts";
-import type { TemplatePreviewRuntime } from "../../signals/okou-page/template-preview-runtime.ts";
 import type { ComposerTemplateAttachment } from "../../signals/okou-page/tiptap-workflow-composer.ts";
 import { shouldUseUserMessage } from "../../signals/okou-page/user-message-document-codec.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -236,12 +234,7 @@ import { rootSignal$ } from "../../signals/root-signal.ts";
 import { sendMode$ } from "../../signals/send-mode.ts";
 import { openSkillImportDialog$ } from "../../signals/skill-import/skill-import-dialog.ts";
 import { activeUserPermissionGrantSnapshot } from "../../signals/user-permission-grants.ts";
-import {
-  Reason,
-  bestEffort,
-  detach,
-  onDomEventFn,
-} from "../../signals/utils.ts";
+import { Reason, detach, onDomEventFn } from "../../signals/utils.ts";
 import {
   audioInputAvailable$,
   audioInputQuota$,
@@ -385,7 +378,6 @@ const TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE = {
 const PRESENTATION_GALLERY_PREVIEW_BASE_URL =
   "https://static.okou.io/web/assets/presentation-gallery/2026-07-04";
 const PRESENTATION_GALLERY_SLIDE_COUNT = 15;
-const TEMPLATE_PREWARM_IMAGE_COUNT = 15;
 const IMPORTED_PRESENTATION_TEMPLATE_EAGER_THUMBNAIL_COUNT = 16;
 const ILLUSTRATION_EAGER_IMAGE_COUNT = 24;
 const ILLUSTRATION_CARD_PREVIEW_SIZE = {
@@ -1231,81 +1223,6 @@ function presentationTemplateDetailSlideImageSource(
     item.previewImages[index] ??
     presentationTemplateGallerySlideUrl(item, index)
   );
-}
-
-function prewarmTemplatePreviewImage(
-  runtime: TemplatePreviewRuntime,
-  url: string,
-): void {
-  if (typeof Image === "undefined") {
-    return;
-  }
-
-  const cachedImage = runtime.imagePreloads.get(url);
-  if (cachedImage !== undefined) {
-    return;
-  }
-
-  const image = new Image();
-  image.decoding = "async";
-  image.loading = "eager";
-  image.fetchPriority = "high";
-  image.src = url;
-  runtime.imagePreloads.set(url, image);
-  if (image.decode !== undefined) {
-    detach(bestEffort(image.decode()), Reason.DomCallback);
-  }
-}
-
-function prewarmTemplatePreviewImages(
-  runtime: TemplatePreviewRuntime,
-  imageUrls: readonly string[],
-): void {
-  for (const imageUrl of [...new Set(imageUrls)].slice(
-    0,
-    TEMPLATE_PREWARM_IMAGE_COUNT,
-  )) {
-    prewarmTemplatePreviewImage(runtime, imageUrl);
-  }
-}
-
-function presentationPreviewImageUrlsForItems(
-  items: readonly PresentationTemplateItem[],
-  themeIdBySlug: Readonly<Record<string, string>> = {},
-): string[] {
-  return items.map((item) => {
-    const theme = findPresentationTemplateTheme(
-      themeIdBySlug[item.slug] ?? defaultPresentationTemplateThemeId(item),
-    );
-    return presentationTemplateCardSlideImage(item, 0, theme);
-  });
-}
-
-function websitePreviewImageUrlsForItems(
-  items: readonly WebsiteTemplateItem[],
-): string[] {
-  return items.map((item) => {
-    return websiteTemplateCardImageUrl(item);
-  });
-}
-
-function initialTemplatePreviewImageUrlsForCategory({
-  category,
-  presentationThemeIdBySlug,
-}: {
-  category: string;
-  presentationThemeIdBySlug?: Readonly<Record<string, string>>;
-}): string[] {
-  if (category === "slides") {
-    return presentationPreviewImageUrlsForItems(
-      PRESENTATION_TEMPLATE_PICKER_ITEMS,
-      presentationThemeIdBySlug,
-    );
-  }
-  if (category === "website") {
-    return websitePreviewImageUrlsForItems(WEBSITE_TEMPLATE_ITEMS);
-  }
-  return [];
 }
 
 interface PresentationTemplateThemeOption {
@@ -4650,7 +4567,6 @@ function TemplatePickerDialogFrame({
   onChange,
   onClose,
   onCloseComplete,
-  onOpen,
   handleSelectPresentation,
   handleSelectImportedPresentation,
 }: {
@@ -4662,7 +4578,6 @@ function TemplatePickerDialogFrame({
   onChange: (value: GenerationTemplateRequest | undefined) => void;
   onClose: () => void;
   onCloseComplete: () => void;
-  onOpen: () => void;
   handleSelectPresentation: (
     item: PresentationTemplateItem,
     colorSystemId?: string,
@@ -4726,10 +4641,6 @@ function TemplatePickerDialogFrame({
       onOpenChangeComplete={(nextOpen) => {
         if (!nextOpen) {
           onCloseComplete();
-          return;
-        }
-        if (!isPreviewing) {
-          onOpen();
         }
       }}
     >
@@ -4789,7 +4700,6 @@ function TemplatePickerDialog({
   onClose,
   onCloseComplete,
   presentationItems,
-  runtime,
   signals,
 }: {
   value: GenerationTemplateRequest | undefined;
@@ -4797,7 +4707,6 @@ function TemplatePickerDialog({
   onClose: () => void;
   onCloseComplete: () => void;
   presentationItems: readonly PresentationTemplateItem[];
-  runtime: TemplatePreviewRuntime;
   signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
@@ -4869,26 +4778,6 @@ function TemplatePickerDialog({
         : t(($) => {
             return $.artifacts.kinds.image;
           });
-
-  const previewImageUrlsForCategory = (targetCategory: string) => {
-    if (targetCategory === "slides") {
-      return presentationPreviewImageUrlsForItems(
-        presentationItems,
-        cardThemeIdBySlug,
-      );
-    }
-    if (targetCategory === "website") {
-      return websitePreviewImageUrlsForItems(WEBSITE_TEMPLATE_ITEMS);
-    }
-    return [];
-  };
-
-  const prewarmTemplatePreviewsForCategory = (targetCategory: string) => {
-    prewarmTemplatePreviewImages(
-      runtime,
-      previewImageUrlsForCategory(targetCategory),
-    );
-  };
 
   const closeTemplatePicker = () => {
     onClose();
@@ -4970,12 +4859,6 @@ function TemplatePickerDialog({
     if (customTemplatesEnabled) {
       setSearch("");
     }
-    prewarmTemplatePreviewsForCategory(nextCategory);
-  };
-
-  const handleSearchChange = (value: string) => {
-    setSearch(value);
-    prewarmTemplatePreviewsForCategory(selectedCategory);
   };
 
   const presentationCards = presentationItems
@@ -5005,9 +4888,6 @@ function TemplatePickerDialog({
       onChange={onChange}
       onClose={closeTemplatePicker}
       onCloseComplete={completeTemplatePickerClose}
-      onOpen={() => {
-        prewarmTemplatePreviewsForCategory(selectedCategory);
-      }}
       handleSelectPresentation={handleSelectPresentation}
       handleSelectImportedPresentation={handleSelectImportedPresentation}
       gallery={(importedItems) => {
@@ -5060,7 +4940,7 @@ function TemplatePickerDialog({
                     {showTemplatePickerSearch ? (
                       <TemplatePickerSearch
                         search={search}
-                        onSearchChange={handleSearchChange}
+                        onSearchChange={setSearch}
                       />
                     ) : null}
                   </div>
@@ -5355,7 +5235,7 @@ function selectedComposerTemplateAttachment(
 
 /**
  * Which templates the picker should land on, what to call the affordance that
- * opens it from the add menu, and how to warm its covers.
+ * opens it from the add menu.
  */
 function useTemplatePickerTrigger(signals: ComposerSignals) {
   const { t } = useTranslation();
@@ -5365,8 +5245,6 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
     pickerFeatures[FeatureSwitchKey.CustomTemplates] === true;
   const createMode = useGet(signals.create.mode$);
   const openTemplatePicker = useSet(signals.template.openTemplatePicker$);
-  const cardThemeIdBySlug = useGet(signals.template.templateCardThemeIdBySlug$);
-  const runtime = signals.template.templatePreview;
   const templateMode = createMode === "image" ? "illustration" : createMode;
   const label =
     templateMode === "illustration"
@@ -5385,32 +5263,20 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
     customTemplatesEnabled,
     pickerFeatures[FeatureSwitchKey.BuiltinDocumentTemplates] === true,
   );
-  const prewarm = () => {
-    prewarmTemplatePreviewImages(
-      runtime,
-      initialTemplatePreviewImageUrlsForCategory({
-        category: selectedCategory,
-        presentationThemeIdBySlug: cardThemeIdBySlug,
-      }),
-    );
-  };
   const open = () => {
-    prewarm();
     openTemplatePicker({ kind: "insert", category: selectedCategory });
   };
-  return { label, prewarm, open };
+  return { label, open };
 }
 
 /** Shared dialog for the add menu, slash panel and inline template chips. */
 function TemplatePickerDialogSlot({
   picker,
   presentationItems,
-  runtime,
   signals,
 }: {
   picker: ComposerTemplatePicker;
   presentationItems: readonly PresentationTemplateItem[];
-  runtime: TemplatePreviewRuntime;
   signals: ComposerSignals;
 }) {
   const mounted = useGet(signals.template.templatePickerMounted$);
@@ -5435,7 +5301,6 @@ function TemplatePickerDialogSlot({
         completeClose();
       }}
       presentationItems={presentationItems}
-      runtime={runtime}
       signals={signals}
     />
   );
@@ -5447,7 +5312,6 @@ function ComposerTemplatePickerSlot({ signals }: { signals: ComposerSignals }) {
     <TemplatePickerDialogSlot
       picker={picker}
       presentationItems={PRESENTATION_TEMPLATE_PICKER_ITEMS}
-      runtime={signals.template.templatePreview}
       signals={signals}
     />
   );
@@ -5777,14 +5641,12 @@ function ComposerConnectorAccessRow({
 
 function ComposerConnectorAccountMenu({
   signals,
-  actions,
   target,
   connectorLabel,
   selectedConnection,
   explicit,
 }: {
   readonly signals: ComposerSignals;
-  readonly actions: ComposerConnectorActions;
   readonly target: ConnectorAccountTarget;
   readonly connectorLabel: string;
   readonly selectedConnection: ConnectorAccountConnection | undefined;
@@ -5862,7 +5724,6 @@ function ComposerConnectorAccountMenu({
         {open && (
           <ComposerConnectorAccountMenuContent
             signals={signals}
-            actions={actions}
             target={target}
             connectorLabel={connectorLabel}
           />
@@ -6037,12 +5898,10 @@ function ComposerConnectorAccountChoices({
 
 function ComposerConnectorAccountMenuContent({
   signals,
-  actions,
   target,
   connectorLabel,
 }: {
   readonly signals: ComposerSignals;
-  readonly actions: ComposerConnectorActions;
   readonly target: ConnectorAccountTarget;
   readonly connectorLabel: string;
 }) {
@@ -6056,7 +5915,9 @@ function ComposerConnectorAccountMenuContent({
   const search = useGet(signals.connector.accounts.search$);
   const closeMenu = useSet(signals.connector.accounts.closeMenu$);
   const setSearch = useSet(signals.connector.accounts.setSearch$);
-  const commitSelection = actions.commitAccountSelection;
+  const [saveOperation, commitSelection] = useLoadableSet(
+    signals.connector.accounts.commitSelection$,
+  );
   const [loadMoreLoadable, loadMore] = useLoadableSet(
     signals.connector.accounts.loadMore$,
   );
@@ -6097,7 +5958,6 @@ function ComposerConnectorAccountMenuContent({
     accountList.connections.length > CONNECTOR_ACCOUNT_SEARCH_THRESHOLD ||
     accountList.hasMultiplePages === true ||
     accountList.nextCursor !== null;
-  const saveOperation = useLoadable(signals.connector.accounts.saveOperation$);
   const saving = saveOperation.state === "loading";
   return (
     <Combobox.Root<string>
@@ -6272,11 +6132,9 @@ function deriveComposerConnectorPopoverState(args: {
 
 function ComposerConnectorAccountAction({
   signals,
-  actions,
   item,
 }: {
   readonly signals: ComposerSignals;
-  readonly actions: ComposerConnectorActions;
   readonly item: ComposerPopoverConnectorItem;
 }) {
   const preference = useLastResolved(
@@ -6296,7 +6154,6 @@ function ComposerConnectorAccountAction({
   return (
     <ComposerConnectorAccountMenu
       signals={signals}
-      actions={actions}
       target={target}
       connectorLabel={
         item.kind === "builtin"
@@ -6691,7 +6548,6 @@ function ComposerConnectorsPopoverBody({
                       actions={
                         <ComposerConnectorAccountAction
                           signals={signals}
-                          actions={actions}
                           item={item}
                         />
                       }
@@ -6726,7 +6582,6 @@ function ComposerConnectorsPopoverBody({
                 const accountAction = connector.authorized ? (
                   <ComposerConnectorAccountAction
                     signals={signals}
-                    actions={actions}
                     item={item}
                   />
                 ) : null;
@@ -7208,7 +7063,6 @@ function useComposerAddMenuGroups(
         Icon: SwatchBook,
         label: template.label,
         onSelect: template.open,
-        onPrewarm: template.prewarm,
       },
     ],
     [
@@ -8494,7 +8348,12 @@ function ComposerFooter({
   actions: ComposerActions;
   children: ReactNode;
 }) {
-  const voiceDraft = useResolved(signals.voice.state$);
+  const { t } = useTranslation();
+  const voiceDraftLoadable = useLoadable(signals.voice.state$);
+  const voiceDraft =
+    voiceDraftLoadable.state === "hasData"
+      ? voiceDraftLoadable.data
+      : undefined;
   const capture = useGet(signals.voice.capture$);
   const voiceAction = useComposerVoiceAction(signals);
   const status =
@@ -8506,7 +8365,9 @@ function ComposerFooter({
           ? "transcribing"
           : capture
             ? "recording"
-            : voiceDraft?.status;
+            : voiceDraftLoadable.state === "hasError"
+              ? "failed"
+              : voiceDraft?.status;
   const activeVoiceDraftStatus: Exclude<
     ComposerVoiceInputStatus,
     "idle"
@@ -8532,7 +8393,13 @@ function ComposerFooter({
           actions={actions}
           status={activeVoiceDraftStatus}
           recordingAvailable={Boolean(voiceDraft?.recording)}
-          voiceMessage={voiceDraft?.message}
+          voiceMessage={
+            voiceDraftLoadable.state === "hasError"
+              ? t(($) => {
+                  return $.chat.voice.storageFailed;
+                })
+              : voiceDraft?.message
+          }
         />
       ) : (
         children

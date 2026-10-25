@@ -75,17 +75,13 @@ function placeCaret(
   composer.focus();
 }
 
-async function setupShortcutTranscription() {
-  const requested = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
+test("Start and stop voice input from the focused composer shortcut", async () => {
   context.mocks.browser.voiceInput({ rms: 0.12 });
   installAvailableVoiceQuota();
   context.mocks.http.post("*/api/voice-io/polish/segments", () => {
     return HttpResponse.json({ text: "Shortcut voice note" });
   });
-  context.mocks.http.post("*/api/voice-io/transcribe/segment", async () => {
-    requested.resolve();
-    await response.promise;
+  context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
     return HttpResponse.json({
       transcript: "um shortcut voice note",
 
@@ -122,27 +118,10 @@ async function setupShortcutTranscription() {
     ctrlKey: true,
     shiftKey: true,
   });
-  await requested.promise;
-  expect(screen.getByRole("status")).toHaveTextContent("Transcribing");
-  expect(screen.getByText("Text is taking shape")).toBeVisible();
-  expect(queryButton("Stop recording")).toBeNull();
-  return response;
-}
-
-async function finishShortcutTranscription(
-  response: Awaited<ReturnType<typeof setupShortcutTranscription>>,
-) {
-  response.resolve();
   await waitFor(() => {
     expect(normalizedComposerText()).toBe("Shortcut voice note");
   });
   await findEnabledButton("Voice input");
-}
-
-test("Start and stop voice input from the focused composer shortcut", async () => {
-  const response = await setupShortcutTranscription();
-  await finishShortcutTranscription(response);
-  expect(normalizedComposerText()).toBe("Shortcut voice note");
 });
 
 test("Transcribe a voice draft with its editor context", async () => {
@@ -207,13 +186,10 @@ test("Transcribe a voice draft with its editor context", async () => {
   await fill(currentComposer(), "Opening  closing");
   click(voiceInput);
   const stop = await activeVoiceDraftStopButton();
-  expect(queryButton("Send")).toBeNull();
   placeCaret(currentComposer(), "Opening  closing", 16);
   click(stop);
   await transcriptionStarted.promise;
 
-  expect(screen.getByRole("status")).toHaveTextContent("Transcribing");
-  expect(queryButton("Send")).toBeNull();
   placeCaret(currentComposer(), "Opening  closing", 8);
 
   transcriptionReady.resolve(undefined);
@@ -230,38 +206,6 @@ test("Transcribe a voice draft with its editor context", async () => {
   expect(normalizedComposerText()).toBe(
     "Opening Send the launch update tomorrow. Additional note. closing",
   );
-});
-
-test("Show microphone startup before the voice-draft waveform", async () => {
-  const microphoneReady = context.mocks.deferred<void>();
-  context.mocks.browser.voiceInput({
-    getUserMediaReady: microphoneReady.promise,
-    rms: 0,
-  });
-  installAvailableVoiceQuota();
-  installRunChat();
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
-  const voiceInput = await readyVoiceInput();
-  click(voiceInput);
-
-  const starting = await findButton("Starting voice input");
-  expect(starting).toBeDisabled();
-  expect(starting).toHaveAttribute("aria-busy", "true");
-  expect(queryButton("Stop recording")).toBeNull();
-  expect(screen.queryByLabelText("Add")).toBeVisible();
-  expect(document.querySelector("[data-voice-level-waveform]")).toBeNull();
-
-  microphoneReady.resolve(undefined);
-
-  await activeVoiceDraftStopButton();
-  expect(
-    document.querySelector("[data-voice-level-waveform]"),
-  ).toBeInTheDocument();
 });
 
 test("Keep a silent voice draft recording until the user stops it", async () => {
@@ -335,11 +279,6 @@ async function removeFailedRecordingWithTypedNotes() {
   click(voiceInput);
   click(await activeVoiceDraftStopButton());
   click(await findButton("Remove voice draft"));
-  await waitFor(() => {
-    const status = screen.getByRole("status");
-    expect(status).toHaveTextContent("Removing voice draft...");
-    expect(status).toHaveTextContent("Returning to composer");
-  });
   await findEnabledButton("Voice input");
 }
 

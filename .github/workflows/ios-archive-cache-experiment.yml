@@ -1,0 +1,94 @@
+name: iOS Release Archive Cache Experiment
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Cold seed, warm reuse, or uncached baseline
+        type: choice
+        options: [seed, warm, baseline]
+        default: warm
+      label:
+        description: Measurement label
+        type: string
+        default: warm
+  workflow_call:
+    inputs:
+      mode:
+        type: string
+        required: true
+      label:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  npm_config_audit: "false"
+
+jobs:
+  measure:
+    name: ${{ inputs.label }}
+    runs-on: xcode-27
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+      IOS_ARCHIVE_CACHE_MODE: ${{ inputs.mode }}
+      IOS_ARCHIVE_CACHE_LABEL: ${{ inputs.label }}
+      IOS_ARCHIVE_CACHE_ENABLED: ${{ inputs.mode != 'baseline' && 'true' || 'false' }}
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: http.version
+      GIT_CONFIG_VALUE_0: HTTP/1.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Pin archive inputs and start measurement
+        run: python3 ops/ios-archive-cache/measure.py prepare
+      - name: Restore persistent Release archive caches
+        id: cache
+        if: inputs.mode != 'baseline'
+        uses: ./.github/actions/setup-ios-build-cache
+        with:
+          target: archive
+      - name: Require exact warm cache reuse
+        if: inputs.mode == 'warm'
+        env:
+          DEPENDENCIES_HIT: ${{ steps.cache.outputs.dependencies-hit }}
+          COMPILATION_HIT: ${{ steps.cache.outputs.compilation-hit }}
+        run: test "$DEPENDENCIES_HIT" = true && test "$COMPILATION_HIT" = true
+      - name: Build and validate a fresh device Release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ios/scripts/build-archive.sh 2>&1 | tee "$IOS_ARCHIVE_MEASUREMENT_DIR/build.log"
+      # Diagnostic writes are scoped to this dispatch ref by GitHub's cache service.
+      # Normal shared-cache writers remain restricted to main in ios-build-cache.yml.
+      - name: Save Release dependency cache
+        if: inputs.mode == 'seed' && steps.cache.outputs.dependencies-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.cache.outputs.dependencies-path }}
+          key: ${{ steps.cache.outputs.dependencies-key }}
+      - name: Save Release compiler cache
+        if: inputs.mode == 'seed' && steps.cache.outputs.compilation-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.cache.outputs.compilation-path }}
+          key: ${{ steps.cache.outputs.compilation-key }}
+      - name: Record measurements including cache saves
+        env:
+          IOS_CACHE_DEPENDENCIES_HIT: ${{ steps.cache.outputs.dependencies-hit }}
+          IOS_CACHE_COMPILATION_HIT: ${{ steps.cache.outputs.compilation-hit }}
+        run: python3 ops/ios-archive-cache/measure.py report
+      - name: Retain archive measurements
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-release-cache-${{ inputs.label }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ios-archive-cache-measurement
+          if-no-files-found: error
+          retention-days: 7

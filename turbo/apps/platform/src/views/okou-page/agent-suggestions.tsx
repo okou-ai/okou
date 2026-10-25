@@ -1,4 +1,5 @@
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -14,7 +15,6 @@ import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import {
   agentSuggestionIndex$,
-  agentSuggestionOperation$,
   agentSuggestionRecoveryId$,
   dismissAgentSuggestion$,
   showAgentSuggestion$,
@@ -66,9 +66,8 @@ function AgentSuggestionHeader({
   readonly total: number;
 }) {
   const { t } = useTranslation();
-  const dismiss = useSet(dismissAgentSuggestion$);
-  const operation = useLoadable(agentSuggestionOperation$);
-  const starting = operation.state === "loading";
+  const [dismissal, dismiss] = useLoadableSet(dismissAgentSuggestion$);
+  const dismissing = dismissal.state === "loading";
   const show = useSet(showAgentSuggestion$);
   const signal = useGet(pageSignal$);
   return (
@@ -88,7 +87,7 @@ function AgentSuggestionHeader({
           size="icon-xs"
           showTooltip
           focusableWhenDisabled
-          disabled={starting || total <= 1}
+          disabled={dismissing || total <= 1}
           className={PAGER}
           aria-label={t(($) => {
             return $.chat.agentSuggestions.previous;
@@ -105,7 +104,7 @@ function AgentSuggestionHeader({
           size="icon-xs"
           showTooltip
           focusableWhenDisabled
-          disabled={starting || total <= 1}
+          disabled={dismissing || total <= 1}
           className={PAGER}
           aria-label={t(($) => {
             return $.chat.agentSuggestions.next;
@@ -125,7 +124,7 @@ function AgentSuggestionHeader({
           aria-label={t(($) => {
             return $.chat.agentSuggestions.dismiss;
           })}
-          disabled={starting}
+          disabled={dismissing}
           onClick={() => {
             detach(dismiss(item, signal), Reason.DomCallback);
           }}
@@ -140,8 +139,7 @@ function AgentSuggestionHeader({
 export function AgentSuggestions() {
   const { t } = useTranslation();
   const result = useLastLoadable(visibleAgentSuggestions$);
-  const start = useSet(startAgentSuggestion$);
-  const operation = useLoadable(agentSuggestionOperation$);
+  const [operation, start] = useLoadableSet(startAgentSuggestion$);
   const starting = operation.state === "loading";
   const recoveryId = useGet(agentSuggestionRecoveryId$);
   const signal = useGet(pageSignal$);
@@ -170,7 +168,7 @@ export function AgentSuggestions() {
       {behind >= 1 && (
         <div aria-hidden className={cn(DECK_EDGE, "inset-x-3 bottom-1.5")} />
       )}
-      <div className="relative">
+      <fieldset disabled={starting} className="relative min-w-0">
         <Button
           key={item.id}
           type="button"
@@ -227,7 +225,7 @@ export function AgentSuggestions() {
           )}
         </Button>
         <AgentSuggestionHeader item={item} index={index} total={items.length} />
-      </div>
+      </fieldset>
     </section>
   );
 }

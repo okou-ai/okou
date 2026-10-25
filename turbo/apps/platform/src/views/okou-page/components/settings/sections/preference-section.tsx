@@ -10,10 +10,6 @@ import {
 } from "../../../../../signals/theme.ts";
 import { TimezoneSettings } from "../timezone-settings.tsx";
 import { MorningBriefSettings } from "../morning-brief-settings.tsx";
-import {
-  ProactiveSuggestionsSettings,
-  ProactiveJobsSettings,
-} from "../proactive-settings.tsx";
 import { EmailSubscriptionSettings } from "../email-subscription-settings.tsx";
 import { SettingsSectionHeading } from "../settings-section-heading.tsx";
 import { AccountSection } from "./account-section.tsx";
@@ -119,8 +115,6 @@ export function PreferenceSection() {
         >
           <EmailSubscriptionSettings />
           <MorningBriefSettings />
-          <ProactiveSuggestionsSettings />
-          <ProactiveJobsSettings />
         </div>
       </section>
 

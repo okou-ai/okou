@@ -7,12 +7,14 @@ import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/mode
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, count, eq, exists, ne, notExists, or, sql } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   nullableDriverValueDecoder,
+  pgIntegerDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
-import { isForeignKeyViolation } from "../../lib/pg-errors";
+import { isForeignKeyViolation, safeSqlStateCode } from "../../lib/pg-errors";
 import { settle } from "../utils";
 import { writeDb$ } from "../external/db";
 import {
@@ -20,6 +22,8 @@ import {
   managedAttributionQuery,
   managedAttributionWrite,
   managedBillingRunQuery,
+  type BillingAttribution,
+  type BillingRun,
 } from "./managed-usage-attribution";
 
 interface ProviderUsageBatch {
@@ -93,6 +97,72 @@ function billableRunnerEvents(
     });
 }
 
+function runnerUsageRunQuery(
+  args: Pick<RunnerUsageBatch, "runId" | "orgId" | "userId">,
+) {
+  return new QueryBuilder()
+    .select({
+      id: agentRuns.id,
+      orgId: agentRuns.orgId,
+      userId: agentRuns.userId,
+      startedAt: sql`${agentRuns.createdAt}::text`
+        .mapWith(pgTextDecoder)
+        .as("started_at"),
+      triggerSource: agentRuns.triggerSource,
+      threadId: agentRuns.chatThreadId,
+      status: agentRuns.status,
+      billingCompletedAt: sql`${agentRuns.completedAt}::text`
+        .mapWith(nullableDriverValueDecoder(pgTextDecoder))
+        .as("billing_completed_at"),
+      modelProvider: agentRuns.modelProvider,
+      selectedModel: agentRuns.selectedModel,
+      modelRuntimeModel: agentRuns.modelRuntimeModel,
+      modelUsageProvider: agentRuns.modelUsageProvider,
+    })
+    .from(agentRuns)
+    .where(
+      and(
+        eq(agentRuns.id, args.runId),
+        eq(agentRuns.orgId, args.orgId),
+        eq(agentRuns.userId, args.userId),
+      ),
+    )
+    .as("runner_usage_run");
+}
+
+function preparedRunnerUsageValues(
+  args: RunnerUsageBatch,
+  events: ProviderUsageBatch["events"],
+  run: BillingRun,
+  attribution: BillingAttribution | undefined,
+) {
+  const capture = attribution
+    ? undefined
+    : managedAttributionWrite({ actor: args }, run);
+  const expectedAttribution = attribution ?? {
+    runId: run.id,
+    orgId: run.orgId,
+    userId: run.userId,
+    startedAt: run.startedAt,
+  };
+  const identity = attributedUsageIdentity(
+    { actor: args },
+    run,
+    expectedAttribution,
+  );
+  return {
+    capture,
+    values: events.map((event) => {
+      return {
+        ...event,
+        ...identity,
+        orgId: args.orgId,
+        userId: args.userId,
+      };
+    }),
+  };
+}
+
 /** A Runner batch retains its live owner and commits captured identity with its events. */
 export const recordRunnerUsageBatch$ = command(
   async (
@@ -103,33 +173,8 @@ export const recordRunnerUsageBatch$ = command(
     const db = set(writeDb$);
     signal.throwIfAborted();
     const outcome = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0234; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        const [run] = await tx
-          .select({
-            id: agentRuns.id,
-            orgId: agentRuns.orgId,
-            userId: agentRuns.userId,
-            startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
-            triggerSource: agentRuns.triggerSource,
-            threadId: agentRuns.chatThreadId,
-            status: agentRuns.status,
-            billingCompletedAt: sql`${agentRuns.completedAt}::text`
-              .mapWith(nullableDriverValueDecoder(pgTextDecoder))
-              .as("billing_completed_at"),
-            modelProvider: agentRuns.modelProvider,
-            selectedModel: agentRuns.selectedModel,
-            modelRuntimeModel: agentRuns.modelRuntimeModel,
-            modelUsageProvider: agentRuns.modelUsageProvider,
-          })
-          .from(agentRuns)
-          .where(
-            and(
-              eq(agentRuns.id, args.runId),
-              eq(agentRuns.orgId, args.orgId),
-              eq(agentRuns.userId, args.userId),
-            ),
-          );
+      (async () => {
+        const [run] = await db.select().from(runnerUsageRunQuery(args));
         if (!run) {
           throw new RunnerUsageRunMissingError("Run not found");
         }
@@ -137,60 +182,111 @@ export const recordRunnerUsageBatch$ = command(
         if (events.length === 0) {
           return;
         }
-        let [attribution] = await tx
+        const [attribution] = await db
           .select()
           .from(managedAttributionQuery(args.runId));
-        if (!attribution) {
-          const capture = managedAttributionWrite({ actor: args }, run);
-          [attribution] = await tx
-            .insert(billingRunAttribution)
-            .values(capture.values)
-            .onConflictDoUpdate(capture.conflict)
-            .returning({
-              runId: billingRunAttribution.runId,
-              orgId: billingRunAttribution.orgId,
-              userId: billingRunAttribution.userId,
-              startedAt:
-                sql`${billingRunAttribution.runStartedAt}::text`.mapWith(
-                  pgTextDecoder,
-                ),
-            });
-          if (!attribution) {
-            throw new Error("Runner usage attribution conflicts with history");
-          }
-        }
-        const identity = attributedUsageIdentity(
-          { actor: args },
+        const { capture, values } = preparedRunnerUsageValues(
+          args,
+          events,
           run,
           attribution,
         );
-        const inserted = await tx
-          .insert(usageEvent)
-          .values(
-            events.map((event) => {
-              return {
-                ...event,
-                ...identity,
-                orgId: args.orgId,
-                userId: args.userId,
-              };
-            }),
-          )
-          .onConflictDoNothing({ target: usageEvent.idempotencyKey })
-          .returning({ id: usageEvent.id });
-        if (inserted.length > 0) {
-          await tx
+        signal.throwIfAborted();
+        if (capture) {
+          const expectedInsert = providerBatchInsertionExpected(values);
+          const captured = db.$with("runner_captured_attribution").as(
+            db
+              .insert(billingRunAttribution)
+              .values({ ...capture.values, usageObserved: expectedInsert })
+              .onConflictDoUpdate({
+                ...capture.conflict,
+                set: {
+                  ...capture.conflict.set,
+                  usageObserved: or(
+                    eq(billingRunAttribution.usageObserved, true),
+                    expectedInsert,
+                  ),
+                },
+              })
+              .returning({ runId: billingRunAttribution.runId }),
+          );
+          const captureCount = db.select({ value: count() }).from(captured);
+          const inserted = db.$with("runner_inserted_usage").as(
+            db
+              .insert(usageEvent)
+              .values(
+                values.map((value) => {
+                  return {
+                    ...value,
+                    // Resolve the real capture before any event's Run FK lock.
+                    quantity: sql`${sql.param(value.quantity, usageEvent.quantity)}::bigint / (${captureCount})`,
+                  };
+                }),
+              )
+              .onConflictDoNothing({ target: usageEvent.idempotencyKey })
+              .returning({ id: usageEvent.id }),
+          );
+          const insertedAny = exists(
+            db.select({ id: inserted.id }).from(inserted),
+          );
+          const query = db
+            .with(captured, inserted)
+            .select({
+              checked:
+                sql`1 / CASE WHEN ${ne(count(), 1)} THEN 0 WHEN ${ne(insertedAny, expectedInsert)} THEN 0 ELSE 1 END`.mapWith(
+                  pgIntegerDecoder,
+                ),
+            })
+            .from(captured);
+          // Re-execute once only after a definite guarded statement rollback,
+          // retaining this same filtered/sorted batch and captured Run context.
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            const published = await settle(
+              (async () => {
+                await query;
+              })(),
+            );
+            signal.throwIfAborted();
+            if (published.ok) {
+              return;
+            }
+            if (safeSqlStateCode(published.error) !== "22012") {
+              throw published.error;
+            }
+            if (attempt === 1) {
+              throw new Error(
+                "Runner usage attribution conflicts with history",
+              );
+            }
+          }
+        }
+        const inserted = db
+          .$with("runner_inserted_usage")
+          .as(
+            db
+              .insert(usageEvent)
+              .values(values)
+              .onConflictDoNothing({ target: usageEvent.idempotencyKey })
+              .returning({ id: usageEvent.id }),
+          );
+        const observed = db.$with("runner_observed_attribution").as(
+          db
             .update(billingRunAttribution)
             .set({ usageObserved: true })
             .where(
               and(
                 eq(billingRunAttribution.runId, args.runId),
                 eq(billingRunAttribution.usageObserved, false),
+                exists(db.select({ id: inserted.id }).from(inserted)),
               ),
-            );
-        }
+            ),
+        );
+        await db
+          .with(inserted, observed)
+          .select({ id: inserted.id })
+          .from(inserted);
         signal.throwIfAborted();
-      }),
+      })(),
       signal,
     );
     // usage_event.run_id is the only FK written here. Its implicit key-share
@@ -203,6 +299,56 @@ export const recordRunnerUsageBatch$ = command(
     }
   },
 );
+
+function providerBatchInsertionExpected(events: ProviderUsageBatch["events"]) {
+  return sql`(${sql.join(
+    events.map((event) => {
+      return notExists(
+        new QueryBuilder()
+          .select({ id: usageEvent.id })
+          .from(usageEvent)
+          .where(eq(usageEvent.idempotencyKey, event.idempotencyKey)),
+      );
+    }),
+    sql` OR `,
+  )})`;
+}
+
+function preparedProviderUsageValues(
+  args: ProviderUsageBatch,
+  actor: Pick<ProviderUsageBatch, "orgId" | "userId" | "runId">,
+  run: BillingRun | undefined,
+  attribution: BillingAttribution | undefined,
+) {
+  const capture =
+    !attribution && run ? managedAttributionWrite({ actor }, run) : undefined;
+  const expectedAttribution =
+    attribution ??
+    (capture && run
+      ? {
+          runId: run.id,
+          orgId: run.orgId,
+          userId: run.userId,
+          startedAt: run.startedAt,
+        }
+      : undefined);
+  const identity = attributedUsageIdentity({ actor }, run, expectedAttribution);
+  const values = args.events.map((event) => {
+    return {
+      ...event,
+      ...identity,
+      orgId: args.orgId,
+      userId: args.userId,
+      // An old generation with no original identity is not proof of runless usage.
+      ...(!actor.runId && args.billingContext !== "runless"
+        ? { billingContext: "legacy_unknown", billingAnchorAt: null }
+        : {}),
+      // Retained billing identity alone never restores a deleted content link.
+      runId: args.runId === undefined ? null : identity.runId,
+    };
+  });
+  return { capture, values };
+}
 
 /** One provider response's categories and captured billing identity commit together. */
 export const recordProviderUsageBatch$ = command(
@@ -221,71 +367,119 @@ export const recordProviderUsageBatch$ = command(
     const actor = { orgId: args.orgId, userId: args.userId, runId };
     const db = set(writeDb$);
     signal.throwIfAborted();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0235; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
+    await (async () => {
       const [run] = runId
-        ? await tx.select().from(managedBillingRunQuery(runId))
+        ? await db.select().from(managedBillingRunQuery(runId))
         : [];
-      let [attribution] = runId
-        ? await tx.select().from(managedAttributionQuery(runId))
+      const [attribution] = runId
+        ? await db.select().from(managedAttributionQuery(runId))
         : [];
-      if (!attribution && run) {
-        const capture = managedAttributionWrite({ actor }, run);
-        [attribution] = await tx
-          .insert(billingRunAttribution)
-          .values(capture.values)
-          .onConflictDoUpdate(capture.conflict)
-          .returning({
-            runId: billingRunAttribution.runId,
-            orgId: billingRunAttribution.orgId,
-            userId: billingRunAttribution.userId,
-            startedAt: sql`${billingRunAttribution.runStartedAt}::text`.mapWith(
-              pgTextDecoder,
-            ),
-          });
-        if (!attribution) {
-          throw new Error(
-            "Provider usage Run attribution conflicts with history",
+      const { capture, values } = preparedProviderUsageValues(
+        args,
+        actor,
+        run,
+        attribution,
+      );
+      signal.throwIfAborted();
+      if (capture) {
+        const expectedInsert = providerBatchInsertionExpected(values);
+        const captured = db.$with("provider_captured_attribution").as(
+          db
+            .insert(billingRunAttribution)
+            .values({ ...capture.values, usageObserved: expectedInsert })
+            .onConflictDoUpdate({
+              ...capture.conflict,
+              set: {
+                ...capture.conflict.set,
+                usageObserved: or(
+                  eq(billingRunAttribution.usageObserved, true),
+                  expectedInsert,
+                ),
+              },
+            })
+            .returning({ runId: billingRunAttribution.runId }),
+        );
+        const captureCount = db.select({ value: count() }).from(captured);
+        const inserted = db.$with("provider_inserted_usage").as(
+          db
+            .insert(usageEvent)
+            .values(
+              values.map((value) => {
+                return {
+                  ...value,
+                  // Resolve the actual capture before any event's Run FK lock.
+                  quantity: sql`${sql.param(value.quantity, usageEvent.quantity)}::bigint / (${captureCount})`,
+                };
+              }),
+            )
+            .onConflictDoNothing({ target: usageEvent.idempotencyKey })
+            .returning({ id: usageEvent.id }),
+        );
+        const insertedAny = exists(
+          db.select({ id: inserted.id }).from(inserted),
+        );
+        const query = db
+          .with(captured, inserted)
+          .select({
+            checked:
+              sql`1 / CASE WHEN ${ne(count(), 1)} THEN 0 WHEN ${ne(insertedAny, expectedInsert)} THEN 0 ELSE 1 END`.mapWith(
+                pgIntegerDecoder,
+              ),
+          })
+          .from(captured);
+        // Concurrent idempotency winners can invalidate the snapshot prediction.
+        // Retry this same atomic statement once, only after definite rollback.
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const published = await settle(
+            (async () => {
+              await query;
+            })(),
           );
+          signal.throwIfAborted();
+          if (published.ok) {
+            return;
+          }
+          if (safeSqlStateCode(published.error) !== "22012") {
+            throw published.error;
+          }
+          if (attempt === 1) {
+            throw new Error(
+              "Provider usage Run attribution conflicts with history",
+            );
+          }
         }
       }
-      const identity = attributedUsageIdentity({ actor }, run, attribution);
-      const inserted = await tx
-        .insert(usageEvent)
-        .values(
-          args.events.map((event) => {
-            return {
-              ...event,
-              ...identity,
-              orgId: args.orgId,
-              userId: args.userId,
-              // An old generation with no original identity is not proof of runless usage.
-              ...(!runId && args.billingContext !== "runless"
-                ? {
-                    billingContext: "legacy_unknown",
-                    billingAnchorAt: null,
-                  }
-                : {}),
-              // Retained billing identity alone never restores a deleted content link.
-              runId: args.runId === undefined ? null : identity.runId,
-            };
-          }),
-        )
-        .onConflictDoNothing({ target: usageEvent.idempotencyKey })
-        .returning({ id: usageEvent.id });
-      if (inserted.length > 0 && attribution) {
-        await tx
-          .update(billingRunAttribution)
-          .set({ usageObserved: true })
-          .where(
-            and(
-              eq(billingRunAttribution.runId, attribution.runId),
-              eq(billingRunAttribution.usageObserved, false),
+      const inserted = db
+        .$with("provider_inserted_usage")
+        .as(
+          db
+            .insert(usageEvent)
+            .values(values)
+            .onConflictDoNothing({ target: usageEvent.idempotencyKey })
+            .returning({ id: usageEvent.id }),
+        );
+      if (attribution) {
+        const observed = db.$with("provider_observed_attribution").as(
+          db
+            .update(billingRunAttribution)
+            .set({ usageObserved: true })
+            .where(
+              and(
+                eq(billingRunAttribution.runId, attribution.runId),
+                eq(billingRunAttribution.usageObserved, false),
+                exists(db.select({ id: inserted.id }).from(inserted)),
+              ),
             ),
-          );
+        );
+        await db
+          .with(inserted, observed)
+          .select({ id: inserted.id })
+          .from(inserted);
+      } else {
+        await db.with(inserted).select({ id: inserted.id }).from(inserted);
       }
       signal.throwIfAborted();
-    });
+    })();
     signal.throwIfAborted();
   },
 );

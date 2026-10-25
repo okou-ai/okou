@@ -128,6 +128,7 @@ export class MessagePortSharedDatabaseBridge implements SharedDatabaseBridge {
         this.pendingRealtimeSubscriptions
           .get(message.subscriptionId)
           ?.onResync();
+        await this.events.realtimeResynced?.();
         return;
       }
       if (message.type === "realtime-event") {
@@ -237,13 +238,19 @@ export class MessagePortSharedDatabaseBridge implements SharedDatabaseBridge {
 
   async getComputed<TKey extends ComputedKey>(
     computedKey: TKey,
+    options?: { readonly refresh?: boolean },
+    signal?: AbortSignal,
   ): Promise<ComputedValue<TKey>> {
     this.requireRegistration();
-    const value = await this.request({
-      type: "get-computed",
-      requestId: crypto.randomUUID(),
-      computedKey,
-    });
+    const value = await this.request(
+      {
+        type: "get-computed",
+        requestId: crypto.randomUUID(),
+        computedKey,
+        ...(options?.refresh ? { refresh: true } : {}),
+      },
+      signal,
+    );
     return parseComputedValue(computedKey, value);
   }
 

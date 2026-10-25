@@ -778,20 +778,16 @@ export async function uploadWebFile(
 export async function generateWebImage(
   options: GenerateWebImageOptions,
 ): Promise<GenerateWebImageResult> {
-  const submitted = await submitWebImage(options);
-  if (!isImageGenerationAcceptedResponse(submitted)) {
-    return submitted;
-  }
   return waitForImageGenerationResult({
-    accepted: submitted,
+    accepted: await submitWebImage(options),
     fallback: "Failed to generate image",
   });
 }
 
-/** Submit once without polling; older APIs can return a completed image. */
+/** Submit once without polling. */
 export async function submitWebImage(
   options: GenerateWebImageOptions,
-): Promise<ImageGenerationAcceptedResponse | GenerateWebImageResult> {
+): Promise<ImageGenerationAcceptedResponse> {
   const baseUrl = await getBaseUrl();
   const token = await getActiveToken();
   if (!token) {
@@ -857,8 +853,5 @@ export async function submitWebImage(
   if (isImageGenerationAcceptedResponse(body)) {
     return body;
   }
-  if (response.status === 202) {
-    throw invalidImageGenerationReceipt(body);
-  }
-  return body as GenerateWebImageResult;
+  throw invalidImageGenerationReceipt(body);
 }

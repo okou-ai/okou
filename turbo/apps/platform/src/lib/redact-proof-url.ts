@@ -1,45 +1,72 @@
-import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
+import {
+  INTEGRATION_SETTINGS_PATHS,
+  INTEGRATION_OAUTH_CALLBACK_PATHS,
+} from "@okouai/core/integration-routes";
 import { z } from "zod";
 
 const diagnosticUrlSchema = z.url();
+const oauthCallbackPaths = [
+  ...Object.values(INTEGRATION_OAUTH_CALLBACK_PATHS),
+  "/api/integrations/slack/oauth/callback",
+  "/api/integrations/teams/oauth/callback",
+  "/api/github/app/setup/callback",
+] as const;
 
 function parseUrl(value: string): URL | null {
   // Diagnostic values include ordinary text; supported Safari lacks URL.parse.
-  const parsed = diagnosticUrlSchema.safeParse(value);
+  // Navigation breadcrumbs use relative URLs. This parsing base is never emitted.
+  const parsed = diagnosticUrlSchema.safeParse(
+    value.startsWith("/") && !value.startsWith("//")
+      ? `https://redaction.invalid${value}`
+      : value,
+  );
   return parsed.success ? new URL(parsed.data) : null;
 }
 
-function redactTelegramUrl(value: string): string {
+function diagnosticUrl(url: URL, original: string): string {
+  return original.startsWith("/")
+    ? `${url.pathname}${url.search}${url.hash}`
+    : url.href;
+}
+
+function redactAuthorizationUrl(value: string): string {
   const url = parseUrl(value);
-  const pathname = url?.pathname.toLowerCase().replace(/\/$/u, "");
-  if (
-    !url ||
-    (pathname !== INTEGRATION_SETTINGS_PATHS.telegram &&
-      pathname !== "/telegram/connect")
-  ) {
+  if (!url) {
     return value;
   }
+  const pathname = url.pathname.toLowerCase().replace(/\/$/u, "");
+  const keys = oauthCallbackPaths.some((path) => {
+    return path === pathname;
+  })
+    ? ["code", "state"]
+    : pathname === INTEGRATION_SETTINGS_PATHS.telegram ||
+        pathname === "/telegram/connect"
+      ? ["sig", "ts", "tgUser", "tgUserName", "tgDisplayName"]
+      : [];
   let changed = false;
-  for (const key of ["sig", "ts", "tgUser", "tgUserName", "tgDisplayName"]) {
+  for (const key of keys) {
     if (url.searchParams.has(key)) {
       url.searchParams.set(key, "[redacted]");
       changed = true;
     }
   }
-  return changed ? url.href : value;
+  return changed ? diagnosticUrl(url, value) : value;
 }
 
 function redactRedirectParams(params: URLSearchParams): URLSearchParams {
   return new URLSearchParams(
     [...params].map(([key, value]) => {
-      return [key, key === "redirect_url" ? redactTelegramUrl(value) : value];
+      return [
+        key,
+        key === "redirect_url" ? redactAuthorizationUrl(value) : value,
+      ];
     }),
   );
 }
 
 /** Diagnostic copies only. Never use this to construct browser navigation. */
 export function redactProofUrl(value: string): string {
-  const direct = redactTelegramUrl(value);
+  const direct = redactAuthorizationUrl(value);
   if (direct !== value) {
     return direct;
   }
@@ -62,5 +89,5 @@ export function redactProofUrl(value: string): string {
       changed = true;
     }
   }
-  return changed ? url.href : value;
+  return changed ? diagnosticUrl(url, value) : value;
 }

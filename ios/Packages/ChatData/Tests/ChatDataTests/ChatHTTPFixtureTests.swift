@@ -1,14 +1,33 @@
+import ChatData
 import ChatDataTestSupport
 import Foundation
+import Synchronization
 import XCTest
 
 @MainActor
 final class ChatHTTPFixtureTests: XCTestCase {
-  func testUnknownOriginIsRejectedByTheFixtureWithoutDNSFallback() async throws {
-    let fixture = ChatHTTPFixture { _ in
-      XCTFail("An unknown origin must not reach a different fixture's handler")
-      return ChatHTTPResponse(body: "{}")
+  func testReturnedClientKeepsItsExternalFixtureAliveForRequests() async throws {
+    func makeClient() -> APIClient {
+      ChatHTTPFixture { request in
+        XCTAssertEqual(request.url?.path, "/api/fixture-lifetime")
+        return ChatHTTPResponse(body: #"{"value":"Owned by the returned client"}"#)
+      }.client
     }
+    let client = makeClient()
+    let result: [String: String] = try await client.request("/api/fixture-lifetime")
+    XCTAssertEqual(result, ["value": "Owned by the returned client"])
+  }
+
+  func testUnknownOriginIsRejectedByTheFixtureWithoutDNSFallback() async throws {
+    let reports = Mutex<[String]>([])
+    let fixture = ChatHTTPFixture(
+      onUnhandledRequest: { message in
+        reports.withLock { $0.append(message) }
+      },
+      handler: { _ in
+        XCTFail("An unknown origin must not reach a different fixture's handler")
+        return ChatHTTPResponse(body: "{}")
+      })
     for scheme in ["https", "http"] {
       let url = try XCTUnwrap(
         URL(string: "\(scheme)://unregistered-\(UUID().uuidString).example.invalid"))
@@ -18,8 +37,42 @@ final class ChatHTTPFixtureTests: XCTestCase {
       } catch let error as URLError {
         XCTAssertEqual(error.code, .unsupportedURL)
         XCTAssertTrue(error.localizedDescription.contains(url.absoluteString))
+        XCTAssertTrue(reports.withLock { $0.contains { $0.contains(url.absoluteString) } })
       }
     }
+  }
+
+  func testClosingFixtureCancelsItsRequestWithoutContaminatingAnotherFixture() async throws {
+    let reports = Mutex<[String]>([])
+    let started = expectation(description: "Retiring fixture request started")
+    let (responses, continuation) = AsyncStream<Void>.makeStream()
+    defer { continuation.finish() }
+    var retiring: ChatHTTPFixture? = ChatHTTPFixture(
+      onUnhandledRequest: { message in reports.withLock { $0.append(message) } },
+      handler: { _ in
+        started.fulfill()
+        for await _ in responses { break }
+        return ChatHTTPResponse(body: "{}")
+      })
+    let session = try XCTUnwrap(retiring).session
+    let url = try XCTUnwrap(retiring).baseURL.appending(path: "api/retiring")
+    let request = Task { try await session.data(from: url) }
+    defer { request.cancel() }
+    await fulfillment(of: [started], timeout: 3)
+
+    let active = ChatHTTPFixture(
+      onUnhandledRequest: { message in reports.withLock { $0.append(message) } },
+      handler: { _ in ChatHTTPResponse(body: "Active fixture") })
+    retiring = nil
+    do {
+      _ = try await request.value
+      XCTFail("Closing the fixture must cancel its outstanding request")
+    } catch let error as URLError {
+      XCTAssertEqual(error.code, .cancelled)
+    }
+    let (data, _) = try await active.session.data(from: active.baseURL)
+    XCTAssertEqual(data, Data("Active fixture".utf8))
+    XCTAssertTrue(reports.withLock { $0.isEmpty })
   }
 
   func testFixtureSessionCanReadFilesFromItsLoopbackServer() async throws {

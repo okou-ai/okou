@@ -478,9 +478,13 @@ async function inspectFirecrawl(
 
 export function quoteDataSearchProvider(
   input: DataSearchRequest,
+  sourceCostUsdMicrosPerCredit: number | undefined,
   signal: AbortSignal,
 ): Promise<DataSearchProviderQuote> {
-  const plan = prepareDataSearchProviderPlan(input);
+  const plan = prepareDataSearchProviderPlan(
+    input,
+    sourceCostUsdMicrosPerCredit,
+  );
   return plan.vendor === "monid"
     ? inspectMonid(plan, signal)
     : inspectFirecrawl(plan, signal);

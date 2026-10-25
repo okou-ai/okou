@@ -1,4 +1,4 @@
-import { command, computed, state } from "ccstate";
+import { command, computed } from "ccstate";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { apiClient$ } from "../../api-client.ts";
 import { withCleanup } from "../../utils.ts";
@@ -16,82 +16,18 @@ import { agentDetail$ } from "./detail.ts";
 //    authorized for this agent
 // ---------------------------------------------------------------------------
 
-const authorizedConnectors$ = computed(async (get): Promise<string[]> => {
-  const detail = await get(agentDetail$);
-  if (!detail?.agentId) {
-    return [];
-  }
-  const authorizations = await get(
-    agentConnectorAuthorizations({ agentId: detail.agentId }),
-  );
-  return [...authorizations.enabledConnectorSlugs];
-});
-
-type AuthorizedConnectorsDraft = {
-  readonly agentId: string;
-  readonly enabledConnectorSlugs: readonly string[];
-};
-
-const internalAuthorizedConnectors$ = state<AuthorizedConnectorsDraft | null>(
-  null,
-);
-
 export const agentAuthorizedConnectors$ = computed(
   async (get): Promise<string[]> => {
     const detail = await get(agentDetail$);
     if (!detail?.agentId) {
       return [];
     }
-    const local = get(internalAuthorizedConnectors$);
-    if (local?.agentId === detail.agentId) {
-      return [...local.enabledConnectorSlugs];
-    }
-    return await get(authorizedConnectors$);
+    const authorizations = await get(
+      agentConnectorAuthorizations({ agentId: detail.agentId }),
+    );
+    return [...authorizations.enabledConnectorSlugs];
   },
 );
-
-const setAgentConnectorDraft$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly name: string;
-      readonly operation: "add" | "remove";
-    },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const detail = await get(agentDetail$);
-    signal.throwIfAborted();
-    if (!detail?.agentId) {
-      return;
-    }
-    const current = get(internalAuthorizedConnectors$);
-    const base =
-      current?.agentId === detail.agentId
-        ? current.enabledConnectorSlugs
-        : await get(authorizedConnectors$);
-    signal.throwIfAborted();
-    const enabledConnectorSlugs =
-      args.operation === "add"
-        ? Array.from(new Set([...base, args.name]))
-        : base.filter((s) => {
-            return s !== args.name;
-          });
-    set(internalAuthorizedConnectors$, {
-      agentId: detail.agentId,
-      enabledConnectorSlugs,
-    });
-  },
-);
-
-const clearAgentConnectorDraft$ = command(({ set }, agentId: string): void => {
-  set(internalAuthorizedConnectors$, (current) => {
-    return current?.agentId === agentId ? null : current;
-  });
-});
-
-export const discardAgentConnectorsDraft$ = command(({ set }) => {
-  set(internalAuthorizedConnectors$, null);
-});
 
 export const toggleAgentConnector$ = command(
   async ({ get, set }, name: string, enabled: boolean, signal: AbortSignal) => {
@@ -106,7 +42,6 @@ export const toggleAgentConnector$ = command(
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
       (async () => {
-        await set(setAgentConnectorDraft$, { name, operation }, signal);
         await accept(
           client.update({
             params: { id: detail.agentId },
@@ -118,7 +53,6 @@ export const toggleAgentConnector$ = command(
         signal.throwIfAborted();
       })(),
       () => {
-        set(clearAgentConnectorDraft$, detail.agentId);
         set(reloadAgentConnectorAuthorizations$);
       },
     );

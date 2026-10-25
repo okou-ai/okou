@@ -1,4 +1,5 @@
-import { useLoadable, useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Loader2, Plus } from "lucide-react";
 import { cn, Button } from "@okouai/ui";
@@ -10,8 +11,6 @@ import {
   connectBuiltinConnectorNoAuth$,
   connectBuiltinConnectorOAuthAuthCode$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
-  builtinConnectOperation$,
-  justConnectedBuiltinSlugs$,
   builtinPollingOAuthDeviceAuthSlug$,
   getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
   runBuiltinConnectorConnectSuccess$,
@@ -194,10 +193,15 @@ function useSourceConnectorActivate(
 ) {
   const pageSignal = useGet(pageSignal$);
   const selectConnector = useSet(setSelectedBuiltinConnectorSlug$);
-  const directConnect = useSet(connectBuiltinConnectorOAuthAuthCodeAndSettle$);
+  const [connection, directConnect] = useLoadableSet(
+    connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+  );
   const runConnectSuccess = useSet(runBuiltinConnectorConnectSuccess$);
 
-  return (item: PlatformConnectorCatalogConnectItem, connected: boolean) => {
+  const activate = (
+    item: PlatformConnectorCatalogConnectItem,
+    connected: boolean,
+  ) => {
     onConnectStart?.(item.slug);
     const authMethod =
       getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(item);
@@ -233,6 +237,7 @@ function useSourceConnectorActivate(
     }
     selectConnector(item.slug);
   };
+  return { activate, busy: connection.state === "loading" };
 }
 
 function ConnectorCatalogReadError() {
@@ -270,10 +275,11 @@ function SourcesConnectorGrid({
   const { t } = useTranslation();
   const { selectedConnector, setSelectedConnectorSlug } =
     useSelectedConnector();
-  const activate = useSourceConnectorActivate(onConnectStart, onConnected);
-  const connectOperation = useLoadable(builtinConnectOperation$);
+  const { activate, busy } = useSourceConnectorActivate(
+    onConnectStart,
+    onConnected,
+  );
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
-  const justConnectedSlugs = useGet(justConnectedBuiltinSlugs$);
   const connectorCatalogItems =
     connectorCatalogItemsLoadable.state === "hasData"
       ? connectorCatalogItemsLoadable.data
@@ -307,18 +313,14 @@ function SourcesConnectorGrid({
           if (!item) {
             return null;
           }
-          const connected =
-            item.connected === true || justConnectedSlugs.has(connectorSlug);
+          const connected = item.connected === true;
           return (
             <SourceConnectorCard
               key={connectorSlug}
               connectorSlug={connectorSlug}
               connector={item}
               connected={connected}
-              busy={
-                connectOperation.state === "loading" ||
-                pollingDeviceAuthSlug === connectorSlug
-              }
+              busy={busy || pollingDeviceAuthSlug === connectorSlug}
               onActivate={() => {
                 activate(item, connected);
               }}
@@ -349,15 +351,19 @@ function SourcesConnectorGrid({
  */
 function useListConnectHandlers(
   setSelectedConnectorSlug: (slug: ConnectorSlug | null) => void,
-): (
-  connectorSlug: ConnectorSlug,
-  item: PlatformConnectorCatalogStatusItem | undefined,
-) => ConnectorConnectHandlers | undefined {
+) {
   const pageSignal = useGet(pageSignal$);
-  const connect = useSet(connectBuiltinConnectorOAuthAuthCode$);
-  const connectNoAuth = useSet(connectBuiltinConnectorNoAuth$);
+  const [browser, connect] = useLoadableSet(
+    connectBuiltinConnectorOAuthAuthCode$,
+  );
+  const [noAuth, connectNoAuth] = useLoadableSet(
+    connectBuiltinConnectorNoAuth$,
+  );
 
-  return (connectorSlug, item) => {
+  const connectHandlersFor = (
+    connectorSlug: ConnectorSlug,
+    item: PlatformConnectorCatalogStatusItem | undefined,
+  ): ConnectorConnectHandlers | undefined => {
     const accountOptions = defaultBuiltinConnectorAccountOptions(item);
     return item && accountOptions
       ? {
@@ -394,6 +400,10 @@ function useListConnectHandlers(
         }
       : undefined;
   };
+  return {
+    connectHandlersFor,
+    busy: browser.state === "loading" || noAuth.state === "loading",
+  };
 }
 
 function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
@@ -404,10 +414,10 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
   );
   const { selectedConnector, setSelectedConnectorSlug } =
     useSelectedConnector();
-  const connectHandlersFor = useListConnectHandlers(setSelectedConnectorSlug);
-  const connectOperation = useLoadable(builtinConnectOperation$);
+  const { connectHandlersFor, busy } = useListConnectHandlers(
+    setSelectedConnectorSlug,
+  );
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
-  const justConnectedSlugs = useGet(justConnectedBuiltinSlugs$);
 
   if (validConnectorSlugs.length === 0) {
     return null;
@@ -437,11 +447,8 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
           if (!item) {
             return null;
           }
-          const connected =
-            item.connected === true || justConnectedSlugs.has(connectorSlug);
-          const connecting =
-            connectOperation.state === "loading" ||
-            pollingDeviceAuthSlug === connectorSlug;
+          const connected = item.connected === true;
+          const connecting = busy || pollingDeviceAuthSlug === connectorSlug;
           const connectHandlers = connectHandlersFor(connectorSlug, item);
           return (
             <SourceConnectorCard

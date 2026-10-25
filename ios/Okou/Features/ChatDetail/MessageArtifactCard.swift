@@ -23,7 +23,6 @@ struct MessageArtifactCard: View {
   @State private var prepared: Prepared?
   @State private var retry = 0
   @Environment(\.openURL) private var openURL
-  @ScaledMetric(relativeTo: .subheadline) private var titleHeight = 42
 
   private var loadKey: LoadKey {
     LoadKey(
@@ -47,7 +46,7 @@ struct MessageArtifactCard: View {
           viewer.open(artifact, images: images, imageSources: imageSources)
         }
       } label: {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
           if isMedia {
             ZStack {
               Rectangle().fill(Color(.tertiarySystemFill))
@@ -72,7 +71,6 @@ struct MessageArtifactCard: View {
             }
             VStack(alignment: .leading, spacing: 3) {
               Text(title).font(.subheadline.weight(.medium)).lineLimit(2)
-                .frame(height: titleHeight, alignment: .leading)
               Text(error ?? artifact.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(
                 1)
             }

@@ -1,3 +1,4 @@
+import { useLoadableSet } from "ccstate-react/experimental";
 import {
   remoteResource$,
   remoteNetworkPage$,
@@ -1226,10 +1227,10 @@ function SettingsConnectorCard({ signals }: SettingsConnectorCardProps) {
     targets.state === "hasData" &&
     targets.data.has(`builtin:${connector.slug}`);
   const inventoryStatus = connectorInventoryStatus(targets.state);
-  const operation = useLoadable(signals.operation$);
   const polling = useGet(signals.polling$);
-  const busy = polling || operation.state === "loading";
-  const accountConnectHandlers = useBuiltinConnectorConnectHandlers();
+  const { connecting, accountConnectHandlers } =
+    useBuiltinConnectorConnectHandlers();
+  const busy = polling || connecting;
   const openAccountManager = useSet(signals.openAccountManager$);
   const manageAccess = useSet(signals.manageAccess$);
   const accessButton = (
@@ -1299,8 +1300,12 @@ function useBuiltinConnectorConnectHandlers() {
   const finishAccountConnection = useSet(finishConnectorAccountConnection$);
   const runConnectSuccess = useSet(runBuiltinConnectorConnectSuccess$);
   const openAccountConnect = useSet(openBuiltinAccountConnectDialog$);
-  const connect = useSet(connectBuiltinConnectorOAuthAuthCodeAndSettle$);
-  const connectNoAuth = useSet(connectBuiltinConnectorNoAuthAndSettle$);
+  const [browserAuth, connect] = useLoadableSet(
+    connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+  );
+  const [noAuth, connectNoAuth] = useLoadableSet(
+    connectBuiltinConnectorNoAuthAndSettle$,
+  );
   const signal = useGet(pageSignal$);
   const finishExplicitAccountAdd = async (
     connector: PlatformConnectorCatalogStatusItem,
@@ -1378,7 +1383,10 @@ function useBuiltinConnectorConnectHandlers() {
     };
   };
 
-  return accountConnectHandlers;
+  return {
+    accountConnectHandlers,
+    connecting: browserAuth.state === "loading" || noAuth.state === "loading",
+  };
 }
 
 function renderDirectoryCard(connector: DirectoryCatalogItem) {
@@ -1654,7 +1662,7 @@ function BuiltinAccountManagerBody({
   const setScopeReviewSelection = useSet(
     setBuiltinConnectorScopeReviewSelection$,
   );
-  const accountConnectHandlers = useBuiltinConnectorConnectHandlers();
+  const { accountConnectHandlers } = useBuiltinConnectorConnectHandlers();
   return (
     <ConnectorAccountManagerDialog
       target={{

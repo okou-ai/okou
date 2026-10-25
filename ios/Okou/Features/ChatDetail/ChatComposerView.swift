@@ -17,6 +17,7 @@ struct ChatComposerView: View {
   let refresh: (@MainActor () async -> Void)?
 
   var modelSelection: ChatModelSelectionStore? = nil
+  var connectorSelection: ComposerConnectorStore? = nil
   var mentionSource: ComposerMentionSource? = nil
   var workflowSource: ComposerWorkflowSource? = nil
   var agentID: String? = nil
@@ -146,11 +147,11 @@ struct ChatComposerView: View {
         }
       }
       .accessibilityIdentifier("message-input")
-      .padding(.leading, expandsInput ? 18 : 58)
+      .padding(.leading, expandsInput ? 18 : (connectorSelection == nil ? 58 : 102))
       .padding(.trailing, expandsInput ? 18 : (modelSelection == nil ? 58 : 106))
-      .padding(.top, expandsInput ? 17 : 15)
-      .padding(.bottom, expandsInput ? 62 : 15)
-      .frame(minHeight: expandsInput ? 116 : 54, alignment: expandsInput ? .topLeading : .leading)
+      .padding(.top, expandsInput ? 17 : 10)
+      .padding(.bottom, expandsInput ? 62 : 10)
+      .frame(minHeight: expandsInput ? 116 : 44, alignment: expandsInput ? .topLeading : .leading)
       .glassEffect(.regular, in: RoundedRectangle(cornerRadius: expandsInput ? 28 : 30))
       .overlay(alignment: .top) {
         if let workflows = draftState?.editor.workflows, workflows.query != nil {
@@ -159,20 +160,26 @@ struct ChatComposerView: View {
         }
       }
       .overlay(alignment: expandsInput ? .bottomLeading : .leading) {
-        Menu {
-          Button("Photo Library", systemImage: "photo.on.rectangle") { showsPhotos = true }
-          Button("Choose Files", systemImage: "folder") { showsFiles = true }
-          if let state = draftState, state.hasContent || state.error != nil {
-            Divider()
-            Button("Clear draft", role: .destructive) { state.clear() }
+        HStack(spacing: 0) {
+          Menu {
+            Button("Photo Library", systemImage: "photo.on.rectangle") { showsPhotos = true }
+            Button("Choose Files", systemImage: "folder") { showsFiles = true }
+            if let state = draftState, state.hasContent || state.error != nil {
+              Divider()
+              Button("Clear draft", role: .destructive) { state.clear() }
+            }
+          } label: {
+            Image(systemName: "plus")
+              .font(.system(size: 22, weight: .regular))
+              .frame(width: 44, height: 44)
           }
-        } label: {
-          Image(systemName: "plus")
-            .font(.system(size: 22, weight: .regular))
-            .frame(width: 44, height: 44)
+          .accessibilityLabel("Attachments")
+          .disabled(isBusy || needsUpgrade)
+          if let connectorSelection {
+            ComposerConnectorButton(store: connectorSelection)
+              .disabled(isBusy || needsUpgrade)
+          }
         }
-        .accessibilityLabel("Attachments")
-        .disabled(isBusy || needsUpgrade)
         .padding(.leading, 8)
         .padding(.bottom, expandsInput ? 8 : 0)
       }
@@ -180,6 +187,7 @@ struct ChatComposerView: View {
         HStack(spacing: 4) {
           if let modelSelection {
             ChatModelPickerButton(selection: modelSelection)
+              .disabled(isBusy || needsUpgrade)
           }
           Button {
             if !showsStop && sendTransition == nil {
@@ -224,7 +232,9 @@ struct ChatComposerView: View {
     }
     .padding(.horizontal, 16)
     .padding(.top, 8)
-    .padding(.bottom, 8)
+    .onChange(of: "\(agentID ?? "")/\(connectorSelection != nil)", initial: true) { _, _ in
+      connectorSelection?.configure(agentID: agentID)
+    }
     .onChange(of: mentionSource, initial: true) { _, source in
       draftState?.editor.mentionSource = source
     }

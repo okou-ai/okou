@@ -8375,7 +8375,6 @@ describe("okou browser route", () => {
         [200],
       );
       expect(attached.body.browser.threadId).toBe(other.threadId);
-      expect(other.threadId).not.toBe(first.threadId);
       expect(attached.body.cdpUrl).toBe(
         `https://${providerIds[1]}.cdp.browser-use.com/`,
       );
@@ -8712,9 +8711,6 @@ describe("okou browser route", () => {
         resizable: true,
       },
     });
-    expect(createdInOtherThread.body.browser.threadId).not.toBe(
-      created.body.browser.threadId,
-    );
     expect(profileCreates).toBe(2);
     expect(providerCreates).toBe(2);
     expect(

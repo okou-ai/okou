@@ -12,6 +12,7 @@ import XCTest
 final class ComposerDraftTests: XCTestCase {
   func testNativeInlineReferencesSurviveDeviceRestartRemoteRoundTripAndConflictChoice() async throws
   {
+    preserveNativePasteboard(for: self)
     let rich = try richDraft()
     let quoted = try JSONDecoder().decode(
       MessageJSON.self,
@@ -28,6 +29,7 @@ final class ComposerDraftTests: XCTestCase {
     let server = DraftServer(remote: remote)
     let storage = server.storage()
     let composer = server.composer(storage: storage)
+    defer { composer.close() }
     await composer.synchronize()
     try await eventually { composer.attachments.isReady }
     let navigation = MentionNavigationFixture()
@@ -36,6 +38,7 @@ final class ComposerDraftTests: XCTestCase {
     let host = UIHostingController(
       rootView: MentionComposerHarness(state: composer, source: workspace.mentionTestSource))
     let window = try await mountMentionHost(host)
+    defer { unmount(window) }
     let input = try XCTUnwrap(
       mentionInputs(in: host.view).first { $0.text.hasPrefix("Review this") })
     input.becomeFirstResponder()
@@ -67,7 +70,6 @@ final class ComposerDraftTests: XCTestCase {
     input.becomeFirstResponder()
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     input.cut(nil)
-    defer { UIPasteboard.general.items = [] }
     try await eventually { composer.text.isEmpty }
     await hostingPresentationFrame()
     input.undoManager?.undo()
@@ -111,30 +113,6 @@ final class ComposerDraftTests: XCTestCase {
         }
     }
     XCTAssertEqual(reopened.document.parts.last?["source"], quoted["source"])
-  }
-
-  func testRestartRestoresTextUploadedFilesAndRichDocumentWithoutCreatingAThread() async throws {
-    let server = DraftServer(remote: try richDraft())
-    let storage = server.storage()
-    let first = server.composer(storage: storage)
-    await first.synchronize()
-    try await eventually { first.attachments.isReady }
-    XCTAssertEqual(first.text, "Review this ")
-    XCTAssertEqual(first.contextLabels, ["Plan"])
-    first.text = "Review this carefully"
-    await first.synchronize()
-    let saved = server.state.value.withLock { $0.remote }
-    XCTAssertEqual(
-      saved.draftUserMessage?.parts.filter { $0["type"]?.string != "text" },
-      try richDraft().draftUserMessage?.parts.filter { $0["type"]?.string != "text" })
-    first.close()
-    let reopened = server.composer(storage: storage)
-    defer { reopened.close() }
-    XCTAssertEqual(reopened.text, "Review this carefully")
-    try await eventually { reopened.attachments.isReady }
-    XCTAssertEqual(reopened.attachments.uploaded.first?.id, "file")
-    XCTAssertEqual(reopened.value, saved)
-    XCTAssertTrue(server.state.value.withLock { $0.paths.allSatisfy { !$0.contains("POST") } })
   }
 
   func testQuotedDraftRoundTripsNotesSourcesOrderAndConflictRecovery() async throws {
@@ -196,6 +174,204 @@ final class ComposerDraftTests: XCTestCase {
     opening.cancel()
     await opening.value
     XCTAssertTrue(server.state.value.withLock { $0.paths.isEmpty })
+  }
+
+  func testUnreadableDeviceDraftIsNotReplacedByAnEmptyDefault() async throws {
+    let server = DraftServer()
+    let storage = server.storage()
+    let key = ChatDraftTarget.agent(draftAgentID).key
+    try storage.save("unreadable draft record", key: key)
+    let composer = server.composer(storage: storage)
+    XCTAssertNotNil(composer.error)
+    XCTAssertFalse(composer.canSend)
+    await composer.synchronize()
+    composer.text = "New input remains in memory"
+    composer.close()
+    XCTAssertEqual(try storage.load(key, as: String.self), "unreadable draft record")
+    XCTAssertTrue(server.state.value.withLock { $0.paths.isEmpty })
+  }
+
+  func testUnavailableRemoteAttachmentRetainsCanonicalPartUntilExplicitRemoval() async throws {
+    let server = DraftServer(remote: try richDraft())
+    server.state.value.withLock { $0.missingFile = true }
+    let composer = server.composer()
+    defer { composer.close() }
+    await composer.synchronize()
+    try await eventually {
+      composer.attachments.items.contains { if case .failed = $0.state { true } else { false } }
+    }
+    XCTAssertFalse(composer.canSend)
+    composer.text = "Keep the attachment context"
+    await composer.synchronize()
+    XCTAssertTrue(
+      server.state.value.withLock {
+        $0.remote.draftUserMessage!.parts.contains { $0["fileId"]?.string == "file" }
+      })
+    let file = try XCTUnwrap(composer.attachments.items.first)
+    composer.attachments.remove(file.id)
+    await composer.synchronize()
+    XCTAssertFalse(
+      server.state.value.withLock {
+        $0.remote.draftUserMessage!.parts.contains { $0["type"]?.string == "file" }
+      })
+    XCTAssertNil(server.state.value.withLock { $0.remote.draftAttachments })
+    XCTAssertTrue(composer.canSend)
+  }
+
+  func testRemoteMetadataCannotOwnOrRemoveADeviceFile() async throws {
+    let server = DraftServer()
+    let source = server.directory.appendingPathComponent("provider-file.txt")
+    try Data("Keep provider-owned bytes".utf8).write(to: source)
+    var remote = try richDraft()
+    let file = try XCTUnwrap(remote.draftAttachments?.first?.attachment)
+    remote.draftAttachments = [.init(attachment: file, url: source.absoluteString)]
+    server.state.value.withLock { $0.remote = remote }
+    let composer = server.composer()
+    await composer.synchronize()
+    XCTAssertFalse(composer.canSend)
+    XCTAssertNotNil(composer.attachments.error)
+    composer.clear()
+    composer.close()
+    XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
+  }
+
+  func testInterruptedLocalFileIsNeverRestoredAsUploadedAndMissingFileRetryFails() async throws {
+    let server = DraftServer()
+    let storage = server.storage()
+    let source = server.directory.appendingPathComponent("local.txt")
+    try Data("local".utf8).write(to: source)
+    let composer = server.composer(storage: storage)
+    composer.attachments.importFiles([source])
+    try await eventually {
+      composer.attachments.items.contains { if case .failed = $0.state { true } else { false } }
+    }
+    let copied = try XCTUnwrap(composer.attachments.items.first?.file.url)
+    composer.close()
+    XCTAssertTrue(FileManager.default.fileExists(atPath: copied.path))
+    try FileManager.default.removeItem(at: copied)
+    let reopened = server.composer(storage: storage)
+    defer {
+      reopened.clear()
+      reopened.close()
+    }
+    XCTAssertTrue(reopened.attachments.uploaded.isEmpty)
+    XCTAssertFalse(reopened.attachments.isReady)
+    let item = try XCTUnwrap(reopened.attachments.items.first)
+    reopened.attachments.retry(item.id)
+    try await eventually {
+      reopened.attachments.items.contains { if case .failed = $0.state { true } else { false } }
+    }
+    XCTAssertTrue(reopened.attachments.uploaded.isEmpty)
+  }
+
+  func testRecommendationsDoNotMatchAcrossReferencesInsideQuotedNotes() async throws {
+    let remote = try JSONDecoder().decode(
+      ComposerDraft.self,
+      from: Data(
+        #"{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Before"},{"type":"feedback","quote":"One","note":[{"type":"text","text":"Existing "},{"type":"chat_thread","threadId":"43000000-0000-4000-8000-000000000001","titleSnapshot":"Plan"},{"type":"text","text":"question"}]},{"type":"feedback","quote":"Two","note":[]}]},"draftAttachments":null}"#
+          .utf8))
+    let server = DraftServer(remote: remote)
+    let composer = server.composer()
+    defer { composer.close() }
+    await composer.synchronize()
+    let notes = composer.editorBlocks.filter(\.isFeedback)
+    let firstNote = composer.document.parts[1]
+    let source = ChatRecommendedFollowupSource(
+      eventID: "followups",
+      followups: [
+        ChatRecommendedFollowup(prompt: "Existing question", kind: .talk)
+      ])
+    let host = UIHostingController(
+      rootView: VStack {
+        RecommendedFollowupList(
+          source: source, finishedAt: nil, select: composer.editor.selectOrAppendText)
+        ChatComposerView(
+          draft: Binding(get: { composer.text }, set: { composer.text = $0 }),
+          isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false, error: nil,
+          attachmentURL: server.http.baseURL, attachments: composer.attachments,
+          draftState: composer, submit: {}, refresh: nil)
+      })
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+    let window = UIWindow(windowScene: scene)
+    window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+    window.rootViewController = host
+    window.makeKeyAndVisible()
+    defer { unmount(window) }
+    try await eventually { composer.editor.view?.window != nil }
+    func button(in view: UIView) -> UIButton? {
+      if let button = view as? UIButton, button.accessibilityLabel == "Existing question" {
+        return button
+      }
+      return view.subviews.lazy.compactMap { button(in: $0) }.first
+    }
+    let action = try XCTUnwrap(button(in: host.view))
+    action.sendActions(for: .touchUpInside)
+    try await eventually {
+      composer.editorBlocks.first(where: { $0.id == notes[1].id })?.content.text
+        == "Existing question"
+    }
+    XCTAssertEqual(composer.document.parts[1], firstNote)
+    XCTAssertEqual(composer.text, "Before")
+    XCTAssertEqual(
+      composer.editorBlocks.filter(\.isFeedback).map(\.content.text),
+      ["Existing question", "Existing question"])
+  }
+
+  func testRecommendedTextPreservesRichDraftAttachmentsAndConflictRecovery() async throws {
+    let server = DraftServer(remote: try richDraft())
+    let composer = server.composer(storage: server.storage())
+    defer { composer.close() }
+    await composer.synchronize()
+    try await eventually { composer.attachments.isReady }
+    let parts = composer.document.parts.filter { $0["type"]?.string != "text" }
+    let attachments = composer.attachments.savedItems
+    let host = UIHostingController(
+      rootView: ChatComposerTextInput(
+        text: Binding(get: { composer.text }, set: { composer.text = $0 }),
+        isFocused: .constant(true), acceptsImages: true, isCurrent: { true }, pasteImages: { _ in },
+        editor: composer.editor))
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+    let window = UIWindow(windowScene: scene)
+    window.frame = CGRect(x: 0, y: 0, width: 390, height: 300)
+    window.rootViewController = host
+    window.makeKeyAndVisible()
+    defer { unmount(window) }
+    try await eventually { composer.editor.view?.window != nil }
+    composer.editor.selectOrAppendText("Compare the alternatives")
+    try await eventually { composer.text.hasSuffix("\nCompare the alternatives") }
+    XCTAssertEqual(composer.document.parts.filter { $0["type"]?.string != "text" }, parts)
+    XCTAssertEqual(composer.attachments.savedItems, attachments)
+    server.state.value.withLock { $0.remote = textDraft("Edited on another device") }
+    await composer.synchronize()
+    XCTAssertNotNil(composer.conflictingRemote)
+    XCTAssertTrue(composer.text.hasSuffix("Compare the alternatives"))
+    composer.keepLocal()
+    await composer.synchronize()
+    XCTAssertNil(composer.conflictingRemote)
+    XCTAssertEqual(server.state.value.withLock { $0.remote }, composer.value)
+  }
+  func testRestartRestoresTextUploadedFilesAndRichDocumentWithoutCreatingAThread() async throws {
+    let server = DraftServer(remote: try richDraft())
+    let storage = server.storage()
+    let first = server.composer(storage: storage)
+    await first.synchronize()
+    try await eventually { first.attachments.isReady }
+    XCTAssertEqual(first.text, "Review this ")
+    XCTAssertEqual(first.contextLabels, ["Plan"])
+    first.text = "Review this carefully"
+    await first.synchronize()
+    let saved = server.state.value.withLock { $0.remote }
+    XCTAssertEqual(
+      saved.draftUserMessage?.parts.filter { $0["type"]?.string != "text" },
+      try richDraft().draftUserMessage?.parts.filter { $0["type"]?.string != "text" })
+    first.close()
+    let reopened = server.composer(storage: storage)
+    defer { reopened.close() }
+    XCTAssertEqual(reopened.text, "Review this carefully")
+    try await eventually { reopened.attachments.isReady }
+    XCTAssertEqual(reopened.attachments.uploaded.first?.id, "file")
+    XCTAssertEqual(reopened.value, saved)
+    XCTAssertTrue(server.state.value.withLock { $0.paths.allSatisfy { !$0.contains("POST") } })
   }
 
   func testTypingDuringLateRemoteLoadKeepsLocalInputAndClearCannotResurrectRemote() async throws {
@@ -419,21 +595,6 @@ final class ComposerDraftTests: XCTestCase {
     XCTAssertEqual(reopened.text, "Edit retained while synchronization is paused")
   }
 
-  func testUnreadableDeviceDraftIsNotReplacedByAnEmptyDefault() async throws {
-    let server = DraftServer()
-    let storage = server.storage()
-    let key = ChatDraftTarget.agent(draftAgentID).key
-    try storage.save("unreadable draft record", key: key)
-    let composer = server.composer(storage: storage)
-    XCTAssertNotNil(composer.error)
-    XCTAssertFalse(composer.canSend)
-    await composer.synchronize()
-    composer.text = "New input remains in memory"
-    composer.close()
-    XCTAssertEqual(try storage.load(key, as: String.self), "unreadable draft record")
-    XCTAssertTrue(server.state.value.withLock { $0.paths.isEmpty })
-  }
-
   func testAcknowledgedClearDoesNotReviveAnOldRemoteDraftAfterRestart() async throws {
     let server = DraftServer(remote: textDraft("Old draft"))
     let storage = server.storage()
@@ -451,199 +612,6 @@ final class ComposerDraftTests: XCTestCase {
     reopened.keepLocal()
     await reopened.synchronize()
     XCTAssertEqual(server.state.value.withLock { $0.remote }, ComposerDraft())
-  }
-
-  func testUnavailableRemoteAttachmentRetainsCanonicalPartUntilExplicitRemoval() async throws {
-    let server = DraftServer(remote: try richDraft())
-    server.state.value.withLock { $0.missingFile = true }
-    let composer = server.composer()
-    defer { composer.close() }
-    await composer.synchronize()
-    try await eventually {
-      composer.attachments.items.contains { if case .failed = $0.state { true } else { false } }
-    }
-    XCTAssertFalse(composer.canSend)
-    composer.text = "Keep the attachment context"
-    await composer.synchronize()
-    XCTAssertTrue(
-      server.state.value.withLock {
-        $0.remote.draftUserMessage!.parts.contains { $0["fileId"]?.string == "file" }
-      })
-    let file = try XCTUnwrap(composer.attachments.items.first)
-    composer.attachments.remove(file.id)
-    await composer.synchronize()
-    XCTAssertFalse(
-      server.state.value.withLock {
-        $0.remote.draftUserMessage!.parts.contains { $0["type"]?.string == "file" }
-      })
-    XCTAssertNil(server.state.value.withLock { $0.remote.draftAttachments })
-    XCTAssertTrue(composer.canSend)
-  }
-
-  func testRemoteMetadataCannotOwnOrRemoveADeviceFile() async throws {
-    let server = DraftServer()
-    let source = server.directory.appendingPathComponent("provider-file.txt")
-    try Data("Keep provider-owned bytes".utf8).write(to: source)
-    var remote = try richDraft()
-    let file = try XCTUnwrap(remote.draftAttachments?.first?.attachment)
-    remote.draftAttachments = [.init(attachment: file, url: source.absoluteString)]
-    server.state.value.withLock { $0.remote = remote }
-    let composer = server.composer()
-    await composer.synchronize()
-    XCTAssertFalse(composer.canSend)
-    XCTAssertNotNil(composer.attachments.error)
-    composer.clear()
-    composer.close()
-    XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
-  }
-
-  func testInterruptedLocalFileIsNeverRestoredAsUploadedAndMissingFileRetryFails() async throws {
-    let server = DraftServer()
-    let storage = server.storage()
-    let source = server.directory.appendingPathComponent("local.txt")
-    try Data("local".utf8).write(to: source)
-    let composer = server.composer(storage: storage)
-    composer.attachments.importFiles([source])
-    try await eventually {
-      composer.attachments.items.contains { if case .failed = $0.state { true } else { false } }
-    }
-    let copied = try XCTUnwrap(composer.attachments.items.first?.file.url)
-    composer.close()
-    XCTAssertTrue(FileManager.default.fileExists(atPath: copied.path))
-    try FileManager.default.removeItem(at: copied)
-    let reopened = server.composer(storage: storage)
-    defer {
-      reopened.clear()
-      reopened.close()
-    }
-    XCTAssertTrue(reopened.attachments.uploaded.isEmpty)
-    XCTAssertFalse(reopened.attachments.isReady)
-    let item = try XCTUnwrap(reopened.attachments.items.first)
-    reopened.attachments.retry(item.id)
-    try await eventually {
-      reopened.attachments.items.contains { if case .failed = $0.state { true } else { false } }
-    }
-    XCTAssertTrue(reopened.attachments.uploaded.isEmpty)
-  }
-
-  func testNativeComposerPreviewShowsRestoredContextAndConflictActions() async throws {
-    let server = DraftServer(remote: try richDraft())
-    let composer = server.composer()
-    defer { composer.close() }
-    await composer.synchronize()
-    composer.text = "Saved draft after restart"
-    server.state.value.withLock { $0.remote = textDraft("Edited on PWA") }
-    await composer.synchronize()
-    let host = UIHostingController(
-      rootView: ChatComposerView(
-        draft: Binding(get: { composer.text }, set: { composer.text = $0 }),
-        isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false,
-        error: nil, attachmentURL: server.http.baseURL, attachments: composer.attachments,
-        draftState: composer, submit: {}, refresh: nil))
-    XCTAssertNotNil(composer.conflictingRemote)
-    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-    let window = UIWindow(windowScene: scene)
-    window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-    window.rootViewController = host
-    window.makeKeyAndVisible()
-    host.view.layoutIfNeeded()
-    await Task.yield()
-    defer { unmount(window) }
-    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-      window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-    }
-    let attachment = XCTAttachment(image: image)
-    attachment.name = "Restored draft and cross-device choice"
-    attachment.lifetime = .keepAlways
-    add(attachment)
-    XCTAssertNotNil(composer.conflictingRemote)
-  }
-
-  func testRecommendationsDoNotMatchAcrossReferencesInsideQuotedNotes() async throws {
-    let remote = try JSONDecoder().decode(
-      ComposerDraft.self,
-      from: Data(
-        #"{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Before"},{"type":"feedback","quote":"One","note":[{"type":"text","text":"Existing "},{"type":"chat_thread","threadId":"43000000-0000-4000-8000-000000000001","titleSnapshot":"Plan"},{"type":"text","text":"question"}]},{"type":"feedback","quote":"Two","note":[]}]},"draftAttachments":null}"#
-          .utf8))
-    let server = DraftServer(remote: remote)
-    let composer = server.composer()
-    defer { composer.close() }
-    await composer.synchronize()
-    let notes = composer.editorBlocks.filter(\.isFeedback)
-    let firstNote = composer.document.parts[1]
-    let source = ChatRecommendedFollowupSource(
-      eventID: "followups",
-      followups: [
-        ChatRecommendedFollowup(prompt: "Existing question", kind: .talk)
-      ])
-    let host = UIHostingController(
-      rootView: VStack {
-        RecommendedFollowupList(
-          source: source, finishedAt: nil, select: composer.editor.selectOrAppendText)
-        ChatComposerView(
-          draft: Binding(get: { composer.text }, set: { composer.text = $0 }),
-          isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false, error: nil,
-          attachmentURL: server.http.baseURL, attachments: composer.attachments,
-          draftState: composer, submit: {}, refresh: nil)
-      })
-    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-    let window = UIWindow(windowScene: scene)
-    window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-    window.rootViewController = host
-    window.makeKeyAndVisible()
-    defer { unmount(window) }
-    try await eventually { composer.editor.view?.window != nil }
-    func button(in view: UIView) -> UIButton? {
-      if let button = view as? UIButton, button.accessibilityLabel == "Existing question" {
-        return button
-      }
-      return view.subviews.lazy.compactMap { button(in: $0) }.first
-    }
-    let action = try XCTUnwrap(button(in: host.view))
-    action.sendActions(for: .touchUpInside)
-    try await eventually {
-      composer.editorBlocks.first(where: { $0.id == notes[1].id })?.content.text
-        == "Existing question"
-    }
-    XCTAssertEqual(composer.document.parts[1], firstNote)
-    XCTAssertEqual(composer.text, "Before")
-    XCTAssertEqual(
-      composer.editorBlocks.filter(\.isFeedback).map(\.content.text),
-      ["Existing question", "Existing question"])
-  }
-
-  func testRecommendedTextPreservesRichDraftAttachmentsAndConflictRecovery() async throws {
-    let server = DraftServer(remote: try richDraft())
-    let composer = server.composer(storage: server.storage())
-    defer { composer.close() }
-    await composer.synchronize()
-    try await eventually { composer.attachments.isReady }
-    let parts = composer.document.parts.filter { $0["type"]?.string != "text" }
-    let attachments = composer.attachments.savedItems
-    let host = UIHostingController(
-      rootView: ChatComposerTextInput(
-        text: Binding(get: { composer.text }, set: { composer.text = $0 }),
-        isFocused: .constant(true), acceptsImages: true, isCurrent: { true }, pasteImages: { _ in },
-        editor: composer.editor))
-    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-    let window = UIWindow(windowScene: scene)
-    window.frame = CGRect(x: 0, y: 0, width: 390, height: 300)
-    window.rootViewController = host
-    window.makeKeyAndVisible()
-    defer { unmount(window) }
-    try await eventually { composer.editor.view?.window != nil }
-    composer.editor.selectOrAppendText("Compare the alternatives")
-    try await eventually { composer.text.hasSuffix("\nCompare the alternatives") }
-    XCTAssertEqual(composer.document.parts.filter { $0["type"]?.string != "text" }, parts)
-    XCTAssertEqual(composer.attachments.savedItems, attachments)
-    server.state.value.withLock { $0.remote = textDraft("Edited on another device") }
-    await composer.synchronize()
-    XCTAssertNotNil(composer.conflictingRemote)
-    XCTAssertTrue(composer.text.hasSuffix("Compare the alternatives"))
-    composer.keepLocal()
-    await composer.synchronize()
-    XCTAssertNil(composer.conflictingRemote)
-    XCTAssertEqual(server.state.value.withLock { $0.remote }, composer.value)
   }
 }
 
@@ -693,6 +661,11 @@ private final class DraftServer: Sendable {
         return ChatHTTPResponse(
           status: state.value.withLock { $0.missingFile } ? 404 : 200, body: "{}")
       }
+      if path == "/api/uploads/prepare" {
+        return ChatHTTPResponse(
+          status: 503, body: #"{"error":{"message":"Upload unavailable for the interrupted file"}}"#
+        )
+      }
       guard path == "/api/agents/\(draftAgentID)/draft" else { throw URLError(.unsupportedURL) }
       if request.httpMethod == "PATCH" {
         let index = state.value.withLock { value in
@@ -724,6 +697,13 @@ private final class DraftServer: Sendable {
   }
 }
 
+private final class DraftServerState: Sendable {
+  let value: Mutex<DraftServer.State>
+  init(remote: ComposerDraft) { value = Mutex(DraftServer.State(remote: remote)) }
+}
+
+private let draftAgentID = "43000000-0000-4000-8000-000000000002"
+
 private final class DraftGate: Sendable {
   let stream: AsyncStream<Void>
   let continuation: AsyncStream<Void>.Continuation
@@ -731,12 +711,5 @@ private final class DraftGate: Sendable {
   func wait() async { for await _ in stream { return } }
   func open() { continuation.finish() }
 }
-
-private final class DraftServerState: Sendable {
-  let value: Mutex<DraftServer.State>
-  init(remote: ComposerDraft) { value = Mutex(DraftServer.State(remote: remote)) }
-}
-
-private let draftAgentID = "43000000-0000-4000-8000-000000000002"
 
 private final class DraftReadCount: Sendable { let value = Mutex(0) }

@@ -28,6 +28,7 @@ use guest_contracts::storage_resources::StorageResourceUsage;
 use guest_control_proto::ExecProcessRole;
 
 use crate::log::log;
+use crate::wait::WaitOutcome;
 
 mod managed_tasks;
 mod storage_resources;
@@ -69,6 +70,21 @@ pub(crate) enum ProcessContainmentCleanupMode {
     Forced,
 }
 
+impl ProcessContainmentCleanupMode {
+    /// Select terminal cleanup using cancellation already observed by the caller.
+    pub(crate) fn for_wait_outcome(outcome: &WaitOutcome, cancellation_observed: bool) -> Self {
+        if cancellation_observed {
+            return Self::Forced;
+        }
+        match outcome {
+            WaitOutcome::Exited(_) => Self::Graceful,
+            WaitOutcome::TimedOut | WaitOutcome::Cancelled | WaitOutcome::WaitFailed(_) => {
+                Self::Forced
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum ProcessContainmentMode {
     BuildConfigured,
@@ -91,11 +107,15 @@ struct CgroupGuard {
     group_name: String,
     group_path: PathBuf,
     outer_placement: OwnedFd,
-    workload_placement: Option<OwnedFd>,
-    tools_path: Option<PathBuf>,
+    workload_placement: Option<TrustedWorkloadPlacement>,
     create_elapsed: Duration,
     oom_evidence: Option<Arc<Mutex<crate::oom_evidence::EvidenceMonitor>>>,
     storage_operation: Option<StorageOperation>,
+}
+
+struct TrustedWorkloadPlacement {
+    runtime: OwnedFd,
+    tools_path: PathBuf,
 }
 
 pub(crate) struct PreparedProcessContainmentCommand<'a> {
@@ -490,7 +510,7 @@ impl CgroupGuard {
         fs::create_dir(&group_path)
             .map_err(|error| ProcessContainmentError::new("create cgroup", error))?;
 
-        let setup: Result<(OwnedFd, Option<OwnedFd>, Option<PathBuf>), ProcessContainmentError> =
+        let setup: Result<(OwnedFd, Option<TrustedWorkloadPlacement>), ProcessContainmentError> =
             (|| {
                 enable_required_controllers(&group_path)?;
                 let control_path = group_path.join(CONTROL_CGROUP_NAME);
@@ -558,18 +578,20 @@ impl CgroupGuard {
                     .map_err(|error| {
                         ProcessContainmentError::new("open outer cgroup directory", error)
                     })?;
-                let workload_placement = if trusted_control {
-                    Some(open_placement(
-                        &workload_placement_path,
-                        "open workload cgroup.procs",
-                    )?)
-                } else {
-                    None
+                let workload_placement = match tools_path {
+                    Some(tools_path) => Some(TrustedWorkloadPlacement {
+                        runtime: open_placement(
+                            &workload_placement_path,
+                            "open workload cgroup.procs",
+                        )?,
+                        tools_path,
+                    }),
+                    None => None,
                 };
-                Ok((outer_placement, workload_placement, tools_path))
+                Ok((outer_placement, workload_placement))
             })();
 
-        let (outer_placement, workload_placement, tools_path) = match setup {
+        let (outer_placement, workload_placement) = match setup {
             Ok(placements) => placements,
             Err(original) => {
                 if let Err(rollback) = remove_cgroup_hierarchy(&group_path) {
@@ -594,7 +616,6 @@ impl CgroupGuard {
             group_path,
             outer_placement,
             workload_placement,
-            tools_path,
             create_elapsed: started.elapsed(),
             storage_operation: None,
         })
@@ -614,19 +635,15 @@ impl CgroupGuard {
         expected_uid: libc::uid_t,
     ) -> Result<WorkloadPlacementBootstrap, ProcessContainmentError> {
         let started = Instant::now();
-        let placement = self
-            .workload_placement
-            .as_ref()
-            .ok_or_else(|| {
-                ProcessContainmentError::new(
-                    "prepare workload placement bootstrap",
-                    io::Error::other("trusted control cgroup has no workload placement capability"),
-                )
-            })?
-            .try_clone()
-            .map_err(|error| {
-                ProcessContainmentError::new("clone workload cgroup.procs for bootstrap", error)
-            })?;
+        let workload_placement = self.workload_placement.as_ref().ok_or_else(|| {
+            ProcessContainmentError::new(
+                "prepare workload placement bootstrap",
+                io::Error::other("trusted control cgroup has no workload placement capability"),
+            )
+        })?;
+        let placement = workload_placement.runtime.try_clone().map_err(|error| {
+            ProcessContainmentError::new("clone workload cgroup.procs for bootstrap", error)
+        })?;
         let endpoint = format!("{control_endpoint}{WORKLOAD_BOOTSTRAP_ENDPOINT_SUFFIX}");
         let listener = process_control_ipc::bind_abstract_listener(&endpoint).map_err(|error| {
             ProcessContainmentError::new("bind workload placement bootstrap endpoint", error)
@@ -642,12 +659,7 @@ impl CgroupGuard {
             .group_path
             .join(WORKLOAD_CGROUP_NAME)
             .join(RUNTIME_CGROUP_NAME);
-        let tools_path = self.tools_path.clone().ok_or_else(|| {
-            ProcessContainmentError::new(
-                "prepare tool placement broker",
-                io::Error::other("trusted control cgroup has no tools domain"),
-            )
-        })?;
+        let tools_path = workload_placement.tools_path.clone();
         let tasks = Arc::new(ManagedTasks::new(
             expected_uid,
             expected_runtime_cgroup,
@@ -768,7 +780,6 @@ impl CgroupGuard {
             group_path,
             outer_placement,
             workload_placement,
-            tools_path: _,
             create_elapsed,
             oom_evidence,
             storage_operation,
@@ -1982,7 +1993,6 @@ mod tests {
             group_path: root.clone(),
             outer_placement: fs::File::open(&root).unwrap().into(),
             workload_placement: None,
-            tools_path: None,
             create_elapsed: Duration::ZERO,
             oom_evidence: Some(Arc::new(Mutex::new(monitor))),
             storage_operation: None,

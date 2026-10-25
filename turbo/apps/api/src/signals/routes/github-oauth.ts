@@ -15,9 +15,15 @@ import {
 } from "@okouai/connectors/auth-providers/connectors/github/oauth";
 
 import { requiredAuthContext$ } from "../auth/auth-context";
+import { authRoute } from "../auth/auth-route";
 import { checkOAuthCallbackActor$ } from "../services/oauth-callback-actor";
+import {
+  integrationOAuthAppRedirect,
+  integrationOAuthCallbackResponse,
+  setIntegrationOAuthCallbackHeaders$,
+} from "../services/integration-oauth-callback";
 import { queryOf } from "../context/request";
-import { request$ } from "../context/hono";
+import { authorization$, request$ } from "../context/hono";
 import { db$, writeDb$ } from "../external/db";
 import { claimBuiltinConnectorOAuthState$ } from "../services/connector-oauth-state.service";
 import { publishUserSignal } from "../external/realtime";
@@ -1187,7 +1193,7 @@ const claimGithubInstallationCallback$ = command(
   },
 );
 
-const callbackGithubOauth$ = command(
+const completeCallbackGithubOauth$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const request = get(request$).raw;
     const query = get(queryOf(githubOauthContract.setupCallback));
@@ -1261,6 +1267,53 @@ const callbackGithubOauth$ = command(
       },
       signal,
     );
+  },
+);
+
+const callbackGithubAuthenticated$ = authRoute(
+  { requireOrganization: true, missingOrganizationStatus: 401 },
+  command(async ({ get, set }, signal: AbortSignal) => {
+    const response = await set(completeCallbackGithubOauth$, signal);
+    return integrationOAuthCallbackResponse(
+      response,
+      get(queryOf(githubOauthContract.setupCallback)).responseMode,
+    );
+  }),
+);
+
+const callbackGithubOauth$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setIntegrationOAuthCallbackHeaders$);
+    const query = get(queryOf(githubOauthContract.setupCallback));
+    if (query.responseMode === "json") {
+      return await set(callbackGithubAuthenticated$, signal);
+    }
+    const stateResolution = await resolveGithubCallbackState({
+      stateString: query.state,
+      secretsEncryptionKey: env("SECRETS_ENCRYPTION_KEY"),
+    });
+    signal.throwIfAborted();
+    const replay = signedGithubCallbackReplayResponse({
+      request: get(request$).raw,
+      stateString: query.state,
+      stateResolution,
+    });
+    if (replay) {
+      return replay;
+    }
+    if (
+      query.state &&
+      stateResolution.ok &&
+      stateResolution.state.userId &&
+      stateResolution.state.orgId
+    ) {
+      if (get(authorization$)) {
+        return await set(callbackGithubAuthenticated$, signal);
+      }
+      return integrationOAuthAppRedirect("github", query);
+    }
+    // Stateless updates only navigate; they never create an Okou association.
+    return await set(completeCallbackGithubOauth$, signal);
   },
 );
 

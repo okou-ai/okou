@@ -511,7 +511,7 @@ that the first repark retained the original private runtime marker, ordinary
 home bytes and complete original 64 KiB payload. Each speculative run differs
 from the original history and the other speculative run. The original backing,
 claim metadata and full lease remain owned throughout; repark uses the original
-16 GiB home identity.
+canonical home identity.
 
 Only a verified parked owner restores into the vacant pool. Its insertion must
 already differ from the captured selection before the subsequent shared logical
@@ -744,7 +744,7 @@ immutable disposable inputs, explicit environment and complete native profile.
 
 The record format is `native-snapshot-preparation-v1`. It binds the compiled
 source and actual producer executable, Firecracker/kernel/rootfs bytes, original
-snapshot creation ID, 2-vCPU/4096-MiB/16384-MiB profile and every required snapshot
+snapshot creation ID, 2-vCPU/4096-MiB/24576-MiB profile and every required snapshot
 output, including the exact production completion marker. Preparation hashes the
 inputs before creation and rechecks them after hashing all outputs. Changed or
 non-regular files, incomplete output and an existing record fail publication.
@@ -1094,6 +1094,18 @@ binding the exact supplied policy and optional-input files.
 python3 crates/runner/tests/guarded_idle_native/foreground_report.py "$P1_OUTPUT_DIRECTORY"
 ```
 
+The foreground, logical, incoming and accepted read/create/returned-Guest readers
+share the sustained-readiness check in `pressure_report.py`. Recovery history may
+exceed `max_sample_age_millis`: each observation must be fresh when observed and
+distinct read starts must stay less than that bound apart. Unknown, critical,
+expired observations or stale gaps reset recovery. A fresh current observation
+at the recovery watermark is still required; historical offsets must fit their
+actual monotonic read intervals. This permits a recovery sustain longer than
+sample freshness without accepting expired current readiness. Re-evaluating an
+original corpus with a corrected reader keeps the original producer identity,
+policy and raw files, and records the new reader identity separately. It does
+not calibrate production envelopes or establish installed production protection.
+
 This proves component composition with synthetic foreground commands, not full
 production Reactor/P2 installation or inference. Exact reuse returns its original
 home-promotion owner to required saving. Inventory/logical/replacement/restore/aged
@@ -1302,7 +1314,17 @@ current test-host measurements and limits (no defaults): `host_total_bytes`,
 `recovery_available_bytes`, `live_growth_bytes`, `tail_growth_bytes`,
 `replacement_preparation_bytes`,
 `max_sample_age_millis`, `max_operations`, `max_cleanup_inflight`. The guest shape
-matches the packaged `vm0/default` fixture: two vCPUs, 4096 MiB, 16384 MiB home.
+matches the canonical `vm0/default` definition: two vCPUs, 4096 MiB, 24576 MiB home.
+The actual home preparation, snapshot creator, size checks and artifact receipts
+share [the production profile definition](../../../runner-types/src/profile.rs).
+The ordinary Rust-to-Python consumer test binds those dimensions to the strict
+external reader. A current-profile native run requires a newly matching snapshot
+and package at its pinned source; it must retain all collector/resource guards.
+Size the disposable invocation's disk prerequisite from this shape rather than
+the old 16 GiB capacity calculation; never lower an existing guard to obtain a run.
+Archived 16 GiB results retain their original source, readers and fixed workload.
+Changing the fixture shape does not requalify those measurements or choose a
+production memory envelope.
 The host observation is a real fresh `/proc/meminfo` read. Arithmetic validation
 does not prove calibration or OOM safety. The test must have actual headroom;
 rejected admission fails the test and uses the existing fixture cleanup path.
@@ -1394,7 +1416,7 @@ Run the exact test through the repository's bounded
 an owned driver that supplies these non-secret fixture inputs before executing
 the native test binary. P1 deliberately removes the caller's environment. Put
 `native_terminal_artifacts` in its metadata, containing the manifest plus
-`profile: {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384}` and
+`profile: {"vcpu": 2, "memory_mib": 4096, "home_mib": 24576}` and
 `required_fixture_tail_bytes: 67108864`.
 The owned driver must also explicitly supply the standard system-tool PATH,
 including `/usr/sbin` and `/sbin` for the provider's iptables, conntrack and sysctl

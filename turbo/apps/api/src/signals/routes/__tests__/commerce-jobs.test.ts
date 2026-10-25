@@ -382,7 +382,7 @@ describe("Commerce async jobs", () => {
     });
   });
 
-  it("recovers the same job after a transient provider GET failure and bills once", async () => {
+  it("recovers the same job after failed and malformed provider reads and bills once", async () => {
     const user = await fundedActor();
     configureProvider();
     const beforeCredits = await credits(user);
@@ -400,13 +400,14 @@ describe("Commerce async jobs", () => {
       }),
       http.get(`${BASE}/products/task_get/advanced/${providerId}`, () => {
         polls++;
-        return polls === 1
-          ? new HttpResponse(null, { status: 503 })
-          : HttpResponse.json(
-              providerResponse(providerId, 20_000, 0, [
-                { type: "products", items: [product] },
-              ]),
-            );
+        if (polls === 1) {
+          return new HttpResponse(null, { status: 503 });
+        }
+        return HttpResponse.json(
+          providerResponse(providerId, 20_000, 0, [
+            { type: "products", items: polls === 2 ? null : [product] },
+          ]),
+        );
       }),
     );
     const created = await accept(
@@ -416,11 +417,13 @@ describe("Commerce async jobs", () => {
       }),
       [202],
     );
-    await expect(getJob(user, created.body.id)).resolves.toStrictEqual(
-      created.body,
-    );
-    expect(polls).toBe(1);
-    await expect(credits(user)).resolves.toBe(beforeCredits);
+    for (const attempt of [1, 2]) {
+      await expect(getJob(user, created.body.id)).resolves.toStrictEqual(
+        created.body,
+      );
+      expect(polls).toBe(attempt);
+      await expect(credits(user)).resolves.toBe(beforeCredits);
+    }
     const completed = await completeJob(user, created.body);
     expect(completed.job.id).toBe(created.body.id);
     expect(completed.result.result.items).toStrictEqual([product]);
@@ -441,12 +444,13 @@ describe("Commerce async jobs", () => {
       beforeUsage.totalCredits + charged,
     );
     expect(submissions).toBe(1);
-    expect(polls).toBe(2);
+    expect(polls).toBe(3);
   });
 
   it("completes and settles through independent cron requests without user polling", async () => {
+    const app = await setupApp({ context, routes: ROUTES, isolatePg: true });
     const user = createBddApi(context).user();
-    await createRunsApi(context).grantProEntitlement(user, { isolatePg: true });
+    await createRunsApi(context).grantProEntitlement(user);
     configureProvider();
     mockEnv("CRON_SECRET", "commerce-jobs-cron-secret");
     const beforeCredits = await credits(user);
@@ -468,14 +472,14 @@ describe("Commerce async jobs", () => {
       }),
     );
     const created = await accept(
-      client()(commerceContract).search({
+      app(commerceContract).search({
         headers: authenticate(user),
         body: { query: "coffee maker", async: true },
       }),
       [202],
     );
     expect(created.body.status).toBe("running");
-    const cron = client()(cronReconcileCommerceJobsContract);
+    const cron = app(cronReconcileCommerceJobsContract);
     await accept(cron.reconcile({ headers: {} }), [401]);
     await accept(
       cron.reconcile({ headers: { authorization: "Bearer wrong-secret" } }),
@@ -552,8 +556,9 @@ describe("Commerce async jobs", () => {
   });
 
   it("settles once when user GET overlaps the global recovery cron", async () => {
+    const app = await setupApp({ context, routes: ROUTES, isolatePg: true });
     const user = createBddApi(context).user();
-    await createRunsApi(context).grantProEntitlement(user, { isolatePg: true });
+    await createRunsApi(context).grantProEntitlement(user);
     configureProvider();
     mockEnv("CRON_SECRET", "commerce-jobs-cron-secret");
     const beforeCredits = await credits(user);
@@ -576,7 +581,7 @@ describe("Commerce async jobs", () => {
       }),
     );
     const created = await accept(
-      client()(commerceContract).search({
+      app(commerceContract).search({
         headers: authenticate(user),
         body: { query: "coffee maker", async: true },
       }),
@@ -587,7 +592,7 @@ describe("Commerce async jobs", () => {
     await Promise.all([
       getJob(user, created.body.id),
       accept(
-        client()(cronReconcileCommerceJobsContract).reconcile({
+        app(cronReconcileCommerceJobsContract).reconcile({
           headers: { authorization: "Bearer commerce-jobs-cron-secret" },
         }),
         [200],
@@ -965,6 +970,210 @@ describe("Commerce async jobs", () => {
     await expect(credits(user)).resolves.toBe(beforeCredits);
     expect((await personalUsage(user)).totalCredits).toBe(
       beforeUsage.totalCredits,
+    );
+  });
+
+  it("rejects generic scrape URLs, mismatched marketplaces and unbounded search input before provider access", async () => {
+    const user = createBddApi(context).user();
+    configureProvider();
+    let calls = 0;
+    server.use(
+      http.post(`${BASE}/:operation/task_post`, () => {
+        calls += 1;
+        return HttpResponse.json(
+          providerResponse(randomUUID(), 20_100, 0, null),
+        );
+      }),
+    );
+    const commerce = client()(commerceContract);
+    for (const target of [
+      "https://example.com/dp/B085RFFC9Q",
+      "https://www.amazon.com/s?k=coffee",
+      "https://amazon.com.evil.test/dp/B085RFFC9Q",
+    ]) {
+      await accept(
+        commerce.inspect({ headers: authenticate(user), body: { target } }),
+        [400],
+      );
+    }
+    await accept(
+      commerce.inspect({
+        headers: authenticate(user),
+        body: {
+          target: "https://amazon.co.uk/dp/B085RFFC9Q",
+          marketplace: "amazon.com",
+        },
+      }),
+      [400],
+    );
+    await accept(
+      commerce.search({
+        headers: authenticate(user),
+        body: { query: "https://amazon.com/dp/B085RFFC9Q" },
+      }),
+      [400],
+    );
+    await accept(
+      commerce.search({
+        headers: authenticate(user),
+        body: { query: "coffee", limit: 49 },
+      }),
+      [400],
+    );
+    expect(calls).toBe(0);
+  });
+
+  it("normalizes a bare ASIN and applies an explicit marketplace", async () => {
+    const user = await fundedActor();
+    configureProvider();
+    const providerId = randomUUID();
+    const submissions: unknown[] = [];
+    server.use(
+      http.post(`${BASE}/asin/task_post`, async ({ request }) => {
+        submissions.push(await request.json());
+        return HttpResponse.json(providerResponse(providerId, 20_100, 0, null));
+      }),
+    );
+    const created = await accept(
+      client()(commerceContract).inspect({
+        headers: authenticate(user),
+        body: { target: "b085rffc9q", marketplace: "amazon.de" },
+      }),
+      [202],
+    );
+    expect(created.body).toMatchObject({
+      operation: "inspect",
+      marketplace: "amazon.de",
+    });
+    expect(submissions).toStrictEqual([
+      [
+        {
+          asin: "B085RFFC9Q",
+          se_domain: "amazon.de",
+          location_code: 2276,
+          language_code: "de_DE",
+          priority: 2,
+          tag: created.body.id,
+        },
+      ],
+    ]);
+  });
+
+  it("completes a billable empty search when DataForSEO reports no results", async () => {
+    const user = await fundedActor();
+    configureProvider();
+    const beforeCredits = await credits(user);
+    const beforeUsage = await personalUsage(user);
+    const providerId = randomUUID();
+    const empty = providerResponse(providerId, 40_102, 0, [
+      { keyword: "no matching product", items_count: 0, items: null },
+    ]);
+    empty.tasks_error = 1;
+    empty.tasks = empty.tasks.map((task) => {
+      return { ...task, status_message: "No Search Results.", result_count: 0 };
+    });
+    server.use(
+      http.post(`${BASE}/products/task_post`, () => {
+        return HttpResponse.json(
+          providerResponse(providerId, 20_100, 0.0024, null),
+        );
+      }),
+      http.get(`${BASE}/products/task_get/advanced/${providerId}`, () => {
+        return HttpResponse.json(empty);
+      }),
+    );
+    const created = await accept(
+      client()(commerceContract).search({
+        headers: authenticate(user),
+        body: { query: "no matching product" },
+      }),
+      [202],
+    );
+    const completed = await completeJob(user, created.body);
+    expect(completed.result).toMatchObject({
+      billingQuantity: 2400,
+      providerCostUsd: 0.0024,
+      result: { items: [], source: empty },
+    });
+    expect(completed.result.result.items).toStrictEqual([]);
+    const charged = completed.result.creditsCharged;
+    expect(charged).toBeGreaterThan(0);
+    if (charged === null) {
+      throw new Error("Expected empty Commerce search billing receipt");
+    }
+    await expect(credits(user)).resolves.toBe(beforeCredits - charged);
+    expect((await personalUsage(user)).totalCredits).toBe(
+      beforeUsage.totalCredits + charged,
+    );
+    await expect(getJob(user, created.body.id)).resolves.toStrictEqual(
+      completed.job,
+    );
+    await expect(credits(user)).resolves.toBe(beforeCredits - charged);
+    expect((await personalUsage(user)).totalCredits).toBe(
+      beforeUsage.totalCredits + charged,
+    );
+  });
+
+  it("fails an unavailable ASIN and settles its accepted submission fee once", async () => {
+    const user = await fundedActor();
+    configureProvider();
+    const beforeCredits = await credits(user);
+    const beforeUsage = await personalUsage(user);
+    const providerId = randomUUID();
+    const empty = providerResponse(providerId, 40_102, 0, [
+      { asin: "B0BTF6T8FV", items_count: 0, items: null },
+    ]);
+    empty.tasks_error = 1;
+    empty.tasks = empty.tasks.map((task) => {
+      return { ...task, status_message: "No Search Results.", result_count: 0 };
+    });
+    server.use(
+      http.post(`${BASE}/asin/task_post`, () => {
+        return HttpResponse.json(
+          providerResponse(providerId, 20_100, 0.003, null),
+        );
+      }),
+      http.get(`${BASE}/asin/task_get/advanced/${providerId}`, () => {
+        return HttpResponse.json(empty);
+      }),
+    );
+    const created = await accept(
+      client()(commerceContract).inspect({
+        headers: authenticate(user),
+        body: { target: "B0BTF6T8FV", async: true },
+      }),
+      [202],
+    );
+    const checkpoint = await getJob(user, created.body.id);
+    expect(checkpoint.status).toBe("running");
+    await expect(credits(user)).resolves.toBe(beforeCredits);
+    const failed = await getJob(user, created.body.id);
+    expect(failed).toMatchObject({
+      status: "failed",
+      operation: "inspect",
+      error: {
+        code: "COMMERCE_TASK_ERROR",
+        message: expect.any(String),
+      },
+      result: {
+        billingQuantity: 3000,
+        providerCostUsd: 0.003,
+        result: { items: [], source: empty },
+      },
+    });
+    const charged = failed.result?.creditsCharged;
+    expect(charged).toBeGreaterThan(0);
+    if (charged === null || charged === undefined) {
+      throw new Error("Expected unavailable ASIN billing receipt");
+    }
+    await expect(credits(user)).resolves.toBe(beforeCredits - charged);
+    expect((await personalUsage(user)).totalCredits).toBe(
+      beforeUsage.totalCredits + charged,
+    );
+    await expect(getJob(user, created.body.id)).resolves.toStrictEqual(failed);
+    await expect(credits(user)).resolves.toBe(beforeCredits - charged);
+    expect((await personalUsage(user)).totalCredits).toBe(
+      beforeUsage.totalCredits + charged,
     );
   });
 });

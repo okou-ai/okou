@@ -11,7 +11,7 @@ import { and, eq, sql } from "drizzle-orm";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
-import { badRequestMessage, notFound } from "../../lib/error";
+import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
 import { db$, writeDb$ } from "../external/db";
@@ -25,7 +25,9 @@ import {
 import { storageCommitLineageCondition } from "./storage-write-conditions";
 import {
   sandboxStorageRunIsActive,
-  storageCommitPublicationPlan,
+  storageCommitPublicationStatement,
+  storageCommitPublicationRow,
+  storageCommitPublicationResult,
   terminalStorageCommitPersistedStateMatches,
   totalSize,
 } from "./storage-write-publication-plan";
@@ -147,7 +149,8 @@ export type CommitStorageResponse =
         readonly deduplicated?: boolean;
       };
     }
-  | StorageErrorResponse;
+  | StorageErrorResponse
+  | ReturnType<typeof conflict>;
 
 function payloadTooLarge(message: string): StorageErrorResponse {
   return {
@@ -480,32 +483,21 @@ const commitVerifiedStorageVersion$ = command(
     },
     signal: AbortSignal,
   ): Promise<CommitStorageResponse> => {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0254; new non-billing transactions are prohibited.
-    return await set(writeDb$).transaction(async (tx) => {
-      // The plan contains only bound SQL and ordinary data. This command alone
-      // executes every statement and owns the transaction through completion.
-      const plan = storageCommitPublicationPlan(args.input, args.verification);
-      let step = plan.next();
-      while (!step.done) {
-        const statement = step.value;
-        if (!("sql" in statement)) {
-          step = plan.next([nowDate()]);
-          continue;
-        }
-        let rows: readonly unknown[] = [];
-        if (statement.rowSchema) {
-          rows = parseRawRows(
-            statement.rowSchema,
-            await tx.execute(statement.sql),
-          );
-        } else {
-          await tx.execute(statement.sql);
-        }
-        signal.throwIfAborted();
-        step = plan.next(rows);
-      }
-      return step.value;
-    });
+    const db = set(writeDb$);
+    const query = storageCommitPublicationStatement(
+      args.input,
+      args.verification,
+      nowDate(),
+    );
+    signal.throwIfAborted();
+    const [row] = parseRawRows(
+      storageCommitPublicationRow,
+      await db.execute(query),
+    );
+    // A submitted statement can commit before cancellation is observed. A SQL
+    // error still rolls back every dependent write and remains the primary error.
+    signal.throwIfAborted();
+    return storageCommitPublicationResult(row, args.input);
   },
 );
 

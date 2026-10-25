@@ -237,7 +237,7 @@ job-local lifetime. Missing R2 configuration fails cache startup explicitly.
 
 Jobs that use the shared compiler cache call
 `.github/actions/setup-r2-sccache` once after checkout. The published
-`vm0-toolchain-rust:20261009` and `vm0-dev:20261009` images include sccache 0.18.0
+`vm0-toolchain-rust:20261023` and `vm0-dev:20261023` images include sccache 0.18.0
 for both native host architectures. Version pinning and verification belong to
 the image build; the action only checks executable availability before
 credentialed startup and does not download a binary. It validates the architecture

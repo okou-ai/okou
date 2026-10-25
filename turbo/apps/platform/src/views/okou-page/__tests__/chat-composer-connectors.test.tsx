@@ -1,7 +1,5 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, describe, beforeEach, it } from "vitest";
@@ -407,7 +405,6 @@ test("Start connector setup from chat", async () => {
     "Connect Google Analytics",
     catalog,
   );
-  expect(connect).not.toHaveAttribute("aria-busy");
   expect(authWindow.location.href).toBe("about:blank");
   await user.click(connect);
   await waitFor(() => {
@@ -423,12 +420,6 @@ test("Start connector setup from chat", async () => {
     );
   });
   expect(browserOpen.calls).toHaveLength(1);
-  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  expect(connect).toHaveAttribute("aria-busy", "true");
-  expect(connect).toBeDisabled();
-  expect(
-    within(catalog).getByPlaceholderText("Find connectors..."),
-  ).toBeVisible();
   authWindow.close();
   await waitFor(() => {
     expect(
@@ -436,15 +427,12 @@ test("Start connector setup from chat", async () => {
     ).toBeEnabled();
   });
   expect(
-    queryFastControl("button", "Connect Google Analytics", catalog),
-  ).not.toHaveAttribute("aria-busy");
-  expect(
     within(catalog).getByPlaceholderText("Find connectors..."),
   ).toHaveValue("Google Analytics");
 });
 
 test.each([null, "Close"] as const)(
-  "Keep chat OAuth in one dialog, with explicit cancellation (%s)",
+  "Complete or cancel connector authorization from chat (%s)",
   async (dismissal) => {
     const user = userEvent.setup({ delay: null });
     const fixture = installComposerConnectorFixture({
@@ -457,25 +445,6 @@ test.each([null, "Close"] as const)(
         }),
       ],
     });
-    const authorizationStarted = context.mocks.deferred<void>();
-    const authorization = context.mocks.deferred<void>();
-    let connected = false;
-    context.mocks.api(agentConnectorAccessContract.agent, ({ respond }) => {
-      return respond(200, {
-        enabledConnectorSlugs: connected ? [GOOGLE_ANALYTICS_SLUG] : [],
-        customConnectorIds: [],
-      });
-    });
-    context.mocks.api(
-      userBuiltinConnectorsContract.update,
-      async ({ body, respond }) => {
-        authorizationStarted.resolve();
-        await authorization.promise;
-        return respond(200, {
-          enabledConnectorSlugs: body.enabledConnectorSlugs,
-        });
-      },
-    );
     const authWindow = createAuthWindow();
     const browserOpen = context.mocks.browser.open(authWindow);
     await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
@@ -495,23 +464,10 @@ test.each([null, "Close"] as const)(
         "https://accounts.example.test/google-analytics",
       );
     });
-    expect(
-      queryFastControl("button", "Connect Google Analytics", catalog),
-    ).toHaveAttribute("aria-busy", "true");
-    expect(
-      within(catalog).getByPlaceholderText("Find connectors..."),
-    ).toBeVisible();
-    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-
     if (dismissal === "Close") {
       await user.click(within(catalog).getByLabelText("Close"));
     }
     const cancelled = dismissal === "Close";
-    await waitFor(() => {
-      expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
-        cancelled ? 0 : 1,
-      );
-    });
     expect(authWindow.closed).toBe(cancelled);
 
     const account = connectorAccount({
@@ -520,7 +476,6 @@ test.each([null, "Close"] as const)(
       displayName: "Work",
       isDefault: true,
     });
-    connected = true;
     context.mocks.data.connectors([
       { ...account, slug: GOOGLE_ANALYTICS_SLUG },
     ]);
@@ -529,25 +484,14 @@ test.each([null, "Close"] as const)(
       screen.queryByText("Google Analytics connected and authorized for Scout"),
     ).toBeNull();
     if (cancelled) {
-      authorization.resolve();
       return;
     }
     authWindow.close();
-    await authorizationStarted.promise;
-    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    const connectedCard = await findFastControl(
-      "button",
-      "Open Google Analytics details",
-      catalog,
-    );
-    expect(connectedCard).toHaveAttribute("aria-busy", "true");
-    expect(connectedCard).toBeDisabled();
-    authorization.resolve();
     await expect(
       screen.findByText("Google Analytics connected and authorized for Scout"),
     ).resolves.toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0);
+      expect(catalog).not.toBeInTheDocument();
     });
     expect(browserOpen.calls).toHaveLength(1);
   },

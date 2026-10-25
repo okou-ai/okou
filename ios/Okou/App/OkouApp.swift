@@ -29,7 +29,7 @@ struct OkouApp: App {
           Color.clear
         }
       }
-      .tint(Color.primary)
+      .modifier(OkouAppearance())
       .task { await authentication?.start() }
       .onOpenURL { url in Task { await authentication?.handleURL(url) } }
     }
@@ -94,10 +94,10 @@ private struct WorkspaceRootView: View {
   let userID: String
   @State private var store: WorkspaceStore
   @State private var sidebar = SidebarInteraction()
+  @State private var topContentHeight: CGFloat = 0
   @Binding private var accountError: String?
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  private let headerHeight: CGFloat = 60
 
   init(
     authentication: AuthenticationService, configuration: AppConfiguration,
@@ -147,38 +147,55 @@ private struct WorkspaceRootView: View {
         .allowsHitTesting(sidebar.isOpen)
         .accessibilityHidden(!sidebar.isOpen)
 
-        Group {
-          if let conversation = store.selectedConversation {
-            ChatDetailView(
-              conversation: conversation, topContentInset: headerHeight, sidebar: sidebar,
-              mentionSource: ComposerMentionSource(
-                agentID: conversation.thread.agentID, agents: store.list.agents,
-                threads: store.list.threads)
-            )
-            .id(conversation.thread.id)
-          } else {
-            newChatHome
-              .safeAreaBar(edge: .bottom, spacing: 0) {
-                @Bindable var composer = store.newComposer
-                ChatComposerView(
-                  draft: $composer.text, isBusy: store.isCreating,
-                  showsProgress: store.isCreating, canStop: false,
-                  needsUpgrade: store.needsUpgrade,
-                  error: store.error ?? store.list.error, attachmentURL: store.webURL,
-                  attachments: composer.attachments,
-                  draftState: composer,
-                  submit: { await store.sendNewChat() }, refresh: nil,
-                  modelSelection: store.newModelSelection,
-                  mentionSource: ComposerMentionSource(
-                    agentID: store.selectedAgentID, agents: store.list.agents,
-                    threads: store.list.threads),
-                  workflowSource: store.composerWorkflows, agentID: store.selectedAgentID)
-              }
+        NavigationStack {
+          Group {
+            if let conversation = store.selectedConversation {
+              ChatDetailView(
+                conversation: conversation, topContentInset: topContentHeight, sidebar: sidebar,
+                mentionSource: ComposerMentionSource(
+                  agentID: conversation.thread.agentID, agents: store.list.agents,
+                  threads: store.list.threads),
+                connectorsEnabled: store.list.canUseComposerConnectors
+              )
+              .id(conversation.thread.id)
+            } else {
+              newChatHome
+                .safeAreaBar(edge: .bottom, spacing: 0) {
+                  @Bindable var composer = store.newComposer
+                  ChatComposerView(
+                    draft: $composer.text, isBusy: store.isCreating,
+                    showsProgress: store.isCreating, canStop: false,
+                    needsUpgrade: store.needsUpgrade,
+                    error: store.error ?? store.list.actionError, attachmentURL: store.webURL,
+                    attachments: composer.attachments,
+                    draftState: composer,
+                    submit: { await store.sendNewChat() }, refresh: nil,
+                    modelSelection: store.newModelSelection,
+                    connectorSelection: store.list.canUseComposerConnectors
+                      ? store.newModelSelection.connectors : nil,
+                    mentionSource: ComposerMentionSource(
+                      agentID: store.selectedAgentID, agents: store.list.agents,
+                      threads: store.list.threads),
+                    workflowSource: store.composerWorkflows, agentID: store.selectedAgentID)
+                }
+            }
           }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .safeAreaBar(edge: .top, spacing: 0) {
-          mainHeader
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .modifier(ChatWorkspaceHeader(store: store, openSidebar: openSidebar))
+          .safeAreaBar(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+              if let error = store.list.syncError {
+                ChatSyncFailureView(message: error, isRefreshing: store.list.isLoading) {
+                  await store.refresh()
+                }
+              }
+            }
+            .onGeometryChange(for: CGFloat.self) {
+              $0.size.height
+            } action: {
+              topContentHeight = $0
+            }
+          }
         }
         .frame(width: geometry.size.width, height: geometry.size.height)
         .accessibilityHidden(sidebar.isOpen)
@@ -262,7 +279,7 @@ private struct WorkspaceRootView: View {
       "Unable to update chats",
       isPresented: Binding(
         get: {
-          store.selectedConversation != nil && store.list.error != nil
+          store.selectedConversation != nil && store.list.actionError != nil
             && store.list.renameRequest == nil && !store.list.isSavingRename
         },
         set: { if !$0 { store.list.dismissError() } }
@@ -270,7 +287,7 @@ private struct WorkspaceRootView: View {
     ) {
       Button("OK") { store.list.dismissError() }
     } message: {
-      Text(store.list.error ?? "")
+      Text(store.list.actionError ?? "")
     }
     .fullScreenCover(isPresented: Binding(get: { store.needsUpgrade }, set: { _ in })) {
       ContentUnavailableView {
@@ -284,10 +301,6 @@ private struct WorkspaceRootView: View {
       }
       .interactiveDismissDisabled()
     }
-  }
-
-  private var mainHeader: some View {
-    ChatWorkspaceHeader(store: store, height: headerHeight, openSidebar: openSidebar)
   }
 
   private var newChatHome: some View {

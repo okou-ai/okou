@@ -1,0 +1,33 @@
+# Inline Templates
+
+Match each numbered template marker in the current user message with the same numbered section below.
+- Apply each template only to the request around its marker.
+- A template is context, not a request by itself.
+
+## Template #1 (website)
+
+Selected website template:
+- Artifact type: website
+- Template: Black Slabs (website-template:black-slabs)
+- Template description: High-contrast editorial website template with monolithic typography, full-bleed showcase panels, metric cards, and electric-indigo accents.
+- Template package id: template:black-slabs
+- Package resource: template:black-slabs
+- Template archive SHA-256: a2ba4a18fe6be58a05a99fcf755f696629c7cbfe295ec9e4f7685bef1eebff79
+
+When you produce a website from the user's request:
+- Pull the package: okou resource pull template:black-slabs --dir ./generated/resources
+- Work from ./generated/resources/black-slabs. Inspect the bundled package metadata and instructions before editing.
+- Read ./generated/resources/black-slabs/SKILL.md before authoring; it owns this package's contract.
+- Assemble the page once with `node tools/compose.mjs <section-ids...>`, then author the composed index.html directly. The command refuses a second compose pass; bypassing that guard would discard authored work.
+- Image workflow: use supplied images first; when generated images are needed, write one outside-site TSV row per selected real slot (`asset-id<TAB>raw prompt<TAB>size`), then run `okou generate image-batch start <manifest.tsv> <state-dir>` exactly once, author the HTML while it runs, and after HTML authoring wait exactly once with `okou generate image-batch wait <state-dir>`; read each returned `asset-id<TAB>URL-or-relative-path` from `<state-dir>/results.tsv`; private images are optimized WebP files under `<state-dir>/assets/` (ffmpeg required), so copy them into the output bundle and use relative paths with the original dimensions; never embed authenticated API URLs or expiring signatures; public URL results remain embeddable and copy each validated TSV size to the image's `data-generation-size`; with no manifest skip this workflow, keep its state outside the site, let the command own generation settings/concurrency/retry, and never call `okou generate image` or a template image wrapper directly.
+- Repair every blocking failure from `bash checks/verify.sh index.html qa` until it prints QA_READY.
+- Stage once: `node tools/stage.mjs publish` writes the final clean ./publish directory before cover capture.
+- If you choose hosted HTML delivery, follow these platform publishing steps after content QA. Template limits on QA screenshots apply only to content QA.
+- Before publishing or updating HTML, run `okou host screenshot ./publish --out ./generated/previews/cover.png` and inspect the cover. Keep the image and receipt outside the bundle; re-capture after edits. A user-selected local PNG/JPEG may replace capture.
+- Publish the same bundle with the cover's path in --preview <image> --json, preserving the site, artifact kind, SPA, and visibility. Confirm a nonempty previewImageUrl before returning the exact artifact URL.
+- Repair failures or report the blocker; do not omit --preview to bypass a failure. A file-only deliverable does not require HTML hosting.
+- Publish once: `okou host ./publish --site <slug> --preview ./generated/previews/cover.png --json`.
+- Check `okou host --help` and, when supported, add `--title` with a concise human-readable site name, independently of the URL slug.
+- Check the deployed page with `bash checks/verify-published.sh <url>`; a local pass is not evidence about the deployment.
+- Use this built-in R2-backed package; do not substitute generic Open Design website templates for the selected template.
+- Return the hosted website URL and keep the generated static site as the final deliverable.

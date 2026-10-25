@@ -1,2 +1,8 @@
-export const WEBSITE_IMAGE_BATCH_INSTRUCTION =
+const WEBSITE_IMAGE_BATCH_INSTRUCTION =
   "Image workflow: use supplied images first; when generated images are needed, write one outside-site TSV row per selected real slot (`asset-id<TAB>raw prompt<TAB>size`), then run `okou generate image-batch start <manifest.tsv> <state-dir>` exactly once, author the HTML while it runs, and after HTML authoring wait exactly once with `okou generate image-batch wait <state-dir>`; read each returned `asset-id<TAB>URL-or-relative-path` from `<state-dir>/results.tsv`; private images are optimized WebP files under `<state-dir>/assets/` (ffmpeg required), so copy them into the output bundle and use relative paths with the original dimensions; never embed authenticated API URLs or expiring signatures; public URL results remain embeddable and copy each validated TSV size to the image's `data-generation-size`; with no manifest skip this workflow, keep its state outside the site, let the command own generation settings/concurrency/retry, and never call `okou generate image` or a template image wrapper directly.";
+
+export function websiteImageInstructions(
+  imageGenerationEnabled: boolean,
+): readonly string[] {
+  return imageGenerationEnabled ? [WEBSITE_IMAGE_BATCH_INSTRUCTION] : [];
+}

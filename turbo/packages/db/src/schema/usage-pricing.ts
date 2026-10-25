@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   uuid,
@@ -6,6 +7,7 @@ import {
   bigint,
   timestamp,
   uniqueIndex,
+  check,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -15,6 +17,10 @@ import {
  * to price a batch of usage events.  Formula:
  *
  *   creditsCharged = ceil(quantity × unit_price / unit_size)
+ *
+ * Sources that report native credits instead of USD can configure their
+ * procurement cost in `source_cost_usd_micros_per_credit`. Admission snapshots
+ * that conversion together with the usage price; NULL means unconfigured.
  *
  * `unit_price` is the credit cost of one pricing unit; `unit_size` is how
  * many `usage_event.quantity` items make up one unit.  Each row picks the
@@ -43,6 +49,9 @@ export const usagePricing = pgTable(
     category: varchar("category", { length: 100 }).notNull(),
     unitPrice: bigint("unit_price", { mode: "number" }).notNull(),
     unitSize: bigint("unit_size", { mode: "number" }).notNull(),
+    sourceCostUsdMicrosPerCredit: bigint("source_cost_usd_micros_per_credit", {
+      mode: "number",
+    }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -52,6 +61,10 @@ export const usagePricing = pgTable(
         table.kind,
         table.provider,
         table.category,
+      ),
+      check(
+        "chk_usage_pricing_source_cost_usd_micros_per_credit",
+        sql`${table.sourceCostUsdMicrosPerCredit} IS NULL OR ${table.sourceCostUsdMicrosPerCredit} BETWEEN 1 AND 9007199254740991`,
       ),
     ];
   },

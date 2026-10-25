@@ -67,7 +67,11 @@ describe("CHAT-02: run-level model overrides", () => {
         actor,
         captured.accountSourceId,
       );
-      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+      // Concurrent real completion reports may both schedule the same pick.
+      await Promise.all([
+        completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders),
+        completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders),
+      ]);
       const page = await waitForThreadMessages(
         actor,
         waiting.threadId,
@@ -99,6 +103,26 @@ describe("CHAT-02: run-level model overrides", () => {
           return event.runId !== undefined;
         }),
       ).toStrictEqual([]);
+      await flushWaitUntilForTest();
+      const settled = await chat.listThreadEvents(actor, waiting.threadId);
+      const rejected = settled.events.filter((event) => {
+        return event.eventType === "input.rejected";
+      });
+      const errors = settled.events.filter((event) => {
+        return event.eventType === "output.error";
+      });
+      expect(rejected).toHaveLength(1);
+      expect(errors).toHaveLength(1);
+      const rejection = rejected[0];
+      const error = errors[0];
+      if (!rejection || !error) {
+        throw new Error("Expected one complete queued rejection pair");
+      }
+      expect(rejection.revokesEventId).toBe(clientEventId);
+      expect(error.seqId).toBe(rejection.seqId + 1);
+      expect(Date.parse(error.createdAt)).toBe(
+        Date.parse(rejection.createdAt) + 1,
+      );
     });
   });
 

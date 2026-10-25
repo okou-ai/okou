@@ -29,7 +29,7 @@ function uncertainSubmission(id: string, cause: unknown): ApiRequestError {
 
 function rejectedSubmission(error: { code: string; message: string }): never {
   throw new ApiRequestError(
-    `${error.message}. If this API deployment does not support asynchronous Commerce, upgrade the API before using this CLI. The submission was not retried.`,
+    `${error.message}. The submission was not retried.`,
     error.code,
     400,
   );
@@ -47,6 +47,7 @@ export async function searchCommerce(
   try {
     result = await client.search({
       headers: {},
+      // Keep the opt-in until supported API rollback targets default to jobs.
       body: { ...body, async: true, requestId },
       fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
     });
@@ -70,6 +71,7 @@ export async function inspectCommerce(
   try {
     result = await client.inspect({
       headers: {},
+      // New CLI sessions can outlive an API rollback to opt-in async handling.
       body: { ...body, async: true, requestId },
       fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
     });

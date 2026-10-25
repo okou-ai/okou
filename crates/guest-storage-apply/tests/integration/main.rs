@@ -7,6 +7,8 @@ mod download;
 mod file_scheme;
 mod gzip_integrity;
 mod inline_instructions;
+mod instruction_cleanup;
 mod preparation_failure;
 mod process;
+mod rooted_extraction;
 mod scheduling;

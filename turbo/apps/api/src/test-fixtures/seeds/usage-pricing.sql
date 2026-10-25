@@ -199,15 +199,6 @@ VALUES
   ('social', 'socialkit', 'request', 3, 1),
   ('data-search', 'monid/apollo', 'provider_cost_usd_micros', 1250, 1000000),
   ('data-search', 'monid/hunterio', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/similarweb', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/upspring', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/firecrawl-trends', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/oriane', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/web-archive-org', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/affiliate-com', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/play-google-com', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/particle', 'provider_cost_usd_micros', 1250, 1000000),
-  ('data-search', 'firecrawl/alexandria/fiscal-ai', 'provider_cost_usd_micros', 1250, 1000000),
   ('social', 'monid/xiaohongshu', 'provider_cost_usd_micros', 1250, 1000000),
   ('social', 'monid/threads', 'provider_cost_usd_micros', 1250, 1000000),
   ('social', 'monid/wechat', 'provider_cost_usd_micros', 1250, 1000000),
@@ -215,4 +206,18 @@ VALUES
   ('social', 'monid/weibo', 'provider_cost_usd_micros', 1250, 1000000),
   ('commerce', 'dataforseo', 'provider_cost_usd_micros', 1250, 1000000),
   ('people-search', 'perplexity', 'request', 20, 1)
+ON CONFLICT (kind, provider, category) DO NOTHING;
+
+-- Fixed Firecrawl test baseline: USD 0.001 per source credit, not a production tariff.
+INSERT INTO usage_pricing (kind, provider, category, unit_price, unit_size, source_cost_usd_micros_per_credit)
+VALUES
+  ('data-search', 'firecrawl/alexandria/similarweb', 'provider_cost_usd_micros', 1250, 1000000, 1000),
+  ('data-search', 'firecrawl/alexandria/upspring', 'provider_cost_usd_micros', 1250, 1000000, 1000),
+  ('data-search', 'firecrawl/alexandria/firecrawl-trends', 'provider_cost_usd_micros', 1250, 1000000, 1000),
+  ('data-search', 'firecrawl/alexandria/oriane', 'provider_cost_usd_micros', 1250, 1000000, 1000),
+  ('data-search', 'firecrawl/alexandria/web-archive-org', 'provider_cost_usd_micros', 1250, 1000000, 1000),
+  ('data-search', 'firecrawl/alexandria/affiliate-com', 'provider_cost_usd_micros', 1250, 1000000, 1000),
+  ('data-search', 'firecrawl/alexandria/play-google-com', 'provider_cost_usd_micros', 1250, 1000000, 1000),
+  ('data-search', 'firecrawl/alexandria/particle', 'provider_cost_usd_micros', 1250, 1000000, 1000),
+  ('data-search', 'firecrawl/alexandria/fiscal-ai', 'provider_cost_usd_micros', 1250, 1000000, 1000)
 ON CONFLICT (kind, provider, category) DO NOTHING;

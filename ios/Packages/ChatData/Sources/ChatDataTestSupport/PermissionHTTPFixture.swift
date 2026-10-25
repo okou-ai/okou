@@ -40,12 +40,13 @@ public final class PermissionHTTPFixture: Sendable {
 
   public init(
     message: String? = nil, initial: State = State(),
+    onUnhandledRequest: @escaping @Sendable (String) -> Void,
     beforeRequest: @escaping @Sendable (URLRequest) async -> Void = { _ in }
   ) {
     let state = ServerState(initial)
     self.state = state
     let message = message ?? Self.actionURL()
-    http = ChatHTTPFixture { request in
+    http = ChatHTTPFixture(onUnhandledRequest: onUnhandledRequest) { request in
       await beforeRequest(request)
       try Task.checkCancellation()
       var request = request
@@ -54,6 +55,13 @@ public final class PermissionHTTPFixture: Sendable {
         value.requests.append(request)
         let path = request.url!.path
         let threadPath = "/api/chat-threads/\(Self.threadID)"
+        if path == threadPath + "/activity-summary" {
+          let body = try JSONDecoder().decode([String: String].self, from: chatRequestBody(request))
+          let data = try JSONSerialization.data(withJSONObject: [
+            "runId": body["runId"] ?? "", "status": "ineligible", "messages": [],
+          ])
+          return ChatHTTPResponse(body: String(decoding: data, as: UTF8.self))
+        }
         if path == threadPath + "/metadata" {
           return ChatHTTPResponse(
             body: """

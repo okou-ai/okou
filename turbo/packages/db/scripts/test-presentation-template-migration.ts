@@ -9,7 +9,7 @@ import { Client } from "pg";
 const client = new Client({ connectionString: process.env.DATABASE_URL });
 const migration = await readFile(
   new URL(
-    "../src/migrations/1457_migrate_presentation_templates_to_user_templates.sql",
+    "../src/migrations/1461_migrate_presentation_templates_to_user_templates.sql",
     import.meta.url,
   ),
   "utf8",

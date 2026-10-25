@@ -48,31 +48,7 @@ async function setupIsolatedApp(
  * TypeScript. Prefer `setupApp` for every case the typed client can express.
  */
 type RawAppRequest = ReturnType<typeof setupRawAppRequestWithRoutes>;
-type SetupRawRequestOptions = SetupRawAppOptions & {
-  readonly isolatePg?: boolean;
-};
 
-export function setupRawAppRequest(
-  options: SetupRawRequestOptions & { readonly isolatePg: true },
-): Promise<RawAppRequest>;
-export function setupRawAppRequest(
-  options: SetupRawRequestOptions & { readonly isolatePg?: false },
-): RawAppRequest;
-export function setupRawAppRequest({
-  context,
-  routes,
-  signal,
-  isolatePg = false,
-}: SetupRawRequestOptions): RawAppRequest | Promise<RawAppRequest> {
-  if (isolatePg) {
-    return setupIsolatedRawAppRequest({ context, routes, signal });
-  }
-  return setupRawAppRequestWithRoutes({ context, routes, signal });
-}
-
-async function setupIsolatedRawAppRequest(
-  options: SetupRawAppOptions,
-): Promise<RawAppRequest> {
-  await initializeCaseDatabase();
+export function setupRawAppRequest(options: SetupRawAppOptions): RawAppRequest {
   return setupRawAppRequestWithRoutes(options);
 }

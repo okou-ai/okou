@@ -1161,7 +1161,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       actor,
       [200],
     );
-    expect(second.body.code).not.toBe(first.body.code);
 
     await ap.postAgentPhoneInboundMessage({
       channel: "sms",

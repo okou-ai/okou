@@ -45,7 +45,8 @@ class NativeReportTests(unittest.TestCase):
             "rootfs_sha256": "e" * 64, "snapshot_files": {name: "f" * 64 for name in (
                 "snapshot.bin", "memory.bin", "cow.img", "cow.img.bitmap", ".snapshot-complete")},
             "policy_sha256": "1" * 64,
-            "profile": {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384},
+            "profile": json.loads(os.environ["OKOU_TEST_NATIVE_PROFILE"])
+            if "OKOU_TEST_NATIVE_PROFILE" in os.environ else dict(report.NATIVE_PROFILE),
             "required_fixture_tail_bytes": 64 * 1024 * 1024,
         }
         prepare_snapshot_record(self.root, self.artifacts)

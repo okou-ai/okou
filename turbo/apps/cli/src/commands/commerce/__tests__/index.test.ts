@@ -134,6 +134,15 @@ describe("managed Commerce commands", () => {
     server.use(
       http.post(`${api}/search`, async ({ request }) => {
         body = await request.json();
+        // Supported rollback APIs still choose synchronous execution by default.
+        if (
+          typeof body !== "object" ||
+          body === null ||
+          !("async" in body) ||
+          body.async !== true
+        ) {
+          return HttpResponse.json(response("search", "amazon.co.uk"));
+        }
         return HttpResponse.json(job("running", "search", "amazon.co.uk"), {
           status: 202,
         });
@@ -178,6 +187,14 @@ describe("managed Commerce commands", () => {
       server.use(
         http.post(`${api}/inspect`, async ({ request }) => {
           body = await request.json();
+          if (
+            typeof body !== "object" ||
+            body === null ||
+            !("async" in body) ||
+            body.async !== true
+          ) {
+            return HttpResponse.json(response("inspect"));
+          }
           return HttpResponse.json(
             job(
               "running",
@@ -433,41 +450,6 @@ describe("managed Commerce commands", () => {
     expect(JSON.parse(stderr.mock.calls.flat().join("\n"))).toMatchObject({
       status: "error",
       error: { message: expect.stringContaining("--async does not support") },
-    });
-  });
-
-  it("reports an old API's strict-body rejection with upgrade guidance and no paid fallback", async () => {
-    let submissions = 0;
-    server.use(
-      http.post(`${api}/search`, () => {
-        submissions += 1;
-        return HttpResponse.json(
-          {
-            error: {
-              code: "INVALID_ARGUMENT",
-              message: "Unrecognized key: async",
-            },
-          },
-          { status: 400 },
-        );
-      }),
-    );
-    await commerceCommand.parseAsync([
-      "node",
-      "okou",
-      "search",
-      "standing desk",
-      "--platform",
-      "amazon",
-      "--json",
-    ]);
-    expect(process.exitCode).toBe(1);
-    expect(submissions).toBe(1);
-    expect(JSON.parse(stderr.mock.calls.flat().join("\n"))).toMatchObject({
-      error: {
-        code: "INVALID_ARGUMENT",
-        message: expect.stringContaining("upgrade the API"),
-      },
     });
   });
 

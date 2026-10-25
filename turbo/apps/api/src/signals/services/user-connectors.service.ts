@@ -4,7 +4,7 @@ import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { agents } from "@okouai/db/schema/agent";
@@ -16,7 +16,7 @@ import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-con
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { settle } from "../utils";
 import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
@@ -36,6 +36,7 @@ import {
   reportConnectorRuntimeWakeupDiscoveryFailure,
 } from "./connector-runtime-wakeup.service";
 import { changedCustomConnectorIds } from "./user-custom-connector-changes";
+import { persistUserCustomConnectorGrants$ } from "./user-custom-connector-grant-persistence.service";
 import {
   effectiveCustomConnectorPermissionBundleRef,
   FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF,
@@ -229,7 +230,7 @@ export const updateUserBuiltinConnectors$ = command(
     const operation = args.operation ?? "replace";
 
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0308; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
+    const committed = await db.transaction(async (tx) => {
       const [agent] = await tx
         .select({ id: agents.id })
         .from(agents)
@@ -243,7 +244,7 @@ export const updateUserBuiltinConnectors$ = command(
         .for("update")
         .limit(1);
       if (agent === undefined) {
-        return { status: "agentNotFound" };
+        return { status: "agentNotFound" } as const;
       }
 
       const connectorScope = and(
@@ -285,7 +286,7 @@ export const updateUserBuiltinConnectors$ = command(
       }
 
       if (operation === "replace") {
-        return { status: "updated", enabledConnectorSlugs };
+        return { status: "updated", enabledConnectorSlugs } as const;
       }
 
       const rows = await tx
@@ -300,6 +301,13 @@ export const updateUserBuiltinConnectors$ = command(
       } as const;
       return result;
     });
+    if (committed.status === "updated") {
+      // Register invalidation before callers observe cancellation after commit.
+      await publishUserSignal([args.userId], "composerAgentConnectorsChanged", {
+        agentId: args.agentId,
+      });
+    }
+    return committed;
   },
 );
 
@@ -480,96 +488,6 @@ async function resolveCustomConnectorPermissionSelection(args: {
   return { ok: true, permissionNamesByConnectorId };
 }
 
-async function persistUserCustomConnectorUpdate(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly agentId: string;
-    readonly grants: readonly AgentCustomConnectorGrant[];
-    readonly operation: UserCustomConnectorUpdateOperation;
-  },
-): Promise<Extract<UpdateUserCustomConnectorsResult, { status: "updated" }>> {
-  const connectorIds = args.grants.map((grant) => {
-    return grant.customConnectorId;
-  });
-  const connectorScope = and(
-    eq(userCustomConnectors.orgId, args.orgId),
-    eq(userCustomConnectors.userId, args.userId),
-    eq(userCustomConnectors.agentId, args.agentId),
-  );
-  if (args.operation === "replace") {
-    await db.delete(userCustomConnectors).where(connectorScope);
-  } else if (args.operation === "remove" && connectorIds.length > 0) {
-    await db
-      .delete(userCustomConnectors)
-      .where(
-        and(
-          connectorScope,
-          inArray(userCustomConnectors.customConnectorId, connectorIds),
-        ),
-      );
-  }
-
-  if (args.operation !== "remove" && args.grants.length > 0) {
-    await db
-      .insert(userCustomConnectors)
-      .values(
-        args.grants.map((grant) => {
-          return {
-            orgId: args.orgId,
-            userId: args.userId,
-            agentId: args.agentId,
-            customConnectorId: grant.customConnectorId,
-            permissionNames: [...grant.permissionNames],
-          };
-        }),
-      )
-      .onConflictDoUpdate({
-        target: [
-          userCustomConnectors.orgId,
-          userCustomConnectors.userId,
-          userCustomConnectors.agentId,
-          userCustomConnectors.customConnectorId,
-        ],
-        set: {
-          permissionNames: sql`excluded.permission_names`,
-        },
-      });
-  }
-
-  if (args.operation === "replace") {
-    return {
-      status: "updated",
-      grants: args.grants,
-    };
-  }
-  const rows = await db
-    .select({
-      customConnectorId: userCustomConnectors.customConnectorId,
-      permissionNames: userCustomConnectors.permissionNames,
-    })
-    .from(userCustomConnectors)
-    .innerJoin(
-      orgCustomConnectors,
-      and(
-        eq(orgCustomConnectors.id, userCustomConnectors.customConnectorId),
-        eq(orgCustomConnectors.orgId, userCustomConnectors.orgId),
-      ),
-    )
-    .where(and(connectorScope, eq(orgCustomConnectors.enabled, true)))
-    .orderBy(userCustomConnectors.customConnectorId);
-  return {
-    status: "updated",
-    grants: rows.map((row) => {
-      return {
-        customConnectorId: row.customConnectorId,
-        permissionNames: [...row.permissionNames],
-      };
-    }),
-  };
-}
-
 function permissionBundleDependencySlugs(
   permissionBundleRefs: Iterable<string | null>,
 ): ConnectorSlug[] {
@@ -629,131 +547,145 @@ function customConnectorGrantScopeCondition(
   );
 }
 
-async function persistUserCustomConnectors(args: {
-  readonly db: Db;
-  readonly request: UpdateUserCustomConnectorsArgs;
-  readonly grants: readonly AgentCustomConnectorGrant[];
-  readonly grantByConnectorId: ReadonlyMap<string, readonly string[]>;
-  readonly operation: UserCustomConnectorUpdateOperation;
-  readonly readsConnectorCatalog: boolean;
-}): Promise<UserCustomConnectorUpdateOutcome> {
-  const grantDb = args.db;
-  const grantScope = args.request;
-  if (
-    !(await (async () => {
-      const plan = userCustomConnectorGrantAgentReadPlan(grantScope);
-      const [agent] = await grantDb
-        .select(plan.columns)
-        .from(plan.from)
-        .where(plan.where)
-        .limit(1);
-      return agent !== undefined;
-    })())
-  ) {
-    return { result: { status: "agentNotFound" }, changedConnectorIds: [] };
-  }
-  const previousRows = await args.db
-    .select({
-      customConnectorId: userCustomConnectors.customConnectorId,
-      permissionNames: userCustomConnectors.permissionNames,
-    })
-    .from(userCustomConnectors)
-    .where(customConnectorGrantScopeCondition(args.request));
-  const connectorIds = args.grants.map((grant) => {
-    return grant.customConnectorId;
-  });
-
-  if (args.operation === "remove") {
-    return {
-      result: await persistUserCustomConnectorUpdate(args.db, {
-        orgId: args.request.orgId,
-        userId: args.request.userId,
-        agentId: args.request.agentId,
-        grants: args.grants,
-        operation: args.operation,
-      }),
-      changedConnectorIds: changedCustomConnectorIds(
-        previousRows,
-        args.grants,
-        args.operation,
-      ),
-    };
-  }
-  const definitionDb = args.db;
-  const definitionArgs = { orgId: args.request.orgId, connectorIds };
-  const definitions = await (async (): Promise<CustomConnectorDefinitions> => {
-    if (definitionArgs.connectorIds.length === 0) {
-      return {
-        missingIds: [],
-        permissionBundleRefs: new Map(),
-      };
+const readCustomConnectorDefinitions$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly connectorIds: readonly string[];
+    },
+  ): Promise<CustomConnectorDefinitions> => {
+    if (args.connectorIds.length === 0) {
+      return { missingIds: [], permissionBundleRefs: new Map() };
     }
-    const rows: CustomConnectorDefinitionRow[] = await definitionDb
+    const rows: CustomConnectorDefinitionRow[] = await set(writeDb$)
       .select(customConnectorDefinitionSelection())
       .from(orgCustomConnectors)
       .leftJoin(orgCustomConnectorOauthConfigs, customConnectorDefinitionJoin())
-      .where(customConnectorDefinitionWhere(definitionArgs));
-    return customConnectorDefinitions(rows, definitionArgs.connectorIds);
-  })();
-  if (definitions.missingIds.length > 0) {
-    return {
-      result: {
-        status: "customConnectorsNotFound",
-        missingIds: definitions.missingIds,
-      },
-      changedConnectorIds: [],
-    };
-  }
-  // Permission bundles read only their dependency connectors' metadata.
-  let connectorCatalogSnapshot: ConnectorRuntimeSelection | null = null;
-  if (args.readsConnectorCatalog) {
-    const catalogDb = args.db;
-    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
-      connectorSlugs: [],
-      metadataConnectorSlugs: permissionBundleDependencySlugs(
-        definitions.permissionBundleRefs.values(),
-      ),
+      .where(customConnectorDefinitionWhere(args));
+    return customConnectorDefinitions(rows, args.connectorIds);
+  },
+);
+
+const persistUserCustomConnectors$ = command(
+  async (
+    { set },
+    args: {
+      readonly request: UpdateUserCustomConnectorsArgs;
+      readonly grants: readonly AgentCustomConnectorGrant[];
+      readonly grantByConnectorId: ReadonlyMap<string, readonly string[]>;
+      readonly operation: UserCustomConnectorUpdateOperation;
+      readonly readsConnectorCatalog: boolean;
+      readonly deferClientInvalidationUntilOuterCommit?: boolean;
+    },
+  ): Promise<UserCustomConnectorUpdateOutcome> => {
+    const db = set(writeDb$);
+    const grantRead = userCustomConnectorGrantAgentReadPlan(args.request);
+    const [agent] = await db
+      .select(grantRead.columns)
+      .from(grantRead.from)
+      .where(grantRead.where)
+      .limit(1);
+    if (agent === undefined) {
+      return { result: { status: "agentNotFound" }, changedConnectorIds: [] };
+    }
+    const previousRows = await db
+      .select({
+        customConnectorId: userCustomConnectors.customConnectorId,
+        permissionNames: userCustomConnectors.permissionNames,
+      })
+      .from(userCustomConnectors)
+      .where(customConnectorGrantScopeCondition(args.request));
+    const connectorIds = args.grants.map((grant) => {
+      return grant.customConnectorId;
     });
-    connectorCatalogSnapshot = connectorRuntimeSlugSelectionFromRows(
-      catalogPlan.selection,
-      await catalogDb
-        .select(catalogPlan.columns)
-        .from(connectorCatalog)
-        .leftJoin(connectorCatalogEntries, catalogPlan.join)
-        .where(connectorCatalogCurrentWhere()),
-    );
-  }
-  const permissionSelection = await resolveCustomConnectorPermissionSelection({
-    connectorIds,
-    permissionIntent: args.request.permissionIntent,
-    grantByConnectorId: args.grantByConnectorId,
-    previousPermissionNamesByConnectorId:
-      customConnectorPermissionNamesById(previousRows),
-    permissionBundleRefs: definitions.permissionBundleRefs,
-    snapshot: connectorCatalogSnapshot,
-  });
-  if (!permissionSelection.ok) {
-    return { result: permissionSelection.error, changedConnectorIds: [] };
-  }
-  const validatedGrants = validatedCustomConnectorGrants(
-    connectorIds,
-    permissionSelection.permissionNamesByConnectorId,
-  );
-  return {
-    result: await persistUserCustomConnectorUpdate(args.db, {
+
+    if (args.operation === "remove") {
+      return {
+        result: await set(persistUserCustomConnectorGrants$, {
+          orgId: args.request.orgId,
+          userId: args.request.userId,
+          agentId: args.request.agentId,
+          grants: args.grants,
+          operation: args.operation,
+          deferClientInvalidationUntilOuterCommit:
+            args.deferClientInvalidationUntilOuterCommit,
+        }),
+        changedConnectorIds: changedCustomConnectorIds(
+          previousRows,
+          args.grants,
+          args.operation,
+        ),
+      };
+    }
+    const definitions = await set(readCustomConnectorDefinitions$, {
       orgId: args.request.orgId,
-      userId: args.request.userId,
-      agentId: args.request.agentId,
-      grants: validatedGrants,
-      operation: args.operation,
-    }),
-    changedConnectorIds: changedCustomConnectorIds(
-      previousRows,
-      validatedGrants,
-      args.operation,
-    ),
-  };
-}
+      connectorIds,
+    });
+    if (definitions.missingIds.length > 0) {
+      return {
+        result: {
+          status: "customConnectorsNotFound",
+          missingIds: definitions.missingIds,
+        },
+        changedConnectorIds: [],
+      };
+    }
+    // Permission bundles read only their dependency connectors' metadata.
+    let connectorCatalogSnapshot: ConnectorRuntimeSelection | null = null;
+    if (args.readsConnectorCatalog) {
+      const catalogDb = db;
+      const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
+        connectorSlugs: [],
+        metadataConnectorSlugs: permissionBundleDependencySlugs(
+          definitions.permissionBundleRefs.values(),
+        ),
+      });
+      connectorCatalogSnapshot = connectorRuntimeSlugSelectionFromRows(
+        catalogPlan.selection,
+        await catalogDb
+          .select(catalogPlan.columns)
+          .from(connectorCatalog)
+          .leftJoin(connectorCatalogEntries, catalogPlan.join)
+          .where(connectorCatalogCurrentWhere()),
+      );
+    }
+    const permissionSelection = await resolveCustomConnectorPermissionSelection(
+      {
+        connectorIds,
+        permissionIntent: args.request.permissionIntent,
+        grantByConnectorId: args.grantByConnectorId,
+        previousPermissionNamesByConnectorId:
+          customConnectorPermissionNamesById(previousRows),
+        permissionBundleRefs: definitions.permissionBundleRefs,
+        snapshot: connectorCatalogSnapshot,
+      },
+    );
+    if (!permissionSelection.ok) {
+      return { result: permissionSelection.error, changedConnectorIds: [] };
+    }
+    const validatedGrants = validatedCustomConnectorGrants(
+      connectorIds,
+      permissionSelection.permissionNamesByConnectorId,
+    );
+    return {
+      result: await set(persistUserCustomConnectorGrants$, {
+        orgId: args.request.orgId,
+        userId: args.request.userId,
+        agentId: args.request.agentId,
+        grants: validatedGrants,
+        operation: args.operation,
+        deferClientInvalidationUntilOuterCommit:
+          args.deferClientInvalidationUntilOuterCommit,
+      }),
+      changedConnectorIds: changedCustomConnectorIds(
+        previousRows,
+        validatedGrants,
+        args.operation,
+      ),
+    };
+  },
+);
 
 export const updateUserCustomConnectors$ = command(
   async (
@@ -768,12 +700,13 @@ export const updateUserCustomConnectors$ = command(
     }
     const { grants, grantByConnectorId } = normalized;
     const operation = args.operation ?? "replace";
-    const committed = await persistUserCustomConnectors({
-      db,
+    const committed = await set(persistUserCustomConnectors$, {
       request: args,
       grants,
       grantByConnectorId,
       operation,
+      deferClientInvalidationUntilOuterCommit:
+        options.deferRuntimeWakeupUntilOuterCommit,
       readsConnectorCatalog:
         args.permissionIntent === "exact" &&
         operation !== "remove" &&
@@ -864,15 +797,6 @@ export const addUserCustomConnector$ = command(
       options,
     );
     if (result.status === "updated") {
-      if (!options.deferRuntimeWakeupUntilOuterCommit) {
-        await publishUserSignal(
-          [args.userId],
-          "composerAgentConnectorsChanged",
-          {
-            agentId: args.agentId,
-          },
-        );
-      }
       return { status: "added" };
     }
     return result;

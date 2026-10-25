@@ -6,7 +6,6 @@ import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
-import { commerce$ } from "../services/commerce.service";
 import {
   createCommerceJob$,
   getCommerceJob$,
@@ -35,22 +34,12 @@ const search$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   set(setResHeader$, "Cache-Control", "private, no-store");
-  if (body.data.async) {
-    return await set(
-      createCommerceJob$,
-      {
-        auth: get(organizationAuthContext$),
-        request: { operation: "search", body: body.data },
-        requestId: body.data.requestId,
-      },
-      signal,
-    );
-  }
   return await set(
-    commerce$,
+    createCommerceJob$,
     {
       auth: get(organizationAuthContext$),
       request: { operation: "search", body: body.data },
+      requestId: body.data.requestId,
     },
     signal,
   );
@@ -63,22 +52,12 @@ const inspect$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   set(setResHeader$, "Cache-Control", "private, no-store");
-  if (body.data.async) {
-    return await set(
-      createCommerceJob$,
-      {
-        auth: get(organizationAuthContext$),
-        request: { operation: "inspect", body: body.data },
-        requestId: body.data.requestId,
-      },
-      signal,
-    );
-  }
   return await set(
-    commerce$,
+    createCommerceJob$,
     {
       auth: get(organizationAuthContext$),
       request: { operation: "inspect", body: body.data },
+      requestId: body.data.requestId,
     },
     signal,
   );

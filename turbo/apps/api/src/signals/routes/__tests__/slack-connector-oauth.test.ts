@@ -1,3 +1,8 @@
+import {
+  callbackAuthenticationModes,
+  callbackBrowserHeaders,
+  callbackNeedsSignIn,
+} from "./helpers/oauth-callback-auth";
 import { randomUUID } from "node:crypto";
 
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -235,7 +240,30 @@ async function complete(
   return location(
     await accept(
       clients()(slackOauthContract).callback({
+        extraHeaders: headers,
         query: { state: parameter(authorization, "state"), code: randomUUID() },
+      }),
+      [307],
+    ),
+  );
+}
+
+async function installAnonymous(current: Actor): Promise<URL> {
+  const authorization = location(
+    await accept(clients()(slackOauthContract).install({ query: {} }), [307]),
+  );
+  context.mocks.slack.oauth.v2.access.mockResolvedValueOnce({
+    ok: true,
+    access_token: `xoxb-${current.workspaceId}`,
+    bot_user_id: `B_${current.workspaceId}`,
+    team: { id: current.workspaceId, name: "Anonymous workspace" },
+    authed_user: { id: current.slackUserId },
+    scope: parameter(authorization, "scope"),
+  });
+  return location(
+    await accept(
+      clients()(slackOauthContract).callback({
+        query: { code: randomUUID(), state: parameter(authorization, "state") },
       }),
       [307],
     ),
@@ -689,6 +717,7 @@ test("installation grants bot and user scopes and connects the OAuth account", a
 
   const replay = await accept(
     clients()(slackOauthContract).callback({
+      extraHeaders: headers,
       query: { state: parameter(authorization, "state"), code: "replay" },
     }),
     [307],
@@ -914,15 +943,8 @@ test("a combined grant cannot bypass identity checks through the standalone conn
   ).toBe("connected");
 });
 
-test("unsigned install parameters cannot opt into a user's connector grant", async () => {
-  const current = actor();
-  const legacy = await accept(
-    clients()(slackOauthContract).install({
-      query: { orgId: current.orgId, userId: current.userId },
-    }),
-    [307],
-  );
-  expect(location(legacy).searchParams.has("user_scope")).toBeFalsy();
+test("an invalid signed install entry cannot grant a user's connector account", async () => {
+  actor();
   const status = await integrationStatus();
   if (!status.installUrl) {
     throw new Error("Expected an installation link");
@@ -1086,25 +1108,7 @@ test("a Slack connect OAuth callback recovers a failed channel confirmation by D
 
 test("an admin binds an anonymously installed workspace through user OAuth", async () => {
   const current = actor();
-  const anonymous = await accept(
-    clients()(slackOauthContract).install({ query: {} }),
-    [307],
-  );
-  const authorization = location(anonymous);
-  context.mocks.slack.oauth.v2.access.mockResolvedValueOnce({
-    ok: true,
-    access_token: `xoxb-${current.workspaceId}`,
-    bot_user_id: `B_${current.workspaceId}`,
-    team: { id: current.workspaceId, name: "Anonymous workspace" },
-    authed_user: { id: current.slackUserId },
-    scope: parameter(authorization, "scope"),
-  });
-  await accept(
-    clients()(slackOauthContract).callback({
-      query: { code: randomUUID(), state: parameter(authorization, "state") },
-    }),
-    [307],
-  );
+  await installAnonymous(current);
   await expect(integrationStatus()).resolves.toMatchObject({
     isInstalled: false,
   });
@@ -1131,6 +1135,26 @@ test("an admin binds an anonymously installed workspace through user OAuth", asy
   );
 });
 
+test("an anonymous reinstall preserves the organization's connected Slack account", async () => {
+  const current = actor();
+  await complete(await startInstall(), current);
+  const connectedAccounts = await accounts();
+
+  const returned = await installAnonymous(current);
+
+  expect(returned.pathname).toBe("/settings/slack");
+  expect(Object.fromEntries(returned.searchParams)).toStrictEqual({
+    w: current.workspaceId,
+    u: current.slackUserId,
+  });
+  await expect(integrationStatus()).resolves.toMatchObject({
+    isInstalled: true,
+    isConnected: true,
+    workspaceName: "Anonymous workspace",
+  });
+  await expect(accounts()).resolves.toStrictEqual(connectedAccounts);
+});
+
 test("slack success and denial retain the verified conversation context for the canonical page", async () => {
   const current = actor();
   await complete(await startInstall(), current);
@@ -1140,6 +1164,7 @@ test("slack success and denial retain the verified conversation context for the 
   const denied = location(
     await accept(
       clients()(slackOauthContract).callback({
+        extraHeaders: headers,
         query: {
           state: parameter(authorization, "state"),
           error: "access_denied",
@@ -1173,3 +1198,92 @@ test("slack success and denial retain the verified conversation context for the 
     isConnected: true,
   });
 });
+
+test.each(callbackAuthenticationModes)(
+  "protects the Slack connector callback actor (%s)",
+  async (mode) => {
+    const current = actor();
+    const authorization = await startInstall();
+    const query = {
+      state: parameter(authorization, "state"),
+      code: "provider-result",
+    };
+    const victimWorkspace = `T_${randomUUID()}`;
+    const victimUser = `U_${randomUUID()}`;
+    context.mocks.slack.oauth.v2.access.mockResolvedValueOnce({
+      ok: true,
+      team: { id: victimWorkspace, name: "Provider workspace" },
+      access_token: "xoxb-test",
+      bot_user_id: "B_TEST",
+      scope: parameter(authorization, "scope"),
+      authed_user: {
+        id: victimUser,
+        access_token: "xoxp-test",
+        scope: parameter(authorization, "user_scope"),
+      },
+    });
+    context.mocks.slack.users.info.mockResolvedValue({
+      ok: true,
+      user: {
+        id: victimUser,
+        real_name: "Provider user",
+        profile: { email: "provider@example.test" },
+      },
+    });
+    const browserHeaders = callbackBrowserHeaders(context, mode, current);
+    const browser = await accept(
+      clients()(slackOauthContract).callback({
+        query,
+        extraHeaders: browserHeaders.cookie
+          ? { cookie: browserHeaders.cookie }
+          : {},
+      }),
+      [307],
+    );
+    expect(location(browser).searchParams.get("integration")).toBe("slack");
+    authenticate(current);
+    await expect(integrationStatus()).resolves.toMatchObject({
+      isInstalled: false,
+      isConnected: false,
+    });
+    const completion = await accept(
+      clients()(slackOauthContract).callback({
+        query: { ...query, responseMode: "json" },
+        extraHeaders: callbackBrowserHeaders(context, mode, current),
+      }),
+      [200, 401],
+    );
+    expect(completion.status).toBe(callbackNeedsSignIn(mode) ? 401 : 200);
+    if (completion.status === 200) {
+      const target = new URL(completion.body.redirectUrl);
+      if (mode === "matching-cookie") {
+        expect(target.searchParams.get("status")).toBe("connected");
+      } else {
+        expect(target.searchParams.get("error")).toContain(
+          "active account or organization changed",
+        );
+      }
+    }
+    authenticate(current);
+    if (mode === "matching-cookie") {
+      await expect(accounts()).resolves.toStrictEqual([
+        expect.objectContaining({ externalId: victimUser }),
+      ]);
+    } else {
+      await expect(accounts()).resolves.toStrictEqual([]);
+    }
+    if (callbackNeedsSignIn(mode)) {
+      const resumed = await accept(
+        clients()(slackOauthContract).callback({
+          query,
+          extraHeaders: headers,
+        }),
+        [307],
+      );
+      expect(location(resumed).searchParams.get("status")).toBe("connected");
+      await expect(accounts()).resolves.toStrictEqual([
+        expect.objectContaining({ externalId: victimUser }),
+      ]);
+    }
+  },
+);

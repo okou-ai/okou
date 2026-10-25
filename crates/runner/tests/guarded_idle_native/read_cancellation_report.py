@@ -103,16 +103,9 @@ def validate(directory):
             samples(actual, events[0]["monotonic_ns"], accepted["monotonic_ns"], policy)
             available = value.get("available_bytes")
             if guarded:
-                fresh = []
-                for observed in actual:
-                    if (pressure.integer(observed["available_bytes"], policy["recovery_available_bytes"])
-                            and observed["age_ns"]+accepted["monotonic_ns"]-observed["finished_ns"] < policy["max_sample_age_millis"]*1_000_000):
-                        fresh.append(observed)
-                    else:
-                        fresh = []
-                if (not pressure.integer(available, policy["recovery_available_bytes"]) or len(fresh) < 2
-                        or not any(v["available_bytes"] == available for v in fresh)
-                        or fresh[-1]["read_start_offset_ns"]-fresh[0]["read_start_offset_ns"] < policy["pressure_recovery_sustain_millis"]*1_000_000):
+                fresh = pressure.sustained_ready_samples(actual, accepted["monotonic_ns"], policy)
+                if (not pressure.integer(available, policy["recovery_available_bytes"])
+                        or not any(v["available_bytes"] == available for v in fresh)):
                     raise ValueError("actual runtime read lacks sustained fresh Ready")
             elif available is not None or actual:
                 raise ValueError("unguarded actual startup did not stay Unknown")

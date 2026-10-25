@@ -70,7 +70,7 @@ class PrebootSimulatorTests(unittest.TestCase):
             check=False,
         )
 
-    def test_starts_only_the_configured_runtime_before_compilation(self):
+    def test_starts_only_the_configured_runtime_and_awaits_readiness(self):
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
         devices = json.loads(self.state.read_text())["devices"]

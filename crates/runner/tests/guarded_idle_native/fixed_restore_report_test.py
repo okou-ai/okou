@@ -29,10 +29,10 @@ class FixedRestoreReportTests(unittest.TestCase):
         target.write_bytes(self.original)
         self.image=self.root/"retained-home.ext4"
         self.image.unlink()
-        with self.image.open("wb") as stream:stream.truncate(16384*1024**2)
+        with self.image.open("wb") as stream:stream.truncate(report.NATIVE_HOME_BYTES)
         subprocess.run(["/usr/sbin/mke2fs","-q","-F","-t","ext4","-O","^has_journal","-d",str(self.root/"seed"),str(self.image)],check=True,capture_output=True)
         with self.image.open("rb") as stream:stream.seek(1024);block=stream.read(1024)
-        home={"path":f"/var/tmp/native-case/workspaces/{self.ident}/home.ext4","bytes":16384*1024**2,
+        home={"path":f"/var/tmp/native-case/workspaces/{self.ident}/home.ext4","bytes":report.NATIVE_HOME_BYTES,
               "filesystem_uuid":block[104:120].hex(),"superblock_sha256":hashlib.sha256(block).hexdigest()}
         at=lambda n:10_000_000_000+int(n*1_000_000)
         self.at=at

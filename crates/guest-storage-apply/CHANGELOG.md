@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.26.6](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.5...guest-storage-apply-v0.26.6) (2026-10-25)
+
+## [0.26.5](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.4...guest-storage-apply-v0.26.5) (2026-10-24)
+
+
+### Performance Improvements
+
+* **runner:** reuse directory handles for decoded guest files ([#42713](https://github.com/okou-ai/okou/issues/42713)) ([f7d7952](https://github.com/okou-ai/okou/commit/f7d7952e30af7350db2376a3bc41d08410d1bb73))
+
+## [0.26.4](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.3...guest-storage-apply-v0.26.4) (2026-10-23)
+
+
+### Performance Improvements
+
+* **runner:** reuse directory descriptors during guest archive extraction ([#42647](https://github.com/okou-ai/okou/issues/42647)) ([704e521](https://github.com/okou-ai/okou/commit/704e521da410fc07165603bc62508360683ce4e5))
+
+## [0.26.3](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.2...guest-storage-apply-v0.26.3) (2026-10-23)
+
+
+### Bug Fixes
+
+* **rust:** anchor instruction cleanup to no-follow directories ([#42590](https://github.com/okou-ai/okou/issues/42590)) ([f7780ea](https://github.com/okou-ai/okou/commit/f7780ea798a48829df0ef6b1cfdf7258257ea715))
+
+## [0.26.2](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.1...guest-storage-apply-v0.26.2) (2026-10-23)
+
+
+### Refactoring
+
+* **workflows:** prepare attachments outside storage ([#42563](https://github.com/okou-ai/okou/issues/42563)) ([c2d0e48](https://github.com/okou-ai/okou/commit/c2d0e488e938512e55dce8ab199046a7f16d7b1c))
+
 ## [0.26.1](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.0...guest-storage-apply-v0.26.1) (2026-10-23)
 
 ## [0.26.0](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.25.34...guest-storage-apply-v0.26.0) (2026-10-23)

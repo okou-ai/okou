@@ -1,10 +1,5 @@
-import {
-  useGet,
-  useLastLoadable,
-  useLastResolved,
-  useLoadable,
-  useSet,
-} from "ccstate-react";
+import { useGet, useLastLoadable, useLastResolved } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   Button,
@@ -21,25 +16,20 @@ import { detach, onDomEventFn, Reason } from "../../signals/utils.ts";
 import { userInvitations$ } from "../../signals/user-invitations.ts";
 import {
   createWorkspace$,
-  workspaceCreation$,
-  workspaceInvitations$,
-  workspaceAcceptance$,
-  type WorkspaceInvitationActions,
+  joinWorkspace$,
+  type WorkspaceInvitation,
 } from "../../signals/select-org/workspace-actions.ts";
 import { ThumbnailPlaceholder, WorkspaceLogo } from "../components/avatar.tsx";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 
-function InvitationRow({ actions }: { actions: WorkspaceInvitationActions }) {
-  const { invitation } = actions;
-  const acceptance = useLoadable(actions.request$);
-  const sharedAcceptance = useLoadable(workspaceAcceptance$);
-  const joinWorkspace = useSet(actions.join$);
+function InvitationRow({ invitation }: { invitation: WorkspaceInvitation }) {
+  const [acceptance, joinWorkspace] = useLoadableSet(joinWorkspace$);
   const signal = useGet(pageSignal$);
   const isAccepting = acceptance.state === "loading";
   const { t } = useTranslation();
 
   const handleAccept = onDomEventFn(async () => {
-    await joinWorkspace(signal);
+    await joinWorkspace(invitation, signal);
   });
 
   return (
@@ -53,7 +43,7 @@ function InvitationRow({ actions }: { actions: WorkspaceInvitationActions }) {
       </span>
       <Button
         type="button"
-        disabled={sharedAcceptance.state === "loading"}
+        disabled={isAccepting}
         onClick={handleAccept}
         variant="quiet"
         size="xs"
@@ -73,9 +63,8 @@ function InvitationRow({ actions }: { actions: WorkspaceInvitationActions }) {
 }
 
 function CreateWorkspaceMenuItem() {
-  const creation = useLoadable(workspaceCreation$);
+  const [creation, createWorkspace] = useLoadableSet(createWorkspace$);
   const creatingOrg = creation.state === "loading";
-  const createWorkspace = useSet(createWorkspace$);
   const signal = useGet(pageSignal$);
   const { t } = useTranslation();
 
@@ -191,7 +180,7 @@ function OrgDropdownContent() {
 
 function OrgDropdownBody() {
   const clerkLoadable = useLastLoadable(clerk$);
-  const pendingInvitations = useLastResolved(workspaceInvitations$);
+  const pendingInvitations = useLastResolved(userInvitations$);
   const currentOrg = useLastResolved(currentOrgInfo$);
   const { t } = useTranslation();
 
@@ -239,12 +228,9 @@ function OrgDropdownBody() {
           {hasPendingInvitations && (
             <>
               <DropdownMenuSeparator />
-              {pendingInvitations.map((actions) => {
+              {pendingInvitations.map((invitation) => {
                 return (
-                  <InvitationRow
-                    key={actions.invitation.id}
-                    actions={actions}
-                  />
+                  <InvitationRow key={invitation.id} invitation={invitation} />
                 );
               })}
             </>

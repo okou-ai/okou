@@ -6,12 +6,12 @@ import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import type { RouteEntry } from "../route-entry";
-import { listDataSearchCapabilities } from "../services/data-search-catalog";
 import {
   advanceDataSearchJob$,
   cancelDataSearchJob$,
   createDataSearchJob$,
   dataSearchError,
+  dataSearchCapabilities$,
   getDataSearchJob$,
   listDataSearchJobs$,
   quoteDataSearch$,
@@ -24,25 +24,29 @@ const getParams$ = pathParamsOf(dataSearchContract.get);
 const cancelParams$ = pathParamsOf(dataSearchContract.cancel);
 const listQuery$ = queryOf(dataSearchContract.list);
 const capabilitiesQuery$ = queryOf(dataSearchContract.capabilities);
-const capabilitiesRoute$ = command(({ get, set }, signal: AbortSignal) => {
-  signal.throwIfAborted();
-  set(setResHeader$, "Cache-Control", "private, no-store");
-  const query = get(capabilitiesQuery$).query?.toLowerCase();
-  const auth = get(organizationAuthContext$);
-  const capabilities = listDataSearchCapabilities().filter((item) => {
-    if (
-      auth.tokenType === "agent" &&
-      !auth.capabilities.includes("data-enrichment:read") &&
-      item.id === "people.enrich"
-    ) {
-      return false;
-    }
-    return (
-      !query || `${item.id} ${item.description}`.toLowerCase().includes(query)
-    );
-  });
-  return { status: 200 as const, body: { capabilities } };
-});
+const capabilitiesRoute$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    set(setResHeader$, "Cache-Control", "private, no-store");
+    const query = get(capabilitiesQuery$).query?.toLowerCase();
+    const auth = get(organizationAuthContext$);
+    const availableCapabilities = await get(dataSearchCapabilities$);
+    signal.throwIfAborted();
+    const capabilities = availableCapabilities.filter((item) => {
+      if (
+        auth.tokenType === "agent" &&
+        !auth.capabilities.includes("data-enrichment:read") &&
+        item.id === "people.enrich"
+      ) {
+        return false;
+      }
+      return (
+        !query || `${item.id} ${item.description}`.toLowerCase().includes(query)
+      );
+    });
+    return { status: 200 as const, body: { capabilities } };
+  },
+);
 const quoteRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
   const body = await get(quoteBody$);

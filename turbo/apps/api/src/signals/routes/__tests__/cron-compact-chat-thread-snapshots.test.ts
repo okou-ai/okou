@@ -31,7 +31,7 @@ function objectKey(version: number): string {
   return `chat-thread-snapshots/v1/${"0".repeat(64)}/${version.toString().padStart(8, "0")}-snapshot.json.gz`;
 }
 
-async function initialize() {
+function initialize(app: Awaited<ReturnType<typeof setupApp>>) {
   mockNow(new Date(initialTime));
   mockEnv("CRON_SECRET", "test-cron-secret");
   mockEnv("R2_USER_STORAGES_BUCKET_NAME", `snapshot-gc-${randomUUID()}`);
@@ -67,11 +67,6 @@ async function initialize() {
     throw new Error("Unexpected snapshot storage request");
   }
   context.mocks.s3.send.mockImplementation(send);
-  const app = await setupApp({
-    context,
-    routes: cronCompactChatThreadSnapshotsRoutes,
-    isolatePg: true,
-  });
   async function compact() {
     return await accept(
       app(cronCompactChatThreadSnapshotsContract).compact({
@@ -209,7 +204,12 @@ test("publishes scoped sidebars with pinned and archived threads", async () => {
 
 describe("chat thread snapshot garbage collection", () => {
   it("continues a dense prefix past retained objects across cron invocations", async () => {
-    const { objects, compact } = await initialize();
+    const app = await setupApp({
+      context,
+      routes: cronCompactChatThreadSnapshotsRoutes,
+      isolatePg: true,
+    });
+    const { objects, compact } = initialize(app);
     const keys = Array.from({ length: 1101 }, (_, index) => {
       return objectKey(index);
     });
@@ -229,7 +229,12 @@ describe("chat thread snapshot garbage collection", () => {
   });
 
   it("reports a failed deletion and processes that page on the next invocation", async () => {
-    const { objects, send, compact } = await initialize();
+    const app = await setupApp({
+      context,
+      routes: cronCompactChatThreadSnapshotsRoutes,
+      isolatePg: true,
+    });
+    const { objects, send, compact } = initialize(app);
     const keys = Array.from({ length: 101 }, (_, index) => {
       return objectKey(index);
     });

@@ -1,5 +1,6 @@
 import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { execFile, type SpawnOptions } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,12 +9,14 @@ import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../mocks/server";
 import { deferred } from "../../../test-fixtures/ably-realtime";
-import { generateCommand } from "../index";
+import { createGenerateCommand } from "../index";
 import { imageBatchCommand } from "../image-batch";
 import {
   AVAILABILITY_URL,
   serveGenerationVisibility,
 } from "./artifact-visibility-fixtures";
+
+const generateCommand = createGenerateCommand();
 
 const taskHelper = vi.hoisted(() => {
   return { path: "" };
@@ -58,6 +61,30 @@ vi.mock("node:child_process", async (importOriginal) => {
 const IMAGE_URL = "http://localhost:3000/api/image-io/generate";
 const IMAGE_GENERATION_ID = "00000000-0000-4000-8000-000000000001";
 const IMAGE_STATUS_URL = `http://localhost:3000/api/built-in-generations/${IMAGE_GENERATION_ID}`;
+const RETRY_GENERATION_ID = "00000000-0000-4000-8000-000000000002";
+const RETRY_STATUS_URL = `http://localhost:3000/api/built-in-generations/${RETRY_GENERATION_ID}`;
+
+function acceptImage(generationId: string) {
+  return HttpResponse.json(
+    { generationId, type: "image", status: "queued", realtime: {} },
+    { status: 202 },
+  );
+}
+
+function completedImage(
+  generationId: string,
+  result: Record<string, unknown> | undefined,
+) {
+  return HttpResponse.json({
+    generationId,
+    type: "image",
+    status: "completed",
+    result,
+    createdAt: "2026-05-15T00:00:00.000Z",
+    startedAt: "2026-05-15T00:00:01.000Z",
+    completedAt: "2026-05-15T00:00:02.000Z",
+  });
+}
 
 interface CapturedImageRequest {
   readonly prompt: string;
@@ -187,6 +214,7 @@ if (args[0] === "stop") {
     });
     const attempts = new Map<string, number>();
     const requests = new Map<string, CapturedImageRequest>();
+    const results = new Map<string, Record<string, unknown>>();
     server.use(
       http.post(IMAGE_URL, async ({ request }) => {
         const body = (await request.json()) as CapturedImageRequest;
@@ -208,7 +236,8 @@ if (args[0] === "stop") {
           );
         }
         const slug = body.prompt.toLowerCase().replaceAll(" ", "-");
-        return HttpResponse.json({
+        const generationId = randomUUID();
+        results.set(generationId, {
           id: `image-${slug}`,
           filename: `${slug}.png`,
           contentType: "image/png",
@@ -224,7 +253,17 @@ if (args[0] === "stop") {
           outputFormat: "png",
           moderation: "auto",
         });
+        return acceptImage(generationId);
       }),
+      http.get(
+        "http://localhost:3000/api/built-in-generations/:generationId",
+        ({ params }) => {
+          return completedImage(
+            String(params.generationId),
+            results.get(String(params.generationId)),
+          );
+        },
+      ),
     );
 
     await generateCommand.parseAsync([
@@ -341,23 +380,26 @@ if (args[0] === "stop") {
                 requirePrivateArtifact: true,
               });
             }
-            return HttpResponse.json({
-              id: IMAGE_GENERATION_ID,
-              filename: "image.png",
-              contentType: "image/png",
-              size: 33,
-              url: `https://app.okou.ai${reference}`,
-              creditsCharged: 1,
-              model: "seedream4",
-              provider: "fal",
-              imageSize: "816x816",
-              quality: "low",
-              background: "opaque",
-              outputFormat: "png",
-              moderation: "auto",
-            });
+            return acceptImage(IMAGE_GENERATION_ID);
           },
         ),
+        http.get(IMAGE_STATUS_URL, () => {
+          return completedImage(IMAGE_GENERATION_ID, {
+            id: IMAGE_GENERATION_ID,
+            filename: "image.png",
+            contentType: "image/png",
+            size: 33,
+            url: `https://app.okou.ai${reference}`,
+            creditsCharged: 1,
+            model: "seedream4",
+            provider: "fal",
+            imageSize: "816x816",
+            quality: "low",
+            background: "opaque",
+            outputFormat: "png",
+            moderation: "auto",
+          });
+        }),
         http.get(
           "http://localhost:3000/api/artifact-references/:reference/download",
           ({ request, params }) => {
@@ -486,7 +528,10 @@ if (args[0] === "stop") {
     server.use(
       http.post(`${IMAGE_URL}/private`, () => {
         generationCount += 1;
-        return HttpResponse.json({
+        return acceptImage(IMAGE_GENERATION_ID);
+      }),
+      http.get(IMAGE_STATUS_URL, () => {
+        return completedImage(IMAGE_GENERATION_ID, {
           id: IMAGE_GENERATION_ID,
           filename: "image.png",
           contentType: "image/png",
@@ -1016,22 +1061,7 @@ if (args[0] === "stop") {
       http.post(IMAGE_URL, () => {
         submissionCount += 1;
         if (submissionCount === 2) {
-          return HttpResponse.json({
-            id: "image-provider-retry",
-            filename: "provider-retry.png",
-            contentType: "image/png",
-            size: 19,
-            url: "https://cdn.example/provider-retry.png",
-            embedUrl: "https://embed.example/provider-retry.png",
-            creditsCharged: 1,
-            model: "seedream4",
-            provider: "fal",
-            imageSize: "816x816",
-            quality: "low",
-            background: "opaque",
-            outputFormat: "png",
-            moderation: "auto",
-          });
+          return acceptImage(RETRY_GENERATION_ID);
         }
         return HttpResponse.json(
           {
@@ -1067,6 +1097,24 @@ if (args[0] === "stop") {
           createdAt: "2026-05-15T00:00:00.000Z",
           startedAt: "2026-05-15T00:00:01.000Z",
           completedAt: "2026-05-15T00:00:02.000Z",
+        });
+      }),
+      http.get(RETRY_STATUS_URL, () => {
+        return completedImage(RETRY_GENERATION_ID, {
+          id: "image-provider-retry",
+          filename: "provider-retry.png",
+          contentType: "image/png",
+          size: 19,
+          url: "https://cdn.example/provider-retry.png",
+          embedUrl: "https://embed.example/provider-retry.png",
+          creditsCharged: 1,
+          model: "seedream4",
+          provider: "fal",
+          imageSize: "816x816",
+          quality: "low",
+          background: "opaque",
+          outputFormat: "png",
+          moderation: "auto",
         });
       }),
     );

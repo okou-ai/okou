@@ -12,9 +12,6 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 mod disk;
 
 const CAPACITY: usize = 64 * 1024 * 1024;
-// Persisted v1 entries cross Runner releases. Activation requires #42504's
-// deployed readers, disabled admission and finished foreground preparation on
-// incompatible Runners, plus a compatible Runner rollback floor.
 const MAX_COMPRESSED_BYTES: usize = 4 * 1024 * 1024;
 pub(super) const MAX_ADMITTED_FILES: usize = 4096;
 pub(super) const MAX_ADMITTED_STORAGE_BYTES: usize = 8 * 1024 * 1024;
@@ -36,8 +33,6 @@ pub(super) const REJECTION_BATCH_SIZE: usize = 16;
 #[derive(Debug)]
 pub struct CachedFiles {
     pub files: Vec<StorageFile>,
-    compressed_bytes: usize,
-    index_bytes: usize,
     pub(crate) archive_retirement_candidate: bool,
     _memory: OwnedSemaphorePermit,
 }
@@ -220,7 +215,7 @@ impl DecodedCache {
                         result.push(None);
                         continue;
                     };
-                    let files = disk::read_with_source_size(
+                    let files = disk::read_with_budget(
                         &inner.home,
                         &name,
                         &version,
@@ -228,15 +223,11 @@ impl DecodedCache {
                         READ_AHEAD_FILES - ready_files,
                         &inner.cancel,
                     )?;
-                    if let Some(entry) = &files {
-                        ready_bytes += entry
-                            .files
-                            .iter()
-                            .map(|file| file.content.len())
-                            .sum::<usize>();
-                        ready_files += entry.files.len();
+                    if let Some(files) = &files {
+                        ready_bytes += files.iter().map(|file| file.content.len()).sum::<usize>();
+                        ready_files += files.len();
                     }
-                    result.push(files.map(|entry| {
+                    result.push(files.map(|files| {
                         // Only a scheduling hint, not authority to delete. An
                         // absent archive must not repeatedly consume the bounded
                         // background queue. Errors are handled by retirement,
@@ -247,7 +238,7 @@ impl DecodedCache {
                             .join("archive.tar.gz");
                         let candidate = !matches!(std::fs::symlink_metadata(archive),
                             Err(error) if error.kind() == io::ErrorKind::NotFound);
-                        cached_files(entry, memory, candidate)
+                        cached_files(files, memory, candidate)
                     }));
                 }
                 Ok(result)
@@ -357,8 +348,6 @@ impl DecodedCache {
         let (name, version) = (name.to_owned(), version.to_owned());
         self.work(move |inner, memory| {
             let files = decode(&bytes, &inner.cancel)?;
-            let index_bytes =
-                disk::encode_index(&name, &version, bytes.len(), files.as_deref())?.len();
             disk::publish(
                 &inner.home,
                 &name,
@@ -367,17 +356,7 @@ impl DecodedCache {
                 files.as_deref(),
                 &inner.cancel,
             )?;
-            Ok(files.map(|files| {
-                cached_files(
-                    disk::ReadFiles {
-                        files,
-                        compressed_bytes: bytes.len(),
-                        index_bytes,
-                    },
-                    memory,
-                    false,
-                )
-            }))
+            Ok(files.map(|files| cached_files(files, memory, false)))
         })
         .await
         .map(Option::flatten)
@@ -385,15 +364,10 @@ impl DecodedCache {
 }
 
 fn cached_files(
-    entry: disk::ReadFiles,
+    files: Vec<StorageFile>,
     mut memory: OwnedSemaphorePermit,
     archive_retirement_candidate: bool,
 ) -> Arc<CachedFiles> {
-    let disk::ReadFiles {
-        files,
-        compressed_bytes,
-        index_bytes,
-    } = entry;
     let charged = files.capacity() * std::mem::size_of::<StorageFile>()
         + files
             .iter()
@@ -405,29 +379,9 @@ fn cached_files(
     }
     Arc::new(CachedFiles {
         files,
-        compressed_bytes,
-        index_bytes,
         archive_retirement_candidate,
         _memory: memory,
     })
-}
-
-pub(super) fn admitted_for_delivery(files: &CachedFiles) -> bool {
-    files.compressed_bytes <= MAX_ADMITTED_COMPRESSED_BYTES
-        && files.index_bytes <= MAX_ADMITTED_INDEX_BYTES
-        && files.files.len() <= MAX_ADMITTED_FILES
-        && files
-            .files
-            .iter()
-            .map(|file| file.path.len())
-            .sum::<usize>()
-            <= MAX_ADMITTED_PATH_BYTES
-        && files
-            .files
-            .iter()
-            .map(|file| file.content.len())
-            .sum::<usize>()
-            <= MAX_ADMITTED_STORAGE_BYTES
 }
 
 fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<StorageFile>>> {

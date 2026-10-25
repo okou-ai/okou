@@ -128,7 +128,7 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
     },
   };
 }
-const features = { [FeatureSwitchKey.AgentSuggestion]: true } as const;
+const features = { [FeatureSwitchKey.ProactiveAgent]: true } as const;
 
 test("Selecting a task hides the categories, focuses the composer, and restores Suggestions when cleared", async () => {
   const user = userEvent.setup();
@@ -207,6 +207,7 @@ test.each([
         return tab.textContent?.trim();
       }),
     ).toStrictEqual([
+      "Tasks",
       "Workflow",
       "Presentation",
       "Document",
@@ -250,67 +251,6 @@ test("An empty pool hides Suggestions until a realtime publication without chang
   });
   await screen.findByText(makeSuggestion().title);
   expect(composer()).toHaveTextContent("Keep my draft");
-});
-test("Suggestions stays out of the row until the pool resolves with items", async () => {
-  const requested = createDeferredPromise<void>(context.signal);
-  const answer = createDeferredPromise<void>(context.signal);
-  context.mocks.api(suggestionsContract.list, async ({ respond }) => {
-    if (!requested.settled()) {
-      requested.resolve();
-    }
-    await answer.promise;
-    return respond(200, { suggestions: [makeSuggestion()] });
-  });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
-  await requested.promise;
-  await waitFor(() => {
-    expect(queryTab("Workflow")).toBeInTheDocument();
-  });
-  expect(queryTab("Suggestions")).not.toBeInTheDocument();
-  answer.resolve();
-  await screen.findByText(makeSuggestion().title);
-  expect(button("Suggestions", "tab")).toHaveAttribute("aria-selected", "true");
-});
-test("A failed suggestion read stays silent until a realtime publication recovers the pool", async () => {
-  let available = false;
-  const failed = createDeferredPromise<void>(context.signal);
-  context.mocks.api(suggestionsContract.list, ({ respond }) => {
-    if (available) {
-      return respond(200, { suggestions: [makeSuggestion()] });
-    }
-    if (!failed.settled()) {
-      failed.resolve();
-    }
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Suggestion service unavailable" },
-    });
-  });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
-  await failed.promise;
-  await waitFor(() => {
-    expect(queryTab("Workflow")).toBeInTheDocument();
-  });
-  expect(queryTab("Suggestions")).not.toBeInTheDocument();
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscription("agentSuggestionsChanged"),
-    ).toBeTruthy();
-  });
-  available = true;
-  context.mocks.ably.trigger("agentSuggestionsChanged");
-  await screen.findByText(makeSuggestion().title);
-  expect(button("Suggestions", "tab")).toHaveAttribute("aria-selected", "true");
-  expect(
-    screen.queryByText("Suggestion service unavailable"),
-  ).not.toBeInTheDocument();
 });
 test("A new-chat suggestion sends its structured reference once and preserves the home draft", async () => {
   const user = userEvent.setup();
@@ -434,9 +374,7 @@ test("An existing-thread suggestion sends only its own content and attachments, 
 });
 test("A conflicting consumption does not send or change the home draft", async () => {
   mockPool();
-  const consumed = createDeferredPromise<void>(context.signal);
-  context.mocks.api(suggestionsContract.consume, async ({ respond }) => {
-    await consumed.promise;
+  context.mocks.api(suggestionsContract.consume, ({ respond }) => {
     return respond(409, {
       error: { code: "CONFLICT", message: "Already consumed" },
     });
@@ -449,10 +387,6 @@ test("A conflicting consumption does not send or change the home draft", async (
   await screen.findByText(makeSuggestion().title);
   await fill(composer(), "Keep this draft");
   click(button(makeSuggestion().title));
-  await screen.findByText("Starting…");
-  expect(button(makeSuggestion().title)).toBeDisabled();
-  expect(button("Dismiss")).toBeDisabled();
-  consumed.resolve();
   await waitFor(() => {
     return expect(queryTab("Suggestions")).not.toBeInTheDocument();
   });

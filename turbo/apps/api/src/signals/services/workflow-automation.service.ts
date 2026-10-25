@@ -11,7 +11,6 @@ import {
   chatThreadEventInsertPlan,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
-import { isDeepStrictEqual } from "node:util";
 
 import type { OfficialWorkflowParameterBinding } from "@okouai/api-contracts/contracts/official-workflow-bindings";
 import {
@@ -78,7 +77,27 @@ import {
 } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  gte,
+  exists,
+  notExists,
+  getTableColumns,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import {
+  pgBooleanDecoder,
+  pgNullDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
@@ -3869,21 +3888,85 @@ function officialAutomationMetadataValues(
   };
 }
 
-function activeOfficialAutomationIdentityValues(
-  automation: AutomationRow,
+/** Preserve schema decoding and the exact snapshot strings through the CTE. */
+function attachedOfficialAutomationColumns() {
+  const automation = alias(workflowAutomations, "official_metadata_updated");
+  return {
+    ...getTableColumns(automation),
+    observedUpdatedAt: sql`${automation.updatedAt}::text`.mapWith(
+      pgTextDecoder,
+    ),
+    observedXmin: sql`${automation}.${sql.identifier("observedXmin")}`.mapWith(
+      pgTextDecoder,
+    ),
+  };
+}
+
+function officialMetadataReservationCondition(
+  metadata: OfficialAutomationCreationMetadata,
+  identityComplete: boolean,
+) {
+  const plain = alias(workflowAutomations, "official_metadata_plain");
+  const reservation = alias(
+    officialWorkflowAutomationIdentities,
+    "official_metadata_reservation",
+  );
+  // JSONB normalizes negative zero, while the former strict JS comparison
+  // rejected it. Binding values are schema-validated scalar primitives.
+  const bindingsComparable = !metadata.parameterBindings.some((binding) => {
+    return Object.is(binding.value, -0);
+  });
+  return and(
+    sql`${identityComplete && bindingsComparable}`,
+    eq(plain.enabled, false),
+    eq(reservation.retainedAppliedFingerprint, metadata.appliedFingerprint),
+    eq(reservation.retainedParameterBindings, [...metadata.parameterBindings]),
+    eq(reservation.retainedIntendedEnabled, metadata.intendedEnabled ?? true),
+  );
+}
+
+function activeOfficialAutomationIdentityColumns(
   metadata: OfficialAutomationCreationMetadata,
   at: Date,
 ) {
+  const updated = alias(workflowAutomations, "official_metadata_updated");
+  const identities = officialWorkflowAutomationIdentities;
   return {
-    id: automation.id,
-    workflowId: automation.workflowId,
-    automationId: automation.id,
-    blueprintKey: metadata.blueprintKey,
+    id: updated.id,
+    workflowId: updated.workflowId,
+    automationId: updated.id,
+    blueprintKey: sql`${metadata.blueprintKey}`
+      .mapWith(identities.blueprintKey)
+      .as("blueprint_key"),
+    state: sql`'active'`.mapWith(identities.state).as("state"),
+    retainedParameterBindings: sql`NULL`
+      .mapWith(pgNullDecoder)
+      .as("retained_parameter_bindings"),
+    retainedIntendedEnabled: sql`NULL`
+      .mapWith(pgNullDecoder)
+      .as("retained_intended_enabled"),
+    retainedAppliedFingerprint: sql`NULL`
+      .mapWith(pgNullDecoder)
+      .as("retained_applied_fingerprint"),
+    createdAt: sql`${sql.param(at, identities.createdAt)}`
+      .mapWith(identities.createdAt)
+      .as("created_at"),
+    updatedAt: sql`${sql.param(at, identities.updatedAt)}`
+      .mapWith(identities.updatedAt)
+      .as("updated_at"),
+  };
+}
+
+function activeOfficialAutomationIdentityUpdate(
+  automationId: string,
+  at: Date,
+) {
+  return {
+    automationId,
     state: "active" as const,
     retainedParameterBindings: null,
     retainedIntendedEnabled: null,
     retainedAppliedFingerprint: null,
-    createdAt: at,
     updatedAt: at,
   };
 }
@@ -3899,103 +3982,126 @@ const persistOfficialAutomationMetadata$ = command(
   ) => {
     const db = set(writeDb$);
     const { automationId, metadata } = args;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0337; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const [plain] = await tx
-        .select()
-        .from(workflowAutomations)
-        .where(plainOfficialAutomationWhere(automationId))
-        .for("update")
-        .limit(1);
-      if (!plain) {
-        throw new Error("Failed to lock new Official Workflow automation");
-      }
-      if (metadata.stagedMaterialization === true) {
-        if (
-          metadata.automationId === undefined ||
-          metadata.automationId !== automationId ||
-          plain.enabled
-        ) {
-          throw new Error("Official materialization identity is incomplete");
-        }
-        const [reservation] = await tx
-          .select({
-            retainedAppliedFingerprint:
-              officialWorkflowAutomationIdentities.retainedAppliedFingerprint,
-            retainedParameterBindings:
-              officialWorkflowAutomationIdentities.retainedParameterBindings,
-            retainedIntendedEnabled:
-              officialWorkflowAutomationIdentities.retainedIntendedEnabled,
-          })
-          .from(officialWorkflowAutomationIdentities)
-          .where(
-            and(
-              eq(
-                officialWorkflowAutomationIdentities.id,
-                metadata.automationId,
-              ),
-              eq(
-                officialWorkflowAutomationIdentities.blueprintKey,
-                metadata.blueprintKey,
-              ),
-              eq(
-                officialWorkflowAutomationIdentities.workflowId,
-                plain.workflowId,
-              ),
-              eq(officialWorkflowAutomationIdentities.state, "reconciling"),
-              isNull(officialWorkflowAutomationIdentities.automationId),
-            ),
-          )
+    const staged = metadata.stagedMaterialization === true;
+    const identityComplete = metadata.automationId === automationId;
+    const identities = officialWorkflowAutomationIdentities;
+    const plain = db
+      .$with("official_metadata_plain")
+      .as(
+        db
+          .select()
+          .from(workflowAutomations)
+          .where(plainOfficialAutomationWhere(automationId))
           .for("update")
-          .limit(1);
-        if (
-          reservation?.retainedAppliedFingerprint !==
-            metadata.appliedFingerprint ||
-          !isDeepStrictEqual(
-            reservation.retainedParameterBindings,
-            metadata.parameterBindings,
-          ) ||
-          reservation.retainedIntendedEnabled !==
-            (metadata.intendedEnabled ?? true)
-        ) {
-          return { kind: "reservation-lost" as const };
-        }
-      }
-      const at = nowDate();
-      const [updated] = await tx
-        .update(workflowAutomations)
-        .set(officialAutomationMetadataValues(metadata, at))
+          .limit(1),
+      );
+    // Retain the existing automation -> reservation lock order. Only a valid
+    // disabled staged automation proceeds to the existing reservation lock.
+    const reservation = db.$with("official_metadata_reservation").as(
+      db
+        .select({
+          id: identities.id,
+          retainedAppliedFingerprint: identities.retainedAppliedFingerprint,
+          retainedParameterBindings: identities.retainedParameterBindings,
+          retainedIntendedEnabled: identities.retainedIntendedEnabled,
+        })
+        .from(identities)
+        .innerJoin(plain, eq(plain.workflowId, identities.workflowId))
         .where(
           and(
-            plainOfficialAutomationWhere(automationId),
-            eq(workflowAutomations.updatedAt, plain.updatedAt),
+            sql`${staged && identityComplete}`,
+            eq(plain.enabled, false),
+            eq(identities.id, automationId),
+            eq(identities.blueprintKey, metadata.blueprintKey),
+            eq(identities.state, "reconciling"),
+            isNull(identities.automationId),
           ),
         )
-        .returning(workflowAutomationColumns());
-      if (!updated) {
+        .for("update", { of: identities })
+        .limit(1),
+    );
+    const admitted = db.$with("official_metadata_admitted").as(
+      db
+        .select({ id: plain.id, updatedAt: plain.updatedAt })
+        .from(plain)
+        .leftJoin(reservation, eq(reservation.id, plain.id))
+        .where(
+          staged
+            ? officialMetadataReservationCondition(metadata, identityComplete)
+            : sql`true`,
+        ),
+    );
+    // One application timestamp owns both writes. Sampling before the statement
+    // can precede a competing writer's timestamp after waiting for its lock.
+    const at = nowDate();
+    const columns = workflowAutomationColumns();
+    const updated = db.$with("official_metadata_updated").as(
+      db
+        .update(workflowAutomations)
+        .set(officialAutomationMetadataValues(metadata, at))
+        .from(admitted)
+        .where(
+          and(
+            eq(workflowAutomations.id, admitted.id),
+            // Preserve the old Date-encoded CAS rejection of submillisecond
+            // preimages before either write can commit.
+            eq(
+              admitted.updatedAt,
+              sql`date_trunc('milliseconds', ${admitted.updatedAt})`,
+            ),
+          ),
+        )
+        .returning({
+          ...columns,
+          observedUpdatedAt: columns.observedUpdatedAt.as("observedUpdatedAt"),
+          observedXmin: columns.observedXmin.as("observedXmin"),
+        }),
+    );
+    const activeIdentity = db.$with("official_metadata_active_identity").as(
+      db
+        .insert(identities)
+        .select(
+          db
+            .select(activeOfficialAutomationIdentityColumns(metadata, at))
+            .from(updated)
+            .where(sql`${!staged}`),
+        )
+        .onConflictDoUpdate({
+          target: [identities.workflowId, identities.blueprintKey],
+          set: activeOfficialAutomationIdentityUpdate(automationId, at),
+        })
+        .returning({ id: identities.id }),
+    );
+    const result = await (async () => {
+      const [row] = await db
+        .with(plain, reservation, admitted, updated, activeIdentity)
+        .select({
+          plainId: plain.id,
+          plainEnabled: plain.enabled,
+          admittedId: admitted.id,
+          row: attachedOfficialAutomationColumns(),
+          identityId: activeIdentity.id,
+        })
+        .from(sql`(SELECT 1) AS metadata_result`)
+        .leftJoin(plain, sql`true`)
+        .leftJoin(reservation, eq(reservation.id, plain.id))
+        .leftJoin(admitted, eq(admitted.id, plain.id))
+        .leftJoin(updated, eq(updated.id, plain.id))
+        .leftJoin(activeIdentity, sql`true`);
+      if (!row?.plainId) {
+        throw new Error("Failed to lock new Official Workflow automation");
+      }
+      if (staged && (!identityComplete || row.plainEnabled)) {
+        throw new Error("Official materialization identity is incomplete");
+      }
+      if (!row.admittedId) {
+        return { kind: "reservation-lost" as const };
+      }
+      if (!row.row || (!staged && !row.identityId)) {
         throw new Error("Failed to mark Official Workflow automation");
       }
-      if (metadata.stagedMaterialization !== true) {
-        await tx
-          .insert(officialWorkflowAutomationIdentities)
-          .values(activeOfficialAutomationIdentityValues(updated, metadata, at))
-          .onConflictDoUpdate({
-            target: [
-              officialWorkflowAutomationIdentities.workflowId,
-              officialWorkflowAutomationIdentities.blueprintKey,
-            ],
-            set: {
-              automationId: updated.id,
-              state: "active",
-              retainedParameterBindings: null,
-              retainedIntendedEnabled: null,
-              retainedAppliedFingerprint: null,
-              updatedAt: at,
-            },
-          });
-      }
-      return { kind: "attached" as const, row: updated };
-    });
+      return { kind: "attached" as const, row: row.row };
+    })();
     signal.throwIfAborted();
     return result;
   },
@@ -6163,6 +6269,188 @@ function enabledAutomationCommitResult(
     : { status: "ok", row };
 }
 
+function enabledAutomationEntitlementPlan(orgId: string, isWebhook: boolean) {
+  const query = new QueryBuilder();
+  const entitlement = query.$with("enable_entitlement").as(
+    query
+      .select({
+        allowed: orgPlanEntitlements.workflowWebhookTriggerAllowed,
+        restricted: orgPlanEntitlements.restrictedBuiltInModels,
+      })
+      .from(orgPlanEntitlements)
+      .where(and(eq(orgPlanEntitlements.orgId, orgId), sql`${isWebhook}`))
+      .limit(1)
+      .for("update"),
+  );
+  const entitlementRows = query.select().from(entitlement);
+  const missingEntitlementOrg = query
+    .$with("enable_missing_entitlement_org")
+    .as(
+      query
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(
+          and(
+            sql`${isWebhook}`,
+            eq(orgMetadata.orgId, orgId),
+            notExists(entitlementRows),
+          ),
+        )
+        .limit(1)
+        .for("update"),
+    );
+  const eligible = isWebhook
+    ? exists(
+        query
+          .select()
+          .from(entitlement)
+          .where(
+            and(
+              eq(entitlement.allowed, true),
+              isNotNull(entitlement.restricted),
+            ),
+          ),
+      )
+    : sql`true`;
+  const outcome = query
+    .select({
+      eligible: sql`${eligible}`.mapWith(pgBooleanDecoder).as("eligible"),
+      missingEntitlement:
+        sql`${exists(query.select().from(missingEntitlementOrg))}`
+          .mapWith(pgBooleanDecoder)
+          .as("missing_entitlement"),
+      invalidRestriction:
+        sql`${exists(query.select().from(entitlement).where(isNull(entitlement.restricted)))}`
+          .mapWith(pgBooleanDecoder)
+          .as("invalid_restriction"),
+    })
+    .from(sql`(SELECT 1) AS enable_result_seed`)
+    .as("enable_outcome");
+  return { entitlement, missingEntitlementOrg, eligible, outcome };
+}
+
+function enabledAutomationPublicationResult(
+  automation: AutomationRow,
+  orgId: string,
+  outcome:
+    | {
+        readonly eligible: boolean;
+        readonly missingEntitlement: boolean;
+        readonly invalidRestriction: boolean;
+      }
+    | undefined,
+  row: AutomationRow | null | undefined,
+): PersistEnabledWorkflowAutomationResult {
+  if (!outcome) {
+    throw new Error("Missing automation enable result");
+  }
+  // These invariant outcomes gate every mutation in the statement.
+  if (outcome.missingEntitlement) {
+    throw new Error("Missing org plan entitlement for " + orgId);
+  }
+  if (outcome.invalidRestriction) {
+    throw new Error(
+      `Unexpected NULL restricted_built_in_models for org plan entitlement ${orgId}`,
+    );
+  }
+  return outcome.eligible
+    ? enabledAutomationCommitResult(automation, row ?? undefined)
+    : { status: "team-required" };
+}
+
+const commitEnabledWorkflowAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly automation: AutomationRow;
+      readonly orgId: string;
+      readonly now: Date;
+    },
+    publication: {
+      readonly values: ReturnType<typeof enabledWorkflowAutomationValues>;
+      readonly isWebhook: boolean;
+      readonly resetsFormsCursor: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<PersistEnabledWorkflowAutomationResult> => {
+    const db = set(writeDb$);
+    const { values, isWebhook, resetsFormsCursor } = publication;
+    const { entitlement, missingEntitlementOrg, eligible, outcome } =
+      enabledAutomationEntitlementPlan(args.orgId, isWebhook);
+    // Each mutation consumes its predecessor before taking the next lock.
+    const resetCursor = db.$with("enable_reset_forms_cursor").as(
+      db
+        .delete(googleFormsAutomationCursors)
+        .where(
+          and(
+            eq(googleFormsAutomationCursors.automationId, args.automation.id),
+            sql`${resetsFormsCursor}`,
+            eligible,
+          ),
+        )
+        .returning({
+          automationId: googleFormsAutomationCursors.automationId,
+        }),
+    );
+    const columns = workflowAutomationColumns();
+    const enabled = db.$with("enabled_automation").as(
+      db
+        .update(workflowAutomations)
+        .set(values)
+        .where(
+          and(
+            officialAutomationLifecycleCondition(args.automation),
+            eligible,
+            gte(db.select({ count: count() }).from(resetCursor), 0),
+          ),
+        )
+        .returning({
+          ...columns,
+          observedUpdatedAt: columns.observedUpdatedAt.as(
+            "observed_updated_at",
+          ),
+          observedXmin: columns.observedXmin.as("observed_xmin"),
+        }),
+    );
+    const clearedWebhook = db.$with("enable_cleared_webhook").as(
+      db
+        .update(workflowWebhookAutomations)
+        .set({ disabledReason: null, updatedAt: args.now })
+        .where(
+          and(
+            sql`${isWebhook}`,
+            inArray(
+              workflowWebhookAutomations.automationId,
+              db.select({ id: enabled.id }).from(enabled),
+            ),
+          ),
+        )
+        .returning({
+          automationId: workflowWebhookAutomations.automationId,
+        }),
+    );
+    const [result] = await db
+      .with(
+        entitlement,
+        missingEntitlementOrg,
+        resetCursor,
+        enabled,
+        clearedWebhook,
+      )
+      .select()
+      .from(outcome)
+      .leftJoin(enabled, sql`true`)
+      .where(gte(db.select({ count: count() }).from(clearedWebhook), 0));
+    signal.throwIfAborted();
+    return enabledAutomationPublicationResult(
+      args.automation,
+      args.orgId,
+      result?.enable_outcome,
+      result?.enabled_automation,
+    );
+  },
+);
+
 const persistEnabledWorkflowAutomation$ = command(
   async (
     { set },
@@ -6195,69 +6483,11 @@ const persistEnabledWorkflowAutomation$ = command(
       PersistEnabledWorkflowAutomationResult | AutomationRow[]
     >(
       isWebhook || resetsFormsCursor
-        ? // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0339; new non-billing transactions are prohibited.
-          db.transaction(
-            async (tx): Promise<PersistEnabledWorkflowAutomationResult> => {
-              // Publish the webhook tier decision/configuration or Forms cursor reset
-              // atomically with the enabled automation. All provider preparation is complete.
-              if (isWebhook) {
-                const [lockedCapabilities] = await tx
-                  .select(webhookTierCapabilityColumns())
-                  .from(orgPlanEntitlements)
-                  .where(eq(orgPlanEntitlements.orgId, args.orgId))
-                  .limit(1)
-                  .for("update");
-                signal.throwIfAborted();
-                if (!lockedCapabilities) {
-                  const [org] = await tx
-                    .select({ orgId: orgMetadata.orgId })
-                    .from(orgMetadata)
-                    .where(eq(orgMetadata.orgId, args.orgId))
-                    .limit(1)
-                    .for("update");
-                  signal.throwIfAborted();
-                  if (org) {
-                    throw new Error(
-                      "Missing org plan entitlement for " + args.orgId,
-                    );
-                  }
-                }
-                const tierEligible = lockedCapabilities
-                  ? orgPlanCapabilitiesFromRow(lockedCapabilities, args.orgId)
-                      .workflowWebhookAutomationAllowed
-                  : false;
-                if (!tierEligible) {
-                  return { status: "team-required" };
-                }
-              }
-              if (resetsFormsCursor) {
-                await tx
-                  .delete(googleFormsAutomationCursors)
-                  .where(
-                    eq(
-                      googleFormsAutomationCursors.automationId,
-                      args.automation.id,
-                    ),
-                  );
-              }
-              const [enabledRow] = await tx
-                .update(workflowAutomations)
-                .set(values)
-                .where(officialAutomationLifecycleCondition(args.automation))
-                .returning(workflowAutomationColumns());
-              if (enabledRow && isWebhook) {
-                await tx
-                  .update(workflowWebhookAutomations)
-                  .set({ disabledReason: null, updatedAt: args.now })
-                  .where(
-                    eq(
-                      workflowWebhookAutomations.automationId,
-                      args.automation.id,
-                    ),
-                  );
-              }
-              return enabledAutomationCommitResult(args.automation, enabledRow);
-            },
+        ? set(
+            commitEnabledWorkflowAutomation$,
+            args,
+            { values, isWebhook, resetsFormsCursor },
+            signal,
           )
         : db
             .update(workflowAutomations)

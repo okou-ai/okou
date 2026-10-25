@@ -57,7 +57,7 @@ async function primaryRun(enabled = true, secondary = false) {
   await updateFeatureSwitchesForUser(
     context,
     { ...actor, orgId: actor.orgId },
-    { [FeatureSwitchKey.AgentSuggestion]: enabled },
+    { [FeatureSwitchKey.ProactiveAgent]: enabled },
   );
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
@@ -335,7 +335,7 @@ describe("Agent suggestions", () => {
       [409],
     );
     await updateFeatureSwitchesForUser(context, fixture.actor, {
-      [FeatureSwitchKey.AgentSuggestion]: false,
+      [FeatureSwitchKey.ProactiveAgent]: false,
     });
     await accept(
       client().update({

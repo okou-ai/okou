@@ -155,12 +155,9 @@ async fn gc_extracted_storage_uses_existing_lock_accounting_and_preserves_pinned
     cache.warm_from_archive("name", "v1").await.unwrap();
     let pinned = cache.get_ready("name", "v1").await.unwrap().unwrap();
     let name = runner_host::paths::short_digest("name");
-    let version = format!("decoded-v1-{}", runner_host::paths::short_digest("v1"));
+    let version = format!("decoded-v2-{}", runner_host::paths::short_digest("v1"));
     let entry = home.storages_dir().join(&name).join(&version);
-    assert_eq!(
-        std::fs::read(entry.join("files/nested/file")).unwrap(),
-        b"hello"
-    );
+    assert_eq!(std::fs::read(entry.join("data.bin")).unwrap(), b"hello");
     let set_old = |path: &Path| {
         std::fs::File::open(path)
             .unwrap()
@@ -196,7 +193,7 @@ async fn gc_extracted_storage_uses_existing_lock_accounting_and_preserves_pinned
 
 #[tokio::test]
 async fn gc_extracted_staging_uses_the_final_version_lock() {
-    for prefix in ["decoded-v1-", "decoded-v1-rejected-"] {
+    for prefix in ["decoded-v2-", "decoded-v1-rejected-"] {
         let dir = tempfile::tempdir().unwrap();
         let home = test_home(dir.path());
         let name = runner_host::paths::short_digest("name");

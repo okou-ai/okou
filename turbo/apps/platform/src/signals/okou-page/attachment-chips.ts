@@ -150,11 +150,14 @@ export type AttachmentLightboxState = AttachmentLightboxInput &
   AttachmentPreviewSignals & {
     /** The owner passed into every subsequent preview surface. */
     readonly preview: AttachmentPreviewSignals;
+    readonly ownerSignal?: AbortSignal;
   };
 
 export const attachmentDiagramPreview = createArtifactDiagramPreviewSignals();
 
-const internalLightboxState$ = state<AttachmentLightboxState | null>(null);
+const internalLightboxState$ = state<
+  (AttachmentLightboxState & { readonly ownerSignal: AbortSignal }) | null
+>(null);
 const internalLightboxDialogVisible$ = state(false);
 const internalLightboxDialogFullscreen$ = state(false);
 const internalLightboxDialogMountToken$ = state(0);
@@ -229,6 +232,7 @@ export const completeLightboxDialogExit$ = command(
 export const closeLightboxWithDialogExit$ = command(
   ({ set }, signal: AbortSignal) => {
     signal.throwIfAborted();
+    set(resetLightboxPreviewSignal$);
     set(attachmentDiagramPreview.dispose$);
     set(internalLightboxDialogVisible$, false);
   },
@@ -339,7 +343,12 @@ export const openImageLightbox$ = command(
     set(internalLightboxDialogVisible$, true);
     set(internalLightboxDialogFullscreen$, false);
     const preview = attachmentPreviewSignalsFor(image);
-    set(internalLightboxState$, { ...image, preview, ...preview });
+    set(internalLightboxState$, {
+      ...image,
+      preview,
+      ...preview,
+      ownerSignal: previewSignal,
+    });
   },
 );
 
@@ -374,10 +383,11 @@ export const navigateImageLightbox$ = command(
     },
   ) => {
     set(attachmentLightboxImageCanvasSignals.reset$);
-    set(resetLightboxPreviewSignal$, get(rootSignal$));
+    const ownerSignal = set(resetLightboxPreviewSignal$, get(rootSignal$));
     set(attachmentDiagramPreview.dispose$);
     const preview = attachmentPreviewSignalsFor(value);
     set(internalLightboxState$, {
+      ownerSignal,
       kind: "image",
       ...value,
       preview,
@@ -395,7 +405,7 @@ export const openDocumentLightbox$ = command(
     if (set(routeToOpenArtifactSidebar$, value, target)) {
       return;
     }
-    set(resetLightboxPreviewSignal$, get(rootSignal$));
+    const ownerSignal = set(resetLightboxPreviewSignal$, get(rootSignal$));
     set(attachmentDiagramPreview.dispose$);
     set(internalLightboxDialogVisible$, true);
     set(internalLightboxDialogFullscreen$, false);
@@ -406,6 +416,7 @@ export const openDocumentLightbox$ = command(
         createTextPreviewComputed(value.url, preview.resourceUrl$);
       if (value.kind === "markdown") {
         set(internalLightboxState$, {
+          ownerSignal,
           ...value,
           kind: "markdown",
           preview,
@@ -419,6 +430,7 @@ export const openDocumentLightbox$ = command(
         return;
       }
       set(internalLightboxState$, {
+        ownerSignal,
         ...value,
         kind: value.kind,
         text$,
@@ -427,7 +439,7 @@ export const openDocumentLightbox$ = command(
       });
       return;
     }
-    set(internalLightboxState$, { ...value, preview, ...preview });
+    set(internalLightboxState$, { ...value, preview, ...preview, ownerSignal });
   },
 );
 
@@ -437,12 +449,13 @@ function createSimpleLightboxOpener(kind: "audio" | "file" | "video") {
       if (set(routeToOpenArtifactSidebar$, value, target)) {
         return;
       }
-      set(resetLightboxPreviewSignal$, get(rootSignal$));
+      const ownerSignal = set(resetLightboxPreviewSignal$, get(rootSignal$));
       set(attachmentDiagramPreview.dispose$);
       set(internalLightboxDialogVisible$, true);
       set(internalLightboxDialogFullscreen$, false);
       const preview = attachmentPreviewSignalsFor(value);
       set(internalLightboxState$, {
+        ownerSignal,
         kind,
         ...value,
         preview,

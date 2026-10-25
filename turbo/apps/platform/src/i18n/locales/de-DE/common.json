@@ -1053,6 +1053,7 @@
       "loadFailed": "Nicht alle angeforderten Berechtigungen konnten überprüft werden. Es können keine Berechtigungen geändert werden.",
       "loading": "Berechtigungen werden geladen",
       "notNow": "Nicht jetzt",
+      "review": "Berechtigungen prüfen",
       "scopeNote": "Gilt für diesen Agenten, nicht nur für die aktuelle Aufgabe.",
       "title": "Folgende Berechtigungen erlauben"
     }
@@ -1969,6 +1970,7 @@
       "retry": "Retry",
       "saved": "Saved for the next evaluation",
       "saveReply": "Save reply",
+      "sourceUpdate": "Quellenaktualisierung",
       "states": {
         "active": "In progress",
         "archived": "Archived",
@@ -2366,6 +2368,7 @@
       "unknown": "Unbekannt",
       "unsupported": "Manuelles Zurücksetzen wird nicht unterstützt; die Nutzung erholt sich automatisch."
     },
+    "syncFailed": "Deine Chats sind möglicherweise nicht aktuell",
     "taskChips": {
       "chooseTask": "Aufgabe wählen",
       "ideas": {
@@ -3335,14 +3338,12 @@
     "connectDialog": {
       "connectedAs": "Verbunden als {{username}}",
       "device": {
-        "checking": "Genehmigung wird geprüft...",
         "connect": "Verbinden Sie {{connector}}",
         "description": "Öffnen Sie die Bestätigungsseite des Anbieters und geben Sie dann diesen Bestätigungscode ein, um den Zugriff zu genehmigen.",
         "intro": "Stellen Sie eine Verbindung her, um einen Bestätigungscode zu erhalten, und verwenden Sie ihn dann auf der Bestätigungsseite des Anbieters, um den Zugriff zu genehmigen.",
         "openPage": "Verifizierungsseite öffnen",
         "selectOption": "Wählen Sie {{option}}",
         "starting": "Beginnt...",
-        "startingConnection": "Verbindung wird gestartet...",
         "verificationCode": "Bestätigungscode",
         "waiting": "Warten auf Genehmigung. Lassen Sie diesen Dialog geöffnet."
       },
@@ -3368,17 +3369,12 @@
       "noMethod": "Es ist keine Verbindungsmethode verfügbar.",
       "or": "oder",
       "progress": {
-        "connecting": "Verbinden...",
-        "savingPermissions": "Berechtigungen werden gespeichert..."
+        "connecting": "Verbinden..."
       },
       "unavailable": {
         "description": "Für diese Integration sind Verbindungsmethoden verfügbar, die in diesem Dialog noch nicht konfiguriert werden können.",
         "title": "Verbindungsmethoden nicht verfügbar"
       }
-    },
-    "connectionProgress": {
-      "description": "Schließen Sie die Autorisierung ab, falls Sie dazu aufgefordert werden. Bitte warten Sie, während wir die Verbindung einrichten.",
-      "title": "Ihr Konto wird verbunden"
     },
     "custom": {
       "connect": {
@@ -5141,6 +5137,10 @@
           "description": "Personalisieren Sie das Aussehen und Verhalten der App.",
           "title": "Einstellungen"
         },
+        "proactiveAgent": {
+          "description": "Festlegen, wie Okou lernt, plant, Tasks bearbeitet und nächste Schritte vorschlägt.",
+          "title": "Proactive Agent"
+        },
         "tools": {
           "title": "Tools"
         },
@@ -5548,15 +5548,37 @@
       "proactiveJobs": {
         "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
         "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
+        "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
         "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
         "preparing": "Preparing your tasks. You can turn this off at any time.",
         "retry": "Retry",
         "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
         "title": "Proactive tasks"
       },
+      "proactiveLearning": {
+        "description": "Aktivitäten nachts überprüfen und persönliche Erinnerungen verbessern.",
+        "missingDefaultAgent": "Wählen Sie einen verfügbaren Standard-Agent.",
+        "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
+        "preparationFailed": "Dieser Workflow ist vorübergehend nicht verfügbar. Okou versucht es erneut.",
+        "preparing": "Dieser Workflow wird vorbereitet.",
+        "retry": "Retry",
+        "retryMessage": "Diese Einstellung konnte nicht geladen oder aktualisiert werden. Erneut versuchen.",
+        "title": "Lernen"
+      },
+      "proactivePlanning": {
+        "description": "Nächste Schritte im ausdrücklich übertragenen Rahmen planen und Tasks pflegen. Bei aktivierten Tasks kann neue Arbeit sofort beginnen.",
+        "missingDefaultAgent": "Wählen Sie einen verfügbaren Standard-Agent.",
+        "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
+        "preparationFailed": "Dieser Workflow ist vorübergehend nicht verfügbar. Okou versucht es erneut.",
+        "preparing": "Dieser Workflow wird vorbereitet.",
+        "retry": "Retry",
+        "retryMessage": "Diese Einstellung konnte nicht geladen oder aktualisiert werden. Erneut versuchen.",
+        "title": "Planung"
+      },
       "proactiveSuggestions": {
         "description": "Okou prüft stündlich deine verbundenen Quellen und schlägt auf der Startseite sinnvolle nächste Schritte vor.",
         "missingDefaultAgent": "Wähle einen verfügbaren Standard-Agent für proaktive Vorschläge.",
+        "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
         "preparationFailed": "Vorübergehend nicht verfügbar. Okou versucht es automatisch erneut.",
         "preparing": "Stündliche Vorschläge werden vorbereitet. Du kannst sie jederzeit deaktivieren.",
         "retry": "Erneut versuchen",

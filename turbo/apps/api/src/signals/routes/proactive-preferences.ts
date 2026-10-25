@@ -2,6 +2,10 @@ import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
+import {
+  proactiveLearningContract,
+  proactivePlanningContract,
+} from "@okouai/api-contracts/contracts/proactive-nightly";
 import type {
   ProactivePreference,
   ProactiveWorkflowKind,
@@ -23,6 +27,20 @@ import {
 import { ensureProactiveWorkflows$ } from "../services/proactive-workflows-lifecycle.service";
 import { PROACTIVE_WORKFLOW_DEFINITIONS } from "../services/proactive-workflow-definitions";
 import { settle } from "../utils";
+
+const PREFERENCE_CONTRACTS = {
+  jobs: proactiveJobsContract,
+  suggestions: proactiveSuggestionsContract,
+  learning: proactiveLearningContract,
+  planning: proactivePlanningContract,
+} as const;
+
+const PREFERENCE_FIELDS = {
+  jobs: "proactiveJobsEnabled",
+  suggestions: "proactiveSuggestionsEnabled",
+  learning: "proactiveLearningEnabled",
+  planning: "proactivePlanningEnabled",
+} as const;
 
 const readProactivePreference$ = command(
   async (
@@ -70,7 +88,12 @@ const readProactivePreference$ = command(
             ? "enabled"
             : "preparing",
       unavailableReason:
-        eligibility.agentId === null ? "missing-default-agent" : null,
+        eligibility.agentId === null
+          ? "missing-default-agent"
+          : (kind === "learning" || kind === "planning") &&
+              eligibility.timezone === null
+            ? "missing-timezone"
+            : null,
     };
   },
 );
@@ -78,8 +101,7 @@ const readProactivePreference$ = command(
 function createProactivePreferenceRoutes(
   kind: ProactiveWorkflowKind,
 ): readonly RouteEntry[] {
-  const contract =
-    kind === "jobs" ? proactiveJobsContract : proactiveSuggestionsContract;
+  const contract = PREFERENCE_CONTRACTS[kind];
   const preferenceRoute$ = command(
     async ({ get, set }, update: boolean, signal: AbortSignal) => {
       const auth = get(organizationAuthContext$);
@@ -90,11 +112,7 @@ function createProactivePreferenceRoutes(
         signal,
       );
       if (!eligibility[kind].available) {
-        return resourceUnavailable(
-          kind === "jobs"
-            ? "Proactive Tasks is not enabled."
-            : "Agent Suggestion is not enabled.",
-        );
+        return resourceUnavailable("Proactive Agent is not enabled.");
       }
       if (update) {
         const body = await get(bodyResultOf(contract.update));
@@ -102,10 +120,7 @@ function createProactivePreferenceRoutes(
         if (!body.ok) {
           return body.response;
         }
-        const choice =
-          kind === "jobs"
-            ? { proactiveJobsEnabled: body.data.enabled }
-            : { proactiveSuggestionsEnabled: body.data.enabled };
+        const choice = { [PREFERENCE_FIELDS[kind]]: body.data.enabled };
         await set(writeDb$)
           .insert(orgMembersMetadata)
           .values({ ...owner, ...choice })
@@ -160,3 +175,7 @@ function createProactivePreferenceRoutes(
 export const proactiveSuggestionsRoutes =
   createProactivePreferenceRoutes("suggestions");
 export const proactiveJobsRoutes = createProactivePreferenceRoutes("jobs");
+export const proactiveLearningRoutes =
+  createProactivePreferenceRoutes("learning");
+export const proactivePlanningRoutes =
+  createProactivePreferenceRoutes("planning");

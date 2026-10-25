@@ -1,4 +1,4 @@
-import { useLoadable, useGet, useSet, useLastLoadable } from "ccstate-react";
+import { useGet, useSet, useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Button } from "@okouai/ui";
 import {
@@ -7,11 +7,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
-import {
-  type ConnectorConnectSuccess,
-  builtinConnectOperation$,
-  justConnectedBuiltinSlugs$,
-} from "../../signals/okou-page/settings/connectors.ts";
+import type { ConnectorConnectSuccess } from "../../signals/okou-page/settings/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   directedAuthorizeCatalogItem$,
@@ -95,7 +91,6 @@ function useDirectedAuthorizeParams(): {
 }
 
 function useDirectedAuthorizeCatalogState(connectorSlug: ConnectorSlug | null) {
-  const justConnected = useGet(justConnectedBuiltinSlugs$);
   const itemLoadable = useLastLoadable(directedAuthorizeCatalogItem$);
   // The last entry is kept across a reload, never shown for another slug.
   const catalogLoaded =
@@ -105,16 +100,13 @@ function useDirectedAuthorizeCatalogState(connectorSlug: ConnectorSlug | null) {
     catalogLoaded && connectorSlug
       ? (itemLoadable.data ?? undefined)
       : undefined;
-  const isConnected =
-    connectorSlug !== null &&
-    (justConnected.has(connectorSlug) || item?.connected === true);
+  const isConnected = connectorSlug !== null && item?.connected === true;
   return {
     item,
     isConnected,
     catalogFailed: itemLoadable.state === "hasError",
     catalogLoading:
       connectorSlug !== null &&
-      !justConnected.has(connectorSlug) &&
       itemLoadable.state !== "hasError" &&
       !catalogLoaded,
     unavailable:
@@ -227,7 +219,6 @@ function DirectedAuthorizeConnectModal({
 
 function useDirectedAuthorizeCardState() {
   const params = useDirectedAuthorizeParams();
-  const connectOperation = useLoadable(builtinConnectOperation$);
   const [authorizeLoadable, authorize] = useLoadableSet(
     authorizeDirectedConnector$,
   );
@@ -249,7 +240,6 @@ function useDirectedAuthorizeCardState() {
     modalKey?.signal === signal;
   return {
     params,
-    connectOperation,
     authorizeLoadable,
     authorize,
     completeAuthorization,
@@ -300,7 +290,6 @@ function DirectedAuthorizeCard() {
   const { t } = useTranslation();
   const {
     params,
-    connectOperation,
     authorizeLoadable,
     authorize,
     completeAuthorization,
@@ -325,9 +314,7 @@ function DirectedAuthorizeCard() {
     return null;
   }
   const { connectorSlug, agentId } = params;
-  const isConnecting =
-    connectOperation.state === "loading" ||
-    authorizeLoadable.state === "loading";
+  const isConnecting = authorizeLoadable.state === "loading";
   const canAuthorize =
     isConnected || (item ? item.authMethods.length > 0 : false);
   const completedAuthorization =

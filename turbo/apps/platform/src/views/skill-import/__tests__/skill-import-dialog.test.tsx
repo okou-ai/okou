@@ -587,26 +587,6 @@ test("Session failure can be retried directly from the panel", async () => {
   expect(prompt.textContent).toContain("retry-session-token");
 });
 
-test("An older API response never presents an untracked prompt as a ready import", async () => {
-  mockWorkflows();
-  context.mocks.api(skillImportSessionsContract.create, ({ respond }) => {
-    return respond(200, {
-      uploadUrl: "https://api.okou.test/api/skill-import/skills",
-      token: "legacy-api-token",
-      expiresAt: new Date(now() + 3_600_000).toISOString(),
-      limits: SKILL_IMPORT_LIMITS,
-    });
-  });
-  await openWorkflowsPage();
-  click(getButtonNamed("Import skills"));
-  const dialog = await findDialog();
-  await within(dialog).findByText("The import session could not be opened.");
-  expect(buttonNamed("Copy prompt", dialog)).toBeUndefined();
-  expect(
-    within(dialog).queryByRole("region", { name: PROMPT_LABEL }),
-  ).toBeNull();
-});
-
 test("Changing the signed-in identity closes the old import and releases its subscription", async () => {
   mockWorkflows();
   mockSessions();

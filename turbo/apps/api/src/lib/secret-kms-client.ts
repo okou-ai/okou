@@ -4,6 +4,7 @@ import {
   KMSClient,
 } from "@aws-sdk/client-kms";
 
+import { optionalEnv } from "./env";
 import { singleton, testOverride } from "./singleton";
 
 export interface SecretKmsGenerateDataKeyRequest {
@@ -36,7 +37,21 @@ export interface SecretKmsClient {
 }
 
 const secretKmsClient = singleton((): SecretKmsClient => {
-  const client = new KMSClient({});
+  const accessKeyId = optionalEnv("AWS_ACCESS_KEY_ID");
+  const secretAccessKey = optionalEnv("AWS_SECRET_ACCESS_KEY");
+  const client = new KMSClient({
+    region: optionalEnv("AWS_REGION"),
+    // Workers unpack configuration through lib/env rather than process.env.
+    // Leave the SDK credential chain available for Node role-based deployments.
+    credentials:
+      accessKeyId && secretAccessKey
+        ? {
+            accessKeyId,
+            secretAccessKey,
+            sessionToken: optionalEnv("AWS_SESSION_TOKEN"),
+          }
+        : undefined,
+  });
 
   return {
     async generateDataKey(

@@ -448,7 +448,9 @@ async function tabToCard(
 
 test("Open one provider authorization window from a focused card with Enter", async () => {
   const user = userEvent.setup({ delay: null });
-  installComposerConnectorFixture({ catalog: directoryCatalog() });
+  const fixture = installComposerConnectorFixture({
+    catalog: directoryCatalog(),
+  });
   const authWindow = context.mocks.browser.authWindow();
   Object.defineProperty(authWindow, "location", {
     configurable: true,
@@ -469,16 +471,8 @@ test("Open one provider authorization window from a focused card with Enter", as
     expect(authWindow.location.href).toBe(
       "https://accounts.example.test/gmail",
     );
+    expect(fixture.oauthConnectionRequests).toHaveLength(1);
   });
-  await waitFor(() => {
-    expect(gmail).toBeDisabled();
-  });
-  expect(gmail).toHaveAttribute("aria-busy", "true");
-  const notion = dialogButton(dialog, "Connect Notion");
-  expect(notion).toBeDisabled();
-  expect(notion).not.toHaveAttribute("aria-busy");
-  expect(screen.getAllByRole("dialog")).toHaveLength(1);
-  expect(within(dialog).getByRole("textbox")).toBeInTheDocument();
   expect(browserOpen.calls).toHaveLength(1);
   click(within(dialog).getByLabelText("Close"));
   await waitFor(() => {

@@ -35,7 +35,6 @@ import {
   confirmSettingsCodexUsageReset$,
   deletePersonalOAuthCredentialAccount$,
   personalAccountDisconnectDialog$,
-  personalActionPromise$,
   personalConfiguredProviders$,
   setPersonalAccountDisconnectDialog$,
   setSettingsCodexResetDialog$,
@@ -92,12 +91,10 @@ type PersonalProviderAccountGroup = {
 function OAuthAccountGroupsSection() {
   const { t } = useTranslation();
   const providersLoadable = useLastLoadable(personalConfiguredProviders$);
-  const actionLoadable = useLoadable(personalActionPromise$);
   const openClaudeCodeDeviceAuthDialog = useSet(
     openClaudeCodeDeviceAuthDialogPersonal$,
   );
   const openCodexDeviceAuthDialog = useSet(openCodexDeviceAuthDialogPersonal$);
-  const activateAccount = useSet(activatePersonalOAuthCredentialAccount$);
   const setDisconnectDialog = useSet(setPersonalAccountDisconnectDialog$);
   const setResetDialog = useSet(setSettingsCodexResetDialog$);
   const pageSignal = useGet(pageSignal$);
@@ -105,7 +102,6 @@ function OAuthAccountGroupsSection() {
   const isLoading = providersLoadable.state === "loading";
   const providers =
     providersLoadable.state === "hasData" ? providersLoadable.data : [];
-  const actionPending = actionLoadable.state === "loading";
   const accountGroups: readonly PersonalProviderAccountGroup[] =
     SUBSCRIPTION_PROVIDERS.map((type) => {
       return {
@@ -153,11 +149,7 @@ function OAuthAccountGroupsSection() {
           showReconnectAction
           accountGroups={accountGroups}
           onConnect={openAccountAuth}
-          actionPending={actionPending}
           isLoading={isLoading}
-          onActivate={(id) => {
-            detach(activateAccount(id, pageSignal), Reason.DomCallback);
-          }}
           onReconnect={openAccountAuth}
           onDisconnect={(account, fallbackIndex) => {
             setDisconnectDialog({ account, fallbackIndex });
@@ -171,10 +163,8 @@ function OAuthAccountGroupsSection() {
           }}
         />
       </TooltipProvider>
-      <PersonalAccountDisconnectDialogController
-        actionPending={actionPending}
-      />
-      <CodexResetDialogController actionPending={actionPending} />
+      <PersonalAccountDisconnectDialogController />
+      <CodexResetDialogController />
     </section>
   );
 }
@@ -227,12 +217,10 @@ function AutoPersonalAccountsReadState({
 
 function ConnectPersonalAccountAction({
   group,
-  actionPending,
   isLoading,
   onAdd,
 }: {
   readonly group: PersonalProviderAccountGroup;
-  readonly actionPending: boolean;
   readonly isLoading: boolean;
   readonly onAdd: (type: PersonalSubscriptionProviderType) => void;
 }) {
@@ -246,7 +234,7 @@ function ConnectPersonalAccountAction({
       variant="neutral"
       size="sm"
       className="h-9 w-9 gap-2 rounded-lg px-0 @[400px]:w-auto @[400px]:px-3"
-      disabled={isLoading || actionPending || group.accounts.length >= 10}
+      disabled={isLoading || group.accounts.length >= 10}
       onClick={() => {
         onAdd(group.type);
       }}
@@ -265,9 +253,7 @@ function PersonalProviderAccountsTable({
   showReconnectAction,
   accountGroups,
   onConnect,
-  actionPending,
   isLoading,
-  onActivate,
   onReconnect,
   onDisconnect,
   onReset,
@@ -275,9 +261,7 @@ function PersonalProviderAccountsTable({
   readonly showReconnectAction: boolean;
   readonly accountGroups: readonly PersonalProviderAccountGroup[];
   readonly onConnect: (type: PersonalSubscriptionProviderType) => void;
-  readonly actionPending: boolean;
   readonly isLoading: boolean;
-  readonly onActivate: (id: string) => void;
   readonly onReconnect: (
     type: PersonalSubscriptionProviderType,
     modelProviderId: string,
@@ -297,9 +281,7 @@ function PersonalProviderAccountsTable({
             key={group.type}
             group={group}
             onConnect={onConnect}
-            actionPending={actionPending}
             isLoading={isLoading}
-            onActivate={onActivate}
             onReconnect={onReconnect}
             onDisconnect={onDisconnect}
             onReset={onReset}
@@ -314,9 +296,7 @@ function PersonalProviderAccountTable({
   showReconnectAction,
   group,
   onConnect,
-  actionPending,
   isLoading,
-  onActivate,
   onReconnect,
   onDisconnect,
   onReset,
@@ -324,9 +304,7 @@ function PersonalProviderAccountTable({
   readonly showReconnectAction: boolean;
   readonly group: PersonalProviderAccountGroup;
   readonly onConnect: (type: PersonalSubscriptionProviderType) => void;
-  readonly actionPending: boolean;
   readonly isLoading: boolean;
-  readonly onActivate: (id: string) => void;
   readonly onReconnect: (
     type: PersonalSubscriptionProviderType,
     modelProviderId: string,
@@ -369,7 +347,6 @@ function PersonalProviderAccountTable({
           </div>
           <ConnectPersonalAccountAction
             group={group}
-            actionPending={actionPending}
             isLoading={isLoading}
             onAdd={onConnect}
           />
@@ -389,10 +366,6 @@ function PersonalProviderAccountTable({
                       key={account.id}
                       account={account}
                       fallbackIndex={index + 1}
-                      actionPending={actionPending}
-                      onActivate={() => {
-                        onActivate(account.id);
-                      }}
                       onReconnect={() => {
                         onReconnect(group.type, account.id);
                       }}
@@ -421,8 +394,6 @@ function OAuthAccountTableRow({
   showReconnectAction,
   account,
   fallbackIndex,
-  actionPending,
-  onActivate,
   onReconnect,
   onDisconnect,
   onReset,
@@ -430,13 +401,19 @@ function OAuthAccountTableRow({
   readonly showReconnectAction: boolean;
   readonly account: ModelProviderResponse;
   readonly fallbackIndex: number;
-  readonly actionPending: boolean;
-  readonly onActivate: () => void;
   readonly onReconnect: () => void;
   readonly onDisconnect: () => void;
   readonly onReset: () => void;
 }) {
   const { t } = useTranslation();
+  const [activation, activate] = useLoadableSet(
+    activatePersonalOAuthCredentialAccount$,
+  );
+  const pageSignal = useGet(pageSignal$);
+  const actionPending = activation.state === "loading";
+  const onActivate = () => {
+    detach(activate(account.id, pageSignal), Reason.DomCallback);
+  };
   const usage = fallbackSubscriptionUsage(account);
   const identity =
     account.accountEmail ??
@@ -757,15 +734,14 @@ function OAuthAccountMenu({
   );
 }
 
-function PersonalAccountDisconnectDialogController({
-  actionPending,
-}: {
-  readonly actionPending: boolean;
-}) {
+function PersonalAccountDisconnectDialogController() {
   const { t } = useTranslation();
   const dialog = useGet(personalAccountDisconnectDialog$);
   const setDialog = useSet(setPersonalAccountDisconnectDialog$);
-  const deleteAccount = useSet(deletePersonalOAuthCredentialAccount$);
+  const [operation, deleteAccount] = useLoadableSet(
+    deletePersonalOAuthCredentialAccount$,
+  );
+  const actionPending = operation.state === "loading";
   const pageSignal = useGet(pageSignal$);
 
   if (!dialog) {
@@ -855,11 +831,7 @@ function PersonalAccountDisconnectDialogController({
   );
 }
 
-function CodexResetDialogController({
-  actionPending,
-}: {
-  readonly actionPending: boolean;
-}) {
+function CodexResetDialogController() {
   const resetDialog = useGet(settingsCodexResetDialog$);
   const setResetDialog = useSet(setSettingsCodexResetDialog$);
   const [resetLoadable, confirmReset] = useLoadableSet(
@@ -875,7 +847,7 @@ function CodexResetDialogController({
     <CodexResetUsageDialog
       open={resetDialog.open}
       resetCredits={resetDialog.resetCredits}
-      resetting={actionPending || resetLoadable.state === "loading"}
+      resetting={resetLoadable.state === "loading"}
       error={
         resetLoadable.state === "hasError" ? String(resetLoadable.error) : null
       }

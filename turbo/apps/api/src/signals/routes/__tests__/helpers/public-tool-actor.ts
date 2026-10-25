@@ -100,8 +100,8 @@ export async function purchaseToolCredits(
   };
   purchase.onExternalStateReady?.(() => {
     restoreCheckout();
-    context.mocks.stripe.webhooks.constructEvent.mockReset();
-    context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+    context.mocks.stripe.webhooks.constructEventAsync.mockReset();
+    context.mocks.stripe.webhooks.constructEventAsync.mockImplementation(
       (payload) => {
         if (String(payload) !== JSON.stringify(invoicePaid)) {
           throw new Error(

@@ -2,6 +2,7 @@ import { captureSessionStorageMocks } from "./helpers/prepared-session-history";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 import { createHash, randomUUID } from "node:crypto";
@@ -34,6 +35,7 @@ import {
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
+  AVAILABLE_PAID_TOOL_IDS,
   DISABLED_PAID_TOOLS_ENV_VAR,
   ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
   ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
@@ -11295,8 +11297,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           'okou data maps search "<query>"',
           "Public-web search, current public facts, and source discovery",
           "okou data web search <query>",
-          "framework-native web search tool is exposed",
-          "managed Web Search is disabled for a personal-subscription Run",
           "external public-web provider",
           "bounded, ranked results",
           "result-count, recency, and domain filters",
@@ -11432,6 +11432,99 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
+      it("omits all disabled managed tool guidance while retaining independent tools and content policy", async () => {
+        const api = createRunsApi(context);
+        const { actor, agentId, runnerGroup } = await entitledRunActor(
+          {},
+          NATIVE_RUNNER_ROUTE,
+        );
+        for (const tool of AVAILABLE_PAID_TOOL_IDS) {
+          await setPaidToolDisabled(context, actor, tool, true);
+        }
+        const run = await api.createThreadRun(actor, {
+          agentId,
+          prompt: "use my available capabilities",
+        });
+        await api.heartbeatRunner(runnerGroup);
+        const claim = await api.claimRunnerJob(run.runId);
+        const prompt = claim.appendSystemPrompt ?? "";
+        for (const command of [
+          "okou data web search",
+          "okou data people search",
+          "okou data web scrape",
+          "okou data finance",
+          "okou data maps",
+          "okou data seo",
+          "okou data social",
+          "okou data capabilities",
+          "okou data jobs",
+        ]) {
+          expect(prompt).not.toContain(command);
+        }
+        expect(prompt).not.toContain("# Built-in image model");
+        expect(prompt).not.toContain("--provider built-in");
+        expect(prompt).toContain("okou generate <type>");
+        expect(prompt).toContain("okou connector search");
+        expect(prompt).toContain("okou data weather");
+        expect(prompt).toContain("# Restricted Explicit Content");
+        expect(
+          claim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
+        ).toBe("true");
+        await api.requestCancelRun(actor, run.runId, [200]);
+        await finishCancelledRun(run.runId, claim.sandboxToken);
+      });
+
+      it("preserves the complete pre-filtering Agent Tools prompt when all managed tools are enabled", async () => {
+        const api = createRunsApi(context);
+        const { actor, agentId, runnerGroup } = await entitledRunActor(
+          {},
+          NATIVE_RUNNER_ROUTE,
+        );
+        if (!actor.orgId) {
+          throw new Error("Expected an organization");
+        }
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...actor, orgId: actor.orgId },
+          {
+            [FeatureSwitchKey.WechatIntegration]: false,
+            [FeatureSwitchKey.Banking]: false,
+            [FeatureSwitchKey.VncAccess]: false,
+            [FeatureSwitchKey.RemoteConnectionDiagnostics]: false,
+            [FeatureSwitchKey.DiscordIntegration]: false,
+            [FeatureSwitchKey.LarkIntegration]: false,
+            [FeatureSwitchKey.PresentationConvert]: false,
+            [FeatureSwitchKey.BrowserNativeInput]: false,
+            [FeatureSwitchKey.BatchConnectorPermissions]: false,
+          },
+        );
+        const run = await api.createThreadRun(actor, {
+          agentId,
+          prompt: "preserve enabled instructions",
+        });
+        await api.heartbeatRunner(runnerGroup);
+        const claim = await api.claimRunnerJob(run.runId);
+        const prompt = claim.appendSystemPrompt ?? "";
+        const start = prompt.indexOf("# Agent Tools\n");
+        const tools = prompt.slice(start, prompt.indexOf("\n\n#", start));
+        // Golden outputs from main beb38c7; browser access is independent.
+        const expected = ["agent-tools.txt", "agent-tools-browser.txt"].map(
+          (name) => {
+            return readFileSync(
+              new URL(
+                `./fixtures/managed-tools-enabled/${name}`,
+                import.meta.url,
+              ),
+              "utf8",
+            ).trimEnd();
+          },
+        );
+        expect(start).toBeGreaterThanOrEqual(0);
+        expect(expected).toContain(tools);
+        await api.requestCancelRun(actor, run.runId, [200]);
+        await finishCancelledRun(run.runId, claim.sandboxToken);
+      });
+
       it("snapshots paid tool preferences for queued runs and applies later changes to new runs", async () => {
         const api = createRunsApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor(
@@ -11448,6 +11541,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await setPaidToolDisabled(context, actor, "image-generation", false);
         await api.heartbeatRunner(runnerGroup);
         const claim = await api.claimRunnerJob(queued.runId);
+        expect(claim.appendSystemPrompt).not.toContain("okou data web search");
+        expect(claim.appendSystemPrompt).not.toContain(
+          "# Built-in image model",
+        );
+        expect(claim.appendSystemPrompt).toContain("okou data people search");
+        expect(claim.appendSystemPrompt).toContain("okou data seo");
+        expect(claim.appendSystemPrompt).toContain(
+          "plus connector-backed music",
+        );
         expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
           '["image-generation","web-search"]',
         );
@@ -11471,6 +11573,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the updated paid tool preferences",
         });
         const enabledClaim = await api.claimRunnerJob(enabled.runId);
+        expect(enabledClaim.appendSystemPrompt).toContain(
+          "okou data web search",
+        );
+        expect(enabledClaim.appendSystemPrompt).toContain(
+          "# Built-in image model",
+        );
         expect(
           enabledClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
         ).toBe("[]");
@@ -11544,6 +11652,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.heartbeatRunner(runnerGroup);
         const claim = await api.claimRunnerJob(queued.runId);
         expect(claim.cliAgentType).toBe("codex");
+        expect(claim.appendSystemPrompt).not.toContain(
+          "# Built-in image model",
+        );
+        expect(claim.appendSystemPrompt).toContain("okou data web search");
         expect(
           claim.platformEnvironment[ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR],
         ).toBe("true");
@@ -11562,6 +11674,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           model: "gpt-6-astra",
         });
         const managedClaim = await api.claimRunnerJob(managedImages.runId);
+        expect(managedClaim.appendSystemPrompt).toContain(
+          "# Built-in image model",
+        );
+        expect(managedClaim.appendSystemPrompt).not.toContain(
+          "okou data web search",
+        );
         expect(managedClaim.platformEnvironment).not.toHaveProperty(
           ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
         );
@@ -11615,6 +11733,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
           '["scrape"]',
         );
+        expect(claim.appendSystemPrompt).not.toContain("okou data web scrape");
+        expect(claim.appendSystemPrompt).toContain("okou data web search");
         await api.requestCancelRun(member, run.runId, [200]);
       });
 
@@ -12844,31 +12964,27 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           expect(rawFailures).toHaveLength(1);
           expect(rawFailures[0]?.failureReason).toBe(args.failureReason);
-          return { failures, rawFailures };
+          return { failures };
         }
 
         it.each(terminalFailureReasons)(
           "publishes %s as the terminal failure reason",
           async (failureReason) => {
-            const { failures, rawFailures } = await completePublicFailure({
+            const { failures } = await completePublicFailure({
               failureReason,
             });
             expect(failures[0]?.failureReason).toBe(failureReason);
-            expect(rawFailures[0]?.failureReason).toBe(failureReason);
           },
         );
 
         it.each(["claude-code-oauth-token"] as const)(
           "preserves failed completion when sandbox root storage fills on %s",
           async (modelProvider) => {
-            const { failures, rawFailures } = await completePublicFailure({
+            const { failures } = await completePublicFailure({
               modelProvider,
               failureReason: "guest_root_filesystem_full",
             });
             expect(failures[0]?.failureReason).toBe(
-              "guest_root_filesystem_full",
-            );
-            expect(rawFailures[0]?.failureReason).toBe(
               "guest_root_filesystem_full",
             );
           },

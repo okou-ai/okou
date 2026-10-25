@@ -10,8 +10,8 @@ struct ConversationActivityLabel: View {
 
   var body: some View {
     let text = state == .running ? summary.text ?? state.label : state.label
-    HStack(spacing: 10) {
-      ProgressView().controlSize(.small).accessibilityHidden(true)
+    HStack(spacing: 8) {
+      ProgressView().controlSize(.small).frame(width: 16).accessibilityHidden(true)
       Text(verbatim: text)
         .font(.subheadline)
         .foregroundStyle(.secondary)

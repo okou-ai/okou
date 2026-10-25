@@ -9,11 +9,6 @@ interface SlackInstallOAuthResult {
   readonly scope: string;
 }
 
-interface SlackUserOAuthResult {
-  readonly teamId: string;
-  readonly authedUserId: string;
-}
-
 function buildWebClient(): WebClient {
   return new WebClient();
 }
@@ -60,32 +55,6 @@ export async function exchangeSlackOAuthCode(
     teamName: result.team.name ?? "",
     authedUserId: result.authed_user.id,
     scope: typeof result.scope === "string" ? result.scope : "",
-  };
-}
-
-export async function exchangeSlackOAuthCodeForUser(
-  clientId: string,
-  clientSecret: string,
-  code: string,
-  redirectUri: string,
-): Promise<SlackUserOAuthResult> {
-  const client = buildWebClient();
-  const result = await client.oauth.v2.access({
-    client_id: clientId,
-    client_secret: clientSecret,
-    code,
-    redirect_uri: redirectUri,
-  });
-
-  if (!result.ok || !result.authed_user?.id || !result.team?.id) {
-    throw new Error(
-      `OAuth user exchange failed: ${result.error ?? "unknown error"}`,
-    );
-  }
-
-  return {
-    teamId: result.team.id,
-    authedUserId: result.authed_user.id,
   };
 }
 

@@ -16,7 +16,7 @@ const NOTION_EVENT_TYPES = [
   "notion-page-content-updated",
 ] as const;
 
-const NOTION_ACCOUNT_CHANGED_SKIP_REASON =
+export const NOTION_ACCOUNT_CHANGED_SKIP_REASON =
   "Notion account selection changed before the event was processed";
 const NOTION_ACCOUNT_RECONNECTED_SKIP_REASON =
   "Notion account identity changed before the event was processed";

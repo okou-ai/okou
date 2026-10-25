@@ -1,0 +1,19 @@
+# Inline Templates
+
+Match each numbered template marker in the current user message with the same numbered section below.
+- Apply each template only to the request around its marker.
+- A template is context, not a request by itself.
+
+## Template #1 (illustration)
+
+Selected illustration style:
+- Artifact type: illustration
+- Style: Emboss & Deboss (image-style:emboss-deboss)
+- Style description: Poetic paper posters with pronounced raised lettering and forms, deep pressed contours, fine fibers, and intentional negative space.
+- Style source: private R2 registry resource image-style:emboss-deboss
+
+When you produce an illustration or image from the user's request:
+- Run once: okou generate image --provider built-in --style image-style:emboss-deboss --prompt "<user request>" --compile --style-source r2
+- Follow the returned packet completely, including pulling the private R2 package and reading its extracted SKILL.md. If the R2 source is unavailable, stop without generating; do not fall back to GitHub.
+- Then run `okou generate image --provider built-in --compiled-prompt "<compiled prompt>"` with the resolved compatible CLI options and required reference image URLs, without `--style`.
+- If a flag above no longer applies, run `okou generate image -h` to discover the current flags, models, providers, and styles.

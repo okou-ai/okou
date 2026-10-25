@@ -135,10 +135,7 @@ type ComposerSuggestionSignals = Pick<
 
 type ComposerTemplateEditorSignals = Pick<
   WorkflowComposerSignals,
-  | "templatePreview"
-  | "hasTemplateAttachment$"
-  | "insertTemplate$"
-  | "openTemplatePicker$"
+  "hasTemplateAttachment$" | "insertTemplate$" | "openTemplatePicker$"
 >;
 
 type ComposerModelUiSignals = ComposerUiSignalGroups["model"];
@@ -444,7 +441,6 @@ function composerTemplateSignals(
   composer: WorkflowComposerSignals,
 ): ComposerTemplateEditorSignals {
   return {
-    templatePreview: composer.templatePreview,
     hasTemplateAttachment$: composer.hasTemplateAttachment$,
     insertTemplate$: composer.insertTemplate$,
     openTemplatePicker$: composer.openTemplatePicker$,

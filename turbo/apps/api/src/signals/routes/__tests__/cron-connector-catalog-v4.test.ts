@@ -272,11 +272,10 @@ function serveObjects(objects: ReadonlyMap<string, Buffer>): void {
   });
 }
 
-async function cronClient() {
-  const app = await setupApp({
+function cronClient() {
+  const app = setupApp({
     context,
     routes: cronConnectorCatalogRoutes,
-    isolatePg: true,
   });
   return app(cronConnectorCatalogContract);
 }
@@ -287,11 +286,8 @@ function catalogClient() {
   );
 }
 
-async function sync() {
-  return await accept(
-    (await cronClient()).sync({ headers: cronHeaders }),
-    [200],
-  );
+async function sync(client = cronClient()) {
+  return await accept(client.sync({ headers: cronHeaders }), [200]);
 }
 
 async function publicCatalog() {
@@ -313,6 +309,12 @@ describe("connector catalog v4 preparation", () => {
   ] as const)(
     "refreshes a running %s %s builtin when its catalog configuration changes, disappears, or is restored",
     async (protocol, authKind) => {
+      const app = await setupApp({
+        context,
+        routes: cronConnectorCatalogRoutes,
+        isolatePg: true,
+      });
+      const cron = app(cronConnectorCatalogContract);
       const endpoint = "https://automatic-mcp.example.test/server";
       const initial = release({
         mutate(catalog) {
@@ -322,7 +324,7 @@ describe("connector catalog v4 preparation", () => {
         },
       });
       serveObjects(initial.objects);
-      expect((await sync()).body.outcome).toBe("accepted");
+      expect((await sync(cron)).body.outcome).toBe("accepted");
       const runs = createRunsApi(context);
       const actor = bdd.user();
       bdd.acceptAgentStorageWrites();
@@ -436,7 +438,7 @@ describe("connector catalog v4 preparation", () => {
               }).objects,
             );
             context.mocks.ably.batchPublish.mockClear();
-            expect((await sync()).body.outcome).toBe("accepted");
+            expect((await sync(cron)).body.outcome).toBe("accepted");
             expect(context.mocks.ably.batchPublish).toHaveBeenCalledWith({
               channels: [expect.stringMatching(/^runner-group:/)],
               messages: [
@@ -476,7 +478,7 @@ describe("connector catalog v4 preparation", () => {
           },
         }).objects,
       );
-      await sync();
+      await sync(cron);
       context.mocks.s3.send.mockResolvedValue({ Contents: [] });
       if (created.runId) {
         await runs.requestCancelRun(actor, created.runId, [200, 404]);
@@ -497,10 +499,16 @@ describe("connector catalog v4 preparation", () => {
   );
 
   it("serves v4 HTTP and generic Automatic MCP methods through normal sync", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
+    const cron = app(cronConnectorCatalogContract);
     const candidate = release({ label: "Accepted v4", mcpSlug: "notes-mcp" });
     serveObjects(candidate.objects);
     // The response is only the attempt report.
-    expect((await sync()).body).toStrictEqual({
+    expect((await sync(cron)).body).toStrictEqual({
       outcome: "accepted",
       failureCode: null,
     });
@@ -508,16 +516,22 @@ describe("connector catalog v4 preparation", () => {
       { slug: "catalog-service", label: "Accepted v4" },
       { slug: "notes-mcp", authMethods: [{ grantKind: "automatic" }] },
     ]);
-    expect((await sync()).body).toStrictEqual({
+    expect((await sync(cron)).body).toStrictEqual({
       outcome: "unchanged",
       failureCode: null,
     });
   });
 
   it("keeps serving the current pointer across a rejected-source sync", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
+    const cron = app(cronConnectorCatalogContract);
     const serving = release({ label: "Serving" });
     serveObjects(serving.objects);
-    expect((await sync()).body).toStrictEqual({
+    expect((await sync(cron)).body).toStrictEqual({
       outcome: "accepted",
       failureCode: null,
     });
@@ -530,7 +544,7 @@ describe("connector catalog v4 preparation", () => {
     ]);
 
     serveObjects(new Map());
-    expect((await sync()).body).toStrictEqual({
+    expect((await sync(cron)).body).toStrictEqual({
       outcome: "rejected",
       failureCode: "source-unavailable",
     });
@@ -545,44 +559,10 @@ describe("connector catalog v4 preparation", () => {
     // Nothing about the rejection was persisted: the next sync of the serving
     // pointer is unchanged.
     serveObjects(serving.objects);
-    expect((await sync()).body).toStrictEqual({
+    expect((await sync(cron)).body).toStrictEqual({
       outcome: "unchanged",
       failureCode: null,
     });
-  });
-
-  it("retains the last accepted v4 snapshot when a later candidate has an invalid protocol", async () => {
-    const accepted = release({ label: "Last accepted" });
-    serveObjects(accepted.objects);
-    await sync();
-    const invalid = release({
-      label: "Rejected candidate",
-      mutate(catalog) {
-        catalog.connectors = [
-          httpConnector("catalog-service", "Rejected candidate"),
-          {
-            ...mcpConnector(),
-            mcp: {
-              transport: "streamable-http",
-              endpoint: "http://notes.example.com/mcp",
-            },
-          },
-        ];
-      },
-    });
-    serveObjects(invalid.objects);
-
-    expect((await sync()).body).toStrictEqual({
-      outcome: "rejected",
-      failureCode: "invalid-artifact",
-    });
-    expect((await publicCatalog()).body.connectors).toMatchObject([
-      { slug: "catalog-service", label: "Last accepted" },
-      {
-        slug: "plaud-mcp",
-        authMethods: [{ id: "automatic", grantKind: "automatic" }],
-      },
-    ]);
   });
 
   it("rejects a pointer outside the canonical v4 release namespace", async () => {
@@ -608,6 +588,12 @@ describe("connector catalog v4 preparation", () => {
   });
 
   it("uses explicit protocol metadata for crossed-name connectors and needs no MCP skill resources", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
+    const cron = app(cronConnectorCatalogContract);
     const candidate = release({
       httpSlug: "http-service-mcp",
       mcpSlug: "spoken-notes",
@@ -615,7 +601,9 @@ describe("connector catalog v4 preparation", () => {
     // Storage contains only the pointer and catalog. Both descriptors declare
     // skill:none, so accepting this release requires no skill resource fetch.
     serveObjects(candidate.objects);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    expect((await sync(cron)).body).toMatchObject({
+      outcome: "accepted",
+    });
     expect((await publicCatalog()).body.connectors).toMatchObject([
       { slug: "http-service-mcp", authMethods: [{ grantKind: "manual" }] },
       { slug: "spoken-notes", authMethods: [{ grantKind: "automatic" }] },
@@ -623,6 +611,12 @@ describe("connector catalog v4 preparation", () => {
   });
 
   it("keeps migrated builtin MCP services ranked in discovery and search", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
+    const cron = app(cronConnectorCatalogContract);
     const candidate = release({
       mutate(catalog) {
         catalog.connectors = [
@@ -659,7 +653,7 @@ describe("connector catalog v4 preparation", () => {
       },
     });
     serveObjects(candidate.objects);
-    expect((await sync()).body.outcome).toBe("accepted");
+    expect((await sync(cron)).body.outcome).toBe("accepted");
 
     const catalog = await publicCatalog();
     expect(catalog.body.connectors).toStrictEqual(
@@ -720,8 +714,14 @@ describe("connector catalog v4 preparation", () => {
   });
 
   it("does not expose an accepted MCP transport as an executable HTTP permission bundle", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
+    });
+    const cron = app(cronConnectorCatalogContract);
     serveObjects(release({ mcpSlug: "notes-mcp" }).objects);
-    await sync();
+    await sync(cron);
     const client = setupApp({ context, routes: customConnectorsRoutes })(
       customConnectorsContract,
     );

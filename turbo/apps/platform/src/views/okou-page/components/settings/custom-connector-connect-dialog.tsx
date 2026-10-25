@@ -25,14 +25,9 @@ import { useTranslation } from "react-i18next";
 
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
-  connectorConnectionCompleted$,
-  connectorConnectionPending$,
-} from "../../../../signals/connector-connection-progress.ts";
-import { useConnectorConnectionDialogClose } from "../../../components/connector-connection-progress.tsx";
-import { ConnectorConnectionDialogBody } from "../../../components/connector-connection-dialog-body.tsx";
-import {
   closeCustomConnectorDialog$,
   submitCustomConnectorConnection$,
+  cancelCustomConnectorConnection$,
   customConnectorConnectForm$,
   resetCustomConnectorConnectInput$,
   setCustomConnectorConnectField$,
@@ -184,7 +179,6 @@ function ConnectDialogFooter({
   readonly onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const completed = useGet(connectorConnectionCompleted$);
   const submitLabel = submitting
     ? authorization || noAuth
       ? t(($) => {
@@ -213,9 +207,7 @@ function ConnectDialogFooter({
         disabled={submitting && !authorization}
       >
         {t(($) => {
-          return submitting && authorization && completed
-            ? $.connectors.actions.close
-            : $.connectors.actions.cancel;
+          return $.connectors.actions.cancel;
         })}
       </Button>
       <Button type="submit" disabled={!canSubmit}>
@@ -434,9 +426,8 @@ function CustomConnectorConnectDialogContent({
   const [connectionLoadable, submit] = useLoadableSet(
     submitCustomConnectorConnection$,
   );
-  const connectionSubmitting = connectionLoadable.state === "loading";
-  const pending = useGet(connectorConnectionPending$);
-  const submitting = connectionSubmitting || pending;
+  const submitting = connectionLoadable.state === "loading";
+  const cancelConnection = useSet(cancelCustomConnectorConnection$);
   const signal = useGet(pageSignal$);
   const authorization =
     connector.authMode === "oauth" || connector.authMode === "automatic";
@@ -453,10 +444,10 @@ function CustomConnectorConnectDialogContent({
     setupAvailable &&
     (authorization || (hasRequiredValues && (noAuth || values.length > 0)));
 
-  const { close: cancel, onOpenChange } = useConnectorConnectionDialogClose(
-    connectionSubmitting,
-    close,
-  );
+  const cancel = () => {
+    cancelConnection();
+    close();
+  };
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -486,7 +477,18 @@ function CustomConnectorConnectDialogContent({
   };
 
   return (
-    <Dialog open onOpenChange={onOpenChange}>
+    <Dialog
+      open
+      onOpenChange={(open, details) => {
+        if (!open && submitting && details.reason === "outside-press") {
+          details.cancel();
+          return;
+        }
+        if (!open) {
+          cancel();
+        }
+      }}
+    >
       <DialogContent
         maxWidth="md"
         aria-describedby={undefined}
@@ -494,25 +496,9 @@ function CustomConnectorConnectDialogContent({
           return $.connectors.actions.close;
         })}
       >
-        <DialogHeader>
-          <div className="flex items-center gap-3">
-            <CustomConnectorIcon
-              id={connector.id}
-              displayName={connector.displayName}
-              size={20}
-            />
-            <DialogTitle>
-              {t(
-                ($) => {
-                  return $.connectors.custom.connect.title;
-                },
-                { connector: connector.displayName },
-              )}
-            </DialogTitle>
-          </div>
-        </DialogHeader>
+        <CustomConnectorConnectHeader connector={connector} />
         <CustomConnectorSecretDescription connector={connector} />
-        <ConnectorConnectionDialogBody>
+        <div>
           {connectionLoadable.state === "hasError" && (
             <p role="alert" className="text-sm text-destructive">
               {String(connectionLoadable.error)}
@@ -535,8 +521,35 @@ function CustomConnectorConnectDialogContent({
               })}
             </p>
           )}
-        </ConnectorConnectionDialogBody>
+        </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function CustomConnectorConnectHeader({
+  connector,
+}: {
+  readonly connector: CustomConnectorResponse;
+}) {
+  const { t } = useTranslation();
+  return (
+    <DialogHeader>
+      <div className="flex items-center gap-3">
+        <CustomConnectorIcon
+          id={connector.id}
+          displayName={connector.displayName}
+          size={20}
+        />
+        <DialogTitle>
+          {t(
+            ($) => {
+              return $.connectors.custom.connect.title;
+            },
+            { connector: connector.displayName },
+          )}
+        </DialogTitle>
+      </div>
+    </DialogHeader>
   );
 }

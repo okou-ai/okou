@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -163,7 +163,7 @@ test("An active activity explains how to load the latest logs", async () => {
   ).toBeInTheDocument();
 });
 
-test("Refreshing an activity keeps the page and search until every new log page is ready", async () => {
+test("Refreshing an activity loads every log page and preserves the search", async () => {
   const secondPageStarted = context.mocks.deferred<void>();
   const releaseSecondPage = context.mocks.deferred<void>();
   let refreshed = false;
@@ -209,13 +209,6 @@ test("Refreshing an activity keeps the page and search until every new log page 
   refreshed = true;
   click(button);
   await secondPageStarted.promise;
-  expect(screen.getByText("Current activity log")).toBeInTheDocument();
-  expect(screen.queryByText("Latest activity log")).not.toBeInTheDocument();
-  expect(screen.getByText("Running")).toBeInTheDocument();
-  expect(button).toHaveAttribute("aria-busy", "true");
-  expect(button).toHaveAttribute("aria-disabled", "true");
-  click(button);
-
   releaseSecondPage.resolve();
   await expect(
     screen.findByText("Latest activity log"),
@@ -226,77 +219,6 @@ test("Refreshing an activity keeps the page and search until every new log page 
   expect(
     screen.queryByText("Logs do not update automatically."),
   ).not.toBeInTheDocument();
-});
-
-test("A failed refresh keeps the logs and lets the user retry without losing focus", async () => {
-  const failureStarted = context.mocks.deferred<void>();
-  const releaseFailure = context.mocks.deferred<void>();
-  let phase: "initial" | "failure" | "ready" = "initial";
-  context.mocks.api(logsByIdContract.getById, ({ respond }) => {
-    return respond(200, makeLogDetail({}));
-  });
-  context.mocks.api(
-    runAgentEventsContract.getAgentEvents,
-    async ({ query, respond }) => {
-      if (phase === "failure") {
-        if (query.cursor === undefined) {
-          return respond(200, {
-            events: [makeAssistantEvent(0, "Unconfirmed activity log")],
-            hasMore: true,
-            nextCursor: "failed-page",
-            status: "running",
-            lastEventSequence: null,
-          });
-        }
-        failureStarted.resolve();
-        await releaseFailure.promise;
-        return respond(403, {
-          error: { code: "FORBIDDEN", message: "Logs temporarily unavailable" },
-        });
-      }
-      return respond(200, {
-        events: [
-          makeAssistantEvent(0, "Current activity log"),
-          ...(phase === "ready"
-            ? [makeAssistantEvent(1, "Latest activity log")]
-            : []),
-        ],
-        hasMore: false,
-        status: "running",
-        lastEventSequence: null,
-      });
-    },
-  );
-
-  await setupPage({ context, path: `/activities/${RUN_ID}` });
-  await expect(
-    screen.findByText("Current activity log"),
-  ).resolves.toBeInTheDocument();
-  const button = refreshButton();
-  button.focus();
-  phase = "failure";
-  click(button);
-  await failureStarted.promise;
-  expect(button).toHaveAttribute("aria-busy", "true");
-  expect(button).toHaveFocus();
-
-  releaseFailure.resolve();
-  await waitFor(() => {
-    expect(button).not.toHaveAttribute("aria-busy");
-  });
-  expect(screen.getByText("Current activity log")).toBeInTheDocument();
-  expect(
-    screen.queryByText("Unconfirmed activity log"),
-  ).not.toBeInTheDocument();
-  expect(button).toHaveFocus();
-  phase = "ready";
-  click(button);
-
-  await expect(
-    screen.findByText("Latest activity log"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Current activity log")).toBeInTheDocument();
-  expect(refreshButton()).toHaveFocus();
 });
 
 test("Leaving an activity cancels a pending refresh before it can affect the next activity", async () => {

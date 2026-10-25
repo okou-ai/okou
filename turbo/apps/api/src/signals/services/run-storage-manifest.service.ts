@@ -3,6 +3,7 @@ import {
   CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
   CANONICAL_CODEX_HOME_DIR,
   CANONICAL_CODEX_MEMORY_MOUNT_PATH,
+  CANONICAL_PI_MEMORY_MOUNT_PATH,
   PI_SKILLS_ROOT,
   type PiModelConfig,
   type StorageMountEntry,
@@ -1488,16 +1489,16 @@ function artifactsForRun(args: {
   readonly piSandbox: PiModelConfig | undefined;
 }): RunArtifacts {
   return {
-    artifacts:
-      args.piSandbox === undefined
-        ? [
-            {
-              name: AUTO_MEMORY_ARTIFACT_NAME,
-              mountPath: autoMemoryMountPath(args.framework),
-              missingRootPolicy: AUTO_MEMORY_MISSING_ROOT_POLICY,
-            },
-          ]
-        : [],
+    artifacts: [
+      {
+        name: AUTO_MEMORY_ARTIFACT_NAME,
+        mountPath:
+          args.piSandbox === undefined
+            ? autoMemoryMountPath(args.framework)
+            : CANONICAL_PI_MEMORY_MOUNT_PATH,
+        missingRootPolicy: AUTO_MEMORY_MISSING_ROOT_POLICY,
+      },
+    ],
   };
 }
 

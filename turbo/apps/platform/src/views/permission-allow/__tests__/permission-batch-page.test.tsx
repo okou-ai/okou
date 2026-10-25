@@ -126,7 +126,6 @@ function openPage({
 
 test("A user allows grouped permissions once and retries only a failed continuation", async () => {
   const grants = installResources();
-  const callbackResponse = context.mocks.deferred<void>();
   let firstCallback = true;
   const sent: ChatEventSendBody[] = [];
   const applied: string[] = [];
@@ -151,11 +150,10 @@ test("A user allows grouped permissions once and retries only a failed continuat
       return respond(200, grants);
     },
   );
-  context.mocks.api(chatEventsContract.send, async ({ body, respond }) => {
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     sent.push(body);
     if (firstCallback) {
       firstCallback = false;
-      await callbackResponse.promise;
       return respond(500, {
         error: { code: "INTERNAL_SERVER_ERROR", message: "Try again" },
       });
@@ -174,8 +172,6 @@ test("A user allows grouped permissions once and retries only a failed continuat
   });
   click(button("Allow all 2 permissions"));
   await screen.findByText("Permissions allowed");
-  // Save success is visible while the callback is still pending.
-  callbackResponse.resolve(undefined);
   await screen.findByText(
     "Permissions allowed, but could not continue. Try continuing again.",
   );

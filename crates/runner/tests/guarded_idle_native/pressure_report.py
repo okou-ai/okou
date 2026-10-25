@@ -35,6 +35,57 @@ def integer(value, minimum=0):
     return type(value) is int and minimum <= value <= 2**64 - 1
 
 
+def sustained_ready_samples(samples, end, policy, after=0):
+    """Replay validated reads, returning fresh high-watermark evidence for Ready.
+
+    Recovery history need not still be fresh at the decision. Each observation
+    must have been fresh when observed, with distinct bounded read-start gaps.
+    Callers retain their sample-shape, witness-order and headroom checks.
+    """
+    max_age = policy["max_sample_age_millis"] * 1_000_000
+    sustain = policy["pressure_recovery_sustain_millis"] * 1_000_000
+    previous, since, latest = None, None, None
+    recovered, high = False, []
+    epoch_lower, epoch_upper = 0, None
+    for sample in samples:
+        if sample["finished_ns"] >= end:
+            continue
+        offset = sample["read_start_offset_ns"]
+        if previous is not None and offset <= previous:
+            raise ValueError("actual pressure read was replayed or reordered")
+        # One source epoch must place each read start inside its real interval.
+        epoch_lower = max(epoch_lower, sample["started_ns"] - offset)
+        upper = sample["finished_ns"] - offset
+        epoch_upper = upper if epoch_upper is None else min(epoch_upper, upper)
+        if epoch_lower > epoch_upper:
+            raise ValueError("actual pressure read offsets contradict their monotonic windows")
+        if previous is not None and offset - previous >= max_age:
+            recovered, since, high = False, None, []
+        previous, latest = offset, sample
+        available = sample["available_bytes"]
+        if (sample["started_ns"] <= after or available is None
+                or sample["age_ns"] >= max_age
+                or available <= policy["critical_available_bytes"]):
+            recovered, since, high = False, None, []
+        elif available >= policy["recovery_available_bytes"]:
+            if since is None:
+                since = offset
+            if offset - since >= sustain:
+                recovered = True
+            high.append(sample)
+        else:
+            # Completed recovery survives the hysteresis band, as in the owner.
+            since = None
+            if not recovered:
+                high = []
+    if (not recovered or latest is None
+            or not integer(latest["available_bytes"], policy["recovery_available_bytes"])
+            or latest["age_ns"] + end - latest["finished_ns"] >= max_age):
+        return []
+    return [sample for sample in high
+            if sample["age_ns"] + end - sample["finished_ns"] < max_age]
+
+
 def validate(directory):
     directory = pathlib.Path(directory)
     metadata = json.loads((directory / "report.json").read_text())["metadata"]

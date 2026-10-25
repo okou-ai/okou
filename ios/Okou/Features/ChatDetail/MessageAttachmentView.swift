@@ -10,7 +10,6 @@ struct MessageAttachmentView: View {
   let loadsThumbnail: Bool
   @State private var thumbnail: UIImage?
   @State private var thumbnailMessage: String?
-  @ScaledMetric(relativeTo: .subheadline) private var filenameHeight = 40
   private var thumbnailFailed: Bool { thumbnailMessage != nil }
 
   private var isMedia: Bool {
@@ -52,7 +51,6 @@ struct MessageAttachmentView: View {
           if !isMedia { Image(systemName: "doc.fill").font(.title2).foregroundStyle(.secondary) }
           VStack(alignment: .leading, spacing: 3) {
             Text(attachment.filename).font(.subheadline.weight(.medium)).lineLimit(2)
-              .frame(height: filenameHeight, alignment: .leading)
             Text(metadata).font(.caption).foregroundStyle(.secondary).lineLimit(1)
           }
           Spacer(minLength: 0)
@@ -61,7 +59,7 @@ struct MessageAttachmentView: View {
       }
       .padding(10)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(Color(.tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+      .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -111,7 +109,8 @@ struct MessageAttachmentPreview: View {
             Text(ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file))
               .foregroundStyle(.secondary)
             if QLPreviewController.canPreview(file.url as NSURL) {
-              Button("Open preview") { quickLookURL = file.url }.buttonStyle(.borderedProminent)
+              Button("Open preview") { quickLookURL = file.url }
+                .buttonStyle(NeutralProminentButtonStyle())
             } else {
               Text(
                 "Preview is unavailable for this file type. Share it or save it to Files to open it in another app."
@@ -126,8 +125,8 @@ struct MessageAttachmentPreview: View {
             Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundStyle(
               .secondary)
             Text(error).multilineTextAlignment(.center)
-            Button("Retry download") { viewer.open(preview.attachment) }.buttonStyle(
-              .borderedProminent)
+            Button("Retry download") { viewer.open(preview.attachment) }
+              .buttonStyle(NeutralProminentButtonStyle())
           } else {
             ProgressView("Downloading attachment…")
             Text(preview.attachment.filename).font(.subheadline)

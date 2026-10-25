@@ -3,12 +3,12 @@ import SwiftUI
 
 /// Presentation revisions include every input that can change a row's measured size.
 enum ConversationCollectionRow: Equatable, Identifiable {
-  case earlier(isLoading: Bool)
+  case earlier
   case message(
     ChatMessage, showsAvatar: Bool, topSpacing: CGFloat, pendingRetry: Bool?, isSending: Bool,
     isWorkHistory: Bool = false)
   case work(ChatWorkSection, expanded: Bool, showsAvatar: Bool, topSpacing: CGFloat)
-  case footer(ChatExecutionState)
+  case footer(ChatExecutionState, showsAvatar: Bool)
   case failure(ChatMessage, AssistantFailureState, topSpacing: CGFloat)
   case followups(ChatRecommendedFollowupSource, finishedAt: Date?)
   case usage(runID: String, state: ConversationRunUsageState)
@@ -30,6 +30,23 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     if case .failure(let message, _, _) = self { return message }
     return nil
   }
+
+  var isMessageContent: Bool {
+    switch self {
+    case .message, .failure, .work: true
+    case .earlier, .footer, .followups, .usage: false
+    }
+  }
+
+  var readingContentTopSpacing: CGFloat? {
+    switch self {
+    case .message(_, _, let spacing, _, _, _), .work(_, _, _, let spacing),
+      .failure(_, _, let spacing):
+      spacing
+    case .usage: 0
+    case .earlier, .footer, .followups: nil
+    }
+  }
 }
 
 struct ConversationCollectionMetrics: Equatable {
@@ -42,6 +59,7 @@ struct ConversationCollectionMetrics: Equatable {
 @MainActor
 private protocol ConversationCollectionScrolling: AnyObject {
   func scrollTo(_ id: String, anchor: UnitPoint, animated: Bool)
+  func captureReadingPosition() -> ConversationReadingPosition?
 }
 
 @MainActor
@@ -55,6 +73,10 @@ final class ConversationCollectionScroll {
       return
     }
     owner.scrollTo(id, anchor: anchor, animated: animated)
+  }
+
+  func captureReadingPosition() -> ConversationReadingPosition? {
+    owner?.captureReadingPosition()
   }
 
   fileprivate func attach(_ owner: any ConversationCollectionScrolling) {
@@ -77,8 +99,10 @@ struct ConversationCollectionView<Content: View>: UIViewControllerRepresentable 
   let followsBottom: Bool
   var sidebar: SidebarInteraction?
   var sendTransition: ConversationSendTransition?
+  var isLoadingHistory = false
   let phaseChanged: (ScrollPhase) -> Void
   let metricsChanged: (ConversationCollectionMetrics) -> Void
+  let rowsPresented: (String?) -> Void
   let refresh: () async -> Void
   @ViewBuilder let content: (ConversationCollectionRow, ConversationScrollAnchor?) -> Content
 
@@ -229,6 +253,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       self?.isPresentedMarker(marker) ?? false
     }
     loading.hidesWhenStopped = true
+    loading.isUserInteractionEnabled = false
+    loading.isAccessibilityElement = true
+    loading.accessibilityLabel = "Loading conversation"
     view.addSubview(loading)
     source.sidebar?.attach(self)
     registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) {
@@ -363,6 +390,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   private func prepareRowsIfNeeded() {
+    defer { updateLoading() }
     guard !stopped, collection.bounds.width > 0 else { return }
     let width = collection.bounds.width
     let category = traitCollection.preferredContentSizeCategory
@@ -401,9 +429,6 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       applyPreparedRows()
       return
     }
-    if displayedRows.isEmpty && rows.contains(where: { $0.message != nil }) {
-      revealLoadingAfterDelay()
-    }
     preparation = Task { [weak self] in
       guard let self else { return }
       // Four temporary hosts at a time bound retained views even in an expanded history.
@@ -427,11 +452,20 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     }
   }
 
-  private func revealLoadingAfterDelay() {
+  private var needsLoadingIndicator: Bool {
+    !stopped && !displayedRows.values.contains(where: \.isMessageContent)
+      && (source.isLoadingHistory || source.rows.contains(where: \.isMessageContent))
+  }
+
+  private func updateLoading() {
+    guard needsLoadingIndicator else {
+      stopLoading()
+      return
+    }
     guard loadingTask == nil, !loading.isAnimating else { return }
     loadingTask = Task { [weak self, sleep] in
       do { try await sleep(.milliseconds(100)) } catch { return }
-      guard !Task.isCancelled, let self, !stopped, displayedRows.isEmpty else { return }
+      guard !Task.isCancelled, let self, needsLoadingIndicator else { return }
       loading.startAnimating()
     }
   }
@@ -500,7 +534,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     preparedRows = nil
     appliesRows = true
     let rows = prepared.rows
-    let position = source.anchor.preservedPosition ?? source.anchor.capture()
+    let ids = Set(rows.map(\.id))
+    let position = source.anchor.preservedPosition ?? captureReadingPosition(retaining: ids)
+    if !source.followsBottom, let position { source.anchor.preserve(position) }
     let oldIDs = Set(dataSource.snapshot().itemIdentifiers)
     var updatedMeasurements = prepared.measurements
     for row in rows {
@@ -529,11 +565,15 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
       guard let self, !stopped else { return }
       appliesRows = false
-      let ids = Set(dataSource.snapshot().itemIdentifiers)
       displayedRows = displayedRows.filter { ids.contains($0.key) }
       measurements = measurements.filter { ids.contains($0.key) }
       collection.layoutIfNeeded()
-      stopLoading()
+      updateLoading()
+      let firstItemID = rows.first(where: { $0.readingContentTopSpacing != nil })?.id
+      DispatchQueue.main.async { [weak self] in
+        guard let self, !stopped else { return }
+        source.rowsPresented(firstItemID)
+      }
       if isScrolling {
         publishMetrics()
         return
@@ -549,6 +589,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         source.anchor.followBottom()
         scrollTo("conversation-bottom", anchor: .bottom, animated: false)
       } else if let position, ids.contains(position.messageID) {
+        // Compensate before the next frame, even when SwiftUI row markers are not mounted yet.
+        restoreReadingPosition(position)
         source.anchor.restore(position)
       }
       source.anchor.layoutDidChange()
@@ -556,6 +598,43 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       applyPreparedRows()
       applyObservedHeights()
     }
+  }
+
+  func captureReadingPosition() -> ConversationReadingPosition? {
+    captureReadingPosition(retaining: nil)
+  }
+
+  private func captureReadingPosition(retaining ids: Set<String>?) -> ConversationReadingPosition? {
+    guard isViewLoaded, displayedWidth == collection.bounds.width,
+      displayedCategory == traitCollection.preferredContentSizeCategory
+    else { return nil }
+    let top = collection.bounds.minY + collection.adjustedContentInset.top
+    let bottom = collection.bounds.maxY - collection.adjustedContentInset.bottom
+    return collection.indexPathsForVisibleItems.compactMap {
+      index -> ConversationReadingPosition? in
+      guard let id = dataSource.itemIdentifier(for: index), ids?.contains(id) ?? true,
+        let spacing = displayedRows[id]?.readingContentTopSpacing,
+        let frame = layout.layoutAttributesForItem(at: index)?.frame,
+        frame.maxY > top, frame.minY + spacing < bottom
+      else { return nil }
+      return ConversationReadingPosition(messageID: id, offset: frame.minY + spacing - top)
+    }.min { $0.offset < $1.offset }
+  }
+
+  private func restoreReadingPosition(_ position: ConversationReadingPosition) {
+    guard displayedWidth == collection.bounds.width,
+      displayedCategory == traitCollection.preferredContentSizeCategory,
+      let index = dataSource.indexPath(for: position.messageID),
+      let spacing = displayedRows[position.messageID]?.readingContentTopSpacing,
+      let frame = layout.layoutAttributesForItem(at: index)?.frame
+    else { return }
+    let insets = collection.adjustedContentInset
+    let minimum = -insets.top
+    let maximum = max(
+      minimum, collection.contentSize.height - collection.bounds.height + insets.bottom)
+    let y = min(maximum, max(minimum, frame.minY + spacing - insets.top - position.offset))
+    guard abs(y - collection.contentOffset.y) > 0.5 else { return }
+    collection.setContentOffset(CGPoint(x: collection.contentOffset.x, y: y), animated: false)
   }
 
   func scrollTo(_ id: String, anchor: UnitPoint, animated: Bool) {
@@ -714,7 +793,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     guard !changed.isEmpty else { return }
     source.sendTransition?.prepareForSnapshot()
     // Capture the presented position after pausing any send animation.
-    let position = source.anchor.preservedPosition ?? source.anchor.capture()
+    let position = source.anchor.preservedPosition ?? captureReadingPosition()
+    if !atBottom, let position { source.anchor.preserve(position) }
     appliesRows = true
     var snapshot = dataSource.snapshot()
     snapshot.reconfigureItems(changed)
@@ -732,6 +812,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       } else if atBottom {
         source.anchor.followBottom()
       } else if let position {
+        restoreReadingPosition(position)
         source.anchor.restore(position)
       }
       publishMetrics()

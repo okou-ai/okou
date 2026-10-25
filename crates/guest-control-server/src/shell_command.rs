@@ -183,6 +183,26 @@ pub(crate) struct SpawnedCommand {
     pub(crate) process_containment: ExecProcessContainment,
 }
 
+impl SpawnedCommand {
+    /// Transfer successful setup ownership, or retire containment before returning its error.
+    pub(crate) fn from_spawn_result(
+        spawn_result: io::Result<(Child, Option<EnvScriptGuard>)>,
+        process_containment: ExecProcessContainment,
+    ) -> io::Result<Self> {
+        match spawn_result {
+            Ok((child, env_script)) => Ok(Self {
+                child,
+                env_script,
+                process_containment,
+            }),
+            Err(error) => {
+                let _ = process_containment.cleanup(ProcessContainmentCleanupMode::Forced);
+                Err(error)
+            }
+        }
+    }
+}
+
 fn effective_uid() -> libc::uid_t {
     // SAFETY: `geteuid` is a simple libc getter with no preconditions.
     unsafe { libc::geteuid() }
@@ -601,17 +621,7 @@ pub(crate) fn spawn_shell_command_with_pipes(
         Ok((child, env_script))
     })();
 
-    match spawn_result {
-        Ok((child, env_script)) => Ok(SpawnedCommand {
-            child,
-            env_script,
-            process_containment,
-        }),
-        Err(error) => {
-            let _ = process_containment.cleanup(ProcessContainmentCleanupMode::Forced);
-            Err(error)
-        }
-    }
+    SpawnedCommand::from_spawn_result(spawn_result, process_containment)
 }
 
 #[cfg(test)]

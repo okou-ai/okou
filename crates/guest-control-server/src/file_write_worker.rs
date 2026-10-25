@@ -56,9 +56,15 @@ pub(crate) enum FileWriteSubmitError {
     Disconnected,
 }
 
+enum FileWriteInput {
+    File,
+    Stream(crate::file_stream::Input),
+    Files,
+    PrivateFiles,
+}
+
 struct FileWriteRequest {
-    stream: Option<crate::file_stream::Input>,
-    kind: FileWriteKind,
+    input: FileWriteInput,
     seq: u32,
     payload: Vec<u8>,
     operation_guard: OperationGuard,
@@ -66,11 +72,15 @@ struct FileWriteRequest {
     progress: FileWriteRequestProgress,
 }
 
+struct FileWriteWorkerState {
+    sender: SyncSender<FileWriteRequest>,
+    handle: JoinHandle<()>,
+}
+
 pub(crate) struct FileWriteWorker {
     streams: Arc<crate::file_stream::Streams>,
     writer: GuestWriter,
-    sender: Option<SyncSender<FileWriteRequest>>,
-    handle: Option<JoinHandle<()>>,
+    state: Option<FileWriteWorkerState>,
     admission: SingleActiveAdmission,
     connection_cancel: Arc<AtomicBool>,
     progress: FileWriteProgress,
@@ -109,8 +119,7 @@ impl FileWriteWorker {
         Ok(Self {
             streams,
             writer: public_writer,
-            sender: Some(sender),
-            handle: Some(handle),
+            state: Some(FileWriteWorkerState { sender, handle }),
             admission: SingleActiveAdmission::new(),
             connection_cancel,
             progress: FileWriteProgress::default(),
@@ -133,8 +142,9 @@ impl FileWriteWorker {
         operation_guard: OperationGuard,
         admission: SingleActivePermit,
     ) -> Result<(), FileWriteSubmitError> {
-        let stream = if matches!(kind, FileWriteKind::Stream) {
-            Some(
+        let input = match kind {
+            FileWriteKind::File => FileWriteInput::File,
+            FileWriteKind::Stream => FileWriteInput::Stream(
                 self.streams
                     .begin(
                         seq,
@@ -142,26 +152,26 @@ impl FileWriteWorker {
                         Arc::clone(&self.connection_cancel),
                         crate::file_stream::decode_begin(payload)
                             .map_err(|_| FileWriteSubmitError::Disconnected)?
-                            .encoded_size,
+                            .codec
+                            .encoded_size(),
                     )
                     .map_err(|_| FileWriteSubmitError::Disconnected)?,
-            )
-        } else {
-            None
+            ),
+            FileWriteKind::Files => FileWriteInput::Files,
+            FileWriteKind::PrivateFiles => FileWriteInput::PrivateFiles,
         };
         let request = FileWriteRequest {
-            stream,
-            kind,
+            input,
             seq,
             payload: payload.to_vec(),
             operation_guard,
             admission,
             progress: self.progress.start(seq),
         };
-        let Some(sender) = &self.sender else {
+        let Some(state) = &self.state else {
             return Err(FileWriteSubmitError::Disconnected);
         };
-        match sender.try_send(request) {
+        match state.sender.try_send(request) {
             Ok(()) => Ok(()),
             Err(TrySendError::Full(_)) => Err(FileWriteSubmitError::Busy),
             Err(TrySendError::Disconnected(_)) => Err(FileWriteSubmitError::Disconnected),
@@ -181,11 +191,11 @@ impl Drop for FileWriteWorker {
         // Signal first so an active helper's cancellable wait kills and reaps
         // its process group before this connection-owned worker is joined.
         self.connection_cancel.store(true, Ordering::Release);
-        drop(self.sender.take());
-        if let Some(handle) = self.handle.take()
-            && handle.join().is_err()
-        {
-            log("ERROR", "file-write worker panicked");
+        if let Some(state) = self.state.take() {
+            drop(state.sender);
+            if state.handle.join().is_err() {
+                log("ERROR", "file-write worker panicked");
+            }
         }
     }
 }
@@ -197,8 +207,7 @@ fn handle_request(
     streams: &crate::file_stream::Streams,
 ) -> io::Result<()> {
     let FileWriteRequest {
-        stream,
-        kind,
+        input,
         seq,
         payload,
         operation_guard,
@@ -206,20 +215,16 @@ fn handle_request(
         progress,
     } = request;
 
-    let response = match kind {
-        FileWriteKind::Stream => crate::handlers::handle_file_stream(
-            seq,
-            &payload,
-            stream.ok_or_else(|| io::Error::other("missing file stream input"))?,
-            connection_cancel,
-            &progress,
-        ),
-        FileWriteKind::File => decode_write_file_message(&payload)
+    let response = match input {
+        FileWriteInput::Stream(stream) => {
+            crate::handlers::handle_file_stream(seq, &payload, stream, connection_cancel, &progress)
+        }
+        FileWriteInput::File => decode_write_file_message(&payload)
             .map_err(protocol_error)
             .and_then(|decoded| {
                 handle_decoded_write_file_message(seq, decoded, connection_cancel, &progress)
             }),
-        FileWriteKind::Files => decode_write_files_message(&payload)
+        FileWriteInput::Files => decode_write_files_message(&payload)
             .map_err(protocol_error)
             .and_then(|decoded| {
                 handle_decoded_write_files_message(
@@ -230,7 +235,7 @@ fn handle_request(
                     &progress,
                 )
             }),
-        FileWriteKind::PrivateFiles => decode_write_files_message(&payload)
+        FileWriteInput::PrivateFiles => decode_write_files_message(&payload)
             .map_err(protocol_error)
             .and_then(|decoded| {
                 handle_decoded_write_files_message(seq, decoded, true, connection_cancel, &progress)

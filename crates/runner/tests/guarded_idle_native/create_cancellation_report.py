@@ -77,17 +77,12 @@ def validate(directory):
             raise ValueError("actual ext4 superblock bytes/hash mismatch")
         created_ids.add(path.parent.name)
         ordered([events[0]["monotonic_ns"],created.get("held_ns"),events[1]["monotonic_ns"]])
-        startup.exact(created,{"home_path":str(path),"home_bytes":16384*1024**2,"ext4_magic":"53ef",
+        startup.exact(created,{"home_path":str(path),"home_bytes":report.NATIVE_HOME_BYTES,"ext4_magic":"53ef",
             "superblock_hex":created["superblock_hex"],"superblock_sha256":created["superblock_sha256"],"held_ns":created["held_ns"]},"actual formatted home shape changed")
         actual = accepted.get("samples")
         reads.samples(actual, events[0]["monotonic_ns"],events[1]["monotonic_ns"],policy)
-        fresh = []
-        for value in actual:
-            if (pressure.integer(value["available_bytes"],policy["recovery_available_bytes"])
-                    and value["age_ns"]+events[1]["monotonic_ns"]-value["finished_ns"] < policy["max_sample_age_millis"]*1_000_000): fresh.append(value)
-            else: fresh=[]
+        fresh = pressure.sustained_ready_samples(actual, events[1]["monotonic_ns"], policy)
         if (not pressure.integer(accepted.get("available_bytes"),policy["recovery_available_bytes"])
-                or len(fresh)<2 or fresh[-1]["read_start_offset_ns"]-fresh[0]["read_start_offset_ns"] < policy["pressure_recovery_sustain_millis"]*1_000_000
                 or not any(v["available_bytes"] == accepted.get("available_bytes") for v in fresh)):
             raise ValueError("actual create lacks sustained fresh Ready")
         accounting(accepted.get("accounting"),growth)

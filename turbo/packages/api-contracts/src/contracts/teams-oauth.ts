@@ -2,6 +2,13 @@ import { z } from "zod";
 
 import { initContract } from "./base";
 
+import { teamsOauthCallbackContract } from "./teams-oauth-callback";
+
+export {
+  teamsOauthCallbackQuerySchema,
+  type TeamsOauthCallbackQuery,
+} from "./teams-oauth-callback";
+
 const c = initContract();
 
 const jsonErrorSchema = z.object({ error: z.string() });
@@ -11,13 +18,6 @@ export const teamsOauthConnectQuerySchema = z.object({
   orgId: z.string().optional(),
   userId: z.string().optional(),
   prompt: z.string().optional(),
-});
-
-export const teamsOauthCallbackQuerySchema = z.object({
-  code: z.string().optional(),
-  error: z.string().optional(),
-  error_description: z.string().optional(),
-  state: z.string().optional(),
 });
 
 export const teamsOauthContract = c.router({
@@ -32,23 +32,10 @@ export const teamsOauthContract = c.router({
     },
     summary: "Start Microsoft Teams user OAuth connect",
   },
-  callback: {
-    method: "GET",
-    path: "/api/integrations/teams/oauth/callback",
-    query: teamsOauthCallbackQuerySchema,
-    responses: {
-      307: c.noBody(),
-      400: jsonErrorSchema,
-      503: jsonErrorSchema,
-    },
-    summary: "Handle Microsoft Teams OAuth callback",
-  },
+  callback: teamsOauthCallbackContract.callback,
 });
 
 export type TeamsOauthContract = typeof teamsOauthContract;
 export type TeamsOauthConnectQuery = z.infer<
   typeof teamsOauthConnectQuerySchema
->;
-export type TeamsOauthCallbackQuery = z.infer<
-  typeof teamsOauthCallbackQuerySchema
 >;

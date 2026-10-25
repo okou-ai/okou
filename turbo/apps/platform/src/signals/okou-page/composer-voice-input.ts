@@ -61,12 +61,6 @@ async function withVoiceDraftFailureToast<T>(
   );
   throw result.error;
 }
-function voiceDraftStorageFailedMessage(): string {
-  return i18n.t(($) => {
-    return $.chat.voice.storageFailed;
-  });
-}
-
 function createVoiceDraftData(draftTarget: string) {
   const storageKey$ = computed(async (get): Promise<string> => {
     const identity = await get(authenticatedIdentity$);
@@ -109,19 +103,12 @@ function createVoiceDraftData(draftTarget: string) {
   const state$ = computed(async (get): Promise<ComposerVoiceInputState> => {
     const active = get(capture.capture$);
     const unavailable = get(providerUnavailable$);
-    const restored = await settle(get(recording$));
-    if (!restored.ok) {
-      return {
-        status: "failed",
-        recording: null,
-        message: voiceDraftStorageFailedMessage(),
-      };
-    }
+    const restored = await get(recording$);
     return {
-      status: active ? "recording" : restored.value ? "failed" : "idle",
-      recording: restored.value,
+      status: active ? "recording" : restored ? "failed" : "idle",
+      recording: restored,
       message:
-        unavailable && unavailable.recordingId === restored.value?.id
+        unavailable && unavailable.recordingId === restored?.id
           ? `${unavailable.message} ${i18n.t(($) => {
               return $.chat.voice.retryReady;
             })}`
@@ -361,16 +348,15 @@ function createVoiceActionBindings(
       }
       const signal = AbortSignal.any([owner.signal, parentSignal]);
       signal.throwIfAborted();
-      const current = await get(state$);
-      signal.throwIfAborted();
       const resolvedAction =
         action === "toggle"
           ? get(capture.capture$)
             ? "finish"
-            : current.status === "failed"
+            : (await get(state$)).status === "failed"
               ? "retry"
               : "start"
           : action;
+      signal.throwIfAborted();
       set(invocation$, { action: resolvedAction, owner });
       if (resolvedAction === "start") {
         await set(start$, signal);

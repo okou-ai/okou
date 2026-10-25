@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Toolbar } from "@base-ui/react/toolbar";
-import { useGet, type LoadableState } from "ccstate-react";
-import { connectorConnectionPending$ } from "../../../../signals/connector-connection-progress.ts";
+import type { LoadableState } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Loader2, Plus } from "lucide-react";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -338,8 +337,7 @@ function AccountsConnectorCard({
   onManage,
 }: AccountsConnectorCardProps) {
   const { t } = useTranslation();
-  const pending = useGet(connectorConnectionPending$);
-  const blocked = busy || pending;
+  const blocked = busy;
   const showDescription = inventoryStatus === "ready" && !hasAccounts;
   const canManage = inventoryStatus === "ready" && hasAccounts;
   const canConnect = inventoryStatus === "ready" && !hasAccounts;

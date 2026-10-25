@@ -11,7 +11,6 @@ import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/u
 import { accept } from "../../lib/accept.ts";
 import { i18n } from "../../i18n/index.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
-import { withCleanup } from "../utils.ts";
 import { pageVersion$ } from "../page-signal.ts";
 import type { z } from "zod";
 
@@ -99,84 +98,6 @@ async function syncArtifactFileToGoogleDrive(
   return { kind: "uploaded", file: response.body };
 }
 
-type GoogleDriveSyncOperation = Promise<ArtifactGoogleDriveSyncResult>;
-
-// This registry owns real in-flight uploads, not a second pending-state model.
-// Repeated surfaces and callers share the same upload result for each mode.
-const internalGoogleDriveSyncOperations$ = state<
-  ReadonlyMap<
-    string,
-    ReadonlyMap<GoogleDriveUploadMode, GoogleDriveSyncOperation>
-  >
->(new Map());
-export const idleGoogleDriveSync$ = computed(() => {
-  return undefined;
-});
-export const googleDriveSyncOperations$ = computed((get) => {
-  return new Map(
-    [...get(internalGoogleDriveSyncOperations$)].map(([artifactId, modes]) => {
-      return [
-        artifactId,
-        new Map(
-          [...modes].map(([mode, operation]) => {
-            return [
-              mode,
-              computed(() => {
-                return operation;
-              }),
-            ] as const;
-          }),
-        ),
-      ] as const;
-    }),
-  );
-});
-
-const syncArtifactFileToGoogleDrive$ = command(
-  (
-    { get, set },
-    params: ArtifactGoogleDriveSyncParams & {
-      readonly createClient: ApiClientFactory;
-    },
-    signal: AbortSignal,
-  ): GoogleDriveSyncOperation => {
-    signal.throwIfAborted();
-    const modes = get(internalGoogleDriveSyncOperations$).get(
-      params.artifactId,
-    );
-    const existing = modes?.get(params.mode);
-    if (existing) {
-      return existing;
-    }
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    const operation: GoogleDriveSyncOperation = withCleanup(
-      syncArtifactFileToGoogleDrive(params, signal),
-      () => {
-        const operations = new Map(get(internalGoogleDriveSyncOperations$));
-        if (operations.get(params.artifactId)?.get(params.mode) !== operation) {
-          return;
-        }
-        const remaining = new Map(operations.get(params.artifactId));
-        remaining.delete(params.mode);
-        if (remaining.size > 0) {
-          operations.set(params.artifactId, remaining);
-        } else {
-          operations.delete(params.artifactId);
-        }
-        set(internalGoogleDriveSyncOperations$, operations);
-      },
-    );
-    set(
-      internalGoogleDriveSyncOperations$,
-      new Map(get(internalGoogleDriveSyncOperations$)).set(
-        params.artifactId,
-        new Map(modes).set(params.mode, operation),
-      ),
-    );
-    return operation;
-  },
-);
-
 type GoogleDriveSyncAccount = {
   readonly artifactId: string;
   readonly agentId: string;
@@ -230,8 +151,7 @@ export const syncArtifactAndRefresh$ = command(
         signal,
       );
     }
-    const result = await set(
-      syncArtifactFileToGoogleDrive$,
+    const result = await syncArtifactFileToGoogleDrive(
       { ...params, createClient },
       signal,
     );

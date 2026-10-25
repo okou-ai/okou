@@ -756,12 +756,20 @@ describe("saved Social data jobs", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it("lists a bounded page of saved jobs and forwards its opaque cursor", async () => {
+  it("lists expanded saved jobs through a supported API and forwards its opaque cursor", async () => {
     const queries: string[] = [];
     server.use(
       http.get(`${api}/jobs`, ({ request }) => {
-        queries.push(new URL(request.url).search);
-        return HttpResponse.json({ jobs: [job()], nextCursor: null });
+        const url = new URL(request.url);
+        queries.push(url.search);
+        // Supported rollback APIs still filter expanded jobs without the opt-in.
+        return HttpResponse.json({
+          jobs:
+            url.searchParams.get("includeExpanded") === "true"
+              ? [job({ platform: "douyin", operation: "posts" })]
+              : [],
+          nextCursor: null,
+        });
       }),
     );
     await socialCommand.parseAsync([
@@ -777,7 +785,7 @@ describe("saved Social data jobs", () => {
     ]);
     expect(queries).toEqual([`?limit=5&cursor=${jobId}&includeExpanded=true`]);
     expect(JSON.parse(stdout())).toMatchObject({
-      jobs: [{ jobId }],
+      jobs: [{ jobId, platform: "douyin", operation: "posts" }],
       nextCursor: null,
     });
   });

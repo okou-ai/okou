@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "2.0.0",
+  "version": "2.2.3",
   "private": true,
   "type": "module",
   "exports": {
@@ -67,6 +67,7 @@
     "billing:pi-memory-stage1": "tsx scripts/pi-memory-stage1-cost.ts",
     "test:pi-memory-stage1-cost": "tsx scripts/test-pi-memory-stage1-cost.ts",
     "test:migration-smoke-diagnostics": "tsx scripts/test-migration-smoke-diagnostics.ts",
+    "test:thread-predecessor-backfill": "tsx scripts/test-thread-predecessor-backfill.ts",
     "test:pi-memory-retirement": "tsx scripts/test-pi-memory-retirement.ts",
     "test:workflow-attachments": "node --import tsx scripts/migrations/024-workflow-attachments/test-backfill.ts"
   },
@@ -78,7 +79,7 @@
     "postgres": "^3.4.9"
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "^3.1149.0",
+    "@aws-sdk/client-s3": "^3.1155.0",
     "@okouai/eslint-config": "workspace:*",
     "@okouai/eslint-rules": "workspace:*",
     "@okouai/typescript-config": "workspace:*",

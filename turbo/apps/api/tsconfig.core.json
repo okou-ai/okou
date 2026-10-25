@@ -307,6 +307,7 @@
     "src/signals/services/time-automation.ts",
     "src/signals/services/user-connectors.service.ts",
     "src/signals/services/user-custom-connector-changes.ts",
+    "src/signals/services/user-custom-connector-grant-persistence.service.ts",
     "src/signals/services/user-permission-grants.service.ts",
     "src/signals/services/workflow-automation-account-classification.service.ts",
     "src/signals/services/workflow-automation-account-projection.service.ts",
@@ -334,6 +335,7 @@
     "src/signals/services/mcp-oauth-client-metadata.service.ts",
     "src/signals/services/mcp-oauth-identity.service.ts",
     "src/signals/services/mcp-oauth-safe-fetch.service.ts",
+    "src/signals/services/model-provider-account-identity.ts",
     "src/signals/services/model-provider-account.service.ts",
     "src/signals/services/model-provider-subscription-usage.types.ts",
     "src/signals/services/vnc-client-identity.service.ts",
@@ -564,6 +566,7 @@
     "src/signals/services/official-workflow-constants.ts",
     "src/signals/services/official-workflow-installation.service.ts",
     "src/signals/services/official-workflow-owner-schedule.ts",
+    "src/signals/services/proactive-nightly-schedule.ts",
     "src/signals/services/official-workflow-reconciliation-sql.ts",
     "src/signals/services/official-workflow-reconciliation.service.ts",
     "src/signals/services/official-workflow-reconciliation.types.ts",
@@ -594,7 +597,9 @@
     "src/signals/services/usage-pack-retained-sql.ts",
     "src/signals/services/usage-pack-pending-snapshot-plan.ts",
     "src/signals/services/usage-pack-member-removal-plan.ts",
-    "src/signals/services/proactive-workflows-eligibility.service.ts"
+    "src/signals/services/proactive-workflows-eligibility.service.ts",
+    "src/signals/services/proactive-workflow-owner.ts",
+    "src/signals/services/proactive-workflow-definitions.ts"
   ],
   "references": [
     {

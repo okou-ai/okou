@@ -11,6 +11,7 @@ import uuid
 
 import batch_aba_report_test as batch_test
 import batch_repark_report as repark
+import report
 
 
 class BatchReparkReportTests(batch_test.BatchAbaReportTests):
@@ -40,7 +41,7 @@ class BatchReparkReportTests(batch_test.BatchAbaReportTests):
                 "evidence":{"started_ns":begin+10,"restored_ns":begin+140,"original_history_run_id":history,
                     "original_sandbox_id":initial["sandbox_id"],"original_backing_generation":blocked["backing_generation"],
                     "reuse_key":initial["reuse_key"],"cycles":cycles,"revision":3,"same_insertion":False,
-                    "restored_original":True,"image_size_bytes":16384*1024**2,"payload_bytes":65536,
+                    "restored_original":True,"image_size_bytes":report.NATIVE_HOME_BYTES,"payload_bytes":65536,
                     "allocated":[2,4096,1],"provider_awaits_outside_pool_status":True}})
             for event in self.witnesses:
                 if event["case"] == case and event["phase"] in ("pool_wait_progress", "batch_refused"):

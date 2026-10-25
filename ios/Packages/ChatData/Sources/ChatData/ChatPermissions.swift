@@ -22,10 +22,15 @@ public struct ChatPermissionMetadata: Decodable, Sendable {
     public let permissionOverrides: [String: [String]]?
     public let unknownPolicy: Policy
   }
+  public struct Categories: Decodable, Sendable {
+    public let categories: [String: String]
+    public let displayOrder: [String]
+  }
   public let connectorSlug: String
   public let label: String
   public let permissions: [Permission]
   public let defaultPolicy: Defaults
+  public let categories: Categories?
 
   public func contains(_ permission: String) -> Bool {
     permission == "__unknown__" || permissions.contains { $0.name == permission }

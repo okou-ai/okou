@@ -1,11 +1,12 @@
 import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Command } from "commander";
+import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
-import { generateCommand } from "../index";
-import { getGenerationCommand } from "../get";
+import { createGenerateCommand } from "../index";
 
 const generationId = "00000000-0000-4000-8000-000000000001";
 const statusUrl = `http://localhost:3000/api/built-in-generations/${generationId}`;
@@ -17,13 +18,13 @@ describe("okou generate get", () => {
     throw new Error("process.exit called");
   }) as never);
   let dir: string;
+  let generateCommand: Command;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "okou-generation-"));
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
-    getGenerationCommand.setOptionValue("out", undefined);
-    getGenerationCommand.setOptionValue("json", undefined);
-    getGenerationCommand.setOptionValue("refresh", undefined);
+    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, undefined);
+    generateCommand = createGenerateCommand();
   });
   afterEach(() => {
     log.mockClear();
@@ -77,7 +78,7 @@ describe("okou generate get", () => {
   );
 
   it.each(["queued", "running", "completed", "failed"])(
-    "refreshes a %s job once before querying, without resubmission",
+    "refreshes a %s job once before querying",
     async (status) => {
       const calls: string[] = [];
       const job = { generationId, type: "image", status };

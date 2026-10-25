@@ -798,7 +798,9 @@ describe("legacy subscription usage pack migration", () => {
       created: currentSecond(),
       data: { object: invoice },
     };
-    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
     await accept(
       setupApp({ context, routes: webhooksStripeRoutes })(
         webhookStripeContract,
@@ -1048,6 +1050,16 @@ describe("legacy subscription usage pack migration", () => {
           usagePackUsd: 20,
         }),
       ]),
+    );
+
+    const materializedAllocations = await readMigrationAllocations(fixture);
+    const materializedCredits = await readMigrationCredits(fixture);
+    await postMigrationInvoice(stripe.invoice());
+    await expect(readMigrationAllocations(fixture)).resolves.toStrictEqual(
+      materializedAllocations,
+    );
+    await expect(readMigrationCredits(fixture)).resolves.toStrictEqual(
+      materializedCredits,
     );
 
     await mockScheduleFromCurrentSubscription();
@@ -1329,7 +1341,7 @@ describe("usage pack allocation management", () => {
         if (lifecycle) {
           lifecycle.expectStripeEvent(event);
         } else {
-          context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(
+          context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
             event,
           );
         }
@@ -2849,7 +2861,9 @@ describe("usage pack allocation management", () => {
         },
       },
     };
-    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
 
     await accept(
       setupApp({ context, routes: webhooksStripeRoutes })(

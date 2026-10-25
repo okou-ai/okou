@@ -9,6 +9,10 @@ import { accept } from "../../../lib/accept.ts";
 
 const reloadVersion$ = state(0);
 
+export const connectorAuthorizationVersion$ = computed((get) => {
+  return get(reloadVersion$);
+});
+
 export const reloadConnectorAgentAccess$ = command(({ set }) => {
   set(reloadVersion$, (version) => {
     return version + 1;

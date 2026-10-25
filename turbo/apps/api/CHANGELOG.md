@@ -9,6 +9,251 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.3.3](https://github.com/okou-ai/okou/compare/api-v2.3.2...api-v2.3.3) (2026-10-25)
+
+
+### Refactoring
+
+* **api:** clear thread connector selections atomically ([#42832](https://github.com/okou-ai/okou/issues/42832)) ([e6c3a00](https://github.com/okou-ai/okou/commit/e6c3a0003b373eead51dfd04f3c31b2fb18720f6))
+* **api:** localize personal logical provider identity ([#42844](https://github.com/okou-ai/okou/issues/42844)) ([bb9eba3](https://github.com/okou-ai/okou/commit/bb9eba3491b8a8fdea9f72ca73d5e52c3587bdee))
+* **api:** publish custom connector updates atomically ([#42846](https://github.com/okou-ai/okou/issues/42846)) ([3ad0987](https://github.com/okou-ai/okou/commit/3ad0987736b58469849da60b7ab1470f9a27a12a))
+* **api:** run nightly learning and planning independently ([#42833](https://github.com/okou-ai/okou/issues/42833)) ([d5840a7](https://github.com/okou-ai/okou/commit/d5840a77258b4daf6192534bd760adf1e8b8dcbb))
+* **api:** update thread connector selections atomically ([#42840](https://github.com/okou-ai/okou/issues/42840)) ([13001fa](https://github.com/okou-ai/okou/commit/13001fab8a587944f9f3958b3a992af2d41d2817))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.2.3
+
+## [2.3.2](https://github.com/okou-ai/okou/compare/api-v2.3.1...api-v2.3.2) (2026-10-25)
+
+
+### Refactoring
+
+* **api:** commit usage compaction atomically ([#42792](https://github.com/okou-ai/okou/issues/42792)) ([6bcc9cb](https://github.com/okou-ai/okou/commit/6bcc9cbd97fbc54c5fb37be30f5d876293a82c74))
+* **api:** finalize canceled usage-pack batches atomically ([#42781](https://github.com/okou-ai/okou/issues/42781)) ([dfbf2a1](https://github.com/okou-ai/okou/commit/dfbf2a10473de5e6ef66e445a1e074add6087088))
+* **api:** localize claude account identity hydration ([#42825](https://github.com/okou-ai/okou/issues/42825)) ([5fd106b](https://github.com/okou-ai/okou/commit/5fd106b95af51a70a19cced6d1494e67bff50d1f))
+* **api:** localize connector credential deletion queries ([#42782](https://github.com/okou-ai/okou/issues/42782)) ([f53f48c](https://github.com/okou-ai/okou/commit/f53f48c3912141c69dcf3a052fa53464cf68adec))
+* **api:** localize manual grant credential writes ([#42808](https://github.com/okou-ai/okou/issues/42808)) ([f785da0](https://github.com/okou-ai/okou/commit/f785da07c267102ed8536605701bb0dc9e482b80))
+* **api:** localize previous token revoke snapshot reads ([#42798](https://github.com/okou-ai/okou/issues/42798)) ([193a602](https://github.com/okou-ai/okou/commit/193a6028532ce7b9dee0849e6350a87540ecf7fb))
+* **api:** materialize migration allocations atomically ([#42796](https://github.com/okou-ai/okou/issues/42796)) ([9f53d2f](https://github.com/okou-ai/okou/commit/9f53d2f7d248f55b9643da9024dfb238c3f29338))
+* **api:** publish managed usage atomically ([#42800](https://github.com/okou-ai/okou/issues/42800)) ([00f7ed3](https://github.com/okou-ai/okou/commit/00f7ed32f4c755ced096e9c83f0ebb69ecc0a689))
+* **api:** publish paid invitation allocations atomically ([#42811](https://github.com/okou-ai/okou/issues/42811)) ([de80c3b](https://github.com/okou-ai/okou/commit/de80c3b3998ae5fc3a953f9088e827e515f6d89f))
+* **api:** publish provider usage batches atomically ([#42803](https://github.com/okou-ai/okou/issues/42803)) ([fae8d73](https://github.com/okou-ai/okou/commit/fae8d73b0432e11c323477ade5e37da0c0299e39))
+* **api:** publish runner usage batches atomically ([#42806](https://github.com/okou-ai/okou/issues/42806)) ([d8bd536](https://github.com/okou-ai/okou/commit/d8bd536ebb9a10a88327123ca00441cb6cbc5241))
+* **api:** restore subscription state atomically ([#42819](https://github.com/okou-ai/okou/issues/42819)) ([fafbbca](https://github.com/okou-ai/okou/commit/fafbbcac180b68536ca2343fcb5b4ff4d55775f5))
+* **api:** switch connector defaults atomically ([#42827](https://github.com/okou-ai/okou/issues/42827)) ([75866e1](https://github.com/okou-ai/okou/commit/75866e1b9e989558fda36b7942acf99001cb2c56))
+* **api:** switch google forms default atomically ([#42823](https://github.com/okou-ai/okou/issues/42823)) ([178a477](https://github.com/okou-ai/okou/commit/178a477668232895afc55d2b1e1159271addc5c0))
+* **cli:** accept only durable image generation receipts ([#42812](https://github.com/okou-ai/okou/issues/42812)) ([8069a85](https://github.com/okou-ai/okou/commit/8069a85e2f098112efee733f2b7bba0623270a10))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.2
+    * @okouai/core bumped to 8.785.1
+    * @okouai/db bumped to 2.2.2
+    * @okouai/pi-agent-runtime bumped to 1.50.67
+
+## [2.3.1](https://github.com/okou-ai/okou/compare/api-v2.3.0...api-v2.3.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **api:** define the proactive learning memory writing contract ([#42761](https://github.com/okou-ai/okou/issues/42761)) ([137d8e9](https://github.com/okou-ai/okou/commit/137d8e942617dde170230570fd24f2b0540a1e9a))
+* **api:** leave two hours between nightly learning and planning ([#42749](https://github.com/okou-ai/okou/issues/42749)) ([161f48b](https://github.com/okou-ai/okou/commit/161f48bcb97206902cdcdf88af09010e2bc4d1ce))
+* **pi:** restore personal memory recall for ordinary conversations ([#42763](https://github.com/okou-ai/okou/issues/42763)) ([ea40a8f](https://github.com/okou-ai/okou/commit/ea40a8f507b736cf2f2f04ea4d7614a1cacc2088))
+
+
+### Refactoring
+
+* **api:** admit discord messages atomically ([#42760](https://github.com/okou-ai/okou/issues/42760)) ([4f23c4d](https://github.com/okou-ai/okou/commit/4f23c4d9c2d994dc8b2ebb0a766138dcbe83d27f))
+* **api:** admit mail notifications atomically ([#42742](https://github.com/okou-ai/okou/issues/42742)) ([d7339af](https://github.com/okou-ai/okou/commit/d7339afd962a69405a2ad055799d9a43336a2ff0))
+* **api:** localize connector account resolution queries ([#42762](https://github.com/okou-ai/okou/issues/42762)) ([8c31ddd](https://github.com/okou-ai/okou/commit/8c31ddd0d2439a74ab044cce18cbab4a5c81da4c))
+* **api:** publish Atom member credit grants atomically ([#42751](https://github.com/okou-ai/okou/issues/42751)) ([9ff8e20](https://github.com/okou-ai/okou/commit/9ff8e20f8f18583272fcea6ea2bbb4d01639f4c8))
+* **api:** publish queued rejections atomically ([#42770](https://github.com/okou-ai/okou/issues/42770)) ([dacfc3b](https://github.com/okou-ai/okou/commit/dacfc3b88f5973e7c48cdef8a53e0f6eb08ad23e))
+* **app:** keep async state in owned requests and server reads ([#42745](https://github.com/okou-ai/okou/issues/42745)) ([d24618e](https://github.com/okou-ai/okou/commit/d24618e29baf061b061b64454aa538e8ea8a74a3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.1
+    * @okouai/core bumped to 8.785.0
+    * @okouai/db bumped to 2.2.1
+    * @okouai/pi-agent-runtime bumped to 1.50.66
+
+## [2.3.0](https://github.com/okou-ai/okou/compare/api-v2.2.0...api-v2.3.0) (2026-10-24)
+
+
+### Features
+
+* add proactive agent learning and planning workflows ([#42724](https://github.com/okou-ai/okou/issues/42724)) ([3a23824](https://github.com/okou-ai/okou/commit/3a23824fb8b9ac3ffd76b65cd463bb687f15269e))
+
+
+### Bug Fixes
+
+* **api:** settle terminal amazon task responses ([#42687](https://github.com/okou-ai/okou/issues/42687)) ([6f2c982](https://github.com/okou-ai/okou/commit/6f2c98256851c0006c40c77a4d52a9bcdd7c59ee))
+
+
+### Refactoring
+
+* **api:** atomically publish automatic mcp accounts ([#42721](https://github.com/okou-ai/okou/issues/42721)) ([0a0111d](https://github.com/okou-ai/okou/commit/0a0111d54751b68120d9aaa9ba8520e87ae20274))
+* **api:** localize custom firewall credential preparation ([#42676](https://github.com/okou-ai/okou/issues/42676)) ([9e11c4a](https://github.com/okou-ai/okou/commit/9e11c4a38fac9eb529f94a3d0188ce179d0da9e3))
+* **api:** own current custom oauth firewall material ([#42722](https://github.com/okou-ai/okou/issues/42722)) ([c6b7721](https://github.com/okou-ai/okou/commit/c6b7721bd060558425c97ab99c840c3a8afeef99))
+* **api:** publish custom oauth authorization attempts atomically ([#42729](https://github.com/okou-ai/okou/issues/42729)) ([275c962](https://github.com/okou-ai/okou/commit/275c9629aac5a1d26ce4a0a3ec62342a8da1f304))
+* **api:** publish custom oauth refresh in one statement ([#42716](https://github.com/okou-ai/okou/issues/42716)) ([8f9b0ca](https://github.com/okou-ai/okou/commit/8f9b0ca3dc20624ab6fd58a91617c01a540329b4))
+* **api:** publish discord ingress failures atomically ([#42735](https://github.com/okou-ai/okou/issues/42735)) ([c876aae](https://github.com/okou-ai/okou/commit/c876aae03923076e5bdedf00a403edce860a0fb5))
+* **api:** publish official automation structure changes atomically ([#42709](https://github.com/okou-ai/okou/issues/42709)) ([19f996d](https://github.com/okou-ai/okou/commit/19f996d92b7e5acf31fff2b1be67239dabed452e))
+* **api:** publish official reconfiguration patches atomically ([#42699](https://github.com/okou-ai/okou/issues/42699)) ([e070b60](https://github.com/okou-ai/okou/commit/e070b6056f0f261f936d437a44009d6721b19b0b))
+* **api:** reserve dormant official automation identities atomically ([#42704](https://github.com/okou-ai/okou/issues/42704)) ([bcd2f00](https://github.com/okou-ai/okou/commit/bcd2f00520abff47614858a28cbfee73206cb5b7))
+* **api:** restore official reconfiguration in one statement ([#42689](https://github.com/okou-ai/okou/issues/42689)) ([0ee4105](https://github.com/okou-ai/okou/commit/0ee41055f08e004a673028123ccd3edf46baaa2a))
+* **api:** stage official transitions in one statement ([#42684](https://github.com/okou-ai/okou/issues/42684)) ([04ad289](https://github.com/okou-ai/okou/commit/04ad289d0361bb8fb397b01837c8a3653d4a3018))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.0
+    * @okouai/core bumped to 8.784.0
+    * @okouai/db bumped to 2.2.0
+    * @okouai/pi-agent-runtime bumped to 1.50.65
+
+## [2.2.0](https://github.com/okou-ai/okou/compare/api-v2.1.3...api-v2.2.0) (2026-10-23)
+
+
+### Features
+
+* **api:** export preview worker telemetry through native otel ([#42579](https://github.com/okou-ai/okou/issues/42579)) ([0dad423](https://github.com/okou-ai/okou/commit/0dad4239bc7035a3c4ed26afbccf91f31559386b))
+
+
+### Refactoring
+
+* **api:** activate official installations atomically ([#42642](https://github.com/okou-ai/okou/issues/42642)) ([c897378](https://github.com/okou-ai/okou/commit/c8973784eeaef356e8f74465938dcd9d00dcbeb5))
+* **api:** admit export jobs atomically ([#42661](https://github.com/okou-ai/okou/issues/42661)) ([e1ef436](https://github.com/okou-ai/okou/commit/e1ef4368da4da7ad12b4fa091b439ed5664f3a08))
+* **api:** commit export collection in one atomic statement ([#42653](https://github.com/okou-ai/okou/issues/42653)) ([e5bf313](https://github.com/okou-ai/okou/commit/e5bf31381575b78473beba53efc53ef1d2352429))
+* **api:** create browser action requests atomically ([#42678](https://github.com/okou-ai/okou/issues/42678)) ([70fad9a](https://github.com/okou-ai/okou/commit/70fad9a627dd3029ac36e6119f5854a0f7dcb9f3))
+* **api:** enable workflow automations in one statement ([#42657](https://github.com/okou-ai/okou/issues/42657)) ([98ec370](https://github.com/okou-ai/okou/commit/98ec370dbf39247fc9e09858fecaeb0bc4c3d443))
+* **api:** enqueue integration inputs atomically ([#42664](https://github.com/okou-ai/okou/issues/42664)) ([f6df09b](https://github.com/okou-ai/okou/commit/f6df09bf383bc2bd95a6e7e40849dfa8f1a25975))
+* **api:** finalize dormant official automations atomically ([#42649](https://github.com/okou-ai/okou/issues/42649)) ([5c0c306](https://github.com/okou-ai/okou/commit/5c0c306431cd1b74018b1bce69eee927867f77ea))
+* **api:** localize automatic oauth refresh client reads ([#42639](https://github.com/okou-ai/okou/issues/42639)) ([280e85d](https://github.com/okou-ai/okou/commit/280e85de0e652c51544cac19a17a224013cf71a8))
+* **api:** localize catalog runtime wakeup ownership ([#42651](https://github.com/okou-ai/okou/issues/42651)) ([1b7765c](https://github.com/okou-ai/okou/commit/1b7765c037bf550ee82d0f930d48ccf15b694a65))
+* **api:** localize custom connector grant persistence ([#42665](https://github.com/okou-ai/okou/issues/42665)) ([92c45b4](https://github.com/okou-ai/okou/commit/92c45b4e9015180f5915ab0750bbd494b1930798))
+* **api:** publish official forms reconfiguration atomically ([#42638](https://github.com/okou-ai/okou/issues/42638)) ([20c37fa](https://github.com/okou-ai/okou/commit/20c37fa2afc0b278a720db6e05d91b98b98c5ff1))
+* **api:** publish storage commits in one statement ([#42674](https://github.com/okou-ai/okou/issues/42674)) ([2393470](https://github.com/okou-ai/okou/commit/23934706c1d2891b93f4e862c0a5eabbc5e35905))
+* **api:** publish workflows in one atomic statement ([#42667](https://github.com/okou-ai/okou/issues/42667)) ([fabc408](https://github.com/okou-ai/okou/commit/fabc4086fba1e2d2e9e86f70c7619a3979047aa5))
+* **api:** sync file artifact projections atomically ([#42655](https://github.com/okou-ai/okou/issues/42655)) ([e0b8035](https://github.com/okou-ai/okou/commit/e0b8035d2ce5a5d05a69adfc9e2ddcbf63f1c0ab))
+* **api:** sync hosted artifact catalog in one statement ([#42670](https://github.com/okou-ai/okou/issues/42670)) ([df16274](https://github.com/okou-ai/okou/commit/df16274de31a1b9d794b532281ad4e0fa972fdf0))
+* remove expired deployment compatibility ([#42668](https://github.com/okou-ai/okou/issues/42668)) ([84f655c](https://github.com/okou-ai/okou/commit/84f655c516454ae8e596de430cdcdd569db67b7f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.1.2
+    * @okouai/core bumped to 8.783.3
+    * @okouai/db bumped to 2.1.3
+    * @okouai/pi-agent-runtime bumped to 1.50.64
+
+## [2.1.3](https://github.com/okou-ai/okou/compare/api-v2.1.2...api-v2.1.3) (2026-10-23)
+
+
+### Bug Fixes
+
+* hide disabled managed tools in prompts and cli ([#42440](https://github.com/okou-ai/okou/issues/42440)) ([33b35f9](https://github.com/okou-ai/okou/commit/33b35f94cb80e9ad361d36b732250587f04bc79b))
+
+
+### Refactoring
+
+* **api:** attach official automation metadata atomically ([#42616](https://github.com/okou-ai/okou/issues/42616)) ([c2b46c2](https://github.com/okou-ai/okou/commit/c2b46c2af4755fe51070eefecd9528032b6bd106))
+* **api:** delete custom connector selections atomically ([#42625](https://github.com/okou-ai/okou/issues/42625)) ([3daaff7](https://github.com/okou-ai/okou/commit/3daaff7418e5e9328285b9d6c27397aa4b0faaae))
+* **api:** own custom automatic oauth authorization client reads ([#42614](https://github.com/okou-ai/okou/issues/42614)) ([1352f11](https://github.com/okou-ai/okou/commit/1352f116f2df2941f26efee14f5f089b8e0239cd))
+* **api:** publish custom connector creation atomically ([#42632](https://github.com/okou-ai/okou/issues/42632)) ([24aceeb](https://github.com/okou-ai/okou/commit/24aceeb494c81526e365b849b7bc1cd47493f28c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.783.2
+    * @okouai/db bumped to 2.1.2
+    * @okouai/pi-agent-runtime bumped to 1.50.63
+
+## [2.1.2](https://github.com/okou-ai/okou/compare/api-v2.1.1...api-v2.1.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* **api:** require authenticated integration oauth completion ([#42592](https://github.com/okou-ai/okou/issues/42592)) ([91c48b0](https://github.com/okou-ai/okou/commit/91c48b09a6488aa3d218b36a9962030da27ef841))
+
+
+### Refactoring
+
+* **api:** atomically persist failed materialization ([#42611](https://github.com/okou-ai/okou/issues/42611)) ([837ab3e](https://github.com/okou-ai/okou/commit/837ab3efa59ec2a7907be085f3bb1156eeaa7604))
+
+## [2.1.1](https://github.com/okou-ai/okou/compare/api-v2.1.0...api-v2.1.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **api:** support kms, stripe and axiom in workers ([#42605](https://github.com/okou-ai/okou/issues/42605)) ([56450ed](https://github.com/okou-ai/okou/commit/56450edb7afbc5368e386113d9855ff03d827b0e))
+
+
+### Refactoring
+
+* **slack:** retire identity-only oauth install and connect ([#42583](https://github.com/okou-ai/okou/issues/42583)) ([ab402e0](https://github.com/okou-ai/okou/commit/ab402e0c626ce072f66715a8ecdb5cca0b848c4c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.1.1
+    * @okouai/core bumped to 8.783.1
+    * @okouai/db bumped to 2.1.1
+    * @okouai/pi-agent-runtime bumped to 1.50.62
+
+## [2.1.0](https://github.com/okou-ai/okou/compare/api-v2.0.0...api-v2.1.0) (2026-10-23)
+
+
+### Features
+
+* **browser:** add feature-gated cdp viewer ([#42535](https://github.com/okou-ai/okou/issues/42535)) ([a489e1d](https://github.com/okou-ai/okou/commit/a489e1d3e2c492ed3a2c83f4eccf60ccf0349df0))
+* **slack:** decouple connections and scope external channel access ([#42486](https://github.com/okou-ai/okou/issues/42486)) ([b82249e](https://github.com/okou-ai/okou/commit/b82249e6de08bb61974dc5503f2ee5adc85cd1ee))
+
+
+### Refactoring
+
+* **api:** delete failed dormant materializations atomically ([#42601](https://github.com/okou-ai/okou/issues/42601)) ([c010789](https://github.com/okou-ai/okou/commit/c01078912838d4eff4b8788817aa0143bc8c87d5))
+* **api:** own custom connector agent grant orchestration ([#42595](https://github.com/okou-ai/okou/issues/42595)) ([e26910d](https://github.com/okou-ai/okou/commit/e26910d8b31449114cda81f323a9efa07cfeca54))
+* **api:** publish benchmark runs and identities atomically ([#42460](https://github.com/okou-ai/okou/issues/42460)) ([c6017b4](https://github.com/okou-ai/okou/commit/c6017b48554833c4c62779ed641bde30a16eba86))
+* **api:** retire official workflow cutover compatibility ([#42564](https://github.com/okou-ai/okou/issues/42564)) ([beb38c7](https://github.com/okou-ai/okou/commit/beb38c7a00af109c0da26128b7c6cac974b1b291))
+* remove legacy job command alias ([#42569](https://github.com/okou-ai/okou/issues/42569)) ([ae62417](https://github.com/okou-ai/okou/commit/ae6241774c2095d22ada2dc048c4a8f6649516a1))
+* retire durable openai image generation switch ([#42594](https://github.com/okou-ai/okou/issues/42594)) ([a5e1f4c](https://github.com/okou-ai/okou/commit/a5e1f4c35c9f3d7ef1824fe9fa47bd4ffbb472d7))
+* retire stripe invoice-paid automation runtime ([#42572](https://github.com/okou-ai/okou/issues/42572)) ([190cdfb](https://github.com/okou-ai/okou/commit/190cdfba6440b50469117758156616447d707b81))
+* **workflows:** prepare attachments outside storage ([#42563](https://github.com/okou-ai/okou/issues/42563)) ([c2d0e48](https://github.com/okou-ai/okou/commit/c2d0e488e938512e55dce8ab199046a7f16d7b1c))
+
+
+### Performance Improvements
+
+* download authorized files directly from providers ([#42546](https://github.com/okou-ai/okou/issues/42546)) ([1b0a44c](https://github.com/okou-ai/okou/commit/1b0a44c01821d2825c8022560b08b70c0f41130b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.1.0
+    * @okouai/core bumped to 8.783.0
+    * @okouai/db bumped to 2.1.0
+    * @okouai/pi-agent-runtime bumped to 1.50.61
+
 ## [2.0.0](https://github.com/okou-ai/okou/compare/api-v1.767.0...api-v2.0.0) (2026-10-23)
 
 

@@ -192,6 +192,10 @@ interface BrowserVisibilityStateMock {
   readonly changeTo: (visibilityState: DocumentVisibilityState) => void;
 }
 
+interface BrowserNetworkStateMock {
+  readonly changeTo: (online: boolean) => void;
+}
+
 interface ImageDimensionsMockValue {
   width: number;
   height: number;
@@ -604,6 +608,18 @@ export function createTestMocks(getSignal: () => AbortSignal) {
               nextVisibilityState,
             );
             document.dispatchEvent(new Event("visibilitychange"));
+          },
+        };
+      },
+      networkState: (online: boolean): BrowserNetworkStateMock => {
+        const descriptor = defineWindowProperty(navigator, "onLine", online);
+        restoreOnAbort(getSignal(), () => {
+          restoreWindowProperty(navigator, "onLine", descriptor);
+        });
+        return {
+          changeTo(nextOnline): void {
+            defineWindowProperty(navigator, "onLine", nextOnline);
+            window.dispatchEvent(new Event(nextOnline ? "online" : "offline"));
           },
         };
       },

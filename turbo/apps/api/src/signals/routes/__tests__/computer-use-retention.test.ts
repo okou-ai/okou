@@ -23,14 +23,7 @@ beforeEach(() => {
   mockEnv("CRON_SECRET", CRON_SECRET);
 });
 
-async function createScenario() {
-  // The operator is explicitly under test. Its global sweep owns this case's
-  // isolated database; commands are created through ordinary Desktop APIs.
-  const app = await setupApp({
-    context,
-    routes: cronComputerUseScreenshotCleanupRoutes,
-    isolatePg: true,
-  });
+function createScenario(app: Awaited<ReturnType<typeof setupApp>>) {
   const cron = app(cronComputerUseScreenshotCleanupContract);
   const scenario = createPublicComputerUseScenario(context);
   return {
@@ -48,7 +41,12 @@ async function createScenario() {
 
 describe("Computer Use command retention", () => {
   it("removes screenshots, results and audit records 72 hours after completion while retaining queued work", async () => {
-    const scenario = await createScenario();
+    const app = await setupApp({
+      context,
+      routes: cronComputerUseScreenshotCleanupRoutes,
+      isolatePg: true,
+    });
+    const scenario = createScenario(app);
     await scenario.run(async () => {
       const computerUse = scenario.computerUse;
       const fake = computerUse.installComputerUseS3Fake();
@@ -184,7 +182,12 @@ describe("Computer Use command retention", () => {
   });
 
   it("retains command data when object deletion fails and removes it on the next sweep", async () => {
-    const scenario = await createScenario();
+    const app = await setupApp({
+      context,
+      routes: cronComputerUseScreenshotCleanupRoutes,
+      isolatePg: true,
+    });
+    const scenario = createScenario(app);
     await scenario.run(async () => {
       const computerUse = scenario.computerUse;
       const fake = computerUse.installComputerUseS3Fake();

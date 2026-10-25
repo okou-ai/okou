@@ -18,6 +18,9 @@ export const recordConnectorOAuthCompletion$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const { attemptId, connectionId, orgId, userId } = args;
+    signal.throwIfAborted();
+    // Return committed receipts so the callback can notify its owner before
+    // observing cancellation that occurred during the write.
     await set(writeDb$).insert(connectorOauthCompletions).values({
       id: attemptId,
       connectionId,
@@ -25,7 +28,6 @@ export const recordConnectorOAuthCompletion$ = command(
       userId,
       expiresAt: connectorOAuthStateExpiresAt(),
     });
-    signal.throwIfAborted();
   },
 );
 

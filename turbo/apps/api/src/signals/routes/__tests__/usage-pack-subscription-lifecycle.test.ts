@@ -306,7 +306,7 @@ async function postStripeEvent(
   event: object,
   expectedStatus: 200 | 500,
 ): Promise<void> {
-  context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+  context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(event);
   const response = await createApp({
     signal: context.signal,
     routes: webhooksStripeRoutes,
@@ -1349,6 +1349,28 @@ describe("usage pack subscription Stripe lifecycle", () => {
       await postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200);
       await postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200);
 
+      await Promise.all([
+        postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200),
+        postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200),
+        postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200),
+      ]);
+      await postStripeEvent(
+        stripeEvent("invoice.paid", {
+          ...grantInvoice,
+          metadata: { ...grantInvoice.metadata, creditsAmount: "6001" },
+        }),
+        500,
+      );
+      await postStripeEvent(
+        stripeEvent("invoice.paid", {
+          ...grantInvoice,
+          id: `in_wrong_customer_${randomUUID()}`,
+          customer: `cus_${randomUUID()}`,
+        }),
+        500,
+      );
+      await postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200);
+
       const grantedState = await readLifecycleSnapshot(fixture);
       expect(grantedState.grants).toHaveLength(3);
       expect(grantedState.grants).toStrictEqual(
@@ -1905,10 +1927,26 @@ describe("usage pack subscription Stripe lifecycle", () => {
         "pro",
         credits,
       );
+      const existingGrants = await grantRows(fixture);
+      expect(existingGrants).toStrictEqual(
+        credits === 2000
+          ? [
+              {
+                userId: fixture.userId,
+                grantType: "bonus",
+                originalAmount: 100,
+                expiresAt: expect.any(String),
+              },
+            ]
+          : [],
+      );
       const firstUpgrade = await fulfillFirstUsagePackInvoice(fixture);
 
       expect(firstUpgrade.billing).toMatchObject({ tier: "pro", credits });
-      expect(firstUpgrade.grants).toHaveLength(2);
+      expect(firstUpgrade.grants).toHaveLength(existingGrants.length + 2);
+      expect(firstUpgrade.grants).toStrictEqual(
+        expect.arrayContaining(existingGrants),
+      );
 
       await spendToOrgDebt(fixture, -3000);
       const paidPeriod = period(30);
@@ -1930,7 +1968,10 @@ describe("usage pack subscription Stripe lifecycle", () => {
 
       const renewed = await readLifecycleSnapshot(fixture);
       expect(renewed.billing).toMatchObject({ tier: "pro", credits: -3000 });
-      expect(renewed.grants).toHaveLength(4);
+      expect(renewed.grants).toHaveLength(existingGrants.length + 4);
+      expect(renewed.grants).toStrictEqual(
+        expect.arrayContaining(existingGrants),
+      );
     },
   );
 

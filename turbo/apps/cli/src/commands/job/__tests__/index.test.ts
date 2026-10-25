@@ -154,3 +154,42 @@ it("reports a structured conflict without retrying an uncertain progress update"
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+it("derives a source identity and sends a separate agent observation without user attribution", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "task-observation-cli-"));
+  try {
+    const observation = {
+      id,
+      text: "Source changed",
+      sourceReferences: ["github:123"],
+      sourceVersion: "revision-2",
+    };
+    const observed: unknown[] = [];
+    server.use(
+      http.post(
+        "http://localhost:3000/api/jobs/identity",
+        async ({ request }) => {
+          expect(await request.json()).toEqual({
+            key: "github:123:revision-2",
+          });
+          return HttpResponse.json({ id });
+        },
+      ),
+      http.post(
+        `http://localhost:3000/api/jobs/${id}/observations`,
+        async ({ request }) => {
+          observed.push(await request.json());
+          return HttpResponse.json(item);
+        },
+      ),
+    );
+    await run("identity", "--key", "github:123:revision-2", "--json");
+    expect(log).toHaveBeenCalledWith(JSON.stringify({ id }));
+    const path = join(directory, "observation.json");
+    await writeFile(path, JSON.stringify(observation));
+    await run("observe", id, "--file", path, "--json");
+    expect(observed).toEqual([observation]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

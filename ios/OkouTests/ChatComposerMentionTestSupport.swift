@@ -127,7 +127,6 @@ struct MentionComposerHarness: View {
   let state: ComposerDraftStore
   let conversation: ConversationStore?
   let source: ComposerMentionSource?
-  var sent: ChatMessage?
 
   init(workspace: WorkspaceStore, source: ComposerMentionSource? = nil) {
     self.workspace = workspace
@@ -135,12 +134,11 @@ struct MentionComposerHarness: View {
     conversation = nil
     self.source = source
   }
-  init(conversation: ConversationStore, source: ComposerMentionSource, sent: ChatMessage? = nil) {
+  init(conversation: ConversationStore, source: ComposerMentionSource) {
     workspace = nil
     self.conversation = conversation
     state = conversation.composer
     self.source = source
-    self.sent = sent
   }
   init(state: ComposerDraftStore, source: ComposerMentionSource? = nil) {
     workspace = nil
@@ -152,17 +150,9 @@ struct MentionComposerHarness: View {
   var body: some View {
     VStack(alignment: .leading) {
       Text("Okou").font(.title2.weight(.semibold)).padding()
-      if let sent, let conversation {
-        UserMessageView(
-          message: sent, webURL: conversation.webURL, viewer: conversation.attachmentViewer,
-          loadsAttachments: false
-        )
-        .padding()
-      }
       Spacer(minLength: 0)
     }
     .safeAreaBar(edge: .bottom, spacing: 0) {
-      // Reference tests assert expanded geometry without sampling animation frames.
       let composer = workspace?.newComposer ?? state
       ChatComposerView(
         draft: Binding(get: { composer.text }, set: { composer.text = $0 }),
@@ -190,18 +180,16 @@ func mentionInputs(in view: UIView) -> [ComposerTextView] {
 @MainActor
 func focusMentionInput(_ input: ComposerTextView) async throws {
   input.becomeFirstResponder()
+  await hostingPresentationFrame()
   try await eventually(
     message:
-      "Native composer focus/expansion: \(input.isFirstResponder), \(input.bounds); "
+      "Native composer focus: \(input.isFirstResponder); "
       + "window: \(input.window != nil); current: \(input.isCurrent()); "
       + "bound focus: \(String(describing: (input.delegate as? ChatComposerTextInput.Coordinator)?.input.isFocused)); "
       + "key window: \(String(describing: input.window?.isKeyWindow)); "
-      + "scene: \(String(describing: input.window?.windowScene?.activationState)); "
-      + "line height: \(String(describing: input.font?.lineHeight))"
+      + "scene: \(String(describing: input.window?.windowScene?.activationState))"
   ) {
-    // Measure the native size after its window has laid out the focus change.
-    input.window?.layoutIfNeeded()
-    return input.isFirstResponder && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
+    input.isFirstResponder
   }
 }
 
@@ -215,28 +203,11 @@ func mentionTable(in view: UIView) -> UITableView? {
 
 @MainActor
 func mountMentionHost<V: View>(_ host: UIHostingController<V>) async throws -> UIWindow {
-  let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-  let window = UIWindow(windowScene: scene)
-  window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-  window.rootViewController = host
-  window.makeKeyAndVisible()
-  host.view.layoutIfNeeded()
-  try await eventually {
+  let window = try await mountNativeHost(host) { window in
     guard let input = mentionInputs(in: host.view).first else { return false }
-    return input.window === window && !input.bounds.isEmpty
+    return input.window === window
   }
   // Native focus must follow the initial hosting transaction's presented frame.
   await hostingPresentationFrame()
   return window
-}
-
-@MainActor
-func attachMention(_ window: UIWindow, name: String) {
-  let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-  }
-  let attachment = XCTAttachment(image: image)
-  attachment.name = name
-  attachment.lifetime = .keepAlways
-  XCTContext.runActivity(named: name) { $0.add(attachment) }
 }

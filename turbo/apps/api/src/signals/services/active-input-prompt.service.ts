@@ -13,14 +13,16 @@ import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-rou
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
+import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import {
   isFeatureEnabled,
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { SelectResultFields } from "drizzle-orm/query-builders/select.types";
+import { and, eq } from "drizzle-orm";
 
-import type { Db } from "../external/db";
+import { db$, type Db } from "../external/db";
 import { resolveThreadGenerationTemplatePrompt } from "../../lib/thread-generation-template";
 import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-context.service";
 import {
@@ -180,24 +182,6 @@ export const materializeActiveInputSource$ = command(
   },
 );
 
-function activeInputGenerationTemplates(userMessage: ChatEventUserMessage) {
-  const projection = projectUserMessage(userMessage);
-  return {
-    projection,
-    templatePrompt: resolveThreadGenerationTemplatePrompt({
-      explicit: projection.primaryTemplate,
-      explicitTemplates: projection.templates,
-      // Steered into a run that is already executing, whose volumes were fixed
-      // when it was created. There is no package to point the agent at, so a
-      // private template contributes no guidance rather than a dangling path.
-      // The custom catalog is mounted the same way and loses it for the same
-      // reason.
-      mountedUserPresentationTemplateIds: [],
-      mountedUserTemplates: [],
-    }),
-  };
-}
-
 function isContextBackedContextType(
   contextType: ChatEventContextType,
 ): contextType is ContextBackedContextType {
@@ -306,7 +290,7 @@ function unreachableActiveInputContextType(contextType: never): never {
 /** Materialize one pending input prompt into the same text capability as a run prompt. */
 const materializeActiveInputPrompt$ = command(
   async (
-    { set },
+    { get, set },
     db: Db,
     args: {
       readonly event: ActiveInputPromptEvent;
@@ -341,8 +325,31 @@ const materializeActiveInputPrompt$ = command(
         `${args.event.contextType} active input is missing launch material`,
       );
     }
-    const { projection, templatePrompt } =
-      activeInputGenerationTemplates(userMessage);
+    const projection = projectUserMessage(userMessage);
+    const [disabledImageGeneration] =
+      projection.templates.length === 0
+        ? []
+        : await get(db$)
+            .select({ toolId: userDisabledPaidTools.toolId })
+            .from(userDisabledPaidTools)
+            .where(
+              and(
+                eq(userDisabledPaidTools.orgId, args.orgId),
+                eq(userDisabledPaidTools.userId, args.userId),
+                eq(userDisabledPaidTools.toolId, "image-generation"),
+              ),
+            )
+            .limit(1);
+    signal.throwIfAborted();
+    const templatePrompt = resolveThreadGenerationTemplatePrompt({
+      explicit: projection.primaryTemplate,
+      explicitTemplates: projection.templates,
+      includeManagedImageInstructions: disabledImageGeneration === undefined,
+      // Steer cannot change the volumes fixed at Run creation, so private and
+      // custom templates contribute no guidance pointing at an unmounted path.
+      mountedUserPresentationTemplateIds: [],
+      mountedUserTemplates: [],
+    });
     const prompt = integration?.prompt ?? projection.agentPrompt;
     const parts = [
       integration?.appendSystemPrompt ?? "",

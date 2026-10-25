@@ -79,90 +79,91 @@ function renderResponse(response: FinanceResponse, json?: boolean): void {
   );
 }
 
-const searchCommand = new Command()
-  .name("search")
-  .description("Search for a financial instrument")
-  .argument("<query>", "Company name, symbol, or instrument")
-  .option("--json", "Print the raw Okou Finance response as JSON")
-  .action(
-    withErrorHandler(async (query: string, options: JsonOption) => {
-      const request = financeSearchRequestSchema.safeParse({ query });
-      if (!request.success) {
-        throw new InvalidArgumentError(firstIssueMessage(request));
-      }
-      renderResponse(await callFinanceSearch(request.data), options.json);
-    }),
-  );
+export function createFinanceCommand(): Command {
+  const searchCommand = new Command()
+    .name("search")
+    .description("Search for a financial instrument")
+    .argument("<query>", "Company name, symbol, or instrument")
+    .option("--json", "Print the raw Okou Finance response as JSON")
+    .action(
+      withErrorHandler(async (query: string, options: JsonOption) => {
+        const request = financeSearchRequestSchema.safeParse({ query });
+        if (!request.success) {
+          throw new InvalidArgumentError(firstIssueMessage(request));
+        }
+        renderResponse(await callFinanceSearch(request.data), options.json);
+      }),
+    );
 
-const profileCommand = new Command()
-  .name("profile")
-  .description("Fetch a company profile")
-  .argument("<symbol>", "Yahoo Finance symbol, such as AAPL or 0700.HK")
-  .option("--json", "Print the raw Okou Finance response as JSON")
-  .action(
-    withErrorHandler(async (symbol: string, options: JsonOption) => {
-      const request = financeProfileRequestSchema.safeParse({ symbol });
-      if (!request.success) {
-        throw new InvalidArgumentError(firstIssueMessage(request));
-      }
-      renderResponse(await callFinanceProfile(request.data), options.json);
-    }),
-  );
+  const profileCommand = new Command()
+    .name("profile")
+    .description("Fetch a company profile")
+    .argument("<symbol>", "Yahoo Finance symbol, such as AAPL or 0700.HK")
+    .option("--json", "Print the raw Okou Finance response as JSON")
+    .action(
+      withErrorHandler(async (symbol: string, options: JsonOption) => {
+        const request = financeProfileRequestSchema.safeParse({ symbol });
+        if (!request.success) {
+          throw new InvalidArgumentError(firstIssueMessage(request));
+        }
+        renderResponse(await callFinanceProfile(request.data), options.json);
+      }),
+    );
 
-const quoteCommand = new Command()
-  .name("quote")
-  .description("Fetch the latest available market quote")
-  .argument("<symbol>", "Yahoo Finance symbol, such as AAPL or 0700.HK")
-  .option("--json", "Print the raw Okou Finance response as JSON")
-  .action(
-    withErrorHandler(async (symbol: string, options: JsonOption) => {
-      const request = financeQuoteRequestSchema.safeParse({ symbol });
-      if (!request.success) {
-        throw new InvalidArgumentError(firstIssueMessage(request));
-      }
-      renderResponse(await callFinanceQuote(request.data), options.json);
-    }),
-  );
+  const quoteCommand = new Command()
+    .name("quote")
+    .description("Fetch the latest available market quote")
+    .argument("<symbol>", "Yahoo Finance symbol, such as AAPL or 0700.HK")
+    .option("--json", "Print the raw Okou Finance response as JSON")
+    .action(
+      withErrorHandler(async (symbol: string, options: JsonOption) => {
+        const request = financeQuoteRequestSchema.safeParse({ symbol });
+        if (!request.success) {
+          throw new InvalidArgumentError(firstIssueMessage(request));
+        }
+        renderResponse(await callFinanceQuote(request.data), options.json);
+      }),
+    );
 
-const chartCommand = new Command()
-  .name("chart")
-  .description("Fetch OHLCV chart data")
-  .argument("<symbol>", "Yahoo Finance symbol, such as AAPL or 0700.HK")
-  .addOption(
-    new Option("--range <range>", "Chart time range")
-      .default(FINANCE_DEFAULT_RANGE)
-      .argParser(parseRange),
-  )
-  .addOption(
-    new Option("--interval <interval>", "Chart interval")
-      .default(FINANCE_DEFAULT_INTERVAL)
-      .argParser(parseInterval),
-  )
-  .option("--json", "Print the raw Okou Finance response as JSON")
-  .action(
-    withErrorHandler(async (symbol: string, options: ChartOptions) => {
-      const request = financeChartRequestSchema.safeParse({
-        symbol,
-        range: options.range,
-        interval: options.interval,
-      });
-      if (!request.success) {
-        throw new InvalidArgumentError(firstIssueMessage(request));
-      }
-      renderResponse(await callFinanceChart(request.data), options.json);
-    }),
-  );
+  const chartCommand = new Command()
+    .name("chart")
+    .description("Fetch OHLCV chart data")
+    .argument("<symbol>", "Yahoo Finance symbol, such as AAPL or 0700.HK")
+    .addOption(
+      new Option("--range <range>", "Chart time range")
+        .default(FINANCE_DEFAULT_RANGE)
+        .argParser(parseRange),
+    )
+    .addOption(
+      new Option("--interval <interval>", "Chart interval")
+        .default(FINANCE_DEFAULT_INTERVAL)
+        .argParser(parseInterval),
+    )
+    .option("--json", "Print the raw Okou Finance response as JSON")
+    .action(
+      withErrorHandler(async (symbol: string, options: ChartOptions) => {
+        const request = financeChartRequestSchema.safeParse({
+          symbol,
+          range: options.range,
+          interval: options.interval,
+        });
+        if (!request.success) {
+          throw new InvalidArgumentError(firstIssueMessage(request));
+        }
+        renderResponse(await callFinanceChart(request.data), options.json);
+      }),
+    );
 
-export const financeCommand = new Command()
-  .name("finance")
-  .description("Query financial instruments through managed Okou Finance")
-  .addCommand(searchCommand)
-  .addCommand(profileCommand)
-  .addCommand(quoteCommand)
-  .addCommand(chartCommand)
-  .addHelpText(
-    "after",
-    `
+  const financeCommand = new Command()
+    .name("finance")
+    .description("Query financial instruments through managed Okou Finance")
+    .addCommand(searchCommand)
+    .addCommand(profileCommand)
+    .addCommand(quoteCommand)
+    .addCommand(chartCommand)
+    .addHelpText(
+      "after",
+      `
 Examples:
   Search instruments:  okou data finance search "Tencent"
   Company profile:     okou data finance profile AAPL
@@ -173,4 +174,8 @@ Notes:
   - Authenticates via OKOU_TOKEN (requires finance:read capability) or a CLI token
   - Each successful command consumes 1 credit
   - Data is returned from APIDojo's Yahoo Finance API on RapidAPI without Okou-side caching`,
-  );
+    );
+  return financeCommand;
+}
+
+export const financeCommand = createFinanceCommand();

@@ -21,6 +21,9 @@ export const loadProactiveWorkflowsEligibility$ = command(
         .select({
           suggestionsEnabled: orgMembersMetadata.proactiveSuggestionsEnabled,
           jobsEnabled: orgMembersMetadata.proactiveJobsEnabled,
+          learningEnabled: orgMembersMetadata.proactiveLearningEnabled,
+          planningEnabled: orgMembersMetadata.proactivePlanningEnabled,
+          timezone: orgMembersMetadata.timezone,
         })
         .from(orgMembersMetadata)
         .where(
@@ -49,27 +52,37 @@ export const loadProactiveWorkflowsEligibility$ = command(
         .limit(1),
     ]);
     signal.throwIfAborted();
-    const jobsAvailable = isFeatureEnabled(
-      FeatureSwitchKey.ProactiveJobs,
+    const available = isFeatureEnabled(
+      FeatureSwitchKey.ProactiveAgent,
       features,
     );
     const jobsEnabled = preference?.jobsEnabled ?? false;
-    const suggestionsAvailable = isFeatureEnabled(
-      FeatureSwitchKey.AgentSuggestion,
-      features,
-    );
     const suggestionsEnabled = preference?.suggestionsEnabled ?? false;
+    const learningEnabled = preference?.learningEnabled ?? false;
+    const planningEnabled = preference?.planningEnabled ?? false;
+    const timezone = preference?.timezone ?? null;
     return {
       jobs: {
-        available: jobsAvailable,
+        available,
         enabled: jobsEnabled,
-        active: jobsAvailable && jobsEnabled,
+        active: available && jobsEnabled,
       },
       suggestions: {
-        available: suggestionsAvailable,
+        available,
         enabled: suggestionsEnabled,
-        active: suggestionsAvailable && suggestionsEnabled,
+        active: available && suggestionsEnabled,
       },
+      learning: {
+        available,
+        enabled: learningEnabled,
+        active: available && learningEnabled && timezone !== null,
+      },
+      planning: {
+        available,
+        enabled: planningEnabled,
+        active: available && planningEnabled && timezone !== null,
+      },
+      timezone,
       agentId: agent?.id ?? null,
     };
   },

@@ -16,6 +16,7 @@ import {
   userConnectedConnectors$,
 } from "../okou-page/connector-overview.ts";
 import { builtinConnectorAccountProjectionVersion$ } from "../okou-page/connector-account-projection.ts";
+import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { apiClient$ } from "../api-client";
 import { accept } from "../../lib/accept.ts";
 import { featureSwitch$ } from "./feature-switch.ts";
@@ -323,3 +324,18 @@ export const reloadBuiltinConnectors$ = command(({ set }) => {
     return x + 1;
   });
 });
+
+/** Visible connector surfaces own the subscription and re-read on attachment. */
+export const subscribeBuiltinConnectorChanges$ = command(
+  ({ set }, signal: AbortSignal) => {
+    set(
+      setAblyInvalidationLoop$,
+      {
+        topic: "connector:changed",
+        invalidations: [reloadBuiltinConnectors$],
+        options: { runOnSubscribe: true },
+      },
+      signal,
+    );
+  },
+);

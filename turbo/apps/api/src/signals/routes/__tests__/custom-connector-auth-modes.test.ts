@@ -260,9 +260,17 @@ describe("Custom connector authentication modes", () => {
     "creates and reads a %s connector without changing endpoint queries",
     async (mode) => {
       const api = clients();
+      const skillMarkdown =
+        mode === "oauth" ? "Use the connected account to search." : null;
+      if (mode === "oauth") {
+        context.mocks.s3.send.mockResolvedValue({});
+      }
       const endpoint = `https://${randomUUID()}.mcp.example.test/server?hl=en&tag=one&tag=two&empty=&encoded=a%20b&literal=a+b&slash=%2f`;
       const created = await accept(
-        api.collection.create({ headers, body: definition(mode, endpoint) }),
+        api.collection.create({
+          headers,
+          body: { ...definition(mode, endpoint), skillMarkdown },
+        }),
         [201],
       );
       const read = await accept(
@@ -274,6 +282,7 @@ describe("Custom connector authentication modes", () => {
         kind: "mcp",
         endpoint,
         authMode: mode,
+        skillMarkdown,
       });
       if (mode === "oauth") {
         expect(read.body).toHaveProperty("oauthConfig", oauthConfig);
@@ -282,6 +291,41 @@ describe("Custom connector authentication modes", () => {
       }
       const listed = await accept(api.collection.list({ headers }), [200]);
       expect(listed.body.connectors).toStrictEqual([read.body]);
+
+      context.mocks.s3.send.mockResolvedValue({});
+      const updatedSkill = "Use the current connector to list project records.";
+      const updated = await accept(
+        api.connector.update({
+          headers,
+          params: { id: created.body.id },
+          body: {
+            ...definition(mode, endpoint),
+            skillMarkdown: updatedSkill,
+            ...(mode === "oauth" ? { oauthConfig } : {}),
+          },
+        }),
+        [200],
+      );
+      expect(updated.body).toMatchObject({
+        id: created.body.id,
+        endpoint,
+        authMode: mode,
+        skillMarkdown: updatedSkill,
+        storageVersion: created.body.storageVersion,
+      });
+      const refreshed = await accept(
+        api.connector.get({ headers, params: { id: created.body.id } }),
+        [200],
+      );
+      expect(refreshed.body).toStrictEqual(updated.body);
+      if (mode === "oauth") {
+        expect(refreshed.body).toHaveProperty("oauthConfig", oauthConfig);
+        expect(JSON.stringify(refreshed.body)).not.toContain(
+          "test-client-secret",
+        );
+      } else {
+        expect(refreshed.body).not.toHaveProperty("oauthConfig");
+      }
     },
   );
 

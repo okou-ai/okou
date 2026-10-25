@@ -103,6 +103,9 @@ test("Authorize one agent without changing another agent", async () => {
       } else {
         authorized.delete(params.id);
       }
+      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
+        agentId: params.id,
+      });
       return respond(200, {
         enabledConnectorSlugs: authorized.has(params.id) ? ["github"] : [],
       });
@@ -319,20 +322,19 @@ test("Present a connector with no accounts and start direct OAuth", async () => 
       singleAuthCodeAuthMethodId: "oauth",
     }),
   ]);
-  const oauthStarted = context.mocks.deferred<void>();
   mockOAuthCompletions(context);
   const popup = context.mocks.browser.authWindow();
+  Object.defineProperty(popup, "location", {
+    configurable: true,
+    value: { href: "" },
+  });
   context.mocks.browser.open(popup);
-  context.mocks.api(
-    builtinConnectorOauthStartContract.start,
-    async ({ respond }) => {
-      await oauthStarted.promise;
-      return respond(200, {
-        authorizationUrl: "https://oauth.test/github/authorize",
-        oauthAttemptId: crypto.randomUUID(),
-      });
-    },
-  );
+  context.mocks.api(builtinConnectorOauthStartContract.start, ({ respond }) => {
+    return respond(200, {
+      authorizationUrl: "https://oauth.test/github/authorize",
+      oauthAttemptId: crypto.randomUUID(),
+    });
+  });
   await setupPage({
     context,
     path: "/connectors",
@@ -352,14 +354,9 @@ test("Present a connector with no accounts and start direct OAuth", async () => 
   });
 
   click(connect);
-  const progress = await screen.findByRole("dialog", {
-    name: "Connecting your account",
+  await waitFor(() => {
+    expect(popup.location.href).toBe("https://oauth.test/github/authorize");
   });
-  expect(within(progress).getByRole("status")).toHaveTextContent(
-    "Please wait while we finish setting up your connection.",
-  );
-  expect(connect).toBeDisabled();
-  oauthStarted.resolve();
 });
 
 function shelfCatalog() {

@@ -1051,6 +1051,7 @@
       "loadFailed": "無法驗證所有請求的權限，因此無法變更任何權限。",
       "loading": "正在載入權限",
       "notNow": "暫不允許",
+      "review": "檢視並授權",
       "scopeNote": "適用於此代理程式，而不僅限於目前的任務。",
       "title": "允許以下權限"
     }
@@ -1962,6 +1963,7 @@
       "retry": "Retry",
       "saved": "Saved for the next evaluation",
       "saveReply": "Save reply",
+      "sourceUpdate": "來源更新",
       "states": {
         "active": "In progress",
         "archived": "Archived",
@@ -2355,6 +2357,7 @@
       "unknown": "未知",
       "unsupported": "不支援手動重設；用量將自然恢復。"
     },
+    "syncFailed": "聊天內容可能尚未更新",
     "taskChips": {
       "chooseTask": "選擇任務",
       "ideas": {
@@ -3320,14 +3323,12 @@
     "connectDialog": {
       "connectedAs": "已以{{username}}身份連線",
       "device": {
-        "checking": "正在檢查授權結果…",
         "connect": "連線{{connector}}",
         "description": "開啟服務商的驗證頁面，然後輸入此驗證碼以授權訪問。",
         "intro": "點選連線獲取驗證碼，然後在服務商的驗證頁面輸入它以授權訪問。",
         "openPage": "開啟驗證頁面",
         "selectOption": "選擇{{option}}",
         "starting": "正在啟動…",
-        "startingConnection": "正在發起連線…",
         "verificationCode": "驗證碼",
         "waiting": "等待授權中，請保持此視窗開啟。"
       },
@@ -3353,17 +3354,12 @@
       "noMethod": "暫無可用的連線方式。",
       "or": "或",
       "progress": {
-        "connecting": "正在連線…",
-        "savingPermissions": "正在儲存權限…"
+        "connecting": "正在連線…"
       },
       "unavailable": {
         "description": "此連接器有可用的連線方式，但目前都還無法在此視窗中配置。",
         "title": "連線方式不可用"
       }
-    },
-    "connectionProgress": {
-      "description": "如有提示請完成授權。我們正在為你完成連線設定，請稍候。",
-      "title": "正在連線你的帳號"
     },
     "custom": {
       "connect": {
@@ -5125,6 +5121,10 @@
           "description": "個性化應用的外觀和使用方式。",
           "title": "偏好設定"
         },
+        "proactiveAgent": {
+          "description": "選擇 Okou 如何學習、規劃、推進任務和提供建議。",
+          "title": "Proactive Agent"
+        },
         "tools": {
           "title": "工具"
         },
@@ -5531,15 +5531,37 @@
       "proactiveJobs": {
         "description": "自動推進你的任務，在需要你協助或任務完成時通知你。",
         "missingDefaultAgent": "請先選擇可用的預設 Agent。",
+        "missingTimezone": "請在偏好設定中設定時區。",
         "preparationFailed": "任務暫時無法推進；如果工作已暫停，可關閉後重新開啟以重試。",
         "preparing": "正在準備任務，你可以隨時關閉。",
         "retry": "重試",
         "retryMessage": "無法讀取或更新任務設定，請重試。",
         "title": "自動推進任務"
       },
+      "proactiveLearning": {
+        "description": "夜間回顧你的資訊和工作，整理個人記憶、更新理解。",
+        "missingDefaultAgent": "請先選擇可用的預設 Agent。",
+        "missingTimezone": "請在偏好設定中設定時區。",
+        "preparationFailed": "此工作流程暫不可用，Okou 會重試。",
+        "preparing": "正在準備此工作流程。",
+        "retry": "重試",
+        "retryMessage": "無法載入或更新此設定，請重試。",
+        "title": "主動學習"
+      },
+      "proactivePlanning": {
+        "description": "在你明確交辦的範圍內規劃並維護任務。開啟 Tasks 後，新任務可立即推進。",
+        "missingDefaultAgent": "請先選擇可用的預設 Agent。",
+        "missingTimezone": "請在偏好設定中設定時區。",
+        "preparationFailed": "此工作流程暫不可用，Okou 會重試。",
+        "preparing": "正在準備此工作流程。",
+        "retry": "重試",
+        "retryMessage": "無法載入或更新此設定，請重試。",
+        "title": "主動規劃"
+      },
       "proactiveSuggestions": {
         "description": "讓 Okou 每小時檢查已連接的資訊來源，並在首頁推薦實用的下一步行動。",
         "missingDefaultAgent": "請選擇可用的預設 Agent 以接收主動建議。",
+        "missingTimezone": "請在偏好設定中設定時區。",
         "preparationFailed": "暫時無法執行，Okou 會自動重試。",
         "preparing": "正在準備每小時建議，你可以隨時關閉。",
         "retry": "重試",

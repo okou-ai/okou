@@ -1,5 +1,100 @@
 # Changelog
 
+## [8.785.1](https://github.com/okou-ai/okou/compare/core-v8.785.0...core-v8.785.1) (2026-10-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.2
+
+## [8.785.0](https://github.com/okou-ai/okou/compare/core-v8.784.0...core-v8.785.0) (2026-10-24)
+
+
+### Features
+
+* **ios:** bring composer connector controls to native chat ([#42767](https://github.com/okou-ai/okou/issues/42767)) ([35daba9](https://github.com/okou-ai/okou/commit/35daba9e983a3c54fe75dabfef43b4d7fff6f30c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.1
+
+## [8.784.0](https://github.com/okou-ai/okou/compare/core-v8.783.3...core-v8.784.0) (2026-10-24)
+
+
+### Features
+
+* add proactive agent learning and planning workflows ([#42724](https://github.com/okou-ai/okou/issues/42724)) ([3a23824](https://github.com/okou-ai/okou/commit/3a23824fb8b9ac3ffd76b65cd463bb687f15269e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.0
+
+## [8.783.3](https://github.com/okou-ai/okou/compare/core-v8.783.2...core-v8.783.3) (2026-10-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.1.2
+
+## [8.783.2](https://github.com/okou-ai/okou/compare/core-v8.783.1...core-v8.783.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* hide disabled managed tools in prompts and cli ([#42440](https://github.com/okou-ai/okou/issues/42440)) ([33b35f9](https://github.com/okou-ai/okou/commit/33b35f94cb80e9ad361d36b732250587f04bc79b))
+
+## [8.783.1](https://github.com/okou-ai/okou/compare/core-v8.783.0...core-v8.783.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **app:** prepare authenticated integration oauth callbacks ([#42591](https://github.com/okou-ai/okou/issues/42591)) ([c7f304e](https://github.com/okou-ai/okou/commit/c7f304e86bc9bc0df19a4e8ef202cb1cc860be6c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.1.1
+
+## [8.783.0](https://github.com/okou-ai/okou/compare/core-v8.782.1...core-v8.783.0) (2026-10-23)
+
+
+### Features
+
+* **browser:** add feature-gated cdp viewer ([#42535](https://github.com/okou-ai/okou/issues/42535)) ([a489e1d](https://github.com/okou-ai/okou/commit/a489e1d3e2c492ed3a2c83f4eccf60ccf0349df0))
+* **slack:** decouple connections and scope external channel access ([#42486](https://github.com/okou-ai/okou/issues/42486)) ([b82249e](https://github.com/okou-ai/okou/commit/b82249e6de08bb61974dc5503f2ee5adc85cd1ee))
+
+
+### Refactoring
+
+* retire durable openai image generation switch ([#42594](https://github.com/okou-ai/okou/issues/42594)) ([a5e1f4c](https://github.com/okou-ai/okou/commit/a5e1f4c35c9f3d7ef1824fe9fa47bd4ffbb472d7))
+* retire stripe invoice-paid automation runtime ([#42572](https://github.com/okou-ai/okou/issues/42572)) ([190cdfb](https://github.com/okou-ai/okou/commit/190cdfba6440b50469117758156616447d707b81))
+* retire unused pi memory model route ([#42575](https://github.com/okou-ai/okou/issues/42575)) ([ce57579](https://github.com/okou-ai/okou/commit/ce57579b30b1460dfe45fbdc6fff8d2694d1e749))
+* **workflows:** prepare attachments outside storage ([#42563](https://github.com/okou-ai/okou/issues/42563)) ([c2d0e48](https://github.com/okou-ai/okou/commit/c2d0e488e938512e55dce8ab199046a7f16d7b1c))
+
+
+### Performance Improvements
+
+* download authorized files directly from providers ([#42546](https://github.com/okou-ai/okou/issues/42546)) ([1b0a44c](https://github.com/okou-ai/okou/commit/1b0a44c01821d2825c8022560b08b70c0f41130b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.1.0
+
 ## [8.782.1](https://github.com/okou-ai/okou/compare/core-v8.782.0...core-v8.782.1) (2026-10-23)
 
 

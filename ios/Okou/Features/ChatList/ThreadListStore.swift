@@ -10,13 +10,18 @@ final class ThreadListStore {
   private(set) var agents: [AgentRecord] = []
   private(set) var pinnedAgentIDs: [String] = []
   private(set) var unreadAgentIDs: Set<String> = []
+  private(set) var canUseComposerConnectors = false
   private(set) var canArchiveChats = false
   private(set) var canMuteChats = false
   var onlyUnread = false
   private(set) var markingAgentRead = false
   private var readRevision = 0
   private(set) var navigationError: String?
-  private(set) var error: String?
+  private(set) var actionError: String?
+  private(set) var refreshError: String?
+  private var indicatorsError: String?
+  var syncError: String? { refreshError ?? indicatorsError }
+  var error: String? { actionError ?? syncError }
   private(set) var isLoading = false
   private(set) var updatingThreads: Set<String> = []
   private let client: APIClient
@@ -24,10 +29,14 @@ final class ThreadListStore {
   private let commands: ChatCommands
   private let didRefresh: @MainActor ([ChatThread]) -> Void
   private let didFail: @MainActor (Error) -> Void
+  private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private var refreshAgain = false
+  private var indicatorsAgain = false
+  private var refreshGeneration = UUID()
   private var creationRevision = 0
   private var refreshTask: Task<Void, Never>?
   private var navigationTask: Task<Void, Never>?
+  private var indicatorsTask: Task<Void, Never>?
   private var updateTasks: [String: Task<Void, Never>] = [:]
   private var pinTasks: [String: Task<Void, Never>] = [:]
   private var lastPinIDs: [String: String] = [:]
@@ -47,13 +56,17 @@ final class ThreadListStore {
   init(
     client: APIClient, sync: ChatSync, commands: ChatCommands,
     didRefresh: @escaping @MainActor ([ChatThread]) -> Void,
-    didFail: @escaping @MainActor (Error) -> Void
+    didFail: @escaping @MainActor (Error) -> Void,
+    readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
+    }
   ) {
     self.client = client
     self.sync = sync
     self.commands = commands
     self.didRefresh = didRefresh
     self.didFail = didFail
+    self.readRetrySleep = readRetrySleep
   }
 
   func restoreCached() async {
@@ -106,17 +119,19 @@ final class ThreadListStore {
       didFail(error)
     }
     guard !closed, !blocked, !Task.isCancelled else { return }
-    let switches: SidebarFeatureSwitches?
+    let switches: SidebarFeatureSwitches
     do {
       switches = try await client.request("/api/feature-switches")
     } catch {
       guard !closed, !Task.isCancelled else { return }
       didFail(error)
-      switches = nil
+      return
     }
     guard !closed, !Task.isCancelled else { return }
-    canArchiveChats = switches?.effectiveSwitches["chatThreadArchiving"] == true
-    canMuteChats = switches?.effectiveSwitches["chatThreadMuting"] == true
+    // Keep this workspace's last successful flags until a new response replaces them.
+    canUseComposerConnectors = switches.effectiveSwitches["iosComposerConnectors"] == true
+    canArchiveChats = switches.effectiveSwitches["chatThreadArchiving"] == true
+    canMuteChats = switches.effectiveSwitches["chatThreadMuting"] == true
   }
 
   var visiblePinnedAgents: [AgentRecord] {
@@ -133,21 +148,27 @@ final class ThreadListStore {
       return
     }
     isLoading = true
+    let generation = refreshGeneration
     let task = Task { [weak self] in
       guard let self else { return }
       defer {
-        isLoading = false
-        refreshTask = nil
+        if refreshGeneration == generation {
+          isLoading = false
+          refreshTask = nil
+        }
       }
+      guard !Task.isCancelled, refreshGeneration == generation else { return }
       repeat {
         refreshAgain = false
         do {
           let revision = readRevision
           let creation = creationRevision
-          let response = try await sync.threadsWithIndicators()
+          let response = try await ChatReadRecovery.read("chat list", sleep: readRetrySleep) {
+            try await sync.threadsWithIndicators()
+          }
           var result = response.threads
           try Task.checkCancellation()
-          guard !closed else { return }
+          guard !closed, refreshGeneration == generation else { return }
           optimisticChanges.removeAll { response.eventIDs.contains($0.id) }
           // A read started before creation cannot remove its acknowledged thread.
           guard creation == creationRevision else {
@@ -166,10 +187,14 @@ final class ThreadListStore {
               response.indicators?.agents.filter { $0.value == .unread }.map(\.key) ?? [])
           }
           projectThreads(result)
-          error = nil
+          refreshError = nil
+          indicatorsError = nil
         } catch is CancellationError {
           return
-        } catch { show(error) }
+        } catch {
+          guard !Task.isCancelled, refreshGeneration == generation else { return }
+          showRefreshFailure(error)
+        }
       } while refreshAgain && !closed && !blocked && !Task.isCancelled
     }
     refreshTask = task
@@ -217,7 +242,7 @@ final class ThreadListStore {
         }
         try Task.checkCancellation()
         readRevision += 1
-        error = nil
+        actionError = nil
         succeeded = true
         await refreshIndicators()
       } catch is CancellationError {
@@ -254,26 +279,53 @@ final class ThreadListStore {
 
   func refreshIndicators() async {
     guard !closed, !blocked, !Task.isCancelled else { return }
-    do {
-      let revision = readRevision
-      let result = try await sync.indicators()
-      try Task.checkCancellation()
-      guard !closed else { return }
-      guard revision == readRevision else {
-        await refresh()
-        return
+    if let indicatorsTask {
+      indicatorsAgain = true
+      await indicatorsTask.value
+      return
+    }
+    let generation = refreshGeneration
+    let task = Task { [weak self] in
+      guard let self else { return }
+      defer {
+        if refreshGeneration == generation { indicatorsTask = nil }
       }
-      unreadAgentIDs = Set(result.agents.filter { $0.value == .unread }.map(\.key))
-      threads = threads.map { thread in
-        var updated = thread
-        updated.indicator = result.threads[thread.id]
-        updated.unreadAt = result.unreadAt[thread.id]
-        if thread.isMuted && updated.indicator == .unread { updated.indicator = nil }
-        return updated
-      }
-      didRefresh(threads)
-    } catch is CancellationError {
-    } catch { show(error) }
+      guard !Task.isCancelled, refreshGeneration == generation else { return }
+      repeat {
+        indicatorsAgain = false
+        do {
+          let revision = readRevision
+          let result = try await ChatReadRecovery.read("chat indicators", sleep: readRetrySleep) {
+            try await sync.indicators()
+          }
+          try Task.checkCancellation()
+          guard !closed, refreshGeneration == generation else { return }
+          guard revision == readRevision else {
+            await refresh()
+            return
+          }
+          unreadAgentIDs = Set(result.agents.filter { $0.value == .unread }.map(\.key))
+          threads = threads.map { thread in
+            var updated = thread
+            updated.indicator = result.threads[thread.id]
+            updated.unreadAt = result.unreadAt[thread.id]
+            if thread.isMuted && updated.indicator == .unread { updated.indicator = nil }
+            return updated
+          }
+          indicatorsError = nil
+          didRefresh(threads)
+        } catch is CancellationError {
+          return
+        } catch {
+          guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
+          indicatorsError = error.localizedDescription
+          blocked = (error as? APIClientError)?.statusCode == 426
+          didFail(error)
+        }
+      } while indicatorsAgain && !closed && !blocked && !Task.isCancelled
+    }
+    indicatorsTask = task
+    await task.value
   }
 
   func togglePinned(_ id: String) async {
@@ -345,7 +397,7 @@ final class ThreadListStore {
   }
 
   func dismissError() {
-    error = nil
+    actionError = nil
   }
 
   func canUpdate(_ id: String) -> Bool {
@@ -399,13 +451,34 @@ final class ThreadListStore {
 
   @discardableResult
   func rename(_ thread: ChatThread, title: String) async -> Bool {
-    guard canUpdate(thread.id), !Task.isCancelled else { return false }
+    guard canUpdate(thread.id), !Task.isCancelled,
+      let current = threads.first(where: { $0.id == thread.id })
+    else { return false }
     let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-    let currentTitle = threads.first(where: { $0.id == thread.id })?.title
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty, trimmed != currentTitle else { return true }
+    let pending = optimisticChanges.last {
+      $0.change.kind == .renamed && $0.change.chatThreadId == thread.id
+    }
+    // A title already shown optimistically still needs an explicit retry until confirmed.
+    guard !trimmed.isEmpty,
+      trimmed != current.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        || pending?.change.title == trimmed
+    else { return true }
+    let eventID: String
+    if let pending, pending.change.title == trimmed {
+      eventID = pending.id
+    } else {
+      eventID = UUID().uuidString.lowercased()
+      optimisticChanges.append(
+        (
+          eventID,
+          ChatThreadChange(
+            kind: .renamed, chatThreadId: current.id, agentId: current.agentID,
+            title: trimmed, createdAt: .now)
+        ))
+    }
+    projectThreads(threads)
     return await updateThread(thread.id) { [commands] in
-      try await commands.rename(threadID: thread.id, title: trimmed)
+      try await commands.rename(threadID: thread.id, title: trimmed, eventID: eventID)
     }
   }
 
@@ -440,7 +513,7 @@ final class ThreadListStore {
     renameRequest = RenameRequest(
       id: renameSessionID, threadID: request.threadID,
       error: error ?? "The title was not saved. Try again.")
-    error = nil
+    actionError = nil
   }
 
   @discardableResult
@@ -460,7 +533,7 @@ final class ThreadListStore {
         try await command()
         try Task.checkCancellation()
         guard !closed else { return }
-        error = nil
+        actionError = nil
         await refresh(waitForCurrent: true)
         succeeded = error == nil
       } catch is CancellationError {
@@ -473,7 +546,7 @@ final class ThreadListStore {
 
   func close() {
     closed = true
-    refreshTask?.cancel()
+    cancelRefresh()
     navigationTask?.cancel()
     for task in updateTasks.values { task.cancel() }
     for task in pinTasks.values { task.cancel() }
@@ -481,8 +554,28 @@ final class ThreadListStore {
   }
 
   private func show(_ failure: Error) {
+    guard !closed, !Task.isCancelled else { return }
+    actionError = failure.localizedDescription
+    blocked = (failure as? APIClientError)?.statusCode == 426
+    didFail(failure)
+  }
+
+  func cancelRefresh() {
+    refreshGeneration = UUID()
+    refreshTask?.cancel()
+    indicatorsTask?.cancel()
+    refreshTask = nil
+    indicatorsTask = nil
+    refreshAgain = false
+    indicatorsAgain = false
+    isLoading = false
+    refreshError = nil
+    indicatorsError = nil
+  }
+
+  private func showRefreshFailure(_ failure: Error) {
     guard !closed else { return }
-    error = failure.localizedDescription
+    refreshError = failure.localizedDescription
     blocked = (failure as? APIClientError)?.statusCode == 426
     didFail(failure)
   }

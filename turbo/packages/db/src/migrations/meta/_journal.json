@@ -2651,8 +2651,36 @@
     {
       "idx": 1457,
       "version": "7",
-      "when": 1792748631313,
-      "tag": "1457_migrate_presentation_templates_to_user_templates",
+      "when": 1792757275134,
+      "tag": "1457_retire_stripe_invoice_paid_storage",
+      "breakpoints": true
+    },
+    {
+      "idx": 1458,
+      "version": "7",
+      "when": 1792764648071,
+      "tag": "1458_usage_pricing_source_cost_conversion",
+      "breakpoints": true
+    },
+    {
+      "idx": 1459,
+      "version": "7",
+      "when": 1792824377712,
+      "tag": "1459_proactive_agent_learning_planning",
+      "breakpoints": true
+    },
+    {
+      "idx": 1460,
+      "version": "7",
+      "when": 1792888269780,
+      "tag": "1460_retire_proactive_nightly_cycles",
+      "breakpoints": true
+    },
+    {
+      "idx": 1461,
+      "version": "7",
+      "when": 1792907126811,
+      "tag": "1461_migrate_presentation_templates_to_user_templates",
       "breakpoints": true
     }
   ]

@@ -9,7 +9,7 @@ import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { apiClient$ } from "../api-client.ts";
 import { setAblyPayloadLoop$, waitAblyPayloadLoopUntil$ } from "../realtime.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { onRef, withCleanup } from "../utils.ts";
+import { onRef } from "../utils.ts";
 import { runChatActionCallback$ } from "./action-callback.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import type { ChatActionContext } from "./chat-action-context.ts";
@@ -72,8 +72,6 @@ function createWalletConnectSignals(
 ) {
   const reload$ = state(0);
   const continued$ = state(false);
-  const internalOperation$ = state<Promise<void> | undefined>(undefined);
-  const running$ = state<Promise<void> | null>(null);
   const status$ = computed(async (get) => {
     get(reload$);
     const result = await accept(
@@ -154,29 +152,10 @@ function createWalletConnectSignals(
       set(continued$, true);
     },
   );
-  const start$ = command(({ get, set }, signal: AbortSignal) => {
-    const running = get(running$);
-    if (running) {
-      return running;
-    }
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    const operation = withCleanup(
-      set(continueAfterAuthorization$, signal),
-      () => {
-        set(running$, null);
-      },
-    );
-    set(running$, operation);
-    set(internalOperation$, operation);
-    return operation;
-  });
   return {
     status$,
     continued$,
-    operation$: computed((get) => {
-      return get(internalOperation$);
-    }),
-    start$,
+    start$: continueAfterAuthorization$,
   };
 }
 

@@ -1,4 +1,4 @@
-import { useLoadable, useGet, useSet } from "ccstate-react";
+import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Input } from "@okouai/ui/components/ui/input";
@@ -27,20 +27,10 @@ import type {
   PublicConnectorCatalogAuthMethodDetail,
   PublicConnectorCatalogStartOption,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import type {
-  PlatformConnectorAccountMutationIntent,
-  PlatformConnectorCatalogStatusItem,
-} from "../../../../signals/connector-domain.ts";
+import type { PlatformConnectorCatalogStatusItem } from "../../../../signals/connector-domain.ts";
 import {
-  builtinConnectOperation$,
-  builtinConnectorBrowserAuthOperation$,
-  builtinConnectorOAuthDeviceAuthStartOperation$,
-  builtinConnectorOAuthDeviceAuthStartContext$,
-  builtinConnectorExternalCodeStartOperation$,
-  builtinConnectorExternalCodeStartContext$,
   builtinConnectorExternalCodeState$,
   builtinConnectorOAuthDeviceAuthState$,
-  builtinConnectorOAuthDeviceAuthPollOperation$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   connectBuiltinConnectorOAuthDeviceAuthAndSettle$,
   connectBuiltinConnectorNoAuthAndSettle$,
@@ -49,11 +39,11 @@ import {
   openBuiltinConnectorExternalCodeAuthorizationPage$,
   openBuiltinConnectorOAuthDeviceAuthVerificationPage$,
   clearBuiltinConnectorExternalCode$,
+  cancelBuiltinConnectorConnection$,
   clearBuiltinConnectorOAuthDeviceAuth$,
   builtinConnectorOAuthDeviceAuthStartOptionValuesFor$,
   setBuiltinConnectorOAuthDeviceAuthStartOptionValue$,
   setBuiltinConnectorExternalCodeAuthorizationCode$,
-  runBuiltinConnectorConnectSuccess$,
   submitBuiltinManualGrantAndSettle$,
   setBuiltinManualGrantFormValue$,
   builtinManualGrantFormValuesFor$,
@@ -65,18 +55,12 @@ import {
   type BuiltinConnectorOAuthDeviceAuthState,
 } from "../../../../signals/okou-page/settings/connectors.ts";
 import { hasTokenInputValue } from "../../../../signals/okou-page/settings/token-input.ts";
-import { ConnectorConnectionError } from "../../../../signals/okou-page/settings/connector-accounts.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 
 import { ConnectorIcon } from "./connector-icons.tsx";
 import { detach, onDomEventFn, Reason } from "../../../../signals/utils.ts";
 import { ConnectorHelpText } from "./connector-help-text.tsx";
 import { i18n } from "../../../../i18n/index.ts";
-import {
-  cancelConnectorConnection$,
-  connectorConnectionAttempt$,
-} from "../../../../signals/connector-connection-progress.ts";
-import { ConnectorConnectionDialogBody } from "../../../components/connector-connection-dialog-body.tsx";
 import type {
   ConnectorAccountConnectMode,
   ConnectorAccountMutationOptions,
@@ -143,78 +127,6 @@ function connectedStatusText(item: PlatformConnectorCatalogStatusItem): string {
   });
 }
 
-type PostConnectOptions = {
-  readonly authorizeVisibleAgents?: boolean;
-  readonly connectorLabel?: string;
-  readonly agentId?: string;
-  readonly account: PlatformConnectorAccountMutationIntent;
-  readonly useDefaultConnectorProjection?: boolean;
-};
-type BrowserAuthPostConnectOptions = PostConnectOptions & {
-  readonly connectorIcon: PlatformConnectorCatalogStatusItem["icon"];
-};
-
-type SubmitManualGrantFn = (
-  args: {
-    readonly connectorSlug: ConnectorSlug;
-    readonly authMethod: ConnectorAuthMethodId;
-    readonly inputValues: Record<string, string>;
-    readonly options: PostConnectOptions;
-    readonly onSuccess: ConnectorConnectSuccess;
-  },
-  signal: AbortSignal,
-) => Promise<void>;
-
-type ConnectOAuthAuthCodeAndSettleFn = (
-  connectorSlug: ConnectorSlug,
-  method: PublicConnectorCatalogAuthMethodDetail,
-  onSuccess: ConnectorConnectSuccess,
-  options: BrowserAuthPostConnectOptions,
-  signal: AbortSignal,
-) => Promise<void>;
-
-type ConnectOAuthDeviceAuthAndSettleFn = (
-  args: {
-    readonly connectorSlug: ConnectorSlug;
-    readonly authMethod: ConnectorAuthMethodId;
-    readonly onSuccess: ConnectorConnectSuccess;
-    readonly options: PostConnectOptions;
-    readonly startOptions?: ConnectorDeviceAuthStartOptions;
-  },
-  signal: AbortSignal,
-) => Promise<void>;
-
-type ConnectExternalCodeFn = (
-  args: {
-    readonly connectorSlug: ConnectorSlug;
-    readonly authMethod: ConnectorAuthMethodId;
-    readonly agentId?: string;
-    readonly account: PlatformConnectorAccountMutationIntent;
-    readonly authorizeVisibleAgents?: boolean;
-  },
-  signal: AbortSignal,
-) => Promise<void>;
-
-type CompleteExternalCodeAndSettleFn = (
-  args: {
-    readonly connectorSlug: ConnectorSlug;
-    readonly authMethod: ConnectorAuthMethodId;
-    readonly onSuccess: ConnectorConnectSuccess;
-    readonly options: PostConnectOptions;
-  },
-  signal: AbortSignal,
-) => Promise<void>;
-
-type ConnectNoAuthAndSettleFn = (
-  args: {
-    readonly connectorSlug: ConnectorSlug;
-    readonly authMethod: ConnectorAuthMethodId;
-    readonly onSuccess: ConnectorConnectSuccess;
-    readonly options: PostConnectOptions;
-  },
-  signal: AbortSignal,
-) => Promise<void>;
-
 type ConnectModalContentProps = {
   item: PlatformConnectorCatalogStatusItem;
   agentId?: string;
@@ -228,15 +140,6 @@ type ConnectModalContentProps = {
 type ConnectMethodContentProps = ConnectModalContentProps & {
   authMethod: ConnectorAuthMethodId;
   method: PublicConnectorCatalogAuthMethodDetail;
-  connectOAuthAuthCodeAndSettle: ConnectOAuthAuthCodeAndSettleFn;
-  connectOAuthDeviceAuthAndSettle: ConnectOAuthDeviceAuthAndSettleFn;
-  connectExternalCode: ConnectExternalCodeFn;
-  completeExternalCodeAndSettle: CompleteExternalCodeAndSettleFn;
-  connectNoAuthAndSettle: ConnectNoAuthAndSettleFn;
-  submitManualGrant: SubmitManualGrantFn;
-  externalCodeCompleting: boolean;
-  manualGrantSubmitting: boolean;
-  noAuthSubmitting: boolean;
 };
 
 type ConnectMethodSharedContentProps = Omit<
@@ -303,8 +206,6 @@ function ManualGrantForm({
   authorizeVisibleAgentsOnConnect,
   agentId,
   accountOptions,
-  submit,
-  submitting,
 }: {
   connectorSlug: ConnectorSlug;
   connectorLabel: string;
@@ -314,10 +215,12 @@ function ManualGrantForm({
   authorizeVisibleAgentsOnConnect: boolean;
   agentId?: string;
   accountOptions: ConnectorAccountMutationOptions;
-  submit: SubmitManualGrantFn;
-  submitting: boolean;
 }) {
   const { t } = useTranslation();
+  const [operation, submit] = useLoadableSet(
+    submitBuiltinManualGrantAndSettle$,
+  );
+  const submitting = operation.state === "loading";
   const setFormValue = useSet(setBuiltinManualGrantFormValue$);
   const pageSignal = useGet(pageSignal$);
   const manualGrantFormValuesFor = useGet(builtinManualGrantFormValuesFor$);
@@ -375,6 +278,11 @@ function ManualGrantForm({
           </div>
         );
       })}
+      {operation.state === "hasError" && (
+        <p role="alert" className="text-sm text-destructive">
+          {String(operation.error)}
+        </p>
+      )}
       <Button
         type="submit"
         disabled={!allFilled || submitting}
@@ -410,56 +318,6 @@ function UnavailableConnectMethodsContent() {
   );
 }
 
-function useConnectorProgressContent(
-  connectorSlug: ConnectorSlug,
-  pending: {
-    readonly browser: boolean;
-    readonly device: boolean;
-    readonly external: boolean;
-  },
-) {
-  const browserOperation = useLoadable(builtinConnectorBrowserAuthOperation$);
-  const deviceStart = useLoadable(
-    builtinConnectorOAuthDeviceAuthStartOperation$,
-  );
-  const externalStart = useLoadable(
-    builtinConnectorExternalCodeStartOperation$,
-  );
-  const deviceAuthState = useGet(builtinConnectorOAuthDeviceAuthState$);
-  const externalCodeState = useGet(builtinConnectorExternalCodeState$);
-  const isPolling = browserOperation.state === "loading";
-  const settling =
-    pending.browser ||
-    (pending.device &&
-      deviceStart.state !== "loading" &&
-      !connectorOAuthDeviceAuthFlowIsActive(deviceAuthState, connectorSlug)) ||
-    (pending.external &&
-      externalStart.state !== "loading" &&
-      !connectorExternalCodeFlowIsActive(externalCodeState, connectorSlug));
-  // While browser authorization is in progress, only show connecting state.
-  if (isPolling) {
-    return (
-      <p role="status" className="text-sm text-muted-foreground">
-        {i18n.t(($) => {
-          return $.connectors.connectDialog.progress.connecting;
-        })}
-      </p>
-    );
-  }
-
-  if (settling) {
-    return (
-      <p role="status" className="text-sm text-muted-foreground">
-        {i18n.t(($) => {
-          return $.connectors.connectDialog.progress.savingPermissions;
-        })}
-      </p>
-    );
-  }
-
-  return null;
-}
-
 function OAuthAuthCodeConnectButton({
   item,
   method,
@@ -469,48 +327,66 @@ function OAuthAuthCodeConnectButton({
   accountOptions,
   accountMode,
   reconnectAuthMethod,
-  connectOAuthAuthCodeAndSettle,
 }: ConnectModalContentProps & {
   method: PublicConnectorCatalogAuthMethodDetail;
-  connectOAuthAuthCodeAndSettle: ConnectOAuthAuthCodeAndSettleFn;
 }) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
+  const [operation, connect] = useLoadableSet(
+    connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+  );
   return (
-    <Button
-      variant="outline"
-      onClick={() => {
-        return detach(
-          connectOAuthAuthCodeAndSettle(
-            item.slug,
-            method,
-            onSuccess,
-            {
-              authorizeVisibleAgents: authorizeVisibleAgentsOnConnect,
-              connectorLabel: item.label,
-              connectorIcon: item.icon,
-              ...(agentId ? { agentId } : {}),
-              ...accountOptions,
-            },
-            signal,
-          ),
-          Reason.DomCallback,
-        );
-      }}
-      className="w-full"
-    >
-      {accountMode?.kind === "reconnect" || reconnectAuthMethod !== undefined
-        ? t(($) => {
-            return $.connectors.actions.reconnect;
-          })
-        : accountMode || !item.connected
+    <>
+      {operation.state === "hasError" && (
+        <p role="alert" className="text-sm text-destructive">
+          {String(operation.error)}
+        </p>
+      )}
+      {operation.state === "loading" && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.connectors.connectDialog.progress.connecting;
+          })}
+        </p>
+      )}
+      <Button
+        variant="outline"
+        disabled={operation.state === "loading"}
+        onClick={() => {
+          return detach(
+            connect(
+              {
+                connectorSlug: item.slug,
+                method,
+                onSuccess,
+                options: {
+                  authorizeVisibleAgents: authorizeVisibleAgentsOnConnect,
+                  connectorLabel: item.label,
+                  connectorIcon: item.icon,
+                  ...(agentId ? { agentId } : {}),
+                  ...accountOptions,
+                },
+              },
+              signal,
+            ),
+            Reason.DomCallback,
+          );
+        }}
+        className="w-full"
+      >
+        {accountMode?.kind === "reconnect" || reconnectAuthMethod !== undefined
           ? t(($) => {
-              return $.connectors.actions.connect;
+              return $.connectors.actions.reconnect;
             })
-          : t(($) => {
-              return $.connectors.actions.authorize;
-            })}
-    </Button>
+          : accountMode || !item.connected
+            ? t(($) => {
+                return $.connectors.actions.connect;
+              })
+            : t(($) => {
+                return $.connectors.actions.authorize;
+              })}
+      </Button>
+    </>
   );
 }
 
@@ -525,20 +401,8 @@ function OAuthAuthCodeConnectMethodContent(props: ConnectMethodContentProps) {
       accountOptions={props.accountOptions}
       accountMode={props.accountMode}
       reconnectAuthMethod={props.reconnectAuthMethod}
-      connectOAuthAuthCodeAndSettle={props.connectOAuthAuthCodeAndSettle}
     />
   );
-}
-
-function getOAuthDeviceAuthStatusText(isChecking: boolean): string {
-  if (isChecking) {
-    return i18n.t(($) => {
-      return $.connectors.connectDialog.device.checking;
-    });
-  }
-  return i18n.t(($) => {
-    return $.connectors.connectDialog.device.waiting;
-  });
 }
 
 function OAuthDeviceAuthCodePanel({
@@ -552,9 +416,6 @@ function OAuthDeviceAuthCodePanel({
   onOpenVerificationPage: () => void;
 }) {
   const { t } = useTranslation();
-  const pollLoadable = useLoadable(
-    builtinConnectorOAuthDeviceAuthPollOperation$,
-  );
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-foreground">
@@ -601,7 +462,9 @@ function OAuthDeviceAuthCodePanel({
         })}
       </Button>
       <p className="text-xs text-muted-foreground" role="status">
-        {getOAuthDeviceAuthStatusText(pollLoadable.state === "loading")}
+        {t(($) => {
+          return $.connectors.connectDialog.device.waiting;
+        })}
       </p>
     </div>
   );
@@ -811,9 +674,8 @@ function OAuthDeviceAuthConnectMethodContent(props: ConnectMethodContentProps) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const state = useGet(builtinConnectorOAuthDeviceAuthState$);
-  const startContext = useGet(builtinConnectorOAuthDeviceAuthStartContext$);
-  const startOperation = useLoadable(
-    builtinConnectorOAuthDeviceAuthStartOperation$,
+  const [operation, connect] = useLoadableSet(
+    connectBuiltinConnectorOAuthDeviceAuthAndSettle$,
   );
   const openVerificationPage = useSet(
     openBuiltinConnectorOAuthDeviceAuthVerificationPage$,
@@ -852,12 +714,10 @@ function OAuthDeviceAuthConnectMethodContent(props: ConnectMethodContentProps) {
     props.authMethod,
   );
   const starting =
-    startOperation.state === "loading" &&
-    startContext?.connectorSlug === props.item.slug &&
-    startContext.authMethod === props.authMethod;
+    operation.state === "loading" && current?.status !== "pending";
 
   const start = onDomEventFn(async () => {
-    await props.connectOAuthDeviceAuthAndSettle(
+    await connect(
       {
         connectorSlug: props.item.slug,
         authMethod: props.authMethod,
@@ -879,9 +739,9 @@ function OAuthDeviceAuthConnectMethodContent(props: ConnectMethodContentProps) {
 
   if (starting) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p role="status" className="text-sm text-muted-foreground">
         {t(($) => {
-          return $.connectors.connectDialog.device.startingConnection;
+          return $.connectors.connectDialog.progress.connecting;
         })}
       </p>
     );
@@ -926,6 +786,9 @@ function OAuthDeviceAuthConnectMethodContent(props: ConnectMethodContentProps) {
       authMethod={props.authMethod}
       startOptions={startOptions}
       values={effectiveStartOptionValues}
+      message={
+        operation.state === "hasError" ? String(operation.error) : undefined
+      }
       starting={starting}
       startOptionsFilled={startOptionsFilled}
       setValue={setStartOptionValue}
@@ -1084,9 +947,11 @@ function ExternalCodeConnectMethodContent(props: ConnectMethodContentProps) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const state = useGet(builtinConnectorExternalCodeState$);
-  const startContext = useGet(builtinConnectorExternalCodeStartContext$);
-  const startOperation = useLoadable(
-    builtinConnectorExternalCodeStartOperation$,
+  const [operation, connect] = useLoadableSet(
+    connectBuiltinConnectorExternalCode$,
+  );
+  const [completion, completeConnection] = useLoadableSet(
+    completeBuiltinConnectorExternalCodeAndSettle$,
   );
   const setCode = useSet(setBuiltinConnectorExternalCodeAuthorizationCode$);
   const openAuthorizationPage = useSet(
@@ -1097,13 +962,10 @@ function ExternalCodeConnectMethodContent(props: ConnectMethodContentProps) {
     props.item.slug,
     props.authMethod,
   );
-  const starting =
-    startOperation.state === "loading" &&
-    startContext?.connectorSlug === props.item.slug &&
-    startContext.authMethod === props.authMethod;
+  const starting = operation.state === "loading";
 
   const start = onDomEventFn(async () => {
-    await props.connectExternalCode(
+    await connect(
       {
         connectorSlug: props.item.slug,
         authMethod: props.authMethod,
@@ -1117,7 +979,7 @@ function ExternalCodeConnectMethodContent(props: ConnectMethodContentProps) {
 
   const complete = onDomEventFn(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    await props.completeExternalCodeAndSettle(
+    await completeConnection(
       {
         connectorSlug: props.item.slug,
         authMethod: props.authMethod,
@@ -1133,11 +995,14 @@ function ExternalCodeConnectMethodContent(props: ConnectMethodContentProps) {
     );
   });
 
-  if (starting) {
+  if (
+    starting ||
+    (completion.state === "loading" && current?.status !== "pending")
+  ) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p role="status" className="text-sm text-muted-foreground">
         {t(($) => {
-          return $.connectors.connectDialog.device.startingConnection;
+          return $.connectors.connectDialog.progress.connecting;
         })}
       </p>
     );
@@ -1145,34 +1010,48 @@ function ExternalCodeConnectMethodContent(props: ConnectMethodContentProps) {
 
   if (current?.status === "pending") {
     return (
-      <ExternalCodePendingContent
-        connectorLabel={props.item.label}
-        method={props.method}
-        current={current}
-        completing={props.externalCodeCompleting}
-        onOpen={() => {
-          openAuthorizationPage(props.item.slug, props.authMethod);
-        }}
-        onCodeChange={(code) => {
-          setCode({
-            connectorSlug: props.item.slug,
-            authMethod: props.authMethod,
-            code,
-          });
-        }}
-        onComplete={complete}
-      />
+      <>
+        {completion.state === "hasError" && (
+          <p role="alert" className="text-sm text-destructive">
+            {String(completion.error)}
+          </p>
+        )}
+        <ExternalCodePendingContent
+          connectorLabel={props.item.label}
+          method={props.method}
+          current={current}
+          completing={completion.state === "loading"}
+          onOpen={() => {
+            openAuthorizationPage(props.item.slug, props.authMethod);
+          }}
+          onCodeChange={(code) => {
+            setCode({
+              connectorSlug: props.item.slug,
+              authMethod: props.authMethod,
+              code,
+            });
+          }}
+          onComplete={complete}
+        />
+      </>
     );
   }
 
   return (
-    <ExternalCodeStartContent
-      connectorLabel={props.item.label}
-      method={props.method}
-      current={current}
-      starting={starting}
-      onStart={start}
-    />
+    <>
+      {operation.state === "hasError" && (
+        <p role="alert" className="text-sm text-destructive">
+          {String(operation.error)}
+        </p>
+      )}
+      <ExternalCodeStartContent
+        connectorLabel={props.item.label}
+        method={props.method}
+        current={current}
+        starting={starting}
+        onStart={start}
+      />
+    </>
   );
 }
 
@@ -1190,17 +1069,18 @@ function ManualGrantConnectMethodContent(props: ConnectMethodContentProps) {
       authorizeVisibleAgentsOnConnect={props.authorizeVisibleAgentsOnConnect}
       agentId={props.agentId}
       accountOptions={props.accountOptions}
-      submit={props.submitManualGrant}
-      submitting={props.manualGrantSubmitting}
     />
   );
 }
 
 function NoAuthConnectMethodContent(props: ConnectMethodContentProps) {
+  const [operation, connect] = useLoadableSet(
+    connectBuiltinConnectorNoAuthAndSettle$,
+  );
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const enable = onDomEventFn(async () => {
-    await props.connectNoAuthAndSettle(
+    await connect(
       {
         connectorSlug: props.item.slug,
         authMethod: props.authMethod,
@@ -1218,6 +1098,11 @@ function NoAuthConnectMethodContent(props: ConnectMethodContentProps) {
 
   return (
     <div className="flex flex-col gap-3">
+      {operation.state === "hasError" && (
+        <p role="alert" className="text-sm text-destructive">
+          {String(operation.error)}
+        </p>
+      )}
       {props.method.description && (
         <ConnectorHelpText text={props.method.description} />
       )}
@@ -1225,10 +1110,10 @@ function NoAuthConnectMethodContent(props: ConnectMethodContentProps) {
         type="button"
         variant="outline"
         onClick={enable}
-        disabled={props.noAuthSubmitting}
+        disabled={operation.state === "loading"}
         className="w-full"
       >
-        {props.noAuthSubmitting
+        {operation.state === "loading"
           ? t(($) => {
               return $.connectors.connectDialog.noAuth.enabling;
             })
@@ -1370,220 +1255,20 @@ function ConnectMethodsContent({
   );
 }
 
-function StandardConnectMethodsContent({
-  item,
-  agentId,
-  onSuccess,
-  authorizeVisibleAgentsOnConnect,
-  accountOptions,
-  accountMode,
-  reconnectAuthMethod,
-  connectOAuthAuthCodeAndSettle,
-  connectOAuthDeviceAuthAndSettle,
-  connectExternalCode,
-  completeExternalCodeAndSettle,
-  connectNoAuthAndSettle,
-  submitManualGrant,
-  externalCodeCompleting,
-  manualGrantSubmitting,
-  noAuthSubmitting,
-  entries,
-}: ConnectModalContentProps & {
-  connectOAuthAuthCodeAndSettle: ConnectOAuthAuthCodeAndSettleFn;
-  connectOAuthDeviceAuthAndSettle: ConnectOAuthDeviceAuthAndSettleFn;
-  connectExternalCode: ConnectExternalCodeFn;
-  completeExternalCodeAndSettle: CompleteExternalCodeAndSettleFn;
-  connectNoAuthAndSettle: ConnectNoAuthAndSettleFn;
-  submitManualGrant: SubmitManualGrantFn;
-  externalCodeCompleting: boolean;
-  manualGrantSubmitting: boolean;
-  noAuthSubmitting: boolean;
-  entries: readonly ConnectMethodContentEntry[];
-}) {
+function ConnectModalContent(props: ConnectModalContentProps) {
+  const entries = getConnectEntries(
+    props.item,
+    props.accountMode,
+    props.reconnectAuthMethod,
+  );
   return (
     <div className="flex flex-col gap-4">
       <ConnectMethodsContent
         entries={entries}
-        availableAuthMethodCount={item.authMethods.length}
-        props={{
-          item,
-          agentId,
-          onSuccess,
-          authorizeVisibleAgentsOnConnect,
-          accountOptions,
-          accountMode,
-          reconnectAuthMethod,
-          connectOAuthAuthCodeAndSettle,
-          connectOAuthDeviceAuthAndSettle,
-          connectExternalCode,
-          completeExternalCodeAndSettle,
-          connectNoAuthAndSettle,
-          submitManualGrant,
-          externalCodeCompleting,
-          manualGrantSubmitting,
-          noAuthSubmitting,
-        }}
+        availableAuthMethodCount={props.item.authMethods.length}
+        props={props}
       />
     </div>
-  );
-}
-
-function ConnectorConnectionFeedback({
-  operations,
-  connectorSlug,
-}: {
-  operations: readonly ReturnType<typeof useLoadableSet>[0][];
-  connectorSlug: ConnectorSlug;
-}) {
-  const externalStart = useLoadable(
-    builtinConnectorExternalCodeStartOperation$,
-  );
-  const externalContext = useGet(builtinConnectorExternalCodeStartContext$);
-  const currentOperations =
-    externalContext?.connectorSlug === connectorSlug
-      ? [...operations, externalStart]
-      : operations;
-  const failed = currentOperations.find((operation) => {
-    return (
-      operation.state === "hasError" &&
-      operation.error instanceof ConnectorConnectionError
-    );
-  });
-  if (
-    failed?.state !== "hasError" ||
-    !(failed.error instanceof ConnectorConnectionError)
-  ) {
-    return null;
-  }
-  return (
-    <p role="alert" className="text-sm text-destructive">
-      {failed.error.message}
-    </p>
-  );
-}
-
-function ConnectModalContent({
-  item,
-  agentId,
-  onSuccess,
-  authorizeVisibleAgentsOnConnect,
-  accountOptions,
-  accountMode,
-  reconnectAuthMethod,
-}: ConnectModalContentProps) {
-  const [settleLoadable, connectOAuthAuthCodeAndSettleCommand] = useLoadableSet(
-    connectBuiltinConnectorOAuthAuthCodeAndSettle$,
-  );
-  const [deviceAuthLoadable, connectOAuthDeviceAuthAndSettle] = useLoadableSet(
-    connectBuiltinConnectorOAuthDeviceAuthAndSettle$,
-  );
-  const connectExternalCodeCommand = useSet(
-    connectBuiltinConnectorExternalCode$,
-  );
-  const [completeExternalCodeLoadable, completeExternalCodeAndSettleCommand] =
-    useLoadableSet(completeBuiltinConnectorExternalCodeAndSettle$);
-  const [manualGrantLoadable, submitManualGrant] = useLoadableSet(
-    submitBuiltinManualGrantAndSettle$,
-  );
-  const [noAuthLoadable, connectNoAuthAndSettle] = useLoadableSet(
-    connectBuiltinConnectorNoAuthAndSettle$,
-  );
-  const [, runConnectSuccess] = useLoadableSet(
-    runBuiltinConnectorConnectSuccess$,
-  );
-  const externalCodeCompleting =
-    completeExternalCodeLoadable.state === "loading";
-  const manualGrantSubmitting = manualGrantLoadable.state === "loading";
-  const noAuthSubmitting = noAuthLoadable.state === "loading";
-  const entries = getConnectEntries(item, accountMode, reconnectAuthMethod);
-  const onConnectSuccess: ConnectorConnectSuccess = async (
-    connectionId,
-    signal,
-  ) => {
-    await runConnectSuccess(onSuccess, connectionId, item.slug, signal);
-  };
-  const connectOAuthAuthCodeAndSettle: ConnectOAuthAuthCodeAndSettleFn = async (
-    connectorSlug,
-    method,
-    connectSuccess,
-    options,
-    signal,
-  ) => {
-    await connectOAuthAuthCodeAndSettleCommand(
-      {
-        connectorSlug,
-        method,
-        onSuccess: connectSuccess,
-        options,
-      },
-      signal,
-    );
-  };
-  const connectOAuthDeviceAuthAndSettleCommandFn: ConnectOAuthDeviceAuthAndSettleFn =
-    async (args, signal) => {
-      await connectOAuthDeviceAuthAndSettle(
-        {
-          connectorSlug: args.connectorSlug,
-          authMethod: args.authMethod,
-          onSuccess: args.onSuccess,
-          options: args.options,
-          startOptions: args.startOptions,
-        },
-        signal,
-      );
-    };
-  const connectExternalCode: ConnectExternalCodeFn = async (args, signal) => {
-    await connectExternalCodeCommand(args, signal);
-  };
-  const completeExternalCodeAndSettle: CompleteExternalCodeAndSettleFn = async (
-    args,
-    signal,
-  ) => {
-    await completeExternalCodeAndSettleCommand(args, signal);
-  };
-  const progressContent = useConnectorProgressContent(item.slug, {
-    browser: settleLoadable.state === "loading",
-    device: deviceAuthLoadable.state === "loading",
-    external: externalCodeCompleting,
-  });
-  if (progressContent) {
-    return progressContent;
-  }
-
-  return (
-    <>
-      <ConnectorConnectionFeedback
-        connectorSlug={item.slug}
-        operations={[
-          settleLoadable,
-          deviceAuthLoadable,
-          completeExternalCodeLoadable,
-          manualGrantLoadable,
-          noAuthLoadable,
-        ]}
-      />
-      <StandardConnectMethodsContent
-        item={item}
-        agentId={agentId}
-        onSuccess={onConnectSuccess}
-        authorizeVisibleAgentsOnConnect={authorizeVisibleAgentsOnConnect}
-        accountOptions={accountOptions}
-        accountMode={accountMode}
-        reconnectAuthMethod={reconnectAuthMethod}
-        connectOAuthAuthCodeAndSettle={connectOAuthAuthCodeAndSettle}
-        connectOAuthDeviceAuthAndSettle={
-          connectOAuthDeviceAuthAndSettleCommandFn
-        }
-        connectExternalCode={connectExternalCode}
-        completeExternalCodeAndSettle={completeExternalCodeAndSettle}
-        connectNoAuthAndSettle={connectNoAuthAndSettle}
-        submitManualGrant={submitManualGrant}
-        externalCodeCompleting={externalCodeCompleting}
-        manualGrantSubmitting={manualGrantSubmitting}
-        noAuthSubmitting={noAuthSubmitting}
-        entries={entries}
-      />
-    </>
   );
 }
 
@@ -1616,18 +1301,15 @@ export function ConnectModal({
     clearBuiltinConnectorOAuthDeviceAuth$,
   );
   const clearConnectorExternalCode = useSet(clearBuiltinConnectorExternalCode$);
-  const connectOperation = useLoadable(builtinConnectOperation$);
   const connectorOAuthDeviceAuthState = useGet(
     builtinConnectorOAuthDeviceAuthState$,
   );
   const connectorExternalCodeState = useGet(builtinConnectorExternalCodeState$);
-  const cancelConnection = useSet(cancelConnectorConnection$);
-  const connectionAttempt = useGet(connectorConnectionAttempt$);
+  const cancelConnection = useSet(cancelBuiltinConnectorConnection$);
 
   const selectedConnectorSlug = item.slug;
 
   const connectFlowActive =
-    connectOperation.state === "loading" ||
     connectorOAuthDeviceAuthFlowIsActive(
       connectorOAuthDeviceAuthState,
       selectedConnectorSlug,
@@ -1638,11 +1320,9 @@ export function ConnectModal({
     );
 
   const cancel = () => {
-    if (connectFlowActive) {
-      cancelConnection(connectionAttempt);
-      clearConnectorOAuthDeviceAuth();
-      clearConnectorExternalCode();
-    }
+    cancelConnection();
+    clearConnectorOAuthDeviceAuth();
+    clearConnectorExternalCode();
     onClose();
   };
 
@@ -1683,7 +1363,7 @@ export function ConnectModal({
           </p>
         )}
 
-        <ConnectorConnectionDialogBody>
+        <div>
           <ConnectModalContent
             item={item}
             agentId={agentId}
@@ -1699,7 +1379,7 @@ export function ConnectModal({
               onClose();
             }}
           />
-        </ConnectorConnectionDialogBody>
+        </div>
         {item.slug === "mercury" ? (
           <MercuryDisclosure className="border-t border-border/50 pt-4" />
         ) : null}

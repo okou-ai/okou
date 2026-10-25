@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { imageCommand } from "./image";
-import { getGenerationCommand } from "./get";
+import { createGetGenerationCommand } from "./get";
 import { imageBatchCommand } from "./image-batch";
 import {
   dashboardDesignCommand,
@@ -10,9 +10,10 @@ import {
   reportCommand,
 } from "./artifacts";
 import { presentationCommand } from "./presentation";
-import { spriteCommand } from "./sprite";
+import { createSpriteCommand } from "./sprite";
 import { websiteCommand } from "./website";
 import { createListerOnlyCommand } from "./lister-only";
+import { isPaidToolEnabled } from "../../lib/command/paid-tools";
 
 const musicCommand = createListerOnlyCommand({
   name: "music",
@@ -39,9 +40,14 @@ const documentCommand = createListerOnlyCommand({
 });
 
 function buildGenerateHelpText(): string {
+  const imageEnabled = isPaidToolEnabled("image-generation");
   const examples = [
-    '  Generate image:        okou generate image --raw-prompt "A watercolor fox"',
-    "  Batch artifact images: okou generate image-batch start images.tsv .image-batch",
+    ...(imageEnabled
+      ? [
+          '  Generate image:        okou generate image --raw-prompt "A watercolor fox"',
+          "  Batch artifact images: okou generate image-batch start images.tsv .image-batch",
+        ]
+      : []),
     '  Generate deck:         okou generate presentation --prompt "A product roadmap"',
     '  Generate report:       okou generate report --prompt "A Q2 usage report"',
     '  Generate docs:         okou generate docs-design --prompt "A setup guide"',
@@ -52,7 +58,11 @@ function buildGenerateHelpText(): string {
     "  Show image choices:    okou generate image",
     "  Show report choices:   okou generate report",
     "  Use a connector:       okou generate music --provider <connector>",
-    "  Force built-in:        okou generate image --provider built-in --raw-prompt ...",
+    ...(imageEnabled
+      ? [
+          "  Force built-in:        okou generate image --provider built-in --raw-prompt ...",
+        ]
+      : []),
   ];
 
   return `
@@ -63,34 +73,46 @@ Routing:
   - If the task includes an attached generation template, follow that template's exact commands and resources. Do not run generic provider discovery unless the template names it as a fallback.
   - When the type is known, run "okou generate <type> --help" directly before execution and reuse help already read for the same CLI version and context. Do not unconditionally chain root, group, and leaf help; flags differ by command.
   - Run this root help only when the type is unknown. Run "okou generate <type>" without generation input only when provider or registry discovery is needed. If the user named a provider, use --provider <name> directly when the type supports it instead of listing every provider.
-  - Built-in generation surfaces are image, presentation, website, and the listed HTML artifact types. Music, text, code, and document use connectors. Do not infer unsupported types.
+  - Built-in generation surfaces are ${imageEnabled ? "image, " : ""}presentation, website, and the listed HTML artifact types. Music, text, code, and document use connectors. Do not infer unsupported types.
 
 Execution:
-  - Use --provider built-in for Okou execution or --provider <connector> for connector skill-invocation guidance where offered.
-  - Image generation returns a durable job receipt immediately by default. For natural-language tasks requesting a final image, use "okou generate image ... --wait" explicitly and retrieve and deliver the final artifact before marking the task complete; a queued/running receipt is not a completed image. Use "okou generate get <generation-id>" to query independently, optionally with --out <path> to download a completed image. Add get --refresh to advance that job once before querying, including after a wait timeout. Never submit a duplicate to check progress.
+  - Use ${imageEnabled ? "--provider built-in for Okou execution or " : ""}--provider <connector> for connector skill-invocation guidance where offered.
+${imageEnabled ? '  - Image generation returns a durable job receipt immediately by default. For natural-language tasks requesting a final image, use "okou generate image ... --wait" explicitly and retrieve and deliver the final artifact before marking the task complete; a queued/running receipt is not a completed image. Use "okou generate get <generation-id>" to query independently, optionally with --out <path> to download a completed image. Add get --refresh to advance that job once before querying, including after a wait timeout. Never submit a duplicate to check progress.\n' : ""}\
   - For other Okou generations, wait for completion and use the returned artifact. Do not recreate the result because generation is taking time.
   - Media and connector-backed generation types may expose --provider for Okou or connector execution guidance.
   - HTML artifact types use registry-backed --design-system and --template selection.`;
 }
 
-export const generateCommand = new Command()
-  .name("generate")
-  .description(
-    "Generate assets via Okou's built-in pipelines or get connector skill-invocation guidance",
-  )
-  .addCommand(imageCommand)
-  .addCommand(getGenerationCommand)
-  .addCommand(imageBatchCommand)
-  .addCommand(presentationCommand)
-  .addCommand(reportCommand)
-  .addCommand(docsDesignCommand)
-  .addCommand(posterCommand)
-  .addCommand(dashboardDesignCommand)
-  .addCommand(mobileAppDesignCommand)
-  .addCommand(websiteCommand)
-  .addCommand(spriteCommand)
-  .addCommand(musicCommand)
-  .addCommand(textCommand)
-  .addCommand(codeCommand)
-  .addCommand(documentCommand)
-  .addHelpText("after", buildGenerateHelpText);
+export function createGenerateCommand(): Command {
+  const imageEnabled = isPaidToolEnabled("image-generation");
+  const command = new Command()
+    .name("generate")
+    .description(
+      "Generate assets via Okou's built-in pipelines or get connector skill-invocation guidance",
+    )
+    .addCommand(
+      imageEnabled
+        ? imageCommand
+        : createListerOnlyCommand({
+            name: "image",
+            generationType: "image",
+            description: "List connectors that provide image generation",
+          }),
+    )
+    .addCommand(createGetGenerationCommand());
+  if (imageEnabled) command.addCommand(imageBatchCommand);
+  return command
+    .addCommand(presentationCommand)
+    .addCommand(reportCommand)
+    .addCommand(docsDesignCommand)
+    .addCommand(posterCommand)
+    .addCommand(dashboardDesignCommand)
+    .addCommand(mobileAppDesignCommand)
+    .addCommand(websiteCommand)
+    .addCommand(createSpriteCommand())
+    .addCommand(musicCommand)
+    .addCommand(textCommand)
+    .addCommand(codeCommand)
+    .addCommand(documentCommand)
+    .addHelpText("after", buildGenerateHelpText);
+}

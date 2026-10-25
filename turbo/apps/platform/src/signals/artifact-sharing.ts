@@ -105,7 +105,6 @@ function createAudienceSignals(
   reload$: State<number>,
 ) {
   // Permission selection comes from server details, not submitted arguments.
-  const operation$ = state<Promise<void> | null>(null);
   const persist$ = command(
     async ({ get, set }, audience: Audience, signal: AbortSignal) => {
       const details = await get(details$);
@@ -141,37 +140,16 @@ function createAudienceSignals(
       signal.throwIfAborted();
       await get(details$);
       signal.throwIfAborted();
+      toast.success(
+        i18n.t(($) => {
+          return $.artifacts.sharing.permissionsUpdated;
+        }),
+      );
       return true;
     },
   );
   const save$ = throttleCommand(persist$, 0);
-  const change$ = command(
-    ({ get, set }, audience: Audience, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      // A distinct continuation per call also identifies the latest caller when
-      // the throttle coalesces several callers into one trailing execution.
-      let promise: Promise<void> | null = null;
-      promise = (async () => {
-        const updated = await set(save$, audience, signal);
-        signal.throwIfAborted();
-        if (updated && get(operation$) === promise) {
-          toast.success(
-            i18n.t(($) => {
-              return $.artifacts.sharing.permissionsUpdated;
-            }),
-          );
-        }
-      })();
-      set(operation$, promise);
-      return promise;
-    },
-  );
-  return {
-    audienceOperation$: computed((get) => {
-      return get(operation$);
-    }),
-    change$,
-  };
+  return { change$: save$ };
 }
 
 function createArtifactShareSession(source: ShareSource) {
@@ -206,12 +184,11 @@ function createArtifactShareSession(source: ShareSource) {
       }
     }
   });
-  const refresh$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const refresh$ = command(({ set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     set(reload$, (value) => {
       return value + 1;
     });
-    await settle(get(details$), signal);
   });
   const copy$ = command(async ({ get, set }, signal: AbortSignal) => {
     const details = await get(details$);
@@ -236,7 +213,6 @@ function createArtifactShareSession(source: ShareSource) {
     refresh$,
     copy$,
     copiedUrl$: linkCopy.copiedUrl$,
-    audienceOperation$: audience.audienceOperation$,
     change$,
   };
 }

@@ -16,6 +16,7 @@ final class ConversationScrollCoordinator {
   private var intent = Intent.latest(resetWindow: false)
   private var hasPositionedHistory = false
   private var isAwayFromBottom = false
+  private(set) var isLoadingEarlier = false
   @ObservationIgnored private var phase = ScrollPhase.idle
   @ObservationIgnored private var metrics: ConversationCollectionMetrics?
   @ObservationIgnored private var reduceMotion = false
@@ -23,6 +24,10 @@ final class ConversationScrollCoordinator {
   @ObservationIgnored private var requestGeneration = UUID()
   @ObservationIgnored private var expansionTask: Task<Void, Never>?
   @ObservationIgnored private var localSendMessageID: String?
+  @ObservationIgnored private var userScrollPending = false
+  @ObservationIgnored private var earlierRequestID: UUID?
+  @ObservationIgnored private var earlierExpansionFinished = false
+  @ObservationIgnored private var presentedFirstItemID: String?
 
   init(conversation: ConversationStore) { self.conversation = conversation }
 
@@ -47,6 +52,7 @@ final class ConversationScrollCoordinator {
     isActive = true
     self.reduceMotion = reduceMotion
     phase = .idle
+    userScrollPending = false
     anchor.isScrolling = false
     anchor.revealRow = { [weak self] in self?.scroll.scrollTo($0, anchor: .top) }
     anchor.readingPositionDidChange = { [weak self] position in
@@ -62,6 +68,9 @@ final class ConversationScrollCoordinator {
     if !followsBottom { saveReadingPosition() }
     isActive = false
     invalidateRequests()
+    earlierRequestID = nil
+    isLoadingEarlier = false
+    earlierExpansionFinished = false
     anchor.readingPositionDidChange = nil
     anchor.revealRow = nil
     anchor.viewportDidChange = nil
@@ -172,17 +181,25 @@ final class ConversationScrollCoordinator {
     anchor.isScrolling = isScrolling
     if phase == .tracking || phase == .interacting {
       invalidateRequests()
+      userScrollPending = true
       intent = .history
       // Native interaction establishes the viewport even if initial positioning was deferred.
       hasPositionedHistory = true
       anchor.cancel()
-      conversation.rememberReadingPosition(anchor.capture())
+      conversation.rememberReadingPosition(scroll.captureReadingPosition())
     }
-    if phase == .idle, hasPositionedHistory, !isAwayFromBottom {
+    if phase == .animating { userScrollPending = false }
+    guard phase == .idle else { return }
+    // Layout and restoration can report idle again without another user gesture.
+    let didScroll = userScrollPending
+    userScrollPending = false
+    guard hasPositionedHistory else { return }
+    if didScroll, !followsBottom, metrics?.isNearTop == true, conversation.hasEarlierMessages {
+      loadEarlierMessages()
+    } else if !isAwayFromBottom {
       reachedBottom()
-    } else if phase == .idle, hasPositionedHistory, !followsBottom {
+    } else if !followsBottom {
       saveReadingPosition()
-      if metrics?.isNearTop == true { loadEarlierMessages() }
     }
   }
 
@@ -206,20 +223,43 @@ final class ConversationScrollCoordinator {
 
   func loadEarlierMessages() {
     guard isActive, hasPositionedHistory, !isScrolling, conversation.hasEarlierMessages,
-      !conversation.isLoadingEarlier, expansionTask == nil
+      !isLoadingEarlier, !conversation.isLoadingEarlier, expansionTask == nil
     else { return }
     intent = .history
     saveReadingPosition()
+    if let position = conversation.readingPosition { anchor.preserve(position) }
+    isLoadingEarlier = true
+    earlierExpansionFinished = false
+    let requestID = UUID()
+    earlierRequestID = requestID
     let generation = requestGeneration
     expansionTask = Task { [weak self] in
       guard let self else { return }
       defer { if requestGeneration == generation { expansionTask = nil } }
       await conversation.loadEarlierMessages()
-      guard canContinue(generation), !isScrolling, !followsBottom,
+      guard isActive, earlierRequestID == requestID else { return }
+      earlierExpansionFinished = true
+      finishEarlierLoadingIfPresented()
+      if canContinue(generation), !isScrolling, !followsBottom,
         let position = conversation.readingPosition
-      else { return }
-      anchor.preserve(position)
+      {
+        anchor.preserve(position)
+      }
     }
+  }
+
+  func rowsPresented(firstItemID: String?) {
+    presentedFirstItemID = firstItemID
+    finishEarlierLoadingIfPresented()
+  }
+
+  private func finishEarlierLoadingIfPresented() {
+    // Preparing the projection finishes before the native collection commits its measured rows.
+    guard isLoadingEarlier, earlierExpansionFinished,
+      presentedFirstItemID == conversation.visibleItems.first?.id
+    else { return }
+    isLoadingEarlier = false
+    earlierRequestID = nil
   }
 
   private func viewportChanged() {
@@ -240,7 +280,7 @@ final class ConversationScrollCoordinator {
 
   private func saveReadingPosition() {
     // Recording ordinary user scrolling must not start an offset correction.
-    if let position = anchor.preservedPosition ?? anchor.capture() {
+    if let position = anchor.preservedPosition ?? scroll.captureReadingPosition() {
       conversation.rememberReadingPosition(position)
     }
   }

@@ -13,7 +13,7 @@ import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 
 import { nowDate, timestampWithoutTimeZone } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
@@ -27,7 +27,6 @@ import {
   type McpAutomaticNoAuth,
   type McpAutomaticOAuthAuthorization,
   type McpAutomaticOAuthContext,
-  type McpAutomaticOAuthDcrClientStore,
   type McpAutomaticOAuthDcrRegistration,
   type McpAutomaticOAuthDcrRegistrationInput,
 } from "./mcp-automatic-oauth.service";
@@ -332,42 +331,61 @@ export function retireCustomConnectorDcrRegistrationSql(
     AND (SELECT ${count()} FROM deleted_bindings) >= 0`;
 }
 
-function customDcrClientStore(args: {
-  readonly db: Db;
-  readonly customConnectorId: string;
-  readonly featureContext: FeatureSwitchContext;
-}): McpAutomaticOAuthDcrClientStore {
+function customDcrBoundClientCondition(
+  registrationId: string,
+  customConnectorId: string,
+) {
+  return and(
+    eq(orgCustomConnectorDcrRegistrations.id, registrationId),
+    eq(orgCustomConnectorDcrRegistrations.customConnectorId, customConnectorId),
+  );
+}
+
+async function customDcrClientFromRegistration(
+  registration: PersistedDcrRegistration | undefined,
+  featureContext: FeatureSwitchContext,
+) {
+  if (!registration) {
+    return null;
+  }
   return {
-    async readBoundClient(registrationId) {
-      const [registration] = await args.db
-        .select()
-        .from(orgCustomConnectorDcrRegistrations)
-        .where(
-          and(
-            eq(orgCustomConnectorDcrRegistrations.id, registrationId),
-            eq(
-              orgCustomConnectorDcrRegistrations.customConnectorId,
-              args.customConnectorId,
-            ),
-          ),
+    ...registration,
+    hasClientSecret: registration.encryptedClientSecret !== null,
+    clientSecret: registration.encryptedClientSecret
+      ? await decryptStoredSecretValue(
+          registration.encryptedClientSecret,
+          featureContext,
         )
-        .limit(1);
-      if (!registration) {
-        return null;
-      }
-      return {
-        ...registration,
-        hasClientSecret: registration.encryptedClientSecret !== null,
-        clientSecret: registration.encryptedClientSecret
-          ? await decryptStoredSecretValue(
-              registration.encryptedClientSecret,
-              args.featureContext,
-            )
-          : undefined,
-      };
-    },
+      : undefined,
   };
 }
+
+const readCustomDcrBoundClient$ = command(
+  async (
+    { get },
+    args: {
+      readonly registrationId: string;
+      readonly customConnectorId: string;
+      readonly featureContext: FeatureSwitchContext;
+    },
+  ) => {
+    const db = get(db$);
+    const [registration] = await db
+      .select()
+      .from(orgCustomConnectorDcrRegistrations)
+      .where(
+        customDcrBoundClientCondition(
+          args.registrationId,
+          args.customConnectorId,
+        ),
+      )
+      .limit(1);
+    return await customDcrClientFromRegistration(
+      registration,
+      args.featureContext,
+    );
+  },
+);
 
 const retireCustomDcrRegistration$ = command(
   async ({ set }, registrationId: string, signal: AbortSignal) => {
@@ -458,7 +476,7 @@ export type CustomConnectorCanonicalAutomaticOAuthStateContext =
     readonly authMode: "automatic";
   };
 
-type CustomConnectorAutomaticOAuthAuthorization = Omit<
+export type CustomConnectorAutomaticOAuthAuthorization = Omit<
   McpAutomaticOAuthAuthorization,
   "context"
 > & {
@@ -531,87 +549,108 @@ export const prepareCustomConnectorAutomaticOAuthAuthorization$ = command(
   },
 );
 
-export async function prepareCustomConnectorAutomaticOAuthReauthorization(
-  args: {
-    readonly db: Db;
-    readonly binding: CustomConnectorAutomaticOAuthBinding;
-    readonly storageVersion: number;
-    readonly endpoint: string;
-    readonly redirectUri: string;
-    readonly cimdClientId: string;
-    readonly requestedScope: string;
-    readonly state: string;
-    readonly featureContext: FeatureSwitchContext;
-  },
-  signal: AbortSignal,
-): Promise<CustomConnectorAutomaticOAuthAuthorization> {
-  const prepared = await prepareMcpAutomaticOAuthReauthorization(
-    {
-      ...args,
-      dcrStore: customDcrClientStore({
-        ...args,
-        customConnectorId: args.binding.customConnectorId,
-      }),
+export const prepareCustomConnectorAutomaticOAuthReauthorization$ = command(
+  async (
+    { set },
+    args: {
+      readonly binding: CustomConnectorAutomaticOAuthBinding;
+      readonly storageVersion: number;
+      readonly endpoint: string;
+      readonly redirectUri: string;
+      readonly cimdClientId: string;
+      readonly requestedScope: string;
+      readonly state: string;
+      readonly featureContext: FeatureSwitchContext;
     },
-    signal,
-  );
-  return {
-    ...prepared,
-    context: {
-      ...prepared.context,
-      version: 2,
-      authMode: "automatic",
-      connectorId: args.binding.customConnectorId,
-      storageVersion: args.storageVersion,
-    } satisfies CustomConnectorCanonicalAutomaticOAuthStateContext,
-  };
-}
+    signal: AbortSignal,
+  ): Promise<CustomConnectorAutomaticOAuthAuthorization> => {
+    const prepared = await prepareMcpAutomaticOAuthReauthorization(
+      {
+        ...args,
+        dcrStore: {
+          readBoundClient: async (registrationId) => {
+            return await set(readCustomDcrBoundClient$, {
+              registrationId,
+              customConnectorId: args.binding.customConnectorId,
+              featureContext: args.featureContext,
+            });
+          },
+        },
+      },
+      signal,
+    );
+    return {
+      ...prepared,
+      context: {
+        ...prepared.context,
+        version: 2,
+        authMode: "automatic",
+        connectorId: args.binding.customConnectorId,
+        storageVersion: args.storageVersion,
+      } satisfies CustomConnectorCanonicalAutomaticOAuthStateContext,
+    };
+  },
+);
 
-export async function exchangeCustomConnectorAutomaticOAuthCode(
-  args: {
-    readonly db: Db;
-    readonly context: CustomConnectorAutomaticOAuthStateContext;
-    readonly redirectUri: string;
-    readonly cimdClientId: string;
-    readonly code: string;
-    readonly iss: string | undefined;
-    readonly codeVerifier: string;
-    readonly featureContext: FeatureSwitchContext;
-  },
-  signal: AbortSignal,
-) {
-  return await exchangeMcpAutomaticOAuthCode(
-    {
-      ...args,
-      dcrStore: customDcrClientStore({
-        ...args,
-        customConnectorId: args.context.connectorId,
-      }),
+export const exchangeCustomConnectorAutomaticOAuthCode$ = command(
+  async (
+    { set },
+    args: {
+      readonly context: CustomConnectorAutomaticOAuthStateContext;
+      readonly redirectUri: string;
+      readonly cimdClientId: string;
+      readonly code: string;
+      readonly iss: string | undefined;
+      readonly codeVerifier: string;
+      readonly featureContext: FeatureSwitchContext;
     },
-    signal,
-  );
-}
+    signal: AbortSignal,
+  ) => {
+    return await exchangeMcpAutomaticOAuthCode(
+      {
+        ...args,
+        dcrStore: {
+          readBoundClient: async (registrationId) => {
+            return await set(readCustomDcrBoundClient$, {
+              registrationId,
+              customConnectorId: args.context.connectorId,
+              featureContext: args.featureContext,
+            });
+          },
+        },
+      },
+      signal,
+    );
+  },
+);
 
-export async function refreshCustomConnectorAutomaticOAuthToken(
-  args: {
-    readonly db: Db;
-    readonly binding: CustomConnectorAutomaticOAuthBinding;
-    readonly endpoint: string;
-    readonly redirectUri: string;
-    readonly cimdClientId: string;
-    readonly refreshToken: string;
-    readonly featureContext: FeatureSwitchContext;
-  },
-  signal: AbortSignal,
-) {
-  return await refreshMcpAutomaticOAuthToken(
-    {
-      ...args,
-      dcrStore: customDcrClientStore({
-        ...args,
-        customConnectorId: args.binding.customConnectorId,
-      }),
+export const refreshCustomConnectorAutomaticOAuthToken$ = command(
+  async (
+    { set },
+    args: {
+      readonly binding: CustomConnectorAutomaticOAuthBinding;
+      readonly endpoint: string;
+      readonly redirectUri: string;
+      readonly cimdClientId: string;
+      readonly refreshToken: string;
+      readonly featureContext: FeatureSwitchContext;
     },
-    signal,
-  );
-}
+    signal: AbortSignal,
+  ) => {
+    return await refreshMcpAutomaticOAuthToken(
+      {
+        ...args,
+        dcrStore: {
+          readBoundClient: async (registrationId) => {
+            return await set(readCustomDcrBoundClient$, {
+              registrationId,
+              customConnectorId: args.binding.customConnectorId,
+              featureContext: args.featureContext,
+            });
+          },
+        },
+      },
+      signal,
+    );
+  },
+);

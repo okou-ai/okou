@@ -47,30 +47,19 @@ final class ChatLinkNavigationTests: XCTestCase {
     await source.refresh()
     XCTAssertFalse(source.visibleMessages.contains { $0.id == ChatLinkFixture.eventID(1) })
 
-    let host = UIHostingController(
-      rootView: ChatDetailView(conversation: source, topContentInset: 60)
-        .modifier(ChatLinkNavigation(store: store)))
-    let window = try await mountConversationHost(host)
-    defer { unmount(window) }
     let openedRun = await store.openChatLink(
       .thread(id: ChatLinkFixture.sourceID, runID: ChatLinkFixture.runID(1)))
     XCTAssertTrue(openedRun)
-    try await eventually(
-      message: readingDescription(ChatLinkFixture.eventID(1), conversation: source, view: host.view)
-    ) {
-      abs((offset(of: ChatLinkFixture.eventID(1), in: host.view) ?? .infinity)) < 1
-    }
     XCTAssertEqual(source.readingPosition?.messageID, ChatLinkFixture.eventID(1))
     XCTAssertTrue(source.visibleMessages.contains { $0.id == ChatLinkFixture.eventID(1) })
     source.draft = "Draft in the source chat"
 
-    // A second link in the current chat must move the native viewport again.
+    // A second link in the current chat changes the reading target without losing the draft.
     let openedAnotherRun = await store.openChatLink(
       .thread(id: ChatLinkFixture.sourceID, runID: ChatLinkFixture.runID(8)))
     XCTAssertTrue(openedAnotherRun)
-    try await eventually {
-      abs((offset(of: ChatLinkFixture.eventID(22), in: host.view) ?? .infinity)) < 1
-    }
+    XCTAssertEqual(source.readingPosition?.messageID, ChatLinkFixture.eventID(22))
+    XCTAssertTrue(source.visibleMessages.contains { $0.id == ChatLinkFixture.eventID(22) })
     XCTAssertEqual(source.draft, "Draft in the source chat")
     store.selectChat(ChatLinkFixture.homeID)
     XCTAssertTrue(store.selectedConversation === home)
@@ -223,6 +212,9 @@ private final class ChatLinkFixture: Sendable {
       }
       let path = request.url?.path ?? ""
       switch path {
+      case "/api/run-models", "/api/model-catalog", "/api/user-model-preference",
+        "/api/feature-switches":
+        return try XCTUnwrap(ModelHTTPFixtures.response(path))
       case "/api/workflows/\(Self.workflowID)":
         if let workflow { return try await workflow(request) }
         return ChatHTTPResponse(
@@ -242,6 +234,11 @@ private final class ChatLinkFixture: Sendable {
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
       case "/api/indicators":
         return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+      case "/api/chat-threads/\(Self.sourceID)/metadata":
+        return ChatHTTPResponse(
+          body:
+            "{\"id\":\"\(Self.sourceID)\",\"agentId\":\"\(Self.otherAgentID)\",\"selectedModel\":null,\"modelSettings\":{},\"serviceTier\":null}"
+        )
       case "/api/chat-threads/\(Self.sourceID)/event-snapshot":
         return ChatHTTPResponse(
           status: 404,

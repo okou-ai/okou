@@ -1,4 +1,4 @@
-import { useLoadable, useGet, useSet, useLastLoadable } from "ccstate-react";
+import { useGet, useSet, useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Button, LoadErrorRow } from "@okouai/ui";
 import {
@@ -24,8 +24,6 @@ import {
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import {
   type ConnectorConnectSuccess,
-  builtinConnectOperation$,
-  justConnectedBuiltinSlugs$,
   builtinPollingOAuthDeviceAuthSlug$,
   submitBuiltinManualGrantAndSettle$,
   setBuiltinManualGrantFormValue$,
@@ -404,7 +402,6 @@ interface DirectedConnectCatalogState {
 function useDirectedConnectCatalogState(
   connectorSlug: ConnectorSlug | null,
 ): DirectedConnectCatalogState {
-  const justConnected = useGet(justConnectedBuiltinSlugs$);
   const itemLoadable = useLastLoadable(directedConnectCatalogItem$);
   // The last entry is kept across a reload, never shown for another slug.
   const catalogLoaded =
@@ -414,19 +411,12 @@ function useDirectedConnectCatalogState(
     catalogLoaded && connectorSlug
       ? (itemLoadable.data ?? undefined)
       : undefined;
-  const optimisticallyConnected =
-    connectorSlug !== null && justConnected.has(connectorSlug);
-  const isConnected = optimisticallyConnected || (item?.connected ?? false);
+  const isConnected = item?.connected ?? false;
   return {
     item,
     isConnected,
-    isLoading:
-      connectorSlug !== null && !optimisticallyConnected && !catalogLoaded,
-    unavailable:
-      connectorSlug !== null &&
-      catalogLoaded &&
-      !item &&
-      !optimisticallyConnected,
+    isLoading: connectorSlug !== null && !catalogLoaded,
+    unavailable: connectorSlug !== null && catalogLoaded && !item,
   };
 }
 
@@ -638,14 +628,12 @@ function DirectedConnectCard() {
   const agentId = useGet(directedConnectAgentId$);
   const agentNameLoadable = useLastLoadable(directedConnectAgentName$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
-  const connectOperation = useLoadable(builtinConnectOperation$);
   const [connectLoadable, connect] = useLoadableSet(connectDirectedConnector$);
   const signal = useGet(pageSignal$);
   const { item, presentation } = useDirectedConnectPresentation(connectorSlug);
   const setManualGrantDialogKey = useSet(setManualGrantDialogKey$);
   const setDirectedConnectModalKey = useSet(setDirectedConnectModalKey$);
   const completeAction = useSet(completeDirectedConnectorAction$);
-  const reloadAccounts = useSet(reloadDirectedConnectAccounts$);
   const actionCallback = useGet(routeChatActionCallback$);
   const { manualGrantDialogOpen, connectModalOpen } =
     useDirectedConnectDialogOpenState(connectorSlug, agentId, signal);
@@ -662,7 +650,6 @@ function DirectedConnectCard() {
       : assistantName;
   const isConnecting =
     pollingDeviceAuthSlug === connectorSlug ||
-    connectOperation.state === "loading" ||
     connectLoadable.state === "loading";
   if (presentation.unavailable) {
     return (
@@ -682,7 +669,6 @@ function DirectedConnectCard() {
     _connectionId,
     attemptSignal,
   ) => {
-    reloadAccounts(attemptSignal);
     return completeAction(agentId, actionCallback, attemptSignal);
   };
 

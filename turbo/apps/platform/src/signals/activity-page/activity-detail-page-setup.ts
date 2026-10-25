@@ -5,7 +5,7 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { i18n } from "../../i18n/index.ts";
-import { currentRunId$, setupActivity$ } from "./activity-signals.ts";
+import { currentRunId$ } from "./activity-signals.ts";
 
 export const setupActivityDetailPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -23,8 +23,5 @@ export const setupActivityDetailPage$ = command(
     );
 
     await set(hideAppSkeleton$, signal);
-
-    await set(setupActivity$, signal);
-    signal.throwIfAborted();
   },
 );

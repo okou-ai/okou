@@ -2,7 +2,10 @@ import { z } from "zod";
 
 import { env } from "../../lib/env";
 import { readBoundedResponseText, safeJsonParse, settle } from "../utils";
-import { commerceProviderResponseSchema } from "./commerce.service";
+import {
+  commerceProviderResponseSchema,
+  commerceProviderStatusSchema,
+} from "./commerce.service";
 
 const BASE_URL = "https://api.dataforseo.com/v3/merchant/amazon";
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
@@ -112,22 +115,27 @@ export async function readCommerceTask(
   if (!outcome.ok) {
     return { kind: "pending" } as const;
   }
-  const parsed = commerceProviderResponseSchema.safeParse(outcome.value);
-  if (!parsed.success || parsed.data.status_code !== 20_000) {
+  const status = commerceProviderStatusSchema.safeParse(outcome.value);
+  if (!status.success || status.data.status_code !== 20_000) {
     return { kind: "pending" } as const;
   }
-  const task = parsed.data.tasks[0];
+  const task = status.data.tasks[0];
   if (!task || task.id !== providerTaskId) {
     return { kind: "pending" } as const;
   }
   if ([20_100, 40_601, 40_602].includes(task.status_code)) {
     return { kind: "pending" } as const;
   }
-  const noResults = operation === "search" && task.status_code === 40_102;
-  if (task.status_code !== 20_000 && !noResults) {
-    return { kind: "failed", body: parsed.data } as const;
+  // Terminal responses can contain items: null; their status does not depend on
+  // satisfying the product payload contract used for successful tasks.
+  if (task.status_code !== 20_000) {
+    if (operation === "search" && task.status_code === 40_102) {
+      return { kind: "empty", body: status.data } as const;
+    }
+    return { kind: "failed", body: status.data } as const;
   }
-  if (!noResults && !task.result) {
+  const parsed = commerceProviderResponseSchema.safeParse(outcome.value);
+  if (!parsed.success || !parsed.data.tasks[0]?.result) {
     return { kind: "pending" } as const;
   }
   return { kind: "completed", body: parsed.data } as const;

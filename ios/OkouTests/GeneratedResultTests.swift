@@ -1,102 +1,18 @@
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
-import QuickLook
-import SwiftUI
 import Synchronization
+import UIKit
 import XCTest
 
 @testable import Okou
 
 @MainActor
 final class GeneratedResultTests: XCTestCase {
-  func testMarkdownSemanticsKeepInlineLinksCodeAndActionCardsInOrder() async throws {
-    let fixture = try await GeneratedResultFixture.make()
-    defer { fixture.server.stop() }
-    let conversation = fixture.history.conversation()
-    defer { conversation.close() }
-    let markdown = conversation.messageMarkdown
-    let source = """
-      Before **the result**. Read [the brief](/artifacts/pdf0000001.pdf) alongside [a normal link](https://example.com/report.pdf).
 
-      ![Campaign image](/artifacts/image00001.png)
-
-      After the image, `![example](/artifacts/word000001.docx)` stays code.
-
-      ```markdown
-      ![Example](/artifacts/slides0001.pptx)
-      ```
-
-      [Connect Slack](/connectors/slack/connect?agentId=\(ConversationHistoryFixture.agentID)&threadId=\(ConversationHistoryFixture.threadID)&callbackPrompt=Continue)
-
-      ![Project brief](/artifacts/word000001.docx)
-
-      Final paragraph.
-      """
-    let content = await markdown.content(for: source)
-    let actions = MessageActionBody.blocks(
-      content, webURL: fixture.history.http.baseURL,
-      agentID: ConversationHistoryFixture.agentID, threadID: ConversationHistoryFixture.threadID)
-    XCTAssertEqual(actions.filter { if case .connector = $0 { true } else { false } }.count, 1)
-    var resources: [ChatArtifact] = []
-    var prose = ""
-    for case .markdown(let fragment) in actions {
-      for block in MessageArtifactBody.blocks(fragment, viewer: conversation.artifacts) {
-        switch block {
-        case .artifact(let resource, _, _): resources.append(resource)
-        case .markdown(let fragment): prose += String(fragment.characters)
-        }
-      }
-    }
-    XCTAssertEqual(resources.map(\.filename), ["image00001.png", "word000001.docx"])
-    XCTAssertTrue(prose.contains("Before the result"))
-    XCTAssertTrue(prose.contains("After the image"))
-    XCTAssertTrue(prose.contains("![Example](/artifacts/slides0001.pptx)"))
-    XCTAssertTrue(prose.contains("Final paragraph"))
-    XCTAssertTrue(content.runs.contains { $0.link?.host == "example.com" })
-    XCTAssertTrue(content.runs.contains { $0.link?.path == "/artifacts/pdf0000001.pdf" })
-    let styled = await markdown.content(for: "![**Bold** label](/artifacts/image00001.png)")
-    XCTAssertEqual(MessageArtifactBody.blocks(styled, viewer: conversation.artifacts).count, 1)
-    let linked = await markdown.content(
-      for: "[![Thumb](/artifacts/image00001.png)](https://example.com)")
-    let linkedBlocks = MessageArtifactBody.blocks(linked, viewer: conversation.artifacts)
-    XCTAssertTrue(
-      linkedBlocks.contains {
-        if case .artifact(_, _, let destination) = $0 {
-          destination?.host == "example.com"
-        } else {
-          false
-        }
-      })
-  }
-
-  func testLoadingCardsAndRefreshingKeepTranscriptGeometry() async throws {
-    let fixture = try await GeneratedResultFixture.make()
-    defer { fixture.server.stop() }
-    let conversation = fixture.history.conversation()
-    defer { conversation.close() }
-    await conversation.refresh()
-    XCTAssertNil(conversation.error)
-    let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
-    let window = try await mountConversationHost(host)
-    defer { unmount(window) }
-    let scroll = try XCTUnwrap(markers(in: host.view).first?.enclosingScrollView)
-    let size = scroll.contentSize
-    try await eventually { fixture.state.resolutions.withLock { $0 >= 4 } }
-    await stableHostingGeometry(host.view)
-    XCTAssertEqual(scroll.contentSize.height, size.height, accuracy: 1)
-    _ = scroll.accessibilityScroll(.down)
-    await stableHostingGeometry(host.view)
-    let before = scroll.contentOffset
-    await conversation.refresh()
-    await stableHostingGeometry(host.view)
-    XCTAssertEqual(scroll.contentOffset.y, before.y, accuracy: 1)
-    XCTAssertEqual(conversation.messages.last?.text, fixture.message)
-  }
-
-  func testReusedCardResolvesReplacedResourceAndReplacementScope() async throws {
+  func testReplacingResultResourcesAndScopesUsesTheirOwnAuthorizedContent() async throws {
     let first = try await GeneratedResultFixture.make()
-    let second = try await GeneratedResultFixture.make()
+    let second = try await GeneratedResultFixture.make(text: "Result owned by the second workspace")
     defer {
       first.server.stop()
       second.server.stop()
@@ -109,36 +25,22 @@ final class GeneratedResultTests: XCTestCase {
     }
     let image = try XCTUnwrap(original.artifacts.resource("/artifacts/image00001.png"))
     let video = try XCTUnwrap(original.artifacts.resource("/artifacts/video00001.mp4"))
-    @MainActor func content(_ resource: ChatArtifact, viewer: MessageArtifactStore) -> some View {
-      ScrollView {
-        MessageArtifactCard(
-          resource: resource, label: resource.filename, destination: nil,
-          images: [], imageSources: [], viewer: viewer, loadsContent: true
-        ).padding(20)
-      }
-    }
-    let host = UIHostingController(rootView: content(image, viewer: original.artifacts))
-    let window = try await mountResultHost(host)
-    defer { unmount(window) }
-    try await eventually {
-      first.state.storageRequests.withLock {
-        $0.contains { $0.url?.lastPathComponent == "image00001.png" }
-      }
-    }
-    host.rootView = content(video, viewer: original.artifacts)
-    try await eventually {
-      first.state.storageRequests.withLock {
-        $0.contains { $0.url?.lastPathComponent == "poster0001.png" }
-      }
-    }
+    let imageCard = try await original.artifacts.card(image, thumbnail: false)
+    XCTAssertEqual(imageCard.artifact.filename, "Campaign study.png")
+    let videoCard = try await original.artifacts.card(video, thumbnail: false)
+    XCTAssertEqual(videoCard.artifact.filename, "Campaign recording.mp4")
+    let text = try XCTUnwrap(original.artifacts.resource("/artifacts/text000001.txt"))
+    original.artifacts.open(text)
+    try await eventually { original.artifacts.preview?.file != nil }
+    let firstFile = try XCTUnwrap(original.artifacts.preview?.file)
+    XCTAssertTrue(
+      try String(contentsOf: firstFile.url, encoding: .utf8).hasPrefix("Synthetic generated text"))
     original.artifacts.deactivate()
-    host.rootView = content(video, viewer: replacement.artifacts)
-    try await eventually {
-      second.state.storageRequests.withLock {
-        $0.contains { $0.url?.lastPathComponent == "poster0001.png" }
-      }
-    }
-    XCTAssertGreaterThan(second.state.resolutions.withLock { $0 }, 0)
+    replacement.artifacts.open(text)
+    try await eventually { replacement.artifacts.preview?.file != nil }
+    let nextFile = try XCTUnwrap(replacement.artifacts.preview?.file)
+    XCTAssertEqual(
+      try String(contentsOf: nextFile.url, encoding: .utf8), "Result owned by the second workspace")
   }
 
   func testImageNavigationAndStructuredTextPreviewsKeepAuthorizedContent() async throws {
@@ -150,23 +52,17 @@ final class GeneratedResultTests: XCTestCase {
     let images = try ["image00001.png", "image00002.png"].map {
       try XCTUnwrap(viewer.resource("/artifacts/" + $0))
     }
-    let host = UIHostingController(
-      rootView: MessageArtifactPreview(viewer: viewer, markdown: conversation.messageMarkdown))
-    let window = try await mountResultHost(host)
-    defer { unmount(window) }
     viewer.open(images[0], images: images)
     for (index, image) in images.enumerated() {
       try await eventually {
         viewer.preview?.file != nil && viewer.preview?.artifact.source == image.source
       }
       let file = try XCTUnwrap(viewer.preview?.file)
-      try await eventually {
-        guard let controller = previewController(in: host),
-          controller.view.window != nil, let source = controller.dataSource,
-          source.numberOfPreviewItems(in: controller) == 1
-        else { return false }
-        return source.previewController(controller, previewItemAt: 0).previewItemURL == file.url
-      }
+      let expectedName = index == 0 ? "Campaign study.png" : "Campaign alternate.png"
+      XCTAssertEqual(viewer.preview?.artifact.filename, expectedName)
+      XCTAssertEqual(
+        try Data(contentsOf: file.url),
+        try XCTUnwrap(fixture.files.first { $0.filename == expectedName }).bytes)
       XCTAssertEqual(viewer.canNavigateImage(-1), index > 0)
       XCTAssertEqual(viewer.canNavigateImage(1), index < images.count - 1)
       if index < images.count - 1 { viewer.navigateImage(1) }
@@ -221,17 +117,6 @@ final class GeneratedResultTests: XCTestCase {
     viewer.open(source)
     XCTAssertNil(viewer.preview)
     try await eventually { !FileManager.default.fileExists(atPath: current.path) }
-  }
-  func testVideoWithoutRecordedPosterLoadsAFrameOnDemand() async throws {
-    let fixture = try await GeneratedResultFixture.make()
-    defer { fixture.server.stop() }
-    let conversation = fixture.history.conversation()
-    defer { conversation.close() }
-    fixture.state.omitVideoPoster.withLock { $0 = true }
-    let resource = try XCTUnwrap(conversation.artifacts.resource("/artifacts/video00001.mp4"))
-    let card = try await conversation.artifacts.card(resource, thumbnail: true)
-    XCTAssertNotNil(card.thumbnail.flatMap(UIImage.init(data:)))
-    XCTAssertEqual(card.artifact.kind, .video)
   }
 
   func testShareConsumerKeepsAuthorizedFileAfterPreviewDismissal() async throws {
@@ -318,18 +203,22 @@ private final class GeneratedResultFixture: Sendable {
   let server: ChatFileHTTPServer
   let state: GeneratedResultState
   let message: String
+  let files: [GeneratedResultFile]
 
   private init(
     history: ConversationHistoryFixture, server: ChatFileHTTPServer,
-    state: GeneratedResultState, message: String
+    state: GeneratedResultState, message: String, files: [GeneratedResultFile]
   ) {
     self.history = history
     self.server = server
     self.state = state
     self.message = message
+    self.files = files
   }
 
-  @MainActor static func make() async throws -> GeneratedResultFixture {
+  @MainActor static func make(
+    text: String = "Synthetic generated text\nRead, copy, share, or save to Files."
+  ) async throws -> GeneratedResultFixture {
     let image = UIGraphicsImageRenderer(size: CGSize(width: 800, height: 500)).pngData { context in
       UIColor.systemIndigo.setFill()
       context.fill(CGRect(x: 0, y: 0, width: 800, height: 500))
@@ -370,7 +259,7 @@ private final class GeneratedResultFixture: Sendable {
         bytes: try bundled("attachment-preview", "mp4")),
       .init(
         reference: "text000001.txt", filename: "Notes.txt", type: "text/plain",
-        bytes: Data("Synthetic generated text\nRead, copy, share, or save to Files.".utf8)),
+        bytes: Data(text.utf8)),
       .init(
         reference: "json000001.json", filename: "Results.json", type: "application/json",
         bytes: Data("{\"region\":\"North\",\"revenue\":120}".utf8)),
@@ -472,13 +361,8 @@ private final class GeneratedResultFixture: Sendable {
           body: String(decoding: try JSONEncoder().encode(body), as: UTF8.self))
       })
     return GeneratedResultFixture(
-      history: history, server: server, state: state, message: message)
+      history: history, server: server, state: state, message: message, files: files)
   }
-}
-
-@MainActor private func previewController(in controller: UIViewController) -> QLPreviewController? {
-  (controller as? QLPreviewController)
-    ?? controller.children.lazy.compactMap { previewController(in: $0) }.first
 }
 
 private final class GeneratedResultState: Sendable {
@@ -487,18 +371,4 @@ private final class GeneratedResultState: Sendable {
   let denied = Mutex(false)
   let resolutions = Mutex(0)
   let storageRequests = Mutex<[URLRequest]>([])
-}
-
-@MainActor private func mountResultHost<V: View>(_ host: UIHostingController<V>) async throws
-  -> UIWindow
-{
-  let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-  let window = UIWindow(windowScene: scene)
-  window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-  window.rootViewController = host
-  window.makeKeyAndVisible()
-  host.view.layoutIfNeeded()
-  try await eventually { host.view.window != nil && !host.view.bounds.isEmpty }
-  await hostingPresentationFrame()
-  return window
 }

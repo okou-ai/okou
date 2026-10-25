@@ -120,7 +120,7 @@ async function postStripeEvent(
     created: Math.floor(now() / 1000),
     ...event,
   };
-  getApiTestMocks().stripe.webhooks.constructEvent.mockReturnValueOnce(
+  getApiTestMocks().stripe.webhooks.constructEventAsync.mockReturnValueOnce(
     stripeEvent,
   );
   const response = await app.request("/api/webhooks/stripe", {

@@ -11,11 +11,6 @@ import { X } from "lucide-react";
 
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import {
-  cancelConnectorConnection$,
-  connectorConnectionAttempt$,
-  connectorConnectionProgressActive$,
-} from "../../signals/connector-connection-progress.ts";
-import {
   attachmentDiagramPreview,
   completeLightboxDialogExit$,
   lightboxDialogFullscreen$,
@@ -54,10 +49,7 @@ export function DialogIconButton({
 function useCloseArtifactPreview() {
   const rootSignal = useGet(rootSignal$);
   const closeArtifactCatalogPreview = useSet(closeArtifactCatalogPreview$);
-  const cancelConnection = useSet(cancelConnectorConnection$);
-  const connectionAttempt = useGet(connectorConnectionAttempt$);
   return () => {
-    cancelConnection(connectionAttempt);
     closeArtifactCatalogPreview(rootSignal);
   };
 }
@@ -89,7 +81,6 @@ export function ArtifactPreviewDialogFrame({
   const dialogMountRef = useSet(lightboxDialogMountRef$);
   const initialFocus = useSet(lightboxDialogInitialFocus$);
   const completeDialogExit = useSet(completeLightboxDialogExit$);
-  const connectionProgressActive = useGet(connectorConnectionProgressActive$);
   const closeWithAnimation = useCloseArtifactPreview();
   const visible = useGet(lightboxDialogVisible$);
   const fullscreen = useGet(lightboxDialogFullscreen$);
@@ -98,15 +89,7 @@ export function ArtifactPreviewDialogFrame({
     <Dialog
       open={visible}
       onOpenChangeComplete={completeDialogExit}
-      onOpenChange={(nextOpen, details) => {
-        if (
-          !nextOpen &&
-          connectionProgressActive &&
-          details.reason === "outside-press"
-        ) {
-          details.cancel();
-          return;
-        }
+      onOpenChange={(nextOpen) => {
         if (!nextOpen && visible) {
           closeWithAnimation();
         }

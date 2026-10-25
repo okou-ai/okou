@@ -22,7 +22,7 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, exists, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { isUniqueViolation } from "../../lib/pg-errors";
@@ -797,87 +797,99 @@ interface InstallationCompletion {
 }
 const activateInstallation$ = command(
   async ({ set }, args: InstallationCompletion, signal: AbortSignal) => {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0196; new non-billing transactions are prohibited.
-    return await set(writeDb$).transaction(async (tx) => {
-      // SHARE conflicts with catalog pointer publication until activation commits.
-      await tx
+    const db = set(writeDb$);
+    signal.throwIfAborted();
+    const [catalogRow] = await db
+      .select({
+        releaseId: officialWorkflowCatalogState.acceptedReleaseId,
+        payload: officialWorkflowCatalogReleases.payload,
+        hiddenThreadDefinitionNames:
+          officialWorkflowCatalogReleases.hiddenThreadDefinitionNames,
+      })
+      .from(officialWorkflowCatalogState)
+      .innerJoin(
+        officialWorkflowCatalogReleases,
+        eq(
+          officialWorkflowCatalogReleases.id,
+          officialWorkflowCatalogState.acceptedReleaseId,
+        ),
+      )
+      .where(
+        eq(
+          officialWorkflowCatalogState.authority,
+          OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      !sameAcceptedDefinition(
+        args.resolved.catalog.releaseId,
+        args.resolved.definition,
+        acceptedCatalogFromRow(catalogRow),
+      )
+    ) {
+      return "stale" as const;
+    }
+
+    // Recheck the validated immutable release while retaining the existing
+    // catalog -> Agent lock order through the installing -> installed write.
+    const catalog = db.$with("activation_catalog").as(
+      db
         .select({ authority: officialWorkflowCatalogState.authority })
         .from(officialWorkflowCatalogState)
         .where(
-          eq(
-            officialWorkflowCatalogState.authority,
-            OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+          and(
+            eq(
+              officialWorkflowCatalogState.authority,
+              OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+            ),
+            eq(
+              officialWorkflowCatalogState.acceptedReleaseId,
+              args.resolved.catalog.releaseId,
+            ),
           ),
         )
-        .for("share");
-      signal.throwIfAborted();
-      // The installing -> installed CAS below owns activation. Run admission,
-      // reconciliation, and Copy only lock installed rows, so no org lock.
-      const [agent] = await tx
+        .for("share"),
+    );
+    const agent = db.$with("activation_agent").as(
+      db
         .select({ id: agents.id })
         .from(agents)
         .where(
           and(
             eq(agents.id, args.installation.agentId),
             eq(agents.orgId, args.installation.orgId),
+            exists(db.select({ authority: catalog.authority }).from(catalog)),
           ),
         )
         .for("key share")
-        .limit(1);
-      if (!agent) {
-        return "lost" as const;
-      }
-      signal.throwIfAborted();
-      const [catalogRow] = await tx
-        .select({
-          releaseId: officialWorkflowCatalogState.acceptedReleaseId,
-          payload: officialWorkflowCatalogReleases.payload,
-          hiddenThreadDefinitionNames:
-            officialWorkflowCatalogReleases.hiddenThreadDefinitionNames,
-        })
-        .from(officialWorkflowCatalogState)
-        .innerJoin(
-          officialWorkflowCatalogReleases,
-          eq(
-            officialWorkflowCatalogReleases.id,
-            officialWorkflowCatalogState.acceptedReleaseId,
-          ),
-        )
-        .where(
-          eq(
-            officialWorkflowCatalogState.authority,
-            OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      const currentCatalog = acceptedCatalogFromRow(catalogRow);
-      if (
-        !sameAcceptedDefinition(
-          args.resolved.catalog.releaseId,
-          args.resolved.definition,
-          currentCatalog,
-        )
-      ) {
-        return "stale" as const;
-      }
-      const [installed] = await tx
+        .limit(1),
+    );
+    const installed = db.$with("activated_installation").as(
+      db
         .update(workflows)
         .set({ officialInstallationState: "installed", updatedAt: nowDate() })
         .where(
           and(
             eq(workflows.id, args.workflowId),
             eq(workflows.officialInstallationState, "installing"),
+            exists(db.select({ id: agent.id }).from(agent)),
           ),
         )
-        .returning({
-          id: workflows.id,
-          agentId: workflows.agentId,
-          ownerUserId: workflows.ownerUserId,
-        });
-      signal.throwIfAborted();
-      return installed ? ("installed" as const) : ("lost" as const);
-    });
+        .returning({ id: workflows.id }),
+    );
+    const [activation] = await db
+      .with(catalog, agent, installed)
+      .select({ agentId: agent.id, installedId: installed.id })
+      .from(catalog)
+      .leftJoin(agent, sql`true`)
+      .leftJoin(installed, sql`true`);
+    signal.throwIfAborted();
+    if (!activation) {
+      return "stale" as const;
+    }
+    return activation.installedId ? ("installed" as const) : ("lost" as const);
   },
 );
 const cleanupInstallation$ = command(

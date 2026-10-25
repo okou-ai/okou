@@ -8,7 +8,9 @@ import {
   manualAuthMethod,
   stubConnectorCatalog,
 } from "../../__tests__/helpers/connector-catalog";
-import { generateCommand } from "../index";
+import { createGenerateCommand } from "../index";
+
+const generateCommand = createGenerateCommand();
 
 const metadata = catalogItem({
   connectorSlug: "fal",

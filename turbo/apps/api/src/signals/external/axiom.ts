@@ -6,7 +6,8 @@ import { decodeHTML } from "entities";
 
 import { createAxiomFetch } from "../../lib/axiom-fetch";
 import { env, optionalEnv } from "../../lib/env";
-import { logger } from "../../lib/log";
+import { logger, writeNativeTelemetry } from "../../lib/log";
+import { currentRequestRuntime } from "../../lib/request-runtime";
 import { singleton } from "../../lib/singleton";
 import { now } from "../../lib/time";
 import {
@@ -120,6 +121,18 @@ export function ingestToAxiom(
   dataset: string,
   events: readonly Record<string, unknown>[],
 ): boolean {
+  // These are observability streams. Product datasets such as run-context and
+  // agent-run-events retain their direct Axiom ingestion and reader contracts.
+  if (
+    currentRequestRuntime()?.nativeTelemetry &&
+    (dataset === getDatasetName("web-logs") ||
+      dataset === getDatasetName("request-log"))
+  ) {
+    for (const event of events) {
+      writeNativeTelemetry(dataset, event);
+    }
+    return true;
+  }
   const client = axiomClientForDataset(dataset);
   if (!client) {
     return false;
@@ -468,7 +481,6 @@ async function axiomHttpErrorDetails(
 async function ingestAxiomRequest(
   request: PreparedAxiomIngest,
   timeoutMs: number,
-  redirect: "error" | "manual",
   signal: AbortSignal,
 ): Promise<void> {
   signal.throwIfAborted();
@@ -506,8 +518,9 @@ async function ingestAxiomRequest(
     awaitWithSignal(
       fetch(axiomIngestUrl(dataset), {
         method: "POST",
-        // Neither policy forwards credentials; traces inspect permanent redirects.
-        redirect,
+        // Workers do not support "error". Reject non-2xx below without
+        // forwarding the ingest token or payload to a redirect destination.
+        redirect: "manual",
         headers: {
           accept: "application/json",
           authorization: `Bearer ${token}`,
@@ -604,7 +617,7 @@ export async function ingestAxiomDirect(
   if (!request) {
     return { configured: false };
   }
-  await ingestAxiomRequest(request, timeoutMs, "error", signal);
+  await ingestAxiomRequest(request, timeoutMs, signal);
   return { configured: true };
 }
 
@@ -646,7 +659,6 @@ export async function ingestAxiomTrace(
       ingestAxiomRequest(
         request,
         Math.min(AXIOM_TRACE_ATTEMPT_TIMEOUT_MS, remainingMs()),
-        "manual",
         operationSignal,
       ),
     );

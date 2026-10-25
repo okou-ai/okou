@@ -1,24 +1,25 @@
 use std::io;
 use std::thread::{self, JoinHandle, ScopedJoinHandle};
 
-pub(crate) type UnitTask = Box<dyn FnOnce() + Send + 'static>;
-pub(crate) type VecTask = Box<dyn FnOnce() -> Vec<u8> + Send + 'static>;
+pub(crate) type ThreadTask<T> = Box<dyn FnOnce() -> T + Send + 'static>;
 
 pub(crate) trait ThreadSpawner: Clone + Send + Sync + 'static {
-    fn spawn_unit(&self, name: &'static str, task: UnitTask) -> io::Result<JoinHandle<()>>;
-
-    fn spawn_vec(&self, name: &'static str, task: VecTask) -> io::Result<JoinHandle<Vec<u8>>>;
+    fn spawn<T: Send + 'static>(
+        &self,
+        name: &'static str,
+        task: ThreadTask<T>,
+    ) -> io::Result<JoinHandle<T>>;
 }
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct SystemThreadSpawner;
 
 impl ThreadSpawner for SystemThreadSpawner {
-    fn spawn_unit(&self, name: &'static str, task: UnitTask) -> io::Result<JoinHandle<()>> {
-        thread::Builder::new().name(name.to_string()).spawn(task)
-    }
-
-    fn spawn_vec(&self, name: &'static str, task: VecTask) -> io::Result<JoinHandle<Vec<u8>>> {
+    fn spawn<T: Send + 'static>(
+        &self,
+        name: &'static str,
+        task: ThreadTask<T>,
+    ) -> io::Result<JoinHandle<T>> {
         thread::Builder::new().name(name.to_string()).spawn(task)
     }
 }
@@ -44,7 +45,7 @@ pub(crate) mod test_support {
     use std::sync::{Arc, Mutex};
     use std::thread::JoinHandle;
 
-    use super::{SystemThreadSpawner, ThreadSpawner, UnitTask, VecTask};
+    use super::{SystemThreadSpawner, ThreadSpawner, ThreadTask};
 
     #[derive(Clone)]
     pub(crate) struct FailingThreadSpawner {
@@ -74,25 +75,18 @@ pub(crate) mod test_support {
     }
 
     impl ThreadSpawner for FailingThreadSpawner {
-        fn spawn_unit(&self, name: &'static str, task: UnitTask) -> io::Result<JoinHandle<()>> {
+        fn spawn<T: Send + 'static>(
+            &self,
+            name: &'static str,
+            task: ThreadTask<T>,
+        ) -> io::Result<JoinHandle<T>> {
             if self.should_fail(name) {
                 drop(task);
                 Err(io::Error::other(format!(
                     "injected thread spawn failure for {name}",
                 )))
             } else {
-                SystemThreadSpawner.spawn_unit(name, task)
-            }
-        }
-
-        fn spawn_vec(&self, name: &'static str, task: VecTask) -> io::Result<JoinHandle<Vec<u8>>> {
-            if self.should_fail(name) {
-                drop(task);
-                Err(io::Error::other(format!(
-                    "injected thread spawn failure for {name}",
-                )))
-            } else {
-                SystemThreadSpawner.spawn_vec(name, task)
+                SystemThreadSpawner.spawn(name, task)
             }
         }
     }

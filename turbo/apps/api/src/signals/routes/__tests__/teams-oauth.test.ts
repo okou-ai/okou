@@ -1,3 +1,10 @@
+import {
+  authenticateCallbackActor,
+  callbackAuthenticationModes,
+  callbackBrowserHeaders,
+  callbackNeedsSignIn,
+} from "./helpers/oauth-callback-auth";
+import { createBddApi } from "./helpers/api-bdd";
 import { createStore } from "ccstate";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { teamsOauthContract } from "@okouai/api-contracts/contracts/teams-oauth";
@@ -55,9 +62,16 @@ async function appRequest(
     signal: context.signal,
     routes: teamsOauthRoutes,
   });
+  const headers = new Headers(options.headers);
+  if (
+    path.startsWith("/api/integrations/teams/oauth/callback") &&
+    !headers.has("authorization")
+  ) {
+    headers.set("authorization", "Bearer clerk-session");
+  }
   return await app.request(`${options.origin ?? "http://api.test"}${path}`, {
     method: "GET",
-    headers: options.headers,
+    headers,
   });
 }
 
@@ -225,7 +239,7 @@ describe("Teams OAuth API routes", () => {
     });
   });
 
-  it("uses an authenticated settings link without browser credentials and consumes each callback once", async () => {
+  it("opens a settings entry link without credentials and consumes authenticated completion once", async () => {
     const fixture = await track(Promise.resolve(teamsConnectFixture()));
     await seedMembership(fixture.orgId, fixture.userId);
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
@@ -481,6 +495,7 @@ describe("Teams OAuth API routes", () => {
     ).searchParams.get("state")!;
     const callback = await accept(
       oauthClient.callback({
+        extraHeaders: { authorization: "Bearer clerk-session" },
         query: {
           code: "valid-code",
           state: startedState,
@@ -870,6 +885,115 @@ describe("Teams OAuth API routes", () => {
           pendingInstallation: accepted || !differentOrg,
         });
         expect(status.body.linkedAccounts).toHaveLength(accepted ? 1 : 0);
+      }
+    },
+  );
+  it.each(callbackAuthenticationModes)(
+    "authenticates before claiming a Teams tenant (%s)",
+    async (mode) => {
+      const actor = createBddApi(context).user();
+      authenticateCallbackActor(context, actor);
+      const client = setupApp({ context, routes: teamsConnectRoutes })(
+        teamsConnectContract,
+      );
+      const status = await accept(
+        client.getStatus({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      const entryUrl = new URL(status.body.connectUrl!);
+      const entry = await appRequest(entryUrl.pathname + entryUrl.search, {
+        origin: API_ORIGIN,
+      });
+      const authorization = new URL(entry.headers.get("location")!);
+      const tenantId = `tenant_${actor.userId}`;
+      const aadObjectId = `aad_${actor.userId}`;
+      mockMicrosoftOAuth({
+        tenantId,
+        aadObjectId,
+        userPrincipalName: "provider@example.test",
+      });
+      const callback = setupApp({
+        context,
+        routes: teamsOauthRoutes,
+        baseUrl: API_ORIGIN,
+      })(teamsOauthContract);
+      const query = {
+        state: authorization.searchParams.get("state")!,
+        code: "provider-result",
+      };
+      const browserHeaders = callbackBrowserHeaders(context, mode, actor);
+      const browser = await accept(
+        callback.callback({
+          query,
+          extraHeaders: browserHeaders.cookie
+            ? { cookie: browserHeaders.cookie }
+            : {},
+        }),
+        [307],
+      );
+      expect(
+        new URL(browser.headers.get("location")!).searchParams.get(
+          "integration",
+        ),
+      ).toBe("teams");
+      authenticateCallbackActor(context, actor);
+      const untouched = await accept(
+        client.getStatus({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(untouched.body.linkedAccounts).toStrictEqual([]);
+      const completion = await accept(
+        callback.callback({
+          query: { ...query, responseMode: "json" },
+          extraHeaders: callbackBrowserHeaders(context, mode, actor),
+        }),
+        [200, 401],
+      );
+      expect(completion.status).toBe(callbackNeedsSignIn(mode) ? 401 : 200);
+      if (completion.status === 200) {
+        const target = new URL(completion.body.redirectUrl);
+        if (mode === "matching-cookie") {
+          expect(target.searchParams.get("status")).toBe("pending");
+        } else {
+          expect(target.searchParams.get("error")).toContain(
+            "active account or organization changed",
+          );
+        }
+      }
+      authenticateCallbackActor(context, actor);
+      const after = await accept(
+        client.getStatus({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(after.body.linkedAccounts).toHaveLength(
+        mode === "matching-cookie" ? 1 : 0,
+      );
+      if (callbackNeedsSignIn(mode)) {
+        const resumed = await accept(
+          callback.callback({
+            query,
+            extraHeaders: { authorization: "Bearer clerk-session" },
+          }),
+          [307],
+        );
+        expect(
+          new URL(resumed.headers.get("location")!).searchParams.get("status"),
+        ).toBe("pending");
+        const linked = await accept(
+          client.getStatus({
+            headers: { authorization: "Bearer clerk-session" },
+          }),
+          [200],
+        );
+        expect(linked.body.linkedAccounts).toContainEqual(
+          expect.objectContaining({ tenantId, teamsAadObjectId: aadObjectId }),
+        );
       }
     },
   );

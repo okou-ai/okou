@@ -2,7 +2,6 @@ import { command } from "ccstate";
 
 import { agentName$, setAgentName$, resetActiveTab$ } from "./agent-name.ts";
 import { discardAgentEdit$ } from "./instructions.ts";
-import { discardAgentConnectorsDraft$ } from "./connectors.ts";
 import { resetSettingsForm$ } from "../settings/settings-tab.ts";
 
 // ---------------------------------------------------------------------------
@@ -22,5 +21,4 @@ export const setActiveAgent$ = command(({ get, set }, agentName: string) => {
   set(setAgentName$, agentName);
   set(resetActiveTab$);
   set(discardAgentEdit$);
-  set(discardAgentConnectorsDraft$);
 });

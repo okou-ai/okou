@@ -41,6 +41,7 @@ import {
   settleJournaledSchedulePreRunFailure$,
 } from "./workflow-schedule-failure.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
+import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 
 const log = logger("WorkflowAutomationPoller");
 
@@ -593,6 +594,11 @@ export const executeDueWorkflowAutomations$ = command(
         continue;
       }
 
+      const proactiveKind =
+        row.automation.officialBlueprintKey === null
+          ? null
+          : proactiveWorkflowKind(row.workflowName);
+
       // The journaled path keeps the pre-claim `next_run_at` and consumes it
       // inside the queue admission transaction, so its preparation runs before
       // anything touches the schedule.
@@ -620,7 +626,9 @@ export const executeDueWorkflowAutomations$ = command(
 
       const claimed =
         journaled ||
-        row.automation.officialBlueprintKey === PROACTIVE_JOBS_BLUEPRINT_KEY
+        row.automation.officialBlueprintKey === PROACTIVE_JOBS_BLUEPRINT_KEY ||
+        proactiveKind === "learning" ||
+        proactiveKind === "planning"
           ? row.automation
           : await set(claimAutomation$, row.automation, currentTime, signal);
       signal.throwIfAborted();

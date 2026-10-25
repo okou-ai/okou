@@ -24,6 +24,8 @@ export interface SharedDatabaseBridge {
   unsubscribeRealtime(subscriptionId: string): void;
   getComputed<TKey extends ComputedKey>(
     computedKey: TKey,
+    options?: { readonly refresh?: boolean },
+    signal?: AbortSignal,
   ): Promise<ComputedValue<TKey>>;
   query<TKey extends SharedDatabaseDataKey>(
     query: SharedDatabaseQuery<TKey>,
@@ -34,6 +36,7 @@ export interface SharedDatabaseBridge {
 export type SharedDatabaseTokenProvider = AuthTokenProvider;
 
 export interface SharedDatabaseBridgeEvents {
+  readonly realtimeResynced?: () => void | Promise<void>;
   readonly databaseInvalidated: (
     dataKey: SharedDatabaseDataKey,
   ) => void | Promise<void>;

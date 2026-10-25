@@ -6,7 +6,8 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { withConnectorConnectionProgress } from "../connector-connection-progress.ts";
+import { isConnectorChangedPayloadFor } from "../connector-change.ts";
+import { setAblyPayloadLoop$ } from "../realtime.ts";
 import {
   connectorSlugSchema,
   type ConnectorSlug,
@@ -95,6 +96,7 @@ interface ConnectorSignalState {
 
 export type CatalogConnectorSignals = CatalogConnectorActionDescriptor &
   ConnectorSignalState & {
+    readonly subscribe$: Command<void, [AbortSignal]>;
     readonly catalogItem$: Computed<
       Promise<PlatformConnectorCatalogStatusItem | null>
     >;
@@ -114,6 +116,7 @@ export type ExactReconnectConnectorSignals =
     >;
     readonly activate$: Command<Promise<void>, [AbortSignal]>;
     readonly refresh$: Command<void, []>;
+    readonly subscribe$: Command<void, [AbortSignal]>;
   };
 
 export type CustomConnectorSignals = CustomConnectorActionDescriptor &
@@ -392,111 +395,120 @@ function createCatalogConnectorActivation(
   descriptor: CatalogConnectorActionDescriptor,
   signals: CatalogConnectorActivationSignals,
 ): CatalogConnectorSignals["activate$"] {
-  return withConnectorConnectionProgress(
-    command(async ({ get, set }, signal: AbortSignal) => {
-      const available = await get(signals.available$);
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    const available = await get(signals.available$);
+    signal.throwIfAborted();
+    if (!available) {
+      return;
+    }
+
+    const catalogItem = await set(signals.readAccount$, undefined, signal);
+    signal.throwIfAborted();
+    const connected = catalogItem?.connected === true;
+    const status =
+      catalogItem === null
+        ? null
+        : builtinConnectorCurrentConnectionStatus(catalogItem);
+    if (status === "unavailable") {
+      throw new Error(
+        "Connector account metadata is unavailable. Refresh and try again.",
+      );
+    }
+    const reconnectRequired = status === "reconnect-required";
+    if (connected && !reconnectRequired) {
+      await set(
+        authorizeDirectedConnector$,
+        descriptor.connectorSlug,
+        descriptor.agentId,
+        signal,
+      );
+      await set(runConnectorActionCallback$, descriptor, signal);
+      return;
+    }
+
+    const connector = catalogItem;
+    if (!connector) {
+      return;
+    }
+    const accountOptions = defaultBuiltinConnectorAccountOptions(connector);
+    if (!accountOptions) {
+      return;
+    }
+
+    const directConnectMethod =
+      getBuiltinConnectorStatusDirectConnectMethod(connector);
+    if (!directConnectMethod) {
+      set(resetBuiltinManualGrantForm$, connector.slug);
+      set(activeChatConnectorActionState$, {
+        ...descriptor,
+        catalogItem: connector,
+        readAccount$: signals.readAccount$,
+      });
+      return;
+    }
+
+    const connectOptions = {
+      connectorLabel: connector.label,
+      connectorIcon: connector.icon,
+      agentId: descriptor.agentId,
+      ...accountOptions,
+    };
+    const connectionCompleted =
+      directConnectMethod.kind === "browser-auth"
+        ? await set(
+            connectBuiltinConnectorOAuthAuthCode$,
+            descriptor.connectorSlug,
+            directConnectMethod.authMethod,
+            connectOptions,
+            signal,
+          )
+        : await set(
+            connectBuiltinConnectorNoAuth$,
+            {
+              connectorSlug: descriptor.connectorSlug,
+              authMethod: directConnectMethod.authMethod,
+              options: connectOptions,
+            },
+            signal,
+          );
+    if (connectionCompleted) {
+      const current = await set(signals.readAccount$, undefined, signal);
       signal.throwIfAborted();
-      if (!available) {
-        return;
-      }
-
-      const catalogItem = await set(signals.readAccount$, undefined, signal);
-      signal.throwIfAborted();
-      const connected = catalogItem?.connected === true;
-      const status =
-        catalogItem === null
-          ? null
-          : builtinConnectorCurrentConnectionStatus(catalogItem);
-      if (status === "unavailable") {
-        throw new Error(
-          "Connector account metadata is unavailable. Refresh and try again.",
-        );
-      }
-      const reconnectRequired = status === "reconnect-required";
-      if (connected && !reconnectRequired) {
-        await set(
-          authorizeDirectedConnector$,
-          descriptor.connectorSlug,
-          descriptor.agentId,
-          signal,
-        );
-        await set(runConnectorActionCallback$, descriptor, signal);
-        return;
-      }
-
-      const connector = catalogItem;
-      if (!connector) {
-        return;
-      }
-      const accountOptions = defaultBuiltinConnectorAccountOptions(connector);
-      if (!accountOptions) {
-        return;
-      }
-
-      const directConnectMethod =
-        getBuiltinConnectorStatusDirectConnectMethod(connector);
-      if (!directConnectMethod) {
-        set(resetBuiltinManualGrantForm$, connector.slug);
-        set(activeChatConnectorActionState$, {
-          ...descriptor,
-          catalogItem: connector,
-          readAccount$: signals.readAccount$,
-        });
-        return;
-      }
-
-      const connectOptions = {
-        connectorLabel: connector.label,
-        connectorIcon: connector.icon,
-        agentId: descriptor.agentId,
-        ...accountOptions,
-      };
-      const connectionCompleted =
-        directConnectMethod.kind === "browser-auth"
-          ? await set(
-              connectBuiltinConnectorOAuthAuthCode$,
-              descriptor.connectorSlug,
-              directConnectMethod.authMethod,
-              connectOptions,
-              signal,
-            )
-          : await set(
-              connectBuiltinConnectorNoAuth$,
-              {
-                connectorSlug: descriptor.connectorSlug,
-                authMethod: directConnectMethod.authMethod,
-                options: connectOptions,
-              },
-              signal,
-            );
-      if (connectionCompleted) {
-        const current = await set(signals.readAccount$, undefined, signal);
-        signal.throwIfAborted();
-        requireCompletedCatalogAccount(current);
-        await set(runConnectorActionCallback$, descriptor, signal);
-      }
-    }),
-  );
+      requireCompletedCatalogAccount(current);
+      await set(runConnectorActionCallback$, descriptor, signal);
+    }
+  });
 }
 
 function createCatalogConnectorSignals(
   descriptor: CatalogConnectorActionDescriptor,
 ): CatalogConnectorSignals {
   const definition$ = connectorCatalogItemBySlug(descriptor.connectorSlug);
-  const verifiedAccount$ = state<{
-    readonly definition: PlatformConnectorCatalogStatusItem;
-    readonly item: PlatformConnectorCatalogStatusItem;
-  } | null>(null);
+  const accountChanges = createBuiltinConnectorAccountInvalidation(
+    descriptor.connectorSlug,
+  );
   const catalogItem$ = computed(async (get) => {
+    get(accountChanges.revision$);
     const definition = await get(definition$);
-    const verified = get(verifiedAccount$);
-    return definition && verified?.definition === definition
-      ? verified.item
-      : definition;
+    if (!definition) {
+      return null;
+    }
+    const result = await accept(
+      get(apiClient$)(connectorAccountsContract).connections({
+        query: {
+          kind: "builtin",
+          connectorSlug: descriptor.connectorSlug,
+          limit: 1,
+          includeScopeMismatch: "true",
+        },
+      }),
+      [200],
+    );
+    return withMemberAccount(definition, result.body.defaultConnection);
   });
   const readAccount$ = command(
     async (
-      { get, set },
+      { get },
       expectedAction: ActiveCatalogConnectorAction | undefined,
       signal: AbortSignal,
     ) => {
@@ -518,9 +530,7 @@ function createCatalogConnectorSignals(
       ) {
         return null;
       }
-      const item = withMemberAccount(definition, accounts.defaultConnection);
-      set(verifiedAccount$, { definition, item });
-      return item;
+      return withMemberAccount(definition, accounts.defaultConnection);
     },
   );
 
@@ -581,16 +591,50 @@ function createCatalogConnectorSignals(
     authorized$,
     complete$,
     activate$,
+    subscribe$: accountChanges.subscribe$,
   };
+}
+
+function createBuiltinConnectorAccountInvalidation(
+  connectorSlug: ConnectorSlug,
+) {
+  const revision$ = state(0);
+  const invalidate$ = command(({ set }) => {
+    set(revision$, (revision) => {
+      return revision + 1;
+    });
+    return false;
+  });
+  const receive$ = command(({ set }, payload: unknown): boolean => {
+    if (isConnectorChangedPayloadFor(payload, connectorSlug)) {
+      set(invalidate$);
+    }
+    return false;
+  });
+  const subscribe$ = command(({ set }, signal: AbortSignal) => {
+    set(
+      setAblyPayloadLoop$,
+      {
+        topic: "connector:changed",
+        loopCommand$: receive$,
+        initializeCommand$: invalidate$,
+        options: { runOnSubscribe: true },
+      },
+      signal,
+    );
+  });
+  return { revision$, invalidate$, subscribe$ };
 }
 
 function createExactReconnectConnectorSignals(
   descriptor: ExactReconnectConnectorActionDescriptor,
 ): ExactReconnectConnectorSignals {
   const catalogItem$ = connectorCatalogItemBySlug(descriptor.connectorSlug);
-  const reload$ = state(0);
+  const accountChanges = createBuiltinConnectorAccountInvalidation(
+    descriptor.connectorSlug,
+  );
   const status$ = computed(async (get) => {
-    get(reload$);
+    get(accountChanges.revision$);
     const catalogItem = await get(catalogItem$);
     if (!catalogItem) {
       return { kind: "unavailable" as const };
@@ -626,9 +670,7 @@ function createExactReconnectConnectorSignals(
   });
 
   const activate$ = command(async ({ get, set }, signal: AbortSignal) => {
-    set(reload$, (version) => {
-      return version + 1;
-    });
+    set(accountChanges.invalidate$);
     const status = await get(status$);
     signal.throwIfAborted();
     if (status.kind !== "ready") {
@@ -644,12 +686,16 @@ function createExactReconnectConnectorSignals(
 
   const refresh$ = command(({ set }) => {
     set(reloadBuiltinConnectors$);
-    set(reload$, (version) => {
-      return version + 1;
-    });
+    set(accountChanges.invalidate$);
   });
 
-  return { ...descriptor, status$, activate$, refresh$ };
+  return {
+    ...descriptor,
+    status$,
+    activate$,
+    refresh$,
+    subscribe$: accountChanges.subscribe$,
+  };
 }
 
 function createCustomConnectorSignals(
@@ -794,7 +840,16 @@ function createConnectorSignals(
 }
 
 export function createConnectorCardSignalsRegistry(): ConnectorCardSignalsRegistry {
-  return createCardSignalsRegistry((descriptor: ConnectorActionDescriptor) => {
-    return descriptor.originalUrl;
-  }, createConnectorSignals);
+  const subscribeCustom$ = command(() => {
+    return undefined;
+  });
+  return createCardSignalsRegistry(
+    (descriptor: ConnectorActionDescriptor) => {
+      return descriptor.originalUrl;
+    },
+    createConnectorSignals,
+    (signals) => {
+      return signals.kind === "custom" ? subscribeCustom$ : signals.subscribe$;
+    },
+  );
 }

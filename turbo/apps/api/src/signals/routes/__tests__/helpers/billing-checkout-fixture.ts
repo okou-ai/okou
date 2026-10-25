@@ -478,7 +478,9 @@ export function createBillingCheckoutFixture() {
         },
       },
     };
-    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
     await accept(
       setupApp({ context, routes: webhooksStripeRoutes })(
         webhookStripeContract,
@@ -650,7 +652,7 @@ export function createBillingCheckoutFixture() {
         },
       };
       const payload = JSON.stringify(event);
-      context.mocks.stripe.webhooks.constructEvent.mockImplementation(
+      context.mocks.stripe.webhooks.constructEventAsync.mockImplementation(
         (body) => {
           if (body !== payload) {
             throw new Error("Unexpected Atom invoice webhook payload");
@@ -755,7 +757,9 @@ export function createBillingCheckoutFixture() {
         ],
       },
     });
-    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
     await accept(
       setupApp({ context, routes: webhooksStripeRoutes })(
         webhookStripeContract,
@@ -852,7 +856,9 @@ export function createBillingCheckoutFixture() {
         ],
       },
     });
-    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
     await accept(
       setupApp({ context, routes: webhooksStripeRoutes })(
         webhookStripeContract,

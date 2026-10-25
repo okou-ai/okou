@@ -1051,6 +1051,7 @@
       "loadFailed": "リクエストされたすべての権限を確認できませんでした。権限は変更できません。",
       "loading": "権限を読み込み中",
       "notNow": "今はしない",
+      "review": "権限を確認",
       "scopeNote": "現在のタスクだけでなく、このエージェントに適用されます。",
       "title": "以下の権限を許可"
     }
@@ -1962,6 +1963,7 @@
       "retry": "Retry",
       "saved": "Saved for the next evaluation",
       "saveReply": "Save reply",
+      "sourceUpdate": "情報の更新",
       "states": {
         "active": "In progress",
         "archived": "Archived",
@@ -2355,6 +2357,7 @@
       "unknown": "不明",
       "unsupported": "手動リセットには対応していません。使用量は自動的に回復します。"
     },
+    "syncFailed": "チャットが最新ではない可能性があります",
     "taskChips": {
       "chooseTask": "タスクを選ぶ",
       "ideas": {
@@ -3320,14 +3323,12 @@
     "connectDialog": {
       "connectedAs": "{{username}} として接続されています",
       "device": {
-        "checking": "承認を確認しています...",
         "connect": "{{connector}} を接続します",
         "description": "プロバイダーの確認ページを開き、この確認コードを入力してアクセスを承認します。",
         "intro": "接続して確認コードを取得し、プロバイダーの確認ページでそれを使用してアクセスを承認します。",
         "openPage": "認証ページを開く",
         "selectOption": "{{option}} を選択します",
         "starting": "開始中...",
-        "startingConnection": "接続を開始しています...",
         "verificationCode": "認証コード",
         "waiting": "承認を待っています。このダイアログは開いたままにしておきます。"
       },
@@ -3353,17 +3354,12 @@
       "noMethod": "利用できる接続方法はありません。",
       "or": "または",
       "progress": {
-        "connecting": "接続中...",
-        "savingPermissions": "権限を保存しています..."
+        "connecting": "接続中..."
       },
       "unavailable": {
         "description": "このコネクタには利用可能な接続方法がありますが、このダイアログからはまだ設定できません。",
         "title": "利用できない接続方法"
       }
-    },
-    "connectionProgress": {
-      "description": "認証を求められた場合は完了してください。接続の設定が完了するまでお待ちください。",
-      "title": "アカウントを接続中"
     },
     "custom": {
       "connect": {
@@ -5125,6 +5121,10 @@
           "description": "アプリの外観と動作をカスタマイズします。",
           "title": "好み"
         },
+        "proactiveAgent": {
+          "description": "Okou の学習、計画、Tasks の実行、提案を設定します。",
+          "title": "Proactive Agent"
+        },
         "tools": {
           "title": "ツール"
         },
@@ -5531,15 +5531,37 @@
       "proactiveJobs": {
         "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
         "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
+        "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
         "preparing": "Preparing your tasks. You can turn this off at any time.",
         "retry": "Retry",
         "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
         "title": "Proactive tasks"
       },
+      "proactiveLearning": {
+        "description": "夜間に活動を振り返り、個人の記憶と理解を更新します。",
+        "missingDefaultAgent": "利用可能な既定の Agent を選択してください。",
+        "missingTimezone": "設定でタイムゾーンを指定してください。",
+        "preparationFailed": "このワークフローは一時的に利用できません。Okou が再試行します。",
+        "preparing": "ワークフローを準備しています。",
+        "retry": "Retry",
+        "retryMessage": "設定を読み込むか更新できませんでした。再試行してください。",
+        "title": "学習"
+      },
+      "proactivePlanning": {
+        "description": "明確に依頼された範囲で計画し、Tasks を更新します。Tasks が有効なら新しい仕事を開始できます。",
+        "missingDefaultAgent": "利用可能な既定の Agent を選択してください。",
+        "missingTimezone": "設定でタイムゾーンを指定してください。",
+        "preparationFailed": "このワークフローは一時的に利用できません。Okou が再試行します。",
+        "preparing": "ワークフローを準備しています。",
+        "retry": "Retry",
+        "retryMessage": "設定を読み込むか更新できませんでした。再試行してください。",
+        "title": "計画"
+      },
       "proactiveSuggestions": {
         "description": "Okou が接続済みの情報源を毎時間確認し、役立つ次のアクションをホームに提案します。",
         "missingDefaultAgent": "先回りの提案を受け取るには、利用可能なデフォルトの Agent を選択してください。",
+        "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "一時的に利用できません。Okou が自動的に再試行します。",
         "preparing": "毎時間の提案を準備しています。いつでもオフにできます。",
         "retry": "再試行",

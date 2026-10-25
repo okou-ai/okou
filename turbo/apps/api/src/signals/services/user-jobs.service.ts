@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import {
   and,
@@ -26,7 +27,12 @@ import {
   type JobUpdate,
   type JobInputCreate,
   type JobListQuery,
+  type JobObservationCreate,
 } from "@okouai/api-contracts/contracts/jobs";
+import {
+  PROACTIVE_LEARNING_DEFINITION_NAME,
+  PROACTIVE_PLANNING_DEFINITION_NAME,
+} from "@okouai/api-contracts/contracts/proactive-nightly";
 import { conflict, notFound, resourceUnavailable } from "../../lib/error";
 import {
   pgBooleanDecoder,
@@ -50,6 +56,26 @@ import {
   sleepIdleProactiveJobs$,
 } from "./proactive-jobs-wake.service";
 
+interface JobExecutionOwner extends JobOwner {
+  readonly actor?: {
+    readonly runId: string;
+    readonly agentId: string;
+    readonly role: "learning" | "planning" | "agent";
+  };
+}
+
+export function deriveUserJobIdentity(owner: JobOwner, key: string) {
+  const bytes = createHash("sha1")
+    .update(Buffer.from("9b07ff60bd8f5d8da731194abfc51007", "hex"))
+    .update(JSON.stringify([owner.orgId, owner.userId, key]))
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes.readUInt8(6) & 0x0f) | 0x50;
+  bytes[8] = (bytes.readUInt8(8) & 0x3f) | 0x80;
+  const value = bytes.toString("hex");
+  return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
+}
+
 export const jobAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const features = await set(
@@ -58,12 +84,16 @@ export const jobAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
     auth.userId,
     signal,
   );
-  if (!isFeatureEnabled(FeatureSwitchKey.ProactiveJobs, features)) {
+  if (!isFeatureEnabled(FeatureSwitchKey.ProactiveAgent, features)) {
     return resourceUnavailable("Tasks are not enabled.");
   }
   if (auth.tokenType === "agent") {
     const [run] = await get(db$)
-      .select({ id: agentRuns.id })
+      .select({
+        id: agentRuns.id,
+        agentId: agentRuns.agentId,
+        provenance: agentRuns.officialWorkflowProvenance,
+      })
       .from(agentRuns)
       .innerJoin(
         orgMetadata,
@@ -82,11 +112,26 @@ export const jobAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!run) {
+    if (!run || run.agentId === null) {
       return resourceUnavailable(
         "Tasks are available only to a running primary Agent.",
       );
     }
+    const definitions = run.provenance?.definitions ?? [];
+    const role = definitions.some((definition) => {
+      return definition.name === PROACTIVE_LEARNING_DEFINITION_NAME;
+    })
+      ? ("learning" as const)
+      : definitions.some((definition) => {
+            return definition.name === PROACTIVE_PLANNING_DEFINITION_NAME;
+          })
+        ? ("planning" as const)
+        : ("agent" as const);
+    return {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      actor: { runId: run.id, agentId: run.agentId, role },
+    } satisfies JobExecutionOwner;
   }
   return { orgId: auth.orgId, userId: auth.userId };
 });
@@ -202,7 +247,23 @@ export const listUserJobs$ = command(
 );
 
 export const createUserJob$ = command(
-  async ({ set }, owner: JobOwner, input: JobCreate, signal: AbortSignal) => {
+  async (
+    { set },
+    owner: JobExecutionOwner,
+    input: JobCreate,
+    signal: AbortSignal,
+  ) => {
+    if (owner.actor?.role === "learning") {
+      return resourceUnavailable("Learning updates memory, not Tasks.");
+    }
+    if (
+      owner.actor?.role === "planning" &&
+      input.sourceReferences.length === 0
+    ) {
+      return conflict(
+        "Planning Tasks require source evidence of explicit user delegation.",
+      );
+    }
     const [row] = await set(writeDb$)
       .insert(userJobs)
       .values({ ...input, orgId: owner.orgId, ownerUserId: owner.userId })
@@ -255,14 +316,23 @@ function jobUpdateReferenceConflict(job: Job, input: JobUpdate) {
   return null;
 }
 
+function isProactiveReviewer(owner: JobExecutionOwner) {
+  return owner.actor?.role === "learning" || owner.actor?.role === "planning";
+}
+
 export const updateUserJob$ = command(
   async (
     { set },
-    owner: JobOwner,
+    owner: JobExecutionOwner,
     id: string,
     input: JobUpdate,
     signal: AbortSignal,
   ) => {
+    if (isProactiveReviewer(owner)) {
+      return resourceUnavailable(
+        "This workflow cannot overwrite Task execution progress. Planning uses observations.",
+      );
+    }
     const read = await set(readUserJob$, owner, id, signal);
     if (read.status !== 200) {
       return read;
@@ -468,6 +538,93 @@ export const appendUserJobInput$ = command(
         }
       }
       return conflict("The Task or input identity changed. Reload the Task.");
+    }
+    await set(wakeProactiveJobs$, owner, signal);
+    await publishUserJobsChangedSafely(owner);
+    signal.throwIfAborted();
+    return { status: 200 as const, body: presentJob(row) };
+  },
+);
+
+function observationMatches(
+  input: Job["inputs"][number],
+  expected: JobObservationCreate,
+) {
+  return (
+    input.kind === "observation" &&
+    input.text === expected.text &&
+    input.sourceVersion === expected.sourceVersion &&
+    isDeepStrictEqual(input.sourceReferences, expected.sourceReferences)
+  );
+}
+
+export const appendUserJobObservation$ = command(
+  async (
+    { set },
+    owner: JobExecutionOwner,
+    id: string,
+    input: JobObservationCreate,
+    signal: AbortSignal,
+  ) => {
+    if (owner.actor?.role !== "planning") {
+      return resourceUnavailable(
+        "Source observations require an Official Planning Run.",
+      );
+    }
+    const read = await set(readUserJob$, owner, id, signal);
+    if (read.status !== 200) {
+      return read;
+    }
+    const existing = read.body.inputs.find((entry) => {
+      return entry.id === input.id;
+    });
+    if (existing) {
+      return observationMatches(existing, input)
+        ? read
+        : conflict(
+            "Observation identity already exists with different content.",
+          );
+    }
+    const entry = {
+      ...input,
+      kind: "observation" as const,
+      authorUserId: null,
+      agentId: owner.actor.agentId,
+      runId: owner.actor.runId,
+      createdAt: nowDate().toISOString(),
+    };
+    const [row] = await set(writeDb$)
+      .update(userJobs)
+      .set({
+        inputs: sql`${userJobs.inputs} || ${sql.param(JSON.stringify([entry]))}::jsonb`,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          jobOwnerCondition(owner),
+          eq(userJobs.id, id),
+          ne(userJobs.status, "archived"),
+          not(
+            arrayContains(
+              userJobs.inputs,
+              sql`${JSON.stringify([{ id: input.id }])}::jsonb`,
+            ),
+          ),
+        ),
+      )
+      .returning();
+    signal.throwIfAborted();
+    if (!row) {
+      const current = await set(readUserJob$, owner, id, signal);
+      const saved =
+        current.status === 200
+          ? current.body.inputs.find((value) => {
+              return value.id === input.id;
+            })
+          : undefined;
+      return saved && observationMatches(saved, input)
+        ? current
+        : conflict("Task was archived or its observation identity changed.");
     }
     await set(wakeProactiveJobs$, owner, signal);
     await publishUserJobsChangedSafely(owner);

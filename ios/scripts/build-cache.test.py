@@ -53,6 +53,10 @@ class BuildCacheTests(unittest.TestCase):
         )
         self.resolved.parent.mkdir(parents=True)
         self.resolved.write_text('{"pins": []}\n')
+        (self.repo / "ios/version.txt").write_text("0.1.0\n")
+        config = self.repo / "ios/Config/Shared.xcconfig"
+        config.parent.mkdir()
+        config.write_text("MARKETING_VERSION = 0.1.0 // x-release-please-version\n")
         self.git("init", "-q")
         self.git("config", "user.name", "Cache Test")
         self.git("config", "user.email", "cache@example.invalid")
@@ -75,6 +79,7 @@ class BuildCacheTests(unittest.TestCase):
             "RUNNER_TEMP": str(self.root),
             "GITHUB_OUTPUT": str(self.root / "outputs"),
             "IOS_TEST_DESTINATION": "platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0",
+            "IOS_CACHE_TARGET": "simulator",
         }
         self.action = yaml(ROOT / ".github/actions/setup-ios-build-cache/action.yml")
 
@@ -134,6 +139,38 @@ class BuildCacheTests(unittest.TestCase):
                 )
                 del self.env[key]
 
+    def test_release_and_simulator_cache_namespaces_and_paths_are_isolated(self):
+        simulator = self.identity()
+        self.env["IOS_CACHE_TARGET"] = "archive"
+        archive = self.identity()
+        for key in ("dependencies-key", "compilation-key", "compilation-prefix"):
+            self.assertNotEqual(simulator[key], archive[key])
+        for key in ("dependencies-path", "compilation-path"):
+            self.assertTrue(
+                Path(archive[key]).is_relative_to(self.root / "okou-ios-promotion")
+            )
+            self.assertNotEqual(simulator[key], archive[key])
+        self.assertEqual(simulator["toolchain-file"], archive["toolchain-file"])
+
+    def test_release_cache_reuses_version_changes_but_tracks_compiler_inputs(self):
+        self.env["IOS_CACHE_TARGET"] = "archive"
+        before = self.identity()
+        (self.repo / "ios/version.txt").write_text("0.1.1\n")
+        config = self.repo / "ios/Config/Shared.xcconfig"
+        config.write_text("MARKETING_VERSION = 0.1.1 // x-release-please-version\n")
+        self.commit()
+        self.assertEqual(before, self.identity())
+        (self.repo / "ios/App.swift").write_text("let value = 1\n")
+        self.commit()
+        source = self.identity()
+        self.assertNotEqual(before["compilation-key"], source["compilation-key"])
+        self.assertEqual(before["dependencies-key"], source["dependencies-key"])
+        config.write_text(config.read_text() + "SWIFT_OPTIMIZATION_LEVEL = -Osize\n")
+        self.commit()
+        self.assertNotEqual(
+            source["compilation-key"], self.identity()["compilation-key"]
+        )
+
     def test_only_selected_main_jobs_can_write_caches(self):
         workflow = yaml(ROOT / ".github/workflows/ios-build-cache.yml")
         source = yaml(ROOT / ".github/workflows/ios.yml")
@@ -147,53 +184,69 @@ class BuildCacheTests(unittest.TestCase):
                 "refs/pull/1/merge",
                 "refs/heads/gh-readonly-queue/main/pr-1",
             ):
-                for needed in ("true", "false", ""):
-                    condition = (
-                        job["if"]
-                        .replace("github.ref", repr(ref))
-                        .replace("needs.detect.outputs.needed", repr(needed))
-                    )
-                    self.assertEqual(
-                        compare_literals(condition),
-                        ref == "refs/heads/main"
-                        and (role == "detect" or needed == "true"),
-                    )
-        warm = workflow["jobs"]["warm"]
-        self.assertFalse(warm["concurrency"]["cancel-in-progress"])
-        checkout = next(
-            step
-            for step in warm["steps"]
-            if step.get("uses", "").startswith("actions/checkout@")
-        )
-        self.assertEqual(checkout["with"]["ref"], "${{ github.sha }}")
-        self.assertFalse(checkout["with"]["persist-credentials"])
+                for event in ("push", "workflow_dispatch", "workflow_run"):
+                    for needed in ("true", "false", ""):
+                        condition = (
+                            job["if"]
+                            .replace("github.ref", repr(ref))
+                            .replace("github.event_name", repr(event))
+                            .replace("needs.detect.outputs.needed", repr(needed))
+                        )
+                        selected = {
+                            "detect": True,
+                            "dispatch": needed == "true" and event == "workflow_run",
+                            "warm": needed == "true" and event != "workflow_run",
+                            "warm-archive": needed == "true"
+                            and event != "workflow_run",
+                        }
+                        self.assertEqual(
+                            compare_literals(condition),
+                            ref == "refs/heads/main" and selected[role],
+                        )
+        for role in ("warm", "warm-archive"):
+            warm = workflow["jobs"][role]
+            self.assertFalse(warm["concurrency"]["cancel-in-progress"])
+            checkout = next(
+                step
+                for step in warm["steps"]
+                if step.get("uses", "").startswith("actions/checkout@")
+            )
+            self.assertEqual(checkout["with"]["ref"], "${{ github.sha }}")
+            self.assertFalse(checkout["with"]["persist-credentials"])
 
     def test_exact_hits_skip_only_the_work_already_cached(self):
         workflow = yaml(ROOT / ".github/workflows/ios-build-cache.yml")
-        steps = {
-            step["id"]: step
-            for step in workflow["jobs"]["warm"]["steps"]
-            if "if" in step
-        }
-        for dependencies in ("true", "false", ""):
-            for compilation in ("true", "false", ""):
-                needed = {
-                    "prepare": dependencies != "true" or compilation != "true",
-                    "save-dependencies": dependencies != "true",
-                    "compile": compilation != "true",
-                    "save-compilation": compilation != "true",
-                }
-                for role, step in steps.items():
-                    condition = (
-                        step["if"]
-                        .replace(
-                            "steps.cache.outputs.dependencies-hit", repr(dependencies)
+        for job_name in ("warm", "warm-archive"):
+            steps = {
+                step["id"]: step
+                for step in workflow["jobs"][job_name]["steps"]
+                if "if" in step
+            }
+            for dependencies in ("true", "false", ""):
+                for compilation in ("true", "false", ""):
+                    prepare = dependencies != "true" or compilation != "true"
+                    needed = {
+                        "prepare": prepare,
+                        "save-dependencies": dependencies != "true",
+                        "verify-dependencies": dependencies != "true",
+                        "compile": prepare
+                        if job_name == "warm-archive"
+                        else compilation != "true",
+                        "save-compilation": compilation != "true",
+                        "verify-compilation": compilation != "true",
+                    }
+                    for role, step in steps.items():
+                        condition = (
+                            step["if"]
+                            .replace(
+                                "steps.cache.outputs.dependencies-hit",
+                                repr(dependencies),
+                            )
+                            .replace(
+                                "steps.cache.outputs.compilation-hit", repr(compilation)
+                            )
                         )
-                        .replace(
-                            "steps.cache.outputs.compilation-hit", repr(compilation)
-                        )
-                    )
-                    self.assertEqual(compare_literals(condition), needed[role])
+                        self.assertEqual(compare_literals(condition), needed[role])
 
     def test_producer_and_restore_paths_and_keys_match(self):
         workflow = yaml(ROOT / ".github/workflows/ios-build-cache.yml")
@@ -202,18 +255,75 @@ class BuildCacheTests(unittest.TestCase):
             for step in self.action["runs"]["steps"]
             if step.get("id") in ("dependencies", "compilation")
         }
-        for role in ("dependencies", "compilation"):
-            save = next(
-                step
-                for step in workflow["jobs"]["warm"]["steps"]
-                if step.get("id") == f"save-{role}"
+        for job_name in ("warm", "warm-archive"):
+            for role in ("dependencies", "compilation"):
+                save = next(
+                    step
+                    for step in workflow["jobs"][job_name]["steps"]
+                    if step.get("id") == f"save-{role}"
+                )
+                self.assertEqual(
+                    save["with"]["path"].replace(
+                        "steps.cache.outputs.", "steps.identity.outputs."
+                    ),
+                    restores[role]["with"]["path"],
+                )
+                self.assertEqual(
+                    save["with"]["key"].replace(
+                        "steps.cache.outputs.", "steps.identity.outputs."
+                    ),
+                    restores[role]["with"]["key"],
+                )
+                verify = next(
+                    step
+                    for step in workflow["jobs"][job_name]["steps"]
+                    if step.get("id") == f"verify-{role}"
+                )
+                self.assertEqual(verify["with"]["path"], save["with"]["path"])
+                self.assertEqual(verify["with"]["key"], save["with"]["key"])
+                self.assertTrue(verify["with"]["lookup-only"])
+                self.assertTrue(verify["with"]["fail-on-cache-miss"])
+                self.assertNotIn("restore-keys", verify["with"])
+
+    def test_completion_dispatches_only_main_and_preserves_api_failure(self):
+        workflow = yaml(ROOT / ".github/workflows/ios-build-cache.yml")
+        dispatch = workflow["jobs"]["dispatch"]
+        self.assertEqual(dispatch["permissions"], {"actions": "write"})
+        request = self.root / "dispatch-request.json"
+        gh = self.root / "bin/gh"
+        gh.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, sys\n"
+            "from pathlib import Path\n"
+            "Path(os.environ['TEST_REQUEST']).write_text(json.dumps(sys.argv[1:]))\n"
+            "sys.exit(int(os.environ['TEST_API_STATUS']))\n"
+        )
+        gh.chmod(0o755)
+        for status in (0, 1):
+            result = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", dispatch["steps"][0]["run"]],
+                cwd=self.repo,
+                env=self.env
+                | {
+                    "GITHUB_REPOSITORY": "okou-ai/okou",
+                    "TEST_REQUEST": str(request),
+                    "TEST_API_STATUS": str(status),
+                },
+                capture_output=True,
+                text=True,
+                check=False,
             )
-            self.assertEqual(save["with"]["path"], restores[role]["with"]["path"])
+            self.assertEqual(result.returncode, status, result.stderr)
             self.assertEqual(
-                save["with"]["key"].replace(
-                    "steps.cache.outputs.", "steps.identity.outputs."
-                ),
-                restores[role]["with"]["key"],
+                json.loads(request.read_text()),
+                [
+                    "api",
+                    "--method",
+                    "POST",
+                    "repos/okou-ai/okou/actions/workflows/ios-build-cache.yml/dispatches",
+                    "-f",
+                    "ref=main",
+                ],
             )
 
     def warm_decision(self, event, jobs, source="okou-ai/okou", api_status=0):

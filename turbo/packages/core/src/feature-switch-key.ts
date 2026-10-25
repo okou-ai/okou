@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  IosComposerConnectors = "iosComposerConnectors",
   SlackWorkspaceIdentity = "slackWorkspaceIdentity",
   BatchConnectorPermissions = "batchConnectorPermissions",
   JsonTreePreview = "jsonTreePreview",
@@ -70,8 +71,7 @@ export enum FeatureSwitchKey {
   GoogleDocsSheetsConversion = "googleDocsSheetsConversion",
   BrowserNativeInput = "browserNativeInput",
   BrowserCdpViewer = "browserCdpViewer",
-  AgentSuggestion = "agentSuggestion",
-  ProactiveJobs = "proactiveJobs",
+  ProactiveAgent = "proactiveAgent",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
   SlashActions = "slashActions",
 }

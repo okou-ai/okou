@@ -123,6 +123,72 @@ class ForegroundReportTests(unittest.TestCase):
         self.write()
         self.assertNotEqual(subprocess.run(command,capture_output=True).returncode,0)
 
+    def recovery_policy(self, freshness=200, sustain=240):
+        self.policy.update(max_sample_age_millis=freshness,
+            pressure_recovery_sustain_millis=sustain)
+        raw = json.dumps(self.policy)
+        self.collector["metadata"]["native_foreground_policy_json"] = raw
+        self.artifacts["policy_sha256"] = hashlib.sha256(raw.encode()).hexdigest()
+
+    def test_cli_accepts_sustained_history_with_only_the_latest_read_still_fresh(self):
+        self.recovery_policy()
+        # Three reads span 240 ms, with 120 ms gaps; only the last is still
+        # within the 200 ms bound at the decision. Historical reads were fresh.
+        self.write()
+        command = [sys.executable, str(pathlib.Path(__file__).with_name("foreground_report.py")), str(self.root)]
+        result = json.loads(subprocess.check_output(command))
+        self.assertTrue(result["native_foreground_progress_complete"])
+        self.assertEqual(set(result["cases"]), foreground.CASES)
+        self.assertFalse(result["memory_envelope_calibrated"])
+        self.assertFalse(result["production_protection_proven"])
+
+    def test_ready_resets_on_unknown_critical_or_interrupted_recovery(self):
+        self.recovery_policy()
+        self.refused(tuple(lambda value=value: self.witnesses[2]["evidence"]["samples"][1].update(
+            available_bytes=value) for value in (None, self.policy["critical_available_bytes"],
+                self.policy["recovery_available_bytes"]-1)))
+
+    def test_read_start_gap_at_freshness_bound_cannot_sustain_ready(self):
+        self.recovery_policy(freshness=240)
+        # Retaining just the endpoints used to manufacture sustained recovery
+        # across a gap at the expiry boundary.
+        self.witnesses[2]["evidence"]["samples"].pop(1)
+        with self.assertRaisesRegex(ValueError, "lacks distinct sustained"):
+            self.validate()
+
+    def test_current_observation_must_still_be_fresh(self):
+        self.recovery_policy(freshness=139)
+        with self.assertRaisesRegex(ValueError, "lacks distinct sustained"):
+            self.validate()
+
+    def test_observation_already_expired_when_read_cannot_sustain_ready(self):
+        self.recovery_policy()
+        sample = self.witnesses[2]["evidence"]["samples"][1]
+        sample.update(finished_ns=sample["started_ns"]+201_000_000, age_ns=201_000_000)
+        with self.assertRaisesRegex(ValueError, "lacks distinct sustained"):
+            self.validate()
+
+    def test_coherent_history_cannot_claim_an_unfinished_recovery(self):
+        self.recovery_policy(sustain=241)
+        with self.assertRaisesRegex(ValueError, "lacks distinct sustained"):
+            self.validate()
+
+    def test_ready_rejects_read_offsets_outside_the_actual_monotonic_intervals(self):
+        self.recovery_policy()
+        self.witnesses[2]["evidence"]["samples"][1]["read_start_offset_ns"] += 1_000_000
+        with self.assertRaisesRegex(ValueError, "offsets contradict"):
+            self.validate()
+
+    def test_completed_recovery_survives_the_hysteresis_band(self):
+        self.recovery_policy(sustain=100)
+        samples = self.witnesses[2]["evidence"]["samples"]
+        middle = copy.deepcopy(samples[1])
+        for key in ("started_ns", "finished_ns", "read_start_offset_ns"):
+            middle[key] += 60_000_000
+        middle["available_bytes"] = self.policy["recovery_available_bytes"]-1
+        samples.insert(2, middle)
+        self.assertTrue(self.validate()["native_foreground_progress_complete"])
+
     def test_missing_duplicate_wrong_case_and_order_fail(self):
         self.refused((lambda:self.witnesses.pop(2), lambda:self.witnesses.append(copy.deepcopy(self.witnesses[-1])),
             lambda:self.witnesses[0].update(case="Startup-fresh"),

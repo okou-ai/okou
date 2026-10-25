@@ -85,8 +85,8 @@ required for the final archive.
   for the exact app/version/build to finish processing, assigns it only to the
   configured internal group, and reads back both group membership and the
   `IN_BETA_TESTING` state. Missing export compliance, invalid builds, API access
-  errors, and timeouts fail the job. This is API evidence of availability; verify
-  installation and login on a tester's iPhone for the first release.
+  errors, and timeouts fail the job. This is API evidence of availability;
+  installation and login require separate device acceptance.
 - A missing or mismatched canonical archive/test record stops publication before
   App Store Connect preparation. Restore the exact object or correct the cause;
   never select a latest successful archive or rebuild inside the publishing job.
@@ -102,8 +102,11 @@ required for the final archive.
   Release configuration. Do not pass `PROVISIONING_PROFILE_SPECIFIER` as a
   global `xcodebuild` setting: Swift Package resource targets reject it.
 - The existing server rollback workflow does not roll back installed iOS apps.
-  Ship a corrected build instead. A separate minimum-build API gate remains
-  outstanding; TestFlight's 90-day build validity is not that gate.
+  Ship a corrected build instead. The API's source-controlled
+  [iOS compatibility policy](../turbo/apps/api/src/lib/ios-client-compatibility.json)
+  compares the marketing version advertised in `X-Client-Version`; it is
+  independent of the App Store Connect build number and TestFlight validity.
+  Check that policy separately when retiring an installed version.
 
 ## Archive promotion
 
@@ -115,9 +118,10 @@ merge-group evidence; missing evidence or mixed groups run full tests. The
 production job requires `release-testflight.sh --archive <unsigned.xcarchive>`.
 Its export-only `--verify-archive` mode remains available and never uploads.
 
-The main distribution-export prerequisite passed in run
-[37862058239](https://github.com/okou-ai/okou/actions/runs/37862058239). First-release
-App Store Connect acceptance and device installation still require verification.
+For each release, inspect the exact publishing run and App Store Connect
+version/build. Verify internal-group availability separately from device
+installation and login. Historical export proofs do not establish the current
+release's publication or device acceptance.
 
 ## Local verification without Apple access
 

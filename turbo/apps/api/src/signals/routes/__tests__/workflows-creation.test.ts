@@ -231,6 +231,70 @@ describe("Workflow creation publication", () => {
     );
   });
 
+  it("publishes one readable Workflow when two creates share a private name", async () => {
+    const { actor, thread, body } = await setupCreation();
+    const s3 = installS3Fixture();
+    const bothUploading = deferred<void>();
+    const release = deferred<void>();
+    let uploads = 0;
+    s3.intercept(async (command) => {
+      if (
+        command instanceof PutObjectCommand &&
+        command.input.Key?.endsWith("/archive.tar.gz")
+      ) {
+        uploads += 1;
+        if (uploads === 2) {
+          bothUploading.resolve();
+        }
+        await release.promise;
+      }
+    });
+    const creating = Promise.all([
+      accept(client().create({ headers: headers(actor), body }), [201, 409]),
+      accept(client().create({ headers: headers(actor), body }), [201, 409]),
+    ]);
+    onTestFinished(async () => {
+      release.resolve();
+      await creating;
+    });
+    await bothUploading.promise;
+    release.resolve();
+    const results = await creating;
+    expect(
+      results
+        .map((result) => {
+          return result.status;
+        })
+        .sort(),
+    ).toStrictEqual([201, 409]);
+    const created = results.find((result) => {
+      return result.status === 201;
+    });
+    if (!created || created.status !== 201) {
+      throw new Error("Expected one successful Workflow publication");
+    }
+    const listed = await accept(
+      client().list({ headers: headers(actor) }),
+      [200],
+    );
+    expect(
+      listed.body.filter((workflow) => {
+        return workflow.name === body.name;
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({ id: created.body.id, name: body.name }),
+    ]);
+    await assertReadable(actor, created.body.id, body);
+    const shared = await accept(
+      detailClient().chatThread({
+        headers: headers(actor),
+        params: { workflowId: created.body.id },
+      }),
+      [200],
+    );
+    expect(shared.body.chatThreadId).toBe(thread.id);
+  });
+
   it.each(["archive upload", "manifest upload"])(
     "does not publish after %s fails and permits the same create after recovery",
     async (phase) => {

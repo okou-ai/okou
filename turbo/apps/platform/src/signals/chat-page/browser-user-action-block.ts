@@ -25,9 +25,8 @@ import { ApiError } from "../../lib/api-error.ts";
 import { fetchResource } from "../../lib/resource-fetch.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { pageSignal$ } from "../page-signal.ts";
 import { setAblyLoop$ } from "../realtime.ts";
-import { onRef, resetSignal, settle, withCleanup } from "../utils.ts";
+import { onRef, settle } from "../utils.ts";
 import {
   runChatActionCallback$,
   type ChatActionCallbackIds,
@@ -354,29 +353,20 @@ async function readBrowserUserAction(
 }
 
 function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
-  // Owned reads publish their Promise, never a late resolved snapshot.
-  const refreshedRequest$ =
-    state<Promise<BrowserUserActionRequestState> | null>(null);
-  const resetRead$ = resetSignal();
+  const revision$ = state(0);
   const request$ = computed(
     async (get): Promise<BrowserUserActionRequestState> => {
+      get(revision$);
       if (get(featureSwitch$)[FeatureSwitchKey.BrowserNativeInput] !== true) {
         return { kind: "unavailable" };
       }
-      return await (get(refreshedRequest$) ??
-        readBrowserUserAction(get(apiClient$), descriptor));
+      return await readBrowserUserAction(get(apiClient$), descriptor);
     },
   );
-  const refresh$ = command(({ get, set }) => {
-    const signal = set(resetRead$, get(pageSignal$));
-    signal.throwIfAborted();
-    if (get(featureSwitch$)[FeatureSwitchKey.BrowserNativeInput] !== true) {
-      return;
-    }
-    set(
-      refreshedRequest$,
-      readBrowserUserAction(get(apiClient$), descriptor, signal),
-    );
+  const refresh$ = command(({ set }) => {
+    set(revision$, (revision) => {
+      return revision + 1;
+    });
   });
   return { request$, refresh$ };
 }
@@ -1401,24 +1391,7 @@ function createSubmitSignal({
       }
     },
   );
-  // Upload staging is shared by request, not by the mounted form. A reopened
-  // form must await the existing submit instead of overwriting its file bytes.
-  const inFlight$ = state<Promise<void> | null>(null);
-  return command(
-    ({ get, set }, action: BrowserInputAction, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      const inFlight = get(inFlight$);
-      if (inFlight) {
-        return inFlight;
-      }
-      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-      const operation = withCleanup(set(submit$, action, signal), () => {
-        set(inFlight$, null);
-      });
-      set(inFlight$, operation);
-      return operation;
-    },
-  );
+  return submit$;
 }
 
 function createCancelSignal({

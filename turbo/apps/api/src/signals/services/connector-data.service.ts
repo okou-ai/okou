@@ -35,6 +35,7 @@ import {
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
 import { connectors } from "@okouai/db/schema/connector";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { gmailWatchStates } from "@okouai/db/schema/gmail-event";
 import { googleCalendarWatchStates } from "@okouai/db/schema/google-calendar-event";
 import { mailDrafts } from "@okouai/db/schema/mail-draft";
@@ -42,7 +43,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   completedGetStartedQuestSql,
@@ -60,6 +61,9 @@ import { db$, writeDb$, type Db } from "../external/db";
 import { bestEffort, settle, settleIncludingAbort } from "../utils";
 import {
   builtinConnectorCredentialStorageIsCompatible,
+  prepareBuiltinTokenRevoke,
+  builtinTokenRevokeFromRows,
+  type BuiltinConnectorPendingTokenRevokeArgs,
   builtinConnectorTokenRevokeReadPlan,
   builtinConnectorTokenRevokeInputsFromRows,
   resolveBuiltinConnectorCredentialAccess,
@@ -67,7 +71,12 @@ import {
 } from "./builtin-connector-credential-access.service";
 import {
   connectorAccountFieldMarkers,
-  prepareConnectorAccountDeletionWithTargetLocked,
+  connectorAccountOwnerCondition,
+  connectorAccountById,
+  connectorAccountSibling,
+  connectorAccountDeletionResult,
+  type ConnectorAccountDeletionScope,
+  type PreparedConnectorAccountDeletion,
 } from "./connector-account-lifecycle.service";
 import {
   connectorAccountSetup,
@@ -88,7 +97,7 @@ import {
 import { normalizeManualGrantSubmittedValuesWithMethod } from "./connector-catalog-form-fields.service";
 import {
   connectorCatalogSearchFromSnapshot,
-  loadAcceptedConnectorCatalogSnapshot,
+  loadAcceptedDisplayConnectorCatalogSnapshot$,
 } from "./connector-catalog-external-reader.service";
 import { isConnectorCatalogUnavailableError } from "./connector-catalog-reader.service";
 import type {
@@ -104,7 +113,9 @@ import {
 import { publishBuiltinConnectorInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import {
   replaceConnectorConnectionOutcome,
-  resolveConnectorConnectionMutation,
+  connectorConnectionMutationReadPlan,
+  connectorConnectionMutationReadResult,
+  type ConnectorConnectionMutationArgs,
   type ConnectorConnectionMutationResolution,
   type StoredConnectorConnectionRow as StoredConnectorRow,
 } from "./connector-connection-write.service";
@@ -113,9 +124,16 @@ import {
   builtinConnectorCredentialStatusWithMethod,
 } from "./connector-credential-status.service";
 import {
-  deleteConnectorCredentialStorageConnection,
+  connectorCredentialStorageConnectionDeletionPlan,
+  connectorCredentialStorageSelectionDeletionPlan,
+  connectorCredentialStorageCursorDeletionPlan,
   connectorOwnedSecretWrite,
   connectorOwnedVariableWrite,
+  manualGrantConnectionMetadata,
+  manualGrantCredentialArgs,
+  manualGrantSecretWrite,
+  manualGrantVariableWrite,
+  requireManualGrantWrite,
   manualGrantUserSecretDeletion,
   manualGrantUserVariableDeletion,
 } from "./connector-credential-storage-write.service";
@@ -549,12 +567,17 @@ async function finalizeConnectorStateChangeAfterCommit(
 ): Promise<void> {
   let postCommitAbort = args.postCommitAbort;
   if (args.pendingTokenRevoke) {
-    await revokePendingConnectorToken(
-      {
-        pending: args.pendingTokenRevoke,
-      },
-      signal,
+    const revoked = await settleIncludingAbort(
+      revokePendingConnectorToken(
+        {
+          pending: args.pendingTokenRevoke,
+        },
+        signal,
+      ),
     );
+    if (!revoked.ok) {
+      postCommitAbort ??= revoked.error;
+    }
     if (signal.aborted) {
       postCommitAbort ??= signal.reason;
     }
@@ -892,16 +915,88 @@ async function prepareBuiltinConnectorAccountDeletion(
   },
   signal: AbortSignal,
 ) {
-  return await prepareConnectorAccountDeletionWithTargetLocked(
-    db,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      target: { kind: "builtin", connectorSlug: args.connectorSlug },
-      connectionId: args.connectionId,
-    },
-    signal,
-  );
+  const deletionDb = db;
+  const deletionArgs: ConnectorAccountDeletionScope = {
+    orgId: args.orgId,
+    userId: args.userId,
+    target: { kind: "builtin", connectorSlug: args.connectorSlug },
+    connectionId: args.connectionId,
+  };
+  const deletionSignal = signal;
+  return await (async (): Promise<PreparedConnectorAccountDeletion> => {
+    const owner = connectorAccountOwnerCondition(deletionArgs);
+    const [account] = await deletionDb
+      .select({ isDefault: connectors.isDefault })
+      .from(connectors)
+      .where(connectorAccountById(owner, deletionArgs.connectionId))
+      .limit(1);
+    if (!account) {
+      return { kind: "missing" };
+    }
+    let promotedDefaultConnectionId: string | null = null;
+    if (account.isDefault) {
+      const [sibling] = await deletionDb
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(connectorAccountSibling(owner, deletionArgs.connectionId))
+        .orderBy(asc(connectors.createdAt), asc(connectors.id))
+        .limit(1);
+      if (sibling) {
+        await deletionDb
+          .update(connectors)
+          .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+          .where(eq(connectors.id, deletionArgs.connectionId));
+        await deletionDb
+          .update(connectors)
+          .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+          .where(eq(connectors.id, sibling.id));
+        promotedDefaultConnectionId = sibling.id;
+      }
+    }
+
+    const resolvedSelectionCount =
+      (
+        await deletionDb
+          .delete(chatThreadConnectorSelections)
+          .where(
+            eq(
+              chatThreadConnectorSelections.connectorId,
+              deletionArgs.connectionId,
+            ),
+          )
+      ).rowCount ?? 0;
+
+    if (
+      deletionArgs.target.kind === "builtin" &&
+      deletionArgs.target.connectorSlug === "notion"
+    ) {
+      const pendingEventDb = deletionDb;
+      const invalidatedConnectorId = deletionArgs.connectionId;
+      await (async () => {
+        const scope = notionPendingEventsReconnectScope(invalidatedConnectorId);
+        await (async () => {
+          const write = notionPendingEventsSkipWrite(
+            scope.condition,
+            scope.reason,
+          );
+          await pendingEventDb
+            .update(write.table)
+            .set(write.values)
+            .where(write.where);
+        })();
+      })();
+    }
+    await reprojectWorkflowAutomationsForOwner(
+      deletionDb,
+      deletionArgs,
+      deletionSignal,
+    );
+
+    return connectorAccountDeletionResult(
+      resolvedSelectionCount,
+      promotedDefaultConnectionId,
+    );
+  })();
 }
 
 type DeleteBuiltinConnectorLocalStateResult =
@@ -948,15 +1043,34 @@ const prepareDeletedConnectorMeetCleanup$ = command(
   },
 );
 
-async function deleteBuiltinConnectorAccountLocalState(
-  tx: Tx,
-  args: DeleteBuiltinConnectorLocalStateArgs & {
+type DeleteBuiltinConnectorAccountLocalStateArgs =
+  DeleteBuiltinConnectorLocalStateArgs & {
     readonly account: { readonly connectionId: string };
     readonly deletion: Extract<
       Awaited<ReturnType<typeof prepareBuiltinConnectorAccountDeletion>>,
       { kind: "ready" }
     >;
-  },
+  };
+
+function builtinConnectorLocalAccountDeletionResult(args: {
+  readonly pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null;
+  readonly deletion: DeleteBuiltinConnectorAccountLocalStateArgs["deletion"];
+  readonly lateSelectionCount: number;
+}) {
+  return {
+    kind: "deleted" as const,
+    pendingTokenRevoke: args.pendingTokenRevoke,
+    deletion: {
+      ...args.deletion,
+      resolvedSelectionCount:
+        args.deletion.resolvedSelectionCount + args.lateSelectionCount,
+    },
+  };
+}
+
+async function deleteBuiltinConnectorAccountLocalState(
+  tx: Tx,
+  args: DeleteBuiltinConnectorAccountLocalStateArgs,
   snapshot: ConnectorRuntimeSelection | null,
   featureSwitchContext: FeatureSwitchContext | null,
   signal: AbortSignal,
@@ -1033,20 +1147,65 @@ async function deleteBuiltinConnectorAccountLocalState(
   }
   signal.throwIfAborted();
 
-  const lateSelectionCount = await deleteConnectorCredentialStorageConnection(
-    tx,
-    { connectorId: existing.id },
-    signal,
-  );
-  return {
-    kind: "deleted" as const,
+  /**
+   * Use the caller's transaction to delete the account, then resolve references
+   * in the next SQL snapshot. The existing deferred account FK is checked at commit. A selection
+   * committed before the deletion's ordinary parent-row mutation is included in
+   * the child DELETE; a later insert fails its FK check. No lock-only write or
+   * SELECT lock is used, and the exact returned count includes late references.
+   */
+  const storageDeletionDb = tx;
+  const storageDeletionArgs = { connectorId: existing.id };
+  const lateSelectionCount = await (async () => {
+    const plan =
+      connectorCredentialStorageConnectionDeletionPlan(storageDeletionArgs);
+    await storageDeletionDb.delete(plan.secrets.from).where(plan.secrets.where);
+    signal.throwIfAborted();
+    await storageDeletionDb
+      .delete(plan.variables.from)
+      .where(plan.variables.where);
+    signal.throwIfAborted();
+    await storageDeletionDb.execute(plan.deferSelections);
+    const deleted = await storageDeletionDb
+      .delete(plan.account.from)
+      .where(plan.account.where)
+      .returning(plan.account.returning);
+    let lateSelectionCount = 0;
+    if (deleted.length > 0) {
+      const selection =
+        connectorCredentialStorageSelectionDeletionPlan(deleted);
+      const selections = await storageDeletionDb
+        .delete(selection.from)
+        .where(selection.where)
+        .returning(selection.returning);
+      lateSelectionCount = selections.length;
+    }
+    await storageDeletionDb.execute(plan.enforceSelections);
+    if (deleted.length > 0) {
+      // FK deletion has already cleared event_connector_id. Use the retained
+      // source config to invalidate only cursors belonging to deleted accounts.
+      // A subsequent projection onto a new account is a different source.
+      const cursor = connectorCredentialStorageCursorDeletionPlan(deleted);
+      await storageDeletionDb
+        .delete(cursor.from)
+        .where(
+          inArray(
+            cursor.automationId,
+            storageDeletionDb
+              .select(cursor.automations.columns)
+              .from(cursor.automations.from)
+              .where(cursor.automations.where),
+          ),
+        );
+    }
+    signal.throwIfAborted();
+    return lateSelectionCount;
+  })();
+  return builtinConnectorLocalAccountDeletionResult({
     pendingTokenRevoke,
-    deletion: {
-      ...deletion,
-      resolvedSelectionCount:
-        deletion.resolvedSelectionCount + lateSelectionCount,
-    },
-  };
+    deletion,
+    lateSelectionCount,
+  });
 }
 
 const stopDeletedWatches$ = command(
@@ -1362,145 +1521,6 @@ export const deleteBuiltinConnectorLocalState$ = command(
   },
 );
 
-async function loadPendingConnectorTokenRevokeForLocalConnect(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorSlug: string;
-    readonly snapshot: ConnectorRuntimeSelection;
-    readonly featureSwitchContext: FeatureSwitchContext;
-    readonly existing: Pick<
-      StoredConnectorRow,
-      "id" | "authMethod" | "storageVersion"
-    > | null;
-  },
-  signal: AbortSignal,
-): Promise<PendingBuiltinConnectorTokenRevoke | null> {
-  if (!args.existing) {
-    return null;
-  }
-
-  let pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null = null;
-  const accessResult = resolveBuiltinConnectorCredentialAccess({
-    snapshot: args.snapshot,
-    stored: {
-      authMethodId: args.existing.authMethod,
-      connectorId: args.existing.id,
-      connectorSlug: args.connectorSlug,
-      orgId: args.orgId,
-      storageVersion: args.existing.storageVersion,
-      userId: args.userId,
-    },
-  });
-  if (
-    accessResult.kind === "ok" &&
-    accessResult.access.runtimeMethod.method.revoke.kind === "token-revoke"
-  ) {
-    const revokeArgs = {
-      access: accessResult.access,
-      featureSwitchContext: args.featureSwitchContext,
-    };
-    const revokeSignal = signal;
-    pendingTokenRevoke =
-      await (async (): Promise<PendingBuiltinConnectorTokenRevoke | null> => {
-        const read = builtinConnectorTokenRevokeReadPlan(revokeArgs.access);
-        if (read.kind === "none") {
-          return null;
-        }
-        if (read.kind === "empty") {
-          return {
-            runtimeMethod: revokeArgs.access.runtimeMethod,
-            encryptedInputs: {},
-            featureSwitchContext: revokeArgs.featureSwitchContext,
-          };
-        }
-        const secretRows = await db
-          .select(read.columns)
-          .from(read.from)
-          .where(read.where);
-        revokeSignal.throwIfAborted();
-        const encryptedInputs = builtinConnectorTokenRevokeInputsFromRows(
-          read.inputEntries,
-          secretRows,
-        );
-        if (encryptedInputs === null) {
-          return null;
-        }
-        return {
-          runtimeMethod: revokeArgs.access.runtimeMethod,
-          encryptedInputs,
-          featureSwitchContext: revokeArgs.featureSwitchContext,
-        };
-      })();
-  }
-
-  return pendingTokenRevoke;
-}
-
-async function writeManualGrantCredentials(
-  db: Db,
-  args: {
-    readonly connectorId: string;
-    readonly encryptedSecrets: readonly EncryptedManualGrantSecret[];
-    readonly method: ConnectorRuntimeMethod["method"];
-    readonly orgId: string;
-    readonly userId: string;
-    readonly variableValues: readonly PreparedManualGrantField[];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  for (const field of args.encryptedSecrets) {
-    const credential = {
-      connectorId: args.connectorId,
-      storage: args.method.storage,
-      orgId: args.orgId,
-      userId: args.userId,
-      name: field.name,
-      encryptedValue: field.encryptedValue,
-      description: null,
-      updatedDescription: null,
-    };
-    const write = connectorOwnedSecretWrite(credential);
-    const [row] = await db
-      .insert(secrets)
-      .values(write.values)
-      .onConflictDoUpdate(write.conflict)
-      .returning({ id: secrets.id });
-    if (!row) {
-      throw new Error(
-        `Connector secret ${credential.name} is owned by another row`,
-      );
-    }
-    signal.throwIfAborted();
-  }
-
-  for (const field of args.variableValues) {
-    const credential = {
-      connectorId: args.connectorId,
-      storage: args.method.storage,
-      orgId: args.orgId,
-      userId: args.userId,
-      name: field.name,
-      value: field.value,
-      description: null,
-      updatedDescription: null,
-    };
-    const write = connectorOwnedVariableWrite(credential);
-    const [row] = await db
-      .insert(variables)
-      .values(write.values)
-      .onConflictDoUpdate(write.conflict)
-      .returning({ id: variables.id });
-    if (!row) {
-      throw new Error(
-        `Connector variable ${credential.name} is owned by another row`,
-      );
-    }
-    signal.throwIfAborted();
-  }
-}
-
 interface CommitManualGrantConnectorArgs {
   readonly orgId: string;
   readonly userId: string;
@@ -1512,19 +1532,13 @@ interface CommitManualGrantConnectorArgs {
   readonly featureSwitchContext: FeatureSwitchContext;
 }
 
-async function commitManualGrantConnector(
-  db: Tx,
-  args: CommitManualGrantConnectorArgs,
-  signal: AbortSignal,
-): Promise<
-  | {
-      readonly status: "connected";
-      readonly connectorRow: StoredConnectorRow;
-      readonly pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null;
-    }
-  | ConnectorConnectionMutationFailure
-> {
-  const resolution = await resolveConnectorConnectionMutation(db, {
+function builtinConnectorLocalMutationValues(
+  args: Pick<
+    CommitManualGrantConnectorArgs,
+    "orgId" | "userId" | "runtimeMethod" | "account"
+  >,
+): ConnectorConnectionMutationArgs {
+  return {
     orgId: args.orgId,
     userId: args.userId,
     target: {
@@ -1533,58 +1547,147 @@ async function commitManualGrantConnector(
     },
     mutation: args.account,
     allowSiblings: true,
-  });
+  };
+}
+
+type ManualGrantConnectorCommitResult =
+  | {
+      readonly status: "connected";
+      readonly connectorRow: StoredConnectorRow;
+      readonly pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null;
+    }
+  | ConnectorConnectionMutationFailure;
+
+function localTokenRevokeValues(
+  args: Pick<
+    CommitManualGrantConnectorArgs,
+    "orgId" | "userId" | "runtimeMethod" | "snapshot"
+  >,
+  mutation: Extract<
+    ConnectorConnectionMutationResolution,
+    { kind: "ready" }
+  >["mutation"],
+  featureSwitchContext: FeatureSwitchContext,
+): BuiltinConnectorPendingTokenRevokeArgs {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    connectorSlug: args.runtimeMethod.connectorSlug,
+    snapshot: args.snapshot,
+    featureSwitchContext,
+    existing: mutation.kind === "update" ? mutation.existing : null,
+    replacement: "local",
+  };
+}
+
+function manualGrantCleanupValues(
+  args: Pick<CommitManualGrantConnectorArgs, "orgId" | "userId" | "prepared">,
+  kind: "secret" | "variable",
+) {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    names:
+      kind === "secret"
+        ? args.prepared.configuredSecretNames
+        : args.prepared.configuredVariableNames,
+  };
+}
+
+async function commitManualGrantConnector(
+  db: Tx,
+  args: CommitManualGrantConnectorArgs,
+  signal: AbortSignal,
+): Promise<ManualGrantConnectorCommitResult> {
+  const mutationReadDb = db;
+  const mutationReadArgs: ConnectorConnectionMutationArgs =
+    builtinConnectorLocalMutationValues(args);
+  const resolution = await (async () => {
+    let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+    for (;;) {
+      const rows = await mutationReadDb
+        .select(read.columns)
+        .from(read.from)
+        .where(read.where)
+        .orderBy(...read.orderBy)
+        .limit(read.limit);
+      const result = connectorConnectionMutationReadResult(
+        mutationReadArgs,
+        read,
+        rows,
+      );
+      if (result.kind === "resolved") {
+        return result.resolution;
+      }
+      read = result.read;
+    }
+  })();
   signal.throwIfAborted();
   if (resolution.kind !== "ready") {
     return connectorConnectionMutationFailure(resolution);
   }
 
-  const pendingTokenRevoke =
-    await loadPendingConnectorTokenRevokeForLocalConnect(
-      db,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorSlug: args.runtimeMethod.connectorSlug,
-        snapshot: args.snapshot,
-        featureSwitchContext: args.featureSwitchContext,
-        existing:
-          resolution.mutation.kind === "update"
-            ? resolution.mutation.existing
-            : null,
-      },
-      signal,
+  const revokeReadDb = db;
+  const revokeReadArgs: BuiltinConnectorPendingTokenRevokeArgs =
+    localTokenRevokeValues(
+      args,
+      resolution.mutation,
+      args.featureSwitchContext,
     );
+  const revokeReadSignal = signal;
+  const pendingTokenRevoke =
+    await (async (): Promise<PendingBuiltinConnectorTokenRevoke | null> => {
+      const preparation = prepareBuiltinTokenRevoke(revokeReadArgs);
+      if (!preparation) {
+        return null;
+      }
+      return await (async () => {
+        const read = builtinConnectorTokenRevokeReadPlan(preparation.access);
+        if (read.kind !== "read") {
+          return builtinTokenRevokeFromRows(preparation, read, []);
+        }
+        const secretRows = await revokeReadDb
+          .select(read.columns)
+          .from(read.from)
+          .where(read.where);
+        revokeReadSignal.throwIfAborted();
+        return builtinTokenRevokeFromRows(preparation, read, secretRows);
+      })();
+    })();
   const written = await replaceConnectorConnectionOutcome(
     db,
     {
-      orgId: args.orgId,
-      userId: args.userId,
-      authMethod: args.runtimeMethod.authMethodId,
-      storageVersion: args.runtimeMethod.method.storage.version,
-      tokenExpiresAt: null,
-      target: {
-        kind: "builtin",
-        connectorSlug: args.runtimeMethod.connectorSlug,
-        identity: { kind: "local" },
-      },
+      ...manualGrantConnectionMetadata(args),
       resolution: resolution.mutation,
       writeCredentials: async (
         { db: credentialDb, connectorId },
         writeSignal,
       ) => {
-        await writeManualGrantCredentials(
-          credentialDb,
-          {
-            connectorId,
-            encryptedSecrets: args.encryptedSecrets,
-            method: args.runtimeMethod.method,
-            orgId: args.orgId,
-            userId: args.userId,
-            variableValues: args.prepared.variableValues,
-          },
-          writeSignal,
-        );
+        const credentialArgs = manualGrantCredentialArgs(args, connectorId);
+        const credentialSignal = writeSignal;
+        await (async (): Promise<void> => {
+          for (const field of credentialArgs.encryptedSecrets) {
+            const write = manualGrantSecretWrite(credentialArgs, field);
+            const [row] = await credentialDb
+              .insert(secrets)
+              .values(write.values)
+              .onConflictDoUpdate(write.conflict)
+              .returning({ id: secrets.id });
+            requireManualGrantWrite(row, "secret", write.values.name);
+            credentialSignal.throwIfAborted();
+          }
+
+          for (const field of credentialArgs.variableValues) {
+            const write = manualGrantVariableWrite(credentialArgs, field);
+            const [row] = await credentialDb
+              .insert(variables)
+              .values(write.values)
+              .onConflictDoUpdate(write.conflict)
+              .returning({ id: variables.id });
+            requireManualGrantWrite(row, "variable", write.values.name);
+            credentialSignal.throwIfAborted();
+          }
+        })();
       },
     },
     signal,
@@ -1593,11 +1696,7 @@ async function commitManualGrantConnector(
     return connectorConnectionMutationFailure(written);
   }
   const connectorRow = written.row;
-  const secretCleanup = {
-    orgId: args.orgId,
-    userId: args.userId,
-    names: args.prepared.configuredSecretNames,
-  };
+  const secretCleanup = manualGrantCleanupValues(args, "secret");
   const secretCleanupSignal = signal;
   await (async (): Promise<void> => {
     for (const name of secretCleanup.names) {
@@ -1610,11 +1709,7 @@ async function commitManualGrantConnector(
       secretCleanupSignal.throwIfAborted();
     }
   })();
-  const variableCleanup = {
-    orgId: args.orgId,
-    userId: args.userId,
-    names: args.prepared.configuredVariableNames,
-  };
+  const variableCleanup = manualGrantCleanupValues(args, "variable");
   const variableCleanupSignal = signal;
   await (async (): Promise<void> => {
     for (const name of variableCleanup.names) {
@@ -1737,37 +1832,60 @@ export const connectNoAuthBuiltinConnector$ = command(
 
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0118; new non-billing transactions are prohibited.
     await writeDb.transaction(async (tx) => {
-      const resolution = await resolveConnectorConnectionMutation(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        target: {
-          kind: "builtin",
-          connectorSlug: args.runtimeMethod.connectorSlug,
-        },
-        mutation: args.account,
-        allowSiblings: true,
-      });
+      const mutationReadDb = tx;
+      const mutationReadArgs: ConnectorConnectionMutationArgs =
+        builtinConnectorLocalMutationValues(args);
+      const resolution = await (async () => {
+        let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+        for (;;) {
+          const rows = await mutationReadDb
+            .select(read.columns)
+            .from(read.from)
+            .where(read.where)
+            .orderBy(...read.orderBy)
+            .limit(read.limit);
+          const result = connectorConnectionMutationReadResult(
+            mutationReadArgs,
+            read,
+            rows,
+          );
+          if (result.kind === "resolved") {
+            return result.resolution;
+          }
+          read = result.read;
+        }
+      })();
       signal.throwIfAborted();
       if (resolution.kind !== "ready") {
         mutationFailure = connectorConnectionMutationFailure(resolution);
         return;
       }
 
-      pendingTokenRevoke = await loadPendingConnectorTokenRevokeForLocalConnect(
-        tx,
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorSlug: args.runtimeMethod.connectorSlug,
-          snapshot: args.snapshot,
-          featureSwitchContext,
-          existing:
-            resolution.mutation.kind === "update"
-              ? resolution.mutation.existing
-              : null,
-        },
-        signal,
-      );
+      const revokeReadDb = tx;
+      const revokeReadArgs: BuiltinConnectorPendingTokenRevokeArgs =
+        localTokenRevokeValues(args, resolution.mutation, featureSwitchContext);
+      const revokeReadSignal = signal;
+      pendingTokenRevoke =
+        await (async (): Promise<PendingBuiltinConnectorTokenRevoke | null> => {
+          const preparation = prepareBuiltinTokenRevoke(revokeReadArgs);
+          if (!preparation) {
+            return null;
+          }
+          return await (async () => {
+            const read = builtinConnectorTokenRevokeReadPlan(
+              preparation.access,
+            );
+            if (read.kind !== "read") {
+              return builtinTokenRevokeFromRows(preparation, read, []);
+            }
+            const secretRows = await revokeReadDb
+              .select(read.columns)
+              .from(read.from)
+              .where(read.where);
+            revokeReadSignal.throwIfAborted();
+            return builtinTokenRevokeFromRows(preparation, read, secretRows);
+          })();
+        })();
 
       const written = await replaceConnectorConnectionOutcome(
         tx,
@@ -2235,77 +2353,6 @@ function isExplicitReconnectIdentityMismatch(args: {
   );
 }
 
-async function loadPendingConnectorTokenRevokeForTokenConnect(
-  db: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorSlug: string;
-    readonly snapshot: ConnectorRuntimeSelection;
-    readonly featureSwitchContext: FeatureSwitchContext;
-    readonly existing: StoredConnectorRow | null;
-  },
-  signal: AbortSignal,
-): Promise<PendingBuiltinConnectorTokenRevoke | null> {
-  if (!args.existing) {
-    return null;
-  }
-  const accessResult = resolveBuiltinConnectorCredentialAccess({
-    snapshot: args.snapshot,
-    stored: {
-      authMethodId: args.existing.authMethod,
-      connectorId: args.existing.id,
-      connectorSlug: args.connectorSlug,
-      orgId: args.orgId,
-      storageVersion: args.existing.storageVersion,
-      userId: args.userId,
-    },
-  });
-  if (
-    accessResult.kind !== "ok" ||
-    accessResult.access.runtimeMethod.method.revoke.kind !== "token-revoke" ||
-    accessResult.access.runtimeMethod.method.revoke.revokePreviousOnReplace !==
-      true
-  ) {
-    return null;
-  }
-  const revokeArgs = {
-    access: accessResult.access,
-    featureSwitchContext: args.featureSwitchContext,
-  };
-  const revokeSignal = signal;
-  return await (async (): Promise<PendingBuiltinConnectorTokenRevoke | null> => {
-    const read = builtinConnectorTokenRevokeReadPlan(revokeArgs.access);
-    if (read.kind === "none") {
-      return null;
-    }
-    if (read.kind === "empty") {
-      return {
-        runtimeMethod: revokeArgs.access.runtimeMethod,
-        encryptedInputs: {},
-        featureSwitchContext: revokeArgs.featureSwitchContext,
-      };
-    }
-    const secretRows = await db
-      .select(read.columns)
-      .from(read.from)
-      .where(read.where);
-    revokeSignal.throwIfAborted();
-    const encryptedInputs = builtinConnectorTokenRevokeInputsFromRows(
-      read.inputEntries,
-      secretRows,
-    );
-    if (encryptedInputs === null) {
-      return null;
-    }
-    return {
-      runtimeMethod: revokeArgs.access.runtimeMethod,
-      encryptedInputs,
-      featureSwitchContext: revokeArgs.featureSwitchContext,
-    };
-  })();
-}
-
 function authorizedExternalIdForMutation(args: {
   readonly mutation: ConnectorAccountMutationIntent;
   readonly matchExistingExternalIdentity: boolean | undefined;
@@ -2440,19 +2487,36 @@ async function prepareConnectorTokenConnectionCleanup(
   readonly pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null;
   readonly pendingGoogleCalendarWatchStop: PendingGoogleCalendarWatchStop | null;
 }> {
+  const revokeReadDb = args.db;
+  const revokeReadArgs: BuiltinConnectorPendingTokenRevokeArgs = {
+    orgId: args.orgId,
+    userId: args.userId,
+    connectorSlug: args.runtimeMethod.connectorSlug,
+    snapshot: args.snapshot,
+    featureSwitchContext: args.featureSwitchContext,
+    existing,
+    replacement: "token",
+  };
+  const revokeReadSignal = signal;
   const pendingTokenRevoke =
-    await loadPendingConnectorTokenRevokeForTokenConnect(
-      args.db,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorSlug: args.runtimeMethod.connectorSlug,
-        snapshot: args.snapshot,
-        featureSwitchContext: args.featureSwitchContext,
-        existing,
-      },
-      signal,
-    );
+    await (async (): Promise<PendingBuiltinConnectorTokenRevoke | null> => {
+      const preparation = prepareBuiltinTokenRevoke(revokeReadArgs);
+      if (!preparation) {
+        return null;
+      }
+      return await (async () => {
+        const read = builtinConnectorTokenRevokeReadPlan(preparation.access);
+        if (read.kind !== "read") {
+          return builtinTokenRevokeFromRows(preparation, read, []);
+        }
+        const secretRows = await revokeReadDb
+          .select(read.columns)
+          .from(read.from)
+          .where(read.where);
+        revokeReadSignal.throwIfAborted();
+        return builtinTokenRevokeFromRows(preparation, read, secretRows);
+      })();
+    })();
   const pendingGoogleCalendarWatchStop =
     existing && existing.externalId !== args.userInfo.id
       ? (args.calendarCleanup.find((candidate) => {
@@ -2475,7 +2539,7 @@ export function builtinConnectorTokenMutationValues(
     | "matchExistingExternalIdentity"
     | "userInfo"
   >,
-): Parameters<typeof resolveConnectorConnectionMutation>[1] {
+): ConnectorConnectionMutationArgs {
   return {
     orgId: args.orgId,
     userId: args.userId,
@@ -2799,10 +2863,29 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
       const mutationSignal = signal;
       const resolution = await (async () => {
         const { db, ...connection } = mutationInput;
-        const resolution = await resolveConnectorConnectionMutation(
-          db,
-          builtinConnectorTokenMutationValues(connection),
-        );
+        const mutationReadDb = db;
+        const mutationReadArgs: ConnectorConnectionMutationArgs =
+          builtinConnectorTokenMutationValues(connection);
+        const resolution = await (async () => {
+          let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+          for (;;) {
+            const rows = await mutationReadDb
+              .select(read.columns)
+              .from(read.from)
+              .where(read.where)
+              .orderBy(...read.orderBy)
+              .limit(read.limit);
+            const result = connectorConnectionMutationReadResult(
+              mutationReadArgs,
+              read,
+              rows,
+            );
+            if (result.kind === "resolved") {
+              return result.resolution;
+            }
+            read = result.read;
+          }
+        })();
         mutationSignal.throwIfAborted();
         return resolution;
       })();
@@ -2912,12 +2995,15 @@ export function builtinConnectorScopeDiff(
   });
 }
 
-export function builtinConnectorSearch(args: {
-  readonly orgId: string | undefined;
-  readonly userId: string;
-  readonly keyword: string | undefined;
-}): Computed<Promise<BuiltinConnectorSearchItem[]>> {
-  return computed(async (get) => {
+export const builtinConnectorSearch$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly orgId: string | undefined;
+      readonly userId: string;
+      readonly keyword: string | undefined;
+    },
+  ): Promise<BuiltinConnectorSearchItem[]> => {
     const overrides = args.orgId
       ? await get(userFeatureSwitchOverrides(args.orgId, args.userId))
       : {};
@@ -2926,15 +3012,13 @@ export function builtinConnectorSearch(args: {
       orgId: args.orgId,
       overrides,
     });
-    const catalogSearchDb = get(db$);
+    get(db$);
     const catalogSearchKeyword = args.keyword;
     return (async () => {
       return await (async () => {
         const viewArgs = { keyword: catalogSearchKeyword, featureStates };
-        const snapshot = await loadAcceptedConnectorCatalogSnapshot(
-          catalogSearchDb,
-          undefined,
-          "display",
+        const snapshot = await set(
+          loadAcceptedDisplayConnectorCatalogSnapshot$,
         );
         return connectorCatalogSearchFromSnapshot({
           ...viewArgs,
@@ -2942,5 +3026,5 @@ export function builtinConnectorSearch(args: {
         });
       })();
     })();
-  });
-}
+  },
+);

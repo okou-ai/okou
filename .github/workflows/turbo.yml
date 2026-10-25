@@ -325,7 +325,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     outputs:
       job-ref: ${{ steps.set-job-ref.outputs.job-ref }}
       runner-image-job-ref: ${{ steps.set-job-ref.outputs.runner-image-job-ref }}
@@ -577,7 +577,7 @@ jobs:
     timeout-minutes: 10
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -615,7 +615,7 @@ jobs:
     timeout-minutes: 10
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -631,7 +631,7 @@ jobs:
     timeout-minutes: 15
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -652,7 +652,7 @@ jobs:
     env:
       TSC_CHECKERS: "2"
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -711,7 +711,7 @@ jobs:
     env:
       TSC_CHECKERS: "2"
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -768,7 +768,7 @@ jobs:
     timeout-minutes: 8
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -782,7 +782,7 @@ jobs:
     timeout-minutes: 10
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -798,7 +798,7 @@ jobs:
     # Only run when migration, schema, persistent JSONB contract, or database script files changed
     if: github.event_name != 'push' && needs.prepare.outputs.migration-changed == 'true'
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     services:
       postgres:
         image: ghcr.io/${{ github.repository_owner }}/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
@@ -836,6 +836,11 @@ jobs:
       - name: Check JSONB Contract Usage
         working-directory: turbo/packages/db
         run: pnpm lint:jsonb-contracts
+      - name: Test Thread Predecessor Backfill
+        working-directory: turbo/packages/db
+        env:
+          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
+        run: pnpm test:thread-predecessor-backfill
       - name: Check Migration Immutability
         if: vars.CI_CHECK_IMMUTABLE_MIGRATE != '0'
         run: |
@@ -906,7 +911,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -942,7 +947,7 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -981,7 +986,7 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     services:
       postgres:
         image: ghcr.io/${{ github.repository_owner }}/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
@@ -1033,7 +1038,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -1071,7 +1076,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -1108,7 +1113,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -1145,7 +1150,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -1197,7 +1202,7 @@ jobs:
       group: deploy-api-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     needs: [prepare]
     # Deploy if job-ref is set (PR or main), not a release-please commit, and anything
     # that needs a live API preview or E2E API token changed.
@@ -1425,8 +1430,10 @@ jobs:
             API preview: ${{ steps.api-alias.outputs.url || steps.api-deploy.outputs.url }}
 
       # Reuse the captured source, installed toolchain and resolved API env.
-      # These steps extend deploy-api, so E2E waits for both API deployments.
+      # E2E consumes Vercel; auxiliary Worker failures must not block that lane.
       - name: Check Worker deployment contracts and secret handling
+        id: api-worker-checks
+        continue-on-error: true
         if: >-
           (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
           (github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -1435,9 +1442,13 @@ jobs:
           pnpm --dir turbo/apps/api test:worker-build
 
       - name: Build and deploy API Worker using the shared preview database
+        id: api-worker-deploy
+        continue-on-error: true
         if: >-
-          (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-          (github.event_name == 'push' && github.ref == 'refs/heads/main')
+          steps.api-worker-checks.outcome == 'success' && (
+            (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+            (github.event_name == 'push' && github.ref == 'refs/heads/main')
+          )
         env:
           JOB_REF: ${{ needs.prepare.outputs.job-ref }}
           API_ENV_FILE: ${{ steps.api-deploy-env.outputs.file }}
@@ -1447,9 +1458,32 @@ jobs:
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+          # Shared dev OTLP destinations are provisioned outside deployment CI.
+          # Set these variables to their slugs; CI only attaches the exports.
           CF_API_TRACES_DESTINATION: ${{ vars.CF_API_TRACES_DESTINATION }}
+          CF_API_LOGS_DESTINATION: ${{ vars.CF_API_LOGS_DESTINATION }}
+          # Validate native export on isolated PR Workers before staging rollout.
+          CF_API_NATIVE_TELEMETRY: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/api-worker-preview.cjs deploy
+
+      - name: Report API Worker preview failure
+        if: >-
+          always() && (
+            steps.api-worker-checks.outcome == 'failure' ||
+            steps.api-worker-deploy.outcome == 'failure'
+          )
+        env:
+          WORKER_CHECKS_OUTCOME: ${{ steps.api-worker-checks.outcome }}
+          WORKER_DEPLOY_OUTCOME: ${{ steps.api-worker-deploy.outcome }}
+        run: |
+          set -euo pipefail
+          echo "::warning::API Worker preview failed (checks=$WORKER_CHECKS_OUTCOME, deploy=$WORKER_DEPLOY_OUTCOME). Vercel API and E2E remain required."
+          {
+            echo "### API Worker preview failed (non-blocking)"
+            echo "Checks: $WORKER_CHECKS_OUTCOME; deployment: $WORKER_DEPLOY_OUTCOME."
+            echo "See the Worker steps above for the failure. Vercel API and E2E remain required."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Remove temporary API runtime environments
         if: always()
@@ -1478,7 +1512,7 @@ jobs:
       group: deploy-app-${{ github.sha }}
       cancel-in-progress: false
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     if: >-
       ${{
         !cancelled() &&
@@ -2752,7 +2786,7 @@ jobs:
     # Blocking for Desktop-owned routes (docs/deployment-compatibility.md#desktop-contract-gate);
     # Runner, Guest Agent, and MITM findings only warn.
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     permissions:
       contents: read
     steps:

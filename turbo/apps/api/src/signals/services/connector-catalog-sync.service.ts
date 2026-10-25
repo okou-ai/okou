@@ -1,19 +1,13 @@
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-
 import type {
   ConnectorCatalogSyncAttemptReport,
   ConnectorCatalogSyncFailureCode,
 } from "@okouai/api-contracts/contracts/connector-catalog-sync";
-import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { connectors } from "@okouai/db/schema/connector";
 import { connectorCatalog } from "@okouai/db/runtime/connector-catalog";
 import { command } from "ccstate";
 import { ne } from "drizzle-orm";
 import {
   CONNECTOR_CATALOG_ACTIVE_KEY,
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-  type ConnectorCatalogArtifact,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import {
   CONNECTOR_CATALOG_ACTIVE_MAX_BYTES,
@@ -28,7 +22,7 @@ import { CONNECTOR_CATALOG_MAX_RAW_BYTES } from "@okouai/connectors/connector-ca
 import type { ConnectorCatalogRelationshipRule } from "@okouai/connectors/connector-catalog/artifacts/relationship-error";
 
 import { logger } from "../../lib/log";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes,
   S3ObjectSizeLimitError,
@@ -46,35 +40,12 @@ import {
   connectorCatalogSource,
   type ConnectorCatalogSource,
 } from "./connector-catalog-source";
-import {
-  materializeConnectorRuntimeSnapshot,
-  type ConnectorRuntimeSnapshot,
-} from "./connector-catalog-runtime.service";
+import { materializeConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
   ExternalConnectorCatalogUnavailableError,
-  loadAcceptedConnectorCatalogSnapshot,
+  loadAcceptedConnectorCatalogSnapshot$,
 } from "./connector-catalog-external-reader.service";
-import { loadCustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
-import {
-  uniqueConnectorRuntimeTargets,
-  connectorRuntimeWakeupCondition,
-  publishConnectorRuntimeWakeupRows,
-  reportConnectorRuntimeWakeupDiscoveryFailure,
-  type ConnectorRuntimeWakeupBusinessArgs,
-} from "./connector-runtime-wakeup.service";
-import {
-  builtinCatalogWakeupReadPlan,
-  builtinCatalogWakeupAccountsByOrg,
-} from "./connector-catalog-builtin-wakeup-plan";
-import {
-  customCatalogWakeupConnectorsByRef,
-  customConnectorPermissionBundleFingerprint,
-  customCatalogWakeupReadPlan,
-  catalogWakeupRunColumns,
-  customCatalogWakeup,
-  builtinCatalogWakeup,
-  customCatalogWakeupSummary,
-} from "./connector-catalog-wakeup-plan";
+import { publishCatalogRuntimeWakeups$ } from "./connector-catalog-runtime-wakeup.service";
 
 const log = logger("connector-catalog:sync");
 
@@ -83,169 +54,6 @@ class ConnectorCatalogPersistenceError extends Error {
     super("Connector catalog snapshot persistence failed");
     this.name = "ConnectorCatalogPersistenceError";
   }
-}
-
-function reportCatalogWakeupDiscoveryFailure(
-  wakeup: ConnectorRuntimeWakeupBusinessArgs,
-  error: unknown,
-): void {
-  reportConnectorRuntimeWakeupDiscoveryFailure({
-    orgId: wakeup.scope.orgId,
-    scopedToUser: wakeup.scope.userId !== undefined,
-    scopedToAgent: wakeup.scope.agentId !== undefined,
-    targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
-    error,
-  });
-}
-
-function reportCatalogWakeupFailures(
-  results: readonly (
-    { readonly ok: true } | { readonly ok: false; readonly error: unknown }
-  )[],
-): void {
-  for (const result of results) {
-    if (!result.ok) {
-      log.warn("Failed to publish connector catalog runtime wakeups", {
-        error: result.error,
-      });
-    }
-  }
-}
-
-async function publishCatalogRuntimeWakeups(args: {
-  readonly db: Db;
-  readonly previousSnapshot: ConnectorRuntimeSnapshot | undefined;
-  readonly currentArtifact: ConnectorCatalogArtifact;
-}): Promise<void> {
-  const results = await Promise.all([
-    settle(
-      (async () => {
-        const readPlan = customCatalogWakeupReadPlan(args.currentArtifact);
-        const currentCatalog = readPlan.catalog;
-        const rows = await args.db
-          .select(readPlan.columns)
-          .from(orgCustomConnectors)
-          .leftJoin(orgCustomConnectorOauthConfigs, readPlan.oauthCondition)
-          .where(readPlan.condition);
-
-        const connectorIdsByRef = customCatalogWakeupConnectorsByRef(rows);
-        const affectedByOrg = new Map<string, string[]>();
-        for (const [ref, connectors] of connectorIdsByRef) {
-          const [previousBundle, currentBundle] = await Promise.all([
-            args.previousSnapshot
-              ? loadCustomConnectorPermissionBundle({
-                  catalog: args.previousSnapshot.serverFirewallMetadata,
-                  ref,
-                })
-              : null,
-            loadCustomConnectorPermissionBundle({
-              catalog: currentCatalog,
-              ref,
-            }),
-          ]);
-          if (
-            customConnectorPermissionBundleFingerprint(previousBundle) ===
-            customConnectorPermissionBundleFingerprint(currentBundle)
-          ) {
-            continue;
-          }
-          for (const connector of connectors) {
-            const connectorIds = affectedByOrg.get(connector.orgId) ?? [];
-            connectorIds.push(connector.connectorId);
-            affectedByOrg.set(connector.orgId, connectorIds);
-          }
-        }
-
-        await Promise.all(
-          [...affectedByOrg].map(async ([orgId, customConnectorIds]) => {
-            const wakeupDb = args.db;
-            const wakeup = customCatalogWakeup(orgId, customConnectorIds);
-            await (async () => {
-              const result = await settle(
-                (async () => {
-                  const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
-                  if (targets.length === 0) {
-                    return;
-                  }
-
-                  const rows = await wakeupDb
-                    .select(catalogWakeupRunColumns())
-                    .from(agentRuns)
-
-                    .where(connectorRuntimeWakeupCondition(wakeup.scope));
-
-                  await publishConnectorRuntimeWakeupRows({
-                    scope: wakeup.scope,
-                    targets,
-                    rows,
-                  });
-                })(),
-              );
-              if (!result.ok) {
-                reportCatalogWakeupDiscoveryFailure(wakeup, result.error);
-              }
-            })();
-          }),
-        );
-        log.debug(
-          "Evaluated Custom connector catalog wakeups",
-          customCatalogWakeupSummary(connectorIdsByRef.size, affectedByOrg),
-        );
-      })(),
-    ),
-    settle(
-      (async () => {
-        const plan = builtinCatalogWakeupReadPlan({
-          previousArtifact: args.previousSnapshot?.acceptedSnapshot.artifact,
-          currentArtifact: args.currentArtifact,
-        });
-        if (!plan.needsRead) {
-          return;
-        }
-        const accounts = await args.db
-          .selectDistinct(plan.columns)
-          .from(connectors)
-          .where(plan.condition);
-        const byOrg = builtinCatalogWakeupAccountsByOrg(accounts);
-        const pending = byOrg.entries();
-        async function publishOrgWakeups() {
-          for (const [orgId, slugs] of pending) {
-            const wakeupDb = args.db;
-            const wakeup = builtinCatalogWakeup(orgId, slugs);
-            await (async () => {
-              const result = await settle(
-                (async () => {
-                  const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
-                  if (targets.length === 0) {
-                    return;
-                  }
-
-                  const rows = await wakeupDb
-                    .select(catalogWakeupRunColumns())
-                    .from(agentRuns)
-
-                    .where(connectorRuntimeWakeupCondition(wakeup.scope));
-
-                  await publishConnectorRuntimeWakeupRows({
-                    scope: wakeup.scope,
-                    targets,
-                    rows,
-                  });
-                })(),
-              );
-              if (!result.ok) {
-                reportCatalogWakeupDiscoveryFailure(wakeup, result.error);
-              }
-            })();
-          }
-        }
-        await Promise.all(
-          Array.from({ length: Math.min(4, byOrg.size) }, publishOrgWakeups),
-        );
-      })(),
-    ),
-  ]);
-  reportCatalogWakeupFailures(results);
 }
 
 function classifySyncFailure(error: unknown): ConnectorCatalogSyncFailureCode {
@@ -496,11 +304,11 @@ export const syncConnectorCatalog$ = command(
 
     // Compare permission bundles against the generation serving before the
     // switch. A cold catalog has no previous runtime snapshot.
-    const db = set(writeDb$);
+    set(writeDb$);
     const previousSnapshotResult = await settle(
       (async () => {
         return materializeConnectorRuntimeSnapshot(
-          await loadAcceptedConnectorCatalogSnapshot(db),
+          await set(loadAcceptedConnectorCatalogSnapshot$),
         );
       })(),
       signal,
@@ -542,8 +350,7 @@ export const syncConnectorCatalog$ = command(
       switched: published.switched,
     });
     if (published.switched) {
-      await publishCatalogRuntimeWakeups({
-        db,
+      await set(publishCatalogRuntimeWakeups$, {
         currentArtifact: candidate.artifact,
         previousSnapshot: previousSnapshotResult.ok
           ? previousSnapshotResult.value

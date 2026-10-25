@@ -294,7 +294,7 @@ describe("Social continuation admission and creation-Run ownership", () => {
       const listed = await accept(
         setup.social.list({
           headers: authenticate(setup.actor),
-          query: { limit: 20, includeExpanded: "true" },
+          query: { limit: 20 },
         }),
         [200],
       );

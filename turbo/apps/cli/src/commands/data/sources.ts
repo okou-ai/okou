@@ -1,6 +1,7 @@
 import type { DataSearchRequest } from "@okouai/api-contracts/contracts/data-search";
 import { Command, InvalidArgumentError, Option } from "commander";
 
+import { isPaidToolEnabled } from "../../lib/command/paid-tools";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import type { DataProspectOptions } from "./query";
 
@@ -453,6 +454,7 @@ export function registerDataSourceCommands(
     }),
   );
 
+  if (!isPaidToolEnabled("finance")) return;
   const finance = group(parent, "finance", "Public financial data research");
   const company = finance
     .command("company-profile")

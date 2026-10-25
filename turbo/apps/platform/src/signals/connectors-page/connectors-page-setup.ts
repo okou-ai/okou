@@ -16,10 +16,12 @@ import { refreshSsh$ } from "../ssh.ts";
 import { closeVncDialog$, invalidateVnc$ } from "../vnc.ts";
 import { setupRemoteNetworkEditor$ } from "../remote-network-page-setup.ts";
 import { setRemoteControlView$ } from "../okou-page/settings/remote-control-directory.ts";
+import { subscribeBuiltinConnectorChanges$ } from "../external/connectors.ts";
 import { searchParams$ } from "../route.ts";
 
 export const setupConnectorsPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    set(subscribeBuiltinConnectorChanges$, signal);
     set(resetConnectorAccountDialogs$);
     set(resetRemoteSetup$);
     set(refreshSsh$);

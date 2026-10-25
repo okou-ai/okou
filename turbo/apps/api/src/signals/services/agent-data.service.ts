@@ -54,6 +54,18 @@ export function visibleJoinedAgentCondition(userId: string) {
   return visibleAgentCondition(userId);
 }
 
+export function visibleAgentIdentityCondition(scope: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly agentId: string;
+}) {
+  return and(
+    eq(agents.orgId, scope.orgId),
+    eq(agents.id, scope.agentId),
+    visibleAgentCondition(scope.userId),
+  );
+}
+
 export function agentExists(args: {
   readonly orgId: string;
   readonly userId: string;
@@ -63,13 +75,7 @@ export function agentExists(args: {
     const [agent] = await get(db$)
       .select({ id: agents.id })
       .from(agents)
-      .where(
-        and(
-          eq(agents.orgId, args.orgId),
-          eq(agents.id, args.agentId),
-          visibleAgentCondition(args.userId),
-        ),
-      )
+      .where(visibleAgentIdentityCondition(args))
       .limit(1);
 
     return Boolean(agent);

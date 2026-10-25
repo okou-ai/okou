@@ -240,33 +240,146 @@ function targetCondition(target: ConnectorAccountTarget) {
     : eq(connectors.customConnectorId, target.customConnectorId);
 }
 
-export async function resolveConnectorConnectionMutation(
-  db: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly mutation: ConnectorAccountMutationIntent;
-    readonly allowSiblings: boolean;
-    readonly matchExternalId?: string;
-  },
-): Promise<ConnectorConnectionMutationResolution> {
-  // No row locks: the write re-checks what it depends on (exact identity on
-  // update, the partial default unique index on insert) and turns a lost race
-  // into a deterministic outcome.
+export interface ConnectorConnectionMutationArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly target: ConnectorAccountTarget;
+  readonly mutation: ConnectorAccountMutationIntent;
+  readonly allowSiblings: boolean;
+  readonly matchExternalId?: string;
+}
+
+function connectorConnectionTargetReadPlan(
+  args: Pick<ConnectorConnectionMutationArgs, "orgId" | "userId" | "target">,
+) {
+  return {
+    columns: existingConnectorConnectionSelection(),
+    from: connectors,
+    where: and(
+      eq(connectors.orgId, args.orgId),
+      eq(connectors.userId, args.userId),
+      targetCondition(args.target),
+    ),
+    orderBy: [connectors.id],
+    limit: 2,
+  };
+}
+
+export function connectorConnectionMutationReadPlan(
+  args: ConnectorConnectionMutationArgs,
+) {
+  // Reads observe the account set; the write still arbitrates its own identity.
   if (args.mutation.intent === "reconnect") {
-    const [existing] = await db
-      .select(existingConnectorConnectionSelection())
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.id, args.mutation.connectionId),
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          targetCondition(args.target),
-        ),
-      )
-      .limit(1);
+    return {
+      kind: "reconnect" as const,
+      columns: existingConnectorConnectionSelection(),
+      from: connectors,
+      where: and(
+        eq(connectors.id, args.mutation.connectionId),
+        eq(connectors.orgId, args.orgId),
+        eq(connectors.userId, args.userId),
+        targetCondition(args.target),
+      ),
+      limit: 1,
+      orderBy: [],
+    };
+  }
+  const displayName =
+    args.mutation.intent === "add" ? (args.mutation.displayName ?? null) : null;
+  if (args.mutation.intent === "add" && args.matchExternalId !== undefined) {
+    return {
+      kind: "external" as const,
+      displayName,
+      columns: existingConnectorConnectionSelection(),
+      from: connectors,
+      where: and(
+        eq(connectors.orgId, args.orgId),
+        eq(connectors.userId, args.userId),
+        targetCondition(args.target),
+        eq(connectors.externalId, args.matchExternalId),
+      ),
+      orderBy: [connectors.id],
+      limit: 2,
+    };
+  }
+  return {
+    kind: "target" as const,
+    displayName,
+    ...connectorConnectionTargetReadPlan(args),
+  };
+}
+
+type ConnectorConnectionMutationSelection =
+  | {
+      readonly kind: "reconnect";
+      readonly existing: ExistingConnectorConnectionRow | undefined;
+    }
+  | {
+      readonly kind: "external";
+      readonly existing: ExistingConnectorConnectionRow;
+      readonly duplicate: ExistingConnectorConnectionRow | undefined;
+      readonly selectedCount: number;
+      readonly displayName: string | null;
+    }
+  | {
+      readonly kind: "target";
+      readonly selectedCount: number;
+      readonly displayName: string | null;
+    };
+
+export function connectorConnectionMutationReadResult(
+  args: ConnectorConnectionMutationArgs,
+  read: ReturnType<typeof connectorConnectionMutationReadPlan>,
+  rows: readonly ExistingConnectorConnectionRow[],
+) {
+  if (read.kind === "reconnect") {
+    return {
+      kind: "resolved" as const,
+      resolution: connectorConnectionMutationResolution(args, {
+        kind: "reconnect",
+        existing: rows[0],
+      }),
+    };
+  }
+  if (read.kind === "external") {
+    const [existing, duplicate] = rows;
+    if (existing) {
+      return {
+        kind: "resolved" as const,
+        resolution: connectorConnectionMutationResolution(args, {
+          kind: "external",
+          existing,
+          duplicate,
+          selectedCount: rows.length,
+          displayName: read.displayName,
+        }),
+      };
+    }
+    return {
+      kind: "read" as const,
+      read: {
+        kind: "target" as const,
+        displayName: read.displayName,
+        ...connectorConnectionTargetReadPlan(args),
+      },
+    };
+  }
+  return {
+    kind: "resolved" as const,
+    resolution: connectorConnectionMutationResolution(args, {
+      kind: "target",
+      selectedCount: rows.length,
+      displayName: read.displayName,
+    }),
+  };
+}
+
+function connectorConnectionMutationResolution(
+  args: ConnectorConnectionMutationArgs,
+  selection: ConnectorConnectionMutationSelection,
+): ConnectorConnectionMutationResolution {
+  if (selection.kind === "reconnect") {
+    const existing = selection.existing;
     const resolution: ConnectorConnectionMutationResolution = existing
       ? {
           kind: "ready",
@@ -282,9 +395,7 @@ export async function resolveConnectorConnectionMutation(
       resolution,
     );
   }
-
-  const displayName =
-    args.mutation.intent === "add" ? (args.mutation.displayName ?? null) : null;
+  const displayName = selection.displayName;
   const insertMutation = (
     isDefault: boolean,
   ): InsertConnectorConnectionMutation => {
@@ -297,70 +408,41 @@ export async function resolveConnectorConnectionMutation(
         args.mutation.intent === "add" ? (args.matchExternalId ?? null) : null,
     };
   };
-
-  if (args.mutation.intent === "add" && args.matchExternalId !== undefined) {
-    const existingByExternalId = await db
-      .select(existingConnectorConnectionSelection())
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          targetCondition(args.target),
-          eq(connectors.externalId, args.matchExternalId),
-        ),
-      )
-      .orderBy(connectors.id)
-      .limit(2);
-    const [existing, duplicate] = existingByExternalId;
-    if (existing) {
-      const resolution: ConnectorConnectionMutationResolution = duplicate
+  if (selection.kind === "external") {
+    const resolution: ConnectorConnectionMutationResolution =
+      selection.duplicate
         ? { kind: "ambiguous" }
         : {
             kind: "ready",
             mutation: {
               kind: "update",
-              existing,
+              existing: selection.existing,
               insertIfMissing: insertMutation(false),
             },
           };
-      return observeConnectorConnectionMutation(
-        {
-          targetKind: args.target.kind,
-          intent: args.mutation.intent,
-          selectedCount: existingByExternalId.length,
-        },
-        resolution,
-      );
-    }
+    return observeConnectorConnectionMutation(
+      {
+        targetKind: args.target.kind,
+        intent: args.mutation.intent,
+        selectedCount: selection.selectedCount,
+      },
+      resolution,
+    );
   }
-
-  const existing = await db
-    .select(existingConnectorConnectionSelection())
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        targetCondition(args.target),
-      ),
-    )
-    .orderBy(connectors.id)
-    .limit(2);
   let resolution: ConnectorConnectionMutationResolution;
-  if (existing.length > 0 && !args.allowSiblings) {
+  if (selection.selectedCount > 0 && !args.allowSiblings) {
     resolution = { kind: "sibling-disabled" };
   } else {
     resolution = {
       kind: "ready",
-      mutation: insertMutation(existing.length === 0),
+      mutation: insertMutation(selection.selectedCount === 0),
     };
   }
   return observeConnectorConnectionMutation(
     {
       targetKind: args.target.kind,
       intent: args.mutation.intent,
-      selectedCount: existing.length,
+      selectedCount: selection.selectedCount,
     },
     resolution,
   );

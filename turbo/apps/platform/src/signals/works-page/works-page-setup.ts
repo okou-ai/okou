@@ -1,4 +1,4 @@
-import { initWechat$ } from "../okou-page/wechat.ts";
+import { initWechat$, wechatStatus$ } from "../okou-page/wechat.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -78,6 +78,7 @@ export const setupWorksPage$ = command(
     set(ownDiscordApprovalRoute$, signal);
     set(setAgentPhoneConnectDialogOpen$, false);
     set(reloadTelegramBots$);
+    set(initWechat$);
     set(updatePage$, createElement(WorksPage), "sidebar");
     set(
       updateDocumentTitle$,
@@ -94,7 +95,7 @@ export const setupWorksPage$ = command(
         set(watchSlackConnection$, signal),
         set(watchTeamsConnection$, signal),
         set(watchDiscordConnection$, signal),
-        set(initWechat$, signal),
+        get(wechatStatus$),
         set(watchGithubIntegration$, signal),
         set(watchTelegramConnection$, signal),
         set(watchAgentPhoneConnection$, signal),

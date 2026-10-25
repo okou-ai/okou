@@ -144,7 +144,6 @@ const inspect = new Command("inspect")
       const parsed = commerceInspectRequestSchema.safeParse({
         target,
         marketplace: options.marketplace,
-        async: true,
         requestId: randomUUID(),
       });
       if (!parsed.success)
@@ -182,7 +181,6 @@ const search = new Command("search")
         query,
         marketplace: options.marketplace,
         limit: options.limit,
-        async: true,
         requestId: randomUUID(),
       });
       if (!parsed.success)

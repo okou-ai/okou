@@ -20,7 +20,8 @@ final class ConversationHistoryFixture: Sendable {
 
   init(
     rows initial: [String], fileOrigin: URL? = nil,
-    usage: ChatHTTPFixture.Handler? = nil, artifactResources: ChatHTTPFixture.Handler? = nil
+    usage: ChatHTTPFixture.Handler? = nil, artifactResources: ChatHTTPFixture.Handler? = nil,
+    snapshot: ChatHTTPFixture.Handler? = nil, send: ChatHTTPFixture.Handler? = nil
   ) {
     let rows = HistoryRows(initial)
     self.rows = rows
@@ -37,6 +38,19 @@ final class ConversationHistoryFixture: Sendable {
         return try await artifactResources(request)
       }
       switch request.url?.path {
+      case path + "/activity-summary":
+        let body = try JSONDecoder().decode([String: String].self, from: chatRequestBody(request))
+        let data = try JSONSerialization.data(withJSONObject: [
+          "runId": body["runId"] ?? "", "status": "ineligible", "messages": [],
+        ])
+        return ChatHTTPResponse(body: String(decoding: data, as: UTF8.self))
+      case "/api/connector-catalog/slack":
+        return ChatHTTPResponse(body: ConnectorHTTPFixtures.catalog())
+      case "/api/connector-accounts/connections":
+        return ChatHTTPResponse(
+          body: #"{"connections":[],"nextCursor":null,"defaultConnection":null}"#)
+      case "/api/agents/\(Self.agentID)/user-connectors":
+        return ChatHTTPResponse(body: #"{"enabledConnectorSlugs":[]}"#)
       case path + "/usage":
         guard let usage else { throw URLError(.unsupportedURL) }
         return try await usage(request)
@@ -50,6 +64,7 @@ final class ConversationHistoryFixture: Sendable {
             "{\"url\":\"\(fileOrigin)/\(id)\",\"downloadUrl\":\"\(fileOrigin)/\(id)\",\"previewImageUrl\":null}"
         )
       case path + "/event-snapshot":
+        if let snapshot { return try await snapshot(request) }
         return ChatHTTPResponse(
           status: 404,
           body:
@@ -76,6 +91,8 @@ final class ConversationHistoryFixture: Sendable {
             "{\"id\":\"\(Self.threadID)\",\"agentId\":\"\(Self.agentID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
         )
       case "/api/chat/events":
+        requests.sentMessages.withLock { $0.append(chatRequestBody(request)) }
+        if let send { return try await send(request) }
         return ChatHTTPResponse(
           status: 503, body: "{\"error\":{\"message\":\"Delivery unavailable\"}}")
       default: throw URLError(.unsupportedURL)
@@ -153,4 +170,5 @@ private final class HistoryRows: Sendable {
 
 final class HistoryRequests: Sendable {
   let values = Mutex<[String]>([])
+  let sentMessages = Mutex<[Data]>([])
 }

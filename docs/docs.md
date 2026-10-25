@@ -53,6 +53,7 @@ not precedent for adding another one.
 - `docs/`: cross-surface standards, Chat design, React development, and shared testing.
 - `docs/app/`: browser application behavior, React/ccstate, styling,
   and application testing.
+- `docs/ios/`: native iOS testing boundaries and verification standards.
 - `docs/desktop/`: native Desktop application behavior, testing, and release contracts.
 - `docs/api/`: server-side ccstate, database policy and lint, and API testing.
 - `docs/runner/`: host/guest infrastructure, MITM addon contracts, and native
@@ -105,6 +106,12 @@ owning surface.
 - [withCleanup](app/signals/withCleanup.md): cleanup anti-patterns, derived request
   state, resource ownership, and the reduction-only legacy-use lint boundary.
 - [Platform testing](app/app-testing.md): real page setup and user-visible assertions.
+
+## iOS
+
+- [iOS testing](ios/ios-testing.md): native entry points, package contracts,
+  observable assertions, layout synchronization, isolation, and device acceptance.
+- [iOS setup and CI](../ios/README.md): local commands and required checks.
 
 ## Desktop
 

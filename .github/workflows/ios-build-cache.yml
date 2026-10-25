@@ -54,9 +54,26 @@ jobs:
           fi
           echo "needed=$needed" >> "$GITHUB_OUTPUT"
 
+  dispatch:
+    needs: detect
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_run' && needs.detect.outputs.needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch trusted main cache refill
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # workflow_run has read-only cache access; workflow_dispatch can write.
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/$GITHUB_REPOSITORY/actions/workflows/ios-build-cache.yml/dispatches" \
+            -f ref=main
+
   warm:
     needs: detect
-    if: github.ref == 'refs/heads/main' && needs.detect.outputs.needed == 'true'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'workflow_run' && needs.detect.outputs.needed == 'true'
     runs-on: xcode-27
     # Preserve main's cold-seeding budget, including compiler-cache upload.
     timeout-minutes: 30
@@ -82,8 +99,17 @@ jobs:
         if: steps.cache.outputs.dependencies-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/okou-ios-ci/SourcePackages
+          path: ${{ steps.cache.outputs.dependencies-path }}
           key: ${{ steps.cache.outputs.dependencies-key }}
+      - name: Verify main SwiftPM cache
+        id: verify-dependencies
+        if: steps.cache.outputs.dependencies-hit != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.cache.outputs.dependencies-path }}
+          key: ${{ steps.cache.outputs.dependencies-key }}
+          lookup-only: true
+          fail-on-cache-miss: true
       - name: Prepare simulator and compiler cache
         id: compile
         if: steps.cache.outputs.compilation-hit != 'true'
@@ -98,5 +124,73 @@ jobs:
         if: steps.cache.outputs.compilation-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/okou-ios-ci/DerivedData/CompilationCache.noindex
+          path: ${{ steps.cache.outputs.compilation-path }}
           key: ${{ steps.cache.outputs.compilation-key }}
+      - name: Verify main Xcode compilation cache
+        id: verify-compilation
+        if: steps.cache.outputs.compilation-hit != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.cache.outputs.compilation-path }}
+          key: ${{ steps.cache.outputs.compilation-key }}
+          lookup-only: true
+          fail-on-cache-miss: true
+
+  warm-archive:
+    needs: detect
+    if: github.ref == 'refs/heads/main' && github.event_name != 'workflow_run' && needs.detect.outputs.needed == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 15
+    concurrency:
+      group: ios-archive-cache-main
+      cancel-in-progress: false
+    env:
+      IOS_ARCHIVE_CACHE_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Configure Release archive workspace
+        run: echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
+      - name: Restore Release archive caches
+        id: cache
+        uses: ./.github/actions/setup-ios-build-cache
+        with:
+          target: archive
+      - name: Build and validate main Release archive caches
+        id: compile
+        if: steps.cache.outputs.dependencies-hit != 'true' || steps.cache.outputs.compilation-hit != 'true'
+        run: bash ios/scripts/build-archive.sh
+      - name: Save main Release dependencies
+        id: save-dependencies
+        if: steps.cache.outputs.dependencies-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.cache.outputs.dependencies-path }}
+          key: ${{ steps.cache.outputs.dependencies-key }}
+      - name: Verify main Release dependency cache
+        id: verify-dependencies
+        if: steps.cache.outputs.dependencies-hit != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.cache.outputs.dependencies-path }}
+          key: ${{ steps.cache.outputs.dependencies-key }}
+          lookup-only: true
+          fail-on-cache-miss: true
+      - name: Save main Release compilation cache
+        id: save-compilation
+        if: steps.cache.outputs.compilation-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.cache.outputs.compilation-path }}
+          key: ${{ steps.cache.outputs.compilation-key }}
+      - name: Verify main Release compilation cache
+        id: verify-compilation
+        if: steps.cache.outputs.compilation-hit != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.cache.outputs.compilation-path }}
+          key: ${{ steps.cache.outputs.compilation-key }}
+          lookup-only: true
+          fail-on-cache-miss: true

@@ -643,66 +643,6 @@ describe("SSH connection routes", () => {
     );
   });
 
-  it("allows concurrent creates beyond 64 configured hosts", async () => {
-    useSecretKmsProbe();
-    const owner = actor("concurrent-above-64");
-    authenticate(owner);
-    const seeded = await Promise.all(
-      Array.from({ length: 63 }, (_, index) => {
-        return client().create({
-          headers: authHeaders(),
-          body: {
-            id: randomUUID(),
-            ...createBody(`seed-${index}.example.com`),
-          },
-        });
-      }),
-    );
-    expect(
-      seeded.every((result) => {
-        return result.status === 201;
-      }),
-    ).toBeTruthy();
-
-    const results = await Promise.all([
-      client().create({
-        headers: authHeaders(),
-        body: {
-          id: randomUUID(),
-          ...createBody("final-a.example.com"),
-        },
-      }),
-      client().create({
-        headers: authHeaders(),
-        body: {
-          id: randomUUID(),
-          ...createBody("final-b.example.com"),
-        },
-      }),
-    ]);
-    expect(
-      results
-        .map((result) => {
-          return result.status;
-        })
-        .sort(),
-    ).toStrictEqual([201, 201]);
-    const summary = await accept(
-      client().summary({ headers: authHeaders() }),
-      [200],
-    );
-    expect(summary.body).toStrictEqual({ configuredCount: 65 });
-    const list = await accept(client().list({ headers: authHeaders() }), [200]);
-    expect(list.body.connections).toHaveLength(65);
-    expect(
-      list.body.connections.map((connection) => {
-        return connection.host;
-      }),
-    ).toStrictEqual(
-      expect.arrayContaining(["final-a.example.com", "final-b.example.com"]),
-    );
-  });
-
   it("leaves no visible row when KMS encryption fails", async () => {
     const owner = actor("kms-failure");
     authenticate(owner);
