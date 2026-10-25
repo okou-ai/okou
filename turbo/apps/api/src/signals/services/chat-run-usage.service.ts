@@ -5,7 +5,7 @@ import {
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
-import { usageEvent } from "@okouai/db/schema/usage-event";
+import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { command } from "ccstate";
 import {
   and,

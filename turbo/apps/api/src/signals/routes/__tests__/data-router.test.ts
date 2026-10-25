@@ -52,6 +52,7 @@ async function createRun(actor = bdd.user()) {
   const claim = await runs.claimRunnerJob(run.runId);
   return {
     actor,
+    agentId: agent.agentId,
     runId: run.runId,
     threadId: run.threadId,
     claim,
@@ -151,6 +152,39 @@ describe("Data Router completion accounting", () => {
     await finish(run);
     expect(lookups).toBe(1);
     await expect(credits(run.actor)).resolves.toBe(before);
+  });
+
+  it("settles captured usage after the completed Agent and Run are deleted", async () => {
+    const run = await createRun();
+    const requestId = randomUUID();
+    await accept(register(run, requestId), [200]);
+    const before = await credits(run.actor);
+    const lookupEntered = createDeferredPromise<void>(context.signal);
+    const releaseLookup = createDeferredPromise<void>(context.signal);
+    server.use(
+      http.post(ROUTER, async () => {
+        lookupEntered.resolve(undefined);
+        await releaseLookup.promise;
+        return HttpResponse.json({
+          jsonrpc: "2.0",
+          id: "deleted-run",
+          result: {
+            structuredContent: { records: [{ requestId, credits: 4 }] },
+          },
+        });
+      }),
+    );
+    const completion = webhooks.requestAgentComplete(
+      { runId: run.runId, exitCode: 1, error: "Completed before deletion" },
+      run.headers,
+      [200],
+    );
+    await lookupEntered.promise;
+    await bdd.deleteAgent(run.actor, run.agentId);
+    releaseLookup.resolve(undefined);
+    await completion;
+    await flushWaitUntilForTest();
+    await expect(credits(run.actor)).resolves.toBe(before - 4);
   });
 
   it("does not charge again when another completion redrives an undelivered chat callback", async () => {

@@ -5,7 +5,7 @@ import {
 } from "@okouai/core/auto-run-model";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { usageEvent } from "@okouai/db/schema/usage-event";
+import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { command } from "ccstate";
 import { and, count, eq, exists, ne, notExists, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";

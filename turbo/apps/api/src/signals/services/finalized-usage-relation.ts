@@ -1,4 +1,4 @@
-import { usageEvent } from "@okouai/db/schema/usage-event";
+import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { usageEventHourlyRollup } from "@okouai/db/schema/usage-event-hourly-rollup";
 import { and, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";

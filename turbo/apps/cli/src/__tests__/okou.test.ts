@@ -294,9 +294,7 @@ describe("Okou CLI lazy command loading", () => {
               ? "lark:write"
               : expectedName === "artifact"
                 ? "artifact:read"
-                : expectedName === "commerce"
-                  ? "commerce:read"
-                  : "social:read",
+                : "data-search:read",
         ]),
       );
       let helpOutput = "";
@@ -332,7 +330,7 @@ describe("Okou CLI lazy command loading", () => {
 
   it("should reject help for an unknown command", async () => {
     const argv = ["node", "okou", "help", "not-a-command"];
-    vi.stubEnv("OKOU_TOKEN", buildOkouToken(["social:read"]));
+    vi.stubEnv("OKOU_TOKEN", buildOkouToken(["data-search:read"]));
     let errorOutput = "";
     const prog = new Command()
       .name("okou")

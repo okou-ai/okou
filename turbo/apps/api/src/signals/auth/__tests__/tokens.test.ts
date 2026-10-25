@@ -98,7 +98,10 @@ describe("auth tokens", () => {
       userId: "user_okou",
       runId: "run_okou",
       orgId: "org_okou",
-      capabilities: expect.arrayContaining(["notify:write", "commerce:read"]),
+      capabilities: expect.arrayContaining([
+        "notify:write",
+        "data-search:read",
+      ]),
     });
   });
 
@@ -200,18 +203,6 @@ describe("auth tokens", () => {
     });
   });
 
-  it("includes maps capability in okou-scoped tokens", () => {
-    const token = generateOkouToken("user_okou", "run_okou", "org_okou");
-
-    expect(verifyOkouToken(token)?.capabilities).toContain("maps:read");
-  });
-
-  it("includes weather capability in okou-scoped tokens", () => {
-    const token = generateOkouToken("user_okou", "run_okou", "org_okou");
-
-    expect(verifyOkouToken(token)?.capabilities).toContain("weather:read");
-  });
-
   it("includes chat thread read and write capabilities in okou-scoped tokens", () => {
     const token = generateOkouToken("user_okou", "run_okou", "org_okou");
 
@@ -296,48 +287,10 @@ describe("auth tokens", () => {
     expect(verifyOkouToken(token)?.capabilities).toContain("slack:write");
   });
 
-  it("grants social capability by default", () => {
-    const token = generateOkouToken("user_okou", "run_okou", "org_okou");
-
-    expect(verifyOkouToken(token)?.capabilities).toContain("social:read");
-  });
-
   it("grants custom connector writes by default", () => {
     const token = generateOkouToken("user_okou", "run_okou", "org_okou");
 
     expect(verifyOkouToken(token)?.capabilities).toContain("connector:write");
-  });
-
-  it("grants scrape capability by default", () => {
-    const token = generateOkouToken("user_okou", "run_okou", "org_okou");
-
-    expect(verifyOkouToken(token)?.capabilities).toContain("scrape:read");
-  });
-
-  it("grants web-search capability by default", () => {
-    const token = generateOkouToken("user_okou", "run_okou", "org_okou");
-
-    expect(verifyOkouToken(token)?.capabilities).toContain("web-search:read");
-  });
-
-  it("grants finance capability by default", () => {
-    const token = generateOkouToken("user_okou", "run_okou", "org_okou");
-
-    expect(verifyOkouToken(token)?.capabilities).toContain("finance:read");
-  });
-
-  it("grants SEO capability by default", () => {
-    const token = generateOkouToken("user_okou", "run_okou", "org_okou");
-
-    expect(verifyOkouToken(token)?.capabilities).toContain("seo:read");
-  });
-
-  it("includes people-search capability in okou-scoped tokens", () => {
-    const token = generateOkouToken("user_okou", "run_okou", "org_okou");
-
-    expect(verifyOkouToken(token)?.capabilities).toContain(
-      "people-search:read",
-    );
   });
 
   it("gates browser capabilities on thread access", () => {

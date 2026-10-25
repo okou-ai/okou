@@ -3,7 +3,7 @@ import { recordProviderUsageBatch$ } from "./provider-usage-publication.service"
 import { Buffer } from "node:buffer";
 
 import { command, computed, type Computed } from "ccstate";
-import { usagePricing } from "@okouai/db/schema/usage-pricing";
+import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import {
   DEFAULT_IMAGE_MODEL,
   IMAGE_MODEL_ALIASES,

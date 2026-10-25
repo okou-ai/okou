@@ -33,7 +33,7 @@ import {
 } from "./credit-usage-batch";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { usageEvent } from "@okouai/db/schema/usage-event";
+import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { command } from "ccstate";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";

@@ -10,10 +10,12 @@ import {
   nullableDriverValueDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
-import {
-  managedValues,
-  type ManagedUsageRecordArgs,
-} from "./managed-usage-record";
+
+interface BillingActor {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly runId?: string;
+}
 
 export interface BillingRun {
   readonly id: string;
@@ -104,7 +106,7 @@ function billingSource(triggerSource: string | null): string {
 }
 
 export function managedAttributionWrite(
-  args: Pick<ManagedUsageRecordArgs, "actor">,
+  args: { readonly actor: BillingActor },
   run: BillingRun,
 ) {
   if (
@@ -153,7 +155,7 @@ export function billingRunAttributionWrite(run: BillingRun) {
 }
 
 function usageRunOwned(
-  actor: ManagedUsageRecordArgs["actor"],
+  actor: BillingActor,
   run: BillingRun | undefined,
 ): run is BillingRun {
   return (
@@ -164,7 +166,7 @@ function usageRunOwned(
 }
 
 export function attributedUsageIdentity(
-  args: Pick<ManagedUsageRecordArgs, "actor">,
+  args: { readonly actor: BillingActor },
   run: BillingRun | undefined,
   attribution: BillingAttribution | undefined,
 ) {
@@ -198,16 +200,5 @@ export function attributedUsageIdentity(
         ? null
         : sql`now()`,
     createdAt: sql`now()`,
-  };
-}
-
-export function attributedManagedValues(
-  args: ManagedUsageRecordArgs,
-  run: BillingRun | undefined,
-  attribution: BillingAttribution | undefined,
-) {
-  return {
-    ...managedValues(args, run),
-    ...attributedUsageIdentity(args, run, attribution),
   };
 }

@@ -1,7 +1,7 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { builtInGenerationJobs } from "@okouai/db/schema/built-in-generation-job";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
-import { usageEvent } from "@okouai/db/schema/usage-event";
+import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { usageEventHourlyRollup } from "@okouai/db/schema/usage-event-hourly-rollup";
 import { command } from "ccstate";
 import {

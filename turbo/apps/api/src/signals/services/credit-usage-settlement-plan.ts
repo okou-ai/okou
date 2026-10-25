@@ -5,7 +5,7 @@ import {
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { usageEvent } from "@okouai/db/schema/usage-event";
+import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import { and, eq, sql } from "drizzle-orm";
 import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
