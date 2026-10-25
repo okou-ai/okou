@@ -74,7 +74,8 @@ private final class ChatFixtureURLProtocol: URLProtocol, @unchecked Sendable {
   private let owner: String
   private let route: Route?
 
-  override init(request: URLRequest, cachedResponse: CachedURLResponse?, client: URLProtocolClient?) {
+  override init(request: URLRequest, cachedResponse: CachedURLResponse?, client: URLProtocolClient?)
+  {
     let owner = request.value(forHTTPHeaderField: Self.ownerHeader) ?? request.url?.host ?? ""
     self.owner = owner
     route = Self.handlers.withLock { $0[owner] }
