@@ -1,4 +1,3 @@
-import { QueryBuilder } from "drizzle-orm/pg-core";
 import type {
   ConnectorAccountConnection,
   ConnectorAccountSelection,
@@ -20,7 +19,6 @@ import {
   eq,
   gte,
   inArray,
-  isNotNull,
   ne,
   sql,
 } from "drizzle-orm";
@@ -49,7 +47,6 @@ import {
 } from "./connector-catalog-slug-source.service";
 import {
   preparedDefaultAccountProjectionPlan,
-  reprojectWorkflowAutomationsForOwner,
   workflowAutomationOwnerProjectionReadPlan,
   workflowAutomationProjectionValues,
   type PreparedDefaultAccountProjection,
@@ -59,6 +56,7 @@ import {
   workflowAutomationSelectedAccountReadPlan,
 } from "./workflow-automation-account.service";
 import { googleFormsAccountProjectionUpdate } from "./google-forms-automation-account.service";
+import { publishUpdatedThreadSelection$ } from "./chat-thread-connector-selection-publication.service";
 import {
   NOTION_ACCOUNT_CHANGED_SKIP_REASON,
   notionPendingEventsSkipWrite,
@@ -473,48 +471,10 @@ export function selectionParentMissing(
   }
 }
 
-function updatedThreadSelectionPlan(
-  chatThreadId: string,
-  selection: PreparedChatThreadConnectorSelection,
-) {
-  const query = new QueryBuilder();
-  const account = query
-    .$with("selected_connector_account")
-    .as(
-      query
-        .select({ id: connectors.id })
-        .from(connectors)
-        .where(eq(connectors.id, selection.connectionId)),
-    );
-  const target = targetColumns(selection.target);
-  return {
-    account,
-    source: sql`SELECT ${chatThreadId}::uuid, ${account.id}, ${target.connectorSlug}::varchar, ${target.customConnectorId}::uuid FROM ${account}`,
-    conflict: {
-      target:
-        selection.target.kind === "builtin"
-          ? [
-              chatThreadConnectorSelections.chatThreadId,
-              chatThreadConnectorSelections.connectorSlug,
-            ]
-          : [
-              chatThreadConnectorSelections.chatThreadId,
-              chatThreadConnectorSelections.customConnectorId,
-            ],
-      targetWhere: isNotNull(
-        selection.target.kind === "builtin"
-          ? chatThreadConnectorSelections.connectorSlug
-          : chatThreadConnectorSelections.customConnectorId,
-      ),
-      set: { connectorId: selection.connectionId },
-    },
-  };
-}
-
 function failedThreadSelectionUpdate(
   error: unknown,
 ): UpdateChatThreadConnectorSelectionResult {
-  // Wait for the whole transaction to roll back before reporting a lost
+  // Wait for the complete statement to roll back before reporting a lost
   // parent, including its selection change.
   switch (selectionParentMissing(error)) {
     case "thread": {
@@ -582,57 +542,25 @@ export const updateChatThreadConnectorSelection$ = command(
     },
     signal: AbortSignal,
   ): Promise<UpdateChatThreadConnectorSelectionResult> => {
-    const db = set(writeDb$);
     const prepared = await set(prepareUpdatedThreadSelection$, args, signal);
     if (prepared.kind === "invalid" || prepared.kind === "not_found") {
       return prepared;
     }
+    const [selection] = prepared.selections;
+    if (!selection) {
+      throw new Error("Expected one prepared connector selection");
+    }
     const result = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0092; new non-billing transactions are prohibited.
-      db.transaction(
-        async (tx): Promise<UpdateChatThreadConnectorSelectionResult> => {
-          // No parent row lock: the selection upsert's FK check on the thread
-          // (or the row lock on an existing selection) makes a concurrent Agent
-          // or thread deletion wait for this commit, or reject the upsert.
-          const [selection] = prepared.selections;
-          if (!selection) {
-            throw new Error("Expected one prepared connector selection");
-          }
-          // The account CTE and FK keep a concurrent account deletion outside this insert.
-          const insert = updatedThreadSelectionPlan(
-            args.chatThreadId,
-            selection,
-          );
-          const [row] = await tx
-            .with(insert.account)
-            .insert(chatThreadConnectorSelections)
-            .select(insert.source)
-            .onConflictDoUpdate(insert.conflict)
-            .returning({
-              connectorId: chatThreadConnectorSelections.connectorId,
-            });
-          const updated = row ? selection : undefined;
-          if (!updated) {
-            return {
-              kind: "invalid",
-              message: "Connector account does not match the requested target",
-            };
-          }
-          await reprojectWorkflowAutomationsForOwner(
-            tx,
-            { ...args, target: selection.target },
-            signal,
-          );
-          return {
-            kind: "updated",
-            selection: updated,
-          };
-        },
-      ),
+      set(publishUpdatedThreadSelection$, { ...args, selection }, signal),
     );
     signal.throwIfAborted();
     if (result.ok) {
-      return result.value;
+      return result.value
+        ? { kind: "updated", selection }
+        : {
+            kind: "invalid",
+            message: "Connector account does not match the requested target",
+          };
     }
     return failedThreadSelectionUpdate(result.error);
   },
