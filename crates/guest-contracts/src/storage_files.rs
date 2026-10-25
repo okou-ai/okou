@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 use std::io::{self, Read};
-use std::path::{Component, Path};
+use std::path::Path;
 
 /// Maximum encoded files payload, including metadata.
 pub const MAX_PAYLOAD_BYTES: usize = 15 * 1024 * 1024;
