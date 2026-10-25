@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.3...guest-agent-v0.109.4) (2026-10-25)
+
+
+### Bug Fixes
+
+* **guest-agent:** keep memory conflicts from failing runs ([#42863](https://github.com/okou-ai/okou/issues/42863)) ([b3138d0](https://github.com/okou-ai/okou/commit/b3138d0ddb95e78eecbba958c0572ed035575725))
+
 ## [0.109.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.2...guest-agent-v0.109.3) (2026-10-25)
 
 ## [0.109.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.1...guest-agent-v0.109.2) (2026-10-25)

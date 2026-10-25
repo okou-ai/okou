@@ -1,5 +1,13 @@
 # Changelog
 
+## [8.786.0](https://github.com/okou-ai/okou/compare/core-v8.785.1...core-v8.786.0) (2026-10-25)
+
+
+### Features
+
+* **core:** enable built-in document templates for everyone ([#42580](https://github.com/okou-ai/okou/issues/42580)) ([f61c808](https://github.com/okou-ai/okou/commit/f61c808adf249d8ef7767548df0893e99d0246ff))
+* **core:** enable chat resource panel for everyone ([#42581](https://github.com/okou-ai/okou/issues/42581)) ([269f6e5](https://github.com/okou-ai/okou/commit/269f6e5bb47c134a266d7078c788645183bab399))
+
 ## [8.785.1](https://github.com/okou-ai/okou/compare/core-v8.785.0...core-v8.785.1) (2026-10-25)
 
 
