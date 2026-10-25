@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.19.0](https://github.com/okou-ai/okou/compare/ios-v0.18.11...ios-v0.19.0) (2026-10-24)
+
+
+### Features
+
+* **ios:** bring composer connector controls to native chat ([#42767](https://github.com/okou-ai/okou/issues/42767)) ([35daba9](https://github.com/okou-ai/okou/commit/35daba9e983a3c54fe75dabfef43b4d7fff6f30c))
+
+
+### Bug Fixes
+
+* **ios:** align thinking indicator with conversation content ([#42746](https://github.com/okou-ai/okou/issues/42746)) ([761394c](https://github.com/okou-ai/okou/commit/761394cb8f8f94b4fc197f17e86ea5ac4319bc76))
+
+
+### CI
+
+* **ios:** measure release archive cache on clean runners ([#42747](https://github.com/okou-ai/okou/issues/42747)) ([8352e4a](https://github.com/okou-ai/okou/commit/8352e4a6a41982130f8cdcadff9485f5352320af))
+* **ios:** reuse persistent caches for release archives ([#42758](https://github.com/okou-ai/okou/issues/42758)) ([56aa4a9](https://github.com/okou-ai/okou/commit/56aa4a9cdc88ed36e1b0043067a4a21048b645a0))
+
 ## [0.18.11](https://github.com/okou-ai/okou/compare/ios-v0.18.10...ios-v0.18.11) (2026-10-24)
 
 

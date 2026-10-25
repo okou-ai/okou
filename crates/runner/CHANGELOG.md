@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.236.32](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.31...runner-rs-v0.236.32) (2026-10-24)
+
+
+### Bug Fixes
+
+* **runner:** validate sustained readiness across fresh native samples ([#42766](https://github.com/okou-ai/okou/issues/42766)) ([01f06ce](https://github.com/okou-ai/okou/commit/01f06cee87d81483bbbe0ffd9be943bd86d5c24b))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.236.31](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.30...runner-rs-v0.236.31) (2026-10-24)
 
 ### Release Dependencies

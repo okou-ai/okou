@@ -19,6 +19,9 @@ import {
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectorAuthMethodHasRequiredScopes } from "@okouai/connectors/connector-auth-method";
 import { connectors } from "@okouai/db/schema/connector";
+import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
+import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
@@ -39,30 +42,44 @@ import {
   desc,
   eq,
   exists,
+  gte,
   ilike,
   inArray,
   isNotNull,
   isNull,
   lt,
+  max,
   ne,
   notInArray,
   or,
   sql,
   type SQL,
+  type WithSubquery,
 } from "drizzle-orm";
 import { z } from "zod";
 
 import type { Tx } from "../../lib/db-types";
-import { pgTextDecoder } from "../../lib/db-structured-result";
+import {
+  pgIntegerDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
 import { isUniqueViolation, safeSqlStateCode } from "../../lib/pg-errors";
-import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
-import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
+import { googleFormsAccountProjectionUpdate } from "./google-forms-automation-account.service";
+import {
+  reprojectWorkflowAutomationsForOwner,
+  workflowAutomationProjectionValues,
+  workflowAutomationOwnerProjectionReadPlan,
+  preparedDefaultAccountProjectionPlan,
+  type PreparedDefaultAccountProjection,
+} from "./workflow-automation-account-projection.service";
+import { workflowAutomationSelectedAccountReadPlan } from "./workflow-automation-account.service";
 import {
   notionPendingEventsReconnectScope,
   notionPendingEventsSkipWrite,
+  NOTION_ACCOUNT_CHANGED_SKIP_REASON,
 } from "./notion-automation-account.service";
 import {
   builtinConnectorCredentialStorageIsCompatible,
@@ -1280,9 +1297,6 @@ function connectorAccountOwnerCondition(args: {
   ) as SQL;
 }
 
-/** Rolls back a default change whose target no longer exists. */
-class DefaultConnectorAccountMissing extends Error {}
-
 function clearOtherDefaultsSql(
   owner: ReturnType<typeof connectorAccountOwnerCondition>,
   connectionId: string,
@@ -1306,22 +1320,6 @@ export function isConnectorAccountDefaultConflict(error: unknown): boolean {
   );
 }
 
-async function settleDefaultChange(
-  change: Promise<Date>,
-): Promise<Date | "conflict" | null> {
-  const settled = await settle(change);
-  if (settled.ok) {
-    return settled.value;
-  }
-  if (settled.error instanceof DefaultConnectorAccountMissing) {
-    return null;
-  }
-  if (isConnectorAccountDefaultConflict(settled.error)) {
-    return "conflict";
-  }
-  throw settled.error;
-}
-
 /** Keep the default transition and Forms projection atomic on missing/racing targets. */
 export const setDefaultGoogleFormsAccount$ = command(
   async (
@@ -1334,32 +1332,78 @@ export const setDefaultGoogleFormsAccount$ = command(
     signal: AbortSignal,
   ): Promise<Date | "conflict" | null> => {
     const db = set(writeDb$);
-    return await settleDefaultChange(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0111; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        const owner = connectorAccountOwnerCondition({
+    const owner = connectorAccountOwnerCondition({
+      orgId: args.orgId,
+      userId: args.userId,
+      target: { kind: "builtin", connectorSlug: "google-forms" },
+    });
+    const cleared = db.$with("cleared_forms_defaults").as(
+      db
+        .update(connectors)
+        .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+        .where(clearOtherDefaultsSql(owner, args.connectionId))
+        .returning({ id: connectors.id }),
+    );
+    const chosen = db.$with("chosen_forms_default").as(
+      db
+        .update(connectors)
+        .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+        .where(
+          and(
+            owner,
+            eq(connectors.id, args.connectionId),
+            gte(db.select({ value: count() }).from(cleared), 0),
+          ),
+        )
+        .returning({ id: connectors.id, updatedAt: connectors.updatedAt }),
+    );
+    const projected = db
+      .$with("projected_forms_accounts", { id: workflowAutomations.id })
+      .as(
+        googleFormsAccountProjectionUpdate({
           orgId: args.orgId,
           userId: args.userId,
-          target: { kind: "builtin", connectorSlug: "google-forms" },
-        });
-        await tx
-          .update(connectors)
-          .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
-          .where(clearOtherDefaultsSql(owner, args.connectionId));
-        const [updated] = await tx
-          .update(connectors)
-          .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
-          .where(and(owner, eq(connectors.id, args.connectionId)))
-          .returning({ updatedAt: connectors.updatedAt });
-        if (!updated) {
-          throw new DefaultConnectorAccountMissing();
-        }
-        const updatedAt = updated.updatedAt;
-        await tx.execute(googleFormsAccountProjectionStatement(args));
-        signal.throwIfAborted();
-        return updatedAt;
-      }),
+          defaultConnectorId: sql`${db.select({ id: chosen.id }).from(chosen)}`,
+        }),
+      );
+    const discarded = db.$with("discarded_forms_cursors").as(
+      db
+        .delete(googleFormsAutomationCursors)
+        .where(
+          inArray(
+            googleFormsAutomationCursors.automationId,
+            db.select({ id: projected.id }).from(projected),
+          ),
+        )
+        .returning({ id: googleFormsAutomationCursors.automationId }),
     );
+    signal.throwIfAborted();
+    const changed = await settle(
+      db
+        .with(cleared, chosen, projected, discarded)
+        .select({
+          updatedAt: max(chosen.updatedAt),
+          // A missing target must also undo clearing the previous default.
+          targetExists: sql`(1 / ${count()})::int`.mapWith(pgIntegerDecoder),
+        })
+        .from(chosen)
+        .where(gte(db.select({ value: count() }).from(discarded), 0)),
+    );
+    signal.throwIfAborted();
+    if (!changed.ok) {
+      if (safeSqlStateCode(changed.error) === "22012") {
+        return null;
+      }
+      if (isConnectorAccountDefaultConflict(changed.error)) {
+        return "conflict";
+      }
+      throw changed.error;
+    }
+    const [updated] = changed.value;
+    if (!updated?.updatedAt) {
+      throw new Error("Google Forms default update returned no timestamp");
+    }
+    return updated.updatedAt;
   },
 );
 
@@ -1389,16 +1433,218 @@ function defaultCustomConnectorDefinition(
     .as("default_custom_definition");
 }
 
-/** Clear/select defaults together so missing targets and index conflicts roll back. */
+interface ConnectorDefaultChangeInput {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly target: ConnectorAccountTarget;
+  readonly connectionId: string;
+}
+
+/** Read and validate projection data before the atomic default publication. */
+const prepareConnectorDefaultProjections$ = command(
+  async (
+    { set },
+    args: ConnectorDefaultChangeInput,
+    signal: AbortSignal,
+  ): Promise<readonly PreparedDefaultAccountProjection[] | null> => {
+    const db = set(writeDb$);
+    if (args.target.kind === "custom") {
+      const definitionQuery = defaultCustomConnectorDefinition(
+        args,
+        args.target.customConnectorId,
+      );
+      const [definition] = await db.select().from(definitionQuery);
+      signal.throwIfAborted();
+      if (
+        !definition ||
+        isIntegrationManagedCustomConnectorProviderAdapter(
+          definition.providerAdapter,
+        )
+      ) {
+        return null;
+      }
+    }
+    const plan = workflowAutomationOwnerProjectionReadPlan(args);
+    if (!plan) {
+      return [];
+    }
+    const automations = await db
+      .select(plan.columns)
+      .from(workflowAutomations)
+      .where(plan.where);
+    signal.throwIfAborted();
+    const projections: PreparedDefaultAccountProjection[] = [];
+    for (const automation of automations) {
+      const selected = workflowAutomationSelectedAccountReadPlan({
+        orgId: args.orgId,
+        userId: args.userId,
+        workflowId: automation.workflowId,
+        connectorSlug: plan.connectorSlug,
+      });
+      const [selection] = await db
+        .select(selected.columns)
+        .from(selected.from)
+        .innerJoin(selected.join.table, selected.join.on)
+        .where(selected.where)
+        .limit(selected.limit);
+      signal.throwIfAborted();
+      // An explicit null selection still overrides the new default.
+      const connectorId = selection ? selection.connectorId : args.connectionId;
+      const values = workflowAutomationProjectionValues(
+        automation,
+        connectorId,
+        plan.connectorSlug,
+      );
+      if (values !== null) {
+        // Drizzle omits undefined fields but writes an explicit null.
+        const eventConfig =
+          "eventConfig" in values ? values.eventConfig : undefined;
+        projections.push({
+          id: automation.id,
+          connector_id: values.eventConnectorId,
+          replace_config: eventConfig !== undefined,
+          event_config: eventConfig === undefined ? null : eventConfig,
+        });
+      }
+    }
+    return projections;
+  },
+);
+
+/** All default/projection mutations commit in this one owning statement. */
+const publishConnectorDefault$ = command(
+  async (
+    { set },
+    args: ConnectorDefaultChangeInput,
+    projections: readonly PreparedDefaultAccountProjection[],
+    signal: AbortSignal,
+  ): Promise<Date | "conflict" | null> => {
+    const db = set(writeDb$);
+    const owner = connectorAccountOwnerCondition(args);
+    const cleared = db.$with("cleared_connector_defaults").as(
+      db
+        .update(connectors)
+        .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+        .where(clearOtherDefaultsSql(owner, args.connectionId))
+        .returning({ id: connectors.id }),
+    );
+    const chosen = db.$with("chosen_connector_default").as(
+      db
+        .update(connectors)
+        .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+        .where(
+          and(
+            owner,
+            eq(connectors.id, args.connectionId),
+            gte(db.select({ value: count() }).from(cleared), 0),
+          ),
+        )
+        .returning({ id: connectors.id, updatedAt: connectors.updatedAt }),
+    );
+    const projectionCtes: WithSubquery[] = [];
+    let projectionCompleted = gte(
+      db.select({ value: count() }).from(chosen),
+      0,
+    );
+    if (projections.length > 0) {
+      const plan = preparedDefaultAccountProjectionPlan(
+        projections,
+        exists(db.select({ id: chosen.id }).from(chosen)),
+      );
+      const configured = db
+        .$with("configured_default_automations")
+        .as(
+          db
+            .update(workflowAutomations)
+            .set(plan.configured.values)
+            .from(plan.configured.from)
+            .where(plan.configured.where)
+            .returning({ id: workflowAutomations.id }),
+        );
+      const selected = db
+        .$with("selected_default_automations")
+        .as(
+          db
+            .update(workflowAutomations)
+            .set(plan.selected.values)
+            .from(plan.selected.from)
+            .where(plan.selected.where)
+            .returning({ id: workflowAutomations.id }),
+        );
+      const projected = db.$with("projected_default_automations").as(
+        db
+          .select({ id: configured.id })
+          .from(configured)
+          .unionAll(db.select({ id: selected.id }).from(selected)),
+      );
+      projectionCtes.push(configured, selected, projected);
+      projectionCompleted = gte(
+        db.select({ value: count() }).from(projected),
+        0,
+      );
+      if (
+        args.target.kind === "builtin" &&
+        args.target.connectorSlug === "notion"
+      ) {
+        const write = notionPendingEventsSkipWrite(
+          plan.pendingEvents,
+          NOTION_ACCOUNT_CHANGED_SKIP_REASON,
+        );
+        const skipped = db.$with("skipped_default_notion_events").as(
+          db
+            .update(write.table)
+            .set(write.values)
+            .where(
+              and(
+                write.where,
+                exists(db.select({ id: chosen.id }).from(chosen)),
+                projectionCompleted,
+              ),
+            )
+            .returning({ id: notionWorkflowPendingEvents.id }),
+        );
+        projectionCtes.push(skipped);
+        projectionCompleted = gte(
+          db.select({ value: count() }).from(skipped),
+          0,
+        );
+      }
+    }
+    signal.throwIfAborted();
+    const changed = await settle(
+      db
+        .with(cleared, chosen, ...projectionCtes)
+        .select({
+          updatedAt: max(chosen.updatedAt),
+          // Roll back clearing other defaults when the target disappeared.
+          targetExists: sql`(1 / ${count()})::int`.mapWith(pgIntegerDecoder),
+        })
+        .from(chosen)
+        .where(projectionCompleted),
+    );
+    signal.throwIfAborted();
+    if (!changed.ok) {
+      if (safeSqlStateCode(changed.error) === "22012") {
+        return null;
+      }
+      if (isConnectorAccountDefaultConflict(changed.error)) {
+        return "conflict";
+      }
+      throw changed.error;
+    }
+    const [updated] = changed.value;
+    if (!updated?.updatedAt) {
+      throw new Error("Connector default update returned no timestamp");
+    }
+    return updated.updatedAt;
+  },
+);
+
+/** Prepare reads separately; publish every related write atomically. */
 export const setDefaultConnectorAccount$ = command(
   async (
     { set },
-    input: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly target: ConnectorAccountTarget;
-      readonly connectionId: string;
-    },
+    input: ConnectorDefaultChangeInput,
     signal: AbortSignal,
   ): Promise<Date | "conflict" | null> => {
     const target: ConnectorAccountTarget =
@@ -1411,43 +1657,27 @@ export const setDefaultConnectorAccount$ = command(
       connectionId: input.connectionId,
       target,
     };
-    const db = set(writeDb$);
-    return await settleDefaultChange(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0112; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        if (args.target.kind === "custom") {
-          const definitionQuery = defaultCustomConnectorDefinition(
-            args,
-            args.target.customConnectorId,
-          );
-          const [definition] = await tx.select().from(definitionQuery);
-          if (
-            !definition ||
-            isIntegrationManagedCustomConnectorProviderAdapter(
-              definition.providerAdapter,
-            )
-          ) {
-            throw new DefaultConnectorAccountMissing();
-          }
-        }
-        const owner = connectorAccountOwnerCondition(args);
-        await tx
-          .update(connectors)
-          .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
-          .where(clearOtherDefaultsSql(owner, args.connectionId));
-        const [updated] = await tx
-          .update(connectors)
-          .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
-          .where(and(owner, eq(connectors.id, args.connectionId)))
-          .returning({ updatedAt: connectors.updatedAt });
-        if (!updated) {
-          throw new DefaultConnectorAccountMissing();
-        }
-        const updatedAt = updated.updatedAt;
-        await reprojectWorkflowAutomationsForOwner(tx, args, signal);
-        return updatedAt;
-      }),
+    if (target.kind === "builtin" && target.connectorSlug === "google-forms") {
+      return await set(
+        setDefaultGoogleFormsAccount$,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          connectionId: args.connectionId,
+        },
+        signal,
+      );
+    }
+    const projections = await set(
+      prepareConnectorDefaultProjections$,
+      args,
+      signal,
     );
+    signal.throwIfAborted();
+    if (projections === null) {
+      return null;
+    }
+    return await set(publishConnectorDefault$, args, projections, signal);
   },
 );
 

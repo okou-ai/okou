@@ -44,6 +44,12 @@ import {
   deviceAuthSessionPublicationSql,
   type DeviceAuthSessionPublication,
 } from "./model-provider-device-session-publication";
+import {
+  claudeAccountIdentityToApply,
+  claudeAccountIdentityValues,
+  hasClaudeIdentity,
+  type PersonalProviderAccountMetadata,
+} from "./model-provider-account-identity";
 
 const MAX_PERSONAL_PROVIDER_ACCOUNTS = 10;
 const CODEX_TYPE = "codex-oauth-token";
@@ -66,16 +72,6 @@ export function isPersonalSubscriptionProviderType(
   type: string,
 ): type is PersonalSubscriptionProviderType {
   return type === CODEX_TYPE || type === CLAUDE_CODE_TYPE;
-}
-
-interface PersonalProviderAccountMetadata {
-  readonly externalAccountId?: string | null;
-  readonly accountEmail?: string | null;
-  readonly tokenExpiresAt?: Date | null;
-  readonly workspaceName?: string | null;
-  readonly planType?: string | null;
-  readonly subscriptionResetPeriod?: string | null;
-  readonly subscriptionNextResetAt?: Date | null;
 }
 
 export type PersonalProviderAccountMutation =
@@ -517,33 +513,6 @@ async function logicalProvider(
   return created;
 }
 
-/** Record profile identity on older Claude accounts that still lack one. */
-async function applyClaudeIdentities(
-  db: Db,
-  accounts: readonly AccountRow[],
-  identities: ReadonlyMap<string, PersonalProviderAccountMetadata> | null,
-): Promise<AccountRow[]> {
-  const hydrated: AccountRow[] = [];
-  for (const account of accounts) {
-    const metadata = identities?.get(account.id);
-    if (!metadata || hasClaudeIdentity(account)) {
-      hydrated.push(account);
-      continue;
-    }
-    const [updated] = await db
-      .update(modelProviderAccounts)
-      .set({
-        externalAccountId: metadata.externalAccountId ?? null,
-        accountEmail: metadata.accountEmail ?? null,
-        workspaceName: metadata.workspaceName ?? null,
-      })
-      .where(eq(modelProviderAccounts.id, account.id))
-      .returning();
-    hydrated.push(updated ?? account);
-  }
-  return hydrated;
-}
-
 async function writePersonalAccount(
   db: Db,
   args: Omit<UpsertPersonalAccountArgs, "metadata"> & {
@@ -559,15 +528,33 @@ async function writePersonalAccount(
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0185; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
     const provider = await logicalProvider(tx, args);
-    const accounts = await applyClaudeIdentities(
-      tx,
-      await tx
-        .select()
-        .from(modelProviderAccounts)
-        .where(eq(modelProviderAccounts.modelProviderId, provider.id))
-        .orderBy(modelProviderAccounts.id),
-      args.identities,
-    );
+    const identityDb = tx;
+    const identityAccounts = await tx
+      .select()
+      .from(modelProviderAccounts)
+      .where(eq(modelProviderAccounts.modelProviderId, provider.id))
+      .orderBy(modelProviderAccounts.id);
+    const identityMetadata = args.identities;
+    const accounts = await (async (): Promise<AccountRow[]> => {
+      const hydrated: AccountRow[] = [];
+      for (const account of identityAccounts) {
+        const metadata = claudeAccountIdentityToApply(
+          account,
+          identityMetadata,
+        );
+        if (!metadata) {
+          hydrated.push(account);
+          continue;
+        }
+        const [updated] = await identityDb
+          .update(modelProviderAccounts)
+          .set(claudeAccountIdentityValues(metadata))
+          .where(eq(modelProviderAccounts.id, account.id))
+          .returning();
+        hydrated.push(updated ?? account);
+      }
+      return hydrated;
+    })();
     const plan = planAccountMutation({ ...args, accounts });
     if ("status" in plan) {
       return plan;
@@ -692,13 +679,6 @@ export const upsertPersonalModelProviderAccount$ = command(
     return result;
   },
 );
-
-function hasClaudeIdentity(identity: PersonalProviderAccountMetadata): boolean {
-  return Boolean(
-    identity.externalAccountId ||
-    (identity.accountEmail && identity.workspaceName),
-  );
-}
 
 /** Profile identity for older Claude accounts is fetched outside any
  * transaction. */
@@ -928,11 +908,30 @@ export const disconnectPersonalModelProviderAccounts$ = command(
     const result = await withAccountConflict(
       // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0187; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
-        for (const account of await applyClaudeIdentities(
-          tx,
-          accounts,
-          identities,
-        )) {
+        const identityDb = tx;
+        const identityAccounts = accounts;
+        const identityMetadata = identities;
+        const hydratedAccounts = await (async (): Promise<AccountRow[]> => {
+          const hydrated: AccountRow[] = [];
+          for (const account of identityAccounts) {
+            const metadata = claudeAccountIdentityToApply(
+              account,
+              identityMetadata,
+            );
+            if (!metadata) {
+              hydrated.push(account);
+              continue;
+            }
+            const [updated] = await identityDb
+              .update(modelProviderAccounts)
+              .set(claudeAccountIdentityValues(metadata))
+              .where(eq(modelProviderAccounts.id, account.id))
+              .returning();
+            hydrated.push(updated ?? account);
+          }
+          return hydrated;
+        })();
+        for (const account of hydratedAccounts) {
           await tx.execute(retiringAccountStatement(account));
         }
         if (args.selection.kind === "account" && first.isActive) {

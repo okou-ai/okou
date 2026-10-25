@@ -57,11 +57,6 @@
       "owner": "linkAgentPhoneIdentity$"
     },
     {
-      "id": "TX-0064",
-      "file": "turbo/apps/api/src/signals/services/billing-restore.service.ts",
-      "owner": "restoreSubscription$"
-    },
-    {
       "id": "TX-0073",
       "file": "turbo/apps/api/src/signals/services/browser.service.ts",
       "owner": "claimExpiredInactiveBrowser$"
@@ -102,16 +97,6 @@
       "owner": "deleteChatThreadContent$"
     },
     {
-      "id": "TX-0111",
-      "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
-      "owner": "setDefaultGoogleFormsAccount$"
-    },
-    {
-      "id": "TX-0112",
-      "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
-      "owner": "setDefaultConnectorAccount$"
-    },
-    {
       "id": "TX-0116",
       "file": "turbo/apps/api/src/signals/services/connector-data.service.ts",
       "owner": "deleteBuiltinConnectorLocalState$"
@@ -135,11 +120,6 @@
       "id": "TX-0128",
       "file": "turbo/apps/api/src/signals/services/cron-cleanup-sandboxes.service.ts",
       "owner": "commitStaleRunTimeout"
-    },
-    {
-      "id": "TX-0129",
-      "file": "turbo/apps/api/src/signals/services/cron-compact-usage-events.service.ts",
-      "owner": "compactUsageEventBatch$"
     },
     {
       "id": "TX-0130",
@@ -212,11 +192,6 @@
       "owner": "deleteHostedSite$"
     },
     {
-      "id": "TX-0178",
-      "file": "turbo/apps/api/src/signals/services/managed-usage.service.ts",
-      "owner": "recordManagedUsage$"
-    },
-    {
       "id": "TX-0185",
       "file": "turbo/apps/api/src/signals/services/model-provider-account.service.ts",
       "owner": "writePersonalAccount"
@@ -245,16 +220,6 @@
       "id": "TX-0220",
       "file": "turbo/apps/api/src/signals/services/org-member-cleanup.service.ts",
       "owner": "revokeOrgMemberRunAuthority"
-    },
-    {
-      "id": "TX-0234",
-      "file": "turbo/apps/api/src/signals/services/provider-usage-publication.service.ts",
-      "owner": "recordRunnerUsageBatch$"
-    },
-    {
-      "id": "TX-0235",
-      "file": "turbo/apps/api/src/signals/services/provider-usage-publication.service.ts",
-      "owner": "recordProviderUsageBatch$"
     },
     {
       "id": "TX-0236",
@@ -312,19 +277,9 @@
       "owner": "commitReflectedUsagePackChanges"
     },
     {
-      "id": "TX-0270",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
-      "owner": "finalizeCanceledUsagePackChanges"
-    },
-    {
       "id": "TX-0272",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "fulfillUsagePackSubscriptionChangeInvoice"
-    },
-    {
-      "id": "TX-0277",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "persistInvitation$"
     },
     {
       "id": "TX-0283",
@@ -340,11 +295,6 @@
       "id": "TX-0287",
       "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
       "owner": "persistDeferredSubscriptionChangeSchedule"
-    },
-    {
-      "id": "TX-0298",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
-      "owner": "materializeUsagePackSnapshot$"
     },
     {
       "id": "TX-0299",

@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, gte } from "drizzle-orm";
 import { usagePackAllocationChanges } from "@okouai/db/schema/usage-pack-subscription";
 
 import { logger } from "../../lib/log";
@@ -117,9 +117,8 @@ export const restoreSubscription$ = command(
     // Stripe has applied the restore; record it as main did, without a
     // row-version guard that a concurrent debit or webhook rewrite would trip.
     if (pendingScheduleId) {
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0064; new non-billing transactions are prohibited.
-      await db.transaction(async (tx) => {
-        await tx
+      const restored = db.$with("restored_subscription").as(
+        db
           .update(orgMetadata)
           .set({
             cancelAtPeriodEnd: false,
@@ -128,28 +127,28 @@ export const restoreSubscription$ = command(
             pendingSubscriptionChangeAt: null,
             updatedAt: restoredAt,
           })
-          .where(eq(orgMetadata.orgId, args.orgId));
-        if (pendingScheduleId) {
-          await tx
-            .update(usagePackAllocationChanges)
-            .set({
-              status: "failed",
-              failureReason: "scheduled_change_restored",
-              completedAt: restoredAt,
-              updatedAt: restoredAt,
-            })
-            .where(
-              and(
-                eq(usagePackAllocationChanges.orgId, args.orgId),
-                eq(usagePackAllocationChanges.status, "scheduled"),
-                eq(
-                  usagePackAllocationChanges.stripeScheduleId,
-                  pendingScheduleId,
-                ),
-              ),
-            );
-        }
-      });
+          .where(eq(orgMetadata.orgId, args.orgId))
+          .returning({ orgId: orgMetadata.orgId }),
+      );
+      // Consume the organization write before updating its scheduled changes,
+      // including when it returns no row, without gating the child write.
+      await db
+        .with(restored)
+        .update(usagePackAllocationChanges)
+        .set({
+          status: "failed",
+          failureReason: "scheduled_change_restored",
+          completedAt: restoredAt,
+          updatedAt: restoredAt,
+        })
+        .where(
+          and(
+            eq(usagePackAllocationChanges.orgId, args.orgId),
+            eq(usagePackAllocationChanges.status, "scheduled"),
+            eq(usagePackAllocationChanges.stripeScheduleId, pendingScheduleId),
+            gte(db.select({ count: count() }).from(restored), 0),
+          ),
+        );
     } else {
       await db
         .update(orgMetadata)

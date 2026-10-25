@@ -37,15 +37,11 @@ struct ChatModelPickerButton: View {
           Image(systemName: hasError ? "exclamationmark.circle" : "slider.horizontal.3")
         }
       }
-      .font(.system(size: 16, weight: .medium))
-      .frame(width: 22, height: 22)
+      .font(.system(size: 19))
+      .frame(width: 44, height: 44)
+      .contentShape(Rectangle())
     }
-    .buttonStyle(.glass)
-    .buttonBorderShape(.circle)
-    .controlSize(.small)
     .tint(hasError ? .orange : .primary)
-    .frame(width: 44, height: 44)
-    .contentShape(Circle())
     .accessibilityIdentifier("chat-model-picker")
     .accessibilityLabel("Model settings")
     .accessibilityValue(accessibilityValue)
