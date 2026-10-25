@@ -3,7 +3,7 @@ import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { sql, type SQL } from "drizzle-orm";
+import { ne, sql, type SQL } from "drizzle-orm";
 
 /**
  * Publish the selected business source and discard an incompatible cursor.
@@ -28,8 +28,13 @@ export function googleFormsAccountProjectionUpdate(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly defaultConnectorId?: SQL;
+  readonly excludedChatThreadId?: string;
 }) {
   const defaultConnectorId = args.defaultConnectorId ?? sql`${connectors.id}`;
+  const selectionCondition =
+    args.excludedChatThreadId === undefined
+      ? sql.empty()
+      : sql`AND ${ne(chatThreadConnectorSelections.chatThreadId, args.excludedChatThreadId)}`;
   return sql`
       UPDATE ${workflowAutomations}
       SET event_connector_id = desired.connector_id,
@@ -50,6 +55,7 @@ export function googleFormsAccountProjectionUpdate(args: {
       LEFT JOIN ${chatThreadConnectorSelections}
         ON ${chatThreadConnectorSelections.chatThreadId} = ${workflowUserAutomationThreads.chatThreadId}
         AND ${chatThreadConnectorSelections.connectorSlug} = 'google-forms'
+        ${selectionCondition}
       LEFT JOIN ${connectors}
         ON ${connectors.orgId} = ${args.orgId}
         AND ${connectors.userId} = ${args.userId}

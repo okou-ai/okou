@@ -13,7 +13,21 @@ import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
-import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  ne,
+  sql,
+} from "drizzle-orm";
+import type { WithSubquery } from "drizzle-orm/subquery";
+import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
+import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { command, computed, type Computed } from "ccstate";
@@ -33,7 +47,22 @@ import {
   connectorCatalogCurrentWhere,
   connectorCatalogSlugJoin,
 } from "./connector-catalog-slug-source.service";
-import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
+import {
+  preparedDefaultAccountProjectionPlan,
+  reprojectWorkflowAutomationsForOwner,
+  workflowAutomationOwnerProjectionReadPlan,
+  workflowAutomationProjectionValues,
+  type PreparedDefaultAccountProjection,
+} from "./workflow-automation-account-projection.service";
+import {
+  workflowAutomationDefaultAccountReadPlan,
+  workflowAutomationSelectedAccountReadPlan,
+} from "./workflow-automation-account.service";
+import { googleFormsAccountProjectionUpdate } from "./google-forms-automation-account.service";
+import {
+  NOTION_ACCOUNT_CHANGED_SKIP_REASON,
+  notionPendingEventsSkipWrite,
+} from "./notion-automation-account.service";
 
 interface ConnectorSelectionRow {
   readonly connectorId: string;
@@ -609,58 +638,239 @@ export const updateChatThreadConnectorSelection$ = command(
   },
 );
 
+interface ClearThreadConnectorSelectionArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly chatThreadId: string;
+  readonly target: ConnectorAccountTarget;
+}
+
+/** Prepare the values that will follow deletion, without committing writes. */
+const prepareClearedThreadProjections$ = command(
+  async (
+    { set },
+    args: ClearThreadConnectorSelectionArgs,
+    signal: AbortSignal,
+  ): Promise<readonly PreparedDefaultAccountProjection[]> => {
+    const plan = workflowAutomationOwnerProjectionReadPlan(args);
+    if (!plan) {
+      return [];
+    }
+    const db = set(writeDb$);
+    const automations = await db
+      .select(plan.columns)
+      .from(workflowAutomations)
+      .where(plan.where);
+    signal.throwIfAborted();
+    const projections: PreparedDefaultAccountProjection[] = [];
+    for (const automation of automations) {
+      const scope = {
+        orgId: args.orgId,
+        userId: args.userId,
+        workflowId: automation.workflowId,
+        connectorSlug: plan.connectorSlug,
+      };
+      const selected = workflowAutomationSelectedAccountReadPlan(scope);
+      const [selection] = await db
+        .select(selected.columns)
+        .from(selected.from)
+        .innerJoin(selected.join.table, selected.join.on)
+        .where(
+          and(
+            selected.where,
+            ne(chatThreadConnectorSelections.chatThreadId, args.chatThreadId),
+          ),
+        )
+        .limit(selected.limit);
+      signal.throwIfAborted();
+      let connectorId: string | null;
+      if (selection) {
+        // A selection on another thread keeps precedence over the default.
+        connectorId = selection.connectorId;
+      } else {
+        const fallback = workflowAutomationDefaultAccountReadPlan(scope);
+        const [account] = await db
+          .select(fallback.columns)
+          .from(fallback.from)
+          .where(fallback.where)
+          .limit(fallback.limit);
+        signal.throwIfAborted();
+        connectorId = account?.connectorId ?? null;
+      }
+      const values = workflowAutomationProjectionValues(
+        automation,
+        connectorId,
+        plan.connectorSlug,
+      );
+      if (values !== null) {
+        const eventConfig =
+          "eventConfig" in values ? values.eventConfig : undefined;
+        projections.push({
+          id: automation.id,
+          connector_id: values.eventConnectorId,
+          replace_config: eventConfig !== undefined,
+          event_config: eventConfig === undefined ? null : eventConfig,
+        });
+      }
+    }
+    return projections;
+  },
+);
+
+/** Delete the selection and publish all related projections in one statement. */
+const publishClearedThreadSelection$ = command(
+  async (
+    { set },
+    args: ClearThreadConnectorSelectionArgs,
+    projections: readonly PreparedDefaultAccountProjection[],
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const deletion = db
+      .delete(chatThreadConnectorSelections)
+      .where(
+        and(
+          eq(chatThreadConnectorSelections.chatThreadId, args.chatThreadId),
+          args.target.kind === "builtin"
+            ? eq(
+                chatThreadConnectorSelections.connectorSlug,
+                args.target.connectorSlug,
+              )
+            : eq(
+                chatThreadConnectorSelections.customConnectorId,
+                args.target.customConnectorId,
+              ),
+        ),
+      )
+      .returning({ connectorId: chatThreadConnectorSelections.connectorId });
+    const cleared = db.$with("cleared_thread_connector_selection").as(deletion);
+    signal.throwIfAborted();
+    if (
+      args.target.kind === "builtin" &&
+      args.target.connectorSlug === "google-forms"
+    ) {
+      const changed = db
+        .$with("changed_thread_forms_automations", {
+          id: workflowAutomations.id,
+        })
+        .as(
+          googleFormsAccountProjectionUpdate({
+            orgId: args.orgId,
+            userId: args.userId,
+            excludedChatThreadId: args.chatThreadId,
+          }),
+        );
+      await db
+        .with(cleared, changed)
+        .delete(googleFormsAutomationCursors)
+        .where(
+          and(
+            inArray(
+              googleFormsAutomationCursors.automationId,
+              db.select({ id: changed.id }).from(changed),
+            ),
+            gte(db.select({ value: count() }).from(cleared), 0),
+          ),
+        );
+      signal.throwIfAborted();
+      return;
+    }
+    const ctes: WithSubquery[] = [cleared];
+    let completed = gte(db.select({ value: count() }).from(cleared), 0);
+    if (projections.length > 0) {
+      const plan = preparedDefaultAccountProjectionPlan(projections, completed);
+      const configured = db
+        .$with("configured_thread_automations")
+        .as(
+          db
+            .update(workflowAutomations)
+            .set(plan.configured.values)
+            .from(plan.configured.from)
+            .where(plan.configured.where)
+            .returning({ id: workflowAutomations.id }),
+        );
+      const selected = db
+        .$with("selected_thread_automations")
+        .as(
+          db
+            .update(workflowAutomations)
+            .set(plan.selected.values)
+            .from(plan.selected.from)
+            .where(plan.selected.where)
+            .returning({ id: workflowAutomations.id }),
+        );
+      const projected = db.$with("projected_thread_automations").as(
+        db
+          .select({ id: configured.id })
+          .from(configured)
+          .unionAll(db.select({ id: selected.id }).from(selected)),
+      );
+      ctes.push(configured, selected, projected);
+      completed = gte(db.select({ value: count() }).from(projected), 0);
+      if (
+        args.target.kind === "builtin" &&
+        args.target.connectorSlug === "notion"
+      ) {
+        const write = notionPendingEventsSkipWrite(
+          plan.pendingEvents,
+          NOTION_ACCOUNT_CHANGED_SKIP_REASON,
+        );
+        const skipped = db
+          .$with("skipped_thread_notion_events")
+          .as(
+            db
+              .update(write.table)
+              .set(write.values)
+              .where(and(write.where, completed))
+              .returning({ id: notionWorkflowPendingEvents.id }),
+          );
+        ctes.push(skipped);
+        completed = gte(db.select({ value: count() }).from(skipped), 0);
+      }
+    }
+    await db
+      .with(...ctes)
+      .select({ value: count() })
+      .from(cleared)
+      .where(completed);
+    signal.throwIfAborted();
+  },
+);
+
 export const clearChatThreadConnectorSelection$ = command(
   async function clearChatThreadConnectorSelection(
     { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly chatThreadId: string;
-      readonly target: ConnectorAccountTarget;
-    },
+    args: ClearThreadConnectorSelectionArgs,
     signal: AbortSignal,
   ): Promise<ClearChatThreadConnectorSelectionResult> {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0093; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const [thread] = await tx
-        .select({ agentId: agents.id })
-        .from(chatThreads)
-        .innerJoin(
-          agents,
-          and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
-        )
-        .where(
-          and(
-            eq(chatThreads.id, args.chatThreadId),
-            eq(chatThreads.userId, args.userId),
-          ),
-        )
-        .limit(1);
-      if (!thread?.agentId) {
-        return { kind: "not_found" };
-      }
-      // Only event sources also change the owner's automation projections.
-      // The reprojection recomputes from current rows.
-      await tx
-        .delete(chatThreadConnectorSelections)
-        .where(
-          and(
-            eq(chatThreadConnectorSelections.chatThreadId, args.chatThreadId),
-            args.target.kind === "builtin"
-              ? eq(
-                  chatThreadConnectorSelections.connectorSlug,
-                  args.target.connectorSlug,
-                )
-              : eq(
-                  chatThreadConnectorSelections.customConnectorId,
-                  args.target.customConnectorId,
-                ),
-          ),
-        );
-      await reprojectWorkflowAutomationsForOwner(tx, args, signal);
-      return { kind: "cleared" };
-    });
+    const [thread] = await db
+      .select({ agentId: agents.id })
+      .from(chatThreads)
+      .innerJoin(
+        agents,
+        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
+      )
+      .where(
+        and(
+          eq(chatThreads.id, args.chatThreadId),
+          eq(chatThreads.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!thread?.agentId) {
+      return { kind: "not_found" };
+    }
+    const projections = await set(
+      prepareClearedThreadProjections$,
+      args,
+      signal,
+    );
+    signal.throwIfAborted();
+    await set(publishClearedThreadSelection$, args, projections, signal);
+    signal.throwIfAborted();
+    return { kind: "cleared" };
   },
 );
 

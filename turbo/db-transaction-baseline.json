@@ -77,11 +77,6 @@
       "owner": "updateChatThreadConnectorSelection$"
     },
     {
-      "id": "TX-0093",
-      "file": "turbo/apps/api/src/signals/services/chat-thread-connector-selection.service.ts",
-      "owner": "clearChatThreadConnectorSelection"
-    },
-    {
       "id": "TX-0095",
       "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
       "owner": "createChatThread$"
