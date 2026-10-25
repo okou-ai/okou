@@ -5,17 +5,28 @@ struct ChatModelPickerButton: View {
   @Bindable var selection: ChatModelSelectionStore
   @State private var isPresented = false
   private var models: ChatModelStore { selection.models }
+  private var isLoading: Bool { models.isLoading || selection.isBusy }
+  private var hasError: Bool {
+    models.error != nil || selection.error != nil
+      || (models.configuration != nil && !selection.canSend && !isLoading)
+  }
   private var accessibilityValue: String {
-    guard let configuration = models.configuration else { return "" }
+    guard let configuration = models.configuration else {
+      return models.error == nil
+        ? String(localized: "Loading model settings")
+        : String(localized: "Model settings unavailable")
+    }
     var parts = [configuration.catalog.name(selection.selection.model)]
     if let effort = selection.effectiveEffort { parts.append(effortLabel(effort)) }
     if selection.selection.serviceTier == "priority" {
       parts.append(String(localized: "Fast mode"))
     }
+    if hasError { parts.append(String(localized: "Model settings need attention")) }
     return parts.joined(separator: " · ")
   }
 
   var body: some View {
+    // Keep the entry mounted before metadata exists so its load task can start.
     Button {
       isPresented = true
     } label: {
