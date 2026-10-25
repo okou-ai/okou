@@ -539,7 +539,7 @@ describe("Proactive nightly workflows", () => {
     const { actor } = await prepareBriefMember({
       bootstrap: false,
     });
-    await runs.grantProEntitlement(actor);
+    const { defaultAgentId } = await runs.grantProEntitlement(actor);
     await initializeBriefMember(actor, "Asia/Shanghai");
     if (!actor.orgId) {
       throw new Error("Expected organization");
@@ -556,7 +556,7 @@ describe("Proactive nightly workflows", () => {
     runs.acceptTelemetryIngest();
     await selectPersonalDefaultModel(actor);
     await runs.heartbeatRunner(runnerGroup);
-    return { actor, runnerGroup };
+    return { actor, runnerGroup, defaultAgentId };
   }
 
   async function schedule(actor: ApiTestUser, definition: string) {
@@ -600,8 +600,7 @@ describe("Proactive nightly workflows", () => {
       routes: workflowAutomationsRoutes,
       isolatePg: true,
     });
-    const { actor, runnerGroup } = await nightlyMember();
-    const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+    const { actor, defaultAgentId } = await nightlyMember();
     if (!defaultAgentId) {
       throw new Error("Expected primary Agent");
     }
@@ -628,7 +627,6 @@ describe("Proactive nightly workflows", () => {
       )
     ).body;
     const started = await fireOfficialSchedule(actor, automation);
-    await runs.heartbeatRunner(runnerGroup);
     const claim = await runs.claimRunnerJob(started.runId);
     expect(claim.prompt).toContain("proactive-learning");
     expect(
