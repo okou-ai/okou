@@ -1,25 +1,30 @@
 import type { WorkflowTemplateItem } from "@okouai/core/workflow-template-items";
 import { i18n } from "../../i18n/index.ts";
-import enUSCommon from "../../i18n/locales/en-US/common.json";
+import type enUSCommon from "../../i18n/locales/en-US/common.json";
+import { DEFAULT_LOCALE, DEFAULT_NAMESPACE } from "../../i18n/resources.ts";
 
 // The catalog lives in core, which ships one English string per field. Every
 // surface that shows a template to the user reads its copy from here instead,
 // keyed by the catalog slug. en-US carries the catalog's own wording, so a
 // template added before its translations land keeps its English copy.
-const TEMPLATE_COPY = enUSCommon.artifacts.templates.workflowCatalog;
-const CATEGORY_COPY = enUSCommon.artifacts.templates.workflowCategories;
-
-type TemplateSlug = keyof typeof TEMPLATE_COPY;
-type TemplateCategory = keyof typeof CATEGORY_COPY;
+type TemplateSlug = keyof typeof enUSCommon.artifacts.templates.workflowCatalog;
+type TemplateCategory =
+  keyof typeof enUSCommon.artifacts.templates.workflowCategories;
 
 const TEMPLATE_ID_PREFIX = "workflow-template:";
 
 function isTemplateSlug(value: string): value is TemplateSlug {
-  return Object.hasOwn(TEMPLATE_COPY, value);
+  return i18n.exists(`artifacts.templates.workflowCatalog.${value}.title`, {
+    lng: DEFAULT_LOCALE,
+    ns: DEFAULT_NAMESPACE,
+  });
 }
 
 function isTemplateCategory(value: string): value is TemplateCategory {
-  return Object.hasOwn(CATEGORY_COPY, value);
+  return i18n.exists(`artifacts.templates.workflowCategories.${value}`, {
+    lng: DEFAULT_LOCALE,
+    ns: DEFAULT_NAMESPACE,
+  });
 }
 
 /**

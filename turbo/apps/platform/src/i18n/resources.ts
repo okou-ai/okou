@@ -6,8 +6,8 @@ import {
 } from "@okouai/api-contracts/contracts/user-preferences";
 import deDEAgentsUrl from "./locales/de-DE/agents.json?url";
 import deDECommonUrl from "./locales/de-DE/common.json?url";
-import enUSAgents from "./locales/en-US/agents.json";
-import enUSCommon from "./locales/en-US/common.json";
+import enUSAgentsUrl from "./locales/en-US/agents.json?url";
+import enUSCommonUrl from "./locales/en-US/common.json?url";
 import esESAgentsUrl from "./locales/es-ES/agents.json?url";
 import esESCommonUrl from "./locales/es-ES/common.json?url";
 import frFRAgentsUrl from "./locales/fr-FR/agents.json?url";
@@ -34,7 +34,6 @@ export const DEFAULT_NAMESPACE = "common";
 export const SUPPORTED_LOCALES = SUPPORTED_USER_LOCALES;
 
 export type SupportedLocale = UserLocale;
-type NonDefaultLocale = Exclude<SupportedLocale, typeof DEFAULT_LOCALE>;
 
 export interface LocaleResourceNamespace {
   readonly [key: string]: string | LocaleResourceNamespace;
@@ -57,8 +56,11 @@ export function isSupportedLocale(value: string): value is SupportedLocale {
   });
 }
 
-function localeResourceUrls(locale: NonDefaultLocale): LocaleResourceUrls {
+function localeResourceUrls(locale: SupportedLocale): LocaleResourceUrls {
   switch (locale) {
+    case "en-US": {
+      return { agents: enUSAgentsUrl, common: enUSCommonUrl };
+    }
     case "pt-BR": {
       return { agents: ptBRAgentsUrl, common: ptBRCommonUrl };
     }
@@ -108,7 +110,7 @@ function isLocaleResourceNamespace(
 
 async function loadLocaleResourceNamespace(
   resourceUrl: string,
-  locale: NonDefaultLocale,
+  locale: SupportedLocale,
   namespace: "agents" | "common",
   signal?: AbortSignal,
 ): Promise<LocaleResourceNamespace> {
@@ -133,10 +135,6 @@ export async function loadLocaleResources(
   locale: SupportedLocale,
   signal?: AbortSignal,
 ): Promise<LocaleResources> {
-  if (locale === DEFAULT_LOCALE) {
-    return { agents: enUSAgents, common: enUSCommon };
-  }
-
   const urls = localeResourceUrls(locale);
   const [agents, common] = await Promise.all([
     loadLocaleResourceNamespace(urls.agents, locale, "agents", signal),
