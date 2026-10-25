@@ -24,7 +24,12 @@ final class ConnectorActionTests: XCTestCase {
         path + "?agentId=\(F.agentID)&threadId=\(F.threadID)&callbackPrompt=\(callbackQuery)",
         webURL: fixture.baseURL, agentID: F.agentID, threadID: F.threadID))
   }
-  private func store(_ fixture: ChatHTTPFixture) -> ConnectorActionStore {
+  private func store(
+    _ fixture: ChatHTTPFixture,
+    pollSleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
+    }
+  ) -> ConnectorActionStore {
     let sync = ChatSync(client: fixture.client)
     let commands = ChatCommands(client: fixture.client, sync: sync)
     let thread = ChatThread(
@@ -33,7 +38,7 @@ final class ConnectorActionTests: XCTestCase {
       pinOrder: nil, modelSettings: [:], serviceTier: nil, indicator: nil)
     return ConnectorActionStore(
       service: commands.connectorActions, commands: commands, thread: thread, didContinue: {},
-      didFail: { _ in })
+      didFail: { _ in }, pollSleep: pollSleep)
   }
   func testNoAuthConnectionVerifiesServerStateAndContinuesWithoutClearingSelection() async throws {
     let linked = Mutex(false)
@@ -139,6 +144,7 @@ final class ConnectorActionTests: XCTestCase {
     XCTAssertEqual(eventIDs.withLock { $0.count }, 2)
   }
   func testOAuthBrowserCancellationDoesNotContinueAndCanRestart() async throws {
+    let clock = ConnectorPollingClock()
     let reads = Mutex(0)
     let fixture = ChatHTTPFixture { request in
       if request.url!.path == "/api/connectors/slack/oauth/start" {
@@ -155,13 +161,15 @@ final class ConnectorActionTests: XCTestCase {
       return try XCTUnwrap(
         F.response(request, connected: false, authorized: false, grantKind: "auth-code"))
     }
-    let store = store(fixture)
+    let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(try descriptor(fixture))
     try await eventually { store.active != nil }
     store.submit()
-    try await eventually { store.active?.browserURL != nil }
+    try await eventually { store.active?.browserURL != nil && clock.hasSleeper(.seconds(2)) }
+    XCTAssertEqual(reads.withLock { $0 }, 0)
     store.browserDismissed()
+    clock.advance(.seconds(2))
     try await eventually { store.active?.notice != nil }
     XCTAssertEqual(reads.withLock { $0 }, 1)
     XCTAssertNil(store.active?.session)
@@ -231,6 +239,7 @@ final class ConnectorActionTests: XCTestCase {
     XCTAssertEqual(submissions.withLock { $0 }, 2)
   }
   func testOAuthCompletionReceiptVerifiesOwnedAccountBeforeContinuing() async throws {
+    let clock = ConnectorPollingClock()
     let connected = Mutex(false)
     let callbacks = Mutex(0)
     let fixture = ChatHTTPFixture { request in
@@ -248,18 +257,21 @@ final class ConnectorActionTests: XCTestCase {
       return try XCTUnwrap(
         F.response(request, connected: connected.withLock { $0 }, grantKind: "auth-code"))
     }
-    let store = store(fixture)
+    let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
     let action = try descriptor(fixture)
     store.activate(action)
     try await eventually { store.active != nil }
     store.submit()
-    try await eventually { store.active?.browserURL != nil }
+    try await eventually { store.active?.browserURL != nil && clock.hasSleeper(.seconds(2)) }
+    XCTAssertEqual(callbacks.withLock { $0 }, 0)
     store.browserDismissed()
+    clock.advance(.seconds(2))
     try await eventually { store.active == nil }
     XCTAssertEqual(callbacks.withLock { $0 }, 1)
   }
   func testDeviceAuthorizationPollsSessionTokenAndCompletesOnlyAfterServerReadiness() async throws {
+    let clock = ConnectorPollingClock()
     let connected = Mutex(false)
     let polls = Mutex(0)
     let fixture = ChatHTTPFixture { request in
@@ -284,19 +296,25 @@ final class ConnectorActionTests: XCTestCase {
       return try XCTUnwrap(
         F.response(request, connected: connected.withLock { $0 }, grantKind: "device-auth"))
     }
-    let store = store(fixture)
+    let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(try descriptor(fixture))
     try await eventually { store.active != nil }
     store.submit()
-    try await eventually { store.active?.session != nil }
+    try await eventually { store.active?.session != nil && clock.hasSleeper(.seconds(1)) }
     XCTAssertEqual(store.active?.session?.userCode, "EXAMPLE-CODE")
+    XCTAssertEqual(polls.withLock { $0 }, 0)
     store.browserDismissed()
+    clock.advance(.seconds(1))
+    try await eventually { polls.withLock { $0 } == 1 && clock.hasSleeper(.seconds(1)) }
+    XCTAssertNotNil(store.active)
+    clock.advance(.seconds(1))
     try await eventually { store.active == nil }
     XCTAssertEqual(polls.withLock { $0 }, 2)
   }
   func testCustomOAuthAndAutomaticDoNotRequestProviderOwnedCredentialFields() async throws {
     for mode in ["oauth", "automatic"] {
+      let clock = ConnectorPollingClock()
       let connected = Mutex(false)
       let callbacks = Mutex(0)
       let fixture = ChatHTTPFixture { request in
@@ -336,13 +354,18 @@ final class ConnectorActionTests: XCTestCase {
         return try XCTUnwrap(
           F.response(request, connected: connected.withLock { $0 }, customMode: mode))
       }
-      let store = store(fixture)
+      let store = store(fixture, pollSleep: clock.sleep)
       defer { store.close() }
       store.activate(try descriptor(fixture, custom: true))
       try await eventually { store.active != nil }
       XCTAssertTrue(try XCTUnwrap(store.active).canSubmit)
       XCTAssertTrue(try XCTUnwrap(store.active).values.isEmpty)
       store.submit()
+      if mode == "oauth" {
+        try await eventually { clock.hasSleeper(.seconds(2)) }
+        XCTAssertEqual(callbacks.withLock { $0 }, 0)
+        clock.advance(.seconds(2))
+      }
       try await eventually { store.active == nil }
       XCTAssertEqual(callbacks.withLock { $0 }, 1)
     }
@@ -387,6 +410,78 @@ final class ConnectorActionTests: XCTestCase {
     XCTAssertTrue(status.selected)
   }
 
+  func testDevicePollingHonorsTheUpdatedIntervalAndScopeClosureCancelsItsWait() async throws {
+    let clock = ConnectorPollingClock()
+    let polls = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path.hasSuffix("/oauth/device/sessions") {
+        return ChatHTTPResponse(
+          body:
+            "{\"sessionId\":\"\(F.attemptID)\",\"sessionToken\":\"synthetic-session\",\"userCode\":\"EXAMPLE-CODE\",\"verificationUri\":\"https://auth.example.invalid/device\",\"expiresIn\":300,\"interval\":1}"
+        )
+      }
+      if request.url!.path.hasSuffix("/poll") {
+        polls.withLock { $0 += 1 }
+        return ChatHTTPResponse(body: "{\"status\":\"pending\",\"interval\":7}")
+      }
+      XCTAssertNotEqual(request.url!.path, "/api/chat/events")
+      return try XCTUnwrap(
+        F.response(request, connected: false, authorized: false, grantKind: "device-auth"))
+    }
+    let store = store(fixture, pollSleep: clock.sleep)
+    defer { store.close() }
+    store.activate(try descriptor(fixture))
+    try await eventually { store.active != nil }
+    store.submit()
+    try await eventually { clock.hasSleeper(.seconds(1)) }
+    XCTAssertEqual(polls.withLock { $0 }, 0)
+    clock.advance(.seconds(1))
+    try await eventually { clock.hasSleeper(.seconds(7)) }
+    XCTAssertEqual(polls.withLock { $0 }, 1)
+    store.close()
+    try await eventually { !clock.hasSleeper(.seconds(7)) }
+    XCTAssertNil(store.active)
+    XCTAssertTrue(store.states.isEmpty)
+    XCTAssertEqual(polls.withLock { $0 }, 1)
+  }
+
+}
+
+private final class ConnectorPollingClock: Sendable {
+  private struct Sleeper: Sendable {
+    let duration: Duration
+    let tick: AsyncStream<Void>.Continuation
+  }
+  private let sleepers = Mutex<[UUID: Sleeper]>([:])
+
+  func sleep(_ duration: Duration) async throws {
+    try Task.checkCancellation()
+    let id = UUID()
+    let ticks = AsyncStream<Void>.makeStream()
+    sleepers.withLock { $0[id] = Sleeper(duration: duration, tick: ticks.continuation) }
+    defer {
+      _ = sleepers.withLock { $0.removeValue(forKey: id) }
+      ticks.continuation.finish()
+    }
+    for await _ in ticks.stream { break }
+    try Task.checkCancellation()
+  }
+
+  func hasSleeper(_ duration: Duration) -> Bool {
+    sleepers.withLock { $0.values.contains { $0.duration == duration } }
+  }
+
+  func advance(_ duration: Duration) {
+    let ready = sleepers.withLock { value in
+      let ready = value.filter { $0.value.duration == duration }
+      for id in ready.keys { value.removeValue(forKey: id) }
+      return ready.values.map(\.tick)
+    }
+    for tick in ready {
+      tick.yield(())
+      tick.finish()
+    }
+  }
 }
 
 private struct ConnectorCardHarness: View {

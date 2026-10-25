@@ -83,17 +83,22 @@ final class ConnectorActionStore {
   private var task: Task<Void, Never>?
   private var callbackIDs: [String: String] = [:]
   private var closed = false
+  private let pollSleep: @Sendable (Duration) async throws -> Void
 
   init(
     service: ChatConnectorService, commands: ChatCommands? = nil, thread: ChatThread? = nil,
     didContinue: @escaping @MainActor () async -> Void,
-    didFail: @escaping @MainActor (Error) -> Void
+    didFail: @escaping @MainActor (Error) -> Void,
+    pollSleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
+    }
   ) {
     self.service = service
     self.commands = commands
     self.thread = thread
     self.didContinue = didContinue
     self.didFail = didFail
+    self.pollSleep = pollSleep
   }
   func refresh(_ action: ChatConnectorAction) async {
     guard !closed, !Task.isCancelled else { return }
@@ -251,7 +256,7 @@ final class ConnectorActionStore {
       guard let self, let flow else { return }
       while active === flow, !closed, !Task.isCancelled {
         do {
-          try await Task.sleep(for: .seconds(flow.pollInterval))
+          try await pollSleep(.seconds(flow.pollInterval))
           if try await checkCompletion(flow) { return }
           if flow.browserClosed, flow.session?.oauthAttemptId != nil {
             flow.session = nil
