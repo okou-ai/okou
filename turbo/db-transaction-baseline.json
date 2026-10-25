@@ -132,11 +132,6 @@
       "owner": "deleteCustomConnectorAccount$"
     },
     {
-      "id": "TX-0156",
-      "file": "turbo/apps/api/src/signals/services/email-common.service.ts",
-      "owner": "prepareNextOutboxItem"
-    },
-    {
       "id": "TX-0161",
       "file": "turbo/apps/api/src/signals/services/feishu-connect.service.ts",
       "owner": "disconnectFeishuConnection$"
