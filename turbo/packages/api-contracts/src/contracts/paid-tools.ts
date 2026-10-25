@@ -1,4 +1,3 @@
-import { DATA_ROUTER_TOOL_IDS } from "./data-router-tools";
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -19,14 +18,23 @@ export const AVAILABLE_PAID_TOOL_IDS = [
 // Discovery and settings controls use only AVAILABLE_PAID_TOOL_IDS.
 export const PAID_TOOL_IDS = [
   ...AVAILABLE_PAID_TOOL_IDS,
-  ...DATA_ROUTER_TOOL_IDS,
   "image-recognition",
   "video-generation",
   "voice-generation",
   "avatar-video-generation",
 ] as const;
 
-export const paidToolIdSchema = z.enum(PAID_TOOL_IDS);
+export const paidToolIdSchema = z.union([
+  z.enum(PAID_TOOL_IDS),
+  z.templateLiteral([
+    "data:",
+    z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[a-zA-Z0-9_.-]+$/),
+  ]),
+]);
 export type PaidToolId = z.infer<typeof paidToolIdSchema>;
 
 export const DISABLED_PAID_TOOLS_ENV_VAR = "OKOU_DISABLED_PAID_TOOLS";

@@ -1,19 +1,13 @@
-import {
-  DATA_ROUTER_TOOLS,
-  type DataRouterToolName,
-} from "@okouai/api-contracts/contracts/data-router-tools";
+import type { DataRouterTool } from "@okouai/api-contracts/contracts/data-router-tools";
 import {
   DISABLED_PAID_TOOLS_ENV_VAR,
   paidToolIdSchema,
   type PaidToolId,
 } from "@okouai/api-contracts/contracts/paid-tools";
-import type { Command } from "commander";
 import { z } from "zod";
 
 import { getPlatformOrigin } from "../platform-url";
-import { withErrorHandler } from "./with-error-handler";
 
-const installedPrograms = new WeakSet<Command>();
 const disabledToolsSchema = z.array(z.string());
 
 function readPolicy(): ReadonlySet<string> | null {
@@ -33,13 +27,11 @@ export function isPaidToolEnabled(tool: PaidToolId): boolean {
   return policy !== null && !policy.has(tool);
 }
 
-export function isDataRouterToolEnabled(name: DataRouterToolName): boolean {
-  const tool = DATA_ROUTER_TOOLS.find((entry) => {
-    return entry.name === name;
-  });
+export function isDataRouterToolEnabled(tool: DataRouterTool): boolean {
+  const metadata = tool._meta?.["ai.okou/data"];
   return Boolean(
-    tool &&
-    isPaidToolEnabled(tool.family) &&
+    metadata &&
+    isPaidToolEnabled(metadata.family) &&
     isPaidToolEnabled(`data:${tool.name}`),
   );
 }
@@ -67,98 +59,4 @@ async function getPaidToolUnavailableMessage(
 export async function assertPaidToolEnabled(tool: PaidToolId): Promise<void> {
   const message = await getPaidToolUnavailableMessage(tool);
   if (message) throw new Error(message);
-}
-
-function commandPath(program: Command, command: Command): Command[] {
-  const path: Command[] = [];
-  for (let current: Command | null = command; current !== program;) {
-    if (!current?.parent) return [];
-    path.unshift(current);
-    current = current.parent;
-  }
-  return path;
-}
-
-function researchTool(
-  family: string | undefined,
-  operation: string | undefined,
-): PaidToolId | undefined {
-  const toolName =
-    family === "web" && operation === "search"
-      ? "web-search"
-      : family === "web" && operation === "scrape"
-        ? "scrape"
-        : family === "people" && operation === "search"
-          ? "people-search"
-          : family;
-  const tool = paidToolIdSchema.safeParse(toolName);
-  return tool.success ? tool.data : undefined;
-}
-
-function isAdvancedDataAction(path: Command[], action: Command): boolean {
-  if (path[0]?.name() !== "data") return false;
-  const family = path[1]?.name();
-  const operation = path[2]?.name();
-  if (family === "social") return false;
-  if (family === "people" && operation === "search") {
-    return action.opts<{ backend?: string }>().backend === "prospect";
-  }
-  // Advanced adapters share a required execution budget. This also covers new
-  // operations nested in historical families without changing their saved IDs.
-  return action.options.some((option) => {
-    return option.long === "--max-credits";
-  });
-}
-
-function advancedPaidTools(
-  tool: PaidToolId | undefined,
-): readonly PaidToolId[] {
-  return tool && tool !== "data-search"
-    ? [tool, "data-search"]
-    : ["data-search"];
-}
-
-function isFreeSocialAction(path: Command[], action: Command): boolean {
-  const operation = path[2]?.name();
-  const jobOperation = path[3]?.name();
-  return Boolean(
-    action.opts<{ dryRun?: boolean }>().dryRun ||
-    (operation === "jobs" &&
-      ["list", "get", "cancel"].includes(jobOperation ?? "")) ||
-    ["capabilities", "status", "downloads"].includes(operation ?? "") ||
-    (operation === "download" &&
-      action.opts<{ resume?: string }>().resume !== undefined),
-  );
-}
-
-function paidToolsForAction(
-  program: Command,
-  action: Command,
-): readonly PaidToolId[] {
-  const path = commandPath(program, action);
-  const tool =
-    path[0]?.name() === "data"
-      ? researchTool(path[1]?.name(), path[2]?.name())
-      : undefined;
-  if (isAdvancedDataAction(path, action)) {
-    if (action.opts<{ dryRun?: boolean }>().dryRun) return [];
-    return advancedPaidTools(tool);
-  }
-  if (!tool) return [];
-  if (tool === "social" && isFreeSocialAction(path, action)) return [];
-  return [tool];
-}
-
-/** Enforce the run's personal preference before any command action starts. */
-export function installPaidToolPolicy(program: Command): void {
-  if (installedPrograms.has(program)) return;
-  installedPrograms.add(program);
-
-  program.hook("preAction", (_command, action) => {
-    const tools = paidToolsForAction(program, action);
-    if (tools.length === 0) return;
-    return withErrorHandler(async () => {
-      for (const tool of tools) await assertPaidToolEnabled(tool);
-    })();
-  });
 }

@@ -1,3 +1,4 @@
+import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -88,7 +89,7 @@ test("Members manage Paid tools in Tools, separately from Chat", async () => {
   const toggle = await readySwitch("Web search");
   expect(toggle).toBeChecked();
   expect(
-    within(dialog).getByRole("switch", { name: "Finance Quote" }),
+    await within(dialog).findByRole("switch", { name: "Finance Quote" }),
   ).toBeInTheDocument();
   expect(
     within(dialog).getByText(
@@ -550,4 +551,38 @@ test("A Router tool can be hidden independently while legacy family preferences 
     { toolId: "finance", disabled: false },
     { toolId: "data:finance_quote", disabled: true },
   ]);
+});
+
+test("A newly discovered Router tool can be disabled without a local catalog entry", async () => {
+  context.mocks.api(dataRouterToolsContract.list, ({ respond }) => {
+    return respond(200, {
+      tools: [
+        {
+          name: "future_research",
+          title: "New research tool",
+          description: "Published independently by Router",
+          inputSchema: {
+            type: "object",
+            properties: { topic: { type: "string" } },
+          },
+          _meta: { "ai.okou/data": { family: "data-search" } },
+        },
+      ],
+    });
+  });
+  const updates: { toolId: string; disabled: boolean }[] = [];
+  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
+    updates.push({ toolId: params.toolId, disabled: body.disabled });
+    return respond(200, { toolId: params.toolId, disabled: body.disabled });
+  });
+  await openPaidTools();
+  const toggle = await readySwitch("New research tool");
+  expect(
+    screen.getByText("Published independently by Router"),
+  ).toBeInTheDocument();
+  click(toggle);
+  await waitFor(() => {
+    return expect(toggle).not.toBeChecked();
+  });
+  expect(updates).toEqual([{ toolId: "data:future_research", disabled: true }]);
 });

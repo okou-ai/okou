@@ -1,4 +1,5 @@
-import { DATA_ROUTER_TOOLS } from "@okouai/api-contracts/contracts/data-router-tools";
+import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router";
+import type { Computed } from "ccstate";
 import { command, computed, state } from "ccstate";
 import {
   AVAILABLE_PAID_TOOL_IDS,
@@ -99,17 +100,38 @@ function createPaidToolsSignals(
   const tools = AVAILABLE_PAID_TOOL_IDS.map((toolId) => {
     return createTool(toolId);
   });
-  const dataTools = DATA_ROUTER_TOOLS.map((definition) => {
-    return {
-      ...createTool(`data:${definition.name}`, definition.family),
-      definition,
-    };
+  const routerClient = createClient(dataRouterToolsContract, {
+    getTokenGuard: () => {
+      assertCurrent();
+      return assertCurrent;
+    },
+  });
+  const dataTools$ = computed(async (get) => {
+    get(revision$);
+    assertCurrent();
+    const response = await accept(routerClient.list(), [200]);
+    assertCurrent();
+    return response.body.tools.flatMap((tool) => {
+      const metadata = tool._meta?.["ai.okou/data"];
+      if (!metadata) return [];
+      return [
+        {
+          ...createTool(`data:${tool.name}`, metadata.family),
+          definition: {
+            name: tool.name,
+            title: tool.title ?? tool.name,
+            description: tool.description ?? "",
+            family: metadata.family,
+          },
+        },
+      ];
+    });
   });
   return {
     disabledTools$,
     retry$,
     tools,
-    dataTools,
+    dataTools$,
     imageModel,
   };
 }
@@ -225,4 +247,9 @@ export type PaidToolsSettings = ReturnType<typeof createPaidToolsSignals> & {
 export type PaidToolSettings = PaidToolsSettings["tools"][number];
 export type ImageModelSettings = PaidToolsSettings["imageModel"];
 
-export type DataRouterToolSettings = PaidToolsSettings["dataTools"][number];
+export type DataRouterToolSettings =
+  PaidToolsSettings["dataTools$"] extends Computed<Promise<infer Tools>>
+    ? Tools extends readonly (infer Tool)[]
+      ? Tool
+      : never
+    : never;

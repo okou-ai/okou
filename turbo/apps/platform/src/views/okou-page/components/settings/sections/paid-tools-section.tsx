@@ -305,6 +305,7 @@ function PaidToolsContent({
   const { t } = useTranslation();
   const loadable = useLoadable(settings.disabledTools$);
   const workspace = useLoadable(currentOrgInfo$);
+  const dataTools = useLoadable(settings.dataTools$);
   const retry = useSet(settings.retry$);
   return (
     <div className="flex flex-col gap-4">
@@ -335,6 +336,33 @@ function PaidToolsContent({
         </div>
       ) : (
         <>
+          {dataTools.state !== "hasData" && (
+            <div className="flex items-center gap-3">
+              <p
+                role={dataTools.state === "hasError" ? "alert" : "status"}
+                className="text-sm text-muted-foreground"
+              >
+                {t(($) => {
+                  return dataTools.state === "hasError"
+                    ? $.settings.paidTools.loadError
+                    : $.settings.paidTools.loading;
+                })}
+              </p>
+              {dataTools.state === "hasError" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    return retry();
+                  }}
+                >
+                  {t(($) => {
+                    return $.settings.paidTools.retry;
+                  })}
+                </Button>
+              )}
+            </div>
+          )}
           <div className="flex flex-col gap-3">
             {settings.tools.map((tool) => {
               return tool.toolId === "image-generation" ? (
@@ -347,7 +375,7 @@ function PaidToolsContent({
                 <div key={tool.toolId} className="flex flex-col gap-2">
                   <PaidToolRow tool={tool} />
                   <div className="ml-4 flex flex-col gap-2">
-                    {settings.dataTools
+                    {(dataTools.state === "hasData" ? dataTools.data : [])
                       .filter((dataTool) => {
                         return dataTool.definition.family === tool.toolId;
                       })

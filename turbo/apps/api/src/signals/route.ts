@@ -215,6 +215,7 @@ import { voiceIoTranscribeRoutes } from "./routes/voice-io-transcribe";
 import { webFileUrlRoutes } from "./routes/web-file-url";
 
 import { dataRouterHistoryRoutes } from "./routes/data-router-history";
+import { dataRouterToolsRoutes } from "./routes/data-router-tools";
 import { webhooksAgentDataRequestRoutes } from "./routes/webhooks-agent-data-request";
 import { webhooksAgentCompleteRoutes } from "./routes/webhooks-agent-complete";
 import { webhooksAgentEventsRoutes } from "./routes/webhooks-agent-events";
@@ -265,6 +266,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webhooksAgentCompleteRoutes,
   ...webhooksAgentDataRequestRoutes,
   ...dataRouterHistoryRoutes,
+  ...dataRouterToolsRoutes,
   ...webhooksAgentEventsRoutes,
   ...webhooksAgentSessionOutputRoutes,
   ...webhooksAgentFirewallAuthRoutes,

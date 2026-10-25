@@ -6,6 +6,10 @@ import { z } from "zod";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import { dataRouterHistoryContract } from "@okouai/api-contracts/contracts/data-router";
 import {
+  dataRouterToolsPageSchema,
+  type DataRouterTool,
+} from "@okouai/api-contracts/contracts/data-router-tools";
+import {
   ApiRequestError,
   getClientConfig,
   handleError,
@@ -15,11 +19,11 @@ const envelopeSchema = z.object({
   data: z.object({ status: z.number().int(), body: z.unknown() }),
 });
 const argumentsSchema = z.record(z.string(), z.json());
-const listTools = new Set([
-  "data_list",
-  "social_data_list",
-  "social_download_list",
-]);
+interface RequestOptions {
+  signal: AbortSignal;
+  timeout: number;
+  maxTotalTimeout: number;
+}
 
 async function ownedRequestIds(): Promise<string[]> {
   const client = initClient(dataRouterHistoryContract, await getClientConfig());
@@ -35,16 +39,11 @@ export function getDataRouterUrl(): URL {
   );
 }
 
-/** Uses the static tool contract. The privileged MITM injects service authentication. */
-export async function callDataRouterTool(
-  name: string,
-  input: Record<string, unknown>,
+async function withDataRouter<T>(
+  operation: (client: Client, options: RequestOptions) => Promise<T>,
   callerSignal?: AbortSignal,
-): Promise<{ status: number; body: unknown }> {
+): Promise<T> {
   await getClientConfig();
-  const args = listTools.has(name)
-    ? { ...input, requestIds: await ownedRequestIds() }
-    : input;
   const signal = AbortSignal.any([
     AbortSignal.timeout(300_000),
     ...(callerSignal ? [callerSignal] : []),
@@ -67,19 +66,65 @@ export async function callDataRouterTool(
       inputRequired: { autoFulfill: false },
     },
   );
-  const requestOptions = { signal, timeout: 300_000, maxTotalTimeout: 300_000 };
+  const options = { signal, timeout: 300_000, maxTotalTimeout: 300_000 };
   try {
-    await client.connect(transport, requestOptions);
+    await client.connect(transport, options);
+    return await operation(client, options);
+  } finally {
+    const [closed] = await Promise.allSettled([client.close()]);
+    if (closed.status === "rejected")
+      process.stderr.write("Warning: Data Router connection cleanup failed.\n");
+  }
+}
+
+async function discoverTools(
+  client: Client,
+  options: RequestOptions,
+): Promise<DataRouterTool[]> {
+  const tools: DataRouterTool[] = [];
+  let cursor: string | undefined;
+  const cursors = new Set<string>();
+  do {
+    const page = dataRouterToolsPageSchema.parse(
+      await client.request(
+        { method: "tools/list", params: cursor ? { cursor } : {} },
+        options,
+      ),
+    );
+    tools.push(...page.tools);
+    cursor = page.nextCursor;
+    if (cursor && cursors.has(cursor))
+      throw new Error("Data Router returned a repeated discovery cursor");
+    if (cursor) cursors.add(cursor);
+  } while (cursor);
+  return tools;
+}
+
+export async function listDataRouterTools(): Promise<DataRouterTool[]> {
+  return withDataRouter(discoverTools);
+}
+
+/** The privileged MITM injects authentication and a managed request ID. */
+export async function callDataRouterTool(
+  name: string,
+  input: Record<string, unknown>,
+  callerSignal?: AbortSignal,
+): Promise<{ status: number; body: unknown }> {
+  return withDataRouter(async (client, options) => {
+    const tools = await discoverTools(client, options);
+    const tool = tools.find((entry) => {
+      return entry.name === name;
+    });
+    const args = tool?._meta?.["ai.okou/data"]?.requestHistory
+      ? { ...input, requestIds: await ownedRequestIds() }
+      : input;
     const result = await client
       .request(
         {
           method: "tools/call",
-          params: {
-            name,
-            arguments: argumentsSchema.parse(JSON.parse(JSON.stringify(args))),
-          },
+          params: { name, arguments: argumentsSchema.parse(args) },
         },
-        requestOptions,
+        options,
       )
       .catch((cause: unknown) => {
         throw new Error(
@@ -95,10 +140,5 @@ export async function callDataRouterTool(
         502,
       );
     return parsed.data.data;
-  } finally {
-    // Closing a completed call must never encourage an automatic paid retry.
-    const [closed] = await Promise.allSettled([client.close()]);
-    if (closed.status === "rejected")
-      process.stderr.write("Warning: Data Router connection cleanup failed.\n");
-  }
+  }, callerSignal);
 }

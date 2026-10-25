@@ -50,75 +50,27 @@ describe("managed research through the canonical CLI entry point", () => {
     await cli.parseAsync(argv);
   }
 
-  it.each([
-    ["social"],
-    ["finance"],
-    ["maps"],
-    ["weather"],
-    ["seo"],
-    ["commerce"],
-    ["web", "search"],
-    ["web", "scrape"],
-    ["people", "search"],
-  ])("shows help at okou data %s", async (...path) => {
-    await expect(run(["data", ...path, "--help"])).rejects.toMatchObject({
-      code: "commander.helpDisplayed",
-    });
-    expect(output).toContain(`Usage: okou data ${path.join(" ")}`);
-  });
-
-  it("calls Data Router through okou data web search", async () => {
+  it("calls a Router tool through the canonical CLI entry point", async () => {
     let requestBody: unknown;
     server.use(
-      dataRouterTool("web_search", ({ toolArguments }) => {
+      dataRouterTool("new_research_tool", ({ toolArguments }) => {
         requestBody = toolArguments;
-        return HttpResponse.json({
-          query: "business productivity",
-          limit: 5,
-          provider: "perplexity",
-          billingCategory: "request",
-          billingQuantity: 1,
-          creditsCharged: 5,
-          results: [],
-        });
-      }),
-    );
-    await run(["data", "web", "search", "business productivity", "--json"]);
-    expect(requestBody).toMatchObject({
-      query: "business productivity",
-      limit: 5,
-    });
-    expect(output).toContain('"provider":"perplexity"');
-  });
-
-  it("calls Data Router for research people search", async () => {
-    let requestBody: unknown;
-    server.use(
-      dataRouterTool("people_search", ({ toolArguments }) => {
-        requestBody = toolArguments;
-        return HttpResponse.json({
-          query: "marketing leaders in London",
-          limit: 5,
-          provider: "perplexity",
-          billingCategory: "request",
-          billingQuantity: 1,
-          creditsCharged: 20,
-          profiles: [],
-        });
+        return HttpResponse.json({ results: [{ newField: "kept" }] });
       }),
     );
     await run([
       "data",
-      "people",
-      "search",
-      "marketing leaders in London",
+      "call",
+      "new_research_tool",
+      "--input",
+      '{"query":"business productivity","newOption":true}',
       "--json",
     ]);
     expect(requestBody).toEqual({
-      query: "marketing leaders in London",
-      limit: 5,
+      query: "business productivity",
+      newOption: true,
     });
-    expect(output).toContain('"profiles":[]');
+    expect(JSON.parse(output)).toEqual({ results: [{ newField: "kept" }] });
   });
 
   it("keeps web-chat message search under okou search", async () => {

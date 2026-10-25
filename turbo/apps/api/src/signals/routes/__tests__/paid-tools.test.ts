@@ -1,3 +1,9 @@
+import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router";
+import { http, HttpResponse } from "msw";
+import { z } from "zod";
+import { server } from "../../../mocks/server";
+import { mockEnv } from "../../../lib/env";
+import { dataRouterToolsRoutes } from "../data-router-tools";
 import { randomUUID } from "node:crypto";
 
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
@@ -83,6 +89,7 @@ test("lets an ordinary member disable and re-enable a tool idempotently", async 
 
 test.each([
   "data-search",
+  "data:future_research",
   "image-generation",
   "video-generation",
   "voice-generation",
@@ -259,4 +266,55 @@ test("membership deletion clears exactly its paid tool preferences", async () =>
   await expect(listFor(current)).resolves.toStrictEqual([]);
   await expect(listFor(peer)).resolves.toStrictEqual(["web-search"]);
   await expect(listFor(elsewhere)).resolves.toStrictEqual(["web-search"]);
+});
+
+test("discovers Router tools and schemas across pages without a local tool catalog", async () => {
+  await owner();
+  mockEnv("OKOU_DATA_ROUTER_URL", "https://router.test/mcp");
+  mockEnv("OKOU_DATA_TOKEN", "test-router-token");
+  const tool = {
+    name: "future_research",
+    title: "New research tool",
+    description: "New Router capability",
+    inputSchema: {
+      type: "object" as const,
+      properties: { topic: { type: "string" } },
+      required: ["topic"],
+    },
+    _meta: { "ai.okou/data": { family: "data-search" as const } },
+  };
+  server.use(
+    http.post("https://router.test/mcp", async ({ request }) => {
+      expect(request.headers.get("authorization")).toBe(
+        "Bearer test-router-token",
+      );
+      const message = z
+        .object({
+          id: z.string(),
+          method: z.literal("tools/list"),
+          params: z.object({ cursor: z.string().optional() }),
+        })
+        .parse(await request.json());
+      return HttpResponse.json({
+        jsonrpc: "2.0",
+        id: message.id,
+        result:
+          message.params.cursor === "next-page"
+            ? { tools: [tool] }
+            : {
+                tools: [
+                  { name: "billing_get", inputSchema: { type: "object" } },
+                ],
+                nextCursor: "next-page",
+              },
+      });
+    }),
+  );
+  const result = await accept(
+    setupApp({ context, routes: dataRouterToolsRoutes })(
+      dataRouterToolsContract,
+    ).list({ headers }),
+    [200],
+  );
+  expect(result.body).toEqual({ tools: [tool] });
 });

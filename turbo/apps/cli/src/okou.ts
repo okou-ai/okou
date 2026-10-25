@@ -12,7 +12,6 @@ import {
 import { getOkouToken } from "./lib/okou-env.js";
 import { artifactCommand } from "./commands/artifact/index.js";
 import {
-  installPaidToolPolicy,
   isPaidCommandEnabled,
   isPaidToolEnabled,
 } from "./lib/command/paid-tools.js";
@@ -694,42 +693,42 @@ export function buildHelpText(
     ),
     ...dataExampleIfVisible(
       "maps:read",
-      '  Search maps?          okou data maps search "coffee near Union Square" --json',
+      "  Search maps?          okou data tools --family maps",
       payload,
     ),
     ...dataExampleIfVisible(
       "weather:read",
-      "  Check weather?        okou data weather current --lat 39.9042 --lng 116.4074 --json",
+      "  Check weather?        okou data tools --family data-search",
       payload,
     ),
     ...dataExampleIfVisible(
       "scrape:read",
-      "  Scrape a web page?    okou data web scrape https://example.com --json",
+      "  Scrape a web page?    okou data tools --family scrape",
       payload,
     ),
     ...dataExampleIfVisible(
       "web-search:read",
-      '  Search the public web? okou data web search "latest news" --json',
+      "  Search the public web? okou data tools --family web-search",
       payload,
     ),
     ...dataExampleIfVisible(
       "social:read",
-      "  Analyze social data?   okou data social transcript https://youtu.be/dQw4w9WgXcQ --json",
+      "  Analyze social data?   okou data tools --family social",
       payload,
     ),
     ...dataExampleIfVisible(
       "finance:read",
-      "  Get a market quote?   okou data finance quote AAPL --json",
+      "  Get a market quote?   okou data tools --family finance",
       payload,
     ),
     ...dataExampleIfVisible(
       "seo:read",
-      '  Research SEO data?    okou data seo serp "technical seo" --json',
+      "  Research SEO data?    okou data tools --family seo",
       payload,
     ),
     ...dataExampleIfVisible(
       "people-search:read",
-      '  Find a professional?   okou data people search "platform engineering leaders" --json',
+      "  Find a professional?   okou data tools --family people-search",
       payload,
     ),
     ...commandExampleIfVisible(
@@ -759,7 +758,6 @@ export function buildHelpText(
  */
 export function registerCommands(prog: Command, commands?: Command[]): void {
   instrumentCommand(prog);
-  installPaidToolPolicy(prog);
   const token = getOkouToken();
   const payload = token ? decodeSandboxTokenPayload(token) : undefined;
 

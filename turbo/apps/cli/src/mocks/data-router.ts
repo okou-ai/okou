@@ -34,7 +34,7 @@ beforeEach(() => {
   );
 });
 
-/** Mock the external MCP boundary without routing through the retired HTTP API. */
+/** Mock the external MCP boundary while exercising the real client and command parser. */
 export function dataRouterTool(toolName: string, resolver: Resolver) {
   return http.all("https://data.okou.ai/mcp", async ({ request }) => {
     if (request.method === "GET")
@@ -60,15 +60,23 @@ export function dataRouterTool(toolName: string, resolver: Resolver) {
       });
     if (message.method === "notifications/initialized")
       return new HttpResponse(null, { status: 202 });
+    if (message.method === "tools/list")
+      return HttpResponse.json({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: {
+          tools: [
+            {
+              name: toolName,
+              inputSchema: { type: "object" },
+              _meta: { "ai.okou/data": { family: "data-search" } },
+            },
+          ],
+        },
+      });
     if (message.method !== "tools/call") return;
     const name = message.params?.name;
-    if (
-      !name ||
-      (toolName === "social:*"
-        ? !/^(?:linkedin|twitter|facebook|instagram|tiktok|youtube)_/.test(name)
-        : name !== toolName)
-    )
-      return;
+    if (!name || name !== toolName) return;
     const response = await resolver({
       request,
       toolName: name,
