@@ -1,4 +1,3 @@
-import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
 import type {
   OfficialWorkflowArtifactReference,
   OfficialWorkflowCatalogDiagnostic,
@@ -13,10 +12,8 @@ import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
 import {
   officialWorkflowCatalogReleases,
   officialWorkflowCatalogState,
-  officialWorkflowDefinitionRevisions,
   officialWorkflowReconciliationWork,
 } from "@okouai/db/schema/official-workflow-catalog";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 
@@ -42,12 +39,7 @@ import {
   catalogPublicationPlan,
   catalogAuthorityCondition,
   catalogPublicationCondition,
-  preparedStorageVersionCondition,
-  preparedStorageCondition,
-  preparedStorageMatches,
-  definitionRevisionValues,
-  definitionRevisionCondition,
-  definitionRevisionMatches,
+  preparedDefinitionPublicationSql,
   changedWorkflowDefinitions,
   reconciliationWorkResetValues,
   reconciliationWorkValues,
@@ -119,17 +111,6 @@ function definitionRevisionKey(definitionName: string, revision: string) {
   return `${definitionName}\0${revision}`;
 }
 
-const definitionRevisionFields: Readonly<{
-  payload: typeof officialWorkflowDefinitionRevisions.payload;
-  storageName: typeof officialWorkflowDefinitionRevisions.storageName;
-  storageId: typeof officialWorkflowDefinitionRevisions.storageId;
-  storageVersion: typeof officialWorkflowDefinitionRevisions.storageVersion;
-}> = {
-  payload: officialWorkflowDefinitionRevisions.payload,
-  storageName: officialWorkflowDefinitionRevisions.storageName,
-  storageId: officialWorkflowDefinitionRevisions.storageId,
-  storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
-};
 const catalogPointerFields: Readonly<{
   acceptedReleaseId: typeof officialWorkflowCatalogState.acceptedReleaseId;
 }> = {
@@ -157,13 +138,6 @@ const catalogReleaseFields: Readonly<{
   payload: officialWorkflowCatalogReleases.payload,
   hiddenThreadDefinitionNames:
     officialWorkflowCatalogReleases.hiddenThreadDefinitionNames,
-};
-const preparedStorageFields: Readonly<{
-  storageId: typeof storages.id;
-  storageVersion: typeof storageVersions.id;
-}> = {
-  storageId: storages.id,
-  storageVersion: storageVersions.id,
 };
 
 const prepareDefinitionArtifact$ = command(
@@ -435,39 +409,11 @@ const activateCandidate$ = command(
 
         for (const prepared of input.preparedByName.values()) {
           registeringDefinitionName = prepared.definition.name;
-          const [row] = await tx
-            .select(preparedStorageFields)
-            .from(storages)
-            .leftJoin(
-              storageVersions,
-              preparedStorageVersionCondition(prepared.artifact),
-            )
-            .where(preparedStorageCondition(prepared.artifact))
-            .limit(1);
-          signal.throwIfAborted();
-          if (!preparedStorageMatches(row, prepared.artifact)) {
-            throw new OfficialWorkflowCatalogRegistrationError();
-          }
-
           const { rowCount: published } = await tx.execute(
-            preparedVolumePublicationSql(prepared.volume, nowDate()),
+            preparedDefinitionPublicationSql(prepared, nowDate()),
           );
           assertPublishedDefinitionCount(published, prepared.definition.name);
           signal.throwIfAborted();
-          await tx
-            .insert(officialWorkflowDefinitionRevisions)
-            .values(definitionRevisionValues(prepared))
-            .onConflictDoNothing();
-          signal.throwIfAborted();
-          const [stored] = await tx
-            .select(definitionRevisionFields)
-            .from(officialWorkflowDefinitionRevisions)
-            .where(definitionRevisionCondition(prepared))
-            .limit(1);
-          signal.throwIfAborted();
-          if (!definitionRevisionMatches(stored, prepared)) {
-            throw new OfficialWorkflowCatalogRegistrationError();
-          }
         }
         registeringDefinitionName = undefined;
         signal.throwIfAborted();
