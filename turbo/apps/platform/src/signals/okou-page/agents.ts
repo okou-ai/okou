@@ -15,9 +15,9 @@ import { setAgentPinned$ } from "./pinned-agents.ts";
 const finishAgentCreation$ = command(
   async (
     { set },
+    agentId: string,
+    prompt: string,
     args: {
-      readonly agentId: string;
-      readonly prompt: string;
       readonly displayName: string;
       readonly visibility: "public" | "private";
     },
@@ -26,9 +26,9 @@ const finishAgentCreation$ = command(
     const sent = await set(
       sendNewThread$,
       {
-        agentId: args.agentId,
+        agentId,
         draft: createDraftSignals(),
-        prompt: args.prompt,
+        prompt,
         generationTemplate: undefined,
         preserveAgentDraft: true,
       },
@@ -112,12 +112,9 @@ export const createSubagentWithSetupThread$ = command(
     // Navigation aborts the page signal; the root-owned send must finish.
     return set(
       finishAgentCreation$,
-      {
-        agentId: agent.agentId,
-        prompt: setupPrompt.value.body.prompt,
-        displayName: args.displayName,
-        visibility: args.visibility,
-      },
+      agent.agentId,
+      setupPrompt.value.body.prompt,
+      args,
       get(rootSignal$),
     );
   },
