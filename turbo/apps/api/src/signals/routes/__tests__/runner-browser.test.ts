@@ -121,31 +121,16 @@ async function admit(chat: Chat, instanceId: string) {
   if (!entry) {
     throw new Error("Expected a new server-generated window lifetime");
   }
-  return { instanceId, windowGeneration: entry[0] };
+  return { instanceId, windowSessionId: entry[0] };
 }
 
 async function activate(
   chat: Chat,
-  window: { instanceId: string; windowGeneration: string },
+  window: { instanceId: string; windowSessionId: string },
   nativeWindowId: number,
-  targetId: string,
 ) {
-  accepted(
-    await chat.request({
-      kind: "registerTarget",
-      ...window,
-      nativeWindowId,
-      targetId,
-      openerTargetId: null,
-    }),
-  );
   return accepted(
-    await chat.request({
-      kind: "activate",
-      ...window,
-      nativeWindowId,
-      primaryTargetId: targetId,
-    }),
+    await chat.request({ kind: "activate", ...window, nativeWindowId }),
   );
 }
 
@@ -293,7 +278,7 @@ describe("official Runner Browser lifecycle", () => {
     });
   });
 
-  it("publishes one physical generation and preserves concurrent chat windows and target ownership", async () => {
+  it("publishes one physical generation and preserves concurrent chat windows and exclusive native window bindings", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
       const a = await f.start();
@@ -329,54 +314,97 @@ describe("official Runner Browser lifecycle", () => {
         admit(a, initial.id),
         admit(b, initial.id),
       ]);
-      await activate(a, wa, 101, "page-a");
-      await activate(b, wb, 102, "page-b");
+      await activate(a, wa, 0);
+      await expect(
+        b.request({ kind: "activate", ...wb, nativeWindowId: 0 }),
+      ).resolves.toStrictEqual({ outcome: "unavailable" });
+      await activate(b, wb, 102);
       const viewA = accepted(await a.request({ kind: "inspect" }));
       const viewB = accepted(await b.request({ kind: "inspect" }));
-      expect(Object.keys(viewA.windows)).toStrictEqual([wa.windowGeneration]);
-      expect(Object.keys(viewB.windows)).toStrictEqual([wb.windowGeneration]);
+      expect(Object.keys(viewA.windows)).toStrictEqual([wa.windowSessionId]);
+      expect(Object.keys(viewB.windows)).toStrictEqual([wb.windowSessionId]);
       await expect(b.request({ kind: "renew", ...wa })).resolves.toStrictEqual({
         outcome: "unavailable",
       });
       await expect(
-        b.request({
-          kind: "registerTarget",
-          ...wb,
+        a.request({
+          kind: "registerAuxiliaryWindow",
+          ...wa,
           nativeWindowId: 102,
-          targetId: "page-a",
-          openerTargetId: null,
+          openerWindowId: 0,
         }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
       await expect(
-        b.request({
-          kind: "registerTarget",
-          ...wb,
-          nativeWindowId: 103,
-          targetId: "foreign-popup",
-          openerTargetId: "page-a",
-        }),
-      ).resolves.toStrictEqual({ outcome: "unavailable" });
-      accepted(
-        await a.request({
-          kind: "registerTarget",
+        a.request({
+          kind: "registerAuxiliaryWindow",
           ...wa,
           nativeWindowId: 103,
-          targetId: "popup-a",
-          openerTargetId: "page-a",
+          openerWindowId: 102,
+        }),
+      ).resolves.toStrictEqual({ outcome: "unavailable" });
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const registered = accepted(
+          await a.request({
+            kind: "registerAuxiliaryWindow",
+            ...wa,
+            nativeWindowId: 103,
+            openerWindowId: 0,
+          }),
+        );
+        expect(
+          registered.windows[wa.windowSessionId]?.auxiliaryWindowIds,
+        ).toStrictEqual([103]);
+      }
+      accepted(
+        await a.request({
+          kind: "registerAuxiliaryWindow",
+          ...wa,
+          nativeWindowId: 104,
+          openerWindowId: 103,
         }),
       );
+      const competing = await Promise.all([
+        a.request({
+          kind: "registerAuxiliaryWindow",
+          ...wa,
+          nativeWindowId: 105,
+          openerWindowId: 0,
+        }),
+        b.request({
+          kind: "registerAuxiliaryWindow",
+          ...wb,
+          nativeWindowId: 105,
+          openerWindowId: 102,
+        }),
+      ]);
       expect(
-        accepted(await a.request({ kind: "inspect" })).windows[
-          wa.windowGeneration
-        ]?.primaryTargetId,
-      ).toBe("page-a");
+        competing
+          .map((result) => {
+            return result.outcome;
+          })
+          .sort(),
+      ).toStrictEqual(["accepted", "unavailable"]);
+      const currentA = accepted(await a.request({ kind: "inspect" })).windows[
+        wa.windowSessionId
+      ];
+      const currentB = accepted(await b.request({ kind: "inspect" })).windows[
+        wb.windowSessionId
+      ];
+      expect(currentA?.primaryWindowId).toBe(0);
+      expect(currentA?.auxiliaryWindowIds).toContain(103);
+      expect(currentA?.auxiliaryWindowIds).toContain(104);
+      expect(
+        [currentA, currentB].filter((window) => {
+          return window?.auxiliaryWindowIds.includes(105);
+        }),
+      ).toHaveLength(1);
       await expect(
         a.request({ kind: "beginStop", instanceId: initial.id }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
     });
   });
 
-  it("keeps active siblings and a reopened window safe from expired-generation cleanup", async () => {
+  it("keeps active siblings and a reopened window safe from expired-session cleanup", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
       const a = await f.start();
@@ -384,23 +412,37 @@ describe("official Runner Browser lifecycle", () => {
       const instance = await allocate(a);
       const wa = await admit(a, instance.id);
       const wb = await admit(b, instance.id);
-      await activate(a, wa, 101, "old-a");
-      await activate(b, wb, 102, "page-b");
+      await activate(a, wa, 0);
+      await activate(b, wb, 102);
+      accepted(
+        await a.request({
+          kind: "registerAuxiliaryWindow",
+          ...wa,
+          nativeWindowId: 103,
+          openerWindowId: 0,
+        }),
+      );
       mockNow(START + 9 * MINUTE);
       accepted(await b.request({ kind: "renew", ...wb }));
       mockNow(START + 10 * MINUTE);
       accepted(await a.request({ kind: "retire", ...wa, reason: "expired" }));
       const replacement = await admit(a, instance.id);
-      expect(replacement.windowGeneration).not.toBe(wa.windowGeneration);
-      await activate(a, replacement, 104, "new-a");
+      expect(replacement.windowSessionId).not.toBe(wa.windowSessionId);
+      await expect(
+        a.request({ kind: "activate", ...replacement, nativeWindowId: 0 }),
+      ).resolves.toStrictEqual({ outcome: "unavailable" });
+      await expect(
+        a.request({ kind: "activate", ...replacement, nativeWindowId: 103 }),
+      ).resolves.toStrictEqual({ outcome: "unavailable" });
+      await activate(a, replacement, 104);
       accepted(await a.request({ kind: "completeWindowClose", ...wa }));
       const current = accepted(await a.request({ kind: "inspect" }));
       expect(Object.keys(current.windows)).toStrictEqual([
-        replacement.windowGeneration,
+        replacement.windowSessionId,
       ]);
       expect(
-        current.windows[replacement.windowGeneration]?.primaryTargetId,
-      ).toBe("new-a");
+        current.windows[replacement.windowSessionId]?.primaryWindowId,
+      ).toBe(104);
       await expect(a.request({ kind: "renew", ...wa })).resolves.toStrictEqual({
         outcome: "unavailable",
       });
@@ -441,7 +483,7 @@ describe("official Runner Browser lifecycle", () => {
       const b = await f.start();
       const instance = await allocate(a);
       const wa = await admit(a, instance.id);
-      await activate(a, wa, 101, "page-a");
+      await activate(a, wa, 101);
       mockNow(START + 9 * MINUTE);
       const beforeExpiry = await Promise.all([
         a.request({ kind: "renew", ...wa }),

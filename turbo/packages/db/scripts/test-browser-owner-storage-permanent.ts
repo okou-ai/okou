@@ -7,9 +7,11 @@ import { z } from "zod";
 import {
   browserOwnerInstances,
   browserOwnerProfiles,
-  browserPageOwnership,
 } from "../src/schema/browser-owner";
-import { parseBrowserOwnerWindows } from "../src/jsonb-contracts/browser-owner";
+import {
+  parseBrowserOwnerWindows,
+  type BrowserOwnerWindows,
+} from "../src/jsonb-contracts/browser-owner";
 
 /** Current schema integrity; caller-level concurrency lives in Runner route tests. */
 export async function validatePermanentBrowserOwnerStorage(
@@ -22,7 +24,7 @@ export async function validatePermanentBrowserOwnerStorage(
   const instanceId = randomUUID();
   const replacementId = randomUUID();
   const providerProfileId = randomUUID();
-  const generation = randomUUID();
+  const windowSessionId = randomUUID();
   const chatThreadId = randomUUID();
   const orgId = `browser-owner-schema-${randomUUID()}`;
   const now = new Date();
@@ -88,34 +90,6 @@ export async function validatePermanentBrowserOwnerStorage(
       { code: "23514", constraint: "browser_owner_instances_windows_check" },
     );
 
-    const page = {
-      instanceId,
-      targetId: "owned-page",
-      windowGeneration: generation,
-      chatThreadId,
-      nativeWindowId: 1,
-    };
-    await db.insert(browserPageOwnership).values(page);
-    await assert.rejects(
-      client.query(
-        "INSERT INTO browser_page_ownership (instance_id, target_id, window_generation, chat_thread_id, native_window_id) VALUES ($1, $2, $3, $4, 2)",
-        [instanceId, page.targetId, randomUUID(), randomUUID()],
-      ),
-      {
-        code: "23505",
-        constraint: "browser_page_ownership_instance_id_target_id_pk",
-      },
-    );
-    await assert.rejects(
-      client.query(
-        "UPDATE browser_page_ownership SET native_window_id = 0 WHERE instance_id = $1",
-        [instanceId],
-      ),
-      {
-        code: "23514",
-        constraint: "browser_page_ownership_native_window_check",
-      },
-    );
     await assert.rejects(
       client.query("DELETE FROM browser_owner_profiles WHERE id = $1", [
         profileId,
@@ -127,33 +101,44 @@ export async function validatePermanentBrowserOwnerStorage(
       .update(browserOwnerInstances)
       .set({ status: "stopped" })
       .where(eq(browserOwnerInstances.id, instanceId));
+    const windows: BrowserOwnerWindows = {
+      [windowSessionId]: {
+        chatThreadId,
+        state: "active",
+        expiresAt: timeoutAt.getTime(),
+        primaryWindowId: 0,
+        auxiliaryWindowIds: [1, 2],
+      },
+    };
     await db.insert(browserOwnerInstances).values({
       id: replacementId,
       ownerProfileId: profileId,
-      status: "creating",
+      status: "active",
+      providerSessionId: randomUUID(),
+      windows,
       creationExpiresAt,
       timeoutAt,
     });
     await db
-      .insert(browserPageOwnership)
-      .values({ ...page, instanceId: replacementId });
-    await db
       .delete(browserOwnerInstances)
       .where(eq(browserOwnerInstances.id, instanceId));
     const surviving = await db
-      .select({ instanceId: browserPageOwnership.instanceId })
-      .from(browserPageOwnership)
-      .where(
-        inArray(browserPageOwnership.instanceId, [instanceId, replacementId]),
-      );
-    assert.deepEqual(surviving, [{ instanceId: replacementId }]);
+      .select({
+        id: browserOwnerInstances.id,
+        windows: browserOwnerInstances.windows,
+      })
+      .from(browserOwnerInstances)
+      .where(inArray(browserOwnerInstances.id, [instanceId, replacementId]));
+    assert.equal(surviving.length, 1);
+    assert.equal(surviving[0]?.id, replacementId);
+    assert.deepEqual(parseBrowserOwnerWindows(surviving[0]?.windows), windows);
 
     const column = z
       .object({ is_nullable: z.literal("YES") })
       .parse(
         (
           await client.query(
-            "SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'browser_user_action_requests' AND column_name = 'window_generation'",
+            "SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'browser_user_action_requests' AND column_name = 'window_session_id'",
           )
         ).rows[0],
       );

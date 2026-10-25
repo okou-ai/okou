@@ -3,10 +3,10 @@ interface BrowserOwnerWindow {
   readonly state: "creating" | "active" | "closing";
   readonly expiresAt: number;
   readonly primaryWindowId: number | null;
-  readonly primaryTargetId: string | null;
+  readonly auxiliaryWindowIds: readonly number[];
 }
 
-/** Keys are immutable window-generation UUIDs, including unfinished cleanup. */
+/** Keys are immutable window-session UUIDs, including unfinished cleanup. */
 export type BrowserOwnerWindows = Record<string, BrowserOwnerWindow>;
 
 const uuid =
@@ -16,7 +16,7 @@ const fields = new Set([
   "state",
   "expiresAt",
   "primaryWindowId",
-  "primaryTargetId",
+  "auxiliaryWindowIds",
 ]);
 
 function object(value: unknown): Record<string, unknown> {
@@ -26,27 +26,36 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function primaryPage(window: Record<string, unknown>) {
-  const { primaryWindowId, primaryTargetId } = window;
+function nativeWindowId(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function windowBindings(window: Record<string, unknown>) {
+  const { primaryWindowId, auxiliaryWindowIds } = window;
   if (
-    (primaryWindowId !== null &&
-      (typeof primaryWindowId !== "number" ||
-        !Number.isSafeInteger(primaryWindowId) ||
-        primaryWindowId <= 0)) ||
-    (primaryTargetId !== null &&
-      (typeof primaryTargetId !== "string" ||
-        primaryTargetId.length === 0 ||
-        primaryTargetId.length > 256)) ||
-    (primaryWindowId === null) !== (primaryTargetId === null)
+    (primaryWindowId !== null && !nativeWindowId(primaryWindowId)) ||
+    !Array.isArray(auxiliaryWindowIds)
   ) {
-    throw new Error("Invalid Browser owner primary page");
+    throw new Error("Invalid Browser owner window bindings");
   }
-  return { primaryWindowId, primaryTargetId };
+  const auxiliary: number[] = [];
+  const seen = new Set<number>();
+  for (const id of auxiliaryWindowIds) {
+    if (!nativeWindowId(id) || id === primaryWindowId || seen.has(id)) {
+      throw new Error("Invalid Browser owner auxiliary window");
+    }
+    seen.add(id);
+    auxiliary.push(id);
+  }
+  if (primaryWindowId === null && auxiliary.length > 0) {
+    throw new Error("Auxiliary Browser windows require a primary window");
+  }
+  return { primaryWindowId, auxiliaryWindowIds: auxiliary };
 }
 
 function decodeWindow(raw: unknown): BrowserOwnerWindow {
   const window = object(raw);
-  const primary = primaryPage(window);
+  const bindings = windowBindings(window);
   if (
     Object.keys(window).length !== fields.size ||
     Object.keys(window).some((key) => {
@@ -60,8 +69,8 @@ function decodeWindow(raw: unknown): BrowserOwnerWindow {
     typeof window.expiresAt !== "number" ||
     !Number.isSafeInteger(window.expiresAt) ||
     window.expiresAt < 0 ||
-    (window.state === "active" && primary.primaryWindowId === null) ||
-    (window.state === "creating" && primary.primaryWindowId !== null)
+    (window.state === "active" && bindings.primaryWindowId === null) ||
+    (window.state === "creating" && bindings.primaryWindowId !== null)
   ) {
     throw new Error("Invalid Browser owner window state");
   }
@@ -69,7 +78,7 @@ function decodeWindow(raw: unknown): BrowserOwnerWindow {
     chatThreadId: window.chatThreadId,
     state: window.state,
     expiresAt: window.expiresAt,
-    ...primary,
+    ...bindings,
   };
 }
 
@@ -77,9 +86,10 @@ function decodeWindow(raw: unknown): BrowserOwnerWindow {
 export function parseBrowserOwnerWindows(value: unknown): BrowserOwnerWindows {
   const windows: BrowserOwnerWindows = {};
   const liveChats = new Set<string>();
-  for (const [generation, raw] of Object.entries(object(value))) {
-    if (!uuid.test(generation)) {
-      throw new Error("Invalid Browser owner window generation");
+  const nativeWindows = new Set<number>();
+  for (const [windowSessionId, raw] of Object.entries(object(value))) {
+    if (!uuid.test(windowSessionId)) {
+      throw new Error("Invalid Browser owner window session");
     }
     const window = decodeWindow(raw);
     if (window.state !== "closing") {
@@ -88,7 +98,15 @@ export function parseBrowserOwnerWindows(value: unknown): BrowserOwnerWindows {
       }
       liveChats.add(window.chatThreadId);
     }
-    windows[generation] = window;
+    for (const id of [window.primaryWindowId, ...window.auxiliaryWindowIds]) {
+      if (id !== null) {
+        if (nativeWindows.has(id)) {
+          throw new Error("Ambiguous Browser owner native window");
+        }
+        nativeWindows.add(id);
+      }
+    }
+    windows[windowSessionId] = window;
   }
   return windows;
 }

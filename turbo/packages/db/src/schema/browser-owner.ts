@@ -2,10 +2,8 @@ import { sql } from "drizzle-orm";
 import {
   check,
   index,
-  integer,
   jsonb,
   pgTable,
-  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -89,40 +87,6 @@ export const browserOwnerInstances = pgTable(
         "browser_owner_instances_deadline_check",
         sql`${table.creationExpiresAt} > ${table.createdAt}
         AND ${table.timeoutAt} >= ${table.creationExpiresAt}`,
-      ),
-    ];
-  },
-);
-
-/** Attribution outlives chat deletion until exact provider cleanup completes. */
-export const browserPageOwnership = pgTable(
-  "browser_page_ownership",
-  {
-    instanceId: uuid("instance_id")
-      .notNull()
-      .references(
-        () => {
-          return browserOwnerInstances.id;
-        },
-        { onDelete: "cascade" },
-      ),
-    targetId: varchar("target_id", { length: 256 }).notNull(),
-    windowGeneration: uuid("window_generation").notNull(),
-    chatThreadId: uuid("chat_thread_id").notNull(),
-    nativeWindowId: integer("native_window_id").notNull(),
-    openerTargetId: varchar("opener_target_id", { length: 256 }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (table) => {
-    return [
-      primaryKey({ columns: [table.instanceId, table.targetId] }),
-      index("idx_browser_page_ownership_window").on(
-        table.instanceId,
-        table.windowGeneration,
-      ),
-      check(
-        "browser_page_ownership_native_window_check",
-        sql`${table.nativeWindowId} > 0`,
       ),
     ];
   },

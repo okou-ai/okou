@@ -4,15 +4,15 @@ import { apiErrorSchema } from "./errors";
 import { runnerHeartbeatGenerationSchema } from "./runner-primitives";
 
 const c = initContract();
-const targetId = z.string().min(1).max(256);
+const nativeWindowId = z.int().nonnegative();
 const instanceIdentity = { instanceId: z.uuid() };
-const windowIdentity = { ...instanceIdentity, windowGeneration: z.uuid() };
+const windowIdentity = { ...instanceIdentity, windowSessionId: z.uuid() };
 const browserWindowSchema = z.strictObject({
   chatThreadId: z.uuid(),
   state: z.enum(["creating", "active", "closing"]),
   expiresAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  primaryWindowId: z.int().positive().nullable(),
-  primaryTargetId: targetId.nullable(),
+  primaryWindowId: nativeWindowId.nullable(),
+  auxiliaryWindowIds: z.array(nativeWindowId).readonly(),
 });
 
 const actionSchema = z.discriminatedUnion("kind", [
@@ -29,17 +29,15 @@ const actionSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({ kind: z.literal("admit"), ...instanceIdentity }),
   z.strictObject({
-    kind: z.literal("registerTarget"),
+    kind: z.literal("registerAuxiliaryWindow"),
     ...windowIdentity,
-    targetId,
-    nativeWindowId: z.int().positive(),
-    openerTargetId: targetId.nullable(),
+    nativeWindowId,
+    openerWindowId: nativeWindowId,
   }),
   z.strictObject({
     kind: z.literal("activate"),
     ...windowIdentity,
-    primaryTargetId: targetId,
-    nativeWindowId: z.int().positive(),
+    nativeWindowId,
   }),
   z.strictObject({ kind: z.literal("renew"), ...windowIdentity }),
   z.strictObject({

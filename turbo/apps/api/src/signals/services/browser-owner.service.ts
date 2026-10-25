@@ -12,7 +12,6 @@ import { agents } from "@okouai/db/schema/agent";
 import {
   browserOwnerInstances,
   browserOwnerProfiles,
-  browserPageOwnership,
 } from "@okouai/db/schema/browser-owner";
 import {
   browserProfiles,
@@ -27,7 +26,6 @@ import {
   getTableColumns,
   gt,
   inArray,
-  isNull,
   lte,
   ne,
   notExists,
@@ -43,7 +41,6 @@ const IDLE_MS = 10 * 60_000;
 const MAX_BROWSER_MS = 240 * 60_000;
 const instances = browserOwnerInstances;
 const profiles = browserOwnerProfiles;
-const pages = browserPageOwnership;
 const liveStates = ["creating", "active", "stopping"] as const;
 type InstanceRow = typeof instances.$inferSelect & {
   readonly providerProfileId: string;
@@ -165,54 +162,57 @@ function activeInstance(
   );
 }
 
-function windowValue(generation: string) {
-  return sql`${instances.windows} -> ${generation}`;
+function windowValue(windowSessionId: string) {
+  return sql`${instances.windows} -> ${windowSessionId}`;
 }
 
-function ownedWindow(owner: BrowserOwnerAuthority, generation: string) {
+function ownedWindow(owner: BrowserOwnerAuthority, windowSessionId: string) {
   return eq(
-    sql`${windowValue(generation)} ->> 'chatThreadId'`,
+    sql`${windowValue(windowSessionId)} ->> 'chatThreadId'`,
     owner.chatThreadId,
   );
 }
 
-function windowState(generation: string) {
-  return sql`${windowValue(generation)} ->> 'state'`;
+function windowState(windowSessionId: string) {
+  return sql`${windowValue(windowSessionId)} ->> 'state'`;
 }
 
-function windowExpiry(generation: string) {
-  return sql`(${windowValue(generation)} ->> 'expiresAt')::bigint`;
+function windowExpiry(windowSessionId: string) {
+  return sql`(${windowValue(windowSessionId)} ->> 'expiresAt')::bigint`;
 }
 
 function hardDeadlineMs() {
   return sql`floor(extract(epoch FROM ${instances.timeoutAt}) * 1000)::bigint`;
 }
 
-function ownedPageOpenerCondition(
-  instanceId: string,
-  generation: string,
-  targetId: string | null,
+function nativeWindowInSession(
+  windowSessionId: string,
+  nativeWindowId: number,
 ) {
-  if (targetId === null) {
-    return undefined;
-  }
-  return exists(
-    new QueryBuilder()
-      .select({ id: pages.targetId })
-      .from(pages)
-      .where(
-        and(
-          eq(pages.instanceId, instanceId),
-          eq(pages.windowGeneration, generation),
-          eq(pages.targetId, targetId),
-        ),
-      ),
+  return or(
+    eq(
+      sql`(${windowValue(windowSessionId)} ->> 'primaryWindowId')::bigint`,
+      sql`${nativeWindowId}::bigint`,
+    ),
+    sql`(${windowValue(windowSessionId)} -> 'auxiliaryWindowIds')
+      @> jsonb_build_array(${nativeWindowId}::bigint)`,
   );
 }
 
-function lifetime(generation: string, patch: ReturnType<typeof sql>) {
-  return sql`jsonb_set(${instances.windows}, ARRAY[${generation}]::text[],
-    ${windowValue(generation)} || ${patch})`;
+function nativeWindowUnclaimed(
+  windowSessionId: string,
+  nativeWindowId: number,
+) {
+  return notExists(sql`(SELECT 1 FROM jsonb_each(${instances.windows}) AS other
+    WHERE other.key <> ${windowSessionId}
+      AND ((other.value ->> 'primaryWindowId')::bigint = ${nativeWindowId}::bigint
+        OR (other.value -> 'auxiliaryWindowIds')
+          @> jsonb_build_array(${nativeWindowId}::bigint)))`);
+}
+
+function lifetime(windowSessionId: string, patch: ReturnType<typeof sql>) {
+  return sql`jsonb_set(${instances.windows}, ARRAY[${windowSessionId}]::text[],
+    ${windowValue(windowSessionId)} || ${patch})`;
 }
 
 function response(
@@ -481,14 +481,14 @@ const admitOwnerBrowserWindow$ = command(
     const db = set(writeDb$);
     const nowMs = now.getTime();
     const active = activeInstance(owner, action.instanceId, now);
-    const generation = randomUUID();
+    const windowSessionId = randomUUID();
     const rows = await db
       .update(instances)
       .set({
-        windows: sql`${instances.windows} || jsonb_build_object(${generation}::text,
+        windows: sql`${instances.windows} || jsonb_build_object(${windowSessionId}::text,
               jsonb_build_object('chatThreadId', ${owner.chatThreadId}::text,
                 'state', 'creating', 'expiresAt', least(${nowMs + SETUP_MS}::bigint, ${hardDeadlineMs()}),
-                'primaryWindowId', NULL, 'primaryTargetId', NULL))`,
+                'primaryWindowId', NULL, 'auxiliaryWindowIds', '[]'::jsonb))`,
         updatedAt: now,
       })
       .where(
@@ -505,131 +505,50 @@ const admitOwnerBrowserWindow$ = command(
   },
 );
 
-const registerOwnerBrowserTarget$ = command(
+const registerOwnerBrowserAuxiliaryWindow$ = command(
   async (
     { set },
     owner: BrowserOwnerAuthority,
-    action: BrowserAction<"registerTarget">,
+    action: BrowserAction<"registerAuxiliaryWindow">,
     now: Date,
     signal: AbortSignal,
   ): Promise<InstanceRow[]> => {
     const db = set(writeDb$);
     const nowMs = now.getTime();
-    const active = activeInstance(owner, action.instanceId, now);
-    const generation = action.windowGeneration;
-    const sameWindow = and(
-      eq(pages.instanceId, action.instanceId),
-      eq(pages.windowGeneration, generation),
-    );
-    const ownedOpener = ownedPageOpenerCondition(
-      action.instanceId,
-      generation,
-      action.openerTargetId,
-    );
-    const accepted = db.$with("browser_target_lifetime").as(
-      db
-        .update(instances)
-        .set({
-          windows: sql`CASE WHEN ${windowState(generation)} = 'active'
-                THEN ${lifetime(generation, sql`jsonb_build_object('expiresAt', least(${hardDeadlineMs()}, greatest(${windowExpiry(generation)}, ${nowMs + IDLE_MS}::bigint)))`)}
-                ELSE ${instances.windows} END`,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            active,
-            ownedWindow(owner, generation),
-            inArray(windowState(generation), ["creating", "active"]),
-            gt(windowExpiry(generation), nowMs),
-            or(
-              eq(windowState(generation), "creating"),
-              eq(
-                sql`(${windowValue(generation)} ->> 'primaryWindowId')::int`,
-                action.nativeWindowId,
-              ),
-              exists(
-                new QueryBuilder()
-                  .select({ id: pages.targetId })
-                  .from(pages)
-                  .where(
-                    and(
-                      sameWindow,
-                      eq(pages.nativeWindowId, action.nativeWindowId),
-                    ),
-                  ),
-              ),
-              ownedOpener,
-            ),
-            action.openerTargetId === null ? undefined : ownedOpener,
-            notExists(
-              new QueryBuilder()
-                .select({ id: pages.targetId })
-                .from(pages)
-                .where(
-                  and(
-                    eq(pages.instanceId, action.instanceId),
-                    eq(pages.nativeWindowId, action.nativeWindowId),
-                    ne(pages.windowGeneration, generation),
-                  ),
-                ),
-            ),
-          ),
-        )
-        .returning(instanceSelection()),
-    );
-    const registered = db.$with("registered_browser_page").as(
-      db
-        .insert(pages)
-        .select(
-          new QueryBuilder()
-            .select({
-              instanceId: accepted.id,
-              targetId: sql`${action.targetId}::text`
-                .mapWith(pages.targetId)
-                .as("target_id"),
-              windowGeneration: sql`${generation}::uuid`
-                .mapWith(pages.windowGeneration)
-                .as("window_generation"),
-              chatThreadId: sql`${owner.chatThreadId}::uuid`
-                .mapWith(pages.chatThreadId)
-                .as("chat_thread_id"),
-              nativeWindowId: sql`${action.nativeWindowId}::int`
-                .mapWith(pages.nativeWindowId)
-                .as("native_window_id"),
-              openerTargetId: sql`${action.openerTargetId}::text`
-                .mapWith(pages.openerTargetId)
-                .as("opener_target_id"),
-              createdAt: sql`${sql.param(now, pages.createdAt)}::timestamp`
-                .mapWith(pages.createdAt)
-                .as("created_at"),
-            })
-            .from(accepted),
-        )
-        .onConflictDoUpdate({
-          target: [pages.instanceId, pages.targetId],
-          set: { targetId: pages.targetId },
-          setWhere: and(
-            eq(pages.windowGeneration, generation),
-            eq(pages.chatThreadId, owner.chatThreadId),
-            eq(pages.nativeWindowId, action.nativeWindowId),
-            action.openerTargetId === null
-              ? isNull(pages.openerTargetId)
-              : eq(pages.openerTargetId, action.openerTargetId),
-          ),
-        })
-        .returning({ instanceId: pages.instanceId }),
-    );
+    const windowSessionId = action.windowSessionId;
+    // The trusted Runner verifies Chrome's opener before binding a new window.
+    // Membership and uniqueness are checked against the current stored aggregate.
     const rows = await db
-      .with(accepted, registered)
-      .select({ ...accepted._.selectedFields })
-      .from(accepted)
-      .where(
-        exists(
-          new QueryBuilder()
-            .select({ id: registered.instanceId })
-            .from(registered),
+      .update(instances)
+      .set({
+        windows: lifetime(
+          windowSessionId,
+          sql`jsonb_build_object('auxiliaryWindowIds',
+            CASE WHEN (${windowValue(windowSessionId)} -> 'auxiliaryWindowIds')
+              @> jsonb_build_array(${action.nativeWindowId}::bigint)
+            THEN ${windowValue(windowSessionId)} -> 'auxiliaryWindowIds'
+            ELSE (${windowValue(windowSessionId)} -> 'auxiliaryWindowIds')
+              || jsonb_build_array(${action.nativeWindowId}::bigint) END,
+            'expiresAt', least(${hardDeadlineMs()},
+              greatest(${windowExpiry(windowSessionId)}, ${nowMs + IDLE_MS}::bigint)))`,
         ),
-      );
+        updatedAt: now,
+      })
+      .where(
+        and(
+          activeInstance(owner, action.instanceId, now),
+          ownedWindow(owner, windowSessionId),
+          eq(windowState(windowSessionId), "active"),
+          gt(windowExpiry(windowSessionId), nowMs),
+          nativeWindowInSession(windowSessionId, action.openerWindowId),
+          ne(
+            sql`(${windowValue(windowSessionId)} ->> 'primaryWindowId')::bigint`,
+            sql`${action.nativeWindowId}::bigint`,
+          ),
+          nativeWindowUnclaimed(windowSessionId, action.nativeWindowId),
+        ),
+      )
+      .returning(instanceSelection());
     signal.throwIfAborted();
     return rows;
   },
@@ -646,42 +565,25 @@ const activateOwnerBrowserWindow$ = command(
     const db = set(writeDb$);
     const nowMs = now.getTime();
     const active = activeInstance(owner, action.instanceId, now);
-    const generation = action.windowGeneration;
+    const windowSessionId = action.windowSessionId;
     const rows = await db
       .update(instances)
       .set({
         windows: lifetime(
-          generation,
+          windowSessionId,
           sql`jsonb_build_object('state', 'active',
               'expiresAt', least(${nowMs + IDLE_MS}::bigint, ${hardDeadlineMs()}),
-              'primaryWindowId', ${action.nativeWindowId}::int,
-              'primaryTargetId', ${action.primaryTargetId}::text)`,
+              'primaryWindowId', ${action.nativeWindowId}::bigint)`,
         ),
         updatedAt: now,
       })
       .where(
         and(
           active,
-          ownedWindow(owner, generation),
-          eq(windowState(generation), "creating"),
-          gt(windowExpiry(generation), nowMs),
-          exists(
-            new QueryBuilder()
-              .select({ id: pages.targetId })
-              .from(pages)
-              .where(
-                and(
-                  eq(pages.instanceId, action.instanceId),
-                  eq(pages.windowGeneration, generation),
-                  eq(pages.chatThreadId, owner.chatThreadId),
-                  eq(pages.targetId, action.primaryTargetId),
-                  eq(pages.nativeWindowId, action.nativeWindowId),
-                ),
-              ),
-          ),
-          notExists(sql`(SELECT 1 FROM jsonb_each(${instances.windows}) AS other
-              WHERE other.key <> ${generation}
-                AND (other.value ->> 'primaryWindowId')::int = ${action.nativeWindowId})`),
+          ownedWindow(owner, windowSessionId),
+          eq(windowState(windowSessionId), "creating"),
+          gt(windowExpiry(windowSessionId), nowMs),
+          nativeWindowUnclaimed(windowSessionId, action.nativeWindowId),
         ),
       )
       .returning(instanceSelection());
@@ -701,23 +603,23 @@ const renewOwnerBrowserWindow$ = command(
     const db = set(writeDb$);
     const nowMs = now.getTime();
     const active = activeInstance(owner, action.instanceId, now);
-    const generation = action.windowGeneration;
+    const windowSessionId = action.windowSessionId;
     const rows = await db
       .update(instances)
       .set({
         windows: lifetime(
-          generation,
+          windowSessionId,
           sql`jsonb_build_object('expiresAt',
-              least(${hardDeadlineMs()}, greatest(${windowExpiry(generation)}, ${nowMs + IDLE_MS}::bigint)))`,
+              least(${hardDeadlineMs()}, greatest(${windowExpiry(windowSessionId)}, ${nowMs + IDLE_MS}::bigint)))`,
         ),
         updatedAt: now,
       })
       .where(
         and(
           active,
-          ownedWindow(owner, generation),
-          eq(windowState(generation), "active"),
-          gt(windowExpiry(generation), nowMs),
+          ownedWindow(owner, windowSessionId),
+          eq(windowState(windowSessionId), "active"),
+          gt(windowExpiry(windowSessionId), nowMs),
         ),
       )
       .returning(instanceSelection());
@@ -737,21 +639,21 @@ const retireOwnerBrowserWindow$ = command(
     const db = set(writeDb$);
     const nowMs = now.getTime();
     const scoped = ownedInstance(owner, action.instanceId);
-    const generation = action.windowGeneration;
+    const windowSessionId = action.windowSessionId;
     const rows = await db
       .update(instances)
       .set({
-        windows: lifetime(generation, sql`'{"state":"closing"}'::jsonb`),
+        windows: lifetime(windowSessionId, sql`'{"state":"closing"}'::jsonb`),
         updatedAt: now,
       })
       .where(
         and(
           scoped,
           inArray(instances.status, ["active", "stopping"]),
-          ownedWindow(owner, generation),
-          inArray(windowState(generation), ["creating", "active"]),
+          ownedWindow(owner, windowSessionId),
+          inArray(windowState(windowSessionId), ["creating", "active"]),
           action.reason === "expired"
-            ? lte(windowExpiry(generation), nowMs)
+            ? lte(windowExpiry(windowSessionId), nowMs)
             : undefined,
         ),
       )
@@ -771,38 +673,20 @@ const completeOwnerBrowserWindowClose$ = command(
   ): Promise<InstanceRow[]> => {
     const db = set(writeDb$);
     const scoped = ownedInstance(owner, action.instanceId);
-    const closed = db.$with("closed_browser_window").as(
-      db
-        .update(instances)
-        .set({
-          windows: sql`${instances.windows} - ${action.windowGeneration}::text`,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            scoped,
-            ownedWindow(owner, action.windowGeneration),
-            eq(windowState(action.windowGeneration), "closing"),
-          ),
-        )
-        .returning(instanceSelection()),
-    );
-    const removed = db.$with("closed_browser_window_targets").as(
-      db
-        .delete(pages)
-        .where(
-          and(
-            eq(pages.instanceId, action.instanceId),
-            eq(pages.windowGeneration, action.windowGeneration),
-            exists(new QueryBuilder().select({ id: closed.id }).from(closed)),
-          ),
-        )
-        .returning({ id: pages.targetId }),
-    );
     const rows = await db
-      .with(closed, removed)
-      .select({ ...closed._.selectedFields })
-      .from(closed);
+      .update(instances)
+      .set({
+        windows: sql`${instances.windows} - ${action.windowSessionId}::text`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          scoped,
+          ownedWindow(owner, action.windowSessionId),
+          eq(windowState(action.windowSessionId), "closing"),
+        ),
+      )
+      .returning(instanceSelection());
     signal.throwIfAborted();
     return rows;
   },
@@ -861,28 +745,11 @@ const completeOwnerBrowserStop$ = command(
   ): Promise<InstanceRow[]> => {
     const db = set(writeDb$);
     const scoped = ownedInstance(owner, action.instanceId);
-    const stopped = db.$with("stopped_owner_browser").as(
-      db
-        .update(instances)
-        .set({ status: "stopped", windows: {}, updatedAt: now })
-        .where(and(scoped, eq(instances.status, "stopping")))
-        .returning(instanceSelection()),
-    );
-    const removed = db.$with("stopped_owner_browser_targets").as(
-      db
-        .delete(pages)
-        .where(
-          and(
-            eq(pages.instanceId, action.instanceId),
-            exists(new QueryBuilder().select({ id: stopped.id }).from(stopped)),
-          ),
-        )
-        .returning({ id: pages.targetId }),
-    );
     const rows = await db
-      .with(stopped, removed)
-      .select({ ...stopped._.selectedFields })
-      .from(stopped);
+      .update(instances)
+      .set({ status: "stopped", windows: {}, updatedAt: now })
+      .where(and(scoped, eq(instances.status, "stopping")))
+      .returning(instanceSelection());
     signal.throwIfAborted();
     return rows;
   },
@@ -911,9 +778,9 @@ export const controlBrowserOwner$ = command(
         rows = await set(admitOwnerBrowserWindow$, owner, action, now, signal);
         break;
       }
-      case "registerTarget": {
+      case "registerAuxiliaryWindow": {
         rows = await set(
-          registerOwnerBrowserTarget$,
+          registerOwnerBrowserAuxiliaryWindow$,
           owner,
           action,
           now,

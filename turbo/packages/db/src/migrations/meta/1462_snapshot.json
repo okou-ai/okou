@@ -1,5 +1,5 @@
 {
-  "id": "3059f47b-d488-401b-849c-c14a46319677",
+  "id": "ef53790f-4f6b-4cff-9322-40a2a44f4038",
   "prevId": "d2149a80-1ef2-451d-a3fd-88fbef1675b3",
   "version": "7",
   "dialect": "postgresql",
@@ -4695,111 +4695,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.browser_page_ownership": {
-      "name": "browser_page_ownership",
-      "schema": "",
-      "columns": {
-        "instance_id": {
-          "name": "instance_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "target_id": {
-          "name": "target_id",
-          "type": "varchar(256)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "window_generation": {
-          "name": "window_generation",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "chat_thread_id": {
-          "name": "chat_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "native_window_id": {
-          "name": "native_window_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "opener_target_id": {
-          "name": "opener_target_id",
-          "type": "varchar(256)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_browser_page_ownership_window": {
-          "name": "idx_browser_page_ownership_window",
-          "columns": [
-            {
-              "expression": "instance_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "window_generation",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "browser_page_ownership_instance_id_browser_owner_instances_id_fk": {
-          "name": "browser_page_ownership_instance_id_browser_owner_instances_id_fk",
-          "tableFrom": "browser_page_ownership",
-          "tableTo": "browser_owner_instances",
-          "columnsFrom": [
-            "instance_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "browser_page_ownership_instance_id_target_id_pk": {
-          "name": "browser_page_ownership_instance_id_target_id_pk",
-          "columns": [
-            "instance_id",
-            "target_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "browser_page_ownership_native_window_check": {
-          "name": "browser_page_ownership_native_window_check",
-          "value": "\"browser_page_ownership\".\"native_window_id\" > 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.browser_authorization_requests": {
       "name": "browser_authorization_requests",
       "schema": "",
@@ -5804,8 +5699,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "window_generation": {
-          "name": "window_generation",
+        "window_session_id": {
+          "name": "window_session_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -29562,24 +29457,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "pricing_unit_price": {
-          "name": "pricing_unit_price",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pricing_unit_size": {
-          "name": "pricing_unit_size",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pricing_credits_limit": {
-          "name": "pricing_credits_limit",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
         "credits_charged": {
           "name": "credits_charged",
           "type": "bigint",
@@ -29609,6 +29486,24 @@
         "processed_at": {
           "name": "processed_at",
           "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pricing_unit_price": {
+          "name": "pricing_unit_price",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pricing_unit_size": {
+          "name": "pricing_unit_size",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pricing_credits_limit": {
+          "name": "pricing_credits_limit",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": false
         }
@@ -32292,12 +32187,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "source_cost_usd_micros_per_credit": {
-          "name": "source_cost_usd_micros_per_credit",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -32311,6 +32200,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "source_cost_usd_micros_per_credit": {
+          "name": "source_cost_usd_micros_per_credit",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
