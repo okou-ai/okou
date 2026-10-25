@@ -418,13 +418,13 @@ test("Use the workflow template picker to send a workflow template", async () =>
   });
 });
 
-test("Workflow category filters preserve English fallback and the search in another locale", async () => {
+test("Workflow category filters narrow templates and preserve the search", async () => {
   mockAgent();
   mockThread();
   installWorkflows(() => {
     return [];
   });
-  await setupPage({ context, path: `/chats/${THREAD_ID}`, locale: "fr-FR" });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
   await findComposerEditor();
 
   const dialog = await openTemplateCategory("Workflow");

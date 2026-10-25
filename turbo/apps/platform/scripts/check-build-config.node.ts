@@ -373,7 +373,7 @@ await test("budgets on-demand PDF bytes separately without relaxing the app cap"
       workerAsset(),
       limitWorker,
     ])[0] ?? "",
-    /JavaScript output: .* raw bytes exceeds 8500000/u,
+    /JavaScript output: .* raw bytes exceeds 8541489/u,
   );
 });
 

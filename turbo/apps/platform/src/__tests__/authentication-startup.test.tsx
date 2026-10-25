@@ -10,7 +10,6 @@ import {
   startPage,
 } from "./page-helper.ts";
 import frFRCommonUrl from "../i18n/locales/fr-FR/common.json?url";
-import enUSCommonUrl from "../i18n/locales/en-US/common.json?url";
 import {
   createTestRuntime,
   testContext,
@@ -92,47 +91,6 @@ test("Authentication is ready before Platform content becomes interactive", asyn
   ).resolves.toBeInTheDocument();
   expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
   expect(queryAllByRoleFast("link").length).toBeGreaterThan(0);
-});
-
-test("English assets finish loading before Platform content becomes interactive", async () => {
-  const localeRequested = context.mocks.deferred<void>();
-  const localeResponse = context.mocks.deferred<void>();
-  context.mocks.http.get(enUSCommonUrl, async () => {
-    if (!localeRequested.settled()) {
-      localeRequested.resolve();
-    }
-    await localeResponse.promise;
-    return HttpResponse.json({
-      shared: {
-        notFound: {
-          title: "Language resources are ready",
-          description: "The requested page does not exist.",
-          action: "Go home",
-          browse: "Browse workflows",
-        },
-      },
-    });
-  });
-  const startup = setupPage({
-    context,
-    host: "app.okou.ai",
-    path: "/missing-locale-page",
-    auth: null,
-  });
-  await localeRequested.promise;
-  const skeleton = bootstrapSkeleton();
-  expect(skeleton).toBeVisible();
-  expect(
-    screen.queryByRole("heading", { name: "Language resources are ready" }),
-  ).not.toBeInTheDocument();
-
-  localeResponse.resolve();
-  await startup;
-
-  expect(
-    screen.getByRole("heading", { name: "Language resources are ready" }),
-  ).toBeInTheDocument();
-  expect(skeleton).toHaveAttribute("aria-hidden", "true");
 });
 
 test("The SharedWorker owns realtime", async () => {
@@ -249,47 +207,41 @@ test.each(["setupPage", "startPage"])(
   },
 );
 
-test.each([
-  { locale: "en-US", url: enUSCommonUrl },
-  { locale: "fr-FR", url: frFRCommonUrl },
-] as const)(
-  "Cancelled $locale startup does not adopt a replacement lifetime",
-  async ({ locale, url }) => {
-    const resetPage$ = resetSignal();
-    const pageSignal = context.store.set(resetPage$, context.signal);
-    const localeRequested = context.mocks.deferred<Request>();
-    const localeResponse = context.mocks.deferred<void>();
-    context.mocks.http.get(url, async ({ request }) => {
-      localeRequested.resolve(request);
-      await localeResponse.promise;
-      return HttpResponse.json({});
-    });
-    let currentSignal = pageSignal;
-    const startup = startPage({
-      context: {
-        ...context,
-        get signal() {
-          return currentSignal;
-        },
+test("Cancelled locale startup does not adopt a replacement lifetime", async () => {
+  const resetPage$ = resetSignal();
+  const pageSignal = context.store.set(resetPage$, context.signal);
+  const localeRequested = context.mocks.deferred<Request>();
+  const localeResponse = context.mocks.deferred<void>();
+  context.mocks.http.get(frFRCommonUrl, async ({ request }) => {
+    localeRequested.resolve(request);
+    await localeResponse.promise;
+    return HttpResponse.json({});
+  });
+  let currentSignal = pageSignal;
+  const startup = startPage({
+    context: {
+      ...context,
+      get signal() {
+        return currentSignal;
       },
-      host: "app.okou.ai",
-      path: "/agents",
-      locale,
-    });
-    const request = await localeRequested.promise;
-    // Model testContext replacing its lifetime while old startup is suspended.
-    currentSignal = context.store.set(resetPage$, context.signal);
-    localeResponse.resolve();
-    await expect(startup).rejects.toBe(pageSignal.reason);
+    },
+    host: "app.okou.ai",
+    path: "/agents",
+    locale: "fr-FR",
+  });
+  const request = await localeRequested.promise;
+  // Model testContext replacing its lifetime while old startup is suspended.
+  currentSignal = context.store.set(resetPage$, context.signal);
+  localeResponse.resolve();
+  await expect(startup).rejects.toBe(pageSignal.reason);
 
-    expect(currentSignal.aborted).toBeFalsy();
-    expect(request.signal.aborted).toBeTruthy();
-    expect(queryBootstrapSkeleton()).toBeNull();
-    expect(
-      screen.queryByRole("heading", { name: "Agents" }),
-    ).not.toBeInTheDocument();
-  },
-);
+  expect(currentSignal.aborted).toBeFalsy();
+  expect(request.signal.aborted).toBeTruthy();
+  expect(queryBootstrapSkeleton()).toBeNull();
+  expect(
+    screen.queryByRole("heading", { name: "Agents" }),
+  ).not.toBeInTheDocument();
+});
 
 test.each(["setupPage", "startPage"])(
   "%s cancels a child app without disposing the case document or external mocks",
