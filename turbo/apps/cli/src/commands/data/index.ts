@@ -1,9 +1,11 @@
 import { Command, InvalidArgumentError } from "commander";
 import { z } from "zod";
-import { listDataRouterTools } from "../../lib/api/data-router-client";
+import {
+  callDataRouterTool,
+  listDataRouterTools,
+} from "../../lib/api/data-router-client";
 import { isDataRouterToolEnabled } from "../../lib/command/paid-tools";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { printDataRouterTool } from "./print-result";
 
 function inputObject(value: string): Record<string, unknown> {
   let parsed: unknown;
@@ -83,7 +85,11 @@ export function createDataCommand(): Command {
           name: string,
           options: { input: Record<string, unknown>; json?: boolean },
         ) => {
-          await printDataRouterTool(name, options.input, options.json);
+          const result = await callDataRouterTool(name, options.input);
+          console.log(
+            JSON.stringify(result.body, null, options.json ? undefined : 2),
+          );
+          if (result.status >= 400) process.exitCode = 1;
         },
       ),
     );

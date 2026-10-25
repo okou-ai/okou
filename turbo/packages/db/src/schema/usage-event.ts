@@ -2,14 +2,12 @@ import {
   pgTable,
   check,
   uuid,
-  varchar,
-  text,
   bigint,
-  timestamp,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { usageEventColumns } from "../columns/usage-event";
 import { agentRuns } from "./agent-run";
 
 /**
@@ -60,34 +58,18 @@ import { agentRuns } from "./agent-run";
 export const usageEvent = pgTable(
   "usage_event",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
+    ...usageEventColumns(),
     runId: uuid("run_id").references(
       () => {
         return agentRuns.id;
       },
       { onDelete: "set null" },
     ),
-    idempotencyKey: uuid("idempotency_key").notNull(),
-    orgId: text("org_id").notNull(),
-    userId: text("user_id").notNull(),
-    // Original identity survives run_id SET NULL. Missing historical context is
-    // explicit. Publication validates ownership; settlement resolves the captured
-    // credit policy through the retained billing attribution.
-    billingRunId: uuid("billing_run_id"),
-    billingAnchorAt: timestamp("billing_anchor_at"),
-    billingContext: text("billing_context").notNull().default("legacy_unknown"),
-    kind: varchar("kind", { length: 30 }).notNull(),
-    provider: text("provider").notNull(),
-    category: varchar("category", { length: 100 }).notNull(),
-    quantity: bigint("quantity", { mode: "number" }).notNull(),
+    // Keep physical storage until this runtime is deployed, preceding API SQL
+    // has drained and incompatible rollback targets are excluded.
     pricingUnitPrice: bigint("pricing_unit_price", { mode: "number" }),
     pricingUnitSize: bigint("pricing_unit_size", { mode: "number" }),
     pricingCreditsLimit: bigint("pricing_credits_limit", { mode: "number" }),
-    creditsCharged: bigint("credits_charged", { mode: "number" }),
-    status: varchar("status", { length: 20 }).notNull().default("pending"),
-    billingError: varchar("billing_error", { length: 50 }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    processedAt: timestamp("processed_at"),
   },
   (table) => {
     return [

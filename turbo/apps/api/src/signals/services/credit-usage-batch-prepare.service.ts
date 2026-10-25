@@ -1,7 +1,7 @@
 import { priceUsageEvents } from "./credit-usage-pricing";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
-import { usageEvent } from "@okouai/db/schema/usage-event";
-import { usagePricing } from "@okouai/db/schema/usage-pricing";
+import { usageEvent } from "@okouai/db/runtime/usage-event";
+import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { command } from "ccstate";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { writeDb$ } from "../external/db";

@@ -8,7 +8,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { hostRoutes } from "../host";
 import { expectApiError } from "./helpers/api-bdd";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
-import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
+import { createHostBddApi } from "./helpers/api-bdd-host";
 import {
   createChatEventsFixture,
   okouTokenFromClaim,
@@ -16,7 +16,7 @@ import {
 
 const context = testContext();
 const fixture = createChatEventsFixture(context);
-const host = createHostMapsBddApi(context);
+const host = createHostBddApi(context);
 
 function hostedSiteBody(site: string, content: string) {
   return {

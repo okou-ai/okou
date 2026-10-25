@@ -8,7 +8,7 @@ import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { hostRoutes } from "../host";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
+import { createHostBddApi } from "./helpers/api-bdd-host";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -40,7 +40,7 @@ async function enable(user: ApiTestUser, enabled = true) {
 }
 async function publish() {
   const owner = createBddApi(context).user();
-  const api = createHostMapsBddApi(context);
+  const api = createHostBddApi(context);
   api.captureHostedSitesS3();
   const name = `url-${randomUUID().slice(0, 8)}`;
   const prepared = await api.prepareHostedSite(owner, {

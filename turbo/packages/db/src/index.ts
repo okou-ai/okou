@@ -46,7 +46,7 @@ import * as builtinConnectorExternalCodeSessionSchema from "./schema/connector-e
 import * as modelProviderAuthSessionSchema from "./schema/model-provider-auth-session";
 import * as builtinConnectorOauthDeviceAuthorizationSessionSchema from "./schema/connector-oauth-device-authorization-session";
 import * as connectorOauthStateSchema from "./schema/connector-oauth-state";
-import * as usageEventSchema from "./schema/usage-event";
+import * as usageEventSchema from "./runtime/usage-event";
 import * as xResourceUsageSchema from "./schema/x-resource-usage";
 import * as usageEventHourlyRollupSchema from "./schema/usage-event-hourly-rollup";
 import * as usagePackCreditGrantSchema from "./schema/usage-pack-credit-grant";
@@ -98,7 +98,7 @@ import * as backgroundJobSchema from "./schema/background-job";
 import * as userExportEntrySchema from "./schema/user-export-entry";
 import * as emailSuppressionSchema from "./schema/email-suppression";
 import * as skillSchema from "./schema/skill";
-import * as usagePricingSchema from "./schema/usage-pricing";
+import * as usagePricingSchema from "./runtime/usage-pricing";
 import * as agentDraftSchema from "./schema/agent-draft";
 import * as chatThreadDraftSchema from "./schema/chat-thread-draft";
 import * as userPermissionGrantSchema from "./schema/user-permission-grant";
@@ -138,10 +138,6 @@ import * as sharedThreadSchema from "./schema/shared-thread";
 import * as userArtifactFavoriteSchema from "./schema/user-artifact-favorite";
 import * as builtInGenerationJobSchema from "./schema/built-in-generation-job";
 import * as openaiImageWebhookReceiptSchema from "./schema/openai-image-webhook-receipt";
-import * as socialKitDownloadJobSchema from "./schema/socialkit-download-job";
-import * as socialDataJobSchema from "./schema/social-data-job";
-import * as dataSearchJobSchema from "./schema/data-search-job";
-import * as commerceJobSchema from "./schema/commerce-job";
 import * as bankingSchema from "./schema/banking";
 import * as linkWalletSchema from "./schema/link-wallet";
 import * as gmailEventSchema from "./schema/gmail-event";
@@ -304,10 +300,6 @@ export const schema = {
   ...userArtifactFavoriteSchema,
   ...builtInGenerationJobSchema,
   ...openaiImageWebhookReceiptSchema,
-  ...socialKitDownloadJobSchema,
-  ...socialDataJobSchema,
-  ...dataSearchJobSchema,
-  ...commerceJobSchema,
   ...bankingSchema,
   ...linkWalletSchema,
   ...gmailEventSchema,

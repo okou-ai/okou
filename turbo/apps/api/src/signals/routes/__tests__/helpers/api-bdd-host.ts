@@ -133,7 +133,7 @@ function objectPreconditionFails(
   );
 }
 
-export function createHostMapsBddApi(context: TestContext) {
+export function createHostBddApi(context: TestContext) {
   function hostClient() {
     return setupAppWithRoutes({
       context,

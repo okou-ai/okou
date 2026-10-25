@@ -11,7 +11,7 @@ import {
   persistedAttachment,
 } from "./helpers/api-bdd-chat-files";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
-import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
+import { createHostBddApi } from "./helpers/api-bdd-host";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -814,7 +814,7 @@ describe("FILE-01 uploads, storage, and host APIs", () => {
   });
 
   it("prepares and completes a hosted-site deployment through host APIs", async () => {
-    createHostMapsBddApi(context).captureHostedSitesS3();
+    createHostBddApi(context).captureHostedSitesS3();
     const actor = bdd.user();
     const site = `bdd-site-${randomUUID().slice(0, 8)}`;
 

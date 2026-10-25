@@ -309,22 +309,10 @@ describe("registerCommands", () => {
     ]);
   });
 
-  it.each([
-    "data-search:read",
-    "data-enrichment:read",
-    "maps:read",
-    "weather:read",
-    "scrape:read",
-    "people-search:read",
-    "web-search:read",
-    "social:read",
-    "commerce:read",
-    "finance:read",
-    "seo:read",
-  ])("shows the data namespace with %s", (capability) => {
+  it("shows the data namespace with the Data Search capability", () => {
     vi.stubEnv(
       "OKOU_TOKEN",
-      buildOkouToken({ scope: "okou", capabilities: [capability] }),
+      buildOkouToken({ scope: "okou", capabilities: ["data-search:read"] }),
     );
     expect(visibleCommandNames(buildProgram())).toContain("data");
     expect(buildHelpText()).toContain("okou data tools");

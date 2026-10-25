@@ -12,7 +12,7 @@ import {
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
-import { usagePricing } from "@okouai/db/schema/usage-pricing";
+import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { skills } from "@okouai/db/schema/skill";
 import { storages } from "@okouai/db/schema/storage";

@@ -13,7 +13,7 @@ import { hostRoutes } from "../host";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { artifactOgRoutes } from "../artifact-og";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
+import { createHostBddApi } from "./helpers/api-bdd-host";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -117,7 +117,7 @@ test.each([
   "creation establishes %s visibility before publishing bytes",
   async (visibility, expected) => {
     const owner = createBddApi(context).user();
-    const api = createHostMapsBddApi(context);
+    const api = createHostBddApi(context);
     api.captureHostedSitesS3();
     await enable(owner);
     const prepared = await api.prepareHostedSite(owner, {
@@ -220,7 +220,7 @@ test("an explicitly private redeployment restricts the site before new bytes are
 
 async function publish() {
   const owner = createBddApi(context).user();
-  const api = createHostMapsBddApi(context);
+  const api = createHostBddApi(context);
   api.captureHostedSitesS3();
   const site = `access-${randomUUID().slice(0, 8)}`;
   const input = {

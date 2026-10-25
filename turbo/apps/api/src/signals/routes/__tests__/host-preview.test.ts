@@ -30,7 +30,7 @@ import { hostRoutes } from "../host";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
-import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
+import { createHostBddApi } from "./helpers/api-bdd-host";
 import {
   createChatEventsFixture,
   okouTokenFromClaim,
@@ -38,7 +38,7 @@ import {
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const host = createHostMapsBddApi(context);
+const host = createHostBddApi(context);
 const chat = createChatFilesBddApi(context);
 
 /** Model real uploads through the returned presigned URL; no private DB setup. */
