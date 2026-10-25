@@ -2226,6 +2226,7 @@ describe("Official Workflow failure recovery", () => {
       runs.heartbeatRunner(runnerGroup),
     ]);
     const claim = await runs.claimRunnerJob(fired.runId);
+    expect(claim.cliAgentType).toBe("claude-code");
     mockNow(new Date("2030-01-01T00:10:00.000Z"));
     const schedule = {
       type: "cron" as const,
@@ -2245,11 +2246,9 @@ describe("Official Workflow failure recovery", () => {
       nextRunAt: "2030-01-01T01:00:00.000Z",
     });
     mockNow(new Date("2030-01-01T00:15:00.000Z"));
-    await createChatEventsFixture(context).completeChatRunOk(
-      fired.runId,
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      { cliAgentType: "pi", cliAgentSessionId: claim.piSessionId },
-    );
+    await createChatEventsFixture(context).completeChatRunOk(fired.runId, {
+      authorization: `Bearer ${claim.sandboxToken}`,
+    });
     await flushWaitUntilForTest();
     const completed = await accept(
       client.get({
