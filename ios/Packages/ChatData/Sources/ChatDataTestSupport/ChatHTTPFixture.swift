@@ -95,9 +95,13 @@ private final class ChatFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     do {
       guard let url = request.url, let route, url.host == owner else {
         if let route {
-          route.report(description)
+          route.report(description + " [fixture owner \(owner); URL origin mismatch]")
         } else {
-          for owner in Self.handlers.withLock({ Array($0.values) }) { owner.report(description) }
+          for (registeredHost, registeredRoute) in Self.handlers.withLock({ Array($0) }) {
+            registeredRoute.report(
+              description
+                + " [no live route for owner \(owner); reported to fixture \(registeredHost)]")
+          }
         }
         throw URLError(.unsupportedURL, userInfo: [NSLocalizedDescriptionKey: description])
       }
@@ -107,7 +111,7 @@ private final class ChatFixtureURLProtocol: URLProtocol, @unchecked Sendable {
       do { result = try await route.handler(forwarded) } catch let error as URLError
         where error.code == .unsupportedURL
       {
-        route.report(description)
+        route.report(description + " [owned handler rejected request for fixture \(owner)]")
         throw error
       }
       try Task.checkCancellation()

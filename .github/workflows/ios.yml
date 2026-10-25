@@ -16,6 +16,10 @@ on:
         description: Compare first and warm test startup on one runner using identical build products
         type: boolean
         default: false
+      trace_fixture_attribution:
+        description: Run targeted fixture-isolation diagnostics after the full native suite
+        type: boolean
+        default: false
       test_process_mode:
         description: Compare split invocations with sequential build-for-testing and test-without-building actions
         type: choice
@@ -253,6 +257,21 @@ jobs:
       - name: Build app and run isolated simulator tests
         if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
         run: bash ios/scripts/run-ci-tests.sh
+      - name: Diagnose fixture ownership across repeated mention tests
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.trace_fixture_attribution
+        run: |
+          shopt -s nullglob
+          test_specs=("$RUNNER_TEMP/okou-ios-ci/DerivedData/Build/Products/"*.xctestrun)
+          [[ ${#test_specs[@]} -eq 1 ]]
+          xcodebuild -xctestrun "${test_specs[0]}" \
+            -destination "$IOS_TEST_DESTINATION" \
+            -parallel-testing-enabled NO \
+            -maximum-concurrent-test-simulator-destinations 1 \
+            -collect-test-diagnostics never \
+            -only-testing:OkouTests/ChatComposerMentionTests \
+            -test-iterations 10 \
+            -resultBundlePath "$RUNNER_TEMP/okou-ios-ci/FixtureTrace.xcresult" \
+            test-without-building
       - name: Upload Xcode startup observations
         if: always() && github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
