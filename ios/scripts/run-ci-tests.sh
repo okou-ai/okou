@@ -9,6 +9,7 @@ repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 ios_preboot_pid=""
 ios_phase_pid=""
+ios_fresh_device_file=""
 cleanup() {
   local ios_child
   for ios_child in "$ios_preboot_pid" "$ios_phase_pid"; do
@@ -17,6 +18,20 @@ cleanup() {
       wait "$ios_child" 2>/dev/null || true
     fi
   done
+  if [[ -n "$ios_fresh_device_file" && -f "$ios_fresh_device_file" ]]; then
+    local ios_fresh_udid
+    ios_fresh_udid=$(python3 - "$ios_fresh_device_file" <<'PY'
+import json, sys, uuid
+record = json.load(open(sys.argv[1]))
+assert record['udid'] != record['source_udid']
+print(str(uuid.UUID(record['udid'])).upper())
+PY
+    )
+    xcrun simctl shutdown "$ios_fresh_udid" 2>/dev/null || true
+    if ! xcrun simctl delete "$ios_fresh_udid"; then
+      echo "Fresh simulator cleanup failed for $ios_fresh_udid" >&2
+    fi
+  fi
 }
 trap cleanup EXIT
 trap 'exit 130' INT
@@ -35,6 +50,17 @@ case "$ios_process_mode" in
 esac
 echo "iOS test process mode: $ios_process_mode"
 ios_repeat_startup=${IOS_REPEAT_TEST_STARTUP:-false}
+if [[ "${IOS_FRESH_SIMULATOR_PROBE:-false}" == true ]]; then
+  if [[ "$ios_repeat_startup" != true ]]; then
+    echo 'Fresh simulator comparison requires startup repetition' >&2
+    exit 2
+  fi
+  if [[ -e "$RUNNER_TEMP/okou-ios-ci/fresh-device.json" ]]; then
+    echo 'Fresh simulator comparison requires a new identity record' >&2
+    exit 2
+  fi
+  ios_fresh_device_file="$RUNNER_TEMP/okou-ios-ci/fresh-device.json"
+fi
 if [[ "$ios_repeat_startup" == true ]]; then
   if [[ "${GITHUB_EVENT_NAME:-}" != workflow_dispatch || "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true ]]; then
     echo 'Startup repetition requires a manual run with stack sampling disabled' >&2
@@ -91,7 +117,23 @@ ios_phase_pid=""
 if [[ "$ios_repeat_startup" == true ]]; then
   # A failed first suite exits above. This is a second full measurement, not a retry.
   mv "$RUNNER_TEMP/okou-ios-ci/Tests.xcresult" "$RUNNER_TEMP/okou-ios-ci/ColdTests.xcresult"
-  echo 'iOS test startup round: warm'
+  ios_repeat_label=warm
+  if [[ "${IOS_FRESH_SIMULATOR_PROBE:-false}" == true ]]; then
+    ios_fresh_started=$SECONDS
+    python3 ops/ios-fresh-simulator-probe.py &
+    ios_preboot_pid=$!
+    wait "$ios_preboot_pid"
+    ios_preboot_pid=""
+    IOS_TEST_DESTINATION=$(python3 - "$ios_fresh_device_file" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1]))['destination'])
+PY
+    )
+    export IOS_TEST_DESTINATION
+    echo "iOS fresh simulator preparation: $((SECONDS - ios_fresh_started)) seconds"
+    ios_repeat_label=fresh
+  fi
+  echo "iOS test startup round: $ios_repeat_label"
   shasum -a 256 "$RUNNER_TEMP/okou-ios-ci/DerivedData/Build/Products/"*.xctestrun
   echo "iOS starting test-without-building"
   bash ios/scripts/ci-test.sh run &
