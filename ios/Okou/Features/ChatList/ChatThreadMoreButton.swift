@@ -19,7 +19,7 @@ private struct ChatThreadMoreControl: UIViewRepresentable {
 
   func makeUIView(context: Context) -> UIButton {
     let button = UIButton(type: .system)
-    var configuration = UIButton.Configuration.plain()
+    var configuration = UIButton.Configuration.glass()
     configuration.cornerStyle = .capsule
     configuration.contentInsets = .zero
     configuration.image = UIImage(systemName: "ellipsis")
