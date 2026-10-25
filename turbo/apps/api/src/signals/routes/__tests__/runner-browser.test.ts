@@ -10,7 +10,11 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env } from "../../../lib/env";
-import { mockNow, withNowScopeForTest } from "../../../lib/time";
+import {
+  mockNow,
+  withMockNowForTest,
+  withNowScopeForTest,
+} from "../../../lib/time";
 import { runnerBrowserRoutes } from "../runner-browser";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -448,16 +452,30 @@ describe("official Runner Browser lifecycle", () => {
           return result.outcome;
         }),
       ).toStrictEqual(["accepted", "unavailable"]);
-      mockNow(START + 19 * MINUTE);
+      // In-flight requests straddle the stored deadline: each is eligible
+      // against its own request time until the competing transition wins.
       const atExpiry = await Promise.all([
-        a.request({ kind: "renew", ...wa }),
-        a.request({ kind: "retire", ...wa, reason: "expired" }),
+        withMockNowForTest(START + 18 * MINUTE, () => {
+          return a.request({ kind: "renew", ...wa });
+        }),
+        withMockNowForTest(START + 19 * MINUTE, () => {
+          return a.request({ kind: "retire", ...wa, reason: "expired" });
+        }),
       ]);
       expect(
-        atExpiry.map((result) => {
-          return result.outcome;
-        }),
-      ).toStrictEqual(["unavailable", "accepted"]);
+        atExpiry
+          .map((result) => {
+            return result.outcome;
+          })
+          .sort(),
+      ).toStrictEqual(["accepted", "unavailable"]);
+      mockNow(START + 28 * MINUTE);
+      if (atExpiry[0]?.outcome === "accepted") {
+        accepted(await a.request({ kind: "retire", ...wa, reason: "expired" }));
+      }
+      await expect(a.request({ kind: "renew", ...wa })).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
       const competing = await Promise.all([
         a.request({ kind: "beginStop", instanceId: instance.id }),
         b.request({ kind: "admit", instanceId: instance.id }),
@@ -474,7 +492,7 @@ describe("official Runner Browser lifecycle", () => {
           a.request({ kind: "beginStop", instanceId: instance.id }),
         ).resolves.toStrictEqual({ outcome: "unavailable" });
         // The incomplete creation is bounded and cannot retain the instance forever.
-        mockNow(START + 20 * MINUTE);
+        mockNow(START + 29 * MINUTE);
         accepted(
           await a.request({ kind: "beginStop", instanceId: instance.id }),
         );
@@ -497,7 +515,7 @@ describe("official Runner Browser lifecycle", () => {
       await expect(
         b.request({ kind: "beginStop", instanceId: replacement.id }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
-      mockNow(START + 21 * MINUTE);
+      mockNow(START + 30 * MINUTE);
       await expect(
         b.request({
           kind: "publish",

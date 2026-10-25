@@ -1,14 +1,15 @@
 import { runnerBrowserContract } from "@okouai/api-contracts/contracts/runner-browser";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { runnerAuth$ } from "../auth/runner-auth";
 import { authorization$, setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
   controlBrowserOwner$,
-  resolveRunnerBrowserAuthority$,
+  createRunnerBrowserAuthority,
+  createRunnerBrowserInspection,
 } from "../services/browser-owner.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 
@@ -19,6 +20,19 @@ const cleanupActions = [
   "beginStop",
   "completeStop",
 ] as const;
+
+const controlInput$ = computed(async (get) => {
+  const body = await get(bodyResultOf(runnerBrowserContract.control));
+  return body.ok
+    ? { ...get(pathParamsOf(runnerBrowserContract.control)), ...body.data }
+    : null;
+});
+const owner$ = createRunnerBrowserAuthority(controlInput$);
+const inspectAction$ = computed(async (get) => {
+  const input = await get(controlInput$);
+  return input?.action.kind === "inspect" ? input.action : null;
+});
+const inspection$ = createRunnerBrowserInspection(owner$, inspectAction$);
 
 const control$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
@@ -48,12 +62,8 @@ const control$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  const { runId } = get(pathParamsOf(runnerBrowserContract.control));
-  const owner = await set(
-    resolveRunnerBrowserAuthority$,
-    { runId, runnerIdentity: body.data.runnerIdentity },
-    signal,
-  );
+  const owner = await get(owner$);
+  signal.throwIfAborted();
   if (!owner) {
     return { status: 200 as const, body: { outcome: "unavailable" as const } };
   }
@@ -74,6 +84,11 @@ const control$ = command(async ({ get, set }, signal: AbortSignal) => {
     })
   ) {
     return { status: 200 as const, body: { outcome: "unavailable" as const } };
+  }
+  if (body.data.action.kind === "inspect") {
+    const result = await get(inspection$);
+    signal.throwIfAborted();
+    return { status: 200 as const, body: result };
   }
   const result = await set(
     controlBrowserOwner$,

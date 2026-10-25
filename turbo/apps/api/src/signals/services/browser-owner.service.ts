@@ -19,7 +19,7 @@ import {
   browserSessionInstances,
   browserThreadProfiles,
 } from "@okouai/db/schema/browser-session";
-import { command } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import {
   and,
   eq,
@@ -242,12 +242,14 @@ function response(
   };
 }
 
-export const resolveRunnerBrowserAuthority$ = command(
-  async (
-    { get },
-    input: RunnerBrowserIdentity,
-    signal: AbortSignal,
-  ): Promise<BrowserOwnerAuthority | null> => {
+export function createRunnerBrowserAuthority(
+  input$: Computed<Promise<RunnerBrowserIdentity | null>>,
+) {
+  return computed(async (get): Promise<BrowserOwnerAuthority | null> => {
+    const input = await get(input$);
+    if (!input) {
+      return null;
+    }
     const [run] = await get(db$)
       .select({
         orgId: agentRuns.orgId,
@@ -256,12 +258,11 @@ export const resolveRunnerBrowserAuthority$ = command(
       })
       .from(agentRuns)
       .where(currentRun(input));
-    signal.throwIfAborted();
     return run?.chatThreadId
       ? { ...input, ...run, chatThreadId: run.chatThreadId }
       : null;
-  },
-);
+  });
+}
 
 /** Each accepted lifecycle transition is one statement over current stored business state. */
 type BrowserAction<K extends RunnerBrowserAction["kind"]> = Extract<
@@ -269,14 +270,17 @@ type BrowserAction<K extends RunnerBrowserAction["kind"]> = Extract<
   { kind: K }
 >;
 
-const inspectOwnerBrowser$ = command(
-  async (
-    { get },
-    owner: BrowserOwnerAuthority,
-    action: BrowserAction<"inspect">,
-    signal: AbortSignal,
-  ): Promise<InstanceRow[]> => {
-    const rows = await get(db$)
+export function createRunnerBrowserInspection(
+  owner$: Computed<Promise<BrowserOwnerAuthority | null>>,
+  action$: Computed<Promise<BrowserAction<"inspect"> | null>>,
+) {
+  return computed(async (get): Promise<RunnerBrowserResponse> => {
+    const owner = await get(owner$);
+    const action = await get(action$);
+    if (!owner || !action) {
+      return { outcome: "unavailable" };
+    }
+    const [row] = await get(db$)
       .select({
         ...getTableColumns(instances),
         providerProfileId: profiles.providerProfileId,
@@ -293,10 +297,9 @@ const inspectOwnerBrowser$ = command(
             : eq(instances.id, action.instanceId),
         ),
       );
-    signal.throwIfAborted();
-    return rows;
-  },
-);
+    return response(row, owner.chatThreadId);
+  });
+}
 
 const allocateOwnerBrowser$ = command(
   async (
@@ -890,16 +893,12 @@ export const controlBrowserOwner$ = command(
   async (
     { set },
     owner: BrowserOwnerAuthority,
-    action: RunnerBrowserAction,
+    action: Exclude<RunnerBrowserAction, { kind: "inspect" }>,
     signal: AbortSignal,
   ): Promise<RunnerBrowserResponse> => {
     const now = nowDate();
     let rows: InstanceRow[];
     switch (action.kind) {
-      case "inspect": {
-        rows = await set(inspectOwnerBrowser$, owner, action, signal);
-        break;
-      }
       case "allocate": {
         rows = await set(allocateOwnerBrowser$, owner, action, now, signal);
         break;
