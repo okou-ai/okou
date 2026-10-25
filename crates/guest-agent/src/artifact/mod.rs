@@ -56,6 +56,12 @@ pub(crate) struct FileEntry {
 
 pub(crate) struct SnapshotResult {
     pub(crate) version_id: String,
+    pub(crate) publication: SnapshotPublication,
+}
+
+pub(crate) enum SnapshotPublication {
+    Published,
+    Conflict(AgentError),
 }
 
 pub(crate) struct CreateSnapshotRequest<'a> {
@@ -230,19 +236,26 @@ pub(crate) async fn create_snapshot(
         // Validate the local manifest inputs before committing the existing
         // version as HEAD, since this branch does not build an archive.
         validate_dedup_snapshot(request.mount_path, Arc::clone(&request.files)).await?;
-        commit_snapshot_step(http, &request, &version_id, None).await?;
-        return Ok(SnapshotResult { version_id });
+        let publication = commit_snapshot_step(http, &request, &version_id, None).await?;
+        return Ok(SnapshotResult {
+            version_id,
+            publication,
+        });
     }
 
     let uploads = extract_uploads(prep.uploads)?;
     let archive = create_archive_bundle(request.mount_path, Arc::clone(&request.files)).await?;
     upload_archive_bundle(http, &uploads, &archive).await?;
-    commit_snapshot_step(http, &request, &version_id, Some(request.message)).await?;
+    let publication =
+        commit_snapshot_step(http, &request, &version_id, Some(request.message)).await?;
 
     let short_id = version_id.get(..8).unwrap_or(&version_id);
     log_info!(LOG_TAG, "Direct upload snapshot created: {short_id}");
 
-    Ok(SnapshotResult { version_id })
+    Ok(SnapshotResult {
+        version_id,
+        publication,
+    })
 }
 
 struct ArchiveBundle {
@@ -336,7 +349,7 @@ async fn commit_snapshot_step(
     request: &SnapshotRequest<'_>,
     version_id: &str,
     message: Option<&str>,
-) -> Result<(), AgentError> {
+) -> Result<SnapshotPublication, AgentError> {
     log_info!(LOG_TAG, "Calling commit endpoint...");
     let commit_start = std::time::Instant::now();
     let result = match commit_snapshot(
@@ -363,7 +376,13 @@ async fn commit_snapshot_step(
         result.is_ok(),
         None,
     );
-    result
+    match result {
+        Ok(()) => Ok(SnapshotPublication::Published),
+        Err(error @ AgentError::HttpStatus { status: 409, .. }) => {
+            Ok(SnapshotPublication::Conflict(error))
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn extract_uploads(uploads: Option<PreparedUploads>) -> Result<PreparedUploads, AgentError> {
