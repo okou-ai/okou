@@ -378,8 +378,8 @@ struct ChatSidebarView: View {
       .accessibilityLabel("Account")
     }
     .buttonStyle(.plain)
+    .frame(height: ChatComposerView.compactHeight)
     .padding(.horizontal, 16)
-    .padding(.top, 10)
-    .padding(.bottom, 12)
+    .padding(.top, 8)
   }
 }

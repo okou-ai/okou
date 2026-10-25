@@ -4,6 +4,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ChatComposerView: View {
+  static let compactHeight: CGFloat = 56
+
   @Binding var draft: String
   let isBusy: Bool
   let showsProgress: Bool
@@ -28,9 +30,9 @@ struct ChatComposerView: View {
   @State private var showsFiles = false
   @State private var selectedPhotos: [PhotosPickerItem] = []
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  private let cornerRadius: CGFloat = 28
   private let actionSize: CGFloat = 44
 
+  private var cornerRadius: CGFloat { Self.compactHeight / 2 }
   private var actionInset: CGFloat { cornerRadius - actionSize / 2 }
 
   private var hasText: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -156,7 +158,7 @@ struct ChatComposerView: View {
       .padding(.top, expandsInput ? 17 : 10)
       .padding(.bottom, expandsInput ? 62 : 10)
       .frame(
-        minHeight: expandsInput ? 116 : cornerRadius * 2,
+        minHeight: expandsInput ? 116 : Self.compactHeight,
         alignment: expandsInput ? .topLeading : .leading
       )
       .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
