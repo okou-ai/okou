@@ -16,6 +16,13 @@ Legacy `public` maps to `organization`.
 
 ## Run
 
+The manual **Copy Production Presentation Templates** GitHub workflow runs this
+operator from `main` inside the protected `production` environment. It defaults
+to `dry-run`; `copy` inspects before writing, verifies every destination package,
+and compares legacy row/Storage/HEAD fingerprints afterward. It stops if the
+inventory exceeds 100 records. It retains identifier-only receipts and refuses
+an apply job rerun; reconcile any uncertain result before dispatching again.
+
 Run from `turbo/packages/db` with locked workspace dependencies. Set
 `DATABASE_URL_FILE` to a private file containing the database URL. Supply
 `R2_ENDPOINT`, `R2_USER_STORAGES_BUCKET_NAME`, `R2_ACCESS_KEY_ID` and
