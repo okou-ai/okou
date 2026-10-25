@@ -2230,7 +2230,7 @@ describe("Official Workflow failure recovery", () => {
     mockNow(new Date("2030-01-01T00:10:00.000Z"));
     const schedule = {
       type: "cron" as const,
-      cronExpression: "0 * * * *",
+      cronExpression: "*/5 * * * *",
       timezone: "UTC",
     };
     const edited = await accept(
@@ -2243,9 +2243,9 @@ describe("Official Workflow failure recovery", () => {
     );
     expect(edited.body).toMatchObject({
       schedule,
-      nextRunAt: "2030-01-01T01:00:00.000Z",
+      nextRunAt: "2030-01-01T00:15:00.000Z",
     });
-    mockNow(new Date("2030-01-01T00:15:00.000Z"));
+    mockNow(new Date("2030-01-01T00:16:00.000Z"));
     await createChatEventsFixture(context).completeChatRunOk(fired.runId, {
       authorization: `Bearer ${claim.sandboxToken}`,
     });
@@ -2260,7 +2260,7 @@ describe("Official Workflow failure recovery", () => {
     expect(completed.body).toMatchObject({
       enabled: true,
       schedule,
-      nextRunAt: "2030-01-01T01:00:00.000Z",
+      nextRunAt: "2030-01-01T00:20:00.000Z",
     });
   });
 
