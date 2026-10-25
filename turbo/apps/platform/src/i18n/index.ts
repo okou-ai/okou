@@ -26,15 +26,19 @@ export async function loadInitialLocaleResources(
   locale: SupportedLocale,
   signal?: AbortSignal,
 ): Promise<InitialLocaleResources> {
-  const fallbackResources = await loadLocaleResources(DEFAULT_LOCALE, signal);
   if (locale === DEFAULT_LOCALE) {
     return {
       locale,
-      resources: { [DEFAULT_LOCALE]: fallbackResources },
+      resources: {
+        [DEFAULT_LOCALE]: await loadLocaleResources(DEFAULT_LOCALE, signal),
+      },
     };
   }
 
-  const localizedResources = await loadLocaleResources(locale, signal);
+  const [fallbackResources, localizedResources] = await Promise.all([
+    loadLocaleResources(DEFAULT_LOCALE, signal),
+    loadLocaleResources(locale, signal),
+  ]);
   return {
     locale,
     resources: {
