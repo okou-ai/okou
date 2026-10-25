@@ -252,6 +252,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Use Okou's interactive browser viewer in conversations and standalone browser pages",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",
