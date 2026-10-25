@@ -14,10 +14,10 @@ import {
 } from "@okouai/ui";
 
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
-import { renameConnectorAccount$ } from "../../../../signals/okou-page/settings/connector-accounts.ts";
 import {
   closeConnectorAccountNamePrompt$,
   connectorAccountNamePromptValue$,
+  saveConnectorAccountNamePrompt$,
   setConnectorAccountNamePromptValue$,
 } from "../../../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { visibleConnectorAccountNamePrompt$ } from "../../../../signals/okou-page/settings/connector-account-name-prompt.ts";
@@ -31,7 +31,9 @@ export function ConnectorAccountNameDialog() {
   const value = useGet(connectorAccountNamePromptValue$);
   const setValue = useSet(setConnectorAccountNamePromptValue$);
   const close = useSet(closeConnectorAccountNamePrompt$);
-  const [renameLoadable, rename] = useLoadableSet(renameConnectorAccount$);
+  const [renameLoadable, rename] = useLoadableSet(
+    saveConnectorAccountNamePrompt$,
+  );
   const signal = useGet(pageSignal$);
 
   if (!prompt) {
@@ -40,24 +42,7 @@ export function ConnectorAccountNameDialog() {
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const displayName = value.trim();
-    if (!displayName) {
-      return;
-    }
-    detach(
-      (async () => {
-        await rename(
-          {
-            target: prompt.target,
-            connectionId: prompt.account.id,
-            displayName,
-          },
-          signal,
-        );
-        close();
-      })(),
-      Reason.DomCallback,
-    );
+    detach(rename(signal), Reason.DomCallback);
   };
 
   return (

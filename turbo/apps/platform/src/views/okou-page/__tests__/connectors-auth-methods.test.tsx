@@ -1072,7 +1072,13 @@ test("Complete OAuth only after the current attempt succeeds", async () => {
   });
 });
 
-async function addManualAccountForNaming() {
+async function addManualAccountForNaming({
+  failFirstRename = false,
+  renamePending,
+}: {
+  failFirstRename?: boolean;
+  renamePending?: Promise<void>;
+} = {}) {
   mockConnectors(context, []);
   const connectionId = crypto.randomUUID();
   let renamed: { readonly id: string; readonly name: string | null } | null =
@@ -1091,7 +1097,14 @@ async function addManualAccountForNaming() {
   );
   context.mocks.api(
     connectorAccountsContract.rename,
-    ({ params, body, respond }) => {
+    async ({ params, body, respond }) => {
+      await renamePending;
+      if (failFirstRename) {
+        failFirstRename = false;
+        return respond(500, {
+          error: { message: "Rename failed", code: "INTERNAL_SERVER_ERROR" },
+        });
+      }
       renamed = { id: params.connectionId, name: body.displayName };
       return respond(200, {
         missingRequiredFields: [],
@@ -1150,6 +1163,40 @@ test("Save a name for the exact newly added manual account", async () => {
 
   await waitFor(() => {
     expect(getRenamed()).toStrictEqual({ id: connectionId, name: "Work" });
+    expect(
+      screen.queryByRole("dialog", { name: "Name your Ahrefs account" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+test("Keep the new account name after a failed save and close on retry", async () => {
+  const renameResponse = context.mocks.deferred<void>();
+  const { input, naming, connectionId, getRenamed } =
+    await addManualAccountForNaming({
+      failFirstRename: true,
+      renamePending: renameResponse.promise,
+    });
+  await fill(input, " Work ");
+  click(getConnectorAction("button", "Save", naming));
+  await waitFor(() => {
+    expect(getConnectorAction("button", "Save", naming)).toBeDisabled();
+  });
+  renameResponse.resolve();
+  await expect(screen.findByText("Rename failed")).resolves.toBeInTheDocument();
+  expect(input).toHaveValue(" Work ");
+  expect(naming).toBeInTheDocument();
+  click(
+    await waitFor(() => {
+      const save = getConnectorAction("button", "Save", naming);
+      expect(save).toBeEnabled();
+      return save;
+    }),
+  );
+  await waitFor(() => {
+    expect(getRenamed()).toStrictEqual({ id: connectionId, name: "Work" });
+    expect(
+      screen.queryByRole("dialog", { name: "Name your Ahrefs account" }),
+    ).not.toBeInTheDocument();
   });
 });
 
