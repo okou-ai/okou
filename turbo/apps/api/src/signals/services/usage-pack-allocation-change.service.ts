@@ -47,6 +47,7 @@ import { command, computed, type Computed } from "ccstate";
 import {
   zodDriverValueDecoder,
   pgInt8ToSafeIntegerDecoder,
+  nullableDriverValueDecoder,
 } from "../../lib/db-structured-result";
 
 import {
@@ -1226,7 +1227,7 @@ function allocationChangePreviewValues(
   source: UsagePackAllocationRow,
   args: UsagePackChangePreviewArgs,
   preview: StripeUsagePackChangePreview,
-): typeof usagePackAllocationChanges.$inferInsert {
+) {
   return {
     usagePackSubscriptionId: context.subscription.id,
     orgId: args.orgId,
@@ -1245,6 +1246,178 @@ function allocationChangePreviewValues(
     previewExpiresAt: preview.expiresAt,
     createdAt: preview.createdAt,
     updatedAt: preview.createdAt,
+  };
+}
+
+function allocationChangePreviewDefaultSource() {
+  return {
+    id: sql`gen_random_uuid()`.mapWith(usagePackAllocationChanges.id).as("id"),
+    subscriptionChangeId: sql`NULL`
+      .mapWith(
+        nullableDriverValueDecoder(
+          usagePackAllocationChanges.subscriptionChangeId,
+        ),
+      )
+      .as("subscriptionChangeId"),
+    replacementAllocationId: sql`NULL`
+      .mapWith(
+        nullableDriverValueDecoder(
+          usagePackAllocationChanges.replacementAllocationId,
+        ),
+      )
+      .as("replacementAllocationId"),
+    status: sql`'previewed'`
+      .mapWith(usagePackAllocationChanges.status)
+      .as("status"),
+    stripeInvoiceId: sql`NULL`
+      .mapWith(
+        nullableDriverValueDecoder(usagePackAllocationChanges.stripeInvoiceId),
+      )
+      .as("stripeInvoiceId"),
+    stripeScheduleId: sql`NULL`
+      .mapWith(
+        nullableDriverValueDecoder(usagePackAllocationChanges.stripeScheduleId),
+      )
+      .as("stripeScheduleId"),
+    stripePendingUpdateExpiresAt: sql`NULL`
+      .mapWith(
+        nullableDriverValueDecoder(
+          usagePackAllocationChanges.stripePendingUpdateExpiresAt,
+        ),
+      )
+      .as("stripePendingUpdateExpiresAt"),
+    failureReason: sql`NULL`
+      .mapWith(
+        nullableDriverValueDecoder(usagePackAllocationChanges.failureReason),
+      )
+      .as("failureReason"),
+    completedAt: sql`NULL`
+      .mapWith(
+        nullableDriverValueDecoder(usagePackAllocationChanges.completedAt),
+      )
+      .as("completedAt"),
+  };
+}
+
+function allocationChangePreviewSource(
+  values: ReturnType<typeof allocationChangePreviewValues>,
+) {
+  const defaults = allocationChangePreviewDefaultSource();
+  return {
+    id: defaults.id,
+    usagePackSubscriptionId:
+      sql`${sql.param(values.usagePackSubscriptionId, usagePackAllocationChanges.usagePackSubscriptionId)}`
+        .mapWith(usagePackAllocationChanges.usagePackSubscriptionId)
+        .as("usagePackSubscriptionId"),
+    subscriptionChangeId: defaults.subscriptionChangeId,
+    orgId: sql`${sql.param(values.orgId, usagePackAllocationChanges.orgId)}`
+      .mapWith(usagePackAllocationChanges.orgId)
+      .as("orgId"),
+    userId: sql`${sql.param(values.userId, usagePackAllocationChanges.userId)}`
+      .mapWith(usagePackAllocationChanges.userId)
+      .as("userId"),
+    sourceAllocationId:
+      sql`${sql.param(values.sourceAllocationId, usagePackAllocationChanges.sourceAllocationId)}`
+        .mapWith(
+          nullableDriverValueDecoder(
+            usagePackAllocationChanges.sourceAllocationId,
+          ),
+        )
+        .as("sourceAllocationId"),
+    replacementAllocationId: defaults.replacementAllocationId,
+    kind: sql`${sql.param(values.kind, usagePackAllocationChanges.kind)}`
+      .mapWith(usagePackAllocationChanges.kind)
+      .as("kind"),
+    status: defaults.status,
+    sourceUsagePackUsd:
+      sql`${sql.param(values.sourceUsagePackUsd, usagePackAllocationChanges.sourceUsagePackUsd)}`
+        .mapWith(
+          nullableDriverValueDecoder(
+            usagePackAllocationChanges.sourceUsagePackUsd,
+          ),
+        )
+        .as("sourceUsagePackUsd"),
+    sourceStripePriceId:
+      sql`${sql.param(values.sourceStripePriceId, usagePackAllocationChanges.sourceStripePriceId)}`
+        .mapWith(
+          nullableDriverValueDecoder(
+            usagePackAllocationChanges.sourceStripePriceId,
+          ),
+        )
+        .as("sourceStripePriceId"),
+    targetUsagePackUsd:
+      sql`${sql.param(values.targetUsagePackUsd, usagePackAllocationChanges.targetUsagePackUsd)}`
+        .mapWith(
+          nullableDriverValueDecoder(
+            usagePackAllocationChanges.targetUsagePackUsd,
+          ),
+        )
+        .as("targetUsagePackUsd"),
+    targetStripePriceId:
+      sql`${sql.param(values.targetStripePriceId, usagePackAllocationChanges.targetStripePriceId)}`
+        .mapWith(
+          nullableDriverValueDecoder(
+            usagePackAllocationChanges.targetStripePriceId,
+          ),
+        )
+        .as("targetStripePriceId"),
+    prorationTimestamp:
+      sql`${sql.param(values.prorationTimestamp, usagePackAllocationChanges.prorationTimestamp)}`
+        .mapWith(
+          nullableDriverValueDecoder(
+            usagePackAllocationChanges.prorationTimestamp,
+          ),
+        )
+        .as("prorationTimestamp"),
+    immediateAmountCents:
+      sql`${sql.param(values.immediateAmountCents, usagePackAllocationChanges.immediateAmountCents)}`
+        .mapWith(
+          nullableDriverValueDecoder(
+            usagePackAllocationChanges.immediateAmountCents,
+          ),
+        )
+        .as("immediateAmountCents"),
+    nextRecurringAmountCents:
+      sql`${sql.param(values.nextRecurringAmountCents, usagePackAllocationChanges.nextRecurringAmountCents)}`
+        .mapWith(
+          nullableDriverValueDecoder(
+            usagePackAllocationChanges.nextRecurringAmountCents,
+          ),
+        )
+        .as("nextRecurringAmountCents"),
+    currency:
+      sql`${sql.param(values.currency, usagePackAllocationChanges.currency)}`
+        .mapWith(
+          nullableDriverValueDecoder(usagePackAllocationChanges.currency),
+        )
+        .as("currency"),
+    effectiveAt:
+      sql`${sql.param(values.effectiveAt, usagePackAllocationChanges.effectiveAt)}`
+        .mapWith(
+          nullableDriverValueDecoder(usagePackAllocationChanges.effectiveAt),
+        )
+        .as("effectiveAt"),
+    previewExpiresAt:
+      sql`${sql.param(values.previewExpiresAt, usagePackAllocationChanges.previewExpiresAt)}`
+        .mapWith(
+          nullableDriverValueDecoder(
+            usagePackAllocationChanges.previewExpiresAt,
+          ),
+        )
+        .as("previewExpiresAt"),
+    stripeInvoiceId: defaults.stripeInvoiceId,
+    stripeScheduleId: defaults.stripeScheduleId,
+    stripePendingUpdateExpiresAt: defaults.stripePendingUpdateExpiresAt,
+    failureReason: defaults.failureReason,
+    completedAt: defaults.completedAt,
+    createdAt:
+      sql`${sql.param(values.createdAt, usagePackAllocationChanges.createdAt)}`
+        .mapWith(usagePackAllocationChanges.createdAt)
+        .as("createdAt"),
+    updatedAt:
+      sql`${sql.param(values.updatedAt, usagePackAllocationChanges.updatedAt)}`
+        .mapWith(usagePackAllocationChanges.updatedAt)
+        .as("updatedAt"),
   };
 }
 
@@ -1301,12 +1474,24 @@ const persistUsagePackChangePreview$ = command(
     if (planChange) {
       return undefined;
     }
-    // Expiry retirement and replacement publication must roll back together.
-    // The source read needs a fresh snapshot after a possibly waiting expiry
-    // update, so a completed competing change cannot publish a stale quote.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0266; new non-billing transactions are prohibited.
-    const [change] = await db.transaction(async (tx) => {
-      await tx
+    // Observe and retire the same expiry set. If a waiting UPDATE loses a row
+    // to a completed competing change, reject publication from this statement's
+    // older source snapshot instead of publishing a stale quote.
+    const expiryCondition = and(
+      eq(usagePackAllocationChanges.orgId, args.orgId),
+      eq(usagePackAllocationChanges.status, "previewed"),
+      lte(usagePackAllocationChanges.previewExpiresAt, preview.createdAt),
+    );
+    const expiring = db
+      .$with("expiring_allocation_previews")
+      .as(
+        db
+          .select({ id: usagePackAllocationChanges.id })
+          .from(usagePackAllocationChanges)
+          .where(expiryCondition),
+      );
+    const retired = db.$with("retired_allocation_previews").as(
+      db
         .update(usagePackAllocationChanges)
         .set({
           status: "failed",
@@ -1316,34 +1501,50 @@ const persistUsagePackChangePreview$ = command(
         })
         .where(
           and(
-            eq(usagePackAllocationChanges.orgId, args.orgId),
-            eq(usagePackAllocationChanges.status, "previewed"),
-            lte(usagePackAllocationChanges.previewExpiresAt, preview.createdAt),
+            expiryCondition,
+            inArray(
+              usagePackAllocationChanges.id,
+              db.select({ id: expiring.id }).from(expiring),
+            ),
           ),
-        );
-      const [lockedSource] = await tx
-        .select()
-        .from(usagePackAllocations)
-        .where(eq(usagePackAllocations.id, source.id))
-        .limit(1);
-      signal.throwIfAborted();
-      if (
-        !lockedSource ||
-        lockedSource.status !== "active" ||
-        lockedSource.orgId !== args.orgId ||
-        lockedSource.userId !== args.userId ||
-        lockedSource.usagePackSubscriptionId !== context.subscription.id ||
-        lockedSource.usagePackUsd !== source.usagePackUsd ||
-        lockedSource.stripePriceId !== source.stripePriceId
-      ) {
-        return [];
-      }
-      return await tx
-        .insert(usagePackAllocationChanges)
-        .values(allocationChangePreviewValues(context, source, args, preview))
-        .onConflictDoNothing()
-        .returning();
-    });
+        )
+        .returning({ id: usagePackAllocationChanges.id }),
+    );
+    const completeRetirement = eq(
+      db.select({ count: count() }).from(retired),
+      db.select({ count: count() }).from(expiring),
+    );
+    const values = allocationChangePreviewValues(
+      context,
+      source,
+      args,
+      preview,
+    );
+    const [change] = await db
+      .with(expiring, retired)
+      .insert(usagePackAllocationChanges)
+      .select(
+        db
+          .select(allocationChangePreviewSource(values))
+          .from(usagePackAllocations)
+          .where(
+            and(
+              eq(usagePackAllocations.id, source.id),
+              eq(usagePackAllocations.status, "active"),
+              eq(usagePackAllocations.orgId, args.orgId),
+              eq(usagePackAllocations.userId, args.userId),
+              eq(
+                usagePackAllocations.usagePackSubscriptionId,
+                context.subscription.id,
+              ),
+              eq(usagePackAllocations.usagePackUsd, source.usagePackUsd),
+              eq(usagePackAllocations.stripePriceId, source.stripePriceId),
+              eq(sql`1 / CASE WHEN ${completeRetirement} THEN 1 ELSE 0 END`, 1),
+            ),
+          ),
+      )
+      .onConflictDoNothing()
+      .returning();
     signal.throwIfAborted();
     return change;
   },
