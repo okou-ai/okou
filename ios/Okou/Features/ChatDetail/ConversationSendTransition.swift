@@ -24,6 +24,7 @@ final class ConversationSendTransition {
   @ObservationIgnored private var reduceMotion = false
   @ObservationIgnored var didBegin: (() -> Void)?
   @ObservationIgnored var didFinish: (() -> Void)?
+  @ObservationIgnored var didEnd: (() -> Void)?
 
   var isActive: Bool { messageID != nil }
 
@@ -76,7 +77,7 @@ final class ConversationSendTransition {
     }
   }
 
-  /// Before insertion, keyboard/composer layout must not scroll toward the old footer.
+  /// Native keyboard compensation owns the viewport until the measured row commits.
   func layoutDidChange() {
     guard isActive else { return }
     preserveOffset()
@@ -87,8 +88,11 @@ final class ConversationSendTransition {
 
   func preserveOffset() {
     guard let collection, isActive, !updatesOffset else { return }
-    // UIKit can preserve its old bottom during a snapshot or keyboard layout.
-    // Only our display-frame updates advance this send's viewport.
+    guard isAnimating else {
+      offset = collection.contentOffset
+      return
+    }
+    // After handoff, only our display-frame updates advance the send's viewport.
     guard abs(collection.contentOffset.y - offset.y) > 0.5 else { return }
     updatesOffset = true
     defer { updatesOffset = false }
@@ -133,8 +137,10 @@ final class ConversationSendTransition {
     elapsed = 0
     if reduceMotion {
       presentFrame(fraction: 1, in: collection, target: y)
-      finish()
-      return
+      if CACurrentMediaTime() >= deadline {
+        finish()
+        return
+      }
     }
     // Composer/keyboard geometry can change on every frame. Retarget the
     // current clock; only an actual snapshot pauses it.
@@ -155,7 +161,7 @@ final class ConversationSendTransition {
       elapsed += max(0, link.timestamp - previousFrame)
     }
     previousFrame = link.timestamp
-    let progress = duration == 0 ? 1 : min(1, elapsed / duration)
+    let progress = reduceMotion || duration == 0 ? 1 : min(1, elapsed / duration)
     let value: Double
     if progress >= 1 {
       value = 1
@@ -173,7 +179,7 @@ final class ConversationSendTransition {
       fraction: CGFloat(min(1, max(0, value))),
       in: collection, target: target)
     guard displayLink === link, self.target == target else { return }
-    if progress >= 1, elapsed >= duration { finish() }
+    if progress >= 1, CACurrentMediaTime() >= deadline { finish() }
   }
 
   private func presentFrame(fraction: CGFloat, in collection: UICollectionView, target: CGFloat) {
@@ -188,6 +194,7 @@ final class ConversationSendTransition {
   }
 
   func cancel() {
+    let wasActive = isActive
     messageID = nil
     isAnimating = false
     target = nil
@@ -201,21 +208,11 @@ final class ConversationSendTransition {
     elapsed = 0
     UIView.performWithoutAnimation { arrivingView?.alpha = 1 }
     arrivingView = nil
+    if wasActive { didEnd?() }
   }
 
   private func finish() {
-    messageID = nil
-    isAnimating = false
-    target = nil
-    deadline = 0
-    if let keyboardObserver { NotificationCenter.default.removeObserver(keyboardObserver) }
-    keyboardObserver = nil
-    displayLink?.invalidate()
-    displayLink = nil
-    previousFrame = nil
-    duration = 0
-    elapsed = 0
-    arrivingView = nil
+    cancel()
     didFinish?()
   }
 }
