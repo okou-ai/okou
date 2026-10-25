@@ -64,7 +64,7 @@
     "bs58": "6.0.0",
     "ccstate": "^6.0.0",
     "ccstate-react": "^6.0.0",
-    "cdp-viewer": "github:okou-ai/cdp-viewer#63dea9ca9686336090e4b2abffbe16d04e5810a2",
+    "cdp-viewer": "github:okou-ai/cdp-viewer#b56758d9be74d530c39fe3bc68e4b053ab763063",
     "fflate": "^0.8.3",
     "hast-util-to-jsx-runtime": "^2.3.6",
     "i18next": "^26.4.2",
