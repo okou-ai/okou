@@ -267,11 +267,6 @@
       "owner": "completeMigrationInvitations$"
     },
     {
-      "id": "TX-0303",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
-      "owner": "publishUsagePackCheckoutState$"
-    },
-    {
       "id": "TX-0304",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
       "owner": "commitUsagePackPlanActivation$"

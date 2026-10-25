@@ -748,15 +748,24 @@ describe("usage pack subscription Stripe lifecycle", () => {
         stripeSubscription(fixture, paidPeriod, quantities),
       );
 
+      const checkout = {
+        id: fixture.checkoutSessionId,
+        customer: fixture.customerId,
+        subscription: fixture.subscriptionId,
+        metadata: usagePackMetadata(fixture),
+      };
       await postStripeEvent(
-        stripeEvent("checkout.session.completed", {
-          id: fixture.checkoutSessionId,
-          customer: fixture.customerId,
-          subscription: fixture.subscriptionId,
-          metadata: usagePackMetadata(fixture),
-        }),
+        stripeEvent("checkout.session.completed", checkout),
         200,
       );
+      if (phase === "initial payment") {
+        // A distinct provider event for the same Checkout republishes the
+        // subscription without consuming another pending purchase.
+        await postStripeEvent(
+          stripeEvent("checkout.session.completed", checkout),
+          200,
+        );
+      }
       await postStripeEvent(
         stripeEvent(
           "customer.subscription.created",
