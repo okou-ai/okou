@@ -25,6 +25,7 @@ import {
 } from "@okouai/db/schema/usage-pack-subscription";
 import {
   DrizzleQueryError,
+  type SQL,
   count,
   and,
   asc,
@@ -3008,7 +3009,8 @@ function changesReflectedBySubscription(
   return reflected;
 }
 
-class ReflectedUsagePackSnapshotChanged extends Error {}
+const reflectedUsagePackBatchFailure = z.object({ code: z.literal("22012") });
+
 const commitReflectedUsagePackChanges$ = command(
   async function commitReflectedUsagePackChanges(
     { set },
@@ -3016,123 +3018,123 @@ const commitReflectedUsagePackChanges$ = command(
     changes: readonly UsagePackAllocationChangeRow[],
     period: UsagePackPeriod,
   ): Promise<number> {
-    const db = set(writeDb$);
-
     if (changes.length === 0) {
       return 0;
     }
-    const result = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0269; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        let applied = 0;
-        const updatedAt = nowDate();
-        for (const expectedChange of changes) {
-          const [change] = await tx
-            .select()
-            .from(usagePackAllocationChanges)
-            .where(eq(usagePackAllocationChanges.id, expectedChange.id))
-            .limit(1);
-          if (
-            !change ||
-            change.status === "applied" ||
-            change.status === "completed"
-          ) {
-            continue;
-          }
-          if (
-            change.status !== expectedChange.status ||
-            change.replacementAllocationId
-          ) {
-            throw new ReflectedUsagePackSnapshotChanged();
-          }
-          requireReflectedChangeOwner(context, change);
-          if (change.kind !== "addition") {
-            const [source] = await tx
-              .update(usagePackAllocations)
-              .set({ status: "inactive", updatedAt })
-              .where(reflectedSourceCondition(change))
-              .returning({ id: usagePackAllocations.id });
-            if (!source) {
-              throw new ReflectedUsagePackSnapshotChanged();
-            }
-          }
-          let replacementAllocationId: string | null = null;
-          if (change.kind !== "removal") {
-            const [replacement] = await tx
-              .insert(usagePackAllocations)
-              .values(
-                reflectedReplacementValues(context, change, period, updatedAt),
-              )
-              .onConflictDoNothing({
-                target: [
-                  usagePackAllocations.orgId,
-                  usagePackAllocations.userId,
-                ],
-                where: sql`${usagePackAllocations.userId} IS NOT NULL AND ${usagePackAllocations.status} <> 'inactive'`,
-              })
-              .returning({ id: usagePackAllocations.id });
-            if (!replacement) {
-              throw new ReflectedUsagePackSnapshotChanged();
-            }
-            replacementAllocationId = replacement.id;
-          }
-
-          if (
-            change.kind === "upgrade" &&
-            change.subscriptionChangeId &&
-            change.stripeScheduleId
-          ) {
-            // The paid upgrade replaces an older downgrade for this member. Retire
-            // the old row before this one becomes applied; the partial unique index
-            // permits only one scheduled/applied change per member.
-            await tx
-              .update(usagePackAllocationChanges)
-              .set({
-                status: "failed",
-                failureReason: "scheduled_change_superseded",
-                completedAt: updatedAt,
-                updatedAt,
-              })
-              .where(
-                and(
-                  eq(usagePackAllocationChanges.orgId, change.orgId),
-                  eq(usagePackAllocationChanges.userId, change.userId),
-                  eq(usagePackAllocationChanges.status, "scheduled"),
-                  eq(
-                    usagePackAllocationChanges.stripeScheduleId,
-                    change.stripeScheduleId,
-                  ),
-                ),
-              );
-          }
-
-          const completed =
-            change.kind !== "addition" && change.kind !== "upgrade";
-          const [published] = await tx
-            .update(usagePackAllocationChanges)
-            .set(
-              reflectedPublicationValues(
-                change,
-                replacementAllocationId,
-                completed,
-                period,
-                updatedAt,
-              ),
+    const db = set(writeDb$);
+    const updatedAt = nowDate();
+    const capturedIds = reflectedUsagePackChangeIds(changes);
+    const current = await db
+      .select()
+      .from(usagePackAllocationChanges)
+      .where(
+        inArray(
+          usagePackAllocationChanges.id,
+          sql`(SELECT value::uuid FROM jsonb_array_elements_text(${capturedIds}::jsonb))`,
+        ),
+      );
+    const prepared = reflectedUsagePackChanges(context, changes, current);
+    if (!prepared?.length) {
+      return 0;
+    }
+    const input = reflectedUsagePackChangeInput(prepared);
+    const sourceCount = sql`(${db.select({ value: count() }).from(input).where(ne(input.kind, "addition"))})`;
+    const retired = db.$with("reflected_retired_allocations").as(
+      db
+        .update(usagePackAllocations)
+        .set({ status: "inactive", updatedAt })
+        .from(input)
+        .where(and(ne(input.kind, "addition"), reflectedSourceCondition(input)))
+        .returning({ id: usagePackAllocations.id }),
+    );
+    const retiredCount = sql`(${db.select({ value: count() }).from(retired)})`;
+    // All source winners precede replacements, including the zero-source case.
+    const replacement = db.$with("reflected_replacement_allocations").as(
+      db
+        .insert(usagePackAllocations)
+        .select(
+          db
+            .select(
+              reflectedReplacementValues(context, input, period, updatedAt),
             )
-            .where(reflectedPublicationCondition(change, expectedChange))
-            .returning({ id: usagePackAllocationChanges.id });
-          if (!published) {
-            throw new ReflectedUsagePackSnapshotChanged();
-          }
-          applied += 1;
-        }
-        return applied;
-      }),
+            .from(input)
+            .where(
+              and(ne(input.kind, "removal"), eq(retiredCount, sourceCount)),
+            ),
+        )
+        .onConflictDoNothing({
+          target: [usagePackAllocations.orgId, usagePackAllocations.userId],
+          where: sql`${usagePackAllocations.userId} IS NOT NULL AND ${usagePackAllocations.status} <> 'inactive'`,
+        })
+        .returning({
+          id: usagePackAllocations.id,
+          userId: usagePackAllocations.userId,
+        }),
+    );
+    const replacementCount = sql`(${db.select({ value: count() }).from(replacement)})`;
+    const targetCount = sql`(${db.select({ value: count() }).from(input).where(ne(input.kind, "removal"))})`;
+    const superseded = db.$with("reflected_superseded_changes").as(
+      db
+        .update(usagePackAllocationChanges)
+        .set({
+          status: "failed",
+          failureReason: "scheduled_change_superseded",
+          completedAt: updatedAt,
+          updatedAt,
+        })
+        .from(input)
+        .where(
+          and(
+            reflectedSupersededScheduleCondition(input),
+            eq(replacementCount, targetCount),
+          ),
+        )
+        .returning({ id: usagePackAllocationChanges.id }),
+    );
+    const supersededCount = sql`(${db.select({ value: count() }).from(superseded)})`;
+    const replacementId = sql`(${db.select({ id: replacement.id }).from(replacement).where(eq(replacement.userId, input.userId))})`;
+    const published = db.$with("reflected_published_changes").as(
+      db
+        .update(usagePackAllocationChanges)
+        .set(
+          reflectedPublicationValues(input, replacementId, period, updatedAt),
+        )
+        .from(input)
+        .where(
+          and(
+            reflectedPublicationCondition(input),
+            eq(retiredCount, sourceCount),
+            eq(replacementCount, targetCount),
+            sql`${supersededCount} >= 0`,
+          ),
+        )
+        .returning({ id: usagePackAllocationChanges.id }),
+    );
+    const publishedCount = sql`(${db.select({ value: count() }).from(published)})`;
+    const inputCount = sql`(${db.select({ value: count() }).from(input)})`;
+    // A lost source, replacement or final identity aborts every write in the batch.
+    const result = await settle(
+      db
+        .with(input, retired, replacement, superseded, published)
+        .select({
+          applied:
+            sql`${publishedCount} / CASE WHEN ${eq(publishedCount, inputCount)} THEN 1 ELSE 0 END`.mapWith(
+              pgInt8ToSafeIntegerDecoder,
+            ),
+        })
+        .from(sql`(SELECT 1) AS reflected_batch_result`),
     );
     if (result.ok) {
-      return result.value;
+      const row = result.value[0];
+      if (!row) {
+        throw new Error("Reflected usage pack batch returned no result");
+      }
+      return row.applied;
     }
-    if (result.error instanceof ReflectedUsagePackSnapshotChanged) {
+    if (
+      result.error instanceof DrizzleQueryError &&
+      reflectedUsagePackBatchFailure.safeParse(result.error.cause).success
+    ) {
       return 0;
     }
     throw result.error;
@@ -6139,71 +6141,237 @@ const loadUpgradeInvoiceObservation$ = command(
   },
 );
 
-function reflectedSourceCondition(change: UsagePackAllocationChangeRow) {
-  if (!change.sourceAllocationId || !change.sourceStripePriceId) {
-    throw new Error(`Usage pack change ${change.id} has no source`);
-  }
-  return and(
-    eq(usagePackAllocations.id, change.sourceAllocationId),
-    eq(usagePackAllocations.orgId, change.orgId),
-    eq(
-      usagePackAllocations.usagePackSubscriptionId,
-      change.usagePackSubscriptionId,
-    ),
-    eq(usagePackAllocations.status, "active"),
-    eq(usagePackAllocations.userId, change.userId),
-    eq(usagePackAllocations.stripePriceId, change.sourceStripePriceId),
+function reflectedUsagePackChangeIds(
+  changes: readonly UsagePackAllocationChangeRow[],
+) {
+  return JSON.stringify(
+    changes.map((change) => {
+      return change.id;
+    }),
   );
 }
+
+/** Read observations are not payment arbitration; the final existing CAS is. */
+function reflectedUsagePackChanges(
+  context: UsagePackChangeContext,
+  expected: readonly UsagePackAllocationChangeRow[],
+  current: readonly UsagePackAllocationChangeRow[],
+): readonly UsagePackAllocationChangeRow[] | null {
+  const byId = new Map(
+    current.map((change) => {
+      return [change.id, change];
+    }),
+  );
+  const seen = new Set<string>();
+  const prepared: UsagePackAllocationChangeRow[] = [];
+  const identity = [
+    "orgId",
+    "usagePackSubscriptionId",
+    "kind",
+    "subscriptionChangeId",
+    "userId",
+    "sourceAllocationId",
+    "replacementAllocationId",
+    "sourceStripePriceId",
+    "targetStripePriceId",
+    "sourceUsagePackUsd",
+    "targetUsagePackUsd",
+  ] as const;
+  for (const original of expected) {
+    if (seen.has(original.id)) {
+      continue;
+    }
+    seen.add(original.id);
+    const change = byId.get(original.id);
+    if (
+      !change ||
+      change.status === "applied" ||
+      change.status === "completed"
+    ) {
+      continue;
+    }
+    if (
+      change.status !== original.status ||
+      change.replacementAllocationId ||
+      identity.some((field) => {
+        return change[field] !== original[field];
+      })
+    ) {
+      return null;
+    }
+    requireReflectedChangeOwner(context, change);
+    // The old schedule retirement would invalidate this row's final status CAS.
+    if (
+      change.kind === "upgrade" &&
+      change.status === "scheduled" &&
+      change.subscriptionChangeId &&
+      change.stripeScheduleId
+    ) {
+      return null;
+    }
+    prepared.push(change);
+  }
+  return prepared;
+}
+
+/** Actual immutable intent fields, one bound JSON value for the complete batch. */
+function reflectedUsagePackChangeInput(
+  changes: readonly UsagePackAllocationChangeRow[],
+) {
+  const rows = changes.map((change) => {
+    if (
+      change.kind !== "addition" &&
+      (!change.sourceAllocationId || !change.sourceStripePriceId)
+    ) {
+      throw new Error(`Usage pack change ${change.id} has no source`);
+    }
+    if (
+      change.kind !== "removal" &&
+      (change.targetUsagePackUsd === null || !change.targetStripePriceId)
+    ) {
+      throw new Error(`Usage pack change ${change.id} has no target`);
+    }
+    return {
+      id: change.id,
+      org_id: change.orgId,
+      usage_pack_subscription_id: change.usagePackSubscriptionId,
+      user_id: change.userId,
+      kind: change.kind,
+      status: change.status,
+      subscription_change_id: change.subscriptionChangeId,
+      source_allocation_id: change.sourceAllocationId,
+      replacement_allocation_id: change.replacementAllocationId,
+      source_stripe_price_id: change.sourceStripePriceId,
+      target_stripe_price_id: change.targetStripePriceId,
+      source_usage_pack_usd: change.sourceUsagePackUsd,
+      target_usage_pack_usd:
+        change.targetUsagePackUsd === null
+          ? null
+          : usagePackUsd(change.targetUsagePackUsd),
+      effective_at: change.effectiveAt?.toISOString() ?? null,
+      stripe_schedule_id: change.stripeScheduleId,
+    };
+  });
+  return new QueryBuilder().$with("reflected_change_input", {
+    ...canceledUsagePackInputColumns,
+    stripeScheduleId: usagePackAllocationChanges.stripeScheduleId,
+  }).as(sql`
+    SELECT * FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS captured(
+      id uuid, org_id text, usage_pack_subscription_id uuid, user_id text,
+      kind text, status text, subscription_change_id uuid, source_allocation_id uuid,
+      replacement_allocation_id uuid, source_stripe_price_id text,
+      target_stripe_price_id text, source_usage_pack_usd integer,
+      target_usage_pack_usd integer, effective_at timestamp, stripe_schedule_id text
+    )
+  `);
+}
+
+type ReflectedUsagePackInput = ReturnType<typeof reflectedUsagePackChangeInput>;
+
+function reflectedSourceCondition(input: ReflectedUsagePackInput) {
+  return and(
+    eq(usagePackAllocations.id, input.sourceAllocationId),
+    eq(usagePackAllocations.orgId, input.orgId),
+    eq(
+      usagePackAllocations.usagePackSubscriptionId,
+      input.usagePackSubscriptionId,
+    ),
+    eq(usagePackAllocations.status, "active"),
+    eq(usagePackAllocations.userId, input.userId),
+    eq(usagePackAllocations.stripePriceId, input.sourceStripePriceId),
+  );
+}
+
 function reflectedReplacementValues(
   context: UsagePackChangeContext,
-  change: UsagePackAllocationChangeRow,
+  input: ReflectedUsagePackInput,
   period: UsagePackPeriod,
   updatedAt: Date,
-): typeof usagePackAllocations.$inferInsert {
-  if (change.targetUsagePackUsd === null || !change.targetStripePriceId) {
-    throw new Error(`Usage pack change ${change.id} has no target`);
-  }
+) {
   return {
-    usagePackSubscriptionId: context.subscription.id,
-    orgId: context.subscription.orgId,
-    userId: change.userId,
-    usagePackUsd: usagePackUsd(change.targetUsagePackUsd),
-    stripePriceId: change.targetStripePriceId,
-    status: "active",
-    currentPeriodStart: new Date(period.start * 1000),
-    currentPeriodEnd: new Date(period.end * 1000),
-    createdAt: updatedAt,
-    updatedAt,
+    id: sql`${usagePackAllocations.id.default}`
+      .mapWith(usagePackAllocations.id)
+      .as("id"),
+    usagePackSubscriptionId: sql`${context.subscription.id}`
+      .mapWith(usagePackAllocations.usagePackSubscriptionId)
+      .as("usage_pack_subscription_id"),
+    orgId: sql`${context.subscription.orgId}`
+      .mapWith(usagePackAllocations.orgId)
+      .as("org_id"),
+    userId: input.userId,
+    invitationId: sql`NULL`
+      .mapWith(usagePackAllocations.invitationId)
+      .as("invitation_id"),
+    usagePackUsd: sql`${input.targetUsagePackUsd}`
+      .mapWith(usagePackAllocations.usagePackUsd)
+      .as("usage_pack_usd"),
+    stripePriceId: sql`${input.targetStripePriceId}`
+      .mapWith(usagePackAllocations.stripePriceId)
+      .as("stripe_price_id"),
+    status: sql`'active'`.mapWith(usagePackAllocations.status).as("status"),
+    currentPeriodStart:
+      sql`${sql.param(new Date(period.start * 1000), usagePackAllocations.currentPeriodStart)}`
+        .mapWith(usagePackAllocations.currentPeriodStart)
+        .as("current_period_start"),
+    currentPeriodEnd:
+      sql`${sql.param(new Date(period.end * 1000), usagePackAllocations.currentPeriodEnd)}`
+        .mapWith(usagePackAllocations.currentPeriodEnd)
+        .as("current_period_end"),
+    createdAt: sql`${sql.param(updatedAt, usagePackAllocations.createdAt)}`
+      .mapWith(usagePackAllocations.createdAt)
+      .as("created_at"),
+    updatedAt: sql`${sql.param(updatedAt, usagePackAllocations.updatedAt)}`
+      .mapWith(usagePackAllocations.updatedAt)
+      .as("updated_at"),
   };
 }
+
+function reflectedSupersededScheduleCondition(input: ReflectedUsagePackInput) {
+  return and(
+    eq(input.kind, "upgrade"),
+    isNotNull(input.subscriptionChangeId),
+    isNotNull(input.stripeScheduleId),
+    eq(usagePackAllocationChanges.orgId, input.orgId),
+    eq(usagePackAllocationChanges.userId, input.userId),
+    eq(usagePackAllocationChanges.status, "scheduled"),
+    eq(usagePackAllocationChanges.stripeScheduleId, input.stripeScheduleId),
+  );
+}
+
 function reflectedPublicationValues(
-  change: UsagePackAllocationChangeRow,
-  replacementAllocationId: string | null,
-  completed: boolean,
+  input: ReflectedUsagePackInput,
+  replacementId: SQL,
   period: UsagePackPeriod,
   updatedAt: Date,
 ): PgUpdateSetSource<typeof usagePackAllocationChanges> {
+  const deferred = sql`${inArray(input.kind, ["downgrade", "removal"])}`;
   return {
-    replacementAllocationId,
-    status: completed ? "completed" : "applied",
-    completedAt: completed ? updatedAt : null,
-    effectiveAt:
-      change.effectiveAt ??
-      (change.kind === "addition" || change.kind === "upgrade"
-        ? updatedAt
-        : new Date(period.start * 1000)),
+    replacementAllocationId: sql`CASE WHEN ${eq(input.kind, "removal")} THEN NULL ELSE ${replacementId} END`,
+    status: sql`CASE WHEN ${deferred} THEN 'completed' ELSE 'applied' END`,
+    completedAt: sql`CASE WHEN ${deferred} THEN ${sql.param(updatedAt, usagePackAllocationChanges.completedAt)}::timestamp ELSE NULL END`,
+    effectiveAt: sql`COALESCE(${input.effectiveAt}, CASE WHEN ${deferred} THEN ${sql.param(new Date(period.start * 1000), usagePackAllocationChanges.effectiveAt)}::timestamp ELSE ${sql.param(updatedAt, usagePackAllocationChanges.effectiveAt)}::timestamp END)`,
     updatedAt,
   };
 }
-function reflectedPublicationCondition(
-  change: UsagePackAllocationChangeRow,
-  expectedChange: UsagePackAllocationChangeRow,
-) {
+
+function reflectedPublicationCondition(input: ReflectedUsagePackInput) {
   return and(
-    eq(usagePackAllocationChanges.id, change.id),
-    eq(usagePackAllocationChanges.status, expectedChange.status),
-    fulfillmentChangeIdentity(expectedChange),
+    eq(usagePackAllocationChanges.id, input.id),
+    eq(usagePackAllocationChanges.status, input.status),
+    eq(usagePackAllocationChanges.orgId, input.orgId),
+    eq(
+      usagePackAllocationChanges.usagePackSubscriptionId,
+      input.usagePackSubscriptionId,
+    ),
+    eq(usagePackAllocationChanges.kind, input.kind),
+    sql`${usagePackAllocationChanges.subscriptionChangeId} IS NOT DISTINCT FROM ${input.subscriptionChangeId}`,
+    sql`${usagePackAllocationChanges.userId} IS NOT DISTINCT FROM ${input.userId}`,
+    sql`${usagePackAllocationChanges.sourceAllocationId} IS NOT DISTINCT FROM ${input.sourceAllocationId}`,
+    sql`${usagePackAllocationChanges.replacementAllocationId} IS NOT DISTINCT FROM ${input.replacementAllocationId}`,
+    sql`${usagePackAllocationChanges.sourceStripePriceId} IS NOT DISTINCT FROM ${input.sourceStripePriceId}`,
+    sql`${usagePackAllocationChanges.targetStripePriceId} IS NOT DISTINCT FROM ${input.targetStripePriceId}`,
+    sql`${usagePackAllocationChanges.sourceUsagePackUsd} IS NOT DISTINCT FROM ${input.sourceUsagePackUsd}`,
+    sql`${usagePackAllocationChanges.targetUsagePackUsd} IS NOT DISTINCT FROM ${input.targetUsagePackUsd}`,
   );
 }
 

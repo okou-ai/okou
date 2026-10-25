@@ -5385,7 +5385,7 @@ describe("usage pack allocation management", () => {
   });
 
   it.each([false, true])(
-    "keeps a downgrade scheduled until the boundary and renews aggregate quantities (existing schedule: %s)",
+    "keeps member downgrades scheduled until the boundary and publishes aggregate quantities (existing schedule: %s)",
     async (existingSchedule) => {
       mockNow(new Date("2035-03-16T00:00:00.000Z"));
       onTestFinished(() => {
@@ -5395,12 +5395,9 @@ describe("usage pack allocation management", () => {
       const secondUserId = `user_${randomUUID()}`;
       const fixture = await purchaseManagedUsagePack([
         { userId, usagePackUsd: 50 },
-        { userId: secondUserId, usagePackUsd: 20 },
+        { userId: secondUserId, usagePackUsd: 50 },
       ]);
-      const currentQuantities = new Map([
-        [TEST_PRICE_USAGE_PACK_50, 1],
-        [TEST_PRICE_USAGE_PACK_20, 1],
-      ]);
+      const currentQuantities = new Map([[TEST_PRICE_USAGE_PACK_50, 2]]);
       const scheduleId = `sub_sched_downgrade_${randomUUID()}`;
       const phaseStart = fixture.billingPeriod.start + 5 * 86_400;
       const currentSubscription = managedUsagePackSubscription(
@@ -5412,7 +5409,7 @@ describe("usage pack allocation management", () => {
       context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
         currentSubscription,
       );
-      mockUsagePackChangePreviews(0, 4000);
+      mockUsagePackChangePreviews(0, 7000);
       const sourceSchedule = scheduleForManagedSubscription(
         currentSubscription,
         scheduleId,
@@ -5476,6 +5473,42 @@ describe("usage pack allocation management", () => {
         expect.objectContaining({
           phases: expect.arrayContaining([
             expect.objectContaining({
+              start_date: fixture.billingPeriod.end,
+              items: expect.arrayContaining([
+                { price: TEST_PRICE_USAGE_PACK_20, quantity: 1 },
+                { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
+              ]),
+            }),
+          ]),
+        }),
+        {
+          idempotencyKey: `usage-pack-change:${preview.body.changeId}:schedule-update`,
+        },
+      );
+      mockUsagePackChangePreviews(0, 4000);
+      const secondPreview = await accept(
+        client.previewChange({
+          headers: { authorization: "Bearer clerk-session" },
+          body: { memberId: secondUserId, targetUsagePackUsd: 20 },
+        }),
+        [200],
+      );
+      const secondConfirmed = await accept(
+        client.confirmChange({
+          params: { changeId: secondPreview.body.changeId },
+          headers: { authorization: "Bearer clerk-session" },
+          body: {},
+        }),
+        [200],
+      );
+      expect(secondConfirmed.body.status).toBe("scheduled");
+      expect(
+        context.mocks.stripe.subscriptionSchedules.update,
+      ).toHaveBeenCalledWith(
+        scheduleId,
+        expect.objectContaining({
+          phases: expect.arrayContaining([
+            expect.objectContaining({
               start_date: phaseStart,
               end_date: fixture.billingPeriod.end,
             }),
@@ -5491,7 +5524,7 @@ describe("usage pack allocation management", () => {
           ]),
         }),
         {
-          idempotencyKey: `usage-pack-change:${preview.body.changeId}:schedule-update`,
+          idempotencyKey: `usage-pack-change:${secondPreview.body.changeId}:schedule-update`,
         },
       );
       const scheduled = await readManagedUsagePacks(fixture);
@@ -5501,6 +5534,16 @@ describe("usage pack allocation management", () => {
           usagePackUsd: 50,
           pendingChange: expect.objectContaining({
             id: preview.body.changeId,
+            status: "scheduled",
+          }),
+        }),
+      );
+      expect(scheduled.allocations).toContainEqual(
+        expect.objectContaining({
+          memberId: secondUserId,
+          usagePackUsd: 50,
+          pendingChange: expect.objectContaining({
+            id: secondPreview.body.changeId,
             status: "scheduled",
           }),
         }),
@@ -5548,6 +5591,13 @@ describe("usage pack allocation management", () => {
             pendingChange: null,
           }),
         ]),
+      );
+      await postManagedUsagePackEvent(
+        "customer.subscription.updated",
+        boundarySubscription,
+      );
+      await expect(readManagedUsagePacks(fixture)).resolves.toStrictEqual(
+        completed,
       );
       await expect(readPurchasedCreditGrants(fixture)).resolves.toStrictEqual(
         creditsBefore,
