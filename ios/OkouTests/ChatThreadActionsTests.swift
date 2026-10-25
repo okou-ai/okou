@@ -376,12 +376,11 @@ private final class ThreadActionsFixture: Sendable {
         let renameBody =
           action == "rename"
           ? try JSONDecoder().decode([String: String].self, from: chatRequestBody(request)) : [:]
-        let eventID =
-          renameBody["eventId"]
-          ?? URLComponents(
-            url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems?.first {
-              $0.name == "eventId"
-            }?.value
+        let queryEventID = URLComponents(
+          url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems?.first {
+            $0.name == "eventId"
+          }?.value
+        let eventID = renameBody["eventId"] ?? queryEventID
         let title = renameBody["title"]
         let (gate, status) = state.value.withLock { state in
           state.writes.append(Write(action: action, eventID: eventID, title: title))
