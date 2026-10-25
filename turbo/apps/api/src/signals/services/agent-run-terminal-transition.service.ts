@@ -3,16 +3,23 @@ import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import { captureBillingRunTerminalSql } from "@okouai/db/operations/billing-run-lifecycle";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
+import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
+import { modelProviders } from "@okouai/db/schema/model-provider";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { command } from "ccstate";
 import {
   and,
+  count,
+  gte,
   eq,
   inArray,
+  isNotNull,
   isNull,
   notInArray,
   or,
+  sql,
   type SQL,
 } from "drizzle-orm";
 
@@ -492,5 +499,165 @@ export const cancelClerkDeletedOwnerRuns$ = command(
       signal,
     );
     return runs;
+  },
+);
+
+function bannedUserAccountCleanupCondition() {
+  return sql`EXISTS (
+        SELECT 1 FROM banned_runs
+        WHERE banned_runs.model_provider_id = ${modelProviderAccounts.id}
+          AND banned_runs.org_id = ${modelProviderAccounts.orgId}
+          AND banned_runs.user_id = ${modelProviderAccounts.userId}
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM ${agentRuns}
+        WHERE ${eq(agentRuns.modelProviderId, modelProviderAccounts.id)}
+          AND ${eq(agentRuns.orgId, modelProviderAccounts.orgId)}
+          AND ${eq(agentRuns.userId, modelProviderAccounts.userId)}
+          AND ${agentRuns.status} IN ('pending', 'running')
+          AND NOT EXISTS (
+            SELECT 1 FROM banned_runs WHERE banned_runs.id = ${agentRuns.id}
+          )
+      )`;
+}
+
+function bannedUserProviderCleanupCondition() {
+  return sql`${modelProviders.id} IN (
+      SELECT model_provider_id FROM banned_removed_accounts
+    ) AND NOT EXISTS (
+      SELECT 1 FROM ${modelProviderAccounts}
+      WHERE ${eq(modelProviderAccounts.modelProviderId, modelProviders.id)}
+        AND NOT EXISTS (
+          SELECT 1 FROM banned_removed_accounts
+          WHERE banned_removed_accounts.id = ${modelProviderAccounts.id}
+        )
+    )`;
+}
+
+// Ban behavior is deliberately separate from account-deletion stop behavior.
+// The entry observes cancellation after scheduling committed releases and
+// notifying runners, preserving this finite write's existing abort boundary.
+export const cancelClerkBannedUserRuns$ = command(
+  async function cancelClerkBannedUserRuns(
+    { set },
+    userId: string,
+    _signal: AbortSignal,
+  ) {
+    const db = set(writeDb$);
+    const completedAt = nowDate();
+    const cancelled = db.$with("banned_runs").as(
+      db
+        .update(agentRuns)
+        .set({
+          status: "cancelled",
+          completedAt,
+          runnerCancellationMode: "hard",
+        })
+        .where(
+          and(
+            eq(agentRuns.userId, userId),
+            inArray(agentRuns.status, ["pending", "running"]),
+          ),
+        )
+        .returning({
+          runId: agentRuns.id,
+          orgId: agentRuns.orgId,
+          userId: agentRuns.userId,
+          runnerGroup: agentRuns.runnerGroup,
+          modelProviderId: agentRuns.modelProviderId,
+          startedAt: agentRuns.startedAt,
+        }),
+    );
+    const capturedBilling = db
+      .$with("banned_run_billing", { runId: billingRunAttribution.runId })
+      .as(
+        captureBillingRunTerminalSql({
+          condition: inArray(
+            agentRuns.id,
+            db.select({ runId: cancelled.runId }).from(cancelled),
+          ),
+          status: "cancelled",
+          completedAt,
+        }),
+      );
+    const removedDiagnostics = db.$with("banned_removed_diagnostics").as(
+      db
+        .delete(agentRunConnectorDiagnosticRegistrations)
+        .where(
+          inArray(
+            agentRunConnectorDiagnosticRegistrations.runId,
+            db.select({ runId: cancelled.runId }).from(cancelled),
+          ),
+        )
+        .returning({ runId: agentRunConnectorDiagnosticRegistrations.runId }),
+    );
+    const removedAccounts = db.$with("banned_removed_accounts").as(
+      db
+        .delete(modelProviderAccounts)
+        .where(
+          and(
+            isNotNull(modelProviderAccounts.disconnectedAt),
+            bannedUserAccountCleanupCondition(),
+            gte(db.select({ total: count() }).from(capturedBilling), 0),
+            gte(db.select({ total: count() }).from(removedDiagnostics), 0),
+          ),
+        )
+        .returning({
+          id: modelProviderAccounts.id,
+          modelProviderId: modelProviderAccounts.modelProviderId,
+        }),
+    );
+    const removedProviders = db
+      .$with("banned_removed_providers")
+      .as(
+        db
+          .delete(modelProviders)
+          .where(bannedUserProviderCleanupCondition())
+          .returning({ id: modelProviders.id }),
+      );
+    // The statement snapshot still sees preceding Run/account rows. Cleanup
+    // explicitly subtracts the winning terminal/deleted rows instead of relying
+    // on a later statement seeing those writes. Slot release consumes all cleanup.
+    const released = db.$with("banned_released_slots").as(
+      db
+        .delete(activeAgentRuns)
+        .where(
+          and(
+            inArray(
+              activeAgentRuns.runId,
+              db
+                .select({ runId: cancelled.runId })
+                .from(cancelled)
+                .where(isNull(cancelled.startedAt)),
+            ),
+            gte(db.select({ total: count() }).from(capturedBilling), 0),
+            gte(db.select({ total: count() }).from(removedDiagnostics), 0),
+            gte(db.select({ total: count() }).from(removedProviders), 0),
+          ),
+        )
+        .returning({
+          runId: activeAgentRuns.runId,
+          orgId: activeAgentRuns.orgId,
+        }),
+    );
+    return await db
+      .with(
+        cancelled,
+        capturedBilling,
+        removedDiagnostics,
+        removedAccounts,
+        removedProviders,
+        released,
+      )
+      .select({
+        runId: cancelled.runId,
+        orgId: cancelled.orgId,
+        userId: cancelled.userId,
+        runnerGroup: cancelled.runnerGroup,
+        startedAt: cancelled.startedAt,
+        releasedOrgId: released.orgId,
+      })
+      .from(cancelled)
+      .leftJoin(released, eq(released.runId, cancelled.runId));
   },
 );
