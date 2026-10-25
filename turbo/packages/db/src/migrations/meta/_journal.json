@@ -2675,13 +2675,6 @@
       "when": 1792888269780,
       "tag": "1460_retire_proactive_nightly_cycles",
       "breakpoints": true
-    },
-    {
-      "idx": 1461,
-      "version": "7",
-      "when": 1792907126811,
-      "tag": "1461_migrate_presentation_templates_to_user_templates",
-      "breakpoints": true
     }
   ]
 }

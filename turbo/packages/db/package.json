@@ -61,7 +61,7 @@
     "db:reset": "tsx scripts/reset-db.ts",
     "test:migration-consistency": "tsx scripts/test-migration-consistency-schema.ts",
     "test:migration-runner": "tsx scripts/test-migration-runner-timeouts.ts",
-    "test:presentation-template-migration": "tsx scripts/test-presentation-template-migration.ts",
+    "test:presentation-template-copy": "node --import tsx scripts/migrations/025-presentation-template-copy/test-copy.ts",
     "lint:jsonb-contracts": "tsx scripts/check-jsonb-contracts.ts",
     "billing:attribution": "tsx scripts/billing-attribution.ts",
     "billing:pi-memory-stage1": "tsx scripts/pi-memory-stage1-cost.ts",
