@@ -332,11 +332,6 @@
       "owner": "commitWorkflowInput$"
     },
     {
-      "id": "TX-0335",
-      "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
-      "owner": "commitWebhookEventAutomation$"
-    },
-    {
       "id": "TX-0341",
       "file": "turbo/apps/api/src/signals/services/workflow-delete.service.ts",
       "owner": "deleteOrphanedWorkflowVolume$"
