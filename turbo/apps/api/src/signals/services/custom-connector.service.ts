@@ -1880,7 +1880,18 @@ type PersistCustomConnectorCreateArgs = {
   readonly preparedSkill: PreparedServerSideVolume | null;
 };
 
-function customConnectorCreateSource(args: PersistCustomConnectorCreateArgs) {
+export function customConnectorCreateSource(
+  args: Pick<
+    PersistCustomConnectorCreateArgs,
+    | "connectorId"
+    | "orgId"
+    | "userId"
+    | "slug"
+    | "definition"
+    | "storageVersion"
+    | "preparedSkill"
+  >,
+) {
   const protocol = protocolColumns(args.definition);
   return {
     id: sql`${sql.param(args.connectorId, orgCustomConnectors.id)}`
@@ -1953,7 +1964,7 @@ function customConnectorCreateSource(args: PersistCustomConnectorCreateArgs) {
   };
 }
 
-function customConnectorOAuthCreateSource(
+export function customConnectorOAuthCreateSource(
   connectorId: SQL,
   orgId: string,
   config: Extract<
