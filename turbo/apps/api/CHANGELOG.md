@@ -9,6 +9,37 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.3.2](https://github.com/okou-ai/okou/compare/api-v2.3.1...api-v2.3.2) (2026-10-25)
+
+
+### Refactoring
+
+* **api:** commit usage compaction atomically ([#42792](https://github.com/okou-ai/okou/issues/42792)) ([6bcc9cb](https://github.com/okou-ai/okou/commit/6bcc9cbd97fbc54c5fb37be30f5d876293a82c74))
+* **api:** finalize canceled usage-pack batches atomically ([#42781](https://github.com/okou-ai/okou/issues/42781)) ([dfbf2a1](https://github.com/okou-ai/okou/commit/dfbf2a10473de5e6ef66e445a1e074add6087088))
+* **api:** localize claude account identity hydration ([#42825](https://github.com/okou-ai/okou/issues/42825)) ([5fd106b](https://github.com/okou-ai/okou/commit/5fd106b95af51a70a19cced6d1494e67bff50d1f))
+* **api:** localize connector credential deletion queries ([#42782](https://github.com/okou-ai/okou/issues/42782)) ([f53f48c](https://github.com/okou-ai/okou/commit/f53f48c3912141c69dcf3a052fa53464cf68adec))
+* **api:** localize manual grant credential writes ([#42808](https://github.com/okou-ai/okou/issues/42808)) ([f785da0](https://github.com/okou-ai/okou/commit/f785da07c267102ed8536605701bb0dc9e482b80))
+* **api:** localize previous token revoke snapshot reads ([#42798](https://github.com/okou-ai/okou/issues/42798)) ([193a602](https://github.com/okou-ai/okou/commit/193a6028532ce7b9dee0849e6350a87540ecf7fb))
+* **api:** materialize migration allocations atomically ([#42796](https://github.com/okou-ai/okou/issues/42796)) ([9f53d2f](https://github.com/okou-ai/okou/commit/9f53d2f7d248f55b9643da9024dfb238c3f29338))
+* **api:** publish managed usage atomically ([#42800](https://github.com/okou-ai/okou/issues/42800)) ([00f7ed3](https://github.com/okou-ai/okou/commit/00f7ed32f4c755ced096e9c83f0ebb69ecc0a689))
+* **api:** publish paid invitation allocations atomically ([#42811](https://github.com/okou-ai/okou/issues/42811)) ([de80c3b](https://github.com/okou-ai/okou/commit/de80c3b3998ae5fc3a953f9088e827e515f6d89f))
+* **api:** publish provider usage batches atomically ([#42803](https://github.com/okou-ai/okou/issues/42803)) ([fae8d73](https://github.com/okou-ai/okou/commit/fae8d73b0432e11c323477ade5e37da0c0299e39))
+* **api:** publish runner usage batches atomically ([#42806](https://github.com/okou-ai/okou/issues/42806)) ([d8bd536](https://github.com/okou-ai/okou/commit/d8bd536ebb9a10a88327123ca00441cb6cbc5241))
+* **api:** restore subscription state atomically ([#42819](https://github.com/okou-ai/okou/issues/42819)) ([fafbbca](https://github.com/okou-ai/okou/commit/fafbbcac180b68536ca2343fcb5b4ff4d55775f5))
+* **api:** switch connector defaults atomically ([#42827](https://github.com/okou-ai/okou/issues/42827)) ([75866e1](https://github.com/okou-ai/okou/commit/75866e1b9e989558fda36b7942acf99001cb2c56))
+* **api:** switch google forms default atomically ([#42823](https://github.com/okou-ai/okou/issues/42823)) ([178a477](https://github.com/okou-ai/okou/commit/178a477668232895afc55d2b1e1159271addc5c0))
+* **cli:** accept only durable image generation receipts ([#42812](https://github.com/okou-ai/okou/issues/42812)) ([8069a85](https://github.com/okou-ai/okou/commit/8069a85e2f098112efee733f2b7bba0623270a10))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.2
+    * @okouai/core bumped to 8.785.1
+    * @okouai/db bumped to 2.2.2
+    * @okouai/pi-agent-runtime bumped to 1.50.67
+
 ## [2.3.1](https://github.com/okou-ai/okou/compare/api-v2.3.0...api-v2.3.1) (2026-10-24)
 
 

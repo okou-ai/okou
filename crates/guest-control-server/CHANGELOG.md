@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.24.42](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.41...guest-control-server-v0.24.42) (2026-10-25)
+
+
+### Refactoring
+
+* **guest-control:** converge spawned command result handoff ([#42793](https://github.com/okou-ai/okou/issues/42793)) ([fc06021](https://github.com/okou-ai/okou/commit/fc060218d1a2c10981e80a676f55db5849f2f634))
+* **guest-control:** pair exec roles with fixed-helper payloads ([#42804](https://github.com/okou-ai/okou/issues/42804)) ([614785d](https://github.com/okou-ai/okou/commit/614785d7043ab5668dbb653d64835854e8ef2f7b))
+
 ## [0.24.41](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.40...guest-control-server-v0.24.41) (2026-10-24)
 
 

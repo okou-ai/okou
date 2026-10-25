@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.19.1](https://github.com/okou-ai/okou/compare/ios-v0.19.0...ios-v0.19.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **ios:** match composer model button to leading actions ([#42785](https://github.com/okou-ai/okou/issues/42785)) ([a3f2356](https://github.com/okou-ai/okou/commit/a3f2356232dcc4a72bd081279a73245f67802d68))
+* **ios:** restore connector row layout and separate actions ([#42786](https://github.com/okou-ai/okou/issues/42786)) ([ceadb97](https://github.com/okou-ai/okou/commit/ceadb9771aa5fb47bcefd47535340d59cd6532af))
+* **ios:** retain feature switches when refresh fails ([#42787](https://github.com/okou-ai/okou/issues/42787)) ([5cbaf9e](https://github.com/okou-ai/okou/commit/5cbaf9e1d3a53854b531d5d8b18f0d143304d3ea))
+
 ## [0.19.0](https://github.com/okou-ai/okou/compare/ios-v0.18.11...ios-v0.19.0) (2026-10-24)
 
 
