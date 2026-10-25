@@ -2193,6 +2193,78 @@ describe("Official Workflow failure recovery", () => {
     },
   );
 
+  it("completes an in-flight user schedule using its edited recurrence", async () => {
+    mockNow(new Date("2030-01-01T00:00:00.000Z"));
+    const client = (
+      await setupApp({
+        context,
+        routes: workflowAutomationsRoutes,
+        isolatePg: true,
+      })
+    )(workflowAutomationsContract);
+    const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
+      timezone: "UTC",
+    });
+    const workflowId = await workflowBdd.createWorkflow(actor, {
+      agentId: defaultAgentId,
+      name: "edited-in-flight-schedule",
+    });
+    const automation = (
+      await accept(
+        client.create({
+          headers: authHeaders(actor),
+          params: { workflowId },
+          body: { schedule: { type: "loop", intervalSeconds: 600 } },
+        }),
+        [201],
+      )
+    ).body;
+    const runnerGroup = runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    const [fired] = await Promise.all([
+      fireOfficialSchedule(actor, automation),
+      runs.heartbeatRunner(runnerGroup),
+    ]);
+    const claim = await runs.claimRunnerJob(fired.runId);
+    mockNow(new Date("2030-01-01T00:10:00.000Z"));
+    const schedule = {
+      type: "cron" as const,
+      cronExpression: "0 * * * *",
+      timezone: "UTC",
+    };
+    const edited = await accept(
+      client.update({
+        headers: authHeaders(actor),
+        params: { id: automation.id },
+        body: { schedule },
+      }),
+      [200],
+    );
+    expect(edited.body).toMatchObject({
+      schedule,
+      nextRunAt: "2030-01-01T01:00:00.000Z",
+    });
+    mockNow(new Date("2030-01-01T00:15:00.000Z"));
+    await createChatEventsFixture(context).completeChatRunOk(
+      fired.runId,
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      { cliAgentType: "pi", cliAgentSessionId: claim.piSessionId },
+    );
+    await flushWaitUntilForTest();
+    const completed = await accept(
+      client.get({
+        headers: authHeaders(actor),
+        params: { id: automation.id },
+      }),
+      [200],
+    );
+    expect(completed.body).toMatchObject({
+      enabled: true,
+      schedule,
+      nextRunAt: "2030-01-01T01:00:00.000Z",
+    });
+  });
+
   it("keeps user-created schedules stopped after three failures", async () => {
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
     // This case executes the cross-tenant automation cron with a future clock.

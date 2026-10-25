@@ -1,8 +1,6 @@
 import {
   inFlightScheduleAdvanceCondition,
-  inFlightScheduleAdvanceSelection,
   inFlightScheduleAdvanceValues,
-  inFlightScheduleCorrection,
   type InFlightScheduleAdvance,
 } from "./workflow-schedule-settlement";
 import { settleProactiveJobsRun$ } from "./proactive-jobs-settlement.service";
@@ -10,7 +8,7 @@ import { command } from "ccstate";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
@@ -150,7 +148,7 @@ function revalidateUnjournaledCallbackLineage(args: {
   );
   if (args.lineage === undefined && lockedLineage !== undefined) {
     // The optimistic ordinary/absent read became a Morning Brief row before
-    // this read. Release this transaction and retry from Official identity;
+    // this read. Retry from Official identity;
     // never publish a successor on a stale identity.
     return { kind: "retry-selected", lineage: lockedLineage };
   }
@@ -186,86 +184,89 @@ const attemptUnjournaledWorkflowAutomationCallbackSettlement$ = command(
     signal?: AbortSignal,
   ): Promise<UnjournaledCallbackSettlementAttempt> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0332; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const [snapshot] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, args.automationId))
-        .limit(1);
-      const revalidation = revalidateUnjournaledCallbackLineage({
-        automationId: args.automationId,
-        lineage: args.lineage,
-        automation: snapshot,
-      });
-      if (revalidation.kind !== "continue") {
-        return revalidation;
-      }
-      const automation = revalidation.automation;
-      const completedAt = nowDate();
-      let isCreditError = false;
-      if (args.callback.status === "failed") {
-        const [run] = await tx
-          .select({ failureReason: agentRuns.failureReason })
-          .from(agentRuns)
-          .where(
-            and(
-              eq(agentRuns.id, args.callback.runId),
-              eq(agentRuns.orgId, automation.orgId),
-            ),
-          )
-          .limit(1);
-        isCreditError = run?.failureReason === "insufficient_credits";
-      }
-      const nextRunAt = advanceTimeAutomationAfterCompletion({
-        scheduleType: automation.scheduleType,
-        cronExpression: automation.cronExpression,
-        intervalSeconds: automation.intervalSeconds,
-        timezone: automation.timezone,
-        completedAt,
-        shouldDisable: false,
-      });
-      const advance: InFlightScheduleAdvance = {
-        automationId: args.automationId,
-        read: automation,
-        automationValues: {
-          consecutiveFailures: 0,
-          nextRunAt,
-          updatedAt: completedAt,
-        },
-        ordinaryFailure: {
-          reset: args.callback.status === "completed",
-          increment:
-            args.callback.status === "failed" && !isCreditError ? 1 : 0,
-          disableAt: MAX_CONSECUTIVE_FAILURES,
-        },
-        at: completedAt,
-        // A Morning Brief compatibility callback owns only the empty slot; an
-        // ordinary recurrence keeps its pre-existing enabled-only predicate.
-        requireEmptySlot: args.lineage !== undefined,
-        requireUnjournaledSlot: args.lineage !== undefined,
-      };
-      const [committed] = await tx
-        .update(workflowAutomations)
-        .set(inFlightScheduleAdvanceValues(advance))
-        .where(inFlightScheduleAdvanceCondition(advance))
-        .returning(inFlightScheduleAdvanceSelection());
-      if (committed !== undefined) {
-        const correction = inFlightScheduleCorrection(committed, advance);
-        if (correction) {
-          await tx
-            .update(workflowAutomations)
-            .set(correction)
-            .where(eq(workflowAutomations.id, args.automationId));
-        }
-      }
-      signal?.throwIfAborted();
-      return committed !== undefined
-        ? ({ kind: "settled", result: { success: true } } as const)
-        : skippedUnjournaledCallbackSettlement();
-    });
+    const [snapshot] = await db
+      .select(workflowAutomationColumns())
+      .from(workflowAutomations)
+      .where(eq(workflowAutomations.id, args.automationId))
+      .limit(1);
     signal?.throwIfAborted();
-    return result;
+    const revalidation = revalidateUnjournaledCallbackLineage({
+      automationId: args.automationId,
+      lineage: args.lineage,
+      automation: snapshot,
+    });
+    if (revalidation.kind !== "continue") {
+      return revalidation;
+    }
+    const automation = revalidation.automation;
+    const completedAt = nowDate();
+    let isCreditError = false;
+    if (args.callback.status === "failed") {
+      const [run] = await db
+        .select({ failureReason: agentRuns.failureReason })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, args.callback.runId),
+            eq(agentRuns.orgId, automation.orgId),
+          ),
+        )
+        .limit(1);
+      signal?.throwIfAborted();
+      isCreditError = run?.failureReason === "insufficient_credits";
+    }
+    const nextRunAt = advanceTimeAutomationAfterCompletion({
+      scheduleType: automation.scheduleType,
+      cronExpression: automation.cronExpression,
+      intervalSeconds: automation.intervalSeconds,
+      timezone: automation.timezone,
+      completedAt,
+      shouldDisable: false,
+    });
+    const advance: InFlightScheduleAdvance = {
+      automationId: args.automationId,
+      read: automation,
+      automationValues: {
+        consecutiveFailures: 0,
+        nextRunAt,
+        updatedAt: completedAt,
+      },
+      ordinaryFailure: {
+        reset: args.callback.status === "completed",
+        increment: args.callback.status === "failed" && !isCreditError ? 1 : 0,
+        disableAt: MAX_CONSECUTIVE_FAILURES,
+      },
+      at: completedAt,
+      // A Morning Brief compatibility callback owns only the empty slot; an
+      // ordinary recurrence keeps its pre-existing enabled-only predicate.
+      requireEmptySlot: args.lineage !== undefined,
+      requireUnjournaledSlot: args.lineage !== undefined,
+    };
+    // Schedule edits publish their own next occurrence. A callback prepared
+    // from an older recurrence must leave that publication and failure count
+    // unchanged instead of correcting the new schedule after writing it.
+    signal?.throwIfAborted();
+    const [committed] = await db
+      .update(workflowAutomations)
+      .set(inFlightScheduleAdvanceValues(advance))
+      .where(
+        and(
+          inFlightScheduleAdvanceCondition(advance),
+          eq(workflowAutomations.scheduleType, automation.scheduleType),
+          sql`${workflowAutomations.cronExpression} IS NOT DISTINCT FROM ${automation.cronExpression}`,
+          sql`${workflowAutomations.intervalSeconds} IS NOT DISTINCT FROM ${automation.intervalSeconds}`,
+          eq(workflowAutomations.timezone, automation.timezone),
+          eq(workflowAutomations.orgId, automation.orgId),
+          eq(workflowAutomations.workflowId, automation.workflowId),
+          sql`${workflowAutomations.ownerUserId} IS NOT DISTINCT FROM ${automation.ownerUserId}`,
+          sql`${workflowAutomations.officialBlueprintKey} IS NOT DISTINCT FROM ${automation.officialBlueprintKey}`,
+        ),
+      )
+      .returning({ id: workflowAutomations.id });
+    signal?.throwIfAborted();
+    return committed !== undefined
+      ? { kind: "settled", result: { success: true } }
+      : skippedUnjournaledCallbackSettlement();
   },
 );
 
