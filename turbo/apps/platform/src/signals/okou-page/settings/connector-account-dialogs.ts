@@ -17,6 +17,7 @@ import type {
 import { onRef, resetSignal, waitLoopUntil } from "../../utils.ts";
 import {
   connectorAccountDeletionImpact$,
+  deleteConnectorAccount$,
   readConnectorAccount$,
   renameConnectorAccount$,
   settingsConnectorAccounts,
@@ -484,6 +485,24 @@ export const prepareConnectorAccountDeletion$ = command(
 export const clearConnectorAccountDeletion$ = command(({ set }) => {
   set(internalConnectorAccountDeletionDraft$, null);
 });
+
+export const confirmConnectorAccountDeletion$ = command(
+  async ({ get, set }, target: ConnectorAccountTarget, signal: AbortSignal) => {
+    const draft = get(internalConnectorAccountDeletionDraft$);
+    if (!draft) {
+      return;
+    }
+    await set(
+      deleteConnectorAccount$,
+      { target, connectionId: draft.account.id },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (get(internalConnectorAccountDeletionDraft$) === draft) {
+      set(clearConnectorAccountDeletion$);
+    }
+  },
+);
 
 export const resetConnectorAccountManagerDrafts$ = command(({ set }) => {
   set(resetConnectorAccountRenameSave$);

@@ -32,12 +32,12 @@ import {
   type ConnectorAccountList,
 } from "../../../../signals/okou-page/connector-accounts.ts";
 import {
-  deleteConnectorAccount$,
   setDefaultConnectorAccount$,
   settingsConnectorAccounts,
 } from "../../../../signals/okou-page/settings/connector-accounts.ts";
 import {
   clearConnectorAccountDeletion$,
+  confirmConnectorAccountDeletion$,
   clearConnectorAccountRename$,
   connectorAccountActionsRef$,
   connectorAccountDeletionDraft$,
@@ -513,20 +513,14 @@ function DisconnectAccountConfirmation({
   const accountLabel = useConnectorAccountLabel();
   const clear = useSet(clearConnectorAccountDeletion$);
   const [disconnectLoadable, deleteAccount] = useLoadableSet(
-    deleteConnectorAccount$,
+    confirmConnectorAccountDeletion$,
   );
   const signal = useGet(pageSignal$);
   if (!draft) {
     return null;
   }
   const disconnect = () => {
-    detach(
-      (async () => {
-        await deleteAccount({ target, connectionId: draft.account.id }, signal);
-        clear();
-      })(),
-      Reason.DomCallback,
-    );
+    detach(deleteAccount(target, signal), Reason.DomCallback);
   };
   return (
     <Dialog
