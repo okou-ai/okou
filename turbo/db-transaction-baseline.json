@@ -127,11 +127,6 @@
       "owner": "storeCustomConnectorOAuth2Connection"
     },
     {
-      "id": "TX-0145",
-      "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
-      "owner": "persistCustomConnectorUpdate$"
-    },
-    {
       "id": "TX-0147",
       "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
       "owner": "setCustomConnectorValues$"
