@@ -182,11 +182,6 @@
       "owner": "commitMorningBriefScheduleSettlement$"
     },
     {
-      "id": "TX-0195",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-catalog-sync.service.ts",
-      "owner": "activateCandidate$"
-    },
-    {
       "id": "TX-0218",
       "file": "turbo/apps/api/src/signals/services/org-limited-free-bootstrap.service.ts",
       "owner": "ensureOrgLimitedFreeBootstrap$/bootstrap"

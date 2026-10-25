@@ -12,12 +12,14 @@ import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
 import {
   officialWorkflowCatalogReleases,
   officialWorkflowCatalogState,
-  officialWorkflowReconciliationWork,
 } from "@okouai/db/schema/official-workflow-catalog";
 import { command } from "ccstate";
+import { z } from "zod";
 import { eq } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
+import { safeSqlStateCode } from "../../lib/pg-errors";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
@@ -30,19 +32,11 @@ import {
   OfficialWorkflowCatalogRegistrationError,
   catalogActivationResult,
   assertCatalogReleasePayload,
-  assertPublishedDefinitionCount,
   type CatalogCandidatePublication,
   catalogReleaseJoinCondition,
-  catalogStateValues,
-  reconciliationDefinitionCondition,
-  retiredBlueprintDefinitions,
   catalogPublicationPlan,
   catalogAuthorityCondition,
-  catalogPublicationCondition,
-  preparedDefinitionPublicationSql,
-  changedWorkflowDefinitions,
-  reconciliationWorkResetValues,
-  reconciliationWorkValues,
+  catalogActivationSql,
   releaseDiagnostics,
   type PreparedOfficialWorkflowDefinition,
 } from "./official-workflow-catalog-publication";
@@ -111,16 +105,6 @@ function definitionRevisionKey(definitionName: string, revision: string) {
   return `${definitionName}\0${revision}`;
 }
 
-const catalogPointerFields: Readonly<{
-  acceptedReleaseId: typeof officialWorkflowCatalogState.acceptedReleaseId;
-}> = {
-  acceptedReleaseId: officialWorkflowCatalogState.acceptedReleaseId,
-};
-const catalogAuthorityFields: Readonly<{
-  authority: typeof officialWorkflowCatalogState.authority;
-}> = {
-  authority: officialWorkflowCatalogState.authority,
-};
 const acceptedCatalogFields: Readonly<{
   releaseId: typeof officialWorkflowCatalogState.acceptedReleaseId;
   payload: typeof officialWorkflowCatalogReleases.payload;
@@ -337,121 +321,59 @@ const prepareDefinitions$ = command(
   },
 );
 
+const activationGuardRow = z.object({ guard: z.literal(1) });
+
 const activateCandidate$ = command(
   async (
     { set },
     input: CatalogCandidatePublication,
     signal: AbortSignal,
   ): Promise<OfficialWorkflowCatalogSyncResponse> => {
-    let registeringDefinitionName: string | undefined;
-    // The accepted pointer, immutable registrations, artifact heads and repair work commit together.
+    const db = set(writeDb$);
+    const [catalogRow] = await db
+      .select(acceptedCatalogFields)
+      .from(officialWorkflowCatalogState)
+      .innerJoin(officialWorkflowCatalogReleases, catalogReleaseJoinCondition())
+      .where(catalogAuthorityCondition())
+      .limit(1);
+    signal.throwIfAborted();
+    const current = acceptedCatalogFromRow(catalogRow);
+    const plan = catalogPublicationPlan(input, current);
+    if (plan.outcome !== "publish") {
+      return plan;
+    }
+    const [stored] = await db
+      .select(catalogReleaseFields)
+      .from(officialWorkflowCatalogReleases)
+      .where(eq(officialWorkflowCatalogReleases.id, plan.releaseId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (stored) {
+      assertCatalogReleasePayload(stored, plan);
+    }
+    const statement = catalogActivationSql(input, current, plan, nowDate());
+    signal.throwIfAborted();
     const activation = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0195; new non-billing transactions are prohibited.
-      set(writeDb$).transaction(async (tx) => {
-        const [state] = await tx
-          .select(catalogPointerFields)
-          .from(officialWorkflowCatalogState)
-          .where(catalogAuthorityCondition())
-          .for("update");
-        signal.throwIfAborted();
-        const [catalogRow] = await tx
-          .select(acceptedCatalogFields)
-          .from(officialWorkflowCatalogState)
-          .innerJoin(
-            officialWorkflowCatalogReleases,
-            catalogReleaseJoinCondition(),
-          )
-          .where(catalogAuthorityCondition())
-          .limit(1);
-        signal.throwIfAborted();
-        const current = acceptedCatalogFromRow(catalogRow);
-        const plan = catalogPublicationPlan(input, current);
-        if (plan.outcome !== "publish") {
-          return plan;
-        }
-        const { releaseId, payload, hiddenThreadDefinitionNames } = plan;
-        const [inserted] = await tx
-          .insert(officialWorkflowCatalogReleases)
-          .values({ id: releaseId, payload, hiddenThreadDefinitionNames })
-          .onConflictDoNothing()
-          .returning(catalogReleaseFields);
-        signal.throwIfAborted();
-        const stored =
-          inserted ??
-          (
-            await tx
-              .select(catalogReleaseFields)
-              .from(officialWorkflowCatalogReleases)
-              .where(eq(officialWorkflowCatalogReleases.id, releaseId))
-              .limit(1)
-          )[0];
-        signal.throwIfAborted();
-        assertCatalogReleasePayload(stored, plan);
-
-        // Claim the singleton before mutating artifact heads, including when the
-        // catalog has never been published. The pointer and exact revisions only
-        // become visible together when this transaction commits.
-        const previousReleaseId = state?.acceptedReleaseId;
-        const published =
-          previousReleaseId === undefined
-            ? await tx
-                .insert(officialWorkflowCatalogState)
-                .values(catalogStateValues(releaseId, nowDate()))
-                .onConflictDoNothing({
-                  target: officialWorkflowCatalogState.authority,
-                })
-                .returning(catalogAuthorityFields)
-            : await tx
-                .update(officialWorkflowCatalogState)
-                .set({ acceptedReleaseId: releaseId, updatedAt: nowDate() })
-                .where(catalogPublicationCondition(previousReleaseId))
-                .returning(catalogAuthorityFields);
-        if (published.length !== 1) {
-          // Roll back the candidate's Storage HEAD and registration writes as well
-          // as its pointer. The singleton primary key arbitrates first publication.
-          throw new OfficialWorkflowCatalogActivationConflictError(releaseId);
-        }
-
-        for (const prepared of input.preparedByName.values()) {
-          registeringDefinitionName = prepared.definition.name;
-          const { rowCount: published } = await tx.execute(
-            preparedDefinitionPublicationSql(prepared, nowDate()),
-          );
-          assertPublishedDefinitionCount(published, prepared.definition.name);
-          signal.throwIfAborted();
-        }
-        registeringDefinitionName = undefined;
-        signal.throwIfAborted();
-        const changed = changedWorkflowDefinitions(current, plan);
-        for (const definition of retiredBlueprintDefinitions(payload)) {
-          await tx
-            .delete(officialWorkflowReconciliationWork)
-            .where(reconciliationDefinitionCondition(definition.name));
-          signal.throwIfAborted();
-        }
-        const currentTime = nowDate();
-        for (const definition of changed) {
-          await tx
-            .insert(officialWorkflowReconciliationWork)
-            .values(
-              reconciliationWorkValues(definition.name, releaseId, currentTime),
-            )
-            .onConflictDoUpdate({
-              target: officialWorkflowReconciliationWork.definitionName,
-              set: reconciliationWorkResetValues(releaseId, currentTime),
-            });
-          signal.throwIfAborted();
-        }
-
-        return {
-          outcome: "accepted" as const,
-          releaseId,
-          diagnostics: [],
-        };
-      }),
+      (async () => {
+        return parseRawRows(activationGuardRow, await db.execute(statement));
+      })(),
       signal,
     );
-    return catalogActivationResult(activation, registeringDefinitionName);
+    if (!activation.ok && safeSqlStateCode(activation.error) === "22012") {
+      const latest = await set(readAcceptedOfficialWorkflowCatalog$, signal);
+      if ((latest?.releaseId ?? null) !== (current?.releaseId ?? null)) {
+        throw new OfficialWorkflowCatalogActivationConflictError(
+          plan.releaseId,
+        );
+      }
+      throw new OfficialWorkflowCatalogRegistrationError(
+        undefined,
+        activation.error,
+      );
+    }
+    catalogActivationResult(activation, undefined);
+    signal.throwIfAborted();
+    return { outcome: "accepted", releaseId: plan.releaseId, diagnostics: [] };
   },
 );
 
