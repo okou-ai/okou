@@ -12,8 +12,10 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { env } from "../../../lib/env";
 import { mockNow, withNowScopeForTest } from "../../../lib/time";
 import { runnerBrowserRoutes } from "../runner-browser";
+import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   okouTokenFromClaim,
   requireOrgId,
@@ -197,18 +199,35 @@ describe("official Runner Browser lifecycle", () => {
         [200],
       );
       expect(forged.body).toStrictEqual({ outcome: "unavailable" });
+      for (const token of [
+        okouTokenFromClaim(chat.claim),
+        chat.claim.sandboxToken,
+      ]) {
+        await accept(
+          client().control({
+            headers: { authorization: `Bearer ${token}` },
+            params: { runId: chat.runId },
+            body: {
+              runnerIdentity: chat.runnerIdentity,
+              action: { kind: "inspect" },
+            },
+          }),
+          [401],
+        );
+      }
+      const pat = await createAuthOrgAgentsBddApi(context).createCliToken(
+        f.owned.actor,
+      );
       await accept(
         client().control({
-          headers: {
-            authorization: `Bearer ${okouTokenFromClaim(chat.claim)}`,
-          },
+          headers: { authorization: `Bearer ${pat.token}` },
           params: { runId: chat.runId },
           body: {
             runnerIdentity: chat.runnerIdentity,
             action: { kind: "inspect" },
           },
         }),
-        [401],
+        [403],
       );
       const denied = await f.start(false);
       await expect(
@@ -250,6 +269,22 @@ describe("official Runner Browser lifecycle", () => {
       });
       await expect(
         chat.request({ kind: "inspect", instanceId: instance.id }),
+      ).resolves.toStrictEqual({ outcome: "unavailable" });
+      const terminal = await f.start();
+      expect(accepted(await terminal.request({ kind: "inspect" })).id).toBe(
+        instance.id,
+      );
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        {
+          runId: terminal.runId,
+          exitCode: 1,
+          error: "Run terminated before further Browser control",
+        },
+        { authorization: `Bearer ${terminal.claim.sandboxToken}` },
+        [200],
+      );
+      await expect(
+        terminal.request({ kind: "inspect", instanceId: instance.id }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
     });
   });
