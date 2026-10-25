@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.5.0](https://github.com/okou-ai/okou/compare/api-v2.4.2...api-v2.5.0) (2026-10-25)
+
+
+### Features
+
+* cut over data tools to dynamic router discovery ([#42695](https://github.com/okou-ai/okou/issues/42695)) ([28d1842](https://github.com/okou-ai/okou/commit/28d18426d6282b443344e3a3cabdec11ee13bc03))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.3.0
+    * @okouai/core bumped to 8.787.1
+    * @okouai/db bumped to 2.3.0
+    * @okouai/pi-agent-runtime bumped to 1.50.70
+
 ## [2.4.2](https://github.com/okou-ai/okou/compare/api-v2.4.1...api-v2.4.2) (2026-10-25)
 
 

@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1062.0](https://github.com/okou-ai/okou/compare/app-v0.1061.0...app-v0.1062.0) (2026-10-25)
+
+
+### Features
+
+* cut over data tools to dynamic router discovery ([#42695](https://github.com/okou-ai/okou/issues/42695)) ([28d1842](https://github.com/okou-ai/okou/commit/28d18426d6282b443344e3a3cabdec11ee13bc03))
+
+
+### Bug Fixes
+
+* **browser:** allow viewer window size sync changes ([#42916](https://github.com/okou-ai/okou/issues/42916)) ([497ec0f](https://github.com/okou-ai/okou/commit/497ec0f949927f3991292972c640db0330ea48a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.3.0
+    * @okouai/core bumped to 8.787.1
+
 ## [0.1061.0](https://github.com/okou-ai/okou/compare/app-v0.1060.1...app-v0.1061.0) (2026-10-25)
 
 
