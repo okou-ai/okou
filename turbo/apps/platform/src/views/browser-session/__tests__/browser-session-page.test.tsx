@@ -127,8 +127,18 @@ test("The viewer switch replaces the provider iframe with the interactive Okou v
   expect(screen.getByLabelText("New tab")).toBeInTheDocument();
   expect(screen.queryByTitle("Live browser: booking")).not.toBeInTheDocument();
   click(screen.getByLabelText("Browser menu"));
-  const menu = await screen.findByRole("menu");
-  const continuousSync = queryAllByRoleFast("menuitemradio", menu).find(
+  const menu = await screen.findByRole("menu", { name: "Browser menu" });
+  const fitToViewer = queryAllByRoleFast("menuitem", menu).find((item) => {
+    return item.textContent?.trim() === "Fit to this viewer";
+  });
+  if (!fitToViewer) {
+    throw new Error("Expected the viewer sizing submenu");
+  }
+  click(fitToViewer);
+  const sizingMenu = await screen.findByRole("menu", {
+    name: "Fit to this viewer",
+  });
+  const continuousSync = queryAllByRoleFast("menuitemradio", sizingMenu).find(
     (item) => {
       return item.textContent?.trim() === "Sync continuously";
     },

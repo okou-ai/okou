@@ -300,15 +300,25 @@ test("The embedded Okou viewer owns its shortcuts while the conversation keeps i
   const address = await screen.findByDisplayValue("https://example.com");
   expect(address).toBeEnabled();
 
-  click(screen.getByLabelText("Browser menu"));
-  const menu = await screen.findByRole("menu");
-  const continuousSync = queryAllByRoleFast("menuitemradio", menu).find(
+  click(buttonByName("Browser menu"));
+  const menu = await screen.findByRole("menu", { name: "Browser menu" });
+  const fitToViewer = queryAllByRoleFast("menuitem", menu).find((item) => {
+    return item.textContent?.trim() === "Fit to this viewer";
+  });
+  if (!fitToViewer) {
+    throw new Error("Expected the viewer sizing submenu");
+  }
+  click(fitToViewer);
+  const sizingMenu = await screen.findByRole("menu", {
+    name: "Fit to this viewer",
+  });
+  const continuousSync = queryAllByRoleFast("menuitemradio", sizingMenu).find(
     (item) => {
       return item.textContent?.trim() === "Sync continuously";
     },
   );
   expect(continuousSync).toHaveAttribute("aria-checked", "true");
-  click(screen.getByLabelText("Browser menu"));
+  click(buttonByName("Browser menu"));
   await waitFor(() => {
     expect(continuousSync).not.toBeInTheDocument();
   });
