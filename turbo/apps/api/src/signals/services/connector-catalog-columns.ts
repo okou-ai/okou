@@ -33,9 +33,22 @@ export const connectorCatalogDisplayColumns = Object.freeze({
   permissionSummary: entry.permissionSummary,
 });
 
+const catalogSearchColumns = Object.freeze({
+  ...connectorCatalogCompatibilityColumns,
+  label: entry.label,
+  description: entry.description,
+});
+
 export const connectorCatalogRuntimeColumns = Object.freeze({
   ...metadataColumns,
   skill: entry.skill,
+  firewall: entry.firewall,
+});
+
+// Catalog-wide diagnostics and change detection do not consume display copy or skills.
+const catalogRuntimeColumns = Object.freeze({
+  ...connectorCatalogCompatibilityColumns,
+  label: entry.label,
   firewall: entry.firewall,
 });
 
@@ -55,7 +68,8 @@ export function acceptedCatalogIdentityReadPlan() {
 export function acceptedCatalogEntriesReadPlan(catalogDigest: string) {
   return {
     displayColumns: connectorCatalogDisplayColumns,
-    runtimeColumns: connectorCatalogRuntimeColumns,
+    searchColumns: catalogSearchColumns,
+    runtimeColumns: catalogRuntimeColumns,
     condition: eq(connectorCatalogEntries.hash, catalogDigest),
     orderBy: asc(connectorCatalogEntries.slug),
   };
@@ -64,6 +78,16 @@ export function acceptedCatalogEntriesReadPlan(catalogDigest: string) {
 type CompatibilityConnector = Pick<
   ConnectorCatalogArtifactConnector,
   "slug" | "authMethods" | "mcp"
+>;
+
+export type ConnectorCatalogRuntimeConnector = Pick<
+  ConnectorCatalogArtifactConnector,
+  "slug" | "authMethods" | "mcp" | "label" | "firewall"
+>;
+
+export type ConnectorCatalogSearchConnector = Pick<
+  ConnectorCatalogArtifactConnector,
+  "slug" | "authMethods" | "mcp" | "label" | "description"
 >;
 
 export type ConnectorCatalogDisplayConnector = Pick<
@@ -97,9 +121,23 @@ export function materializeConnectorCatalogDisplayRow(
   return { ...fields, ...(mcp === null ? {} : { mcp }) };
 }
 
+export function materializeConnectorCatalogSearchRow(
+  row: ColumnRow<ConnectorCatalogSearchConnector>,
+): ConnectorCatalogSearchConnector {
+  const { mcp, ...fields } = row;
+  return { ...fields, ...(mcp === null ? {} : { mcp }) };
+}
+
 export function materializeConnectorCatalogRuntimeRow(
   row: ColumnRow<ConnectorCatalogArtifactConnector>,
 ): ConnectorCatalogArtifactConnector {
+  const { mcp, ...fields } = row;
+  return { ...fields, ...(mcp === null ? {} : { mcp }) };
+}
+
+export function materializeConnectorCatalogRuntimeMetadataRow(
+  row: ColumnRow<ConnectorCatalogRuntimeConnector>,
+): ConnectorCatalogRuntimeConnector {
   const { mcp, ...fields } = row;
   return { ...fields, ...(mcp === null ? {} : { mcp }) };
 }

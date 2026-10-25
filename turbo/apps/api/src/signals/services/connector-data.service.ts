@@ -97,7 +97,7 @@ import {
 import { normalizeManualGrantSubmittedValuesWithMethod } from "./connector-catalog-form-fields.service";
 import {
   connectorCatalogSearchFromSnapshot,
-  loadAcceptedDisplayConnectorCatalogSnapshot$,
+  loadAcceptedSearchConnectorCatalogSnapshot$,
 } from "./connector-catalog-external-reader.service";
 import { isConnectorCatalogUnavailableError } from "./connector-catalog-reader.service";
 import type {
@@ -3017,9 +3017,7 @@ export const builtinConnectorSearch$ = command(
     return (async () => {
       return await (async () => {
         const viewArgs = { keyword: catalogSearchKeyword, featureStates };
-        const snapshot = await set(
-          loadAcceptedDisplayConnectorCatalogSnapshot$,
-        );
+        const snapshot = await set(loadAcceptedSearchConnectorCatalogSnapshot$);
         return connectorCatalogSearchFromSnapshot({
           ...viewArgs,
           catalog: snapshot,

@@ -36,8 +36,10 @@ import {
   acceptedCatalogIdentityReadPlan,
   acceptedCatalogEntriesReadPlan,
   materializeConnectorCatalogDisplayRow,
-  materializeConnectorCatalogRuntimeRow,
+  materializeConnectorCatalogSearchRow,
+  materializeConnectorCatalogRuntimeMetadataRow,
   type ConnectorCatalogDisplayConnector,
+  type ConnectorCatalogSearchConnector,
 } from "./connector-catalog-columns";
 import { isConnectorCatalogIconKey } from "@okouai/connectors/connector-catalog/artifacts/icon";
 import { deriveConnectorCatalogFirewallPermissions } from "@okouai/connectors/connector-catalog/artifacts/relationships";
@@ -97,13 +99,16 @@ interface AcceptedCatalogSnapshot<
   Connector extends CompatibleCatalogConnector,
 > {
   readonly identity: ExternalCatalogIdentity;
-  readonly artifact: { readonly connectors: Connector[] };
+  readonly artifact: { readonly connectors: readonly Connector[] };
   readonly connectorBySlug: ReadonlyMap<string, Connector>;
   readonly filteredMethodKeys: ReadonlySet<string>;
 }
 
 type AcceptedDisplayCatalogSnapshot =
   AcceptedCatalogSnapshot<ConnectorCatalogDisplayConnector>;
+
+type AcceptedSearchCatalogSnapshot =
+  AcceptedCatalogSnapshot<ConnectorCatalogSearchConnector>;
 
 interface PreparedExternalCatalogCache<
   Catalog extends { readonly identity: ExternalCatalogIdentity },
@@ -144,7 +149,9 @@ interface ExternalCatalogConnectorReadArgs<
   readonly connectorSlug: string;
 }
 
-interface CatalogSearchSnapshotArgs extends ExternalCatalogSnapshotArgs {
+interface CatalogSearchSnapshotArgs {
+  readonly catalog: AcceptedSearchCatalogSnapshot;
+  readonly featureStates: ConnectorFeatureStates;
   readonly keyword: string | undefined;
 }
 
@@ -200,6 +207,14 @@ const preparedCatalogCache = singleton(
 
 const preparedDisplayCatalogCache = singleton(
   (): PreparedExternalCatalogCache<AcceptedDisplayCatalogSnapshot> => {
+    return {
+      completed: undefined,
+    };
+  },
+);
+
+const preparedSearchCatalogCache = singleton(
+  (): PreparedExternalCatalogCache<AcceptedSearchCatalogSnapshot> => {
     return {
       completed: undefined,
     };
@@ -356,6 +371,49 @@ export const loadAcceptedDisplayConnectorCatalogSnapshot$ = command(
   },
 );
 
+export const loadAcceptedSearchConnectorCatalogSnapshot$ = command(
+  async ({ get, set }): Promise<AcceptedSearchCatalogSnapshot> => {
+    const { identity, capability } = await set(
+      readAcceptedConnectorCatalogIdentity$,
+    );
+    // Display entries already contain every search field. Reuse that generation
+    // when loaded, while keeping search-only reads on their narrow projection.
+    const { catalog: displayCatalog } = readCachedConnectorCatalogSnapshot({
+      cache: preparedDisplayCatalogCache(),
+      identity,
+      timing: undefined,
+    });
+    if (displayCatalog) {
+      return displayCatalog;
+    }
+    const cache = preparedSearchCatalogCache();
+    const { key, catalog: cached } = readCachedConnectorCatalogSnapshot({
+      cache,
+      identity,
+      timing: undefined,
+    });
+    if (cached) {
+      return cached;
+    }
+    const plan = acceptedCatalogEntriesReadPlan(identity.catalogDigest);
+    const rows = await get(db$)
+      .select(plan.searchColumns)
+      .from(connectorCatalogEntries)
+      .where(plan.condition)
+      .orderBy(plan.orderBy);
+    if (rows.length === 0) {
+      throw new ExternalConnectorCatalogUnavailableError("missing_entries");
+    }
+    const catalog = materializeAcceptedConnectorCatalog({
+      identity,
+      capability,
+      connectors: rows.map(materializeConnectorCatalogSearchRow),
+    });
+    cache.completed = { key, catalog };
+    return catalog;
+  },
+);
+
 export const loadAcceptedConnectorCatalogSnapshot$ = command(
   async ({ get, set }): Promise<AcceptedConnectorCatalogSnapshot> => {
     const { identity, capability } = await set(
@@ -385,7 +443,7 @@ export const loadAcceptedConnectorCatalogSnapshot$ = command(
       return materializeAcceptedConnectorCatalog({
         identity,
         capability,
-        connectors: rows.map(materializeConnectorCatalogRuntimeRow),
+        connectors: rows.map(materializeConnectorCatalogRuntimeMetadataRow),
       });
     })();
     cache.completed = { key, catalog };
@@ -690,7 +748,7 @@ export function connectorCatalogListFromSnapshot(
 }
 
 function connectorMatchesKeyword(
-  entry: EffectiveConnector,
+  entry: EffectiveConnector<ConnectorCatalogSearchConnector>,
   keyword: string,
 ): boolean {
   return (
@@ -699,18 +757,20 @@ function connectorMatchesKeyword(
   );
 }
 
-function sortedByPopularity(
-  effective: readonly EffectiveConnector[],
-): EffectiveConnector[] {
+function sortedByPopularity<Connector extends ConnectorCatalogSearchConnector>(
+  effective: readonly EffectiveConnector<Connector>[],
+): EffectiveConnector<Connector>[] {
   const index = createConnectorPopularityIndex();
   return [...effective].sort((left, right) => {
     return compareConnectorPopularity(index, left.connector, right.connector);
   });
 }
 
-function withoutInternalConnectors(
-  effective: readonly EffectiveConnector[],
-): EffectiveConnector[] {
+function withoutInternalConnectors<
+  Connector extends CompatibleCatalogConnector,
+>(
+  effective: readonly EffectiveConnector<Connector>[],
+): EffectiveConnector<Connector>[] {
   return effective.filter((entry) => {
     return !isInternalConnector(entry.connector.slug);
   });
@@ -756,11 +816,13 @@ function categoryEffectiveConnectors(
   );
 }
 
-function searchEffectiveConnectors(
-  effective: readonly EffectiveConnector[],
+function searchEffectiveConnectors<
+  Connector extends ConnectorCatalogSearchConnector,
+>(
+  effective: readonly EffectiveConnector<Connector>[],
   keyword: string | undefined,
   options: { readonly excludeInternal: boolean } = { excludeInternal: false },
-): EffectiveConnector[] {
+): EffectiveConnector<Connector>[] {
   const ranked = options.excludeInternal
     ? withoutInternalConnectors(sortedByPopularity(effective))
     : sortedByPopularity(effective);

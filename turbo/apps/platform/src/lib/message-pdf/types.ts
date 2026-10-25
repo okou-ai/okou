@@ -17,6 +17,9 @@ export interface PdfWorkerRequest {
   readonly assets: PdfAssets;
   readonly regularFont: ArrayBuffer;
   readonly boldFont: ArrayBuffer;
+  readonly italicFont?: ArrayBuffer;
+  readonly boldItalicFont?: ArrayBuffer;
+  readonly emojiFont?: ArrayBuffer;
 }
 
 export type PdfWorkerResponse =
