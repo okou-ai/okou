@@ -22,6 +22,18 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+ios_repeat_startup=${IOS_REPEAT_TEST_STARTUP:-false}
+if [[ "$ios_repeat_startup" == true ]]; then
+  if [[ "${GITHUB_EVENT_NAME:-}" != workflow_dispatch || "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true ]]; then
+    echo 'Startup repetition requires a manual run with stack sampling disabled' >&2
+    exit 2
+  fi
+  if [[ -e "$RUNNER_TEMP/okou-ios-ci/ColdTests.xcresult" ]]; then
+    echo 'Startup repetition requires a new result directory' >&2
+    exit 2
+  fi
+fi
+
 ios_prepare_started=$SECONDS
 bash ios/scripts/ci-test.sh prepare &
 ios_phase_pid=$!
@@ -45,8 +57,24 @@ echo "iOS simulator preparation: $ios_boot_seconds seconds"
 echo "iOS total preparation: $((ios_dependency_seconds + ios_boot_seconds)) seconds"
 echo "iOS startup before tests: $((SECONDS - ios_prepare_started)) seconds"
 
+if [[ "$ios_repeat_startup" == true ]]; then
+  echo 'iOS test startup round: cold'
+  shasum -a 256 "$RUNNER_TEMP/okou-ios-ci/DerivedData/Build/Products/"*.xctestrun
+fi
 echo "iOS starting test-without-building"
 bash ios/scripts/ci-test.sh run &
 ios_phase_pid=$!
 wait "$ios_phase_pid"
 ios_phase_pid=""
+
+if [[ "$ios_repeat_startup" == true ]]; then
+  # A failed first suite exits above. This is a second full measurement, not a retry.
+  mv "$RUNNER_TEMP/okou-ios-ci/Tests.xcresult" "$RUNNER_TEMP/okou-ios-ci/ColdTests.xcresult"
+  echo 'iOS test startup round: warm'
+  shasum -a 256 "$RUNNER_TEMP/okou-ios-ci/DerivedData/Build/Products/"*.xctestrun
+  echo "iOS starting test-without-building"
+  bash ios/scripts/ci-test.sh run &
+  ios_phase_pid=$!
+  wait "$ios_phase_pid"
+  ios_phase_pid=""
+fi

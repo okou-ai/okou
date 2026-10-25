@@ -12,6 +12,10 @@ on:
         description: Sample Xcode startup during compilation and before the first App test
         type: boolean
         default: false
+      repeat_test_startup:
+        description: Compare first and warm test startup on one runner using identical build products
+        type: boolean
+        default: false
       archive_cache_experiment:
         description: Compare fresh Release archives with and without native caches
         type: boolean
@@ -178,6 +182,7 @@ jobs:
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
       IOS_BUILD_CACHE_ENABLED: "true"
       IOS_XCODE_STARTUP_SAMPLING: ${{ github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup && 'true' || 'false' }}
+      IOS_REPEAT_TEST_STARTUP: ${{ github.event_name == 'workflow_dispatch' && inputs.repeat_test_startup && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
