@@ -66,7 +66,20 @@ private final class ChatFixtureURLProtocol: URLProtocol, @unchecked Sendable {
   }
   static let ownerHeader = "X-Okou-Test-Fixture"
   static let handlers = Mutex<[String: Route]>([:])
-  private let loadingTask = Mutex<Task<Void, Never>?>(nil)
+  private struct Loading: Sendable {
+    var task: Task<Void, Never>?
+    var stopped = false
+  }
+  private let loading = Mutex(Loading())
+  private let owner: String
+  private let route: Route?
+
+  override init(request: URLRequest, cachedResponse: CachedURLResponse?, client: URLProtocolClient?) {
+    let owner = request.value(forHTTPHeaderField: Self.ownerHeader) ?? request.url?.host ?? ""
+    self.owner = owner
+    route = Self.handlers.withLock { $0[owner] }
+    super.init(request: request, cachedResponse: cachedResponse, client: client)
+  }
 
   override class func canInit(with request: URLRequest) -> Bool {
     guard let url = request.url, let scheme = url.scheme, ["http", "https"].contains(scheme) else {
@@ -78,14 +91,14 @@ private final class ChatFixtureURLProtocol: URLProtocol, @unchecked Sendable {
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
   override func startLoading() {
-    // The protocol task must retain its route even if session invalidation
-    // finishes before this task observes cancellation.
-    let owner = request.value(forHTTPHeaderField: Self.ownerHeader) ?? request.url?.host ?? ""
-    let route = Self.handlers.withLock { $0[owner] }
-    let task = Task { @Sendable [self] in
-      await deliverResponse(owner: owner, route: route)
+    // Retain request ownership from protocol creation, before deferred loading
+    // can race session invalidation. Cancellation and task publication are atomic.
+    loading.withLock { state in
+      guard !state.stopped else { return }
+      state.task = Task { @Sendable [self] in
+        await deliverResponse(owner: owner, route: route)
+      }
     }
-    loadingTask.withLock { $0 = task }
   }
 
   private func deliverResponse(owner: String, route: Route?) async {
@@ -130,10 +143,13 @@ private final class ChatFixtureURLProtocol: URLProtocol, @unchecked Sendable {
   }
 
   override func stopLoading() {
-    loadingTask.withLock { task in
-      task?.cancel()
-      task = nil
+    let task = loading.withLock { state in
+      state.stopped = true
+      let task = state.task
+      state.task = nil
+      return task
     }
+    task?.cancel()
   }
 }
 
