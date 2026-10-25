@@ -35,12 +35,16 @@ case "$ios_process_mode" in
 esac
 echo "iOS test process mode: $ios_process_mode"
 ios_repeat_startup=${IOS_REPEAT_TEST_STARTUP:-false}
+if [[ "${IOS_REBOOT_STARTUP_PROBE:-false}" == true && "$ios_repeat_startup" != true ]]; then
+  echo 'Simulator restart comparison requires startup repetition' >&2
+  exit 2
+fi
 if [[ "$ios_repeat_startup" == true ]]; then
   if [[ "${GITHUB_EVENT_NAME:-}" != workflow_dispatch || "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true ]]; then
     echo 'Startup repetition requires a manual run with stack sampling disabled' >&2
     exit 2
   fi
-  if [[ -e "$RUNNER_TEMP/okou-ios-ci/ColdTests.xcresult" ]]; then
+  if [[ -e "$RUNNER_TEMP/okou-ios-ci/ColdTests.xcresult" || -e "$RUNNER_TEMP/okou-ios-ci/WarmTests.xcresult" ]]; then
     echo 'Startup repetition requires a new result directory' >&2
     exit 2
   fi
@@ -98,4 +102,20 @@ if [[ "$ios_repeat_startup" == true ]]; then
   ios_phase_pid=$!
   wait "$ios_phase_pid"
   ios_phase_pid=""
+  if [[ "${IOS_REBOOT_STARTUP_PROBE:-false}" == true ]]; then
+    mv "$RUNNER_TEMP/okou-ios-ci/Tests.xcresult" "$RUNNER_TEMP/okou-ios-ci/WarmTests.xcresult"
+    ios_restart_started=$SECONDS
+    python3 ios/scripts/preboot-simulator.py --restart &
+    ios_preboot_pid=$!
+    wait "$ios_preboot_pid"
+    ios_preboot_pid=""
+    echo "iOS simulator reboot preparation: $((SECONDS - ios_restart_started)) seconds"
+    echo 'iOS test startup round: rebooted'
+    shasum -a 256 "$RUNNER_TEMP/okou-ios-ci/DerivedData/Build/Products/"*.xctestrun
+    echo "iOS starting test-without-building"
+    bash ios/scripts/ci-test.sh run &
+    ios_phase_pid=$!
+    wait "$ios_phase_pid"
+    ios_phase_pid=""
+  fi
 fi

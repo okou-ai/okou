@@ -6,12 +6,18 @@ Callers own when startup occurs. Missing/ambiguous devices and boot or
 readiness failures fail CI.
 """
 
+import argparse
 import json
 import os
 import subprocess
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--restart", action="store_true")
+    args = parser.parse_args()
+    if args.restart and os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch":
+        raise ValueError("Simulator restart requires a manual diagnostic")
     destination = dict(
         item.split("=", 1) for item in os.environ["IOS_TEST_DESTINATION"].split(",")
     )
@@ -36,6 +42,13 @@ def main():
     if len(devices) != 1:
         raise ValueError("Expected one available simulator matching the CI name and OS")
     device = devices[0]
+    if args.restart:
+        if device["state"] != "Booted":
+            raise ValueError(
+                "Restart diagnostic requires the selected simulator to be booted"
+            )
+        subprocess.run(["xcrun", "simctl", "shutdown", device["udid"]], check=True)
+        device["state"] = "Shutdown"
     print(
         f"Prebooting {device['name']} ({destination['OS']}): {device['udid']}",
         flush=True,

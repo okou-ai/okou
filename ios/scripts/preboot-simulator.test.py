@@ -17,6 +17,16 @@ path = pathlib.Path(os.environ['SIMULATOR_FIXTURE'])
 inventory = json.loads(path.read_text())
 if sys.argv[1:] == ['simctl', 'list', 'devices', 'available', '--json']:
     print(json.dumps(inventory))
+elif sys.argv[1:3] == ['simctl', 'shutdown']:
+    if os.environ.get('SIMULATOR_SHUTDOWN_FAILURE'):
+        sys.exit('Simulator shutdown failed')
+    device, = [device for devices in inventory['devices'].values()
+        for device in devices if device['udid'] == sys.argv[3]]
+    if device['state'] != 'Booted':
+        sys.exit('Device must be booted before shutdown')
+    device['state'] = 'Shutdown'
+    path.write_text(json.dumps(inventory))
+    path.with_suffix('.shutdown').write_text(sys.argv[3])
 elif sys.argv[1:3] == ['simctl', 'boot']:
     if os.environ.get('SIMULATOR_BOOT_FAILURE'):
         sys.exit('Simulator boot failed')
@@ -61,9 +71,9 @@ class PrebootSimulatorTests(unittest.TestCase):
             "IOS_TEST_DESTINATION": "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2",
         }
 
-    def invoke(self):
+    def invoke(self, *options):
         return subprocess.run(
-            ["python3", str(SCRIPT)],
+            ["python3", str(SCRIPT), *options],
             env=self.env,
             text=True,
             capture_output=True,
@@ -106,6 +116,27 @@ class PrebootSimulatorTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Simulator boot failed", result.stderr)
         self.assertEqual(json.loads(self.state.read_text()), self.inventory)
+
+    def test_manual_restart_only_restarts_the_selected_booted_device(self):
+        self.inventory["devices"][RUNTIME][0]["state"] = "Booted"
+        self.state.write_text(json.dumps(self.inventory))
+        self.env["GITHUB_EVENT_NAME"] = "workflow_dispatch"
+        result = self.invoke("--restart")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.state.with_suffix(".shutdown").read_text(), "configured")
+        self.assertEqual(self.state.with_suffix(".ready").read_text(), "configured")
+        self.assertEqual(json.loads(self.state.read_text()), self.inventory)
+
+    def test_restart_shutdown_failure_blocks_further_boot_and_readiness(self):
+        self.inventory["devices"][RUNTIME][0]["state"] = "Booted"
+        self.state.write_text(json.dumps(self.inventory))
+        self.env.update(
+            GITHUB_EVENT_NAME="workflow_dispatch", SIMULATOR_SHUTDOWN_FAILURE="true"
+        )
+        result = self.invoke("--restart")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Simulator shutdown failed", result.stderr)
+        self.assertFalse(self.state.with_suffix(".ready").exists())
 
 
 if __name__ == "__main__":
