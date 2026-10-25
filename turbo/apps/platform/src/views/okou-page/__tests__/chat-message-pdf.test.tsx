@@ -289,6 +289,25 @@ async function exportRenderedPdf(markdown: string) {
   return { pdf: await task.promise, task };
 }
 
+test("Whitespace-only emphasis still exports the surrounding text", async () => {
+  const { pdf, task } = await exportRenderedPdf(
+    "Before<em> </em>between<strong><em> </em></strong>after.",
+  );
+  try {
+    const content = await (await pdf.getPage(1)).getTextContent();
+    const text = content.items
+      .map((item) => {
+        return "str" in item ? item.str : "";
+      })
+      .join("");
+    expect(text).toContain("Before");
+    expect(text).toContain("between");
+    expect(text).toContain("after.");
+  } finally {
+    await task.destroy();
+  }
+});
+
 test("Exported table text stays inside the page and merged columns preserve all cells", async () => {
   const { pdf, task } = await exportRenderedPdf(`| Rank | Candidate | Reason |
 |---|---|---|

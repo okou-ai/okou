@@ -23,7 +23,8 @@ function requiredExtraFonts(tree: Root) {
   const needed = { italic: false, boldItalic: false, emoji: false };
   const visit = (node: RootContent, bold: boolean, italic: boolean): void => {
     if (node.type === "text") {
-      if (node.value.trim()) {
+      // Whitespace runs retain their emphasis during PDF font measurement.
+      if (node.value) {
         needed.italic ||= italic && !bold;
         needed.boldItalic ||= italic && bold;
         needed.emoji ||= /[\p{Emoji_Presentation}\uFE0F\u20E3]/u.test(

@@ -376,10 +376,11 @@ function tableWidths(
       const preference =
         Math.min(width / 2, length * TABLE_FONT_SIZE + 4) / span;
       for (let offset = 0; offset < span; offset++) {
-        desired[column + offset] = Math.max(
-          desired[column + offset] ?? minimum,
-          preference,
-        );
+        const current = desired[column + offset];
+        if (current === undefined) {
+          throw new Error("PDF table column is outside its declared span");
+        }
+        desired[column + offset] = Math.max(current, preference);
       }
       column += span;
     }
