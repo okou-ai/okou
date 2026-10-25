@@ -1,6 +1,7 @@
 //! Guest storage-manifest transport.
 
 use std::collections::HashMap;
+use std::io::{self, Write};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -357,6 +358,32 @@ fn manifest_json(manifest: &Manifest) -> RunnerResult<Vec<u8>> {
     serde_json::to_vec(manifest).map_err(|e| RunnerError::Internal(format!("manifest json: {e}")))
 }
 
+#[derive(Default)]
+struct ManifestSize(usize);
+
+impl Write for ManifestSize {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0 = self
+            .0
+            .checked_add(bytes.len())
+            .ok_or_else(|| io::Error::other("manifest JSON size overflow"))?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+// Probe exact canonical bytes without retaining output that would be discarded
+// when decoded input must split. Actual transport serialization remains below.
+fn manifest_json_size(manifest: &Manifest) -> RunnerResult<usize> {
+    let mut size = ManifestSize::default();
+    serde_json::to_writer(&mut size, manifest)
+        .map_err(|e| RunnerError::Internal(format!("manifest json: {e}")))?;
+    Ok(size.0)
+}
+
 fn files_input(json: &[u8], groups: &[(&str, &[StorageFile])]) -> RunnerResult<StorageInput> {
     storage_files::encode_input(json, groups)
         .and_then(|bytes| {
@@ -384,9 +411,8 @@ fn storage_inputs(
     mut manifest: Manifest,
     files: &[(String, Arc<CachedFiles>)],
 ) -> RunnerResult<Vec<StorageInput>> {
-    let json = manifest_json(&manifest)?;
     if files.is_empty() {
-        return Ok(vec![StorageInput::Json(json)]);
+        return Ok(vec![StorageInput::Json(manifest_json(&manifest)?)]);
     }
     let groups = files
         .iter()
@@ -394,11 +420,10 @@ fn storage_inputs(
         .collect::<Vec<_>>();
     storage_files::validate_bindings(&manifest, groups.iter().map(|(mount, _)| *mount))
         .map_err(|e| RunnerError::Internal(format!("storage files bindings: {e}")))?;
-    if json.len() <= storage_files::MAX_MANIFEST_BYTES {
-        return Ok(vec![files_input(&json, &groups)?]);
+    if manifest_json_size(&manifest)? <= storage_files::MAX_MANIFEST_BYTES {
+        return Ok(vec![files_input(&manifest_json(&manifest)?, &groups)?]);
     }
     // A split request alone cannot see conflicts with entries in another batch.
-    drop(json);
     // Validate the aggregate selected-file and mount budget without copying the
     // complete payload. Each emitted batch is encoded and checked below.
     storage_files::encoded_payload_len(&groups)
@@ -424,7 +449,7 @@ fn storage_inputs(
         inputs.push(StorageInput::Json(manifest_json(&manifest)?));
     }
     let mut batch = empty_storage_manifest();
-    let empty_bytes = manifest_json(&batch)?.len();
+    let empty_bytes = manifest_json_size(&batch)?;
     let mut batch_bytes = empty_bytes;
     let decoded = decoded_storages
         .into_iter()
@@ -435,8 +460,8 @@ fn storage_inputs(
                 .map(DecodedManifestEntry::Artifact),
         );
     for entry in decoded {
-        let single = entry.single_manifest();
-        let single_bytes = manifest_json(&single)?.len();
+        let mut single = entry.single_manifest();
+        let single_bytes = manifest_json_size(&single)?;
         if single_bytes > storage_files::MAX_MANIFEST_BYTES {
             return Err(RunnerError::Internal(
                 "decoded manifest entry exceeds manifest limit".into(),
@@ -445,14 +470,15 @@ fn storage_inputs(
         // Exact canonical array accounting, including escaped field contents.
         // The codec revalidates each final serialized batch against the cap.
         let entry_bytes = single_bytes - empty_bytes;
-        let comma_bytes = entry.comma_bytes(&batch);
+        let comma_bytes = usize::from(manifest_entry_count(&batch) > 0);
         if batch_bytes + comma_bytes + entry_bytes > storage_files::MAX_MANIFEST_BYTES {
             inputs.push(encode_decoded_batch(&batch, &files_by_mount)?);
             batch = empty_storage_manifest();
             batch_bytes = empty_bytes;
         }
-        batch_bytes += entry.comma_bytes(&batch) + entry_bytes;
-        entry.push_into(&mut batch);
+        batch_bytes += usize::from(manifest_entry_count(&batch) > 0) + entry_bytes;
+        batch.storages.append(&mut single.storages);
+        batch.artifacts.append(&mut single.artifacts);
     }
     if manifest_entry_count(&batch) > 0 {
         inputs.push(encode_decoded_batch(&batch, &files_by_mount)?);
@@ -466,30 +492,16 @@ enum DecodedManifestEntry {
 }
 
 impl DecodedManifestEntry {
-    fn single_manifest(&self) -> Manifest {
+    fn single_manifest(self) -> Manifest {
         match self {
             Self::Storage(entry) => Manifest {
-                storages: vec![entry.clone()],
+                storages: vec![entry],
                 ..empty_storage_manifest()
             },
             Self::Artifact(entry) => Manifest {
-                artifacts: vec![entry.clone()],
+                artifacts: vec![entry],
                 ..empty_storage_manifest()
             },
-        }
-    }
-
-    fn push_into(self, manifest: &mut Manifest) {
-        match self {
-            Self::Storage(entry) => manifest.storages.push(entry),
-            Self::Artifact(entry) => manifest.artifacts.push(entry),
-        }
-    }
-
-    fn comma_bytes(&self, manifest: &Manifest) -> usize {
-        match self {
-            Self::Storage(_) => usize::from(!manifest.storages.is_empty()),
-            Self::Artifact(_) => usize::from(!manifest.artifacts.is_empty()),
         }
     }
 }

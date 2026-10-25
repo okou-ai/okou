@@ -22,6 +22,8 @@ use crate::storage_plan::build_storage_plan;
 use guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
 use runner_types::storage_manifest::StorageManifest;
 
+mod memory;
+
 struct DeliveryFixture {
     root: tempfile::TempDir,
     config: ExecutorConfig,
