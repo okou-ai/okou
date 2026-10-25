@@ -1425,16 +1425,13 @@ export function CustomConnectorCreateDialog({
       return;
     }
     detach(
-      (async () => {
-        await updateConnector(
-          {
-            id: connector.id,
-            body,
-          },
-          signal,
-        );
-        close();
-      })(),
+      updateConnector(
+        {
+          id: connector.id,
+          body,
+        },
+        signal,
+      ),
       Reason.DomCallback,
     );
   };
