@@ -240,6 +240,28 @@ export const closeConnectorAccountNamePrompt$ = command(({ set }) => {
   set(internalConnectorAccountNamePromptValue$, "");
 });
 
+export const saveConnectorAccountNamePrompt$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const prompt = get(internalConnectorAccountNamePrompt$);
+    const displayName = get(internalConnectorAccountNamePromptValue$).trim();
+    if (!prompt || !displayName) {
+      return;
+    }
+    await set(
+      renameConnectorAccount$,
+      {
+        target: prompt.target,
+        connectionId: prompt.account.id,
+        displayName,
+      },
+      signal,
+    );
+    if (get(internalConnectorAccountNamePrompt$) === prompt) {
+      set(closeConnectorAccountNamePrompt$);
+    }
+  },
+);
+
 const finishConnectorAccountConnectionCommand$ = command(
   async (
     { set },

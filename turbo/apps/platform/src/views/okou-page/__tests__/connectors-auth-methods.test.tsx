@@ -1072,9 +1072,16 @@ test("Complete OAuth only after the current attempt succeeds", async () => {
   });
 });
 
-async function addManualAccountForNaming() {
+async function addManualAccountForNaming({
+  failFirstRename = false,
+  renamePending,
+}: {
+  failFirstRename?: boolean;
+  renamePending?: Promise<void>;
+} = {}) {
   mockConnectors(context, []);
   const connectionId = crypto.randomUUID();
+  const accounts: BuiltinConnectorResponse[] = [];
   let renamed: { readonly id: string; readonly name: string | null } | null =
     null;
   context.mocks.api(
@@ -1082,25 +1089,33 @@ async function addManualAccountForNaming() {
     ({ body, respond }) => {
       const connector = {
         ...storeConnectedConnector("ahrefs", body.authMethod),
-        id: connectionId,
+        id: accounts.length === 0 ? connectionId : crypto.randomUUID(),
         externalEmail: "owner@example.com",
       };
-      context.mocks.data.connectors([connector]);
+      accounts.push(connector);
+      context.mocks.data.connectors(accounts);
       return respond(200, { connectionId: connector.id });
     },
   );
   context.mocks.api(
     connectorAccountsContract.rename,
-    ({ params, body, respond }) => {
+    async ({ params, body, respond }) => {
+      await renamePending;
+      if (failFirstRename) {
+        failFirstRename = false;
+        return respond(500, {
+          error: { message: "Rename failed", code: "INTERNAL_SERVER_ERROR" },
+        });
+      }
       renamed = { id: params.connectionId, name: body.displayName };
       return respond(200, {
         missingRequiredFields: [],
         configuredFieldKeys: [],
-        id: connectionId,
+        id: params.connectionId,
         target: { kind: "builtin", connectorSlug: "ahrefs" },
         authMethod: "api-token",
         displayName: body.displayName,
-        isDefault: true,
+        isDefault: params.connectionId === connectionId,
         externalId: null,
         externalUsername: null,
         externalEmail: "owner@example.com",
@@ -1150,7 +1165,96 @@ test("Save a name for the exact newly added manual account", async () => {
 
   await waitFor(() => {
     expect(getRenamed()).toStrictEqual({ id: connectionId, name: "Work" });
+    expect(
+      screen.queryByRole("dialog", { name: "Name your Ahrefs account" }),
+    ).not.toBeInTheDocument();
   });
+});
+
+test("Keep the new account name after a failed save and close on retry", async () => {
+  const renameResponse = context.mocks.deferred<void>();
+  const { input, naming, connectionId, getRenamed } =
+    await addManualAccountForNaming({
+      failFirstRename: true,
+      renamePending: renameResponse.promise,
+    });
+  await fill(input, " Work ");
+  click(getConnectorAction("button", "Save", naming));
+  await waitFor(() => {
+    expect(getConnectorAction("button", "Save", naming)).toBeDisabled();
+  });
+  renameResponse.resolve();
+  await expect(screen.findByText("Rename failed")).resolves.toBeInTheDocument();
+  expect(input).toHaveValue(" Work ");
+  expect(naming).toBeInTheDocument();
+  click(
+    await waitFor(() => {
+      const save = getConnectorAction("button", "Save", naming);
+      expect(save).toBeEnabled();
+      return save;
+    }),
+  );
+  await waitFor(() => {
+    expect(getRenamed()).toStrictEqual({ id: connectionId, name: "Work" });
+    expect(
+      screen.queryByRole("dialog", { name: "Name your Ahrefs account" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+test("Keep a replacement account name prompt when an earlier save completes", async () => {
+  const renameResponse = context.mocks.deferred<void>();
+  const { input, naming, connectionId, getRenamed } =
+    await addManualAccountForNaming({
+      renamePending: renameResponse.promise,
+    });
+  await fill(input, "First account");
+  click(getConnectorAction("button", "Save", naming));
+  await waitFor(() => {
+    expect(getConnectorAction("button", "Save", naming)).toBeDisabled();
+  });
+  click(getConnectorAction("button", "Skip", naming));
+
+  const manageAccounts = await waitFor(() => {
+    return getConnectorAction("button", "Manage Ahrefs accounts");
+  });
+  click(manageAccounts);
+  const manager = await screen.findByRole("dialog", {
+    name: "Manage Ahrefs accounts",
+  });
+  click(getConnectorAction("button", "Add account", manager));
+  const addition = await screen.findByRole("dialog", { name: "Ahrefs" });
+  await fill(
+    within(addition).getByPlaceholderText("your-ahrefs-api-token"),
+    "second-token",
+  );
+  click(getConnectorAction("button", "Save", addition));
+  const secondNaming = await screen.findByRole("dialog", {
+    name: "Name your Ahrefs account",
+  });
+  await fill(
+    within(secondNaming).getByLabelText("Account name"),
+    "Second account draft",
+  );
+  expect(getConnectorAction("button", "Save", secondNaming)).toBeDisabled();
+
+  renameResponse.resolve();
+
+  await waitFor(() => {
+    const currentNaming = screen.getByRole("dialog", {
+      name: "Name your Ahrefs account",
+    });
+    expect(getConnectorAction("button", "Save", currentNaming)).toBeEnabled();
+  });
+  expect(getRenamed()).toStrictEqual({
+    id: connectionId,
+    name: "First account",
+  });
+  expect(
+    within(
+      screen.getByRole("dialog", { name: "Name your Ahrefs account" }),
+    ).getByLabelText("Account name"),
+  ).toHaveValue("Second account draft");
 });
 
 test("Submit a chosen device-authorization start option", async () => {
