@@ -56,13 +56,30 @@ export const jobInputCreateSchema = z.discriminatedUnion("kind", [
     text: z.string().max(4000),
   }),
 ]);
-export const jobInputSchema = z.intersection(
+const userJobInputSchema = z.intersection(
   jobInputCreateSchema,
   z.object({
     authorUserId: z.string().min(1),
     createdAt: z.iso.datetime(),
   }),
 );
+export const jobObservationCreateSchema = z.object({
+  id,
+  text: z.string().trim().min(1).max(16000),
+  sourceReferences: z.array(z.string().trim().min(1).max(2000)).min(1).max(20),
+  sourceVersion: z.string().trim().min(1).max(2000),
+});
+export const jobObservationSchema = jobObservationCreateSchema.extend({
+  kind: z.literal("observation"),
+  authorUserId: z.null(),
+  agentId: id,
+  runId: id,
+  createdAt: z.iso.datetime(),
+});
+export const jobInputSchema = z.union([
+  userJobInputSchema,
+  jobObservationSchema,
+]);
 export const jobCreateSchema = z.object({
   id,
   title: z.string().trim().min(1).max(160),
@@ -142,6 +159,7 @@ export type JobResult = z.infer<typeof jobResultSchema>;
 export type JobCreate = z.infer<typeof jobCreateSchema>;
 export type JobUpdate = z.infer<typeof jobUpdateSchema>;
 export type JobInputCreate = z.infer<typeof jobInputCreateSchema>;
+export type JobObservationCreate = z.infer<typeof jobObservationCreateSchema>;
 export type Job = z.infer<typeof jobSchema>;
 export type JobSummary = z.infer<typeof jobSummarySchema>;
 export type JobListQuery = z.infer<typeof jobListQuerySchema>;
@@ -161,6 +179,15 @@ const resource = {
   responses: { 200: jobSchema, ...errors },
 };
 export const jobsContract = c.router({
+  identity: {
+    method: "POST",
+    path: "/api/jobs/identity",
+    headers: authHeadersSchema,
+    body: z.object({ key: z.string().trim().min(1).max(2048) }),
+    responses: { 200: z.object({ id }), ...errors },
+    summary:
+      "Derive an owner-scoped stable identity for one source and next action",
+  },
   list: {
     method: "GET",
     path: "/api/jobs",
@@ -202,6 +229,14 @@ export const jobsContract = c.router({
     ...resource,
     body: jobInputCreateSchema,
     summary: "Save user input for the next Task evaluation",
+  },
+  observe: {
+    method: "POST",
+    path: "/api/jobs/:id/observations",
+    ...resource,
+    body: jobObservationCreateSchema,
+    summary:
+      "Planning: append verified source context without impersonating a user",
   },
   viewed: {
     method: "POST",

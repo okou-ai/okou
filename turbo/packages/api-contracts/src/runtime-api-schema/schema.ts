@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { z } from "zod";
+import * as z from "zod";
 import packageJson from "../../package.json" with { type: "json" };
 import {
   type RuntimeApiRouteBinding,

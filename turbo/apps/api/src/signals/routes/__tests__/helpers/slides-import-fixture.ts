@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import AdmZip from "adm-zip";
 import { http, HttpResponse } from "msw";
 import { SaxesParser } from "saxes";
-import { z } from "zod";
+import * as z from "zod";
 import { server } from "../../../../mocks/server";
 
 const font = readFileSync(

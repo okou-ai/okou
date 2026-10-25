@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { billingCreditCheckoutContract } from "@okouai/api-contracts/contracts/billing";
 import { expect } from "vitest";
-import { z } from "zod";
+import * as z from "zod";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { env, mockEnv } from "../../../../lib/env";

@@ -80,7 +80,11 @@ import { command } from "ccstate";
 import {
   and,
   asc,
+  count,
   eq,
+  gte,
+  exists,
+  notExists,
   getTableColumns,
   inArray,
   isNotNull,
@@ -88,8 +92,12 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
-import { pgNullDecoder, pgTextDecoder } from "../../lib/db-structured-result";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import {
+  pgBooleanDecoder,
+  pgNullDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
@@ -156,7 +164,6 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import {
   prepareChatThreadInsert,
   createdChatThreadFromRow,
-  chatThreadCreatedEventSql,
 } from "./chat-thread-create.service";
 import { calculateNextRun } from "./time-automation";
 import {
@@ -2298,21 +2305,6 @@ function automationThreadInsertPlan(args: {
   });
 }
 
-function automationCreatedThreadColumns() {
-  return {
-    id: chatThreads.id,
-    userId: chatThreads.userId,
-    title: chatThreads.title,
-    selectedModel: chatThreads.selectedModel,
-    hidden: chatThreads.hidden,
-    modelSettings: chatThreads.modelSettings,
-    codexServiceTier: chatThreads.codexServiceTier,
-    computerUseHostId: chatThreads.computerUseHostId,
-    cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-    createdAt: chatThreads.createdAt,
-  };
-}
-
 function webhookAutomationValues(args: WebhookAutomationCreateArgs) {
   return {
     id: args.automationId,
@@ -2371,23 +2363,6 @@ function webhookThreadOwner(args: WebhookAutomationCreateArgs) {
   };
 }
 
-function webhookThreadBindingInsert(args: WebhookAutomationCreateArgs) {
-  return {
-    values: {
-      ...webhookThreadOwner(args),
-      createdAt: args.currentTime,
-      updatedAt: args.currentTime,
-    },
-    conflict: {
-      target: [
-        workflowUserAutomationThreads.orgId,
-        workflowUserAutomationThreads.userId,
-        workflowUserAutomationThreads.workflowId,
-      ],
-    },
-  };
-}
-
 function createdWebhookAutomationResult(
   row: AutomationRow,
   chatThreadId: string,
@@ -2418,6 +2393,251 @@ function webhookCreationAgentColumns() {
   return { id: agents.id, owner: agents.owner, visibility: agents.visibility };
 }
 
+function webhookCreationAccessCondition(
+  args: WebhookAutomationCreateArgs,
+  agent: ReturnType<typeof webhookCreationAdmissionPlan>["agent"],
+  workflow: ReturnType<typeof webhookCreationAdmissionPlan>["workflow"],
+) {
+  const owned = eq(workflow.ownerUserId, args.input.member.userId);
+  const usable = or(
+    eq(agent.visibility, "public"),
+    eq(agent.owner, args.input.member.userId),
+  );
+  const official = args.input.officialInstallation;
+  return and(
+    eq(workflow.agentId, agent.id),
+    or(
+      and(
+        or(
+          isNull(workflow.officialDefinitionName),
+          eq(workflow.officialInstallationState, "installed"),
+        ),
+        or(owned, and(eq(workflow.visibility, "public"), usable)),
+      ),
+      official === undefined
+        ? sql`false`
+        : and(owned, eq(workflow.officialInstallationState, "installing")),
+    ),
+    official === undefined
+      ? isNull(workflow.officialDefinitionName)
+      : and(
+          owned,
+          eq(workflow.officialDefinitionName, official.definitionName),
+          eq(
+            workflow.officialInstallationState,
+            official.installationState ?? "installing",
+          ),
+        ),
+    usable,
+  );
+}
+
+/** Retain the original entitlement -> agent -> Workflow protection order. */
+function webhookCreationAdmissionPlan(args: WebhookAutomationCreateArgs) {
+  const query = new QueryBuilder();
+  const entitlement = enabledAutomationEntitlementPlan(args.input.orgId, true);
+  const agent = query.$with("webhook_creation_agent").as(
+    query
+      .select(webhookCreationAgentColumns())
+      .from(agents)
+      .where(
+        and(
+          eq(agents.id, args.agentId),
+          eq(agents.orgId, args.input.orgId),
+          entitlement.eligible,
+        ),
+      )
+      .for("share")
+      .limit(1),
+  );
+  const workflow = query.$with("webhook_creation_workflow").as(
+    query
+      .select(getTableColumns(workflows))
+      .from(workflows)
+      .where(
+        and(
+          eq(workflows.id, args.workflowId),
+          eq(workflows.orgId, args.input.orgId),
+          entitlement.eligible,
+          gte(query.select({ total: count() }).from(agent), 0),
+        ),
+      )
+      .for("share")
+      .limit(1),
+  );
+  return { ...entitlement, agent, workflow };
+}
+
+function webhookThreadPublicationValues(args: WebhookAutomationCreateArgs) {
+  const values = preparedWorkflowThreadValues(
+    {
+      ...webhookThreadOwner(args),
+      agentId: args.agentId,
+      workflowTitle: args.threadPreparation.title,
+      currentTime: args.currentTime,
+    },
+    args.threadPreparation,
+    randomUUID(),
+  );
+  const thread = {
+    ...values,
+    selectedModel: automationThreadInsertPlan(args).values.selectedModel,
+  };
+  // The prepared preferences are ordinary inputs. Validate before any write.
+  createdChatThreadFromRow(
+    { ...thread, computerUseHostId: null },
+    args.agentId,
+  );
+  return thread;
+}
+
+function webhookBindingSource(
+  args: WebhookAutomationCreateArgs,
+  threadId: string,
+  source: ReturnType<typeof webhookCreationAdmissionPlan>["workflow"],
+  agent: ReturnType<typeof webhookCreationAdmissionPlan>["agent"],
+) {
+  const binding = workflowUserAutomationThreads;
+  return new QueryBuilder()
+    .select({
+      id: sql`gen_random_uuid()`.mapWith(binding.id).as("id"),
+      orgId: sql`${sql.param(args.input.orgId, binding.orgId)}`
+        .mapWith(binding.orgId)
+        .as("org_id"),
+      userId: sql`${sql.param(args.input.member.userId, binding.userId)}`
+        .mapWith(binding.userId)
+        .as("user_id"),
+      workflowId: source.id,
+      chatThreadId: sql`${sql.param(threadId, binding.chatThreadId)}`
+        .mapWith(binding.chatThreadId)
+        .as("chat_thread_id"),
+      createdAt: sql`${sql.param(args.currentTime, binding.createdAt)}`
+        .mapWith(binding.createdAt)
+        .as("created_at"),
+      updatedAt: sql`${sql.param(args.currentTime, binding.updatedAt)}`
+        .mapWith(binding.updatedAt)
+        .as("updated_at"),
+    })
+    .from(source)
+    .innerJoin(agent, eq(source.agentId, agent.id))
+    .where(webhookCreationAccessCondition(args, agent, source));
+}
+
+function webhookBindingConflict(
+  args: WebhookAutomationCreateArgs,
+  threadId: string,
+) {
+  const binding = workflowUserAutomationThreads;
+  return {
+    target: [binding.orgId, binding.userId, binding.workflowId],
+    set: {
+      chatThreadId: sql`coalesce(${binding.chatThreadId}, ${sql.param(threadId, binding.chatThreadId)})`,
+      updatedAt: sql`CASE WHEN ${isNull(binding.chatThreadId)}
+        THEN ${sql.param(args.currentTime, binding.updatedAt)} ELSE ${binding.updatedAt} END`,
+    },
+  };
+}
+
+/** INSERT SELECT with omitted schema defaults is not supported by the builder. */
+function webhookAutomationPublicationSql(args: WebhookAutomationCreateArgs) {
+  const original = webhookAutomationValues(args);
+  const values = {
+    ...original,
+    id: args.automationId ?? randomUUID(),
+    eventConfig: webhookReceivedEventConfigSchema.parse(original.eventConfig),
+  };
+  const columns = getTableColumns(workflowAutomations);
+  const entries = (Object.keys(values) as (keyof typeof values)[]).map(
+    (key) => {
+      const value = values[key];
+      if (value === undefined) {
+        throw new Error(
+          "Webhook automation publication contains an undefined value",
+        );
+      }
+      return { column: columns[key], value };
+    },
+  );
+  const names = entries.map(({ column }) => {
+    return sql.identifier(column.name);
+  });
+  const parameters = entries.map(({ column, value }) => {
+    return sql.param(value, column);
+  });
+  return sql`INSERT INTO ${workflowAutomations} (${sql.join(names, sql`, `)})
+    SELECT ${sql.join(parameters, sql`, `)} FROM accepted_binding
+    CROSS JOIN (SELECT count(*) FROM inserted_thread_event) AS event_completion
+    RETURNING *, ${workflowAutomations.updatedAt}::text AS observed_updated_at,
+      ${workflowAutomations}.xmin::text AS observed_xmin`;
+}
+
+function webhookPublicationColumns() {
+  const columns = workflowAutomationColumns();
+  return {
+    ...columns,
+    observedUpdatedAt: columns.observedUpdatedAt.as("observed_updated_at"),
+    observedXmin: columns.observedXmin.as("observed_xmin"),
+  };
+}
+
+function webhookCreationPublicationResult(
+  args: WebhookAutomationCreateArgs,
+  credentials: Awaited<ReturnType<typeof prepareWebhookCredentials>>,
+  result:
+    | {
+        readonly enable_outcome: {
+          readonly eligible: boolean;
+          readonly missingEntitlement: boolean;
+          readonly invalidRestriction: boolean;
+        };
+        readonly webhook_creation_agent: UsableAgent | null;
+        readonly webhook_creation_workflow: WorkflowRow | null;
+        readonly accepted_binding: {
+          readonly chatThreadId: string | null;
+        } | null;
+        readonly inserted_webhook_automation: AutomationRow | null;
+        readonly inserted_webhook_config:
+          typeof workflowWebhookAutomations.$inferSelect | null;
+      }
+    | undefined,
+): AutomationResult {
+  if (!result) {
+    throw new Error("Webhook automation publication returned no result");
+  }
+  const outcome = result.enable_outcome;
+  if (outcome.missingEntitlement) {
+    throw new Error(`Missing org plan entitlement for ${args.input.orgId}`);
+  }
+  if (outcome.invalidRestriction) {
+    throw new Error(
+      `Unexpected NULL restricted_built_in_models for org plan entitlement ${args.input.orgId}`,
+    );
+  }
+  if (!outcome.eligible) {
+    return workflowWebhookTeamRequiredResult();
+  }
+  const failure = webhookCreationAccessFailure(
+    args,
+    result.webhook_creation_agent ?? undefined,
+    result.webhook_creation_workflow ?? undefined,
+  );
+  if (failure) {
+    return failure;
+  }
+  const row = result.inserted_webhook_automation;
+  const threadId = result.accepted_binding?.chatThreadId;
+  if (!row || !threadId) {
+    throw new Error("Failed to create workflow automation");
+  }
+  return createdWebhookAutomationResult(
+    row,
+    threadId,
+    result.inserted_webhook_config ?? undefined,
+    credentials,
+  );
+}
+
+/** Publish the binding, optional thread/event, automation and signed configuration together. */
 const commitWebhookEventAutomation$ = command(
   async (
     { set },
@@ -2426,135 +2646,112 @@ const commitWebhookEventAutomation$ = command(
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0335; new non-billing transactions are prohibited.
-    const result = await db.transaction(
-      async (tx): Promise<AutomationResult> => {
-        // The entitlement/access checks, shared thread binding and signed webhook
-        // configuration must publish atomically. KMS preparation is already complete.
-        // A downgrade may have committed while credentials were being prepared.
-        const [lockedCapabilities] = await tx
-          .select(webhookTierCapabilityColumns())
-          .from(orgPlanEntitlements)
-          .where(eq(orgPlanEntitlements.orgId, args.input.orgId))
-          .limit(1)
-          .for("update");
-        signal.throwIfAborted();
-        if (!lockedCapabilities) {
-          const [org] = await tx
-            .select({ orgId: orgMetadata.orgId })
-            .from(orgMetadata)
-            .where(eq(orgMetadata.orgId, args.input.orgId))
-            .limit(1)
-            .for("update");
-          signal.throwIfAborted();
-          if (org) {
-            throw new Error(
-              `Missing org plan entitlement for ${args.input.orgId}`,
-            );
-          }
-        }
-        const tierEligible = lockedCapabilities
-          ? orgPlanCapabilitiesFromRow(lockedCapabilities, args.input.orgId)
-              .workflowWebhookAutomationAllowed
-          : false;
-        if (!tierEligible) {
-          return workflowWebhookTeamRequiredResult();
-        }
-        // Preserve source protection in agent -> workflow order after KMS preparation.
-        const [agent] = await tx
-          .select(webhookCreationAgentColumns())
-          .from(agents)
-          .where(
-            and(
-              eq(agents.id, args.agentId),
-              eq(agents.orgId, args.input.orgId),
-            ),
-          )
-          .for("share");
-        const [workflow] = await tx
-          .select()
-          .from(workflows)
-          .where(
-            and(
-              eq(workflows.id, args.workflowId),
-              eq(workflows.orgId, args.input.orgId),
-            ),
-          )
-          .for("share");
-        const accessFailure = webhookCreationAccessFailure(
-          args,
-          agent,
-          workflow,
-        );
-        signal.throwIfAborted();
-        if (accessFailure) {
-          return accessFailure;
-        }
-
-        const owner = webhookThreadOwner(args);
-        const bindingInsert = webhookThreadBindingInsert(args);
-        await tx
-          .insert(workflowUserAutomationThreads)
-          .values(bindingInsert.values)
-          .onConflictDoNothing(bindingInsert.conflict);
-        const [binding] = await tx
-          .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
-          .from(workflowUserAutomationThreads)
-          .where(workflowUserAutomationThreadOwnerCondition(owner))
-          .limit(1);
-        let chatThreadId = binding?.chatThreadId;
-        if (!chatThreadId) {
-          const plan = automationThreadInsertPlan(args);
-          const [threadRow] = await tx
-            .with(...plan.defaults)
-            .insert(chatThreads)
-            .values(plan.values)
-            .onConflictDoNothing()
-            .returning(automationCreatedThreadColumns());
-          if (!threadRow) {
-            throw new Error("Failed to create workflow automation chat thread");
-          }
-          const thread = createdChatThreadFromRow(threadRow, args.agentId);
-          await tx.execute(
-            chatThreadCreatedEventSql({ orgId: args.input.orgId, thread }),
-          );
-          await tx
-            .update(workflowUserAutomationThreads)
-            .set({ chatThreadId: thread.id, updatedAt: args.currentTime })
-            .where(workflowUserAutomationThreadOwnerCondition(owner));
-          chatThreadId = thread.id;
-        }
-
-        const [row] = await tx
-          .insert(workflowAutomations)
-          .values(webhookAutomationValues(args))
-          .returning(workflowAutomationColumns());
-        if (!row) {
-          throw new Error("Failed to create workflow automation");
-        }
-
-        await tx.insert(workflowWebhookAutomations).values({
-          automationId: row.id,
-          ...credentials.row,
-          createdAt: args.currentTime,
-          updatedAt: args.currentTime,
-        });
-
-        const [webhook] = await tx
-          .select()
-          .from(workflowWebhookAutomations)
-          .where(eq(workflowWebhookAutomations.automationId, row.id))
-          .limit(1);
-        return createdWebhookAutomationResult(
-          row,
-          chatThreadId,
-          webhook,
-          credentials,
-        );
+    const plan = webhookCreationAdmissionPlan(args);
+    const values = webhookThreadPublicationValues(args);
+    const binding = db.$with("accepted_binding").as(
+      db
+        .insert(workflowUserAutomationThreads)
+        .select(
+          webhookBindingSource(args, values.id, plan.workflow, plan.agent),
+        )
+        .onConflictDoUpdate(webhookBindingConflict(args, values.id))
+        .returning({
+          chatThreadId: workflowUserAutomationThreads.chatThreadId,
+        }),
+    );
+    const thread = db
+      .$with("inserted_thread", {
+        id: chatThreads.id,
+        agentId: chatThreads.agentId,
+      })
+      .as(workflowThreadInsertFromBindingSql(values, values.id));
+    const event = chatThreadEventInsertPlan(
+      workflowThreadCreatedEventValues(
+        {
+          orgId: args.input.orgId,
+          userId: args.input.member.userId,
+          agentId: args.agentId,
+        },
+        values,
+      ),
+      {
+        gate: sql`EXISTS (SELECT 1 FROM inserted_thread)`,
+        agentId: sql`(SELECT agent_id FROM inserted_thread)`,
       },
     );
+    const reserved = db
+      .$with("reserved", { lastSeqId: chatThreadEventSequences.lastSeqId })
+      .as(event.reservation);
+    const createdEvent = db
+      .$with("inserted_thread_event", { id: chatThreadEvents.id })
+      .as(event.insertion);
+    const automation = db
+      .$with("inserted_webhook_automation", webhookPublicationColumns())
+      .as(webhookAutomationPublicationSql(args));
+    const config = workflowWebhookAutomations;
+    const signed = db.$with("inserted_webhook_config").as(
+      db
+        .insert(config)
+        .select(
+          db
+            .select({
+              automationId: automation.id,
+              tokenHash:
+                sql`${sql.param(credentials.row.tokenHash, config.tokenHash)}`
+                  .mapWith(config.tokenHash)
+                  .as("token_hash"),
+              encryptedToken:
+                sql`${sql.param(credentials.row.encryptedToken, config.encryptedToken)}`
+                  .mapWith(config.encryptedToken)
+                  .as("encrypted_token"),
+              encryptedSecret:
+                sql`${sql.param(credentials.row.encryptedSecret, config.encryptedSecret)}`
+                  .mapWith(config.encryptedSecret)
+                  .as("encrypted_secret"),
+              secretLastFour:
+                sql`${sql.param(credentials.row.secretLastFour, config.secretLastFour)}`
+                  .mapWith(config.secretLastFour)
+                  .as("secret_last_four"),
+              disabledReason: sql`NULL`
+                .mapWith(pgNullDecoder)
+                .as("disabled_reason"),
+              lastReceivedAt: sql`NULL`
+                .mapWith(pgNullDecoder)
+                .as("last_received_at"),
+              createdAt: sql`${sql.param(args.currentTime, config.createdAt)}`
+                .mapWith(config.createdAt)
+                .as("created_at"),
+              updatedAt: sql`${sql.param(args.currentTime, config.updatedAt)}`
+                .mapWith(config.updatedAt)
+                .as("updated_at"),
+            })
+            .from(automation),
+        )
+        .returning(),
+    );
     signal.throwIfAborted();
-    return result;
+    const [result] = await db
+      .with(
+        plan.entitlement,
+        plan.missingEntitlementOrg,
+        plan.agent,
+        plan.workflow,
+        binding,
+        thread,
+        reserved,
+        createdEvent,
+        automation,
+        signed,
+      )
+      .select()
+      .from(plan.outcome)
+      .leftJoin(plan.agent, sql`true`)
+      .leftJoin(plan.workflow, sql`true`)
+      .leftJoin(binding, sql`true`)
+      .leftJoin(automation, sql`true`)
+      .leftJoin(signed, sql`true`);
+    signal.throwIfAborted();
+    return webhookCreationPublicationResult(args, credentials, result);
   },
 );
 const insertWebhookEventAutomation$ = command(
@@ -6261,6 +6458,188 @@ function enabledAutomationCommitResult(
     : { status: "ok", row };
 }
 
+function enabledAutomationEntitlementPlan(orgId: string, isWebhook: boolean) {
+  const query = new QueryBuilder();
+  const entitlement = query.$with("enable_entitlement").as(
+    query
+      .select({
+        allowed: orgPlanEntitlements.workflowWebhookTriggerAllowed,
+        restricted: orgPlanEntitlements.restrictedBuiltInModels,
+      })
+      .from(orgPlanEntitlements)
+      .where(and(eq(orgPlanEntitlements.orgId, orgId), sql`${isWebhook}`))
+      .limit(1)
+      .for("update"),
+  );
+  const entitlementRows = query.select().from(entitlement);
+  const missingEntitlementOrg = query
+    .$with("enable_missing_entitlement_org")
+    .as(
+      query
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(
+          and(
+            sql`${isWebhook}`,
+            eq(orgMetadata.orgId, orgId),
+            notExists(entitlementRows),
+          ),
+        )
+        .limit(1)
+        .for("update"),
+    );
+  const eligible = isWebhook
+    ? exists(
+        query
+          .select()
+          .from(entitlement)
+          .where(
+            and(
+              eq(entitlement.allowed, true),
+              isNotNull(entitlement.restricted),
+            ),
+          ),
+      )
+    : sql`true`;
+  const outcome = query
+    .select({
+      eligible: sql`${eligible}`.mapWith(pgBooleanDecoder).as("eligible"),
+      missingEntitlement:
+        sql`${exists(query.select().from(missingEntitlementOrg))}`
+          .mapWith(pgBooleanDecoder)
+          .as("missing_entitlement"),
+      invalidRestriction:
+        sql`${exists(query.select().from(entitlement).where(isNull(entitlement.restricted)))}`
+          .mapWith(pgBooleanDecoder)
+          .as("invalid_restriction"),
+    })
+    .from(sql`(SELECT 1) AS enable_result_seed`)
+    .as("enable_outcome");
+  return { entitlement, missingEntitlementOrg, eligible, outcome };
+}
+
+function enabledAutomationPublicationResult(
+  automation: AutomationRow,
+  orgId: string,
+  outcome:
+    | {
+        readonly eligible: boolean;
+        readonly missingEntitlement: boolean;
+        readonly invalidRestriction: boolean;
+      }
+    | undefined,
+  row: AutomationRow | null | undefined,
+): PersistEnabledWorkflowAutomationResult {
+  if (!outcome) {
+    throw new Error("Missing automation enable result");
+  }
+  // These invariant outcomes gate every mutation in the statement.
+  if (outcome.missingEntitlement) {
+    throw new Error("Missing org plan entitlement for " + orgId);
+  }
+  if (outcome.invalidRestriction) {
+    throw new Error(
+      `Unexpected NULL restricted_built_in_models for org plan entitlement ${orgId}`,
+    );
+  }
+  return outcome.eligible
+    ? enabledAutomationCommitResult(automation, row ?? undefined)
+    : { status: "team-required" };
+}
+
+const commitEnabledWorkflowAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly automation: AutomationRow;
+      readonly orgId: string;
+      readonly now: Date;
+    },
+    publication: {
+      readonly values: ReturnType<typeof enabledWorkflowAutomationValues>;
+      readonly isWebhook: boolean;
+      readonly resetsFormsCursor: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<PersistEnabledWorkflowAutomationResult> => {
+    const db = set(writeDb$);
+    const { values, isWebhook, resetsFormsCursor } = publication;
+    const { entitlement, missingEntitlementOrg, eligible, outcome } =
+      enabledAutomationEntitlementPlan(args.orgId, isWebhook);
+    // Each mutation consumes its predecessor before taking the next lock.
+    const resetCursor = db.$with("enable_reset_forms_cursor").as(
+      db
+        .delete(googleFormsAutomationCursors)
+        .where(
+          and(
+            eq(googleFormsAutomationCursors.automationId, args.automation.id),
+            sql`${resetsFormsCursor}`,
+            eligible,
+          ),
+        )
+        .returning({
+          automationId: googleFormsAutomationCursors.automationId,
+        }),
+    );
+    const columns = workflowAutomationColumns();
+    const enabled = db.$with("enabled_automation").as(
+      db
+        .update(workflowAutomations)
+        .set(values)
+        .where(
+          and(
+            officialAutomationLifecycleCondition(args.automation),
+            eligible,
+            gte(db.select({ count: count() }).from(resetCursor), 0),
+          ),
+        )
+        .returning({
+          ...columns,
+          observedUpdatedAt: columns.observedUpdatedAt.as(
+            "observed_updated_at",
+          ),
+          observedXmin: columns.observedXmin.as("observed_xmin"),
+        }),
+    );
+    const clearedWebhook = db.$with("enable_cleared_webhook").as(
+      db
+        .update(workflowWebhookAutomations)
+        .set({ disabledReason: null, updatedAt: args.now })
+        .where(
+          and(
+            sql`${isWebhook}`,
+            inArray(
+              workflowWebhookAutomations.automationId,
+              db.select({ id: enabled.id }).from(enabled),
+            ),
+          ),
+        )
+        .returning({
+          automationId: workflowWebhookAutomations.automationId,
+        }),
+    );
+    const [result] = await db
+      .with(
+        entitlement,
+        missingEntitlementOrg,
+        resetCursor,
+        enabled,
+        clearedWebhook,
+      )
+      .select()
+      .from(outcome)
+      .leftJoin(enabled, sql`true`)
+      .where(gte(db.select({ count: count() }).from(clearedWebhook), 0));
+    signal.throwIfAborted();
+    return enabledAutomationPublicationResult(
+      args.automation,
+      args.orgId,
+      result?.enable_outcome,
+      result?.enabled_automation,
+    );
+  },
+);
+
 const persistEnabledWorkflowAutomation$ = command(
   async (
     { set },
@@ -6293,69 +6672,11 @@ const persistEnabledWorkflowAutomation$ = command(
       PersistEnabledWorkflowAutomationResult | AutomationRow[]
     >(
       isWebhook || resetsFormsCursor
-        ? // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0339; new non-billing transactions are prohibited.
-          db.transaction(
-            async (tx): Promise<PersistEnabledWorkflowAutomationResult> => {
-              // Publish the webhook tier decision/configuration or Forms cursor reset
-              // atomically with the enabled automation. All provider preparation is complete.
-              if (isWebhook) {
-                const [lockedCapabilities] = await tx
-                  .select(webhookTierCapabilityColumns())
-                  .from(orgPlanEntitlements)
-                  .where(eq(orgPlanEntitlements.orgId, args.orgId))
-                  .limit(1)
-                  .for("update");
-                signal.throwIfAborted();
-                if (!lockedCapabilities) {
-                  const [org] = await tx
-                    .select({ orgId: orgMetadata.orgId })
-                    .from(orgMetadata)
-                    .where(eq(orgMetadata.orgId, args.orgId))
-                    .limit(1)
-                    .for("update");
-                  signal.throwIfAborted();
-                  if (org) {
-                    throw new Error(
-                      "Missing org plan entitlement for " + args.orgId,
-                    );
-                  }
-                }
-                const tierEligible = lockedCapabilities
-                  ? orgPlanCapabilitiesFromRow(lockedCapabilities, args.orgId)
-                      .workflowWebhookAutomationAllowed
-                  : false;
-                if (!tierEligible) {
-                  return { status: "team-required" };
-                }
-              }
-              if (resetsFormsCursor) {
-                await tx
-                  .delete(googleFormsAutomationCursors)
-                  .where(
-                    eq(
-                      googleFormsAutomationCursors.automationId,
-                      args.automation.id,
-                    ),
-                  );
-              }
-              const [enabledRow] = await tx
-                .update(workflowAutomations)
-                .set(values)
-                .where(officialAutomationLifecycleCondition(args.automation))
-                .returning(workflowAutomationColumns());
-              if (enabledRow && isWebhook) {
-                await tx
-                  .update(workflowWebhookAutomations)
-                  .set({ disabledReason: null, updatedAt: args.now })
-                  .where(
-                    eq(
-                      workflowWebhookAutomations.automationId,
-                      args.automation.id,
-                    ),
-                  );
-              }
-              return enabledAutomationCommitResult(args.automation, enabledRow);
-            },
+        ? set(
+            commitEnabledWorkflowAutomation$,
+            args,
+            { values, isWebhook, resetsFormsCursor },
+            signal,
           )
         : db
             .update(workflowAutomations)

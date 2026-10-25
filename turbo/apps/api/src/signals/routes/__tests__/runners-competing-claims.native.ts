@@ -6,7 +6,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
-import { z } from "zod";
+import * as z from "zod";
 
 import { testContext } from "../../../__tests__/test-context";
 import { env, optionalEnv } from "../../../lib/env";

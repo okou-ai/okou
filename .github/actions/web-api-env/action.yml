@@ -405,21 +405,10 @@ runs:
 
         add_secret GOOGLE_ADS_DEVELOPER_TOKEN GOOGLE_ADS_DEVELOPER_TOKEN
         add_secret GOOGLE_ADS_LOGIN_CUSTOMER_ID GOOGLE_ADS_LOGIN_CUSTOMER_ID
-        okou_provider_secret_suffixes=(
-          WEATHER_GOOGLE_WEATHER_TOKEN
-          SCRAPE_FIRECRAWL_TOKEN
-          WEB_SEARCH_PERPLEXITY_TOKEN
-          FINANCE_APIDOJO_TOKEN
-        )
-        for suffix in "${okou_provider_secret_suffixes[@]}"; do
-          add_secret "OKOU_${suffix}" "OKOU_${suffix}"
-        done
         if [[ "$INPUT_APP" == "api" ]]; then
-          add_var OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT
-          add_secret OKOU_SOCIAL_MONID_API_KEY OKOU_SOCIAL_MONID_API_KEY
-          add_secret OKOU_SOCIAL_SOCIALKIT_TOKEN OKOU_SOCIAL_SOCIALKIT_TOKEN
-          add_secret OKOU_SEO_DATAFORSEO_LOGIN OKOU_SEO_DATAFORSEO_LOGIN
-          add_secret OKOU_SEO_DATAFORSEO_PASSWORD OKOU_SEO_DATAFORSEO_PASSWORD
+          # Data Router credentials are configured per deployment.
+          add_secret OKOU_DATA_ROUTER_URL OKOU_DATA_ROUTER_URL
+          add_secret OKOU_DATA_TOKEN OKOU_DATA_TOKEN
           add_secret OKOU_BROWSER_USE_API_KEY OKOU_BROWSER_USE_API_KEY
           # Optional while the default-off hosted-consent pilot is unconfigured.
           add_env LINK_OAUTH_CLIENT_ID "$(doppler_secret LINK_OAUTH_CLIENT_ID)"

@@ -1,6 +1,6 @@
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import { usagePackCreditRefunds } from "@okouai/db/schema/usage-pack-credit-refund";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 
 export interface InvoiceUsagePackCreditGrant {
   readonly orgId: string;
@@ -29,6 +29,21 @@ export interface InvoiceUsagePackCreditGrant {
 export function invoiceUsagePackCreditGrantSql(
   grant: InvoiceUsagePackCreditGrant,
 ) {
+  return invoiceUsagePackCreditGrantStatement(grant);
+}
+
+/** A compound owner supplies its existing admission predicate, without a refund. */
+export function eligibleInvoiceUsagePackCreditGrantSql(
+  grant: Omit<InvoiceUsagePackCreditGrant, "refund">,
+  eligibility: SQL,
+) {
+  return invoiceUsagePackCreditGrantStatement(grant, eligibility);
+}
+
+function invoiceUsagePackCreditGrantStatement(
+  grant: InvoiceUsagePackCreditGrant,
+  eligibility?: SQL,
+) {
   const refund = grant.refund;
   if (
     refund &&
@@ -38,9 +53,13 @@ export function invoiceUsagePackCreditGrantSql(
   ) {
     throw new Error("Invalid usage pack refund source");
   }
+  const values = sql`${grant.orgId}, ${grant.userId}, ${grant.grantType}, ${grant.idempotencyKey}, ${grant.amount}, ${grant.amount}, ${sql.param(grant.expiresAt, usagePackCreditGrants.expiresAt)}`;
+  const input = eligibility
+    ? sql`SELECT ${values} WHERE ${eligibility}`
+    : sql`VALUES (${values})`;
   const credit = sql`INSERT INTO ${usagePackCreditGrants}
     (org_id, user_id, grant_type, idempotency_key, original_amount, remaining_amount, expires_at)
-    VALUES (${grant.orgId}, ${grant.userId}, ${grant.grantType}, ${grant.idempotencyKey}, ${grant.amount}, ${grant.amount}, ${sql.param(grant.expiresAt, usagePackCreditGrants.expiresAt)})
+    ${input}
     ON CONFLICT (idempotency_key) DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
     WHERE ${usagePackCreditGrants.orgId} = EXCLUDED.org_id
       AND ${usagePackCreditGrants.userId} = EXCLUDED.user_id

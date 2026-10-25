@@ -46,6 +46,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.IosComposerConnectors]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "iOS composer connectors",
+    description:
+      "Choose connector accounts, permissions, and remote access from native iOS chat.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.SlackWorkspaceIdentity]: {
     maintainer: "yuma@okou.ai",
     displayName: "Slack workspace identity",
@@ -68,13 +76,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-  },
-  [FeatureSwitchKey.JsonTreePreview]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "JSON tree previews",
-    description: "Explore JSON nodes in file and artifact previews.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   // Gate visibility settings; access and preview delivery always enforce Site policy.
   [FeatureSwitchKey.HostedSiteVisibility]: {
@@ -121,7 +122,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Chat resources",
     description:
       "Show a responsive panel of outputs and links from the current chat.",
-    enabled: false,
+    enabled: true,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ThreadEmailManager]: {
@@ -167,18 +168,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.AgentSuggestion]: {
+  [FeatureSwitchKey.ProactiveAgent]: {
     maintainer: "lancy@okou.ai",
-    displayName: "Agent Suggestion",
-    description: "Let Okou manage actionable suggestions on your home page.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ProactiveJobs]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "Proactive jobs",
+    displayName: "Proactive Agent",
     description:
-      "Automatically advance explicitly entrusted Jobs and show their progress and Results.",
+      "Review activity, learn, plan next steps, advance entrusted Tasks and curate Suggestions.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -187,7 +181,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Built-in document templates",
     description:
       "Document templates in the picker, using pinned public GitHub sources. Enable after preview assets are published.",
-    enabled: false,
+    enabled: true,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.CustomTemplates]: {
@@ -195,10 +189,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Custom templates",
     description:
       "Templates compiled from uploaded files, available in their own catalog and the composer slash menu.",
-    enabled: false,
-    // Back to the staff org now that the picker carries its own upload entry:
-    // a colleague who opens the empty panel has the one action that fills it,
-    // which is what the earlier narrowing to the maintainer was waiting for.
+    enabled: true,
+    // Retain the staff and maintainer rollout for a global-default rollback.
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     // Kept beside the org so the maintainer keeps the feature while signed
     // into a customer workspace, where the org hash does not apply.
@@ -251,6 +243,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Use Okou's interactive browser viewer in conversations and standalone browser pages",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",

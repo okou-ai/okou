@@ -7,6 +7,9 @@ use guest_telemetry::log_warn;
 use std::io;
 use std::path::Path;
 
+#[cfg(target_os = "linux")]
+pub(crate) mod rooted;
+
 /// Extract a gzip-compressed tar archive into an existing target directory.
 ///
 /// `target` must be an existing canonical directory prepared before download
@@ -28,9 +31,10 @@ use std::path::Path;
 /// process; it does not prevent another process from concurrently mutating the
 /// destination tree (for example, atomically replacing a checked directory with
 /// a symlink) between a check and the extraction below. The `tar` crate's
-/// threat model explicitly excludes concurrent destination mutation, and
-/// preventing such races requires OS primitives (e.g. `openat`/`O_PATH`) that
-/// this crate does not use. Exposure is reduced by lifecycle assumptions owned
+/// threat model explicitly excludes concurrent destination mutation. The Linux
+/// ordinary-file writer also caches directory identities for the duration of
+/// an extraction; it does not protect against an external directory rename.
+/// Exposure is reduced by lifecycle assumptions owned
 /// by callers: the runner applies storage before spawning the guest agent, and
 /// the guest-storage-apply scheduler serializes logically or physically overlapping
 /// targets within this process. Callers that permit concurrent access to an
@@ -43,6 +47,8 @@ use std::path::Path;
 /// written before an error remain in the target directory.
 pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(), DownloadError> {
     let mut skipped_entries = SkippedEntries { target, skipped: 0 };
+    #[cfg(target_os = "linux")]
+    let mut rooted = rooted::RootedWriter::new(target);
     let (reader, http_body_read_failure) = source.into_parts();
     let decoder = flate2::read::GzDecoder::new(reader);
     let budget = MetadataBudget::default();
@@ -68,6 +74,29 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
             .into_owned();
 
         let entry_type = entry.header().entry_type();
+
+        #[cfg(target_os = "linux")]
+        {
+            // Only plain, new regular files have the metadata and replacement
+            // semantics implemented by the rooted writer. Tar owns all others.
+            if entry_type.is_file()
+                && entry
+                    .pax_extensions()
+                    .map_err(|e| archive_error("Failed to read entry metadata", e))?
+                    .is_none()
+                && rooted.try_unpack(&entry_path, &mut entry).map_err(|e| {
+                    archive_error(
+                        format!("Failed to extract entry {}", entry_path.display()),
+                        e,
+                    )
+                })?
+            {
+                continue;
+            }
+            // General tar operations can replace links or change directory
+            // permissions. Never reuse ancestry across one of those operations.
+            rooted.invalidate();
+        }
 
         // Check that the entry path lexically stays within the target directory
         // (normalize to collapse any .. components before checking)

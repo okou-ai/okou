@@ -56,6 +56,7 @@ const CANONICAL_CLAUDE_PROJECT_NAME = CANONICAL_WORKING_DIR.replace(
 export const CANONICAL_CLAUDE_MEMORY_MOUNT_PATH = `${CANONICAL_CLAUDE_CONFIG_DIR}/projects/-${CANONICAL_CLAUDE_PROJECT_NAME}/memory`;
 export const CANONICAL_CODEX_MEMORY_MOUNT_PATH = `${CANONICAL_CODEX_HOME_DIR}/memories`;
 export const PI_AGENT_DIR = `${CANONICAL_GUEST_HOME_DIR}/.pi/agent`;
+export const CANONICAL_PI_MEMORY_MOUNT_PATH = `${PI_AGENT_DIR}/memory`;
 export const CANONICAL_PI_SESSION_DIR = `${PI_AGENT_DIR}/sessions/--home-user-workspace--`;
 // Shared resume history size contract. Rust consumers import the generated
 // binding from `api_contracts::generated::constants`.

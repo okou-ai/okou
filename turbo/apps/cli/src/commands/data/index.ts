@@ -1,47 +1,95 @@
-import { Command } from "commander";
+import { Command, InvalidArgumentError } from "commander";
+import { z } from "zod";
+import { listDataRouterTools } from "../../lib/api/data-router-client";
+import { isDataRouterToolEnabled } from "../../lib/command/paid-tools";
+import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { printDataRouterTool } from "./print-result";
 
-import { commerceCommand } from "../commerce";
-import { financeCommand } from "../finance";
-import { mapsCommand } from "../maps";
-import { peopleSearchCommand } from "../people-search";
-import { scrapeCommand } from "../scrape";
-import { seoCommand } from "../seo";
-import { socialCommand } from "../social";
-import { weatherCommand } from "../weather";
-import { webSearchCommand } from "../web-search";
-import { registerDataSearchCommands } from "./query";
+function inputObject(value: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new InvalidArgumentError("--input must contain a JSON object");
+  }
+  const result = z.record(z.string(), z.json()).safeParse(parsed);
+  if (!result.success)
+    throw new InvalidArgumentError("--input must contain a JSON object");
+  return result.data;
+}
 
-const webCommand = new Command("web")
-  .description("Search and extract public web sources")
-  .addCommand(webSearchCommand)
-  .addCommand(scrapeCommand);
-
-const peopleCommand = new Command("people")
-  .description("Research professionals and enrich business profiles")
-  .addCommand(peopleSearchCommand);
-
-export const dataCommand = new Command("data")
-  .description("Search and retrieve managed research data")
-  .addCommand(peopleCommand)
-  .addCommand(webCommand)
-  .addCommand(socialCommand)
-  .addCommand(financeCommand)
-  .addCommand(mapsCommand)
-  .addCommand(weatherCommand)
-  .addCommand(seoCommand)
-  .addCommand(commerceCommand)
-  .addHelpText(
-    "after",
-    `
-Examples:
-  Search the web:       okou data web search "small business AI tools" --json
-  Extract a page:       okou data web scrape https://example.com --json
-  Find professionals:   okou data people search "marketing leaders in London" --json
-  Research social:      okou data social --help
-  Discover operations:  okou data capabilities --json
-
-Managed requests can consume credits. Use each command's help for pricing, permissions, and source limitations.
-Chat and session search remain under okou search. Web-chat file delivery remains under okou web upload-file and okou web download-file.`,
+export function createDataCommand(): Command {
+  const command = new Command("data").description(
+    "Discover and call managed research tools from Data Router",
   );
-
-registerDataSearchCommands(dataCommand);
+  command
+    .command("tools")
+    .description("List currently enabled tools from Data Router")
+    .option("--json", "Print compact JSON")
+    .option("--family <family>", "Filter by the family reported by Router")
+    .action(
+      withErrorHandler(async (options: { json?: boolean; family?: string }) => {
+        const tools = (await listDataRouterTools())
+          .filter(isDataRouterToolEnabled)
+          .filter((tool) => {
+            return (
+              !options.family ||
+              tool._meta?.["ai.okou/data"]?.family === options.family
+            );
+          })
+          .map(({ name, title, description, _meta }) => {
+            return {
+              name,
+              title,
+              description,
+              family: _meta?.["ai.okou/data"]?.family,
+            };
+          });
+        console.log(
+          JSON.stringify({ tools }, null, options.json ? undefined : 2),
+        );
+      }),
+    );
+  command
+    .command("describe")
+    .description("Read a tool's current input schema and instructions")
+    .argument("<tool>", "Tool name from okou data tools")
+    .option("--json", "Print compact JSON")
+    .action(
+      withErrorHandler(async (name: string, options: { json?: boolean }) => {
+        const tool = (await listDataRouterTools()).find((entry) => {
+          return entry.name === name && isDataRouterToolEnabled(entry);
+        });
+        if (!tool)
+          throw new InvalidArgumentError(
+            `Data tool ${name} is unavailable. Use okou data tools to discover enabled tools.`,
+          );
+        console.log(JSON.stringify(tool, null, options.json ? undefined : 2));
+      }),
+    );
+  command
+    .command("call")
+    .description("Call a Data Router tool with its current JSON input")
+    .argument("<tool>", "Data Router tool name")
+    .requiredOption(
+      "--input <json>",
+      "Tool arguments as a JSON object",
+      inputObject,
+    )
+    .option("--json", "Print compact JSON")
+    .action(
+      withErrorHandler(
+        async (
+          name: string,
+          options: { input: Record<string, unknown>; json?: boolean },
+        ) => {
+          await printDataRouterTool(name, options.input, options.json);
+        },
+      ),
+    );
+  command.addHelpText(
+    "after",
+    '\nDiscover tools with okou data tools, then inspect parameters with okou data describe <tool>.\nCall tools with okou data call <tool> --input \'{"parameter":"value"}\'. Results are printed as JSON.\nCalls can consume credits. Follow the tool description for quotes and job status; do not automatically repeat an uncertain paid call.',
+  );
+  return command;
+}

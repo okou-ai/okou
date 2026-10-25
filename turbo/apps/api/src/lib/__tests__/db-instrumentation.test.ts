@@ -30,6 +30,7 @@ import {
   type PgQueryExecution,
 } from "../db-instrumentation";
 import { env } from "../env";
+import { withRequestRuntime, type RequestRuntime } from "../request-runtime";
 import { settleIncludingAbort } from "../../signals/utils";
 
 const ACQUIRE_DURATION_ATTRIBUTE = "vm0.db.pool.acquire.duration_ms";
@@ -198,6 +199,7 @@ function createPgTestResources() {
     spanProcessors: [new SimpleSpanProcessor(exporter)],
   });
   const tracer = provider.getTracer("db-instrumentation-test");
+  const runtimeTracer = provider.getTracer("worker-runtime-test");
   const pools: Pool[] = [];
   const releases = new Set<PoolClient["release"]>();
   const pending = new Set<Promise<unknown>>();
@@ -210,10 +212,10 @@ function createPgTestResources() {
     }
   }
 
-  function track<T>(work: Promise<T>): Promise<T> {
+  function ownPendingWork(work: Promise<unknown>): void {
     pending.add(work);
-    // Observe rejection immediately, but return the original outcome to the
-    // test. Cleanup joins abandoned work without masking its primary failure.
+    // Observe rejection immediately. Cleanup joins abandoned work without
+    // masking the original outcome returned to the test by track().
     void work.then(
       () => {
         pending.delete(work);
@@ -222,6 +224,10 @@ function createPgTestResources() {
         pending.delete(work);
       },
     );
+  }
+
+  function track<T>(work: Promise<T>): Promise<T> {
+    ownPendingWork(work);
     return work;
   }
 
@@ -358,6 +364,31 @@ function createPgTestResources() {
     );
   }
 
+  function runUnderWorkerRuntime<T>(operation: () => Promise<T>): Promise<T> {
+    // Infrastructure exception: model only the platform-owned span factory.
+    // Query execution and queued acquisition still use the real pg pool.
+    const runtime: RequestRuntime = {
+      nativeTelemetry: true,
+      database() {
+        throw new Error("Use the test-owned pg pool");
+      },
+      waitUntil: ownPendingWork,
+      observeHttp() {},
+      traceQuery(name, sql, execute) {
+        return runtimeTracer.startActiveSpan(
+          name,
+          { attributes: { "db.statement": sql } },
+          (span) => {
+            return execute(span).finally(() => {
+              span.end();
+            });
+          },
+        );
+      },
+    };
+    return track(withRequestRuntime(runtime, operation));
+  }
+
   onTestFinished(close);
   return {
     exporter,
@@ -371,6 +402,7 @@ function createPgTestResources() {
     findSpan,
     findNamedSpan,
     runUnderParent,
+    runUnderWorkerRuntime,
   };
 }
 
@@ -683,6 +715,77 @@ describe("instrumentPgPool", () => {
     expect(parentA.spanContext().traceId).not.toBe(
       parentB.spanContext().traceId,
     );
+  });
+
+  it("preserves acquisition measurements on Workers query spans", async () => {
+    const pg = createPgTestResources();
+    const pool = pg.createPool();
+    const warmStatement = "SELECT 501 AS worker_new";
+    const idleStatement = "SELECT 502 AS worker_idle";
+    const queuedStatementA = "SELECT 503 AS worker_queued_a";
+    const queuedStatementB = "SELECT 504 AS worker_queued_b";
+
+    await pg.runUnderWorkerRuntime(() => {
+      return pg.query(pool, warmStatement);
+    });
+    await pg.runUnderWorkerRuntime(() => {
+      return pg.query(pool, idleStatement);
+    });
+    const heldClient = await pg.connect(pool);
+    const queryA = pg.runUnderWorkerRuntime(() => {
+      return pg.query(pool, queuedStatementA);
+    });
+    const queryB = pg.runUnderWorkerRuntime(() => {
+      return pg.query(pool, queuedStatementB);
+    });
+    const waitingCount = pool.waitingCount;
+    heldClient.release();
+    const results = await Promise.all([queryA, queryB]);
+
+    expect(waitingCount).toBe(2);
+    expect(
+      results.map((result) => {
+        return result.rowCount;
+      }),
+    ).toStrictEqual([1, 1]);
+    expectAcquisition(pg.findSpan(warmStatement), "new");
+    expectAcquisition(pg.findSpan(idleStatement), "idle");
+    expectAcquisition(pg.findSpan(queuedStatementA), "queued");
+    expectAcquisition(pg.findSpan(queuedStatementB), "queued");
+    const spans = pg.exporter.getFinishedSpans();
+    expect(spans).toHaveLength(4);
+    expect(
+      spans.every((span) => {
+        return span.instrumentationScope.name === "worker-runtime-test";
+      }),
+    ).toBeTruthy();
+  });
+
+  it("retains Workers acquisition failures and allows the next query", async () => {
+    const pg = createPgTestResources();
+    const pool = pg.createPool({ connectionTimeoutMillis: 25 });
+    const heldClient = await pg.connect(pool);
+    const timeoutStatement = "SELECT 505 AS worker_acquisition_timeout";
+    const recoveryStatement = "SELECT 506 AS worker_recovered";
+
+    const error = await captureRejection(
+      pg.runUnderWorkerRuntime(() => {
+        return pg.query(pool, timeoutStatement);
+      }),
+    );
+    heldClient.release();
+    const recovered = await pg.runUnderWorkerRuntime(() => {
+      return pg.query(pool, recoveryStatement);
+    });
+
+    expect(error).toHaveProperty(
+      "message",
+      "timeout exceeded when trying to connect",
+    );
+    expect(recovered.rowCount).toBe(1);
+    expectAcquisition(pg.findSpan(timeoutStatement), "queued");
+    expectAcquisition(pg.findSpan(recoveryStatement), "idle");
+    expect(pg.exporter.getFinishedSpans()).toHaveLength(2);
   });
 
   it("preserves acquisition and query failures and releases clients", async () => {

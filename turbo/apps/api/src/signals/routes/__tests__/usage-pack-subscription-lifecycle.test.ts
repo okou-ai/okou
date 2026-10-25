@@ -1,7 +1,7 @@
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
-import { chargePublicSeoUsage } from "./helpers/public-seo-charge";
+import { chargePublicDataUsage } from "./helpers/public-data-charge";
 import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { purchaseToolCredits } from "./helpers/public-tool-actor";
 import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
@@ -645,7 +645,7 @@ async function spendToOrgDebt(
     rewardAmount: 100,
     rewardTarget: "user",
   });
-  await chargePublicSeoUsage(context, spender, before.credits + 100 - debt);
+  await chargePublicDataUsage(context, spender, before.credits + 100 - debt);
   await expect(readBillingStatus(fixture)).resolves.toMatchObject({
     credits: debt,
   });
@@ -748,15 +748,24 @@ describe("usage pack subscription Stripe lifecycle", () => {
         stripeSubscription(fixture, paidPeriod, quantities),
       );
 
+      const checkout = {
+        id: fixture.checkoutSessionId,
+        customer: fixture.customerId,
+        subscription: fixture.subscriptionId,
+        metadata: usagePackMetadata(fixture),
+      };
       await postStripeEvent(
-        stripeEvent("checkout.session.completed", {
-          id: fixture.checkoutSessionId,
-          customer: fixture.customerId,
-          subscription: fixture.subscriptionId,
-          metadata: usagePackMetadata(fixture),
-        }),
+        stripeEvent("checkout.session.completed", checkout),
         200,
       );
+      if (phase === "initial payment") {
+        // A distinct provider event for the same Checkout republishes the
+        // subscription without consuming another pending purchase.
+        await postStripeEvent(
+          stripeEvent("checkout.session.completed", checkout),
+          200,
+        );
+      }
       await postStripeEvent(
         stripeEvent(
           "customer.subscription.created",
@@ -1347,6 +1356,28 @@ describe("usage pack subscription Stripe lifecycle", () => {
       );
 
       await postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200);
+      await postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200);
+
+      await Promise.all([
+        postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200),
+        postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200),
+        postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200),
+      ]);
+      await postStripeEvent(
+        stripeEvent("invoice.paid", {
+          ...grantInvoice,
+          metadata: { ...grantInvoice.metadata, creditsAmount: "6001" },
+        }),
+        500,
+      );
+      await postStripeEvent(
+        stripeEvent("invoice.paid", {
+          ...grantInvoice,
+          id: `in_wrong_customer_${randomUUID()}`,
+          customer: `cus_${randomUUID()}`,
+        }),
+        500,
+      );
       await postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200);
 
       const grantedState = await readLifecycleSnapshot(fixture);

@@ -119,9 +119,13 @@ public struct ChatConnectorService: Sendable {
     // The thread's current Agent is authoritative, including after reassignment.
     struct Metadata: Decodable, Sendable { let agentId: String }
     do {
-      let metadata: Metadata = try await client.request(
-        "/api/chat-threads/\(action.threadID)/metadata")
-      guard metadata.agentId.lowercased() == action.agentID.lowercased() else { return nil }
+      if let threadID = action.threadID {
+        let metadata: Metadata = try await client.request("/api/chat-threads/\(threadID)/metadata")
+        guard metadata.agentId.lowercased() == action.agentID.lowercased() else { return nil }
+      } else {
+        let agent: Metadata = try await client.request("/api/agents/\(action.agentID)")
+        guard agent.agentId.lowercased() == action.agentID.lowercased() else { return nil }
+      }
       return try await readStatus(action)
     } catch let error as APIClientError where error.statusCode == 404 { return nil }
   }
@@ -150,6 +154,9 @@ public struct ChatConnectorService: Sendable {
     case .select(let selectedTarget, let id):
       target = selectedTarget
       exactID = id
+    case .configuration(let selectedTarget, let id):
+      target = selectedTarget
+      exactID = id
     }
     if let slug = target.connectorSlug {
       struct Response: Decodable, Sendable { let connector: ChatBuiltinConnector }
@@ -163,6 +170,8 @@ public struct ChatConnectorService: Sendable {
     let account: ChatConnectorAccount?
     if let exactID {
       account = try await self.account(id: exactID, target: target)
+    } else if case .configuration = action.kind {
+      account = nil
     } else if custom?.managed == true {
       account = nil
     } else {
@@ -233,14 +242,14 @@ public struct ChatConnectorService: Sendable {
     }
     var selected = false
     if case .select = action.kind {
-      guard authorized else { return nil }
+      guard authorized, let threadID = action.threadID else { return nil }
       struct Selection: Decodable, Sendable {
         let target: ChatConnectorTarget
         let connectionId: String
       }
       struct Response: Decodable, Sendable { let selections: [Selection] }
       let response: Response = try await client.request(
-        "/api/chat-threads/\(action.threadID)/connector-selections")
+        "/api/chat-threads/\(threadID)/connector-selections")
       selected = response.selections.contains {
         $0.target == target && $0.connectionId.lowercased() == exactID
       }
@@ -287,7 +296,9 @@ public struct ChatConnectorService: Sendable {
     }
   }
   public func select(_ action: ChatConnectorAction, status: ChatConnectorStatus) async throws {
-    guard case .select(let target, let id) = action.kind, target == status.target else {
+    guard case .select(let target, let id) = action.kind, target == status.target,
+      let threadID = action.threadID
+    else {
       throw APIClientError.invalidResponse
     }
     struct Body: Encodable {
@@ -295,7 +306,7 @@ public struct ChatConnectorService: Sendable {
       let connectionId: String
     }
     try await client.data(
-      "/api/chat-threads/\(action.threadID)/connector-selections", method: "PUT",
+      "/api/chat-threads/\(threadID)/connector-selections", method: "PUT",
       body: JSONEncoder().encode(Body(target: target, connectionId: id)))
   }
   public func start(

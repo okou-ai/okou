@@ -1,11 +1,20 @@
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { ScrollArea } from "@base-ui/react/scroll-area";
-import { Button, ScrollBar } from "@okouai/ui";
-import type { ReactNode } from "react";
+import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  IconButton,
+  cn,
+} from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { Check, Loader2 } from "lucide-react";
+import { AlertCircle, Check, Loader2, ShieldCheck, X } from "lucide-react";
 import type { PermissionBatchSignals } from "../../signals/chat-page/permission-batch-signals.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { user$ } from "../../signals/auth.ts";
@@ -126,6 +135,7 @@ function getBatchPolicy(
     descriptor,
     saveFailed,
     continueFailed,
+    continued,
   } = resources;
   const chosenGrants =
     grants.state === "hasData"
@@ -153,7 +163,8 @@ function getBatchPolicy(
       : 0;
   const allowed =
     complete && !loadFailed && allowedCount === descriptor.items.length;
-  const callbackFailed = allowed && (saveFailed || continueFailed);
+  const callbackFailed =
+    allowed && !continued && (saveFailed || continueFailed);
 
   return { allowedCount, allowed, callbackFailed, chosenGrants };
 }
@@ -302,7 +313,11 @@ function BatchPermissionDetails({ batch }: BatchViewProps) {
                     className="flex min-w-0 flex-col items-start gap-1"
                   >
                     <code className="max-w-full break-all rounded border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-xs text-sky-700">
-                      {item.permission}
+                      {item.permission === UNKNOWN_PERMISSION_GRANT
+                        ? t(($) => {
+                            return $.chat.permissions.otherEndpoints;
+                          })
+                        : item.permission}
                     </code>
                     {!loadFailed &&
                       resolveUserPermissionGrantPolicy(
@@ -482,28 +497,174 @@ function BatchActions({
   );
 }
 
-function BatchScrollRegion({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
+function BatchCardDescription({
+  batch,
+  failed,
+}: BatchViewProps & { failed: boolean }) {
+  const { t } = useTranslation();
+  const {
+    allowed,
+    allowedCount,
+    callbackFailed,
+    complete,
+    continued,
+    descriptor,
+    groups,
+    loadFailed,
+    ready,
+    saveFailed,
+  } = batch;
+  const description =
+    loadFailed || (ready && !complete)
+      ? t(($) => {
+          return $.authorization.permissionBatch.loadFailed;
+        })
+      : callbackFailed
+        ? t(($) => {
+            return $.authorization.permissionBatch.continueFailed;
+          })
+        : saveFailed && !allowed
+          ? t(($) => {
+              return $.authorization.permission.errors.updateFailed;
+            })
+          : !ready
+            ? t(($) => {
+                return $.authorization.permissionBatch.loading;
+              })
+            : continued && allowed
+              ? t(($) => {
+                  return $.authorization.permissionBatch.continued;
+                })
+              : [
+                  t(
+                    ($) => {
+                      return $.authorization.permissionBatch.allowedCount;
+                    },
+                    { allowed: allowedCount, total: descriptor.items.length },
+                  ),
+                  groups
+                    .map(({ connector }) => {
+                      return connector.label;
+                    })
+                    .join(", "),
+                ].join(" · ");
   return (
-    <ScrollArea.Root className="relative min-h-0 min-w-0">
-      <ScrollArea.Viewport
-        data-slot="scroll-area-viewport"
-        role="region"
-        aria-label={label}
-        tabIndex={0}
-        className="h-full rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+    <p
+      className={cn(
+        "mt-0.5 line-clamp-2 text-sm leading-5",
+        failed ? "text-destructive" : "text-muted-foreground",
+      )}
+    >
+      {description}
+    </p>
+  );
+}
+
+function BatchCardSummary({ batch }: BatchViewProps) {
+  const { t } = useTranslation();
+  const {
+    allowed,
+    busy,
+    callbackFailed,
+    complete,
+    loadFailed,
+    ready,
+    saveFailed,
+  } = batch;
+  const failed =
+    loadFailed ||
+    (ready && !complete) ||
+    (!allowed && saveFailed) ||
+    callbackFailed;
+  return (
+    <div className="flex h-full w-full flex-col justify-between gap-3 px-4 py-3 text-left @[640px]:flex-row @[640px]:items-center">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-muted-foreground">
+          {failed ? (
+            <AlertCircle size={22} className="text-destructive" />
+          ) : busy || !ready ? (
+            <Loader2 size={22} className="animate-spin" />
+          ) : allowed ? (
+            <Check size={22} className="text-green-600" />
+          ) : (
+            <ShieldCheck size={22} />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[0.9375rem] font-medium leading-5 text-foreground">
+            {allowed
+              ? t(($) => {
+                  return $.authorization.permissionBatch.allowed;
+                })
+              : t(($) => {
+                  return $.authorization.permissionBatch.title;
+                })}
+          </div>
+          <BatchCardDescription batch={batch} failed={failed} />
+        </div>
+      </div>
+      <DialogTrigger
+        render={
+          <Button
+            type="button"
+            variant="neutral"
+            size="sm"
+            className="shrink-0 self-end @[640px]:self-auto"
+          />
+        }
       >
-        <ScrollArea.Content className="flex min-w-0 flex-col gap-4 pr-3 break-words">
-          {children}
-        </ScrollArea.Content>
-      </ScrollArea.Viewport>
-      <ScrollBar />
-    </ScrollArea.Root>
+        {allowed
+          ? t(($) => {
+              return $.authorization.permissionBatch.details;
+            })
+          : t(($) => {
+              return $.authorization.permissionBatch.review;
+            })}
+      </DialogTrigger>
+    </div>
+  );
+}
+
+function BatchDialog({ batch, href }: BatchViewProps & { href: string }) {
+  const { t } = useTranslation();
+  return (
+    <Dialog>
+      <BatchCardSummary batch={batch} />
+      <DialogContent maxWidth={640} showCloseButton={false}>
+        <DialogHeader className="flex-row items-center gap-3 space-y-0 text-left">
+          <DialogTitle className="min-w-0 flex-1 leading-6">
+            {t(($) => {
+              return $.authorization.permissionBatch.title;
+            })}
+          </DialogTitle>
+          {/* Initial focus stays above the list instead of scrolling to duration. */}
+          <DialogClose
+            render={
+              <IconButton
+                className="shrink-0"
+                aria-label={t(($) => {
+                  return $.connectors.actions.close;
+                })}
+              />
+            }
+          >
+            <X size={20} />
+          </DialogClose>
+        </DialogHeader>
+        {batch.allowed && <BatchHeader batch={batch} standalone={false} />}
+        <BatchPermissionDetails batch={batch} />
+        <BatchFeedback batch={batch} />
+        <BatchActions batch={batch} standalone={false} />
+        <a
+          href={href}
+          className="break-words text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+        >
+          {t(($) => {
+            return $.authorization.permissionBatch.details;
+          })}
+        </a>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -526,45 +687,8 @@ function BatchContent({
     );
   }
   if (!standalone) {
-    // Reserve every async slot from the first render, including terminal states.
-    // Long scopes and localized feedback scroll inside their own bounded rows;
-    // the approval/continuation action and direct destination stay reachable.
-    return (
-      <div className="grid h-full min-h-0 w-full min-w-0 grid-rows-[104px_minmax(0,1fr)_160px_36px_40px] gap-3">
-        <BatchScrollRegion
-          label={t(($) => {
-            return $.authorization.permissionBatch.title;
-          })}
-        >
-          <BatchHeader batch={batch} standalone={false} />
-        </BatchScrollRegion>
-        <BatchScrollRegion
-          label={t(($) => {
-            return $.authorization.permissionBatch.scopeNote;
-          })}
-        >
-          <BatchPermissionDetails batch={batch} />
-        </BatchScrollRegion>
-        <BatchScrollRegion
-          label={t(($) => {
-            return $.authorization.permission.durationLabel;
-          })}
-        >
-          <BatchFeedback batch={batch} />
-        </BatchScrollRegion>
-        <div className="min-w-0">
-          <BatchActions batch={batch} standalone={false} />
-        </div>
-        <a
-          href={signals.href}
-          className="overflow-y-auto break-words text-sm text-muted-foreground underline underline-offset-4"
-        >
-          {t(($) => {
-            return $.authorization.permissionBatch.details;
-          })}
-        </a>
-      </div>
-    );
+    // Keep operation state mounted across dialog closes and asynchronous updates.
+    return <BatchDialog batch={batch} href={signals.href} />;
   }
   return (
     <div className="flex w-full min-w-0 flex-col gap-4">

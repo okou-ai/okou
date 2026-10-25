@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { z } from "zod";
+import * as z from "zod";
 import { desktopResponseTransforms } from "../client-transforms/desktop";
 import { compareRuntimeApiSchemas } from "./compat";
 import {

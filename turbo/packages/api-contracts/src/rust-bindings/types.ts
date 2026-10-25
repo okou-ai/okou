@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
 import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
 import { runnersRunStartupContract } from "../contracts/runner-startup";

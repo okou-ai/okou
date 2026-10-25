@@ -183,10 +183,6 @@ const startBuiltinAutomaticInner$ = command(
         return notFound(authorization.message);
       }
     }
-    await publishBuiltinConnectorInvalidationAfterCommit(
-      { userId: auth.userId, connectorSlug: resolved.connectorSlug },
-      signal,
-    );
     return {
       status: 200 as const,
       body: {
@@ -261,6 +257,8 @@ const completeBuiltinAutomatic$ = command(
       },
       signal,
     );
+    // The account notification can precede this attempt's completion receipt.
+    // Wake its OAuth owner again now that the receipt can be read.
     await publishBuiltinConnectorInvalidationAfterCommit(
       { userId: completed.userId, connectorSlug: completed.connectorSlug },
       signal,

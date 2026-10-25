@@ -2,7 +2,6 @@ import {
   usageSnapshotCondition,
   type PendingUsageSnapshot,
 } from "./credit-usage-batch";
-import type { SocialSettlementClaim } from "./social-data-settlement-plan";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -324,12 +323,9 @@ export function completeSettlementReceipt(
 export function claimUsageWhere(
   orgId: string,
   snapshots: readonly PendingUsageSnapshot[],
-  socialKey?: string,
 ) {
   return and(
-    socialKey
-      ? eq(usageEvent.idempotencyKey, socialKey)
-      : usageSnapshotCondition(snapshots),
+    usageSnapshotCondition(snapshots),
     eq(usageEvent.orgId, orgId),
     eq(usageEvent.status, "pending"),
   );
@@ -354,11 +350,4 @@ export function emptySettlementReceipt(
   work: SettlementWorkObservation,
 ): ProcessOrgUsageEventsResult {
   return { sharedCreditsCharged: 0, runIds: [], lowBalanceAlert: null, work };
-}
-
-export function hasNoStandaloneUsage(
-  events: readonly { readonly id: string }[],
-  social: SocialSettlementClaim | undefined,
-): boolean {
-  return events.length === 0 && social === undefined;
 }

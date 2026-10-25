@@ -8,8 +8,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import chalk from "chalk";
-import { generateCommand } from "../index";
+import { createGenerateCommand } from "../index";
 import { websiteCommand } from "../website";
+
+const generateCommand = createGenerateCommand();
 
 function buildRunToken(capabilities: readonly string[] = []): string {
   const header = Buffer.from(JSON.stringify({ alg: "HS256" })).toString(

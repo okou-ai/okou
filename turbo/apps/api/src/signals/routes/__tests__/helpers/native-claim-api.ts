@@ -5,7 +5,7 @@ import { lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { http, passthrough } from "msw";
-import { z } from "zod";
+import * as z from "zod";
 
 import type { TestContext } from "../../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../../app-factory-core";

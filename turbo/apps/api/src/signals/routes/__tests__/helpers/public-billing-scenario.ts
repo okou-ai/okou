@@ -24,8 +24,8 @@ function captureBillingState(context: TestContext) {
   const base = captureConnectorExternalState(context, [
     "STRIPE_SECRET_KEY",
     "OKOU_PREVIEW_JOB_REF",
-    "OKOU_SEO_DATAFORSEO_LOGIN",
-    "OKOU_SEO_DATAFORSEO_PASSWORD",
+    "OKOU_DATA_ROUTER_URL",
+    "OKOU_DATA_TOKEN",
     "OKOU_PRICE_CUSTOM_CREDIT_UNIT",
   ]);
   const prices = (

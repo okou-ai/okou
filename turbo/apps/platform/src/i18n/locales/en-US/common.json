@@ -1053,6 +1053,7 @@
       "loadFailed": "Could not verify all requested permissions. No permissions can be changed.",
       "loading": "Loading permissions",
       "notNow": "Not now",
+      "review": "Review permissions",
       "scopeNote": "Applies to this agent, not only the current task.",
       "title": "Allow the following permissions"
     }
@@ -1969,6 +1970,7 @@
       "retry": "Retry",
       "saved": "Saved for the next evaluation",
       "saveReply": "Save reply",
+      "sourceUpdate": "Source update",
       "states": {
         "active": "In progress",
         "archived": "Archived",
@@ -2366,6 +2368,7 @@
       "unknown": "Unknown",
       "unsupported": "Manual reset is not supported; usage recovers naturally."
     },
+    "syncFailed": "Your chats may be out of date",
     "taskChips": {
       "chooseTask": "Choose a task",
       "ideas": {
@@ -5132,6 +5135,10 @@
           "description": "Personalize how the app looks and behaves.",
           "title": "Preference"
         },
+        "proactiveAgent": {
+          "description": "Choose how Okou learns, plans, advances Tasks and suggests next steps.",
+          "title": "Proactive Agent"
+        },
         "tools": {
           "title": "Tools"
         },
@@ -5539,15 +5546,37 @@
       "proactiveJobs": {
         "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
         "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
+        "missingTimezone": "Set your time zone in Preferences.",
         "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
         "preparing": "Preparing your tasks. You can turn this off at any time.",
         "retry": "Retry",
         "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
         "title": "Proactive tasks"
       },
+      "proactiveLearning": {
+        "description": "Review your activity overnight and improve personal memory.",
+        "missingDefaultAgent": "Choose an available default Agent.",
+        "missingTimezone": "Set your time zone in Preferences.",
+        "preparationFailed": "This workflow is temporarily unavailable. Okou will retry.",
+        "preparing": "Preparing this workflow.",
+        "retry": "Retry",
+        "retryMessage": "Could not load or update this setting. Retry.",
+        "title": "Learning"
+      },
+      "proactivePlanning": {
+        "description": "Plan within your explicit delegations and maintain Tasks. New work can start when Tasks is on.",
+        "missingDefaultAgent": "Choose an available default Agent.",
+        "missingTimezone": "Set your time zone in Preferences.",
+        "preparationFailed": "This workflow is temporarily unavailable. Okou will retry.",
+        "preparing": "Preparing this workflow.",
+        "retry": "Retry",
+        "retryMessage": "Could not load or update this setting. Retry.",
+        "title": "Planning"
+      },
       "proactiveSuggestions": {
         "description": "Let Okou check your connected sources every hour and suggest useful next steps on your home page.",
         "missingDefaultAgent": "Choose a usable default Agent to receive proactive suggestions.",
+        "missingTimezone": "Set your time zone in Preferences.",
         "preparationFailed": "Temporarily unavailable. Okou will retry automatically.",
         "preparing": "Preparing hourly suggestions. You can turn this off at any time.",
         "retry": "Retry",
@@ -5747,6 +5776,9 @@
         "logo": {
           "description": "Workspace avatar displayed across the app",
           "fallbackAlt": "Workspace",
+          "loadError": "Could not load workspace logo.",
+          "loading": "Loading workspace logo",
+          "retry": "Retry",
           "title": "Logo",
           "upload": "Upload logo"
         },

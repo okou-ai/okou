@@ -7,7 +7,7 @@ import { http, HttpResponse } from "msw";
 import chalk from "chalk";
 import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { server } from "../../../mocks/server";
-import { generateCommand } from "../index";
+import { createGenerateCommand } from "../index";
 import { stubConnectedConnectors } from "../../__tests__/helpers/connector-accounts";
 import {
   catalogItem,
@@ -18,6 +18,8 @@ import {
   stubRunConnectorAccountInspection,
   writeRunConnectorAccountContext,
 } from "../../__tests__/helpers/run-connector-accounts";
+
+const generateCommand = createGenerateCommand();
 
 const AGENT_ID = "550e8400-e29b-41d4-a716-446655440000";
 const RUN_CONNECTION_ID = "00000000-0000-4000-8000-000000000001";
@@ -249,7 +251,7 @@ describe("okou generate lister", () => {
   });
 
   it.each([{ type: "image", tool: "image-generation", provider: "fal" }])(
-    "explains disabled built-in $type while retaining a ready connector",
+    "omits disabled built-in $type while retaining a ready connector",
     async ({ type, tool, provider }) => {
       vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, JSON.stringify([tool]));
       server.use(
@@ -257,13 +259,11 @@ describe("okou generate lister", () => {
         stubUserConnectors([provider]),
       );
 
-      await generateCommand.parseAsync(["node", "cli", type]);
+      await createGenerateCommand().parseAsync(["node", "cli", type]);
 
-      expect(output()).toContain(
-        `Paid tool "${tool}" is disabled for this run.`,
-      );
-      expect(output()).toContain("Settings > Personal > Tools");
-      expect(output()).toContain("http://localhost:3000/?settings=tools");
+      expect(output()).not.toContain("Built-in command:");
+      expect(output()).not.toContain("--provider built-in");
+      expect(output()).not.toContain("disabled");
       expect(output()).toContain(`@${provider}-user`);
       expect(output()).not.toContain("Available on the current plan");
       expect(mockConsoleError).not.toHaveBeenCalled();
@@ -277,9 +277,10 @@ describe("okou generate lister", () => {
       stubUserConnectors(["fal"]),
     );
 
-    await generateCommand.parseAsync(["node", "cli", "image"]);
+    await createGenerateCommand().parseAsync(["node", "cli", "image"]);
 
-    expect(output()).toContain("Paid tool configuration is invalid");
+    expect(output()).not.toContain("Built-in command:");
+    expect(output()).not.toContain("--provider built-in");
     expect(output()).toContain("@fal-user");
     expect(mockConsoleError).not.toHaveBeenCalled();
   });
@@ -392,7 +393,7 @@ describe("okou generate lister", () => {
       ]),
     );
 
-    await generateCommand.parseAsync([
+    await createGenerateCommand().parseAsync([
       "node",
       "cli",
       "image",

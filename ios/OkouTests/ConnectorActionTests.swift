@@ -24,7 +24,12 @@ final class ConnectorActionTests: XCTestCase {
         path + "?agentId=\(F.agentID)&threadId=\(F.threadID)&callbackPrompt=\(callbackQuery)",
         webURL: fixture.baseURL, agentID: F.agentID, threadID: F.threadID))
   }
-  private func store(_ fixture: ChatHTTPFixture) -> ConnectorActionStore {
+  private func store(
+    _ fixture: ChatHTTPFixture,
+    pollSleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
+    }
+  ) -> ConnectorActionStore {
     let sync = ChatSync(client: fixture.client)
     let commands = ChatCommands(client: fixture.client, sync: sync)
     let thread = ChatThread(
@@ -33,7 +38,7 @@ final class ConnectorActionTests: XCTestCase {
       pinOrder: nil, modelSettings: [:], serviceTier: nil, indicator: nil)
     return ConnectorActionStore(
       service: commands.connectorActions, commands: commands, thread: thread, didContinue: {},
-      didFail: { _ in })
+      didFail: { _ in }, pollSleep: pollSleep)
   }
   func testNoAuthConnectionVerifiesServerStateAndContinuesWithoutClearingSelection() async throws {
     let linked = Mutex(false)
@@ -139,6 +144,7 @@ final class ConnectorActionTests: XCTestCase {
     XCTAssertEqual(eventIDs.withLock { $0.count }, 2)
   }
   func testOAuthBrowserCancellationDoesNotContinueAndCanRestart() async throws {
+    let clock = ConnectorPollingClock()
     let reads = Mutex(0)
     let fixture = ChatHTTPFixture { request in
       if request.url!.path == "/api/connectors/slack/oauth/start" {
@@ -155,13 +161,15 @@ final class ConnectorActionTests: XCTestCase {
       return try XCTUnwrap(
         F.response(request, connected: false, authorized: false, grantKind: "auth-code"))
     }
-    let store = store(fixture)
+    let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(try descriptor(fixture))
     try await eventually { store.active != nil }
     store.submit()
-    try await eventually { store.active?.browserURL != nil }
+    try await eventually { store.active?.browserURL != nil && clock.hasSleeper(.seconds(2)) }
+    XCTAssertEqual(reads.withLock { $0 }, 0)
     store.browserDismissed()
+    clock.advance(.seconds(2))
     try await eventually { store.active?.notice != nil }
     XCTAssertEqual(reads.withLock { $0 }, 1)
     XCTAssertNil(store.active?.session)
@@ -231,6 +239,7 @@ final class ConnectorActionTests: XCTestCase {
     XCTAssertEqual(submissions.withLock { $0 }, 2)
   }
   func testOAuthCompletionReceiptVerifiesOwnedAccountBeforeContinuing() async throws {
+    let clock = ConnectorPollingClock()
     let connected = Mutex(false)
     let callbacks = Mutex(0)
     let fixture = ChatHTTPFixture { request in
@@ -248,18 +257,21 @@ final class ConnectorActionTests: XCTestCase {
       return try XCTUnwrap(
         F.response(request, connected: connected.withLock { $0 }, grantKind: "auth-code"))
     }
-    let store = store(fixture)
+    let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
     let action = try descriptor(fixture)
     store.activate(action)
     try await eventually { store.active != nil }
     store.submit()
-    try await eventually { store.active?.browserURL != nil }
+    try await eventually { store.active?.browserURL != nil && clock.hasSleeper(.seconds(2)) }
+    XCTAssertEqual(callbacks.withLock { $0 }, 0)
     store.browserDismissed()
+    clock.advance(.seconds(2))
     try await eventually { store.active == nil }
     XCTAssertEqual(callbacks.withLock { $0 }, 1)
   }
   func testDeviceAuthorizationPollsSessionTokenAndCompletesOnlyAfterServerReadiness() async throws {
+    let clock = ConnectorPollingClock()
     let connected = Mutex(false)
     let polls = Mutex(0)
     let fixture = ChatHTTPFixture { request in
@@ -284,19 +296,25 @@ final class ConnectorActionTests: XCTestCase {
       return try XCTUnwrap(
         F.response(request, connected: connected.withLock { $0 }, grantKind: "device-auth"))
     }
-    let store = store(fixture)
+    let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(try descriptor(fixture))
     try await eventually { store.active != nil }
     store.submit()
-    try await eventually { store.active?.session != nil }
+    try await eventually { store.active?.session != nil && clock.hasSleeper(.seconds(1)) }
     XCTAssertEqual(store.active?.session?.userCode, "EXAMPLE-CODE")
+    XCTAssertEqual(polls.withLock { $0 }, 0)
     store.browserDismissed()
+    clock.advance(.seconds(1))
+    try await eventually { polls.withLock { $0 } == 1 && clock.hasSleeper(.seconds(1)) }
+    XCTAssertNotNil(store.active)
+    clock.advance(.seconds(1))
     try await eventually { store.active == nil }
     XCTAssertEqual(polls.withLock { $0 }, 2)
   }
   func testCustomOAuthAndAutomaticDoNotRequestProviderOwnedCredentialFields() async throws {
     for mode in ["oauth", "automatic"] {
+      let clock = ConnectorPollingClock()
       let connected = Mutex(false)
       let callbacks = Mutex(0)
       let fixture = ChatHTTPFixture { request in
@@ -336,13 +354,18 @@ final class ConnectorActionTests: XCTestCase {
         return try XCTUnwrap(
           F.response(request, connected: connected.withLock { $0 }, customMode: mode))
       }
-      let store = store(fixture)
+      let store = store(fixture, pollSleep: clock.sleep)
       defer { store.close() }
       store.activate(try descriptor(fixture, custom: true))
       try await eventually { store.active != nil }
       XCTAssertTrue(try XCTUnwrap(store.active).canSubmit)
       XCTAssertTrue(try XCTUnwrap(store.active).values.isEmpty)
       store.submit()
+      if mode == "oauth" {
+        try await eventually { clock.hasSleeper(.seconds(2)) }
+        XCTAssertEqual(callbacks.withLock { $0 }, 0)
+        clock.advance(.seconds(2))
+      }
       try await eventually { store.active == nil }
       XCTAssertEqual(callbacks.withLock { $0 }, 1)
     }
@@ -386,82 +409,79 @@ final class ConnectorActionTests: XCTestCase {
     }
     XCTAssertTrue(status.selected)
   }
-  func testNativeCardKeepsHeightWhileLoadingAndAfterRefreshAndShowsConfirmationSheet() async throws
-  {
-    let fixture = ChatHTTPFixture { request in try XCTUnwrap(F.response(request)) }
-    let store = store(fixture)
-    defer { store.close() }
-    let action = try descriptor(fixture, reconnect: true)
-    let host = UIHostingController(rootView: ConnectorCardHarness(action: action, store: store))
-    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-    let window = UIWindow(windowScene: scene)
-    window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-    window.rootViewController = host
-    window.makeKeyAndVisible()
-    host.view.layoutIfNeeded()
-    defer { unmount(window) }
-    let size = host.sizeThatFits(in: CGSize(width: 350, height: CGFloat.greatestFiniteMagnitude))
-    await store.refresh(action)
-    host.view.layoutIfNeeded()
-    XCTAssertEqual(
-      host.sizeThatFits(in: CGSize(width: 350, height: CGFloat.greatestFiniteMagnitude)).height,
-      size.height, accuracy: 1)
-    store.activate(action)
-    try await eventually { host.presentedViewController != nil }
-    let sheet = try XCTUnwrap(host.presentedViewController)
-    await store.refreshKnown()
-    XCTAssertTrue(host.presentedViewController === sheet)
-    if let transition = sheet.transitionCoordinator {
-      await withCheckedContinuation { continuation in
-        if !transition.animate(alongsideTransition: nil, completion: { _ in continuation.resume() })
-        {
-          continuation.resume()
-        }
+
+  func testDevicePollingHonorsTheUpdatedIntervalAndScopeClosureCancelsItsWait() async throws {
+    let clock = ConnectorPollingClock()
+    let polls = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path.hasSuffix("/oauth/device/sessions") {
+        return ChatHTTPResponse(
+          body:
+            "{\"sessionId\":\"\(F.attemptID)\",\"sessionToken\":\"synthetic-session\",\"userCode\":\"EXAMPLE-CODE\",\"verificationUri\":\"https://auth.example.invalid/device\",\"expiresIn\":300,\"interval\":1}"
+        )
       }
+      if request.url!.path.hasSuffix("/poll") {
+        polls.withLock { $0 += 1 }
+        return ChatHTTPResponse(body: "{\"status\":\"pending\",\"interval\":7}")
+      }
+      XCTAssertNotEqual(request.url!.path, "/api/chat/events")
+      return try XCTUnwrap(
+        F.response(request, connected: false, authorized: false, grantKind: "device-auth"))
     }
-    let attachment = XCTAttachment(
-      image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-      })
-    attachment.name = "Native exact-account connector confirmation"
-    attachment.lifetime = .keepAlways
-    add(attachment)
-    store.cancel()
-    try await eventually { host.presentedViewController == nil }
-  }
-  func testNativeCardInDarkChineseWithLargeText() async throws {
-    let fixture = ChatHTTPFixture { request in try XCTUnwrap(F.response(request)) }
-    let store = store(fixture)
+    let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
-    let action = try descriptor(fixture, reconnect: true)
-    await store.refresh(action)
-    let host = UIHostingController(
-      rootView:
-        ScrollView {
-          VStack(alignment: .leading, spacing: 20) {
-            Text("连接 Slack 后继续对话").font(.title2)
-            ConnectorActionCard(action: action, store: store, loadsState: false)
-            Text("普通消息和链接保持可选择、可复制。").textSelection(.enabled)
-          }.padding(20)
-        }.environment(\.locale, Locale(identifier: "zh-Hans"))
-        .environment(\.dynamicTypeSize, .accessibility1)
-        .preferredColorScheme(.dark))
-    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-    let window = UIWindow(windowScene: scene)
-    window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-    window.rootViewController = host
-    window.makeKeyAndVisible()
-    defer { unmount(window) }
-    host.view.layoutIfNeeded()
-    let attachment = XCTAttachment(
-      image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-      })
-    attachment.name = "Connector card dark Chinese accessibility text"
-    attachment.lifetime = .keepAlways
-    add(attachment)
+    store.activate(try descriptor(fixture))
+    try await eventually { store.active != nil }
+    store.submit()
+    try await eventually { clock.hasSleeper(.seconds(1)) }
+    XCTAssertEqual(polls.withLock { $0 }, 0)
+    clock.advance(.seconds(1))
+    try await eventually { clock.hasSleeper(.seconds(7)) }
+    XCTAssertEqual(polls.withLock { $0 }, 1)
+    store.close()
+    try await eventually { !clock.hasSleeper(.seconds(7)) }
+    XCTAssertNil(store.active)
+    XCTAssertTrue(store.states.isEmpty)
+    XCTAssertEqual(polls.withLock { $0 }, 1)
   }
 
+}
+
+private final class ConnectorPollingClock: Sendable {
+  private struct Sleeper: Sendable {
+    let duration: Duration
+    let tick: AsyncStream<Void>.Continuation
+  }
+  private let sleepers = Mutex<[UUID: Sleeper]>([:])
+
+  func sleep(_ duration: Duration) async throws {
+    try Task.checkCancellation()
+    let id = UUID()
+    let ticks = AsyncStream<Void>.makeStream()
+    sleepers.withLock { $0[id] = Sleeper(duration: duration, tick: ticks.continuation) }
+    defer {
+      _ = sleepers.withLock { $0.removeValue(forKey: id) }
+      ticks.continuation.finish()
+    }
+    for await _ in ticks.stream { break }
+    try Task.checkCancellation()
+  }
+
+  func hasSleeper(_ duration: Duration) -> Bool {
+    sleepers.withLock { $0.values.contains { $0.duration == duration } }
+  }
+
+  func advance(_ duration: Duration) {
+    let ready = sleepers.withLock { value in
+      let ready = value.filter { $0.value.duration == duration }
+      for id in ready.keys { value.removeValue(forKey: id) }
+      return ready.values.map(\.tick)
+    }
+    for tick in ready {
+      tick.yield(())
+      tick.finish()
+    }
+  }
 }
 
 private struct ConnectorCardHarness: View {

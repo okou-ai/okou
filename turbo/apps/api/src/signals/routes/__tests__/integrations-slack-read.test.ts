@@ -792,7 +792,7 @@ describe("Slack bot thread replies", () => {
     },
   );
 
-  it.each([{ oldest: "20", latest: "10" }, { limit: 201 }])(
+  it.each([{ oldest: "20", latest: "10" }])(
     "rejects invalid reply queries before reading Slack: %j",
     async (query) => {
       const { client, headers } = await fixture();

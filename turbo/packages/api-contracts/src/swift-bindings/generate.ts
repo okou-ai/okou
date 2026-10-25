@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { z } from "zod";
+import * as z from "zod";
 import { type SwiftConstantBinding, swiftConstantBindings } from "./constants";
 import { type SwiftRouteBinding, swiftRouteBindings } from "./routes";
 import { type SwiftTypeBinding, swiftTypeBindings } from "./types";

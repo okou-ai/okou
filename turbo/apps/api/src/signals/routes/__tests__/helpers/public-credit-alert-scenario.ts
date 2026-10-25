@@ -1,21 +1,19 @@
+import { chargePublicDataUsage } from "./public-data-charge";
 import { randomBytes, randomUUID } from "node:crypto";
 import { expect, vi } from "vitest";
-import { z } from "zod";
+import * as z from "zod";
 import { Webhook } from "svix";
-import { HttpResponse, http } from "msw";
 import {
   billingAutoRechargeContract,
   billingStatusContract,
   billingUsagePackCheckoutContract,
   billingUsagePackCreditsContract,
 } from "@okouai/api-contracts/contracts/billing";
-import { webSearchContract } from "@okouai/api-contracts/contracts/web-search";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { createApp } from "../../../../app-factory";
-import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
+import { mockOptionalEnv } from "../../../../lib/env";
 import { mockNow, now } from "../../../../lib/time";
-import { server } from "../../../../mocks/server";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import {
   mockStripeClient,
@@ -31,7 +29,6 @@ import { billingAutoRechargeRoutes } from "../../billing-auto-recharge";
 import { billingCheckoutRoutes } from "../../billing-checkout";
 import { billingStatusRoutes } from "../../billing-status";
 import { billingUsagePackCreditsRoutes } from "../../billing-usage-pack-credits";
-import { webSearchRoutes } from "../../web-search";
 import { webhooksClerkRoutes } from "../../webhooks-clerk";
 import { webhooksStripeRoutes } from "../../webhooks-stripe";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
@@ -649,9 +646,6 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
   const checkout = setupApp({ context, routes: billingCheckoutRoutes })(
     billingUsagePackCheckoutContract,
   );
-  const search = setupApp({ context, routes: webSearchRoutes })(
-    webSearchContract,
-  );
   bdd.acceptAgentStorageWrites();
   await owner.run(async () => {
     await bdd.completeOnboarding(admin);
@@ -792,24 +786,6 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
     ).toBe(403);
     await flushWaitUntilForTest();
   });
-  mockEnv("OKOU_WEB_SEARCH_PERPLEXITY_TOKEN", "test-perplexity-token");
-  server.use(
-    http.post("https://api.perplexity.ai/search", () => {
-      return HttpResponse.json({
-        id: `search_${randomUUID()}`,
-        server_time: new Date(now()).toISOString(),
-        results: [
-          {
-            title: "Public cache fixture result",
-            url: "https://example.com/credits",
-            snippet: "A bounded provider response.",
-            date: "2026-10-10",
-            last_updated: "2026-10-10",
-          },
-        ],
-      });
-    }),
-  );
   return {
     async debitWithMemberships(mode: "paginated" | "empty") {
       if (mode === "empty") {
@@ -847,16 +823,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
         );
       }
       await owner.run(async () => {
-        const result = await accept(
-          search.search({
-            headers: memberHeaders,
-            body: { query: "public credit cache fixture", limit: 1 },
-          }),
-          [200],
-        );
-        expect(result.body.results[0]?.title).toBe(
-          "Public cache fixture result",
-        );
+        await chargePublicDataUsage(context, member, 5);
         await flushWaitUntilForTest();
         // This existing session reader cannot upsert or bootstrap the asserted
         // CLI cache state, including when the provider's membership page is empty.

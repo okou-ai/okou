@@ -29,6 +29,7 @@ import {
   chatThreadArtifactsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { mockApi } from "../msw-contract.ts";
+import { triggerAblyEvent } from "../ably.ts";
 
 const DEFAULT_AGENTS: AgentResponse[] = [
   {
@@ -206,6 +207,7 @@ export const apiAgentsHandlers = [
       body.operation,
     );
     mockEnabledConnectorSlugsByAgent.set(params.id, enabledConnectorSlugs);
+    triggerAblyEvent("composerAgentConnectorsChanged", { agentId: params.id });
     return respond(200, {
       enabledConnectorSlugs,
     });
@@ -220,6 +222,7 @@ export const apiAgentsHandlers = [
       body.operation,
     );
     mockCustomConnectorGrantsByAgent.set(params.id, grants);
+    triggerAblyEvent("composerAgentConnectorsChanged", { agentId: params.id });
     return respond(200, { grants });
   }),
 

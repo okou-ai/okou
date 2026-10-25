@@ -248,31 +248,15 @@ const catchUpSharedChatThreadEventSource$ = command(
     const dataKey = await get(sharedChatThreadEventDataKey$);
     signal.throwIfAborted();
     const currentSeqId = get(chatThreadEventState$).latestSeqId;
-    const cached = await set(
+    const result = await set(
       queryChatThreadEventSharedDatabase$,
       {
         dataKey,
         afterSeqId: currentSeqId,
-        consistency: "cache-only",
+        consistency: "catch-up",
       },
       signal,
     );
-    signal.throwIfAborted();
-    const cachedLastSeqId =
-      cached.events.at(-1)?.seqId ?? cached.snapshot?.latestSeqId ?? null;
-    const result =
-      cachedLastSeqId !== null &&
-      (currentSeqId === null || cachedLastSeqId > currentSeqId)
-        ? cached
-        : await set(
-            queryChatThreadEventSharedDatabase$,
-            {
-              dataKey,
-              afterSeqId: currentSeqId,
-              consistency: "catch-up",
-            },
-            signal,
-          );
     signal.throwIfAborted();
     set(applyPersistedChatThreadEventResult$, result, signal);
     set(clearBootstrapThreadMeta$);

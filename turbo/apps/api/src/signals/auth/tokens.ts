@@ -31,9 +31,7 @@ const PAT_TOKEN_PREFIX = "vm0_pat_";
 // Skill import sessions carry their own prefix so the upload handler is the
 // only code that can accept them. They are never registered as a general auth
 // token type, so no other route can be reached with one.
-const SKILL_IMPORT_TOKEN_PREFIX = "vm0_skillimport_";
-// Older APIs must reject these credentials rather than create unattributed rows.
-const TRACKED_SKILL_IMPORT_TOKEN_PREFIX = "vm0_skillimport_v2_";
+const SKILL_IMPORT_TOKEN_PREFIX = "vm0_skillimport_v2_";
 // Covers the runner's two-hour execution budget plus claim, startup,
 // finalization, and terminal report time.
 const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
@@ -41,10 +39,10 @@ const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 const CONDITIONAL_CAPABILITIES = [
   ["host-visibility:write", FeatureSwitchKey.HostedSiteVisibility],
   ["computer-use:shell:write", FeatureSwitchKey.DesktopShell],
-  ["suggestion:read", FeatureSwitchKey.AgentSuggestion],
-  ["suggestion:write", FeatureSwitchKey.AgentSuggestion],
-  ["job:read", FeatureSwitchKey.ProactiveJobs],
-  ["job:write", FeatureSwitchKey.ProactiveJobs],
+  ["suggestion:read", FeatureSwitchKey.ProactiveAgent],
+  ["suggestion:write", FeatureSwitchKey.ProactiveAgent],
+  ["job:read", FeatureSwitchKey.ProactiveAgent],
+  ["job:write", FeatureSwitchKey.ProactiveAgent],
   ["banking:read", FeatureSwitchKey.Banking],
   ["lark:write", FeatureSwitchKey.LarkIntegration],
   ["wechat:read", FeatureSwitchKey.WechatIntegration],
@@ -131,7 +129,7 @@ const skillImportTokenPayloadSchema = jwtBaseSchema.extend({
   orgId: z.string().min(1),
   agentId: z.string().min(1),
   provider: workflowImportSourceSchema,
-  sessionId: z.uuid().optional(),
+  sessionId: z.uuid(),
 });
 
 export type SkillImportTokenPayload = z.infer<
@@ -439,15 +437,11 @@ function signOkouToken(claims: OkouTokenClaims): string {
 }
 
 export function verifySkillImportToken(token: string): SkillImportAuth | null {
-  const tracked = token.startsWith(TRACKED_SKILL_IMPORT_TOKEN_PREFIX);
   const parsed = skillImportTokenPayloadSchema.safeParse(
-    verifyPrefixedToken(
-      token,
-      tracked ? TRACKED_SKILL_IMPORT_TOKEN_PREFIX : SKILL_IMPORT_TOKEN_PREFIX,
-    ),
+    verifyPrefixedToken(token, SKILL_IMPORT_TOKEN_PREFIX),
   );
 
-  if (!parsed.success || (tracked && !parsed.data.sessionId)) {
+  if (!parsed.success) {
     return null;
   }
 
@@ -456,8 +450,7 @@ export function verifySkillImportToken(token: string): SkillImportAuth | null {
     orgId: parsed.data.orgId,
     agentId: parsed.data.agentId,
     provider: parsed.data.provider,
-    issuedAtSeconds: parsed.data.iat,
-    sessionId: parsed.data.sessionId ?? null,
+    sessionId: parsed.data.sessionId,
   };
 }
 
@@ -482,7 +475,7 @@ export function generateSkillImportToken(
   };
 
   return {
-    token: TRACKED_SKILL_IMPORT_TOKEN_PREFIX + signJwt(payload),
+    token: SKILL_IMPORT_TOKEN_PREFIX + signJwt(payload),
     expiresAt: new Date(expiresAtSeconds * 1000),
   };
 }

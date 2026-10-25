@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.6.11](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.10...runner-storage-v0.6.11) (2026-10-25)
+
+## [0.6.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.9...runner-storage-v0.6.10) (2026-10-25)
+
+
+### Performance Improvements
+
+* **runner:** index decoded mount ownership checks ([#42773](https://github.com/okou-ai/okou/issues/42773)) ([41e0886](https://github.com/okou-ai/okou/commit/41e088645e693f25d23daad3ad2ca4627e6ae4b1))
+
+## [0.6.9](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.8...runner-storage-v0.6.9) (2026-10-25)
+
+## [0.6.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.7...runner-storage-v0.6.8) (2026-10-24)
+
+
+### Refactoring
+
+* **runner:** remove decoded-v1 compatibility and migration ([#42753](https://github.com/okou-ai/okou/issues/42753)) ([cb66502](https://github.com/okou-ai/okou/commit/cb665021a8cd1b98cd493a9b34178145cfbc3456))
+
+## [0.6.7](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.6...runner-storage-v0.6.7) (2026-10-24)
+
+
+### Performance Improvements
+
+* **runner:** pack and migrate decoded cache payloads ([#42706](https://github.com/okou-ai/okou/issues/42706)) ([794505c](https://github.com/okou-ai/okou/commit/794505c65589d18c4900e40e90fd9d678e54c0d5))
+
+## [0.6.6](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.5...runner-storage-v0.6.6) (2026-10-23)
+
+## [0.6.5](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.4...runner-storage-v0.6.5) (2026-10-23)
+
+
+### Bug Fixes
+
+* **runner-storage:** retain background-fill shutdown joins ([#42623](https://github.com/okou-ai/okou/issues/42623)) ([da7e2a5](https://github.com/okou-ai/okou/commit/da7e2a5ada0a4874719b9be13715a70f4bc98424))
+
+
+### Refactoring
+
+* **runner-storage:** retire decoded preparation selection bridge ([#42593](https://github.com/okou-ai/okou/issues/42593)) ([8be62d8](https://github.com/okou-ai/okou/commit/8be62d8fb6f2af70192a7e305a62b0e4c3e57b8e))
+* **runner:** retire named instruction fingerprint compatibility ([#42626](https://github.com/okou-ai/okou/issues/42626)) ([364daef](https://github.com/okou-ai/okou/commit/364daef72931549bf823f05dfd2636d8d052032d))
+
 ## [0.6.4](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.3...runner-storage-v0.6.4) (2026-10-23)
 
 

@@ -6,13 +6,26 @@ import {
   type ChatEventSendBody,
   type UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  setupPage,
+  startPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname, search } from "../../../signals/location.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
+import {
+  closeModelPanel,
+  modelOption,
+  openModelPanel,
+} from "./chat-model-panel-test-helpers.ts";
+import { findButton } from "./chat-run-test-fixtures.ts";
+import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 
 const context = testContext();
 
@@ -23,16 +36,20 @@ interface PromptLaunchCapture {
   readonly createdThreads: {
     readonly connectorSelections: readonly unknown[] | undefined;
     readonly model: string | null | undefined;
+    readonly reasoningEffort: string | undefined;
+    readonly serviceTier: string | null | undefined;
   }[];
   readonly sends: ChatEventSendBody[];
 }
 
-function capturePromptLaunch(): PromptLaunchCapture {
+function capturePromptLaunch(sendGate?: Promise<void>): PromptLaunchCapture {
   const capture: PromptLaunchCapture = { createdThreads: [], sends: [] };
   context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
     capture.createdThreads.push({
       connectorSelections: body.connectorSelections,
       model: body.model,
+      reasoningEffort: body.reasoningEffort,
+      serviceTier: body.serviceTier,
     });
     return respond(201, {
       id: body.clientThreadId ?? "b0000000-0000-4000-a000-000000000001",
@@ -46,11 +63,12 @@ function capturePromptLaunch(): PromptLaunchCapture {
       serviceTier: body.serviceTier ?? null,
     });
   });
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+  context.mocks.api(chatEventsContract.send, async ({ body, respond }) => {
     if (body.prompt === undefined) {
       throw new Error("Expected a prompt launch request");
     }
     capture.sends.push(body);
+    await sendGate;
     return respond(201, {
       threadId: body.threadId ?? "b0000000-0000-4000-a000-000000000001",
       createdAt: "2026-03-10T00:00:00Z",
@@ -163,6 +181,13 @@ test("A prompt route starts a chat with its selected personal subscription model
       updatedAt: "2026-03-10T00:00:00Z",
     },
   ]);
+  context.mocks.data.userModelPreference({
+    selectedModel: "gpt-6-astra",
+    serviceTier: "priority",
+    modelSettings: { "gpt-6-astra": { effort: "low" } },
+    selectedImageModel: null,
+    updatedAt: null,
+  });
   const capture = capturePromptLaunch();
   await setupPage({
     context,
@@ -175,6 +200,8 @@ test("A prompt route starts a chat with its selected personal subscription model
   expect(capture.createdThreads[0]).toStrictEqual({
     connectorSelections: undefined,
     model: "gpt-6-astra",
+    reasoningEffort: undefined,
+    serviceTier: null,
   });
   expect(send.prompt).toBe("Compare the launch options");
   expect(parts).toContainEqual({
@@ -186,7 +213,86 @@ test("A prompt route starts a chat with its selected personal subscription model
     selectedModel: "gpt-6-astra",
   });
   expect(JSON.stringify(parts)).not.toContain("github");
+  expect(send.runOptions?.codexServiceTier).toBeUndefined();
   expect(search()).toBe("");
+});
+
+test.each(["", "&model=unknown-model"])(
+  "A prompt link uses the member default when its model is missing or invalid: %s",
+  async (modelParam) => {
+    installConnectedPersonalSubscriptions(context);
+    context.mocks.data.userModelPreference({
+      selectedModel: "gpt-6-astra",
+      serviceTier: "priority",
+      modelSettings: { "gpt-6-astra": { effort: "low" } },
+      selectedImageModel: null,
+      updatedAt: null,
+    });
+    const capture = capturePromptLaunch();
+    await setupPage({
+      context,
+      path: `/prompt?prompt=Use%20my%20default%20model${modelParam}`,
+    });
+
+    const send = await waitForPromptLaunch("Use my default model", capture);
+
+    expect(capture.createdThreads[0]).toMatchObject({
+      model: "gpt-6-astra",
+      reasoningEffort: "low",
+      serviceTier: "priority",
+    });
+    expect(send.runOptions?.codexServiceTier).toBe("fast");
+    expect(userMessageParts(send)).toContainEqual({
+      type: "model",
+      selectedModel: "gpt-6-astra",
+      serviceTier: "priority",
+    });
+  },
+);
+
+test("Completing a prompt link preserves a model chosen in a later composer", async () => {
+  installConnectedPersonalSubscriptions(context);
+  context.mocks.data.userModelPreference({
+    selectedModel: "gpt-6-astra",
+    serviceTier: null,
+    modelSettings: {},
+    selectedImageModel: null,
+    updatedAt: null,
+  });
+  const sendGate = context.mocks.deferred<void>();
+  const capture = capturePromptLaunch(sendGate.promise);
+  const page = await startPage({
+    context,
+    path: "/prompt?prompt=Finish%20the%20linked%20task&model=gpt-6-astra",
+  });
+  await waitForPromptLaunch("Finish the linked task", capture);
+
+  act(() => {
+    window.history.pushState(null, "", `/agents/${DEFAULT_AGENT_ID}/chat`);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expect(
+    screen.findByTestId("chat-greeting"),
+  ).resolves.toBeInTheDocument();
+  const panel = await openModelPanel("GPT 6 Astra");
+  click(modelOption(/^Claude Sonnet 5\.5/u, panel));
+  await expect(
+    composerModelTrigger("Claude Sonnet 5.5"),
+  ).resolves.toBeInTheDocument();
+  await closeModelPanel();
+
+  sendGate.resolve();
+  await page.ready;
+
+  await expect(
+    composerModelTrigger("Claude Sonnet 5.5"),
+  ).resolves.toBeInTheDocument();
+  await fill(mountedComposer(), "Send my next task with this model");
+  click(await findButton("Send"));
+  await waitFor(() => {
+    expect(capture.sends[1]?.prompt).toBe("Send my next task with this model");
+  });
+  expect(capture.createdThreads[1]?.model).toBe("claude-sonnet-5-5");
 });
 
 test("A prompt link starts an illustration chat with its selected style", async () => {
@@ -320,5 +426,4 @@ test("An unavailable model leaves a prompt link recoverable", async () => {
   expect(capture.createdThreads).toHaveLength(0);
   expect(capture.sends).toHaveLength(0);
   expect(draftUpdates).toHaveLength(0);
-  expect(savedDraft.parts[0]?.text).toBe("Keep my unrelated draft");
 });

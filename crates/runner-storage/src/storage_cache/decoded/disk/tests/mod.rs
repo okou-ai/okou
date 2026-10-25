@@ -1,6 +1,7 @@
 use super::*;
 
 mod bounded;
+mod packed;
 
 fn files() -> Vec<StorageFile> {
     vec![StorageFile {
@@ -102,8 +103,12 @@ fn persisted_paths(
     let name_hash = hex::encode(Sha256::digest(name.as_bytes()));
     let version_hash = hex::encode(Sha256::digest(version.as_bytes()));
     let name_hash = &name_hash[..16];
-    let kind = if rejected { "rejected-" } else { "" };
-    let key = format!("decoded-v1-{kind}{}", &version_hash[..16]);
+    let prefix = if rejected {
+        "decoded-v1-rejected-"
+    } else {
+        "decoded-v2-"
+    };
+    let key = format!("{prefix}{}", &version_hash[..16]);
     (
         home.storages_dir().join(name_hash).join(&key),
         home.locks_dir()
@@ -128,8 +133,10 @@ fn persisted_entries_keep_their_identity_and_external_writer_lock() {
                     .join(std::ffi::OsString::from_vec(b"cache-\xff".to_vec())),
             );
             let (entry, lock_path) = persisted_paths(&home, &name, &version, rejected);
-            fs::create_dir_all(entry.join("files/nested")).unwrap();
-            fs::write(entry.join("files/nested/file"), b"hello").unwrap();
+            fs::create_dir_all(&entry).unwrap();
+            if !rejected {
+                fs::write(entry.join("data.bin"), b"hello").unwrap();
+            }
             let metadata = (!rejected).then(|| {
                 serde_json::json!([{
                     "path": "nested/file", "mode": 0o751, "mtime": 1234,
@@ -174,7 +181,12 @@ fn a_missing_entry_can_be_published_under_its_existing_writer_lock() {
         let home = HomePaths::with_root(root.path().to_owned());
         let name = "nested/存储";
         let version = "version/一";
-        let (entry, lock_path) = persisted_paths(&home, name, version, rejected);
+        let kind = if rejected {
+            EntryKind::Rejection
+        } else {
+            EntryKind::Positive
+        };
+        let (entry, lock_path) = entry_paths(&home, name, version, kind);
         let cancel = CancellationToken::new();
         assert!(read(&home, name, version, &cancel).unwrap().is_none());
         assert!(!is_rejected(&home, name, version, &cancel).unwrap());
@@ -306,7 +318,7 @@ fn retirement_preserves_archive_without_complete_valid_replacement() {
         match mutation {
             "missing" => fs::rename(&entry, root.path().join("evicted")).unwrap(),
             "missing-lock" => fs::remove_file(replacement_lock).unwrap(),
-            "corrupt-content" => fs::write(entry.join("files/nested/file"), b"world").unwrap(),
+            "corrupt-content" => fs::write(entry.join("data.bin"), b"world").unwrap(),
             "corrupt-index" => fs::write(entry.join("index.json"), b"{").unwrap(),
             "wrong-identity" | "wrong-kind" => {
                 let path = entry.join("index.json");
@@ -371,7 +383,7 @@ fn retirement_refuses_archive_links_and_symlinked_parents() {
 #[test]
 fn real_files_survive_new_home_owner_without_an_archive() {
     let (root, _, entry, _) = setup();
-    assert_eq!(fs::read(entry.join("files/nested/file")).unwrap(), b"hello");
+    assert_eq!(fs::read(entry.join("data.bin")).unwrap(), b"hello");
     assert!(!entry.join("archive.tar.gz").exists());
     let home = HomePaths::with_root(root.path().to_owned());
     assert_eq!(
@@ -468,7 +480,7 @@ fn rejects_corrupt_content_and_index_without_returning_partial_files() {
         let mut index: serde_json::Value =
             serde_json::from_slice(&fs::read(&index_path).unwrap()).unwrap();
         match target {
-            "content" => fs::write(entry.join("files/nested/file"), b"world").unwrap(),
+            "content" => fs::write(entry.join("data.bin"), b"world").unwrap(),
             "truncated-index" => fs::write(&index_path, b"{").unwrap(),
             mutation => {
                 match mutation {
@@ -500,14 +512,14 @@ fn positive_entry_cannot_claim_an_empty_compressed_source() {
     index["compressed_bytes"] = 0.into();
     index["files"][0]["size"] = 0.into();
     index["files"][0]["sha256"] = hex::encode(Sha256::digest([])).into();
-    fs::write(entry.join("files/nested/file"), []).unwrap();
+    fs::write(entry.join("data.bin"), []).unwrap();
     fs::write(&index_path, serde_json::to_vec(&index).unwrap()).unwrap();
     assert!(read(&home, "name", "v1", &CancellationToken::new()).is_err());
 }
 
 #[test]
-fn refuses_file_directory_and_index_symlinks_and_hardlinks() {
-    for target in ["files/nested/file", "files/nested", "files", "index.json"] {
+fn refuses_payload_and_index_symlinks_and_hardlinks() {
+    for target in ["data.bin", "index.json"] {
         let (root, home, entry, _) = setup();
         let path = entry.join(target);
         let outside = root.path().join("outside");
@@ -519,7 +531,7 @@ fn refuses_file_directory_and_index_symlinks_and_hardlinks() {
         );
     }
     let (root, home, entry, _) = setup();
-    fs::hard_link(entry.join("files/nested/file"), root.path().join("link")).unwrap();
+    fs::hard_link(entry.join("data.bin"), root.path().join("link")).unwrap();
     assert!(read(&home, "name", "v1", &CancellationToken::new()).is_err());
 }
 
@@ -553,7 +565,7 @@ fn oversized_index_and_missing_file_are_errors_not_cache_misses() {
     file.set_len(INDEX_LIMIT as u64 + 1).unwrap();
     assert!(read(&home, "name", "v1", &CancellationToken::new()).is_err());
     let (_root, home, entry, _) = setup();
-    fs::remove_file(entry.join("files/nested/file")).unwrap();
+    fs::remove_file(entry.join("data.bin")).unwrap();
     assert!(read(&home, "name", "v1", &CancellationToken::new()).is_err());
 }
 

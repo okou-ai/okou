@@ -1425,16 +1425,13 @@ export function CustomConnectorCreateDialog({
       return;
     }
     detach(
-      (async () => {
-        await updateConnector(
-          {
-            id: connector.id,
-            body,
-          },
-          signal,
-        );
-        close();
-      })(),
+      updateConnector(
+        {
+          id: connector.id,
+          body,
+        },
+        signal,
+      ),
       Reason.DomCallback,
     );
   };
@@ -1454,11 +1451,7 @@ export function CustomConnectorCreateDialog({
       return;
     }
     detach(
-      (async () => {
-        const created = await createConnector(buildCreateBody(form), signal);
-        close();
-        onCreated?.(created);
-      })(),
+      createConnector(buildCreateBody(form), onCreated, signal),
       Reason.DomCallback,
     );
   };

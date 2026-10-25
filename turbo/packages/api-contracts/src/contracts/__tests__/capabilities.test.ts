@@ -78,35 +78,6 @@ describe("CAPABILITIES", () => {
     expect(CAPABILITIES).toContain("browser:write");
   });
 
-  it("should include Google Maps grounding read capability", () => {
-    expect(CAPABILITIES).toContain("maps:read");
-  });
-
-  it("should include managed weather read capability", () => {
-    expect(CAPABILITIES).toContain("weather:read");
-  });
-
-  it("should include managed scrape read capability", () => {
-    expect(CAPABILITIES).toContain("scrape:read");
-  });
-
-  it("should include managed web-search read capability", () => {
-    expect(CAPABILITIES).toContain("web-search:read");
-    expect(CAPABILITIES).toContain("people-search:read");
-  });
-
-  it("should include managed social read capability", () => {
-    expect(CAPABILITIES).toContain("social:read");
-  });
-
-  it("should include managed finance read capability", () => {
-    expect(CAPABILITIES).toContain("finance:read");
-  });
-
-  it("should include managed SEO read capability", () => {
-    expect(CAPABILITIES).toContain("seo:read");
-  });
-
   it("should include billing read and write capabilities", () => {
     expect(CAPABILITIES).toContain("billing:read");
     expect(CAPABILITIES).toContain("billing:write");

@@ -5,12 +5,11 @@ import { WechatConnectPage } from "../../views/okou-page/wechat-connect-page.tsx
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
-import { settle } from "../utils.ts";
 import { initWechat$ } from "./wechat.ts";
-import { wechatConnectPageStatus$ } from "./wechat-connect-signals.ts";
 
 export const setupWechatConnectPage$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ set }, signal: AbortSignal) => {
+    set(initWechat$);
     set(updatePage$, createElement(WechatConnectPage));
     set(
       updateDocumentTitle$,
@@ -19,8 +18,5 @@ export const setupWechatConnectPage$ = command(
       }),
     );
     await set(hideAppSkeleton$, signal);
-    // The card renders read failures; route setup must still finish.
-    await settle(set(initWechat$, signal), signal);
-    await settle(get(wechatConnectPageStatus$), signal);
   },
 );

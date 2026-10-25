@@ -29,6 +29,8 @@ export const orgMembersMetadata = pgTable(
     proactiveSuggestionsEnabled: boolean("proactive_suggestions_enabled"),
     // Jobs inherits the saved opt-in without changing its physical column.
     proactiveJobsEnabled: boolean("proactive_action_enabled"),
+    proactiveLearningEnabled: boolean("proactive_learning_enabled"),
+    proactivePlanningEnabled: boolean("proactive_planning_enabled"),
     locale: text("locale"),
     // Retired chat preference; keep the physical column and schema in sync
     // until API versions that select it have drained before a later migration.

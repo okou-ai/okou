@@ -123,8 +123,5 @@ export interface SkillImportAuth {
   readonly agentId: string;
   /** The tool the session's prompt was written for, tagged on each import. */
   readonly provider: WorkflowImportSource;
-  /** Null for credentials issued before explicit session attribution. */
-  readonly sessionId: string | null;
-  /** Retained for the quota behavior of previously issued credentials. */
-  readonly issuedAtSeconds: number;
+  readonly sessionId: string;
 }

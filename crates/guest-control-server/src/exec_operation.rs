@@ -233,10 +233,32 @@ impl ExecOperationTimeout {
     }
 }
 
+enum ExecOperationProcess {
+    Workload,
+    Agent,
+    SessionHistoryIdentityVerifier(
+        guest_contracts::session_history_identity::SessionHistoryIdentityVerifyRequest,
+    ),
+    CodexSessionCleanup(guest_contracts::codex_session_cleanup::CodexSessionCleanupRequest),
+}
+
+impl ExecOperationProcess {
+    fn role(&self) -> ExecProcessRole {
+        match self {
+            Self::Workload => ExecProcessRole::Workload,
+            Self::Agent => ExecProcessRole::Agent,
+            Self::SessionHistoryIdentityVerifier(_) => {
+                ExecProcessRole::SessionHistoryIdentityVerifier
+            }
+            Self::CodexSessionCleanup(_) => ExecProcessRole::CodexSessionCleanup,
+        }
+    }
+}
+
 pub(crate) struct ExecOperationWorkerRequest {
     seq: u32,
     lifecycle: ExecOperationLifecycle,
-    role: ExecProcessRole,
+    process: ExecOperationProcess,
     timeout: ExecOperationTimeout,
     command: String,
     env: Vec<(String, String)>,
@@ -250,17 +272,13 @@ pub(crate) struct ExecOperationWorkerRequest {
     exec_control_guard: Option<ExecControlGuard>,
     exec_control_bootstrap_endpoint: Option<String>,
     guest_agent_program: GuestAgentProgram,
-    session_history_identity_verify_request:
-        Option<guest_contracts::session_history_identity::SessionHistoryIdentityVerifyRequest>,
-    codex_session_cleanup_request:
-        Option<guest_contracts::codex_session_cleanup::CodexSessionCleanupRequest>,
     process_containment_mode: ProcessContainmentMode,
     drain_deadline: Duration,
 }
 
 impl ExecOperationWorkerRequest {
     fn process_class(&self) -> &'static str {
-        self.role.process_class()
+        self.process.role().process_class()
     }
 
     fn operation_kind(&self) -> &'static str {
@@ -268,7 +286,7 @@ impl ExecOperationWorkerRequest {
             ExecOperationLifecycle::OneShot => ExecLifecyclePolicy::OneShot,
             ExecOperationLifecycle::Supervised => ExecLifecyclePolicy::Supervised,
         };
-        self.role.operation_kind(lifecycle)
+        self.process.role().operation_kind(lifecycle)
     }
 
     pub(crate) fn from_decoded(
@@ -316,32 +334,31 @@ impl ExecOperationWorkerRequest {
                 "exec control policy requires supervised lifecycle",
             ));
         }
-        let (session_history_identity_verify_request, codex_session_cleanup_request) =
-            match decoded.role {
-                ExecProcessRole::Agent => {
-                    if !decoded.command.is_empty() {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "Agent process cannot select a command",
-                        ));
-                    }
-                    if decoded.sudo {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "Agent process cannot select sudo execution",
-                        ));
-                    }
-                    if decoded.stdin_bytes.is_some() {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "Agent process cannot provide stdin",
-                        ));
-                    }
-                    (None, None)
+        let process = match decoded.role {
+            ExecProcessRole::Agent => {
+                if !decoded.command.is_empty() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Agent process cannot select a command",
+                    ));
                 }
-                ExecProcessRole::SessionHistoryIdentityVerifier => {
-                    validate_session_history_identity_verifier_contract(&decoded)?;
-                    let request = serde_json::from_str::<
+                if decoded.sudo {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Agent process cannot select sudo execution",
+                    ));
+                }
+                if decoded.stdin_bytes.is_some() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Agent process cannot provide stdin",
+                    ));
+                }
+                ExecOperationProcess::Agent
+            }
+            ExecProcessRole::SessionHistoryIdentityVerifier => {
+                validate_session_history_identity_verifier_contract(&decoded)?;
+                let request = serde_json::from_str::<
                     guest_contracts::session_history_identity::SessionHistoryIdentityVerifyRequest,
                 >(decoded.command)
                 .map_err(|_| {
@@ -350,40 +367,40 @@ impl ExecOperationWorkerRequest {
                         "session history identity verifier payload is invalid",
                     )
                 })?;
-                    request.validate().map_err(|_| {
-                        io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "session history identity verifier payload is invalid",
-                        )
-                    })?;
-                    (Some(request), None)
-                }
-                ExecProcessRole::CodexSessionCleanup => {
-                    validate_codex_session_cleanup_contract(&decoded)?;
-                    let request = serde_json::from_str::<
-                        guest_contracts::codex_session_cleanup::CodexSessionCleanupRequest,
-                    >(decoded.command)
-                    .map_err(|_| {
-                        io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "Codex session cleanup payload is invalid",
-                        )
-                    })?;
-                    request.validate().map_err(|_| {
-                        io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "Codex session cleanup payload is invalid",
-                        )
-                    })?;
-                    (None, Some(request))
-                }
-                ExecProcessRole::Workload => (None, None),
-            };
+                request.validate().map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "session history identity verifier payload is invalid",
+                    )
+                })?;
+                ExecOperationProcess::SessionHistoryIdentityVerifier(request)
+            }
+            ExecProcessRole::CodexSessionCleanup => {
+                validate_codex_session_cleanup_contract(&decoded)?;
+                let request = serde_json::from_str::<
+                    guest_contracts::codex_session_cleanup::CodexSessionCleanupRequest,
+                >(decoded.command)
+                .map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Codex session cleanup payload is invalid",
+                    )
+                })?;
+                request.validate().map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Codex session cleanup payload is invalid",
+                    )
+                })?;
+                ExecOperationProcess::CodexSessionCleanup(request)
+            }
+            ExecProcessRole::Workload => ExecOperationProcess::Workload,
+        };
 
         Ok(Self {
             seq,
             lifecycle,
-            role: decoded.role,
+            process,
             timeout,
             command: decoded.command.to_owned(),
             env: decoded
@@ -401,8 +418,6 @@ impl ExecOperationWorkerRequest {
             exec_control_guard: None,
             exec_control_bootstrap_endpoint: None,
             guest_agent_program,
-            session_history_identity_verify_request,
-            codex_session_cleanup_request,
             process_containment_mode,
             drain_deadline,
         })
@@ -429,7 +444,10 @@ impl ExecOperationWorkerRequest {
     }
 
     pub(crate) fn validate_control_attachment(&self) -> io::Result<()> {
-        match (self.role, self.exec_control_bootstrap_endpoint.is_some()) {
+        match (
+            self.process.role(),
+            self.exec_control_bootstrap_endpoint.is_some(),
+        ) {
             (ExecProcessRole::Workload, false)
             | (ExecProcessRole::Agent, true)
             | (ExecProcessRole::SessionHistoryIdentityVerifier, false)
@@ -583,9 +601,8 @@ enum ExecStreamWriteError {
 }
 
 struct StdinWriter {
-    handle: JoinHandle<()>,
+    handle: JoinHandle<io::Result<()>>,
     done_rx: mpsc::Receiver<()>,
-    result_rx: mpsc::Receiver<io::Result<()>>,
     cancel: Arc<AtomicBool>,
     cancel_wake_writer: OwnedFd,
 }
@@ -727,13 +744,11 @@ impl ExecSetup {
 
     fn into_stdout_started(
         self,
-        stdout_handle: JoinHandle<()>,
-        stdout_result_rx: mpsc::Receiver<BoundedDrainResult>,
+        stdout_handle: JoinHandle<BoundedDrainResult>,
     ) -> ExecSetupWithStdout {
         ExecSetupWithStdout {
             setup: self,
             stdout_handle,
-            stdout_result_rx,
         }
     }
 
@@ -742,6 +757,16 @@ impl ExecSetup {
         exec_cancel: &AtomicBool,
         completion: &ExecCompletion<'_>,
         diagnostic: &str,
+    ) {
+        self.abort_wait_failed_with_stdout(exec_cancel, completion, diagnostic, None);
+    }
+
+    fn abort_wait_failed_with_stdout(
+        self,
+        exec_cancel: &AtomicBool,
+        completion: &ExecCompletion<'_>,
+        diagnostic: &str,
+        stdout_handle: Option<JoinHandle<BoundedDrainResult>>,
     ) {
         let ExecSetup {
             child,
@@ -762,6 +787,9 @@ impl ExecSetup {
             false,
         );
         join_stdin_writer_after_kill(stdin_writer);
+        if let Some(stdout_handle) = stdout_handle {
+            let _ = stdout_handle.join();
+        }
         let containment_error = containment_result.as_ref().err().map(ToString::to_string);
         let diagnostic =
             append_containment_cleanup_failure(diagnostic, containment_error.as_deref());
@@ -798,8 +826,7 @@ impl ExecSetup {
 /// [`RunningExec`].
 struct ExecSetupWithStdout {
     setup: ExecSetup,
-    stdout_handle: JoinHandle<()>,
-    stdout_result_rx: mpsc::Receiver<BoundedDrainResult>,
+    stdout_handle: JoinHandle<BoundedDrainResult>,
 }
 
 impl ExecSetupWithStdout {
@@ -820,44 +847,23 @@ impl ExecSetupWithStdout {
         let ExecSetupWithStdout {
             setup,
             stdout_handle,
-            stdout_result_rx: _,
         } = self;
-        let ExecSetup {
-            child,
-            process_containment,
-            placement_bootstrap,
-            stdin_writer,
-            drain_cancel,
-            drain_done_tx: _,
-            drain_done_rx: _,
-        } = setup;
-        exec_cancel.store(true, Ordering::Release);
-        drain_cancel.cancel();
-        kill_and_reap_child(child);
-        drop(placement_bootstrap);
-        let containment_result = cleanup_process_containment(
-            process_containment,
-            ProcessContainmentCleanupMode::Forced,
-            false,
+        setup.abort_wait_failed_with_stdout(
+            exec_cancel,
+            completion,
+            diagnostic,
+            Some(stdout_handle),
         );
-        join_stdin_writer_after_kill(stdin_writer);
-        let _ = stdout_handle.join();
-        let containment_error = containment_result.as_ref().err().map(ToString::to_string);
-        let diagnostic =
-            append_containment_cleanup_failure(diagnostic, containment_error.as_deref());
-        completion.wait_failed(&diagnostic);
     }
 
     fn into_running(
         self,
-        stderr_handle: JoinHandle<()>,
-        stderr_result_rx: mpsc::Receiver<BoundedDrainResult>,
+        stderr_handle: JoinHandle<BoundedDrainResult>,
         stream_writer: Option<SharedExecStreamWriter>,
     ) -> RunningExec {
         let ExecSetupWithStdout {
             setup,
             stdout_handle,
-            stdout_result_rx,
         } = self;
         let ExecSetup {
             child,
@@ -876,9 +882,7 @@ impl ExecSetupWithStdout {
             placement_bootstrap,
             stdin_writer,
             stdout_handle,
-            stdout_result_rx,
             stderr_handle,
-            stderr_result_rx,
             stream_writer,
             drain_cancel,
             drain_done_rx,
@@ -898,10 +902,8 @@ struct RunningExec {
     process_containment: ExecProcessContainment,
     placement_bootstrap: Option<WorkloadPlacementBootstrap>,
     stdin_writer: Option<StdinWriter>,
-    stdout_handle: JoinHandle<()>,
-    stdout_result_rx: mpsc::Receiver<BoundedDrainResult>,
-    stderr_handle: JoinHandle<()>,
-    stderr_result_rx: mpsc::Receiver<BoundedDrainResult>,
+    stdout_handle: JoinHandle<BoundedDrainResult>,
+    stderr_handle: JoinHandle<BoundedDrainResult>,
     stream_writer: Option<SharedExecStreamWriter>,
     drain_cancel: Arc<DrainCancellation>,
     drain_done_rx: mpsc::Receiver<()>,
@@ -986,9 +988,7 @@ impl RunningExec {
             placement_bootstrap,
             stdin_writer,
             stdout_handle,
-            stdout_result_rx,
             stderr_handle,
-            stderr_result_rx,
             stream_writer,
             drain_cancel,
             drain_done_rx,
@@ -1025,7 +1025,8 @@ impl RunningExec {
         }
         let cancellation_observed =
             connection_cancel.load(Ordering::Acquire) || exec_cancel.load(Ordering::Acquire);
-        let cleanup_mode = cleanup_mode_for_wait_outcome(&outcome, cancellation_observed);
+        let cleanup_mode =
+            ProcessContainmentCleanupMode::for_wait_outcome(&outcome, cancellation_observed);
         drop(placement_bootstrap);
         if !matches!(&outcome, WaitOutcome::Exited(status) if status.success()) {
             process_containment.capture_error();
@@ -1061,21 +1062,15 @@ impl RunningExec {
             );
         }
 
-        let stdout_join_failed = stdout_handle.join().is_err();
-        let stderr_join_failed = stderr_handle.join().is_err();
-        let stdout_result = stdout_result_rx.recv().ok();
-        let stderr_result = stderr_result_rx.recv().ok();
-        let drains_incomplete = completed < 2
-            || stdout_join_failed
-            || stderr_join_failed
-            || stdout_result.is_none()
-            || stderr_result.is_none();
+        let stdout_result = stdout_handle.join();
+        let stderr_result = stderr_handle.join();
+        let drains_incomplete = completed < 2 || stdout_result.is_err() || stderr_result.is_err();
         let stdout_settings = output_settings(request.stdout);
         let stderr_settings = output_settings(request.stderr);
         let stdout_result =
-            finalize_exec_drain_result(stdout_result, stdout_settings, drains_incomplete);
+            finalize_exec_drain_result(stdout_result.ok(), stdout_settings, drains_incomplete);
         let stderr_result =
-            finalize_exec_drain_result(stderr_result, stderr_settings, drains_incomplete);
+            finalize_exec_drain_result(stderr_result.ok(), stderr_settings, drains_incomplete);
         if drains_incomplete {
             emit_exec_stream_truncation_markers(
                 stream_writer.as_ref(),
@@ -1197,21 +1192,6 @@ fn emit_exec_stream_truncation_markers(
                 );
                 return;
             }
-        }
-    }
-}
-
-fn cleanup_mode_for_wait_outcome(
-    outcome: &WaitOutcome,
-    cancellation_observed: bool,
-) -> ProcessContainmentCleanupMode {
-    if cancellation_observed {
-        return ProcessContainmentCleanupMode::Forced;
-    }
-    match outcome {
-        WaitOutcome::Exited(_) => ProcessContainmentCleanupMode::Graceful,
-        WaitOutcome::TimedOut | WaitOutcome::Cancelled | WaitOutcome::WaitFailed(_) => {
-            ProcessContainmentCleanupMode::Forced
         }
     }
 }
@@ -1354,7 +1334,7 @@ where
     let worker_writer = writer.clone();
     let worker_spawner = spawner.clone();
     let worker_operation_guard = operation_guard.clone();
-    let result = spawner.spawn_unit(
+    let result = spawner.spawn(
         THREAD_EXEC_OPERATION_WORKER,
         Box::new(move || {
             run_exec_operation_worker(
@@ -1453,7 +1433,7 @@ fn run_exec_operation_worker<S>(
     let process_containment = match ExecProcessContainment::create(
         request.seq,
         request.process_containment_mode,
-        request.role,
+        request.process.role(),
     ) {
         Ok(process_containment) => process_containment,
         Err(error) => {
@@ -1509,38 +1489,27 @@ fn run_exec_operation_worker<S>(
         env_refs.as_slice()
     };
     let shell_spawn_started = Instant::now();
-    let spawn_result = match request.role {
-        ExecProcessRole::Workload => spawn_shell_command_with_pipes(
+    let spawn_result = match &request.process {
+        ExecOperationProcess::Workload => spawn_shell_command_with_pipes(
             &request.command,
             effective_env,
             request.sudo,
             pipe_stdin,
             process_containment,
         ),
-        ExecProcessRole::Agent => spawn_agent_command_with_pipes(
+        ExecOperationProcess::Agent => spawn_agent_command_with_pipes(
             effective_env,
             process_containment,
             &request.guest_agent_program,
         ),
-        ExecProcessRole::SessionHistoryIdentityVerifier => {
-            let Some(verify_request) = request.session_history_identity_verify_request.as_ref()
-            else {
-                let _ = process_containment.cleanup(ProcessContainmentCleanupMode::Forced);
-                completion.start_failed("session history identity verifier payload is missing");
-                return;
-            };
+        ExecOperationProcess::SessionHistoryIdentityVerifier(verify_request) => {
             spawn_session_history_identity_verifier_with_pipes(
                 verify_request,
                 process_containment,
                 &request.guest_agent_program,
             )
         }
-        ExecProcessRole::CodexSessionCleanup => {
-            let Some(cleanup_request) = request.codex_session_cleanup_request.as_ref() else {
-                let _ = process_containment.cleanup(ProcessContainmentCleanupMode::Forced);
-                completion.start_failed("Codex session cleanup payload is missing");
-                return;
-            };
+        ExecOperationProcess::CodexSessionCleanup(cleanup_request) => {
             spawn_codex_session_cleanup_with_pipes(
                 cleanup_request,
                 process_containment,
@@ -1551,7 +1520,7 @@ fn run_exec_operation_worker<S>(
     let spawned = match spawn_result {
         Ok(spawned) => spawned,
         Err(e) => {
-            let diagnostic = match request.role {
+            let diagnostic = match request.process.role() {
                 ExecProcessRole::Workload => format!(
                     "Failed to execute: {e} ({})",
                     format_env_diagnostics(&request.command, &env_refs)
@@ -1653,9 +1622,7 @@ fn run_exec_operation_worker<S>(
         spawner.clone(),
     );
     let setup = match stdout_spawn {
-        Ok((stdout_handle, stdout_result_rx)) => {
-            setup.into_stdout_started(stdout_handle, stdout_result_rx)
-        }
+        Ok(stdout_handle) => setup.into_stdout_started(stdout_handle),
         Err(e) => {
             setup.abort_wait_failed(
                 &exec_cancel,
@@ -1679,9 +1646,7 @@ fn run_exec_operation_worker<S>(
         spawner.clone(),
     );
     let mut running = match stderr_spawn {
-        Ok((stderr_handle, stderr_result_rx)) => {
-            setup.into_running(stderr_handle, stderr_result_rx, stream_writer)
-        }
+        Ok(stderr_handle) => setup.into_running(stderr_handle, stream_writer),
         Err(e) => {
             setup.abort_wait_failed(
                 &exec_cancel,
@@ -1692,7 +1657,7 @@ fn run_exec_operation_worker<S>(
         }
     };
 
-    if request.role == ExecProcessRole::Agent {
+    if request.process.role() == ExecProcessRole::Agent {
         let stages = AgentStartStages {
             containment_create,
             placement_broker_setup,
@@ -1849,7 +1814,7 @@ fn spawn_exec_operation_drain<R, S>(
     pipe: R,
     worker: DrainWorker,
     spawner: S,
-) -> io::Result<(JoinHandle<()>, mpsc::Receiver<BoundedDrainResult>)>
+) -> io::Result<JoinHandle<BoundedDrainResult>>
 where
     R: Into<OwnedFd> + Send + 'static,
     S: ThreadSpawner,
@@ -1862,12 +1827,11 @@ where
         exec_cancel,
         drain_done_tx,
     } = worker;
-    let (result_tx, result_rx) = mpsc::channel();
     let thread_name = match stream {
         ExecOutputStream::Stdout => THREAD_EXEC_OPERATION_STDOUT,
         ExecOutputStream::Stderr => THREAD_EXEC_OPERATION_STDERR,
     };
-    let handle = spawner.spawn_unit(
+    spawner.spawn(
         thread_name,
         Box::new(move || {
             let result = drain_bounded_cancellable(
@@ -1929,11 +1893,10 @@ where
                     }
                 },
             );
-            let _ = result_tx.send(result);
             let _ = drain_done_tx.send(());
+            result
         }),
-    )?;
-    Ok((handle, result_rx))
+    )
 }
 
 fn spawn_exec_operation_stdin<W, S>(
@@ -1950,8 +1913,7 @@ where
     let cancel = Arc::new(AtomicBool::new(false));
     let writer_cancel = Arc::clone(&cancel);
     let (done_tx, done_rx) = mpsc::channel();
-    let (result_tx, result_rx) = mpsc::channel();
-    let handle = spawner.spawn_unit(
+    let handle = spawner.spawn(
         THREAD_EXEC_OPERATION_STDIN,
         Box::new(move || {
             let result = write_stdin_cancellable(
@@ -1960,14 +1922,13 @@ where
                 &writer_cancel,
                 cancel_wake_reader.as_raw_fd(),
             );
-            let _ = result_tx.send(result);
             let _ = done_tx.send(());
+            result
         }),
     )?;
     Ok(StdinWriter {
         handle,
         done_rx,
-        result_rx,
         cancel,
         cancel_wake_writer,
     })
@@ -2154,14 +2115,14 @@ fn join_stdin_writer_after_kill(writer: Option<StdinWriter>) {
 }
 
 fn join_stdin_writer(writer: StdinWriter, seq: u32, label: &str) {
-    match writer.handle.join() {
-        Ok(()) => {}
+    let result = match writer.handle.join() {
+        Ok(result) => result,
         Err(panic) => std::panic::resume_unwind(panic),
-    }
-    match writer.result_rx.recv() {
-        Ok(Ok(())) | Err(_) => {}
-        Ok(Err(e)) if is_stdin_write_cancelled(&e) => {}
-        Ok(Err(e)) => {
+    };
+    match result {
+        Ok(()) => {}
+        Err(e) if is_stdin_write_cancelled(&e) => {}
+        Err(e) => {
             let label_preview = truncate_command_preview(label);
             log(
                 "WARN",
@@ -2485,8 +2446,8 @@ fn log_exec_terminal_if_notable(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::threading::ThreadTask;
     use crate::threading::test_support::FailingThreadSpawner;
-    use crate::threading::{UnitTask, VecTask};
     use std::cell::Cell;
     use std::fs::File;
     use std::io::{Read, Write};
@@ -2506,19 +2467,19 @@ mod tests {
     }
 
     impl ThreadSpawner for StdinPollReadySpawner {
-        fn spawn_unit(&self, name: &'static str, task: UnitTask) -> io::Result<JoinHandle<()>> {
+        fn spawn<T: Send + 'static>(
+            &self,
+            name: &'static str,
+            task: ThreadTask<T>,
+        ) -> io::Result<JoinHandle<T>> {
             let ready = self.ready.clone();
-            SystemThreadSpawner.spawn_unit(
+            SystemThreadSpawner.spawn(
                 name,
                 Box::new(move || {
                     STDIN_POLL_READY.set(Some(ready));
-                    task();
+                    task()
                 }),
             )
-        }
-
-        fn spawn_vec(&self, name: &'static str, task: VecTask) -> io::Result<JoinHandle<Vec<u8>>> {
-            SystemThreadSpawner.spawn_vec(name, task)
         }
     }
 
@@ -2542,7 +2503,7 @@ mod tests {
         ExecOperationWorkerRequest {
             seq,
             lifecycle: ExecOperationLifecycle::OneShot,
-            role: ExecProcessRole::Workload,
+            process: ExecOperationProcess::Workload,
             timeout: ExecOperationTimeout::Duration { timeout_ms: 0 },
             command: command.to_string(),
             env: Vec::new(),
@@ -2556,8 +2517,6 @@ mod tests {
             exec_control_guard: None,
             exec_control_bootstrap_endpoint: None,
             guest_agent_program: GuestAgentProgram::production(),
-            session_history_identity_verify_request: None,
-            codex_session_cleanup_request: None,
             process_containment_mode: ProcessContainmentMode::BuildConfigured,
             drain_deadline: EXEC_OUTPUT_DRAIN_DEADLINE,
         }
@@ -2629,7 +2588,7 @@ mod tests {
         );
 
         let mut agent = request(2, "true");
-        agent.role = ExecProcessRole::Agent;
+        agent.process = ExecOperationProcess::Agent;
         agent.lifecycle = ExecOperationLifecycle::Supervised;
         agent.control = ExecControlPolicy::Enabled {
             control_nonce: [2; guest_control_proto::EXEC_CONTROL_NONCE_LEN],
@@ -2745,19 +2704,19 @@ mod tests {
     fn wait_outcome_selects_containment_cleanup_mode() {
         let status = Command::new("true").status().unwrap();
         assert_eq!(
-            cleanup_mode_for_wait_outcome(&WaitOutcome::Exited(status), false),
+            ProcessContainmentCleanupMode::for_wait_outcome(&WaitOutcome::Exited(status), false),
             ProcessContainmentCleanupMode::Graceful
         );
         assert_eq!(
-            cleanup_mode_for_wait_outcome(&WaitOutcome::TimedOut, false),
+            ProcessContainmentCleanupMode::for_wait_outcome(&WaitOutcome::TimedOut, false),
             ProcessContainmentCleanupMode::Forced
         );
         assert_eq!(
-            cleanup_mode_for_wait_outcome(&WaitOutcome::Cancelled, false),
+            ProcessContainmentCleanupMode::for_wait_outcome(&WaitOutcome::Cancelled, false),
             ProcessContainmentCleanupMode::Forced
         );
         assert_eq!(
-            cleanup_mode_for_wait_outcome(
+            ProcessContainmentCleanupMode::for_wait_outcome(
                 &WaitOutcome::WaitFailed("wait failed".to_string()),
                 false,
             ),
@@ -2765,7 +2724,7 @@ mod tests {
         );
         let status = Command::new("true").status().unwrap();
         assert_eq!(
-            cleanup_mode_for_wait_outcome(&WaitOutcome::Exited(status), true),
+            ProcessContainmentCleanupMode::for_wait_outcome(&WaitOutcome::Exited(status), true),
             ProcessContainmentCleanupMode::Forced
         );
     }
@@ -3153,7 +3112,7 @@ mod tests {
     #[test]
     fn contained_tool_oom_terminal_logging_keeps_failures_actionable() {
         let mut request = request(7, "private command must not be logged");
-        request.role = ExecProcessRole::Agent;
+        request.process = ExecOperationProcess::Agent;
         request.lifecycle = ExecOperationLifecycle::Supervised;
         // Production records that proved containment exited 1 and 124. Those
         // codes reach this branch only when the request declares them expected;
@@ -3251,7 +3210,7 @@ mod tests {
         ))
         .unwrap();
         let mut request = request(7, "private command must not be logged");
-        request.role = ExecProcessRole::Agent;
+        request.process = ExecOperationProcess::Agent;
         request.lifecycle = ExecOperationLifecycle::Supervised;
         for (known_runtime_counter, expected) in
             [(true, "agent_oom_kill"), (false, "unproven_containment")]
@@ -3557,15 +3516,17 @@ mod tests {
         let ready = ready_rx.recv_timeout(Duration::from_secs(5));
         request_stdin_writer_cancel(&writer);
         let completed = writer.done_rx.recv_timeout(Duration::from_secs(5));
-        let result = writer.result_rx.try_recv();
 
         // Record completion while the peer is still open and undrained. Release
         // it and join before asserting, including readiness and wakeup failures.
         drop(read_fd);
-        join_stdin_writer(writer, 0, "");
+        let result = writer
+            .handle
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
         ready.expect("stdin writer did not reach its blocking poll");
         completed.expect("stdin writer cancel did not wake blocked writer");
-        assert!(is_stdin_write_cancelled(&result.unwrap().unwrap_err()));
+        assert!(is_stdin_write_cancelled(&result.unwrap_err()));
     }
 
     #[test]

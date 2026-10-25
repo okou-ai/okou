@@ -36,7 +36,10 @@ import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
-import { zodDriverValueDecoder } from "../../lib/db-structured-result";
+import {
+  pgTextDecoder,
+  zodDriverValueDecoder,
+} from "../../lib/db-structured-result";
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
@@ -482,97 +485,134 @@ function notificationIsUnsubscribed(
   return notification.unsubscribed;
 }
 
-/**
- * Claims one due item and commits the provider request and key it will be sent
- * under. The transaction ends before any network call, so the payload and key a
- * retry replays are already durable when the provider first sees them.
+interface OutboxRejection {
+  readonly message: string;
+  readonly status: "failed" | "skipped";
+  readonly reason:
+    "expired" | "delivery-failed" | "unsubscribed" | "suppressed";
+}
+
+interface OutboxPreparation {
+  readonly values: Pick<
+    typeof emailOutbox.$inferInsert,
+    | "status"
+    | "lastError"
+    | "attempts"
+    | "providerRequest"
+    | "providerIdempotencyKey"
+    | "nextRetryAt"
+  >;
+  readonly outcome: Exclude<PrepareOutcome, { readonly kind: "empty" }>;
+}
+
+function outboxPreparation(
+  row: OutboxRow,
+  preparedAtMs: number,
+  rejection: OutboxRejection | null,
+): OutboxPreparation {
+  if (rejection) {
+    return {
+      values: { status: "failed", lastError: rejection.message },
+      outcome: { kind: "resolved" },
+    };
+  }
+  // A retry replays the committed payload and key, including after an
+  // unresolved provider acceptance. Rendering never changes that identity.
+  const request =
+    row.provider_request !== null && row.provider_request !== undefined
+      ? providerRequestSchema.parse(row.provider_request)
+      : buildProviderRequest(row);
+  const idempotencyKey =
+    row.provider_idempotency_key ?? providerIdempotencyKey(row.id);
+  const attempts = row.attempts + 1;
+  return {
+    values: {
+      status: "sending",
+      attempts,
+      providerRequest: request,
+      providerIdempotencyKey: idempotencyKey,
+      nextRetryAt: new Date(preparedAtMs + OUTBOX_SEND_LEASE_MS),
+    },
+    outcome: {
+      kind: "prepared",
+      item: {
+        id: row.id,
+        attempts,
+        idempotencyKey,
+        request,
+        expiresAtMs: row.created_at.getTime() + OUTBOX_TTL_MS,
+        preparedAtMs,
+      },
+    },
+  };
+}
+
+/** Prepare before the conditional claim; only the committed winner may send.
+ * A concurrent mutation rejects this attempt without publishing a receipt or
+ * contacting the provider. The existing next drain can select another item.
  */
 async function prepareNextOutboxItem(
   { set }: Parameters<Write<Promise<PrepareOutcome>, [number]>>[0],
   currentTimeMs: number,
 ): Promise<PrepareOutcome> {
   const db = set(writeDb$);
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0156; new non-billing transactions are prohibited.
-  return await db.transaction(async (tx) => {
-    const [selectedRow] = await tx
-      .select(outboxRowSelection())
-      .from(emailOutbox)
-      .where(
-        and(
-          // `sending` items belong to an in-flight attempt until their lease
-          // expires; recovering them replays the committed request.
-          inArray(emailOutbox.status, ["pending", "sending"]),
-          or(
-            isNull(emailOutbox.nextRetryAt),
-            // Keep the Date schema-bound so Drizzle encodes its UTC wall-clock
-            // value instead of letting node-postgres apply the process timezone.
-            lte(emailOutbox.nextRetryAt, new Date(currentTimeMs)),
-          ),
+  const [selectedRow] = await db
+    .select({
+      ...outboxRowSelection(),
+      rowVersion: sql`${emailOutbox}.xmin::text`.mapWith(pgTextDecoder),
+    })
+    .from(emailOutbox)
+    .where(
+      and(
+        // A sending row remains owned until its existing recovery lease ends.
+        inArray(emailOutbox.status, ["pending", "sending"]),
+        or(
+          isNull(emailOutbox.nextRetryAt),
+          // Keep Date encoding bound to the timestamp column.
+          lte(emailOutbox.nextRetryAt, new Date(currentTimeMs)),
         ),
-      )
-      .orderBy(asc(emailOutbox.createdAt))
-      .limit(1)
-      .for("update", { skipLocked: true });
-    if (!selectedRow) {
-      return { kind: "empty" };
+      ),
+    )
+    .orderBy(asc(emailOutbox.createdAt))
+    .limit(1);
+  if (!selectedRow) {
+    return { kind: "empty" };
+  }
+  const row = outboxRowSchema.parse(selectedRow);
+  const preparedAtMs = now();
+  const admissionError = outboxAdmissionError(
+    row.created_at.getTime() + OUTBOX_TTL_MS,
+    preparedAtMs,
+    row.attempts + 1,
+    row.provider_request !== null && row.provider_request !== undefined,
+  );
+  let rejection: OutboxRejection | null = admissionError
+    ? { ...admissionError, status: "failed" }
+    : null;
+  if (!rejection) {
+    const [notification] = await db
+      .select({ unsubscribed: users.emailUnsubscribed })
+      .from(mailNotifications)
+      .leftJoin(users, eq(users.id, mailNotifications.userId))
+      .where(eq(mailNotifications.outboxId, row.id))
+      .limit(1);
+    if (notificationIsUnsubscribed(row.template, notification)) {
+      rejection = {
+        message: "Recipient unsubscribed",
+        status: "skipped",
+        reason: "unsubscribed",
+      };
     }
-    const row = outboxRowSchema.parse(selectedRow);
-    const itemId = row.id;
-    const attempts = row.attempts + 1;
-    const committedRequest: unknown = row.provider_request;
-    const hasCommittedRequest =
-      committedRequest !== null && committedRequest !== undefined;
-    // Admit against the real clock reached here, not the timestamp the batch
-    // started with: a paced batch can outlive its own items. The provider
-    // boundary rechecks the same deadline once this claim has committed.
-    const preparedAtMs = now();
-    // Derived once from the persisted creation time. Neither this claim nor a
-    // later retry may extend it.
-    const expiresAtMs = row.created_at.getTime() + OUTBOX_TTL_MS;
-
-    const admissionError = outboxAdmissionError(
-      expiresAtMs,
-      preparedAtMs,
-      attempts,
-      hasCommittedRequest,
-    );
-    if (admissionError) {
-      await tx
-        .update(emailOutbox)
-        .set({ status: "failed", lastError: admissionError.message })
-        .where(eq(emailOutbox.id, itemId));
-      await tx
-        .update(mailNotifications)
-        .set({ status: "failed", reason: admissionError.reason })
-        .where(eq(mailNotifications.outboxId, itemId));
-      return { kind: "resolved" };
-    }
-
+  }
+  if (!rejection) {
     const toAddresses =
       typeof row.to_addresses === "string"
         ? [row.to_addresses]
         : row.to_addresses;
-    const [notification] = await tx
-      .select({ unsubscribed: users.emailUnsubscribed })
-      .from(mailNotifications)
-      .leftJoin(users, eq(users.id, mailNotifications.userId))
-      .where(eq(mailNotifications.outboxId, itemId))
-      .limit(1);
-    if (notificationIsUnsubscribed(row.template, notification)) {
-      await tx
-        .update(emailOutbox)
-        .set({ status: "failed", lastError: "Recipient unsubscribed" })
-        .where(eq(emailOutbox.id, itemId));
-      await tx
-        .update(mailNotifications)
-        .set({ status: "skipped", reason: "unsubscribed" })
-        .where(eq(mailNotifications.outboxId, itemId));
-      return { kind: "resolved" };
-    }
     const suppressedRows =
       toAddresses.length === 0
         ? []
-        : await tx
+        : await db
             .select({ emailAddress: emailSuppressions.emailAddress })
             .from(emailSuppressions)
             .where(suppressionAddressCondition(toAddresses))
@@ -582,54 +622,45 @@ async function prepareNextOutboxItem(
       suppressedRows[0]?.emailAddress.toLowerCase(),
     );
     if (suppressedAddress) {
-      await tx
-        .update(emailOutbox)
-        .set({
-          status: "failed",
-          lastError: `Recipient address suppressed (${suppressedAddress})`,
-        })
-        .where(eq(emailOutbox.id, itemId));
-      await tx
-        .update(mailNotifications)
-        .set({ status: "skipped", reason: "suppressed" })
-        .where(eq(mailNotifications.outboxId, itemId));
-      return { kind: "resolved" };
+      rejection = {
+        message: `Recipient address suppressed (${suppressedAddress})`,
+        status: "skipped",
+        reason: "suppressed",
+      };
     }
-
-    // Render only for a row whose request is not committed yet. Once it is,
-    // the provider may already hold this key, so the committed request is the
-    // only payload that can be sent under it.
-    const request = hasCommittedRequest
-      ? providerRequestSchema.parse(committedRequest)
-      : buildProviderRequest(row);
-    // The committed key stays authoritative for the row it was written for,
-    // even if the derivation below ever changes.
-    const idempotencyKey =
-      row.provider_idempotency_key ?? providerIdempotencyKey(itemId);
-
-    await tx
+  }
+  const preparation = outboxPreparation(row, preparedAtMs, rejection);
+  const claimed = db.$with("claimed_email_outbox").as(
+    db
       .update(emailOutbox)
-      .set({
-        status: "sending",
-        attempts,
-        providerRequest: request,
-        providerIdempotencyKey: idempotencyKey,
-        nextRetryAt: new Date(preparedAtMs + OUTBOX_SEND_LEASE_MS),
-      })
-      .where(eq(emailOutbox.id, itemId));
-
-    return {
-      kind: "prepared",
-      item: {
-        id: itemId,
-        attempts,
-        idempotencyKey,
-        request,
-        expiresAtMs,
-        preparedAtMs,
-      },
-    };
-  });
+      .set(preparation.values)
+      .where(
+        and(
+          eq(emailOutbox.id, row.id),
+          eq(sql`${emailOutbox}.xmin::text`, selectedRow.rowVersion),
+        ),
+      )
+      .returning({ id: emailOutbox.id }),
+  );
+  const receipt = rejection
+    ? db.$with("rejected_email_notification").as(
+        db
+          .update(mailNotifications)
+          .set({ status: rejection.status, reason: rejection.reason })
+          .where(
+            inArray(
+              mailNotifications.outboxId,
+              db.select({ id: claimed.id }).from(claimed),
+            ),
+          )
+          .returning({ id: mailNotifications.id }),
+      )
+    : null;
+  const [committed] = await db
+    .with(claimed, ...(receipt ? [receipt] : []))
+    .select({ id: claimed.id })
+    .from(claimed);
+  return committed ? preparation.outcome : { kind: "empty" };
 }
 
 const prepareNextOutboxItem$ = command(prepareNextOutboxItem);

@@ -377,6 +377,7 @@ export default [
     plugins: { api: apiLintPlugin },
     linterOptions: { reportUnusedDisableDirectives: "error" },
     rules: {
+      "api/isolate-pg-setup-app-only": "error",
       "api/no-db-transaction": "error",
       "api/db-transaction-exemptions": "error",
     },

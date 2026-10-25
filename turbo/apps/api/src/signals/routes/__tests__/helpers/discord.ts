@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { http, HttpResponse } from "msw";
-import { z } from "zod";
+import * as z from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 

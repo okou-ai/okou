@@ -4,7 +4,6 @@ import {
   type Node,
   type ParseError,
 } from "jsonc-parser";
-import { jsonParseOr } from "../signals/utils.ts";
 
 export interface JsonPreviewSource {
   readonly text: string;
@@ -105,23 +104,4 @@ export function parseJsonPreview(source: JsonPreviewSource): JsonPreviewModel {
     return { status: "source", reason: "invalid" };
   }
   return { status: "ready", root: sourceNode(source.text, root, "$") };
-}
-
-/** Legacy text display may change whitespace, never values or property order. */
-export function formatJsonPreviewText(source: JsonPreviewSource): string {
-  if (source.truncated || sourceLimit(source.text)) {
-    return source.text;
-  }
-  const parsed = jsonParseOr<unknown>(source.text, null);
-  if (parsed === null) {
-    return source.text;
-  }
-  const compact = source.text.replace(/"(?:\\.|[^"\\])*"|\s+/g, (token) => {
-    return token.startsWith('"') ? token : "";
-  });
-  if (JSON.stringify(parsed) !== compact) {
-    return source.text;
-  }
-  const formatted = JSON.stringify(parsed, null, 2);
-  return formatted.length <= 65_536 ? formatted : source.text;
 }

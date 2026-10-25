@@ -10,10 +10,11 @@ runs simulator tests to recover a missing archive.
 A main merge group with changed iOS inputs also builds an **unsigned device
 Release archive**, with locked Swift packages and no production credentials.
 Standalone Swift package tests, simulator validation, and device compilation run
-in **parallel macOS jobs**. Simulator validation has a 30-minute limit; package
-tests and device compilation each retain a 15-minute limit. The merge queue has
-a 30-minute check-response window. The simulator
-checkout retains bounded queue ancestry (32 commits; the current squash queue
+in **parallel macOS jobs** on the existing standard runners. Simulator build/tests
+retain a 30-minute limit; package tests and device compilation retain 15-minute
+limits. Measure the complete required iOS path, including staging, publication,
+and the final gate. The merge queue has a 30-minute check-response window. The
+simulator checkout retains bounded queue ancestry (32 commits; the current squash queue
 merges at most five entries); the
 archive builder needs only its own commit. Only release-only groups install an
 R2 client on macOS to resolve potential prior evidence.
@@ -63,10 +64,11 @@ provenance stop the pipeline rather than masquerading as a cache miss.
 ## Native build cache
 
 The independent `iOS Build Cache` workflow can be dispatched on `main` to seed
-SwiftPM sources and Xcode's official compilation cache for Xcode 27.1. Dependency
-preparation and compilation have separate 15-minute jobs on the standard image.
-Cache warming does not publish archives, run acceptance tests, or produce test
-evidence. No required gate or release job waits for this workflow.
+SwiftPM sources and Xcode's official compilation cache for Xcode 27.1. Its
+main-only warming job has a separate 30-minute cold-seeding limit. Cache warming
+does not publish archives, run acceptance tests, or produce test evidence. No
+required gate or release job waits for this independent workflow, so it is outside
+the required iOS admission path.
 
 SwiftPM caches require an exact toolchain/destination and lockfile match. Compiler
 caches are isolated by the actual Xcode/SDK builds, architecture, and destination;

@@ -1,5 +1,120 @@
 # Changelog
 
+## [10.2.0](https://github.com/okou-ai/okou/compare/cli-v10.1.4...cli-v10.2.0) (2026-10-25)
+
+
+### Features
+
+* cut over data tools to dynamic router discovery ([#42695](https://github.com/okou-ai/okou/issues/42695)) ([28d1842](https://github.com/okou-ai/okou/commit/28d18426d6282b443344e3a3cabdec11ee13bc03))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.3.0
+    * @okouai/core bumped to 8.787.1
+    * @okouai/pi-agent-runtime bumped to 1.50.70
+
+## [10.1.4](https://github.com/okou-ai/okou/compare/cli-v10.1.3...cli-v10.1.4) (2026-10-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.787.0
+    * @okouai/pi-agent-runtime bumped to 1.50.69
+
+## [10.1.3](https://github.com/okou-ai/okou/compare/cli-v10.1.2...cli-v10.1.3) (2026-10-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.786.0
+    * @okouai/pi-agent-runtime bumped to 1.50.68
+
+## [10.1.2](https://github.com/okou-ai/okou/compare/cli-v10.1.1...cli-v10.1.2) (2026-10-25)
+
+
+### Refactoring
+
+* **cli:** accept only durable image generation receipts ([#42812](https://github.com/okou-ai/okou/issues/42812)) ([8069a85](https://github.com/okou-ai/okou/commit/8069a85e2f098112efee733f2b7bba0623270a10))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.2.2
+    * @okouai/core bumped to 8.785.1
+    * @okouai/pi-agent-runtime bumped to 1.50.67
+
+## [10.1.1](https://github.com/okou-ai/okou/compare/cli-v10.1.0...cli-v10.1.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **pi:** restore personal memory recall for ordinary conversations ([#42763](https://github.com/okou-ai/okou/issues/42763)) ([ea40a8f](https://github.com/okou-ai/okou/commit/ea40a8f507b736cf2f2f04ea4d7614a1cacc2088))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.2.1
+    * @okouai/core bumped to 8.785.0
+    * @okouai/pi-agent-runtime bumped to 1.50.66
+
+## [10.1.0](https://github.com/okou-ai/okou/compare/cli-v10.0.4...cli-v10.1.0) (2026-10-24)
+
+
+### Features
+
+* add proactive agent learning and planning workflows ([#42724](https://github.com/okou-ai/okou/issues/42724)) ([3a23824](https://github.com/okou-ai/okou/commit/3a23824fb8b9ac3ffd76b65cd463bb687f15269e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.2.0
+    * @okouai/core bumped to 8.784.0
+    * @okouai/pi-agent-runtime bumped to 1.50.65
+
+## [10.0.4](https://github.com/okou-ai/okou/compare/cli-v10.0.3...cli-v10.0.4) (2026-10-23)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#42668](https://github.com/okou-ai/okou/issues/42668)) ([84f655c](https://github.com/okou-ai/okou/commit/84f655c516454ae8e596de430cdcdd569db67b7f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.1.2
+    * @okouai/core bumped to 8.783.3
+    * @okouai/pi-agent-runtime bumped to 1.50.64
+
+## [10.0.3](https://github.com/okou-ai/okou/compare/cli-v10.0.2...cli-v10.0.3) (2026-10-23)
+
+
+### Bug Fixes
+
+* hide disabled managed tools in prompts and cli ([#42440](https://github.com/okou-ai/okou/issues/42440)) ([33b35f9](https://github.com/okou-ai/okou/commit/33b35f94cb80e9ad361d36b732250587f04bc79b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.783.2
+    * @okouai/pi-agent-runtime bumped to 1.50.63
+
 ## [10.0.2](https://github.com/okou-ai/okou/compare/cli-v10.0.1...cli-v10.0.2) (2026-10-23)
 
 

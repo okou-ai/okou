@@ -59,6 +59,8 @@ import { runDetailRoutes } from "../signals/routes/run-detail";
 import { runsRoutes } from "../signals/routes/runs";
 import { runsCancelRoutes } from "../signals/routes/runs-cancel";
 import { onboardingRecommendationRoutes } from "../signals/routes/onboarding-recommendations";
+import { proactiveLearningRoutes } from "../signals/routes/proactive-preferences";
+import { proactivePlanningRoutes } from "../signals/routes/proactive-preferences";
 import { debugMorningBriefRoutes } from "../signals/routes/debug-morning-brief";
 import { workflowsRoutes } from "../signals/routes/workflows";
 import { workflowAutomationsRoutes } from "../signals/routes/workflow-automations";
@@ -126,6 +128,8 @@ export const EXECUTION_ROUTES: readonly RouteEntry[] = [
   ...runsRoutes,
   ...runsCancelRoutes,
   ...onboardingRecommendationRoutes,
+  ...proactiveLearningRoutes,
+  ...proactivePlanningRoutes,
   ...debugMorningBriefRoutes,
   ...workflowsRoutes,
   ...workflowAutomationsRoutes,

@@ -1,3 +1,8 @@
+import {
+  connectorCredentialDeletion,
+  connectorCredentialDeletionKinds,
+  type ConnectorConnectionMetadataArgs,
+} from "./connector-account-mutation.service";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   isIntegrationManagedCustomConnector,
@@ -24,6 +29,7 @@ import {
   canonicalizeFirewallBaseUrl,
   expandHostWildcardsInBaseUrl,
 } from "@okouai/connectors/firewall-types";
+import { connectors } from "@okouai/db/schema/connector";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
@@ -38,7 +44,20 @@ import {
   type OrgCustomConnectorOAuthTokenEndpointAuthMethod,
 } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  exists,
+  gte,
+  inArray,
+  lt,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import type { WithSubquery } from "drizzle-orm/subquery";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
@@ -60,10 +79,11 @@ import {
 import type { CapturedConnectorClientInvalidationAbort } from "./connector-client-invalidation.service";
 import {
   connectorConnectionWrittenRow,
-  replaceConnectorConnectionOutcome,
-  resolveConnectorConnectionMutation,
-  writeConnectorConnectionMetadataOutcome,
-  type ConnectorConnectionMetadataArgs,
+  awaitConnectorConnectionRow,
+  connectorConnectionMutationReadPlan,
+  connectorConnectionMutationReadResult,
+  type ConnectorConnectionMutationArgs,
+  writeConnectorConnectionMetadataOutcome as writeConnectionMetadata,
   type ReadyConnectorConnectionMutation,
 } from "./connector-connection-write.service";
 import {
@@ -89,9 +109,19 @@ import {
 import {
   connectorOwnedSecretWrite,
   connectorOwnedVariableWrite,
-  deleteConnectorCredentialStorageConnection,
+  connectorCredentialStorageConnectionDeletionPlan as connectionDeletionPlan,
+  connectorCredentialStorageSelectionDeletionPlan as selectionDeletionPlan,
+  connectorCredentialStorageCursorDeletionPlan as cursorDeletionPlan,
 } from "./connector-credential-storage-write.service";
-import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
+import {
+  connectorAccountOwnerCondition,
+  connectorAccountById,
+  connectorAccountSibling,
+  connectorAccountDeletionResult,
+  customConnectorAccountDeletionScope,
+  type PreparedConnectorAccountDeletion as PreparedDeletion,
+} from "./connector-account-lifecycle.service";
+import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import {
   customConnectorStorageDeclaration,
   type CustomConnectorMemberConnectionDeletionResult,
@@ -110,7 +140,7 @@ import { userFeatureSwitchContext } from "./feature-switches.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
 
 import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
-import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
+import { preparedVolumePublicationPlan } from "./storage-volume-publication-sql";
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
 import { addUserCustomConnector$ } from "./user-connectors.service";
 
@@ -1834,20 +1864,154 @@ function randomShortId(): string {
   return randomUUID().replace(/-/g, "").slice(0, 6);
 }
 
+type PersistCustomConnectorCreateArgs = {
+  readonly connectorId: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly slug: string;
+  readonly definition: ValidatedDefinition;
+  readonly storageVersion: number;
+  readonly oauthConfigUpdate: ValidatedOAuthConfigUpdate;
+  readonly encryptedClientSecret: string | null;
+  readonly preparedSkill: PreparedServerSideVolume | null;
+};
+
+function customConnectorCreateSource(args: PersistCustomConnectorCreateArgs) {
+  const protocol = protocolColumns(args.definition);
+  return {
+    id: sql`${sql.param(args.connectorId, orgCustomConnectors.id)}`
+      .mapWith(orgCustomConnectors.id)
+      .as("id"),
+    orgId: sql`${sql.param(args.orgId, orgCustomConnectors.orgId)}`
+      .mapWith(orgCustomConnectors.orgId)
+      .as("org_id"),
+    slug: sql`${sql.param(args.slug, orgCustomConnectors.slug)}`
+      .mapWith(orgCustomConnectors.slug)
+      .as("slug"),
+    displayName:
+      sql`${sql.param(args.definition.displayName, orgCustomConnectors.displayName)}`
+        .mapWith(orgCustomConnectors.displayName)
+        .as("display_name"),
+    prefixTemplates:
+      sql`${sql.param(protocol.prefixTemplates, orgCustomConnectors.prefixTemplates)}`
+        .mapWith(orgCustomConnectors.prefixTemplates)
+        .as("prefix_templates"),
+    fields:
+      sql`${sql.param([...args.definition.fields], orgCustomConnectors.fields)}`
+        .mapWith(orgCustomConnectors.fields)
+        .as("fields"),
+    headerInjections:
+      sql`${sql.param([...args.definition.headerInjections], orgCustomConnectors.headerInjections)}`
+        .mapWith(orgCustomConnectors.headerInjections)
+        .as("header_injections"),
+    queryInjections:
+      sql`${sql.param([...args.definition.queryInjections], orgCustomConnectors.queryInjections)}`
+        .mapWith(orgCustomConnectors.queryInjections)
+        .as("query_injections"),
+    authMode:
+      sql`${sql.param(args.definition.authMode, orgCustomConnectors.authMode)}`
+        .mapWith(orgCustomConnectors.authMode)
+        .as("auth_mode"),
+    enabled: sql`true`.mapWith(orgCustomConnectors.enabled).as("enabled"),
+    permissionBundleRef:
+      sql`${sql.param(protocol.permissionBundleRef, orgCustomConnectors.permissionBundleRef)}`
+        .mapWith(orgCustomConnectors.permissionBundleRef)
+        .as("permission_bundle_ref"),
+    mcpEndpoint:
+      sql`${sql.param(protocol.mcpEndpoint, orgCustomConnectors.mcpEndpoint)}`
+        .mapWith(orgCustomConnectors.mcpEndpoint)
+        .as("mcp_endpoint"),
+    mcpTransport:
+      sql`${sql.param(protocol.mcpTransport, orgCustomConnectors.mcpTransport)}`
+        .mapWith(orgCustomConnectors.mcpTransport)
+        .as("mcp_transport"),
+    skillMarkdown:
+      sql`${sql.param(args.definition.skillMarkdown, orgCustomConnectors.skillMarkdown)}`
+        .mapWith(orgCustomConnectors.skillMarkdown)
+        .as("skill_markdown"),
+    skillStorageVersionId:
+      sql`${sql.param(args.preparedSkill?.version.versionId ?? null, orgCustomConnectors.skillStorageVersionId)}`
+        .mapWith(orgCustomConnectors.skillStorageVersionId)
+        .as("skill_storage_version_id"),
+    storageVersion:
+      sql`${sql.param(args.storageVersion, orgCustomConnectors.storageVersion)}`
+        .mapWith(orgCustomConnectors.storageVersion)
+        .as("storage_version"),
+    createdBy: sql`${sql.param(args.userId, orgCustomConnectors.createdBy)}`
+      .mapWith(orgCustomConnectors.createdBy)
+      .as("created_by"),
+    createdAt: sql`now()`
+      .mapWith(orgCustomConnectors.createdAt)
+      .as("created_at"),
+    updatedAt: sql`now()`
+      .mapWith(orgCustomConnectors.updatedAt)
+      .as("updated_at"),
+  };
+}
+
+function customConnectorOAuthCreateSource(
+  connectorId: SQL,
+  orgId: string,
+  config: Extract<
+    ValidatedOAuthConfigUpdate,
+    { readonly kind: "upsert" }
+  >["config"],
+  encryptedClientSecret: string,
+) {
+  return {
+    connectorId: connectorId.as("connector_id"),
+    orgId: sql`${sql.param(orgId, orgCustomConnectorOauthConfigs.orgId)}`
+      .mapWith(orgCustomConnectorOauthConfigs.orgId)
+      .as("org_id"),
+    providerAdapter:
+      sql`${sql.param(config.providerAdapter, orgCustomConnectorOauthConfigs.providerAdapter)}`
+        .mapWith(orgCustomConnectorOauthConfigs.providerAdapter)
+        .as("provider_adapter"),
+    clientId:
+      sql`${sql.param(config.clientId, orgCustomConnectorOauthConfigs.clientId)}`
+        .mapWith(orgCustomConnectorOauthConfigs.clientId)
+        .as("client_id"),
+    encryptedClientSecret:
+      sql`${sql.param(encryptedClientSecret, orgCustomConnectorOauthConfigs.encryptedClientSecret)}`
+        .mapWith(orgCustomConnectorOauthConfigs.encryptedClientSecret)
+        .as("encrypted_client_secret"),
+    authorizationUrl:
+      sql`${sql.param(config.authorizationUrl, orgCustomConnectorOauthConfigs.authorizationUrl)}`
+        .mapWith(orgCustomConnectorOauthConfigs.authorizationUrl)
+        .as("authorization_url"),
+    tokenUrl:
+      sql`${sql.param(config.tokenUrl, orgCustomConnectorOauthConfigs.tokenUrl)}`
+        .mapWith(orgCustomConnectorOauthConfigs.tokenUrl)
+        .as("token_url"),
+    tokenEndpointAuthMethod:
+      sql`${sql.param(config.tokenEndpointAuthMethod, orgCustomConnectorOauthConfigs.tokenEndpointAuthMethod)}`
+        .mapWith(orgCustomConnectorOauthConfigs.tokenEndpointAuthMethod)
+        .as("token_endpoint_auth_method"),
+    pkceMethod:
+      sql`${sql.param(config.pkceMethod, orgCustomConnectorOauthConfigs.pkceMethod)}`
+        .mapWith(orgCustomConnectorOauthConfigs.pkceMethod)
+        .as("pkce_method"),
+    scopes:
+      sql`${sql.param(config.scopes, orgCustomConnectorOauthConfigs.scopes)}`
+        .mapWith(orgCustomConnectorOauthConfigs.scopes)
+        .as("scopes"),
+    authorizationParams:
+      sql`${sql.param(config.authorizationParams, orgCustomConnectorOauthConfigs.authorizationParams)}`
+        .mapWith(orgCustomConnectorOauthConfigs.authorizationParams)
+        .as("authorization_params"),
+    createdAt: sql`now()`
+      .mapWith(orgCustomConnectorOauthConfigs.createdAt)
+      .as("created_at"),
+    updatedAt: sql`now()`
+      .mapWith(orgCustomConnectorOauthConfigs.updatedAt)
+      .as("updated_at"),
+  };
+}
+
 const persistCustomConnectorCreate$ = command(
   async (
     { set },
-    args: {
-      readonly connectorId: string;
-      readonly orgId: string;
-      readonly userId: string;
-      readonly slug: string;
-      readonly definition: ValidatedDefinition;
-      readonly storageVersion: number;
-      readonly oauthConfigUpdate: ValidatedOAuthConfigUpdate;
-      readonly encryptedClientSecret: string | null;
-      readonly preparedSkill: PreparedServerSideVolume | null;
-    },
+    args: PersistCustomConnectorCreateArgs,
     signal: AbortSignal,
   ): Promise<
     | {
@@ -1857,62 +2021,80 @@ const persistCustomConnectorCreate$ = command(
     | BadRequestResponse
   > => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0144; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      if (args.preparedSkill) {
-        const { rowCount: published } = await tx.execute(
-          preparedVolumePublicationSql(args.preparedSkill, nowDate()),
-        );
-        if (published !== 1) {
+    const oauth =
+      args.oauthConfigUpdate.kind === "upsert" && args.encryptedClientSecret
+        ? {
+            config: args.oauthConfigUpdate.config,
+            secret: args.encryptedClientSecret,
+          }
+        : null;
+    if ((args.definition.authMode === "oauth") !== (oauth !== null)) {
+      throw new Error("custom connector OAuth mode and config do not match");
+    }
+    const publication = args.preparedSkill
+      ? preparedVolumePublicationPlan(args.preparedSkill, nowDate())
+      : null;
+    const source =
+      publication?.published ?? sql`(VALUES (1)) AS connector_create_source`;
+    const values = db.select(customConnectorCreateSource(args)).from(source);
+    const created = db
+      .$with("created_connector")
+      .as(db.insert(orgCustomConnectors).select(values).returning());
+    const ctes = publication?.ctes ?? [];
+    signal.throwIfAborted();
+    if (oauth) {
+      const config = db.$with("created_oauth_config").as(
+        db
+          .insert(orgCustomConnectorOauthConfigs)
+          .select(
+            db
+              .select(
+                customConnectorOAuthCreateSource(
+                  sql`${created.id}`.mapWith(
+                    orgCustomConnectorOauthConfigs.connectorId,
+                  ),
+                  args.orgId,
+                  oauth.config,
+                  oauth.secret,
+                ),
+              )
+              .from(created),
+          )
+          .returning(),
+      );
+      const [result] = await db
+        .with(...ctes, created, config)
+        .select()
+        .from(created)
+        .innerJoin(config, eq(config.connectorId, created.id));
+      signal.throwIfAborted();
+      if (!result) {
+        if (args.preparedSkill) {
           throw new StorageVersionIdentityConflictError(
             args.preparedSkill.version.versionId,
           );
         }
-        signal.throwIfAborted();
-      }
-      const [row] = await tx
-        .insert(orgCustomConnectors)
-        .values({
-          id: args.connectorId,
-          orgId: args.orgId,
-          slug: args.slug,
-          displayName: args.definition.displayName,
-          ...protocolColumns(args.definition),
-          fields: [...args.definition.fields],
-          headerInjections: [...args.definition.headerInjections],
-          queryInjections: [...args.definition.queryInjections],
-          authMode: args.definition.authMode,
-          skillMarkdown: args.definition.skillMarkdown,
-          skillStorageVersionId: args.preparedSkill?.version.versionId ?? null,
-          storageVersion: args.storageVersion,
-          createdBy: args.userId,
-        })
-        .returning(customConnectorDefinitionSelection());
-      if (!row) {
         throw new Error("Expected insert to return a row");
       }
-      let oauthConfig: CustomConnectorOAuthConfigRow | null = null;
-      if (
-        args.oauthConfigUpdate.kind === "upsert" &&
-        args.encryptedClientSecret
-      ) {
-        const [insertedOAuthConfig] = await tx
-          .insert(orgCustomConnectorOauthConfigs)
-          .values({
-            connectorId: row.id,
-            orgId: args.orgId,
-            ...args.oauthConfigUpdate.config,
-            encryptedClientSecret: args.encryptedClientSecret,
-          })
-          .returning();
-        if (!insertedOAuthConfig) {
-          throw new Error("Expected OAuth config insert to return a row");
-        }
-        oauthConfig = insertedOAuthConfig;
+      return {
+        row: result.created_connector,
+        oauthConfig: result.created_oauth_config,
+      };
+    }
+    const [row] = await db
+      .with(...ctes, created)
+      .select()
+      .from(created);
+    signal.throwIfAborted();
+    if (!row) {
+      if (args.preparedSkill) {
+        throw new StorageVersionIdentityConflictError(
+          args.preparedSkill.version.versionId,
+        );
       }
-      requireCustomConnectorOAuthConfig(row.authMode, oauthConfig);
-      return { row, oauthConfig };
-    });
+      throw new Error("Expected insert to return a row");
+    }
+    return { row, oauthConfig: null };
   },
 );
 
@@ -2094,62 +2276,6 @@ interface PersistCustomConnectorUpdateArgs {
   readonly preparedSkill: PreparedServerSideVolume | null;
 }
 
-function replacedAutomaticOAuthDeletionSql(
-  args: Pick<
-    PersistCustomConnectorUpdateArgs,
-    "existing" | "definition" | "id" | "orgId"
-  >,
-) {
-  if (
-    args.existing.authMode !== "automatic" ||
-    args.definition.authMode === "automatic"
-  ) {
-    return [];
-  }
-  return [
-    sql`DELETE FROM ${customConnectorAccountOauthBindings}
-      WHERE ${customConnectorAccountOauthBindings.customConnectorId} = ${args.id}`,
-    sql`DELETE FROM ${orgCustomConnectorDcrRegistrations}
-      WHERE ${orgCustomConnectorDcrRegistrations.customConnectorId} = ${args.id}
-        AND ${orgCustomConnectorDcrRegistrations.orgId} = ${args.orgId}`,
-  ];
-}
-
-function customConnectorOAuthConfigUpdateSql(
-  args: PersistCustomConnectorUpdateArgs,
-  at: Date,
-) {
-  const config = orgCustomConnectorOauthConfigs;
-  if (args.oauthConfigUpdate.kind === "none") {
-    return [
-      sql`DELETE FROM ${config} WHERE ${config.connectorId} = ${args.id} AND ${config.orgId} = ${args.orgId}`,
-    ];
-  }
-  if (args.oauthConfigUpdate.kind === "preserve") {
-    return [];
-  }
-  if (!args.encryptedClientSecret) {
-    throw new Error("Expected encrypted OAuth client secret");
-  }
-  const values = args.oauthConfigUpdate.config;
-  return [
-    sql`INSERT INTO ${config} (
-    connector_id, org_id, provider_adapter, client_id, encrypted_client_secret,
-    authorization_url, token_url, token_endpoint_auth_method, pkce_method, scopes, authorization_params
-  ) VALUES (
-    ${args.id}, ${args.orgId}, ${values.providerAdapter}, ${values.clientId}, ${args.encryptedClientSecret},
-    ${values.authorizationUrl}, ${values.tokenUrl}, ${values.tokenEndpointAuthMethod}, ${values.pkceMethod},
-    ${sql.param(values.scopes, config.scopes)}, ${sql.param(values.authorizationParams, config.authorizationParams)}
-  ) ON CONFLICT (connector_id) DO UPDATE SET
-    provider_adapter = EXCLUDED.provider_adapter, client_id = EXCLUDED.client_id,
-    encrypted_client_secret = EXCLUDED.encrypted_client_secret,
-    authorization_url = EXCLUDED.authorization_url, token_url = EXCLUDED.token_url,
-    token_endpoint_auth_method = EXCLUDED.token_endpoint_auth_method, pkce_method = EXCLUDED.pkce_method,
-    scopes = EXCLUDED.scopes, authorization_params = EXCLUDED.authorization_params,
-    updated_at = ${sql.param(at, config.updatedAt)}`,
-  ];
-}
-
 function requireCustomConnectorOAuthConfig(
   authMode: ValidatedDefinition["authMode"],
   config: CustomConnectorOAuthConfigRow | null,
@@ -2177,6 +2303,175 @@ function customConnectorDefinitionUpdateValues(
   };
 }
 
+/** Only a matching definition may publish its prepared skill and OAuth changes. */
+function customConnectorUpdatePublicationPlan(
+  args: PersistCustomConnectorUpdateArgs,
+) {
+  const oauth = args.oauthConfigUpdate;
+  if (oauth.kind === "upsert" && !args.encryptedClientSecret) {
+    throw new Error("Expected encrypted OAuth client secret");
+  }
+  if ((args.definition.authMode === "oauth") !== (oauth.kind !== "none")) {
+    throw new Error("custom connector OAuth mode and config do not match");
+  }
+  const query = new QueryBuilder();
+  const configPresent = exists(
+    query
+      .select({ id: orgCustomConnectorOauthConfigs.connectorId })
+      .from(orgCustomConnectorOauthConfigs)
+      .where(
+        and(
+          eq(orgCustomConnectorOauthConfigs.connectorId, args.id),
+          eq(orgCustomConnectorOauthConfigs.orgId, args.orgId),
+        ),
+      ),
+  );
+  const locked = query.$with("locked_custom_connector").as(
+    query
+      .select({ id: orgCustomConnectors.id })
+      .from(orgCustomConnectors)
+      .where(
+        and(
+          eq(orgCustomConnectors.id, args.id),
+          eq(orgCustomConnectors.orgId, args.orgId),
+          eq(orgCustomConnectors.storageVersion, args.existing.storageVersion),
+          gte(orgCustomConnectors.updatedAt, args.existing.updatedAt),
+          lt(
+            orgCustomConnectors.updatedAt,
+            new Date(args.existing.updatedAt.getTime() + 1),
+          ),
+          args.oauthConfigUpdate.kind === "preserve"
+            ? configPresent
+            : undefined,
+        ),
+      )
+      .for("update", { of: orgCustomConnectors })
+      .limit(1),
+  );
+  const publication = args.preparedSkill
+    ? preparedVolumePublicationPlan(
+        args.preparedSkill,
+        nowDate(),
+        exists(query.select({ id: locked.id }).from(locked)),
+      )
+    : null;
+  const source = publication?.published ?? locked;
+  const ready = exists(query.select({ id: source.id }).from(source));
+  return {
+    locked,
+    ctes: [locked, ...(publication?.ctes ?? [])],
+    ready,
+    bindings: and(
+      eq(customConnectorAccountOauthBindings.customConnectorId, args.id),
+      ready,
+    ),
+    registrations: and(
+      eq(orgCustomConnectorDcrRegistrations.customConnectorId, args.id),
+      eq(orgCustomConnectorDcrRegistrations.orgId, args.orgId),
+      ready,
+    ),
+  };
+}
+
+const failedCustomConnectorUpdate$ = command(
+  async (
+    { set },
+    args: PersistCustomConnectorUpdateArgs,
+    signal: AbortSignal,
+  ): Promise<BadRequestResponse | null> => {
+    const db = set(writeDb$);
+    const [current] = await db
+      .select({
+        id: orgCustomConnectors.id,
+        storageVersion: orgCustomConnectors.storageVersion,
+        updatedAt: orgCustomConnectors.updatedAt,
+      })
+      .from(orgCustomConnectors)
+      .where(
+        and(
+          eq(orgCustomConnectors.id, args.id),
+          eq(orgCustomConnectors.orgId, args.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!current) {
+      return null;
+    }
+    if (
+      args.oauthConfigUpdate.kind === "preserve" &&
+      current.storageVersion === args.existing.storageVersion &&
+      current.updatedAt.getTime() === args.existing.updatedAt.getTime()
+    ) {
+      const [config] = await db
+        .select({ id: orgCustomConnectorOauthConfigs.connectorId })
+        .from(orgCustomConnectorOauthConfigs)
+        .where(
+          and(
+            eq(orgCustomConnectorOauthConfigs.connectorId, args.id),
+            eq(orgCustomConnectorOauthConfigs.orgId, args.orgId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!config) {
+        throw new Error("custom connector OAuth mode and config do not match");
+      }
+    }
+    return badRequestMessage(
+      "Custom connector changed while the definition was being saved; retry",
+    );
+  },
+);
+
+function publishedCustomConnectorUpdate(
+  args: PersistCustomConnectorUpdateArgs,
+  row: CustomConnectorDefinitionRow | null,
+  oauthConfig: CustomConnectorOAuthConfigRow | null,
+) {
+  if (!row) {
+    if (args.preparedSkill) {
+      throw new StorageVersionIdentityConflictError(
+        args.preparedSkill.version.versionId,
+      );
+    }
+    throw new Error("Expected locked custom connector to be updated");
+  }
+  requireCustomConnectorOAuthConfig(row.authMode, oauthConfig);
+  return { row, oauthConfig };
+}
+
+function customConnectorOAuthUpdateValues(
+  config: CustomConnectorOAuthConfig,
+  secret: string,
+) {
+  return {
+    ...config,
+    encryptedClientSecret: secret,
+    scopes: [...config.scopes],
+    authorizationParams: { ...config.authorizationParams },
+    updatedAt: nowDate(),
+  };
+}
+
+function customConnectorSnapshotOAuthPlan(
+  args: PersistCustomConnectorUpdateArgs,
+) {
+  const query = new QueryBuilder();
+  return query.$with("custom_connector_oauth_result").as(
+    query
+      .select()
+      .from(orgCustomConnectorOauthConfigs)
+      .where(
+        and(
+          eq(orgCustomConnectorOauthConfigs.connectorId, args.id),
+          eq(orgCustomConnectorOauthConfigs.orgId, args.orgId),
+          args.oauthConfigUpdate.kind === "preserve" ? undefined : sql`false`,
+        ),
+      ),
+  );
+}
+
 const persistCustomConnectorUpdate$ = command(
   async (
     { set },
@@ -2191,91 +2486,120 @@ const persistCustomConnectorUpdate$ = command(
     | null
   > => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0145; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const [locked] = await tx
-        .select({ id: orgCustomConnectors.id })
-        .from(orgCustomConnectors)
-        .where(
-          and(
-            eq(orgCustomConnectors.id, args.id),
-            eq(orgCustomConnectors.orgId, args.orgId),
-            eq(
-              orgCustomConnectors.storageVersion,
-              args.existing.storageVersion,
-            ),
-            gte(orgCustomConnectors.updatedAt, args.existing.updatedAt),
-            lt(
-              orgCustomConnectors.updatedAt,
-              new Date(args.existing.updatedAt.getTime() + 1),
-            ),
-          ),
-        )
-        .for("update", { of: orgCustomConnectors })
-        .limit(1);
-      if (!locked) {
-        const [current] = await tx
-          .select({ id: orgCustomConnectors.id })
-          .from(orgCustomConnectors)
-          .where(
-            and(
-              eq(orgCustomConnectors.id, args.id),
-              eq(orgCustomConnectors.orgId, args.orgId),
-            ),
-          )
-          .limit(1);
-        return current
-          ? badRequestMessage(
-              "Custom connector changed while the definition was being saved; retry",
+    const oauth = args.oauthConfigUpdate;
+    const plan = customConnectorUpdatePublicationPlan(args);
+    const ctes: WithSubquery[] = [...plan.ctes];
+    let cleanupCompleted: SQL | undefined;
+    if (
+      args.existing.authMode === "automatic" &&
+      args.definition.authMode !== "automatic"
+    ) {
+      const bindings = db.$with("removed_automatic_oauth_bindings").as(
+        db
+          .delete(customConnectorAccountOauthBindings)
+          .where(plan.bindings)
+          .returning({
+            id: customConnectorAccountOauthBindings.customConnectorId,
+          }),
+      );
+      const registrations = db
+        .$with("removed_automatic_oauth_registrations")
+        .as(
+          db
+            .delete(orgCustomConnectorDcrRegistrations)
+            .where(
+              and(
+                plan.registrations,
+                gte(db.select({ value: count() }).from(bindings), 0),
+              ),
             )
-          : null;
-      }
-      if (args.preparedSkill) {
-        const { rowCount: published } = await tx.execute(
-          preparedVolumePublicationSql(args.preparedSkill, nowDate()),
+            .returning({
+              id: orgCustomConnectorDcrRegistrations.customConnectorId,
+            }),
         );
-        if (published !== 1) {
-          throw new StorageVersionIdentityConflictError(
-            args.preparedSkill.version.versionId,
-          );
-        }
-        signal.throwIfAborted();
-      }
-      for (const statement of replacedAutomaticOAuthDeletionSql(args)) {
-        await tx.execute(statement);
-      }
-      const [updated] = await tx
+      ctes.push(bindings, registrations);
+      cleanupCompleted = gte(
+        db.select({ value: count() }).from(registrations),
+        0,
+      );
+    }
+    const updated = db.$with("updated_custom_connector").as(
+      db
         .update(orgCustomConnectors)
         .set(customConnectorDefinitionUpdateValues(args, nowDate()))
         .where(
           and(
             eq(orgCustomConnectors.id, args.id),
             eq(orgCustomConnectors.orgId, args.orgId),
+            plan.ready,
+            cleanupCompleted,
           ),
         )
-        .returning(customConnectorDefinitionSelection());
-      if (!updated) {
-        throw new Error("Expected locked custom connector to be updated");
-      }
-      for (const statement of customConnectorOAuthConfigUpdateSql(
-        args,
-        nowDate(),
-      )) {
-        await tx.execute(statement);
-      }
-      const [oauthConfig] = await tx
-        .select()
-        .from(orgCustomConnectorOauthConfigs)
-        .where(
-          and(
-            eq(orgCustomConnectorOauthConfigs.connectorId, args.id),
-            eq(orgCustomConnectorOauthConfigs.orgId, args.orgId),
-          ),
-        );
-      const storedOAuthConfig = oauthConfig ?? null;
-      requireCustomConnectorOAuthConfig(updated.authMode, storedOAuthConfig);
-      return { row: updated, oauthConfig: storedOAuthConfig };
-    });
+        .returning(customConnectorDefinitionSelection()),
+    );
+    ctes.push(updated);
+    const config =
+      oauth.kind === "upsert" && args.encryptedClientSecret
+        ? db.$with("custom_connector_oauth_result").as(
+            db
+              .insert(orgCustomConnectorOauthConfigs)
+              .select(
+                db
+                  .select(
+                    customConnectorOAuthCreateSource(
+                      sql`${updated.id}`.mapWith(
+                        orgCustomConnectorOauthConfigs.connectorId,
+                      ),
+                      args.orgId,
+                      oauth.config,
+                      args.encryptedClientSecret,
+                    ),
+                  )
+                  .from(updated),
+              )
+              .onConflictDoUpdate({
+                target: orgCustomConnectorOauthConfigs.connectorId,
+                set: customConnectorOAuthUpdateValues(
+                  oauth.config,
+                  args.encryptedClientSecret,
+                ),
+              })
+              .returning(),
+          )
+        : customConnectorSnapshotOAuthPlan(args);
+    let completed: SQL | undefined;
+    if (oauth.kind === "none") {
+      const removed = db.$with("removed_custom_connector_oauth").as(
+        db
+          .delete(orgCustomConnectorOauthConfigs)
+          .where(
+            and(
+              eq(orgCustomConnectorOauthConfigs.connectorId, args.id),
+              eq(orgCustomConnectorOauthConfigs.orgId, args.orgId),
+              exists(db.select({ id: updated.id }).from(updated)),
+            ),
+          )
+          .returning({ id: orgCustomConnectorOauthConfigs.connectorId }),
+      );
+      ctes.push(removed);
+      completed = gte(db.select({ value: count() }).from(removed), 0);
+    }
+    signal.throwIfAborted();
+    const [result] = await db
+      .with(...ctes, config)
+      .select()
+      .from(plan.locked)
+      .leftJoin(updated, eq(updated.id, plan.locked.id))
+      .leftJoin(config, eq(config.connectorId, updated.id))
+      .where(completed);
+    signal.throwIfAborted();
+    return result
+      ? publishedCustomConnectorUpdate(
+          args,
+          result.updated_custom_connector,
+          result.custom_connector_oauth_result,
+        )
+      : await set(failedCustomConnectorUpdate$, args, signal);
   },
 );
 
@@ -2539,9 +2863,8 @@ export const deleteCustomConnector$ = command(
     signal: AbortSignal,
   ): Promise<NotFoundResponse | ForbiddenResponse | undefined> => {
     const writeDb = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0146; new non-billing transactions are prohibited.
-    const deletion = writeDb.transaction(async (tx) => {
-      const [existing] = await tx
+    const deletion = (async () => {
+      const [existing] = await writeDb
         .select({
           id: orgCustomConnectors.id,
           providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
@@ -2563,26 +2886,31 @@ export const deleteCustomConnector$ = command(
       ) {
         return integrationManagedCustomConnectorMutationForbidden();
       }
-      const selectionDeletion = { customConnectorId: args.id };
-      await tx
-        .delete(chatThreadConnectorSelections)
-        .where(
-          eq(
-            chatThreadConnectorSelections.customConnectorId,
-            selectionDeletion.customConnectorId,
-          ),
-        );
       signal.throwIfAborted();
-      await tx
+      const removedSelections = writeDb
+        .$with("deleted_custom_connector_selections")
+        .as(
+          writeDb
+            .delete(chatThreadConnectorSelections)
+            .where(eq(chatThreadConnectorSelections.customConnectorId, args.id))
+            .returning({
+              connectorId: chatThreadConnectorSelections.connectorId,
+            }),
+        );
+      // Consume the complete cleanup before cascading account deletion. Both
+      // writes share one statement, including the existing NO ACTION checks.
+      await writeDb
+        .with(removedSelections)
         .delete(orgCustomConnectors)
         .where(
           and(
             eq(orgCustomConnectors.id, args.id),
             eq(orgCustomConnectors.orgId, args.orgId),
+            gte(writeDb.select({ count: count() }).from(removedSelections), 0),
           ),
         );
       return true;
-    });
+    })();
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
     const deleted = await (async () => {
       const result = await deletion;
@@ -2978,7 +3306,8 @@ async function prepareCustomConnectorValueWrite(args: {
     );
   }
 
-  const resolution = await resolveConnectorConnectionMutation(args.tx, {
+  const mutationReadDb = args.tx;
+  const mutationReadArgs: ConnectorConnectionMutationArgs = {
     orgId: args.request.orgId,
     userId: args.request.userId,
     target: {
@@ -2987,7 +3316,27 @@ async function prepareCustomConnectorValueWrite(args: {
     },
     mutation: args.request.account,
     allowSiblings: true,
-  });
+  };
+  const resolution = await (async () => {
+    let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+    for (;;) {
+      const rows = await mutationReadDb
+        .select(read.columns)
+        .from(read.from)
+        .where(read.where)
+        .orderBy(...read.orderBy)
+        .limit(read.limit);
+      const result = connectorConnectionMutationReadResult(
+        mutationReadArgs,
+        read,
+        rows,
+      );
+      if (result.kind === "resolved") {
+        return result.resolution;
+      }
+      read = result.read;
+    }
+  })();
   if (resolution.kind !== "ready") {
     return resolution.kind === "missing"
       ? notFound("Connector account not found")
@@ -3051,10 +3400,6 @@ interface CustomConnectorValuePersistenceArgs {
   readonly preparedValues: readonly PreparedCustomConnectorValue[];
 }
 
-type CustomConnectorReplacementArgs = Parameters<
-  typeof replaceConnectorConnectionOutcome
->[1];
-
 function customConnectorValueCredentialScope(
   preparedWrite: {
     readonly connectionId: string;
@@ -3080,11 +3425,10 @@ async function persistCustomConnectorValues(
     return state;
   }
   const writeValues = async (
-    tx: Tx,
     connectionId: string,
     writeSignal: AbortSignal,
   ) => {
-    const credentialDb = tx;
+    const credentialDb = args.tx;
     const preparedWrite = {
       connectionId,
       fields: state.connector.fields,
@@ -3158,34 +3502,40 @@ async function persistCustomConnectorValues(
     };
     const connection = await (async () => {
       return connectorConnectionWrittenRow(
-        await writeConnectorConnectionMetadataOutcome(
-          connectionDb,
-          metadataArgs,
-        ),
+        await writeConnectionMetadata(connectionDb, metadataArgs),
       );
     })();
     connectedAccountId = connection.id;
     signal.throwIfAborted();
-    await writeValues(args.tx, connection.id, signal);
+    await writeValues(connection.id, signal);
   } else {
-    const connectionDb = args.tx;
-    const replacementArgs: CustomConnectorReplacementArgs = {
-      ...connectionArgs,
-      resolution: state.resolution,
-      writeCredentials: async ({ db, connectorId }, writeSignal) => {
-        await writeValues(db, connectorId, writeSignal);
-      },
-    };
-    const connectionSignal = signal;
-    const connection = await (async () => {
-      return connectorConnectionWrittenRow(
-        await replaceConnectorConnectionOutcome(
-          connectionDb,
-          replacementArgs,
-          connectionSignal,
-        ),
-      );
-    })();
+    const tx = args.tx;
+    const replacementArgs = { ...connectionArgs, resolution: state.resolution };
+
+    const connection = await awaitConnectorConnectionRow(
+      (async () => {
+        const outcome = await writeConnectionMetadata(tx, replacementArgs);
+        signal.throwIfAborted();
+        if (outcome.kind !== "written") {
+          return outcome;
+        }
+        const connection = outcome.row;
+        const cleanup = { connectorId: connection.id, connection };
+        for (const kind of connectorCredentialDeletionKinds) {
+          const deletion = connectorCredentialDeletion(kind, cleanup);
+          await tx.delete(deletion.from).where(deletion.where);
+          if (kind !== "builtin-oauth") {
+            signal.throwIfAborted();
+          }
+        }
+        const connectorId = connection.id;
+        await (async () => {
+          await writeValues(connectorId, signal);
+        })();
+        signal.throwIfAborted();
+        return outcome;
+      })(),
+    );
     connectedAccountId = connection.id;
   }
   return {
@@ -3313,7 +3663,185 @@ export const setCustomConnectorValues$ = command(
   },
 );
 
-export const deleteCustomConnectorAccount$ = command(
+function customConnectorAccountDeletionColumns() {
+  return {
+    oauthProviderAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
+  };
+}
+
+function customConnectorAccountDeletionWhere(args: {
+  readonly connectorId: string;
+  readonly orgId: string;
+}) {
+  return customConnectorMutationDefinitionScope(args.connectorId, args.orgId);
+}
+
+function customConnectorAccountDeletionBlocker(
+  connector:
+    | {
+        readonly oauthProviderAdapter: OrgCustomConnectorOAuthProviderAdapter | null;
+      }
+    | undefined,
+): { readonly kind: "missing" } | { readonly kind: "managed" } | null {
+  if (!connector) {
+    return { kind: "missing" };
+  }
+  if (
+    isIntegrationManagedCustomConnectorProviderAdapter(
+      connector.oauthProviderAdapter,
+    )
+  ) {
+    return { kind: "managed" };
+  }
+  return null;
+}
+
+const deleteCustomConnectorAccount$ = command(
+  ({ set }, args: DeleteCustomConnectorAccountArgs, signal: AbortSignal) => {
+    const writeDb = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0148; new non-billing transactions are prohibited.
+    return writeDb.transaction(
+      async (tx) => {
+        const [connector] = await tx
+          .select(customConnectorAccountDeletionColumns())
+          .from(orgCustomConnectors)
+          .leftJoin(
+            orgCustomConnectorOauthConfigs,
+            customConnectorMutationOAuthJoin(),
+          )
+          .where(customConnectorAccountDeletionWhere(args))
+          .for("update", { of: orgCustomConnectors })
+          .limit(1);
+        signal.throwIfAborted();
+        const blocker = customConnectorAccountDeletionBlocker(connector);
+        if (blocker) {
+          return blocker;
+        }
+        const memberDeletionDb = tx;
+        const memberDeletionArgs = args;
+        return await (async (): Promise<CustomConnectorMemberConnectionDeletionResult> => {
+          const db = memberDeletionDb;
+          const scope = customConnectorAccountDeletionScope(memberDeletionArgs);
+          const abort = signal;
+          const deletion = await (async (): Promise<PreparedDeletion> => {
+            const { connectionId } = scope;
+            const owner = connectorAccountOwnerCondition(scope);
+            const [account] = await db
+              .select({ isDefault: connectors.isDefault })
+              .from(connectors)
+              .where(connectorAccountById(owner, connectionId))
+              .limit(1);
+            if (!account) {
+              return { kind: "missing" };
+            }
+            let promotedId: string | null = null;
+            if (account.isDefault) {
+              const [sibling] = await db
+                .select({ id: connectors.id })
+                .from(connectors)
+                .where(connectorAccountSibling(owner, connectionId))
+                .orderBy(asc(connectors.createdAt), asc(connectors.id))
+                .limit(1);
+              if (sibling) {
+                await db
+                  .update(connectors)
+                  .set({
+                    isDefault: false,
+                    updatedAt: sql`clock_timestamp()`,
+                  })
+                  .where(eq(connectors.id, connectionId));
+                await db
+                  .update(connectors)
+                  .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+                  .where(eq(connectors.id, sibling.id));
+                promotedId = sibling.id;
+              }
+            }
+
+            const selectionCount =
+              (
+                await db
+                  .delete(chatThreadConnectorSelections)
+                  .where(
+                    eq(chatThreadConnectorSelections.connectorId, connectionId),
+                  )
+              ).rowCount ?? 0;
+
+            await reprojectWorkflowAutomationsForOwner(db, scope, abort);
+
+            return connectorAccountDeletionResult(selectionCount, promotedId);
+          })();
+          signal.throwIfAborted();
+          if (deletion.kind !== "ready") {
+            return deletion;
+          }
+          /**
+           * Use the caller's transaction to delete the account, then resolve references
+           * in the next SQL snapshot. The existing deferred account FK is checked at commit. A selection
+           * committed before the deletion's ordinary parent-row mutation is included in
+           * the child DELETE; a later insert fails its FK check. No lock-only write or
+           * SELECT lock is used, and the exact returned count includes late references.
+           */
+          const storageDb = memberDeletionDb;
+          const storageArgs = {
+            connectorId: memberDeletionArgs.memberConnectorId,
+          };
+          const lateCount = await (async () => {
+            const plan = connectionDeletionPlan(storageArgs);
+            await storageDb.delete(plan.secrets.from).where(plan.secrets.where);
+            signal.throwIfAborted();
+            await storageDb
+              .delete(plan.variables.from)
+              .where(plan.variables.where);
+            signal.throwIfAborted();
+            await storageDb.execute(plan.deferSelections);
+            const deleted = await storageDb
+              .delete(plan.account.from)
+              .where(plan.account.where)
+              .returning(plan.account.returning);
+            let lateSelectionCount = 0;
+            if (deleted.length > 0) {
+              const selection = selectionDeletionPlan(deleted);
+              const selections = await storageDb
+                .delete(selection.from)
+                .where(selection.where)
+                .returning(selection.returning);
+              lateSelectionCount = selections.length;
+            }
+            await storageDb.execute(plan.enforceSelections);
+            if (deleted.length > 0) {
+              // FK deletion has already cleared event_connector_id. Use the retained
+              // source config to invalidate only cursors belonging to deleted accounts.
+              // A subsequent projection onto a new account is a different source.
+              const cursor = cursorDeletionPlan(deleted);
+              await storageDb
+                .delete(cursor.from)
+                .where(
+                  inArray(
+                    cursor.automationId,
+                    storageDb
+                      .select(cursor.automations.columns)
+                      .from(cursor.automations.from)
+                      .where(cursor.automations.where),
+                  ),
+                );
+            }
+            signal.throwIfAborted();
+            return lateSelectionCount;
+          })();
+          return {
+            kind: "deleted",
+            resolvedSelectionCount: deletion.resolvedSelectionCount + lateCount,
+            promotedDefaultConnectionId: deletion.promotedDefaultConnectionId,
+          };
+        })();
+      },
+      { isolationLevel: "read committed" },
+    );
+  },
+);
+
+export const deleteCustomConnectorAccountAndPublish$ = command(
   async (
     { set },
     args: DeleteCustomConnectorAccountArgs,
@@ -3321,75 +3849,7 @@ export const deleteCustomConnectorAccount$ = command(
   ) => {
     const writeDb = set(writeDb$);
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0148; new non-billing transactions are prohibited.
-    const deletion = writeDb.transaction(
-      async (tx) => {
-        const [connector] = await tx
-          .select({
-            oauthProviderAdapter:
-              orgCustomConnectorOauthConfigs.providerAdapter,
-          })
-          .from(orgCustomConnectors)
-          .leftJoin(
-            orgCustomConnectorOauthConfigs,
-            customConnectorMutationOAuthJoin(),
-          )
-          .where(
-            customConnectorMutationDefinitionScope(
-              args.connectorId,
-              args.orgId,
-            ),
-          )
-          .for("update", { of: orgCustomConnectors })
-          .limit(1);
-        signal.throwIfAborted();
-        if (!connector) {
-          return { kind: "missing" as const };
-        }
-        if (
-          isIntegrationManagedCustomConnectorProviderAdapter(
-            connector.oauthProviderAdapter,
-          )
-        ) {
-          return { kind: "managed" as const };
-        }
-        const memberDeletionDb = tx;
-        const memberDeletionArgs = args;
-        return await (async (): Promise<CustomConnectorMemberConnectionDeletionResult> => {
-          const deletion =
-            await prepareConnectorAccountDeletionWithTargetLocked(
-              memberDeletionDb,
-              {
-                orgId: memberDeletionArgs.orgId,
-                userId: memberDeletionArgs.userId,
-                target: {
-                  kind: "custom",
-                  customConnectorId: memberDeletionArgs.connectorId,
-                },
-                connectionId: memberDeletionArgs.memberConnectorId,
-              },
-              signal,
-            );
-          signal.throwIfAborted();
-          if (deletion.kind !== "ready") {
-            return deletion;
-          }
-          const lateSelectionCount =
-            await deleteConnectorCredentialStorageConnection(
-              memberDeletionDb,
-              { connectorId: memberDeletionArgs.memberConnectorId },
-              signal,
-            );
-          return {
-            kind: "deleted",
-            resolvedSelectionCount:
-              deletion.resolvedSelectionCount + lateSelectionCount,
-            promotedDefaultConnectionId: deletion.promotedDefaultConnectionId,
-          };
-        })();
-      },
-      { isolationLevel: "read committed" },
-    );
+    const deletion = set(deleteCustomConnectorAccount$, args, signal);
     const result = await (async () => {
       const result = await deletion;
       const wakeup: ConnectorRuntimeWakeupBusinessArgs | undefined =

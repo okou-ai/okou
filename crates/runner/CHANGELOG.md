@@ -1,5 +1,67 @@
 # Changelog
 
+## [0.237.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.37...runner-rs-v0.237.0) (2026-10-25)
+
+
+### Features
+
+* cut over data tools to dynamic router discovery ([#42695](https://github.com/okou-ai/okou/issues/42695)) ([28d1842](https://github.com/okou-ai/okou/commit/28d18426d6282b443344e3a3cabdec11ee13bc03))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.236.37](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.36...runner-rs-v0.236.37) (2026-10-25)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.236.36](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.35...runner-rs-v0.236.36) (2026-10-25)
+
+## [0.236.35](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.34...runner-rs-v0.236.35) (2026-10-25)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.236.34](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.33...runner-rs-v0.236.34) (2026-10-25)
+
+## [0.236.33](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.32...runner-rs-v0.236.33) (2026-10-25)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.236.32](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.31...runner-rs-v0.236.32) (2026-10-24)
+
+
+### Bug Fixes
+
+* **runner:** validate sustained readiness across fresh native samples ([#42766](https://github.com/okou-ai/okou/issues/42766)) ([01f06ce](https://github.com/okou-ai/okou/commit/01f06cee87d81483bbbe0ffd9be943bd86d5c24b))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.236.31](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.30...runner-rs-v0.236.31) (2026-10-24)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.236.30](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.29...runner-rs-v0.236.30) (2026-10-23)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.236.29](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.28...runner-rs-v0.236.29) (2026-10-23)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.236.28](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.27...runner-rs-v0.236.28) (2026-10-23)
 
 ### Release Dependencies

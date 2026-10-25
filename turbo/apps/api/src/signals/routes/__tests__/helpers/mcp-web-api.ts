@@ -1,7 +1,7 @@
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { http, HttpResponse } from "msw";
-import { z } from "zod";
+import * as z from "zod";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import {
   setupApp,

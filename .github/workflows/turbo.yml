@@ -62,9 +62,11 @@ on:
         required: false
       OFFICIAL_RUNNER_SECRET:
         required: false
-      OKOU_BROWSER_USE_API_KEY:
+      OKOU_DATA_ROUTER_URL:
         required: false
-      OKOU_FINANCE_APIDOJO_TOKEN:
+      OKOU_DATA_TOKEN:
+        required: false
+      OKOU_BROWSER_USE_API_KEY:
         required: false
       OKOU_GITHUB_APP_CLIENT_SECRET:
         required: false
@@ -73,20 +75,6 @@ on:
       OKOU_GITHUB_APP_WEBHOOK_SECRET:
         required: false
       OKOU_MACHINE_SECRET_KEY:
-        required: false
-      OKOU_SCRAPE_FIRECRAWL_TOKEN:
-        required: false
-      OKOU_SEO_DATAFORSEO_LOGIN:
-        required: false
-      OKOU_SEO_DATAFORSEO_PASSWORD:
-        required: false
-      OKOU_SOCIAL_MONID_API_KEY:
-        required: false
-      OKOU_SOCIAL_SOCIALKIT_TOKEN:
-        required: false
-      OKOU_WEATHER_GOOGLE_WEATHER_TOKEN:
-        required: false
-      OKOU_WEB_SEARCH_PERPLEXITY_TOKEN:
         required: false
       OPENAI_API_KEY:
         required: false
@@ -1485,7 +1473,12 @@ jobs:
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+          # Shared dev OTLP destinations are provisioned outside deployment CI.
+          # Set these variables to their slugs; CI only attaches the exports.
           CF_API_TRACES_DESTINATION: ${{ vars.CF_API_TRACES_DESTINATION }}
+          CF_API_LOGS_DESTINATION: ${{ vars.CF_API_LOGS_DESTINATION }}
+          # Validate native export on isolated PR Workers before staging rollout.
+          CF_API_NATIVE_TELEMETRY: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
           GH_TOKEN: ${{ github.token }}
           # Temporary experiment, restricted to this existing same-repo PR.
           API_WORKER_STARTUP_BENCH: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 42640 && github.head_ref == 'perf/worker-domain-split' && 'workflow-schema-reuse' || '' }}

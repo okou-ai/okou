@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { isPaidToolEnabled } from "../../lib/command/paid-tools";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
   createSpriteAuthoringInstructions,
@@ -138,40 +139,44 @@ function slugify(value: string): string {
   return slug.length >= 3 ? slug : "sprite";
 }
 
-export const spriteCommand = new Command()
-  .name("sprite")
-  .description(
-    "Prepare 2D game sprite/asset authoring instructions from a prompt",
-  )
-  .option("--prompt <text>", "Sprite prompt/theme; can also be piped via stdin")
-  .option("--asset-type <type>", `Asset type: ${ASSET_TYPES.join(", ")}`)
-  .option("--action <action>", `Animation/action: ${ACTIONS.join(", ")}`)
-  .option(
-    "--view <view>",
-    `Camera view: ${VIEWS.join(", ")} (3-4 means 3/4 view)`,
-  )
-  .option("--sheet <grid>", `Sheet/grid shape: ${SHEETS.join(", ")}`, "auto")
-  .option("--frames <count>", "Frame count: 'auto' or an integer (1-64)")
-  .option("--bundle <preset>", `Bundle preset: ${BUNDLES.join(", ")}`)
-  .option(
-    "--art-style <style>",
-    `Sprite art style (the sprite analog of 'okou generate image --style'): ${ART_STYLES.join(", ")}`,
-  )
-  .option("--anchor <anchor>", `Frame anchor: ${ANCHORS.join(", ")}`)
-  .option("--margin <margin>", `Safe-area margin: ${MARGINS.join(", ")}`)
-  .option(
-    "--effect-policy <policy>",
-    `Detached-FX component policy: ${EFFECT_POLICIES.join(", ")}`,
-  )
-  .option(
-    "--reference <url>",
-    "Reference image URL for identity/style consistency",
-  )
-  .option("--name <slug>", "Output bundle name/slug")
-  .addOption(createArtifactVisibilityOption())
-  .addHelpText(
-    "after",
-    `
+export function createSpriteCommand(): Command {
+  return new Command()
+    .name("sprite")
+    .description(
+      "Prepare 2D game sprite/asset authoring instructions from a prompt",
+    )
+    .option(
+      "--prompt <text>",
+      "Sprite prompt/theme; can also be piped via stdin",
+    )
+    .option("--asset-type <type>", `Asset type: ${ASSET_TYPES.join(", ")}`)
+    .option("--action <action>", `Animation/action: ${ACTIONS.join(", ")}`)
+    .option(
+      "--view <view>",
+      `Camera view: ${VIEWS.join(", ")} (3-4 means 3/4 view)`,
+    )
+    .option("--sheet <grid>", `Sheet/grid shape: ${SHEETS.join(", ")}`, "auto")
+    .option("--frames <count>", "Frame count: 'auto' or an integer (1-64)")
+    .option("--bundle <preset>", `Bundle preset: ${BUNDLES.join(", ")}`)
+    .option(
+      "--art-style <style>",
+      `Sprite art style${isPaidToolEnabled("image-generation") ? " (the sprite analog of 'okou generate image --style')" : ""}: ${ART_STYLES.join(", ")}`,
+    )
+    .option("--anchor <anchor>", `Frame anchor: ${ANCHORS.join(", ")}`)
+    .option("--margin <margin>", `Safe-area margin: ${MARGINS.join(", ")}`)
+    .option(
+      "--effect-policy <policy>",
+      `Detached-FX component policy: ${EFFECT_POLICIES.join(", ")}`,
+    )
+    .option(
+      "--reference <url>",
+      "Reference image URL for identity/style consistency",
+    )
+    .option("--name <slug>", "Output bundle name/slug")
+    .addOption(createArtifactVisibilityOption())
+    .addHelpText(
+      "after",
+      `
 Examples:
   Generate sprite:       ${SPRITE_USAGE_COMMAND} --prompt "A green slime monster idle loop"
   Pick asset + action:   ${SPRITE_USAGE_COMMAND} --asset-type creature --action idle --sheet 3x3 --prompt "A fire dragon boss"
@@ -189,56 +194,53 @@ Output:
   With no --prompt and no piped input, prints the generation choices instead.
 
 Notes:
-  - The agent generates each raw sheet with built-in image generation, which
-    uses the image model selected in Settings › Built-in tools, on a solid
-    magenta background, then runs the
-    sprite skill's local processor for chroma-key cleanup, frame extraction,
-    alignment, QC, and transparent/GIF export.
+${isPaidToolEnabled("image-generation") ? "  - The agent generates each raw sheet with built-in image generation, which\n    uses the image model selected in Settings › Built-in tools, on a solid\n    magenta background, then runs the\n    sprite skill's local processor for chroma-key cleanup, frame extraction,\n    alignment, QC, and transparent/GIF export.\n" : ""}\
   - Raw sprite art must originate from image generation, never from code-drawn
     primitives (Three.js/Canvas/SVG/HTML/PIL).
   - Unset flags resolve to "agent decides"; the agent infers them from the
     prompt and the skill's modes reference.`,
-  )
-  .action(
-    withErrorHandler(async (options: SpriteOptions) => {
-      validateEnum("--asset-type", options.assetType, ASSET_TYPES);
-      validateEnum("--action", options.action, ACTIONS);
-      validateEnum("--view", options.view, VIEWS);
-      validateEnum("--sheet", options.sheet, SHEETS);
-      validateEnum("--bundle", options.bundle, BUNDLES);
-      validateEnum("--art-style", options.artStyle, ART_STYLES);
-      validateEnum("--anchor", options.anchor, ANCHORS);
-      validateEnum("--margin", options.margin, MARGINS);
-      validateEnum("--effect-policy", options.effectPolicy, EFFECT_POLICIES);
-      const frames = resolveFrames(options.frames);
+    )
+    .action(
+      withErrorHandler(async (options: SpriteOptions) => {
+        validateEnum("--asset-type", options.assetType, ASSET_TYPES);
+        validateEnum("--action", options.action, ACTIONS);
+        validateEnum("--view", options.view, VIEWS);
+        validateEnum("--sheet", options.sheet, SHEETS);
+        validateEnum("--bundle", options.bundle, BUNDLES);
+        validateEnum("--art-style", options.artStyle, ART_STYLES);
+        validateEnum("--anchor", options.anchor, ANCHORS);
+        validateEnum("--margin", options.margin, MARGINS);
+        validateEnum("--effect-policy", options.effectPolicy, EFFECT_POLICIES);
+        const frames = resolveFrames(options.frames);
 
-      const dispatch = await dispatchGenerate({
-        generationType: "sprite",
-        prompt: options.prompt,
-      });
-      if (dispatch.outcome === "handled") return;
-      const prompt = dispatch.prompt;
+        const dispatch = await dispatchGenerate({
+          generationType: "sprite",
+          prompt: options.prompt,
+        });
+        if (dispatch.outcome === "handled") return;
+        const prompt = dispatch.prompt;
 
-      const plan: SpritePlan = {
-        assetType: options.assetType ?? AGENT_DECIDES,
-        action: options.action ?? AGENT_DECIDES,
-        view: options.view ?? AGENT_DECIDES,
-        sheet: options.sheet ?? "auto",
-        frames,
-        bundle: options.bundle ?? AGENT_DECIDES,
-        artStyle: options.artStyle ?? AGENT_DECIDES,
-        anchor: options.anchor ?? AGENT_DECIDES,
-        margin: options.margin ?? AGENT_DECIDES,
-        effectPolicy: options.effectPolicy ?? AGENT_DECIDES,
-        reference: options.reference ?? "none",
-        name: slugify(options.name ?? prompt),
-      };
+        const plan: SpritePlan = {
+          assetType: options.assetType ?? AGENT_DECIDES,
+          action: options.action ?? AGENT_DECIDES,
+          view: options.view ?? AGENT_DECIDES,
+          sheet: options.sheet ?? "auto",
+          frames,
+          bundle: options.bundle ?? AGENT_DECIDES,
+          artStyle: options.artStyle ?? AGENT_DECIDES,
+          anchor: options.anchor ?? AGENT_DECIDES,
+          margin: options.margin ?? AGENT_DECIDES,
+          effectPolicy: options.effectPolicy ?? AGENT_DECIDES,
+          reference: options.reference ?? "none",
+          name: slugify(options.name ?? prompt),
+        };
 
-      const instructions = createSpriteAuthoringInstructions({
-        prompt,
-        plan,
-        visibility: options.visibility,
-      });
-      console.log(instructions);
-    }),
-  );
+        const instructions = createSpriteAuthoringInstructions({
+          prompt,
+          plan,
+          visibility: options.visibility,
+        });
+        console.log(instructions);
+      }),
+    );
+}

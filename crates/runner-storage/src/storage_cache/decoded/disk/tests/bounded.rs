@@ -57,7 +57,7 @@ fn valid_path_envelope_can_still_fail_bounded_index_publication_cleanly() {
 #[test]
 fn content_budget_is_checked_before_opening_file_bodies() {
     let (_root, home, entry, _) = setup();
-    fs::remove_file(entry.join("files/nested/file")).unwrap();
+    fs::remove_file(entry.join("data.bin")).unwrap();
     assert!(
         read_with_budget(
             &home,
@@ -77,7 +77,7 @@ fn content_budget_is_checked_before_opening_file_bodies() {
 #[test]
 fn file_budget_is_checked_before_bodies_but_does_not_hide_invalid_metadata() {
     let (_root, home, entry, _) = setup();
-    fs::remove_file(entry.join("files/nested/file")).unwrap();
+    fs::remove_file(entry.join("data.bin")).unwrap();
     let cancel = CancellationToken::new();
     assert!(
         read_with_budget(
@@ -123,13 +123,13 @@ fn file_budget_is_checked_before_bodies_but_does_not_hide_invalid_metadata() {
 }
 
 #[test]
-fn existing_v1_positive_entry_is_reused_without_republication() {
+fn existing_positive_entry_is_reused_without_republication() {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());
     let (entry, _) = persisted_paths(&home, "name", "v1", false);
-    fs::create_dir_all(entry.join("files/nested")).unwrap();
-    fs::write(entry.join("files/nested/file"), b"hello").unwrap();
-    // Seed the existing v1 schema independently from the current publisher.
+    fs::create_dir_all(&entry).unwrap();
+    fs::write(entry.join("data.bin"), b"hello").unwrap();
+    // Seed the persisted v2 schema independently from the publisher.
     let index = serde_json::to_vec(&serde_json::json!({
         "name": "name", "version": "v1", "compressed_bytes": 100,
         "files": [{
@@ -152,7 +152,7 @@ fn existing_v1_positive_entry_is_reused_without_republication() {
     }];
     publish(&home, "name", "v1", 100, Some(&replacement), &cancel).unwrap();
     assert_eq!(fs::read(entry.join("index.json")).unwrap(), index);
-    assert_eq!(fs::read(entry.join("files/nested/file")).unwrap(), b"hello");
+    assert_eq!(fs::read(entry.join("data.bin")).unwrap(), b"hello");
     assert_eq!(
         read(&home, "name", "v1", &cancel).unwrap().unwrap(),
         files()
@@ -160,7 +160,7 @@ fn existing_v1_positive_entry_is_reused_without_republication() {
 }
 
 #[tokio::test]
-async fn existing_v1_rejection_retains_optional_skip_without_rewriting_source() {
+async fn existing_rejection_retains_optional_skip_without_rewriting_source() {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());
     let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
@@ -182,8 +182,8 @@ async fn existing_v1_rejection_retains_optional_skip_without_rewriting_source() 
     drop(lock::try_acquire_or_busy_blocking(&home.storage_lock("name", "v1")).unwrap());
     let (entry, _) = persisted_paths(&home, "name", "v1", true);
     fs::create_dir_all(&entry).unwrap();
-    // This shape exceeded the former 32-file limit. The existing record has no
-    // admission-policy field, so keeping v1 also keeps its optional skip.
+    // A retained rejection skips optional warming without rewriting its index
+    // or the source archive.
     let index = serde_json::to_vec(&serde_json::json!({
         "name": "name", "version": "v1", "compressed_bytes": bytes.len(),
         "files": null

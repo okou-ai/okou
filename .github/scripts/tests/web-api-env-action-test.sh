@@ -299,7 +299,7 @@ run_action() {
 
   repo_vars_json='{"GH_OAUTH_CLIENT_ID":"github-gh-client-id","SLACK_OAUTH_CLIENT_ID":"github-slack-client-id","GOOGLE_ADS_DEVELOPER_TOKEN":"github-google-ads-var","FINICITY_PARTNER_ID":"github-finicity-partner-id","LINK_STRIPE_PUBLISHABLE_KEY":"pk_live_github_link_fixture","POSTHOG_KEY":"github-posthog-key","POSTHOG_HOST":"https://posthog.github.test","ATOM_URL":"https://atom.github.test","STRIPE_OAUTH_CLIENT_ID":"ca_test_connect_client","STRIPE_CONCURRENCY_PORTAL_CONFIGURATION_ID":"bpc_test_concurrency","MICROSOFT_TEAMS_BOT_APP_ID":"github-teams-bot-app-id","MICROSOFT_TEAMS_APP_TENANT_ID":"github-teams-app-tenant-id","OKOU_PRICE_PRO":"price_test_pro","OKOU_PRICE_TEAM":"price_test_team","OKOU_PRICE_USAGE_PACK_PLAN_PRO":"price_test_usage_pack_plan_pro","OKOU_PRICE_USAGE_PACK_PLAN_TEAM":"price_test_usage_pack_plan_team","OKOU_PRICE_USAGE_PACK_20":"price_test_usage_pack_20","OKOU_PRICE_USAGE_PACK_50":"price_test_usage_pack_50","OKOU_PRICE_USAGE_PACK_100":"price_test_usage_pack_100","OKOU_PRICE_USAGE_PACK_200":"price_test_usage_pack_200","ATOM_GRANT_PRICE":"price_test_atom_grant","OKOU_PRICE_CUSTOM_CREDITS":"price_test_custom_credits","OKOU_PRICE_CUSTOM_CREDIT_UNIT":"price_test_custom_credit_unit","OKOU_PRICE_CONCURRENCY":"price_test_concurrency","GMAIL_PUBSUB_TOPIC_NAME":"projects/github/topics/gmail","GMAIL_PUBSUB_PUSH_AUDIENCE":"https://api.github.test/api/webhooks/gmail","GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL":"gmail-push@github.test","GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME":"projects/github/topics/google-workspace-events","GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE":"https://api.github.test/api/webhooks/google-workspace-events","GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL":"workspace-events-push@github.test"}'
   repo_vars_json="$(jq -c '. + {OKOU_PUBLIC_ARTIFACTS_BASE_URL: "https://cdn.okou.test", OKOU_PUBLIC_HOST_DOMAIN: "okou.app", OKOU_HOST_SCHEME: "https", OKOU_ONE_TIME_CAMPAIGN: "test-campaign"}' <<< "$repo_vars_json")"
-  repo_secrets_json='{"R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID":"private-prod-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY":"private-prod-secret","R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV":"private-dev-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV":"private-dev-secret","GH_OAUTH_CLIENT_SECRET":"github-gh-client-secret","SLACK_OAUTH_CLIENT_SECRET":"github-slack-client-secret","GOOGLE_ADS_DEVELOPER_TOKEN":"github-google-ads-secret","OKOU_WEATHER_GOOGLE_WEATHER_TOKEN":"github-google-weather-token","OKOU_FINANCE_APIDOJO_TOKEN":"github-apidojo-token","OKOU_SEO_DATAFORSEO_LOGIN":"github-dataforseo-login","OKOU_SEO_DATAFORSEO_PASSWORD":"github-dataforseo-password","OKOU_BROWSER_USE_API_KEY":"github-browser-use-api-key","OKOU_SCRAPE_FIRECRAWL_TOKEN":"github-firecrawl-token","OKOU_WEB_SEARCH_PERPLEXITY_TOKEN":"github-perplexity-token","OKOU_SOCIAL_MONID_API_KEY":"github-monid-api-key","OKOU_SOCIAL_SOCIALKIT_TOKEN":"github-socialkit-token","STEAM_WEB_API_KEY":"github-steam-web-api-key","LINK_OAUTH_CLIENT_ID":"github-link-client-id","LINK_OAUTH_CLIENT_SECRET":"github-link-client-secret","FINICITY_APP_KEY":"github-finicity-app-key","FINICITY_APP_SECRET":"github-finicity-app-secret","OKOU_MACHINE_SECRET_KEY":"github-atom-machine-secret","MICROSOFT_TEAMS_BOT_APP_PASSWORD":"github-teams-bot-app-password","VERCEL_AUTOMATION_BYPASS_SECRET":"github-vercel-bypass-secret","STRIPE_WEBHOOK_SECRET":"github-stripe-billing-webhook-secret","STRIPE_AUTOMATION_WEBHOOK_SECRET":"github-stripe-automation-webhook-secret"}'
+  repo_secrets_json='{"R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID":"private-prod-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY":"private-prod-secret","R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV":"private-dev-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV":"private-dev-secret","GH_OAUTH_CLIENT_SECRET":"github-gh-client-secret","SLACK_OAUTH_CLIENT_SECRET":"github-slack-client-secret","GOOGLE_ADS_DEVELOPER_TOKEN":"github-google-ads-secret","OKOU_DATA_ROUTER_URL":"https://data.okou.ai/mcp","OKOU_DATA_TOKEN":"github-data-router-token","OKOU_BROWSER_USE_API_KEY":"github-browser-use-api-key","STEAM_WEB_API_KEY":"github-steam-web-api-key","LINK_OAUTH_CLIENT_ID":"github-link-client-id","LINK_OAUTH_CLIENT_SECRET":"github-link-client-secret","FINICITY_APP_KEY":"github-finicity-app-key","FINICITY_APP_SECRET":"github-finicity-app-secret","OKOU_MACHINE_SECRET_KEY":"github-atom-machine-secret","MICROSOFT_TEAMS_BOT_APP_PASSWORD":"github-teams-bot-app-password","VERCEL_AUTOMATION_BYPASS_SECRET":"github-vercel-bypass-secret","STRIPE_WEBHOOK_SECRET":"github-stripe-billing-webhook-secret","STRIPE_AUTOMATION_WEBHOOK_SECRET":"github-stripe-automation-webhook-secret"}'
   repo_secrets_json="$(jq -c '. + {
     PREVIEW_KMS_KEY_ID: "github-preview-kms-key",
     PREVIEW_KMS_ACCESS_KEY_ID: "github-preview-kms-access-key",
@@ -615,15 +615,7 @@ assert_env_value "$success_env_file" MICROSOFT_TEAMS_BOT_APP_ID "github-teams-bo
 assert_env_value "$success_env_file" MICROSOFT_TEAMS_BOT_APP_PASSWORD "github-teams-bot-app-password"
 assert_env_value "$success_env_file" MICROSOFT_TEAMS_APP_TENANT_ID "github-teams-app-tenant-id"
 assert_env_value "$success_env_file" GOOGLE_ADS_DEVELOPER_TOKEN "github-google-ads-secret"
-assert_env_value "$success_env_file" OKOU_WEATHER_GOOGLE_WEATHER_TOKEN "github-google-weather-token"
-assert_env_value "$success_env_file" OKOU_FINANCE_APIDOJO_TOKEN "github-apidojo-token"
-assert_env_value "$success_env_file" OKOU_SEO_DATAFORSEO_LOGIN "github-dataforseo-login"
-assert_env_value "$success_env_file" OKOU_SEO_DATAFORSEO_PASSWORD "github-dataforseo-password"
 assert_env_value "$success_env_file" OKOU_BROWSER_USE_API_KEY "github-browser-use-api-key"
-assert_env_value "$success_env_file" OKOU_SCRAPE_FIRECRAWL_TOKEN "github-firecrawl-token"
-assert_env_value "$success_env_file" OKOU_WEB_SEARCH_PERPLEXITY_TOKEN "github-perplexity-token"
-assert_env_value "$success_env_file" OKOU_SOCIAL_MONID_API_KEY "github-monid-api-key"
-assert_env_value "$success_env_file" OKOU_SOCIAL_SOCIALKIT_TOKEN "github-socialkit-token"
 assert_env_value "$success_env_file" STEAM_WEB_API_KEY "github-steam-web-api-key"
 assert_env_value "$success_env_file" LINK_OAUTH_CLIENT_ID "doppler-link-client-id"
 assert_env_value "$success_env_file" LINK_OAUTH_CLIENT_SECRET "doppler-link-client-secret"
@@ -719,9 +711,6 @@ assert_api_backend_url_canonical "$empty_env_file" "https://pr-123-api-backend.o
 assert_machine_secret_absent "$empty_env_file"
 assert_env_value "$empty_env_file" OKOU_PUBLIC_ARTIFACTS_BASE_URL ""
 assert_env_value "$empty_env_file" OKOU_PUBLIC_HOST_DOMAIN ""
-assert_env_value "$empty_env_file" OKOU_SOCIAL_MONID_API_KEY ""
-assert_env_value "$empty_env_file" OKOU_SOCIAL_SOCIALKIT_TOKEN ""
-assert_env_value "$empty_env_file" OKOU_SEO_DATAFORSEO_LOGIN ""
 assert_env_value "$empty_env_file" OKOU_PRICE_PRO ""
 assert_env_value "$empty_env_file" OKOU_ONE_TIME_CAMPAIGN ""
 
@@ -744,14 +733,6 @@ assert_env_value "$production_web_env_file" POSTHOG_HOST "https://posthog.github
 assert_env_value "$production_web_env_file" GIT_COMMIT_SHA "$EXPECTED_BUILD_COMMIT_SHA"
 assert_env_absent_value "$production_web_env_file" "ATOM_URL="
 assert_env_key_absent "$production_web_env_file" OKOU_MACHINE_SECRET_KEY
-assert_env_value "$production_web_env_file" OKOU_WEATHER_GOOGLE_WEATHER_TOKEN "github-google-weather-token"
-assert_env_value "$production_web_env_file" OKOU_FINANCE_APIDOJO_TOKEN "github-apidojo-token"
-assert_env_absent_value "$production_web_env_file" "OKOU_SEO_DATAFORSEO_LOGIN="
-assert_env_absent_value "$production_web_env_file" "OKOU_SEO_DATAFORSEO_PASSWORD="
-assert_env_value "$production_web_env_file" OKOU_SCRAPE_FIRECRAWL_TOKEN "github-firecrawl-token"
-assert_env_value "$production_web_env_file" OKOU_WEB_SEARCH_PERPLEXITY_TOKEN "github-perplexity-token"
-assert_env_absent_value "$production_web_env_file" "OKOU_SOCIAL_MONID_API_KEY="
-assert_env_absent_value "$production_web_env_file" "OKOU_SOCIAL_SOCIALKIT_TOKEN="
 assert_env_absent_value "$production_web_env_file" "OKOU_BROWSER_USE_API_KEY="
 assert_env_absent_value "$production_web_env_file" "github-cloudflare-browser-rendering-token"
 assert_env_absent_value "$production_web_env_file" "github-artifact-preview-waf-secret"
@@ -788,31 +769,13 @@ assert_machine_secret_canonical "$production_api_env_file" "github-atom-machine-
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_BOT_APP_ID "github-teams-bot-app-id"
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_BOT_APP_PASSWORD "github-teams-bot-app-password"
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_APP_TENANT_ID "github-teams-app-tenant-id"
-assert_env_value "$production_api_env_file" OKOU_WEATHER_GOOGLE_WEATHER_TOKEN "github-google-weather-token"
-assert_env_value "$production_api_env_file" OKOU_FINANCE_APIDOJO_TOKEN "github-apidojo-token"
-assert_env_value "$production_api_env_file" OKOU_SEO_DATAFORSEO_LOGIN "github-dataforseo-login"
-assert_env_value "$production_api_env_file" OKOU_SEO_DATAFORSEO_PASSWORD "github-dataforseo-password"
 assert_env_value "$production_api_env_file" OKOU_BROWSER_USE_API_KEY "github-browser-use-api-key"
-assert_env_value "$production_api_env_file" OKOU_SCRAPE_FIRECRAWL_TOKEN "github-firecrawl-token"
-assert_env_value "$production_api_env_file" OKOU_WEB_SEARCH_PERPLEXITY_TOKEN "github-perplexity-token"
-assert_env_value "$production_api_env_file" OKOU_SOCIAL_MONID_API_KEY "github-monid-api-key"
-assert_env_value "$production_api_env_file" OKOU_SOCIAL_SOCIALKIT_TOKEN "github-socialkit-token"
 assert_env_absent_value "$production_api_env_file" "ONBOARDING_URL="
 assert_env_value "$production_api_env_file" STRIPE_WEBHOOK_SECRET "github-stripe-billing-webhook-secret"
 assert_env_value "$production_api_env_file" STRIPE_AUTOMATION_WEBHOOK_SECRET "github-stripe-automation-webhook-secret"
 assert_env_absent_value "$production_api_env_file" "doppler-stripe-billing-webhook-secret"
 assert_env_absent_value "$production_api_env_file" "doppler-stripe-automation-webhook-secret"
 assert_preview_job_ref_absent "$production_api_env_file"
-
-# Forward the explicitly configured conversion rate in both API environments.
-for firecrawl_environment in preview production; do
-  firecrawl_dir="$(mktemp -d)"
-  TEMP_DIRS+=("$firecrawl_dir")
-  firecrawl_vars='{"OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT":"2500"}'
-  run_action "$(build_doppler_secrets_json)" "$firecrawl_dir" api "$firecrawl_environment" canonical "$firecrawl_vars" > /dev/null
-  firecrawl_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${firecrawl_dir}/github-output")"
-  assert_env_value "$firecrawl_env_file" OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT "2500"
-done
 
 for kms_secret in PREVIEW_KMS_KEY_ID PREVIEW_KMS_ACCESS_KEY_ID PREVIEW_KMS_SECRET_ACCESS_KEY; do
   missing_kms_dir="$(mktemp -d)"
@@ -1013,5 +976,8 @@ for oauth_key in MAILCHIMP_OAUTH_CLIENT_ID MAILCHIMP_OAUTH_CLIENT_SECRET CAL_COM
   assert_contains "$missing_oauth_output" "::error::${oauth_key} is missing from Doppler OAuth config"
   assert_no_fixture_secret_values "$missing_oauth_output"
 done
+
+assert_env_value "$production_api_env_file" OKOU_DATA_ROUTER_URL "https://data.okou.ai/mcp"
+assert_env_value "$production_api_env_file" OKOU_DATA_TOKEN "github-data-router-token"
 
 echo "web-api-env-action-test: ok"

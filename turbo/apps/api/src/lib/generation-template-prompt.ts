@@ -20,12 +20,12 @@ import {
   userPresentationTemplateDirectory,
 } from "@okouai/core/presentation-template-selection";
 import {
-  PRESENTATION_IMAGE_BATCH_INSTRUCTION,
+  presentationImageInstructions,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
   presentationDeliveryInstructions,
 } from "@okouai/core/presentation-generation-instructions";
 import { artifactPreviewInstructions } from "@okouai/core/artifact-preview-instructions";
-import { WEBSITE_IMAGE_BATCH_INSTRUCTION } from "@okouai/core/website-generation-instructions";
+import { websiteImageInstructions } from "@okouai/core/website-generation-instructions";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { userTemplateDirectory } from "@okouai/core/user-template-selection";
 import type { MountedUserTemplate } from "../signals/services/user-template-data.service";
@@ -114,6 +114,7 @@ type GenerationTemplatePromptResult =
  * leave it empty and lose the guidance rather than point at nothing.
  */
 interface GenerationTemplatePromptOptions {
+  readonly includeManagedImageInstructions?: boolean;
   readonly mountedUserPresentationTemplateIds?: readonly string[];
   /**
    * The custom templates this run will carry, each with the kind its row says
@@ -132,9 +133,14 @@ export function buildGenerationTemplatePrompt(
   if (!generationTemplate) {
     return { status: "resolved", prompt: "" };
   }
+  const imageGenerationEnabled =
+    options.includeManagedImageInstructions !== false;
 
   if (generationTemplate.type === "illustration") {
-    return buildIllustrationGenerationTemplatePrompt(generationTemplate);
+    return buildIllustrationGenerationTemplatePrompt(
+      generationTemplate,
+      imageGenerationEnabled,
+    );
   }
   if (generationTemplate.type === "workflow") {
     return buildWorkflowGenerationTemplatePrompt(generationTemplate);
@@ -143,7 +149,10 @@ export function buildGenerationTemplatePrompt(
     return buildDocumentGenerationTemplatePrompt(generationTemplate);
   }
   if (generationTemplate.type === "website") {
-    return buildWebsiteGenerationTemplatePrompt(generationTemplate);
+    return buildWebsiteGenerationTemplatePrompt(
+      generationTemplate,
+      imageGenerationEnabled,
+    );
   }
   if (generationTemplate.type === "custom") {
     return buildCustomGenerationTemplatePrompt(
@@ -155,6 +164,7 @@ export function buildGenerationTemplatePrompt(
   return buildPresentationGenerationTemplatePrompt(
     generationTemplate,
     options.mountedUserPresentationTemplateIds ?? [],
+    imageGenerationEnabled,
   );
 }
 
@@ -298,6 +308,7 @@ function buildCustomGenerationTemplatePrompt(
 function buildPresentationGenerationTemplatePrompt(
   generationTemplate: PresentationGenerationTemplateInput,
   mountedUserPresentationTemplateIds: readonly string[],
+  imageGenerationEnabled: boolean,
 ): GenerationTemplatePromptResult {
   const { templateId } = generationTemplate.selection;
   if (isUserPresentationTemplateId(templateId)) {
@@ -310,7 +321,7 @@ function buildPresentationGenerationTemplatePrompt(
     if (!mountedUserPresentationTemplateIds.includes(rowId)) {
       return { status: "invalid", message: "Presentation template not found" };
     }
-    return buildUserPresentationTemplatePrompt(rowId);
+    return buildUserPresentationTemplatePrompt(rowId, imageGenerationEnabled);
   }
   // Presentation picker selections are valid only when they resolve to a
   // self-contained runbook package. The legacy multi-resource registry flow has
@@ -319,7 +330,11 @@ function buildPresentationGenerationTemplatePrompt(
   if (!runbookPackage) {
     return { status: "invalid", message: "Unknown generation template" };
   }
-  return buildPresentationRunbookPrompt(generationTemplate, runbookPackage);
+  return buildPresentationRunbookPrompt(
+    generationTemplate,
+    runbookPackage,
+    imageGenerationEnabled,
+  );
 }
 
 /**
@@ -337,6 +352,7 @@ function buildPresentationGenerationTemplatePrompt(
  */
 function buildUserPresentationTemplatePrompt(
   rowId: string,
+  imageGenerationEnabled: boolean,
 ): GenerationTemplatePromptResult {
   return {
     status: "resolved",
@@ -351,7 +367,7 @@ function buildUserPresentationTemplatePrompt(
       "- Lay out live rows, columns, and text flow with CSS Grid or Flexbox. Absolute positioning is for backgrounds, fixed chrome, decoration, and intentional overlays.",
       "- Background images from the package are optional visual material. New text, charts, tables, labels, and diagrams stay live HTML or SVG so they reflow and stay legible.",
       "- Use the slide count the user asks for; if unspecified, default to 8 pages.",
-      PRESENTATION_IMAGE_BATCH_INSTRUCTION,
+      ...presentationImageInstructions(imageGenerationEnabled),
       PRESENTATION_STATIC_HTML_INSTRUCTION,
       ...presentationDeliveryInstructions(),
       "- Check `okou host --help` and, when supported, add `--title` with a concise human-readable presentation name, independently of the URL slug.",
@@ -362,6 +378,7 @@ function buildUserPresentationTemplatePrompt(
 function buildPresentationRunbookPrompt(
   generationTemplate: PresentationGenerationTemplateInput,
   runbookPackage: PresentationRunbookPackage,
+  imageGenerationEnabled: boolean,
 ): GenerationTemplatePromptResult {
   const color = resolvePresentationRunbookColorToken(
     runbookPackage,
@@ -381,6 +398,7 @@ function buildPresentationRunbookPrompt(
       ...buildPresentationRunbookInstructionLines({
         runbookPackage,
         colorSystemToken: color.token,
+        imageGenerationEnabled,
       }),
       "- Check `okou host --help` and, when supported, add `--title` with a concise human-readable presentation name, independently of the URL slug.",
     ].join("\n"),
@@ -389,6 +407,7 @@ function buildPresentationRunbookPrompt(
 
 function buildWebsiteGenerationTemplatePrompt(
   generationTemplate: WebsiteGenerationTemplateInput,
+  imageGenerationEnabled: boolean,
 ): GenerationTemplatePromptResult {
   const item = findWebsiteTemplateItem(
     generationTemplate.selection.websiteTemplateId,
@@ -402,12 +421,13 @@ function buildWebsiteGenerationTemplatePrompt(
     return { status: "invalid", message: "Unknown website template" };
   }
 
-  return buildWebsiteTemplatePackagePrompt(item, pkg);
+  return buildWebsiteTemplatePackagePrompt(item, pkg, imageGenerationEnabled);
 }
 
 function buildWebsiteTemplatePackagePrompt(
   item: WebsiteTemplateItem,
   pkg: WebsiteTemplatePackage,
+  imageGenerationEnabled: boolean,
 ): GenerationTemplatePromptResult {
   const packageDir = `./generated/resources/${pkg.slug}`;
 
@@ -428,7 +448,9 @@ function buildWebsiteTemplatePackagePrompt(
       `- Work from ${packageDir}. Inspect the bundled package metadata and instructions before editing.`,
       `- Read ${packageDir}/SKILL.md before authoring; it owns this package's contract.`,
       "- Assemble the page once with `node tools/compose.mjs <section-ids...>`, then author the composed index.html directly. The command refuses a second compose pass; bypassing that guard would discard authored work.",
-      `- ${WEBSITE_IMAGE_BATCH_INSTRUCTION}`,
+      ...websiteImageInstructions(imageGenerationEnabled).map((line) => {
+        return `- ${line}`;
+      }),
       "- Repair every blocking failure from `bash checks/verify.sh index.html qa` until it prints QA_READY.",
       "- Stage once: `node tools/stage.mjs publish` writes the final clean ./publish directory before cover capture.",
       ...artifactPreviewInstructions({ outputDir: "./publish" }),
@@ -443,12 +465,26 @@ function buildWebsiteTemplatePackagePrompt(
 
 function buildIllustrationGenerationTemplatePrompt(
   generationTemplate: IllustrationGenerationTemplateInput,
+  imageGenerationEnabled: boolean,
 ): GenerationTemplatePromptResult {
   const imageStyle = findImageStyle(
     generationTemplate.selection.illustrationStyleId,
   );
   if (!imageStyle) {
     return { status: "invalid", message: "Unknown generation image style" };
+  }
+  const styleContext = [
+    ...templateFraming("an illustration or image"),
+    "Selected illustration style:",
+    "- Artifact type: illustration",
+    `- Style: ${imageStyle.name} (${imageStyle.id})`,
+    `- Style description: ${imageStyle.description}`,
+  ];
+  if (!imageGenerationEnabled) {
+    return {
+      status: "resolved",
+      prompt: styleContext.join("\n"),
+    };
   }
   const styleSource = `private R2 registry resource ${imageStyle.id}`;
   const compileCommand = `okou generate image --provider built-in --style ${imageStyle.id} --prompt "<user request>" --compile --style-source r2`;
@@ -458,11 +494,7 @@ function buildIllustrationGenerationTemplatePrompt(
   return {
     status: "resolved",
     prompt: [
-      ...templateFraming("an illustration or image"),
-      "Selected illustration style:",
-      "- Artifact type: illustration",
-      `- Style: ${imageStyle.name} (${imageStyle.id})`,
-      `- Style description: ${imageStyle.description}`,
+      ...styleContext,
       `- Style source: ${styleSource}`,
       "",
       "When you produce an illustration or image from the user's request:",

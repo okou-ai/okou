@@ -7,11 +7,10 @@ import {
 } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
+import { and, count, eq, exists, gte, notExists, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
   googleFormsCursorMustReset,
   googleFormsCursorPublicationStatement,
@@ -110,6 +109,62 @@ function activeIdentityUpdate(automationId: string, updatedAt: Date) {
   };
 }
 
+function formsIdentityPublicationSource(
+  automation: OfficialAutomationRow,
+  currentTime: Date,
+) {
+  const values = activeIdentityValues(automation, currentTime);
+  const identity = officialWorkflowAutomationIdentities;
+  return {
+    id: sql`${values.id}::uuid`.mapWith(identity.id).as("id"),
+    workflowId: sql`${values.workflowId}::uuid`
+      .mapWith(identity.workflowId)
+      .as("workflow_id"),
+    automationId: sql`${values.automationId}::uuid`
+      .mapWith(identity.automationId)
+      .as("automation_id"),
+    blueprintKey: sql`${values.blueprintKey}`
+      .mapWith(identity.blueprintKey)
+      .as("blueprint_key"),
+    state: sql`${values.state}`.mapWith(identity.state).as("state"),
+    retainedParameterBindings: sql`NULL::jsonb`
+      .mapWith(identity.retainedParameterBindings)
+      .as("retained_parameter_bindings"),
+    retainedIntendedEnabled: sql`NULL::boolean`
+      .mapWith(identity.retainedIntendedEnabled)
+      .as("retained_intended_enabled"),
+    retainedAppliedFingerprint: sql`NULL::varchar`
+      .mapWith(identity.retainedAppliedFingerprint)
+      .as("retained_applied_fingerprint"),
+    createdAt:
+      sql`${sql.param(values.createdAt, identity.createdAt)}::timestamp`
+        .mapWith(identity.createdAt)
+        .as("created_at"),
+    updatedAt:
+      sql`${sql.param(values.updatedAt, identity.updatedAt)}::timestamp`
+        .mapWith(identity.updatedAt)
+        .as("updated_at"),
+  };
+}
+
+/** Only the existing snapshot UPDATE can admit the dependent publications. */
+function formsReconfigurationValues(args: FormsReconfiguration, at: Date) {
+  const enabled =
+    args.expected.officialIntendedEnabled === true || args.expected.enabled;
+  const patch = {
+    ...refreshOfficialAutomationPatch(
+      args.expected,
+      { ...args.patch, enabled },
+      at,
+    ),
+    officialReconciliationStatus: "current" as const,
+  };
+  const next = { ...args.expected, ...patch };
+  const identitySource = formsIdentityPublicationSource(next, at);
+  const reset = googleFormsCursorMustReset(args.expected, next);
+  return { patch, next, identitySource, reset };
+}
+
 const commitOfficialFormsReconfiguration$ = command(
   async (
     { set },
@@ -117,62 +172,111 @@ const commitOfficialFormsReconfiguration$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
-    const enabled =
-      args.expected.officialIntendedEnabled === true || args.expected.enabled;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0194; new non-billing transactions are prohibited.
-    const committed = await db.transaction(async (tx) => {
-      const currentTime = nowDate();
-      const [updated] = await tx
-        .update(workflowAutomations)
-        .set({
-          ...refreshOfficialAutomationPatch(
-            args.expected,
-            { ...args.patch, enabled },
-            currentTime,
-          ),
-          officialReconciliationStatus: "current",
-        })
-        // The watch was prepared for the observed row, including its enabled
-        // state. A user pause or any other write since then wins; this
-        // reconfiguration then commits nothing and is retried from the new row.
-        .where(observedWorkflowAutomationCondition(args.expected))
-        .returning(workflowAutomationColumns());
-      if (!updated) {
-        return false;
-      }
-      if (googleFormsCursorMustReset(args.expected, updated)) {
-        await tx
-          .delete(googleFormsAutomationCursors)
-          .where(
-            eq(googleFormsAutomationCursors.automationId, args.expected.id),
-          );
-      }
-      const cursor = googleFormsCursorPublicationStatement(
-        updated,
-        args.seedCursor,
-        currentTime,
+    const at = nowDate();
+    const { patch, next, identitySource, reset } = formsReconfigurationValues(
+      args,
+      at,
+    );
+    const updated = db
+      .$with("reconfigured_forms_automation")
+      .as(
+        db
+          .update(workflowAutomations)
+          .set(patch)
+          .where(observedWorkflowAutomationCondition(args.expected))
+          .returning({ id: workflowAutomations.id }),
       );
-      if (cursor !== null) {
-        await tx.execute(cursor);
-      }
-      await tx
+    const admitted = exists(db.select({ id: updated.id }).from(updated));
+    const cursorStatement = googleFormsCursorPublicationStatement(
+      next,
+      args.seedCursor,
+      at,
+      { gate: admitted, reset },
+    );
+    const cursor = db
+      .$with("published_forms_cursor", {
+        automationId: googleFormsAutomationCursors.automationId,
+      })
+      .as(
+        cursorStatement ??
+          db
+            .select({
+              automationId: sql`${updated.id}`
+                .mapWith(googleFormsAutomationCursors.automationId)
+                .as("automation_id"),
+            })
+            .from(updated)
+            .where(sql`false`)
+            .getSQL(),
+      );
+    // Reset an old interval even when its new watch is absent. A successful
+    // upsert already replaced the interval, so these writes never share a row.
+    const removedCursor = db.$with("removed_forms_cursor").as(
+      db
+        .delete(googleFormsAutomationCursors)
+        .where(
+          and(
+            eq(googleFormsAutomationCursors.automationId, args.expected.id),
+            reset ? admitted : sql`false`,
+            notExists(db.select().from(cursor)),
+          ),
+        )
+        .returning({ automationId: googleFormsAutomationCursors.automationId }),
+    );
+    const identity = db.$with("published_forms_identity").as(
+      db
         .insert(officialWorkflowAutomationIdentities)
-        .values(activeIdentityValues(updated, currentTime))
+        .select(
+          db
+            .select({
+              id: identitySource.id,
+              workflowId: identitySource.workflowId,
+              automationId: identitySource.automationId,
+              blueprintKey: identitySource.blueprintKey,
+              state: identitySource.state,
+              retainedParameterBindings:
+                identitySource.retainedParameterBindings,
+              retainedIntendedEnabled: identitySource.retainedIntendedEnabled,
+              retainedAppliedFingerprint:
+                identitySource.retainedAppliedFingerprint,
+              createdAt: identitySource.createdAt,
+              updatedAt: identitySource.updatedAt,
+            })
+            .from(updated)
+            .where(
+              and(
+                gte(db.select({ value: count() }).from(cursor), 0),
+                gte(db.select({ value: count() }).from(removedCursor), 0),
+              ),
+            ),
+        )
         .onConflictDoUpdate({
           target: [
             officialWorkflowAutomationIdentities.workflowId,
             officialWorkflowAutomationIdentities.blueprintKey,
           ],
-          set: activeIdentityUpdate(updated.id, currentTime),
-        });
-      await tx
+          set: activeIdentityUpdate(next.id, at),
+        })
+        .returning({ id: officialWorkflowAutomationIdentities.id }),
+    );
+    const installation = db.$with("touched_forms_installation").as(
+      db
         .update(workflows)
-        .set({ updatedBy: args.userId, updatedAt: currentTime })
-        .where(eq(workflows.id, updated.workflowId));
-      return true;
-    });
+        .set({ updatedBy: args.userId, updatedAt: at })
+        .where(
+          and(
+            eq(workflows.id, next.workflowId),
+            exists(db.select({ id: identity.id }).from(identity)),
+          ),
+        )
+        .returning({ id: workflows.id }),
+    );
+    const [committed] = await db
+      .with(updated, cursor, removedCursor, identity, installation)
+      .select({ id: updated.id })
+      .from(updated);
     signal.throwIfAborted();
-    return committed;
+    return committed !== undefined;
   },
 );
 

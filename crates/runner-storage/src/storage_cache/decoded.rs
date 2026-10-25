@@ -12,9 +12,6 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 mod disk;
 
 const CAPACITY: usize = 64 * 1024 * 1024;
-// Persisted v1 entries cross Runner releases. Activation requires #42504's
-// deployed readers, disabled admission and finished foreground preparation on
-// incompatible Runners, plus a compatible Runner rollback floor.
 const MAX_COMPRESSED_BYTES: usize = 4 * 1024 * 1024;
 pub(super) const MAX_ADMITTED_FILES: usize = 4096;
 pub(super) const MAX_ADMITTED_STORAGE_BYTES: usize = 8 * 1024 * 1024;

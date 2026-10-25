@@ -35,10 +35,8 @@ import { mcpConnectorsRoutes } from "../signals/routes/mcp-connectors";
 import { mcpOAuthClientMetadataRoutes } from "../signals/routes/mcp-oauth-client-metadata";
 import { meModelProvidersDeleteRoutes } from "../signals/routes/me-model-providers-delete";
 import { meModelProviderAccountRoutes } from "../signals/routes/me-model-provider-accounts";
-import {
-  meModelProvidersListRoutes,
-  meThirdPartySubscriptionsListRoutes,
-} from "../signals/routes/me-model-providers-list";
+import { meModelProvidersListRoutes } from "../signals/routes/me-model-providers-list";
+import { meThirdPartySubscriptionsListRoutes } from "../signals/routes/me-model-providers-list";
 import { meModelProvidersResetSubscriptionRoutes } from "../signals/routes/me-model-providers-reset-subscription";
 import { meModelProvidersUpsertRoutes } from "../signals/routes/me-model-providers-upsert";
 import { integrationsGithubRoutes } from "../signals/routes/integrations-github";

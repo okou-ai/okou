@@ -3,7 +3,7 @@ import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution
 import { billingRunLifecycleConflictSet } from "@okouai/db/operations/billing-run-lifecycle";
 import { command } from "ccstate";
 import { count, isNotNull, min, ne, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as z from "zod";
 import {
   nullableDriverValueDecoder,
   pgIntegerDecoder,

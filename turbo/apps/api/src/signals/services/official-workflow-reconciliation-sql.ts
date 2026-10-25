@@ -1,7 +1,6 @@
 import type { OfficialWorkflowAcceptedDefinition } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import {
   officialWorkflowCatalogReleases,
   officialWorkflowCatalogState,
@@ -9,12 +8,7 @@ import {
 } from "@okouai/db/schema/official-workflow-catalog";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import {
-  officialWorkflowAutomationIdentities,
-  workflowWebhookAutomations,
-  workflows,
-} from "@okouai/db/schema/workflow";
-import { and, eq, sql, type SQL } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import * as z from "zod";
 
 import {
@@ -23,8 +17,6 @@ import {
   OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
   type AcceptedOfficialWorkflowCatalog,
 } from "./official-workflow-catalog-read.service";
-import type { OfficialAutomationRow } from "./official-workflow-installation.service";
-import type { OfficialAutomationEventPreparation } from "./workflow-automation.service";
 
 export const acceptedCatalogRowSchema = z.object({
   releaseId: z.string(),
@@ -107,52 +99,6 @@ export function acceptedRevisionReadStatement(
     WHERE ${identityCondition} LIMIT 1`;
 }
 
-/** Preserve existing webhook credentials; preparation is needed only for a new subtype. */
-export function officialWebhookSubtypeMutation(
-  desired: Pick<OfficialAutomationRow, "id" | "eventType">,
-  webhookExists: boolean,
-  credentials: OfficialAutomationEventPreparation["webhookCredentials"],
-  tierEligible: boolean,
-  currentTime: Date,
-) {
-  const automationCondition = eq(
-    workflowWebhookAutomations.automationId,
-    desired.id,
-  );
-  if (desired.eventType !== "webhook-received") {
-    return {
-      kind: "ready" as const,
-      statement: webhookExists
-        ? sql`DELETE FROM ${workflowWebhookAutomations} WHERE ${automationCondition}`
-        : null,
-    };
-  }
-  if (!tierEligible) {
-    return {
-      kind: "failed" as const,
-      message: "Webhook automations require a Team or Custom workspace",
-    };
-  }
-  const timestamp = currentTime.toISOString();
-  if (webhookExists) {
-    return {
-      kind: "ready" as const,
-      statement: sql`UPDATE ${workflowWebhookAutomations}
-      SET disabled_reason = NULL, updated_at = ${timestamp}::timestamp WHERE ${automationCondition}`,
-    };
-  }
-  if (!credentials) {
-    throw new Error("Missing prepared Official webhook credentials");
-  }
-  return {
-    kind: "ready" as const,
-    statement: sql`INSERT INTO ${workflowWebhookAutomations}
-    (automation_id, token_hash, encrypted_token, encrypted_secret, secret_last_four, created_at, updated_at)
-    VALUES (${desired.id}::uuid, ${credentials.tokenHash}, ${credentials.encryptedToken},
-      ${credentials.encryptedSecret}, ${credentials.secretLastFour}, ${timestamp}::timestamp, ${timestamp}::timestamp)`,
-  };
-}
-
 export const webhookTierRowSchema = z.object({
   entitlementExists: z.boolean(),
   orgExists: z.boolean(),
@@ -197,52 +143,6 @@ export function webhookTierFromRows(
     );
   }
   return z.boolean().parse(row.allowed);
-}
-
-export function installedWorkflowLockStatement(condition: SQL) {
-  return sql`SELECT ${workflows.id} AS id FROM ${workflows} WHERE ${condition} LIMIT 1 FOR UPDATE`;
-}
-
-export function activeAutomationIdentityLockStatement(condition: SQL) {
-  return sql`SELECT ${officialWorkflowAutomationIdentities.id} AS id FROM ${officialWorkflowAutomationIdentities}
-    WHERE ${condition} LIMIT 1 FOR UPDATE`;
-}
-
-export function automationWebhookReadStatement(automationId: string) {
-  return sql`SELECT ${workflowWebhookAutomations.automationId} AS id FROM ${workflowWebhookAutomations}
-    WHERE ${workflowWebhookAutomations.automationId} = ${automationId}::uuid LIMIT 1`;
-}
-
-export function activeAutomationIdentityUpsertStatement(
-  automation: OfficialAutomationRow,
-  currentTime: Date,
-) {
-  if (!automation.officialBlueprintKey) {
-    throw new Error("Official Workflow automation identity is incomplete");
-  }
-  const timestamp = currentTime.toISOString();
-  return sql`INSERT INTO ${officialWorkflowAutomationIdentities}
-    (id, workflow_id, automation_id, blueprint_key, state, retained_parameter_bindings,
-      retained_intended_enabled, retained_applied_fingerprint, created_at, updated_at)
-    VALUES (${automation.id}::uuid, ${automation.workflowId}::uuid, ${automation.id}::uuid,
-      ${automation.officialBlueprintKey}, 'active', NULL, NULL, NULL, ${timestamp}::timestamp, ${timestamp}::timestamp)
-    ON CONFLICT (workflow_id, blueprint_key) DO UPDATE SET automation_id = ${automation.id}::uuid,
-      state = 'active', retained_parameter_bindings = NULL, retained_intended_enabled = NULL,
-      retained_applied_fingerprint = NULL, updated_at = ${timestamp}::timestamp`;
-}
-
-export function installationUpdatedStatement(
-  workflowId: string,
-  userId: string,
-  currentTime: Date,
-) {
-  return sql`UPDATE ${workflows} SET updated_by = ${userId}, updated_at = ${currentTime.toISOString()}::timestamp
-    WHERE ${workflows.id} = ${workflowId}::uuid`;
-}
-
-export function deleteGoogleFormsCursorStatement(automationId: string) {
-  return sql`DELETE FROM ${googleFormsAutomationCursors}
-    WHERE ${googleFormsAutomationCursors.automationId} = ${automationId}::uuid`;
 }
 
 export interface AcceptedBlueprintIdentity {

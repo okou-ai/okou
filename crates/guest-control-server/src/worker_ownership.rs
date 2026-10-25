@@ -14,8 +14,8 @@ pub(crate) enum LazyConnectionWorkerSubmitError {
 }
 
 struct LazyConnectionWorkerState<Request> {
-    sender: Option<SyncSender<Request>>,
-    handle: Option<JoinHandle<()>>,
+    sender: SyncSender<Request>,
+    handle: JoinHandle<()>,
 }
 
 type LazyConnectionWorkerHandler<Request, Context> =
@@ -26,7 +26,7 @@ where
     Request: Send + 'static,
     Context: Clone + Send + 'static,
 {
-    state: Mutex<LazyConnectionWorkerState<Request>>,
+    state: Mutex<Option<LazyConnectionWorkerState<Request>>>,
     writer: GuestWriter,
     context: Context,
     handler: LazyConnectionWorkerHandler<Request, Context>,
@@ -50,10 +50,7 @@ where
         worker_label: &'static str,
     ) -> Self {
         Self {
-            state: Mutex::new(LazyConnectionWorkerState {
-                sender: None,
-                handle: None,
-            }),
+            state: Mutex::new(None),
             writer,
             context,
             handler,
@@ -84,8 +81,8 @@ where
 
     fn sender(&self) -> Result<SyncSender<Request>, LazyConnectionWorkerSubmitError> {
         let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
-        if let Some(sender) = &state.sender {
-            return Ok(sender.clone());
+        if let Some(state) = &*state {
+            return Ok(state.sender.clone());
         }
 
         // Admission bounds active plus queued work to one. The channel keeps
@@ -110,8 +107,10 @@ where
                 }
             })
             .map_err(LazyConnectionWorkerSubmitError::Start)?;
-        state.sender = Some(sender.clone());
-        state.handle = Some(handle);
+        *state = Some(LazyConnectionWorkerState {
+            sender: sender.clone(),
+            handle,
+        });
         Ok(sender)
     }
 }
@@ -129,11 +128,11 @@ where
             .state
             .get_mut()
             .unwrap_or_else(|error| error.into_inner());
-        drop(state.sender.take());
-        if let Some(handle) = state.handle.take()
-            && handle.join().is_err()
-        {
-            log("ERROR", &format!("{} panicked", self.worker_label));
+        if let Some(state) = state.take() {
+            drop(state.sender);
+            if state.handle.join().is_err() {
+                log("ERROR", &format!("{} panicked", self.worker_label));
+            }
         }
     }
 }

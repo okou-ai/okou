@@ -1,4 +1,11 @@
-import { command, computed, state, type Computed } from "ccstate";
+import {
+  command,
+  computed,
+  state,
+  type Command,
+  type Computed,
+  type State,
+} from "ccstate";
 import { debounceCommand } from "../command-scheduling.ts";
 import {
   connectorAccountTargetKey,
@@ -9,6 +16,8 @@ import {
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import { setAblyPayloadLoop$ } from "../realtime.ts";
+import { isConnectorChangedPayloadFor } from "../connector-change.ts";
 import { resetSignal } from "../utils.ts";
 import { userConnectedConnectors$ } from "./connector-overview.ts";
 
@@ -155,6 +164,42 @@ function accountPageRequest(signal: AbortSignal) {
   };
 }
 
+function createConnectorAccountQuerySubscription(
+  query$: State<ConnectorAccountQuery | null>,
+  reload$: Command<void, [AbortSignal]>,
+) {
+  const invalidateOnSubscribe$ = command(({ set }, signal: AbortSignal) => {
+    set(reload$, signal);
+    return false;
+  });
+  const invalidateFromRealtime$ = command(
+    ({ get, set }, payload: unknown, signal: AbortSignal) => {
+      const target = get(query$)?.target;
+      if (
+        target?.kind === "builtin" &&
+        isConnectorChangedPayloadFor(payload, target.connectorSlug)
+      ) {
+        set(reload$, signal);
+      }
+      return false;
+    },
+  );
+  return command(({ get, set }, signal: AbortSignal) => {
+    if (get(query$)?.target.kind === "builtin") {
+      set(
+        setAblyPayloadLoop$,
+        {
+          topic: "connector:changed",
+          loopCommand$: invalidateFromRealtime$,
+          initializeCommand$: invalidateOnSubscribe$,
+          options: { runOnSubscribe: true },
+        },
+        signal,
+      );
+    }
+  });
+}
+
 function createConnectorAccountQuerySignals() {
   const query$ = state<ConnectorAccountQuery | null>(null);
   const resetQuerySignal$ = resetSignal();
@@ -187,12 +232,14 @@ function createConnectorAccountQuerySignals() {
       set(search$, "");
       set(lastPage$, null);
       set(debouncedSearch$, Promise.resolve(""));
+      const querySignal = set(resetQuerySignal$, ownerSignal);
       set(query$, {
         target,
         search: "",
         debounce: false,
-        request: accountPageRequest(set(resetQuerySignal$, ownerSignal)),
+        request: accountPageRequest(querySignal),
       });
+      set(subscribe$, querySignal);
     },
   );
   const clearTarget$ = command(({ set }) => {
@@ -250,6 +297,7 @@ function createConnectorAccountQuerySignals() {
       request: current.request,
     });
   });
+  const subscribe$ = createConnectorAccountQuerySubscription(query$, reload$);
   return {
     query$,
     lastPage$,

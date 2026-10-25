@@ -14,6 +14,8 @@ import {
   type CreateAgentSessionFromServicesOptions,
   type SessionManager,
 } from "@earendil-works/pi-coding-agent";
+import { join } from "node:path";
+import { createPiMemoryReader } from "./memory-reader-node";
 import type { PiPreheatedResourceSnapshot } from "./api-types";
 import { resolvePiAgentModel } from "./model-catalog";
 import {
@@ -160,6 +162,12 @@ export async function createPiAgentSessionForRuntime(
     },
     signal,
   );
+  // Discovery snapshots contain resources, never personal Memory. Guest has
+  // already materialized this Run's selected member version.
+  const memory = await createPiMemoryReader(join(args.agentDir, "memory"));
+  process.stderr.write(
+    `${JSON.stringify({ type: "pi_memory_read", ...memory.observation })}\n`,
+  );
   const resourceSnapshot = args.resourceSnapshot;
   const services = await measurePiPreparation(
     args.onPreparationTiming,
@@ -189,9 +197,12 @@ export async function createPiAgentSessionForRuntime(
               ? piPreheatedResourceLoaderOptions({
                   snapshot: resourceSnapshot,
                   appendSystemPrompt,
-                  systemPrompt,
+                  systemPrompt: `${systemPrompt}\n\n${memory.prompt}`,
                 })
-              : sandboxResourceLoaderOptions;
+              : {
+                  ...sandboxResourceLoaderOptions,
+                  systemPrompt: `${systemPrompt}\n\n${memory.prompt}`,
+                };
           },
           signal,
         ),
@@ -239,7 +250,7 @@ export async function createPiAgentSessionForRuntime(
           args.sessionManager,
           args.model.thinkingLevel,
         ),
-        customTools: [createBashTool(args.cwd, bashOptions)],
+        customTools: [createBashTool(args.cwd, bashOptions), ...memory.tools],
       });
     },
     signal,

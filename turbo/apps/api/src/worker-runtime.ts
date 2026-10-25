@@ -16,12 +16,17 @@ import {
   filterTelegramAuthSentryBreadcrumb,
   filterTelegramAuthSentryEvent,
 } from "./lib/telegram-auth-telemetry";
-import { withRequestRuntime, type RequestRuntime } from "./lib/request-runtime";
+import {
+  withRequestRuntime,
+  type RequestQuerySpan,
+  type RequestRuntime,
+} from "./lib/request-runtime";
 import type { Hono } from "hono";
 import { createDeferredPromise, settleIncludingAbort } from "./signals/utils";
 
 interface WorkerBindings {
   readonly HYPERDRIVE: Hyperdrive;
+  readonly API_NATIVE_TELEMETRY?: string;
 }
 
 /** Keep the pool alive until both response streaming and registered work finish. */
@@ -93,6 +98,38 @@ function ownResponse(
   );
 }
 
+function traceWorkerQuery(
+  name: string,
+  sql: string | undefined,
+  execute: (span: RequestQuerySpan) => Promise<unknown>,
+): Promise<unknown> {
+  return tracing.enterSpan(name, async (span) => {
+    span.setAttributes({
+      "db.system": "postgresql",
+      "db.system.name": "postgresql",
+      "db.statement": sql,
+      "db.query.text": sql,
+      "okou.runtime": "cloudflare-workers",
+    });
+    const result = await settleIncludingAbort(() => {
+      return execute(span);
+    });
+    if (result.ok) {
+      span.setAttribute("okou.outcome", "success");
+      return result.value;
+    }
+    // Native custom spans have no setStatus API yet. Keep an explicit
+    // outcome; missing OTel status must not be interpreted as success.
+    // Never include query parameter values in telemetry attributes.
+    span.setAttribute("okou.outcome", "error");
+    span.setAttribute(
+      "error.type",
+      result.error instanceof Error ? result.error.name : "unknown",
+    );
+    throw result.error;
+  });
+}
+
 function workerFetch(
   request: Request,
   bindings: WorkerBindings,
@@ -121,7 +158,12 @@ function workerFetch(
   };
 
   return tracing.enterSpan("api.request", (requestSpan) => {
+    requestSpan.setAttributes({
+      "server.address": new URL(request.url).hostname,
+      "okou.api.commit_sha": env("GIT_COMMIT_SHA"),
+    });
     const runtime: RequestRuntime = {
+      nativeTelemetry: bindings.API_NATIVE_TELEMETRY === "true",
       database() {
         if (closing) {
           throw new Error("Worker request database is closed");
@@ -157,31 +199,7 @@ function workerFetch(
         background.add(tracked);
         context.waitUntil(tracked);
       },
-      traceQuery(name, sql, execute) {
-        return tracing.enterSpan(name, async (span) => {
-          span.setAttributes({
-            "db.system": "postgresql",
-            "db.system.name": "postgresql",
-            "db.statement": sql,
-            "db.query.text": sql,
-            "okou.runtime": "cloudflare-workers",
-          });
-          const result = await settleIncludingAbort(execute);
-          if (result.ok) {
-            span.setAttribute("okou.outcome", "success");
-            return result.value;
-          }
-          // Native custom spans have no setStatus API yet. Keep an explicit
-          // outcome; missing OTel status must not be interpreted as success.
-          // Never include query parameter values in telemetry attributes.
-          span.setAttribute("okou.outcome", "error");
-          span.setAttribute(
-            "error.type",
-            result.error instanceof Error ? result.error.name : "unknown",
-          );
-          throw result.error;
-        });
-      },
+      traceQuery: traceWorkerQuery,
       observeHttp(method, route, status) {
         requestSpan.setAttributes({
           "http.request.method": method,

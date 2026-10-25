@@ -492,7 +492,7 @@ struct BackgroundFillCoordinatorInner {
 
 struct BackgroundFillCoordinatorLifecycle {
     inner: Arc<BackgroundFillCoordinatorInner>,
-    supervisor: Mutex<Option<JoinHandle<()>>>,
+    supervisor: tokio::sync::Mutex<Option<JoinHandle<()>>>,
 }
 
 /// Runner-owned coordinator for deferred storage-cache warming.
@@ -550,15 +550,11 @@ impl StorageCacheBackgroundFillCoordinator {
             classifiers: TaskTracker::new(),
             classification_slot: Arc::new(Semaphore::new(1)),
         });
+        let supervisor = tokio::spawn(run_background_fill_supervisor(Arc::clone(&inner), receiver));
         let lifecycle = Arc::new(BackgroundFillCoordinatorLifecycle {
-            inner: Arc::clone(&inner),
-            supervisor: Mutex::new(None),
+            inner,
+            supervisor: tokio::sync::Mutex::new(Some(supervisor)),
         });
-        let supervisor = tokio::spawn(run_background_fill_supervisor(inner, receiver));
-        *lifecycle
-            .supervisor
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(supervisor);
         Ok(Self { lifecycle })
     }
 
@@ -745,6 +741,9 @@ impl StorageCacheBackgroundFillCoordinator {
 
     /// Close admissions, cancel queued work, drain active atomic operations,
     /// and join all terminal telemetry reports before returning.
+    ///
+    /// Cancelling one observer leaves the original supervisor join owned here.
+    /// Concurrent and replacement observers wait for the same accepted work.
     pub async fn shutdown(&self) {
         {
             let mut state = self
@@ -753,37 +752,30 @@ impl StorageCacheBackgroundFillCoordinator {
                 .state
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            if state.closed {
-                return;
-            }
             state.closed = true;
             self.lifecycle.inner.classifiers.close();
         }
-        let supervisor = self
-            .lifecycle
-            .supervisor
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take();
-        let Some(supervisor) = supervisor else {
-            return;
-        };
-
-        let (complete, completed) = oneshot::channel();
-        if self
-            .lifecycle
-            .inner
-            .commands
-            .send(BackgroundFillCommand::Shutdown(complete))
-            .await
-            .is_ok()
         {
-            let _ = completed.await;
-        } else {
-            self.lifecycle.inner.shutdown.cancel();
-        }
-        if let Err(error) = supervisor.await {
-            warn!(%error, "storage_cache: background fill supervisor failed during shutdown");
+            let mut owner = self.lifecycle.supervisor.lock().await;
+            if let Some(supervisor) = owner.as_mut() {
+                let (complete, completed) = oneshot::channel();
+                if self
+                    .lifecycle
+                    .inner
+                    .commands
+                    .send(BackgroundFillCommand::Shutdown(complete))
+                    .await
+                    .is_ok()
+                {
+                    let _ = completed.await;
+                } else {
+                    self.lifecycle.inner.shutdown.cancel();
+                }
+                if let Err(error) = supervisor.await {
+                    warn!(%error, "storage_cache: background fill supervisor failed during shutdown");
+                }
+                *owner = None;
+            }
         }
         self.lifecycle.inner.classifiers.wait().await;
     }
@@ -838,12 +830,7 @@ impl Drop for BackgroundFillCoordinatorLifecycle {
             .closed = true;
         self.inner.classifiers.close();
         self.inner.shutdown.cancel();
-        if let Some(supervisor) = self
-            .supervisor
-            .get_mut()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take()
-        {
+        if let Some(supervisor) = self.supervisor.get_mut().take() {
             supervisor.abort();
         }
     }
@@ -4924,7 +4911,7 @@ mod tests {
                 let entry = home
                     .storages_dir()
                     .join(short_digest("name"))
-                    .join(format!("decoded-v1-{}", short_digest("v1")));
+                    .join(format!("decoded-v2-{}", short_digest("v1")));
                 std::fs::write(entry.join("index.json"), b"{").unwrap();
             }
             let cache = decoded::DecodedCache::new(home.clone());
@@ -8512,19 +8499,26 @@ mod tests {
             BackgroundFillAdmission::Accepted
         );
 
-        let shutdown_coordinator = coordinator.clone();
-        let shutdown_task = tokio::spawn(async move {
-            shutdown_coordinator.shutdown().await;
-        });
-        tokio::time::timeout(Duration::from_secs(5), async {
-            while !coordinator.is_closed_for_test() {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .expect("shutdown should close admissions before draining workers");
+        let first_coordinator = coordinator.clone();
+        let mut first_shutdown = Box::pin(first_coordinator.shutdown());
+        let first_pending = futures_util::poll!(first_shutdown.as_mut()).is_pending();
+        let admission_closed = coordinator.is_closed_for_test();
+
+        let concurrent_coordinator = coordinator.clone();
+        let mut concurrent_shutdown = Box::pin(concurrent_coordinator.shutdown());
+        let concurrent_pending = futures_util::poll!(concurrent_shutdown.as_mut()).is_pending();
+        drop(first_shutdown);
+        drop(concurrent_shutdown);
+
+        let mut replacement_shutdown = Box::pin(coordinator.shutdown());
+        let replacement_pending = futures_util::poll!(replacement_shutdown.as_mut()).is_pending();
         server.release.add_permits(1);
-        shutdown_task.await.expect("shutdown task should not panic");
+        // A prematurely completed future must not be polled again during cleanup.
+        if replacement_pending {
+            tokio::time::timeout(Duration::from_secs(5), replacement_shutdown)
+                .await
+                .expect("replacement shutdown should join the original accepted work");
+        }
         join_raw_http_task(server.task, "active archive server during shutdown")
             .await
             .expect("archive server should not fail");
@@ -8541,6 +8535,16 @@ mod tests {
         assert!(reports.iter().any(|request| {
             request.contains(r#""action_type":"storage_cache_background_fill_shutdown_cancelled""#)
         }));
+        // Drain real publication and reports before asserting the held-state observations.
+        assert!(
+            admission_closed,
+            "shutdown must close admissions before waiting"
+        );
+        assert_eq!(
+            (first_pending, concurrent_pending, replacement_pending),
+            (true, true, true),
+            "every shutdown observer must wait for the original held archive work"
+        );
     }
 
     #[test]

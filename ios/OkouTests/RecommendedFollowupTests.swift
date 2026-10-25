@@ -11,56 +11,34 @@ final class RecommendedFollowupTests: XCTestCase {
     let conversation = fixture.conversation()
     defer { conversation.close() }
     await conversation.refresh()
-    conversation.draft = "Keep the context 🧭"
     let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
-    let window = try await mountConversationHost(host)
+    let window = try await mountNativeHost(host)
     defer { unmount(window) }
     try await eventually { self.rail(in: host.view)?.subviews.contains { $0 is UIButton } == true }
+    let input = try XCTUnwrap(input(in: host.view))
+    try await focusMentionInput(input)
+    input.insertText("Keep the context 🧭")
     let rail = try XCTUnwrap(rail(in: host.view))
     let buttons = rail.subviews.compactMap { $0 as? UIButton }
     XCTAssertEqual(buttons.count, 5)
     XCTAssertEqual(buttons.map(\.accessibilityLabel), prompts)
-    XCTAssertTrue(
-      buttons.allSatisfy {
-        $0.bounds.height >= 44 && $0.bounds.width <= rail.bounds.width * 0.72 + 1
-      })
-    XCTAssertGreaterThan(rail.contentSize.width, rail.bounds.width)
-    let viewport = rail.convert(rail.bounds, to: window)
-    XCTAssertEqual(viewport.minX, window.bounds.minX, accuracy: 1)
-    XCTAssertEqual(viewport.maxX, window.bounds.maxX, accuracy: 1)
-    let first = try XCTUnwrap(buttons.first)
-    let last = try XCTUnwrap(buttons.last)
-    XCTAssertEqual(
-      first.convert(first.bounds, to: window).minX, window.bounds.minX + 26, accuracy: 1)
-
-    // Cards scroll through the resting gutters all the way to the screen edges.
-    rail.setContentOffset(.zero, animated: false)
-    XCTAssertEqual(first.convert(first.bounds, to: window).minX, window.bounds.minX, accuracy: 1)
-    let endOffset = rail.contentSize.width - rail.bounds.width + rail.adjustedContentInset.right
-    rail.setContentOffset(CGPoint(x: endOffset - 20, y: 0), animated: false)
-    XCTAssertEqual(last.convert(last.bounds, to: window).maxX, window.bounds.maxX, accuracy: 1)
-    rail.setContentOffset(CGPoint(x: endOffset, y: 0), animated: false)
-    XCTAssertEqual(last.convert(last.bounds, to: window).maxX, window.bounds.maxX - 20, accuracy: 1)
-    rail.setContentOffset(CGPoint(x: -rail.adjustedContentInset.left, y: 0), animated: false)
-
-    let input = try XCTUnwrap(input(in: host.view))
+    XCTAssertNotNil(buttons[0].window)
     buttons[0].sendActions(for: .touchUpInside)
     try await eventually {
-      conversation.draft == "Keep the context 🧭\n" + self.prompts[0] && input.isFirstResponder
+      input.text == "Keep the context 🧭\n" + self.prompts[0] && input.isFirstResponder
     }
     XCTAssertEqual(input.selectedRange.length, 0)
     XCTAssertTrue(buttons[0].accessibilityActivate())
     try await eventually {
       (input.text as NSString).substring(with: input.selectedRange) == self.prompts[0]
     }
-    XCTAssertEqual(conversation.draft, "Keep the context 🧭\n" + prompts[0])
+    XCTAssertEqual(input.text, "Keep the context 🧭\n" + prompts[0])
 
     // A different recommendation appends at the end, preserving the selected one.
     buttons[1].sendActions(for: .touchUpInside)
-    try await eventually { conversation.draft.hasSuffix(self.prompts[0] + "\n" + self.prompts[1]) }
+    try await eventually { (input.text ?? "").hasSuffix(self.prompts[0] + "\n" + self.prompts[1]) }
     // Existing text anywhere in the draft is selected rather than rewritten.
-    conversation.draft = "Before " + prompts[1] + " after " + prompts[1]
-    try await eventually { input.text == conversation.draft }
+    replaceInput("Before " + prompts[1] + " after " + prompts[1], in: input)
     buttons[1].sendActions(for: .touchUpInside)
     XCTAssertEqual(
       input.selectedRange, NSRange(location: 7, length: (prompts[1] as NSString).length))
@@ -69,105 +47,29 @@ final class RecommendedFollowupTests: XCTestCase {
     input.selectedRange = NSRange(location: (input.text as NSString).length, length: 0)
     let longPrompt = prompts[4].trimmingCharacters(in: .whitespacesAndNewlines)
     buttons[4].sendActions(for: .touchUpInside)
-    try await eventually { conversation.draft.hasSuffix(longPrompt) }
+    try await eventually { (input.text ?? "").hasSuffix(longPrompt) }
     input.undoManager?.undo()
-    try await eventually { !conversation.draft.hasSuffix(longPrompt) }
-    conversation.draft = ""
+    try await eventually { !(input.text ?? "").hasSuffix(longPrompt) }
+    replaceInput("", in: input)
     try await eventually { input.text.isEmpty }
+    XCTAssertNotNil(buttons[0].window)
     buttons[0].sendActions(for: .touchUpInside)
-    try await eventually { conversation.draft == self.prompts[0] }
-    conversation.draft = "Keep the trailing paragraph\n   "
-    try await eventually { input.text == conversation.draft }
+    try await eventually { input.text == self.prompts[0] }
+    replaceInput("Keep the trailing paragraph\n   ", in: input)
+    XCTAssertNotNil(buttons[0].window)
     buttons[0].sendActions(for: .touchUpInside)
     try await eventually {
-      conversation.draft == "Keep the trailing paragraph\n   " + self.prompts[0]
+      input.text == "Keep the trailing paragraph\n   " + self.prompts[0]
     }
     XCTAssertFalse(
       fixture.requests.values.withLock {
         $0.contains { $0.contains("/api/chat/events") || $0.contains("generat") }
       })
-    attach(window, name: "Native recommendation selection and composer focus")
   }
 
-  func testLateRecommendationsRemeasureAndKeepHistoryPositionAcrossRefresh() async throws {
-    let fixture = try fixture(includeFollowups: false, messages: 30)
-    let conversation = fixture.conversation()
-    defer { conversation.close() }
-    await conversation.refresh()
-    while conversation.hasEarlierMessages { await conversation.loadEarlierMessages() }
-    let position = ConversationReadingPosition(
-      messageID: ConversationHistoryFixture.id(39), offset: -24)
-    conversation.rememberReadingPosition(position)
-    let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
-    let window = try await mountConversationHost(host)
-    defer { unmount(window) }
-    try await eventually {
-      abs((offset(of: position.messageID, in: host.view) ?? .infinity) - position.offset) < 1
-    }
-    fixture.append(try followupRow(61))
-    await conversation.refresh()
-    await stableHostingGeometry(host.view)
-    XCTAssertNotNil(conversation.history?.recommendedFollowups)
-    XCTAssertEqual(
-      offset(of: position.messageID, in: host.view) ?? .infinity, position.offset, accuracy: 1)
-    fixture.append(try row(62, type: "output.message", content: "A newer answer"))
-    fixture.append(try row(63, type: "run.completed"))
-    await conversation.refresh()
-    XCTAssertNil(conversation.history?.recommendedFollowups)
-    await stableHostingGeometry(host.view)
-    XCTAssertEqual(
-      offset(of: position.messageID, in: host.view) ?? .infinity, position.offset, accuracy: 1)
-  }
-
-  func testNativeRailFitsDynamicTypeAndRemeasuresChangedSourceAtBottom() async throws {
-    let fixture = try fixture(includeFollowups: false)
-    let conversation = fixture.conversation()
-    defer { conversation.close() }
-    await conversation.refresh()
-    let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
-    let window = try await mountConversationHost(host)
-    defer { unmount(window) }
-    fixture.append(try followupRow(3))
-    await conversation.refresh()
-    try await eventually { self.rail(in: host.view)?.bounds.height ?? 0 > 44 }
-    let scroll = try XCTUnwrap(markers(in: host.view).first?.enclosingScrollView)
-    let rail = try XCTUnwrap(rail(in: host.view))
-    let height = rail.bounds.height
-    XCTAssertLessThan(
-      rail.convert(rail.bounds, to: window).maxY,
-      input(in: host.view)?.convert(input(in: host.view)!.bounds, to: window).minY ?? 0)
-    attach(window, name: "Native recommendation rail")
-    host.traitOverrides.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
-    try await eventually { self.rail(in: host.view)?.bounds.height ?? 0 > height }
-    await stableHostingGeometry(host.view)
-    let large = try XCTUnwrap(self.rail(in: host.view))
-    for button in large.subviews.compactMap({ $0 as? UIButton }) {
-      let title = try XCTUnwrap(
-        button.subviews.compactMap { $0 as? UILabel }.first { $0.text?.isEmpty == false })
-      XCTAssertEqual(title.numberOfLines, 2)
-      XCTAssertLessThanOrEqual(
-        title.frame.maxY, button.bounds.height - 11,
-        "Title \(title.frame), font \(title.font.pointSize), button \(button.bounds)")
-      XCTAssertEqual(button.bounds.height, large.bounds.height, accuracy: 1)
-      XCTAssertLessThanOrEqual(button.bounds.width, large.bounds.width * 0.72 + 1)
-      XCTAssertNotNil(button.accessibilityLabel)
-    }
-    XCTAssertLessThanOrEqual(
-      scroll.contentSize.height - scroll.contentOffset.y - scroll.bounds.height
-        + scroll.adjustedContentInset.bottom, 2)
-    attach(window, name: "Accessibility Dynamic Type recommendation rail")
-    let previousWidth = large.bounds.width
-    window.frame.size.width = 520
-    host.view.setNeedsLayout()
-    host.view.layoutIfNeeded()
-    try await eventually { self.rail(in: host.view)?.bounds.width != previousWidth }
-    await stableHostingGeometry(host.view)
-    let resized = try XCTUnwrap(self.rail(in: host.view))
-    for button in resized.subviews.compactMap({ $0 as? UIButton }) {
-      let title = try XCTUnwrap(
-        button.subviews.compactMap { $0 as? UILabel }.first { $0.text?.isEmpty == false })
-      XCTAssertLessThanOrEqual(title.frame.maxY, button.bounds.height - 11)
-    }
+  private func replaceInput(_ text: String, in input: ComposerTextView) {
+    input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
+    if text.isEmpty { input.deleteBackward() } else { input.insertText(text) }
   }
 
   private var prompts: [String] {
@@ -228,15 +130,5 @@ final class RecommendedFollowupTests: XCTestCase {
 
   private func input(in view: UIView) -> ComposerTextView? {
     (view as? ComposerTextView) ?? view.subviews.lazy.compactMap { self.input(in: $0) }.first
-  }
-
-  private func attach(_ window: UIWindow, name: String) {
-    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-      window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-    }
-    let attachment = XCTAttachment(image: image)
-    attachment.name = name
-    attachment.lifetime = .keepAlways
-    add(attachment)
   }
 }

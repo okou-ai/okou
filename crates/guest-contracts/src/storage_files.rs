@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 use std::io::{self, Read};
-use std::path::{Component, Path};
+use std::path::Path;
 
 /// Maximum encoded files payload, including metadata.
 pub const MAX_PAYLOAD_BYTES: usize = 15 * 1024 * 1024;
@@ -29,123 +29,8 @@ pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 /// Maximum complete binary helper input.
 pub const MAX_INPUT_BYTES: usize = 16 + MAX_MANIFEST_BYTES + MAX_PAYLOAD_BYTES;
 
-/// Whether another manifest entry owns paths needed by a decoded mount.
-///
-/// Storage and artifacts own their whole mount. Callers exclude only the decoded
-/// entry itself, retaining conflicts with other entries at the same path.
-pub fn decoded_mount_conflicts(target: &Path, mount: &Path) -> bool {
-    !absolute_mount(target)
-        || !absolute_mount(mount)
-        || target.starts_with(mount)
-        || mount.starts_with(target)
-}
-
-/// Validate decoded ownership against the complete manifest before transport splitting.
-pub fn validate_bindings<'a>(
-    manifest: &crate::storage_manifest::Manifest,
-    mounts: impl IntoIterator<Item = &'a str>,
-) -> io::Result<()> {
-    let mut manifest_mounts = HashSet::new();
-    for mount in manifest
-        .storages
-        .iter()
-        .map(|entry| entry.mount_path.as_str())
-        .chain(
-            manifest
-                .artifacts
-                .iter()
-                .map(|entry| entry.mount_path.as_str()),
-        )
-    {
-        if !manifest_mounts.insert(mount) {
-            return Err(io::Error::other("duplicate storage manifest mount"));
-        }
-    }
-    let mut selected = HashSet::new();
-    for mount in mounts {
-        if !selected.insert(mount) {
-            return Err(io::Error::other("duplicate decoded mount"));
-        }
-        let storage = manifest
-            .storages
-            .iter()
-            .enumerate()
-            .find(|(_, entry)| entry.mount_path == mount);
-        let artifact = manifest
-            .artifacts
-            .iter()
-            .enumerate()
-            .find(|(_, entry)| entry.mount_path == mount);
-        let binding = match (storage, artifact) {
-            (Some((index, entry)), None) => {
-                if entry.cached || !valid_archive_url(entry.archive_url.as_deref()) {
-                    return Err(io::Error::other(
-                        "decoded storage source is not an ordinary download",
-                    ));
-                }
-                DecodedBinding::Storage(index)
-            }
-            (None, Some((index, entry))) => {
-                if entry.empty
-                    || entry.cached
-                    || !valid_archive_url(entry.archive_url.as_deref())
-                    || !present_identity(&entry.vas_storage_name)
-                    || !present_identity(&entry.vas_storage_id)
-                    || !present_identity(&entry.vas_version_id)
-                {
-                    return Err(io::Error::other(
-                        "decoded artifact source is not a fresh complete download",
-                    ));
-                }
-                DecodedBinding::Artifact(index)
-            }
-            (None, None) => return Err(io::Error::other("decoded mount absent")),
-            (Some(_), Some(_)) => {
-                return Err(io::Error::other("duplicate storage manifest mount"));
-            }
-        };
-        let target = Path::new(mount);
-        for (other_index, other) in manifest.storages.iter().enumerate() {
-            if matches!(binding, DecodedBinding::Storage(index) if index == other_index) {
-                continue;
-            }
-            if decoded_mount_conflicts(target, Path::new(&other.mount_path)) {
-                return Err(io::Error::other("decoded mount overlaps another mount"));
-            }
-        }
-        for (other_index, other) in manifest.artifacts.iter().enumerate() {
-            if matches!(binding, DecodedBinding::Artifact(index) if index == other_index) {
-                continue;
-            }
-            if decoded_mount_conflicts(target, Path::new(&other.mount_path)) {
-                return Err(io::Error::other("decoded mount overlaps another mount"));
-            }
-        }
-    }
-    Ok(())
-}
-
-#[derive(Clone, Copy)]
-enum DecodedBinding {
-    Storage(usize),
-    Artifact(usize),
-}
-
-fn valid_archive_url(url: Option<&str>) -> bool {
-    url.is_some_and(|url| !url.is_empty() && url != "null")
-}
-
-fn present_identity(value: &Option<String>) -> bool {
-    value.as_deref().is_some_and(|value| !value.is_empty())
-}
-
-fn absolute_mount(path: &Path) -> bool {
-    path.is_absolute()
-        && !path.as_os_str().as_encoded_bytes().contains(&0)
-        && path
-            .components()
-            .all(|part| matches!(part, Component::RootDir | Component::Normal(_)))
-}
+mod bindings;
+pub use bindings::{conflicting_mounts, validate_bindings};
 
 /// Build binary helper input containing a canonical manifest and decoded groups.
 pub fn encode_input(manifest: &[u8], groups: &[(&str, &[StorageFile])]) -> io::Result<Vec<u8>> {
@@ -202,55 +87,8 @@ fn invalid() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, "invalid decoded storage files")
 }
 
-/// Validate the admitted regular-file shape without touching the filesystem.
-pub fn validate_files(files: &[StorageFile]) -> io::Result<()> {
-    if files.is_empty() || files.len() > MAX_FILES {
-        return Err(invalid());
-    }
-    let mut paths = Vec::with_capacity(files.len());
-    let mut total = 0usize;
-    let mut path_bytes = 0usize;
-    for file in files {
-        let path = Path::new(&file.path);
-        if file.path.is_empty()
-            || file.path.len() > MAX_PATH_BYTES
-            || file.path.as_bytes().contains(&0)
-            || path
-                .components()
-                .any(|c| !matches!(c, Component::Normal(_)))
-            || path
-                .components()
-                .collect::<std::path::PathBuf>()
-                .as_os_str()
-                != path.as_os_str()
-            || file.mode & !0o777 != 0
-            || file.mtime > i64::MAX as u64
-            || file.content.len() > MAX_FILE_BYTES
-        {
-            return Err(invalid());
-        }
-        total = total.checked_add(file.content.len()).ok_or_else(invalid)?;
-        path_bytes = path_bytes
-            .checked_add(file.path.len())
-            .ok_or_else(invalid)?;
-        if total > MAX_STORAGE_BYTES || path_bytes > MAX_TOTAL_PATH_BYTES {
-            return Err(invalid());
-        }
-        paths.push(path);
-    }
-    // Path ordering compares components, keeping an ancestor adjacent to its first
-    // descendant even when a lexical distractor (such as "a-b") is present.
-    // Sort borrowed paths only: the caller's file/write order remains unchanged.
-    paths.sort_unstable();
-    if paths
-        .iter()
-        .zip(paths.iter().skip(1))
-        .any(|(ancestor, descendant)| descendant.starts_with(ancestor))
-    {
-        return Err(invalid());
-    }
-    Ok(())
-}
+mod validation;
+pub use validation::validate_files;
 
 /// Encode a complete bounded set of mount groups.
 pub fn encode(groups: &[(&str, &[StorageFile])]) -> io::Result<Vec<u8>> {

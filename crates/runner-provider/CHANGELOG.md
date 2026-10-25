@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.11.15](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.14...runner-provider-v0.11.15) (2026-10-25)
+
+
+### Bug Fixes
+
+* **runner-provider:** bound shared api error diagnostics ([#42907](https://github.com/okou-ai/okou/issues/42907)) ([a361cd1](https://github.com/okou-ai/okou/commit/a361cd17f5fc369e156347e6340dd57ef02a5181))
+
+## [0.11.14](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.13...runner-provider-v0.11.14) (2026-10-25)
+
+## [0.11.13](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.12...runner-provider-v0.11.13) (2026-10-25)
+
+## [0.11.12](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.11...runner-provider-v0.11.12) (2026-10-25)
+
+## [0.11.11](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.10...runner-provider-v0.11.11) (2026-10-23)
+
 ## [0.11.10](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.9...runner-provider-v0.11.10) (2026-10-23)
 
 ## [0.11.9](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.8...runner-provider-v0.11.9) (2026-10-23)

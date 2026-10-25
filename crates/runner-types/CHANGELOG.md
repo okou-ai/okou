@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.13](https://github.com/okou-ai/okou/compare/runner-types-v0.9.12...runner-types-v0.9.13) (2026-10-25)
+
+## [0.9.12](https://github.com/okou-ai/okou/compare/runner-types-v0.9.11...runner-types-v0.9.12) (2026-10-25)
+
+## [0.9.11](https://github.com/okou-ai/okou/compare/runner-types-v0.9.10...runner-types-v0.9.11) (2026-10-25)
+
+## [0.9.10](https://github.com/okou-ai/okou/compare/runner-types-v0.9.9...runner-types-v0.9.10) (2026-10-23)
+
+
+### Refactoring
+
+* **runner:** retire named instruction fingerprint compatibility ([#42626](https://github.com/okou-ai/okou/issues/42626)) ([364daef](https://github.com/okou-ai/okou/commit/364daef72931549bf823f05dfd2636d8d052032d))
+
 ## [0.9.9](https://github.com/okou-ai/okou/compare/runner-types-v0.9.8...runner-types-v0.9.9) (2026-10-23)
 
 

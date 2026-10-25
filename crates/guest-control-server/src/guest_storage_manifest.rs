@@ -1,12 +1,10 @@
 use guest_contracts::storage_resources::StorageResourceUsage;
 use serde::{Serialize, Serializer};
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
-use std::process::ChildStdin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use guest_control_proto::{
@@ -18,6 +16,7 @@ use crate::contained_command::{
 };
 use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::error::to_io_error;
+use crate::helper_input::FixedInputWriter;
 use crate::log::log;
 use crate::process::{extract_exit_code, kill_and_reap_child};
 use crate::process_containment::{
@@ -26,7 +25,7 @@ use crate::process_containment::{
 };
 use crate::quiesce::OperationGuard;
 use crate::wait::{
-    WaitOutcome, await_drain_deadline, wait_with_kill_timeout_or_connection_cancelled,
+    WaitOutcome, collect_bounded_output, wait_with_kill_timeout_or_connection_cancelled,
 };
 pub(crate) use crate::worker_ownership::LazyConnectionWorkerSubmitError as GuestStorageManifestSubmitError;
 use crate::worker_ownership::{LazyConnectionWorker, SingleActivePermit};
@@ -496,7 +495,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
             );
         }
     };
-    let stdin_writer = match spawn_stdin(stdin, manifest_json) {
+    let stdin_writer = match FixedInputWriter::spawn(stdin, manifest_json, THREAD_STDIN) {
         Ok(writer) => writer,
         Err(error) => {
             drain_cancel.cancel();
@@ -528,7 +527,8 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
         || true,
     );
     let cancellation_observed = connection_cancel.load(Ordering::Acquire);
-    let cleanup_mode = cleanup_mode_for_wait_outcome(&outcome, cancellation_observed);
+    let cleanup_mode =
+        ProcessContainmentCleanupMode::for_wait_outcome(&outcome, cancellation_observed);
     let containment_result =
         process_containment.cleanup_with_storage_resources(cleanup_mode, resources);
     let stdin_result = stdin_writer.join();
@@ -538,22 +538,13 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
     {
         drain_cancel.cancel();
     }
-    let completed = await_drain_deadline(&drain_done_rx, 2, &drain_cancel, drain_deadline);
-    let stdout_result = stdout_drain.join();
-    let stderr_result = stderr_drain.join();
-    let drains_incomplete = completed < 2 || stdout_result.is_err() || stderr_result.is_err();
-    let mut stdout = stdout_result.unwrap_or_default();
-    let mut stderr = stderr_result.unwrap_or_default();
-    if drains_incomplete {
-        stdout.capture_truncated = true;
-        stderr.capture_truncated = true;
-    }
-    if stdout.captured.is_none() {
-        stdout.captured = Some(Vec::new());
-    }
-    if stderr.captured.is_none() {
-        stderr.captured = Some(Vec::new());
-    }
+    let (stdout, stderr) = collect_bounded_output(
+        stdout_drain,
+        stderr_drain,
+        &drain_done_rx,
+        &drain_cancel,
+        drain_deadline,
+    );
 
     let (mut termination, mut diagnostic) = match outcome {
         WaitOutcome::Exited(status) => (
@@ -608,21 +599,6 @@ fn abort_spawned(
     )
 }
 
-fn cleanup_mode_for_wait_outcome(
-    outcome: &WaitOutcome,
-    cancellation_observed: bool,
-) -> ProcessContainmentCleanupMode {
-    if cancellation_observed {
-        return ProcessContainmentCleanupMode::Forced;
-    }
-    match outcome {
-        WaitOutcome::Exited(_) => ProcessContainmentCleanupMode::Graceful,
-        WaitOutcome::TimedOut | WaitOutcome::Cancelled | WaitOutcome::WaitFailed(_) => {
-            ProcessContainmentCleanupMode::Forced
-        }
-    }
-}
-
 fn append_cleanup_failure(diagnostic: String, error: Option<&ProcessContainmentError>) -> String {
     let Some(error) = error else {
         return diagnostic;
@@ -632,29 +608,6 @@ fn append_cleanup_failure(diagnostic: String, error: Option<&ProcessContainmentE
     } else {
         format!("{diagnostic}; failed to clean storage helper process containment: {error}")
     }
-}
-
-struct StdinWriter {
-    handle: JoinHandle<io::Result<()>>,
-}
-
-impl StdinWriter {
-    fn join(self) -> io::Result<()> {
-        self.handle
-            .join()
-            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
-    }
-}
-
-fn spawn_stdin(mut stdin: ChildStdin, manifest_json: Vec<u8>) -> io::Result<StdinWriter> {
-    let handle = thread::Builder::new()
-        .name(THREAD_STDIN.to_string())
-        .spawn(move || {
-            let result = stdin.write_all(&manifest_json);
-            drop(stdin);
-            result
-        })?;
-    Ok(StdinWriter { handle })
 }
 
 fn failed_output(

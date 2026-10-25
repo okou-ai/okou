@@ -5,6 +5,7 @@ import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
+  click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -86,14 +87,22 @@ test("A markdown batch link renders grouped permissions without duplicate rows",
   );
 
   const card = await screen.findByTestId("permission-batch-action-card");
+  const review = queryAllByRoleFast("button", card).find((button) => {
+    return button.textContent?.trim() === "Review permissions";
+  });
+  expect(review).toBeEnabled();
+  click(review!);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Allow the following permissions",
+  });
   await expect(
-    within(card).findByText("Read repositories"),
+    within(dialog).findByText("Read repositories"),
   ).resolves.toBeInTheDocument();
   await expect(
-    within(card).findByText("Read workspace files"),
+    within(dialog).findByText("Read workspace files"),
   ).resolves.toBeInTheDocument();
-  expect(within(card).getAllByText("files:read")).toHaveLength(1);
-  expect(within(card).getByText("repos.read")).toBeInTheDocument();
+  expect(within(dialog).getAllByText("files:read")).toHaveLength(1);
+  expect(within(dialog).getByText("repos.read")).toBeInTheDocument();
   expect(screen.getByText("Review these permissions.")).toBeInTheDocument();
 });
 

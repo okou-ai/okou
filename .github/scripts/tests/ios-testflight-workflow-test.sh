@@ -116,7 +116,22 @@ for upload_attempt, download_attempt in [(1, 1), (1, 2), (2, 2)]:
     assert uploaded == downloaded
 assert source_upload['overwrite'] is True
 assert test_job['env']['IOS_BUILD_CACHE_ENABLED'] == 'true'
-assert {key: value for key, value in test_job['env'].items() if key != 'IOS_BUILD_CACHE_ENABLED'} == archive_job['env'] == package_job['env']
+assert archive_job['env']['IOS_ARCHIVE_CACHE_ENABLED'] == 'true'
+assert {key: value for key, value in test_job['env'].items() if key not in {'IOS_BUILD_CACHE_ENABLED', 'IOS_XCODE_STARTUP_SAMPLING'}} == {key: value for key, value in archive_job['env'].items() if key != 'IOS_ARCHIVE_CACHE_ENABLED'} == package_job['env']
+# Startup observations are confined to explicit manual runs, not native release evidence.
+assert ios['on']['workflow_dispatch']['inputs']['sample_xcode_startup']['default'] is False
+sampling = test_job['env']['IOS_XCODE_STARTUP_SAMPLING'].removeprefix('${{').removesuffix('}}').strip()
+upload = next(step for step in native if step.get('name') == 'Upload Xcode startup observations')
+for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
+    for enabled in [False, True]:
+        def evaluate(condition):
+            expression = (condition.replace('github.event_name', repr(event))
+                .replace('inputs.sample_xcode_startup', repr(enabled))
+                .replace('always()', 'True').replace('&&', 'and').replace('||', 'or'))
+            return eval(expression, {'__builtins__': {}}, {})
+        expected = event == 'workflow_dispatch' and enabled
+        assert evaluate(sampling) == ('true' if expected else 'false')
+        assert evaluate(upload['if']) is expected
 assert ios['jobs']['publish-archive']['needs'] == ['detect', 'script-checks', 'test-packages', 'build-test', 'build-archive']
 assert 'script-checks' in ios['jobs']['ci-gate-ios']['needs']
 assert 'test-packages' in ios['jobs']['ci-gate-ios']['needs']

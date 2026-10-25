@@ -1,13 +1,14 @@
 import { Command, InvalidArgumentError } from "commander";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { dispatchGenerate } from "../generate/lib/dispatch";
+import { isPaidToolEnabled } from "../../lib/command/paid-tools";
 import {
   buildPresentationRunbookInstructionLines,
   findPresentationRunbookPackage,
   listPresentationRunbookPackages,
 } from "@okouai/core/resource-registry";
 import {
-  PRESENTATION_IMAGE_BATCH_INSTRUCTION,
+  presentationImageInstructions,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
   presentationDeliveryInstructions,
 } from "@okouai/core/presentation-generation-instructions";
@@ -152,6 +153,7 @@ ${formatPresentationTemplateListing(templates)}`;
               ...buildPresentationRunbookInstructionLines({
                 runbookPackage: template,
                 colorSystemToken: template.defaultColorSystem,
+                imageGenerationEnabled: isPaidToolEnabled("image-generation"),
                 hostCommand,
               }),
               ...deliveryInstructions,
@@ -182,7 +184,9 @@ ${formatPresentationTemplateListing(templates)}`;
             "- Use a fixed 1920x1080 slide canvas and scale it uniformly for smaller viewports.",
             "- Use one section per slide and keep repeated elements in consistent positions.",
             PRESENTATION_STATIC_HTML_INSTRUCTION,
-            PRESENTATION_IMAGE_BATCH_INSTRUCTION,
+            ...presentationImageInstructions(
+              isPaidToolEnabled("image-generation"),
+            ),
             "- Make keyboard navigation work with ArrowLeft, ArrowRight, Home, and End.",
             "- Keep slide text readable from across a room; avoid memo-like walls of text.",
             "- Produce exactly the requested slide count. Do not let a template's reference example or preview slide count override the requested count.",

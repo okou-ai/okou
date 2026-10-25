@@ -19,7 +19,7 @@ async fn wait_for_removal(path: &Path) {
         }
     })
     .await
-    .expect("resumed background GC must remove the pressured cache entry");
+    .expect("background maintenance must remove the selected cache entry");
 }
 
 async fn background_gc_lifecycle(pressure: bool, resume: bool) {

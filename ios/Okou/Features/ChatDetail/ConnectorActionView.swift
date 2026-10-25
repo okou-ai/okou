@@ -31,7 +31,7 @@ struct ConnectorActionCard: View {
         Spacer(minLength: 0)
         HStack {
           Button(button(status)) { store.activate(action) }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(NeutralProminentButtonStyle())
             .disabled(complete(status) || store.active != nil)
           if complete(status) { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
         }
@@ -221,7 +221,7 @@ struct ConnectorAuthorizationSheet: View {
   }
 }
 
-private struct ConnectorSafariView: UIViewControllerRepresentable {
+struct ConnectorSafariView: UIViewControllerRepresentable {
   let url: URL
   let onDone: () -> Void
   func makeCoordinator() -> Coordinator { Coordinator(onDone: onDone) }

@@ -105,6 +105,19 @@ describe("CHAT-02: model-first routing", () => {
       model,
     });
     const claimed = await claimChatRun(runnerGroup, run.runId);
+    const memory = claimed.claim.storageManifest?.storageMounts.find(
+      (mount) => {
+        return mount.name === "memory";
+      },
+    );
+    if (!memory?.versionId) {
+      throw new Error("Expected the ordinary Pi Run's selected Memory version");
+    }
+    expect(memory).toMatchObject({
+      mountPath: "/home/user/.pi/agent/memory",
+      missingRootPolicy: "preserveParentVersion",
+      writeback: true,
+    });
     expect(claimed.claim.cliAgentType).toBe("pi");
     expect(claimed.claim.piSessionId).toBe(run.threadId);
     // The first turn has no stored history, so the Sandbox starts fresh.
@@ -231,7 +244,15 @@ describe("CHAT-02: model-first routing", () => {
     await flushWaitUntilForTest();
     await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
       result: {
-        storageOutputs: storageOutputs,
+        // No local Memory output still preserves this Run's selected version.
+        storageOutputs: [
+          {
+            name: memory.name,
+            mountPath: memory.mountPath,
+            version: memory.versionId,
+            missingRootPolicy: memory.missingRootPolicy,
+          },
+        ],
       },
     });
     const committedOutputs = await webhooks.requestAgentRunOutputs(

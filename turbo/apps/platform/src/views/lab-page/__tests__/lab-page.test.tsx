@@ -135,7 +135,7 @@ test("Lab groups active feature switches", async () => {
     within(featureSwitchGroup("Alpha")).getByText(FeatureSwitchKey.Banking),
   ).toBeVisible();
   expect(
-    within(featureSwitchGroup("Beta")).getByText("Custom templates"),
+    within(featureSwitchGroup("Released")).getByText("Custom templates"),
   ).toBeVisible();
   expect(
     within(featureSwitchGroup("Internal")).getByText(

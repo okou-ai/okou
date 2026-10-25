@@ -12,7 +12,7 @@ import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
 import { drizzle as nativeDrizzle } from "drizzle-orm/node-postgres";
 import { Client, Pool } from "pg";
 import { Parser } from "tar";
-import { z } from "zod";
+import * as z from "zod";
 import { API_DATABASE_SEED_FILES } from "./database-seeds";
 import type { ApiDb } from "../lib/db-types";
 import { singleton } from "../lib/singleton";

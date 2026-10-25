@@ -513,12 +513,6 @@ test("Credit usage merges historical data services and new enrichment while pres
     );
   }
   expect(within(details).getByText("170")).toBeInTheDocument();
-  expect(within(details).queryByText(/dataforseo/iu)).not.toBeInTheDocument();
-  expect(within(details).queryByText(/monid/iu)).not.toBeInTheDocument();
-  expect(within(details).queryByText(/socialkit/iu)).not.toBeInTheDocument();
-  for (const platform of ["Instagram", "TikTok", "YouTube", "Facebook"]) {
-    expect(within(details).queryByText(platform)).not.toBeInTheDocument();
-  }
 });
 
 test("Chat stays usable and shows no hint amount when settled usage cannot be read", async () => {

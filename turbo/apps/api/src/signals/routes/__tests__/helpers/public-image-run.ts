@@ -198,8 +198,8 @@ export async function createClaimedImageRun(
   function captureExternalState() {
     const restoreCommon = captureConnectorExternalState(context, [
       "OKOU_PRICE_CUSTOM_CREDIT_UNIT",
-      "OKOU_SEO_DATAFORSEO_LOGIN",
-      "OKOU_SEO_DATAFORSEO_PASSWORD",
+      "OKOU_DATA_ROUTER_URL",
+      "OKOU_DATA_TOKEN",
     ]);
     const checkout =
       context.mocks.stripe.checkout.sessions.create.getMockImplementation();

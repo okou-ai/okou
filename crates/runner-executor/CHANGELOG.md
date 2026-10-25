@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.15.30](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.29...runner-executor-v0.15.30) (2026-10-25)
+
+## [0.15.29](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.28...runner-executor-v0.15.29) (2026-10-25)
+
+## [0.15.28](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.27...runner-executor-v0.15.28) (2026-10-25)
+
+## [0.15.27](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.26...runner-executor-v0.15.27) (2026-10-25)
+
+## [0.15.26](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.25...runner-executor-v0.15.26) (2026-10-25)
+
+## [0.15.25](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.24...runner-executor-v0.15.25) (2026-10-24)
+
+## [0.15.24](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.23...runner-executor-v0.15.24) (2026-10-24)
+
+
+### Performance Improvements
+
+* **runner:** pack and migrate decoded cache payloads ([#42706](https://github.com/okou-ai/okou/issues/42706)) ([794505c](https://github.com/okou-ai/okou/commit/794505c65589d18c4900e40e90fd9d678e54c0d5))
+
+## [0.15.23](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.22...runner-executor-v0.15.23) (2026-10-23)
+
+## [0.15.22](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.21...runner-executor-v0.15.22) (2026-10-23)
+
 ## [0.15.21](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.20...runner-executor-v0.15.21) (2026-10-23)
 
 

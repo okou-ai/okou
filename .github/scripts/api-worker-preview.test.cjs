@@ -48,6 +48,7 @@ const prUrl = "https://api.github.com/repos/example/repository/pulls/123";
 const neon = (method, route) => request(neonBase, "test-token", method, route);
 const startupBenchmark = require("../../ops/worker-startup/run-workflow-schema-bench.cjs");
 
+
 test("Worker consumes the exact prepared shared branch through a direct GET-only connection", async () => {
   const branch = {
     id: "br-shared-preview",
@@ -122,7 +123,7 @@ function operationEnvironment(t, values) {
   });
 }
 
-test("closed-PR Worker cleanup deletes only its Worker and Hyperdrive without Neon credentials", async (t) => {
+test("closed-PR cleanup releases its Worker and Hyperdrive without managing shared exports", async (t) => {
   operationEnvironment(t, {
     JOB_REF: "pr-123",
     CLOUDFLARE_ACCOUNT_ID: "a".repeat(32),
@@ -194,7 +195,7 @@ test("a superseded PR revision is rejected before database or Cloudflare operati
   await assert.rejects(main("deploy"), /Superseded PR revision/);
 });
 
-test("downstream deployment binds the existing branch and runs only build and Worker upload", async (t) => {
+function deploymentFixture(t, environment = {}) {
   const root = path.resolve(__dirname, "../..");
   const cwd = process.cwd();
   process.chdir(root);
@@ -204,7 +205,12 @@ test("downstream deployment binds the existing branch and runs only build and Wo
   );
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const envFile = path.join(directory, "runtime.env");
-  fs.writeFileSync(envFile, "ENV=preview\n", { mode: 0o600 });
+  fs.writeFileSync(
+    envFile,
+    `ENV=preview\nGIT_COMMIT_SHA=${"3".repeat(40)}\nAXIOM_DATASET_SUFFIX=dev\nAXIOM_TOKEN_TELEMETRY=\nPRIVATE_KEY=private-runtime-credential\n`,
+    { mode: 0o600 },
+  );
+  const outputFile = path.join(directory, "outputs");
   operationEnvironment(t, {
     JOB_REF: "pr-123",
     CLOUDFLARE_ACCOUNT_ID: "a".repeat(32),
@@ -215,7 +221,12 @@ test("downstream deployment binds the existing branch and runs only build and Wo
     NEON_API_KEY: "test-token",
     NEON_PROJECT_ID: "test-project",
     API_ENV_FILE: envFile,
-    CF_API_TRACES_DESTINATION: undefined,
+    CF_API_TRACES_DESTINATION: "okou-api-dev-traces",
+    CF_API_LOGS_DESTINATION: "okou-api-dev-logs",
+    CF_API_NATIVE_TELEMETRY: "true",
+    GITHUB_OUTPUT: outputFile,
+    GITHUB_STEP_SUMMARY: undefined,
+    ...environment,
   });
   const branch = {
     id: "br-shared-preview",
@@ -227,7 +238,14 @@ test("downstream deployment binds the existing branch and runs only build and Wo
     name: "okou-api-preview-pr-123",
     caching: { disabled: true },
   };
+  const mutations = [];
   server.use(
+    http.get(`${cfBase}/workers/subdomain`, () =>
+      HttpResponse.json({
+        success: true,
+        result: { subdomain: "test-account" },
+      }),
+    ),
     http.get(prUrl, () =>
       HttpResponse.json({
         state: "open",
@@ -269,6 +287,7 @@ test("downstream deployment binds the existing branch and runs only build and Wo
           "Bearer test-token",
         );
         const body = await incoming.json();
+        mutations.push([incoming.method, new URL(incoming.url).pathname]);
         assert.deepEqual(body, {
           name: hyperdrive.name,
           origin: {
@@ -285,6 +304,11 @@ test("downstream deployment binds the existing branch and runs only build and Wo
       },
     ),
   );
+  return { hyperdrive, outputFile, envFile, mutations };
+}
+
+test("native deployment binds preconfigured exports without requiring an Axiom destination credential", async (t) => {
+  const { hyperdrive, outputFile } = deploymentFixture(t);
   const commands = [];
   const output = [];
   t.mock.method(console, "log", (...values) => output.push(values.join(" ")));
@@ -297,6 +321,17 @@ test("downstream deployment binds the existing branch and runs only build and Wo
       generatedPath = args[args.indexOf("--config") + 1];
       assert.equal(fs.statSync(generatedPath).mode & 0o777, 0o600);
       const config = JSON.parse(fs.readFileSync(generatedPath, "utf8"));
+      assert.equal(config.vars.API_NATIVE_TELEMETRY, "true");
+      for (const kind of ["logs", "traces"]) {
+        assert.equal(config.observability[kind].head_sampling_rate, 1);
+        assert.deepEqual(config.observability[kind].destinations, [
+          `okou-api-dev-${kind}`,
+        ]);
+      }
+      assert.equal(
+        JSON.stringify(config).includes("private-runtime-credential"),
+        false,
+      );
       assert.deepEqual(config.hyperdrive, [
         { binding: "HYPERDRIVE", id: hyperdrive.id },
       ]);
@@ -309,6 +344,8 @@ test("downstream deployment binds the existing branch and runs only build and Wo
           (_, i) => secrets[`API_ENV_JSON_${i}`],
         ).join(""),
       );
+      assert.equal(runtime.AXIOM_TOKEN_TELEMETRY, "");
+      assert.equal(runtime.PRIVATE_KEY, "private-runtime-credential");
       assert.equal(
         new URL(runtime.DATABASE_URL).hostname,
         "ep-shared.example.neon.tech",
@@ -331,8 +368,84 @@ test("downstream deployment binds the existing branch and runs only build and Wo
     ["Worker Startup Time: 612.5 ms"],
   );
   assert.ok(output.every((line) => !line.includes("private-value")));
+  assert.equal(
+    fs.readFileSync(outputFile, "utf8"),
+    `worker-url=https://okou-api-preview-pr-123.test-account.workers.dev\nsource-sha=${"3".repeat(40)}\n`,
+  );
+
   assert.equal(fs.existsSync(generatedPath), false);
   assert.equal(fs.existsSync(path.dirname(secretsPath)), false);
+});
+
+for (const kind of ["logs", "traces"]) {
+  test(`native deployment without the ${kind} destination stops before building or mutating resources`, async (t) => {
+    const { mutations } = deploymentFixture(t, {
+      [`CF_API_${kind.toUpperCase()}_DESTINATION`]: undefined,
+    });
+    const processBoundary = t.mock.method(childProcess, "spawnSync", () => {
+      throw new Error("Deployment must not start with incomplete exports");
+    });
+    await assert.rejects(
+      main("deploy"),
+      new RegExp(
+        `requires a valid CF_API_${kind.toUpperCase()}_DESTINATION slug`,
+      ),
+    );
+    assert.equal(processBoundary.mock.callCount(), 0);
+    assert.deepEqual(mutations, []);
+  });
+}
+
+test("native deployment rejects a non-dev Axiom configuration before changing resources", async (t) => {
+  const { envFile, mutations } = deploymentFixture(t);
+  fs.writeFileSync(
+    envFile,
+    `ENV=preview\nGIT_COMMIT_SHA=${"3".repeat(40)}\nAXIOM_DATASET_SUFFIX=prod\n`,
+  );
+  const processBoundary = t.mock.method(childProcess, "spawnSync", () => {
+    throw new Error("Deployment must not start with a production dataset");
+  });
+  await assert.rejects(main("deploy"), /requires an Axiom dev configuration/);
+  assert.equal(processBoundary.mock.callCount(), 0);
+  assert.deepEqual(mutations, []);
+});
+
+test("SDK telemetry deployment retains optional export destinations and runtime credentials", async (t) => {
+  const { envFile } = deploymentFixture(t, {
+    CF_API_NATIVE_TELEMETRY: "false",
+    CF_API_LOGS_DESTINATION: undefined,
+    CF_API_TRACES_DESTINATION: undefined,
+  });
+  fs.writeFileSync(
+    envFile,
+    fs
+      .readFileSync(envFile, "utf8")
+      .replace(
+        "AXIOM_TOKEN_TELEMETRY=\n",
+        "AXIOM_TOKEN_TELEMETRY=private-product-token\n",
+      ),
+  );
+  const commands = [];
+  t.mock.method(childProcess, "spawnSync", (_command, args) => {
+    if (args.includes("build:worker")) commands.push("build");
+    else {
+      const config = JSON.parse(
+        fs.readFileSync(args[args.indexOf("--config") + 1], "utf8"),
+      );
+      assert.equal(config.vars.API_NATIVE_TELEMETRY, "false");
+      assert.deepEqual(config.observability.logs.destinations, []);
+      assert.deepEqual(config.observability.traces.destinations, []);
+      const secrets = JSON.parse(
+        fs.readFileSync(args[args.indexOf("--secrets-file") + 1], "utf8"),
+      );
+      const runtime = JSON.parse(secrets.API_ENV_JSON_0);
+      assert.equal(runtime.AXIOM_TOKEN_TELEMETRY, "private-product-token");
+      commands.push("upload");
+    }
+    return { status: 0 };
+  });
+  await main("deploy");
+  assert.deepEqual(commands, ["build", "upload"]);
 });
 
 test("encrypted environment chunks preserve multibyte values and stay below the per-secret limit", () => {

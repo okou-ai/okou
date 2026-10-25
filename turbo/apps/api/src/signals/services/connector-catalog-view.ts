@@ -1,8 +1,5 @@
 import { connectorCatalogSource } from "./connector-catalog-source";
-import type {
-  ConnectorCatalogArtifact,
-  ConnectorCatalogArtifactConnector,
-} from "@okouai/connectors/connector-catalog/artifacts/artifacts";
+import type { ConnectorCatalogRuntimeConnector } from "./connector-catalog-columns";
 
 export interface ExternalCatalogIdentity {
   readonly sourceId: string;
@@ -12,19 +9,21 @@ export interface ExternalCatalogIdentity {
   readonly capabilityDigest: string;
 }
 
-/** Captured catalog facts needed for per-slug runtime materialization. */
+/** Catalog-wide routing and auth facts; per-slug execution reads also include skills. */
 export interface ConnectorCatalogLookup {
   readonly identity: ExternalCatalogIdentity;
   readonly connectorBySlug: ReadonlyMap<
     string,
-    ConnectorCatalogArtifactConnector
+    ConnectorCatalogRuntimeConnector
   >;
   readonly filteredMethodKeys: ReadonlySet<string>;
 }
 
 /** Catalog-wide entries read from the immutable entry rows. */
 export interface ConnectorCatalogView extends ConnectorCatalogLookup {
-  readonly artifact: Pick<ConnectorCatalogArtifact, "connectors">;
+  readonly artifact: {
+    readonly connectors: readonly ConnectorCatalogRuntimeConnector[];
+  };
 }
 
 export type ConnectorCatalogRuntimeView = ConnectorCatalogView;

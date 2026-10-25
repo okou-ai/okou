@@ -227,6 +227,13 @@ function liveBrowserSidebar(): HTMLElement {
   return screen.getByRole("complementary", { name: "Live browser" });
 }
 
+async function openViewerSizingMenu(): Promise<HTMLElement> {
+  click(buttonByName("Browser menu"));
+  const menu = await screen.findByRole("menu", { name: "Browser menu" });
+  click(within(menu).getByText("Fit to this viewer"));
+  return screen.findByRole("menu", { name: "Fit to this viewer" });
+}
+
 interface ViewportGeometry {
   readonly resizeTo: (width: number, height: number) => void;
 }
@@ -299,18 +306,22 @@ test("The embedded Okou viewer owns its shortcuts while the conversation keeps i
   click(buttonByName("Open browser"));
   const address = await screen.findByDisplayValue("https://example.com");
   expect(address).toBeEnabled();
-
-  click(screen.getByLabelText("Browser menu"));
-  const menu = await screen.findByRole("menu");
-  const continuousSync = queryAllByRoleFast("menuitemradio", menu).find(
-    (item) => {
-      return item.textContent?.trim() === "Sync continuously";
-    },
+  const sizingMenu = await openViewerSizingMenu();
+  expect(within(sizingMenu).getByText("Sync continuously")).toHaveAttribute(
+    "aria-checked",
+    "true",
   );
-  expect(continuousSync).toHaveAttribute("aria-checked", "true");
-  click(screen.getByLabelText("Browser menu"));
+  click(within(sizingMenu).getByText("Do not sync automatically"));
   await waitFor(() => {
-    expect(continuousSync).not.toBeInTheDocument();
+    expect(sizingMenu).not.toBeInTheDocument();
+  });
+  const updatedSizingMenu = await openViewerSizingMenu();
+  expect(
+    within(updatedSizingMenu).getByText("Do not sync automatically"),
+  ).toHaveAttribute("aria-checked", "true");
+  click(buttonByName("Browser menu"));
+  await waitFor(() => {
+    expect(updatedSizingMenu).not.toBeInTheDocument();
   });
 
   await user.click(address);

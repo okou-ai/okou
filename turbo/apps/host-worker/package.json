@@ -1,6 +1,6 @@
 {
   "name": "@okouai/host-worker",
-  "version": "1.8.3",
+  "version": "1.8.11",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,7 +17,7 @@
     "@okouai/typescript-config": "workspace:*",
     "@typescript/native": "npm:typescript@7.0.2",
     "eslint": "^9.34.0",
-    "happy-dom": "^20.11.6",
+    "happy-dom": "^21.0.4",
     "msw": "^2.13.2",
     "oxlint": "^1.75.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
@@ -34,7 +34,7 @@
     "entities": "7.0.1",
     "@okouai/api-contracts": "workspace:*",
     "@okouai/core": "workspace:*",
-    "zod": "^4.6.7",
+    "zod": "^4.5.4",
     "@okouai/ui": "workspace:*",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"

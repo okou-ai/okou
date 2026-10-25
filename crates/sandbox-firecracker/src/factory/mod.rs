@@ -310,32 +310,32 @@ impl FirecrackerFactory {
             }
         }
 
-        let create_result = async {
-            // Clean stale sock dir and create vsock directory.
-            let stage_started = Instant::now();
-            let sock_paths = SockPaths::new(self.runtime_paths.sock_dir(&id));
-            let sock_result = match clean_stale_sock_dir(&id, sock_paths.dir()) {
-                Ok(()) => {
-                    tx.track_sock_dir(sock_paths.dir().to_owned());
-                    prepare_runtime_socket_dir(&sock_paths).map_err(|e| {
-                        SandboxError::Initialization {
-                            phase: SandboxInitializationPhase::SandboxAllocation,
-                            message: format!("prepare sock dir: {e}"),
-                        }
-                    })
-                }
-                Err(e) => Err(e),
-            };
-            timing.record_stage_result(
-                SandboxCreateStage::SockDirPrepare,
-                stage_started,
-                sock_result,
-            )?;
-
-            // Acquire a network namespace from the pool.
-            let stage_started = Instant::now();
-            let network =
+        let create_result =
+            async {
+                // Clean stale sock dir and create vsock directory.
+                let stage_started = Instant::now();
+                let sock_paths = SockPaths::new(self.runtime_paths.sock_dir(&id));
+                let sock_result = match clean_stale_sock_dir(&id, sock_paths.dir()) {
+                    Ok(()) => {
+                        tx.track_sock_dir(sock_paths.dir().to_owned());
+                        prepare_runtime_socket_dir(&sock_paths).map_err(|e| {
+                            SandboxError::Initialization {
+                                phase: SandboxInitializationPhase::SandboxAllocation,
+                                message: format!("prepare sock dir: {e}"),
+                            }
+                        })
+                    }
+                    Err(e) => Err(e),
+                };
                 timing.record_stage_result(
+                    SandboxCreateStage::SockDirPrepare,
+                    stage_started,
+                    sock_result,
+                )?;
+
+                // Acquire a network namespace from the pool.
+                let stage_started = Instant::now();
+                let network = timing.record_stage_result(
                     SandboxCreateStage::NetnsAcquire,
                     stage_started,
                     resources.netns_pool.acquire().await.map_err(|e| {
@@ -345,13 +345,12 @@ impl FirecrackerFactory {
                         }
                     }),
                 )?;
-            tx.track_network(network);
+                tx.track_network(network);
 
-            // Acquire a complete file + connected-device pair only after
-            // the network attachment is known.
-            let stage_started = Instant::now();
-            let slot =
-                timing.record_stage_result(
+                // Acquire a complete file + connected-device pair only after
+                // the network attachment is known.
+                let stage_started = Instant::now();
+                let slot = timing.record_stage_result(
                     SandboxCreateStage::CowPoolAcquire,
                     stage_started,
                     resources.cow_pool.acquire().await.map_err(|error| {
@@ -362,54 +361,47 @@ impl FirecrackerFactory {
                     }),
                 )?;
 
-            // Checkout is entirely synchronous. Once it succeeds there are
-            // no await points before the transaction owns the device and
-            // commits all resources.
-            let stage_started = Instant::now();
-            let prepared_device = match slot.checkout_to(sandbox_paths.workspace()) {
-                Ok(device) => timing.record_stage_result(
-                    SandboxCreateStage::WorkspaceDirRename,
-                    stage_started,
-                    Ok::<_, SandboxError>(device),
-                )?,
-                Err(error) => {
-                    let message = error.to_string();
-                    let checkout_result: sandbox::Result<SandboxCreateResources> = timing
-                        .record_stage_result(
-                            SandboxCreateStage::WorkspaceDirRename,
-                            stage_started,
-                            Err(SandboxError::Initialization {
-                                phase: SandboxInitializationPhase::SandboxAllocation,
-                                message: format!("checkout prepared COW slot: {message}"),
-                            }),
-                        );
-                    tx.preserve_workspace_on_leak_cleanup();
-                    let slot = error.into_slot();
-                    let cleanup_outcome = match custody.clone() {
-                        Some(custody) => {
-                            crate::cow_pool::destroy_prepared_slot_with_custody_async(slot, custody)
-                                .await
+                // Checkout is entirely synchronous. Once it succeeds there are
+                // no await points before the transaction owns the device and
+                // commits all resources.
+                let stage_started = Instant::now();
+                let prepared_device = match slot.checkout_to(sandbox_paths.workspace()) {
+                    Ok(device) => timing.record_stage_result(
+                        SandboxCreateStage::WorkspaceDirRename,
+                        stage_started,
+                        Ok::<_, SandboxError>(device),
+                    )?,
+                    Err(error) => {
+                        let message = error.to_string();
+                        let checkout_result: sandbox::Result<SandboxCreateResources> = timing
+                            .record_stage_result(
+                                SandboxCreateStage::WorkspaceDirRename,
+                                stage_started,
+                                Err(SandboxError::Initialization {
+                                    phase: SandboxInitializationPhase::SandboxAllocation,
+                                    message: format!("checkout prepared COW slot: {message}"),
+                                }),
+                            );
+                        tx.preserve_workspace_on_leak_cleanup();
+                        let cleanup_outcome = error.start_cleanup(custody.clone()).await;
+                        if cleanup_outcome.backing_files_safe_to_delete() {
+                            tx.allow_workspace_delete_on_leak_cleanup();
                         }
-                        None => crate::cow_pool::destroy_prepared_slot_async(slot).await,
-                    };
-                    if cleanup_outcome.backing_files_safe_to_delete() {
-                        tx.allow_workspace_delete_on_leak_cleanup();
+                        return checkout_result;
                     }
-                    return checkout_result;
-                }
-            };
-            let cow_device =
-                prepared_device
-                    .into_real()
-                    .map_err(|error| SandboxError::Initialization {
-                        phase: SandboxInitializationPhase::SandboxAllocation,
-                        message: format!("use prepared COW device: {error}"),
-                    })?;
-            tx.track_cow_device(cow_device);
+                };
+                let cow_device =
+                    prepared_device
+                        .into_real()
+                        .map_err(|error| SandboxError::Initialization {
+                            phase: SandboxInitializationPhase::SandboxAllocation,
+                            message: format!("use prepared COW device: {error}"),
+                        })?;
+                tx.track_cow_device(cow_device);
 
-            tx.commit()
-        }
-        .await;
+                tx.commit()
+            }
+            .await;
 
         let resources = match create_result {
             Ok(result) => result,

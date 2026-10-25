@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { MsgPack } from "ably/modular";
 import { http, HttpResponse } from "msw";
 import { expect } from "vitest";
-import { z } from "zod";
+import * as z from "zod";
 
 import type { TestContext } from "../../../../__tests__/test-context";
 import { env, mockEnv } from "../../../../lib/env";

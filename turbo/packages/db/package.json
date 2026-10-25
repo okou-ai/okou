@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "2.1.1",
+  "version": "2.3.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -61,6 +61,7 @@
     "db:reset": "tsx scripts/reset-db.ts",
     "test:migration-consistency": "tsx scripts/test-migration-consistency-schema.ts",
     "test:migration-runner": "tsx scripts/test-migration-runner-timeouts.ts",
+    "test:presentation-template-copy": "node --import tsx scripts/migrations/025-presentation-template-copy/test-copy.ts",
     "lint:jsonb-contracts": "tsx scripts/check-jsonb-contracts.ts",
     "billing:attribution": "tsx scripts/billing-attribution.ts",
     "billing:pi-memory-stage1": "tsx scripts/pi-memory-stage1-cost.ts",
@@ -78,7 +79,7 @@
     "postgres": "^3.4.9"
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "^3.1149.0",
+    "@aws-sdk/client-s3": "^3.1155.0",
     "@okouai/eslint-config": "workspace:*",
     "@okouai/eslint-rules": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
@@ -94,6 +95,6 @@
     "tsx": "^4.21.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vitest": "^5.0.5",
-    "zod": "^4.6.7"
+    "zod": "^4.5.4"
   }
 }

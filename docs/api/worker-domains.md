@@ -10,7 +10,7 @@ production Worker deployment entry points continue to use the complete API.
 | Core         | Organization, billing, settings and resource management      |
 | Execution    | Chat, runs, agents, workflows and execution callbacks        |
 | Integrations | Connector authorization and external platform integrations   |
-| Data         | Weather, maps, finance, search and related data capabilities |
+| Data         | Data Router discovery, history and usage callbacks |
 | Processor    | Private presentation-byte preparation                        |
 
 ## Dependency boundaries

@@ -18,10 +18,11 @@ use api_contracts::generated::types::{
     runners::storage::ArtifactEntryMissingRootPolicy, webhooks::agent::complete,
 };
 use futures_util::stream::{self, FuturesUnordered, StreamExt};
-use guest_telemetry::log_info;
 use guest_telemetry::telemetry::record_sandbox_op;
+use guest_telemetry::{log_info, log_warn};
 
 const ARTIFACT_SNAPSHOT_CONCURRENCY: usize = 2;
+const MEMORY_ARTIFACT_NAME: &str = "memory";
 /// Build a Storage output using the type generated from the canonical
 /// completion webhook contract.
 fn build_artifact_snapshot_entry(
@@ -160,6 +161,25 @@ async fn snapshot_artifact_plan(
         },
     )
     .await?;
+    if let vas::SnapshotPublication::Conflict(error) = snapshot.publication {
+        if entry.name != MEMORY_ARTIFACT_NAME {
+            return Err(error);
+        }
+        // The commit retained this candidate without publishing it. Keep the
+        // Run's captured version as output; future Runs select the current HEAD.
+        log_warn!(
+            LOG_TAG,
+            "Memory publication conflicted; retained candidate {} and preserved Run parent {}",
+            snapshot.version_id,
+            entry.version_id
+        );
+        return Ok(build_artifact_snapshot_entry(
+            &entry.name,
+            &entry.version_id,
+            &entry.mount_path,
+            entry.missing_root_policy,
+        ));
+    }
     log_info!(
         LOG_TAG,
         "VAS artifact snapshot created: {}@{}",

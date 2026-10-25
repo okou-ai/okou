@@ -4,6 +4,8 @@ import {
   refreshWalletConnection$,
 } from "./wallet.ts";
 import { command, computed, state } from "ccstate";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../external/feature-switch.ts";
 import { isOrgAdmin$ } from "../../org.ts";
 import { searchParams$, updateSearchParams$ } from "../../route.ts";
 import { reloadIndexedDbDiagnosticsFromWorker$ } from "../../shared-database.ts";
@@ -21,6 +23,8 @@ import {
   billingSubPage$,
   clearBillingScrollTarget$,
   clearPendingLogo$,
+  resetOrgLogo$,
+  startOrgLogoLoading$,
   initProfileName$,
   requestBuyCreditsScroll$,
   resetDeleteConfirm$,
@@ -33,6 +37,7 @@ import {
 // used to live at the bottom of it.
 export const SETTINGS_SECTIONS = [
   "preference",
+  "proactive-agent",
   "chat",
   "tools",
   "model",
@@ -67,8 +72,12 @@ export function resolveAvailableSettingsSection(
   section: SettingsSection,
   options: {
     readonly isAdmin: boolean;
+    readonly proactiveAgentAvailable?: boolean;
   },
 ): SettingsSection {
+  if (section === "proactive-agent" && !options.proactiveAgentAvailable) {
+    return "preference";
+  }
   if (!options.isAdmin && isAdminOnlySettingsSection(section)) {
     return "preference";
   }
@@ -108,11 +117,14 @@ export const settingsActiveSection$ = computed((get) => {
 });
 
 export const setSettingsActiveSection$ = command(
-  ({ get, set }, section: SettingsSection) => {
+  ({ get, set }, section: SettingsSection, signal: AbortSignal) => {
     if (section === "debug" && get(internalActiveSection$) !== "debug") {
       set(reloadIndexedDbDiagnosticsFromWorker$);
     }
     set(internalActiveSection$, section);
+    if (section === "general") {
+      set(startOrgLogoLoading$, signal);
+    }
     if (section !== "billing") {
       set(clearBillingScrollTarget$);
       set(resetUsagePackPricing$);
@@ -192,6 +204,7 @@ const releaseSettingsDialogSession$ = command(({ set }) => {
   set(internalSettingsDialogSignal$, null);
   set(internalSettingsDialogSessionActive$, false);
   set(clearPendingLogo$);
+  set(resetOrgLogo$);
   set(resetDeleteConfirm$);
   set(resetUsagePackPricing$);
   // The billing sub-page belongs to the session, not to the tab: a closed
@@ -256,7 +269,7 @@ export const setSettingsDialogOpen$ = command(
     }
     if (get(internalSettingsDialogSessionActive$)) {
       set(internalSettingsDialogOpen$, true);
-      set(setSettingsActiveSection$, get(internalActiveSection$));
+      set(setSettingsActiveSection$, get(internalActiveSection$), pageSignal);
       return;
     }
 
@@ -269,6 +282,9 @@ export const setSettingsDialogOpen$ = command(
       { once: true },
     );
     set(internalSettingsDialogSignal$, modalSignal);
+    if (get(internalActiveSection$) === "general") {
+      set(startOrgLogoLoading$, modalSignal);
+    }
     set(observeWalletConnection$, modalSignal);
     set(internalSettingsDialogSessionActive$, true);
     // A plans sub-page that is already open when the session starts was opened
@@ -352,7 +368,11 @@ export const checkUnifiedSettingsParam$ = command(
       return;
     }
 
-    const resolved = resolveAvailableSettingsSection(section, { isAdmin });
+    const resolved = resolveAvailableSettingsSection(section, {
+      isAdmin,
+      proactiveAgentAvailable:
+        get(featureSwitch$)[FeatureSwitchKey.ProactiveAgent] ?? false,
+    });
     set(internalActiveSection$, resolved);
     set(setBillingSubPage$, opensBillingPlans && resolved === "billing");
     if (opensBuyCredits && resolved === "billing") {

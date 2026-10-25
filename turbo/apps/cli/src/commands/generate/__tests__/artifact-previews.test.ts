@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { generateCommand } from "../index";
+import { createGenerateCommand } from "../index";
+
+const generateCommand = createGenerateCommand();
 
 const variants = [
   ["website", []],

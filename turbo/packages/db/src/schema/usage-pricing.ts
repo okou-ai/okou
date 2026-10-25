@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   uuid,
@@ -6,6 +7,7 @@ import {
   bigint,
   timestamp,
   uniqueIndex,
+  check,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -29,10 +31,6 @@ import {
  *   image      fal-ai/qwen-image         output_megapixel 24        1          $0.024 per output megapixel
  *   video      fal-ai/veo3.1/fast        output_video_seconds.audio 180 1      generated video seconds
  *   video      bytedance/seedance-2.0    output_video_tokens 1680   100000     generated video tokens
- *   maps       google-maps-grounding     provider_cost_usd_micros 1250 1000000 actual Google cost + 25% markup
- *   scrape     firecrawl                 standard.markdown 4        1          fixed per-request scrape pricing
- *   web-search perplexity                request        5           1          $0.005 per search request
- *   people-search perplexity             request        20          1          fixed per-request people search pricing
  */
 export const usagePricing = pgTable(
   "usage_pricing",
@@ -43,6 +41,9 @@ export const usagePricing = pgTable(
     category: varchar("category", { length: 100 }).notNull(),
     unitPrice: bigint("unit_price", { mode: "number" }).notNull(),
     unitSize: bigint("unit_size", { mode: "number" }).notNull(),
+    sourceCostUsdMicrosPerCredit: bigint("source_cost_usd_micros_per_credit", {
+      mode: "number",
+    }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -52,6 +53,10 @@ export const usagePricing = pgTable(
         table.kind,
         table.provider,
         table.category,
+      ),
+      check(
+        "chk_usage_pricing_source_cost_usd_micros_per_credit",
+        sql`${table.sourceCostUsdMicrosPerCredit} IS NULL OR ${table.sourceCostUsdMicrosPerCredit} BETWEEN 1 AND 9007199254740991`,
       ),
     ];
   },

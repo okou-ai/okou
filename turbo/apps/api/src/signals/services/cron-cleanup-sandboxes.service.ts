@@ -6,17 +6,7 @@ import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agen
 import { exportJobs } from "@okouai/db/schema/export-job";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { command } from "ccstate";
-import {
-  and,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  lt,
-  lte,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -42,6 +32,7 @@ import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-proc
 import { pickAllQueuedOrgs$ } from "./chat-thread-queue-drain.service";
 import { retryPendingFeishuConnectWelcomes$ } from "./feishu-welcome.service";
 import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
+import { runnerJobQueueExpiredCondition } from "./runner-job-queue-lifecycle.service";
 import {
   cleanupThreadlessRuns$,
   type ThreadlessRunCleanupResult,
@@ -269,6 +260,7 @@ const dispatchMaintenanceTerminalSideEffects$ = command(
       dispatchCompleteSideEffects$,
       {
         kind: "terminal",
+        firstTerminalTransition: true,
         runId: input.runId,
         orgId: input.orgId,
         status: "failed",
@@ -509,7 +501,7 @@ async function cleanupExpiredRunnerJobs(
 ): Promise<number> {
   const { rowCount } = await db
     .delete(runnerJobQueue)
-    .where(lte(runnerJobQueue.expiresAt, sql`now()`));
+    .where(runnerJobQueueExpiredCondition());
   signal.throwIfAborted();
 
   const deletedCount = rowCount ?? 0;

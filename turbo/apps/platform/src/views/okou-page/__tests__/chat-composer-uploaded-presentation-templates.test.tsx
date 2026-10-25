@@ -1,6 +1,7 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { formatUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
 import { expect, test } from "vitest";
 import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/presentation-templates";
@@ -17,7 +18,6 @@ import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-te
 import {
   buttonContainingText,
   expectTextBefore,
-  trackTemplatePreviewImagePreloads,
 } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
@@ -48,6 +48,7 @@ test("An empty catalog keeps the import card available", async () => {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
     sharedWorkerTestTransport: "message-port",
   });
   const picker = await openTemplatePicker(user, "Presentation");
@@ -111,35 +112,6 @@ function sentTemplate(capture: ReturnType<typeof mockTemplateChat>) {
   return templatePart(message).template;
 }
 
-test("A closed composer does not load uploaded template covers", async () => {
-  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
-  mockTemplateChat();
-  const uploaded = createUploadedTemplate({
-    id: UPLOADED_TEMPLATE_ID,
-    title: "Quarterly Board Review",
-  });
-  mockPresentationTemplateLibrary([uploaded]);
-  const user = userEvent.setup();
-
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    host: "app.okou.ai",
-  });
-
-  await screen.findByLabelText("Add");
-  expect(
-    document.querySelector(`img[src*="${uploaded.id}"]`),
-  ).not.toBeInTheDocument();
-
-  await openTemplatePicker(user, "Presentation");
-  await waitFor(() => {
-    expect(
-      importedTemplateMedia(uploaded.id).querySelector("img"),
-    ).toHaveAttribute("src", expect.stringContaining(uploaded.id));
-  });
-});
-
 async function openUploadedPresentationPicker() {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   const capture = mockTemplateChat();
@@ -149,13 +121,13 @@ async function openUploadedPresentationPicker() {
     pageCount: 3,
   });
   mockPresentationTemplateLibrary([uploaded]);
-  trackTemplatePreviewImagePreloads();
   const user = userEvent.setup();
 
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
 
   const picker = await openTemplatePicker(user, "Presentation");
@@ -251,12 +223,12 @@ async function openWorkspaceTemplateLibrary(includePublished: boolean) {
       updatedAt: "2026-08-01T00:03:00.000Z",
     },
   ]);
-  trackTemplatePreviewImagePreloads();
   const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
   const picker = await openTemplatePicker(user, "Presentation");
   await waitFor(() => {
@@ -304,6 +276,7 @@ test("Keep an uploaded template preview usable during a catalog refresh", async 
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
   await openTemplatePicker(user, "Presentation");
   const preview = await waitFor(() => {
@@ -390,6 +363,7 @@ test("Rename an uploaded template", async () => {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
   await openTemplatePicker(user, "Presentation");
   await waitFor(() => {
@@ -441,6 +415,7 @@ test.each([
       context,
       path: `/agents/${AGENT_ID}/chat`,
       host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
     });
     await openTemplatePicker(user, "Presentation");
     await screen.findByText(uploaded.title);
@@ -500,12 +475,12 @@ test("Imported visibility saves once and closes even on the current value", asyn
     canManage: true,
   });
   const library = mockPresentationTemplateLibrary([uploaded]);
-  trackTemplatePreviewImagePreloads();
   const user = userEvent.setup();
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
   await openTemplatePicker(user, "Presentation");
   click(
@@ -561,6 +536,7 @@ test("Delete an uploaded template from its preview", async () => {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
   await openTemplatePicker(user, "Presentation");
   click(

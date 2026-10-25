@@ -22,7 +22,7 @@ import {
   lockPublicationScopeSql,
   workflowPublicationKey,
 } from "../services/storage-publication-fence.service";
-import { preparedVolumePublicationSql } from "../services/storage-volume-publication-sql";
+import { preparedVolumePublicationPlan } from "../services/storage-volume-publication-sql";
 import { StorageVersionIdentityConflictError } from "../services/storage-version-registration.service";
 import { randomUUID } from "node:crypto";
 
@@ -48,7 +48,23 @@ import {
   workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
-import { and, eq, isNull, isNotNull, ne } from "drizzle-orm";
+import {
+  and,
+  eq,
+  isNull,
+  isNotNull,
+  ne,
+  or,
+  exists,
+  notExists,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import {
+  pgBooleanDecoder,
+  nullableDriverValueDecoder,
+} from "../../lib/db-structured-result";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -292,7 +308,7 @@ export interface WorkflowCreationInput {
 function workflowCreationRowValues(
   args: WorkflowCreationInput & { readonly workflowId: string },
   currentTime: Date,
-): typeof workflows.$inferInsert {
+) {
   const { body, member, visibility } = args;
   return {
     id: args.workflowId,
@@ -357,138 +373,307 @@ const validateWorkflowCreation$ = command(
   },
 );
 
-const commitPreparedWorkflow$ = command(
-  async (
-    { set },
-    args: WorkflowCreationInput & {
-      readonly workflowId: string;
-      readonly volume: PreparedServerSideVolume;
-      readonly attachments: WorkflowAttachments;
-    },
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0045; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // Publication reads Agent permissions without changing the Agent. SHARE
-      // keeps them stable while independent workflows publish concurrently.
-      const [agent] = await tx
-        .select({
-          id: agents.id,
-          owner: agents.owner,
-          visibility: agents.visibility,
-          name: agents.name,
-          displayName: agents.displayName,
-        })
-        .from(agents)
-        .where(
-          and(eq(agents.orgId, args.orgId), eq(agents.id, args.body.agentId)),
+interface PreparedWorkflowCreation extends WorkflowCreationInput {
+  readonly workflowId: string;
+  readonly volume: PreparedServerSideVolume;
+  readonly attachments: WorkflowAttachments;
+}
+
+/** Statement data only; execution and every write belong to the creation owner. */
+function workflowCreationAdmissionPlan(args: PreparedWorkflowCreation) {
+  const query = new QueryBuilder();
+  const { body, member } = args;
+  const agent = query.$with("creation_agent").as(
+    query
+      .select({
+        id: agents.id,
+        owner: agents.owner,
+        visibility: agents.visibility,
+      })
+      .from(agents)
+      .where(and(eq(agents.orgId, args.orgId), eq(agents.id, body.agentId)))
+      .limit(1)
+      .for("share"),
+  );
+  // Use the returned locked Agent, including changes committed while waiting.
+  // These are the same owner/admin and private-visibility rules as preflight.
+  const permitted =
+    args.visibility === "public"
+      ? or(
+          eq(agent.owner, member.userId),
+          and(eq(agent.visibility, "public"), sql`${member.role === "admin"}`),
         )
-        .limit(1)
-        .for("share");
-      signal.throwIfAborted();
-      if (!agent) {
-        return {
-          kind: "error" as const,
-          response: notFound(`Agent not found: ${args.body.agentId}`),
-        };
-      }
-      const permissionError =
-        args.visibility === "public"
-          ? requireAgentWritePermission(
-              agent,
-              args.member,
-              "create workflows on this agent",
-            )
-          : requireVisibleAgentForPrivateWorkflowCreate(agent, args.member);
-      if (permissionError) {
-        return { kind: "error" as const, response: permissionError };
-      }
-      const [existing] = await tx
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(
-          workflowSlugCondition({
-            orgId: args.orgId,
-            agentId: agent.id,
-            ownerUserId: args.member.userId,
-            name: args.body.name,
-            visibility: args.visibility,
-          }),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (existing) {
-        return {
-          kind: "error" as const,
-          response: workflowSlugConflict(args.visibility, args.body.name),
-        };
-      }
-      // Cleanup takes this same lock before checking Workflow absence, so even
-      // an uncertain COMMIT cannot let cleanup race a late publication.
-      const [storage] = await tx
-        .select({ id: storages.id })
-        .from(storages)
-        .where(eq(storages.id, args.volume.version.storageId))
-        .for("update");
-      signal.throwIfAborted();
-      if (!storage) {
-        throw new Error(
-          `Prepared workflow storage not found: ${args.workflowId}`,
-        );
-      }
-      const { body, member } = args;
-      const currentTime = nowDate();
-      const [workflow] = await tx
-        .insert(workflows)
-        .values({
-          ...workflowCreationRowValues(args, currentTime),
-          attachments: args.attachments,
-        })
-        .returning({ id: workflows.id });
-      signal.throwIfAborted();
-      if (!workflow) {
-        throw new Error("Failed to create workflow");
-      }
-      let chatThreadId: string | null = null;
-      if (body.chatThreadId) {
-        const [thread] = await tx
-          .select({ id: chatThreads.id })
-          .from(chatThreads)
-          .where(
-            and(
-              eq(chatThreads.id, body.chatThreadId),
-              eq(chatThreads.userId, member.userId),
-              eq(chatThreads.agentId, body.agentId),
-            ),
-          )
-          .limit(1)
-          .for("update");
-        chatThreadId = thread?.id ?? null;
-      }
-      signal.throwIfAborted();
-      if (chatThreadId) {
-        await tx.insert(workflowUserAutomationThreads).values({
+      : or(eq(agent.visibility, "public"), eq(agent.owner, member.userId));
+  const admitted = query
+    .$with("creation_admitted")
+    .as(query.select({ id: agent.id }).from(agent).where(permitted));
+  const slug = query.$with("creation_slug").as(
+    query
+      .select({ id: workflows.id })
+      .from(workflows)
+      .innerJoin(admitted, eq(workflows.agentId, admitted.id))
+      .where(
+        workflowSlugCondition({
           orgId: args.orgId,
-          userId: member.userId,
-          workflowId: workflow.id,
-          chatThreadId,
-          createdAt: currentTime,
-          updatedAt: currentTime,
-        });
-        signal.throwIfAborted();
-      }
-      const { rowCount: published } = await tx.execute(
-        preparedVolumePublicationSql(args.volume, nowDate()),
-      );
-      if (published !== 1) {
-        throw new StorageVersionIdentityConflictError(
-          args.volume.version.versionId,
-        );
-      }
-      signal.throwIfAborted();
-      return { kind: "created" as const, workflow, chatThreadId };
-    });
+          agentId: body.agentId,
+          ownerUserId: member.userId,
+          name: body.name,
+          visibility: args.visibility,
+        }),
+      )
+      .limit(1),
+  );
+  const storage = query.$with("creation_storage").as(
+    query
+      .select({ id: storages.id })
+      .from(storages)
+      .crossJoin(admitted)
+      .where(
+        and(
+          eq(storages.id, args.volume.version.storageId),
+          notExists(query.select({ id: slug.id }).from(slug)),
+        ),
+      )
+      .for("update", { of: storages }),
+  );
+  const thread = query.$with("creation_thread").as(
+    query
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .crossJoin(storage)
+      .where(
+        and(
+          body.chatThreadId
+            ? eq(chatThreads.id, body.chatThreadId)
+            : sql`false`,
+          eq(chatThreads.userId, member.userId),
+          eq(chatThreads.agentId, body.agentId),
+        ),
+      )
+      .limit(1)
+      .for("update", { of: chatThreads }),
+  );
+  return { agent, admitted, slug, storage, thread };
+}
+
+interface WorkflowCreationOutcomeRow {
+  readonly agentOwner: string | null;
+  readonly agentVisibility: "public" | "private" | null;
+  readonly slugExists: boolean;
+  readonly storageId: string | null;
+  readonly publishedStorageId: string | null;
+  readonly workflowId: string | null;
+  readonly chatThreadId: string | null;
+}
+
+function workflowCreationOutcome(
+  args: PreparedWorkflowCreation,
+  result: WorkflowCreationOutcomeRow | undefined,
+) {
+  const { body, member } = args;
+  if (!result) {
+    throw new Error("Expected one workflow creation outcome");
+  }
+  if (result.agentOwner === null || result.agentVisibility === null) {
+    return {
+      kind: "error" as const,
+      response: notFound(`Agent not found: ${body.agentId}`),
+    };
+  }
+  const lockedAgent = {
+    owner: result.agentOwner,
+    visibility: result.agentVisibility,
+  };
+  const permissionError =
+    args.visibility === "public"
+      ? requireAgentWritePermission(
+          lockedAgent,
+          member,
+          "create workflows on this agent",
+        )
+      : requireVisibleAgentForPrivateWorkflowCreate(lockedAgent, member);
+  if (permissionError) {
+    return { kind: "error" as const, response: permissionError };
+  }
+  if (result.slugExists) {
+    return {
+      kind: "error" as const,
+      response: workflowSlugConflict(args.visibility, body.name),
+    };
+  }
+  if (result.storageId === null) {
+    throw new Error(`Prepared workflow storage not found: ${args.workflowId}`);
+  }
+  if (result.publishedStorageId === null) {
+    throw new StorageVersionIdentityConflictError(
+      args.volume.version.versionId,
+    );
+  }
+  if (result.workflowId === null) {
+    throw new Error("Failed to create workflow");
+  }
+  return {
+    kind: "created" as const,
+    workflow: { id: result.workflowId },
+    chatThreadId: result.chatThreadId,
+  };
+}
+
+function workflowCreationSource(
+  args: PreparedWorkflowCreation,
+  at: Date,
+  published: SQL,
+) {
+  const v = workflowCreationRowValues(args, at);
+  return new QueryBuilder()
+    .select({
+      id: sql`${sql.param(v.id, workflows.id)}`.mapWith(workflows.id).as("id"),
+      orgId: sql`${sql.param(v.orgId, workflows.orgId)}`
+        .mapWith(workflows.orgId)
+        .as("org_id"),
+      agentId: sql`${sql.param(v.agentId, workflows.agentId)}`
+        .mapWith(workflows.agentId)
+        .as("agent_id"),
+      name: sql`${sql.param(v.name, workflows.name)}`
+        .mapWith(workflows.name)
+        .as("name"),
+      visibility: sql`${sql.param(v.visibility, workflows.visibility)}`
+        .mapWith(workflows.visibility)
+        .as("visibility"),
+      instruction: sql`${sql.param(v.instruction, workflows.instruction)}`
+        .mapWith(nullableDriverValueDecoder(workflows.instruction))
+        .as("instruction"),
+      attachments: sql`${sql.param(args.attachments, workflows.attachments)}`
+        .mapWith(nullableDriverValueDecoder(workflows.attachments))
+        .as("attachments"),
+      ownerUserId: sql`${sql.param(v.ownerUserId, workflows.ownerUserId)}`
+        .mapWith(workflows.ownerUserId)
+        .as("owner_user_id"),
+      displayName: sql`${sql.param(v.displayName, workflows.displayName)}`
+        .mapWith(nullableDriverValueDecoder(workflows.displayName))
+        .as("display_name"),
+      description: sql`${sql.param(v.description, workflows.description)}`
+        .mapWith(nullableDriverValueDecoder(workflows.description))
+        .as("description"),
+      officialDefinitionName: sql`NULL`
+        .mapWith(nullableDriverValueDecoder(workflows.officialDefinitionName))
+        .as("official_definition_name"),
+      officialInstallationState: sql`NULL`
+        .mapWith(
+          nullableDriverValueDecoder(workflows.officialInstallationState),
+        )
+        .as("official_installation_state"),
+      importSource: sql`${sql.param(v.importSource, workflows.importSource)}`
+        .mapWith(nullableDriverValueDecoder(workflows.importSource))
+        .as("import_source"),
+      importSessionId:
+        sql`${sql.param(v.importSessionId, workflows.importSessionId)}`
+          .mapWith(nullableDriverValueDecoder(workflows.importSessionId))
+          .as("import_session_id"),
+      createdBy: sql`${sql.param(v.createdBy, workflows.createdBy)}`
+        .mapWith(workflows.createdBy)
+        .as("created_by"),
+      updatedBy: sql`${sql.param(v.updatedBy, workflows.updatedBy)}`
+        .mapWith(workflows.updatedBy)
+        .as("updated_by"),
+      createdAt: sql`${sql.param(v.createdAt, workflows.createdAt)}`
+        .mapWith(workflows.createdAt)
+        .as("created_at"),
+      updatedAt: sql`${sql.param(v.updatedAt, workflows.updatedAt)}`
+        .mapWith(workflows.updatedAt)
+        .as("updated_at"),
+    })
+    .from(published);
+}
+
+const commitPreparedWorkflow$ = command(
+  async ({ set }, args: PreparedWorkflowCreation, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const { member } = args;
+    const { agent, admitted, slug, storage, thread } =
+      workflowCreationAdmissionPlan(args);
+    const currentTime = nowDate();
+    // Storage admission is consumed by registration, HEAD and index publication.
+    // A version conflict returns no publication and cannot create a Workflow.
+    const volume = preparedVolumePublicationPlan(
+      args.volume,
+      nowDate(),
+      exists(db.select({ id: storage.id }).from(storage)),
+    );
+    const created = db.$with("created_workflow").as(
+      db
+        .insert(workflows)
+        .select(
+          workflowCreationSource(args, currentTime, sql`${volume.published}`),
+        )
+        .returning({ id: workflows.id }),
+    );
+    const linked = db.$with("creation_link").as(
+      db
+        .insert(workflowUserAutomationThreads)
+        .select(
+          db
+            .select({
+              id: sql`gen_random_uuid()`
+                .mapWith(workflowUserAutomationThreads.id)
+                .as("id"),
+              orgId:
+                sql`${sql.param(args.orgId, workflowUserAutomationThreads.orgId)}`
+                  .mapWith(workflowUserAutomationThreads.orgId)
+                  .as("org_id"),
+              userId:
+                sql`${sql.param(member.userId, workflowUserAutomationThreads.userId)}`
+                  .mapWith(workflowUserAutomationThreads.userId)
+                  .as("user_id"),
+              workflowId: created.id,
+              chatThreadId: thread.id,
+              createdAt:
+                sql`${sql.param(currentTime, workflowUserAutomationThreads.createdAt)}`
+                  .mapWith(workflowUserAutomationThreads.createdAt)
+                  .as("created_at"),
+              updatedAt:
+                sql`${sql.param(currentTime, workflowUserAutomationThreads.updatedAt)}`
+                  .mapWith(workflowUserAutomationThreads.updatedAt)
+                  .as("updated_at"),
+            })
+            .from(created)
+            .crossJoin(thread),
+        )
+        .returning({
+          chatThreadId: workflowUserAutomationThreads.chatThreadId,
+        }),
+    );
+    signal.throwIfAborted();
+    const [result] = await db
+      .with(
+        agent,
+        admitted,
+        slug,
+        storage,
+        thread,
+        ...volume.ctes,
+        created,
+        linked,
+      )
+      .select({
+        agentOwner: agent.owner,
+        agentVisibility: agent.visibility,
+        slugExists: exists(db.select({ id: slug.id }).from(slug)).mapWith(
+          pgBooleanDecoder,
+        ),
+        storageId: storage.id,
+        publishedStorageId: volume.published.id,
+        workflowId: created.id,
+        chatThreadId: linked.chatThreadId,
+      })
+      .from(sql`(SELECT true) AS result`)
+      .leftJoin(agent, sql`true`)
+      .leftJoin(storage, sql`true`)
+      .leftJoin(volume.published, sql`true`)
+      .leftJoin(created, sql`true`)
+      .leftJoin(linked, sql`true`);
+    signal.throwIfAborted();
+    return workflowCreationOutcome(args, result);
   },
 );
 
@@ -620,7 +805,7 @@ type WorkflowCreationOutcome =
 /**
  * Shared creation path for a validated workflow body: the built-in name guard,
  * agent and slug validation, volume preparation, and the publication
- * transaction. Callers own request parsing, their own admission rules, and how
+ * statement. Callers own request parsing, their own admission rules, and how
  * they render the created workflow.
  */
 export const createWorkflowRecord$ = command(

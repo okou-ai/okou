@@ -90,6 +90,26 @@ class RouteMetadataExtractor {
     if (ts.isPropertyAccessExpression(node)) {
       return `${this.contractExpression(node.expression, context, scope)}.${node.name.text}`;
     }
+    if (ts.isElementAccessExpression(node)) {
+      return `${this.contractExpression(node.expression, context, scope)}[${this.contractExpression(node.argumentExpression, context, scope)}]`;
+    }
+    if (ts.isObjectLiteralExpression(node)) {
+      const properties = node.properties.map((property) => {
+        if (
+          !ts.isPropertyAssignment(property) ||
+          (!ts.isIdentifier(property.name) &&
+            !ts.isStringLiteral(property.name))
+        ) {
+          fail(
+            context,
+            property,
+            "Contract maps require static property names",
+          );
+        }
+        return `${JSON.stringify(property.name.text)}: ${this.contractExpression(property.initializer, context, scope)}`;
+      });
+      return `({${properties.join(",")}})`;
+    }
     if (ts.isStringLiteral(node) || ts.isNumericLiteral(node)) {
       return JSON.stringify(
         ts.isStringLiteral(node) ? node.text : Number(node.text),

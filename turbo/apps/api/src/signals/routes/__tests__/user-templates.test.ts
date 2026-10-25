@@ -47,7 +47,8 @@ beforeEach(() => {
 
 describe("user template owner routes", () => {
   it("lists an empty catalog for a member with no templates", async () => {
-    await enabledActor();
+    const actor = bdd.user();
+    mocks.clerk.session(actor.userId, actor.orgId);
     const client = templateClient();
 
     const response = await accept(
@@ -96,7 +97,14 @@ describe("user template owner routes", () => {
 
   it("hides the catalog entirely while the switch is off", async () => {
     const actor = bdd.user();
-    mocks.clerk.session(actor.userId, actor.orgId);
+    if (!actor.orgId) {
+      throw new Error("User template tests require an organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId },
+      { [FeatureSwitchKey.CustomTemplates]: false },
+    );
     const client = templateClient();
 
     // Reads are gated too: with the switch off the feature must be absent, not

@@ -118,7 +118,6 @@ def validate(directory):
         if (not pressure_report.integer(available, policy["recovery_available_bytes"])
                 or available > policy["host_total_bytes"] or not isinstance(samples, list)):
             raise ValueError("foreground Ready lacks actual supplied headroom")
-        fresh_samples = []
         previous, previous_offset = -1, -1
         for sample in samples:
             if (not isinstance(sample, dict) or set(sample) != {"started_ns", "finished_ns", "read_start_offset_ns",
@@ -132,11 +131,8 @@ def validate(directory):
                         or sample["available_bytes"] > policy["host_total_bytes"])):
                 raise ValueError("foreground actual pressure read clocks changed")
             previous, previous_offset = sample["started_ns"], sample["read_start_offset_ns"]
-            if (pressure_report.integer(sample["available_bytes"], policy["recovery_available_bytes"])
-                    and sample["age_ns"]+events[2]["monotonic_ns"]-sample["finished_ns"] < policy["max_sample_age_millis"]*1_000_000):
-                fresh_samples.append(sample)
-        if (len(fresh_samples) < 2 or not any(s["available_bytes"] == available for s in fresh_samples)
-                or fresh_samples[-1]["started_ns"]-fresh_samples[0]["started_ns"] < policy["pressure_recovery_sustain_millis"]*1_000_000):
+        fresh_samples = pressure_report.sustained_ready_samples(samples, events[2]["monotonic_ns"], policy)
+        if not any(s["available_bytes"] == available for s in fresh_samples):
             raise ValueError("foreground Ready lacks distinct sustained actual observations")
         startup.exact(status, {"state": "Ready", "available_bytes": available, "status_held": True,
             "heartbeat": status["heartbeat"], "observer": status["observer"], "reads": status["reads"],

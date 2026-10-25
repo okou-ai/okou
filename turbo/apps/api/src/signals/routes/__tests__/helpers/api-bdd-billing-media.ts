@@ -24,10 +24,6 @@ import { builtInGenerationContract } from "@okouai/api-contracts/contracts/built
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { imageIoGenerateContract } from "@okouai/api-contracts/contracts/image-io-generate";
 import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
-import {
-  mapsContract,
-  type MapsSearchRequest,
-} from "@okouai/api-contracts/contracts/maps";
 import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
 import {
   usageRecordContract,
@@ -58,13 +54,11 @@ import { billingStatusRoutes } from "../../billing-status";
 import { builtInGenerationRoutes } from "../../built-in-generation";
 import { featureSwitchesRoutes } from "../../feature-switches";
 import { imageIoGenerateRoutes } from "../../image-io-generate";
-import { mapsRoutes } from "../../maps";
 import { usageMembersRoutes } from "../../usage-members";
 import { usageRecordRoutes } from "../../usage-record";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
 import { voiceIoQuotaRoutes } from "../../voice-io-quota";
 import type { ApiTestUser } from "./api-bdd";
-import { mockGoogleMapsGrounding } from "./google-maps-grounding";
 import { createRouteMocks } from "./route-test";
 
 type ClerkOrgRole = "org:admin" | "org:member";
@@ -124,8 +118,7 @@ interface AutoRechargeUpdateBody {
 
 type CheckoutStatus = 200 | 400 | 401 | 403 | 500 | 503;
 type BillingMutationStatus = 200 | 400 | 401 | 403 | 409 | 500 | 503;
-type ImageIoStatus = 200 | 202 | 400 | 401 | 402 | 403 | 500 | 502 | 503;
-type MapsStatus = 200 | 400 | 401 | 402 | 403 | 502 | 503;
+type ImageIoStatus = 202 | 400 | 401 | 402 | 403 | 500 | 502 | 503;
 
 function authHeaders(actor: ApiTestUser | null): AuthHeaders {
   return actor ? { authorization: "Bearer clerk-session" } : {};
@@ -240,14 +233,9 @@ export function createBillingMediaApi(context: TestContext) {
     );
   }
 
-  function configureMapsProvider(): void {
-    mockGoogleMapsGrounding();
-  }
-
   return {
     configureBillingPrices,
     configureCampaign,
-    configureMapsProvider,
 
     async readBillingStatus(
       actor: ApiTestUser,
@@ -594,18 +582,6 @@ export function createBillingMediaApi(context: TestContext) {
           params: { generationId },
           headers: authenticate(actor),
         }),
-        statuses,
-      );
-    },
-
-    async requestMapsSearch(
-      actor: ApiTestUser | null,
-      body: MapsSearchRequest,
-      statuses: readonly MapsStatus[],
-    ) {
-      const client = setupApp({ context, routes: mapsRoutes })(mapsContract);
-      return await accept(
-        client.search({ headers: authenticate(actor), body }),
         statuses,
       );
     },

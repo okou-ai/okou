@@ -49,10 +49,6 @@ final class AuthenticationHTTPFixture: Sendable {
       return ChatHTTPResponse(
         status: 403, body: "{\"error\":{\"message\":\"No live updates in this fixture\"}}")
     default:
-      let message =
-        "Unhandled app HTTP request: \(request.httpMethod ?? "GET") "
-        + "\(request.url?.absoluteString ?? "<missing URL>")"
-      await MainActor.run { XCTFail(message) }
       throw URLError(.unsupportedURL)
     }
   }
@@ -72,7 +68,7 @@ final class AuthenticationHTTPFixture: Sendable {
   }
 
   @MainActor
-  func authentication() async throws -> AuthenticationService {
+  func authentication(resetPersistedIdentity: Bool = false) async throws -> AuthenticationService {
     let url = try await withCheckedThrowingContinuation { continuation in
       startup.withLock { $0 = continuation }
       listener.stateUpdateHandler = { [weak self] state in
@@ -104,6 +100,7 @@ final class AuthenticationHTTPFixture: Sendable {
       return snapshot
     }
     let clerk = Clerk.configure(publishableKey: publishableKey, options: options)
+    if resetPersistedIdentity { try await Clerk.clearAllKeychainItemsAndWait() }
     _ = try await clerk.auth.signInWithPassword(
       identifier: "startup@example.invalid", password: "synthetic-password")
     state.withLock { $0 = snapshot }
@@ -188,6 +185,8 @@ final class AuthenticationHTTPFixture: Sendable {
   func close() async {
     await memberships.releaseAll()
     await activation.releaseAll()
+    await memberships.finishObservations()
+    await activation.finishObservations()
     listener.cancel()
     connections.withLock {
       for connection in $0 { connection.cancel() }
@@ -313,12 +312,31 @@ actor AuthenticationRequestGate {
   private var requests = 0
   private var open = true
   private var blocked: [Int: CheckedContinuation<Void, Never>] = [:]
+  private var observers: [UUID: AsyncStream<Int>.Continuation] = [:]
 
   func hold() { open = false }
-  var count: Int { requests }
+
+  func observeRequests() -> (id: UUID, arrivals: AsyncStream<Int>) {
+    let id = UUID()
+    let (arrivals, continuation) = AsyncStream<Int>.makeStream(bufferingPolicy: .bufferingOldest(1))
+    observers[id] = continuation
+    return (id, arrivals)
+  }
+
+  func stopObserving(_ id: UUID) {
+    observers.removeValue(forKey: id)?.finish()
+  }
+
+  func finishObservations() {
+    let pending = observers.values
+    observers.removeAll()
+    for continuation in pending { continuation.finish() }
+  }
+
   func enter() async {
     requests += 1
     let request = requests
+    for continuation in observers.values { continuation.yield(request) }
     if !open {
       await withCheckedContinuation { blocked[request] = $0 }
     }

@@ -25,6 +25,7 @@ import {
 } from "@okouai/db/schema/usage-pack-subscription";
 import {
   DrizzleQueryError,
+  count,
   and,
   asc,
   desc,
@@ -42,7 +43,11 @@ import {
 } from "drizzle-orm";
 import { type PgUpdateSetSource, QueryBuilder } from "drizzle-orm/pg-core";
 import { command, computed, type Computed } from "ccstate";
-import { zodDriverValueDecoder } from "../../lib/db-structured-result";
+import {
+  zodDriverValueDecoder,
+  pgInt8ToSafeIntegerDecoder,
+} from "../../lib/db-structured-result";
+
 import {
   contextJsonProjection,
   contextJsonRows,
@@ -3134,7 +3139,154 @@ const commitReflectedUsagePackChanges$ = command(
   },
 );
 
-class CanceledUsagePackSnapshotChanged extends Error {}
+const canceledUsagePackInputColumns = Object.freeze({
+  id: usagePackAllocationChanges.id,
+  orgId: usagePackAllocationChanges.orgId,
+  usagePackSubscriptionId: usagePackAllocationChanges.usagePackSubscriptionId,
+  userId: usagePackAllocationChanges.userId,
+  kind: usagePackAllocationChanges.kind,
+  status: usagePackAllocationChanges.status,
+  subscriptionChangeId: usagePackAllocationChanges.subscriptionChangeId,
+  sourceAllocationId: usagePackAllocationChanges.sourceAllocationId,
+  replacementAllocationId: usagePackAllocationChanges.replacementAllocationId,
+  sourceStripePriceId: usagePackAllocationChanges.sourceStripePriceId,
+  targetStripePriceId: usagePackAllocationChanges.targetStripePriceId,
+  sourceUsagePackUsd: usagePackAllocationChanges.sourceUsagePackUsd,
+  targetUsagePackUsd: usagePackAllocationChanges.targetUsagePackUsd,
+  effectiveAt: usagePackAllocationChanges.effectiveAt,
+});
+
+/** Actual captured change rows, carried in one parameter without a bind-count limit. */
+function canceledUsagePackChangeInput(
+  subscription: Pick<
+    typeof usagePackSubscriptions.$inferSelect,
+    "id" | "orgId"
+  >,
+  finalizable: readonly UsagePackAllocationChangeRow[],
+) {
+  const rows = finalizable.map((change) => {
+    if (
+      change.orgId !== subscription.orgId ||
+      change.usagePackSubscriptionId !== subscription.id
+    ) {
+      throw new Error(
+        "Canceled usage pack change belongs to another billing owner",
+      );
+    }
+    if (
+      change.kind === "removal" &&
+      (change.status === "scheduled" || change.status === "applying") &&
+      (!change.sourceAllocationId || !change.sourceStripePriceId)
+    ) {
+      throw new Error(`Usage pack removal ${change.id} has no source`);
+    }
+    return {
+      id: change.id,
+      org_id: change.orgId,
+      usage_pack_subscription_id: change.usagePackSubscriptionId,
+      user_id: change.userId,
+      kind: change.kind,
+      status: change.status,
+      subscription_change_id: change.subscriptionChangeId,
+      source_allocation_id: change.sourceAllocationId,
+      replacement_allocation_id: change.replacementAllocationId,
+      source_stripe_price_id: change.sourceStripePriceId,
+      target_stripe_price_id: change.targetStripePriceId,
+      source_usage_pack_usd: change.sourceUsagePackUsd,
+      target_usage_pack_usd: change.targetUsagePackUsd,
+      effective_at: change.effectiveAt?.toISOString() ?? null,
+    };
+  });
+  return new QueryBuilder().$with(
+    "canceled_change_input",
+    canceledUsagePackInputColumns,
+  ).as(sql`
+    SELECT * FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS captured(
+      id uuid, org_id text, usage_pack_subscription_id uuid, user_id text,
+      kind text, status text, subscription_change_id uuid, source_allocation_id uuid,
+      replacement_allocation_id uuid, source_stripe_price_id text,
+      target_stripe_price_id text, source_usage_pack_usd integer,
+      target_usage_pack_usd integer, effective_at timestamp
+    )
+  `);
+}
+
+type CanceledUsagePackInput = ReturnType<typeof canceledUsagePackChangeInput>;
+
+/** Repeated references to the same real source need only one identical UPDATE. */
+function canceledUsagePackRemovalSources(input: CanceledUsagePackInput) {
+  const query = new QueryBuilder();
+  return query.$with("canceled_removal_sources").as(
+    query
+      .selectDistinct({
+        id: input.sourceAllocationId,
+        orgId: input.orgId,
+        usagePackSubscriptionId: input.usagePackSubscriptionId,
+        userId: input.userId,
+        stripePriceId: input.sourceStripePriceId,
+      })
+      .from(input)
+      .where(
+        and(
+          eq(input.kind, "removal"),
+          inArray(input.status, ["scheduled", "applying"]),
+        ),
+      ),
+  );
+}
+
+function canceledUsagePackAllocationCondition(
+  source: ReturnType<typeof canceledUsagePackRemovalSources>,
+) {
+  return and(
+    eq(usagePackAllocations.id, source.id),
+    eq(usagePackAllocations.orgId, source.orgId),
+    eq(
+      usagePackAllocations.usagePackSubscriptionId,
+      source.usagePackSubscriptionId,
+    ),
+    eq(usagePackAllocations.userId, source.userId),
+    eq(usagePackAllocations.stripePriceId, source.stripePriceId),
+  );
+}
+
+/** The original fulfillment identity and expected status, with column operands. */
+function canceledUsagePackChangeCondition(input: CanceledUsagePackInput) {
+  return and(
+    eq(usagePackAllocationChanges.id, input.id),
+    eq(usagePackAllocationChanges.status, input.status),
+    eq(usagePackAllocationChanges.orgId, input.orgId),
+    eq(
+      usagePackAllocationChanges.usagePackSubscriptionId,
+      input.usagePackSubscriptionId,
+    ),
+    eq(usagePackAllocationChanges.kind, input.kind),
+    sql`${usagePackAllocationChanges.subscriptionChangeId} IS NOT DISTINCT FROM ${input.subscriptionChangeId}`,
+    sql`${usagePackAllocationChanges.userId} IS NOT DISTINCT FROM ${input.userId}`,
+    sql`${usagePackAllocationChanges.sourceAllocationId} IS NOT DISTINCT FROM ${input.sourceAllocationId}`,
+    sql`${usagePackAllocationChanges.replacementAllocationId} IS NOT DISTINCT FROM ${input.replacementAllocationId}`,
+    sql`${usagePackAllocationChanges.sourceStripePriceId} IS NOT DISTINCT FROM ${input.sourceStripePriceId}`,
+    sql`${usagePackAllocationChanges.targetStripePriceId} IS NOT DISTINCT FROM ${input.targetStripePriceId}`,
+    sql`${usagePackAllocationChanges.sourceUsagePackUsd} IS NOT DISTINCT FROM ${input.sourceUsagePackUsd}`,
+    sql`${usagePackAllocationChanges.targetUsagePackUsd} IS NOT DISTINCT FROM ${input.targetUsagePackUsd}`,
+  );
+}
+
+function canceledUsagePackChangeValues(
+  input: CanceledUsagePackInput,
+  at: Date,
+) {
+  const completed = sql`${eq(input.kind, "removal")} AND ${inArray(input.status, ["scheduled", "applying"])}`;
+  return {
+    status: sql`CASE WHEN ${completed} THEN 'completed' ELSE 'failed' END`,
+    failureReason: sql`CASE WHEN ${completed} THEN NULL ELSE 'subscription_canceled' END`,
+    effectiveAt: sql`COALESCE(${input.effectiveAt}, ${sql.param(at, usagePackAllocationChanges.effectiveAt)})`,
+    completedAt: at,
+    updatedAt: at,
+  };
+}
+
+const canceledUsagePackBatchFailure = z.object({ code: z.literal("22012") });
 
 const finalizeCanceledUsagePackChanges$ = command(
   async function finalizeCanceledUsagePackChanges(
@@ -3142,7 +3294,6 @@ const finalizeCanceledUsagePackChanges$ = command(
     context: UsagePackChangeContext,
   ): Promise<number> {
     const db = set(writeDb$);
-
     const finalizable = context.changes.filter((change) => {
       return change.status !== "applied";
     });
@@ -3150,86 +3301,65 @@ const finalizeCanceledUsagePackChanges$ = command(
       return 0;
     }
     const at = nowDate();
+    const input = canceledUsagePackChangeInput(
+      context.subscription,
+      finalizable,
+    );
+    const sources = canceledUsagePackRemovalSources(input);
+    // Keep source allocations before their referencing changes. Every old
+    // identity/status condition must win or the complete batch rolls back.
+    const retired = db
+      .$with("canceled_retired_allocations")
+      .as(
+        db
+          .update(usagePackAllocations)
+          .set({ status: "inactive", updatedAt: at })
+          .from(sources)
+          .where(canceledUsagePackAllocationCondition(sources))
+          .returning({ id: usagePackAllocations.id }),
+      );
+    const retiredCount = sql`(${db.select({ value: count() }).from(retired)})`;
+    const sourceCount = sql`(${db.select({ value: count() }).from(sources)})`;
+    const finalized = db.$with("canceled_finalized_changes").as(
+      db
+        .update(usagePackAllocationChanges)
+        .set(canceledUsagePackChangeValues(input, at))
+        .from(input)
+        .where(
+          and(
+            canceledUsagePackChangeCondition(input),
+            eq(retiredCount, sourceCount),
+          ),
+        )
+        .returning({ id: usagePackAllocationChanges.id }),
+    );
+    const finalizedCount = sql`(${db.select({ value: count() }).from(finalized)})`;
+    const inputCount = sql`(${db.select({ value: count() }).from(input)})`;
+    // The denominator depends on actual RETURNING counts, so PostgreSQL checks
+    // it at execution rather than folding a constant error during planning.
+    // 22012 is emitted only by this batch guard; it aborts every preceding CTE.
     const result = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0270; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        // Each transition is conditional on the change status it was read in.
-        // A paid invoice publication that commits first makes this batch roll
-        // back; one that loses finds the failed change through its own status
-        // condition, so neither order publishes a grant twice.
-        let finalized = 0;
-        for (const change of finalizable) {
-          if (
-            change.orgId !== context.subscription.orgId ||
-            change.usagePackSubscriptionId !== context.subscription.id
-          ) {
-            throw new Error(
-              "Canceled usage pack change belongs to another billing owner",
-            );
-          }
-          const completed =
-            change.kind === "removal" &&
-            (change.status === "scheduled" || change.status === "applying");
-          if (completed) {
-            if (!change.sourceAllocationId || !change.sourceStripePriceId) {
-              throw new Error(`Usage pack removal ${change.id} has no source`);
-            }
-            // Mutate the real source before its referencing change, matching
-            // deletion's parent/child order without any SELECT lock.
-            const [retired] = await tx
-              .update(usagePackAllocations)
-              .set({ status: "inactive", updatedAt: at })
-              .where(
-                and(
-                  eq(usagePackAllocations.id, change.sourceAllocationId),
-                  eq(usagePackAllocations.orgId, change.orgId),
-                  eq(
-                    usagePackAllocations.usagePackSubscriptionId,
-                    change.usagePackSubscriptionId,
-                  ),
-                  eq(usagePackAllocations.userId, change.userId),
-                  eq(
-                    usagePackAllocations.stripePriceId,
-                    change.sourceStripePriceId,
-                  ),
-                ),
-              )
-              .returning({ id: usagePackAllocations.id });
-            if (!retired) {
-              throw new CanceledUsagePackSnapshotChanged();
-            }
-          }
-          const [finalizedChange] = await tx
-            .update(usagePackAllocationChanges)
-            .set({
-              status: completed ? "completed" : "failed",
-              failureReason: completed ? null : "subscription_canceled",
-              effectiveAt: change.effectiveAt ?? at,
-              completedAt: at,
-              updatedAt: at,
-            })
-            .where(
-              and(
-                eq(usagePackAllocationChanges.id, change.id),
-                eq(usagePackAllocationChanges.status, change.status),
-                fulfillmentChangeIdentity(change),
-              ),
-            )
-            .returning({ id: usagePackAllocationChanges.id });
-          if (!finalizedChange) {
-            // A paid/applied/completed winner must not be overwritten. Roll back
-            // every mutation in this stale batch; the normal next visit reloads.
-            throw new CanceledUsagePackSnapshotChanged();
-          }
-          finalized += 1;
-        }
-        return finalized;
-      }),
+      db
+        .with(input, sources, retired, finalized)
+        .select({
+          finalized:
+            sql`${finalizedCount} / CASE WHEN ${eq(finalizedCount, inputCount)} THEN 1 ELSE 0 END`.mapWith(
+              pgInt8ToSafeIntegerDecoder,
+            ),
+        })
+        .from(sql`(SELECT 1) AS canceled_batch_result`),
     );
     if (result.ok) {
-      return result.value;
+      const row = result.value[0];
+      if (!row) {
+        throw new Error("Canceled usage pack batch returned no result");
+      }
+      return row.finalized;
     }
-    if (result.error instanceof CanceledUsagePackSnapshotChanged) {
+    if (
+      result.error instanceof DrizzleQueryError &&
+      canceledUsagePackBatchFailure.safeParse(result.error.cause).success
+    ) {
       return 0;
     }
     throw result.error;

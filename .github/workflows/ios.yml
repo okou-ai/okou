@@ -7,6 +7,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      sample_xcode_startup:
+        description: Sample the compile-phase Xcode startup
+        type: boolean
+        default: false
+      archive_cache_experiment:
+        description: Compare fresh Release archives with and without native caches
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -24,6 +33,41 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  archive-cache-seed:
+    if: github.event_name == 'workflow_dispatch' && inputs.archive_cache_experiment
+    uses: ./.github/workflows/ios-archive-cache-experiment.yml
+    with:
+      mode: seed
+      label: seed
+
+  archive-cache-baseline-before:
+    needs: archive-cache-seed
+    uses: ./.github/workflows/ios-archive-cache-experiment.yml
+    with:
+      mode: baseline
+      label: baseline-before
+
+  archive-cache-warm-one:
+    needs: archive-cache-baseline-before
+    uses: ./.github/workflows/ios-archive-cache-experiment.yml
+    with:
+      mode: warm
+      label: warm-one
+
+  archive-cache-warm-two:
+    needs: archive-cache-warm-one
+    uses: ./.github/workflows/ios-archive-cache-experiment.yml
+    with:
+      mode: warm
+      label: warm-two
+
+  archive-cache-baseline-after:
+    needs: archive-cache-warm-two
+    uses: ./.github/workflows/ios-archive-cache-experiment.yml
+    with:
+      mode: baseline
+      label: baseline-after
+
   detect:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -70,6 +114,7 @@ jobs:
           python3 ios/scripts/preboot-simulator.test.py
           python3 ios/scripts/prepare-package-sources.test.py
           python3 ios/scripts/run-ci-tests.test.py
+          python3 ios/scripts/sample-xcode-startup.test.py
           python3 ios/scripts/build-cache.test.py
 
   test-packages:
@@ -132,6 +177,7 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
       IOS_BUILD_CACHE_ENABLED: "true"
+      IOS_XCODE_STARTUP_SAMPLING: ${{ github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -196,6 +242,14 @@ jobs:
       - name: Build app and run isolated simulator tests
         if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
         run: bash ios/scripts/run-ci-tests.sh
+      - name: Upload Xcode startup observations
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-xcode-startup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/okou-ios-ci/startup-samples
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Record simulator inputs and test decision
         if: github.event_name == 'merge_group'
         run: |
@@ -230,14 +284,20 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+      IOS_ARCHIVE_CACHE_ENABLED: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure archive workspace
         run: echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
+      - name: Restore Release archive caches
+        id: cache
+        uses: ./.github/actions/setup-ios-build-cache
+        with:
+          target: archive
       - name: Capture archive toolchain
         run: |
-          mkdir "$IOS_ARCHIVE_DIR"
-          python3 ios/scripts/archive-promotion.py toolchain "$IOS_ARCHIVE_DIR/toolchain.json"
+          mkdir -p "$IOS_ARCHIVE_DIR"
+          cp "${{ steps.cache.outputs.toolchain-file }}" "$IOS_ARCHIVE_DIR/toolchain.json"
       - name: Build unsigned device Release archive
         run: |
           bash ios/scripts/build-archive.sh

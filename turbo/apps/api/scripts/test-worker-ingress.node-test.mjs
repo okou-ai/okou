@@ -123,17 +123,16 @@ test(
       { path: "/health", method: "HEAD", status: 200 },
       { path: "/api/build-info", status: 200 },
       { path: "/api/chat-thread-drafts", status: 401 },
-      { path: "/api/weather/current", method: "POST", body: "{}", status: 401 },
+      { path: "/api/data/router/tools", method: "GET", status: 401 },
       { path: "/sign-in?redirect_url=%2Fchat", status: 302 },
       {
-        path: "/api/weather/current",
-        method: "POST",
-        body: "{}",
+        path: "/api/data/router/tools",
+        method: "GET",
         headers: { "X-Client-Type": "App", "X-Client-Version": "0.0.0" },
         status: 426,
       },
       {
-        path: "/api/weather/current",
+        path: "/api/data/router/tools",
         method: "OPTIONS",
         headers: {
           Origin: "https://app.okou.ai",
@@ -143,10 +142,9 @@ test(
         status: 204,
       },
       {
-        path: "/api/weather/current",
-        method: "POST",
+        path: "/api/data/router/tools",
+        method: "GET",
         protected: true,
-        body: "{}",
         status: 403,
       },
     ];

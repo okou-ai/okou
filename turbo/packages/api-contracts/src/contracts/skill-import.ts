@@ -65,8 +65,7 @@ export type SkillImportSessionRequest = z.infer<
 >;
 
 export const skillImportSessionResponseSchema = z.object({
-  /** Absent only on APIs predating session-attributed imports. */
-  sessionId: z.uuid().optional(),
+  sessionId: z.uuid(),
   /** Absolute URL of the upload route the prompt posts each skill to. */
   uploadUrl: z.url(),
   token: z.string().min(1),

@@ -1,6 +1,6 @@
 import { HttpResponse } from "msw";
 import { onTestFinished } from "vitest";
-import { z } from "zod";
+import * as z from "zod";
 
 import { stubTestVercelRuntimeToken } from "../../../../__tests__/env-stub";
 import { mockGoogleLlm } from "./google-voice";

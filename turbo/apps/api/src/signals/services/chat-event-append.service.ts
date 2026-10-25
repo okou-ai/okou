@@ -56,9 +56,8 @@ function conflictClause(conflict: ChatEventAppendConflict): SQL {
  * positions; a SQL error rolls allocation back together with the insert.
  * An optional input predicate runs before counts or reservations are produced.
  */
-export function canonicalChatEventAppendCtes(
+export function canonicalChatEventInputCtes(
   values: readonly PreparedChatEventRow[],
-  conflict: ChatEventAppendConflict,
   inputEligibility?: SQL,
 ): SQL {
   const input = JSON.stringify(
@@ -70,24 +69,6 @@ export function canonicalChatEventAppendCtes(
       };
     }),
   );
-  // Attribute only winning input replacements, both at admission and active delivery.
-  const consumesInput = values.some((value) => {
-    return (
-      value.eventType === "input.prompt" &&
-      typeof value.runId === "string" &&
-      typeof value.revokesEventId === "string"
-    );
-  });
-  const relationAttribution = consumesInput
-    ? sql`, attributed_relations AS (
-    UPDATE chat_relations AS relation SET target_run_id = input."runId"
-    FROM input JOIN inserted ON inserted.id = input.id
-    WHERE relation.message_event_id = input."revokesEventId"
-      AND relation.target_chat_thread_id = input."chatThreadId"
-      AND relation.type = 'message' AND relation.target_run_id IS NULL
-      AND input."eventType" = 'input.prompt' AND input."runId" IS NOT NULL
-  )`
-    : sql.empty();
   return sql`
     input AS MATERIALIZED (
       SELECT * FROM jsonb_to_recordset(${input}::jsonb) AS event(
@@ -108,26 +89,72 @@ export function canonicalChatEventAppendCtes(
       ON CONFLICT (chat_thread_id) DO UPDATE
         SET last_seq_id = chat_event_sequences.last_seq_id + EXCLUDED.last_seq_id
       RETURNING chat_thread_id, last_seq_id
-    ), inserted AS (
+    )
+  `;
+}
+
+/** Pure INSERT for rows prepared and reserved by canonicalChatEventInputCtes. */
+export function canonicalChatEventInsertSql(
+  conflict: ChatEventAppendConflict,
+  source?: {
+    readonly eligibility?: SQL;
+    readonly sequenceOffset?: SQL;
+    readonly threadIdentity?: SQL;
+  },
+): SQL {
+  const sequenceOffset =
+    source?.sequenceOffset ??
+    sql`row_number() OVER (
+    PARTITION BY input."chatThreadId" ORDER BY input.ordinal
+  )`;
+  const threadIdentity = source?.threadIdentity ?? sql`input."chatThreadId"`;
+  return sql`
       INSERT INTO chat_events (
         id, chat_thread_id, run_id, revokes_event_id, event_type, payload, model_selection,
         failure_reason, required_official_workflow_ids, context_type, context_id,
         run_event_sequence_number, run_event_id, seq_id, created_at
       )
-      SELECT input.id, input."chatThreadId", input."runId", input."revokesEventId",
+      SELECT input.id, ${threadIdentity}, input."runId", input."revokesEventId",
         input."eventType", input.payload, input."modelSelection", input."failureReason",
         input."requiredOfficialWorkflowIds", input."contextType", input."contextId",
         input."runEventSequenceNumber", input."runEventId",
-        reserved.last_seq_id - counts.event_count + row_number() OVER (
-          PARTITION BY input."chatThreadId" ORDER BY input.ordinal
-        ), input."createdAt"
+        reserved.last_seq_id - counts.event_count + ${sequenceOffset}, input."createdAt"
       FROM input
       JOIN counts ON counts.chat_thread_id = input."chatThreadId"
       LEFT JOIN reserved ON reserved.chat_thread_id = input."chatThreadId"
+      ${source?.eligibility ? sql`WHERE ${source.eligibility}` : sql.empty()}
       ORDER BY input.ordinal
       ${conflictClause(conflict)}
-      RETURNING id, created_at, seq_id, run_event_sequence_number
-    )
+      RETURNING id, created_at, seq_id, run_event_sequence_number`;
+}
+
+/** Atomic default append; compound owners reuse its same reservation/INSERT. */
+export function canonicalChatEventAppendCtes(
+  values: readonly PreparedChatEventRow[],
+  conflict: ChatEventAppendConflict,
+  inputEligibility?: SQL,
+): SQL {
+  // Attribute only winning input replacements, both at admission and active delivery.
+  const consumesInput = values.some((value) => {
+    return (
+      value.eventType === "input.prompt" &&
+      typeof value.runId === "string" &&
+      typeof value.revokesEventId === "string"
+    );
+  });
+  const relationAttribution = consumesInput
+    ? sql`, attributed_relations AS (
+    UPDATE chat_relations AS relation SET target_run_id = input."runId"
+    FROM input JOIN inserted ON inserted.id = input.id
+    WHERE relation.message_event_id = input."revokesEventId"
+      AND relation.target_chat_thread_id = input."chatThreadId"
+      AND relation.type = 'message' AND relation.target_run_id IS NULL
+      AND input."eventType" = 'input.prompt' AND input."runId" IS NOT NULL
+  )`
+    : sql.empty();
+  return sql`
+    ${canonicalChatEventInputCtes(values, inputEligibility)},
+    inserted AS (${canonicalChatEventInsertSql(conflict)})
     ${relationAttribution}
   `;
 }

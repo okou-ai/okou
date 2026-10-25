@@ -72,11 +72,15 @@ struct FileWriteRequest {
     progress: FileWriteRequestProgress,
 }
 
+struct FileWriteWorkerState {
+    sender: SyncSender<FileWriteRequest>,
+    handle: JoinHandle<()>,
+}
+
 pub(crate) struct FileWriteWorker {
     streams: Arc<crate::file_stream::Streams>,
     writer: GuestWriter,
-    sender: Option<SyncSender<FileWriteRequest>>,
-    handle: Option<JoinHandle<()>>,
+    state: Option<FileWriteWorkerState>,
     admission: SingleActiveAdmission,
     connection_cancel: Arc<AtomicBool>,
     progress: FileWriteProgress,
@@ -115,8 +119,7 @@ impl FileWriteWorker {
         Ok(Self {
             streams,
             writer: public_writer,
-            sender: Some(sender),
-            handle: Some(handle),
+            state: Some(FileWriteWorkerState { sender, handle }),
             admission: SingleActiveAdmission::new(),
             connection_cancel,
             progress: FileWriteProgress::default(),
@@ -149,7 +152,8 @@ impl FileWriteWorker {
                         Arc::clone(&self.connection_cancel),
                         crate::file_stream::decode_begin(payload)
                             .map_err(|_| FileWriteSubmitError::Disconnected)?
-                            .encoded_size,
+                            .codec
+                            .encoded_size(),
                     )
                     .map_err(|_| FileWriteSubmitError::Disconnected)?,
             ),
@@ -164,10 +168,10 @@ impl FileWriteWorker {
             admission,
             progress: self.progress.start(seq),
         };
-        let Some(sender) = &self.sender else {
+        let Some(state) = &self.state else {
             return Err(FileWriteSubmitError::Disconnected);
         };
-        match sender.try_send(request) {
+        match state.sender.try_send(request) {
             Ok(()) => Ok(()),
             Err(TrySendError::Full(_)) => Err(FileWriteSubmitError::Busy),
             Err(TrySendError::Disconnected(_)) => Err(FileWriteSubmitError::Disconnected),
@@ -187,11 +191,11 @@ impl Drop for FileWriteWorker {
         // Signal first so an active helper's cancellable wait kills and reaps
         // its process group before this connection-owned worker is joined.
         self.connection_cancel.store(true, Ordering::Release);
-        drop(self.sender.take());
-        if let Some(handle) = self.handle.take()
-            && handle.join().is_err()
-        {
-            log("ERROR", "file-write worker panicked");
+        if let Some(state) = self.state.take() {
+            drop(state.sender);
+            if state.handle.join().is_err() {
+                log("ERROR", "file-write worker panicked");
+            }
         }
     }
 }

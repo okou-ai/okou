@@ -120,9 +120,10 @@ stays outside the per-thread foreground lock, and publication skips a batch whos
 starting cursor has been overtaken by a foreground read. Closing the workspace or
 receiving memory pressure cancels warming. Ordinary warming failures leave the
 normal cache-first open path available; a force-upgrade response blocks the scope.
-Data and native-layout loading indicators reveal only after 100 ms, matching the
-web transcript's short-wait policy. Cache-ready rows commit without another
-asynchronous measurement pass.
+One native loading indicator covers initial history loading and layout preparation
+while no message content is displayed. It reveals only after 100 ms and disappears
+as soon as message content, including a local pending message, is displayed.
+Cache-ready rows commit without another asynchronous measurement pass.
 
 Network decoding, event replay, and SQLite access belong to their existing
 service/storage actors. Markdown parsing now runs serially on a separate actor.
@@ -178,10 +179,11 @@ view's latest-message task retains SwiftUI cancellation ownership. Native sizing
 reuse, motion completion, and actual offset correction remain with the existing
 collection and anchor.
 
-Scrolling near the top loads an
-earlier page after scrolling settles; the accessible Load earlier messages
-button also works when a short window cannot be scrolled. Initial positioning
-follows the latest message. Reading history pins the window boundary, and
+Scrolling near the top loads one earlier page after each user scroll settles;
+layout and restoration callbacks cannot request another page without a new gesture.
+The fixed-height loading row shows only a spinner while preparing and presenting
+the page, and retains its accessible Load earlier messages action for short windows.
+Initial positioning follows the latest message. Reading history pins the window boundary, and
 incoming messages preserve the reading position. A local send follows its new
 row. The explicit bottom button shrinks the window after reaching the bottom.
 Resident stores retain their expanded window and reading position; an evicted
@@ -201,9 +203,12 @@ the resulting resize preserves the visible row or follows the bottom. Closing
 the controller cancels preparation, resize, and refresh tasks. This bounds live
 measurement views without eagerly retaining the whole expanded history.
 
-ConversationScrollAnchor registers weak markers for mounted message rows and
-records a message ID plus its offset from the usable viewport top. The collection
-accepts only markers inside the current native cell for that message. Marker
+The collection captures a message ID and its content offset from native row
+geometry, including row spacing, without waiting for SwiftUI markers to mount.
+It freezes the reading anchor before applying a snapshot and restores the native
+offset immediately after layout. ConversationScrollAnchor registers weak markers
+for mounted message rows and verifies the position on subsequent display frames.
+The collection accepts only markers inside the current native cell for that message. Marker
 readiness and geometry publish reading-position changes on a display frame even
 when the scroll metrics have not changed. Capture waits until the measured
 snapshot matches the native viewport width and content-size category, so a
@@ -268,97 +273,32 @@ first compile-time boundary; additional modules should follow actual ownership
 needs. API contract generation and cross-language CI consumer selection remain
 separate work.
 
-## Acceptance
+## Verification
 
-Automated checks cover pinned-renderer attribute parity, relative links/images,
-cache eviction, oversized content, source changes, and workspace isolation.
-Existing synchronization, replay, cache, and send-recovery tests remain required.
-Eight domain regressions run independently with `swift test` and exercise the
-package's public API with domain values. Thirty-one data regressions run through ChatData's real HTTP/decoding, commands,
-synchronization, and SQLite boundaries without an App host. The separate
-ChatDataTestSupport target shares the HTTP fixture with App integration tests;
-the production App does not link it. App tests retain store ownership and
-rendering coverage through the real data services. CI runs both package suites
-and the App suite.
+Follow the [iOS testing standard](../docs/ios/ios-testing.md) for test boundaries,
+external fixtures, observable assertions, layout readiness, resource ownership,
+and runtime/device acceptance. Package suites protect ChatDomain's public value
+and replay contracts and ChatData's real HTTP, synchronization, and SQLite
+boundaries. App admission tests prioritize in-process feature commands and
+observable protocol, persistence, recovery, and ownership outcomes. Keep only
+necessary product-specific native input bridges; ordinary rendering, geometry,
+and appearance are on-demand acceptance. Do not substitute private cache,
+pending flags, object identity, or renderer snapshots for those outcomes.
+See the [README](README.md#ci) for executable commands and current CI ownership.
 
-The October 7 ownership refactor passed all 57 XCTest cases with zero failures
-and a Debug simulator build on Xcode 26.3. HTTP-boundary regressions cover
-targeted invalidation, SQLite rehydration after memory release, draft and pending
-input retention, dirty-cache write recovery, and workspace-wide upgrade blocking.
-These checks do not establish new visual or device performance results.
+Changes to the history container require native verification of sidebar
+opening/closing and cancellation, vertical history and horizontal code/table
+scrolling, bottom positioning, refresh while reading, copying, text selection,
+and keyboard/composer behavior. Observe the visible row position across
+prepends, height changes, refreshed content, resident-detail reopening, and
+local sends. Width and Dynamic Type changes require actual native layout
+verification; reuse and viewport changes must preserve the reading/following
+contract.
 
-Interactive acceptance covers sidebar opening/closing and cancellation, vertical
-history scrolling, horizontal code/table scrolling, bottom positioning, refresh
-while reading history, message/code copying, and keyboard/composer behavior.
-Use a physical device with a Release build and Animation Hitches to assess frame
-pacing. Debug simulator responsiveness and CPU samples do not establish a
-device frame-rate improvement.
-
-Progressive-history regressions cover full HTTP pagination at 100, 1,000, and
-5,000 messages; whole-group boundaries; overlapping expansion; close-time
-cancellation; failed send/retry; revocation; and SQLite rehydration. Mounted
-native scroll-anchor and real ChatDetailView tests verify partial-row offsets through
-prepends, height changes, remote refresh, detail-view recreation, and local send.
-Hosting setup waits for stable native geometry and samples complete presentation
-frames. Position assertions remain independent of this setup and retain their
-three-second deadline. Repeated traversal of code and table messages also
-verifies stable content height and allocated cell heights after reuse, including
-width and Dynamic Type changes. Viewport resizing verifies bottom following.
-Coordinator tests with a native collection cover remote updates while reading, viewport changes, bottom requests
-during animated paging with and without Reduce Motion, resuming following, and
-user scrolling that interrupts a bottom request without shrinking history, and
-user interaction preceding deferred initial positioning.
-The collection supports
-native animated accessibility paging as well as touch scrolling.
-These are correctness and rendering-scope checks. A physical-device Release
-comparison of initial positioning, Animation Hitches, and memory remains
-required before claiming a measured performance improvement. Header/bottom
-button activation and VoiceOver scrolling remain part of interactive acceptance;
-the in-process hosting tests do not expose SwiftUI's accessibility button tree.
-At the October 7 checkpoint, the connected iPhone on iOS 26.6.2 could not mount its developer disk image with
-the installed Xcode 26.3, so this checkpoint has no physical-device measurements.
-
-### October 8, 2026 collection sizing checkpoint
-
-- The iPhone 16 Pro / iOS 26.4 simulator build and all 69 tests passed.
-  Swift formatting, documentation formatting, and local documentation links passed.
-- Simulator investigation reproduced a code/table row changing from 36 points
-  to 259.33 points when remounted in the previous self-sizing List. Parsed
-  Markdown alone did not settle Textual's initial view state and overflow layout.
-- In the measured collection, native animated accessibility paging through the
-  mixed-message fixture produced no content-height changes. The explicit bottom
-  button then caused the expected reduction to the latest ten render groups.
-  Repeating the button action reached the latest message and footer.
-- Opening the keyboard at the bottom exposed a viewport-following regression;
-  reporting native bounds changes restored the latest message and footer above
-  the composer. Automated hosting checks cover resizing, font changes, refresh,
-  send, revocation, and resident reading-position restoration.
-- These observations establish layout correctness on the simulator. Touch
-  dragging through the available computer-use input and physical-device frame
-  pacing remain unverified.
-
-### October 7, 2026 checkpoint
-
-- The signed iPhone 17 Pro / iOS 26.3 simulator build and all 56 tests passed.
-  Swift formatting and documentation formatting checks passed.
-- A CPU sample during real conversation loading captured `MarkdownWorker.parse`
-  on a worker thread. This verifies execution placement, not a frame-rate gain.
-- An existing long conversation with a table loaded and reached the latest
-  message and footer. Interactive checking exposed an initial-position regression
-  when content acquired its final height; the conditional growth correction
-  restored bottom positioning in that conversation.
-- Native accessibility button actions worked, but the computer-use tool returned
-  `noWindowsAvailable` for drag/scroll input even after reselecting the simulator
-  window. Scrolling feel and physical-device frame pacing remain unverified.
-  The gesture tests cover direction, edge boundaries,
-  release distance/velocity, and cancellation policy.
-- Manual acceptance reproduced an opening failure: the pan entered recognition
-  but received no update callbacks. Allowing simultaneous recognition beyond
-  `UIPanGestureRecognizer` fixed arbitration with responder/relationship
-  recognizers. Capturing the touch origin also removed a recognition-threshold
-  offset from the edge check. The user then confirmed edge opening and closing
-  from the exposed main panel; local logs captured complete begin/change/end
-  callbacks.
-  Temporary diagnostic logging was removed. The automation tool's later drag
-  sent touch down/up without intervening move events, so manual acceptance was
-  used for this gesture regression.
+Use on-demand native acceptance for position, layout, scrolling and animation
+changes instead of adding admission UI matrices. Real touch arbitration, VoiceOver,
+menus, and keyboard transitions require explicit native acceptance as described
+in the testing guide. Use a physical-device Release build and Animation Hitches
+for frame-pacing claims. Simulator responsiveness, CPU samples, and historical
+checkpoints do not establish current device performance. Record task-specific
+measurements and acceptance evidence in the owning PR or issue.

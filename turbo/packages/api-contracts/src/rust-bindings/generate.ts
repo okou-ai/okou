@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
-import { z } from "zod";
+import * as z from "zod";
 import {
   type RustConstantValue,
   type RustConstantModuleDoc,

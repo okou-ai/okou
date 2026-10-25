@@ -1,5 +1,87 @@
 # Changelog
 
+## [8.787.1](https://github.com/okou-ai/okou/compare/core-v8.787.0...core-v8.787.1) (2026-10-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.3.0
+
+## [8.787.0](https://github.com/okou-ai/okou/compare/core-v8.786.0...core-v8.787.0) (2026-10-25)
+
+
+### Features
+
+* **browser:** enable okou viewer for staff ([#42910](https://github.com/okou-ai/okou/issues/42910)) ([e45694f](https://github.com/okou-ai/okou/commit/e45694f5bbb2c30369ed48e188e6a75e9ab4b024))
+
+
+### Refactoring
+
+* **app:** remove json tree preview feature switch ([#42911](https://github.com/okou-ai/okou/issues/42911)) ([2ed0f18](https://github.com/okou-ai/okou/commit/2ed0f180ffd7ee1db828f447a7da171cdb6df3b4))
+
+## [8.786.0](https://github.com/okou-ai/okou/compare/core-v8.785.1...core-v8.786.0) (2026-10-25)
+
+
+### Features
+
+* **core:** enable built-in document templates for everyone ([#42580](https://github.com/okou-ai/okou/issues/42580)) ([f61c808](https://github.com/okou-ai/okou/commit/f61c808adf249d8ef7767548df0893e99d0246ff))
+* **core:** enable chat resource panel for everyone ([#42581](https://github.com/okou-ai/okou/issues/42581)) ([269f6e5](https://github.com/okou-ai/okou/commit/269f6e5bb47c134a266d7078c788645183bab399))
+
+## [8.785.1](https://github.com/okou-ai/okou/compare/core-v8.785.0...core-v8.785.1) (2026-10-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.2
+
+## [8.785.0](https://github.com/okou-ai/okou/compare/core-v8.784.0...core-v8.785.0) (2026-10-24)
+
+
+### Features
+
+* **ios:** bring composer connector controls to native chat ([#42767](https://github.com/okou-ai/okou/issues/42767)) ([35daba9](https://github.com/okou-ai/okou/commit/35daba9e983a3c54fe75dabfef43b4d7fff6f30c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.1
+
+## [8.784.0](https://github.com/okou-ai/okou/compare/core-v8.783.3...core-v8.784.0) (2026-10-24)
+
+
+### Features
+
+* add proactive agent learning and planning workflows ([#42724](https://github.com/okou-ai/okou/issues/42724)) ([3a23824](https://github.com/okou-ai/okou/commit/3a23824fb8b9ac3ffd76b65cd463bb687f15269e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.0
+
+## [8.783.3](https://github.com/okou-ai/okou/compare/core-v8.783.2...core-v8.783.3) (2026-10-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.1.2
+
+## [8.783.2](https://github.com/okou-ai/okou/compare/core-v8.783.1...core-v8.783.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* hide disabled managed tools in prompts and cli ([#42440](https://github.com/okou-ai/okou/issues/42440)) ([33b35f9](https://github.com/okou-ai/okou/commit/33b35f94cb80e9ad361d36b732250587f04bc79b))
+
 ## [8.783.1](https://github.com/okou-ai/okou/compare/core-v8.783.0...core-v8.783.1) (2026-10-23)
 
 

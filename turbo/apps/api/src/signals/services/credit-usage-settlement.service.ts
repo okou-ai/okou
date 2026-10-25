@@ -1,13 +1,4 @@
 import {
-  commerceJobQuery,
-  type CommerceSettlementJob,
-  commerceClaimUnavailable,
-  commercePlan,
-  commerceReceiptPlan,
-  requireCommerceSettlement,
-} from "./commerce-job-settlement";
-import { priceUsageEvents } from "./credit-usage-pricing";
-import {
   OrgCreditExpirationConflict,
   orgCreditExpirationOutcome as expirationOutcome,
   orgCreditExpirationOutcomeRow as expRow,
@@ -38,35 +29,8 @@ import {
   UsageSettlementSnapshotConflict,
   requiredSettlementDebit,
   type PreparedUsageBatch,
-  preparedSettlementPrices,
   reportCommittedSettlementPricing,
 } from "./credit-usage-batch";
-import { socialDataJobs } from "@okouai/db/schema/social-data-job";
-import {
-  dataSearchClaimUnavailable,
-  dataSearchReceiptSql as dataReceiptSql,
-  requireDataSearchSettlement,
-} from "./data-search-settlement-plan";
-import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
-import { receiptQuery } from "./managed-usage-record";
-import {
-  managedAttributionQuery as attributionQuery,
-  managedAttributionWrite,
-  managedBillingRunQuery as runQuery,
-} from "./managed-usage-attribution";
-import {
-  capturedManagedAttribution,
-  managedUsagePublicationSql,
-} from "./managed-usage-publication";
-import {
-  socialJobQuery,
-  socialClaimUnavailable,
-  socialPlan,
-  socialValues,
-  socialSettledWhere,
-  requireSocialSettlement,
-  type SocialSettlementClaim,
-} from "./social-data-settlement-plan";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { usageEvent } from "@okouai/db/schema/usage-event";
@@ -78,7 +42,6 @@ import {
   claimUsageWhere as claimWhere,
   settlementObservation,
   emptySettlementReceipt,
-  hasNoStandaloneUsage,
   settledEventsSql,
   freeUsageSettlementSql,
   memberGrantDeductionsSql,
@@ -97,8 +60,8 @@ const L = logger("CreditUsageSettlement");
 /**
  * The whole settlement transaction rolled back because a conditional write
  * reported a stale snapshot. The batch stays pending; the existing next
- * settlement cycle (cron-process-usage-events, the next run completion or the
- * social job cycle) prepares it again. It is never re-run in place.
+ * settlement cycle (cron-process-usage-events or the next run completion)
+ * prepares it again. It is never re-run in place.
  */
 function deferredSettlementConflict(error: unknown) {
   return (
@@ -109,96 +72,13 @@ function deferredSettlementConflict(error: unknown) {
 
 interface UsageSettlementArgs {
   readonly orgId: string;
-  readonly idempotencyKeys?: readonly string[];
-  readonly social?: SocialSettlementClaim;
-  readonly dataSearchJobId?: string;
-  readonly commerceJobId?: string;
+  readonly idempotencyKeys: readonly string[];
 }
 
 interface SettlementBatchArgs extends UsageSettlementArgs {
   readonly batch: PreparedUsageBatch;
-  readonly financial?: PreparedUsageFinancialPlan;
+  readonly financial: PreparedUsageFinancialPlan;
   readonly at: Date;
-}
-
-function settlementJobPlan(
-  args: SettlementBatchArgs,
-  socialJob:
-    | (typeof socialDataJobs.$inferSelect & { readonly xmin: string })
-    | undefined,
-  commerceJob: CommerceSettlementJob | undefined,
-) {
-  const dataSearchJob = args.batch.dataSearch?.job;
-  if (
-    socialClaimUnavailable(args.social, socialJob) ||
-    commerceClaimUnavailable(args.commerceJobId, commerceJob) ||
-    dataSearchClaimUnavailable(args.dataSearchJobId, dataSearchJob)
-  ) {
-    return null;
-  }
-  const social = socialPlan(args.batch.social, socialJob);
-  const jobPlan = args.batch.dataSearch?.plan ?? social;
-  return {
-    managed: commercePlan(args.batch.commerce, commerceJob) ?? jobPlan.usage,
-    receiptKey: jobPlan.usage?.idempotencyKey,
-    dataJob: dataSearchJob,
-    processPending: commerceJob !== undefined || jobPlan.processPending,
-    jobScoped:
-      socialJob !== undefined ||
-      commerceJob !== undefined ||
-      dataSearchJob !== undefined,
-    socialReceipt:
-      socialJob && args.social
-        ? { job: socialJob, claim: args.social }
-        : undefined,
-  };
-}
-
-function noStandaloneEvents(
-  events: readonly { readonly id: string }[],
-  args: UsageSettlementArgs,
-) {
-  return (
-    hasNoStandaloneUsage(events, args.social) &&
-    !args.commerceJobId &&
-    !args.dataSearchJobId
-  );
-}
-
-/** Social and Data Search jobs create their event identity at commit; their prepared price
- * and captured policy are applied to the actual claimed event. */
-function batchFinancialPlan(
-  args: SettlementBatchArgs,
-  events: (typeof usageEvent.$inferSelect)[],
-) {
-  if (args.dataSearchJobId && events.length === 0) {
-    // Zero-cost/budget jobs and already processed receipts have no debit work.
-    return { ...usageFinancialPlan([], args.at), freeOnly: true };
-  }
-  return (
-    args.financial ??
-    usageFinancialPlan(
-      args.commerceJobId
-        ? priceUsageEvents(
-            events.map((event) => {
-              return {
-                ...event,
-                creditChargePolicy:
-                  event.billingRunId &&
-                  args.batch.freeOfficialRunOwners.get(event.billingRunId) ===
-                    event.userId
-                    ? ("official_workflow_free" as const)
-                    : ("standard" as const),
-              };
-            }),
-            args.batch.prices,
-            args.orgId,
-            false,
-          )
-        : preparedSettlementPrices(args, args.batch, events),
-      args.at,
-    )
-  );
 }
 
 /**
@@ -227,7 +107,7 @@ const commitFreeUsageBatch$ = command(
       ),
     );
     signal.throwIfAborted();
-    requireCompleteUsageClaim(batch.events.length, rowCount ?? 0, false);
+    requireCompleteUsageClaim(batch.events.length, rowCount ?? 0);
     Object.assign(work, { pendingEvents: batch.events.length });
     const result = settlementReceipt(orgId, financial.priced, {
       amount: 0,
@@ -247,133 +127,75 @@ const commitFreeUsageBatch$ = command(
  */
 const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
-    const { orgId, batch, at } = args;
+    const { orgId, batch, financial, at } = args;
     const { startedAt, work } = settlementObservation(batch.prices.length);
-    // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: usage publication/claims, credit deductions, debt audit and Social/Commerce/Data Search receipts must commit together; single-statement alternative: the dependent validated cash plan, receipt CAS and later fresh expiration snapshot require precommit whole-batch rollback.
+    // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: usage claims, credit deductions and debt audit must commit together; single-statement alternative: the dependent validated cash plan and later fresh expiration snapshot require precommit whole-batch rollback.
     const result = await set(writeDb$).transaction(async (tx) => {
-      const [job] = args.social
-        ? await tx.select().from(socialJobQuery(orgId, args.social))
-        : [];
-      const [commerceJob] = args.commerceJobId
-        ? await tx.select().from(commerceJobQuery(orgId, args.commerceJobId))
-        : [];
-      const plan = settlementJobPlan(args, job, commerceJob);
-      if (!plan) {
-        return null;
-      }
-      const { managed, processPending, jobScoped, dataJob } = plan;
-      if (managed) {
-        const runId = managed.actor.runId;
-        const [run] = await tx.select().from(runQuery(runId));
-        let [attribution] = await tx.select().from(attributionQuery(runId));
-        if (run && !attribution) {
-          const capture = managedAttributionWrite(managed, run);
-          const [captured] = await tx
-            .insert(billingRunAttribution)
-            .values(capture.values)
-            .onConflictDoUpdate(capture.conflict)
-            .returning({ runId: billingRunAttribution.runId });
-          attribution = capturedManagedAttribution(run, captured);
-        }
-        await tx.execute(managedUsagePublicationSql(managed, run, attribution));
-      }
-      const events = processPending
-        ? await tx
-            .update(usageEvent)
-            .set({ status: "processed", creditsCharged: 0, processedAt: at })
-            .where(claimWhere(orgId, batch.events, managed?.idempotencyKey))
-            .returning()
-        : [];
-      requireCompleteUsageClaim(batch.events.length, events.length, jobScoped);
+      const events = await tx
+        .update(usageEvent)
+        .set({ status: "processed", creditsCharged: 0, processedAt: at })
+        .where(claimWhere(orgId, batch.events))
+        .returning();
+      requireCompleteUsageClaim(batch.events.length, events.length);
       Object.assign(work, { pendingEvents: events.length });
-      if (noStandaloneEvents(events, args)) {
+      if (events.length === 0) {
         return emptySettlementReceipt(work);
       }
-      // Includes actual events claimed by the global processor, not just GET.
-      const commerceReceipts = commerceReceiptPlan(batch.commerce, events, at);
-      const { priced, charges, freeOnly } = batchFinancialPlan(args, events);
-      let amount = 0;
+      const { priced, charges } = financial;
       let afterCredits = 0;
-      if (freeOnly) {
-        // Free job usage also needs its durable job receipt in this
-        // transaction. Standalone free usage can settle above in one statement.
-        await tx.execute(settledEventsSql(charges, at));
-      } else {
-        const cash = usageCashQueries(orgId, charges.byUser, at);
-        const [wallet] = await tx.select().from(cash.wallet);
-        requireUsageCashWallet(wallet);
-        const grants = await tx.select().from(cash.grants);
-        const deduction = planMemberGrantDeductions(charges.byUser, grants);
-        if (deduction.sharedCredits > 0) {
-          // Cash writers acquire the wallet before grant/expiry-lot locks.
-          await tx.select().from(cash.wallet);
-          const rows = parseRows(expRow, await tx.execute(expSql(orgId, at)));
-          const outcome = expirationOutcome(rows);
-          // A later statement snapshot distinguishes remaining expired lots
-          // from a concurrent clear or extension that completed expiration.
-          const [remaining] =
-            outcome.cleared === outcome.expected
-              ? []
-              : await tx
-                  .select()
-                  .from(pendingOrgCreditExpirationQuery(orgId, at));
-          requireCompleteOrgCreditExpiration(orgId, outcome, remaining);
+      const cash = usageCashQueries(orgId, charges.byUser, at);
+      const [wallet] = await tx.select().from(cash.wallet);
+      requireUsageCashWallet(wallet);
+      const grants = await tx.select().from(cash.grants);
+      const deduction = planMemberGrantDeductions(charges.byUser, grants);
+      if (deduction.sharedCredits > 0) {
+        // Cash writers acquire the wallet before grant/expiry-lot locks.
+        await tx.select().from(cash.wallet);
+        const rows = parseRows(expRow, await tx.execute(expSql(orgId, at)));
+        const outcome = expirationOutcome(rows);
+        // A later statement snapshot distinguishes remaining expired lots
+        // from a concurrent clear or extension that completed expiration.
+        const [remaining] =
+          outcome.cleared === outcome.expected
+            ? []
+            : await tx
+                .select()
+                .from(pendingOrgCreditExpirationQuery(orgId, at));
+        requireCompleteOrgCreditExpiration(orgId, outcome, remaining);
+      }
+      requirePackDebt(
+        parseRows(debtRow, await tx.execute(packDebtSql({ orgId }, at))),
+      );
+      const lots =
+        deduction.sharedCredits > 0
+          ? await tx.select().from(usageCashExpiryLotsQuery(orgId, at))
+          : [];
+      const expiry = planLots(lots, deduction.sharedCredits, at);
+      await tx.execute(settledEventsSql(charges, at));
+      const grantSql = memberGrantDeductionsSql(deduction.updates);
+      const granted = (await tx.execute(grantSql)).rowCount;
+      requireConditionalDeductions("grant", deduction.updates, granted);
+      const amount = deduction.sharedCredits;
+      const lotSql = expiryLotDeductionsSql(expiry.updates);
+      const lotted = (await tx.execute(lotSql)).rowCount;
+      requireConditionalDeductions("expiry lot", expiry.updates, lotted);
+      Object.assign(work, usageCashWork(deduction, expiry));
+      if (amount > 0) {
+        const debit = orgDebitPlan(orgId, amount, expiry.expired, at);
+        const [debited] = await tx
+          .insert(orgMetadataCanonicalWrites)
+          .values(debit.values)
+          .onConflictDoUpdate(debit.conflict)
+          .returning();
+        const metadata = requiredSettlementDebit(debited);
+        const defaultPlan = settlementDefaultPlan(metadata);
+        if (defaultPlan) {
+          await tx
+            .insert(orgPlanEntitlements)
+            .values(defaultPlan)
+            .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
         }
-        requirePackDebt(
-          parseRows(debtRow, await tx.execute(packDebtSql({ orgId }, at))),
-        );
-        const lots =
-          deduction.sharedCredits > 0
-            ? await tx.select().from(usageCashExpiryLotsQuery(orgId, at))
-            : [];
-        const expiry = planLots(lots, deduction.sharedCredits, at);
-        await tx.execute(settledEventsSql(charges, at));
-        const grantSql = memberGrantDeductionsSql(deduction.updates);
-        const granted = (await tx.execute(grantSql)).rowCount;
-        requireConditionalDeductions("grant", deduction.updates, granted);
-        amount = deduction.sharedCredits;
-        const lotSql = expiryLotDeductionsSql(expiry.updates);
-        const lotted = (await tx.execute(lotSql)).rowCount;
-        requireConditionalDeductions("expiry lot", expiry.updates, lotted);
-        Object.assign(work, usageCashWork(deduction, expiry));
-        if (amount > 0) {
-          const debit = orgDebitPlan(orgId, amount, expiry.expired, at);
-          const [debited] = await tx
-            .insert(orgMetadataCanonicalWrites)
-            .values(debit.values)
-            .onConflictDoUpdate(debit.conflict)
-            .returning();
-          const metadata = requiredSettlementDebit(debited);
-          const defaultPlan = settlementDefaultPlan(metadata);
-          if (defaultPlan) {
-            await tx
-              .insert(orgPlanEntitlements)
-              .values(defaultPlan)
-              .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
-          }
-          afterCredits = metadata.credits;
-        }
-      }
-      if (commerceReceipts.expected > 0) {
-        const { rowCount } = await tx.execute(commerceReceipts.sql);
-        requireCommerceSettlement(commerceReceipts.expected, rowCount);
-      }
-      const [receipt] = plan.receiptKey
-        ? await tx.select().from(receiptQuery(plan.receiptKey))
-        : [];
-      const socialReceipt = plan.socialReceipt;
-      if (socialReceipt) {
-        const settled = await tx
-          .update(socialDataJobs)
-          .set(socialValues(managed, receipt, at))
-          .where(socialSettledWhere(socialReceipt.claim, socialReceipt.job))
-          .returning({ id: socialDataJobs.id });
-        requireSocialSettlement(settled.length);
-      }
-      if (dataJob) {
-        const receiptSql = dataReceiptSql(dataJob, managed, receipt, at);
-        const { rowCount } = await tx.execute(receiptSql);
-        requireDataSearchSettlement(rowCount);
+        afterCredits = metadata.credits;
       }
       signal.throwIfAborted();
       return settlementReceipt(orgId, priced, { amount, work, afterCredits });
@@ -391,12 +213,9 @@ const commitUsageBatch$ = command(
 export const settleOrgUsage$ = command(
   async ({ set }, args: UsageSettlementArgs, signal: AbortSignal) => {
     const batch = await set(prepareUsageSettlementBatch$, args, signal);
-    const financial =
-      args.social || args.commerceJobId || args.dataSearchJobId
-        ? undefined
-        : usageFinancialPlan(batch.priced, nowDate());
+    const financial = usageFinancialPlan(batch.priced, nowDate());
     const outcome = await settle(
-      financial?.freeOnly && batch.commerce.length === 0
+      financial.freeOnly
         ? set(
             commitFreeUsageBatch$,
             { orgId: args.orgId, batch, financial },
@@ -404,7 +223,7 @@ export const settleOrgUsage$ = command(
           )
         : set(
             commitUsageBatch$,
-            { ...args, batch, financial, at: financial?.at ?? nowDate() },
+            { ...args, batch, financial, at: financial.at },
             signal,
           ),
     );
@@ -420,9 +239,9 @@ export const settleOrgUsage$ = command(
       throw outcome.error;
     }
     const { result, startedAt } = outcome.value;
-    if (result?.work.pendingEvents && !args.social && !args.dataSearchJobId) {
+    if (result.work.pendingEvents) {
       reportCommittedSettlementPricing(args.orgId, batch);
     }
-    return result ? completeSettlementReceipt(result, startedAt) : null;
+    return completeSettlementReceipt(result, startedAt);
   },
 );

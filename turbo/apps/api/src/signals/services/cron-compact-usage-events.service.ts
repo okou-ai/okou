@@ -30,7 +30,8 @@ import { logger } from "../../lib/log";
 import { timestampWithoutTimeZone } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { recordBillingOperationTimings } from "../external/sandbox-op-log";
-import { safeSync } from "../utils";
+import { safeSync, settle } from "../utils";
+import { safeSqlStateCode } from "../../lib/pg-errors";
 
 const L = logger("CronCompactUsageEvents");
 const USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT = 500;
@@ -188,7 +189,7 @@ function capturedIdentityCtes(): SQL {
     captured_attributions AS (
       INSERT INTO ${billingRunAttribution} (
         run_id, org_id, user_id, run_started_at, source, thread_id, thread_context,
-        run_terminal_status, run_completed_at, run_lifecycle_context
+        run_terminal_status, run_completed_at, run_lifecycle_context, usage_observed
       )
       SELECT id, org_id, user_id, created_at,
         CASE
@@ -201,7 +202,7 @@ function capturedIdentityCtes(): SQL {
         CASE WHEN chat_thread_id IS NULL THEN 'threadless' ELSE 'thread' END,
         CASE WHEN status IN ('completed', 'failed', 'cancelled', 'timeout') THEN status END,
         CASE WHEN status IN ('completed', 'failed', 'cancelled', 'timeout') THEN completed_at END,
-        'captured'
+        'captured', true
       FROM retained_runs run
       WHERE NOT EXISTS (SELECT 1 FROM retained_attributions attribution WHERE attribution.run_id = run.id)
         AND EXISTS (
@@ -388,6 +389,22 @@ function mutationCtes(): SQL {
   `;
 }
 
+// Newly captured identities publish usageObserved in their INSERT. Update only
+// retained identities here: PostgreSQL cannot modify one row twice in a statement.
+// Consuming the materialized summary validates reconciliation before this UPDATE.
+function observedAttributionCte(): SQL {
+  return sql`
+    observed_attributions AS (
+      UPDATE ${billingRunAttribution}
+      SET usage_observed = true
+      WHERE ${eq(billingRunAttribution.usageObserved, sql`false`)}
+        AND ${inArray(billingRunAttribution.runId, sql`(SELECT run_id FROM retained_attributions)`)}
+        AND ${inArray(billingRunAttribution.runId, sql`(SELECT unnest("observedRunIds") FROM compaction_summary)`)}
+      RETURNING ${billingRunAttribution.runId}
+    )
+  `;
+}
+
 function rowCountCte(): SQL {
   return sql`
     row_counts AS (
@@ -436,7 +453,7 @@ function compactionSummarySelect(): SQL {
       source_totals.credits_charged::text AS "creditsCharged",
       ARRAY(SELECT DISTINCT billing_run_id FROM inserted_hourly
             WHERE billing_context = 'run') AS "observedRunIds",
-      (
+      (1 / CASE WHEN (
         source_totals.quantity = inserted_totals.quantity
         AND source_totals.credits_charged = inserted_totals.credits_charged
         AND row_counts.locked_raw_rows = row_counts.raw_rows_deleted
@@ -449,7 +466,7 @@ function compactionSummarySelect(): SQL {
             AND NOT EXISTS (SELECT 1 FROM retained_attributions retained WHERE retained.run_id = run.id)
             AND NOT EXISTS (SELECT 1 FROM captured_attributions captured WHERE captured.run_id = run.id)
         )
-      ) AS "reconciled"
+      ) THEN 1 ELSE 0 END = 1) AS "reconciled"
     FROM source_totals
     CROSS JOIN inserted_totals
     CROSS JOIN row_counts
@@ -466,8 +483,12 @@ function compactUsageEventsSql(args: {
     ${consumedSourceCtes()},
     ${mutationCtes()},
     ${rowCountCte()},
-    ${productTotalCtes()}
-    ${compactionSummarySelect()}
+    ${productTotalCtes()},
+    compaction_summary AS MATERIALIZED (
+      ${compactionSummarySelect()}
+    ),
+    ${observedAttributionCte()}
+    SELECT * FROM compaction_summary
   `;
 }
 
@@ -526,68 +547,60 @@ const compactUsageEventBatch$ = command(
         "Usage event compaction hold probe returned no summary row",
       );
     }
-    // The probes are read-only; financial reconciliation still rejects the
-    // compaction and attribution writes together before this transaction commits.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0129; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const rows = parseRawRows(
-        compactionRowSchema,
-        await tx.execute(compactUsageEventsSql({ cutoff, rawSeedLimit })),
-      );
-      const compaction = rows[0];
-      if (!compaction) {
-        throw new Error("Usage event compaction returned no summary row");
-      }
-      if (!compaction.reconciled) {
+    // The runtime count/total guard raises 22012 on failed reconciliation.
+    // Its denominator depends on the consumed rows, so every compaction and
+    // attribution write rolls back inside this one statement before any decode.
+    const query = compactUsageEventsSql({ cutoff, rawSeedLimit });
+    const executed = await settle(
+      (async () => {
+        return parseRawRows(compactionRowSchema, await db.execute(query));
+      })(),
+    );
+    signal.throwIfAborted();
+    if (!executed.ok) {
+      if (safeSqlStateCode(executed.error) === "22012") {
+        // A rejected statement returns no summary; do not invent rolled-back counts.
         L.error("usage event compaction reconciliation failed", {
           cutoff: cutoffDate.toISOString(),
           rawSeedLimit,
-          seededRawRows: compaction.seededRawRows,
-          selectedGrains: compaction.selectedGrains,
-          rawRowsDeleted: compaction.rawRowsDeleted,
-          hourlyRowsDeleted: compaction.hourlyRowsDeleted,
-          hourlyRowsInserted: compaction.hourlyRowsInserted,
         });
         throw new Error("Usage event compaction reconciliation failed");
       }
-      if (compaction.observedRunIds.length > 0) {
-        await tx
-          .update(billingRunAttribution)
-          .set({ usageObserved: true })
-          .where(
-            and(
-              inArray(billingRunAttribution.runId, compaction.observedRunIds),
-              eq(billingRunAttribution.usageObserved, false),
-            ),
-          );
-      }
-      signal.throwIfAborted();
-      const [remaining] = await tx
-        .select({ id: event.id })
-        .from(event)
-        .where(eligibleRawPredicate(cutoff))
-        .limit(1);
-      const hasMoreRaw = remaining !== undefined;
-      signal.throwIfAborted();
+      throw executed.error;
+    }
+    const compaction = executed.value[0];
+    if (!compaction) {
+      throw new Error("Usage event compaction returned no summary row");
+    }
+    if (!compaction.reconciled) {
+      throw new Error("Usage event compaction reconciliation failed");
+    }
+    signal.throwIfAborted();
+    const [remaining] = await db
+      .select({ id: event.id })
+      .from(event)
+      .where(eligibleRawPredicate(cutoff))
+      .limit(1);
+    signal.throwIfAborted();
+    const hasMoreRaw = remaining !== undefined;
 
-      return {
-        cutoff: cutoffDate.toISOString(),
-        rawSeedLimit,
-        seededRawRows: compaction.seededRawRows,
-        selectedGrains: compaction.selectedGrains,
-        maxGrainSourceRows: compaction.maxGrainSourceRows,
-        probedRawRows: holdProbe.probedRawRows,
-        billingErrorHeldRows: holdProbe.billingErrorHeldRows,
-        rawRowsDeleted: compaction.rawRowsDeleted,
-        hourlyRowsDeleted: compaction.hourlyRowsDeleted,
-        hourlyRowsInserted: compaction.hourlyRowsInserted,
-        quantity: compaction.quantity,
-        creditsCharged: compaction.creditsCharged,
-        reconciled: compaction.reconciled,
-        hasMore: hasMoreRaw,
-        lockWaitMs,
-      };
-    });
+    return {
+      cutoff: cutoffDate.toISOString(),
+      rawSeedLimit,
+      seededRawRows: compaction.seededRawRows,
+      selectedGrains: compaction.selectedGrains,
+      maxGrainSourceRows: compaction.maxGrainSourceRows,
+      probedRawRows: holdProbe.probedRawRows,
+      billingErrorHeldRows: holdProbe.billingErrorHeldRows,
+      rawRowsDeleted: compaction.rawRowsDeleted,
+      hourlyRowsDeleted: compaction.hourlyRowsDeleted,
+      hourlyRowsInserted: compaction.hourlyRowsInserted,
+      quantity: compaction.quantity,
+      creditsCharged: compaction.creditsCharged,
+      reconciled: compaction.reconciled,
+      hasMore: hasMoreRaw,
+      lockWaitMs,
+    };
   },
 );
 

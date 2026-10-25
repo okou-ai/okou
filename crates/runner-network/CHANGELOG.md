@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.82](https://github.com/okou-ai/okou/compare/runner-network-v0.2.81...runner-network-v0.2.82) (2026-10-25)
+
+## [0.2.81](https://github.com/okou-ai/okou/compare/runner-network-v0.2.80...runner-network-v0.2.81) (2026-10-25)
+
+## [0.2.80](https://github.com/okou-ai/okou/compare/runner-network-v0.2.79...runner-network-v0.2.80) (2026-10-25)
+
+
+### Bug Fixes
+
+* **runner:** bound deferred network log allocations ([#42794](https://github.com/okou-ai/okou/issues/42794)) ([fd8d46a](https://github.com/okou-ai/okou/commit/fd8d46ae1756aa974a5088cf4a2f550a17e0c23a))
+
+## [0.2.79](https://github.com/okou-ai/okou/compare/runner-network-v0.2.78...runner-network-v0.2.79) (2026-10-25)
+
+## [0.2.78](https://github.com/okou-ai/okou/compare/runner-network-v0.2.77...runner-network-v0.2.78) (2026-10-23)
+
 ## [0.2.77](https://github.com/okou-ai/okou/compare/runner-network-v0.2.76...runner-network-v0.2.77) (2026-10-23)
 
 ## [0.2.76](https://github.com/okou-ai/okou/compare/runner-network-v0.2.75...runner-network-v0.2.76) (2026-10-23)

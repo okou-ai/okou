@@ -1,7 +1,10 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
+import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
+import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE,
   STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE,
@@ -15,6 +18,7 @@ import {
   userMessageWithTemplate,
 } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { setPaidToolDisabled } from "./helpers/paid-tools";
 
 /**
  * Steering without delivery IDs: a running sandbox run reads the next
@@ -59,6 +63,132 @@ async function sendQueuedPrompt(
 }
 
 describe("CHAT-02: steering input prompts into a running run", () => {
+  const templates: readonly {
+    readonly kind: string;
+    readonly title: string;
+    readonly template: GenerationTemplateRequest;
+  }[] = [
+    {
+      kind: "website",
+      title: "Website",
+      template: {
+        type: "website",
+        selection: { websiteTemplateId: "website-template:black-slabs" },
+      },
+    },
+    {
+      kind: "illustration",
+      title: "Illustration",
+      template: {
+        type: "illustration",
+        selection: { illustrationStyleId: "image-style:emboss-deboss" },
+      },
+    },
+  ];
+
+  it.each(
+    [false, true].flatMap((initiallyDisabled) => {
+      return templates.map((template) => {
+        return { ...template, initiallyDisabled };
+      });
+    }),
+  )(
+    "renders $kind steering from current settings after starting disabled=$initiallyDisabled",
+    async ({ kind, title, template, initiallyDisabled }) => {
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+      await setPaidToolDisabled(
+        context,
+        actor,
+        "image-generation",
+        initiallyDisabled,
+      );
+      const active = await sendChatRun(actor, {
+        agentId,
+        prompt: "Start with captured tool settings",
+      });
+      const claimed = await claimChatRun(runnerGroup, active.runId);
+      expect(
+        claimed.claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
+      ).toBe(initiallyDisabled ? '["image-generation"]' : "[]");
+      const originalPrompt = (await api.readRun(actor, active.runId))
+        .appendSystemPrompt;
+      const eventId = randomUUID();
+      const request =
+        "Use this template. Preserve this literal command: okou generate image --raw-prompt example";
+      await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          threadId: active.threadId,
+          clientEventId: eventId,
+          prompt: request,
+          userMessage: userMessageWithTemplate(request, template),
+        },
+        [201],
+      );
+      await setPaidToolDisabled(
+        context,
+        actor,
+        "image-generation",
+        !initiallyDisabled,
+      );
+      const first = await api.nextSteerableInput(
+        claimed.claim.sandboxToken,
+        active.runId,
+      );
+      await setPaidToolDisabled(
+        context,
+        actor,
+        "image-generation",
+        initiallyDisabled,
+      );
+      const second = await api.nextSteerableInput(
+        claimed.claim.sandboxToken,
+        active.runId,
+      );
+      const enabled = initiallyDisabled ? first : second;
+      const disabled = initiallyDisabled ? second : first;
+      const golden = readFileSync(
+        new URL(
+          `./fixtures/managed-tools-enabled/${kind}.txt`,
+          import.meta.url,
+        ),
+        "utf8",
+      ).trimEnd();
+      const disabledGolden =
+        kind === "website"
+          ? golden
+              .split("\n")
+              .filter((line) => {
+                return !line.startsWith("- Image workflow:");
+              })
+              .join("\n")
+          : golden.split("\n- Style source:")[0];
+      const userPrompt = `${request}\n\n[Template #1: ${title} template (${kind})]`;
+      expect(enabled).toStrictEqual({
+        input: { eventId, prompt: `${golden}\n\n${userPrompt}` },
+      });
+      expect(disabled).toStrictEqual({
+        input: { eventId, prompt: `${disabledGolden}\n\n${userPrompt}` },
+      });
+      await expect(
+        api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+      ).resolves.toStrictEqual(second);
+      expect((await api.readRun(actor, active.runId)).appendSystemPrompt).toBe(
+        originalPrompt,
+      );
+      await api.declareSteeredInput(
+        claimed.claim.sandboxToken,
+        active.runId,
+        eventId,
+      );
+      await expect(
+        api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+      ).resolves.toStrictEqual({ input: null });
+      await cancelChatRun(actor, active.runId);
+    },
+  );
+
   it("keeps disabled Document input queued and steers it only after enablement", async () => {
     const {
       actor: owner,
@@ -75,6 +205,9 @@ describe("CHAT-02: steering input prompts into a running run", () => {
     const userMessage = userMessageWithTemplate("Prepare an invoice", {
       type: "document",
       selection: { documentTemplateId: "document-template:simple-invoice" },
+    });
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BuiltinDocumentTemplates]: false,
     });
     await chat.requestSendEvent(
       actor,

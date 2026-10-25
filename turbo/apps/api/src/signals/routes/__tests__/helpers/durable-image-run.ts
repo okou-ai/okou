@@ -15,19 +15,13 @@ const cronHeaders = Object.freeze({
 
 export async function createDurableImageFixture(
   context: TestContext,
-  { isolatePg = false }: { readonly isolatePg?: boolean } = {},
+  preferences = setupApp({ context, routes: userModelPreferenceRoutes }),
 ) {
   mockEnv("CRON_SECRET", "image-reconciliation-secret");
   mockEnv("OPENAI_API_KEY", "test-openai-key");
   context.mocks.ably.createTokenRequest.mockResolvedValue(tokenRequest);
   context.mocks.ably.publish.mockResolvedValue(undefined);
   context.mocks.s3.send.mockResolvedValue({});
-  // Select isolation before member setup for cases that scan the global queue.
-  const preferences = await setupApp({
-    context,
-    routes: userModelPreferenceRoutes,
-    isolatePg,
-  });
   const actor = await createPublicImageMember(context, {
     credits: 10_000,
   });

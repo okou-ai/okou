@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { http, HttpResponse } from "msw";
-import { z } from "zod";
+import * as z from "zod";
 import { server } from "../../../../mocks/server";
 
 export const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";

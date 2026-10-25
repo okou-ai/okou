@@ -700,6 +700,20 @@ describe("CHAT-02: dispatch failure", () => {
         return message.runId !== undefined;
       }),
     ).toBeFalsy();
+    const rejections = messages.events.filter((message) => {
+      return message.eventType === "input.rejected";
+    });
+    const errors = messages.events.filter((message) => {
+      return message.eventType === "output.error";
+    });
+    expect(rejections).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    const rejection = rejections[0];
+    const error = errors[0];
+    if (!rejection || !error) {
+      throw new Error("Expected the atomic dispatch rejection pair");
+    }
+    expect(error.seqId).toBe(rejection.seqId + 1);
     const runs = await reads.requestListLogs(actor, { limit: 100 }, [200]);
     expect(runs.body.data).toStrictEqual([]);
 

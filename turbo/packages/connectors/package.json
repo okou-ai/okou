@@ -113,7 +113,7 @@
   },
   "dependencies": {
     "tr46": "5.1.1",
-    "zod": "^4.6.7"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@okouai/eslint-config": "workspace:*",

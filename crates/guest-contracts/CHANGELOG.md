@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.27.5](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.4...guest-contracts-v0.27.5) (2026-10-25)
+
+
+### Performance Improvements
+
+* **runner:** borrow canonical storage manifest entries ([#42894](https://github.com/okou-ai/okou/issues/42894)) ([ee39444](https://github.com/okou-ai/okou/commit/ee39444f77ba7901fbc7e2a5319da9a168189f5e))
+
+## [0.27.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.3...guest-contracts-v0.27.4) (2026-10-25)
+
+
+### Performance Improvements
+
+* **runner:** index decoded mount ownership checks ([#42773](https://github.com/okou-ai/okou/issues/42773)) ([41e0886](https://github.com/okou-ai/okou/commit/41e088645e693f25d23daad3ad2ca4627e6ae4b1))
+
+## [0.27.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.2...guest-contracts-v0.27.3) (2026-10-25)
+
+
+### Performance Improvements
+
+* **storage:** avoid repeated decoded file path parsing ([#42778](https://github.com/okou-ai/okou/issues/42778)) ([d110db6](https://github.com/okou-ai/okou/commit/d110db669b585905b4a1a0eb811944c78ef16d4b))
+
 ## [0.27.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.1...guest-contracts-v0.27.2) (2026-10-23)
 
 ## [0.27.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.0...guest-contracts-v0.27.1) (2026-10-23)

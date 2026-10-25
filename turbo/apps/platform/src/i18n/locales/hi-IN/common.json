@@ -1053,6 +1053,7 @@
       "loadFailed": "सभी अनुरोधित अनुमतियों की पुष्टि नहीं हो सकी। किसी भी अनुमति में बदलाव नहीं किया जा सकता।",
       "loading": "अनुमतियाँ लोड हो रही हैं",
       "notNow": "अभी नहीं",
+      "review": "अनुमतियों की समीक्षा करें",
       "scopeNote": "यह इस एजेंट पर लागू होता है, केवल मौजूदा कार्य पर नहीं।",
       "title": "निम्नलिखित अनुमतियाँ दें"
     }
@@ -1969,6 +1970,7 @@
       "retry": "Retry",
       "saved": "Saved for the next evaluation",
       "saveReply": "Save reply",
+      "sourceUpdate": "स्रोत अपडेट",
       "states": {
         "active": "In progress",
         "archived": "Archived",
@@ -2366,6 +2368,7 @@
       "unknown": "अज्ञात",
       "unsupported": "मैन्युअल रीसेट समर्थित नहीं है; उपयोग अपने आप पुनः उपलब्ध होगा।"
     },
+    "syncFailed": "आपकी चैट शायद अपडेट न हुई हों",
     "taskChips": {
       "chooseTask": "काम चुनें",
       "ideas": {
@@ -5134,6 +5137,10 @@
           "description": "ऐप कैसा दिखता है और कैसे व्यवहार करता है, इसे वैयक्तिकृत करें।",
           "title": "वरीयता"
         },
+        "proactiveAgent": {
+          "description": "चुनें कि Okou कैसे सीखे, योजना बनाए, Tasks आगे बढ़ाए और सुझाव दे।",
+          "title": "Proactive Agent"
+        },
         "tools": {
           "title": "टूल"
         },
@@ -5541,15 +5548,37 @@
       "proactiveJobs": {
         "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
         "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
+        "missingTimezone": "प्राथमिकताओं में अपना समय क्षेत्र सेट करें।",
         "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
         "preparing": "Preparing your tasks. You can turn this off at any time.",
         "retry": "Retry",
         "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
         "title": "Proactive tasks"
       },
+      "proactiveLearning": {
+        "description": "रात में आपकी गतिविधि की समीक्षा करें और व्यक्तिगत स्मृति बेहतर बनाएँ।",
+        "missingDefaultAgent": "उपलब्ध डिफ़ॉल्ट Agent चुनें।",
+        "missingTimezone": "प्राथमिकताओं में अपना समय क्षेत्र सेट करें।",
+        "preparationFailed": "यह कार्यप्रवाह अस्थायी रूप से उपलब्ध नहीं है। Okou फिर प्रयास करेगा।",
+        "preparing": "यह कार्यप्रवाह तैयार हो रहा है।",
+        "retry": "Retry",
+        "retryMessage": "यह सेटिंग लोड या अपडेट नहीं हो सकी। फिर प्रयास करें।",
+        "title": "सीखना"
+      },
+      "proactivePlanning": {
+        "description": "आपके स्पष्ट रूप से सौंपे गए काम के दायरे में योजना बनाएँ और Tasks अपडेट करें। Tasks चालू होने पर नया काम तुरंत शुरू हो सकता है।",
+        "missingDefaultAgent": "उपलब्ध डिफ़ॉल्ट Agent चुनें।",
+        "missingTimezone": "प्राथमिकताओं में अपना समय क्षेत्र सेट करें।",
+        "preparationFailed": "यह कार्यप्रवाह अस्थायी रूप से उपलब्ध नहीं है। Okou फिर प्रयास करेगा।",
+        "preparing": "यह कार्यप्रवाह तैयार हो रहा है।",
+        "retry": "Retry",
+        "retryMessage": "यह सेटिंग लोड या अपडेट नहीं हो सकी। फिर प्रयास करें।",
+        "title": "योजना"
+      },
       "proactiveSuggestions": {
         "description": "Okou हर घंटे आपके जुड़े स्रोतों की जाँच करता है और होम पेज पर उपयोगी अगले कदम सुझाता है।",
         "missingDefaultAgent": "सक्रिय सुझाव पाने के लिए उपलब्ध डिफ़ॉल्ट Agent चुनें।",
+        "missingTimezone": "प्राथमिकताओं में अपना समय क्षेत्र सेट करें।",
         "preparationFailed": "अभी उपलब्ध नहीं है। Okou अपने आप फिर से कोशिश करेगा।",
         "preparing": "हर घंटे के सुझाव तैयार किए जा रहे हैं। आप इन्हें कभी भी बंद कर सकते हैं।",
         "retry": "फिर कोशिश करें",
@@ -5749,6 +5778,9 @@
         "logo": {
           "description": "वर्कस्पेस अवतार पूरे ऐप में प्रदर्शित होता है",
           "fallbackAlt": "वर्कस्पेस",
+          "loadError": "वर्कस्पेस का लोगो लोड नहीं हो सका।",
+          "loading": "वर्कस्पेस का लोगो लोड हो रहा है",
+          "retry": "फिर से कोशिश करें",
           "title": "प्रतीक चिन्ह",
           "upload": "लोगो अपलोड करें"
         },

@@ -15,6 +15,7 @@ import {
 } from "@okouai/api-contracts/contracts/client-headers";
 import { serializeError } from "@okouai/core/log-utils";
 import type { Command } from "ccstate";
+// oxlint-disable-next-line no-restricted-imports -- app factory owns the Hono instance
 import { Hono, type Context, type Next } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { bodyLimit } from "hono/body-limit";
@@ -700,11 +701,13 @@ export function createAppWithRoutes({
   app.use("*", corsMiddleware);
   app.use("/mcp", bodyLimit({ maxSize: 64 * 1024 }));
 
-  // Flush buffered Axiom logs after the response is sent so logging doesn't
-  // add latency to the user-visible request.
+  // Native Worker logs are exported by the platform. Node and Workers without
+  // an export destination retain the buffered SDK transport.
   app.use("*", async (c, next) => {
     await next();
-    waitUntil(flushLogs());
+    if (!currentRequestRuntime()?.nativeTelemetry) {
+      waitUntil(flushLogs());
+    }
   });
 
   app.use("*", clientCompatibilityMiddleware);

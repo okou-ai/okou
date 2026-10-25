@@ -15,12 +15,6 @@ export interface ComposerAddMenuItem {
   readonly Icon: LucideIcon;
   readonly label: string;
   readonly onSelect: () => void;
-  /**
-   * Runs on hover, focus and press, before the click that opens whatever the
-   * row leads to. The template picker downloads its cover images, so it warms
-   * them here rather than after the menu has already closed.
-   */
-  readonly onPrewarm?: () => void;
 }
 
 /**
@@ -86,13 +80,7 @@ export function ComposerAddMenu({
             ...separator,
             ...group.map((item) => {
               return (
-                <DropdownMenuItem
-                  key={item.id}
-                  onPointerEnter={item.onPrewarm}
-                  onFocus={item.onPrewarm}
-                  onPointerDown={item.onPrewarm}
-                  onClick={item.onSelect}
-                >
+                <DropdownMenuItem key={item.id} onClick={item.onSelect}>
                   <item.Icon
                     className="shrink-0 text-muted-foreground"
                     aria-hidden="true"

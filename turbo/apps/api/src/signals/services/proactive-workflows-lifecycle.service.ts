@@ -37,6 +37,8 @@ import {
 import { resolveBlueprint } from "./official-workflow-installation.service";
 import { calculateNextRun } from "./time-automation";
 import { officialScheduleOwnerHash } from "./official-workflow-owner-schedule";
+import { proactiveWorkflowOwnerEnabledSql } from "./proactive-workflow-owner";
+import { proactiveNightlyCron } from "./proactive-nightly-schedule";
 import { userJobs } from "@okouai/db/schema/user-job";
 import { runnableJobCondition } from "./user-jobs-query";
 import { wakeProactiveJobs$ } from "./proactive-jobs-wake.service";
@@ -49,32 +51,12 @@ function ownerMinute(owner: ProactiveWorkflowOwner): number {
   return officialScheduleOwnerHash(owner) % 60;
 }
 
-/** The source preference is business intent, never a worker claim or lease. */
-export function proactiveWorkflowOwnerEnabledSql(
-  owner: ProactiveWorkflowOwner,
-  agentId: string,
-  kind: ProactiveWorkflowKind,
-) {
-  const preference =
-    kind === "jobs"
-      ? sql`preference.proactive_action_enabled = true`
-      : sql`preference.proactive_suggestions_enabled = true`;
-  return sql`EXISTS (
-    SELECT 1 FROM org_members_metadata AS preference
-    JOIN org_metadata AS organization ON organization.org_id = preference.org_id
-    JOIN agents AS primary_agent ON primary_agent.id = organization.default_agent_id AND primary_agent.org_id = organization.org_id
-    WHERE preference.org_id = ${owner.orgId} AND preference.user_id = ${owner.userId}
-      AND ${preference}
-      AND primary_agent.id = ${agentId}::uuid
-      AND (primary_agent.visibility = 'public' OR primary_agent.owner = ${owner.userId})
-  )`;
-}
-
 const loadProactiveSchedule$ = command(
   async (
     { set },
     owner: ProactiveWorkflowOwner,
     kind: ProactiveWorkflowKind,
+    timezone: string,
     signal: AbortSignal,
   ) => {
     const source = PROACTIVE_WORKFLOW_DEFINITIONS[kind];
@@ -106,11 +88,19 @@ const loadProactiveSchedule$ = command(
     const bindings =
       kind === "jobs"
         ? []
-        : [{ key: "cron", value: `${ownerMinute(owner)} * * * *` }];
+        : [
+            {
+              key: "cron",
+              value:
+                kind === "learning" || kind === "planning"
+                  ? proactiveNightlyCron(kind, owner)
+                  : `${ownerMinute(owner)} * * * *`,
+            },
+          ];
     const resolved = resolveBlueprint(
       blueprint,
       { blueprintKey: blueprint.key, bindings },
-      "UTC",
+      timezone,
     );
     if (
       !resolved.ok ||
@@ -118,9 +108,7 @@ const loadProactiveSchedule$ = command(
       (resolved.blueprint.createRequest.schedule.type !== "cron" &&
         resolved.blueprint.createRequest.schedule.type !== "loop")
     ) {
-      throw new Error(
-        "Proactive workflows require their hourly cron Blueprint",
-      );
+      throw new Error("Proactive workflows require a cron or loop Blueprint");
     }
     const schedule = resolved.blueprint.createRequest.schedule;
     return { catalog, definition, blueprint, bindings, schedule };
@@ -214,6 +202,70 @@ const synchronizeProactiveJobThreads$ = command(
   },
 );
 
+const synchronizeProactiveSchedule$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: ProactiveWorkflowOwner;
+      readonly agentId: string;
+      readonly workflowId: string;
+      readonly blueprintKey: string;
+      readonly kind: ProactiveWorkflowKind;
+      readonly cron: string | null;
+      readonly timezone: string;
+      readonly nextRunAt: Date | null;
+      readonly at: Date;
+    },
+    signal: AbortSignal,
+  ) => {
+    const database = set(writeDb$);
+    await database
+      .update(workflowAutomations)
+      .set({
+        enabled: true,
+        officialIntendedEnabled: true,
+        ...(args.kind === "jobs" ? { consecutiveFailures: 0 } : {}),
+        nextRunAt: args.nextRunAt,
+        updatedAt: args.at,
+      })
+      .where(
+        and(
+          eq(workflowAutomations.workflowId, args.workflowId),
+          eq(workflowAutomations.officialBlueprintKey, args.blueprintKey),
+          eq(workflowAutomations.officialIntendedEnabled, false),
+          proactiveWorkflowOwnerEnabledSql(args.owner, args.agentId, args.kind),
+        ),
+      );
+    signal.throwIfAborted();
+    if (args.kind === "learning" || args.kind === "planning") {
+      await database
+        .update(workflowAutomations)
+        .set({
+          cronExpression: args.cron,
+          timezone: args.timezone,
+          nextRunAt: args.nextRunAt,
+          updatedAt: args.at,
+        })
+        .where(
+          and(
+            eq(workflowAutomations.workflowId, args.workflowId),
+            eq(workflowAutomations.officialBlueprintKey, args.blueprintKey),
+            or(
+              sql`${workflowAutomations.timezone} IS DISTINCT FROM ${args.timezone}`,
+              sql`${workflowAutomations.cronExpression} IS DISTINCT FROM ${args.cron}`,
+            ),
+            proactiveWorkflowOwnerEnabledSql(
+              args.owner,
+              args.agentId,
+              args.kind,
+            ),
+          ),
+        );
+      signal.throwIfAborted();
+    }
+  },
+);
+
 /** Materialize this fixed Official schedule atomically, without legacy installer transactions. */
 export const ensureProactiveWorkflows$ = command(
   async ({ get, set }, owner: ProactiveWorkflowOwner, signal: AbortSignal) => {
@@ -247,7 +299,20 @@ export const ensureProactiveWorkflows$ = command(
       return;
     }
     for (const kind of kinds) {
-      const schedule = await set(loadProactiveSchedule$, owner, kind, signal);
+      const timezone =
+        kind === "learning" || kind === "planning"
+          ? eligibility.timezone
+          : "UTC";
+      if (timezone === null) {
+        continue;
+      }
+      const schedule = await set(
+        loadProactiveSchedule$,
+        owner,
+        kind,
+        timezone,
+        signal,
+      );
       if (!schedule) {
         continue;
       }
@@ -261,7 +326,7 @@ export const ensureProactiveWorkflows$ = command(
           ? schedule.schedule.intervalSeconds
           : null;
       const at = nowDate();
-      const next = cron === null ? null : calculateNextRun(cron, "UTC", at);
+      const next = cron === null ? null : calculateNextRun(cron, timezone, at);
       const rows = parseRawRows(
         installedSchema,
         await database.execute(sql`
@@ -279,7 +344,7 @@ export const ensureProactiveWorkflows$ = command(
         INSERT INTO workflow_automations (org_id, workflow_id, owner_user_id, kind, schedule_type, cron_expression, interval_seconds,
           timezone, enabled, next_run_at, official_blueprint_key, official_applied_fingerprint,
           official_reconciliation_status, official_parameter_bindings, official_intended_enabled)
-        SELECT ${owner.orgId}, id, ${owner.userId}, 'schedule', ${schedule.schedule.type}, ${cron}, ${interval}, 'UTC', true, ${next},
+        SELECT ${owner.orgId}, id, ${owner.userId}, 'schedule', ${schedule.schedule.type}, ${cron}, ${interval}, ${timezone}, true, ${next},
           ${blueprint.key}, ${blueprint.fingerprint}, 'current', ${JSON.stringify(bindings)}::jsonb, true FROM installed
         ON CONFLICT (workflow_id, official_blueprint_key) WHERE official_blueprint_key IS NOT NULL DO NOTHING
         RETURNING id, workflow_id
@@ -295,24 +360,21 @@ export const ensureProactiveWorkflows$ = command(
       if (!installed) {
         continue;
       }
-      await database
-        .update(workflowAutomations)
-        .set({
-          enabled: true,
-          officialIntendedEnabled: true,
-          ...(kind === "jobs" ? { consecutiveFailures: 0 } : {}),
+      await set(
+        synchronizeProactiveSchedule$,
+        {
+          owner,
+          agentId: eligibility.agentId,
+          workflowId: installed.id,
+          blueprintKey: blueprint.key,
+          kind,
+          cron,
+          timezone,
           nextRunAt: next,
-          updatedAt: at,
-        })
-        .where(
-          and(
-            eq(workflowAutomations.workflowId, installed.id),
-            eq(workflowAutomations.officialBlueprintKey, blueprint.key),
-            eq(workflowAutomations.officialIntendedEnabled, false),
-            proactiveWorkflowOwnerEnabledSql(owner, eligibility.agentId, kind),
-          ),
-        );
-      signal.throwIfAborted();
+          at,
+        },
+        signal,
+      );
       if (kind === "jobs") {
         await set(wakeProactiveJobs$, owner, signal);
       }
@@ -334,10 +396,10 @@ export const reconcileProactiveWorkflows$ = command(
         .from(orgMembersMetadata)
         .where(
           and(
-            sql`(${orgMembersMetadata.proactiveSuggestionsEnabled} = true OR ${orgMembersMetadata.proactiveJobsEnabled} = true OR EXISTS (
+            sql`(${orgMembersMetadata.proactiveSuggestionsEnabled} = true OR ${orgMembersMetadata.proactiveJobsEnabled} = true OR ${orgMembersMetadata.proactiveLearningEnabled} = true OR ${orgMembersMetadata.proactivePlanningEnabled} = true OR EXISTS (
               SELECT 1 FROM workflows AS proactive_workflow WHERE proactive_workflow.org_id = ${orgMembersMetadata.orgId}
                 AND proactive_workflow.owner_user_id = ${orgMembersMetadata.userId}
-                AND proactive_workflow.official_definition_name IN (${PROACTIVE_WORKFLOW_DEFINITIONS.suggestions.name}, ${RETIRED_PROACTIVE_DEFINITION_NAME}, ${PROACTIVE_WORKFLOW_DEFINITIONS.jobs.name})
+                AND proactive_workflow.official_definition_name IN (${PROACTIVE_WORKFLOW_DEFINITIONS.suggestions.name}, ${RETIRED_PROACTIVE_DEFINITION_NAME}, ${PROACTIVE_WORKFLOW_DEFINITIONS.jobs.name}, ${PROACTIVE_WORKFLOW_DEFINITIONS.learning.name}, ${PROACTIVE_WORKFLOW_DEFINITIONS.planning.name})
             ))`,
             sql`(('x' || substr(encode(sha256(convert_to(${orgMembersMetadata.orgId} || '/' || ${orgMembersMetadata.userId}, 'UTF8')), 'hex'), 1, 8))::bit(32)::bigint % 60) = ${minute}`,
             cursor

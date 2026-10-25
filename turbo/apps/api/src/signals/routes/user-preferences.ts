@@ -11,6 +11,7 @@ import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
 import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
+import { ensureProactiveWorkflows$ } from "../services/proactive-workflows-lifecycle.service";
 import { reconcileExistingMorningBrief$ } from "../services/morning-brief-recovery.service";
 
 import { badRequestMessage, conflict } from "../../lib/error";
@@ -83,6 +84,11 @@ const updateUserPreferencesInner$ = command(
       ]);
     }
     if (body.data.timezone !== undefined) {
+      await set(
+        ensureProactiveWorkflows$,
+        { orgId: auth.orgId, userId: auth.userId },
+        signal,
+      );
       const reconciled = await set(
         reconcileExistingMorningBrief$,
         {
@@ -203,6 +209,8 @@ const initializeUserPreferencesInner$ = command(
     // Existing members without memory are initialized here on demand; this
     // only creates missing memory or an empty HEAD and never rewrites content.
     await set(initializeMemberMemory$, identity, signal);
+    signal.throwIfAborted();
+    await set(ensureProactiveWorkflows$, identity, signal);
     signal.throwIfAborted();
     // An unavailable brief does not invalidate initialized preferences. Its
     // Settings status and explicit retry remain the recovery surface.

@@ -1,8 +1,5 @@
-// Build-time ownership only. Preserve the complete API registry order so
-// gateway matching has the same precedence as signals/route.ts.
-// Runtime domain entries import their own static route lists instead.
+// Build-time ownership only. Preserve production route order.
 export const WORKER_DOMAINS = ["core", "execution", "integrations", "data"];
-
 export const ROUTE_MODULE_OWNERSHIP = [
   {
     domain: "execution",
@@ -123,6 +120,21 @@ export const ROUTE_MODULE_OWNERSHIP = [
     domain: "execution",
     module: "../signals/routes/webhooks-agent-complete",
     exportName: "webhooksAgentCompleteRoutes",
+  },
+  {
+    domain: "data",
+    module: "../signals/routes/webhooks-agent-data-request",
+    exportName: "webhooksAgentDataRequestRoutes",
+  },
+  {
+    domain: "data",
+    module: "../signals/routes/data-router-history",
+    exportName: "dataRouterHistoryRoutes",
+  },
+  {
+    domain: "data",
+    module: "../signals/routes/data-router-tools",
+    exportName: "dataRouterToolsRoutes",
   },
   {
     domain: "execution",
@@ -258,11 +270,6 @@ export const ROUTE_MODULE_OWNERSHIP = [
     domain: "core",
     module: "../signals/routes/cron-process-usage-events",
     exportName: "cronProcessUsageEventsRoutes",
-  },
-  {
-    domain: "data",
-    module: "../signals/routes/cron-reconcile-socialkit-downloads",
-    exportName: "cronReconcileSocialKitDownloadRoutes",
   },
   {
     domain: "core",
@@ -525,26 +532,6 @@ export const ROUTE_MODULE_OWNERSHIP = [
     exportName: "featureSwitchesRoutes",
   },
   {
-    domain: "data",
-    module: "../signals/routes/finance",
-    exportName: "financeRoutes",
-  },
-  {
-    domain: "data",
-    module: "../signals/routes/seo",
-    exportName: "seoRoutes",
-  },
-  {
-    domain: "data",
-    module: "../signals/routes/commerce",
-    exportName: "commerceRoutes",
-  },
-  {
-    domain: "data",
-    module: "../signals/routes/cron-reconcile-commerce-jobs",
-    exportName: "cronReconcileCommerceJobRoutes",
-  },
-  {
     domain: "core",
     module: "../signals/routes/host",
     exportName: "hostRoutes",
@@ -590,11 +577,6 @@ export const ROUTE_MODULE_OWNERSHIP = [
     exportName: "mailRoutes",
   },
   {
-    domain: "data",
-    module: "../signals/routes/maps",
-    exportName: "mapsRoutes",
-  },
-  {
     domain: "integrations",
     module: "../signals/routes/mcp-connectors",
     exportName: "mcpConnectorsRoutes",
@@ -608,41 +590,6 @@ export const ROUTE_MODULE_OWNERSHIP = [
     domain: "execution",
     module: "../signals/routes/mcp-server",
     exportName: "mcpServerRoutes",
-  },
-  {
-    domain: "data",
-    module: "../signals/routes/weather",
-    exportName: "weatherRoutes",
-  },
-  {
-    domain: "data",
-    module: "../signals/routes/scrape",
-    exportName: "scrapeRoutes",
-  },
-  {
-    domain: "data",
-    module: "../signals/routes/people-search",
-    exportName: "peopleSearchRoutes",
-  },
-  {
-    domain: "data",
-    module: "../signals/routes/web-search",
-    exportName: "webSearchRoutes",
-  },
-  {
-    domain: "data",
-    module: "../signals/routes/social",
-    exportName: "socialRoutes",
-  },
-  {
-    domain: "data",
-    module: "../signals/routes/social-data",
-    exportName: "socialDataRoutes",
-  },
-  {
-    domain: "data",
-    module: "../signals/routes/data-search",
-    exportName: "dataSearchRoutes",
   },
   {
     domain: "execution",
@@ -883,6 +830,16 @@ export const ROUTE_MODULE_OWNERSHIP = [
     domain: "core",
     module: "../signals/routes/proactive-preferences",
     exportName: "proactiveJobsRoutes",
+  },
+  {
+    domain: "execution",
+    module: "../signals/routes/proactive-preferences",
+    exportName: "proactiveLearningRoutes",
+  },
+  {
+    domain: "execution",
+    module: "../signals/routes/proactive-preferences",
+    exportName: "proactivePlanningRoutes",
   },
   {
     domain: "core",

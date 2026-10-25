@@ -8,6 +8,15 @@ import XCTest
 
 @MainActor
 final class ChatModelConfigurationTests: XCTestCase {
+  func testHistoricalCatalogNamesDoNotRequireExecutionOrSubscriptionReads() async throws {
+    let fixture = ChatHTTPFixture { request in
+      XCTAssertEqual(request.url?.path, "/api/model-catalog")
+      return modelCatalogResponse()
+    }
+    let catalog = try await ChatModelService(client: fixture.client).catalog()
+    XCTAssertEqual(catalog.name("claude-opus-4-8"), "Claude Opus 4.8")
+  }
+
   func testCatalogRouteNarrowsPreferredEffortWithoutDestroyingIt() async throws {
     let fixture = ChatHTTPFixture { request in
       try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))

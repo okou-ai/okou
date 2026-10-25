@@ -1877,6 +1877,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
       }
       // Only prepared cards have registered signals. Start their subscriptions
       // under the panel owner, including re-entry with already cached trees.
+      set(registries.connectorCardSignals.subscribe$, signal);
       set(registries.bankingCardSignals.subscribe$, signal);
       set(registries.desktopShellAuthorizationCardSignals.subscribe$, signal);
       set(registries.browserUserActionCardSignals.subscribe$, signal);

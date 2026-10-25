@@ -33,20 +33,8 @@ const SCHEMA = {
   GCP_LLM_PROJECT_ID: z.string().optional(),
   GCP_LLM_WORKLOAD_IDENTITY_PROVIDER: z.string().optional(),
   GCP_LLM_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
-  OKOU_WEATHER_GOOGLE_WEATHER_TOKEN: z.string().min(1).optional(),
-  OKOU_SCRAPE_FIRECRAWL_TOKEN: z.string().min(1).optional(),
-  OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT: z.coerce
-    .number()
-    .int()
-    .positive()
-    .max(Number.MAX_SAFE_INTEGER)
-    .optional(),
-  OKOU_WEB_SEARCH_PERPLEXITY_TOKEN: z.string().min(1).optional(),
-  OKOU_SOCIAL_SOCIALKIT_TOKEN: z.string().min(1).optional(),
-  OKOU_SOCIAL_MONID_API_KEY: z.string().min(1).optional(),
-  OKOU_FINANCE_APIDOJO_TOKEN: z.string().min(1).optional(),
-  OKOU_SEO_DATAFORSEO_LOGIN: z.string().min(1).optional(),
-  OKOU_SEO_DATAFORSEO_PASSWORD: z.string().min(1).optional(),
+  OKOU_DATA_ROUTER_URL: z.url().optional(),
+  OKOU_DATA_TOKEN: z.string().min(1).optional(),
   OKOU_BROWSER_USE_API_KEY: z.string().min(1).optional(),
   STEAM_WEB_API_KEY: z.string().min(1).optional(),
   LINK_OAUTH_CLIENT_ID: z.string().min(1).optional(),

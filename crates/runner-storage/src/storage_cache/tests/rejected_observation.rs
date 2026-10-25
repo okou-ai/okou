@@ -4,8 +4,12 @@ const VERSION: &str = "v1";
 
 fn entry_dir(home: &HomePaths, name: &str, rejected: bool) -> PathBuf {
     home.storages_dir().join(short_digest(name)).join(format!(
-        "decoded-v1-{}{}",
-        if rejected { "rejected-" } else { "" },
+        "{}{}",
+        if rejected {
+            "decoded-v1-rejected-"
+        } else {
+            "decoded-v2-"
+        },
         short_digest(VERSION),
     ))
 }

@@ -10,7 +10,7 @@ import {
   now,
 } from "../../../lib/time";
 
-import { chargePublicSeoUsage } from "./helpers/public-seo-charge";
+import { chargePublicDataUsage } from "./helpers/public-data-charge";
 import { createBddApi } from "./helpers/api-bdd";
 import { readGetStartedStatus } from "./helpers/get-started";
 import { randomUUID } from "node:crypto";
@@ -1050,6 +1050,16 @@ describe("legacy subscription usage pack migration", () => {
           usagePackUsd: 20,
         }),
       ]),
+    );
+
+    const materializedAllocations = await readMigrationAllocations(fixture);
+    const materializedCredits = await readMigrationCredits(fixture);
+    await postMigrationInvoice(stripe.invoice());
+    await expect(readMigrationAllocations(fixture)).resolves.toStrictEqual(
+      materializedAllocations,
+    );
+    await expect(readMigrationCredits(fixture)).resolves.toStrictEqual(
+      materializedCredits,
     );
 
     await mockScheduleFromCurrentSubscription();
@@ -7054,7 +7064,7 @@ describe("usage pack allocation management", () => {
       orgRole: "org:member",
     });
     // Normal usage consumes purchased credits before bonus credits.
-    await chargePublicSeoUsage(context, member, 5000);
+    await chargePublicDataUsage(context, member, 5000);
     authenticateOrg(purchase.fixture);
     expect(
       (await readPurchasedCreditGrants(purchase.fixture))

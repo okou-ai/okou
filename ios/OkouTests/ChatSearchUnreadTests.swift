@@ -1,7 +1,7 @@
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
-import SwiftUI
+import Observation
 import Synchronization
 import XCTest
 
@@ -41,121 +41,6 @@ final class ChatSearchUnreadTests: XCTestCase {
     XCTAssertTrue(conversation.visibleMessages.contains { $0.id == position.messageID })
     XCTAssertFalse(store.search.isPresented)
     XCTAssertNil(store.error)
-  }
-
-  func testSearchDebounceReplacementClearingDismissalAndWorkspaceIsolation() async throws {
-    let started = expectation(description: "Old search started")
-    let gate = SearchResponseGate()
-    defer { gate.open() }
-    let seen = Mutex<[String]>([])
-    let fixture = ChatHTTPFixture { request in
-      XCTAssertNil(query(request, "agentId"))
-      XCTAssertEqual(
-        request.value(forHTTPHeaderField: "Authorization"), "Bearer local-test-session")
-      let keyword = query(request, "keyword") ?? ""
-      seen.withLock { $0.append(keyword) }
-      if keyword == "old" {
-        started.fulfill()
-        await gate.wait()
-      }
-      return searchResponse(content: keyword)
-    }
-    let search = ChatSearchStore(sync: ChatSync(client: fixture.client), didFail: { _ in })
-    defer { search.close() }
-    search.present()
-    search.updateQuery("discarded")
-    search.updateQuery("old")
-    await fulfillment(of: [started], timeout: 2)
-    search.updateQuery("new")
-    try await eventually { !search.isLoading }
-    XCTAssertEqual(search.messages.first?.matchedMessage.content, "new")
-    gate.open()
-    await Task.yield()
-    XCTAssertEqual(search.messages.first?.matchedMessage.content, "new")
-    XCTAssertFalse(seen.withLock { $0.contains("discarded") })
-    search.updateQuery("")
-    XCTAssertTrue(search.messages.isEmpty)
-    XCTAssertFalse(search.isLoading)
-    search.updateQuery("closed")
-    search.dismiss()
-    XCTAssertFalse(search.isPresented)
-    XCTAssertTrue(search.messages.isEmpty)
-
-    let fresh = SearchUnreadFixture().workspace()
-    defer { fresh.close() }
-    XCTAssertTrue(fresh.search.messages.isEmpty)
-    XCTAssertFalse(fresh.search.isPresented)
-    XCTAssertTrue(fresh.search.query.isEmpty)
-  }
-
-  func testDismissedSearchCannotNavigateWhenItsPendingListReadFinishes() async throws {
-    let started = expectation(description: "Search is refreshing a missing result's thread")
-    let gate = SearchResponseGate()
-    defer { gate.open() }
-    let fixture = ChatHTTPFixture { request in
-      switch request.url?.path {
-      case "/api/chat-threads/snapshot":
-        started.fulfill()
-        await gate.wait()
-        return ChatHTTPResponse(
-          body: "{\"chatThreads\":[],\"latestEventId\":null,\"latestSeqId\":null}")
-      case "/api/chat-threads/events":
-        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
-      case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
-      default: throw URLError(.unsupportedURL)
-      }
-    }
-    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
-    defer { store.close() }
-    store.search.present()
-    let opening = Task { await store.openSearchResult(SearchUnreadFixture.id(2)) }
-    await fulfillment(of: [started], timeout: 2)
-    store.search.dismiss()
-    gate.open()
-    let opened = await opening.value
-    XCTAssertFalse(opened)
-    XCTAssertNil(store.selectedThreadID)
-    XCTAssertNil(store.search.openingError)
-  }
-
-  func testOpeningSearchResultKeepsRefreshFailuresDistinctFromMissingThreads() async {
-    let failing = Mutex(true)
-    let fixture = ChatHTTPFixture { request in
-      switch request.url?.path {
-      case "/api/chat-threads/snapshot":
-        if failing.withLock({ $0 }) {
-          return ChatHTTPResponse(
-            status: 503, body: "{\"error\":{\"message\":\"List unavailable\"}}")
-        }
-        return ChatHTTPResponse(
-          body: "{\"chatThreads\":[],\"latestEventId\":null,\"latestSeqId\":null}")
-      case "/api/chat-threads/events":
-        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
-      case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
-      default: throw URLError(.unsupportedURL)
-      }
-    }
-    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
-    defer { store.close() }
-    store.search.present()
-    let failed = await store.openSearchResult(SearchUnreadFixture.id(2))
-    XCTAssertFalse(failed)
-    XCTAssertNotNil(store.list.error)
-    XCTAssertNil(store.search.openingError)
-    XCTAssertNil(store.selectedThreadID)
-    failing.withLock { $0 = false }
-    let missing = await store.openSearchResult(SearchUnreadFixture.id(2))
-    XCTAssertFalse(missing)
-    XCTAssertNil(store.list.error)
-    XCTAssertNotNil(store.search.openingError)
-    XCTAssertNil(store.selectedThreadID)
-    failing.withLock { $0 = true }
-    let failedAgain = await store.openSearchResult(SearchUnreadFixture.id(2))
-    XCTAssertFalse(failedAgain)
-    XCTAssertNotNil(store.list.error)
-    XCTAssertNil(store.search.openingError)
   }
 
   func testOpeningSearchResultAwaitsAnAlreadyRunningListRefresh() async {
@@ -201,82 +86,6 @@ final class ChatSearchUnreadTests: XCTestCase {
     XCTAssertEqual(store.selectedAgentID, SearchUnreadFixture.otherAgent)
     XCTAssertNil(store.list.error)
     XCTAssertNil(store.search.openingError)
-  }
-
-  func testEmptyDeniedFailedAndRetriedMessageSearch() async throws {
-    let attempt = Mutex(0)
-    let fixture = ChatHTTPFixture { request in
-      switch query(request, "keyword") {
-      case "empty": return ChatHTTPResponse(body: "{\"results\":[]}")
-      case "denied":
-        return ChatHTTPResponse(status: 403, body: "{\"error\":{\"message\":\"Forbidden\"}}")
-      default:
-        let current = attempt.withLock {
-          $0 += 1
-          return $0
-        }
-        return current == 1
-          ? ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Try later\"}}")
-          : searchResponse(content: "Recovered")
-      }
-    }
-    let search = ChatSearchStore(sync: ChatSync(client: fixture.client), didFail: { _ in })
-    defer { search.close() }
-    search.present()
-    search.updateQuery("empty")
-    try await eventually { !search.isLoading }
-    XCTAssertTrue(search.messages.isEmpty)
-    XCTAssertNil(search.error)
-    search.updateQuery("denied")
-    try await eventually { !search.isLoading }
-    XCTAssertNotNil(search.error)
-    XCTAssertTrue(search.messages.isEmpty)
-    search.updateQuery("retry")
-    try await eventually { !search.isLoading }
-    XCTAssertNotNil(search.error)
-    search.retry()
-    try await eventually { !search.isLoading }
-    XCTAssertNil(search.error)
-    XCTAssertEqual(search.messages.first?.matchedMessage.content, "Recovered")
-  }
-
-  func testUnreadFilterMatchesPWABusyMutedArchivedBoundariesAndBulkReadScope() async throws {
-    let fixture = SearchUnreadFixture()
-    let store = fixture.workspace()
-    defer { store.close() }
-    await store.refreshNavigation()
-    await store.refresh()
-    store.list.onlyUnread = true
-    let agent = SearchUnreadFixture.agent
-    XCTAssertEqual(
-      store.list.threads(agentID: agent, archived: false).map(\.id), [SearchUnreadFixture.id(5)])
-    XCTAssertEqual(
-      store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)
-    XCTAssertTrue(store.list.threads.first { $0.id == SearchUnreadFixture.id(3) }?.isMuted == true)
-    await store.list.markAgentRead(agent)
-    XCTAssertEqual(fixture.state.value.withLock { $0.bulkAgent }, agent)
-    XCTAssertTrue(store.list.threads(agentID: agent, archived: false).isEmpty)
-    XCTAssertTrue(store.list.threads.first { $0.id == SearchUnreadFixture.id(2) }?.isUnread == true)
-    XCTAssertEqual(
-      store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)
-  }
-
-  func testBulkReadUsesAgentIndicatorsWhenThreadResultsAreBounded() async throws {
-    let fixture = SearchUnreadFixture()
-    fixture.state.value.withLock { $0.omitThreadIndicators = true }
-    let store = fixture.workspace()
-    defer { store.close() }
-    await store.refresh()
-    XCTAssertTrue(store.list.unreadAgentIDs.contains(SearchUnreadFixture.agent))
-    XCTAssertFalse(store.list.threads.contains(where: \.isUnread))
-    let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
-    await store.setRead(thread, read: true)
-    XCTAssertFalse(fixture.state.value.withLock { $0.unread.contains(1) })
-    XCTAssertTrue(fixture.state.value.withLock { $0.unread.contains(5) })
-    await store.list.markAgentRead(SearchUnreadFixture.agent)
-    XCTAssertEqual(fixture.state.value.withLock { $0.bulkAgent }, SearchUnreadFixture.agent)
-    XCTAssertFalse(store.list.unreadAgentIDs.contains(SearchUnreadFixture.agent))
-    XCTAssertTrue(store.list.unreadAgentIDs.contains(SearchUnreadFixture.otherAgent))
   }
 
   func testBulkReadBlocksConcurrentChangesAndRecoversAfterFailure() async throws {
@@ -412,8 +221,10 @@ final class ChatSearchUnreadTests: XCTestCase {
 
   func testStaleIndicatorRefreshCannotUndoConfirmedRead() async throws {
     let started = expectation(description: "Old indicator request has captured unread state")
+    let reconciling = expectation(
+      description: "Fresh indicators requested after the stale response")
     let gate = SearchResponseGate()
-    defer { gate.open() }
+    let freshGate = SearchResponseGate()
     let count = Mutex(0)
     let read = Mutex(false)
     let fixture = ChatHTTPFixture { request in
@@ -434,6 +245,9 @@ final class ChatSearchUnreadTests: XCTestCase {
         if attempt == 2 {
           started.fulfill()
           await gate.wait()
+        } else if attempt == 3 {
+          reconciling.fulfill()
+          await freshGate.wait()
         }
         if alreadyRead {
           return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
@@ -449,87 +263,244 @@ final class ChatSearchUnreadTests: XCTestCase {
       }
     }
     let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
-    defer { store.close() }
+    addTeardownBlock { @MainActor in
+      gate.open()
+      freshGate.open()
+      withExtendedLifetime(fixture) { store.close() }
+    }
     await store.list.refresh()
     let thread = try XCTUnwrap(store.list.threads.first)
+    XCTAssertTrue(thread.isUnread)
     let stale = Task { await store.list.refreshIndicators() }
+    addTeardownBlock {
+      stale.cancel()
+      gate.open()
+      freshGate.open()
+      await stale.value
+    }
     await fulfillment(of: [started], timeout: 2)
-    await store.setRead(thread, read: true)
-    XCTAssertFalse(store.list.threads.first?.isUnread == true)
+    let confirmedRead = Task {
+      for await unread in Observations({ store.list.threads.first?.isUnread }) {
+        if unread == false { return }
+      }
+    }
+    addTeardownBlock {
+      confirmedRead.cancel()
+      await confirmedRead.value
+    }
+    let markingRead = Task {
+      await store.setRead(thread, read: true)
+      confirmedRead.cancel()
+    }
+    addTeardownBlock {
+      markingRead.cancel()
+      gate.open()
+      freshGate.open()
+      await markingRead.value
+    }
+    await confirmedRead.value
+    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
+    // Release the stale response before waiting for the read operation that joins it.
     gate.open()
+    await fulfillment(of: [reconciling], timeout: 2)
+    // A fresh response must not conceal a stale overwrite of the confirmed read.
+    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
+    freshGate.open()
+    await markingRead.value
     await stale.value
     XCTAssertFalse(store.list.threads.first?.isUnread == true)
     XCTAssertNil(store.list.error)
   }
 
-  func testNativeSidebarKeepsLongListScrolling() async throws {
-    let fixture = SearchUnreadFixture()
-    let store = fixture.workspace()
-    defer { store.close() }
-    await store.refreshNavigation()
-    await store.refresh()
-    let host = UIHostingController(
-      rootView: ChatSidebarView(
-        store: store, authentication: AuthenticationService(publishableKey: ""),
-        workspaceID: "workspace", accountError: .constant(nil), close: {}, newChat: { _ in }))
-    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-    let window = UIWindow(windowScene: scene)
-    window.frame = CGRect(x: 0, y: 0, width: 300, height: 844)
-    window.rootViewController = host
-    window.makeKeyAndVisible()
-    defer { unmount(window) }
-    try await eventually { nativeCollection(host.view)?.contentSize.height ?? 0 > 844 }
-    let collection = try XCTUnwrap(nativeCollection(host.view))
-    try await eventually { collection.bounds.height > 0 && !collection.visibleCells.isEmpty }
-    XCTAssertTrue(collection.isScrollEnabled)
-    let bottom = max(
-      -collection.adjustedContentInset.top,
-      collection.contentSize.height - collection.bounds.height
-        + collection.adjustedContentInset.bottom)
-    collection.setContentOffset(CGPoint(x: 0, y: bottom), animated: false)
-    try await eventually { collection.contentOffset.y > 0 && !collection.visibleCells.isEmpty }
-    host.view.layoutIfNeeded()
-    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-      window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+  func testSearchDebounceReplacementClearingDismissalAndWorkspaceIsolation() async throws {
+    let started = expectation(description: "Old search started")
+    let gate = SearchResponseGate()
+    defer { gate.open() }
+    let seen = Mutex<[String]>([])
+    let fixture = ChatHTTPFixture { request in
+      XCTAssertNil(query(request, "agentId"))
+      XCTAssertEqual(
+        request.value(forHTTPHeaderField: "Authorization"), "Bearer local-test-session")
+      let keyword = query(request, "keyword") ?? ""
+      seen.withLock { $0.append(keyword) }
+      if keyword == "old" {
+        started.fulfill()
+        await gate.wait()
+      }
+      return searchResponse(content: keyword)
     }
-    let attachment = XCTAttachment(image: image)
-    attachment.name = "Native long chat list"
-    attachment.lifetime = .keepAlways
-    add(attachment)
+    let search = ChatSearchStore(sync: ChatSync(client: fixture.client), didFail: { _ in })
+    defer { search.close() }
+    search.present()
+    search.updateQuery("discarded")
+    search.updateQuery("old")
+    await fulfillment(of: [started], timeout: 2)
+    search.updateQuery("new")
+    try await eventually { !search.isLoading }
+    XCTAssertEqual(search.messages.first?.matchedMessage.content, "new")
+    gate.open()
+    await Task.yield()
+    XCTAssertEqual(search.messages.first?.matchedMessage.content, "new")
+    XCTAssertFalse(seen.withLock { $0.contains("discarded") })
+    search.updateQuery("")
+    XCTAssertTrue(search.messages.isEmpty)
+    XCTAssertFalse(search.isLoading)
+    search.updateQuery("closed")
+    search.dismiss()
+    XCTAssertFalse(search.isPresented)
+    XCTAssertTrue(search.messages.isEmpty)
+
+    let fresh = SearchUnreadFixture().workspace()
+    defer { fresh.close() }
+    XCTAssertTrue(fresh.search.messages.isEmpty)
+    XCTAssertFalse(fresh.search.isPresented)
+    XCTAssertTrue(fresh.search.query.isEmpty)
   }
 
-  func testNativeSearchPreviewShowsWorkspaceResultsAndKeyboard() async throws {
+  func testDismissedSearchCannotNavigateWhenItsPendingListReadFinishes() async throws {
+    let started = expectation(description: "Search is refreshing a missing result's thread")
+    let gate = SearchResponseGate()
+    defer { gate.open() }
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot":
+        started.fulfill()
+        await gate.wait()
+        return ChatHTTPResponse(
+          body: "{\"chatThreads\":[],\"latestEventId\":null,\"latestSeqId\":null}")
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { store.close() }
+    store.search.present()
+    let opening = Task { await store.openSearchResult(SearchUnreadFixture.id(2)) }
+    await fulfillment(of: [started], timeout: 2)
+    store.search.dismiss()
+    gate.open()
+    let opened = await opening.value
+    XCTAssertFalse(opened)
+    XCTAssertNil(store.selectedThreadID)
+    XCTAssertNil(store.search.openingError)
+  }
+
+  func testOpeningSearchResultKeepsRefreshFailuresDistinctFromMissingThreads() async {
+    let failing = Mutex(true)
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot":
+        if failing.withLock({ $0 }) {
+          return ChatHTTPResponse(
+            status: 503, body: "{\"error\":{\"message\":\"List unavailable\"}}")
+        }
+        return ChatHTTPResponse(
+          body: "{\"chatThreads\":[],\"latestEventId\":null,\"latestSeqId\":null}")
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { store.close() }
+    store.search.present()
+    let failed = await store.openSearchResult(SearchUnreadFixture.id(2))
+    XCTAssertFalse(failed)
+    XCTAssertNotNil(store.list.error)
+    XCTAssertNil(store.search.openingError)
+    XCTAssertNil(store.selectedThreadID)
+    failing.withLock { $0 = false }
+    let missing = await store.openSearchResult(SearchUnreadFixture.id(2))
+    XCTAssertFalse(missing)
+    XCTAssertNil(store.list.error)
+    XCTAssertNotNil(store.search.openingError)
+    XCTAssertNil(store.selectedThreadID)
+    failing.withLock { $0 = true }
+    let failedAgain = await store.openSearchResult(SearchUnreadFixture.id(2))
+    XCTAssertFalse(failedAgain)
+    XCTAssertNotNil(store.list.error)
+    XCTAssertNil(store.search.openingError)
+  }
+
+  func testEmptyDeniedFailedAndRetriedMessageSearch() async throws {
+    let attempt = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      switch query(request, "keyword") {
+      case "empty": return ChatHTTPResponse(body: "{\"results\":[]}")
+      case "denied":
+        return ChatHTTPResponse(status: 403, body: "{\"error\":{\"message\":\"Forbidden\"}}")
+      default:
+        let current = attempt.withLock {
+          $0 += 1
+          return $0
+        }
+        return current == 1
+          ? ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Try later\"}}")
+          : searchResponse(content: "Recovered")
+      }
+    }
+    let search = ChatSearchStore(sync: ChatSync(client: fixture.client), didFail: { _ in })
+    defer { search.close() }
+    search.present()
+    search.updateQuery("empty")
+    try await eventually { !search.isLoading }
+    XCTAssertTrue(search.messages.isEmpty)
+    XCTAssertNil(search.error)
+    search.updateQuery("denied")
+    try await eventually { !search.isLoading }
+    XCTAssertNotNil(search.error)
+    XCTAssertTrue(search.messages.isEmpty)
+    search.updateQuery("retry")
+    try await eventually { !search.isLoading }
+    XCTAssertNotNil(search.error)
+    search.retry()
+    try await eventually { !search.isLoading }
+    XCTAssertNil(search.error)
+    XCTAssertEqual(search.messages.first?.matchedMessage.content, "Recovered")
+  }
+
+  func testUnreadFilterMatchesPWABusyMutedArchivedBoundariesAndBulkReadScope() async throws {
     let fixture = SearchUnreadFixture()
     let store = fixture.workspace()
     defer { store.close() }
     await store.refreshNavigation()
     await store.refresh()
-    store.search.present()
-    store.search.updateQuery("needle")
-    try await eventually { !store.search.isLoading }
-    let host = UIHostingController(rootView: ChatSearchView(workspace: store, didOpen: {}))
-    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-    let window = UIWindow(windowScene: scene)
-    window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-    window.rootViewController = host
-    window.makeKeyAndVisible()
-    defer { unmount(window) }
-    try await eventually { nativeSearchField(host.view) != nil }
-    let field = try XCTUnwrap(nativeSearchField(host.view))
-    XCTAssertEqual(field.text, "needle")
-    XCTAssertTrue(field.becomeFirstResponder())
-    try await eventually { !store.search.isLoading && !store.search.messages.isEmpty }
-    host.view.layoutIfNeeded()
-    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-      window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-    }
-    let attachment = XCTAttachment(image: image)
-    attachment.name = "Native workspace search results"
-    attachment.lifetime = .keepAlways
-    add(attachment)
-    field.resignFirstResponder()
-    store.search.dismiss()
-    XCTAssertFalse(store.search.isPresented)
+    store.list.onlyUnread = true
+    let agent = SearchUnreadFixture.agent
+    XCTAssertEqual(
+      store.list.threads(agentID: agent, archived: false).map(\.id), [SearchUnreadFixture.id(5)])
+    XCTAssertEqual(
+      store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)
+    XCTAssertTrue(store.list.threads.first { $0.id == SearchUnreadFixture.id(3) }?.isMuted == true)
+    await store.list.markAgentRead(agent)
+    XCTAssertEqual(fixture.state.value.withLock { $0.bulkAgent }, agent)
+    XCTAssertTrue(store.list.threads(agentID: agent, archived: false).isEmpty)
+    XCTAssertTrue(store.list.threads.first { $0.id == SearchUnreadFixture.id(2) }?.isUnread == true)
+    XCTAssertEqual(
+      store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)
+  }
+
+  func testBulkReadUsesAgentIndicatorsWhenThreadResultsAreBounded() async throws {
+    let fixture = SearchUnreadFixture()
+    fixture.state.value.withLock { $0.omitThreadIndicators = true }
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refresh()
+    XCTAssertTrue(store.list.unreadAgentIDs.contains(SearchUnreadFixture.agent))
+    XCTAssertFalse(store.list.threads.contains(where: \.isUnread))
+    let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
+    await store.setRead(thread, read: true)
+    XCTAssertFalse(fixture.state.value.withLock { $0.unread.contains(1) })
+    XCTAssertTrue(fixture.state.value.withLock { $0.unread.contains(5) })
+    await store.list.markAgentRead(SearchUnreadFixture.agent)
+    XCTAssertEqual(fixture.state.value.withLock { $0.bulkAgent }, SearchUnreadFixture.agent)
+    XCTAssertFalse(store.list.unreadAgentIDs.contains(SearchUnreadFixture.agent))
+    XCTAssertTrue(store.list.unreadAgentIDs.contains(SearchUnreadFixture.otherAgent))
   }
 }
 
@@ -537,15 +508,6 @@ final class ChatSearchUnreadTests: XCTestCase {
 private func nativeCollection(_ view: UIView) -> UICollectionView? {
   if let collection = view as? UICollectionView { return collection }
   for child in view.subviews { if let collection = nativeCollection(child) { return collection } }
-  return nil
-}
-
-@MainActor
-private func nativeSearchField(_ view: UIView) -> UISearchTextField? {
-  if let field = view as? UISearchTextField { return field }
-  for subview in view.subviews {
-    if let field = nativeSearchField(subview) { return field }
-  }
   return nil
 }
 

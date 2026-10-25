@@ -278,9 +278,24 @@ impl Drop for Transfer<'_> {
     }
 }
 
+struct ProducerState {
+    receiver: mpsc::Receiver<Vec<u8>>,
+    handle: JoinHandle<io::Result<()>>,
+}
+
+impl ProducerState {
+    fn join(self) -> io::Result<()> {
+        let Self { receiver, handle } = self;
+        // Close the bounded sink before joining, including future cancellation.
+        drop(receiver);
+        handle
+            .join()
+            .map_err(|_| io::Error::other("file codec panicked"))?
+    }
+}
+
 struct Producer {
-    receiver: Option<mpsc::Receiver<Vec<u8>>>,
-    handle: Option<JoinHandle<io::Result<()>>>,
+    state: Option<ProducerState>,
     cancel: Arc<AtomicBool>,
 }
 
@@ -305,33 +320,31 @@ impl Producer {
                 encoder.finish()?.flush()
             })?;
         Ok(Self {
-            receiver: Some(rx),
-            handle: Some(handle),
+            state: Some(ProducerState {
+                receiver: rx,
+                handle,
+            }),
             cancel,
         })
     }
 
     async fn next(&mut self) -> Option<Vec<u8>> {
-        self.receiver.as_mut()?.recv().await
+        self.state.as_mut()?.receiver.recv().await
     }
 
     fn finish(&mut self) -> io::Result<()> {
-        self.receiver.take();
-        self.handle
+        self.state
             .take()
             .ok_or_else(|| io::Error::other("file codec already joined"))?
             .join()
-            .map_err(|_| io::Error::other("file codec panicked"))?
     }
 }
 
 impl Drop for Producer {
     fn drop(&mut self) {
         self.cancel.store(true, Ordering::Release);
-        // Close the bounded sink before joining, including future cancellation.
-        self.receiver.take();
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
+        if let Some(state) = self.state.take() {
+            let _ = state.join();
         }
     }
 }

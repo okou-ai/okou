@@ -31,6 +31,7 @@ import {
   sql,
 } from "drizzle-orm";
 import * as z from "zod";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -2215,6 +2216,65 @@ function materializedMigrationAllocations(
   });
 }
 
+const migrationAllocationInputColumns = Object.freeze({
+  usagePackSubscriptionId: usagePackAllocations.usagePackSubscriptionId,
+  orgId: usagePackAllocations.orgId,
+  userId: usagePackAllocations.userId,
+  invitationId: usagePackAllocations.invitationId,
+  usagePackUsd: usagePackAllocations.usagePackUsd,
+  stripePriceId: usagePackAllocations.stripePriceId,
+  status: usagePackAllocations.status,
+});
+
+/** Actual validated selections, carried in one parameter without a bind-count limit. */
+function materializedMigrationAllocationInput(
+  values: ReturnType<typeof materializedMigrationAllocations>,
+) {
+  const rows = values.map((value) => {
+    return {
+      usage_pack_subscription_id: value.usagePackSubscriptionId,
+      org_id: value.orgId,
+      user_id: value.userId,
+      invitation_id: value.invitationId,
+      usage_pack_usd: value.usagePackUsd,
+      stripe_price_id: value.stripePriceId,
+      status: value.status,
+    };
+  });
+  return new QueryBuilder().$with(
+    "migration_allocation_input",
+    migrationAllocationInputColumns,
+  ).as(sql`
+    SELECT * FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS captured(
+      usage_pack_subscription_id uuid, org_id text, user_id text,
+      invitation_id text, usage_pack_usd integer, stripe_price_id text, status text
+    )
+  `);
+}
+
+/** Partial INSERT SELECT preserves the schema-owned UUID/time/null defaults. */
+function materializedMigrationAllocationInsert(
+  input: ReturnType<typeof materializedMigrationAllocationInput>,
+  winningRootIds: ReturnType<typeof sql>,
+) {
+  const columns = usagePackAllocations;
+  return sql`
+    INSERT INTO ${usagePackAllocations} (
+      ${sql.identifier(columns.usagePackSubscriptionId.name)},
+      ${sql.identifier(columns.orgId.name)},
+      ${sql.identifier(columns.userId.name)},
+      ${sql.identifier(columns.invitationId.name)},
+      ${sql.identifier(columns.usagePackUsd.name)},
+      ${sql.identifier(columns.stripePriceId.name)},
+      ${sql.identifier(columns.status.name)}
+    )
+    SELECT ${input.usagePackSubscriptionId}, ${input.orgId}, ${input.userId},
+      ${input.invitationId}, ${input.usagePackUsd}, ${input.stripePriceId}, ${input.status}
+    FROM ${input}
+    WHERE ${inArray(input.usagePackSubscriptionId, winningRootIds)}
+  `;
+}
+
 class MigrationMaterializationChanged extends Error {}
 
 const materializeUsagePackSnapshot$ = command(
@@ -2234,18 +2294,17 @@ const materializeUsagePackSnapshot$ = command(
       selections,
     );
     const result = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0298; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
+      (async () => {
         // A Plan root already bound to this Stripe subscription keeps both
         // identities. The migration UUID identifies the conversion operation,
         // not a second root competing for the same unique provider binding.
-        const [root] = await tx
+        const [root] = await db
           .select()
           .from(usagePackSubscriptions)
           .where(migrationSubscriptionRootWhere(migration))
           .limit(1);
         const existing = validatedMigrationSubscriptionRoot(migration, root);
-        const [locked] = await tx
+        const [locked] = await db
           .select()
           .from(usagePackSubscriptionMigrations)
           .where(
@@ -2258,7 +2317,7 @@ const materializeUsagePackSnapshot$ = command(
         if (!locked || locked.status === "failed") {
           throw new Error(`Usage pack migration ${migration.id} is not active`);
         }
-        const currentSelections = await tx
+        const currentSelections = await db
           .select()
           .from(usagePackSubscriptionMigrationSelections)
           .where(migrationSelectionsWhere(migration.id));
@@ -2271,55 +2330,13 @@ const materializeUsagePackSnapshot$ = command(
         const convertingPlanRoot =
           existing !== null &&
           existing.stripePlanPriceId !== migration.stripePlanPriceId;
-        if (!existing) {
-          // Historical rootless Plans retain their already-persisted conversion
-          // UUID. No new identity is generated at payment or reconciliation.
-          const [inserted] = await tx
-            .insert(usagePackSubscriptions)
-            .values({
-              id: rootId,
-              orgId: migration.orgId,
-              tier: migration.targetTier,
-              stripePlanPriceId: migration.stripePlanPriceId,
-              stripeCustomerId: migration.stripeCustomerId,
-              stripeSubscriptionId: migration.stripeSubscriptionId,
-              subscriptionStatus: subscription.status,
-              cancelAtPeriodEnd: subscription.cancel_at_period_end,
-            })
-            .onConflictDoNothing()
-            .returning({ id: usagePackSubscriptions.id });
-          if (!inserted) {
-            throw new MigrationMaterializationChanged();
+        if (existing && !convertingPlanRoot) {
+          if (existing.tier !== migration.targetTier) {
+            throw new Error(
+              `Usage pack migration ${migration.id} snapshot changed`,
+            );
           }
-        } else if (convertingPlanRoot) {
-          const conversion = migrationPlanRootConversion(
-            migration,
-            existing,
-            subscription,
-          );
-          const [converted] = await tx
-            .update(usagePackSubscriptions)
-            .set(conversion.values)
-            .where(conversion.condition)
-            .returning({ id: usagePackSubscriptions.id });
-          if (!converted) {
-            throw new MigrationMaterializationChanged();
-          }
-        } else if (existing.tier !== migration.targetTier) {
-          throw new Error(
-            `Usage pack migration ${migration.id} snapshot changed`,
-          );
-        }
-        if (!existing || convertingPlanRoot) {
-          if (selections.length > 0) {
-            await tx
-              .insert(usagePackAllocations)
-              .values(
-                materializedMigrationAllocations(migration, rootId, selections),
-              );
-          }
-        } else {
-          const allocations = await tx
+          const allocations = await db
             .select()
             .from(usagePackAllocations)
             .where(eq(usagePackAllocations.usagePackSubscriptionId, rootId));
@@ -2330,10 +2347,51 @@ const materializeUsagePackSnapshot$ = command(
             selections,
             locked.status !== "completed",
           );
+          signal.throwIfAborted();
+          return rootId;
+        }
+        const conversion = existing
+          ? migrationPlanRootConversion(migration, existing, subscription)
+          : null;
+        const mutation = conversion
+          ? db
+              .update(usagePackSubscriptions)
+              .set(conversion.values)
+              .where(conversion.condition)
+              .returning({ id: usagePackSubscriptions.id })
+          : db
+              .insert(usagePackSubscriptions)
+              .values({
+                id: rootId,
+                orgId: migration.orgId,
+                tier: migration.targetTier,
+                stripePlanPriceId: migration.stripePlanPriceId,
+                stripeCustomerId: migration.stripeCustomerId,
+                stripeSubscriptionId: migration.stripeSubscriptionId,
+                subscriptionStatus: subscription.status,
+                cancelAtPeriodEnd: subscription.cancel_at_period_end,
+              })
+              .onConflictDoNothing()
+              .returning({ id: usagePackSubscriptions.id });
+        const winner = db.$with("materialized_migration_root").as(mutation);
+        const input = materializedMigrationAllocationInput(
+          materializedMigrationAllocations(migration, rootId, selections),
+        );
+        const winningRootIds = sql`(${db.select({ id: winner.id }).from(winner)})`;
+        const allocations = db
+          .$with("materialized_migration_allocations", {})
+          .as(materializedMigrationAllocationInsert(input, winningRootIds));
+        const [published] = await db
+          .with(winner, input, allocations)
+          .select({ id: winner.id })
+          .from(winner);
+        signal.throwIfAborted();
+        if (!published) {
+          throw new MigrationMaterializationChanged();
         }
         signal.throwIfAborted();
         return rootId;
-      }),
+      })(),
     );
     signal.throwIfAborted();
     if (result.ok) {
@@ -2342,7 +2400,7 @@ const materializeUsagePackSnapshot$ = command(
     if (!(result.error instanceof MigrationMaterializationChanged)) {
       throw result.error;
     }
-    // The losing transaction has rolled back. Resolve one committed canonical
+    // The losing statement left no writes. Resolve one committed canonical
     // root once; neither generate another UUID nor rerun materialization.
     return await set(
       committedMigrationMaterialization$,

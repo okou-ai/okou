@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
 import { onTestFinished } from "vitest";
-import { z } from "zod";
+import * as z from "zod";
 
 import { stubTestAwsKmsEnvironment } from "../../../../__tests__/env-stub";
 import { mockOptionalEnv } from "../../../../lib/env";

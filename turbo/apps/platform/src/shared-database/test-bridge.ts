@@ -299,9 +299,14 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
 
   async getComputed<TKey extends ComputedKey>(
     computedKey: TKey,
+    options?: { readonly refresh?: boolean },
+    signal?: AbortSignal,
   ): Promise<ComputedValue<TKey>> {
-    const signal = this.requireConnectionSignal();
-    signal.throwIfAborted();
+    const readSignal = AbortSignal.any([
+      this.requireConnectionSignal(),
+      ...(signal ? [signal] : []),
+    ]);
+    readSignal.throwIfAborted();
     const value = await this.workerStore.set(
       getComputedStoreMessage$,
       this.connectionId,
@@ -309,8 +314,9 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
         type: "get-computed",
         requestId: "direct-test-bridge",
         computedKey,
+        ...(options?.refresh ? { refresh: true } : {}),
       },
-      signal,
+      readSignal,
     );
     const cloned: unknown = structuredClone(value);
     return parseComputedValue(computedKey, cloned);
@@ -387,8 +393,10 @@ class TestSharedDatabaseBridge implements SharedDatabaseBridge {
 
   getComputed<TKey extends ComputedKey>(
     computedKey: TKey,
+    options?: { readonly refresh?: boolean },
+    signal?: AbortSignal,
   ): Promise<ComputedValue<TKey>> {
-    return this.bridge.getComputed(computedKey);
+    return this.bridge.getComputed(computedKey, options, signal);
   }
 
   query<TKey extends SharedDatabaseDataKey>(

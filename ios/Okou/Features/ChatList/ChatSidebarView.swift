@@ -5,6 +5,7 @@ struct ChatSidebarView: View {
   @Bindable var store: WorkspaceStore
   let authentication: AuthenticationService
   let workspaceID: String
+  let headerHeight: CGFloat
   @Binding var accountError: String?
   let close: () -> Void
   let newChat: (String?) -> Void
@@ -89,7 +90,6 @@ struct ChatSidebarView: View {
     .safeAreaBar(edge: .top, spacing: 0) {
       header
         .padding(.horizontal, 16)
-        .padding(.top, 14)
     }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
     .background(Color(uiColor: .systemBackground))
@@ -111,7 +111,7 @@ struct ChatSidebarView: View {
         .buttonStyle(.glass)
         .accessibilityIdentifier("search-chats")
     }
-    .frame(height: 44)
+    .frame(height: headerHeight)
   }
 
   private var workspaceSwitcher: some View {
@@ -378,8 +378,8 @@ struct ChatSidebarView: View {
       .accessibilityLabel("Account")
     }
     .buttonStyle(.plain)
+    .frame(height: ChatComposerView.compactHeight)
     .padding(.horizontal, 16)
-    .padding(.top, 10)
-    .padding(.bottom, 12)
+    .padding(.top, 8)
   }
 }

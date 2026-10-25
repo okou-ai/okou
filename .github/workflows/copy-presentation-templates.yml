@@ -1,0 +1,145 @@
+name: Copy Production Presentation Templates
+
+run-name: ${{ inputs.mode }} production presentation templates by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Inspect only, or copy after a successful inspection
+        type: choice
+        options: [dry-run, copy]
+        default: dry-run
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  npm_config_audit: "false"
+
+concurrency:
+  group: production-presentation-template-copy
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  copy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    container: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/toolchain-init
+
+      - name: Inspect, optionally copy, and verify retained legacy data
+        working-directory: turbo/packages/db
+        env:
+          COPY_MODE: ${{ inputs.mode }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          R2_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_USER_STORAGES_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$COPY_MODE" == dry-run || "$COPY_MODE" == copy ]]
+          [[ "$NEON_PROJECT_ID" == hidden-lab-39609750 ]]
+          [[ "$R2_USER_STORAGES_BUCKET_NAME" == vm0-s3-user-storages-prod ]]
+          if [[ "$COPY_MODE" == copy && "$GITHUB_RUN_ATTEMPT" != 1 ]]; then
+            echo '::error::Do not replay an uncertain copy. Inspect its receipts and dispatch a fresh dry-run first.'
+            exit 1
+          fi
+          credential_dir=$(mktemp -d)
+          trap 'rm -rf "$credential_dir"' EXIT
+          export DATABASE_URL_FILE="$credential_dir/database-url"
+          receipts="$RUNNER_TEMP/presentation-template-copy-receipts"
+          mkdir -p "$receipts"
+
+          node --input-type=module <<'JS'
+          import { writeFile } from 'node:fs/promises';
+          try {
+            const base = `https://console.neon.tech/api/v2/projects/${process.env.NEON_PROJECT_ID}`;
+            const headers = { Authorization: `Bearer ${process.env.NEON_API_KEY}` };
+            const branchesResponse = await fetch(`${base}/branches`, { headers, signal: AbortSignal.timeout(30000) });
+            if (!branchesResponse.ok) throw new Error('BranchLookupFailed');
+            const { branches } = await branchesResponse.json();
+            const production = branches.filter(branch => branch.name === 'production');
+            if (production.length !== 1) throw new Error('ProductionBranchNotUnique');
+            const params = new URLSearchParams({ branch_id: production[0].id, database_name: 'neondb', role_name: 'neondb_owner', pooled: 'true' });
+            const connectionResponse = await fetch(`${base}/connection_uri?${params}`, { headers, signal: AbortSignal.timeout(30000) });
+            if (!connectionResponse.ok) throw new Error('ConnectionLookupFailed');
+            const { uri } = await connectionResponse.json();
+            if (typeof uri !== 'string' || !uri.startsWith('postgresql://')) throw new Error('InvalidConnection');
+            process.stdout.write(`::add-mask::${uri.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')}\n`);
+            await writeFile(process.env.DATABASE_URL_FILE, uri, { mode: 0o600 });
+            console.log(JSON.stringify({ project: process.env.NEON_PROJECT_ID, branch: production[0].id, bucket: process.env.R2_USER_STORAGES_BUCKET_NAME }));
+          } catch {
+            console.error('Production connection lookup failed; no copy was attempted.');
+            process.exitCode = 1;
+          }
+          JS
+
+          cat > "$credential_dir/snapshot.mjs" <<'JS'
+          import { readFile } from 'node:fs/promises';
+          import postgres from 'postgres';
+          const db = postgres((await readFile(process.env.DATABASE_URL_FILE, 'utf8')).trim(), { max: 1, onnotice() {} });
+          try {
+            const rows = await db`
+              SELECT p.id, md5(to_jsonb(p)::text) AS template,
+                md5(to_jsonb(s)::text) AS storage, md5(to_jsonb(v)::text) AS head
+              FROM presentation_templates p
+              LEFT JOIN storages s ON s.org_id = p.org_id AND s.user_id = '__org__'
+                AND s.name = 'presentation-template@' || p.id::text
+              LEFT JOIN storage_versions v ON v.id = s.head_version_id AND v.storage_id = s.id
+              ORDER BY p.id LIMIT 101`;
+            if (rows.length > 100) throw new Error('Inventory exceeds the single-batch limit');
+            console.log(JSON.stringify(rows));
+          } catch {
+            console.error('Legacy snapshot failed or exceeded 100 templates; stop and inspect.');
+            process.exitCode = 1;
+          } finally {
+            await db.end();
+          }
+          JS
+          node --input-type=module < "$credential_dir/snapshot.mjs" > "$receipts/legacy-before.json"
+          count=$(jq length "$receipts/legacy-before.json")
+          operator=scripts/migrations/025-presentation-template-copy/copy.ts
+          node --import tsx "$operator" | tee "$receipts/before.jsonl"
+          tail -n 1 "$receipts/before.jsonl" | jq -e --argjson count "$count" \
+            '.scanned == $count and (.attention | length) == 0 and (.ready + .existing) == $count'
+
+          if [[ "$COPY_MODE" == copy ]]; then
+            node --import tsx "$operator" --migrate | tee "$receipts/copy.jsonl"
+            node --import tsx "$operator" | tee "$receipts/after.jsonl"
+            tail -n 1 "$receipts/after.jsonl" | jq -e --argjson count "$count" \
+              '.scanned == $count and (.attention | length) == 0 and .ready == 0 and .existing == $count'
+          fi
+          node --input-type=module < "$credential_dir/snapshot.mjs" > "$receipts/legacy-after.json"
+          cmp "$receipts/legacy-before.json" "$receipts/legacy-after.json"
+          printf 'Mode: %s\nLegacy templates retained unchanged: %s\nCommit: %s\n' \
+            "$COPY_MODE" "$count" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$COPY_MODE" == copy ]]; then
+            tail -n 1 "$receipts/copy.jsonl" >> "$GITHUB_STEP_SUMMARY"
+            tail -n 1 "$receipts/after.jsonl" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Retain identifiers and verification receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: presentation-template-copy-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/presentation-template-copy-receipts
+          if-no-files-found: warn
+          retention-days: 30

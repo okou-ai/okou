@@ -34,7 +34,7 @@ import { createRouteMocks } from "./helpers/route-test";
 
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createPublicImageMember } from "./helpers/public-image-member";
-import { chargePublicSeoUsage } from "./helpers/public-seo-charge";
+import { chargePublicDataUsage } from "./helpers/public-data-charge";
 
 import {
   createClaimedImageRun as createClaimedImageRunForContext,
@@ -601,7 +601,7 @@ describe("POST /api/image-io/generate", () => {
       const fundedBalance = await orgCredits(fixture);
       expect(fundedBalance).toBe(fixture.initialCredits);
       await fixture.run(() => {
-        return chargePublicSeoUsage(context, fixture.actor, fundedBalance);
+        return chargePublicDataUsage(context, fixture.actor, fundedBalance);
       });
       await expect(orgCredits(fixture)).resolves.toBe(0);
 
@@ -667,16 +667,18 @@ describe("POST /api/image-io/generate", () => {
           }),
           expect.objectContaining({
             credits: fundedBalance,
-            threadId: null,
+            threadId: expect.any(String),
             breakdown: [
               {
                 kind: "other",
                 credits: fundedBalance,
                 providers: [
                   {
-                    provider: "dataforseo",
+                    provider: "data-router",
                     credits: fundedBalance,
-                    usageKinds: [{ kind: "seo", credits: fundedBalance }],
+                    usageKinds: [
+                      { kind: "data-search", credits: fundedBalance },
+                    ],
                   },
                 ],
               },

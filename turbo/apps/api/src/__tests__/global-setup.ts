@@ -8,7 +8,7 @@ import {
   type ApiDatabaseSnapshot,
 } from "../test-fixtures/pglite-database";
 import { Client } from "pg";
-import { z } from "zod";
+import * as z from "zod";
 import { env } from "../lib/env";
 import { API_DATABASE_SEED_FILES } from "../test-fixtures/database-seeds";
 import { onRejection, settleIncludingAbort } from "../signals/utils";

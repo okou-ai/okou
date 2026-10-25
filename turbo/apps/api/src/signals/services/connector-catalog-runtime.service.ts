@@ -45,9 +45,9 @@ import type {
   ConnectorCatalogView,
   ExternalCatalogIdentity,
 } from "./connector-catalog-view";
+import type { ConnectorCatalogRuntimeConnector } from "./connector-catalog-columns";
 import { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.service";
 import {
-  createAcceptedConnectorServerFirewallCatalog,
   createAcceptedConnectorServerFirewallCatalogFromConnectors,
   selectConnectorServerFirewalls,
   type ConnectorServerFirewallCatalog,
@@ -64,11 +64,18 @@ export interface ConnectorRuntimeMethod {
   readonly registration: ConnectorAuthProviderRegistrationCapability | null;
 }
 
-export interface ConnectorRuntimeConnector {
+interface ConnectorRuntimeCatalogConnector {
   readonly connectorSlug: ConnectorSlug;
-  readonly catalogConnector: PublicConnectorCatalogDetail;
+  readonly catalogConnector: Pick<
+    PublicConnectorCatalogDetail,
+    "label" | "authMethods" | "mcp"
+  >;
   readonly methods: ReadonlyMap<ConnectorAuthMethodId, ConnectorRuntimeMethod>;
   readonly authoredVisibleMethodIds: ReadonlySet<ConnectorAuthMethodId>;
+}
+
+export interface ConnectorRuntimeConnector extends ConnectorRuntimeCatalogConnector {
+  readonly catalogConnector: PublicConnectorCatalogDetail;
   readonly skill: ConnectorCatalogSkill;
 }
 
@@ -100,7 +107,14 @@ export interface ConnectorRuntimeSelection extends ConnectorRuntimeLookup {
 }
 
 /** Full firewall iteration/host ownership, without the accepted storage snapshot. */
-export interface ConnectorRuntimeCatalogView extends ConnectorRuntimeSelection {
+export interface ConnectorRuntimeCatalogView extends Omit<
+  ConnectorRuntimeSelection,
+  "connectors"
+> {
+  readonly connectors: ReadonlyMap<
+    ConnectorSlug,
+    ConnectorRuntimeCatalogConnector
+  >;
   readonly serverFirewalls: ConnectorServerFirewallCatalog;
   readonly serverFirewallMetadata: ConnectorServerFirewallCatalog;
 }
@@ -578,6 +592,22 @@ function runtimeConnector(
   };
 }
 
+function runtimeCatalogConnector(
+  connector: ConnectorCatalogRuntimeConnector,
+  filteredMethodKeys: ReadonlySet<string>,
+): ConnectorRuntimeCatalogConnector {
+  const authMethods = connector.authMethods.map(authMethodDetailForCatalog);
+  return {
+    connectorSlug: connector.slug,
+    catalogConnector: {
+      label: connector.label,
+      authMethods,
+      ...(connector.mcp === undefined ? {} : { mcp: { ...connector.mcp } }),
+    },
+    ...runtimeConnectorMethods(connector, authMethods, filteredMethodKeys),
+  };
+}
+
 /** Reuses executable method rules without materializing skills or firewall catalogs. */
 export function materializeConnectorRuntimeAuthLookup(args: {
   readonly connectors: readonly Pick<
@@ -625,7 +655,7 @@ function runtimeCatalogKey(identity: ExternalCatalogIdentity): string {
 
 interface ConnectorRuntimeState {
   readonly acceptedSnapshot: ConnectorCatalogView;
-  readonly connectors: Map<ConnectorSlug, ConnectorRuntimeConnector>;
+  readonly connectors: Map<ConnectorSlug, ConnectorRuntimeCatalogConnector>;
   readonly serverFirewalls: ConnectorServerFirewallCatalog;
   snapshot: ConnectorRuntimeSnapshot | undefined;
 }
@@ -641,9 +671,9 @@ const runtimeCatalogCache = singleton((): RuntimeCatalogCache => {
 
 function materializeConnectorRuntimeEntry(
   acceptedSnapshot: ConnectorCatalogLookup,
-  connectors: Map<ConnectorSlug, ConnectorRuntimeConnector>,
+  connectors: Map<ConnectorSlug, ConnectorRuntimeCatalogConnector>,
   connectorSlug: ConnectorSlug,
-): ConnectorRuntimeConnector {
+): ConnectorRuntimeCatalogConnector {
   const cached = connectors.get(connectorSlug);
   if (cached !== undefined) {
     return cached;
@@ -652,7 +682,7 @@ function materializeConnectorRuntimeEntry(
   if (source === undefined) {
     throw new Error("Accepted connector runtime source is unavailable");
   }
-  const connector = runtimeConnector(
+  const connector = runtimeCatalogConnector(
     source,
     acceptedSnapshot.filteredMethodKeys,
   );
@@ -669,10 +699,10 @@ function connectorRuntimeState(
   if (cache.key === key && cache.state !== undefined) {
     return { state: cache.state, created: false };
   }
-  const connectors = new Map<ConnectorSlug, ConnectorRuntimeConnector>();
+  const connectors = new Map<ConnectorSlug, ConnectorRuntimeCatalogConnector>();
   const createServerFirewalls = (): ConnectorServerFirewallCatalog => {
-    return createAcceptedConnectorServerFirewallCatalog({
-      artifact: acceptedSnapshot.artifact,
+    return createAcceptedConnectorServerFirewallCatalogFromConnectors({
+      connectors: acceptedSnapshot.artifact.connectors,
       runtimeMethodsForSlug: (connectorSlug) => {
         return [
           ...materializeConnectorRuntimeEntry(
@@ -707,10 +737,10 @@ function connectorRuntimeState(
 function selectedRuntimeConnectors(
   state: ConnectorRuntimeState,
   connectorSlugs: readonly ConnectorSlug[],
-): ReadonlyMap<ConnectorSlug, ConnectorRuntimeConnector> {
+): ReadonlyMap<ConnectorSlug, ConnectorRuntimeCatalogConnector> {
   return new Map(
     connectorSlugs.map(
-      (connectorSlug): [ConnectorSlug, ConnectorRuntimeConnector] => {
+      (connectorSlug): [ConnectorSlug, ConnectorRuntimeCatalogConnector] => {
         return [
           connectorSlug,
           materializeConnectorRuntimeEntry(
@@ -833,10 +863,10 @@ export function materializeConnectorRuntimeSnapshot(
   return snapshot;
 }
 
-export function getConnectorRuntimeConnector(
-  snapshot: ConnectorRuntimeLookup,
+export function getConnectorRuntimeConnector<Connector>(
+  snapshot: { readonly connectors: ReadonlyMap<ConnectorSlug, Connector> },
   connectorSlug: string,
-): ConnectorRuntimeConnector | undefined {
+): Connector | undefined {
   return snapshot.connectors.get(connectorSlug);
 }
 

@@ -18,7 +18,7 @@ use crate::process::{extract_exit_code, kill_and_reap_child, spawn_in_own_proces
 use crate::quiesce::OperationGuard;
 use crate::user::apply_command_identity;
 use crate::wait::{
-    WaitOutcome, await_drain_deadline, wait_with_kill_timeout_or_connection_cancelled,
+    WaitOutcome, collect_bounded_output, wait_with_kill_timeout_or_connection_cancelled,
 };
 pub(crate) use crate::worker_ownership::LazyConnectionWorkerSubmitError as GuestDnsReadinessSubmitError;
 use crate::worker_ownership::{LazyConnectionWorker, SingleActivePermit};
@@ -287,12 +287,13 @@ fn run_probe(
     if !matches!(outcome, WaitOutcome::Exited(_)) {
         drain_cancel.cancel();
     }
-    let completed = await_drain_deadline(&drain_done_rx, 2, &drain_cancel, OUTPUT_DRAIN_DEADLINE);
-    let stdout_result = stdout_drain.join();
-    let stderr_result = stderr_drain.join();
-    let drains_incomplete = completed < 2 || stdout_result.is_err() || stderr_result.is_err();
-    let stdout_result = stdout_result.unwrap_or_default();
-    let stderr_result = stderr_result.unwrap_or_default();
+    let (stdout_result, stderr_result) = collect_bounded_output(
+        stdout_drain,
+        stderr_drain,
+        &drain_done_rx,
+        &drain_cancel,
+        OUTPUT_DRAIN_DEADLINE,
+    );
 
     let (termination, wait_diagnostic) = match outcome {
         WaitOutcome::Exited(status) => (
@@ -318,9 +319,7 @@ fn run_probe(
         termination,
         duration_ms: elapsed_ms(started),
         answer,
-        output_truncated: drains_incomplete
-            || stdout_result.capture_truncated
-            || stderr_result.capture_truncated,
+        output_truncated: stdout_result.capture_truncated || stderr_result.capture_truncated,
         diagnostic: truncate_utf8(diagnostic, GUEST_DNS_READINESS_MAX_DIAGNOSTIC_BYTES),
     }
 }

@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { Command, Help } from "commander";
 import { buildHelpText, registerCommands } from "../okou";
-import { generateCommand } from "../commands/generate";
+import { createGenerateCommand } from "../commands/generate";
 import { decodeSandboxTokenPayload } from "../lib/api/sandbox-token";
+
+const generateCommand = createGenerateCommand();
 
 function buildOkouToken(payload: Record<string, unknown>): string {
   const header = Buffer.from(JSON.stringify({ alg: "HS256" })).toString(
@@ -325,6 +327,7 @@ describe("registerCommands", () => {
       buildOkouToken({ scope: "okou", capabilities: [capability] }),
     );
     expect(visibleCommandNames(buildProgram())).toContain("data");
+    expect(buildHelpText()).toContain("okou data tools");
   });
 
   it("should show credit with either billing read or billing write capability", () => {
@@ -737,152 +740,6 @@ describe("registerCommands", () => {
 
     expect(help).not.toContain("Check credits?");
     expect(help).not.toContain("Buy credits?");
-  });
-
-  it("should show the maps help example when maps:read capability is present", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["maps:read"],
-    });
-
-    expect(buildHelpText(decodeSandboxTokenPayload(token))).toContain(
-      "Search maps?",
-    );
-  });
-
-  it("should hide the maps help example when maps:read capability is missing", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["file:write"],
-    });
-
-    expect(buildHelpText(decodeSandboxTokenPayload(token))).not.toContain(
-      "Search maps?",
-    );
-  });
-
-  it("should show the weather help example when weather:read capability is present", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["weather:read"],
-    });
-
-    expect(buildHelpText(decodeSandboxTokenPayload(token))).toContain(
-      "Check weather?",
-    );
-  });
-
-  it("should hide the weather help example when weather:read capability is missing", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["file:write"],
-    });
-
-    expect(buildHelpText(decodeSandboxTokenPayload(token))).not.toContain(
-      "Check weather?",
-    );
-  });
-
-  it("should show the scrape help example when scrape:read capability is present", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["scrape:read"],
-    });
-
-    expect(buildHelpText(decodeSandboxTokenPayload(token))).toContain(
-      "Scrape a web page?",
-    );
-  });
-
-  it("should hide the scrape help example when scrape:read capability is missing", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["file:write"],
-    });
-
-    expect(buildHelpText(decodeSandboxTokenPayload(token))).not.toContain(
-      "Scrape a web page?",
-    );
-  });
-
-  it("should show the finance help example when finance:read capability is present", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["finance:read"],
-    });
-
-    expect(buildHelpText(decodeSandboxTokenPayload(token))).toContain(
-      "Get a market quote?",
-    );
-  });
-
-  it("should hide the finance help example when finance:read capability is missing", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["file:write"],
-    });
-
-    expect(buildHelpText(decodeSandboxTokenPayload(token))).not.toContain(
-      "Get a market quote?",
-    );
-  });
-
-  it("should gate the SEO help example on seo:read", () => {
-    const visibleToken = buildOkouToken({
-      scope: "okou",
-      capabilities: ["seo:read"],
-    });
-    const hiddenToken = buildOkouToken({
-      scope: "okou",
-      capabilities: ["file:write"],
-    });
-
-    expect(buildHelpText(decodeSandboxTokenPayload(visibleToken))).toContain(
-      "Research SEO data?",
-    );
-    expect(buildHelpText(decodeSandboxTokenPayload(hiddenToken))).not.toContain(
-      "Research SEO data?",
-    );
-  });
-
-  it("should show the people-search help example when people-search:read capability is present", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["people-search:read"],
-    });
-
-    expect(buildHelpText(decodeSandboxTokenPayload(token))).toContain(
-      "Find a professional?",
-    );
-  });
-
-  it("should hide the people-search help example when people-search:read capability is missing", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["file:write"],
-    });
-
-    expect(buildHelpText(decodeSandboxTokenPayload(token))).not.toContain(
-      "Find a professional?",
-    );
-  });
-
-  it("should gate the social help example on social:read", () => {
-    const visibleToken = buildOkouToken({
-      scope: "okou",
-      capabilities: ["social:read"],
-    });
-    const hiddenToken = buildOkouToken({
-      scope: "okou",
-      capabilities: ["file:write"],
-    });
-
-    expect(buildHelpText(decodeSandboxTokenPayload(visibleToken))).toContain(
-      "Analyze social data?",
-    );
-    expect(buildHelpText(decodeSandboxTokenPayload(hiddenToken))).not.toContain(
-      "Analyze social data?",
-    );
   });
 
   it("should show the banking help example when banking:read capability is present", () => {

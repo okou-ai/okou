@@ -16,7 +16,7 @@ use crate::error::to_io_error;
 use crate::process::{extract_exit_code, kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
 use crate::wait::{
-    WaitOutcome, await_drain_deadline, wait_with_kill_timeout_or_connection_cancelled,
+    WaitOutcome, collect_bounded_output, wait_with_kill_timeout_or_connection_cancelled,
 };
 pub(crate) use crate::worker_ownership::LazyConnectionWorkerSubmitError as HomeDriveMountSubmitError;
 use crate::worker_ownership::{LazyConnectionWorker, SingleActivePermit};
@@ -307,22 +307,13 @@ fn run_mount(input: RunMountInput<'_>) -> HomeDriveMountOutput {
     if !matches!(outcome, WaitOutcome::Exited(_)) || cancellation_observed {
         drain_cancel.cancel();
     }
-    let completed = await_drain_deadline(&drain_done_rx, 2, &drain_cancel, drain_deadline);
-    let stdout_result = stdout_drain.join();
-    let stderr_result = stderr_drain.join();
-    let drains_incomplete = completed < 2 || stdout_result.is_err() || stderr_result.is_err();
-    let mut stdout = stdout_result.unwrap_or_default();
-    let mut stderr = stderr_result.unwrap_or_default();
-    if drains_incomplete {
-        stdout.capture_truncated = true;
-        stderr.capture_truncated = true;
-    }
-    if stdout.captured.is_none() {
-        stdout.captured = Some(Vec::new());
-    }
-    if stderr.captured.is_none() {
-        stderr.captured = Some(Vec::new());
-    }
+    let (stdout, stderr) = collect_bounded_output(
+        stdout_drain,
+        stderr_drain,
+        &drain_done_rx,
+        &drain_cancel,
+        drain_deadline,
+    );
 
     let (termination, diagnostic) = match outcome {
         WaitOutcome::Exited(status) => (

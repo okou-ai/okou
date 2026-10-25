@@ -12,6 +12,164 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1062.0](https://github.com/okou-ai/okou/compare/app-v0.1061.0...app-v0.1062.0) (2026-10-25)
+
+
+### Features
+
+* cut over data tools to dynamic router discovery ([#42695](https://github.com/okou-ai/okou/issues/42695)) ([28d1842](https://github.com/okou-ai/okou/commit/28d18426d6282b443344e3a3cabdec11ee13bc03))
+
+
+### Bug Fixes
+
+* **browser:** allow viewer window size sync changes ([#42916](https://github.com/okou-ai/okou/issues/42916)) ([497ec0f](https://github.com/okou-ai/okou/commit/497ec0f949927f3991292972c640db0330ea48a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.3.0
+    * @okouai/core bumped to 8.787.1
+
+## [0.1061.0](https://github.com/okou-ai/okou/compare/app-v0.1060.1...app-v0.1061.0) (2026-10-25)
+
+
+### Features
+
+* **browser:** enable okou viewer for staff ([#42910](https://github.com/okou-ai/okou/issues/42910)) ([e45694f](https://github.com/okou-ai/okou/commit/e45694f5bbb2c30369ed48e188e6a75e9ab4b024))
+* **browser:** show cdp viewer settings menu ([#42904](https://github.com/okou-ai/okou/issues/42904)) ([b4cf1ac](https://github.com/okou-ai/okou/commit/b4cf1acf0888f0d028d92b3eae6b28d7b884d4c8))
+
+
+### Refactoring
+
+* **app:** remove json tree preview feature switch ([#42911](https://github.com/okou-ai/okou/issues/42911)) ([2ed0f18](https://github.com/okou-ai/okou/commit/2ed0f180ffd7ee1db828f447a7da171cdb6df3b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.787.0
+
+## [0.1060.1](https://github.com/okou-ai/okou/compare/app-v0.1060.0...app-v0.1060.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **platform:** make workspace logo loading recoverable ([#42872](https://github.com/okou-ai/okou/issues/42872)) ([60cea25](https://github.com/okou-ai/okou/commit/60cea259b395664d54716c6f98f592439899b797))
+* preserve new drafts when custom connector creation completes ([#42885](https://github.com/okou-ai/okou/issues/42885)) ([7fbb795](https://github.com/okou-ai/okou/commit/7fbb7958c7aa8faa9230a6cd319efe401d0c9e61))
+* preserve newer custom connector drafts after an edit ([#42883](https://github.com/okou-ai/okou/issues/42883)) ([d4e90fc](https://github.com/okou-ai/okou/commit/d4e90fc679a17bbd865e8780f736af148f54c84b))
+* preserve newer custom connector drafts after deletion ([#42886](https://github.com/okou-ai/okou/issues/42886)) ([e3d6756](https://github.com/okou-ai/okou/commit/e3d67561022e1e67830945c711960bd5da6bf92f))
+
+
+### Refactoring
+
+* **platform:** own agent creation completion in signals ([#42868](https://github.com/okou-ai/okou/issues/42868)) ([c1d72a8](https://github.com/okou-ai/okou/commit/c1d72a81ac68249c1aa19bd7801e97928daf3eb8))
+* **platform:** own connector account disconnect completion ([#42870](https://github.com/okou-ai/okou/issues/42870)) ([c1f768a](https://github.com/okou-ai/okou/commit/c1f768a4747b97262320383f331c3c40d6ce6ecd))
+* **platform:** own connector account naming completion ([#42871](https://github.com/okou-ai/okou/issues/42871)) ([29d717a](https://github.com/okou-ai/okou/commit/29d717acb22c0f27a18712d05b91661ca76e86d6))
+* **platform:** own personal account disconnect completion ([#42869](https://github.com/okou-ai/okou/issues/42869)) ([aec4206](https://github.com/okou-ai/okou/commit/aec4206cacf8a00615ca9d4f93378784c6fab6e3))
+
+## [0.1060.0](https://github.com/okou-ai/okou/compare/app-v0.1059.2...app-v0.1060.0) (2026-10-25)
+
+
+### Features
+
+* **core:** enable built-in document templates for everyone ([#42580](https://github.com/okou-ai/okou/issues/42580)) ([f61c808](https://github.com/okou-ai/okou/commit/f61c808adf249d8ef7767548df0893e99d0246ff))
+* **core:** enable chat resource panel for everyone ([#42581](https://github.com/okou-ai/okou/issues/42581)) ([269f6e5](https://github.com/okou-ai/okou/commit/269f6e5bb47c134a266d7078c788645183bab399))
+
+
+### Bug Fixes
+
+* **app:** preserve table bounds and text layout in message pdf exports ([#42607](https://github.com/okou-ai/okou/issues/42607)) ([c78a494](https://github.com/okou-ai/okou/commit/c78a49413f2aa7f1452f30a841b5ceb428f4c22a))
+
+
+### Performance Improvements
+
+* reduce resource and workflow publication overhead ([#42783](https://github.com/okou-ai/okou/issues/42783)) ([efca2a9](https://github.com/okou-ai/okou/commit/efca2a9ee30dcb5bad41396943784b3714e9e69f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.786.0
+
+## [0.1059.2](https://github.com/okou-ai/okou/compare/app-v0.1059.1...app-v0.1059.2) (2026-10-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.2
+    * @okouai/core bumped to 8.785.1
+
+## [0.1059.1](https://github.com/okou-ai/okou/compare/app-v0.1059.0...app-v0.1059.1) (2026-10-24)
+
+
+### Refactoring
+
+* **app:** keep async state in owned requests and server reads ([#42745](https://github.com/okou-ai/okou/issues/42745)) ([d24618e](https://github.com/okou-ai/okou/commit/d24618e29baf061b061b64454aa538e8ea8a74a3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.1
+    * @okouai/core bumped to 8.785.0
+
+## [0.1059.0](https://github.com/okou-ai/okou/compare/app-v0.1058.3...app-v0.1059.0) (2026-10-24)
+
+
+### Features
+
+* add proactive agent learning and planning workflows ([#42724](https://github.com/okou-ai/okou/issues/42724)) ([3a23824](https://github.com/okou-ai/okou/commit/3a23824fb8b9ac3ffd76b65cd463bb687f15269e))
+
+
+### Bug Fixes
+
+* **app:** review batch connector permissions in a dialog ([#42686](https://github.com/okou-ai/okou/issues/42686)) ([af97702](https://github.com/okou-ai/okou/commit/af97702825932330016d6cf39bcf95ce24eee714))
+* recover chat sync after returning to the foreground ([#42693](https://github.com/okou-ai/okou/issues/42693)) ([c202d59](https://github.com/okou-ai/okou/commit/c202d594a57aca54f2fd6c6e666decda445c80b6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.0
+    * @okouai/core bumped to 8.784.0
+
+## [0.1058.3](https://github.com/okou-ai/okou/compare/app-v0.1058.2...app-v0.1058.3) (2026-10-23)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#42668](https://github.com/okou-ai/okou/issues/42668)) ([84f655c](https://github.com/okou-ai/okou/commit/84f655c516454ae8e596de430cdcdd569db67b7f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.1.2
+    * @okouai/core bumped to 8.783.3
+
+## [0.1058.2](https://github.com/okou-ai/okou/compare/app-v0.1058.1...app-v0.1058.2) (2026-10-23)
+
+
+### Refactoring
+
+* **app:** keep async action state in views ([#42608](https://github.com/okou-ai/okou/issues/42608)) ([ec42eb2](https://github.com/okou-ai/okou/commit/ec42eb24c17d0ed66a55d87fc03201ad0da586d7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.783.2
+
 ## [0.1058.1](https://github.com/okou-ai/okou/compare/app-v0.1058.0...app-v0.1058.1) (2026-10-23)
 
 

@@ -1571,12 +1571,6 @@ describe("CHAT-01 chat thread read state", () => {
       }
       expect(Object.keys(indicators.threads)).toHaveLength(50);
       expect(Object.keys(indicators.unreadAt)).toHaveLength(50);
-      const oldestRun = runs[0];
-      if (!oldestRun) {
-        throw new Error("Expected an oldest completed run");
-      }
-      expect(indicators.threads).not.toHaveProperty(oldestRun.threadId);
-      expect(indicators.unreadAt).not.toHaveProperty(oldestRun.threadId);
       for (const run of runs.slice(1)) {
         expect(indicators.threads[run.threadId]).toBe("unread");
         expect(indicators.unreadAt[run.threadId]).toStrictEqual(

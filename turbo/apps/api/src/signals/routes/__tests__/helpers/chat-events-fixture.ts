@@ -19,7 +19,7 @@ import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 
 import { http, HttpResponse } from "msw";
 import { expect } from "vitest";
-import { z } from "zod";
+import * as z from "zod";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../../app-factory-core";

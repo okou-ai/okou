@@ -192,6 +192,10 @@ interface BrowserVisibilityStateMock {
   readonly changeTo: (visibilityState: DocumentVisibilityState) => void;
 }
 
+interface BrowserNetworkStateMock {
+  readonly changeTo: (online: boolean) => void;
+}
+
 interface ImageDimensionsMockValue {
   width: number;
   height: number;
@@ -607,6 +611,18 @@ export function createTestMocks(getSignal: () => AbortSignal) {
           },
         };
       },
+      networkState: (online: boolean): BrowserNetworkStateMock => {
+        const descriptor = defineWindowProperty(navigator, "onLine", online);
+        restoreOnAbort(getSignal(), () => {
+          restoreWindowProperty(navigator, "onLine", descriptor);
+        });
+        return {
+          changeTo(nextOnline): void {
+            defineWindowProperty(navigator, "onLine", nextOnline);
+            window.dispatchEvent(new Event(nextOnline ? "online" : "offline"));
+          },
+        };
+      },
       cookie: (cookie: string): void => {
         vi.spyOn(document, "cookie", "get").mockReturnValue(cookie);
       },
@@ -647,6 +663,21 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       },
       canvasRendering: (): CanvasRenderingMock => {
         return mockCanvasRendering(getSignal());
+      },
+      uint8ArrayFromBase64: (): void => {
+        // The viewer requires this browser API, which the test runtime lacks.
+        const descriptor = defineWindowProperty(
+          Uint8Array,
+          "fromBase64",
+          (value: string) => {
+            return Uint8Array.from(atob(value), (character) => {
+              return character.charCodeAt(0);
+            });
+          },
+        );
+        restoreOnAbort(getSignal(), () => {
+          restoreWindowProperty(Uint8Array, "fromBase64", descriptor);
+        });
       },
       indexedDbUnavailable: (): void => {
         const open = vi

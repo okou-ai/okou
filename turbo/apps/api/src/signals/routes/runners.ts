@@ -53,7 +53,6 @@ import {
   isNotNull,
   isNull,
   lt,
-  lte,
   ne,
   notExists,
   notInArray,
@@ -127,6 +126,7 @@ import {
   runnerReusePreferenceLookupError,
   runnerReusePreferencePollPriority,
 } from "../services/runner-reuse-preference";
+import { runnerJobQueueExpiredCondition } from "../services/runner-job-queue-lifecycle.service";
 
 import {
   mergeNetworkPolicyRefreshes,
@@ -1113,40 +1113,6 @@ function decodeClaimTransitionResult(
   return { status: row.status };
 }
 
-async function lockClaimRun(
-  db: Pick<Db, "select">,
-  runId: string,
-): Promise<{ readonly id: string; readonly status: string } | undefined> {
-  const [run] = await db
-    .select({
-      id: agentRuns.id,
-      status: agentRuns.status,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId))
-    .for("update");
-  return run;
-}
-
-async function lockRunnerJob(
-  db: Pick<Db, "select">,
-  runId: string,
-): Promise<
-  { readonly runId: string; readonly isExpired: boolean } | undefined
-> {
-  const [row] = await db
-    .select({
-      runId: runnerJobQueue.runId,
-      isExpired: lte(runnerJobQueue.expiresAt, sql`now()`).mapWith(
-        pgBooleanDecoder,
-      ),
-    })
-    .from(runnerJobQueue)
-    .where(eq(runnerJobQueue.runId, runId))
-    .for("update");
-  return row;
-}
-
 /** Consume the eligible locked Run/claim clock before the Run transition. */
 function buildClaimThreadStartSql(): SQL {
   const dialect = new PgDialect();
@@ -1210,7 +1176,7 @@ function buildClaimTransitionSql(
           locked_job AS MATERIALIZED (
             SELECT
               ${runnerJobQueue.runId} AS "runId",
-              ${lte(runnerJobQueue.expiresAt, sql`now()`)} AS "isExpired"
+              ${runnerJobQueueExpiredCondition()} AS "isExpired"
             FROM ${runnerJobQueue}
             INNER JOIN locked_run
               ON locked_run."id" = ${runnerJobQueue.runId}
@@ -1365,7 +1331,21 @@ async function failPoisonQueuedJob(
 ): Promise<PoisonJobResult> {
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0022; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
-    const run = await lockClaimRun(tx, runId);
+    const runPreflightDb = tx;
+    const runPreflightId = runId;
+    const run = await (async (): Promise<
+      { readonly id: string; readonly status: string } | undefined
+    > => {
+      const [run] = await runPreflightDb
+        .select({
+          id: agentRuns.id,
+          status: agentRuns.status,
+        })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, runPreflightId))
+        .for("update");
+      return run;
+    })();
     signal.throwIfAborted();
     if (!run) {
       return { status: "run-not-found" };
@@ -1376,7 +1356,21 @@ async function failPoisonQueuedJob(
       return { status: "run-not-found" };
     }
 
-    const job = await lockRunnerJob(tx, runId);
+    const jobPreflightDb = tx;
+    const jobPreflightId = runId;
+    const job = await (async (): Promise<
+      { readonly runId: string; readonly isExpired: boolean } | undefined
+    > => {
+      const [row] = await jobPreflightDb
+        .select({
+          runId: runnerJobQueue.runId,
+          isExpired: runnerJobQueueExpiredCondition().mapWith(pgBooleanDecoder),
+        })
+        .from(runnerJobQueue)
+        .where(eq(runnerJobQueue.runId, jobPreflightId))
+        .for("update");
+      return row;
+    })();
     signal.throwIfAborted();
     if (!job || job.isExpired) {
       return { status: "job-not-found" };
@@ -2020,6 +2014,7 @@ const scheduleClaimFailedSideEffects$ = command(
           dispatchCompleteSideEffects$,
           {
             kind: "terminal",
+            firstTerminalTransition: true,
             runId: args.runId,
             orgId: args.orgId,
             status: "failed",

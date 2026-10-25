@@ -117,15 +117,8 @@ def validate(directory):
         startup.exact(actual, {"created": created, "stages": stages, "cleanup": None}, "Guest cleaned before cancelled result")
         samples = accepted.get("samples")
         reads.samples(samples, events[0]["monotonic_ns"], events[2]["monotonic_ns"], policy)
-        fresh = []
-        for sample in samples:
-            if (pressure.integer(sample["available_bytes"], policy["recovery_available_bytes"])
-                    and sample["age_ns"]+events[2]["monotonic_ns"]-sample["finished_ns"] < policy["max_sample_age_millis"]*1_000_000):
-                fresh.append(sample)
-            else:
-                fresh = []
+        fresh = pressure.sustained_ready_samples(samples, events[2]["monotonic_ns"], policy)
         if (not pressure.integer(accepted.get("available_bytes"), policy["recovery_available_bytes"])
-                or len(fresh)<2 or fresh[-1]["read_start_offset_ns"]-fresh[0]["read_start_offset_ns"] < policy["pressure_recovery_sustain_millis"]*1_000_000
                 or not any(v["available_bytes"] == accepted["available_bytes"] for v in fresh)):
             raise ValueError("actual returned Guest lacks sustained fresh Ready")
         create.accounting(accepted.get("accounting"), growth)

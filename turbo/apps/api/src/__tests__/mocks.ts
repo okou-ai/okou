@@ -10,7 +10,7 @@ import { ws } from "msw";
 import { Buffer } from "node:buffer";
 import type StripeSDK from "stripe";
 import { vi, type Mock } from "vitest";
-import { z } from "zod";
+import * as z from "zod";
 
 import { mockStripeClient } from "../signals/external/stripe-client";
 

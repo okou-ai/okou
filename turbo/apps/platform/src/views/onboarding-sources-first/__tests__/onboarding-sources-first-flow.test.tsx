@@ -867,6 +867,9 @@ test("The sheet's connector card connects the tool the prompt link names", async
         updatedAt: "2026-01-01T00:00:00.000Z",
       };
       context.mocks.data.connectors([connector]);
+      context.mocks.ably.trigger("connector:changed", {
+        connectorSlug: connector.slug,
+      });
       return respond(200, { ...connector, connectionId: connector.id });
     },
   );

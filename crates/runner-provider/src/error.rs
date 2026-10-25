@@ -40,6 +40,8 @@ pub type ProviderResult<T> = Result<T, ProviderError>;
 pub struct ApiStatusError {
     pub endpoint_label: &'static str,
     pub status: StatusCode,
+    /// Response diagnostics. The shared API reader marks a truncated byte prefix;
+    /// endpoint-specific readers, such as the catalog, keep their own limits.
     pub body: String,
 }
 

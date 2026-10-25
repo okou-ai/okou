@@ -35,13 +35,19 @@ if command == 'xcrun':
         print(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-26-2':
             [{'name': 'iPhone 17 Pro', 'udid': 'configured', 'state': 'Shutdown'}]}}))
     elif args == ['simctl', 'boot', 'configured']:
-        pass
+        if not (state / 'build-finished').exists():
+            sys.exit('Simulator boot requested before compilation finished')
     elif args == ['simctl', 'bootstatus', 'configured']:
         role = 'boot'
+        if not (state / 'prepare-finished').exists():
+            sys.exit('Simulator started before locked dependency resolution finished')
+        if not (state / 'build-finished').exists():
+            sys.exit('Simulator started before compilation finished')
         mark('boot-started')
         if scenario == 'boot-failure':
             sys.exit('Boot rejected')
-        wait_for('prepare-finished')
+        if scenario == 'cancel-boot':
+            wait_for('allow-boot')
         mark('boot-finished')
     elif args[0] != 'swift-format':
         raise ValueError(args)
@@ -54,8 +60,8 @@ elif command == 'xcodebuild':
     if '-resolvePackageDependencies' in args:
         role = 'prepare'
         mark('prepare-started')
-        if scenario != 'manual':
-            wait_for('boot-started')
+        if (state / 'boot-started').exists():
+            sys.exit('Locked dependency resolution overlapped simulator startup')
         if scenario == 'prepare-failure':
             sys.exit(17)
         if scenario == 'cancel':
@@ -64,9 +70,17 @@ elif command == 'xcodebuild':
         sys.exit(0)
     if 'build-for-testing' in args:
         role = 'build'
-        if scenario != 'manual' and not (state / 'boot-finished').exists():
-            sys.exit('Compilation started before system boot readiness')
+        if not (state / 'prepare-finished').exists():
+            sys.exit('Compilation started before locked dependency resolution finished')
+        if (state / 'boot-started').exists():
+            sys.exit('Compilation overlapped simulator startup')
+        for required in ['-onlyUsePackageVersionsFromResolvedFile',
+                         '-disableAutomaticPackageResolution', '-skipPackageUpdates']:
+            if required not in args:
+                sys.exit('Compilation must enforce locked package inputs: ' + required)
         mark('build-started')
+        if scenario == 'cancel-build':
+            wait_for('allow-build')
         if scenario == 'build-failure':
             sys.exit(23)
         products = pathlib.Path(args[args.index('-derivedDataPath') + 1]) / 'Build/Products'
@@ -113,6 +127,7 @@ class CIProcessTests(unittest.TestCase):
             "ci-package-test.sh",
             "preboot-simulator.py",
             "run-ci-tests.sh",
+            "sample-xcode-startup.py",
         ):
             shutil.copy2(SCRIPTS / name, scripts / name)
         resolved = (
@@ -165,7 +180,7 @@ class CIProcessTests(unittest.TestCase):
         )
         self.assertTrue((self.state / "tests-ran").exists())
 
-    def test_boot_and_resolution_overlap_before_compilation_and_the_complete_suite(
+    def test_resolution_and_compilation_finish_before_boot_and_the_complete_suite(
         self,
     ):
         packages = self.invoke("ci-package-test.sh")
@@ -180,24 +195,26 @@ class CIProcessTests(unittest.TestCase):
         result = self.invoke("ci-package-test.sh")
         self.assertEqual(result.returncode, 19, result.stderr)
 
-    def test_resolution_failure_stops_owned_boot_process_and_blocks_native_tests(self):
+    def test_resolution_failure_does_not_start_the_simulator_or_native_tests(self):
         self.env["CI_PROCESS_SCENARIO"] = "prepare-failure"
         result = self.invoke()
         self.assertEqual(result.returncode, 17, result.stderr)
-        self.await_marker("boot-stopped")
+        self.assertFalse((self.state / "boot-started").exists())
         self.assertFalse((self.state / "tests-ran").exists())
 
-    def test_boot_failure_blocks_compilation_and_native_tests(self):
+    def test_boot_failure_blocks_native_tests_after_successful_compilation(self):
         self.env["CI_PROCESS_SCENARIO"] = "boot-failure"
         result = self.invoke()
         self.assertNotEqual(result.returncode, 0)
         self.assertTrue((self.state / "prepare-finished").exists())
+        self.assertTrue((self.state / "build-finished").exists())
         self.assertFalse((self.state / "tests-ran").exists())
 
     def test_compilation_failure_blocks_native_tests(self):
         self.env["CI_PROCESS_SCENARIO"] = "build-failure"
         result = self.invoke()
         self.assertEqual(result.returncode, 23, result.stderr)
+        self.assertFalse((self.state / "boot-started").exists())
         self.assertFalse((self.state / "tests-ran").exists())
 
     def test_missing_build_products_block_native_tests(self):
@@ -207,6 +224,14 @@ class CIProcessTests(unittest.TestCase):
         self.assertIn("Expected exactly one built test specification", result.stderr)
         self.assertFalse((self.state / "tests-ran").exists())
 
+    def test_sampled_compiler_failure_still_blocks_native_tests(self):
+        self.env["CI_PROCESS_SCENARIO"] = "build-failure"
+        self.env["IOS_XCODE_STARTUP_SAMPLING"] = "true"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 23, result.stderr)
+        self.assertFalse((self.state / "boot-started").exists())
+        self.assertFalse((self.state / "tests-ran").exists())
+
     def test_native_failure_preserves_its_status_and_result_bundle(self):
         self.env["CI_PROCESS_SCENARIO"] = "test-failure"
         result = self.invoke()
@@ -214,7 +239,7 @@ class CIProcessTests(unittest.TestCase):
         bundle = self.root / "work/okou-ios-ci/Tests.xcresult"
         self.assertEqual((bundle / "failure.txt").read_text(), "First failed assertion")
 
-    def test_cancellation_retires_both_owned_process_groups(self):
+    def test_cancellation_retires_resolution_without_starting_the_simulator(self):
         self.env["CI_PROCESS_SCENARIO"] = "cancel"
         with subprocess.Popen(
             self.command(),
@@ -224,13 +249,49 @@ class CIProcessTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         ) as process:
-            self.await_marker("boot-started")
             self.await_marker("prepare-started")
             process.send_signal(signal.SIGTERM)
             _, stderr = process.communicate(timeout=5)
             self.assertEqual(process.returncode, 143, stderr)
-        self.await_marker("boot-stopped")
         self.await_marker("prepare-stopped")
+        self.assertFalse((self.state / "boot-started").exists())
+        self.assertFalse((self.state / "tests-ran").exists())
+
+    def test_cancellation_retires_compilation_without_starting_the_simulator(self):
+        self.env["CI_PROCESS_SCENARIO"] = "cancel-build"
+        with subprocess.Popen(
+            self.command(),
+            cwd=self.repo,
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ) as process:
+            self.await_marker("build-started")
+            process.send_signal(signal.SIGTERM)
+            _, stderr = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 143, stderr)
+        self.await_marker("build-stopped")
+        self.assertFalse((self.state / "boot-started").exists())
+        self.assertFalse((self.state / "tests-ran").exists())
+
+    def test_cancellation_retires_simulator_startup_after_compilation(self):
+        self.env["CI_PROCESS_SCENARIO"] = "cancel-boot"
+        with subprocess.Popen(
+            self.command(),
+            cwd=self.repo,
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ) as process:
+            self.await_marker("boot-started")
+            process.send_signal(signal.SIGTERM)
+            _, stderr = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 143, stderr)
+        self.await_marker("boot-stopped")
+        self.assertTrue((self.state / "prepare-finished").exists())
+        self.assertTrue((self.state / "build-finished").exists())
         self.assertFalse((self.state / "tests-ran").exists())
 
     def test_manual_default_still_builds_and_runs_every_suite(self):

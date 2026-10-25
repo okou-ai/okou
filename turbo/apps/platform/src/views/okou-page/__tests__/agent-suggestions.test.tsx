@@ -128,7 +128,7 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
     },
   };
 }
-const features = { [FeatureSwitchKey.AgentSuggestion]: true } as const;
+const features = { [FeatureSwitchKey.ProactiveAgent]: true } as const;
 
 test("Selecting a task hides the categories, focuses the composer, and restores Suggestions when cleared", async () => {
   const user = userEvent.setup();
@@ -207,6 +207,7 @@ test.each([
         return tab.textContent?.trim();
       }),
     ).toStrictEqual([
+      "Tasks",
       "Workflow",
       "Presentation",
       "Document",

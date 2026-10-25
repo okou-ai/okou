@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 export const MCP_TOOL_ERROR_MAX_ISSUES = 20;
 export const MCP_TOOL_ERROR_MAX_PATH_SEGMENTS = 16;

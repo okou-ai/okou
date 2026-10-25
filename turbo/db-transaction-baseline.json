@@ -32,11 +32,6 @@
       "owner": "commitWorkflowCopy$"
     },
     {
-      "id": "TX-0045",
-      "file": "turbo/apps/api/src/signals/routes/workflows.ts",
-      "owner": "commitPreparedWorkflow$"
-    },
-    {
       "id": "TX-0046",
       "file": "turbo/apps/api/src/signals/routes/workflows.ts",
       "owner": "applyWorkflowVisibility$"
@@ -57,39 +52,9 @@
       "owner": "createAgentRunCompletion/complete$"
     },
     {
-      "id": "TX-0052",
-      "file": "turbo/apps/api/src/signals/services/agentphone-link.service.ts",
-      "owner": "linkAgentPhoneIdentity$"
-    },
-    {
-      "id": "TX-0056",
-      "file": "turbo/apps/api/src/signals/services/artifact-catalog.service.ts",
-      "owner": "syncHostedArtifact$"
-    },
-    {
-      "id": "TX-0057",
-      "file": "turbo/apps/api/src/signals/services/artifact-catalog.service.ts",
-      "owner": "syncFileArtifact$"
-    },
-    {
-      "id": "TX-0064",
-      "file": "turbo/apps/api/src/signals/services/billing-restore.service.ts",
-      "owner": "restoreSubscription$"
-    },
-    {
-      "id": "TX-0066",
-      "file": "turbo/apps/api/src/signals/services/browser-user-actions.service.ts",
-      "owner": "persistBrowserUserAction"
-    },
-    {
       "id": "TX-0073",
       "file": "turbo/apps/api/src/signals/services/browser.service.ts",
       "owner": "claimExpiredInactiveBrowser$"
-    },
-    {
-      "id": "TX-0077",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-automatic-connection.service.ts",
-      "owner": "publishAutomaticConnection$"
     },
     {
       "id": "TX-0084",
@@ -97,24 +62,9 @@
       "owner": "completeClaimedSession$"
     },
     {
-      "id": "TX-0088",
-      "file": "turbo/apps/api/src/signals/services/canonical-discord-ingress-processor.service.ts",
-      "owner": "recordIngressFailure"
-    },
-    {
       "id": "TX-0091",
       "file": "turbo/apps/api/src/signals/services/chat-events.command.ts",
       "owner": "appendNormalSendInput$"
-    },
-    {
-      "id": "TX-0092",
-      "file": "turbo/apps/api/src/signals/services/chat-thread-connector-selection.service.ts",
-      "owner": "updateChatThreadConnectorSelection$"
-    },
-    {
-      "id": "TX-0093",
-      "file": "turbo/apps/api/src/signals/services/chat-thread-connector-selection.service.ts",
-      "owner": "clearChatThreadConnectorSelection"
     },
     {
       "id": "TX-0095",
@@ -130,16 +80,6 @@
       "id": "TX-0097",
       "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
       "owner": "deleteChatThreadContent$"
-    },
-    {
-      "id": "TX-0111",
-      "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
-      "owner": "setDefaultGoogleFormsAccount$"
-    },
-    {
-      "id": "TX-0112",
-      "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
-      "owner": "setDefaultConnectorAccount$"
     },
     {
       "id": "TX-0116",
@@ -167,19 +107,9 @@
       "owner": "commitStaleRunTimeout"
     },
     {
-      "id": "TX-0129",
-      "file": "turbo/apps/api/src/signals/services/cron-compact-usage-events.service.ts",
-      "owner": "compactUsageEventBatch$"
-    },
-    {
       "id": "TX-0130",
       "file": "turbo/apps/api/src/signals/services/cron-project-chat-event-search.service.ts",
       "owner": "projectThread"
-    },
-    {
-      "id": "TX-0138",
-      "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
-      "owner": "persistCustomConnectorOAuthStart"
     },
     {
       "id": "TX-0139",
@@ -187,29 +117,9 @@
       "owner": "persistAutomaticNoAuthConnection"
     },
     {
-      "id": "TX-0140",
-      "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
-      "owner": "replaceConnectionTokens"
-    },
-    {
       "id": "TX-0141",
       "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
       "owner": "storeCustomConnectorOAuth2Connection"
-    },
-    {
-      "id": "TX-0144",
-      "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
-      "owner": "persistCustomConnectorCreate$"
-    },
-    {
-      "id": "TX-0145",
-      "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
-      "owner": "persistCustomConnectorUpdate$"
-    },
-    {
-      "id": "TX-0146",
-      "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
-      "owner": "deleteCustomConnector$"
     },
     {
       "id": "TX-0147",
@@ -220,16 +130,6 @@
       "id": "TX-0148",
       "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
       "owner": "deleteCustomConnectorAccount$"
-    },
-    {
-      "id": "TX-0150",
-      "file": "turbo/apps/api/src/signals/services/discord-chat-ingress.service.ts",
-      "owner": "admitCanonicalDiscordChatEvent$"
-    },
-    {
-      "id": "TX-0156",
-      "file": "turbo/apps/api/src/signals/services/email-common.service.ts",
-      "owner": "prepareNextOutboxItem"
     },
     {
       "id": "TX-0161",
@@ -267,21 +167,6 @@
       "owner": "deleteHostedSite$"
     },
     {
-      "id": "TX-0172",
-      "file": "turbo/apps/api/src/signals/services/integration-chat-queue.service.ts",
-      "owner": "enqueueIntegrationChatInput$"
-    },
-    {
-      "id": "TX-0176",
-      "file": "turbo/apps/api/src/signals/services/mail-notification.service.ts",
-      "owner": "commitMailNotification$"
-    },
-    {
-      "id": "TX-0178",
-      "file": "turbo/apps/api/src/signals/services/managed-usage.service.ts",
-      "owner": "recordManagedUsage$"
-    },
-    {
       "id": "TX-0185",
       "file": "turbo/apps/api/src/signals/services/model-provider-account.service.ts",
       "owner": "writePersonalAccount"
@@ -297,49 +182,9 @@
       "owner": "commitMorningBriefScheduleSettlement$"
     },
     {
-      "id": "TX-0194",
-      "file": "turbo/apps/api/src/signals/services/official-google-forms-reconfiguration.service.ts",
-      "owner": "commitOfficialFormsReconfiguration$"
-    },
-    {
       "id": "TX-0195",
       "file": "turbo/apps/api/src/signals/services/official-workflow-catalog-sync.service.ts",
       "owner": "activateCandidate$"
-    },
-    {
-      "id": "TX-0196",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-installation.service.ts",
-      "owner": "activateInstallation$"
-    },
-    {
-      "id": "TX-0197",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "persistReconfigurationPatch$"
-    },
-    {
-      "id": "TX-0198",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "restoreFailedReconfiguration$"
-    },
-    {
-      "id": "TX-0201",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "stageAutomationStructureTransition$"
-    },
-    {
-      "id": "TX-0202",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "finalizeAutomationStructureTransition$"
-    },
-    {
-      "id": "TX-0204",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "reserveDormantIdentity$"
-    },
-    {
-      "id": "TX-0208",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "finalizeDormantMaterialization$"
     },
     {
       "id": "TX-0218",
@@ -350,16 +195,6 @@
       "id": "TX-0220",
       "file": "turbo/apps/api/src/signals/services/org-member-cleanup.service.ts",
       "owner": "revokeOrgMemberRunAuthority"
-    },
-    {
-      "id": "TX-0234",
-      "file": "turbo/apps/api/src/signals/services/provider-usage-publication.service.ts",
-      "owner": "recordRunnerUsageBatch$"
-    },
-    {
-      "id": "TX-0235",
-      "file": "turbo/apps/api/src/signals/services/provider-usage-publication.service.ts",
-      "owner": "recordProviderUsageBatch$"
     },
     {
       "id": "TX-0236",
@@ -375,26 +210,6 @@
       "id": "TX-0248",
       "file": "turbo/apps/api/src/signals/services/slack-workspace-write.service.ts",
       "owner": "commitSlackWorkspaceConnection$"
-    },
-    {
-      "id": "TX-0249",
-      "file": "turbo/apps/api/src/signals/services/social-data.service.ts",
-      "owner": "createSocialDataJob$/result"
-    },
-    {
-      "id": "TX-0253",
-      "file": "turbo/apps/api/src/signals/services/storage-volume-upload.service.ts",
-      "owner": "commitPreparedVolumeUpload$"
-    },
-    {
-      "id": "TX-0254",
-      "file": "turbo/apps/api/src/signals/services/storage-write.service.ts",
-      "owner": "commitVerifiedStorageVersion$"
-    },
-    {
-      "id": "TX-0261",
-      "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
-      "owner": "createThreadClaimRunObjects/commitQueueHeadRejection$"
     },
     {
       "id": "TX-0263",
@@ -427,19 +242,9 @@
       "owner": "commitReflectedUsagePackChanges"
     },
     {
-      "id": "TX-0270",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
-      "owner": "finalizeCanceledUsagePackChanges"
-    },
-    {
       "id": "TX-0272",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "fulfillUsagePackSubscriptionChangeInvoice"
-    },
-    {
-      "id": "TX-0277",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "persistInvitation$"
     },
     {
       "id": "TX-0283",
@@ -457,19 +262,9 @@
       "owner": "persistDeferredSubscriptionChangeSchedule"
     },
     {
-      "id": "TX-0298",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
-      "owner": "materializeUsagePackSnapshot$"
-    },
-    {
       "id": "TX-0299",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
       "owner": "completeMigrationInvitations$"
-    },
-    {
-      "id": "TX-0303",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
-      "owner": "publishUsagePackCheckoutState$"
     },
     {
       "id": "TX-0304",
@@ -487,16 +282,6 @@
       "owner": "updateUserBuiltinConnectors$"
     },
     {
-      "id": "TX-0309",
-      "file": "turbo/apps/api/src/signals/services/user-export-durable.service.ts",
-      "owner": "commitCollectedEntries$"
-    },
-    {
-      "id": "TX-0313",
-      "file": "turbo/apps/api/src/signals/services/user-export.service.ts",
-      "owner": "startUserExport$"
-    },
-    {
       "id": "TX-0314",
       "file": "turbo/apps/api/src/signals/services/user-permission-grants.service.ts",
       "owner": "applyVisibleAgentGrantRows"
@@ -505,11 +290,6 @@
       "id": "TX-0320",
       "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
       "owner": "cancelUserRuns"
-    },
-    {
-      "id": "TX-0324",
-      "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
-      "owner": "grantAtomMemberCredits$"
     },
     {
       "id": "TX-0325",
@@ -522,24 +302,9 @@
       "owner": "publishLegacyPlanSubscription$"
     },
     {
-      "id": "TX-0332",
-      "file": "turbo/apps/api/src/signals/services/workflow-automation-run-callback.service.ts",
-      "owner": "attemptUnjournaledWorkflowAutomationCallbackSettlement$"
-    },
-    {
       "id": "TX-0333",
       "file": "turbo/apps/api/src/signals/services/workflow-automation-run.service.ts",
       "owner": "commitWorkflowInput$"
-    },
-    {
-      "id": "TX-0335",
-      "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
-      "owner": "commitWebhookEventAutomation$"
-    },
-    {
-      "id": "TX-0339",
-      "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
-      "owner": "persistEnabledWorkflowAutomation$"
     },
     {
       "id": "TX-0341",

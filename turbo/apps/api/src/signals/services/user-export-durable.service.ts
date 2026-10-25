@@ -1,6 +1,18 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import { and, asc, eq, gt, gte, inArray, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  exists,
+  gt,
+  gte,
+  inArray,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { createSHA256 } from "hash-wasm";
 import * as z from "zod";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
@@ -164,6 +176,69 @@ const saveState$ = command(
   },
 );
 
+function collectionSnapshotPins(
+  entries: readonly (typeof userExportEntries.$inferInsert)[],
+) {
+  const ctes: SQL[] = [];
+  const failures: SQL[] = [];
+  let previous = sql.identifier("export_collection_decision");
+  for (const [index, entry] of entries.entries()) {
+    if (entry.metadata?.sourceKind !== "chat-snapshot") {
+      continue;
+    }
+    const name = sql.identifier(`export_collection_snapshot_${index}`);
+    const threadId = entry.metadata.threadId;
+    const invalidIdentity = typeof threadId !== "string";
+    const head = invalidIdentity
+      ? sql`select null::uuid as id from ${previous} where false`
+      : new QueryBuilder()
+          .select({ id: chatEventSnapshots.id })
+          .from(chatEventSnapshots)
+          .where(
+            and(
+              eq(chatEventSnapshots.chatThreadId, threadId),
+              eq(
+                chatEventSnapshots.archiveSchemaVersion,
+                CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+              ),
+              eq(chatEventSnapshots.objectKey, entry.sourceKey),
+              exists(sql`(select 1 from ${previous})`),
+            ),
+          )
+          .limit(1)
+          .for("share");
+    ctes.push(sql`${name} as materialized (${head})`);
+    failures.push(sql`select ${index}::integer as position,
+      ${invalidIdentity}::boolean as invalid_identity
+      where exists (select 1 from ${previous})
+        and not exists (select 1 from ${name})`);
+    previous = name;
+  }
+  return {
+    ctes: ctes.length ? sql`${sql.join(ctes, sql`, `)},` : sql.empty(),
+    admitted: exists(sql`(select 1 from ${previous})`),
+    failure: failures.length
+      ? sql`select invalid_identity from (${sql.join(failures, sql` union all `)}) as failures order by position limit 1`
+      : sql`select false as invalid_identity`,
+  };
+}
+
+function collectedEntryValues(
+  entries: readonly (typeof userExportEntries.$inferInsert)[],
+) {
+  return sql.join(
+    entries.map((entry) => {
+      return sql`(${entry.jobId}::uuid, ${entry.ordinal}::integer,
+        ${entry.path}::text, ${entry.sourceKey}::text, ${entry.size}::bigint,
+        ${entry.crc32 ?? 0}::bigint, ${entry.scannedBytes ?? 0}::bigint,
+        ${entry.localOffset ?? 0}::bigint, ${entry.centralOffset ?? 0}::bigint,
+        ${sql.param(entry.metadata ?? {}, userExportEntries.metadata)}::jsonb,
+        ${entry.ready ?? false}::boolean)`;
+    }),
+    sql`, `,
+  );
+}
+
 /** Commit one collection step: pin its snapshots, record its entries, run the job. */
 const commitCollectedEntries$ = command(
   async (
@@ -177,84 +252,96 @@ const commitCollectedEntries$ = command(
   ): Promise<boolean> => {
     const db = set(writeDb$);
     const { job, entries, next } = args;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0309; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const transition = { job, checkpoint: next };
-      // The checkpoint and its byte inventory are one recoverable business write.
-      // Lock before evaluating database-clock expiry, never extend this lease.
-      const [lease] = await tx
-        .select({ id: backgroundJobs.id })
-        .from(backgroundJobs)
-        .where(backgroundJobActiveLease(job))
-        .limit(1)
-        .for("update", { skipLocked: true });
-      signal.throwIfAborted();
-      if (!lease) {
-        return false;
-      }
-      const [progress] = await tx
-        .update(backgroundJobs)
-        .set({
-          status: "pending",
-          checkpoint: transition.checkpoint,
-          failureCount: 0,
-          lastError: null,
-          availableAt: backgroundJobDatabaseNow,
-          leaseId: null,
-          leaseExpiresAt: null,
-          updatedAt: backgroundJobDatabaseNow,
-        })
-        .where(backgroundJobActiveLease(job))
-        .returning({ id: backgroundJobs.id });
-      signal.throwIfAborted();
-      if (!(progress !== undefined)) {
-        return false;
-      }
-      for (const entry of entries) {
-        if (entry.metadata?.sourceKind !== "chat-snapshot") {
-          continue;
-        }
-        const threadId = entry.metadata.threadId;
-        if (typeof threadId !== "string") {
-          throw new Error("Export snapshot has no thread identity");
-        }
-        // Pin while holding the current head against replacement. GC observes
-        // either the live head or this committed export reference, never a gap.
-        const [head] = await tx
-          .select({ id: chatEventSnapshots.id })
-          .from(chatEventSnapshots)
-          .where(
-            and(
-              eq(chatEventSnapshots.chatThreadId, threadId),
-              eq(
-                chatEventSnapshots.archiveSchemaVersion,
-                CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-              ),
-              eq(chatEventSnapshots.objectKey, entry.sourceKey),
-            ),
+    const lease = db
+      .select({
+        id: backgroundJobs.id,
+        leaseExpiresAt: backgroundJobs.leaseExpiresAt,
+      })
+      .from(backgroundJobs)
+      .where(backgroundJobActiveLease(job))
+      .limit(1)
+      .for("update", { skipLocked: true });
+    const pins = collectionSnapshotPins(entries);
+    const progress = db
+      .update(backgroundJobs)
+      .set({
+        status: "pending",
+        checkpoint: next,
+        failureCount: 0,
+        lastError: null,
+        availableAt: backgroundJobDatabaseNow,
+        leaseId: null,
+        leaseExpiresAt: null,
+        updatedAt: backgroundJobDatabaseNow,
+      })
+      .where(and(eq(backgroundJobs.id, job.id), pins.admitted))
+      .returning({ id: backgroundJobs.id });
+    const inventory = entries.length
+      ? db
+          .insert(userExportEntries)
+          .select(
+            sql`select incoming.* from (values ${collectedEntryValues(entries)})
+            as incoming(job_id, ordinal, path, source_key, size, crc32,
+              scanned_bytes, local_offset, central_offset, metadata, ready)
+            cross join export_collection_progress`,
           )
-          .limit(1)
-          .for("share");
-        signal.throwIfAborted();
-        if (!head) {
-          throw new Error(
-            "Export snapshot changed before its durable pin; retry collection",
-          );
-        }
-      }
-      if (entries.length > 0) {
-        await tx.insert(userExportEntries).values([...entries]);
-        signal.throwIfAborted();
-      }
-      await tx
-        .update(exportJobs)
-        .set({ status: "running" })
-        .where(
-          and(eq(exportJobs.id, job.id), eq(exportJobs.status, "pending")),
-        );
-      signal.throwIfAborted();
-      return true;
-    });
+          .returning({ ordinal: userExportEntries.ordinal })
+          .getSQL()
+      : sql`select null::integer as ordinal where false`;
+    const running = db
+      .update(exportJobs)
+      .set({ status: "running" })
+      .where(
+        and(
+          eq(exportJobs.id, job.id),
+          eq(exportJobs.status, "pending"),
+          exists(sql`(select 1 from export_collection_progress)`),
+          eq(
+            sql`(select ${count()} from export_collection_inventory)`,
+            entries.length,
+          ),
+        ),
+      )
+      .returning({ id: exportJobs.id });
+    // The original lease lock precedes its clock decision and input-ordered
+    // SHARE locks. Keep every head until its durable inventory commits, so GC
+    // sees a live head or an export reference. Missing heads gate every write.
+    signal.throwIfAborted();
+    const [outcome] = parseRawRows(
+      z.object({
+        leased: z.boolean(),
+        pinned: z.boolean(),
+        invalid_identity: z.boolean(),
+      }),
+      await db.execute(sql`
+        with export_collection_lease as materialized (${lease}),
+        export_collection_decision as materialized (
+          select id from export_collection_lease
+          where lease_expires_at > ${backgroundJobDatabaseNow}
+        ), ${pins.ctes}
+        export_collection_progress as (${progress.getSQL()}),
+        export_collection_inventory as (${inventory}),
+        export_collection_running as (${running.getSQL()})
+        select exists (select 1 from export_collection_decision) as leased,
+          exists (select 1 from export_collection_progress) as pinned,
+          coalesce((${pins.failure}), false) as invalid_identity
+      `),
+    );
+    signal.throwIfAborted();
+    if (!outcome) {
+      throw new Error("Export collection returned no outcome");
+    }
+    if (!outcome.leased) {
+      return false;
+    }
+    if (!outcome.pinned) {
+      throw new Error(
+        outcome.invalid_identity
+          ? "Export snapshot has no thread identity"
+          : "Export snapshot changed before its durable pin; retry collection",
+      );
+    }
+    return true;
   },
 );
 

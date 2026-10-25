@@ -10,8 +10,27 @@ use sandbox_mock::{MockLifecycleGate, MockSandboxFactory, MockSandboxOverrides};
 
 const WAIT: Duration = Duration::from_secs(5);
 
-#[tokio::test]
-async fn exhausted_home_cleanup_prefers_existing_blank_then_bounds_cold_fallback() {
+#[test]
+fn exhausted_home_cleanup_prefers_existing_blank_then_bounds_cold_fallback() {
+    // Unoptimized nested Executor polling during disk replacement can exceed
+    // libtest's default worker stack. Keep the larger budget local to this test.
+    let worker = std::thread::Builder::new()
+        .name("disk-recovery".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(assert_exhausted_home_cleanup());
+        })
+        .unwrap();
+    if let Err(panic) = worker.join() {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+async fn assert_exhausted_home_cleanup() {
     for (blank_fails, retirement) in [
         (false, "confirmed"),
         (true, "confirmed"),

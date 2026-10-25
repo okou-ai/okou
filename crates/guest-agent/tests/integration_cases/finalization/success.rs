@@ -4,6 +4,220 @@ use httpmock::prelude::*;
 use serde_json::json;
 
 #[tokio::test]
+async fn memory_publication_conflict_completes_with_captured_parent_and_other_outputs() {
+    for existing in [true, false] {
+        let api = SharedApiMock::new().await;
+        let server = api.server();
+        let mut runtime = finalization_runtime().unwrap();
+        runtime.config.framework = guest_agent::env::Framework::Pi;
+        let dir = tempfile::tempdir().unwrap();
+        let mut outputs = Vec::new();
+        let mut commits = Vec::new();
+        for (name, storage_id, parent, candidate) in [
+            (
+                "memory",
+                "00000000-0000-4000-8000-000000000001",
+                "captured-memory-parent",
+                "retained-memory-candidate",
+            ),
+            (
+                "workspace",
+                "00000000-0000-4000-8000-000000000002",
+                "captured-workspace-parent",
+                "published-workspace-version",
+            ),
+            (
+                "reports",
+                "00000000-0000-4000-8000-000000000003",
+                "captured-reports-parent",
+                "published-reports-version",
+            ),
+        ] {
+            let mount = dir.path().join(name);
+            std::fs::create_dir(&mount).unwrap();
+            std::fs::write(mount.join("notes.md"), "New candidate content").unwrap();
+            let is_memory = name == "memory";
+            let mount_path = mount.to_string_lossy().into_owned();
+            runtime.config.artifacts.push(guest_agent::env::ArtifactEnv {
+                name: name.to_string(),
+                mount_path: mount_path.clone(),
+                storage_id: storage_id.to_string(),
+                version_id: parent.to_string(),
+                missing_root_policy: is_memory.then_some(
+                    api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy::PreserveParentVersion,
+                ),
+            });
+            let mut output = json!({
+                "name": name,
+                "version": if is_memory { parent } else { candidate },
+                "mountPath": mount_path,
+            });
+            if is_memory {
+                output["missingRootPolicy"] = json!("preserveParentVersion");
+            }
+            outputs.push(output);
+
+            server.mock(|when, then| {
+                when.method(POST)
+                    .path("/api/webhooks/agent/storages/prepare")
+                    .json_body_includes(
+                        json!({"storageId": storage_id, "parentVersionId": parent}).to_string(),
+                    );
+                let response = if is_memory && !existing {
+                    json!({
+                        "versionId": candidate,
+                        "existing": false,
+                        "uploads": {
+                            "archive": {
+                                "key": "archive.tar.gz",
+                                "presignedUrl": format!("{}/memory-archive", server.base_url()),
+                            },
+                            "manifest": {
+                                "key": "manifest.json",
+                                "presignedUrl": format!("{}/memory-manifest", server.base_url()),
+                            },
+                        },
+                    })
+                } else {
+                    json!({"versionId": candidate, "existing": true})
+                };
+                then.status(200).json_body(response);
+            });
+            commits.push(server.mock(|when, then| {
+                when.method(POST)
+                    .path("/api/webhooks/agent/storages/commit")
+                    .json_body_includes(
+                        json!({
+                            "storageId": storage_id,
+                            "parentVersionId": parent,
+                            "versionId": candidate,
+                        })
+                        .to_string(),
+                    );
+                if is_memory {
+                    then.status(409).json_body(json!({
+                        "error": {
+                            "code": "CONFLICT",
+                            "message": "Memory changed during this Run. Candidate version retained-memory-candidate was retained; review the latest memory before publishing again.",
+                        },
+                    }));
+                } else {
+                    then.status(200).json_body(json!({
+                        "success": true,
+                        "storageName": name,
+                        "versionId": candidate,
+                        "size": 21,
+                        "fileCount": 1,
+                    }));
+                }
+            }));
+        }
+        let archive = server.mock(|when, then| {
+            when.method(PUT).path("/memory-archive");
+            then.status(200);
+        });
+        let manifest = server.mock(|when, then| {
+            when.method(PUT).path("/memory-manifest");
+            then.status(200);
+        });
+        let complete = server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/webhooks/agent/complete")
+                .json_body_includes(
+                    json!({
+                        "runId": "test-run-001",
+                        "exitCode": 0,
+                        "completion": {
+                            "cliAgentType": "pi",
+                            "cliAgentSessionId": "memory-conflict-session",
+                            "cliAgentSessionHistoryDisposition": "native_only",
+                            "storageOutputs": outputs,
+                        },
+                    })
+                    .to_string(),
+                );
+            then.status(200)
+                .json_body(json!({"success": true, "status": "completed"}));
+        });
+        let metadata = guest_agent::session_metadata::CapturedSessionMetadata::for_test(
+            "memory-conflict-session",
+            None,
+        );
+        let finalization =
+            guest_agent::finalization::prepare_finalization_for_runtime(&runtime, &metadata)
+                .await
+                .unwrap();
+        report_prepared_finalization(&runtime, 0, finalization)
+            .await
+            .unwrap();
+
+        complete.assert_calls_async(1).await;
+        for commit in commits {
+            commit.assert_calls_async(1).await;
+        }
+        let uploads = usize::from(!existing);
+        archive.assert_calls_async(uploads).await;
+        manifest.assert_calls_async(uploads).await;
+    }
+}
+
+#[tokio::test]
+async fn other_artifact_and_memory_prepare_conflicts_still_fail_finalization() {
+    for name in ["workspace", "memory"] {
+        let api = SharedApiMock::new().await;
+        let server = api.server();
+        let mut runtime = finalization_runtime().unwrap();
+        runtime.config.framework = guest_agent::env::Framework::Pi;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("notes.md"), "Candidate content").unwrap();
+        runtime
+            .config
+            .artifacts
+            .push(guest_agent::env::ArtifactEnv {
+                name: name.to_string(),
+                mount_path: dir.path().to_string_lossy().into_owned(),
+                storage_id: "00000000-0000-4000-8000-000000000001".to_string(),
+                version_id: "captured-parent".to_string(),
+                missing_root_policy: None,
+            });
+        server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/webhooks/agent/storages/prepare");
+            if name == "memory" {
+                then.status(409).json_body(json!({
+                    "error": {"code": "CONFLICT", "message": "Preparation conflict"},
+                }));
+            } else {
+                then.status(200).json_body(json!({
+                    "versionId": "candidate",
+                    "existing": true,
+                }));
+            }
+        });
+        server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/webhooks/agent/storages/commit");
+            then.status(409).json_body(json!({
+                "error": {"code": "CONFLICT", "message": "Artifact conflict"},
+            }));
+        });
+        let metadata = guest_agent::session_metadata::CapturedSessionMetadata::for_test(
+            "conflict-session",
+            None,
+        );
+        let error =
+            guest_agent::finalization::prepare_finalization_for_runtime(&runtime, &metadata)
+                .await
+                .err()
+                .expect("only a retained Memory commit conflict can complete successfully");
+        assert!(matches!(
+            error,
+            guest_agent::error::AgentError::HttpStatus { status: 409, .. }
+        ));
+    }
+}
+
+#[tokio::test]
 async fn pi_finalization_reports_full_combined_completion_payload() {
     let api = SharedApiMock::new().await;
     let server = api.server();

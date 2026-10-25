@@ -27,8 +27,6 @@ import {
   cronReconcileBillingEntitlementsContract,
   cronReconcileImageGenerationsContract,
   cronReconcileArtifactCatalogContract,
-  cronReconcileSocialKitDownloadsContract,
-  cronReconcileCommerceJobsContract,
   cronSteerRunTimeBudgetContract,
   cronSyncSkillsContract,
   cronTelegramCleanupContract,
@@ -145,14 +143,6 @@ const expectedVercelCrons = [
   },
   {
     path: cronProcessUsageEventsContract.process.path,
-    schedule: "* * * * *",
-  },
-  {
-    path: cronReconcileSocialKitDownloadsContract.reconcile.path,
-    schedule: "* * * * *",
-  },
-  {
-    path: cronReconcileCommerceJobsContract.reconcile.path,
     schedule: "* * * * *",
   },
   {

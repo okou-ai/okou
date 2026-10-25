@@ -18,7 +18,7 @@ import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-conn
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { expect } from "vitest";
-import { z } from "zod";
+import * as z from "zod";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";

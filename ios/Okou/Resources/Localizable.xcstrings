@@ -980,6 +980,17 @@
         }
       }
     },
+    "Saving model settings…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saving model settings…"
+          }
+        }
+      }
+    },
     "Model settings unavailable": {
       "extractionState": "manual",
       "localizations": {

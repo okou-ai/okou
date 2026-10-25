@@ -283,10 +283,10 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
   });
 
-  it("should enable custom templates for Bingjie by email outside the staff org", () => {
+  it("should enable custom templates for users outside the staff org", () => {
     const bingjieStates = getAllFeatureStates({
       email: "BINGJIE@OKOU.AI",
       orgId: "org_nonexistent",
@@ -297,7 +297,7 @@ describe("getAllFeatureStates", () => {
       email: "ethan@okou.ai",
       orgId: "org_nonexistent",
     });
-    expect(otherStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
+    expect(otherStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
   });
 
   it("should apply overrides to enable disabled features", () => {
@@ -391,7 +391,7 @@ describe("getFeatureSwitchMetadata", () => {
       "alpha",
     );
     expect(metadata[FeatureSwitchKey.CustomTemplates].rolloutStage).toBe(
-      "beta",
+      "released",
     );
     expect(
       metadata[FeatureSwitchKey.SidebarSubscriptionUsage].rolloutStage,

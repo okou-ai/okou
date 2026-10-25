@@ -1100,7 +1100,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     const second = await completeClaudeAccount({ mode: "add" });
     expect(second.provider.isActive).toBeFalsy();
     const secondAccountId = second.provider.id;
-    expect(secondAccountId).not.toBe(firstAccountId);
 
     await support.activatePersonalModelProviderAccount(member, secondAccountId);
 

@@ -1,4 +1,8 @@
 import {
+  connectorCredentialDeletion,
+  connectorCredentialDeletionKinds,
+} from "./connector-account-mutation.service";
+import {
   completedGetStartedQuestSql,
   memberRewardWalletQuery,
 } from "./get-started-member-reward";
@@ -12,8 +16,9 @@ import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
 import * as z from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   mcpOAuthScopeListSchema,
   mcpOAuthScopeTokenSchema,
@@ -32,7 +37,6 @@ import {
 } from "@okouai/connectors/auth-providers/oauth/error";
 import { connectors } from "@okouai/db/schema/connector";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
@@ -46,7 +50,7 @@ import {
   generateConnectorOAuthState,
 } from "../../lib/connector-oauth-state";
 import { safeJsonParse, settle } from "../utils";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   exchangeFeishuOAuthCode,
   FeishuOAuthTokenError,
@@ -71,10 +75,13 @@ import { customConnectorDefinitionSelection } from "./custom-connector-definitio
 import type { StoredCustomConnectorOAuthState } from "./connector-oauth-state.service";
 import {
   type ConnectorConnectionMutationResolution,
-  connectorConnectionWrittenRow,
+  awaitConnectorConnectionRow,
   existingConnectorConnectionSelection,
-  replaceConnectorConnectionOutcome,
-  resolveConnectorConnectionMutation,
+  connectorConnectionMutationReadPlan,
+  connectorConnectionMutationReadResult,
+  type ConnectorConnectionMutationArgs,
+  writeConnectorConnectionMetadataOutcome as writeConnectionMetadata,
+  type ConnectorConnectionWriteArgs,
 } from "./connector-connection-write.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import {
@@ -95,9 +102,9 @@ import {
   customConnectorAutomaticOAuthErrorCode,
   prepareCustomConnectorAutomaticOAuthAuthorization$,
   prepareCustomConnectorAutomaticOAuthReauthorization$,
+  refreshCustomConnectorAutomaticOAuthToken$,
   customConnectorAutomaticOAuthBindingReadPlan,
   customConnectorAutomaticOAuthBindingFromRow,
-  refreshCustomConnectorAutomaticOAuthToken,
   retireCustomConnectorDcrRegistrationSql,
   type CustomConnectorAutomaticOAuthBinding,
   type CustomConnectorAutomaticOAuthAuthorization,
@@ -116,6 +123,8 @@ import {
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 import {
   customConnectorOAuthStartFromRow,
+  customConnectorOAuthStartResultSchema,
+  customConnectorOAuthStartSql,
   customConnectorOAuthConnectionReadPlan,
   customConnectorOAuthConnectionTokenReadPlan,
   customConnectorRefreshReconnectCondition,
@@ -893,68 +902,53 @@ const persistCustomConnectorOAuthStart$ = command(
     const db = set(writeDb$);
     const { connector, args, prepared } = context;
     const expiresAt = connectorOAuthStateExpiresAt();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0138; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const credentialContractDb = tx;
-      const contractRef = {
-        orgId: args.orgId,
-        connectorId: connector.id,
-        storageVersion: connector.storageVersion,
-        authMode: prepared.authMode,
-      };
-      await (async () => {
-        const plan =
-          customConnectorOAuth2CredentialContractReadPlan(contractRef);
-        const rows = await credentialContractDb
-          .select(plan.columns)
-          .from(plan.from)
-          .leftJoin(plan.join.table, plan.join.on)
-          .where(plan.where)
-          .for("update", { of: plan.from })
-          .limit(1);
-        return customConnectorOAuth2CredentialContractFromRows(
-          rows,
-          contractRef,
-        );
-      })();
-      const resolution = await resolveConnectorConnectionMutation(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        target: { kind: "custom", customConnectorId: connector.id },
-        mutation: args.account,
-        allowSiblings: !isIntegrationManagedCustomConnector(connector),
-      });
-      if (resolution.kind !== "ready") {
-        return resolution;
-      }
-      const [oauthState] = await tx
-        .insert(connectorOauthStates)
-        .values({
-          state: prepared.state,
-          customConnectorId: connector.id,
-          storageVersion: connector.storageVersion,
-          authMethod: "oauth",
-          userId: args.userId,
-          orgId: args.orgId,
-          agentId: args.agentId,
-          authorizeAgent: args.agentId !== undefined,
-          redirectUri: prepared.redirectUri,
-          authorizationUrl: prepared.authorizationUrl,
-          oauthRequestedScopes: prepared.oauthRequestedScopes,
-          codeVerifier: prepared.codeVerifier,
-          oauthContext: JSON.stringify(prepared.context),
-          accountMutation: args.account,
-          expiresAt,
-        })
-        .returning({ id: connectorOauthStates.id });
-      return customConnectorOAuthStartFromRow(
-        oauthState,
-        args.account,
-        expiresAt,
-      );
+    const allowSiblings = !isIntegrationManagedCustomConnector(connector);
+    const query = customConnectorOAuthStartSql({
+      orgId: args.orgId,
+      userId: args.userId,
+      connectorId: connector.id,
+      storageVersion: connector.storageVersion,
+      authMode: prepared.authMode,
+      allowSiblings,
+      account: args.account,
+      state: prepared.state,
+      agentId: args.agentId,
+      redirectUri: prepared.redirectUri,
+      authorizationUrl: prepared.authorizationUrl,
+      oauthRequestedScopes: prepared.oauthRequestedScopes,
+      codeVerifier: prepared.codeVerifier,
+      oauthContext: JSON.stringify(prepared.context),
+      expiresAt,
     });
     signal.throwIfAborted();
-    return result;
+    const [result] = parseRawRows(
+      customConnectorOAuthStartResultSchema,
+      await db.execute(query),
+    );
+    signal.throwIfAborted();
+    if (!result) {
+      throw new Error("Failed to create connector OAuth state");
+    }
+    if (!result.contractValid) {
+      throw new Error(
+        "Custom connector credential contract changed during OAuth connection",
+      );
+    }
+    if (args.account.intent === "reconnect" && !result.accountPresent) {
+      return { kind: "missing" as const };
+    }
+    if (
+      args.account.intent !== "reconnect" &&
+      !allowSiblings &&
+      result.accountPresent
+    ) {
+      return { kind: "sibling-disabled" as const };
+    }
+    return customConnectorOAuthStartFromRow(
+      result.oauthStateId === null ? undefined : { id: result.oauthStateId },
+      args.account,
+      expiresAt,
+    );
   },
 );
 
@@ -994,10 +988,6 @@ type AutomaticNoAuthConnector = CustomConnectorRow & {
   readonly oauthConfig: null;
 };
 
-type CustomConnectorReplacementArgs = Parameters<
-  typeof replaceConnectorConnectionOutcome
->[1];
-
 interface AutomaticNoAuthPersistenceContext {
   readonly connector: AutomaticNoAuthConnector;
   readonly args: StartCustomConnectorOAuth2Args;
@@ -1015,7 +1005,7 @@ function automaticNoAuthCredentialContractRef(
   };
 }
 
-function automaticNoAuthConnectionWriteValues(
+function noAuthWriteArgs(
   args: StartCustomConnectorOAuth2Args,
   connector: AutomaticNoAuthConnector,
   resolution: Extract<ConnectorConnectionMutationResolution, { kind: "ready" }>,
@@ -1076,51 +1066,70 @@ const commitAutomaticNoAuthConnection$ = command(
           contractRef,
         );
       })();
-      const resolution = await resolveConnectorConnectionMutation(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        target: { kind: "custom", customConnectorId: connector.id },
-        mutation: args.account,
-        allowSiblings: true,
-      });
+      const mutationReadDb = tx;
+      const mutationReadArgs = automaticNoAuthMutation(args, connector);
+      const resolution = await (async () => {
+        let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+        for (;;) {
+          const rows = await mutationReadDb
+            .select(read.columns)
+            .from(read.from)
+            .where(read.where)
+            .orderBy(...read.orderBy)
+            .limit(read.limit);
+          const result = connectorConnectionMutationReadResult(
+            mutationReadArgs,
+            read,
+            rows,
+          );
+          if (result.kind === "resolved") {
+            return result.resolution;
+          }
+          read = result.read;
+        }
+      })();
       if (resolution.kind !== "ready") {
         return { resolution, connection: null };
       }
-      const connectionDb = tx;
-      const connectionArgs: CustomConnectorReplacementArgs = {
-        ...automaticNoAuthConnectionWriteValues(args, connector, resolution),
-        writeCredentials: async ({ db: credentialDb, connectorId }) => {
-          await credentialDb
-            .delete(customConnectorAccountOauthBindings)
-            .where(
-              eq(
-                customConnectorAccountOauthBindings.connectorAccountId,
-                connectorId,
-              ),
-            );
-        },
-      };
-      const connectionSignal = signal;
-      const connection = await (async () => {
-        return connectorConnectionWrittenRow(
-          await replaceConnectorConnectionOutcome(
-            connectionDb,
-            connectionArgs,
-            connectionSignal,
-          ),
-        );
-      })();
+
+      const connectionArgs = noAuthWriteArgs(args, connector, resolution);
+
+      const connection = await awaitConnectorConnectionRow(
+        (async () => {
+          const outcome = await writeConnectionMetadata(tx, connectionArgs);
+          signal.throwIfAborted();
+          if (outcome.kind !== "written") {
+            return outcome;
+          }
+          const connection = outcome.row;
+          const cleanup = { connectorId: connection.id, connection };
+          for (const kind of connectorCredentialDeletionKinds) {
+            const deletion = connectorCredentialDeletion(kind, cleanup);
+            await tx.delete(deletion.from).where(deletion.where);
+            if (kind !== "builtin-oauth") {
+              signal.throwIfAborted();
+            }
+          }
+          const connectorId = connection.id;
+          await (async () => {
+            await tx
+              .delete(customConnectorAccountOauthBindings)
+              .where(
+                eq(
+                  customConnectorAccountOauthBindings.connectorAccountId,
+                  connectorId,
+                ),
+              );
+          })();
+          signal.throwIfAborted();
+          return outcome;
+        })(),
+      );
       return { resolution, connection };
     });
     return (async () => {
       const result = await transaction;
-      const wakeup: ConnectorRuntimeWakeupBusinessArgs | undefined =
-        result.connection
-          ? {
-              scope: { orgId: args.orgId, userId: args.userId },
-              targets: [{ kind: "custom", customConnectorId: connector.id }],
-            }
-          : undefined;
+      const wakeup = automaticNoAuthWakeup(args, connector, result.connection);
       if (wakeup) {
         await (async () => {
           const result = await settle(
@@ -1630,74 +1639,102 @@ export function connectionTokenRows(args: {
   ];
 }
 
-async function replaceConnectionTokens(args: {
-  readonly db: Db;
-  readonly connectionId: string;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly storedIdentity: StoredConnection;
-  readonly token: CustomConnectorOAuthTokenResult;
-  readonly fallbackRefreshToken?: string;
-  readonly fallbackEncryptedIdToken?: string;
-  readonly featureContext: FeatureSwitchContext;
-}): Promise<
-  | { readonly kind: "replaced"; readonly encryptedAccessToken: string }
-  | { readonly kind: "publication-lost" }
-> {
-  const identity = resolveRefreshedOAuthIdentity(
-    args.storedIdentity,
-    args.token.userInfo,
-  );
-  const encrypted = await encryptTokenValues(args);
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0140; new non-billing transactions are prohibited.
-  return await args.db.transaction(async (tx) => {
-    const [claimed] = await tx
-      .update(connectors)
-      .set({
-        tokenExpiresAt: args.token.expiresAt,
-        needsReconnect: false,
-        reconnectReason: null,
-        ...(args.token.scopes === null
-          ? {}
-          : { oauthScopes: JSON.stringify(args.token.scopes) }),
-        ...(identity.kind === "update"
-          ? {
-              externalId: identity.externalId,
-              externalUsername: identity.externalUsername,
-              externalEmail: identity.externalEmail,
-            }
-          : {}),
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(connectors.id, args.connectionId),
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          storedRefreshTokenCondition(
-            args.connectionId,
-            args.storedIdentity.encryptedRefreshToken,
-            CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
-          ),
-        ),
-      )
-      .returning({ id: connectors.id });
-    if (!claimed) {
-      return { kind: "publication-lost" } as const;
-    }
-    await tx.delete(secrets).where(eq(secrets.connectorId, args.connectionId));
-    await tx.insert(secrets).values(
-      connectionTokenRows({
-        ...args,
-        encrypted,
-      }),
+const replaceConnectionTokens$ = command(
+  async (
+    { set },
+    args: {
+      readonly connectionId: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly storedIdentity: StoredConnection;
+      readonly token: CustomConnectorOAuthTokenResult;
+      readonly fallbackRefreshToken?: string;
+      readonly fallbackEncryptedIdToken?: string;
+      readonly featureContext: FeatureSwitchContext;
+    },
+  ): Promise<
+    | { readonly kind: "replaced"; readonly encryptedAccessToken: string }
+    | { readonly kind: "publication-lost" }
+  > => {
+    const identity = resolveRefreshedOAuthIdentity(
+      args.storedIdentity,
+      args.token.userInfo,
     );
-    return {
-      kind: "replaced",
-      encryptedAccessToken: encrypted.accessToken,
-    } as const;
-  });
-}
+    const encrypted = await encryptTokenValues(args);
+    const db = set(writeDb$);
+    const claimed = db.$with("claimed_custom_oauth_refresh").as(
+      db
+        .update(connectors)
+        .set({
+          tokenExpiresAt: args.token.expiresAt,
+          needsReconnect: false,
+          reconnectReason: null,
+          ...(args.token.scopes === null
+            ? {}
+            : { oauthScopes: JSON.stringify(args.token.scopes) }),
+          ...(identity.kind === "update"
+            ? {
+                externalId: identity.externalId,
+                externalUsername: identity.externalUsername,
+                externalEmail: identity.externalEmail,
+              }
+            : {}),
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(connectors.id, args.connectionId),
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            storedRefreshTokenCondition(
+              args.connectionId,
+              args.storedIdentity.encryptedRefreshToken,
+              CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
+            ),
+          ),
+        )
+        .returning({ id: connectors.id }),
+    );
+    const removed = db.$with("removed_custom_oauth_secrets").as(
+      db
+        .delete(secrets)
+        .where(
+          inArray(
+            secrets.connectorId,
+            db.select({ id: claimed.id }).from(claimed),
+          ),
+        )
+        .returning({ id: secrets.id }),
+    );
+    const tokenRows = connectionTokenRows({ ...args, encrypted });
+    const values = sql.join(
+      tokenRows.map((row) => {
+        return sql`(${row.name}, ${row.encryptedValue})`;
+      }),
+      sql`, `,
+    );
+    // Keep database defaults for secret IDs/timestamps. Exhaust deletion before
+    // inserting the replacement names, and gate every credential on the CAS winner.
+    const inserted = db.$with("inserted_custom_oauth_secrets", {
+      id: secrets.id,
+    }).as(sql`INSERT INTO ${secrets}
+      (name, encrypted_value, type, connector_id, user_id, org_id)
+    SELECT token.name, token.encrypted_value, 'connector', ${claimed.id},
+      ${args.userId}, ${args.orgId}
+    FROM ${claimed}
+    CROSS JOIN (VALUES ${values}) AS token(name, encrypted_value)
+    WHERE ${gte(db.select({ count: count() }).from(removed), 0)}
+    RETURNING id`);
+    const [published] = await db
+      .with(claimed, removed, inserted)
+      .select({ id: claimed.id })
+      .from(claimed)
+      .where(gte(db.select({ count: count() }).from(inserted), 0));
+    return published
+      ? { kind: "replaced", encryptedAccessToken: encrypted.accessToken }
+      : { kind: "publication-lost" };
+  },
+);
 
 export function customConnectorOAuth2CredentialContractReadPlan(args: {
   readonly orgId: string;
@@ -1789,6 +1826,40 @@ interface StoreCustomConnectorOAuth2ConnectionArgs {
   };
 }
 
+function customOAuth2CredentialContractRef(
+  args: Pick<
+    StoreCustomConnectorOAuth2ConnectionArgs,
+    "orgId" | "connectorId" | "storageVersion" | "automaticOAuthBinding"
+  >,
+) {
+  return {
+    orgId: args.orgId,
+    connectorId: args.connectorId,
+    storageVersion: args.storageVersion,
+    authMode: args.automaticOAuthBinding
+      ? ("automatic" as const)
+      : ("oauth" as const),
+  };
+}
+
+function customOAuthConnectionMutationValues(
+  args: Pick<
+    StoreCustomConnectorOAuth2ConnectionArgs,
+    "orgId" | "userId" | "connectorId" | "account"
+  >,
+  contract: ReturnType<typeof customConnectorOAuth2CredentialContractFromRows>,
+): ConnectorConnectionMutationArgs {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    target: { kind: "custom", customConnectorId: args.connectorId },
+    mutation: args.account,
+    allowSiblings: !isIntegrationManagedCustomConnectorProviderAdapter(
+      contract.providerAdapter,
+    ),
+  };
+}
+
 export const storeCustomConnectorOAuth2Connection$ = command(
   async function storeCustomConnectorOAuth2Connection(
     { set },
@@ -1816,14 +1887,7 @@ export const storeCustomConnectorOAuth2Connection$ = command(
           .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
       }
       const credentialContractDb = tx;
-      const contractRef = {
-        orgId: args.orgId,
-        connectorId: args.connectorId,
-        storageVersion: args.storageVersion,
-        authMode: args.automaticOAuthBinding
-          ? ("automatic" as const)
-          : ("oauth" as const),
-      };
+      const contractRef = customOAuth2CredentialContractRef(args);
       const contract = await (async () => {
         const plan =
           customConnectorOAuth2CredentialContractReadPlan(contractRef);
@@ -1840,74 +1904,83 @@ export const storeCustomConnectorOAuth2Connection$ = command(
         );
       })();
       signal.throwIfAborted();
-      const resolution = await resolveConnectorConnectionMutation(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        target: { kind: "custom", customConnectorId: args.connectorId },
-        mutation: args.account,
-        allowSiblings: !isIntegrationManagedCustomConnectorProviderAdapter(
-          contract.providerAdapter,
-        ),
-      });
+      const mutationReadDb = tx;
+      const mutationReadArgs: ConnectorConnectionMutationArgs =
+        customOAuthConnectionMutationValues(args, contract);
+      const resolution = await (async () => {
+        let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+        for (;;) {
+          const rows = await mutationReadDb
+            .select(read.columns)
+            .from(read.from)
+            .where(read.where)
+            .orderBy(...read.orderBy)
+            .limit(read.limit);
+          const result = connectorConnectionMutationReadResult(
+            mutationReadArgs,
+            read,
+            rows,
+          );
+          if (result.kind === "resolved") {
+            return result.resolution;
+          }
+          read = result.read;
+        }
+      })();
       signal.throwIfAborted();
       if (resolution.kind !== "ready") {
         return resolution;
       }
-      const connectionDb = tx;
-      const connectionArgs: CustomConnectorReplacementArgs = {
-        orgId: args.orgId,
-        userId: args.userId,
-        authMethod: "oauth",
-        storageVersion: args.storageVersion,
-        tokenExpiresAt: args.token.expiresAt,
-        target: customOAuthConnectionTarget(args.connectorId, args.token),
-        resolution: resolution.mutation,
-        insertConnectionId: args.insertConnectionId,
-        writeCredentials: async ({ db, connectorId }) => {
-          await db.insert(secrets).values(
-            connectionTokenRows({
-              ...args,
-              connectionId: connectorId,
-              encrypted,
-            }),
-          );
-          await db
-            .delete(customConnectorAccountOauthBindings)
-            .where(
-              eq(
-                customConnectorAccountOauthBindings.connectorAccountId,
-                connectorId,
-              ),
-            );
-          if (args.automaticOAuthBinding) {
-            await db.insert(customConnectorAccountOauthBindings).values({
-              connectorAccountId: connectorId,
-              customConnectorId: args.connectorId,
-              ...args.automaticOAuthBinding,
-            });
+
+      const connectionArgs = customOAuthWriteArgs(args, resolution);
+
+      const connection = await awaitConnectorConnectionRow(
+        (async () => {
+          const outcome = await writeConnectionMetadata(tx, connectionArgs);
+          signal.throwIfAborted();
+          if (outcome.kind !== "written") {
+            return outcome;
           }
-        },
-      };
-      const connectionSignal = signal;
-      const connection = await (async () => {
-        return connectorConnectionWrittenRow(
-          await replaceConnectorConnectionOutcome(
-            connectionDb,
-            connectionArgs,
-            connectionSignal,
-          ),
-        );
-      })();
+          const connection = outcome.row;
+          const cleanup = { connectorId: connection.id, connection };
+          for (const kind of connectorCredentialDeletionKinds) {
+            const deletion = connectorCredentialDeletion(kind, cleanup);
+            await tx.delete(deletion.from).where(deletion.where);
+            if (kind !== "builtin-oauth") {
+              signal.throwIfAborted();
+            }
+          }
+          const connectorId = connection.id;
+          await (async () => {
+            await tx.insert(secrets).values(
+              connectionTokenRows({
+                ...args,
+                connectionId: connectorId,
+                encrypted,
+              }),
+            );
+            await tx
+              .delete(customConnectorAccountOauthBindings)
+              .where(
+                eq(
+                  customConnectorAccountOauthBindings.connectorAccountId,
+                  connectorId,
+                ),
+              );
+            if (args.automaticOAuthBinding) {
+              await tx.insert(customConnectorAccountOauthBindings).values({
+                connectorAccountId: connectorId,
+                customConnectorId: args.connectorId,
+                ...args.automaticOAuthBinding,
+              });
+            }
+          })();
+          signal.throwIfAborted();
+          return outcome;
+        })(),
+      );
       await tx.execute(
-        completedGetStartedQuestSql(
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            questKey: "connector",
-            sourceKey: CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY,
-          },
-          nowDate(),
-        ),
+        completedGetStartedQuestSql(customOAuthQuest(args), nowDate()),
       );
       return { kind: "stored", connectionId: connection.id };
     });
@@ -2008,32 +2081,15 @@ export class CustomConnectorOAuth2TokenRefreshError extends Error {
   }
 }
 
-async function storeRefreshedConnectionTokens(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connection: StoredConnection;
-    readonly token: CustomConnectorOAuthTokenResult;
-    readonly fallbackRefreshToken: string;
-    readonly featureContext: FeatureSwitchContext;
-  },
+function refreshedConnectionTokenResult(
+  replacement:
+    | { readonly kind: "replaced"; readonly encryptedAccessToken: string }
+    | { readonly kind: "publication-lost" },
+  tokenExpiresAt: Date | null,
   signal: AbortSignal,
-): Promise<
+):
   | CustomConnectorOAuth2AccessTokenResolution
-  | { readonly kind: "publication-lost" }
-> {
-  const replacement = await replaceConnectionTokens({
-    db: args.db,
-    connectionId: args.connection.id,
-    orgId: args.orgId,
-    userId: args.userId,
-    storedIdentity: args.connection,
-    token: args.token,
-    fallbackRefreshToken: args.fallbackRefreshToken,
-    fallbackEncryptedIdToken: args.connection.encryptedIdToken ?? undefined,
-    featureContext: args.featureContext,
-  });
+  | { readonly kind: "publication-lost" } {
   if (replacement.kind === "publication-lost") {
     return replacement;
   }
@@ -2041,13 +2097,45 @@ async function storeRefreshedConnectionTokens(
   return {
     kind: "available",
     encryptedAccessToken: replacement.encryptedAccessToken,
-    tokenExpiresAt: args.token.expiresAt,
+    tokenExpiresAt: tokenExpiresAt,
     status: "refreshed",
   };
 }
 
+const storeRefreshedConnectionTokens$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connection: StoredConnection;
+      readonly token: CustomConnectorOAuthTokenResult;
+      readonly fallbackRefreshToken: string;
+      readonly featureContext: FeatureSwitchContext;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | CustomConnectorOAuth2AccessTokenResolution
+    | { readonly kind: "publication-lost" }
+  > => {
+    return refreshedConnectionTokenResult(
+      await set(replaceConnectionTokens$, {
+        connectionId: args.connection.id,
+        orgId: args.orgId,
+        userId: args.userId,
+        storedIdentity: args.connection,
+        token: args.token,
+        fallbackRefreshToken: args.fallbackRefreshToken,
+        fallbackEncryptedIdToken: args.connection.encryptedIdToken ?? undefined,
+        featureContext: args.featureContext,
+      }),
+      args.token.expiresAt,
+      signal,
+    );
+  },
+);
+
 interface ResolveCustomConnectorOAuth2AccessTokenArgs {
-  readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
   readonly connector: CustomConnectorRow;
@@ -2073,184 +2161,61 @@ function currentAfterLostPublication(
     : { kind: "unavailable" };
 }
 
-async function loadCustomOAuthConnection(
-  args: ResolveCustomConnectorOAuth2AccessTokenArgs,
-): Promise<StoredConnection | null> {
-  const connectionDb = args.db;
-  const connectionIdentity: CustomConnectorOAuthConnectionReadIdentity = {
-    orgId: args.orgId,
-    userId: args.userId,
-    customConnectorId: args.connector.id,
-    memberConnectorId: args.memberConnectorId,
-    storageVersion: args.connector.storageVersion,
-    definitionAuthMode: "oauth",
-  };
-  return await (async (): Promise<StoredConnection | null> => {
-    const plan = customConnectorOAuthConnectionReadPlan(connectionIdentity);
-    const query = connectionDb
-      .select(plan.columns)
-      .from(connectors)
-      .where(plan.condition);
-    const rows = await query.limit(1);
-    const connection = rows[0];
-    if (!connection) {
-      return null;
-    }
-    // Re-check the complete identity at the secret read boundary because the
-    // organization definition can change after the parent lookup.
-    const tokenPlan = customConnectorOAuthConnectionTokenReadPlan(
-      connectionIdentity,
-      connection.id,
-    );
-    const tokenRows = await connectionDb
-      .select(tokenPlan.columns)
-      .from(secrets)
-      .innerJoin(connectors, tokenPlan.accountJoin)
-      .innerJoin(orgCustomConnectors, tokenPlan.definitionJoin)
-      .where(tokenPlan.condition);
-    return storedConnectionFromRows(connection, tokenRows);
-  })();
-}
-
-async function resolveCustomConnectorOAuth2AccessToken(
-  args: ResolveCustomConnectorOAuth2AccessTokenArgs,
-  signal: AbortSignal,
-): Promise<CustomConnectorOAuth2AccessTokenResolution> {
-  if (args.connector.authMode !== "oauth" || !args.connector.oauthConfig) {
-    return { kind: "unavailable" };
-  }
-  const oauthConfig = args.connector.oauthConfig;
-  const connection = await loadCustomOAuthConnection(args);
-  signal.throwIfAborted();
-  if (!connection) {
-    return { kind: "unavailable" };
-  }
-  const accessToken = storedConnectionAccessToken(connection);
-  if (
-    !args.forceRefresh &&
-    !connection.needsReconnect &&
-    accessToken.kind === "available" &&
-    connectionAccessTokenIsCurrent(connection)
-  ) {
-    return accessToken;
-  }
-  // Ordinary refresh: KMS and provider HTTP run outside any transaction and
-  // publication compares the consumed refresh token (see replaceConnectionTokens).
-  if (!connection.encryptedRefreshToken) {
-    const reconnectDb = args.db;
-    const reconnectConnectorId = connection.id;
-    const reconnectReason = "missing_refresh_token";
-    const reconnectObservedToken = null;
-    await (async () => {
-      await reconnectDb
-        .update(connectors)
-        .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
-        .where(
-          customConnectorRefreshReconnectCondition(
-            reconnectConnectorId,
-            reconnectObservedToken,
-            CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
-          ),
-        );
-    })();
-    return { kind: "reconnect-required" };
-  }
-  const [credentials, refreshToken] = await Promise.all([
-    decryptCustomConnectorOAuth2Credentials(
-      args.connector,
-      args.featureContext,
-    ),
-    decryptStoredSecretValue(
-      connection.encryptedRefreshToken,
-      args.featureContext,
-    ),
-  ]);
-  signal.throwIfAborted();
-  if (!credentials) {
-    return { kind: "unavailable" };
-  }
-  const refreshResult = await settle(
-    refreshCustomConnectorOAuth2Token(
-      {
-        config: oauthConfig,
-        clientSecret: credentials.clientSecret,
-        refreshToken,
-      },
-      signal,
-    ),
-  );
-  if (!refreshResult.ok) {
-    if (
-      !isOAuthProviderHttpError(refreshResult.error) ||
-      refreshResult.error.oauthError !== "invalid_grant"
-    ) {
-      throw new CustomConnectorOAuth2TokenRefreshError(refreshResult.error);
-    }
-    const reconnectDb = args.db;
-    const reconnectConnectorId = connection.id;
-    const reconnectReason = "authorization_expired_or_revoked";
-    const reconnectObservedToken = connection.encryptedRefreshToken;
-    await (async () => {
-      await reconnectDb
-        .update(connectors)
-        .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
-        .where(
-          customConnectorRefreshReconnectCondition(
-            reconnectConnectorId,
-            reconnectObservedToken,
-            CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
-          ),
-        );
-    })();
-    return { kind: "reconnect-required" };
-  }
-  signal.throwIfAborted();
-  const stored = await storeRefreshedConnectionTokens(
-    {
-      db: args.db,
+const loadCustomOAuthConnection$ = command(
+  async (
+    { get },
+    args: ResolveCustomConnectorOAuth2AccessTokenArgs,
+  ): Promise<StoredConnection | null> => {
+    const connectionDb = get(db$);
+    const connectionIdentity: CustomConnectorOAuthConnectionReadIdentity = {
       orgId: args.orgId,
       userId: args.userId,
-      connection,
-      token: refreshResult.value,
-      fallbackRefreshToken: refreshToken,
-      featureContext: args.featureContext,
-    },
-    signal,
-  );
-  if (stored.kind !== "publication-lost") {
-    return stored;
-  }
-  const current = await loadCustomOAuthConnection(args);
-  signal.throwIfAborted();
-  return currentAfterLostPublication(current);
-}
+      customConnectorId: args.connector.id,
+      memberConnectorId: args.memberConnectorId,
+      storageVersion: args.connector.storageVersion,
+      definitionAuthMode: "oauth",
+    };
+    return await (async (): Promise<StoredConnection | null> => {
+      const plan = customConnectorOAuthConnectionReadPlan(connectionIdentity);
+      const query = connectionDb
+        .select(plan.columns)
+        .from(connectors)
+        .where(plan.condition);
+      const rows = await query.limit(1);
+      const connection = rows[0];
+      if (!connection) {
+        return null;
+      }
+      // Re-check the complete identity at the secret read boundary because the
+      // organization definition can change after the parent lookup.
+      const tokenPlan = customConnectorOAuthConnectionTokenReadPlan(
+        connectionIdentity,
+        connection.id,
+      );
+      const tokenRows = await connectionDb
+        .select(tokenPlan.columns)
+        .from(secrets)
+        .innerJoin(connectors, tokenPlan.accountJoin)
+        .innerJoin(orgCustomConnectors, tokenPlan.definitionJoin)
+        .where(tokenPlan.condition);
+      return storedConnectionFromRows(connection, tokenRows);
+    })();
+  },
+);
 
-async function handleAutomaticOAuthRefreshFailure(args: {
-  readonly db: Db;
-  readonly connectionId: string;
-  readonly observedEncryptedRefreshToken: string;
-  readonly binding: CustomConnectorAutomaticOAuthBinding;
-  readonly error: unknown;
-}): Promise<{ readonly kind: "reconnect-required" }> {
-  if (
-    isAutomaticOAuthInvalidClient(args.error) &&
-    args.binding.registrationMethod === "dcr"
-  ) {
-    const registrationId = args.binding.dcrRegistration.id;
-    await args.db.execute(
-      retireCustomConnectorDcrRegistrationSql(registrationId, nowDate()),
-    );
-    return { kind: "reconnect-required" };
-  }
-  if (
-    isAutomaticOAuthInvalidGrant(args.error) ||
-    isAutomaticOAuthInvalidClient(args.error) ||
-    (args.error instanceof McpAutomaticOAuthError &&
-      args.error.kind === "binding-drift")
-  ) {
-    const reconnectDb = args.db;
+const markCustomOAuthRefreshReconnect$ = command(
+  async (
+    { set },
+    args: {
+      readonly connectionId: string;
+      readonly observedEncryptedRefreshToken: string | null;
+      readonly reason:
+        "missing_refresh_token" | "authorization_expired_or_revoked";
+    },
+  ): Promise<{ readonly kind: "reconnect-required" }> => {
+    const reconnectDb = set(writeDb$);
     const reconnectConnectorId = args.connectionId;
-    const reconnectReason = "authorization_expired_or_revoked";
+    const reconnectReason = args.reason;
     const reconnectObservedToken = args.observedEncryptedRefreshToken;
     await (async () => {
       await reconnectDb
@@ -2265,15 +2230,175 @@ async function handleAutomaticOAuthRefreshFailure(args: {
         );
     })();
     return { kind: "reconnect-required" };
-  }
-  if (
-    args.error instanceof McpAutomaticOAuthError &&
-    args.error.kind === "temporary"
-  ) {
-    throw new CustomConnectorOAuth2TokenRefreshError(args.error);
-  }
-  throw args.error;
-}
+  },
+);
+const retireAutomaticOAuthRefreshRegistration$ = command(
+  async (
+    { set },
+    registrationId: string,
+  ): Promise<{ readonly kind: "reconnect-required" }> => {
+    const db = set(writeDb$);
+    await db.execute(
+      retireCustomConnectorDcrRegistrationSql(registrationId, nowDate()),
+    );
+    return { kind: "reconnect-required" };
+  },
+);
+const requestCustomOAuthTokenRefresh$ = command(
+  async (
+    _,
+    args: Parameters<typeof refreshCustomConnectorOAuth2Token>[0],
+    signal: AbortSignal,
+  ) => {
+    return await settle(refreshCustomConnectorOAuth2Token(args, signal));
+  },
+);
+
+const resolveCustomConnectorOAuth2AccessToken$ = command(
+  async (
+    { set },
+    args: ResolveCustomConnectorOAuth2AccessTokenArgs,
+    signal: AbortSignal,
+  ): Promise<CustomConnectorOAuth2AccessTokenResolution> => {
+    if (args.connector.authMode !== "oauth" || !args.connector.oauthConfig) {
+      return { kind: "unavailable" };
+    }
+    const oauthConfig = args.connector.oauthConfig;
+    const connection = await set(loadCustomOAuthConnection$, args);
+    signal.throwIfAborted();
+    if (!connection) {
+      return { kind: "unavailable" };
+    }
+    const accessToken = storedConnectionAccessToken(connection);
+    if (
+      !args.forceRefresh &&
+      !connection.needsReconnect &&
+      accessToken.kind === "available" &&
+      connectionAccessTokenIsCurrent(connection)
+    ) {
+      return accessToken;
+    }
+    // Ordinary refresh: KMS and provider HTTP run outside any transaction and
+    // publication compares the consumed refresh token (see replaceConnectionTokens).
+    if (!connection.encryptedRefreshToken) {
+      return await set(markCustomOAuthRefreshReconnect$, {
+        connectionId: connection.id,
+        observedEncryptedRefreshToken: null,
+        reason: "missing_refresh_token",
+      });
+    }
+    const [credentials, refreshToken] = await Promise.all([
+      decryptCustomConnectorOAuth2Credentials(
+        args.connector,
+        args.featureContext,
+      ),
+      decryptStoredSecretValue(
+        connection.encryptedRefreshToken,
+        args.featureContext,
+      ),
+    ]);
+    signal.throwIfAborted();
+    if (!credentials) {
+      return { kind: "unavailable" };
+    }
+    const refreshResult = await set(
+      requestCustomOAuthTokenRefresh$,
+      {
+        config: oauthConfig,
+        clientSecret: credentials.clientSecret,
+        refreshToken,
+      },
+      signal,
+    );
+    if (!refreshResult.ok) {
+      if (
+        !isOAuthProviderHttpError(refreshResult.error) ||
+        refreshResult.error.oauthError !== "invalid_grant"
+      ) {
+        throw new CustomConnectorOAuth2TokenRefreshError(refreshResult.error);
+      }
+      return await set(markCustomOAuthRefreshReconnect$, {
+        connectionId: connection.id,
+        observedEncryptedRefreshToken: connection.encryptedRefreshToken,
+        reason: "authorization_expired_or_revoked",
+      });
+    }
+    signal.throwIfAborted();
+    const stored = await set(
+      storeRefreshedConnectionTokens$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        connection,
+        token: refreshResult.value,
+        fallbackRefreshToken: refreshToken,
+        featureContext: args.featureContext,
+      },
+      signal,
+    );
+    if (stored.kind !== "publication-lost") {
+      return stored;
+    }
+    const current = await set(loadCustomOAuthConnection$, args);
+    signal.throwIfAborted();
+    return currentAfterLostPublication(current);
+  },
+);
+
+const handleAutomaticOAuthRefreshFailure$ = command(
+  async (
+    { set },
+    args: {
+      readonly connectionId: string;
+      readonly observedEncryptedRefreshToken: string;
+      readonly binding: CustomConnectorAutomaticOAuthBinding;
+      readonly error: unknown;
+    },
+  ): Promise<{ readonly kind: "reconnect-required" }> => {
+    const db = set(writeDb$);
+    if (
+      isAutomaticOAuthInvalidClient(args.error) &&
+      args.binding.registrationMethod === "dcr"
+    ) {
+      const registrationId = args.binding.dcrRegistration.id;
+      await db.execute(
+        retireCustomConnectorDcrRegistrationSql(registrationId, nowDate()),
+      );
+      return { kind: "reconnect-required" };
+    }
+    if (
+      isAutomaticOAuthInvalidGrant(args.error) ||
+      isAutomaticOAuthInvalidClient(args.error) ||
+      (args.error instanceof McpAutomaticOAuthError &&
+        args.error.kind === "binding-drift")
+    ) {
+      const reconnectDb = db;
+      const reconnectConnectorId = args.connectionId;
+      const reconnectReason = "authorization_expired_or_revoked";
+      const reconnectObservedToken = args.observedEncryptedRefreshToken;
+      await (async () => {
+        await reconnectDb
+          .update(connectors)
+          .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
+          .where(
+            customConnectorRefreshReconnectCondition(
+              reconnectConnectorId,
+              reconnectObservedToken,
+              CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
+            ),
+          );
+      })();
+      return { kind: "reconnect-required" };
+    }
+    if (
+      args.error instanceof McpAutomaticOAuthError &&
+      args.error.kind === "temporary"
+    ) {
+      throw new CustomConnectorOAuth2TokenRefreshError(args.error);
+    }
+    throw args.error;
+  },
+);
 
 type RefreshAutomaticOAuthAccessTokenContext = {
   readonly args: ResolveCustomConnectorOAuth2AccessTokenArgs;
@@ -2289,192 +2414,114 @@ type RefreshAutomaticOAuthAccessTokenContext = {
  * reads, KMS and provider HTTP run outside any transaction; publication
  * compares the consumed refresh token.
  */
-async function refreshAutomaticOAuthAccessToken(
-  context: RefreshAutomaticOAuthAccessTokenContext,
-  signal: AbortSignal,
-): Promise<
-  | CustomConnectorOAuth2AccessTokenResolution
-  | { readonly kind: "publication-lost" }
-> {
-  const { args, connector, connection } = context;
-  const db = args.db;
-  if (!connection.encryptedRefreshToken) {
-    const reconnectDb = db;
-    const reconnectConnectorId = connection.id;
-    const reconnectReason = "missing_refresh_token";
-    const reconnectObservedToken = null;
-    await (async () => {
-      await reconnectDb
-        .update(connectors)
-        .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
-        .where(
-          customConnectorRefreshReconnectCondition(
-            reconnectConnectorId,
-            reconnectObservedToken,
-            CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
-          ),
-        );
+const refreshAutomaticOAuthAccessToken$ = command(
+  async (
+    { set },
+    context: RefreshAutomaticOAuthAccessTokenContext,
+    signal: AbortSignal,
+  ): Promise<
+    | CustomConnectorOAuth2AccessTokenResolution
+    | { readonly kind: "publication-lost" }
+  > => {
+    const { args, connector, connection } = context;
+    const db = set(writeDb$);
+    if (!connection.encryptedRefreshToken) {
+      return await set(markCustomOAuthRefreshReconnect$, {
+        connectionId: connection.id,
+        observedEncryptedRefreshToken: null,
+        reason: "missing_refresh_token",
+      });
+    }
+    const binding = await (async () => {
+      const plan = customConnectorAutomaticOAuthBindingReadPlan(connection.id);
+      const [row] = await db
+        .select(plan.columns)
+        .from(customConnectorAccountOauthBindings)
+        .innerJoin(connectors, plan.accountJoin)
+        .innerJoin(orgCustomConnectors, plan.connectorJoin)
+        .leftJoin(orgCustomConnectorDcrRegistrations, plan.registrationJoin)
+        .where(plan.condition)
+        .limit(1);
+      return customConnectorAutomaticOAuthBindingFromRow(row);
     })();
-    return { kind: "reconnect-required" };
-  }
-  const binding = await (async () => {
-    const plan = customConnectorAutomaticOAuthBindingReadPlan(connection.id);
-    const [row] = await db
-      .select(plan.columns)
-      .from(customConnectorAccountOauthBindings)
-      .innerJoin(connectors, plan.accountJoin)
-      .innerJoin(orgCustomConnectors, plan.connectorJoin)
-      .leftJoin(orgCustomConnectorDcrRegistrations, plan.registrationJoin)
-      .where(plan.condition)
-      .limit(1);
-    return customConnectorAutomaticOAuthBindingFromRow(row);
-  })();
-  signal.throwIfAborted();
-  if (!binding) {
-    const reconnectDb = db;
-    const reconnectConnectorId = connection.id;
-    const reconnectReason = "authorization_expired_or_revoked";
-    const reconnectObservedToken = connection.encryptedRefreshToken;
-    await (async () => {
-      await reconnectDb
-        .update(connectors)
-        .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
-        .where(
-          customConnectorRefreshReconnectCondition(
-            reconnectConnectorId,
-            reconnectObservedToken,
-            CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
-          ),
-        );
-    })();
-    return { kind: "reconnect-required" };
-  }
-  if (
-    binding.registrationMethod === "dcr" &&
-    binding.dcrRegistration.expiresAt !== null &&
-    binding.dcrRegistration.expiresAt <= nowDate()
-  ) {
-    await db.execute(
-      retireCustomConnectorDcrRegistrationSql(
+    signal.throwIfAborted();
+    if (!binding) {
+      return await set(markCustomOAuthRefreshReconnect$, {
+        connectionId: connection.id,
+        observedEncryptedRefreshToken: connection.encryptedRefreshToken,
+        reason: "authorization_expired_or_revoked",
+      });
+    }
+    if (
+      binding.registrationMethod === "dcr" &&
+      binding.dcrRegistration.expiresAt !== null &&
+      binding.dcrRegistration.expiresAt <= nowDate()
+    ) {
+      return await set(
+        retireAutomaticOAuthRefreshRegistration$,
         binding.dcrRegistration.id,
-        nowDate(),
-      ),
+      );
+    }
+    const refreshToken = await decryptStoredSecretValue(
+      connection.encryptedRefreshToken,
+      args.featureContext,
     );
-    return { kind: "reconnect-required" };
-  }
-  const refreshToken = await decryptStoredSecretValue(
-    connection.encryptedRefreshToken,
-    args.featureContext,
-  );
-  signal.throwIfAborted();
-  const okouClientMetadata = configuredOkouMcpOAuthClientMetadata();
-  const [okouRedirectUri] = okouClientMetadata.redirect_uris;
-  if (!okouRedirectUri) {
-    throw new Error("Okou MCP OAuth callback is unavailable");
-  }
-  const refreshResult = await settle(
-    refreshCustomConnectorAutomaticOAuthToken(
-      {
-        db,
+    signal.throwIfAborted();
+    const okouClientMetadata = configuredOkouMcpOAuthClientMetadata();
+    const [okouRedirectUri] = okouClientMetadata.redirect_uris;
+    if (!okouRedirectUri) {
+      throw new Error("Okou MCP OAuth callback is unavailable");
+    }
+    const refreshResult = await settle(
+      set(
+        refreshCustomConnectorAutomaticOAuthToken$,
+        {
+          binding,
+          endpoint: connector.endpoint,
+          redirectUri: okouRedirectUri,
+          cimdClientId: okouClientMetadata.client_id,
+          refreshToken,
+          featureContext: args.featureContext,
+        },
+        signal,
+      ),
+      signal,
+    );
+    if (!refreshResult.ok) {
+      return await set(handleAutomaticOAuthRefreshFailure$, {
+        connectionId: connection.id,
+        observedEncryptedRefreshToken: connection.encryptedRefreshToken,
         binding,
-        endpoint: connector.endpoint,
-        redirectUri: okouRedirectUri,
-        cimdClientId: okouClientMetadata.client_id,
-        refreshToken,
+        error: refreshResult.error,
+      });
+    }
+    return await set(
+      storeRefreshedConnectionTokens$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        connection,
+        token: refreshResult.value,
+        fallbackRefreshToken: refreshToken,
         featureContext: args.featureContext,
       },
       signal,
-    ),
-    signal,
-  );
-  if (!refreshResult.ok) {
-    return await handleAutomaticOAuthRefreshFailure({
-      db,
-      connectionId: connection.id,
-      observedEncryptedRefreshToken: connection.encryptedRefreshToken,
-      binding,
-      error: refreshResult.error,
-    });
-  }
-  return await storeRefreshedConnectionTokens(
-    {
-      db,
-      orgId: args.orgId,
-      userId: args.userId,
-      connection,
-      token: refreshResult.value,
-      fallbackRefreshToken: refreshToken,
-      featureContext: args.featureContext,
-    },
-    signal,
-  );
-}
-
-async function resolveAutomaticCustomConnectorOAuth2AccessToken(
-  args: ResolveCustomConnectorOAuth2AccessTokenArgs,
-  signal: AbortSignal,
-): Promise<CustomConnectorOAuth2AccessTokenResolution> {
-  if (!isAutomaticOAuthConnector(args.connector)) {
-    return { kind: "unavailable" };
-  }
-  const connector = args.connector;
-  const connectionDb = args.db;
-  const connectionIdentity: CustomConnectorOAuthConnectionReadIdentity = {
-    orgId: args.orgId,
-    userId: args.userId,
-    customConnectorId: connector.id,
-    memberConnectorId: args.memberConnectorId,
-    storageVersion: connector.storageVersion,
-    definitionAuthMode: "automatic",
-  };
-  const connection = await (async (): Promise<StoredConnection | null> => {
-    const plan = customConnectorOAuthConnectionReadPlan(connectionIdentity);
-    const query = connectionDb
-      .select(plan.columns)
-      .from(connectors)
-      .where(plan.condition);
-    const rows = await query.limit(1);
-    const connection = rows[0];
-    if (!connection) {
-      return null;
-    }
-    // Re-check the complete identity at the secret read boundary because the
-    // organization definition can change after the parent lookup.
-    const tokenPlan = customConnectorOAuthConnectionTokenReadPlan(
-      connectionIdentity,
-      connection.id,
     );
-    const tokenRows = await connectionDb
-      .select(tokenPlan.columns)
-      .from(secrets)
-      .innerJoin(connectors, tokenPlan.accountJoin)
-      .innerJoin(orgCustomConnectors, tokenPlan.definitionJoin)
-      .where(tokenPlan.condition);
-    return storedConnectionFromRows(connection, tokenRows);
-  })();
-  signal.throwIfAborted();
-  if (!connection) {
-    return { kind: "unavailable" };
-  }
-  const accessToken = storedConnectionAccessToken(connection);
-  if (
-    !args.forceRefresh &&
-    !connection.needsReconnect &&
-    accessToken.kind === "available" &&
-    connectionAccessTokenIsCurrent(connection)
-  ) {
-    return accessToken;
-  }
-  const refreshed = await refreshAutomaticOAuthAccessToken(
-    { args, connector, connection },
-    signal,
-  );
-  if (refreshed.kind !== "publication-lost") {
-    return refreshed;
-  }
-  const currentConnectionDb = args.db;
-  const currentConnectionIdentity: CustomConnectorOAuthConnectionReadIdentity =
-    {
+  },
+);
+
+const resolveAutomaticCustomConnectorOAuth2AccessToken$ = command(
+  async (
+    { get, set },
+    args: ResolveCustomConnectorOAuth2AccessTokenArgs,
+    signal: AbortSignal,
+  ): Promise<CustomConnectorOAuth2AccessTokenResolution> => {
+    if (!isAutomaticOAuthConnector(args.connector)) {
+      return { kind: "unavailable" };
+    }
+    const connector = args.connector;
+    const connectionDb = get(db$);
+    const connectionIdentity: CustomConnectorOAuthConnectionReadIdentity = {
       orgId: args.orgId,
       userId: args.userId,
       customConnectorId: connector.id,
@@ -2482,88 +2529,201 @@ async function resolveAutomaticCustomConnectorOAuth2AccessToken(
       storageVersion: connector.storageVersion,
       definitionAuthMode: "automatic",
     };
-  const current = await (async (): Promise<StoredConnection | null> => {
-    const plan = customConnectorOAuthConnectionReadPlan(
-      currentConnectionIdentity,
-    );
-    const query = currentConnectionDb
-      .select(plan.columns)
-      .from(connectors)
-      .where(plan.condition);
-    const rows = await query.limit(1);
-    const connection = rows[0];
+    const connection = await (async (): Promise<StoredConnection | null> => {
+      const plan = customConnectorOAuthConnectionReadPlan(connectionIdentity);
+      const query = connectionDb
+        .select(plan.columns)
+        .from(connectors)
+        .where(plan.condition);
+      const rows = await query.limit(1);
+      const connection = rows[0];
+      if (!connection) {
+        return null;
+      }
+      // Re-check the complete identity at the secret read boundary because the
+      // organization definition can change after the parent lookup.
+      const tokenPlan = customConnectorOAuthConnectionTokenReadPlan(
+        connectionIdentity,
+        connection.id,
+      );
+      const tokenRows = await connectionDb
+        .select(tokenPlan.columns)
+        .from(secrets)
+        .innerJoin(connectors, tokenPlan.accountJoin)
+        .innerJoin(orgCustomConnectors, tokenPlan.definitionJoin)
+        .where(tokenPlan.condition);
+      return storedConnectionFromRows(connection, tokenRows);
+    })();
+    signal.throwIfAborted();
     if (!connection) {
-      return null;
+      return { kind: "unavailable" };
     }
-    // Re-check the complete identity at the secret read boundary because the
-    // organization definition can change after the parent lookup.
-    const tokenPlan = customConnectorOAuthConnectionTokenReadPlan(
-      currentConnectionIdentity,
-      connection.id,
+    const accessToken = storedConnectionAccessToken(connection);
+    if (
+      !args.forceRefresh &&
+      !connection.needsReconnect &&
+      accessToken.kind === "available" &&
+      connectionAccessTokenIsCurrent(connection)
+    ) {
+      return accessToken;
+    }
+    const refreshed = await set(
+      refreshAutomaticOAuthAccessToken$,
+      { args, connector, connection },
+      signal,
     );
-    const tokenRows = await currentConnectionDb
-      .select(tokenPlan.columns)
-      .from(secrets)
-      .innerJoin(connectors, tokenPlan.accountJoin)
-      .innerJoin(orgCustomConnectors, tokenPlan.definitionJoin)
-      .where(tokenPlan.condition);
-    return storedConnectionFromRows(connection, tokenRows);
-  })();
-  signal.throwIfAborted();
-  return currentAfterLostPublication(current);
+    if (refreshed.kind !== "publication-lost") {
+      return refreshed;
+    }
+    const currentConnectionDb = get(db$);
+    const currentConnectionIdentity: CustomConnectorOAuthConnectionReadIdentity =
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        customConnectorId: connector.id,
+        memberConnectorId: args.memberConnectorId,
+        storageVersion: connector.storageVersion,
+        definitionAuthMode: "automatic",
+      };
+    const current = await (async (): Promise<StoredConnection | null> => {
+      const plan = customConnectorOAuthConnectionReadPlan(
+        currentConnectionIdentity,
+      );
+      const query = currentConnectionDb
+        .select(plan.columns)
+        .from(connectors)
+        .where(plan.condition);
+      const rows = await query.limit(1);
+      const connection = rows[0];
+      if (!connection) {
+        return null;
+      }
+      // Re-check the complete identity at the secret read boundary because the
+      // organization definition can change after the parent lookup.
+      const tokenPlan = customConnectorOAuthConnectionTokenReadPlan(
+        currentConnectionIdentity,
+        connection.id,
+      );
+      const tokenRows = await currentConnectionDb
+        .select(tokenPlan.columns)
+        .from(secrets)
+        .innerJoin(connectors, tokenPlan.accountJoin)
+        .innerJoin(orgCustomConnectors, tokenPlan.definitionJoin)
+        .where(tokenPlan.condition);
+      return storedConnectionFromRows(connection, tokenRows);
+    })();
+    signal.throwIfAborted();
+    return currentAfterLostPublication(current);
+  },
+);
+
+export const resolveCurrentCustomConnectorOAuth2AccessToken$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly customConnectorId: string;
+      readonly memberConnectorId: string;
+      readonly featureContext: FeatureSwitchContext;
+      readonly forceRefresh?: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<CustomConnectorOAuth2AccessTokenResolution> => {
+    const db = get(db$);
+    const connector = await (async (): Promise<CustomConnectorRow | null> => {
+      const [row] = await db
+        .select({
+          connector: customConnectorDefinitionSelection(),
+          oauthConfig: orgCustomConnectorOauthConfigs,
+        })
+        .from(orgCustomConnectors)
+        .leftJoin(
+          orgCustomConnectorOauthConfigs,
+          and(
+            eq(
+              orgCustomConnectorOauthConfigs.connectorId,
+              orgCustomConnectors.id,
+            ),
+            eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(orgCustomConnectors.id, args.customConnectorId),
+            eq(orgCustomConnectors.orgId, args.orgId),
+            eq(orgCustomConnectors.enabled, true),
+          ),
+        )
+        .limit(1);
+      return row
+        ? normaliseCustomConnectorRow(row.connector, row.oauthConfig)
+        : null;
+    })();
+    signal.throwIfAborted();
+    if (
+      !connector ||
+      (connector.authMode !== "oauth" && connector.authMode !== "automatic")
+    ) {
+      return { kind: "unavailable" };
+    }
+    const resolve =
+      connector.authMode === "automatic"
+        ? resolveAutomaticCustomConnectorOAuth2AccessToken$
+        : resolveCustomConnectorOAuth2AccessToken$;
+    return await set(resolve, { ...args, connector }, signal);
+  },
+);
+
+function customOAuthWriteArgs(
+  args: StoreCustomConnectorOAuth2ConnectionArgs,
+  resolution: Extract<ConnectorConnectionMutationResolution, { kind: "ready" }>,
+): ConnectorConnectionWriteArgs {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    authMethod: "oauth",
+    storageVersion: args.storageVersion,
+    tokenExpiresAt: args.token.expiresAt,
+    target: customOAuthConnectionTarget(args.connectorId, args.token),
+    resolution: resolution.mutation,
+    insertConnectionId: args.insertConnectionId,
+  };
 }
 
-export async function resolveCurrentCustomConnectorOAuth2AccessToken(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly customConnectorId: string;
-    readonly memberConnectorId: string;
-    readonly featureContext: FeatureSwitchContext;
-    readonly forceRefresh?: boolean;
-  },
-  signal: AbortSignal,
-): Promise<CustomConnectorOAuth2AccessTokenResolution> {
-  const connector = await (async (): Promise<CustomConnectorRow | null> => {
-    const [row] = await args.db
-      .select({
-        connector: customConnectorDefinitionSelection(),
-        oauthConfig: orgCustomConnectorOauthConfigs,
-      })
-      .from(orgCustomConnectors)
-      .leftJoin(
-        orgCustomConnectorOauthConfigs,
-        and(
-          eq(
-            orgCustomConnectorOauthConfigs.connectorId,
-            orgCustomConnectors.id,
-          ),
-          eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-        ),
-      )
-      .where(
-        and(
-          eq(orgCustomConnectors.id, args.customConnectorId),
-          eq(orgCustomConnectors.orgId, args.orgId),
-          eq(orgCustomConnectors.enabled, true),
-        ),
-      )
-      .limit(1);
-    return row
-      ? normaliseCustomConnectorRow(row.connector, row.oauthConfig)
-      : null;
-  })();
-  signal.throwIfAborted();
-  if (
-    !connector ||
-    (connector.authMode !== "oauth" && connector.authMode !== "automatic")
-  ) {
-    return { kind: "unavailable" };
-  }
-  const resolve =
-    connector.authMode === "automatic"
-      ? resolveAutomaticCustomConnectorOAuth2AccessToken
-      : resolveCustomConnectorOAuth2AccessToken;
-  return await resolve({ ...args, connector }, signal);
+function automaticNoAuthMutation(
+  args: StartCustomConnectorOAuth2Args,
+  connector: AutomaticNoAuthConnector,
+): ConnectorConnectionMutationArgs {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    target: { kind: "custom", customConnectorId: connector.id },
+    mutation: args.account,
+    allowSiblings: true,
+  };
+}
+
+function automaticNoAuthWakeup(
+  args: StartCustomConnectorOAuth2Args,
+  connector: AutomaticNoAuthConnector,
+  connection: { readonly id: string } | null,
+): ConnectorRuntimeWakeupBusinessArgs | undefined {
+  return connection
+    ? {
+        scope: { orgId: args.orgId, userId: args.userId },
+        targets: [{ kind: "custom", customConnectorId: connector.id }],
+      }
+    : undefined;
+}
+
+function customOAuthQuest(
+  args: Pick<StoreCustomConnectorOAuth2ConnectionArgs, "orgId" | "userId">,
+) {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    questKey: "connector" as const,
+    sourceKey: CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY,
+  };
 }

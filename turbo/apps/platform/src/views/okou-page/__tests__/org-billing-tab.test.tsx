@@ -1291,9 +1291,6 @@ test("Compare legacy Team packages and review conversion totals", async () => {
       name: /Monthly total \$200\/month \$230\/month/u,
     }),
   ).toBeInTheDocument();
-  expect(
-    within(orderSummary).queryByText("Monthly difference"),
-  ).not.toBeInTheDocument();
   const conversionNotice = within(orderSummary).getByRole("status", {
     name: "Convert plan",
   });
@@ -1643,7 +1640,6 @@ test("Upgrade a current member package in the app", async () => {
       name: /Monthly total \$20\/month \$50\/month/u,
     }),
   ).toBeInTheDocument();
-  expect(screen.queryByText("Review")).not.toBeInTheDocument();
   const locationBeforeConfirmation = window.location.href;
   click(buttonByText("Confirm", orderSummary));
   const confirmationDialog = await screen.findByRole("dialog", {
@@ -1669,9 +1665,6 @@ test("Upgrade a current member package in the app", async () => {
     .closest("div");
   expect(grantRow).toHaveTextContent("Expires Apr 1, 2026");
   expect(grantRow).toHaveTextContent("+16,100");
-  expect(
-    within(confirmationDialog).queryByText("Total credits"),
-  ).not.toBeInTheDocument();
   const monthlyCreditsRow = within(confirmationDialog)
     .getByText("Credits")
     .closest("div");

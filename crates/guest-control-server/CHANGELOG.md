@@ -1,5 +1,62 @@
 # Changelog
 
+## [0.24.45](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.44...guest-control-server-v0.24.45) (2026-10-25)
+
+## [0.24.44](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.43...guest-control-server-v0.24.44) (2026-10-25)
+
+
+### Refactoring
+
+* **guest-control:** carry exec stdin result through thread custody ([#42862](https://github.com/okou-ai/okou/issues/42862)) ([ae70ee3](https://github.com/okou-ai/okou/commit/ae70ee330377013447701593a605c47b714d2333))
+* **guest-control:** centralize setup abort retirement ([#42852](https://github.com/okou-ai/okou/issues/42852)) ([b58667b](https://github.com/okou-ai/okou/commit/b58667bbf0509d6ee1566ce07f5bba5b4b6956ea))
+
+## [0.24.43](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.42...guest-control-server-v0.24.43) (2026-10-25)
+
+
+### Refactoring
+
+* **guest-control:** pair trusted workload placement capabilities ([#42836](https://github.com/okou-ai/okou/issues/42836)) ([034d29d](https://github.com/okou-ai/okou/commit/034d29d761b8fc78e7533b105384e701ca454a6d))
+
+## [0.24.42](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.41...guest-control-server-v0.24.42) (2026-10-25)
+
+
+### Refactoring
+
+* **guest-control:** converge spawned command result handoff ([#42793](https://github.com/okou-ai/okou/issues/42793)) ([fc06021](https://github.com/okou-ai/okou/commit/fc060218d1a2c10981e80a676f55db5849f2f634))
+* **guest-control:** pair exec roles with fixed-helper payloads ([#42804](https://github.com/okou-ai/okou/issues/42804)) ([614785d](https://github.com/okou-ai/okou/commit/614785d7043ab5668dbb653d64835854e8ef2f7b))
+
+## [0.24.41](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.40...guest-control-server-v0.24.41) (2026-10-24)
+
+
+### Refactoring
+
+* **guest-control:** carry exec drain results through thread custody ([#42755](https://github.com/okou-ai/okou/issues/42755)) ([16ad675](https://github.com/okou-ai/okou/commit/16ad6759f3dd8f9d55b20be3f2d7afba0e3a839a))
+* **guest-control:** centralize terminal containment cleanup selection ([#42772](https://github.com/okou-ai/okou/issues/42772)) ([73d153e](https://github.com/okou-ai/okou/commit/73d153e1f9389aed36570843a669e0c02e037c89))
+* **guest-control:** share fixed-helper stdin thread ownership ([#42748](https://github.com/okou-ai/okou/issues/42748)) ([f875241](https://github.com/okou-ai/okou/commit/f87524191c14e42e01f4559aef3a2b244c34d3e5))
+
+## [0.24.40](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.39...guest-control-server-v0.24.40) (2026-10-24)
+
+
+### Refactoring
+
+* **guest-control:** encode file stream codec metadata ([#42733](https://github.com/okou-ai/okou/issues/42733)) ([894f847](https://github.com/okou-ai/okou/commit/894f847e9a9ea1251372e5e2912958c4f8d13711))
+* **guest-control:** share bounded output pair completion ([#42714](https://github.com/okou-ai/okou/issues/42714)) ([a97b5b7](https://github.com/okou-ai/okou/commit/a97b5b783a1ad3d504ef057d034d45f22067bc14))
+
+## [0.24.39](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.38...guest-control-server-v0.24.39) (2026-10-23)
+
+
+### Refactoring
+
+* **guest-control:** pair eager file-write worker lifetime custody ([#42659](https://github.com/okou-ai/okou/issues/42659)) ([02da916](https://github.com/okou-ai/okou/commit/02da916d6718a4176312ffed2aa37d8446ad090f))
+* **guest-control:** return bounded capture results through thread custody ([#42646](https://github.com/okou-ai/okou/issues/42646)) ([5f7af61](https://github.com/okou-ai/okou/commit/5f7af617da846312a9c9d1e90c7df18decab1485))
+
+## [0.24.38](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.37...guest-control-server-v0.24.38) (2026-10-23)
+
+
+### Refactoring
+
+* **guest-control:** pair lazy worker channel and thread custody ([#42630](https://github.com/okou-ai/okou/issues/42630)) ([11eb74e](https://github.com/okou-ai/okou/commit/11eb74e5caaf023f7b208428f8fa35d4cc00dbf7))
+
 ## [0.24.37](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.36...guest-control-server-v0.24.37) (2026-10-23)
 
 

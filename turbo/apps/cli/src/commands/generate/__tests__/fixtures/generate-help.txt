@@ -1,0 +1,60 @@
+Usage: okou generate [options] [command]
+
+Generate assets via Okou's built-in pipelines or get connector skill-invocation
+guidance
+
+Options:
+  -h, --help                     display help for command
+
+Commands:
+  image [options]                Submit a billed image job; query it with okou
+                                 generate get <id>
+  get [options] <generation-id>  Query a built-in generation job once, without
+                                 waiting or submitting another job
+  image-batch                    Run image jobs with at most three concurrent
+                                 requests and one transient retry
+  presentation [options]         Generate an HTML presentation from a prompt
+  report [options]               Generate an HTML report from a prompt
+  docs-design [options]          Generate a documentation design from a prompt
+  poster [options]               Generate an HTML poster from a prompt
+  dashboard-design [options]     Generate a dashboard design from a prompt
+  mobile-app-design [options]    Generate a mobile app design prototype from a
+                                 prompt
+  website [options]              Prepare website authoring instructions from a
+                                 prompt
+  sprite [options]               Prepare 2D game sprite/asset authoring
+                                 instructions from a prompt
+  music [options]                List connectors that provide music generation
+  text [options]                 List connectors that provide text generation
+  code [options]                 List connectors that provide code generation
+  document [options]             List connectors that provide document
+                                 generation
+  help [command]                 display help for command
+
+Examples:
+  Generate image:        okou generate image --raw-prompt "A watercolor fox"
+  Batch artifact images: okou generate image-batch start images.tsv .image-batch
+  Generate deck:         okou generate presentation --prompt "A product roadmap"
+  Generate report:       okou generate report --prompt "A Q2 usage report"
+  Generate docs:         okou generate docs-design --prompt "A setup guide"
+  Generate site:         okou generate website --prompt "A launch site"
+  Generate sprite:       okou generate sprite --prompt "A slime monster idle loop"
+  Show music choices:    okou generate music
+
+  Show image choices:    okou generate image
+  Show report choices:   okou generate report
+  Use a connector:       okou generate music --provider <connector>
+  Force built-in:        okou generate image --provider built-in --raw-prompt ...
+
+Routing:
+  - If the task includes an attached generation template, follow that template's exact commands and resources. Do not run generic provider discovery unless the template names it as a fallback.
+  - When the type is known, run "okou generate <type> --help" directly before execution and reuse help already read for the same CLI version and context. Do not unconditionally chain root, group, and leaf help; flags differ by command.
+  - Run this root help only when the type is unknown. Run "okou generate <type>" without generation input only when provider or registry discovery is needed. If the user named a provider, use --provider <name> directly when the type supports it instead of listing every provider.
+  - Built-in generation surfaces are image, presentation, website, and the listed HTML artifact types. Music, text, code, and document use connectors. Do not infer unsupported types.
+
+Execution:
+  - Use --provider built-in for Okou execution or --provider <connector> for connector skill-invocation guidance where offered.
+  - Image generation returns a durable job receipt immediately by default. For natural-language tasks requesting a final image, use "okou generate image ... --wait" explicitly and retrieve and deliver the final artifact before marking the task complete; a queued/running receipt is not a completed image. Use "okou generate get <generation-id>" to query independently, optionally with --out <path> to download a completed image. Add get --refresh to advance that job once before querying, including after a wait timeout. Never submit a duplicate to check progress.
+  - For other Okou generations, wait for completion and use the returned artifact. Do not recreate the result because generation is taking time.
+  - Media and connector-backed generation types may expose --provider for Okou or connector execution guidance.
+  - HTML artifact types use registry-backed --design-system and --template selection.

@@ -62,10 +62,8 @@ import { userPreferencesRoutes } from "../signals/routes/user-preferences";
 import { paidToolsRoutes } from "../signals/routes/paid-tools";
 import { userModelPreferenceRoutes } from "../signals/routes/user-model-preference";
 import { morningBriefPreferenceRoutes } from "../signals/routes/morning-brief-preference";
-import {
-  proactiveSuggestionsRoutes,
-  proactiveJobsRoutes,
-} from "../signals/routes/proactive-preferences";
+import { proactiveSuggestionsRoutes } from "../signals/routes/proactive-preferences";
+import { proactiveJobsRoutes } from "../signals/routes/proactive-preferences";
 import { emailSubscriptionRoutes } from "../signals/routes/email-subscription";
 import { notificationsRoutes } from "../signals/routes/notifications";
 import { uploadsCompleteRoutes } from "../signals/routes/uploads-complete";

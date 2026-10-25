@@ -23,6 +23,9 @@ readonly FINALIZING_SOURCE_RUNNER_READER_COMMIT=b610ff61043274157618e3925b13a66d
 # #41808 stopped naming runner_state.wss_ingress_service_active in ORM statements.
 # Migration drop_runner_state_wss_ingress drops it, so earlier APIs fail Runner state SQL.
 readonly RUNNER_STATE_WSS_INGRESS_FREE_COMMIT=430cb92b5431e1554d0a1dceed6d9cfb27762921
+# #42572 removed invoice-paid automation SQL before its dedicated tables retire.
+# Preserve the shared Stripe Connect deauthorization receiver from that release.
+readonly STRIPE_INVOICE_PAID_RETIREMENT_COMMIT=190cdfba6440b50469117758156616447d707b81
 # #36897 made chat_thread_drafts the only draft store and writes user_id on
 # every draft row. Migration contract_chat_thread_drafts makes user_id and
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
@@ -174,6 +177,10 @@ fi
 
 if ! git merge-base --is-ancestor "$RUNNER_STATE_WSS_INGRESS_FREE_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the wss_ingress_service_active-free Runner state mapping: ${RUNNER_STATE_WSS_INGRESS_FREE_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$STRIPE_INVOICE_PAID_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Stripe invoice-paid automation retirement: ${STRIPE_INVOICE_PAID_RETIREMENT_COMMIT}."
 fi
 
 # Workflows retain the authoritative cursor in Cloudflare. Earlier APIs also

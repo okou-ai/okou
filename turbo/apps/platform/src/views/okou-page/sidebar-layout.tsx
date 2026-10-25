@@ -83,6 +83,7 @@ import {
 } from "./pwa-navigation.tsx";
 import { ChatThreadDialogs } from "./sidebar-threads.tsx";
 import { NotFoundPage } from "../not-found-page.tsx";
+import { ChatSyncStatus } from "./chat-sync-status.tsx";
 
 function AgentAvatarInTopBar() {
   const agent = useLastResolved(currentChatAgent$);
@@ -517,6 +518,7 @@ function SidebarWorkspace({
 
   const workspaceHeader = (
     <>
+      <ChatSyncStatus />
       <InstallBanner />
       <IosInstallModal />
       {!isDesktop &&

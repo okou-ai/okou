@@ -378,7 +378,7 @@ function ShareSessionMenu({
             {failed ? (
               <ShareRetryRow
                 onRetry={() => {
-                  return detach(refresh(signal), Reason.DomCallback);
+                  refresh(signal);
                 }}
               />
             ) : (

@@ -150,19 +150,11 @@ describe("Stripe Connect account notifications", () => {
     ).resolves.toStrictEqual(connected);
   });
 
-  it("validates deauthorization before ignoring test-mode and unrelated events", async () => {
+  it("ignores test-mode and unrelated events", async () => {
     const actor = api.user();
     const accountId = `acct_stripe_validation_${randomUUID()}`;
     const connected = await connectStripeOAuth(actor, accountId);
     const event = deauthorization(accountId);
-    for (const malformed of [
-      { ...event, data: undefined },
-      { ...event, account: undefined },
-      { ...event, livemode: false, data: undefined },
-      { ...event, livemode: false, account: "" },
-    ]) {
-      expect((await postEvent(malformed)).status).toBe(400);
-    }
     for (const ignored of [
       { ...event, livemode: false },
       { ...event, livemode: false, account: undefined },

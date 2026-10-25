@@ -1,6 +1,6 @@
 {
   "name": "@okouai/api-contracts",
-  "version": "2.1.1",
+  "version": "2.3.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -34,7 +34,7 @@
   },
   "dependencies": {
     "@okouai/connectors": "workspace:*",
-    "zod": "^4.6.7"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@okouai/eslint-config": "workspace:*",

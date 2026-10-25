@@ -8,7 +8,7 @@ struct ChatThreadMoreButton: View {
   var body: some View {
     if store.list.threads.contains(where: { $0.id == threadID }) {
       ChatThreadMoreControl(store: store, threadID: threadID)
-        .frame(width: 48, height: 48)
+        .frame(width: 44, height: 44)
     }
   }
 }
