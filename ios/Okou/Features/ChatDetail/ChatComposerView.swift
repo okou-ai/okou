@@ -232,6 +232,7 @@ struct ChatComposerView: View {
     }
     .padding(.horizontal, 16)
     .padding(.top, 8)
+    .padding(.bottom, isFocused ? 8 : 0)
     .onChange(of: "\(agentID ?? "")/\(connectorSelection != nil)", initial: true) { _, _ in
       connectorSelection?.configure(agentID: agentID)
     }

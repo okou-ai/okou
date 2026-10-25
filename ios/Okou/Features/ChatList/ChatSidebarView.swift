@@ -53,6 +53,22 @@ struct ChatSidebarView: View {
   }
 
   var body: some View {
+    NavigationStack {
+      sidebarList
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+          ToolbarItem(placement: .topBarLeading) {
+            workspaceSwitcher
+          }
+          ToolbarItem(placement: .topBarTrailing) {
+            Button("Search", systemImage: "magnifyingglass") { store.search.present() }
+              .accessibilityIdentifier("search-chats")
+          }
+        }
+    }
+  }
+
+  private var sidebarList: some View {
     List {
       pinnedAgentsSection
       if let error = store.list.navigationError {
@@ -86,11 +102,6 @@ struct ChatSidebarView: View {
     .environment(\.defaultMinListHeaderHeight, 0)
     .scrollContentBackground(.hidden)
     .scrollEdgeEffectStyle(.soft, for: .vertical)
-    .safeAreaBar(edge: .top, spacing: 0) {
-      header
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-    }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
     .background(Color(uiColor: .systemBackground))
     .sheet(
@@ -101,17 +112,6 @@ struct ChatSidebarView: View {
     ) {
       ChatSearchView(workspace: store, showsArchived: showArchived, didOpen: close)
     }
-  }
-
-  private var header: some View {
-    HStack {
-      workspaceSwitcher.frame(maxWidth: .infinity, alignment: .leading)
-      Button("Search", systemImage: "magnifyingglass") { store.search.present() }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.glass)
-        .accessibilityIdentifier("search-chats")
-    }
-    .frame(height: 44)
   }
 
   private var workspaceSwitcher: some View {
