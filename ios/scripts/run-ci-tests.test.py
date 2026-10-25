@@ -91,6 +91,13 @@ elif command == 'xcodebuild':
     elif 'test-without-building' in args:
         if not (state / 'build-finished').exists():
             sys.exit('Tests require built products')
+        if os.environ.get('IOS_XCODE_OWNS_SIMULATOR_BOOT') == 'true':
+            if args[args.index('-destination') + 1] != 'platform=iOS Simulator,id=configured':
+                sys.exit('Xcode must boot only the selected simulator')
+            mark('boot-started')
+            if scenario == 'boot-failure':
+                sys.exit('Xcode boot rejected')
+            mark('boot-finished')
         if scenario != 'manual' and not (state / 'boot-finished').exists():
             sys.exit('Tests started before simulator readiness')
         if (state / 'tests-ran').exists():
@@ -178,6 +185,21 @@ class CIProcessTests(unittest.TestCase):
             (self.state / "packages").read_text().splitlines(),
             ["ios/Packages/ChatDomain", "ios/Packages/ChatData"],
         )
+
+    def test_xcode_owns_boot_for_the_uniquely_selected_device(self):
+        self.env["IOS_XCODE_OWNS_SIMULATOR_BOOT"] = "true"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.state / "tests-ran").exists())
+        self.assertIn("iOS simulator selection:", result.stdout)
+
+    def test_xcode_boot_failure_blocks_the_run(self):
+        self.env["IOS_XCODE_OWNS_SIMULATOR_BOOT"] = "true"
+        self.env["CI_PROCESS_SCENARIO"] = "boot-failure"
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Xcode boot rejected", result.stderr)
+        self.assertFalse((self.state / "tests-ran").exists())
         self.assertTrue((self.state / "tests-ran").exists())
 
     def test_resolution_and_compilation_finish_before_boot_and_the_complete_suite(

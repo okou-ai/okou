@@ -61,9 +61,9 @@ class PrebootSimulatorTests(unittest.TestCase):
             "IOS_TEST_DESTINATION": "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2",
         }
 
-    def invoke(self):
+    def invoke(self, *options):
         return subprocess.run(
-            ["python3", str(SCRIPT)],
+            ["python3", str(SCRIPT), *options],
             env=self.env,
             text=True,
             capture_output=True,
@@ -85,6 +85,23 @@ class PrebootSimulatorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(self.state.read_text()), self.inventory)
         self.assertEqual(self.state.with_suffix(".ready").read_text(), "configured")
+
+    def test_select_only_returns_the_exact_device_without_booting(self):
+        result = self.invoke("--select-only")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "configured")
+        self.assertEqual(json.loads(self.state.read_text()), self.inventory)
+        self.assertFalse(self.state.with_suffix(".ready").exists())
+
+    def test_select_only_rejects_an_ambiguous_destination(self):
+        self.inventory["devices"][RUNTIME].append(
+            {"name": "iPhone 17 Pro", "udid": "duplicate", "state": "Shutdown"}
+        )
+        self.state.write_text(json.dumps(self.inventory))
+        result = self.invoke("--select-only")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("one available simulator", result.stderr)
+        self.assertEqual(json.loads(self.state.read_text()), self.inventory)
 
     def test_readiness_failure_blocks_ci_after_boot_was_requested(self):
         self.env["SIMULATOR_READY_FAILURE"] = "true"

@@ -36,12 +36,23 @@ wait "$ios_phase_pid"
 ios_phase_pid=""
 
 ios_boot_started=$SECONDS
-python3 ios/scripts/preboot-simulator.py &
+ios_simulator_phase="simulator preparation"
+if [[ "${IOS_XCODE_OWNS_SIMULATOR_BOOT:-false}" == true ]]; then
+  ios_simulator_phase="simulator selection"
+  ios_selected_device_file="$RUNNER_TEMP/okou-ios-ci/selected-simulator"
+  python3 ios/scripts/preboot-simulator.py --select-only > "$ios_selected_device_file" &
+else
+  python3 ios/scripts/preboot-simulator.py &
+fi
 ios_preboot_pid=$!
 wait "$ios_preboot_pid"
 ios_preboot_pid=""
+if [[ "${IOS_XCODE_OWNS_SIMULATOR_BOOT:-false}" == true ]]; then
+  IFS= read -r ios_selected_device < "$ios_selected_device_file"
+  export IOS_TEST_DESTINATION="platform=iOS Simulator,id=$ios_selected_device"
+fi
 ios_boot_seconds=$((SECONDS - ios_boot_started))
-echo "iOS simulator preparation: $ios_boot_seconds seconds"
+echo "iOS $ios_simulator_phase: $ios_boot_seconds seconds"
 echo "iOS total preparation: $((ios_dependency_seconds + ios_boot_seconds)) seconds"
 echo "iOS startup before tests: $((SECONDS - ios_prepare_started)) seconds"
 
