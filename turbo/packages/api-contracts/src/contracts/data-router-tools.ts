@@ -17,7 +17,7 @@ export const dataRouterToolSchema = z
     name: z.string().min(1),
     title: z.string().optional(),
     description: z.string().optional(),
-    inputSchema: z.object({ type: z.literal("object") }).catchall(z.json()),
+    inputSchema: z.object({ type: z.literal("object") }).catchall(z.unknown()),
     _meta: z
       .object({
         "ai.okou/data": z
@@ -27,10 +27,10 @@ export const dataRouterToolSchema = z
           })
           .optional(),
       })
-      .catchall(z.json())
+      .catchall(z.unknown())
       .optional(),
   })
-  .catchall(z.json());
+  .catchall(z.unknown());
 
 export const dataRouterToolsPageSchema = z.object({
   tools: z.array(dataRouterToolSchema),

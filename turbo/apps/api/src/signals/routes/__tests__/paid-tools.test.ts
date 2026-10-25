@@ -1,4 +1,4 @@
-import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router";
+import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router-catalog";
 import { http, HttpResponse } from "msw";
 import { z } from "zod";
 import { server } from "../../../mocks/server";

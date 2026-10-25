@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { z } from "zod";
-import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router";
+import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router-catalog";
 import {
   dataRouterToolsPageSchema,
   type DataRouterTool,

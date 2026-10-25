@@ -1,4 +1,4 @@
-import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router";
+import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router-catalog";
 import {
   AVAILABLE_PAID_TOOL_IDS,
   paidToolsContract,

@@ -1,4 +1,4 @@
-import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router";
+import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router-catalog";
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
 import { mockApi } from "../msw-contract.ts";
 
