@@ -3,9 +3,6 @@ import type {
   ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectors } from "@okouai/db/schema/connector";
-import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
-import { secrets } from "@okouai/db/schema/secret";
-import { variables } from "@okouai/db/schema/variable";
 import { and, eq, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
@@ -39,19 +36,6 @@ export interface StoredConnectorConnectionRow {
   readonly tokenExpiresAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
-}
-
-interface ConnectorCredentialWriteContext {
-  readonly db: Tx;
-  readonly connectorId: string;
-}
-
-interface ReplaceConnectorConnectionArgs extends ConnectorConnectionMetadataArgs {
-  readonly resolution: ReadyConnectorConnectionMutation;
-  readonly writeCredentials: (
-    context: ConnectorCredentialWriteContext,
-    signal: AbortSignal,
-  ) => Promise<void>;
 }
 
 interface ExistingConnectorConnectionRow extends StoredConnectorConnectionRow {
@@ -567,37 +551,12 @@ export function connectorConnectionWrittenRow(
   return outcome.row;
 }
 
-export async function replaceConnectorConnectionOutcome(
-  db: Tx,
-  args: ReplaceConnectorConnectionArgs,
-  signal: AbortSignal,
-): Promise<ConnectorConnectionWriteOutcome> {
-  const outcome = await writeConnectorConnectionMetadataOutcome(db, args);
-  signal.throwIfAborted();
-  if (outcome.kind !== "written") {
-    return outcome;
-  }
-  const connection = outcome.row;
+export type ConnectorConnectionWriteArgs = Parameters<
+  typeof writeConnectorConnectionMetadataOutcome
+>[1];
 
-  const credentialDeletion = { connectorId: connection.id };
-  await db
-    .delete(secrets)
-    .where(eq(secrets.connectorId, credentialDeletion.connectorId));
-  signal.throwIfAborted();
-  await db
-    .delete(variables)
-    .where(eq(variables.connectorId, credentialDeletion.connectorId));
-  signal.throwIfAborted();
-  await db
-    .delete(builtinConnectorAccountOauthBindings)
-    .where(
-      eq(
-        builtinConnectorAccountOauthBindings.connectorAccountId,
-        connection.id,
-      ),
-    );
-  await args.writeCredentials({ db, connectorId: connection.id }, signal);
-  signal.throwIfAborted();
-
-  return outcome;
+export async function awaitConnectorConnectionRow(
+  outcome: Promise<ConnectorConnectionWriteOutcome>,
+): Promise<StoredConnectorConnectionRow> {
+  return connectorConnectionWrittenRow(await outcome);
 }
