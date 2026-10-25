@@ -1053,7 +1053,7 @@ mod tests {
 
     use api_contracts::generated::constants::client::headers::CLIENT_REQUEST_ID_HEADER;
     use httpmock::prelude::*;
-    use serde_json::json;
+    use serde_json::{Map, Value, json};
     use tokio::io::AsyncWriteExt as _;
     use tracing_subscriber::prelude::*;
     use tracing_test_support::{CapturedEvent, CapturedEvents};
@@ -2281,7 +2281,10 @@ mod tests {
             - empty_record_bytes;
         for overflow in [0, 1] {
             let path = dir.path().join(format!("boundary-{overflow}.jsonl"));
-            let record = json!({"body":"x".repeat(body_bytes + overflow)});
+            let record = Value::Object(Map::from_iter([(
+                "body".to_owned(),
+                Value::String("x".repeat(body_bytes + overflow)),
+            )]));
             let after = json!({"sequence":1});
             let content = format!("\u{2003}{record}\u{2028}\r\n{after}");
             tokio::fs::write(&path, content.as_bytes()).await.unwrap();
@@ -2293,7 +2296,10 @@ mod tests {
                 vec![vec![after]]
             };
             for batch in batches {
-                let expected = json!({"runId":run_id.to_string(),"networkLogs":batch});
+                let expected = Value::Object(Map::from_iter([
+                    ("runId".to_owned(), Value::String(run_id.to_string())),
+                    ("networkLogs".to_owned(), Value::Array(batch)),
+                ]));
                 uploads.push(
                     server
                         .mock_async(move |when, then| {
