@@ -1,8 +1,7 @@
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
-import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
+import { preparedVolumePublicationPlan } from "./storage-volume-publication-sql";
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
@@ -16,7 +15,22 @@ import {
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { command } from "ccstate";
-import { and, count, eq, gte } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  gte,
+  lt,
+  exists,
+  sql,
+  type SQL,
+  type WithSubquery,
+} from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import {
+  pgBooleanDecoder,
+  pgIntegerDecoder,
+} from "../../lib/db-structured-result";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { FEISHU_OAUTH_SCOPES } from "@okouai/api-contracts/contracts/feishu-connect";
 import { connectors } from "@okouai/db/schema/connector";
@@ -40,10 +54,9 @@ import {
   type CustomConnectorDefinitionRow,
 } from "./custom-connector-definition-selection";
 import {
-  customConnectorOAuthStateLockReadPlan,
-  customConnectorOAuthStateValidationReadPlan,
-  assertCustomConnectorOAuthStateRows,
-} from "./custom-connector-oauth-write.service";
+  customConnectorCreateSource,
+  customConnectorOAuthCreateSource,
+} from "./custom-connector.service";
 import {
   connectorAccountResolutionReadPlan,
   connectorAccountResolutionsFromRows,
@@ -426,13 +439,272 @@ function feishuOAuthConfigWrite(
     },
   };
 }
-function assertFeishuVolumePublished(
-  rowCount: number | null,
-  versionId: string,
+/** Bind prepared values to the installation fields that determine their authority. */
+function feishuObservedInstallationCondition(
+  installation: FeishuConnectorInstallation,
 ) {
-  if (rowCount !== 1) {
-    throw new StorageVersionIdentityConflictError(versionId);
-  }
+  return and(
+    eq(feishuOrgInstallations.orgId, installation.orgId),
+    eq(feishuOrgInstallations.platform, installation.platform),
+    eq(feishuOrgInstallations.appId, installation.appId),
+    eq(
+      feishuOrgInstallations.encryptedAppSecret,
+      installation.encryptedAppSecret,
+    ),
+    sql`${feishuOrgInstallations.customConnectorId} IS NOT DISTINCT FROM ${installation.customConnectorId}::uuid`,
+    sql`${feishuOrgInstallations.ownerUserId} IS NOT DISTINCT FROM ${installation.ownerUserId}`,
+    sql`${feishuOrgInstallations.botName} IS NOT DISTINCT FROM ${installation.botName}`,
+  );
+}
+
+/** Definition writers publish OAuth changes with this existing row version. */
+function feishuObservedDefinitionCondition(
+  connector: CustomConnectorDefinitionRow,
+) {
+  return and(
+    eq(orgCustomConnectors.id, connector.id),
+    eq(orgCustomConnectors.orgId, connector.orgId),
+    eq(orgCustomConnectors.storageVersion, connector.storageVersion),
+    gte(orgCustomConnectors.updatedAt, connector.updatedAt),
+    lt(
+      orgCustomConnectors.updatedAt,
+      new Date(connector.updatedAt.getTime() + 1),
+    ),
+    eq(orgCustomConnectors.displayName, connector.displayName),
+    eq(orgCustomConnectors.prefixTemplates, connector.prefixTemplates),
+    eq(orgCustomConnectors.fields, connector.fields),
+    eq(orgCustomConnectors.headerInjections, connector.headerInjections),
+    eq(orgCustomConnectors.queryInjections, connector.queryInjections),
+    eq(orgCustomConnectors.authMode, connector.authMode),
+    eq(orgCustomConnectors.enabled, connector.enabled),
+    sql`${orgCustomConnectors.permissionBundleRef} IS NOT DISTINCT FROM ${connector.permissionBundleRef}`,
+    sql`${orgCustomConnectors.skillMarkdown} IS NOT DISTINCT FROM ${connector.skillMarkdown}`,
+    sql`${orgCustomConnectors.skillStorageVersionId} IS NOT DISTINCT FROM ${connector.skillStorageVersionId}`,
+  );
+}
+
+function feishuReconciliationPublicationPlan(
+  args: EnsureFeishuCustomConnectorArgs,
+  installed: FeishuConnectorInstallation,
+  existing: ExistingFeishuCustomConnector | undefined,
+  prepared: PreparedFeishuCustomConnectorSkill,
+) {
+  const query = new QueryBuilder();
+  // Retain the original installation -> definition lock order. A waiting lock
+  // must not authorize values prepared from a different installation/definition.
+  const installation = query.$with("feishu_publication_installation").as(
+    query
+      .select({ id: feishuOrgInstallations.id })
+      .from(feishuOrgInstallations)
+      .where(
+        and(
+          feishuCustomConnectorIdCondition(args),
+          feishuObservedInstallationCondition(installed),
+        ),
+      )
+      .for("update")
+      .limit(1),
+  );
+  const installationPresent = exists(query.select().from(installation));
+  const definition = existing
+    ? query.$with("feishu_publication_definition").as(
+        query
+          .select({
+            id: orgCustomConnectors.id,
+            authMode: orgCustomConnectors.authMode,
+          })
+          .from(orgCustomConnectors)
+          .where(
+            and(
+              feishuObservedDefinitionCondition(existing.connector),
+              installationPresent,
+            ),
+          )
+          .for("update", { of: orgCustomConnectors })
+          .limit(1),
+      )
+    : null;
+  const authority = definition
+    ? sql`${installationPresent} AND ${exists(query.select().from(definition))}`
+    : installationPresent;
+  const publication = preparedVolumePublicationPlan(
+    prepared.volume,
+    nowDate(),
+    authority,
+  );
+  return {
+    installation,
+    definition,
+    authority,
+    publication,
+    ctes: [
+      installation,
+      ...(definition ? [definition] : []),
+      ...publication.ctes,
+    ],
+    ready: exists(query.select().from(publication.published)),
+  };
+}
+
+const prepareFeishuReconciliation$ = command(
+  async (
+    { set },
+    {
+      args,
+      prepared,
+    }: {
+      readonly args: EnsureFeishuCustomConnectorArgs;
+      readonly prepared: PreparedFeishuCustomConnectorSkill;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const p = feishuReconciliationReadPlan(args);
+    const [installed] = await db
+      .select(p.columns)
+      .from(p.from)
+      .where(p.condition)
+      .limit(1);
+    signal.throwIfAborted();
+    if (!installed) {
+      return { kind: "installation-missing" as const };
+    }
+    const e = feishuExistingConnectorPlan(
+      args.orgId,
+      installed.customConnectorId,
+    );
+    const [existing] = installed.customConnectorId
+      ? await db
+          .select(e.columns)
+          .from(e.from)
+          .leftJoin(orgCustomConnectorOauthConfigs, e.join)
+          .where(e.condition)
+          .limit(1)
+      : [];
+    signal.throwIfAborted();
+    if (existing && existing.connector.id !== prepared.connectorId) {
+      return {
+        kind: "stale-target" as const,
+        connectorId: existing.connector.id,
+      };
+    }
+    const mutation = feishuConnectorMutation(
+      args,
+      installed,
+      prepared,
+      existing,
+    );
+    return {
+      kind: "prepared" as const,
+      installed,
+      mutation,
+      plan: feishuReconciliationPublicationPlan(
+        args,
+        installed,
+        existing,
+        prepared,
+      ),
+    };
+  },
+);
+
+function feishuDefinitionCreateSource(
+  args: EnsureFeishuCustomConnectorArgs,
+  installed: FeishuConnectorInstallation,
+  prepared: PreparedFeishuCustomConnectorSkill,
+) {
+  return customConnectorCreateSource({
+    connectorId: prepared.connectorId,
+    orgId: args.orgId,
+    userId: installed.ownerUserId ?? args.userId,
+    slug: getFeishuCustomConnectorSlug(args.installationId, installed.platform),
+    definition: {
+      kind: "http",
+      slug: undefined,
+      ...desiredConnectorDefinition(installed),
+    },
+    storageVersion: 1,
+    preparedSkill: prepared.volume,
+  });
+}
+
+function feishuOAuthPublicationSource(
+  installation: FeishuConnectorInstallation,
+  definitionId: SQL,
+) {
+  return customConnectorOAuthCreateSource(
+    definitionId,
+    installation.orgId,
+    desiredOAuthConfig(installation),
+    installation.encryptedAppSecret,
+  );
+}
+
+const publishedFeishuReconciliation$ = command(
+  async (
+    { set },
+    input: {
+      readonly result:
+        { readonly guard: number; readonly applied: boolean } | undefined;
+      readonly args: EnsureFeishuCustomConnectorArgs;
+      readonly prepared: PreparedFeishuCustomConnectorSkill;
+      readonly runtimeChanged: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<FeishuCustomConnectorReconciliation> => {
+    const { result, args, prepared } = input;
+    if (result && !result.applied) {
+      // Classify a lost installation target using a fresh read. The existing
+      // outer retarget loop handles it; this command never retries a write.
+      const current = await set(
+        prepareFeishuReconciliation$,
+        { args, prepared },
+        signal,
+      );
+      if (current.kind !== "prepared") {
+        return current;
+      }
+    }
+    if (!result || result.guard !== 1 || !result.applied) {
+      throw new Error(
+        "Feishu connector configuration changed during publication",
+      );
+    }
+    return {
+      kind: "reconciled",
+      connector: {
+        connectorId: prepared.connectorId,
+        runtimeChanged: input.runtimeChanged,
+      },
+    };
+  },
+);
+
+function feishuPublicationResultSelection(
+  plan: ReturnType<typeof feishuReconciliationPublicationPlan>,
+  definition: WithSubquery,
+  config: WithSubquery,
+  linked: WithSubquery,
+  needsLink: boolean,
+) {
+  const query = new QueryBuilder();
+  const complete = sql`(
+    ${eq(query.select({ count: count() }).from(plan.publication.published), 1)} AND
+    ${eq(query.select({ count: count() }).from(definition), 1)} AND
+    ${eq(query.select({ count: count() }).from(config), 1)} AND
+    ${eq(query.select({ count: count() }).from(linked), needsLink ? 1 : 0)}
+  )`;
+  return {
+    applied: sql`${plan.authority}`.mapWith(pgBooleanDecoder),
+    guard:
+      sql`(1 / CASE WHEN NOT (${plan.authority}) OR (${complete}) THEN 1 ELSE 0 END)::int`.mapWith(
+        pgIntegerDecoder,
+      ),
+  };
+}
+
+function feishuPublishedDefinitionColumns() {
+  return { id: orgCustomConnectors.id, authMode: orgCustomConnectors.authMode };
 }
 
 const ensureFeishuCustomConnector$ = command(
@@ -442,114 +714,124 @@ const ensureFeishuCustomConnector$ = command(
     prepared: PreparedFeishuCustomConnectorSkill,
     signal: AbortSignal,
   ): Promise<FeishuCustomConnectorReconciliation> => {
-    // Publication must roll back with definition/config validation and the
-    // installation link; stale-target arbitration precedes every write.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0162; new non-billing transactions are prohibited.
-    return await set(writeDb$).transaction(
-      async (tx): Promise<FeishuCustomConnectorReconciliation> => {
-        const p = feishuReconciliationReadPlan(args);
-        const q = tx.select(p.columns).from(p.from).where(p.condition);
-        const [installed] = await q.for("update", { of: p.from }).limit(1);
-        signal.throwIfAborted();
-        if (!installed) {
-          return { kind: "installation-missing" };
-        }
-        const e = feishuExistingConnectorPlan(
-          args.orgId,
-          installed.customConnectorId,
-        );
-        const existingQuery = tx
-          .select(e.columns)
-          .from(e.from)
-          .leftJoin(orgCustomConnectorOauthConfigs, e.join);
-        const [existing] = installed.customConnectorId
-          ? await existingQuery
-              .where(e.condition)
-              .for("update", { of: e.from })
-              .limit(1)
-          : [];
-        signal.throwIfAborted();
-        if (existing && existing.connector.id !== prepared.connectorId) {
-          return { kind: "stale-target", connectorId: existing.connector.id };
-        }
-        const { rowCount } = await tx.execute(
-          preparedVolumePublicationSql(prepared.volume, nowDate()),
-        );
-        assertFeishuVolumePublished(
-          rowCount,
-          prepared.volume.version.versionId,
-        );
-        signal.throwIfAborted();
-        const mutation = feishuConnectorMutation(
-          args,
-          installed,
-          prepared,
-          existing,
-        );
-        const connector = {
-          connectorId: prepared.connectorId,
-          runtimeChanged: mutation.kind === "repair",
-        };
-        if (mutation.kind !== "unchanged") {
-          const lock = customConnectorOAuthStateLockReadPlan([
-            { connectorId: prepared.connectorId, orgId: args.orgId },
-          ]);
-          const locked = tx
-            .select(lock.columns)
-            .from(orgCustomConnectors)
-            .where(lock.condition);
-          await locked.orderBy(...lock.orderBy).for("update");
-          if (mutation.kind === "create") {
-            const insert = tx
+    const db = set(writeDb$);
+    const preparation = await set(
+      prepareFeishuReconciliation$,
+      { args, prepared },
+      signal,
+    );
+    if (preparation.kind !== "prepared") {
+      return preparation;
+    }
+    const { installed, mutation, plan } = preparation;
+    const definition =
+      mutation.kind === "create"
+        ? db.$with("feishu_published_definition").as(
+            db
               .insert(orgCustomConnectors)
-              .values(mutation.values);
-            const [created] = await insert.returning({
-              id: orgCustomConnectors.id,
-            });
-            signal.throwIfAborted();
-            if (!created) {
-              throw new Error("Expected Feishu custom connector to be created");
-            }
-            await tx
-              .insert(orgCustomConnectorOauthConfigs)
-              .values(feishuOAuthConfigWrite(installed, created.id).values);
-          } else {
-            await tx
-              .update(orgCustomConnectors)
-              .set(mutation.values)
-              .where(mutation.condition);
-            signal.throwIfAborted();
-            const oauth = feishuOAuthConfigWrite(
-              installed,
-              prepared.connectorId,
+              .select(
+                db
+                  .select(
+                    feishuDefinitionCreateSource(args, installed, prepared),
+                  )
+                  .from(plan.publication.published),
+              )
+              .returning(feishuPublishedDefinitionColumns()),
+          )
+        : mutation.kind === "repair"
+          ? db
+              .$with("feishu_published_definition")
+              .as(
+                db
+                  .update(orgCustomConnectors)
+                  .set(mutation.values)
+                  .where(and(mutation.condition, plan.ready))
+                  .returning(feishuPublishedDefinitionColumns()),
+              )
+          : db.$with("feishu_published_definition").as(
+              db
+                .select(feishuPublishedDefinitionColumns())
+                .from(orgCustomConnectors)
+                .where(
+                  and(
+                    eq(orgCustomConnectors.id, prepared.connectorId),
+                    plan.ready,
+                  ),
+                ),
             );
-            await tx
+    const oauth = feishuOAuthConfigWrite(installed, prepared.connectorId);
+    const config =
+      mutation.kind === "unchanged"
+        ? db.$with("feishu_published_oauth").as(
+            db
+              .select({ id: orgCustomConnectorOauthConfigs.connectorId })
+              .from(orgCustomConnectorOauthConfigs)
+              .where(
+                and(
+                  eq(
+                    orgCustomConnectorOauthConfigs.connectorId,
+                    prepared.connectorId,
+                  ),
+                  eq(orgCustomConnectorOauthConfigs.orgId, args.orgId),
+                  exists(db.select().from(definition)),
+                ),
+              ),
+          )
+        : db.$with("feishu_published_oauth").as(
+            db
               .insert(orgCustomConnectorOauthConfigs)
-              .values(oauth.values)
-              .onConflictDoUpdate(oauth.conflict);
-          }
-          signal.throwIfAborted();
-          const state = customConnectorOAuthStateValidationReadPlan(
-            lock.condition,
+              .select(
+                db
+                  .select(
+                    feishuOAuthPublicationSource(
+                      installed,
+                      sql`${definition.id}`.mapWith(
+                        orgCustomConnectorOauthConfigs.connectorId,
+                      ),
+                    ),
+                  )
+                  .from(definition),
+              )
+              .onConflictDoUpdate({
+                ...oauth.conflict,
+                setWhere: mutation.kind === "create" ? sql`false` : undefined,
+              })
+              .returning({ id: orgCustomConnectorOauthConfigs.connectorId }),
           );
-          const stateQuery = tx.select(state.columns).from(orgCustomConnectors);
-          const states = await stateQuery
-            .leftJoin(orgCustomConnectorOauthConfigs, state.join)
-            .where(state.condition);
-          assertCustomConnectorOAuthStateRows(states);
-        }
-        if (installed.customConnectorId !== connector.connectorId) {
-          await tx
-            .update(feishuOrgInstallations)
-            .set({
-              customConnectorId: connector.connectorId,
-              updatedAt: nowDate(),
-            })
-            .where(p.condition);
-          signal.throwIfAborted();
-        }
-        return { kind: "reconciled", connector };
-      },
+    const configured = eq(db.select({ count: count() }).from(config), 1);
+    const linked = db.$with("feishu_published_installation").as(
+      db
+        .update(feishuOrgInstallations)
+        .set({ customConnectorId: prepared.connectorId, updatedAt: nowDate() })
+        .where(
+          and(
+            feishuCustomConnectorIdCondition(args),
+            configured,
+            sql`${feishuOrgInstallations.customConnectorId} IS DISTINCT FROM ${prepared.connectorId}::uuid`,
+          ),
+        )
+        .returning({ id: feishuOrgInstallations.id }),
+    );
+    signal.throwIfAborted();
+    // Server-side assertion rolls back every dependent write, including Storage
+    // HEAD, before a failed registration can become externally visible.
+    const [result] = await db
+      .with(...plan.ctes, definition, config, linked)
+      .select(
+        feishuPublicationResultSelection(
+          plan,
+          definition,
+          config,
+          linked,
+          installed.customConnectorId !== prepared.connectorId,
+        ),
+      )
+      .from(sql`(VALUES (1)) AS feishu_publication_result`);
+    signal.throwIfAborted();
+    return await set(
+      publishedFeishuReconciliation$,
+      { result, args, prepared, runtimeChanged: mutation.kind === "repair" },
+      signal,
     );
   },
 );
