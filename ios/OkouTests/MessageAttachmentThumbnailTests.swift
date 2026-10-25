@@ -96,10 +96,12 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     }
     let viewer = makeViewer(fixture)
     defer { viewer.close() }
-    let loaded = ChatMessageAttachment(id: "loaded", filename: "image.png", contentType: "image/png")
+    let loaded = ChatMessageAttachment(
+      id: "loaded", filename: "image.png", contentType: "image/png")
     let thumbnail = try await viewer.thumbnail(loaded)
     XCTAssertNotNil(thumbnail)
-    let pending = ChatMessageAttachment(id: "pending", filename: "image.png", contentType: "image/png")
+    let pending = ChatMessageAttachment(
+      id: "pending", filename: "image.png", contentType: "image/png")
     let downloading = Task { _ = try await viewer.thumbnail(pending) }
     addTeardownBlock {
       downloading.cancel()

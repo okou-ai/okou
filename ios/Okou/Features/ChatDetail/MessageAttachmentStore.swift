@@ -68,8 +68,10 @@ final class MessageAttachmentStore {
         try Task.checkCancellation()
         guard !closed, generation == scope else { throw CancellationError() }
         let thumbnail = Thumbnail(image: data.flatMap(UIImage.init(data:)))
-        let cost = thumbnail.image?.cgImage.map { $0.bytesPerRow * $0.height } ?? 1
-        thumbnails.setObject(thumbnail, forKey: id as NSString, cost: cost)
+        if let image = thumbnail.image {
+          let cost = Int(image.size.width * image.scale) * Int(image.size.height * image.scale) * 4
+          thumbnails.setObject(thumbnail, forKey: id as NSString, cost: cost)
+        }
         return thumbnail
       }
       thumbnailTasks[id] = task

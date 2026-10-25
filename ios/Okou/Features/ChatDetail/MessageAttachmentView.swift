@@ -96,7 +96,8 @@ struct MessageAttachmentView: View {
           key: key, image: image, message: image == nil ? "Tap to download preview" : nil)
       } catch {
         guard !Task.isCancelled else { return }
-        prepared = Prepared(key: key, image: nil, message: MessageAttachmentStore.message(for: error))
+        prepared = Prepared(
+          key: key, image: nil, message: MessageAttachmentStore.message(for: error))
       }
     }
   }
