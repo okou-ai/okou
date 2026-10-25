@@ -1,6 +1,4 @@
 import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router";
-import type { Computed } from "ccstate";
-import { command, computed, state } from "ccstate";
 import {
   AVAILABLE_PAID_TOOL_IDS,
   paidToolsContract,
@@ -8,6 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/paid-tools";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
+import { command, computed, state, type Computed } from "ccstate";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
 import { authenticatedSessionKey$, clerk$ } from "../../auth.ts";
@@ -113,7 +112,9 @@ function createPaidToolsSignals(
     assertCurrent();
     return response.body.tools.flatMap((tool) => {
       const metadata = tool._meta?.["ai.okou/data"];
-      if (!metadata) return [];
+      if (!metadata) {
+        return [];
+      }
       return [
         {
           ...createTool(`data:${tool.name}`, metadata.family),

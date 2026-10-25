@@ -61,10 +61,11 @@ service authentication; the CLI never sends `OKOU_TOKEN` to that endpoint.
 The token remains required for local authentication and for the main API's
 user-owned Data request history, which scopes saved-job lists.
 
-Use `src/mocks/data-router.ts` to mock the external MCP boundary. Its handlers
-receive the actual tool name and arguments. Keep argument validation and MCP
-transport real. Data commands print the complete Router JSON body without
-validating, projecting, or formatting provider result fields. A submission
+Mock the external MCP endpoint with MSW and inspect the actual tool name and
+arguments, as in `src/commands/data/__tests__/router.test.ts`. Keep command
+registration, argument validation and MCP transport real. Data commands print
+the complete Router JSON body without validating, projecting, or formatting
+provider result fields. A submission
 returns its receipt; subsequent job reads are explicit commands. Test arbitrary
 JSON results and transport failures without automatically resubmitting a
 potentially paid tool call.

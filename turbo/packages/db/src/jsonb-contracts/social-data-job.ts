@@ -1,6 +1,46 @@
-import type { SocialDataCreateRequest } from "@okouai/api-contracts/contracts/social-data";
+/** Historical request fields retained with their database owner. */
+export type SocialDataPlatform =
+  | "x"
+  | "instagram"
+  | "tiktok"
+  | "youtube"
+  | "facebook"
+  | "xiaohongshu"
+  | "threads"
+  | "wechat"
+  | "douyin"
+  | "weibo";
 
-export type SocialDataJobRequest = SocialDataCreateRequest;
+export type SocialDataOperation =
+  | "inspect"
+  | "posts"
+  | "search"
+  | "comments"
+  | "transcript"
+  | "replies"
+  | "followers"
+  | "following";
+
+export interface SocialDataJobRequest {
+  readonly operation: SocialDataOperation;
+  readonly platform: SocialDataPlatform;
+  readonly url?: string;
+  readonly query?: string;
+  readonly limit: number;
+  readonly kind?: "posts" | "reels";
+  readonly sort?: string;
+  readonly date?: string;
+  readonly type?: "video" | "shorts" | "article" | "account" | "post";
+  readonly commentId?: string;
+  readonly hashtag?: boolean;
+  readonly fullDetails?: boolean;
+  readonly refresh?: boolean;
+  readonly thread?: boolean;
+  readonly requireViews?: boolean;
+  readonly language?: string;
+  readonly requestId: string;
+  readonly maxCredits?: number;
+}
 
 /** Historical persisted results; the Router owns new execution results. */
 interface SocialDataJobRecord {

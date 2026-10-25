@@ -51,6 +51,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
   });
 
   async function run(args: string[]): Promise<void> {
+    output = "";
     const argv = ["node", "okou", ...args];
     const program = new Command("okou").addHelpText("after", () => {
       return buildHelpText();
@@ -145,7 +146,6 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       ["generate", "image", "--help"],
       ["generate", "sprite", "--help"],
     ]) {
-      output = "";
       await expect(run(args)).rejects.toMatchObject({
         code: args[0] === "help" ? "commander.help" : "commander.helpDisplayed",
       });
@@ -157,7 +157,6 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       expect(output).not.toContain("built-in image generation");
       expect(output).not.toContain("okou generate image --style");
     }
-    output = "";
     await run(["generate", "sprite", "--prompt", "A fox"]);
     expect(output).toContain("## Core Invariants");
     expect(output).not.toContain("--provider built-in");
@@ -173,7 +172,6 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       ],
       ["website", "--prompt", "A product site"],
     ]) {
-      output = "";
       await run(["generate", ...args]);
       expect(output).not.toContain("Image workflow:");
       expect(output).not.toContain("okou generate image-batch");
@@ -206,7 +204,6 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       })
       .join("\n");
 
-    output = "";
     vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["image-generation"]');
     await run(args);
 
@@ -253,7 +250,6 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       });
       expect(output).toContain("--out <path>");
       expect(output).not.toContain("--refresh");
-      output = "";
       await expect(
         run(["generate", "get", generationId, "--refresh"]),
       ).rejects.toMatchObject({ code: "commander.unknownOption" });
@@ -305,7 +301,6 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       );
       expect(output).not.toContain("--refresh");
       completed = true;
-      output = "";
       const out = join(directory, "existing-image.png");
       await run(["generate", "get", generationId, "--out", out, "--json"]);
       expect(await readFile(out, "utf8")).toBe("existing image");

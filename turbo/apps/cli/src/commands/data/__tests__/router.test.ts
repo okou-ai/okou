@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { DataRouterTool } from "@okouai/api-contracts/contracts/data-router-tools";
 import { server } from "../../../mocks/server";
-import { createDataCommand } from "../index";
+import { registerRequestedCommand } from "../../../okou";
 
 const endpoint = "https://router.test/mcp";
 const futureTool: DataRouterTool = {
@@ -33,9 +33,10 @@ let returnedStatus: number;
 let output: string;
 
 async function run(args: string[]) {
-  await new Command("okou")
-    .addCommand(createDataCommand())
-    .parseAsync(["node", "okou", "data", ...args]);
+  const argv = ["node", "okou", "data", ...args];
+  const cli = new Command("okou");
+  await registerRequestedCommand(cli, argv);
+  await cli.parseAsync(argv);
 }
 
 describe("Data Router discovery and JSON calls", () => {

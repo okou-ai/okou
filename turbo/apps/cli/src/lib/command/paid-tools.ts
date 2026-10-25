@@ -1,7 +1,6 @@
 import type { DataRouterTool } from "@okouai/api-contracts/contracts/data-router-tools";
 import {
   DISABLED_PAID_TOOLS_ENV_VAR,
-  paidToolIdSchema,
   type PaidToolId,
 } from "@okouai/api-contracts/contracts/paid-tools";
 import { z } from "zod";
@@ -34,12 +33,6 @@ export function isDataRouterToolEnabled(tool: DataRouterTool): boolean {
     isPaidToolEnabled(metadata.family) &&
     isPaidToolEnabled(`data:${tool.name}`),
   );
-}
-
-/** Whole managed families are absent from the run's command tree. */
-export function isPaidCommandEnabled(name: string): boolean {
-  const tool = paidToolIdSchema.safeParse(name);
-  return !tool.success || isPaidToolEnabled(tool.data);
 }
 
 async function getPaidToolUnavailableMessage(

@@ -70,11 +70,10 @@ export function priceUsageEvents(
       });
       continue;
     }
-    const lookupProvider = record.provider;
     const lookup = findUsagePricing(
       pricingByKey,
       record.kind,
-      lookupProvider,
+      record.provider,
       record.category,
     );
 

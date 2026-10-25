@@ -11,10 +11,7 @@ import {
 } from "./lib/api/sandbox-token.js";
 import { getOkouToken } from "./lib/okou-env.js";
 import { artifactCommand } from "./commands/artifact/index.js";
-import {
-  isPaidCommandEnabled,
-  isPaidToolEnabled,
-} from "./lib/command/paid-tools.js";
+import { isPaidToolEnabled } from "./lib/command/paid-tools.js";
 import {
   observePiCliEntryImports,
   startPiCliObservation,
@@ -485,7 +482,6 @@ function shouldHideCommand(
   name: string,
   payload: SandboxTokenPayload | undefined,
 ): boolean {
-  if (!isPaidCommandEnabled(name)) return true;
   if (name.startsWith("__")) return true;
   if (name === "subagent") return !isPiSession();
   if (!payload) return RUN_ONLY_COMMANDS.has(name);
@@ -505,7 +501,6 @@ function addCommandWithVisibility(
   cmd: Command,
   payload: SandboxTokenPayload | undefined,
 ): void {
-  if (!isPaidCommandEnabled(cmd.name())) return;
   const hidden = shouldHideCommand(cmd.name(), payload);
   prog.addCommand(cmd, hidden ? { hidden: true } : {});
 }
@@ -543,7 +538,7 @@ function getRequestedCommandName(argv = process.argv): string | undefined {
 async function loadRequestedCommand(
   name: string | undefined,
 ): Promise<Command | undefined> {
-  if (!name || !isPaidCommandEnabled(name)) {
+  if (!name) {
     return undefined;
   }
 
@@ -587,15 +582,6 @@ function commandExampleIfVisible(
   payload: SandboxTokenPayload | undefined,
 ): string[] {
   return shouldHideCommand(name, payload) ? [] : [example];
-}
-
-function dataExampleIfVisible(
-  capability: string,
-  example: string,
-  payload: SandboxTokenPayload | undefined,
-): string[] {
-  if (!isPaidCommandEnabled(capability.split(":")[0] ?? "")) return [];
-  return payload && !payload.capabilities.includes(capability) ? [] : [example];
 }
 
 export function buildHelpText(
@@ -691,44 +677,9 @@ export function buildHelpText(
       "  Artifact visibility?   okou artifact --help",
       payload,
     ),
-    ...dataExampleIfVisible(
-      "maps:read",
-      "  Search maps?          okou data tools --family maps",
-      payload,
-    ),
-    ...dataExampleIfVisible(
-      "weather:read",
-      "  Check weather?        okou data tools --family data-search",
-      payload,
-    ),
-    ...dataExampleIfVisible(
-      "scrape:read",
-      "  Scrape a web page?    okou data tools --family scrape",
-      payload,
-    ),
-    ...dataExampleIfVisible(
-      "web-search:read",
-      "  Search the public web? okou data tools --family web-search",
-      payload,
-    ),
-    ...dataExampleIfVisible(
-      "social:read",
-      "  Analyze social data?   okou data tools --family social",
-      payload,
-    ),
-    ...dataExampleIfVisible(
-      "finance:read",
-      "  Get a market quote?   okou data tools --family finance",
-      payload,
-    ),
-    ...dataExampleIfVisible(
-      "seo:read",
-      "  Research SEO data?    okou data tools --family seo",
-      payload,
-    ),
-    ...dataExampleIfVisible(
-      "people-search:read",
-      "  Find a professional?   okou data tools --family people-search",
+    ...commandExampleIfVisible(
+      "data",
+      "  Discover research tools? okou data tools",
       payload,
     ),
     ...commandExampleIfVisible(
@@ -748,7 +699,7 @@ export function buildHelpText(
 }
 
 /**
- * Omit disabled managed families, then apply OKOU_TOKEN visibility.
+ * Apply OKOU_TOKEN visibility to top-level commands.
  * Commands not granted by the token are registered as hidden via
  * Commander's public `addCommand(cmd, { hidden: true })` API.
  * Without OKOU_TOKEN, globally available commands stay visible while
