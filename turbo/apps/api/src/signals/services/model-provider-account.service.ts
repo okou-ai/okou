@@ -45,6 +45,8 @@ import {
   type DeviceAuthSessionPublication,
 } from "./model-provider-device-session-publication";
 import {
+  logicalProviderIdentityCondition,
+  logicalProviderIdentityValues,
   claudeAccountIdentityToApply,
   claudeAccountIdentityValues,
   hasClaudeIdentity,
@@ -477,42 +479,6 @@ function connectedAccountCondition(providerId: string) {
   );
 }
 
-async function logicalProvider(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly type: PersonalSubscriptionProviderType;
-  },
-): Promise<ProviderRow> {
-  const [existing] = await db
-    .select(providerColumns)
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.orgId, args.orgId),
-        eq(modelProviders.userId, args.userId),
-        eq(modelProviders.type, args.type),
-      ),
-    )
-    .limit(1);
-  if (existing) {
-    return existing;
-  }
-  const [created] = await db
-    .insert(modelProviders)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      type: args.type,
-    })
-    .returning(providerColumns);
-  if (!created) {
-    throw new Error("Expected logical model provider row");
-  }
-  return created;
-}
-
 async function writePersonalAccount(
   db: Db,
   args: Omit<UpsertPersonalAccountArgs, "metadata"> & {
@@ -527,7 +493,26 @@ async function writePersonalAccount(
 ): Promise<UpsertPersonalAccountResult> {
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0185; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
-    const provider = await logicalProvider(tx, args);
+    const providerDb = tx;
+    const providerArgs = args;
+    const provider = await (async (): Promise<ProviderRow> => {
+      const [existing] = await providerDb
+        .select(providerColumns)
+        .from(modelProviders)
+        .where(logicalProviderIdentityCondition(providerArgs))
+        .limit(1);
+      if (existing) {
+        return existing;
+      }
+      const [created] = await providerDb
+        .insert(modelProviders)
+        .values(logicalProviderIdentityValues(providerArgs))
+        .returning(providerColumns);
+      if (!created) {
+        throw new Error("Expected logical model provider row");
+      }
+      return created;
+    })();
     const identityDb = tx;
     const identityAccounts = await tx
       .select()
