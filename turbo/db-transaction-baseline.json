@@ -267,11 +267,6 @@
       "owner": "commitUsagePackPlanActivation$"
     },
     {
-      "id": "TX-0306",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
-      "owner": "retireReconciledUsagePackSnapshot$"
-    },
-    {
       "id": "TX-0308",
       "file": "turbo/apps/api/src/signals/services/user-connectors.service.ts",
       "owner": "updateUserBuiltinConnectors$"
