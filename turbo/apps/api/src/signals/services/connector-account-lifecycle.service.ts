@@ -37,7 +37,6 @@ import {
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import {
   and,
-  asc,
   count,
   desc,
   eq,
@@ -58,7 +57,6 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
-import type { Tx } from "../../lib/db-types";
 import {
   pgIntegerDecoder,
   pgTextDecoder,
@@ -69,7 +67,6 @@ import { safeJsonParse, settle } from "../utils";
 import { isUniqueViolation, safeSqlStateCode } from "../../lib/pg-errors";
 import { googleFormsAccountProjectionUpdate } from "./google-forms-automation-account.service";
 import {
-  reprojectWorkflowAutomationsForOwner,
   workflowAutomationProjectionValues,
   workflowAutomationOwnerProjectionReadPlan,
   preparedDefaultAccountProjectionPlan,
@@ -77,7 +74,6 @@ import {
 } from "./workflow-automation-account-projection.service";
 import { workflowAutomationSelectedAccountReadPlan } from "./workflow-automation-account.service";
 import {
-  notionPendingEventsReconnectScope,
   notionPendingEventsSkipWrite,
   NOTION_ACCOUNT_CHANGED_SKIP_REASON,
 } from "./notion-automation-account.service";
@@ -1285,7 +1281,7 @@ export const renameConnectorAccount$ = command(
   },
 );
 
-function connectorAccountOwnerCondition(args: {
+export function connectorAccountOwnerCondition(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly target: ConnectorAccountTarget;
@@ -1295,6 +1291,35 @@ function connectorAccountOwnerCondition(args: {
     eq(connectors.userId, args.userId),
     targetCondition(args.target),
   ) as SQL;
+}
+
+export function connectorAccountById(owner: SQL, connectionId: string) {
+  return and(owner, eq(connectors.id, connectionId));
+}
+
+export function connectorAccountSibling(owner: SQL, connectionId: string) {
+  return and(owner, ne(connectors.id, connectionId));
+}
+
+export function customConnectorAccountDeletionScope(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorId: string;
+  readonly memberConnectorId: string;
+}): ConnectorAccountDeletionScope {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    target: { kind: "custom", customConnectorId: args.connectorId },
+    connectionId: args.memberConnectorId,
+  };
+}
+
+export function connectorAccountDeletionResult(
+  resolvedSelectionCount: number,
+  promotedDefaultConnectionId: string | null,
+): PreparedConnectorAccountDeletion {
+  return { kind: "ready", resolvedSelectionCount, promotedDefaultConnectionId };
 }
 
 function clearOtherDefaultsSql(
@@ -1736,7 +1761,7 @@ export function connectorAccountDeletionImpact(
   );
 }
 
-type PreparedConnectorAccountDeletion =
+export type PreparedConnectorAccountDeletion =
   | { readonly kind: "missing" }
   | {
       readonly kind: "ready";
@@ -1744,79 +1769,9 @@ type PreparedConnectorAccountDeletion =
       readonly promotedDefaultConnectionId: string | null;
     };
 
-/** Plain reads and writes; a concurrent change resolves as last writer wins. */
-export async function prepareConnectorAccountDeletionWithTargetLocked(
-  db: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly connectionId: string;
-  },
-  signal: AbortSignal,
-): Promise<PreparedConnectorAccountDeletion> {
-  const owner = connectorAccountOwnerCondition(args);
-  const [account] = await db
-    .select({ isDefault: connectors.isDefault })
-    .from(connectors)
-    .where(and(owner, eq(connectors.id, args.connectionId)))
-    .limit(1);
-  if (!account) {
-    return { kind: "missing" };
-  }
-  let promotedDefaultConnectionId: string | null = null;
-  if (account.isDefault) {
-    const [sibling] = await db
-      .select({ id: connectors.id })
-      .from(connectors)
-      .where(and(owner, ne(connectors.id, args.connectionId)))
-      .orderBy(asc(connectors.createdAt), asc(connectors.id))
-      .limit(1);
-    if (sibling) {
-      await db
-        .update(connectors)
-        .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
-        .where(eq(connectors.id, args.connectionId));
-      await db
-        .update(connectors)
-        .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
-        .where(eq(connectors.id, sibling.id));
-      promotedDefaultConnectionId = sibling.id;
-    }
-  }
-
-  const resolvedSelectionCount =
-    (
-      await db
-        .delete(chatThreadConnectorSelections)
-        .where(eq(chatThreadConnectorSelections.connectorId, args.connectionId))
-    ).rowCount ?? 0;
-
-  if (
-    args.target.kind === "builtin" &&
-    args.target.connectorSlug === "notion"
-  ) {
-    const pendingEventDb = db;
-    const invalidatedConnectorId = args.connectionId;
-    await (async () => {
-      const scope = notionPendingEventsReconnectScope(invalidatedConnectorId);
-      await (async () => {
-        const write = notionPendingEventsSkipWrite(
-          scope.condition,
-          scope.reason,
-        );
-        await pendingEventDb
-          .update(write.table)
-          .set(write.values)
-          .where(write.where);
-      })();
-    })();
-  }
-  await reprojectWorkflowAutomationsForOwner(db, args, signal);
-
-  return {
-    kind: "ready",
-    resolvedSelectionCount,
-    promotedDefaultConnectionId,
-  };
+export interface ConnectorAccountDeletionScope {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly target: ConnectorAccountTarget;
+  readonly connectionId: string;
 }
