@@ -195,7 +195,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     collection.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     collection.backgroundColor = .clear
     collection.alwaysBounceVertical = true
-    collection.bottomEdgeEffect.style = .soft
+    collection.topEdgeEffect.style = .soft
+    collection.bottomEdgeEffect.isHidden = true
     collection.keyboardDismissMode = .interactive
     collection.selfSizingInvalidation = .disabled
     collection.register(UICollectionViewCell.self, forCellWithReuseIdentifier: "message")
