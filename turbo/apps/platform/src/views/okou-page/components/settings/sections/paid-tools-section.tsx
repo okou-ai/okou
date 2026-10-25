@@ -297,6 +297,39 @@ function ImageGenerationRows({
   );
 }
 
+function PaidToolsLoadStatus({
+  failed = false,
+  retry,
+}: {
+  readonly failed?: boolean;
+  readonly retry?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex items-center gap-3">
+      <p
+        role={failed ? "alert" : "status"}
+        className={
+          failed ? "text-sm text-destructive" : "text-sm text-muted-foreground"
+        }
+      >
+        {t(($) => {
+          return failed
+            ? $.settings.paidTools.loadError
+            : $.settings.paidTools.loading;
+        })}
+      </p>
+      {failed && retry && (
+        <Button variant="outline" size="sm" onClick={retry}>
+          {t(($) => {
+            return $.settings.paidTools.retry;
+          })}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function PaidToolsContent({
   settings,
 }: {
@@ -309,59 +342,18 @@ function PaidToolsContent({
   const retry = useSet(settings.retry$);
   return (
     <div className="flex flex-col gap-4">
-      {loadable.state === "loading" ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.settings.paidTools.loading;
-          })}
-        </p>
-      ) : loadable.state === "hasError" ? (
-        <div className="flex items-center gap-3">
-          <p role="alert" className="text-sm text-destructive">
-            {t(($) => {
-              return $.settings.paidTools.loadError;
-            })}
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              return retry();
-            }}
-          >
-            {t(($) => {
-              return $.settings.paidTools.retry;
-            })}
-          </Button>
-        </div>
+      {loadable.state !== "hasData" ? (
+        <PaidToolsLoadStatus
+          failed={loadable.state === "hasError"}
+          retry={retry}
+        />
       ) : (
         <>
           {dataTools.state !== "hasData" && (
-            <div className="flex items-center gap-3">
-              <p
-                role={dataTools.state === "hasError" ? "alert" : "status"}
-                className="text-sm text-muted-foreground"
-              >
-                {t(($) => {
-                  return dataTools.state === "hasError"
-                    ? $.settings.paidTools.loadError
-                    : $.settings.paidTools.loading;
-                })}
-              </p>
-              {dataTools.state === "hasError" && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    return retry();
-                  }}
-                >
-                  {t(($) => {
-                    return $.settings.paidTools.retry;
-                  })}
-                </Button>
-              )}
-            </div>
+            <PaidToolsLoadStatus
+              failed={dataTools.state === "hasError"}
+              retry={retry}
+            />
           )}
           <div className="flex flex-col gap-3">
             {settings.tools.map((tool) => {
@@ -417,16 +409,9 @@ function PaidToolsContent({
 }
 
 export function PaidToolsSection() {
-  const { t } = useTranslation();
   const settings = useLoadable(paidToolsSettings$);
   if (settings.state !== "hasData" || !settings.data) {
-    return (
-      <p role="status" className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.settings.paidTools.loading;
-        })}
-      </p>
-    );
+    return <PaidToolsLoadStatus />;
   }
   return <PaidToolsContent key={settings.data.key} settings={settings.data} />;
 }

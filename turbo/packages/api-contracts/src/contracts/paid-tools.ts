@@ -26,14 +26,7 @@ export const PAID_TOOL_IDS = [
 
 export const paidToolIdSchema = z.union([
   z.enum(PAID_TOOL_IDS),
-  z.templateLiteral([
-    "data:",
-    z
-      .string()
-      .min(1)
-      .max(128)
-      .regex(/^[a-zA-Z0-9_.-]+$/),
-  ]),
+  z.string().regex(/^data:[a-zA-Z0-9_.-]{1,128}$/),
 ]);
 export type PaidToolId = z.infer<typeof paidToolIdSchema>;
 
