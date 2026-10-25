@@ -88,4 +88,45 @@ final class ChatHTTPFixtureTests: XCTestCase {
     XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
     XCTAssertEqual(data, body)
   }
+
+  func testRetiringStartedRequestsCannotReportToAnotherLiveFixture() async throws {
+    let reports = Mutex<[String]>([])
+    let active = ChatHTTPFixture(
+      onUnhandledRequest: { message in reports.withLock { $0.append(message) } },
+      handler: { _ in ChatHTTPResponse(body: "Active fixture") })
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      for _ in 0..<40 {
+        group.addTask {
+          var retiring: ChatHTTPFixture? = ChatHTTPFixture(
+            onUnhandledRequest: { message in reports.withLock { $0.append(message) } },
+            handler: { _ in ChatHTTPResponse(body: "Retiring fixture") })
+          let session = try XCTUnwrap(retiring).session
+          let url = try XCTUnwrap(retiring).baseURL.appending(path: "api/retiring-started")
+          do {
+            let data: Data = try await withCheckedThrowingContinuation { continuation in
+              let request = session.dataTask(with: url) { data, _, error in
+                if let error {
+                  continuation.resume(throwing: error)
+                } else if let data {
+                  continuation.resume(returning: data)
+                } else {
+                  continuation.resume(throwing: URLError(.badServerResponse))
+                }
+              }
+              request.resume()
+              // Construct and start the SDK task while its fixture is still live.
+              retiring = nil
+            }
+            XCTAssertEqual(data, Data("Retiring fixture".utf8))
+          } catch let error as URLError {
+            XCTAssertEqual(error.code, .cancelled, error.localizedDescription)
+          }
+        }
+      }
+      try await group.waitForAll()
+    }
+    let (data, _) = try await active.session.data(from: active.baseURL)
+    XCTAssertEqual(data, Data("Active fixture".utf8))
+    XCTAssertEqual(reports.withLock { $0 }, [])
+  }
 }
