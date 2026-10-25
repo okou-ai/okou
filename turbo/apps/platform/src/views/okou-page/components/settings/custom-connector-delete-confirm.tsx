@@ -30,13 +30,7 @@ export function CustomConnectorDeleteConfirm({
   const submitting = loadable.state === "loading";
 
   const onConfirm = () => {
-    detach(
-      (async () => {
-        await submit(id, signal);
-        closeDialog();
-      })(),
-      Reason.DomCallback,
-    );
+    detach(submit(id, signal), Reason.DomCallback);
   };
 
   return (

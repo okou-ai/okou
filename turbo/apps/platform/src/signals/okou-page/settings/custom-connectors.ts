@@ -345,22 +345,27 @@ export const updateCustomConnector$ = command(
 );
 
 export const deleteCustomConnector$ = command(
-  async ({ get, set }, id: string, _signal: AbortSignal): Promise<void> => {
+  async ({ get, set }, id: string, signal: AbortSignal): Promise<void> => {
+    const dialog = get(internalDialog$);
     const createClient = get(apiClient$);
     const client = createClient(customConnectorByIdContract);
     await accept(
       client.delete({
         params: { id },
-        fetchOptions: { signal: _signal },
+        fetchOptions: { signal },
       }),
       [204],
     );
+    signal.throwIfAborted();
     set(bumpReload$);
     toast.success(
       i18n.t(($) => {
         return $.connectors.custom.toasts.deleted;
       }),
     );
+    if (get(internalDialog$) === dialog) {
+      set(closeCustomConnectorDialog$);
+    }
   },
 );
 
