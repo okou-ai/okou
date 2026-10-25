@@ -1,4 +1,5 @@
 import Foundation
+import ObjectiveC
 import Synchronization
 
 public struct ChatHTTPResponse: Sendable {
@@ -36,9 +37,12 @@ public final class ChatHTTPFixture: Sendable {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [ChatFixtureURLProtocol.self]
     configuration.httpAdditionalHeaders = [ChatFixtureURLProtocol.ownerHeader: fixtureHost]
-    session = URLSession(
-      configuration: configuration,
-      delegate: ChatFixtureSessionDelegate(host: fixtureHost), delegateQueue: nil)
+    session = URLSession(configuration: configuration)
+    let lifetimeKey = UnsafeRawPointer(
+      bitPattern: UInt(bitPattern: ObjectIdentifier(ChatFixtureSessionLifetime.self)))!
+    objc_setAssociatedObject(
+      session, lifetimeKey, ChatFixtureSessionLifetime(host: fixtureHost),
+      .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
   }
 
   deinit {
@@ -46,14 +50,14 @@ public final class ChatHTTPFixture: Sendable {
   }
 }
 
-private final class ChatFixtureSessionDelegate: NSObject, URLSessionDelegate {
+private final class ChatFixtureSessionLifetime: Sendable {
   let host: String
 
   init(host: String) { self.host = host }
 
-  func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
-    // Cancellation is asynchronous. Keep this route until all session tasks have
-    // finished so a retiring request cannot be reported to another fixture.
+  deinit {
+    // A retained invalidated session can still construct a deferred protocol.
+    // Its route belongs to the session's lifetime, not its invalidation callback.
     _ = ChatFixtureURLProtocol.handlers.withLock { $0.removeValue(forKey: host) }
   }
 }

@@ -106,7 +106,7 @@ final class ChatHTTPFixtureTests: XCTestCase {
             let (data, _) = try await session.data(from: url)
             XCTAssertEqual(data, Data("Retiring fixture".utf8))
           } catch let error as URLError {
-            XCTAssertEqual(error.code, .cancelled)
+            XCTAssertEqual(error.code, .cancelled, error.localizedDescription)
           }
         }
         retiring = nil
@@ -115,6 +115,6 @@ final class ChatHTTPFixtureTests: XCTestCase {
     }
     let (data, _) = try await active.session.data(from: active.baseURL)
     XCTAssertEqual(data, Data("Active fixture".utf8))
-    XCTAssertTrue(reports.withLock { $0.isEmpty })
+    XCTAssertEqual(reports.withLock { $0 }, [])
   }
 }
