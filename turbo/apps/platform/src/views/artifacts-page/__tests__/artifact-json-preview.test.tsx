@@ -1,5 +1,4 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -45,7 +44,6 @@ test("An Artifacts catalog JSON file shares the source-aware tree viewer", async
   await setupPage({
     context,
     path: "/artifacts?tab=file",
-    featureSwitches: { [FeatureSwitchKey.JsonTreePreview]: true },
   });
   const card = await findArtifactAction("catalog.json");
   click(card);

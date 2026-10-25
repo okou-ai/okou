@@ -77,13 +77,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
-  [FeatureSwitchKey.JsonTreePreview]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "JSON tree previews",
-    description: "Explore JSON nodes in file and artifact previews.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   // Gate visibility settings; access and preview delivery always enforce Site policy.
   [FeatureSwitchKey.HostedSiteVisibility]: {
     maintainer: "yuma@okou.ai",
