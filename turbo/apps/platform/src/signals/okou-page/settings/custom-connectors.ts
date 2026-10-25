@@ -285,17 +285,20 @@ export const createCustomConnector$ = command(
   async (
     { get, set },
     body: CreateCustomConnectorBody,
-    _signal: AbortSignal,
+    onCreated: ((connector: CustomConnectorResponse) => void) | undefined,
+    signal: AbortSignal,
   ): Promise<CustomConnectorResponse> => {
+    const dialog = get(internalDialog$);
     const createClient = get(apiClient$);
     const client = createClient(customConnectorsContract);
     const result = await accept(
       client.create({
         body,
-        fetchOptions: { signal: _signal },
+        fetchOptions: { signal },
       }),
       [201],
     );
+    signal.throwIfAborted();
     const connector = customConnectorResponseSchema.parse(result.body);
     set(bumpReload$);
     toast.success(
@@ -306,6 +309,10 @@ export const createCustomConnector$ = command(
         { connector: connector.displayName },
       ),
     );
+    if (get(internalDialog$) === dialog) {
+      set(closeCustomConnectorDialog$);
+      onCreated?.(connector);
+    }
     return connector;
   },
 );
