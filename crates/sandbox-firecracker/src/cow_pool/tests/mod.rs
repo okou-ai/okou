@@ -1626,7 +1626,7 @@ async fn failed_prepared_checkout_can_be_cleaned_explicitly() {
         Ok(_) => panic!("checkout unexpectedly succeeded"),
         Err(error) => error,
     };
-    destroy_prepared_slot_async(error.into_slot()).await;
+    error.start_cleanup(None).await;
 
     assert_eq!(dropped.await.unwrap(), workspace);
     assert!(!workspace.exists());
@@ -1650,7 +1650,7 @@ async fn partial_prepared_checkout_cleanup_leaves_target_for_transaction() {
         Ok(_) => panic!("checkout unexpectedly succeeded"),
         Err(error) => error,
     };
-    destroy_prepared_slot_async(error.into_slot()).await;
+    error.start_cleanup(None).await;
 
     assert_eq!(dropped.await.unwrap(), source_workspace);
     assert!(!source_workspace.exists());
@@ -1673,7 +1673,7 @@ async fn checkout_failure_after_file_moves_leaves_target_for_transaction() {
         Ok(_) => panic!("checkout unexpectedly succeeded"),
         Err(error) => error,
     };
-    destroy_prepared_slot_async(error.into_slot()).await;
+    error.start_cleanup(None).await;
 
     let target_cow = target_workspace.join("cow.img");
     assert_eq!(dropped.await.unwrap(), source_workspace);
