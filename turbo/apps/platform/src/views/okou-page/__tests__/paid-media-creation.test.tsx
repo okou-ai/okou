@@ -1,5 +1,10 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { screen, waitFor, within } from "@testing-library/react";
+import {
+  isInaccessible,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
@@ -92,10 +97,10 @@ test("An image creation notice opens settings and a confirmed save restores crea
   click(button("Open settings"));
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
   await within(dialog).findByRole("heading", { name: "Tools" });
-  const toggle = await within(dialog).findByRole("switch", {
-    name: "Image generation",
-  });
+  const toggle = await within(dialog).findByLabelText("Image generation");
+  expect(toggle).toHaveRole("switch");
   await waitFor(() => {
+    expect(isInaccessible(toggle)).toBeFalsy();
     return expect(toggle).not.toHaveAttribute("aria-disabled", "true");
   });
   click(toggle);
