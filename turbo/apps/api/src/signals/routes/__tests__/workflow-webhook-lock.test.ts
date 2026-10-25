@@ -88,6 +88,135 @@ function startCreation(
 }
 
 describe("webhook credential preparation lock isolation", () => {
+  it("publishes concurrent webhook credentials through one shared conversation", async () => {
+    const { actor, workflowId } = await scenario();
+    const created = await Promise.all(
+      [0, 1].map(() => {
+        return accept(
+          client().create({
+            headers: headers(actor),
+            params: { workflowId },
+            body: { kind: "event", eventType: "webhook-received" },
+          }),
+          [201],
+        );
+      }),
+    );
+    const summaries = created.map(({ body }) => {
+      if (body.kind !== "event" || body.eventType !== "webhook-received") {
+        throw new Error("Expected a webhook automation");
+      }
+      return body;
+    });
+    const threadId = summaries[0]?.chatThreadId;
+    expect(threadId).toBeTruthy();
+    expect(
+      summaries.every((summary) => {
+        return summary.chatThreadId === threadId;
+      }),
+    ).toBeTruthy();
+    expect(
+      new Set(
+        summaries.map((summary) => {
+          return summary.id;
+        }),
+      ).size,
+    ).toBe(2);
+    expect(
+      new Set(
+        summaries.map((summary) => {
+          return summary.webhookUrl;
+        }),
+      ).size,
+    ).toBe(2);
+    for (const summary of summaries) {
+      const revealed = await accept(
+        client().revealWebhookSecret({
+          headers: headers(actor),
+          params: { id: summary.id },
+          body: undefined,
+        }),
+        [200],
+      );
+      expect(summary).toMatchObject(revealed.body);
+    }
+    const threads = await readThreads(actor);
+    expect(threads).toHaveLength(2);
+    expect(threads).toContainEqual(expect.objectContaining({ id: threadId }));
+    const listed = await accept(
+      client().list({ headers: headers(actor), params: { workflowId } }),
+      [200],
+    );
+    expect(
+      listed.body
+        .map((summary) => {
+          return summary.id;
+        })
+        .sort(),
+    ).toStrictEqual(
+      summaries
+        .map((summary) => {
+          return summary.id;
+        })
+        .sort(),
+    );
+  });
+
+  it("rebuilds the shared conversation without re-enabling a deleted conversation's webhook", async () => {
+    const { actor, workflowId } = await scenario();
+    const first = await accept(
+      client().create({
+        headers: headers(actor),
+        params: { workflowId },
+        body: { kind: "event", eventType: "webhook-received" },
+      }),
+      [201],
+    );
+    const previousThreadId = first.body.chatThreadId;
+    if (!previousThreadId) {
+      throw new Error("Expected a thread-bound webhook automation");
+    }
+    await chat.deleteThread(actor, previousThreadId);
+    const created = await accept(
+      client().create({
+        headers: headers(actor),
+        params: { workflowId },
+        body: { kind: "event", eventType: "webhook-received" },
+      }),
+      [201],
+    );
+    expect(created.body.chatThreadId).toBeTruthy();
+    expect(created.body.chatThreadId).not.toBe(previousThreadId);
+    const listed = await accept(
+      client().list({ headers: headers(actor), params: { workflowId } }),
+      [200],
+    );
+    expect(listed.body).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: first.body.id,
+          enabled: false,
+          chatThreadId: created.body.chatThreadId,
+        }),
+        expect.objectContaining({
+          id: created.body.id,
+          enabled: true,
+          chatThreadId: created.body.chatThreadId,
+        }),
+      ]),
+    );
+    const revealed = await accept(
+      client().revealWebhookSecret({
+        headers: headers(actor),
+        params: { id: created.body.id },
+        body: undefined,
+      }),
+      [200],
+    );
+    expect(created.body).toMatchObject(revealed.body);
+    await expect(readThreads(actor)).resolves.toHaveLength(2);
+  });
+
   it.each([1, 2])(
     "allows unrelated chat writes while KMS call %i is stalled",
     async (callToHold) => {
