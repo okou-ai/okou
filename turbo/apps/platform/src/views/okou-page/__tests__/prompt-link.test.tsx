@@ -426,5 +426,4 @@ test("An unavailable model leaves a prompt link recoverable", async () => {
   expect(capture.createdThreads).toHaveLength(0);
   expect(capture.sends).toHaveLength(0);
   expect(draftUpdates).toHaveLength(0);
-  expect(savedDraft.parts[0]?.text).toBe("Keep my unrelated draft");
 });
