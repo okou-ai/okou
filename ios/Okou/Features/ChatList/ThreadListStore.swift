@@ -451,13 +451,34 @@ final class ThreadListStore {
 
   @discardableResult
   func rename(_ thread: ChatThread, title: String) async -> Bool {
-    guard canUpdate(thread.id), !Task.isCancelled else { return false }
+    guard canUpdate(thread.id), !Task.isCancelled,
+      let current = threads.first(where: { $0.id == thread.id })
+    else { return false }
     let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-    let currentTitle = threads.first(where: { $0.id == thread.id })?.title
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty, trimmed != currentTitle else { return true }
+    let pending = optimisticChanges.last {
+      $0.change.kind == .renamed && $0.change.chatThreadId == thread.id
+    }
+    // A title already shown optimistically still needs an explicit retry until confirmed.
+    guard !trimmed.isEmpty,
+      trimmed != current.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        || pending?.change.title == trimmed
+    else { return true }
+    let eventID: String
+    if let pending, pending.change.title == trimmed {
+      eventID = pending.id
+    } else {
+      eventID = UUID().uuidString.lowercased()
+      optimisticChanges.append(
+        (
+          eventID,
+          ChatThreadChange(
+            kind: .renamed, chatThreadId: current.id, agentId: current.agentID,
+            title: trimmed, createdAt: .now)
+        ))
+    }
+    projectThreads(threads)
     return await updateThread(thread.id) { [commands] in
-      try await commands.rename(threadID: thread.id, title: trimmed)
+      try await commands.rename(threadID: thread.id, title: trimmed, eventID: eventID)
     }
   }
 

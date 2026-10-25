@@ -235,8 +235,8 @@ public actor ChatCommands {
       query: eventID.map { [URLQueryItem(name: "eventId", value: $0)] } ?? [])
   }
 
-  public func rename(threadID: String, title: String) async throws {
-    let body = try JSONEncoder().encode(["title": title])
+  public func rename(threadID: String, title: String, eventID: String) async throws {
+    let body = try JSONEncoder().encode(["title": title, "eventId": eventID])
     try await client.data("/api/chat-threads/\(threadID)/rename", method: "POST", body: body)
   }
 

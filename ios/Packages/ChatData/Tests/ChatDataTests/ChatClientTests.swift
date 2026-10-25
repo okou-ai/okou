@@ -23,6 +23,7 @@ final class ChatClientTests: XCTestCase {
     let muteEventID = UUID().uuidString
     let unmuteEventID = UUID().uuidString
     let archiveEventID = UUID().uuidString
+    let renameEventID = UUID().uuidString
     let fixture = ChatHTTPFixture { request in
       queries.withLock {
         $0.append(
@@ -45,7 +46,7 @@ final class ChatClientTests: XCTestCase {
     try await service.setArchived(threadID: fixtureThread, archived: false)
     try await service.setMuted(threadID: fixtureThread, muted: true, eventID: muteEventID)
     try await service.setMuted(threadID: fixtureThread, muted: false, eventID: unmuteEventID)
-    try await service.rename(threadID: fixtureThread, title: "Renamed")
+    try await service.rename(threadID: fixtureThread, title: "Renamed", eventID: renameEventID)
 
     XCTAssertEqual(requests.withLock { $0.map(\.0) }, Array(repeating: "POST", count: 7))
     XCTAssertEqual(
@@ -59,7 +60,10 @@ final class ChatClientTests: XCTestCase {
         "/api/chat-threads/\(fixtureThread)/unmute",
         "/api/chat-threads/\(fixtureThread)/rename",
       ])
-    XCTAssertEqual(requests.withLock { $0.last?.2 }, "{\"title\":\"Renamed\"}")
+    let renameBody = try XCTUnwrap(requests.withLock { $0.last?.2 })
+    XCTAssertEqual(
+      try JSONDecoder().decode([String: String].self, from: Data(renameBody.utf8)),
+      ["title": "Renamed", "eventId": renameEventID])
     XCTAssertEqual(
       queries.withLock { $0[0] },
       [
