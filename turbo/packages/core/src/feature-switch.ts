@@ -245,6 +245,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.BrowserSharedOwner]: {
+    maintainer: "liangyou@vm0.ai",
+    displayName: "Shared Browser",
+    description:
+      "Share website logins across chats with a separate window for each chat",
+    enabled: false,
+  },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",
     description: "Test-only feature switch for flag system validation",
