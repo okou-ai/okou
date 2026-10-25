@@ -2,8 +2,6 @@ import { captureSessionStorageMocks } from "./helpers/prepared-session-history";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-/* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";

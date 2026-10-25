@@ -2,7 +2,6 @@ import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-ro
 import { http, HttpResponse } from "msw";
 import { z } from "zod";
 import { server } from "../../../mocks/server";
-import { mockEnv } from "../../../lib/env";
 import { dataRouterToolsRoutes } from "../data-router-tools";
 import { randomUUID } from "node:crypto";
 
@@ -13,7 +12,7 @@ import { expect, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { generateOkouToken, generateSandboxToken } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { paidToolsRoutes } from "../paid-tools";
@@ -316,5 +315,5 @@ test("discovers Router tools and schemas across pages without a local tool catal
     ).list({ headers }),
     [200],
   );
-  expect(result.body).toEqual({ tools: [tool] });
+  expect(result.body).toStrictEqual({ tools: [tool] });
 });

@@ -15,7 +15,7 @@ import { settleIncludingAbort } from "../utils";
 const list$ = command(async ({ get }, signal: AbortSignal) => {
   const endpoint = env("OKOU_DATA_ROUTER_URL");
   const token = env("OKOU_DATA_TOKEN");
-  if (!endpoint || !token)
+  if (!endpoint || !token) {
     return {
       status: 503 as const,
       body: {
@@ -25,6 +25,7 @@ const list$ = command(async ({ get }, signal: AbortSignal) => {
         },
       },
     };
+  }
   const requestSignal = AbortSignal.any([
     signal,
     get(requestSignal$),
@@ -51,7 +52,9 @@ const list$ = command(async ({ get }, signal: AbortSignal) => {
           }),
           signal: requestSignal,
         });
-        if (!response.ok) throw new Error("Data Router discovery failed");
+        if (!response.ok) {
+          throw new Error("Data Router discovery failed");
+        }
         const page = z
           .object({ result: dataRouterToolsPageSchema })
           .parse(await response.json()).result;
@@ -61,15 +64,18 @@ const list$ = command(async ({ get }, signal: AbortSignal) => {
           }),
         );
         cursor = page.nextCursor;
-        if (cursor && cursors.has(cursor))
+        if (cursor && cursors.has(cursor)) {
           throw new Error("Data Router repeated a discovery cursor");
-        if (cursor) cursors.add(cursor);
+        }
+        if (cursor) {
+          cursors.add(cursor);
+        }
       } while (cursor);
       return tools;
     })(),
   );
   signal.throwIfAborted();
-  if (!result.ok)
+  if (!result.ok) {
     return {
       status: 502 as const,
       body: {
@@ -79,6 +85,7 @@ const list$ = command(async ({ get }, signal: AbortSignal) => {
         },
       },
     };
+  }
   return { status: 200 as const, body: { tools: result.value } };
 });
 
