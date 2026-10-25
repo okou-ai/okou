@@ -9,6 +9,24 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.3.3](https://github.com/okou-ai/okou/compare/api-v2.3.2...api-v2.3.3) (2026-10-25)
+
+
+### Refactoring
+
+* **api:** clear thread connector selections atomically ([#42832](https://github.com/okou-ai/okou/issues/42832)) ([e6c3a00](https://github.com/okou-ai/okou/commit/e6c3a0003b373eead51dfd04f3c31b2fb18720f6))
+* **api:** localize personal logical provider identity ([#42844](https://github.com/okou-ai/okou/issues/42844)) ([bb9eba3](https://github.com/okou-ai/okou/commit/bb9eba3491b8a8fdea9f72ca73d5e52c3587bdee))
+* **api:** publish custom connector updates atomically ([#42846](https://github.com/okou-ai/okou/issues/42846)) ([3ad0987](https://github.com/okou-ai/okou/commit/3ad0987736b58469849da60b7ab1470f9a27a12a))
+* **api:** run nightly learning and planning independently ([#42833](https://github.com/okou-ai/okou/issues/42833)) ([d5840a7](https://github.com/okou-ai/okou/commit/d5840a77258b4daf6192534bd760adf1e8b8dcbb))
+* **api:** update thread connector selections atomically ([#42840](https://github.com/okou-ai/okou/issues/42840)) ([13001fa](https://github.com/okou-ai/okou/commit/13001fab8a587944f9f3958b3a992af2d41d2817))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.2.3
+
 ## [2.3.2](https://github.com/okou-ai/okou/compare/api-v2.3.1...api-v2.3.2) (2026-10-25)
 
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.19.2](https://github.com/okou-ai/okou/compare/ios-v0.19.1...ios-v0.19.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* **ios:** align chat bars with system navigation sizing ([#42838](https://github.com/okou-ai/okou/issues/42838)) ([20c24fb](https://github.com/okou-ai/okou/commit/20c24fb1b05e27e31362f9fe8e4715bf7bc61a85))
+* **ios:** keep the composer model settings entry stable ([#42842](https://github.com/okou-ai/okou/issues/42842)) ([770d1e5](https://github.com/okou-ai/okou/commit/770d1e57b08853ad669592d73f4570e762f87d51))
+* **ios:** rename chats optimistically like the pwa ([#42830](https://github.com/okou-ai/okou/issues/42830)) ([321e3d0](https://github.com/okou-ai/okou/commit/321e3d0ed36ba27f8cf07d03a0a61cb68c6f3fb4))
+* **ios:** restore attachment card contrast and compact file details ([#42837](https://github.com/okou-ai/okou/issues/42837)) ([6cefa25](https://github.com/okou-ai/okou/commit/6cefa251eb62d73ae720db2f0e027f9c6014a232))
+
 ## [0.19.1](https://github.com/okou-ai/okou/compare/ios-v0.19.0...ios-v0.19.1) (2026-10-25)
 
 
