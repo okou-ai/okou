@@ -127,7 +127,6 @@ struct MentionComposerHarness: View {
   let state: ComposerDraftStore
   let conversation: ConversationStore?
   let source: ComposerMentionSource?
-  var sent: ChatMessage?
 
   init(workspace: WorkspaceStore, source: ComposerMentionSource? = nil) {
     self.workspace = workspace
@@ -135,12 +134,11 @@ struct MentionComposerHarness: View {
     conversation = nil
     self.source = source
   }
-  init(conversation: ConversationStore, source: ComposerMentionSource, sent: ChatMessage? = nil) {
+  init(conversation: ConversationStore, source: ComposerMentionSource) {
     workspace = nil
     self.conversation = conversation
     state = conversation.composer
     self.source = source
-    self.sent = sent
   }
   init(state: ComposerDraftStore, source: ComposerMentionSource? = nil) {
     workspace = nil
@@ -152,13 +150,6 @@ struct MentionComposerHarness: View {
   var body: some View {
     VStack(alignment: .leading) {
       Text("Okou").font(.title2.weight(.semibold)).padding()
-      if let sent, let conversation {
-        UserMessageView(
-          message: sent, webURL: conversation.webURL, viewer: conversation.attachmentViewer,
-          loadsAttachments: false
-        )
-        .padding()
-      }
       Spacer(minLength: 0)
     }
     .safeAreaBar(edge: .bottom, spacing: 0) {
@@ -219,15 +210,4 @@ func mountMentionHost<V: View>(_ host: UIHostingController<V>) async throws -> U
   // Native focus must follow the initial hosting transaction's presented frame.
   await hostingPresentationFrame()
   return window
-}
-
-@MainActor
-func attachMention(_ window: UIWindow, name: String) {
-  let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-  }
-  let attachment = XCTAttachment(image: image)
-  attachment.name = name
-  attachment.lifetime = .keepAlways
-  XCTContext.runActivity(named: name) { $0.add(attachment) }
 }

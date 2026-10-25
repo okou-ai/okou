@@ -601,9 +601,8 @@ enum ExecStreamWriteError {
 }
 
 struct StdinWriter {
-    handle: JoinHandle<()>,
+    handle: JoinHandle<io::Result<()>>,
     done_rx: mpsc::Receiver<()>,
-    result_rx: mpsc::Receiver<io::Result<()>>,
     cancel: Arc<AtomicBool>,
     cancel_wake_writer: OwnedFd,
 }
@@ -1914,7 +1913,6 @@ where
     let cancel = Arc::new(AtomicBool::new(false));
     let writer_cancel = Arc::clone(&cancel);
     let (done_tx, done_rx) = mpsc::channel();
-    let (result_tx, result_rx) = mpsc::channel();
     let handle = spawner.spawn(
         THREAD_EXEC_OPERATION_STDIN,
         Box::new(move || {
@@ -1924,14 +1922,13 @@ where
                 &writer_cancel,
                 cancel_wake_reader.as_raw_fd(),
             );
-            let _ = result_tx.send(result);
             let _ = done_tx.send(());
+            result
         }),
     )?;
     Ok(StdinWriter {
         handle,
         done_rx,
-        result_rx,
         cancel,
         cancel_wake_writer,
     })
@@ -2118,14 +2115,14 @@ fn join_stdin_writer_after_kill(writer: Option<StdinWriter>) {
 }
 
 fn join_stdin_writer(writer: StdinWriter, seq: u32, label: &str) {
-    match writer.handle.join() {
-        Ok(()) => {}
+    let result = match writer.handle.join() {
+        Ok(result) => result,
         Err(panic) => std::panic::resume_unwind(panic),
-    }
-    match writer.result_rx.recv() {
-        Ok(Ok(())) | Err(_) => {}
-        Ok(Err(e)) if is_stdin_write_cancelled(&e) => {}
-        Ok(Err(e)) => {
+    };
+    match result {
+        Ok(()) => {}
+        Err(e) if is_stdin_write_cancelled(&e) => {}
+        Err(e) => {
             let label_preview = truncate_command_preview(label);
             log(
                 "WARN",
@@ -3519,15 +3516,17 @@ mod tests {
         let ready = ready_rx.recv_timeout(Duration::from_secs(5));
         request_stdin_writer_cancel(&writer);
         let completed = writer.done_rx.recv_timeout(Duration::from_secs(5));
-        let result = writer.result_rx.try_recv();
 
         // Record completion while the peer is still open and undrained. Release
         // it and join before asserting, including readiness and wakeup failures.
         drop(read_fd);
-        join_stdin_writer(writer, 0, "");
+        let result = writer
+            .handle
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
         ready.expect("stdin writer did not reach its blocking poll");
         completed.expect("stdin writer cancel did not wake blocked writer");
-        assert!(is_stdin_write_cancelled(&result.unwrap().unwrap_err()));
+        assert!(is_stdin_write_cancelled(&result.unwrap_err()));
     }
 
     #[test]
