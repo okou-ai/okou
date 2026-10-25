@@ -42,8 +42,6 @@ import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { mailDrafts } from "@okouai/db/schema/mail-draft";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { secrets } from "@okouai/db/schema/secret";
-import { variables } from "@okouai/db/schema/variable";
 import { command, computed, type Computed } from "ccstate";
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -134,8 +132,8 @@ import {
   connectorCredentialStorageConnectionDeletionPlan,
   connectorCredentialStorageSelectionDeletionPlan,
   connectorCredentialStorageCursorDeletionPlan,
-  connectorOwnedSecretWrite,
-  connectorOwnedVariableWrite,
+  builtinTokenCredentialWrites as tokenWrites,
+  type PreparedBuiltinConnectorTokenState,
   manualGrantConnectionMetadata,
   manualGrantCredentialArgs,
   manualGrantCredentialFields,
@@ -304,21 +302,11 @@ interface EncryptedManualGrantSecret {
   readonly encryptedValue: string;
 }
 
-interface EncryptedBuiltinConnectorTokenSecret {
-  readonly name: string;
-  readonly encryptedValue: string;
-  readonly description: string;
-}
+type EncryptedBuiltinConnectorTokenSecret =
+  PreparedBuiltinConnectorTokenState["secrets"][number];
 
-interface PreparedBuiltinConnectorTokenVariable {
-  readonly name: string;
-  readonly value: string;
-}
-
-interface PreparedBuiltinConnectorTokenState {
-  readonly secrets: readonly EncryptedBuiltinConnectorTokenSecret[];
-  readonly variables: readonly PreparedBuiltinConnectorTokenVariable[];
-}
+type PreparedBuiltinConnectorTokenVariable =
+  PreparedBuiltinConnectorTokenState["variables"][number];
 
 interface BuiltinConnectorTokenOutputRequirements {
   readonly requiredOutputNames: readonly string[];
@@ -2260,109 +2248,6 @@ async function prepareConnectorTokenState(
   };
 }
 
-async function upsertPreparedConnectorTokenState(
-  args: {
-    readonly db: Db;
-    readonly connectorId: string;
-    readonly method: ConnectorAuthMethodRuntimeConfig;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly state: PreparedBuiltinConnectorTokenState;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const tokenSecretsWriteArgs: {
-    readonly db: Db;
-    readonly connectorId: string;
-    readonly method: ConnectorAuthMethodRuntimeConfig;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly secrets: readonly EncryptedBuiltinConnectorTokenSecret[];
-  } = {
-    db: args.db,
-    connectorId: args.connectorId,
-    method: args.method,
-    orgId: args.orgId,
-    userId: args.userId,
-    secrets: args.state.secrets,
-  };
-  const tokenSecretsWriteSignal = signal;
-  await (async (): Promise<void> => {
-    if (tokenSecretsWriteArgs.secrets.length === 0) {
-      return;
-    }
-
-    for (const secret of tokenSecretsWriteArgs.secrets) {
-      const db = tokenSecretsWriteArgs.db;
-      const credential = {
-        connectorId: tokenSecretsWriteArgs.connectorId,
-        storage: tokenSecretsWriteArgs.method.storage,
-        orgId: tokenSecretsWriteArgs.orgId,
-        userId: tokenSecretsWriteArgs.userId,
-        name: secret.name,
-        encryptedValue: secret.encryptedValue,
-        description: secret.description,
-        updatedDescription: secret.description,
-      };
-      const write = connectorOwnedSecretWrite(credential);
-      const [row] = await db
-        .insert(secrets)
-        .values(write.values)
-        .onConflictDoUpdate(write.conflict)
-        .returning({ id: secrets.id });
-      if (!row) {
-        throw new Error(
-          `Connector secret ${credential.name} is owned by another row`,
-        );
-      }
-      tokenSecretsWriteSignal.throwIfAborted();
-    }
-  })();
-  const tokenVariablesWriteArgs: {
-    readonly db: Db;
-    readonly connectorId: string;
-    readonly method: ConnectorAuthMethodRuntimeConfig;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly variables: readonly PreparedBuiltinConnectorTokenVariable[];
-  } = {
-    db: args.db,
-    connectorId: args.connectorId,
-    method: args.method,
-    orgId: args.orgId,
-    userId: args.userId,
-    variables: args.state.variables,
-  };
-  const tokenVariablesWriteSignal = signal;
-  await (async (): Promise<void> => {
-    for (const variable of tokenVariablesWriteArgs.variables) {
-      const db = tokenVariablesWriteArgs.db;
-      const credential = {
-        connectorId: tokenVariablesWriteArgs.connectorId,
-        storage: tokenVariablesWriteArgs.method.storage,
-        orgId: tokenVariablesWriteArgs.orgId,
-        userId: tokenVariablesWriteArgs.userId,
-        name: variable.name,
-        value: variable.value,
-        description: null,
-        updatedDescription: null,
-      };
-      const write = connectorOwnedVariableWrite(credential);
-      const [row] = await db
-        .insert(variables)
-        .values(write.values)
-        .onConflictDoUpdate(write.conflict)
-        .returning({ id: variables.id });
-      if (!row) {
-        throw new Error(
-          `Connector variable ${credential.name} is owned by another row`,
-        );
-      }
-      tokenVariablesWriteSignal.throwIfAborted();
-    }
-  })();
-}
-
 function isExplicitReconnectIdentityMismatch(
   account: ConnectorAccountMutationIntent,
   existing: StoredConnectorRow | null,
@@ -2502,7 +2387,7 @@ async function reprojectConnectedWorkflowAutomations(
   );
 }
 
-async function prepareConnectorTokenConnectionCleanup(
+async function prepareTokenCleanup(
   args: CommitBuiltinConnectorTokenConnectionArgs,
   existing: StoredConnectorRow | null,
   signal: AbortSignal,
@@ -2599,11 +2484,7 @@ export async function commitBuiltinConnectorTokenConnection(
   ) {
     return { status: "identityMismatch" };
   }
-  const cleanup = await prepareConnectorTokenConnectionCleanup(
-    args,
-    existingConnector,
-    signal,
-  );
+  const cleanup = await prepareTokenCleanup(args, existingConnector, signal);
   if (existingConnector !== null) {
     const db = args.db;
     const ref = connectionIdentity(existingConnector, args.userInfo);
@@ -2686,13 +2567,15 @@ export async function commitBuiltinConnectorTokenConnection(
         signal.throwIfAborted();
       }
     }
-    const connectorId = connection.id;
-    await (async () => {
-      await upsertPreparedConnectorTokenState(
-        { db, connectorId, ...values.credentials },
-        signal,
-      );
-    })();
+    for (const write of tokenWrites(connection.id, values.credentials)) {
+      const [row] = await db
+        .insert(write.table)
+        .values(write.values)
+        .onConflictDoUpdate(write.conflict)
+        .returning({ id: write.table.id });
+      requireManualGrantWrite(row, write.kind, write.values.name);
+      signal.throwIfAborted();
+    }
     signal.throwIfAborted();
     return outcome;
   })();
@@ -3097,7 +2980,7 @@ function noAuthConnected(
 function tokenConnected(
   connectorRow: StoredConnectorRow,
   existing: StoredConnectorRow | null,
-  cleanup: Awaited<ReturnType<typeof prepareConnectorTokenConnectionCleanup>>,
+  cleanup: Awaited<ReturnType<typeof prepareTokenCleanup>>,
 ): CommittedBuiltinConnectorTokenConnection {
   return {
     status: "connected",
