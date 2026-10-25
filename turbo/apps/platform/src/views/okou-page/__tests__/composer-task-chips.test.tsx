@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import {
@@ -347,7 +348,7 @@ test("The /ill slash command selects Image", async () => {
 test.each([
   {
     entry: "Presentation",
-    category: "Illustration",
+    category: "Image",
     task: "Image",
     template: ILLUSTRATION_TEMPLATE_ITEMS[0]!,
     type: "illustration",
@@ -493,7 +494,7 @@ test("A presentation suggestion inserts a canonical template and preserves the p
   });
 });
 
-test("Uploaded presentation suggestions use the existing template reference", async () => {
+test("Uploaded presentation suggestions use the existing template reference when custom templates are disabled", async () => {
   const capture = mockTemplateChat();
   const deck = createUploadedTemplate({
     id: "81000000-0000-4000-a000-000000000022",
@@ -510,7 +511,12 @@ test("Uploaded presentation suggestions use the existing template reference", as
       });
     }),
   ]);
-  const editor = await setupChips();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
+  });
+  const editor = await findComposerEditor();
   click(
     button(
       "Presentation",
@@ -544,7 +550,7 @@ test("Uploaded presentation suggestions use the existing template reference", as
   });
 });
 
-test("Importing a deck uses the existing analysis flow without a create-mode instruction", async () => {
+test("Importing a deck uses the existing analysis flow when custom templates are disabled", async () => {
   const capture = mockTemplateChat();
   context.mocks.upload.success({
     id: "81000000-0000-4000-a000-000000000023",
@@ -554,7 +560,12 @@ test("Importing a deck uses the existing analysis flow without a create-mode ins
     url: "https://cdn.example.test/brand.pdf",
   });
   const user = userEvent.setup({ delay: null });
-  await setupChips();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
+  });
+  await findComposerEditor();
   click(
     button(
       "Presentation",

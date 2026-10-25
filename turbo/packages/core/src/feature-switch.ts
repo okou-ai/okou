@@ -189,10 +189,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Custom templates",
     description:
       "Templates compiled from uploaded files, available in their own catalog and the composer slash menu.",
-    enabled: false,
-    // Back to the staff org now that the picker carries its own upload entry:
-    // a colleague who opens the empty panel has the one action that fills it,
-    // which is what the earlier narrowing to the maintainer was waiting for.
+    enabled: true,
+    // Retain the staff and maintainer rollout for a global-default rollback.
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     // Kept beside the org so the maintainer keeps the feature while signed
     // into a customer workspace, where the org hash does not apply.
