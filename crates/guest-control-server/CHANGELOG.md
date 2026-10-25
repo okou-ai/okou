@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.43](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.42...guest-control-server-v0.24.43) (2026-10-25)
+
+
+### Refactoring
+
+* **guest-control:** pair trusted workload placement capabilities ([#42836](https://github.com/okou-ai/okou/issues/42836)) ([034d29d](https://github.com/okou-ai/okou/commit/034d29d761b8fc78e7533b105384e701ca454a6d))
+
 ## [0.24.42](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.41...guest-control-server-v0.24.42) (2026-10-25)
 
 
