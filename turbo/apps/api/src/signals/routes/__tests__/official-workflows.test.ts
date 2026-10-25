@@ -2032,13 +2032,15 @@ async function prepareBriefMember({
   readonly bootstrap?: boolean;
 } = {}) {
   installCatalogStorageFixture(context);
-  if (catalogAvailable) {
-    await catalogSync();
-  }
   mockBriefMemberships([{ actor, createdAt }]);
-  if (bootstrap) {
-    await deliverClerkOrganizationCreated(actor, createdAt);
-  }
+  // Catalog publication and organization bootstrap own independent resources.
+  // Both must finish before preference initialization can install the Brief.
+  await Promise.all([
+    catalogAvailable ? catalogSync() : Promise.resolve(),
+    bootstrap
+      ? deliverClerkOrganizationCreated(actor, createdAt)
+      : Promise.resolve(),
+  ]);
   return { actor, createdAt };
 }
 
@@ -2052,9 +2054,13 @@ describe("Official Workflow failure recovery", () => {
       throw new Error("Expected the next schedule occurrence");
     }
     const scheduledAt = new Date(automation.nextRunAt).getTime();
-    const fired = await fireOfficialSchedule(actor, automation);
+    // The scheduler and heartbeat own separate clock scopes. Complete both
+    // before claiming the same genuine scheduled Run.
+    const [fired] = await Promise.all([
+      fireOfficialSchedule(actor, automation),
+      runs.heartbeatRunner(runnerGroup),
+    ]);
     mockNow(scheduledAt + 1000);
-    await runs.heartbeatRunner(runnerGroup);
     const claim = await runs.claimRunnerJob(fired.runId);
     await webhooks.requestAgentComplete(
       {
