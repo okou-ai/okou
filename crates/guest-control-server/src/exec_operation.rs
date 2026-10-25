@@ -759,6 +759,16 @@ impl ExecSetup {
         completion: &ExecCompletion<'_>,
         diagnostic: &str,
     ) {
+        self.abort_wait_failed_with_stdout(exec_cancel, completion, diagnostic, None);
+    }
+
+    fn abort_wait_failed_with_stdout(
+        self,
+        exec_cancel: &AtomicBool,
+        completion: &ExecCompletion<'_>,
+        diagnostic: &str,
+        stdout_handle: Option<JoinHandle<BoundedDrainResult>>,
+    ) {
         let ExecSetup {
             child,
             process_containment,
@@ -778,6 +788,9 @@ impl ExecSetup {
             false,
         );
         join_stdin_writer_after_kill(stdin_writer);
+        if let Some(stdout_handle) = stdout_handle {
+            let _ = stdout_handle.join();
+        }
         let containment_error = containment_result.as_ref().err().map(ToString::to_string);
         let diagnostic =
             append_containment_cleanup_failure(diagnostic, containment_error.as_deref());
@@ -836,30 +849,12 @@ impl ExecSetupWithStdout {
             setup,
             stdout_handle,
         } = self;
-        let ExecSetup {
-            child,
-            process_containment,
-            placement_bootstrap,
-            stdin_writer,
-            drain_cancel,
-            drain_done_tx: _,
-            drain_done_rx: _,
-        } = setup;
-        exec_cancel.store(true, Ordering::Release);
-        drain_cancel.cancel();
-        kill_and_reap_child(child);
-        drop(placement_bootstrap);
-        let containment_result = cleanup_process_containment(
-            process_containment,
-            ProcessContainmentCleanupMode::Forced,
-            false,
+        setup.abort_wait_failed_with_stdout(
+            exec_cancel,
+            completion,
+            diagnostic,
+            Some(stdout_handle),
         );
-        join_stdin_writer_after_kill(stdin_writer);
-        let _ = stdout_handle.join();
-        let containment_error = containment_result.as_ref().err().map(ToString::to_string);
-        let diagnostic =
-            append_containment_cleanup_failure(diagnostic, containment_error.as_deref());
-        completion.wait_failed(&diagnostic);
     }
 
     fn into_running(
