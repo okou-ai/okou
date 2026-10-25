@@ -370,16 +370,21 @@ const activateCandidate$ = command(
           return plan;
         }
         const { releaseId, payload, hiddenThreadDefinitionNames } = plan;
-        await tx
+        const [inserted] = await tx
           .insert(officialWorkflowCatalogReleases)
           .values({ id: releaseId, payload, hiddenThreadDefinitionNames })
-          .onConflictDoNothing();
+          .onConflictDoNothing()
+          .returning(catalogReleaseFields);
         signal.throwIfAborted();
-        const [stored] = await tx
-          .select(catalogReleaseFields)
-          .from(officialWorkflowCatalogReleases)
-          .where(eq(officialWorkflowCatalogReleases.id, releaseId))
-          .limit(1);
+        const stored =
+          inserted ??
+          (
+            await tx
+              .select(catalogReleaseFields)
+              .from(officialWorkflowCatalogReleases)
+              .where(eq(officialWorkflowCatalogReleases.id, releaseId))
+              .limit(1)
+          )[0];
         signal.throwIfAborted();
         assertCatalogReleasePayload(stored, plan);
 
