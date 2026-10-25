@@ -5,6 +5,7 @@ import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { z } from "zod";
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
+import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import {
   and,
   asc,
@@ -16,6 +17,16 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+
+export function customConnectorOAuthBindingDeletionPlan(connectionId: string) {
+  return {
+    from: customConnectorAccountOauthBindings,
+    where: eq(
+      customConnectorAccountOauthBindings.connectorAccountId,
+      connectionId,
+    ),
+  };
+}
 
 export const customConnectorOAuthStartResultSchema = z.object({
   contractValid: z.boolean(),

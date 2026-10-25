@@ -99,7 +99,37 @@ export function manualGrantConnectionMetadata(args: {
   };
 }
 
-export function manualGrantSecretWrite(
+type ManualGrantCredentialEntry =
+  | {
+      readonly kind: "secret";
+      readonly field: ManualGrantCredentialInputs["encryptedSecrets"][number];
+    }
+  | {
+      readonly kind: "variable";
+      readonly field: ManualGrantCredentialInputs["prepared"]["variableValues"][number];
+    };
+
+export function* manualGrantCredentialFields(
+  args: ReturnType<typeof manualGrantCredentialArgs>,
+): Generator<ManualGrantCredentialEntry, void> {
+  for (const field of args.encryptedSecrets) {
+    yield { kind: "secret" as const, field };
+  }
+  for (const field of args.variableValues) {
+    yield { kind: "variable" as const, field };
+  }
+}
+
+export function manualGrantCredentialWrite(
+  args: ManualGrantCredentialScope,
+  entry: ManualGrantCredentialEntry,
+) {
+  return entry.kind === "secret"
+    ? { table: secrets, ...manualGrantSecretWrite(args, entry.field) }
+    : { table: variables, ...manualGrantVariableWrite(args, entry.field) };
+}
+
+function manualGrantSecretWrite(
   args: ManualGrantCredentialScope,
   field: { readonly name: string; readonly encryptedValue: string },
 ) {
@@ -115,7 +145,7 @@ export function manualGrantSecretWrite(
   });
 }
 
-export function manualGrantVariableWrite(
+function manualGrantVariableWrite(
   args: ManualGrantCredentialScope,
   field: { readonly name: string; readonly value: string },
 ) {
@@ -146,8 +176,10 @@ export function manualGrantUserSecretDeletion(
 }
 
 export function manualGrantUserVariableDeletion(
-  args: ManualGrantUserCredentialDeletion,
+  scope: Omit<ManualGrantUserCredentialDeletion, "name">,
+  name: string,
 ) {
+  const args = { ...scope, name };
   return {
     from: variables,
     where: and(
