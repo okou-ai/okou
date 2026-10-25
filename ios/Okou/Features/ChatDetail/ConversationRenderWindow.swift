@@ -11,11 +11,11 @@ struct ConversationRenderWindow {
 
   var hasEarlierMessages: Bool { range.lowerBound > 0 }
 
-  mutating func update(_ items: [ConversationItem]) {
+  mutating func update(_ items: [ConversationItem], preservingBoundary: Bool) {
     let newIDs = items.map(\.id)
     let oldBoundary = range.lowerBound
     var boundary: Int?
-    if !followsLatest {
+    if !followsLatest || preservingBoundary {
       let indexes = Dictionary(uniqueKeysWithValues: newIDs.enumerated().map { ($1, $0) })
       // A revoked boundary advances to the next surviving row in the previously visible suffix.
       boundary = ids.dropFirst(oldBoundary).lazy.compactMap { indexes[$0] }.first
