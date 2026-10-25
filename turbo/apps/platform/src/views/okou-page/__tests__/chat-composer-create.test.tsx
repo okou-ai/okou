@@ -484,7 +484,7 @@ test("The slash panel's Illustration row opens the image style flow", async () =
   const dialog = await screen.findByRole("dialog");
   await waitFor(() => {
     const tab = queryAllByRoleFast("tab", dialog).find((item) => {
-      return item.textContent?.trim() === "Illustration";
+      return item.textContent?.trim() === "Image";
     });
     expect(tab).toHaveAttribute("aria-selected", "true");
   });
@@ -503,7 +503,7 @@ test("Image mode opens its style picker from the Add menu", async () => {
   await clickComposerAddMenuItem("Add style");
   const dialog = await screen.findByRole("dialog");
   const tab = queryAllByRoleFast("tab", dialog).find((item) => {
-    return item.textContent?.trim() === "Illustration";
+    return item.textContent?.trim() === "Image";
   });
   expect(tab).toHaveAttribute("aria-selected", "true");
 });

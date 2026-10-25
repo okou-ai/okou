@@ -142,7 +142,7 @@ test("A failed preference read blocks explicit creation but ordinary chat remain
   });
 });
 
-test("Gallery notices follow each paid branch for a member without feature switches", async () => {
+test("Gallery notices follow each paid branch for a member using default feature switches", async () => {
   mockTemplateChat();
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
     return respond(200, { disabledTools: ["image-generation"] });
@@ -151,7 +151,7 @@ test("Gallery notices follow each paid branch for a member without feature switc
   await findComposerEditor();
   const dialog = await openTemplatePicker(
     userEvent.setup({ delay: null }),
-    "Illustration",
+    "Image",
   );
   await within(dialog).findByText("Image generation is off for you");
   click(tabByText("Website"));

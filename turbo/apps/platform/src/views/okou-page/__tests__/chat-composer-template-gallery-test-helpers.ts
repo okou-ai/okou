@@ -38,7 +38,7 @@ interface TemplateChatCapture {
 
 export async function openTemplatePicker(
   _user: ReturnType<typeof userEvent.setup>,
-  category?: "Presentation" | "Website" | "Illustration",
+  category?: "Presentation" | "Website" | "Illustration" | "Image",
 ): Promise<HTMLElement> {
   await clickComposerAddMenuItem("Template");
   const dialog = await waitFor(() => {

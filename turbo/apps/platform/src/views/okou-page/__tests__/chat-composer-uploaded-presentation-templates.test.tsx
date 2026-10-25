@@ -1,6 +1,7 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { formatUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
 import { expect, test } from "vitest";
 import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/presentation-templates";
@@ -47,6 +48,7 @@ test("An empty catalog keeps the import card available", async () => {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
     sharedWorkerTestTransport: "message-port",
   });
   const picker = await openTemplatePicker(user, "Presentation");
@@ -125,6 +127,7 @@ async function openUploadedPresentationPicker() {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
 
   const picker = await openTemplatePicker(user, "Presentation");
@@ -225,6 +228,7 @@ async function openWorkspaceTemplateLibrary(includePublished: boolean) {
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
   const picker = await openTemplatePicker(user, "Presentation");
   await waitFor(() => {
@@ -272,6 +276,7 @@ test("Keep an uploaded template preview usable during a catalog refresh", async 
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
   await openTemplatePicker(user, "Presentation");
   const preview = await waitFor(() => {
@@ -358,6 +363,7 @@ test("Rename an uploaded template", async () => {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
   await openTemplatePicker(user, "Presentation");
   await waitFor(() => {
@@ -409,6 +415,7 @@ test.each([
       context,
       path: `/agents/${AGENT_ID}/chat`,
       host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
     });
     await openTemplatePicker(user, "Presentation");
     await screen.findByText(uploaded.title);
@@ -473,6 +480,7 @@ test("Imported visibility saves once and closes even on the current value", asyn
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
   await openTemplatePicker(user, "Presentation");
   click(
@@ -528,6 +536,7 @@ test("Delete an uploaded template from its preview", async () => {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
   await openTemplatePicker(user, "Presentation");
   click(
