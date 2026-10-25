@@ -8,6 +8,39 @@ import XCTest
 
 @MainActor
 final class ChatThreadActionsTests: XCTestCase {
+  func testRenameUpdatesListAndOpenChatBeforeSavingAndReconcilesWithRemoteTitles() async throws {
+    let fixture = ThreadActionsFixture()
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refresh()
+    store.selectChat(ThreadActionsFixture.thread)
+    store.list.beginRename(ThreadActionsFixture.thread)
+    store.list.renameTitle = "  Focus for this week  "
+    let gate = ThreadActionGate()
+    defer { gate.open() }
+    fixture.state.value.withLock { $0.nextGate = gate }
+    let saving = Task { await store.list.saveRename() }
+    addTeardownBlock {
+      gate.open()
+      await saving.value
+    }
+    try await eventually { fixture.writes.contains { $0.action == "rename" } }
+    XCTAssertNil(store.list.renameRequest)
+    XCTAssertEqual(store.list.threads.first?.displayTitle, "Focus for this week")
+    XCTAssertEqual(store.selectedConversation?.thread.displayTitle, "Focus for this week")
+
+    // An old server snapshot must not replace the title while its write is pending.
+    await store.refresh()
+    XCTAssertEqual(store.list.threads.first?.displayTitle, "Focus for this week")
+    XCTAssertEqual(store.selectedConversation?.thread.displayTitle, "Focus for this week")
+    gate.open()
+    await saving.value
+    fixture.remote(kind: "renamed", extra: ",\"title\":\"Updated from another device\"")
+    await store.refresh()
+    XCTAssertEqual(store.list.threads.first?.displayTitle, "Updated from another device")
+    XCTAssertEqual(store.selectedConversation?.thread.displayTitle, "Updated from another device")
+  }
+
   func testDetailArchiveWaitsForNewChatCreationToReleaseNavigation() async throws {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
@@ -69,12 +102,22 @@ final class ChatThreadActionsTests: XCTestCase {
     store.list.renameTitle = "  A title worth keeping  "
     await store.list.saveRename()
     XCTAssertEqual(store.list.renameTitle, "  A title worth keeping  ")
-    XCTAssertEqual(store.selectedConversation?.thread.title, "Planning a useful week")
+    XCTAssertNotNil(store.list.renameRequest?.error)
+    XCTAssertEqual(store.selectedConversation?.thread.title, "A title worth keeping")
+    await store.refresh()
+    XCTAssertEqual(store.list.threads.first?.displayTitle, "A title worth keeping")
     await store.list.saveRename()
     XCTAssertEqual(store.list.threads.first?.displayTitle, "A title worth keeping")
     XCTAssertEqual(
       fixture.writes.filter { $0.action == "rename" }.map(\.title),
       ["A title worth keeping", "A title worth keeping"])
+    let renameIDs = fixture.writes.filter { $0.action == "rename" }.compactMap(\.eventID)
+    XCTAssertEqual(renameIDs.count, 2)
+    XCTAssertNotNil(UUID(uuidString: try XCTUnwrap(renameIDs.first)))
+    XCTAssertEqual(Set(renameIDs).count, 1)
+    fixture.remote(kind: "renamed", extra: ",\"title\":\"Confirmed elsewhere\"")
+    await store.refresh()
+    XCTAssertEqual(store.selectedConversation?.thread.title, "Confirmed elsewhere")
   }
 
   func testUnmuteMarksReadBeforeExposingPastRepliesAndAllowsSwitchOffRecovery() async throws {
@@ -330,14 +373,16 @@ private final class ThreadActionsFixture: Sendable {
           request.value(forHTTPHeaderField: "Authorization"), "Bearer local-test-session")
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-Client-Type"), "iOS")
         let action = String(path.split(separator: "/").last ?? "")
-        let eventID = URLComponents(
-          url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems?.first {
-            $0.name == "eventId"
-          }?.value
-        let title =
+        let renameBody =
           action == "rename"
-          ? try JSONDecoder().decode([String: String].self, from: chatRequestBody(request))["title"]
-          : nil
+          ? try JSONDecoder().decode([String: String].self, from: chatRequestBody(request)) : [:]
+        let eventID =
+          renameBody["eventId"]
+          ?? URLComponents(
+            url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems?.first {
+              $0.name == "eventId"
+            }?.value
+        let title = renameBody["title"]
         let (gate, status) = state.value.withLock { state in
           state.writes.append(Write(action: action, eventID: eventID, title: title))
           let gate = state.nextGate
