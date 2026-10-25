@@ -12,6 +12,31 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1059.2](https://github.com/okou-ai/okou/compare/app-v0.1059.1...app-v0.1059.2) (2026-10-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.2
+    * @okouai/core bumped to 8.785.1
+
+## [0.1059.1](https://github.com/okou-ai/okou/compare/app-v0.1059.0...app-v0.1059.1) (2026-10-24)
+
+
+### Refactoring
+
+* **app:** keep async state in owned requests and server reads ([#42745](https://github.com/okou-ai/okou/issues/42745)) ([d24618e](https://github.com/okou-ai/okou/commit/d24618e29baf061b061b64454aa538e8ea8a74a3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.2.1
+    * @okouai/core bumped to 8.785.0
+
 ## [0.1059.0](https://github.com/okou-ai/okou/compare/app-v0.1058.3...app-v0.1059.0) (2026-10-24)
 
 

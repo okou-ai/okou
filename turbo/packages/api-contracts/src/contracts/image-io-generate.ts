@@ -81,7 +81,6 @@ const creationRoute = {
   headers: authHeadersSchema,
   body: imageIoGenerateRequestSchema,
   responses: {
-    200: imageIoGenerateResponseSchema,
     202: builtInGenerationAcceptedResponseSchema,
     400: apiErrorSchema,
     401: apiErrorSchema,

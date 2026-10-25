@@ -57,11 +57,6 @@
       "owner": "linkAgentPhoneIdentity$"
     },
     {
-      "id": "TX-0064",
-      "file": "turbo/apps/api/src/signals/services/billing-restore.service.ts",
-      "owner": "restoreSubscription$"
-    },
-    {
       "id": "TX-0073",
       "file": "turbo/apps/api/src/signals/services/browser.service.ts",
       "owner": "claimExpiredInactiveBrowser$"
@@ -77,16 +72,6 @@
       "owner": "appendNormalSendInput$"
     },
     {
-      "id": "TX-0092",
-      "file": "turbo/apps/api/src/signals/services/chat-thread-connector-selection.service.ts",
-      "owner": "updateChatThreadConnectorSelection$"
-    },
-    {
-      "id": "TX-0093",
-      "file": "turbo/apps/api/src/signals/services/chat-thread-connector-selection.service.ts",
-      "owner": "clearChatThreadConnectorSelection"
-    },
-    {
       "id": "TX-0095",
       "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
       "owner": "createChatThread$"
@@ -100,16 +85,6 @@
       "id": "TX-0097",
       "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
       "owner": "deleteChatThreadContent$"
-    },
-    {
-      "id": "TX-0111",
-      "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
-      "owner": "setDefaultGoogleFormsAccount$"
-    },
-    {
-      "id": "TX-0112",
-      "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
-      "owner": "setDefaultConnectorAccount$"
     },
     {
       "id": "TX-0116",
@@ -137,11 +112,6 @@
       "owner": "commitStaleRunTimeout"
     },
     {
-      "id": "TX-0129",
-      "file": "turbo/apps/api/src/signals/services/cron-compact-usage-events.service.ts",
-      "owner": "compactUsageEventBatch$"
-    },
-    {
       "id": "TX-0130",
       "file": "turbo/apps/api/src/signals/services/cron-project-chat-event-search.service.ts",
       "owner": "projectThread"
@@ -157,11 +127,6 @@
       "owner": "storeCustomConnectorOAuth2Connection"
     },
     {
-      "id": "TX-0145",
-      "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
-      "owner": "persistCustomConnectorUpdate$"
-    },
-    {
       "id": "TX-0147",
       "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
       "owner": "setCustomConnectorValues$"
@@ -170,11 +135,6 @@
       "id": "TX-0148",
       "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
       "owner": "deleteCustomConnectorAccount$"
-    },
-    {
-      "id": "TX-0150",
-      "file": "turbo/apps/api/src/signals/services/discord-chat-ingress.service.ts",
-      "owner": "admitCanonicalDiscordChatEvent$"
     },
     {
       "id": "TX-0156",
@@ -217,11 +177,6 @@
       "owner": "deleteHostedSite$"
     },
     {
-      "id": "TX-0178",
-      "file": "turbo/apps/api/src/signals/services/managed-usage.service.ts",
-      "owner": "recordManagedUsage$"
-    },
-    {
       "id": "TX-0185",
       "file": "turbo/apps/api/src/signals/services/model-provider-account.service.ts",
       "owner": "writePersonalAccount"
@@ -252,16 +207,6 @@
       "owner": "revokeOrgMemberRunAuthority"
     },
     {
-      "id": "TX-0234",
-      "file": "turbo/apps/api/src/signals/services/provider-usage-publication.service.ts",
-      "owner": "recordRunnerUsageBatch$"
-    },
-    {
-      "id": "TX-0235",
-      "file": "turbo/apps/api/src/signals/services/provider-usage-publication.service.ts",
-      "owner": "recordProviderUsageBatch$"
-    },
-    {
       "id": "TX-0236",
       "file": "turbo/apps/api/src/signals/services/run-built-in-admission.service.ts",
       "owner": "startRunBuiltInAdmission$"
@@ -275,16 +220,6 @@
       "id": "TX-0248",
       "file": "turbo/apps/api/src/signals/services/slack-workspace-write.service.ts",
       "owner": "commitSlackWorkspaceConnection$"
-    },
-    {
-      "id": "TX-0253",
-      "file": "turbo/apps/api/src/signals/services/storage-volume-upload.service.ts",
-      "owner": "commitPreparedVolumeUpload$"
-    },
-    {
-      "id": "TX-0261",
-      "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
-      "owner": "createThreadClaimRunObjects/commitQueueHeadRejection$"
     },
     {
       "id": "TX-0263",
@@ -317,19 +252,9 @@
       "owner": "commitReflectedUsagePackChanges"
     },
     {
-      "id": "TX-0270",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
-      "owner": "finalizeCanceledUsagePackChanges"
-    },
-    {
       "id": "TX-0272",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "fulfillUsagePackSubscriptionChangeInvoice"
-    },
-    {
-      "id": "TX-0277",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "persistInvitation$"
     },
     {
       "id": "TX-0283",
@@ -345,11 +270,6 @@
       "id": "TX-0287",
       "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
       "owner": "persistDeferredSubscriptionChangeSchedule"
-    },
-    {
-      "id": "TX-0298",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
-      "owner": "materializeUsagePackSnapshot$"
     },
     {
       "id": "TX-0299",

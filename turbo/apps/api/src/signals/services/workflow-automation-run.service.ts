@@ -55,7 +55,8 @@ import {
   canonicalChatEventAppendCtes,
 } from "./chat-event-append.service";
 import { PROACTIVE_JOBS_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/proactive-jobs";
-import { jobsOwnerEnabledSql, runnableJobsExistSql } from "./user-jobs-query";
+import { runnableJobsExistSql } from "./user-jobs-query";
+import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { proactiveWorkflowOwnerEnabledSql } from "./proactive-workflow-owner";
 import { calculateNextRun } from "./time-automation";
 import {
@@ -477,7 +478,7 @@ interface PreparedWorkflowInputCommit {
   readonly timing: ApiDispatchTimingCollector;
 }
 
-/** Proactive schedule anchors, nightly identities and queue inputs commit together. */
+/** Each Proactive schedule anchor and its queue input commit together. */
 const commitProactiveWorkflowInput$ = command(
   async (
     { set },
@@ -493,33 +494,23 @@ const commitProactiveWorkflowInput$ = command(
       args.scheduleClaim
     ) {
       throw new Error(
-        "Jobs admission requires an Official schedule without an external event source",
+        "Proactive admission requires an Official schedule without an external event source",
       );
     }
     const database = set(writeDb$);
     const at = nowDate();
     const owner = { orgId: automation.orgId, userId: automation.ownerUserId };
-    const nightly = args.proactiveNightlyOccurrence;
-    if (nightly && automation.cronExpression === null) {
+    const kind = proactiveWorkflowKind(args.automationContext.workflowName);
+    if (kind === null || kind === "suggestions") {
+      throw new Error("Expected a Tasks, Learning or Planning schedule");
+    }
+    if (kind !== "jobs" && automation.cronExpression === null) {
       throw new Error("Nightly workflow is missing its cron schedule");
     }
     const next =
-      nightly && automation.cronExpression !== null
-        ? calculateNextRun(automation.cronExpression, automation.timezone, at)
-        : null;
-    const nightlyCondition = nightly
-      ? sql`EXISTS (SELECT 1 FROM org_members_metadata AS preference
-          WHERE preference.org_id = ${owner.orgId} AND preference.user_id = ${owner.userId}
-            AND preference.timezone = ${nightly.timezone}
-            AND COALESCE(preference.proactive_learning_enabled, false) = ${nightly.learningEnabled})
-          AND (${nightly.learningEventId === null} OR EXISTS (
-            SELECT 1 FROM chat_events AS learning_input
-            JOIN agent_runs AS learning_run ON learning_run.id = learning_input.run_id
-            WHERE learning_input.id = ${nightly.learningEventId}::uuid
-              AND learning_run.org_id = ${owner.orgId} AND learning_run.user_id = ${owner.userId}
-              AND learning_run.status = 'completed'
-              AND learning_run.result @> ${JSON.stringify({ storageOutputs: [{ name: "memory", version: nightly.learningMemoryVersion }] })}::jsonb))`
-      : undefined;
+      automation.cronExpression === null
+        ? null
+        : calculateNextRun(automation.cronExpression, automation.timezone, at);
     const claim = database
       .update(workflowAutomations)
       .set({ nextRunAt: next, lastRunAt: at, updatedAt: at })
@@ -535,10 +526,12 @@ const commitProactiveWorkflowInput$ = command(
             ? isNull(workflowAutomations.nextRunAt)
             : eq(workflowAutomations.nextRunAt, automation.nextRunAt),
           sql`${workflowAutomations.lastRunAt} IS NOT DISTINCT FROM ${automation.lastRunAt}::timestamp`,
-          nightly
-            ? proactiveWorkflowOwnerEnabledSql(owner, agentId, nightly.kind)
-            : jobsOwnerEnabledSql(owner, agentId),
-          nightly ? nightlyCondition : runnableJobsExistSql(owner),
+          proactiveWorkflowOwnerEnabledSql(owner, agentId, kind),
+          kind === "jobs"
+            ? runnableJobsExistSql(owner)
+            : sql`EXISTS (SELECT 1 FROM org_members_metadata AS preference
+                WHERE preference.org_id = ${owner.orgId} AND preference.user_id = ${owner.userId}
+                  AND preference.timezone = ${automation.timezone})`,
           sql`NOT EXISTS (SELECT 1 FROM agent_runs AS running WHERE running.workflow_automation_id = ${automation.id}::uuid AND running.status IN ('pending', 'running'))`,
           sql`NOT EXISTS (SELECT 1 FROM chat_events AS pending JOIN chat_automation_context AS context ON context.id = pending.context_id WHERE context.automation_id = ${automation.id}::uuid AND pending.run_id IS NULL AND pending.event_type = 'input.automation' AND NOT EXISTS (SELECT 1 FROM chat_events AS revoker WHERE revoker.revokes_event_id = pending.id))`,
         ),
@@ -548,21 +541,10 @@ const commitProactiveWorkflowInput$ = command(
       chatThreadId,
       orgId: automation.orgId,
     });
-    const cycle = nightly
-      ? sql`INSERT INTO proactive_nightly_cycles
-          (org_id, user_id, kind, review_date, timezone, scheduled_at, automation_id,
-           event_id, learning_event_id, learning_memory_version)
-          SELECT ${owner.orgId}, ${owner.userId}, ${nightly.kind}, ${nightly.reviewDate}::date,
-            ${nightly.timezone}, ${nightly.scheduledAt}::timestamp, id, ${plan.row.id}::uuid,
-            ${nightly.learningEventId}::uuid, ${nightly.learningMemoryVersion}
-          FROM accepted_proactive_anchor
-          ON CONFLICT (org_id, user_id, review_date, kind) DO NOTHING RETURNING id`
-      : sql`SELECT id FROM accepted_proactive_anchor`;
     // Context is inserted only for the canonical event accepted in this statement.
     const inserted = (
       await database.execute(sql`WITH accepted_proactive_anchor AS (${claim.getSQL()}),
-    accepted_proactive_cycle AS (${cycle}),
-    ${canonicalChatEventAppendCtes([plan.row], plan.conflict, sql`EXISTS (SELECT 1 FROM accepted_proactive_cycle)`)},
+    ${canonicalChatEventAppendCtes([plan.row], plan.conflict, sql`EXISTS (SELECT 1 FROM accepted_proactive_anchor)`)},
     automation_context AS (
       INSERT INTO chat_automation_context (id, chat_thread_id, automation_id, workflow_name, event_type, event_payload, connector_source_id, trigger_brief, created_at)
       SELECT ${plan.context.id}::uuid, ${plan.context.chatThreadId}::uuid, ${plan.context.automationId}::uuid, ${plan.context.workflowName}, ${plan.context.eventType}, ${sql.param(plan.context.eventPayload, chatAutomationContext.eventPayload)}, ${plan.context.connectorSourceId}::uuid, ${plan.context.triggerBrief}, ${sql.param(plan.context.createdAt, chatAutomationContext.createdAt)} FROM inserted
@@ -606,10 +588,15 @@ const commitWorkflowInput$ = command(
     input: PreparedWorkflowInputCommit,
     signal: AbortSignal,
   ): Promise<ChatInputEnqueueCommit | null> => {
+    const proactiveKind =
+      input.args.due.automation.officialBlueprintKey === null
+        ? null
+        : proactiveWorkflowKind(input.args.automationContext.workflowName);
     if (
       input.args.due.automation.officialBlueprintKey ===
         PROACTIVE_JOBS_BLUEPRINT_KEY ||
-      input.args.proactiveNightlyOccurrence !== undefined
+      (input.args.automationContext.eventType === "schedule" &&
+        (proactiveKind === "learning" || proactiveKind === "planning"))
     ) {
       return await set(commitProactiveWorkflowInput$, input, signal);
     }

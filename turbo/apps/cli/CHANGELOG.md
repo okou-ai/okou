@@ -1,5 +1,37 @@
 # Changelog
 
+## [10.1.2](https://github.com/okou-ai/okou/compare/cli-v10.1.1...cli-v10.1.2) (2026-10-25)
+
+
+### Refactoring
+
+* **cli:** accept only durable image generation receipts ([#42812](https://github.com/okou-ai/okou/issues/42812)) ([8069a85](https://github.com/okou-ai/okou/commit/8069a85e2f098112efee733f2b7bba0623270a10))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.2.2
+    * @okouai/core bumped to 8.785.1
+    * @okouai/pi-agent-runtime bumped to 1.50.67
+
+## [10.1.1](https://github.com/okou-ai/okou/compare/cli-v10.1.0...cli-v10.1.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **pi:** restore personal memory recall for ordinary conversations ([#42763](https://github.com/okou-ai/okou/issues/42763)) ([ea40a8f](https://github.com/okou-ai/okou/commit/ea40a8f507b736cf2f2f04ea4d7614a1cacc2088))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.2.1
+    * @okouai/core bumped to 8.785.0
+    * @okouai/pi-agent-runtime bumped to 1.50.66
+
 ## [10.1.0](https://github.com/okou-ai/okou/compare/cli-v10.0.4...cli-v10.1.0) (2026-10-24)
 
 

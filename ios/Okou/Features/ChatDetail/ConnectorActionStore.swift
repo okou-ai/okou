@@ -36,7 +36,7 @@ final class ConnectorAuthorizationFlow: Identifiable {
   var needsConnection: Bool {
     switch action.kind {
     case .select, .unavailable: false
-    case .reconnect: true
+    case .reconnect, .configuration: true
     case .connect: !status.connected
     }
   }
@@ -68,9 +68,10 @@ final class ConnectorActionStore {
   private(set) var states: [String: State] = [:]
   private(set) var active: ConnectorAuthorizationFlow?
   private(set) var notices: [String: String] = [:]
+  var activationError: String?
   private let service: ChatConnectorService
-  private let commands: ChatCommands
-  private let thread: ChatThread
+  private let commands: ChatCommands?
+  private let thread: ChatThread?
   private let didContinue: @MainActor () async -> Void
   private let didFail: @MainActor (Error) -> Void
   private var known: [String: ChatConnectorAction] = [:]
@@ -82,17 +83,22 @@ final class ConnectorActionStore {
   private var task: Task<Void, Never>?
   private var callbackIDs: [String: String] = [:]
   private var closed = false
+  private let pollSleep: @Sendable (Duration) async throws -> Void
 
   init(
-    service: ChatConnectorService, commands: ChatCommands, thread: ChatThread,
+    service: ChatConnectorService, commands: ChatCommands? = nil, thread: ChatThread? = nil,
     didContinue: @escaping @MainActor () async -> Void,
-    didFail: @escaping @MainActor (Error) -> Void
+    didFail: @escaping @MainActor (Error) -> Void,
+    pollSleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
+    }
   ) {
     self.service = service
     self.commands = commands
     self.thread = thread
     self.didContinue = didContinue
     self.didFail = didFail
+    self.pollSleep = pollSleep
   }
   func refresh(_ action: ChatConnectorAction) async {
     guard !closed, !Task.isCancelled else { return }
@@ -125,11 +131,20 @@ final class ConnectorActionStore {
   }
   func activate(_ action: ChatConnectorAction) {
     guard !closed, active == nil else { return }
+    activationError = nil
     task?.cancel()
     task = Task { [weak self] in
       guard let self else { return }
       await refresh(action)
-      guard !closed, !Task.isCancelled, case .ready(let status) = states[action.id] else { return }
+      guard !closed, !Task.isCancelled else { return }
+      guard case .ready(let status) = states[action.id] else {
+        if case .failed(let message) = states[action.id] {
+          activationError = message
+        } else {
+          activationError = "This connector is no longer available. Refresh and try again."
+        }
+        return
+      }
       notices[action.id] = nil
       active = ConnectorAuthorizationFlow(action: action, status: status)
     }
@@ -166,7 +181,10 @@ final class ConnectorActionStore {
           return
         }
         let reconnect: Bool
-        if case .reconnect = flow.action.kind { reconnect = true } else { reconnect = false }
+        switch flow.action.kind {
+        case .reconnect, .configuration: reconnect = true
+        default: reconnect = false
+        }
         if current.connected && !reconnect && flow.session == nil {
           if !current.authorized { try await service.authorize(flow.action, status: current) }
           try await finish(flow, status: current)
@@ -238,7 +256,7 @@ final class ConnectorActionStore {
       guard let self, let flow else { return }
       while active === flow, !closed, !Task.isCancelled {
         do {
-          try await Task.sleep(for: .seconds(flow.pollInterval))
+          try await pollSleep(.seconds(flow.pollInterval))
           if try await checkCompletion(flow) { return }
           if flow.browserClosed, flow.session?.oauthAttemptId != nil {
             flow.session = nil
@@ -304,7 +322,7 @@ final class ConnectorActionStore {
       throw APIClientError.http(
         status: 409, message: "Connector setup is incomplete. Refresh and try again.")
     }
-    guard let current = try await service.status(flow.action) else {
+    guard let current = try await service.status(flow.action.confirming(accountID: id)) else {
       throw APIClientError.invalidResponse
     }
     try check(flow)
@@ -314,7 +332,9 @@ final class ConnectorActionStore {
   private func finish(_ flow: ConnectorAuthorizationFlow, status: ChatConnectorStatus) async throws
   {
     try check(flow)
-    guard let verified = try await service.status(flow.action) else {
+    guard
+      let verified = try await service.status(flow.action.confirming(accountID: flow.operatedID))
+    else {
       throw APIClientError.invalidResponse
     }
     if case .select = flow.action.kind {
@@ -334,7 +354,7 @@ final class ConnectorActionStore {
       guard account.ready else { throw APIClientError.invalidResponse }
     }
     try check(flow)
-    if let prompt = flow.action.callbackPrompt {
+    if let prompt = flow.action.callbackPrompt, let thread, let commands {
       let eventID = callbackIDs[flow.action.id] ?? UUID().uuidString
       callbackIDs[flow.action.id] = eventID
       _ = try await commands.send(

@@ -297,6 +297,20 @@ describe("Billing model reporting", () => {
       expect(compacted).toStrictEqual(raw);
       expect((await chatUsage()).body).toStrictEqual(rawChatUsage.body);
 
+      const repeatedCompaction = await accept(
+        setupApp({ context, routes: cronCompactUsageEventsRoutes })(
+          cronCompactUsageEventsContract,
+        ).compact({ headers: { authorization: "Bearer test-cron-secret" } }),
+        [200],
+      );
+      expect(repeatedCompaction.body).toMatchObject({
+        rawRowsDeleted: 0,
+        hourlyRowsInserted: 0,
+        reconciled: true,
+      });
+      await expect(report()).resolves.toStrictEqual(raw);
+      expect((await chatUsage()).body).toStrictEqual(rawChatUsage.body);
+
       await createChatFilesBddApi(context).deleteThread(actor, run.threadId);
       const withoutThread = await report();
       expect(withoutThread.record).toStrictEqual({

@@ -274,7 +274,7 @@ impl ExecWaitCore {
         })
     }
 
-    fn complete_taken_result(
+    fn complete_received_result(
         &mut self,
         result: Result<io::Result<ExecOperationResult>, oneshot::error::RecvError>,
     ) -> ExecOperationWaitOutcome<ExecOperationResult> {
@@ -391,17 +391,7 @@ impl ExecWaitCore {
 
         tokio::select! {
             biased;
-            result = rx => {
-                self.route_id = None;
-                self.result_rx = None;
-                match result {
-                    Ok(result) => ExecOperationWaitOutcome::terminal(result),
-                    Err(_) => ExecOperationWaitOutcome::unproven(io::Error::new(
-                        io::ErrorKind::ConnectionReset,
-                        "connection closed",
-                    )),
-                }
-            }
+            result = rx => self.complete_received_result(result),
             _ = &mut timeout => {
                 ExecOperationWaitOutcome::unproven(
                     self.abandon_timed_out_operation(route_id, poison_on_timeout, lifecycle),
@@ -492,7 +482,7 @@ impl ExecWaitCore {
                     })
             }
             result = &mut result_rx => {
-                return match self.complete_taken_result(result) {
+                return match self.complete_received_result(result) {
                     ExecOperationWaitOutcome::Terminal(result) => {
                         Ok(ExecCancelWriteOutcome::Terminal(result))
                     }
@@ -510,7 +500,7 @@ impl ExecWaitCore {
         match write_outcome? {
             ExecCancelFrameWriteOutcome::AlreadyTerminal => {
                 let result = result_rx.await;
-                match self.complete_taken_result(result) {
+                match self.complete_received_result(result) {
                     ExecOperationWaitOutcome::Terminal(result) => {
                         Ok(ExecCancelWriteOutcome::Terminal(result))
                     }

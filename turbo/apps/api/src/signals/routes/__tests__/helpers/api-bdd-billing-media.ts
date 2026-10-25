@@ -118,7 +118,7 @@ interface AutoRechargeUpdateBody {
 
 type CheckoutStatus = 200 | 400 | 401 | 403 | 500 | 503;
 type BillingMutationStatus = 200 | 400 | 401 | 403 | 409 | 500 | 503;
-type ImageIoStatus = 200 | 202 | 400 | 401 | 402 | 403 | 500 | 502 | 503;
+type ImageIoStatus = 202 | 400 | 401 | 402 | 403 | 500 | 502 | 503;
 
 function authHeaders(actor: ApiTestUser | null): AuthHeaders {
   return actor ? { authorization: "Bearer clerk-session" } : {};

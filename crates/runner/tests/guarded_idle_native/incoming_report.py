@@ -40,21 +40,15 @@ def ready(value, initial, pool, event, policy, allocated, restored, publication)
     if (not isinstance(samples, list) or not pressure.integer(available, policy["recovery_available_bytes"])
             or available > policy["host_total_bytes"]):
         raise ValueError("incoming Ready lacks actual supplied observations")
-    offset, fresh, before_runtime = -1, [], []
+    offset = -1
     for sample in samples:
         logical_report.sample(sample, pool["monotonic_ns"], event["monotonic_ns"], policy)
         if sample["read_start_offset_ns"] <= offset:
             raise ValueError("incoming Ready replays a pressure observation")
         offset = sample["read_start_offset_ns"]
-        for end, selected in ((completed, before_runtime), (event["monotonic_ns"], fresh)):
-            if (sample["finished_ns"] < end
-                    and pressure.integer(sample["available_bytes"], policy["recovery_available_bytes"])
-                    and sample["age_ns"]+end-sample["finished_ns"] < policy["max_sample_age_millis"]*1_000_000):
-                selected.append(sample)
-    for selected in (fresh, before_runtime):
-        if (len(selected) < 2 or selected[-1]["started_ns"]-selected[0]["started_ns"]
-                < policy["pressure_recovery_sustain_millis"]*1_000_000):
-            raise ValueError("incoming runtime/status lacks distinct sustained fresh Ready")
+    fresh = pressure.sustained_ready_samples(samples, event["monotonic_ns"], policy)
+    if not pressure.sustained_ready_samples(samples, completed, policy):
+        raise ValueError("incoming runtime/status lacks distinct sustained fresh Ready")
     if not any(sample["available_bytes"] == available for sample in fresh):
         raise ValueError("incoming Ready availability is not an actual fresh read")
     startup.exact(value, {"state": "Ready", "available_bytes": available, "reads": value["reads"],

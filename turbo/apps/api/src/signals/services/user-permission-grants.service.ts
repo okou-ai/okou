@@ -64,6 +64,7 @@ import {
   connectorRuntimeSlugSelectionFromRows,
 } from "./connector-catalog-slug-source.service";
 import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
+import { visibleAgentIdentityCondition } from "./agent-data.service";
 
 const userPermissionGrantSelection = Object.freeze({
   id: userPermissionGrants.id,
@@ -436,25 +437,6 @@ function formatUserPermissionGrant(
   };
 }
 
-async function lockVisibleAgentForUpdate(
-  db: Pick<Db, "select">,
-  scope: UserPermissionGrantBaseScope & { readonly agentId: string },
-): Promise<{ readonly id: string } | null> {
-  const [agent] = await db
-    .select({ id: agents.id })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.orgId, scope.orgId),
-        eq(agents.id, scope.agentId),
-        visibleAgentCondition(scope.userId),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  return agent ?? null;
-}
-
 async function validateApplyUserPermissionGrants(
   apply: ApplyUserPermissionGrantsRequest,
   catalog: ConnectorServerFirewallSelection,
@@ -505,12 +487,24 @@ async function applyVisibleAgentGrantRows(
 ): Promise<readonly UserPermissionGrantRow[] | NotFoundResponse> {
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0314; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
-    const visibleAgent = await lockVisibleAgentForUpdate(tx, {
+    const visibleAgentDb = tx;
+    const visibleAgentScope: UserPermissionGrantScope = {
       orgId: args.orgId,
       userId: args.userId,
       role: args.role,
       agentId,
-    });
+    };
+    const visibleAgent = await (async (): Promise<{
+      readonly id: string;
+    } | null> => {
+      const [agent] = await visibleAgentDb
+        .select({ id: agents.id })
+        .from(agents)
+        .where(visibleAgentIdentityCondition(visibleAgentScope))
+        .for("update")
+        .limit(1);
+      return agent ?? null;
+    })();
     if (!visibleAgent) {
       return notFound(`Agent not found: ${agentId}`);
     }

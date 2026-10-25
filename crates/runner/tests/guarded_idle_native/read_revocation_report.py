@@ -24,19 +24,11 @@ PHASES = ("inputs_verified", "initial_unknown", "both_accepted", "observation_he
 def ready(value, end, begin, policy, growth, readers, after=0):
     actual = value.get("samples")
     cancellation.samples(actual, begin, end, policy)
-    fresh = []
-    for observed in actual:
-        if (observed["started_ns"] > after
-                and pressure.integer(observed["available_bytes"], policy["recovery_available_bytes"])
-                and observed["age_ns"]+end-observed["finished_ns"] < policy["max_sample_age_millis"]*1_000_000):
-            fresh.append(observed)
-        else:
-            fresh = []
+    fresh = pressure.sustained_ready_samples(actual, end, policy, after)
     available = value.get("available_bytes")
     required = policy["operating_floor_bytes"]+policy["cleanup_reserve_bytes"]+readers*growth
-    if (not pressure.integer(available, max(required, policy["recovery_available_bytes"])) or len(fresh) < 2
-            or not any(v["available_bytes"] == available for v in fresh)
-            or fresh[-1]["read_start_offset_ns"]-fresh[0]["read_start_offset_ns"] < policy["pressure_recovery_sustain_millis"]*1_000_000):
+    if (not pressure.integer(available, max(required, policy["recovery_available_bytes"]))
+            or not any(v["available_bytes"] == available for v in fresh)):
         raise ValueError("revoked readers lack actual sustained Ready/full aggregate headroom")
 
 

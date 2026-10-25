@@ -51,6 +51,32 @@ const IMAGE_RESULT = {
   moderation: "auto",
 };
 
+function acceptImage() {
+  return HttpResponse.json(
+    {
+      generationId: IMAGE_GENERATION_ID,
+      type: "image",
+      status: "queued",
+      realtime: {},
+    },
+    { status: 202 },
+  );
+}
+
+function completeImage(result: Record<string, unknown>) {
+  return http.get(IMAGE_STATUS_URL, () => {
+    return HttpResponse.json({
+      generationId: IMAGE_GENERATION_ID,
+      type: "image",
+      status: "completed",
+      result,
+      createdAt: "2026-05-15T00:00:00.000Z",
+      startedAt: "2026-05-15T00:00:01.000Z",
+      completedAt: "2026-05-15T00:00:02.000Z",
+    });
+  });
+}
+
 function buildRunToken(): string {
   const header = Buffer.from(JSON.stringify({ alg: "HS256" })).toString(
     "base64url",
@@ -113,11 +139,12 @@ describe("okou generate image command", () => {
           expect(await request.json()).toMatchObject({
             requirePrivateArtifact: true,
           });
-          return HttpResponse.json({
-            ...IMAGE_RESULT,
-            id: GENERATION_ARTIFACT_ID,
-            url: artifact.url,
-          });
+          return acceptImage();
+        }),
+        completeImage({
+          ...IMAGE_RESULT,
+          id: GENERATION_ARTIFACT_ID,
+          url: artifact.url,
         }),
       );
 
@@ -155,7 +182,7 @@ describe("okou generate image command", () => {
       }),
       http.post(`${IMAGE_URL}/private`, () => {
         generated = true;
-        return HttpResponse.json(IMAGE_RESULT);
+        return acceptImage();
       }),
     );
     await expect(
@@ -214,15 +241,16 @@ describe("okou generate image command", () => {
         expect(request.headers.get("content-type")).toBe("application/json");
         capturedBody = await request.json();
 
-        return HttpResponse.json({
-          ...IMAGE_RESULT,
-          imageSize: "1024x1024",
-          quality: "auto",
-          background: "opaque",
-          outputFormat: "webp",
-          outputCompression: 50,
-          moderation: "low",
-        });
+        return acceptImage();
+      }),
+      completeImage({
+        ...IMAGE_RESULT,
+        imageSize: "1024x1024",
+        quality: "auto",
+        background: "opaque",
+        outputFormat: "webp",
+        outputCompression: 50,
+        moderation: "low",
       }),
     );
 
@@ -242,6 +270,7 @@ describe("okou generate image command", () => {
       "50",
       "--moderation",
       "low",
+      "--wait",
     ]);
 
     expect(capturedBody).toEqual({
@@ -284,7 +313,7 @@ describe("okou generate image command", () => {
       server.use(
         http.post(IMAGE_URL, async ({ request }) => {
           capturedBody = await request.json();
-          return HttpResponse.json(IMAGE_RESULT);
+          return acceptImage();
         }),
       );
 
@@ -312,7 +341,7 @@ describe("okou generate image command", () => {
     server.use(
       http.post(IMAGE_URL, async ({ request }) => {
         capturedBody = await request.json();
-        return HttpResponse.json(IMAGE_RESULT);
+        return acceptImage();
       }),
     );
 
@@ -342,8 +371,9 @@ describe("okou generate image command", () => {
       "https://cdn.vm7.io/cdn-cgi/image/fit=scale-down,format=auto,quality=85,metadata=none/artifacts/abc.png";
     server.use(
       http.post(IMAGE_URL, () => {
-        return HttpResponse.json({ ...IMAGE_RESULT, embedUrl });
+        return acceptImage();
       }),
+      completeImage({ ...IMAGE_RESULT, embedUrl }),
     );
 
     await generateCommand.parseAsync([
@@ -352,6 +382,7 @@ describe("okou generate image command", () => {
       "image",
       "--raw-prompt",
       "A watercolor fox",
+      "--wait",
     ]);
 
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
@@ -368,8 +399,9 @@ describe("okou generate image command", () => {
   it("should omit the embed line when the API does not return one", async () => {
     server.use(
       http.post(IMAGE_URL, () => {
-        return HttpResponse.json(IMAGE_RESULT);
+        return acceptImage();
       }),
+      completeImage(IMAGE_RESULT),
     );
 
     await generateCommand.parseAsync([
@@ -378,6 +410,7 @@ describe("okou generate image command", () => {
       "image",
       "--raw-prompt",
       "A watercolor fox",
+      "--wait",
     ]);
 
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
@@ -388,8 +421,9 @@ describe("okou generate image command", () => {
   it("should print the complete image result as one JSON object", async () => {
     server.use(
       http.post(IMAGE_URL, () => {
-        return HttpResponse.json(IMAGE_RESULT);
+        return acceptImage();
       }),
+      completeImage(IMAGE_RESULT),
     );
 
     await generateCommand.parseAsync([
@@ -399,6 +433,7 @@ describe("okou generate image command", () => {
       "--raw-prompt",
       "A watercolor fox",
       "--json",
+      "--wait",
     ]);
 
     expect(mockConsoleLog.mock.calls).toHaveLength(1);
@@ -419,8 +454,9 @@ describe("okou generate image command", () => {
     const label = String.raw`Launch \[v2\]\\image.png`;
     server.use(
       http.post(IMAGE_URL, () => {
-        return HttpResponse.json({ ...IMAGE_RESULT, filename, url });
+        return acceptImage();
       }),
+      completeImage({ ...IMAGE_RESULT, filename, url }),
     );
 
     await generateCommand.parseAsync([
@@ -430,6 +466,7 @@ describe("okou generate image command", () => {
       "--raw-prompt",
       "A product image",
       "--json",
+      "--wait",
     ]);
 
     expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toMatchObject(
@@ -479,16 +516,17 @@ describe("okou generate image command", () => {
       http.post(IMAGE_URL, async ({ request }) => {
         capturedBody = await request.json();
 
-        return HttpResponse.json({
-          ...IMAGE_RESULT,
-          model: "fal-ai/flux-pro/v1.1",
-          provider: "fal",
-          quality: "model-default",
-          billingCategory: "output_megapixel",
-          billingQuantity: 2,
-          safetyTolerance: "5",
-          seed: 123,
-        });
+        return acceptImage();
+      }),
+      completeImage({
+        ...IMAGE_RESULT,
+        model: "fal-ai/flux-pro/v1.1",
+        provider: "fal",
+        quality: "model-default",
+        billingCategory: "output_megapixel",
+        billingQuantity: 2,
+        safetyTolerance: "5",
+        seed: 123,
       }),
     );
 
@@ -505,6 +543,7 @@ describe("okou generate image command", () => {
       "--safety-tolerance",
       "5",
       "--enhance-prompt",
+      "--wait",
     ]);
 
     expect(capturedBody).toEqual({
@@ -530,14 +569,15 @@ describe("okou generate image command", () => {
       http.post(IMAGE_URL, async ({ request }) => {
         capturedBody = await request.json();
 
-        return HttpResponse.json({
-          ...IMAGE_RESULT,
-          model: "fal-ai/flux-pro/v1.1",
-          provider: "fal",
-          outputFormat: "jpeg",
-          sourceImageUrls: ["https://example.com/mockup.png"],
-          imagePromptStrength: 0.2,
-        });
+        return acceptImage();
+      }),
+      completeImage({
+        ...IMAGE_RESULT,
+        model: "fal-ai/flux-pro/v1.1",
+        provider: "fal",
+        outputFormat: "jpeg",
+        sourceImageUrls: ["https://example.com/mockup.png"],
+        imagePromptStrength: 0.2,
       }),
     );
 
@@ -553,6 +593,7 @@ describe("okou generate image command", () => {
       "0.2",
       "--format",
       "jpeg",
+      "--wait",
     ]);
 
     expect(capturedBody).toEqual({
@@ -576,16 +617,17 @@ describe("okou generate image command", () => {
       http.post(IMAGE_URL, async ({ request }) => {
         capturedBody = await request.json();
 
-        return HttpResponse.json({
-          ...IMAGE_RESULT,
-          model: "fal-ai/nano-banana-2",
-          provider: "fal",
-          outputFormat: "webp",
-          sourceImageUrls: [
-            "https://example.com/reference-1.png",
-            "https://example.com/reference-2.png",
-          ],
-        });
+        return acceptImage();
+      }),
+      completeImage({
+        ...IMAGE_RESULT,
+        model: "fal-ai/nano-banana-2",
+        provider: "fal",
+        outputFormat: "webp",
+        sourceImageUrls: [
+          "https://example.com/reference-1.png",
+          "https://example.com/reference-2.png",
+        ],
       }),
     );
 
@@ -605,6 +647,7 @@ describe("okou generate image command", () => {
       "456",
       "--safety-tolerance",
       "5",
+      "--wait",
     ]);
 
     expect(capturedBody).toEqual({

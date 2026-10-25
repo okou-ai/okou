@@ -1299,6 +1299,100 @@ describe("workflows", () => {
     },
   );
 
+  it.each(["private", "public"] as const)(
+    "keeps a rejected %s upload from registering a conflicting attachment identity",
+    async (visibility) => {
+      const actor = user();
+      const agent = await createAgent(actor, { visibility: "public" });
+      const s3 = installVolumeS3Fixture();
+      const workflow = await createWorkflow(actor, {
+        agentId: agent.agentId,
+        name: `rejected-volume-${randomUUID().slice(0, 8)}`,
+        visibility,
+        instruction: "Keep the winning attachment revision",
+        files: [{ path: "original.txt", content: "original" }],
+      });
+      const rejectedFiles = [
+        { path: "aa", content: "X" },
+        { path: "bb", content: "Y" },
+      ];
+      const winningFiles = [
+        {
+          path: `aa:${createHash("sha256").update("X").digest("hex")}\nbb`,
+          content: "Y",
+        },
+      ];
+      const signal = AbortSignal.timeout(10_000);
+      const rejectedEntered = createDeferredPromise<void>(signal);
+      const rejectedReleased = createDeferredPromise<void>(signal);
+      const winningEntered = createDeferredPromise<void>(signal);
+      const winningReleased = createDeferredPromise<void>(signal);
+      let rejectedArchiveKey: string | undefined;
+      let winningArchiveKey: string | undefined;
+      function beforeNextVolumeWrite(callback: (key: string) => Promise<void>) {
+        const onWrite = async (key: string) => {
+          if (key.startsWith("workflow-attachments/")) {
+            s3.beforeNextArchiveWrite(onWrite);
+            return;
+          }
+          await callback(key);
+        };
+        s3.beforeNextArchiveWrite(onWrite);
+      }
+      beforeNextVolumeWrite(async (key) => {
+        rejectedArchiveKey = key;
+        rejectedEntered.resolve();
+        await rejectedReleased.promise;
+      });
+      const rejected = requestUpdateWorkflow(
+        actor,
+        workflow.body.id,
+        { files: rejectedFiles },
+        [409],
+      );
+      const winning = (async () => {
+        await rejectedEntered.promise;
+        beforeNextVolumeWrite(async (key) => {
+          winningArchiveKey = key;
+          winningEntered.resolve();
+          await winningReleased.promise;
+        });
+        return await updateWorkflow(actor, workflow.body.id, {
+          files: winningFiles,
+        });
+      })();
+      onTestFinished(async () => {
+        if (!rejectedReleased.settled()) {
+          rejectedReleased.resolve();
+        }
+        if (!winningReleased.settled()) {
+          winningReleased.resolve();
+        }
+        await Promise.all([rejected, winning]);
+      });
+      await winningEntered.promise;
+      expect(winningArchiveKey).toBe(rejectedArchiveKey);
+      rejectedReleased.resolve();
+      expect((await rejected).body.error.message).toBe(
+        "Workflow changed during update; retry the request",
+      );
+      winningReleased.resolve();
+      expect((await winning).body.fileContents).toStrictEqual(winningFiles);
+      const retried = await updateWorkflow(actor, workflow.body.id, {
+        files: winningFiles,
+      });
+      expect(retried.body.fileContents).toStrictEqual(winningFiles);
+      const current = await accept(
+        detailClient().get({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.body.id },
+        }),
+        [200],
+      );
+      expect(current.body.fileContents).toStrictEqual(winningFiles);
+    },
+  );
+
   it("keeps concurrent Workflow instruction updates on the same Agent", async () => {
     const actor = user();
     const agent = await createAgent(actor, {

@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.19.2](https://github.com/okou-ai/okou/compare/ios-v0.19.1...ios-v0.19.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* **ios:** align chat bars with system navigation sizing ([#42838](https://github.com/okou-ai/okou/issues/42838)) ([20c24fb](https://github.com/okou-ai/okou/commit/20c24fb1b05e27e31362f9fe8e4715bf7bc61a85))
+* **ios:** keep the composer model settings entry stable ([#42842](https://github.com/okou-ai/okou/issues/42842)) ([770d1e5](https://github.com/okou-ai/okou/commit/770d1e57b08853ad669592d73f4570e762f87d51))
+* **ios:** rename chats optimistically like the pwa ([#42830](https://github.com/okou-ai/okou/issues/42830)) ([321e3d0](https://github.com/okou-ai/okou/commit/321e3d0ed36ba27f8cf07d03a0a61cb68c6f3fb4))
+* **ios:** restore attachment card contrast and compact file details ([#42837](https://github.com/okou-ai/okou/issues/42837)) ([6cefa25](https://github.com/okou-ai/okou/commit/6cefa251eb62d73ae720db2f0e027f9c6014a232))
+
+## [0.19.1](https://github.com/okou-ai/okou/compare/ios-v0.19.0...ios-v0.19.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **ios:** match composer model button to leading actions ([#42785](https://github.com/okou-ai/okou/issues/42785)) ([a3f2356](https://github.com/okou-ai/okou/commit/a3f2356232dcc4a72bd081279a73245f67802d68))
+* **ios:** restore connector row layout and separate actions ([#42786](https://github.com/okou-ai/okou/issues/42786)) ([ceadb97](https://github.com/okou-ai/okou/commit/ceadb9771aa5fb47bcefd47535340d59cd6532af))
+* **ios:** retain feature switches when refresh fails ([#42787](https://github.com/okou-ai/okou/issues/42787)) ([5cbaf9e](https://github.com/okou-ai/okou/commit/5cbaf9e1d3a53854b531d5d8b18f0d143304d3ea))
+
+## [0.19.0](https://github.com/okou-ai/okou/compare/ios-v0.18.11...ios-v0.19.0) (2026-10-24)
+
+
+### Features
+
+* **ios:** bring composer connector controls to native chat ([#42767](https://github.com/okou-ai/okou/issues/42767)) ([35daba9](https://github.com/okou-ai/okou/commit/35daba9e983a3c54fe75dabfef43b4d7fff6f30c))
+
+
+### Bug Fixes
+
+* **ios:** align thinking indicator with conversation content ([#42746](https://github.com/okou-ai/okou/issues/42746)) ([761394c](https://github.com/okou-ai/okou/commit/761394cb8f8f94b4fc197f17e86ea5ac4319bc76))
+
+
+### CI
+
+* **ios:** measure release archive cache on clean runners ([#42747](https://github.com/okou-ai/okou/issues/42747)) ([8352e4a](https://github.com/okou-ai/okou/commit/8352e4a6a41982130f8cdcadff9485f5352320af))
+* **ios:** reuse persistent caches for release archives ([#42758](https://github.com/okou-ai/okou/issues/42758)) ([56aa4a9](https://github.com/okou-ai/okou/commit/56aa4a9cdc88ed36e1b0043067a4a21048b645a0))
+
 ## [0.18.11](https://github.com/okou-ai/okou/compare/ios-v0.18.10...ios-v0.18.11) (2026-10-24)
 
 

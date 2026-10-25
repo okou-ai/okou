@@ -1,0 +1,1 @@
+DROP TABLE "proactive_nightly_cycles";

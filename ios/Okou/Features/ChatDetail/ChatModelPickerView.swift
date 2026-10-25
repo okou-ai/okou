@@ -30,22 +30,12 @@ struct ChatModelPickerButton: View {
     Button {
       isPresented = true
     } label: {
-      Group {
-        if isLoading {
-          ProgressView().controlSize(.small)
-        } else {
-          Image(systemName: hasError ? "exclamationmark.circle" : "slider.horizontal.3")
-        }
-      }
-      .font(.system(size: 16, weight: .medium))
-      .frame(width: 22, height: 22)
+      Image(systemName: "slider.horizontal.3")
+        .font(.system(size: 19))
+        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
     }
-    .buttonStyle(.glass)
-    .buttonBorderShape(.circle)
-    .controlSize(.small)
-    .tint(hasError ? .orange : .primary)
-    .frame(width: 44, height: 44)
-    .contentShape(Circle())
+    .tint(.primary)
     .accessibilityIdentifier("chat-model-picker")
     .accessibilityLabel("Model settings")
     .accessibilityValue(accessibilityValue)
@@ -72,6 +62,11 @@ struct ChatModelPickerView: View {
     NavigationStack {
       List {
         if let configuration = models.configuration {
+          if selection.isSaving {
+            ProgressView("Saving model settings…")
+          } else if selection.isLoading {
+            ProgressView("Loading model settings")
+          }
           ForEach(["built-in"] + PersonalSubscriptionType.allCases.map(\.rawValue), id: \.self) {
             type in
             let rows = configuration.models.filter {

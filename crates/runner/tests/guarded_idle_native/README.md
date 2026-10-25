@@ -1094,6 +1094,18 @@ binding the exact supplied policy and optional-input files.
 python3 crates/runner/tests/guarded_idle_native/foreground_report.py "$P1_OUTPUT_DIRECTORY"
 ```
 
+The foreground, logical, incoming and accepted read/create/returned-Guest readers
+share the sustained-readiness check in `pressure_report.py`. Recovery history may
+exceed `max_sample_age_millis`: each observation must be fresh when observed and
+distinct read starts must stay less than that bound apart. Unknown, critical,
+expired observations or stale gaps reset recovery. A fresh current observation
+at the recovery watermark is still required; historical offsets must fit their
+actual monotonic read intervals. This permits a recovery sustain longer than
+sample freshness without accepting expired current readiness. Re-evaluating an
+original corpus with a corrected reader keeps the original producer identity,
+policy and raw files, and records the new reader identity separately. It does
+not calibrate production envelopes or establish installed production protection.
+
 This proves component composition with synthetic foreground commands, not full
 production Reactor/P2 installation or inference. Exact reuse returns its original
 home-promotion owner to required saving. Inventory/logical/replacement/restore/aged

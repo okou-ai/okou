@@ -5,20 +5,6 @@ import { and, eq, exists, inArray, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
-import type { PreparedStorageVersion } from "./storage-version-registration.service";
-
-/** One immutable version per publication; insert-first distinguishes new work from encoding repair. */
-export function repairVolumeIndexSql(
-  version: PreparedStorageVersion,
-  updatedAt: Date,
-) {
-  const at = updatedAt.toISOString();
-  return sql`UPDATE ${piResourceVersionIndexes} SET status = 'pending', projection = NULL, projection_hash = NULL,
-      source_archive_size = ${version.archiveSize}, lease_id = NULL, lease_expires_at = NULL,
-      available_at = ${at}::timestamp, attempt_count = 0, updated_at = ${at}::timestamp
-    WHERE storage_version_id = ${version.versionId} AND extractor_version = ${PI_RESOURCE_EXTRACTOR_VERSION}
-      AND source_archive_size IS DISTINCT FROM ${version.archiveSize}`;
-}
 
 /** Pure CTE plan so an owning publication can include its dependent writes. */
 export function preparedVolumePublicationPlan(

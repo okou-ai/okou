@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.24.43](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.42...guest-control-server-v0.24.43) (2026-10-25)
+
+
+### Refactoring
+
+* **guest-control:** pair trusted workload placement capabilities ([#42836](https://github.com/okou-ai/okou/issues/42836)) ([034d29d](https://github.com/okou-ai/okou/commit/034d29d761b8fc78e7533b105384e701ca454a6d))
+
+## [0.24.42](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.41...guest-control-server-v0.24.42) (2026-10-25)
+
+
+### Refactoring
+
+* **guest-control:** converge spawned command result handoff ([#42793](https://github.com/okou-ai/okou/issues/42793)) ([fc06021](https://github.com/okou-ai/okou/commit/fc060218d1a2c10981e80a676f55db5849f2f634))
+* **guest-control:** pair exec roles with fixed-helper payloads ([#42804](https://github.com/okou-ai/okou/issues/42804)) ([614785d](https://github.com/okou-ai/okou/commit/614785d7043ab5668dbb653d64835854e8ef2f7b))
+
+## [0.24.41](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.40...guest-control-server-v0.24.41) (2026-10-24)
+
+
+### Refactoring
+
+* **guest-control:** carry exec drain results through thread custody ([#42755](https://github.com/okou-ai/okou/issues/42755)) ([16ad675](https://github.com/okou-ai/okou/commit/16ad6759f3dd8f9d55b20be3f2d7afba0e3a839a))
+* **guest-control:** centralize terminal containment cleanup selection ([#42772](https://github.com/okou-ai/okou/issues/42772)) ([73d153e](https://github.com/okou-ai/okou/commit/73d153e1f9389aed36570843a669e0c02e037c89))
+* **guest-control:** share fixed-helper stdin thread ownership ([#42748](https://github.com/okou-ai/okou/issues/42748)) ([f875241](https://github.com/okou-ai/okou/commit/f87524191c14e42e01f4559aef3a2b244c34d3e5))
+
 ## [0.24.40](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.39...guest-control-server-v0.24.40) (2026-10-24)
 
 

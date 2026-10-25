@@ -29,28 +29,28 @@ set -eu
 test -z "${OKOU_DATA_TOKEN-}"
 test "${OKOU_DATA_ROUTER_URL}" = 'https://okou-data-router-staging.vm0.workers.dev/mcp'
 result=$(mktemp)
-trap 'rm -f "$result"' EXIT
+catalog=$(mktemp)
+trap 'rm -f "$result" "$catalog"' EXIT
 # The sandbox supplies no Authorization header. The privileged MITM injects it
-# on the direct Router request and registers the trusted Run/request identity.
+# on the direct Router request.
 curl --fail --silent --show-error --max-time 45 \
     --header 'Content-Type: application/json' \
     --header 'Accept: application/json, text/event-stream' \
-    --data '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"data_capabilities","arguments":{}}}' \
-    --output "$result" \
+    --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+    --output "$catalog" \
     "$OKOU_DATA_ROUTER_URL"
-jq -e '
-    .result.isError != true and
-    .result.structuredContent.data.status == 200 and
-    (.result.structuredContent.data.body.capabilities | length > 0)
-' "$result" >/dev/null
-# These installed CLI commands read owned request history with the run's OKOU_TOKEN
-# before listing Router jobs; none of them creates paid work.
-okou data jobs list --json >"$result"
-jq -e '.jobs | type == "array"' "$result" >/dev/null
-okou data social jobs list --json >"$result"
-jq -e '.jobs | type == "array"' "$result" >/dev/null
-okou data social downloads --json >"$result"
-jq -e '.downloads | type == "array"' "$result" >/dev/null
+jq -e '[.result.tools[] | select(._meta["ai.okou/data"])] | length > 0' "$catalog" >/dev/null
+okou data tools --json >"$result"
+tool=$(jq -er '.tools[0].name' "$result")
+okou data describe "$tool" --json >"$result"
+jq -e '.inputSchema.type == "object"' "$result" >/dev/null
+# Discover history tools from Router metadata. Each installed CLI call supplies
+# caller-owned request IDs using the Run token, without creating paid work.
+history_tools=$(jq -er '[.result.tools[] | select(._meta["ai.okou/data"].requestHistory == true) | .name] | select(length > 0) | .[]' "$catalog")
+for tool in $history_tools; do
+    okou data call "$tool" --input '{"limit":1}' --json >"$result"
+    jq -e 'type == "object"' "$result" >/dev/null
+done
 printf 'DATA_ROUTER_DIRECT_OK\n'
 EOF
 )

@@ -11470,27 +11470,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {},
           NATIVE_RUNNER_ROUTE,
         );
-        if (!actor.orgId) {
-          throw new Error("Expected an organization");
-        }
-        await updateFeatureSwitchesForUser(
-          context,
-          { ...actor, orgId: actor.orgId },
-          {
-            [FeatureSwitchKey.WechatIntegration]: false,
-            [FeatureSwitchKey.Banking]: false,
-            [FeatureSwitchKey.VncAccess]: false,
-            [FeatureSwitchKey.RemoteConnectionDiagnostics]: false,
-            [FeatureSwitchKey.DiscordIntegration]: false,
-            [FeatureSwitchKey.LarkIntegration]: false,
-            [FeatureSwitchKey.PresentationConvert]: false,
-            [FeatureSwitchKey.BrowserNativeInput]: false,
-            [FeatureSwitchKey.BatchConnectorPermissions]: false,
-          },
-        );
         const run = await api.createThreadRun(actor, {
           agentId,
-          prompt: "preserve enabled instructions",
+          prompt: "discover a managed research tool",
         });
         await api.heartbeatRunner(runnerGroup);
         const claim = await api.claimRunnerJob(run.runId);

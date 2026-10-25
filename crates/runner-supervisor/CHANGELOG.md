@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.20.27](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.26...runner-supervisor-v0.20.27) (2026-10-25)
+
+## [0.20.26](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.25...runner-supervisor-v0.20.26) (2026-10-25)
+
+## [0.20.25](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.24...runner-supervisor-v0.20.25) (2026-10-24)
+
+
+### Refactoring
+
+* **runner:** remove decoded-v1 compatibility and migration ([#42753](https://github.com/okou-ai/okou/issues/42753)) ([cb66502](https://github.com/okou-ai/okou/commit/cb665021a8cd1b98cd493a9b34178145cfbc3456))
+
 ## [0.20.24](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.23...runner-supervisor-v0.20.24) (2026-10-24)
 
 

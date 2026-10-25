@@ -357,8 +357,7 @@ Output:
   tasks requesting a final image, use image --wait explicitly. A queued/running
   receipt is not a completed image: retrieve and deliver the final artifact before
   marking the task complete. After a timeout, use get --refresh for the same ID;
-  never regenerate to check progress. --visibility requires --wait. Older APIs that return
-  a completed image directly are also supported. Use --json for JSON. With
+  never regenerate to check progress. --visibility requires --wait. Use --json for JSON. With
   --style <id> --prompt "..." --compile, prints a prompt-compilation packet
   for the current agent.
 

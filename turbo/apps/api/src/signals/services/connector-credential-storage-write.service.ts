@@ -7,7 +7,7 @@ import { variables } from "@okouai/db/schema/variable";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import type { Tx } from "../../lib/db-types";
+import type { ConnectorRuntimeMethod } from "./connector-catalog-runtime.service";
 
 export interface ConnectorCredentialStorageDeclaration {
   readonly secrets: readonly string[];
@@ -31,6 +31,104 @@ interface ManualGrantUserCredentialDeletion {
   readonly orgId: string;
   readonly userId: string;
   readonly name: string;
+}
+
+interface ManualGrantCredentialScope {
+  readonly connectorId: string;
+  readonly method: Pick<ConnectorRuntimeMethod["method"], "storage">;
+  readonly orgId: string;
+  readonly userId: string;
+}
+
+interface ManualGrantCredentialInputs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly runtimeMethod: ConnectorRuntimeMethod;
+  readonly encryptedSecrets: readonly {
+    readonly name: string;
+    readonly encryptedValue: string;
+  }[];
+  readonly prepared: {
+    readonly variableValues: readonly {
+      readonly name: string;
+      readonly value: string;
+    }[];
+  };
+}
+
+export function manualGrantCredentialArgs(
+  args: ManualGrantCredentialInputs,
+  connectorId: string,
+) {
+  return {
+    connectorId,
+    encryptedSecrets: args.encryptedSecrets,
+    method: args.runtimeMethod.method,
+    orgId: args.orgId,
+    userId: args.userId,
+    variableValues: args.prepared.variableValues,
+  };
+}
+
+export function requireManualGrantWrite(
+  row: { readonly id: string } | undefined,
+  kind: "secret" | "variable",
+  name: string,
+): void {
+  if (!row) {
+    throw new Error(`Connector ${kind} ${name} is owned by another row`);
+  }
+}
+
+export function manualGrantConnectionMetadata(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly runtimeMethod: ConnectorRuntimeMethod;
+}) {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    authMethod: args.runtimeMethod.authMethodId,
+    storageVersion: args.runtimeMethod.method.storage.version,
+    tokenExpiresAt: null,
+    target: {
+      kind: "builtin" as const,
+      connectorSlug: args.runtimeMethod.connectorSlug,
+      identity: { kind: "local" as const },
+    },
+  };
+}
+
+export function manualGrantSecretWrite(
+  args: ManualGrantCredentialScope,
+  field: { readonly name: string; readonly encryptedValue: string },
+) {
+  return connectorOwnedSecretWrite({
+    connectorId: args.connectorId,
+    storage: args.method.storage,
+    orgId: args.orgId,
+    userId: args.userId,
+    name: field.name,
+    encryptedValue: field.encryptedValue,
+    description: null,
+    updatedDescription: null,
+  });
+}
+
+export function manualGrantVariableWrite(
+  args: ManualGrantCredentialScope,
+  field: { readonly name: string; readonly value: string },
+) {
+  return connectorOwnedVariableWrite({
+    connectorId: args.connectorId,
+    storage: args.method.storage,
+    orgId: args.orgId,
+    userId: args.userId,
+    name: field.name,
+    value: field.value,
+    description: null,
+    updatedDescription: null,
+  });
 }
 
 export function manualGrantUserSecretDeletion(
@@ -145,76 +243,60 @@ export function connectorOwnedVariableWrite(
   };
 }
 
-/**
- * Use the caller's transaction to delete the account, then resolve references
- * in the next SQL snapshot. The existing deferred account FK is checked at commit. A selection
- * committed before the deletion's ordinary parent-row mutation is included in
- * the child DELETE; a later insert fails its FK check. No lock-only write or
- * SELECT lock is used, and the exact returned count includes late references.
- */
-async function deleteConnectorCredentialStorageConnectionsWhere(
-  tx: Tx,
-  args: { readonly connectorId: string },
-  signal: AbortSignal,
-): Promise<number> {
-  await tx.delete(secrets).where(eq(secrets.connectorId, args.connectorId));
-  signal.throwIfAborted();
-  await tx.delete(variables).where(eq(variables.connectorId, args.connectorId));
-  signal.throwIfAborted();
-  await tx.execute(
-    sql`SET CONSTRAINTS fk_chat_thread_connector_selections_connector_slug, fk_chat_thread_connector_selections_custom_connector DEFERRED`,
-  );
-  const deleted = await tx
-    .delete(connectors)
-    .where(eq(connectors.id, args.connectorId))
-    .returning({ id: connectors.id });
-  const selections =
-    deleted.length === 0
-      ? []
-      : await tx
-          .delete(chatThreadConnectorSelections)
-          .where(
-            inArray(
-              chatThreadConnectorSelections.connectorId,
-              deleted.map((row) => {
-                return row.id;
-              }),
-            ),
-          )
-          .returning({
-            connectorId: chatThreadConnectorSelections.connectorId,
-          });
-  await tx.execute(
-    sql`SET CONSTRAINTS fk_chat_thread_connector_selections_connector_slug, fk_chat_thread_connector_selections_custom_connector IMMEDIATE`,
-  );
-  if (deleted.length > 0) {
-    // FK deletion has already cleared event_connector_id. Use the retained
-    // source config to invalidate only cursors belonging to deleted accounts.
-    // A subsequent projection onto a new account is a different source.
-    await tx.delete(googleFormsAutomationCursors).where(
-      inArray(
-        googleFormsAutomationCursors.automationId,
-        tx
-          .select({ id: workflowAutomations.id })
-          .from(workflowAutomations)
-          .where(
-            and(
-              eq(
-                workflowAutomations.eventType,
-                "google-forms-response-submitted",
-              ),
-              sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ANY(${sql.param(
-                deleted.map((row) => {
-                  return row.id;
-                }),
-              )}::text[])`,
-            ),
-          ),
-      ),
-    );
-  }
-  signal.throwIfAborted();
-  return selections.length;
+export function connectorCredentialStorageConnectionDeletionPlan(args: {
+  readonly connectorId: string;
+}) {
+  return {
+    secrets: {
+      from: secrets,
+      where: eq(secrets.connectorId, args.connectorId),
+    },
+    variables: {
+      from: variables,
+      where: eq(variables.connectorId, args.connectorId),
+    },
+    account: {
+      from: connectors,
+      where: eq(connectors.id, args.connectorId),
+      returning: { id: connectors.id },
+    },
+    deferSelections: sql`SET CONSTRAINTS fk_chat_thread_connector_selections_connector_slug, fk_chat_thread_connector_selections_custom_connector DEFERRED`,
+    enforceSelections: sql`SET CONSTRAINTS fk_chat_thread_connector_selections_connector_slug, fk_chat_thread_connector_selections_custom_connector IMMEDIATE`,
+  };
 }
 
-export { deleteConnectorCredentialStorageConnectionsWhere as deleteConnectorCredentialStorageConnection };
+export function connectorCredentialStorageSelectionDeletionPlan(
+  deleted: readonly { readonly id: string }[],
+) {
+  return {
+    from: chatThreadConnectorSelections,
+    where: inArray(
+      chatThreadConnectorSelections.connectorId,
+      deleted.map((row) => {
+        return row.id;
+      }),
+    ),
+    returning: { connectorId: chatThreadConnectorSelections.connectorId },
+  };
+}
+
+export function connectorCredentialStorageCursorDeletionPlan(
+  deleted: readonly { readonly id: string }[],
+) {
+  return {
+    from: googleFormsAutomationCursors,
+    automationId: googleFormsAutomationCursors.automationId,
+    automations: {
+      columns: { id: workflowAutomations.id },
+      from: workflowAutomations,
+      where: and(
+        eq(workflowAutomations.eventType, "google-forms-response-submitted"),
+        sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ANY(${sql.param(
+          deleted.map((row) => {
+            return row.id;
+          }),
+        )}::text[])`,
+      ),
+    },
+  };
+}

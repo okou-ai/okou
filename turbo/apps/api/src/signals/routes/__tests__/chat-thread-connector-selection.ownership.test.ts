@@ -212,6 +212,35 @@ describe("chat-thread connector account ownership", () => {
     const retained = await accept(selections.get({ headers, params }), [200]);
     expect(retained.body).toStrictEqual(initial.body);
 
+    for (const selection of requested) {
+      await accept(
+        selections.clear({ headers, params, body: selection.target }),
+        [204],
+      );
+      const withoutSelection = await accept(
+        selections.get({ headers, params }),
+        [200],
+      );
+      expect(withoutSelection.body).toStrictEqual({
+        selections: initial.body.selections.filter((item) => {
+          return item.connectionId !== selection.connectionId;
+        }),
+        selectedConnections: accountResponses.filter((account) => {
+          return account.id !== selection.connectionId;
+        }),
+      });
+      await accept(
+        selections.clear({ headers, params, body: selection.target }),
+        [204],
+      );
+      await accept(
+        selections.update({ headers, params, body: selection }),
+        [200],
+      );
+      const restored = await accept(selections.get({ headers, params }), [200]);
+      expect(restored.body).toStrictEqual(initial.body);
+    }
+
     const renamed = await accept(
       accounts.rename({
         headers,

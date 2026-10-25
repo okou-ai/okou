@@ -8,7 +8,7 @@ struct ChatThreadMoreButton: View {
   var body: some View {
     if store.list.threads.contains(where: { $0.id == threadID }) {
       ChatThreadMoreControl(store: store, threadID: threadID)
-        .frame(width: 48, height: 48)
+        .frame(width: 44, height: 44)
     }
   }
 }
@@ -19,7 +19,7 @@ private struct ChatThreadMoreControl: UIViewRepresentable {
 
   func makeUIView(context: Context) -> UIButton {
     let button = UIButton(type: .system)
-    var configuration = UIButton.Configuration.glass()
+    var configuration = UIButton.Configuration.plain()
     configuration.cornerStyle = .capsule
     configuration.contentInsets = .zero
     configuration.image = UIImage(systemName: "ellipsis")

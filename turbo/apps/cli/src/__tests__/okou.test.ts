@@ -265,14 +265,14 @@ describe("Okou CLI lazy command loading", () => {
       expectedHelpCode: "commander.helpDisplayed",
     },
     {
-      label: "Commerce help invocation",
-      argv: ["node", "okou", "data", "commerce", "--help"],
+      label: "data tool discovery help invocation",
+      argv: ["node", "okou", "data", "tools", "--help"],
       expectedName: "data",
       expectedHelpCode: "commander.helpDisplayed",
     },
     {
       label: "direct canonical invocation",
-      argv: ["node", "okou", "data", "social", "--help"],
+      argv: ["node", "okou", "data", "call", "--help"],
       expectedName: "data",
       expectedHelpCode: "commander.helpDisplayed",
     },

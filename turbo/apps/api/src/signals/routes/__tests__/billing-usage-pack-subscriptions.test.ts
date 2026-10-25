@@ -1052,6 +1052,16 @@ describe("legacy subscription usage pack migration", () => {
       ]),
     );
 
+    const materializedAllocations = await readMigrationAllocations(fixture);
+    const materializedCredits = await readMigrationCredits(fixture);
+    await postMigrationInvoice(stripe.invoice());
+    await expect(readMigrationAllocations(fixture)).resolves.toStrictEqual(
+      materializedAllocations,
+    );
+    await expect(readMigrationCredits(fixture)).resolves.toStrictEqual(
+      materializedCredits,
+    );
+
     await mockScheduleFromCurrentSubscription();
     const revokeResponse = await accept(
       setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).revoke({
