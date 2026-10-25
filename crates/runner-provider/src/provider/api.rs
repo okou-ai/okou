@@ -138,6 +138,12 @@ struct ApiErrorDetails {
     _message: String,
 }
 
+// Only a complete response can carry a structured terminal outcome.
+struct ApiErrorBody {
+    text: String,
+    complete: bool,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PollRequestTelemetry {
@@ -233,6 +239,11 @@ const HEARTBEAT_DEGRADED_AFTER: Duration = Duration::from_secs(30);
 // The full catalog is multi-megabyte. This budget covers connection setup,
 // response headers and the entire body, rather than restarting for each chunk.
 const BUILTIN_FIREWALL_CATALOG_RESOLVE_TIMEOUT: Duration = Duration::from_secs(60);
+
+// Diagnostic bytes only, before UTF8-lossy conversion. Successful payloads and
+// the builtin catalog retain their own contracts and response-body limits.
+const API_ERROR_BODY_MAX_BYTES: usize = 64 * 1024;
+const API_ERROR_BODY_TRUNCATED: &str = "\n[response body truncated]";
 
 struct DegradationEpisode {
     started_at: Instant,
@@ -1819,12 +1830,18 @@ impl ApiClient {
 
         if resp.status() == StatusCode::CONFLICT {
             let (status, body) = read_api_error(resp).await;
-            if serde_json::from_str::<ApiErrorEnvelope>(&body).is_ok_and(|response| {
-                response.error.code == CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE
-            }) {
+            if body.complete
+                && serde_json::from_str::<ApiErrorEnvelope>(&body.text).is_ok_and(|response| {
+                    response.error.code == CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE
+                })
+            {
                 return Ok(ConnectorRuntimeSyncOutcome::RunTerminal);
             }
-            return Err(api_status_error("connector runtime sync", status, &body));
+            return Err(api_status_error(
+                "connector runtime sync",
+                status,
+                body.text,
+            ));
         }
 
         let resp = check_api_status(resp, "connector runtime sync").await?;
@@ -1921,7 +1938,7 @@ impl ApiClient {
             return Err(api_status_error(
                 LABEL,
                 status,
-                &String::from_utf8_lossy(&body),
+                String::from_utf8_lossy(&body).into_owned(),
             ));
         }
         let catalog: BuiltinFirewallCatalog = decode_api_json_bytes(&body)
@@ -2136,7 +2153,7 @@ async fn check_api_status(resp: Response, label: &'static str) -> ProviderResult
     let status = resp.status();
     if !status.is_success() {
         let (status, body) = read_api_error(resp).await;
-        return Err(api_status_error(label, status, &body));
+        return Err(api_status_error(label, status, body.text));
     }
     Ok(resp)
 }
@@ -2182,17 +2199,46 @@ async fn decode_api_json<T: ApiDecodePath>(resp: Response, label: &str) -> Provi
     decode_api_json_bytes(&body).map_err(|e| ProviderError::Api(format!("{label} decode: {e}")))
 }
 
-async fn read_api_error(resp: Response) -> (StatusCode, String) {
+async fn read_api_error(mut resp: Response) -> (StatusCode, ApiErrorBody) {
     let status = resp.status();
-    let body = resp.text().await.unwrap_or_default();
-    (status, body)
+    let mut bytes = Vec::new();
+    let complete = loop {
+        let chunk = match resp.chunk().await {
+            Ok(Some(chunk)) => chunk,
+            Ok(None) => break true,
+            // Preserve the existing empty diagnostic for a body-read failure.
+            Err(_) => {
+                return (
+                    status,
+                    ApiErrorBody {
+                        text: String::new(),
+                        complete: false,
+                    },
+                );
+            }
+        };
+        let remaining = API_ERROR_BODY_MAX_BYTES - bytes.len();
+        bytes.extend(chunk.iter().take(remaining));
+        if chunk.len() > remaining {
+            break false;
+        }
+    };
+    let mut text = String::from_utf8_lossy(&bytes).into_owned();
+    if !complete {
+        text.push_str(API_ERROR_BODY_TRUNCATED);
+    }
+    (status, ApiErrorBody { text, complete })
 }
 
-fn api_status_error(label: &'static str, status: StatusCode, body: &str) -> ProviderError {
+fn api_status_error(
+    label: &'static str,
+    status: StatusCode,
+    body: impl Into<String>,
+) -> ProviderError {
     ProviderError::ApiStatus(Box::new(ApiStatusError {
         endpoint_label: label,
         status,
-        body: body.to_string(),
+        body: body.into(),
     }))
 }
 
@@ -2504,6 +2550,46 @@ mod tests {
             ConnectorRuntimeSyncOutcome::Synced(response) if response.results.len() == 1
         ));
         join_raw_http_task(server, "cold-start API peers").await;
+    }
+
+    #[tokio::test]
+    async fn api_client_sync_requires_complete_terminal_diagnostics() {
+        let complete = r#"{"error":{"code":"RUN_TERMINAL","message":"Run is terminal"}}"#;
+        let mut oversized = complete.to_string();
+        oversized.extend(std::iter::repeat_n(' ', API_ERROR_BODY_MAX_BYTES + 1));
+        for (body, terminal) in [(complete.to_string(), true), (oversized, false)] {
+            let server = MockServer::start();
+            let run_id = RunId::new_v4();
+            let response = server.mock(|when, then| {
+                when.method(POST)
+                    .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"));
+                then.status(409).body(body);
+            });
+            let api = api_client_for_server(&server);
+            let targets = [ConnectorRuntimeTargetRegistration::Builtin {
+                connector_slug: "slack".into(),
+                base_url_vars: None,
+                source_id: None,
+            }];
+            let result = api.sync_connector_runtime(run_id, &targets).await;
+            if terminal {
+                assert!(matches!(
+                    result,
+                    Ok(ConnectorRuntimeSyncOutcome::RunTerminal)
+                ));
+            } else {
+                let Err(ProviderError::ApiStatus(error)) = result else {
+                    panic!("expected incomplete terminal response to remain an API error");
+                };
+                assert_eq!(error.status, StatusCode::CONFLICT);
+                assert_eq!(
+                    error.body.len(),
+                    API_ERROR_BODY_MAX_BYTES + API_ERROR_BODY_TRUNCATED.len()
+                );
+                assert!(error.body.ends_with(API_ERROR_BODY_TRUNCATED));
+            }
+            response.assert_calls(1);
+        }
     }
 
     async fn claim_decode_error(
