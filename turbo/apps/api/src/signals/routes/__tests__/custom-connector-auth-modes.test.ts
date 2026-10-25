@@ -298,7 +298,11 @@ describe("Custom connector authentication modes", () => {
         api.connector.update({
           headers,
           params: { id: created.body.id },
-          body: { ...definition(mode, endpoint), skillMarkdown: updatedSkill },
+          body: {
+            ...definition(mode, endpoint),
+            skillMarkdown: updatedSkill,
+            ...(mode === "oauth" ? { oauthConfig } : {}),
+          },
         }),
         [200],
       );
