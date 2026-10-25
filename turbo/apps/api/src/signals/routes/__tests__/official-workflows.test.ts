@@ -675,9 +675,9 @@ describe("Proactive nightly workflows", () => {
     expect((await schedule(actor, "proactive-planning")).enabled).toBeTruthy();
   });
 
-  it.each([true, false])(
-    "waits for exact Learning completion and acknowledged Memory before one Planning Run (changed=%s)",
-    async (changed) => {
+  it.each(["running", "failed", "completed", "published"] as const)(
+    "runs scheduled Planning independently while Learning is %s and uses available published Memory",
+    async (learningState) => {
       const app = await setupApp({
         context,
         routes: jobsRoutes,
@@ -689,25 +689,21 @@ describe("Proactive nightly workflows", () => {
       mockNow(Date.parse(pair.planning.nextRunAt ?? ""));
       await runs.heartbeatRunner(runnerGroup);
       const claim = await runs.claimRunnerJob(started.runId);
-      const learningHeaders = {
-        authorization: `Bearer ${okouTokenFromClaim(claim)}`,
-      };
-      await accept(
-        app(jobsContract).create({
-          headers: learningHeaders,
-          body: {
-            id: randomUUID(),
-            title: "Unrequested action",
-            objective: "Learning must not create Tasks",
-          },
-        }),
-        [403],
-      );
-      await executeAutomationCron();
-      await flushWaitUntilForTest();
-      expect(
-        (await schedule(actor, "proactive-planning")).lastRunAt,
-      ).toBeNull();
+      if (learningState === "running") {
+        await accept(
+          app(jobsContract).create({
+            headers: {
+              authorization: `Bearer ${okouTokenFromClaim(claim)}`,
+            },
+            body: {
+              id: randomUUID(),
+              title: "Unrequested action",
+              objective: "Learning must not create Tasks",
+            },
+          }),
+          [403],
+        );
+      }
       const memory = expectCanonicalStorageManifest(
         claim.storageManifest,
       )?.storageMounts.find((mount) => {
@@ -716,50 +712,46 @@ describe("Proactive nightly workflows", () => {
       if (!memory?.versionId) {
         throw new Error("Expected Learning Memory mount");
       }
-      const published = changed
-        ? await commitMemoryVersion(
-            context,
-            {
-              runId: started.runId,
-              sandboxHeaders: { authorization: `Bearer ${claim.sandboxToken}` },
-              storageManifest: claim.storageManifest,
-            },
-            [{ path: "notes.md", content: "Verified nightly learning" }],
-          )
-        : { versionId: memory.versionId };
-      if (!changed) {
-        await webhooks.requestAgentStorageCommit(
+      let expectedMemoryVersion = memory.versionId;
+      if (learningState === "published") {
+        const published = await commitMemoryVersion(
+          context,
           {
             runId: started.runId,
-            storageId: memory.storageId,
-            versionId: memory.versionId,
-            files: [],
+            sandboxHeaders: { authorization: `Bearer ${claim.sandboxToken}` },
+            storageManifest: claim.storageManifest,
+          },
+          [{ path: "notes.md", content: "Verified nightly learning" }],
+        );
+        expectedMemoryVersion = published.versionId;
+        await webhooks.requestAgentRunOutputs(
+          {
+            runId: started.runId,
+            cliAgentType: "pi",
+            cliAgentSessionId: started.runId,
+            cliAgentSessionHistoryDisposition: "native_only",
+            storageOutputs: [
+              {
+                name: "memory",
+                version: published.versionId,
+                mountPath: memory.mountPath,
+              },
+            ],
+          },
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          [200],
+        );
+      } else if (learningState !== "running") {
+        await webhooks.requestAgentComplete(
+          {
+            runId: started.runId,
+            exitCode: learningState === "failed" ? 1 : 0,
+            ...(learningState === "failed" ? { error: "Review failed" } : {}),
           },
           { authorization: `Bearer ${claim.sandboxToken}` },
           [200],
         );
       }
-      await executeAutomationCron();
-      expect(
-        (await schedule(actor, "proactive-planning")).lastRunAt,
-      ).toBeNull();
-      await webhooks.requestAgentRunOutputs(
-        {
-          runId: started.runId,
-          cliAgentType: "pi",
-          cliAgentSessionId: started.runId,
-          cliAgentSessionHistoryDisposition: "native_only",
-          storageOutputs: [
-            {
-              name: "memory",
-              version: published.versionId,
-              mountPath: memory.mountPath,
-            },
-          ],
-        },
-        { authorization: `Bearer ${claim.sandboxToken}` },
-        [200],
-      );
       await flushWaitUntilForTest();
       await Promise.all([executeAutomationCron(), executeAutomationCron()]);
       await flushWaitUntilForTest();
@@ -785,8 +777,7 @@ describe("Proactive nightly workflows", () => {
         )?.storageMounts.find((mount) => {
           return mount.name === "memory";
         })?.versionId,
-      ).toBe(published.versionId);
-      expect(planner.prompt).toContain("reviewCutoff");
+      ).toBe(expectedMemoryVersion);
     },
   );
 
@@ -931,47 +922,6 @@ describe("Proactive nightly workflows", () => {
       }),
       [409],
     );
-  });
-
-  it("skips paired Planning after failed Learning and bounds the wait without launching a model", async () => {
-    await setupApp({
-      context,
-      routes: workflowAutomationsRoutes,
-      isolatePg: true,
-    });
-    const { actor, runnerGroup } = await nightlyMember();
-    const pair = await enabledPair(actor);
-    const started = await fireOfficialSchedule(actor, pair.learning);
-    mockNow(Date.parse(pair.planning.nextRunAt ?? ""));
-    await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.claimRunnerJob(started.runId);
-    await webhooks.requestAgentComplete(
-      { runId: started.runId, exitCode: 1, error: "Review failed" },
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    await executeAutomationCron();
-    const skipped = await schedule(actor, "proactive-planning");
-    expect(skipped.lastRunAt).toBeNull();
-    expect(Date.parse(skipped.nextRunAt ?? "")).toBeGreaterThan(now());
-  });
-
-  it("expires a missed nightly pair without launching catch-up Runs after the morning deadline", async () => {
-    await setupApp({
-      context,
-      routes: workflowAutomationsRoutes,
-      isolatePg: true,
-    });
-    const { actor } = await nightlyMember();
-    const pair = await enabledPair(actor);
-    mockNow(Date.parse(pair.planning.nextRunAt ?? "") + 3 * 60 * 60_000);
-    await executeAutomationCron();
-    for (const name of ["proactive-learning", "proactive-planning"]) {
-      const expired = await schedule(actor, name);
-      expect(expired.lastRunAt).toBeNull();
-      expect(Date.parse(expired.nextRunAt ?? "")).toBeGreaterThan(now());
-    }
   });
 
   it("allows an independent manual review while automatic Learning is paused and preserves the schedule", async () => {

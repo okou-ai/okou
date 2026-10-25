@@ -2668,6 +2668,13 @@
       "when": 1792824377712,
       "tag": "1459_proactive_agent_learning_planning",
       "breakpoints": true
+    },
+    {
+      "idx": 1460,
+      "version": "7",
+      "when": 1792888269780,
+      "tag": "1460_retire_proactive_nightly_cycles",
+      "breakpoints": true
     }
   ]
 }

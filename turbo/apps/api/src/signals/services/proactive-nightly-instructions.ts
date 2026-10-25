@@ -1,6 +1,6 @@
 import { CANONICAL_PI_MEMORY_MOUNT_PATH } from "@okouai/api-contracts/contracts/runners";
 
-const REVIEW_SOURCES = `Use only ordinary authorized connector skills and CLI commands. At the start, fix the review cutoff supplied by the nightly trigger, or the start of this manual Run. Read each source since its own last verified coverage with a bounded overlap for late arrivals. For a first run, review at most the preceding 24 hours. Follow pagination and retain fixed time bounds; stop with an accurate partial-coverage record when the Run budget is near exhaustion.
+const REVIEW_SOURCES = `Use only ordinary authorized connector skills and CLI commands. At the start, fix the review cutoff to this Run's schedule trigger time, or the start of a manual Run. Read each source since its own last verified coverage with a bounded overlap for late arrivals. For a first run, review at most the preceding 24 hours. Follow pagination and retain fixed time bounds; stop with an accurate partial-coverage record when the Run budget is near exhaustion.
 
 Review connected email, calendar, GitHub and shared messaging sources where relevant. Skip disconnected sources without requesting setup. Read relevant recent Chats, including already-read conversations: use \`okou chat list --help\`, list authorized recent conversations without restricting discovery to unread messages, then synchronize selected histories with \`okou chat messages\`. Read current Tasks and actual Results with \`okou task list --filter all --json\`, following nextAfter with --after, and inspect relevant Tasks with \`okou task get\`.
 
@@ -49,7 +49,7 @@ export const PROACTIVE_PLANNING_INSTRUCTION = `# Proactive Planning
 
 Plan next actions within the user's explicitly entrusted work. This is an Official planner Run: you may finish a bounded planning batch after saving a Task, then hand execution to the existing Task loop. The ordinary creating-chat handoff rule continues to apply to ordinary Chats. Do not execute the planned work here.
 
-Read the current published member memory mounted for this Run (Okou Harness: \`${CANONICAL_PI_MEMORY_MOUNT_PATH}\`); never assume a previous Learning Run succeeded merely because it wrote a summary. Scheduled Planning is admitted only after the paired Learning output is published, or independently when Learning is disabled. A manual Planning Run uses the current published memory. Treat memory as evidence-backed context, and verify current state before making Task changes.
+Read the current published member memory selected and mounted for this Run (Okou Harness: \`${CANONICAL_PI_MEMORY_MOUNT_PATH}\`). Learning and Planning run independently on their own schedules. Use the published memory available when this Run starts, including when Learning has not run, is still running, failed, or produced no new memory. Never treat a local write or a previous Run's summary as proof of publication. Treat memory as evidence-backed context, and verify current state before making Task changes.
 
 ${REVIEW_SOURCES}
 

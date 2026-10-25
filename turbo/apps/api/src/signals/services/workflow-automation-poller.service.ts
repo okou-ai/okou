@@ -42,11 +42,6 @@ import {
 } from "./workflow-schedule-failure.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
-import {
-  prepareProactiveNightlyAdmission$,
-  skipProactiveNightlyOccurrence$,
-} from "./proactive-nightly.service";
-import type { ProactiveNightlyOccurrence } from "./proactive-nightly-schedule";
 
 const log = logger("WorkflowAutomationPoller");
 
@@ -78,8 +73,6 @@ const startDueWorkflowAutomation$ = command(
       readonly currentTime: Date;
       readonly scheduleContext: ReturnType<typeof scheduleTriggerContext>;
       readonly scheduleClaim: WorkflowScheduleClaimPlan | undefined;
-      readonly proactiveNightlyOccurrence:
-        ProactiveNightlyOccurrence | undefined;
     },
     signal: AbortSignal,
   ): Promise<RunWorkflowAutomationResult> => {
@@ -88,27 +81,9 @@ const startDueWorkflowAutomation$ = command(
       runWorkflowAutomationNow$,
       {
         due: args.due,
-        automationContext: args.proactiveNightlyOccurrence
-          ? {
-              ...args.scheduleContext,
-              event: {
-                ...args.scheduleContext.event,
-                reviewDate: args.proactiveNightlyOccurrence.reviewDate,
-                reviewCutoff:
-                  args.proactiveNightlyOccurrence.scheduledAt.toISOString(),
-                learningMemoryVersion:
-                  args.proactiveNightlyOccurrence.learningMemoryVersion,
-              },
-            }
-          : args.scheduleContext,
+        automationContext: args.scheduleContext,
         apiStartTime: now(),
         ...(args.scheduleClaim ? { scheduleClaim: args.scheduleClaim } : {}),
-        ...(args.proactiveNightlyOccurrence
-          ? {
-              proactiveNightlyOccurrence: args.proactiveNightlyOccurrence,
-              replacePendingScheduleTick: false,
-            }
-          : {}),
         triggerBrief:
           buildWorkflowScheduleAutomationBrief({
             createdAt: args.currentTime,
@@ -429,8 +404,6 @@ const launchClaimedDueRow$ = command(
       readonly journaled: boolean;
       readonly currentTime: Date;
       readonly counters: PollCounters;
-      readonly proactiveNightlyOccurrence:
-        ProactiveNightlyOccurrence | undefined;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -520,7 +493,6 @@ const launchClaimedDueRow$ = command(
           currentTime,
           scheduleContext,
           scheduleClaim,
-          proactiveNightlyOccurrence: args.proactiveNightlyOccurrence,
         },
         signal,
       ),
@@ -622,37 +594,10 @@ export const executeDueWorkflowAutomations$ = command(
         continue;
       }
 
-      let proactiveNightlyOccurrence: ProactiveNightlyOccurrence | undefined;
       const proactiveKind =
         row.automation.officialBlueprintKey === null
           ? null
           : proactiveWorkflowKind(row.workflowName);
-      if (proactiveKind === "learning" || proactiveKind === "planning") {
-        const admission = await set(
-          prepareProactiveNightlyAdmission$,
-          { automation: row.automation, kind: proactiveKind, at: currentTime },
-          signal,
-        );
-        if (admission.kind === "wait") {
-          counters.skipped++;
-          continue;
-        }
-        if (admission.kind === "skip") {
-          await set(
-            skipProactiveNightlyOccurrence$,
-            {
-              automation: row.automation,
-              agentId: row.agentId,
-              occurrence: admission.occurrence,
-              reason: admission.reason,
-            },
-            signal,
-          );
-          counters.skipped++;
-          continue;
-        }
-        proactiveNightlyOccurrence = admission.occurrence;
-      }
 
       // The journaled path keeps the pre-claim `next_run_at` and consumes it
       // inside the queue admission transaction, so its preparation runs before
@@ -682,7 +627,8 @@ export const executeDueWorkflowAutomations$ = command(
       const claimed =
         journaled ||
         row.automation.officialBlueprintKey === PROACTIVE_JOBS_BLUEPRINT_KEY ||
-        proactiveNightlyOccurrence !== undefined
+        proactiveKind === "learning" ||
+        proactiveKind === "planning"
           ? row.automation
           : await set(claimAutomation$, row.automation, currentTime, signal);
       signal.throwIfAborted();
@@ -702,7 +648,6 @@ export const executeDueWorkflowAutomations$ = command(
           journaled,
           currentTime,
           counters,
-          proactiveNightlyOccurrence,
         },
         signal,
       );

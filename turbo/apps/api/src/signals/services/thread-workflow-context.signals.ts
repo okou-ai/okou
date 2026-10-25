@@ -3,7 +3,6 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { db$ } from "../external/db";
-import { nowDate } from "../../lib/time";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { proactiveWorkflowOwnerEnabledSql } from "./proactive-workflow-owner";
 import { computed, type Computed } from "ccstate";
@@ -40,8 +39,6 @@ function createProactiveTargetEligibility(
     const proactiveKind = proactiveWorkflowKind(
       workflow.officialDefinitionName,
     );
-    const nightly =
-      proactiveKind === "learning" || proactiveKind === "planning";
     if (proactiveKind !== null) {
       if (
         !isFeatureEnabled(
@@ -75,19 +72,6 @@ function createProactiveTargetEligibility(
         throw new OfficialWorkflowRunAdmissionError({
           message: "Proactive workflow was paused before launch.",
         });
-      }
-      if (nightly && context.eventType !== "manual") {
-        const cutoff = context.eventPayload?.["reviewCutoff"];
-        const deadline =
-          typeof cutoff === "string"
-            ? Date.parse(cutoff) +
-              (proactiveKind === "learning" ? 4 : 3) * 60 * 60_000
-            : Number.NaN;
-        if (!Number.isFinite(deadline) || nowDate().getTime() >= deadline) {
-          throw new OfficialWorkflowRunAdmissionError({
-            message: "Nightly review expired before launch.",
-          });
-        }
       }
     }
   });
