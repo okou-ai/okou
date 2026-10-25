@@ -299,7 +299,7 @@ test("The embedded Okou viewer owns its shortcuts while the conversation keeps i
   click(buttonByName("Open browser"));
   const address = await screen.findByDisplayValue("https://example.com");
   expect(address).toBeEnabled();
-  expect(screen.queryByLabelText("Browser menu")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Browser menu")).toBeInTheDocument();
 
   await user.click(address);
   expect(address).toHaveFocus();
