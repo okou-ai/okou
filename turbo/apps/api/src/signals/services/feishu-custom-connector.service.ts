@@ -20,6 +20,8 @@ import {
   count,
   eq,
   gte,
+  inArray,
+  isNull,
   lt,
   exists,
   sql,
@@ -916,12 +918,8 @@ export const deleteFeishuInstallationAndCustomConnector$ = command(
   ): Promise<boolean> => {
     const db = set(writeDb$);
     signal.throwIfAborted();
-    // Keep a fresh snapshot after locking/removing the installation: a concurrent
-    // reconciler may have just committed a new connector and installation link.
-    // A single statement could return that new link but miss its new connector.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0163; new non-billing transactions are prohibited.
-    const deletion = db.transaction(async (tx) => {
-      const [installation] = await tx
+    const installation = db.$with("deleted_feishu_installation").as(
+      db
         .delete(feishuOrgInstallations)
         .where(
           and(
@@ -930,45 +928,65 @@ export const deleteFeishuInstallationAndCustomConnector$ = command(
           ),
         )
         .returning({
+          id: feishuOrgInstallations.id,
           customConnectorId: feishuOrgInstallations.customConnectorId,
-        });
-      signal.throwIfAborted();
-      if (!installation) {
-        return { installationDeleted: false, connectorId: null };
-      }
-      const connectorId = installation.customConnectorId;
-      if (!connectorId) {
-        return { installationDeleted: true, connectorId: null };
-      }
-      const selections = tx
-        .$with("deleted_feishu_connector_selections")
-        .as(
-          tx
-            .delete(chatThreadConnectorSelections)
-            .where(
-              eq(chatThreadConnectorSelections.customConnectorId, connectorId),
-            )
-            .returning({ id: chatThreadConnectorSelections.connectorId }),
-        );
-      const [deletedConnector] = await tx
-        .with(selections)
+        }),
+    );
+    const linkedConnector = db
+      .select({ id: installation.customConnectorId })
+      .from(installation);
+    const selections = db
+      .$with("deleted_feishu_connector_selections")
+      .as(
+        db
+          .delete(chatThreadConnectorSelections)
+          .where(
+            inArray(
+              chatThreadConnectorSelections.customConnectorId,
+              linkedConnector,
+            ),
+          )
+          .returning({ id: chatThreadConnectorSelections.connectorId }),
+      );
+    const connector = db.$with("deleted_feishu_connector").as(
+      db
         .delete(orgCustomConnectors)
         .where(
           and(
             eq(orgCustomConnectors.orgId, args.orgId),
-            eq(orgCustomConnectors.id, connectorId),
-            // Consume all selections before cascading connector deletion,
-            // including the zero-selection case.
-            gte(tx.select({ count: count() }).from(selections), 0),
+            inArray(orgCustomConnectors.id, linkedConnector),
+            // Consume every selection before cascading account deletion, including
+            // the zero-selection case and its existing NO ACTION constraints.
+            gte(db.select({ count: count() }).from(selections), 0),
           ),
         )
-        .returning({ id: orgCustomConnectors.id });
-      signal.throwIfAborted();
-      return {
-        installationDeleted: true,
-        connectorId: deletedConnector?.id ?? null,
-      };
-    });
+        .returning({ id: orgCustomConnectors.id }),
+    );
+    // DELETE can return a link committed while it waited, although that new
+    // connector is absent from this statement's snapshot. Reject the whole
+    // deletion in that case; never commit an orphaned managed connector.
+    const expectedConnectors = sql`CASE WHEN ${isNull(installation.customConnectorId)} THEN 0 ELSE 1 END`;
+    const deletion = (async () => {
+      const [result] = await db
+        .with(installation, selections, connector)
+        .select({
+          connectorId: connector.id,
+          guard:
+            sql`(1 / CASE WHEN ${eq(db.select({ count: count() }).from(connector), expectedConnectors)} THEN 1 ELSE 0 END)::int`.mapWith(
+              pgIntegerDecoder,
+            ),
+        })
+        .from(installation)
+        .leftJoin(connector, eq(connector.id, installation.customConnectorId));
+      if (result && result.guard !== 1) {
+        throw new Error(
+          "Feishu installation deletion returned an invalid completion guard",
+        );
+      }
+      return result
+        ? { installationDeleted: true, connectorId: result.connectorId }
+        : { installationDeleted: false, connectorId: null };
+    })();
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
     const deleted = await (async () => {
       const result = await deletion;
