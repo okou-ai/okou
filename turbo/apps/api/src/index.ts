@@ -7,7 +7,7 @@ import { createProductionApp } from "./production-bootstrap";
 // realtime relay WebSocket — Epic #12128 pivoted to Plan D (browser-direct
 // to OpenAI), and the WS scaffolding has since been retired.
 //
-// (no-op API release marker refreshed for production delivery at 2026-10-22T07:54:00+08:00)
+// (no-op API release marker refreshed for disposable performance preview at 2026-10-25T09:01:42+08:00)
 
 const app = (() => {
   const instanceAbortController = new AbortController();
