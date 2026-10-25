@@ -149,9 +149,9 @@ struct ChatComposerView: View {
       .accessibilityIdentifier("message-input")
       .padding(.leading, expandsInput ? 18 : (connectorSelection == nil ? 58 : 102))
       .padding(.trailing, expandsInput ? 18 : (modelSelection == nil ? 58 : 106))
-      .padding(.top, expandsInput ? 17 : 15)
-      .padding(.bottom, expandsInput ? 62 : 15)
-      .frame(minHeight: expandsInput ? 116 : 54, alignment: expandsInput ? .topLeading : .leading)
+      .padding(.top, expandsInput ? 17 : 10)
+      .padding(.bottom, expandsInput ? 62 : 10)
+      .frame(minHeight: expandsInput ? 116 : 44, alignment: expandsInput ? .topLeading : .leading)
       .glassEffect(.regular, in: RoundedRectangle(cornerRadius: expandsInput ? 28 : 30))
       .overlay(alignment: .top) {
         if let workflows = draftState?.editor.workflows, workflows.query != nil {
@@ -231,7 +231,6 @@ struct ChatComposerView: View {
     }
     .padding(.horizontal, 16)
     .padding(.top, 8)
-    .padding(.bottom, 8)
     .onChange(of: "\(agentID ?? "")/\(connectorSelection != nil)", initial: true) { _, _ in
       connectorSelection?.configure(agentID: agentID)
     }
