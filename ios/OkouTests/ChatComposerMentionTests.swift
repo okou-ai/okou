@@ -122,7 +122,10 @@ final class ChatComposerMentionTests: XCTestCase {
     defer { unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
     try await focusMentionInput(input)
-    input.insertText("person@example.com\n@")
+    input.insertText("person@example.com")
+    await hostingPresentationFrame()
+    XCTAssertNil(mentionTable(in: host.view))
+    input.insertText("\n@")
     try await eventually { mentionTable(in: host.view) != nil }
     input.setMarkedText("研究", selectedRange: NSRange(location: 2, length: 0))
     try await eventually { input.markedTextRange != nil && mentionTable(in: host.view) == nil }
@@ -149,7 +152,10 @@ final class ChatComposerMentionTests: XCTestCase {
     try mentionKey(UIKeyCommand.inputEscape, input: input)
     try await eventually { mentionTable(in: host.view) == nil }
     XCTAssertTrue(input.isFirstResponder)
-    input.insertText("missing\n")
+    input.insertText("missing")
+    await hostingPresentationFrame()
+    XCTAssertNil(mentionTable(in: host.view))
+    input.insertText("\n")
     XCTAssertTrue(input.text.hasSuffix("missing\n"))
   }
 
