@@ -72,10 +72,6 @@ import { logsRoutes } from "../logs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import {
-  PROACTIVE_LEARNING_BLUEPRINT_KEY,
-  PROACTIVE_LEARNING_DEFINITION_NAME,
-  PROACTIVE_PLANNING_BLUEPRINT_KEY,
-  PROACTIVE_PLANNING_DEFINITION_NAME,
   proactiveLearningContract,
   proactivePlanningContract,
 } from "@okouai/api-contracts/contracts/proactive-nightly";
@@ -256,53 +252,6 @@ async function syncSourceCatalog() {
     [200],
   );
   catalogPublication.recordPublished(result.body.outcome);
-  return result;
-}
-
-/** A user-owned workflow can share a name with an active Official definition. */
-async function syncNightlyCatalog() {
-  const definitions = [
-    [
-      PROACTIVE_LEARNING_DEFINITION_NAME,
-      PROACTIVE_LEARNING_BLUEPRINT_KEY,
-      "0 2 * * *",
-    ],
-    [
-      PROACTIVE_PLANNING_DEFINITION_NAME,
-      PROACTIVE_PLANNING_BLUEPRINT_KEY,
-      "0 4 * * *",
-    ],
-  ] as const;
-  const result = await syncCatalog(
-    catalog(
-      definitions.map(([name, key, cronExpression]) => {
-        return activeDefinition(name, [
-          {
-            key,
-            parameters: [
-              {
-                key: "cron",
-                type: "string",
-                required: true,
-                format: "text",
-                default: cronExpression,
-              },
-            ],
-            desiredState: {
-              kind: "schedule",
-              schedule: {
-                type: "cron",
-                cronExpression: { parameter: "cron" },
-              },
-            },
-          },
-        ]);
-      }),
-    ),
-  );
-  if (result.body.outcome === "rejected") {
-    throw new Error("Expected a published nightly catalog");
-  }
   return result;
 }
 
@@ -574,14 +523,9 @@ describe("Proactive nightly workflows", () => {
     return setupApp({ context, routes: jobsRoutes })(jobsContract);
   };
 
-  async function nightlyMember({
-    catalogSync = syncDeployedCatalog,
-  }: {
-    readonly catalogSync?: typeof syncDeployedCatalog;
-  } = {}) {
+  async function nightlyMember() {
     mockNow(new Date("2030-01-01T12:00:00.000Z"));
     const { actor } = await prepareBriefMember({
-      catalogSync,
       bootstrap: false,
     });
     await runs.grantProEntitlement(actor);
@@ -645,9 +589,7 @@ describe("Proactive nightly workflows", () => {
       routes: workflowAutomationsRoutes,
       isolatePg: true,
     });
-    const { actor, runnerGroup } = await nightlyMember({
-      catalogSync: syncNightlyCatalog,
-    });
+    const { actor, runnerGroup } = await nightlyMember();
     const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
     if (!defaultAgentId) {
       throw new Error("Expected primary Agent");
@@ -2022,13 +1964,11 @@ async function prepareBriefMember({
   actor = bdd.user(),
   createdAt = new Date("2030-01-01T00:00:00.000Z"),
   catalogAvailable = true,
-  catalogSync = syncDeployedCatalog,
   bootstrap = true,
 }: {
   readonly actor?: ApiTestUser;
   readonly createdAt?: Date;
   readonly catalogAvailable?: boolean;
-  readonly catalogSync?: typeof syncDeployedCatalog;
   readonly bootstrap?: boolean;
 } = {}) {
   installCatalogStorageFixture(context);
@@ -2036,7 +1976,7 @@ async function prepareBriefMember({
   // Catalog publication and organization bootstrap own independent resources.
   // Both must finish before preference initialization can install the Brief.
   await Promise.all([
-    catalogAvailable ? catalogSync() : Promise.resolve(),
+    catalogAvailable ? syncDeployedCatalog() : Promise.resolve(),
     bootstrap
       ? deliverClerkOrganizationCreated(actor, createdAt)
       : Promise.resolve(),
@@ -2087,12 +2027,7 @@ describe("Official Workflow failure recovery", () => {
     name: "agent-suggestions" | "morning-brief",
   ) {
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
-    const { actor } = await prepareBriefMember({
-      catalogSync:
-        name === "morning-brief"
-          ? syncMorningBriefCatalog
-          : syncDeployedCatalog,
-    });
+    const { actor } = await prepareBriefMember();
     await initializeBriefMember(actor, "UTC");
     if (!actor.orgId) {
       throw new Error("Expected an organization");
