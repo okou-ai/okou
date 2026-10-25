@@ -1,5 +1,4 @@
-import { sql } from "drizzle-orm";
-import { pgTable, bigint, uniqueIndex, check } from "drizzle-orm/pg-core";
+import { pgTable, uniqueIndex } from "drizzle-orm/pg-core";
 import { usagePricingColumns } from "../columns/usage-pricing";
 
 /**
@@ -28,11 +27,6 @@ export const usagePricing = pgTable(
   "usage_pricing",
   {
     ...usagePricingColumns(),
-    // Keep physical storage until this runtime is deployed, preceding API SQL
-    // has drained and incompatible rollback targets are excluded.
-    sourceCostUsdMicrosPerCredit: bigint("source_cost_usd_micros_per_credit", {
-      mode: "number",
-    }),
   },
   (table) => {
     return [
@@ -40,10 +34,6 @@ export const usagePricing = pgTable(
         table.kind,
         table.provider,
         table.category,
-      ),
-      check(
-        "chk_usage_pricing_source_cost_usd_micros_per_credit",
-        sql`${table.sourceCostUsdMicrosPerCredit} IS NULL OR ${table.sourceCostUsdMicrosPerCredit} BETWEEN 1 AND 9007199254740991`,
       ),
     ];
   },

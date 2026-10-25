@@ -2682,6 +2682,13 @@
       "when": 1792906284816,
       "tag": "1461_data_router_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 1462,
+      "version": "7",
+      "when": 1792941027691,
+      "tag": "1462_retire_managed_data_storage",
+      "breakpoints": true
     }
   ]
 }

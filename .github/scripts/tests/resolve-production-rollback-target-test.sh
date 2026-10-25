@@ -67,6 +67,8 @@ case "${1:-}" in
       [ "${MOCK_FINALIZING_SOURCE_API_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "430cb92b5431e1554d0a1dceed6d9cfb27762921" ]; then
       [ "${MOCK_RUNNER_STATE_WSS_INGRESS_FREE_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "b220a504c5e633de162791f1216c4458188ffe72" ]; then
+      [ "${MOCK_MANAGED_DATA_RUNTIME_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "190cdfba6440b50469117758156616447d707b81" ]; then
       [ "${MOCK_STRIPE_INVOICE_PAID_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "b610ff61043274157618e3925b13a66dc56ef84b" ]; then
@@ -545,6 +547,21 @@ assert_failure "Rollback target predates the wss_ingress_service_active-free Run
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "ingress-mapping API must fail before artifact or host access"
 fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the retired Data storage-independent runtime" \
+  run_resolver "${tmp_dir}/managed-data-runtime-floor.output" MOCK_MANAGED_DATA_RUNTIME_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/managed-data-runtime-floor.output" ] || fail "retired Data storage-dependent API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "retired Data storage-dependent API must fail before artifact or host access"
+fi
+
+# The preparation remains a valid target independently of the later DROP.
+run_resolver "${tmp_dir}/managed-data-runtime-exact.output" \
+  TARGET_COMMIT=b220a504c5e633de162791f1216c4458188ffe72 \
+  >"${tmp_dir}/managed-data-runtime-exact.log"
+grep -qx "target_commit=b220a504c5e633de162791f1216c4458188ffe72" \
+  "${tmp_dir}/managed-data-runtime-exact.output" || fail "exact Data runtime preparation must remain eligible"
 
 : >"${tmp_dir}/boundaries.log"
 assert_failure "predates the independent finalizing source reader" \

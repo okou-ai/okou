@@ -3,6 +3,7 @@
 import { validatePiMemoryStage1Cost } from "./test-pi-memory-stage1-cost";
 import { validatePiMemoryRetirement } from "./test-pi-memory-retirement";
 import { validateStripeInvoicePaidRetirement } from "./test-stripe-invoice-paid-retirement";
+import { validateManagedDataRetirement } from "./test-managed-data-retirement";
 /**
  * Migration Consistency Test - Schema Comparison
  *
@@ -2834,6 +2835,7 @@ async function main(): Promise<void> {
     await validatePiMemoryStage1Cost(dbUrl1);
     await validatePiMemoryRetirement(dbUrl1);
     await validateStripeInvoicePaidRetirement(dbUrl1);
+    await validateManagedDataRetirement(dbUrl1);
     console.log("=== Workflow attachment migration CLI ===");
     console.log(
       execCommand(
