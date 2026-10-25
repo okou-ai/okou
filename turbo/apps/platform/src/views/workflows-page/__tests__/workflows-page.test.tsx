@@ -4208,7 +4208,11 @@ test("A completed automation creation preserves a reopened creation draft", asyn
     return respond(201, automation);
   });
   await setupWorkflowDetailPage(workflowDetailPath("automations"));
-  click(await waitFor(() => {return buttonByText("Add automation")}));
+  click(
+    await waitFor(() => {
+      return buttonByText("Add automation");
+    }),
+  );
   pickAutomation("Schedule", /^Interval/u);
   const first = await screen.findByRole("form", {
     name: "Add interval automation",
@@ -4250,7 +4254,11 @@ test("An earlier webhook response preserves a reopened creation form", async () 
   await setupWorkflowDetailPage(workflowDetailPath("automations"), {}, "pro", {
     workflowWebhookAutomationAllowed: true,
   });
-  click(await waitFor(() => {return buttonByText("Add automation")}));
+  click(
+    await waitFor(() => {
+      return buttonByText("Add automation");
+    }),
+  );
   pickAutomation("Integrations", /^Webhook/u);
   click(buttonByText("Create webhook"));
   await started.promise;
