@@ -5,43 +5,26 @@ struct ChatModelPickerButton: View {
   @Bindable var selection: ChatModelSelectionStore
   @State private var isPresented = false
   private var models: ChatModelStore { selection.models }
-  private var isLoading: Bool { models.isLoading || selection.isBusy }
-  private var hasError: Bool {
-    models.error != nil || selection.error != nil
-      || (models.configuration != nil && !selection.canSend && !isLoading)
-  }
   private var accessibilityValue: String {
-    guard let configuration = models.configuration else {
-      return models.error == nil
-        ? String(localized: "Loading model settings")
-        : String(localized: "Model settings unavailable")
-    }
+    guard let configuration = models.configuration else { return "" }
     var parts = [configuration.catalog.name(selection.selection.model)]
     if let effort = selection.effectiveEffort { parts.append(effortLabel(effort)) }
     if selection.selection.serviceTier == "priority" {
       parts.append(String(localized: "Fast mode"))
     }
-    if hasError { parts.append(String(localized: "Model settings need attention")) }
     return parts.joined(separator: " · ")
   }
 
   var body: some View {
-    // Keep the entry mounted before metadata exists so its load task can start.
     Button {
       isPresented = true
     } label: {
-      Group {
-        if isLoading {
-          ProgressView().controlSize(.small)
-        } else {
-          Image(systemName: hasError ? "exclamationmark.circle" : "slider.horizontal.3")
-        }
-      }
-      .font(.system(size: 19))
-      .frame(width: 44, height: 44)
-      .contentShape(Rectangle())
+      Image(systemName: "slider.horizontal.3")
+        .font(.system(size: 19))
+        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
     }
-    .tint(hasError ? .orange : .primary)
+    .tint(.primary)
     .accessibilityIdentifier("chat-model-picker")
     .accessibilityLabel("Model settings")
     .accessibilityValue(accessibilityValue)
@@ -68,6 +51,11 @@ struct ChatModelPickerView: View {
     NavigationStack {
       List {
         if let configuration = models.configuration {
+          if selection.isSaving {
+            ProgressView("Saving model settings…")
+          } else if selection.isLoading {
+            ProgressView("Loading model settings")
+          }
           ForEach(["built-in"] + PersonalSubscriptionType.allCases.map(\.rawValue), id: \.self) {
             type in
             let rows = configuration.models.filter {

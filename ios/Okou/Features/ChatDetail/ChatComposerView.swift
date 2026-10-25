@@ -187,6 +187,7 @@ struct ChatComposerView: View {
         HStack(spacing: 4) {
           if let modelSelection {
             ChatModelPickerButton(selection: modelSelection)
+              .disabled(isBusy || needsUpgrade)
           }
           Button {
             if !showsStop && sendTransition == nil {
