@@ -1,5 +1,4 @@
 import { Button, CopyButton, cn } from "@okouai/ui";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -10,8 +9,6 @@ import type {
   JsonPreviewNodeSignals,
   JsonPreviewPageSignals,
 } from "../../signals/json-preview.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { formatJsonPreviewText } from "../../lib/json-preview.ts";
 import { formatAppNumber } from "../../i18n/format.ts";
 
 const INDENTS = Object.freeze([
@@ -300,11 +297,12 @@ function JsonLimitedStatus({
   ) : null;
 }
 
-function JsonTreePreview({
-  signals,
+export function JsonPreview({
+  preview,
 }: {
-  readonly signals: JsonPreviewSignals;
+  readonly preview: TextPreviewContent;
 }) {
+  const signals = preview.json;
   const { t } = useTranslation();
   const model = useGet(signals.model$);
   const sourceMode = useGet(signals.sourceMode$);
@@ -391,26 +389,5 @@ function JsonTreePreview({
         )}
       </div>
     </div>
-  );
-}
-
-export function JsonPreview({
-  preview,
-  maxCharacters = 65_536,
-}: {
-  readonly preview: TextPreviewContent;
-  readonly maxCharacters?: number;
-}) {
-  const features = useGet(featureSwitch$);
-  if (features[FeatureSwitchKey.JsonTreePreview]) {
-    return <JsonTreePreview signals={preview.json} />;
-  }
-  const formatted = formatJsonPreviewText(preview);
-  return (
-    <pre className="m-0 h-full overflow-auto whitespace-pre-wrap break-words p-6 text-sm text-foreground">
-      {formatted.length > maxCharacters
-        ? `${formatted.slice(0, maxCharacters)}\n\n…`
-        : formatted}
-    </pre>
   );
 }
