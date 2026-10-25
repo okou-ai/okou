@@ -246,7 +246,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.BrowserSharedOwner]: {
-    maintainer: "liangyou@vm0.ai",
+    maintainer: "liangyou@okou.ai",
     displayName: "Shared Browser",
     description:
       "Share website logins across chats with a separate window for each chat",
