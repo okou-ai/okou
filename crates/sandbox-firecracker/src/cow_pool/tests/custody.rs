@@ -23,14 +23,13 @@ async fn cancelled_failed_checkout_keeps_create_custody_until_physical_cleanup_f
     std::fs::write(workspace.join("leftover"), b"source still owns bytes").unwrap();
     let failed = match slot.checkout_to(&target) {
         Ok(_) => panic!("partial checkout unexpectedly succeeded"),
-        Err(error) => error.into_slot(),
+        Err(error) => error,
     };
     assert_eq!(std::fs::read(target.join("cow.img")).unwrap(), b"cow");
     let (completed, mut custody_finished) = oneshot::channel();
-    let cleanup = destroy_prepared_slot_with_custody_async(
-        failed,
-        sandbox::SandboxCreateCustody::new(Arc::new(CustodyCompletion(Some(completed)))),
-    );
+    let cleanup = failed.start_cleanup(Some(sandbox::SandboxCreateCustody::new(Arc::new(
+        CustodyCompletion(Some(completed)),
+    ))));
     tokio::time::timeout(Duration::from_secs(5), started)
         .await
         .unwrap()

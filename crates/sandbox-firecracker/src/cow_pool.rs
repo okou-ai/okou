@@ -65,9 +65,7 @@ use tokio::task::JoinHandle;
 pub(crate) use actor::CowPoolHandle;
 #[cfg(test)]
 use slot::destroy_slot_sync;
-pub(crate) use slot::{
-    PreparedCowSlot, destroy_prepared_slot_async, destroy_prepared_slot_with_custody_async,
-};
+pub(crate) use slot::{PreparedCowSlot, destroy_prepared_slot_async};
 use slot::{PrewarmedSlot, destroy_slot_async};
 
 /// Number of ready COW slots to keep warm in steady state.
