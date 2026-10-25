@@ -5,6 +5,7 @@ struct ChatSidebarView: View {
   @Bindable var store: WorkspaceStore
   let authentication: AuthenticationService
   let workspaceID: String
+  let headerHeight: CGFloat
   @Binding var accountError: String?
   let close: () -> Void
   let newChat: (String?) -> Void
@@ -53,21 +54,6 @@ struct ChatSidebarView: View {
   }
 
   var body: some View {
-    NavigationStack {
-      sidebarList
-        .navigationTitle(workspaceName)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarTitleMenu { workspaceActions }
-        .toolbar {
-          ToolbarItem(placement: .topBarTrailing) {
-            Button("Search", systemImage: "magnifyingglass") { store.search.present() }
-              .accessibilityIdentifier("search-chats")
-          }
-        }
-    }
-  }
-
-  private var sidebarList: some View {
     List {
       pinnedAgentsSection
       if let error = store.list.navigationError {
@@ -100,7 +86,11 @@ struct ChatSidebarView: View {
     .environment(\.defaultMinListRowHeight, 0)
     .environment(\.defaultMinListHeaderHeight, 0)
     .scrollContentBackground(.hidden)
-    .scrollEdgeEffectStyle(.soft, for: .bottom)
+    .scrollEdgeEffectStyle(.soft, for: .vertical)
+    .safeAreaBar(edge: .top, spacing: 0) {
+      header
+        .padding(.horizontal, 16)
+    }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
     .background(Color(uiColor: .systemBackground))
     .sheet(
@@ -113,23 +103,48 @@ struct ChatSidebarView: View {
     }
   }
 
-  private var workspaceActions: some View {
-    ForEach(authentication.workspaces) { workspace in
-      Button {
-        Task {
-          do { try await authentication.switchWorkspace(workspace.id) } catch {
-            accountError = error.localizedDescription
+  private var header: some View {
+    HStack {
+      workspaceSwitcher.frame(maxWidth: .infinity, alignment: .leading)
+      Button("Search", systemImage: "magnifyingglass") { store.search.present() }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.glass)
+        .accessibilityIdentifier("search-chats")
+    }
+    .frame(height: headerHeight)
+  }
+
+  private var workspaceSwitcher: some View {
+    Menu {
+      ForEach(authentication.workspaces) { workspace in
+        Button {
+          Task {
+            do { try await authentication.switchWorkspace(workspace.id) } catch {
+              accountError = error.localizedDescription
+            }
+          }
+        } label: {
+          if workspace.id == workspaceID {
+            Label(workspace.name, systemImage: "checkmark")
+          } else {
+            Text(workspace.name)
           }
         }
-      } label: {
-        if workspace.id == workspaceID {
-          Label(workspace.name, systemImage: "checkmark")
-        } else {
-          Text(workspace.name)
-        }
       }
-      .disabled(authentication.isSwitchingWorkspace)
+    } label: {
+      HStack(spacing: 9) {
+        Text(workspaceName)
+          .font(.system(size: 22, weight: .semibold))
+          .lineLimit(1)
+        Image(systemName: "chevron.down")
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(.secondary)
+      }
+      .contentShape(Rectangle())
     }
+    .buttonStyle(.plain)
+    .disabled(authentication.isSwitchingWorkspace || authentication.workspaces.isEmpty)
+    .accessibilityLabel("Workspace: \(workspaceName)")
   }
 
   private var pinnedAgentsSection: some View {
