@@ -29,12 +29,29 @@ export function googleFormsAccountProjectionUpdate(args: {
   readonly userId: string;
   readonly defaultConnectorId?: SQL;
   readonly excludedChatThreadId?: string;
+  readonly selectedThread?: {
+    readonly chatThreadId: string;
+    readonly connectorId: string;
+  };
+  readonly publicationCondition?: SQL;
 }) {
   const defaultConnectorId = args.defaultConnectorId ?? sql`${connectors.id}`;
   const selectionCondition =
     args.excludedChatThreadId === undefined
       ? sql.empty()
       : sql`AND ${ne(chatThreadConnectorSelections.chatThreadId, args.excludedChatThreadId)}`;
+  const snapshotConnectorId = sql`CASE WHEN ${chatThreadConnectorSelections.connectorSlug} IS NOT NULL
+    THEN ${chatThreadConnectorSelections.connectorId}
+    ELSE ${defaultConnectorId} END`;
+  const selectedConnectorId =
+    args.selectedThread === undefined
+      ? snapshotConnectorId
+      : sql`CASE WHEN ${workflowUserAutomationThreads.chatThreadId} = ${args.selectedThread.chatThreadId}
+        THEN ${args.selectedThread.connectorId}::uuid ELSE ${snapshotConnectorId} END`;
+  const publicationCondition =
+    args.publicationCondition === undefined
+      ? sql.empty()
+      : sql`AND ${args.publicationCondition}`;
   return sql`
       UPDATE ${workflowAutomations}
       SET event_connector_id = desired.connector_id,
@@ -44,9 +61,7 @@ export function googleFormsAccountProjectionUpdate(args: {
           ELSE ${workflowAutomations.eventConfig} END
       FROM (
       SELECT ${workflowAutomations.id} AS id,
-        CASE WHEN ${chatThreadConnectorSelections.connectorSlug} IS NOT NULL
-          THEN ${chatThreadConnectorSelections.connectorId}
-          ELSE ${defaultConnectorId} END AS connector_id
+        ${selectedConnectorId} AS connector_id
       FROM ${workflowAutomations}
       LEFT JOIN ${workflowUserAutomationThreads}
         ON ${workflowUserAutomationThreads.orgId} = ${workflowAutomations.orgId}
@@ -67,6 +82,7 @@ export function googleFormsAccountProjectionUpdate(args: {
         AND ${workflowAutomations.eventType} = 'google-forms-response-submitted'
       ) AS desired
       WHERE ${workflowAutomations.id} = desired.id
+        ${publicationCondition}
         AND ${workflowAutomations.kind} = 'event'
         AND ${workflowAutomations.eventType} = 'google-forms-response-submitted'
         AND (${workflowAutomations.eventConnectorId} IS DISTINCT FROM desired.connector_id
