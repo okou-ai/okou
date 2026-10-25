@@ -2303,6 +2303,8 @@ describe("Official Workflow failure recovery", () => {
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
       new ClerkTransportTestError(503),
     );
+    // Keep both real Clerk retry waits; fix only their optional jitter.
+    onTestFinished(context.mocks.clerkRetryJitter(0));
     await accept(
       app(morningBriefPreferenceContract).retry({
         headers: authHeaders(actor),
