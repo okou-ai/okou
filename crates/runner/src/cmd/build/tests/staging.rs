@@ -84,7 +84,7 @@ async fn staging_contract_happy_path() {
     tokio::fs::write(rootfs.rootfs_staging(), b"customized")
         .await
         .unwrap();
-    publish.commit().await.unwrap();
+    publish.commit().unwrap();
 
     assert!(rootfs.rootfs().exists());
     assert!(!rootfs.rootfs_staging().exists());
@@ -111,7 +111,7 @@ async fn staging_contract_crash_leaves_recoverable_state() {
     assert!(rootfs.rootfs_staging().exists());
 
     // Next build's cleanup step.
-    publish.cleanup_stale_staging_best_effort().await;
+    publish.cleanup_stale_staging_best_effort();
     assert!(!rootfs.rootfs_staging().exists());
     assert!(!is_rootfs_present(&rootfs).await.unwrap());
 }
