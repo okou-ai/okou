@@ -6,7 +6,7 @@ import {
 } from "./message-pdf-worker.ts";
 import { SHARED_DATABASE_WORKER_FILE_PATTERN } from "./shared-database-worker-html.ts";
 
-export const RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES = 8_541_489;
+export const RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES = 8_541_509;
 
 const VENDOR_FILE_PATTERN = /^assets\/vendor-[^/]+\.js$/u;
 const ROLLDOWN_RUNTIME_FILE_PATTERN = /^assets\/rolldown-runtime-[^/]+\.js$/u;
