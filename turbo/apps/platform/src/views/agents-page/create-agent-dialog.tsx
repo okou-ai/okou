@@ -22,7 +22,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@okouai/ui";
-import { toast } from "@okouai/ui/components/ui/sonner";
 import { createSubagentWithSetupThread$ } from "../../signals/okou-page/agents.ts";
 import {
   jobsDialogOpen$,
@@ -35,7 +34,6 @@ import {
   setJobsAvatarUrl$,
   jobsVisibility$,
   setJobsVisibility$,
-  setJobsActiveTab$,
 } from "../../signals/okou-page/jobs-page.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { onDomEventFn } from "../../signals/utils.ts";
@@ -57,27 +55,10 @@ export function CreateAgentDialogContainer() {
   const { t } = useTranslation("agents");
   const open = useGet(jobsDialogOpen$);
   const setDialogOpen = useSet(setJobsDialogOpen$);
-  const setActiveTab = useSet(setJobsActiveTab$);
   const [createLoadable, createSubagentWithSetupThreadFn] = useLoadableSet(
     createSubagentWithSetupThread$,
   );
   const creating = createLoadable.state === "loading";
-  const handleCreateTeammate = async (
-    input: CreateAgentInput,
-    signal: AbortSignal,
-  ) => {
-    await createSubagentWithSetupThreadFn(input, signal);
-    setActiveTab(input.visibility);
-    setDialogOpen(false);
-    toast.success(
-      t(
-        ($) => {
-          return $.list.create.success;
-        },
-        { agentName: input.displayName },
-      ),
-    );
-  };
 
   return (
     <Dialog open={open} onOpenChange={creating ? undefined : setDialogOpen}>
@@ -90,7 +71,7 @@ export function CreateAgentDialogContainer() {
       >
         <CreateAgentDialogForm
           creating={creating}
-          onCreate={handleCreateTeammate}
+          onCreate={createSubagentWithSetupThreadFn}
           onCancel={() => {
             setDialogOpen(false);
           }}
