@@ -30,6 +30,7 @@ let pages: { tools: DataRouterTool[]; nextCursor?: string }[];
 let calls: unknown[];
 let returnedBody: unknown;
 let returnedStatus: number;
+let returnedToolError: string | undefined;
 let output: string;
 
 async function run(args: string[]) {
@@ -49,6 +50,7 @@ describe("Data Router discovery and JSON calls", () => {
     calls = [];
     returnedBody = { newField: [null, true, { count: 2 }] };
     returnedStatus = 200;
+    returnedToolError = undefined;
     output = "";
     vi.spyOn(console, "log").mockImplementation((value: unknown) => {
       output += String(value);
@@ -81,6 +83,11 @@ describe("Data Router discovery and JSON calls", () => {
           return reply(pages[message.params?.cursor === "second-page" ? 1 : 0]);
         if (message.method === "tools/call") {
           calls.push(message.params);
+          if (returnedToolError)
+            return reply({
+              content: [{ type: "text", text: returnedToolError }],
+              isError: true,
+            });
           const data = { status: returnedStatus, body: returnedBody };
           return reply({
             content: [{ type: "text", text: JSON.stringify({ data }) }],
@@ -199,6 +206,17 @@ describe("Data Router discovery and JSON calls", () => {
     };
     await run(["call", "future_research", "--input", "{}", "--json"]);
     expect(JSON.parse(output)).toEqual(returnedBody);
+    expect(process.exitCode).toBe(1);
+    expect(calls).toEqual([{ name: "future_research", arguments: {} }]);
+  });
+
+  it("prints MCP input errors with a failure exit status", async () => {
+    returnedToolError = "Input validation error: maxCredits is required";
+    await run(["call", "future_research", "--input", "{}", "--json"]);
+    expect(JSON.parse(output)).toEqual({
+      content: [{ type: "text", text: returnedToolError }],
+      isError: true,
+    });
     expect(process.exitCode).toBe(1);
     expect(calls).toEqual([{ name: "future_research", arguments: {} }]);
   });

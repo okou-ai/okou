@@ -133,6 +133,7 @@ export async function callDataRouterTool(
         );
       });
     const parsed = envelopeSchema.safeParse(result.structuredContent);
+    if (!parsed.success && result.isError) return { status: 400, body: result };
     if (!parsed.success)
       throw new ApiRequestError(
         "Data Router returned an invalid tool response; a paid operation may have executed. Do not resubmit automatically; inspect saved jobs when available.",

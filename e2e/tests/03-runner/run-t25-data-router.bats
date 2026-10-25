@@ -51,6 +51,14 @@ for tool in $history_tools; do
     okou data call "$tool" --input '{"limit":1}' --json >"$result"
     jq -e 'type == "object"' "$result" >/dev/null
 done
+# A required input rejected by MCP must remain a readable error, rather than
+# being mistaken for a lost paid response. Discover the schema instead of
+# maintaining a tool-specific argument list in the CLI test.
+required_tool=$(jq -er '[.result.tools[] | select(._meta["ai.okou/data"] and ((.inputSchema.required // []) | length > 0))] | .[0].name' "$catalog")
+if okou data call "$required_tool" --input '{}' --json >"$result"; then
+    exit 1
+fi
+jq -e '.isError == true and any(.content[]; .type == "text" and (.text | length > 0))' "$result" >/dev/null
 printf 'DATA_ROUTER_DIRECT_OK\n'
 EOF
 )
