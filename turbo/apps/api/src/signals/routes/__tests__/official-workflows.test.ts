@@ -57,7 +57,6 @@ import {
 } from "@okouai/core/storage-names";
 
 import { gunzipSync } from "node:zlib";
-import { writeSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -118,6 +117,7 @@ import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
+import { OFFICIAL_WORKFLOW_SOURCE_CATALOG } from "../official-workflow-catalog-input";
 import {
   activeDefinition,
   installCatalogStorageFixture,
@@ -125,7 +125,6 @@ import {
 } from "./helpers/official-workflow-catalog";
 
 const context = testContext();
-type Native503StageProbe = (stage: string) => void;
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const workflowBdd = createWorkflowsBddApi(context);
@@ -135,16 +134,25 @@ const chat = createChatFilesBddApi(context);
 const mocks = createRouteMocks(context);
 const CRON_SECRET = "official-workflow-installation-cron-secret";
 function createCatalogPublicationFixture() {
-  let published = false;
+  let publishedNames = new Set<string>();
   return {
     reset() {
-      published = false;
+      publishedNames = new Set();
     },
-    hasProactiveDefinition() {
-      return published;
+    hasPublishedDefinition(name: string) {
+      return publishedNames.has(name);
     },
-    recordPublished(outcome: string) {
-      published = outcome !== "rejected";
+    recordPublished(
+      outcome: string,
+      definitions: readonly { readonly name: string }[],
+    ) {
+      publishedNames = new Set(
+        outcome === "rejected"
+          ? []
+          : definitions.map(({ name }) => {
+              return name;
+            }),
+      );
     },
   };
 }
@@ -169,27 +177,28 @@ function catalog(
     schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
     definitions: [
       ...definitions,
-      ...(catalogPublication.hasProactiveDefinition()
-        ? [
-            "agent-suggestions",
-            "proactive-action",
-            "proactive-jobs",
-            "proactive-learning",
-            "proactive-planning",
-          ]
-            .filter((name) => {
-              return !definitions.some((definition) => {
-                return definition.name === name;
-              });
+      ...[
+        "agent-suggestions",
+        "proactive-action",
+        "proactive-jobs",
+        "proactive-learning",
+        "proactive-planning",
+      ]
+        .filter((name) => {
+          return (
+            catalogPublication.hasPublishedDefinition(name) &&
+            !definitions.some((definition) => {
+              return definition.name === name;
             })
-            .map((name) => {
-              return {
-                name,
-                lifecycle: "retired" as const,
-                presentation: { category: "productivity" },
-              };
-            })
-        : []),
+          );
+        })
+        .map((name) => {
+          return {
+            name,
+            lifecycle: "retired" as const,
+            presentation: { category: "productivity" },
+          };
+        }),
     ],
   };
 }
@@ -227,25 +236,18 @@ function connectorDoctorDefinition(): ActiveDefinition {
   ]);
 }
 
-async function syncDeployedCatalog(native503StageProbe?: Native503StageProbe) {
-  await syncCatalog(
-    catalog([
-      connectorDoctorDefinition(),
-      activeDefinition("proactive-action", [
-        {
-          key: "hourly-check",
-          parameters: [],
-          desiredState: {
-            kind: "schedule",
-            schedule: { type: "cron", cronExpression: "0 * * * *" },
-          },
-        },
-      ]),
-    ]),
-  );
-  native503StageProbe?.("legacy-catalog-published");
-  const result = await syncSourceCatalog();
-  native503StageProbe?.("source-catalog-published");
+async function syncActiveSourceCatalog() {
+  const source = {
+    ...OFFICIAL_WORKFLOW_SOURCE_CATALOG,
+    definitions: OFFICIAL_WORKFLOW_SOURCE_CATALOG.definitions.filter(
+      ({ lifecycle }) => {
+        return lifecycle === "active";
+      },
+    ),
+  };
+  const result = await syncCatalog(source);
+  expect(["accepted", "unchanged"]).toContain(result.body.outcome);
+  catalogPublication.recordPublished(result.body.outcome, source.definitions);
   return result;
 }
 
@@ -257,7 +259,10 @@ async function syncSourceCatalog() {
     ).sync({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
     [200],
   );
-  catalogPublication.recordPublished(result.body.outcome);
+  catalogPublication.recordPublished(
+    result.body.outcome,
+    OFFICIAL_WORKFLOW_SOURCE_CATALOG.definitions,
+  );
   return result;
 }
 
@@ -409,7 +414,6 @@ async function listAgentRunLogIds(
 async function deliverClerkOrganizationCreated(
   actor: ApiTestUser,
   createdAt: Date,
-  native503StageProbe?: Native503StageProbe,
 ): Promise<void> {
   if (!actor.orgId) {
     throw new Error("Expected organization-scoped actor");
@@ -424,9 +428,7 @@ async function deliverClerkOrganizationCreated(
     },
   });
   await webhooks.requestClerkWebhook("{}", {}, [200]);
-  native503StageProbe?.("organization-webhook-accepted");
   await flushWaitUntilForTest();
-  native503StageProbe?.("organization-bootstrap-drained");
 }
 
 async function deliverClerkOrganizationMembershipCreated(
@@ -1974,24 +1976,20 @@ async function prepareBriefMember({
   createdAt = new Date("2030-01-01T00:00:00.000Z"),
   catalogAvailable = true,
   bootstrap = true,
-  native503StageProbe,
 }: {
   readonly actor?: ApiTestUser;
   readonly createdAt?: Date;
   readonly catalogAvailable?: boolean;
   readonly bootstrap?: boolean;
-  readonly native503StageProbe?: Native503StageProbe;
 } = {}) {
   installCatalogStorageFixture(context);
   mockBriefMemberships([{ actor, createdAt }]);
   // Catalog publication and organization bootstrap own independent resources.
   // Both must finish before preference initialization can install the Brief.
   await Promise.all([
-    catalogAvailable
-      ? syncDeployedCatalog(native503StageProbe)
-      : Promise.resolve(),
+    catalogAvailable ? syncActiveSourceCatalog() : Promise.resolve(),
     bootstrap
-      ? deliverClerkOrganizationCreated(actor, createdAt, native503StageProbe)
+      ? deliverClerkOrganizationCreated(actor, createdAt)
       : Promise.resolve(),
   ]);
   return { actor, createdAt };
@@ -2001,17 +1999,14 @@ describe("Official Workflow failure recovery", () => {
   async function failScheduleOccurrence(
     actor: ApiTestUser,
     automation: WorkflowAutomationSummary,
-    native503StageProbe?: Native503StageProbe,
   ) {
     if (!automation.nextRunAt) {
       throw new Error("Expected the next schedule occurrence");
     }
     const scheduledAt = new Date(automation.nextRunAt).getTime();
     const fired = await fireOfficialSchedule(actor, automation);
-    native503StageProbe?.("occurrence-fired");
     mockNow(scheduledAt + 1000);
     const claim = await runs.claimRunnerJob(fired.runId);
-    native503StageProbe?.("run-claimed");
     await webhooks.requestAgentComplete(
       {
         runId: fired.runId,
@@ -2021,9 +2016,7 @@ describe("Official Workflow failure recovery", () => {
       { authorization: `Bearer ${claim.sandboxToken}` },
       [200],
     );
-    native503StageProbe?.("failed-completion-accepted");
     await flushWaitUntilForTest();
-    native503StageProbe?.("failure-side-effects-drained");
     return (
       await accept(
         automationClient().get({
@@ -2037,14 +2030,10 @@ describe("Official Workflow failure recovery", () => {
 
   async function preparePausedOfficialSchedule(
     name: "agent-suggestions" | "morning-brief",
-    native503StageProbe?: Native503StageProbe,
   ) {
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
-    native503StageProbe?.("member-start");
-    const { actor } = await prepareBriefMember({ native503StageProbe });
-    native503StageProbe?.("member-ready");
+    const { actor } = await prepareBriefMember();
     await initializeBriefMember(actor, "UTC");
-    native503StageProbe?.("preferences-initialized");
     if (!actor.orgId) {
       throw new Error("Expected an organization");
     }
@@ -2076,7 +2065,6 @@ describe("Official Workflow failure recovery", () => {
       }),
       [200],
     );
-    native503StageProbe?.("enabled-schedule-listed");
     const installation = listed.body.find(({ workflow }) => {
       return workflow.official?.definitionName === name;
     });
@@ -2090,16 +2078,9 @@ describe("Official Workflow failure recovery", () => {
     const runnerGroup = runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     // One live Runner handles all three sequential failed occurrences.
-    native503StageProbe?.("runner-readiness-start");
     await runs.heartbeatRunner(runnerGroup);
-    native503StageProbe?.("runner-ready");
     for (let failure = 0; failure < 3; failure += 1) {
-      automation = await failScheduleOccurrence(
-        actor,
-        automation,
-        native503StageProbe,
-      );
-      native503StageProbe?.(`failure-${failure + 1}-readback`);
+      automation = await failScheduleOccurrence(actor, automation);
     }
     expect(automation).toMatchObject({
       enabled: false,
@@ -2391,28 +2372,13 @@ describe("Official Workflow failure recovery", () => {
   });
 
   it("keeps an existing brief paused when membership lookup returns 503", async () => {
-    const stageStart = performance.now();
-    const stages: { stage: string; elapsedMs: number }[] = [];
-    const native503StageProbe = (stage: string) => {
-      stages.push({ stage, elapsedMs: performance.now() - stageStart });
-    };
-    onTestFinished(() => {
-      writeSync(
-        2,
-        `TS_CI_DURATION_GUARD_42947_STAGE_V1 ${JSON.stringify(stages)}\n`,
-      );
-    });
     const app = await setupApp({
       context,
       routes: morningBriefPreferenceRoutes,
       isolatePg: true,
     });
-    native503StageProbe("isolated-app-ready");
-    const { actor, automation } = await preparePausedOfficialSchedule(
-      "morning-brief",
-      native503StageProbe,
-    );
-    native503StageProbe("paused-fixture-ready");
+    const { actor, automation } =
+      await preparePausedOfficialSchedule("morning-brief");
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
       new ClerkTransportTestError(503),
     );
@@ -2424,7 +2390,6 @@ describe("Official Workflow failure recovery", () => {
       }),
       [500],
     );
-    native503StageProbe("clerk-retries-finished");
     const unchanged = await accept(
       automationClient().get({
         headers: authHeaders(actor),
@@ -2433,7 +2398,6 @@ describe("Official Workflow failure recovery", () => {
       [200],
     );
     expect(unchanged.body).toStrictEqual(automation);
-    native503StageProbe("unchanged-automation-asserted");
   });
 });
 
@@ -2922,7 +2886,7 @@ describe("Morning Brief suggestion instruction rollout", () => {
       });
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
         installCatalogStorageFixture(context);
-        await syncDeployedCatalog();
+        await syncActiveSourceCatalog();
 
         const { actor } = await workflowBdd.setupWorkflowOrg({
           timezone: "Asia/Shanghai",
@@ -3799,7 +3763,7 @@ describe("Official schedule expiry", () => {
       });
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
         installCatalogStorageFixture(context);
-        await syncDeployedCatalog();
+        await syncActiveSourceCatalog();
         const { actor } = await workflowBdd.setupWorkflowOrg({
           timezone: "Asia/Shanghai",
         });

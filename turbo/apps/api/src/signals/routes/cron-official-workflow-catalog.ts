@@ -3,7 +3,7 @@ import { command } from "ccstate";
 
 import type { RouteEntry } from "../route-entry";
 import { createOfficialWorkflowCatalogSyncCommand } from "../services/official-workflow-catalog-sync.service";
-import { OFFICIAL_WORKFLOW_SOURCE_CATALOG } from "../services/official-workflow-catalog-source";
+import { OFFICIAL_WORKFLOW_SOURCE_CATALOG } from "./official-workflow-catalog-input";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
 export function createCronOfficialWorkflowCatalogRoutes(
