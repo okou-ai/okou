@@ -6,12 +6,12 @@ import { runnerHeartbeatGenerationSchema } from "./runner-primitives";
 const c = initContract();
 const nativeWindowId = z.int().nonnegative();
 const instanceIdentity = { instanceId: z.uuid() };
-const windowIdentity = { ...instanceIdentity, windowSessionId: z.uuid() };
+const windowIdentity = { ...instanceIdentity, primaryWindowId: nativeWindowId };
 const browserWindowSchema = z.strictObject({
   chatThreadId: z.uuid(),
-  state: z.enum(["creating", "active", "closing"]),
+  state: z.enum(["active", "closing"]),
   expiresAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  primaryWindowId: nativeWindowId.nullable(),
+  primaryWindowId: nativeWindowId,
 });
 
 const actionSchema = z.discriminatedUnion("kind", [
@@ -26,12 +26,7 @@ const actionSchema = z.discriminatedUnion("kind", [
     providerSessionId: z.uuid(),
     timeoutAt: z.iso.datetime(),
   }),
-  z.strictObject({ kind: z.literal("admit"), ...instanceIdentity }),
-  z.strictObject({
-    kind: z.literal("activate"),
-    ...windowIdentity,
-    nativeWindowId,
-  }),
+  z.strictObject({ kind: z.literal("admit"), ...windowIdentity }),
   z.strictObject({ kind: z.literal("renew"), ...windowIdentity }),
   z.strictObject({
     kind: z.literal("retire"),
@@ -60,7 +55,7 @@ const instanceSchema = z.strictObject({
   creationExpiresAt: z.iso.datetime(),
   timeoutAt: z.iso.datetime(),
   // The host sees only the current Run's chat, including its cleanup identities.
-  windows: z.record(z.uuid(), browserWindowSchema),
+  window: browserWindowSchema.nullable(),
 });
 
 export const runnerBrowserContract = c.router({

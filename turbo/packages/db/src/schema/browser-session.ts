@@ -172,9 +172,6 @@ export const browserUserActionRequests = pgTable(
       .$type<BrowserUserActionState>()
       .notNull(),
     providerSessionId: uuid("provider_session_id").notNull(),
-    // Shared input requires an exact window session; null is legacy identity,
-    // never authority to address whichever window happens to be current.
-    windowSessionId: uuid("window_session_id"),
     payload: jsonb("payload").$type<BrowserUserActionPayload>().notNull(),
     applyStartedAt: timestamp("apply_started_at"),
     completedAt: timestamp("completed_at"),

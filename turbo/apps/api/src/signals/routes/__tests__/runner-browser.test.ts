@@ -113,25 +113,12 @@ async function allocate(chat: Chat) {
   );
 }
 
-async function admit(chat: Chat, instanceId: string) {
-  const instance = accepted(await chat.request({ kind: "admit", instanceId }));
-  const entry = Object.entries(instance.windows).find(([, window]) => {
-    return window.state === "creating";
-  });
-  if (!entry) {
-    throw new Error("Expected a new server-generated window lifetime");
-  }
-  return { instanceId, windowSessionId: entry[0] };
-}
-
-async function activate(
-  chat: Chat,
-  window: { instanceId: string; windowSessionId: string },
-  nativeWindowId: number,
-) {
-  return accepted(
-    await chat.request({ kind: "activate", ...window, nativeWindowId }),
+async function admit(chat: Chat, instanceId: string, primaryWindowId: number) {
+  const instance = accepted(
+    await chat.request({ kind: "admit", instanceId, primaryWindowId }),
   );
+  expect(instance.window).toMatchObject({ primaryWindowId, state: "active" });
+  return { instanceId, primaryWindowId };
 }
 
 describe("official Runner Browser lifecycle", () => {
@@ -147,7 +134,11 @@ describe("official Runner Browser lifecycle", () => {
           b.request({ kind: "inspect", instanceId: instance.id }),
         ).resolves.toStrictEqual({ outcome: "unavailable" });
         await expect(
-          b.request({ kind: "admit", instanceId: instance.id }),
+          b.request({
+            kind: "admit",
+            instanceId: instance.id,
+            primaryWindowId: 0,
+          }),
         ).resolves.toStrictEqual({ outcome: "unavailable" });
         await expect(
           b.request({ kind: "beginStop", instanceId: instance.id }),
@@ -278,7 +269,7 @@ describe("official Runner Browser lifecycle", () => {
     });
   });
 
-  it("publishes one physical generation with independent chat rows and exclusive primary windows", async () => {
+  it("publishes one physical instance and admits one native candidate per chat", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
       const a = await f.start(),
@@ -293,8 +284,8 @@ describe("official Runner Browser lifecycle", () => {
       );
       expect(
         allocations
-          .map((result) => {
-            return result.outcome;
+          .map((r) => {
+            return r.outcome;
           })
           .sort(),
       ).toStrictEqual(["accepted", "unavailable"]);
@@ -310,40 +301,43 @@ describe("official Runner Browser lifecycle", () => {
           timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
         }),
       );
-      const [wa, wb] = await Promise.all([
-        admit(a, initial.id),
-        admit(b, initial.id),
-      ]);
-      await expect(
-        a.request({ kind: "admit", instanceId: initial.id }),
-      ).resolves.toStrictEqual({ outcome: "unavailable" });
-      const activations = await Promise.all([
-        a.request({ kind: "activate", ...wa, nativeWindowId: 0 }),
-        b.request({ kind: "activate", ...wb, nativeWindowId: 0 }),
-      ]);
+      const candidates = await Promise.all(
+        [0, 101].map((primaryWindowId) => {
+          return a.request({
+            kind: "admit",
+            instanceId: initial.id,
+            primaryWindowId,
+          });
+        }),
+      );
       expect(
-        activations
-          .map((result) => {
-            return result.outcome;
+        candidates
+          .map((r) => {
+            return r.outcome;
           })
           .sort(),
       ).toStrictEqual(["accepted", "unavailable"]);
-      if (activations[0]?.outcome === "unavailable") {
-        await activate(a, wa, 102);
-      } else {
-        await activate(b, wb, 102);
+      const winner = accepted(await a.request({ kind: "inspect" })).window;
+      if (!winner) {
+        throw new Error("Missing registered chat window");
       }
+      await expect(
+        b.request({
+          kind: "admit",
+          instanceId: initial.id,
+          primaryWindowId: winner.primaryWindowId,
+        }),
+      ).resolves.toStrictEqual({ outcome: "unavailable" });
+      const wb = await admit(b, initial.id, 102);
       const viewA = accepted(await a.request({ kind: "inspect" }));
       const viewB = accepted(await b.request({ kind: "inspect" }));
-      expect(Object.keys(viewA.windows)).toStrictEqual([wa.windowSessionId]);
-      expect(Object.keys(viewB.windows)).toStrictEqual([wb.windowSessionId]);
-      expect(
-        new Set([
-          viewA.windows[wa.windowSessionId]?.primaryWindowId,
-          viewB.windows[wb.windowSessionId]?.primaryWindowId,
-        ]),
-      ).toStrictEqual(new Set([0, 102]));
-      await expect(b.request({ kind: "renew", ...wa })).resolves.toStrictEqual({
+      expect(viewA.window).toStrictEqual(winner);
+      expect(viewB.window).toMatchObject({
+        primaryWindowId: 102,
+        state: "active",
+      });
+      expect(viewB.window?.chatThreadId).not.toBe(winner.chatThreadId);
+      await expect(a.request({ kind: "renew", ...wb })).resolves.toStrictEqual({
         outcome: "unavailable",
       });
       await expect(
@@ -352,40 +346,36 @@ describe("official Runner Browser lifecycle", () => {
     });
   });
 
-  it("acknowledges old window closure before readmission and rejects delayed cleanup of its replacement", async () => {
+  it("keeps native closure identity until acknowledgement and rejects old requests after reopen", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
       const a = await f.start(),
         b = await f.start();
       const instance = await allocate(a);
-      const wa = await admit(a, instance.id),
-        wb = await admit(b, instance.id);
-      await activate(a, wa, 0);
-      await activate(b, wb, 102);
+      const wa = await admit(a, instance.id, 0),
+        wb = await admit(b, instance.id, 102);
       mockNow(START + 9 * MINUTE);
       accepted(await b.request({ kind: "renew", ...wb }));
       mockNow(START + 10 * MINUTE);
       accepted(await a.request({ kind: "retire", ...wa, reason: "expired" }));
       await expect(
-        a.request({ kind: "admit", instanceId: instance.id }),
+        a.request({
+          kind: "admit",
+          instanceId: instance.id,
+          primaryWindowId: 1,
+        }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
       accepted(await a.request({ kind: "completeWindowClose", ...wa }));
-      const replacement = await admit(a, instance.id);
-      expect(replacement.windowSessionId).not.toBe(wa.windowSessionId);
-      await activate(a, replacement, 0);
-      await expect(
-        a.request({ kind: "completeWindowClose", ...wa }),
-      ).resolves.toStrictEqual({ outcome: "unavailable" });
-      const current = accepted(await a.request({ kind: "inspect" }));
-      expect(Object.keys(current.windows)).toStrictEqual([
-        replacement.windowSessionId,
-      ]);
-      expect(
-        current.windows[replacement.windowSessionId]?.primaryWindowId,
-      ).toBe(0);
+      const replacement = await admit(a, instance.id, 1);
       await expect(a.request({ kind: "renew", ...wa })).resolves.toStrictEqual({
         outcome: "unavailable",
       });
+      await expect(
+        a.request({ kind: "retire", ...wa, reason: "closed" }),
+      ).resolves.toStrictEqual({ outcome: "unavailable" });
+      expect(
+        accepted(await a.request({ kind: "inspect" })).window,
+      ).toMatchObject({ primaryWindowId: 1, state: "active" });
       accepted(await b.request({ kind: "renew", ...wb }));
       await expect(
         a.request({ kind: "beginStop", instanceId: instance.id }),
@@ -403,47 +393,50 @@ describe("official Runner Browser lifecycle", () => {
       accepted(
         await a.request({ kind: "retire", ...replacement, reason: "closed" }),
       );
+      await expect(
+        a.request({ kind: "completeWindowClose", ...wa }),
+      ).resolves.toStrictEqual({ outcome: "unavailable" });
       accepted(await b.request({ kind: "retire", ...wb, reason: "closed" }));
       const stopping = accepted(
         await a.request({ kind: "beginStop", instanceId: instance.id }),
       );
       expect(stopping.status).toBe("stopping");
-      expect(stopping.windows[replacement.windowSessionId]?.state).toBe(
-        "closing",
-      );
+      expect(stopping.window).toMatchObject({
+        primaryWindowId: 1,
+        state: "closing",
+      });
       expect(
         accepted(await a.request({ kind: "inspect", instanceId: instance.id }))
-          .windows,
-      ).toStrictEqual(stopping.windows);
+          .window,
+      ).toStrictEqual(stopping.window);
       accepted(
         await a.request({ kind: "completeStop", instanceId: instance.id }),
       );
       expect(
         accepted(await a.request({ kind: "inspect", instanceId: instance.id }))
-          .windows,
-      ).toStrictEqual({});
+          .window,
+      ).toBeNull();
       await expect(a.request({ kind: "inspect" })).resolves.toStrictEqual({
         outcome: "unavailable",
       });
     });
   });
 
-  it("arbitrates renewal versus expiry and final stop versus new admission on native PostgreSQL", async () => {
+  it("arbitrates lease and stop races and fences native ID reuse across physical replacement", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
       const a = await f.start(),
         b = await f.start();
       const instance = await allocate(a),
-        wa = await admit(a, instance.id);
-      await activate(a, wa, 101);
+        wa = await admit(a, instance.id, 101);
       mockNow(START + 9 * MINUTE);
       const beforeExpiry = await Promise.all([
         a.request({ kind: "renew", ...wa }),
         a.request({ kind: "retire", ...wa, reason: "expired" }),
       ]);
       expect(
-        beforeExpiry.map((result) => {
-          return result.outcome;
+        beforeExpiry.map((r) => {
+          return r.outcome;
         }),
       ).toStrictEqual(["accepted", "unavailable"]);
       const atExpiry = await Promise.all([
@@ -456,8 +449,8 @@ describe("official Runner Browser lifecycle", () => {
       ]);
       expect(
         atExpiry
-          .map((result) => {
-            return result.outcome;
+          .map((r) => {
+            return r.outcome;
           })
           .sort(),
       ).toStrictEqual(["accepted", "unavailable"]);
@@ -468,73 +461,88 @@ describe("official Runner Browser lifecycle", () => {
       await expect(a.request({ kind: "renew", ...wa })).resolves.toStrictEqual({
         outcome: "unavailable",
       });
+      const wb = { instanceId: instance.id, primaryWindowId: 102 };
       const competing = await Promise.all([
         a.request({ kind: "beginStop", instanceId: instance.id }),
-        b.request({ kind: "admit", instanceId: instance.id }),
+        b.request({ kind: "admit", ...wb }),
       ]);
       expect(
         competing
-          .map((result) => {
-            return result.outcome;
+          .map((r) => {
+            return r.outcome;
           })
           .sort(),
       ).toStrictEqual(["accepted", "unavailable"]);
       if (competing[1]?.outcome === "accepted") {
-        const entry = Object.keys(competing[1].instance.windows)[0];
-        if (!entry) {
-          throw new Error("Missing admitted window lifetime");
-        }
-        const pending = { instanceId: instance.id, windowSessionId: entry };
         await expect(
           a.request({ kind: "beginStop", instanceId: instance.id }),
         ).resolves.toStrictEqual({ outcome: "unavailable" });
-        mockNow(START + 29 * MINUTE);
-        accepted(
-          await b.request({ kind: "retire", ...pending, reason: "expired" }),
-        );
+        accepted(await b.request({ kind: "retire", ...wb, reason: "closed" }));
         accepted(
           await a.request({ kind: "beginStop", instanceId: instance.id }),
         );
       }
       expect(
         accepted(await a.request({ kind: "inspect", instanceId: instance.id }))
-          .windows[wa.windowSessionId]?.state,
-      ).toBe("closing");
+          .window,
+      ).toMatchObject({ primaryWindowId: 101, state: "closing" });
       accepted(
         await a.request({ kind: "completeStop", instanceId: instance.id }),
       );
-      const replacement = accepted(
-        await b.request({ kind: "allocate", providerProfileId: randomUUID() }),
-      );
+      const replacement = await allocate(a);
       expect(replacement.id).not.toBe(instance.id);
       expect(replacement.ownerProfileId).toBe(instance.ownerProfileId);
       expect(replacement.providerProfileId).toBe(instance.providerProfileId);
+      const current = await admit(a, replacement.id, 101);
       await expect(
         a.request({ kind: "completeStop", instanceId: instance.id }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
-      await expect(
-        a.request({ kind: "completeWindowClose", ...wa }),
-      ).resolves.toStrictEqual({ outcome: "unavailable" });
-      expect(accepted(await b.request({ kind: "inspect" })).id).toBe(
-        replacement.id,
+      for (const action of [
+        { kind: "renew", ...wa },
+        { kind: "retire", ...wa, reason: "closed" },
+        { kind: "completeWindowClose", ...wa },
+        { kind: "admit", ...wa },
+      ] as const) {
+        await expect(a.request(action)).resolves.toStrictEqual({
+          outcome: "unavailable",
+        });
+      }
+      expect(
+        accepted(await a.request({ kind: "inspect" })).window,
+      ).toMatchObject({ primaryWindowId: 101, state: "active" });
+      accepted(
+        await a.request({ kind: "retire", ...current, reason: "closed" }),
+      );
+      accepted(
+        await a.request({ kind: "beginStop", instanceId: replacement.id }),
+      );
+      accepted(
+        await a.request({ kind: "completeStop", instanceId: replacement.id }),
+      );
+
+      const abandoned = accepted(
+        await b.request({
+          kind: "allocate",
+          providerProfileId: randomUUID(),
+        }),
       );
       await expect(
-        b.request({ kind: "beginStop", instanceId: replacement.id }),
+        b.request({ kind: "beginStop", instanceId: abandoned.id }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
       mockNow(START + 30 * MINUTE);
       await expect(
         b.request({
           kind: "publish",
-          instanceId: replacement.id,
+          instanceId: abandoned.id,
           providerSessionId: randomUUID(),
           timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
         }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
       accepted(
-        await b.request({ kind: "beginStop", instanceId: replacement.id }),
+        await b.request({ kind: "beginStop", instanceId: abandoned.id }),
       );
       accepted(
-        await b.request({ kind: "completeStop", instanceId: replacement.id }),
+        await b.request({ kind: "completeStop", instanceId: abandoned.id }),
       );
     });
   });

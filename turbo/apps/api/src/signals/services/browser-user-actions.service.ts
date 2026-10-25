@@ -1128,9 +1128,6 @@ const persistBrowserUserAction = command(
             .as("chat_thread_id"),
         status: sql`'pending'`.mapWith(t.status).as("status"),
         providerSessionId: leased.providerSessionId,
-        windowSessionId: sql`NULL::uuid`
-          .mapWith(nullableDriverValueDecoder(t.windowSessionId))
-          .as("window_session_id"),
         payload: sql`${sql.param(payload, t.payload)}::jsonb`
           .mapWith(t.payload)
           .as("payload"),

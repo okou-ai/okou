@@ -40,12 +40,11 @@ export const browserOwnerProfiles = pgTable(
       uniqueIndex("uq_browser_owner_profiles_provider").on(
         table.providerProfileId,
       ),
-      uniqueIndex("uq_browser_owner_profiles_instance").on(table.instanceId),
+      unique("uq_browser_owner_profiles_instance").on(table.instanceId),
       uniqueIndex("uq_browser_owner_profiles_session").on(
         table.providerSessionId,
       ),
       unique("uq_browser_owner_profiles_instance_state").on(
-        table.id,
         table.instanceId,
         table.status,
       ),
@@ -75,18 +74,12 @@ export const browserOwnerProfiles = pgTable(
 export const browserOwnerWindows = pgTable(
   "browser_owner_windows",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    ownerProfileId: uuid("owner_profile_id")
-      .notNull()
-      .references(() => {
-        return browserOwnerProfiles.id;
-      }),
+    chatThreadId: uuid("chat_thread_id").primaryKey(),
     instanceId: uuid("instance_id").notNull(),
-    chatThreadId: uuid("chat_thread_id").notNull(),
     state: varchar("state", { length: 16 })
-      .$type<"creating" | "active" | "closing">()
+      .$type<"active" | "closing">()
       .notNull(),
-    primaryWindowId: bigint("primary_window_id", { mode: "number" }),
+    primaryWindowId: bigint("primary_window_id", { mode: "number" }).notNull(),
     expiresAt: timestamp("expires_at").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -94,29 +87,23 @@ export const browserOwnerWindows = pgTable(
     // identities without preventing a final whole-provider stop.
     liveBrowserStatus: varchar("live_browser_status", { length: 16 })
       .$type<"active">()
-      .generatedAlwaysAs(
-        sql`CASE WHEN state IN ('creating', 'active') THEN 'active' END`,
-      ),
+      .generatedAlwaysAs(sql`CASE WHEN state = 'active' THEN 'active' END`),
   },
   (table) => {
     return [
       foreignKey({
+        name: "browser_owner_windows_instance_fk",
+        columns: [table.instanceId],
+        foreignColumns: [browserOwnerProfiles.instanceId],
+      }),
+      foreignKey({
         name: "browser_owner_windows_active_instance_fk",
-        columns: [
-          table.ownerProfileId,
-          table.instanceId,
-          table.liveBrowserStatus,
-        ],
+        columns: [table.instanceId, table.liveBrowserStatus],
         foreignColumns: [
-          browserOwnerProfiles.id,
           browserOwnerProfiles.instanceId,
           browserOwnerProfiles.status,
         ],
       }),
-      uniqueIndex("uq_browser_owner_windows_chat").on(
-        table.ownerProfileId,
-        table.chatThreadId,
-      ),
       uniqueIndex("uq_browser_owner_windows_native_window").on(
         table.instanceId,
         table.primaryWindowId,
@@ -127,14 +114,11 @@ export const browserOwnerWindows = pgTable(
       ),
       check(
         "browser_owner_windows_state_check",
-        sql`${table.state} IN ('creating', 'active', 'closing')`,
+        sql`${table.state} IN ('active', 'closing')`,
       ),
       check(
         "browser_owner_windows_primary_check",
-        sql`(${table.primaryWindowId} IS NULL OR
-          ${table.primaryWindowId} BETWEEN 0 AND 9007199254740991)
-          AND (${table.state} <> 'active' OR ${table.primaryWindowId} IS NOT NULL)
-          AND (${table.state} <> 'creating' OR ${table.primaryWindowId} IS NULL)`,
+        sql`${table.primaryWindowId} BETWEEN 0 AND 9007199254740991`,
       ),
       check(
         "browser_owner_windows_deadline_check",

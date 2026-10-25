@@ -44,7 +44,7 @@ const windows = browserOwnerWindows;
 type ProfileRow = typeof profiles.$inferSelect;
 type WindowView = Pick<
   typeof windows.$inferSelect,
-  "id" | "chatThreadId" | "state" | "expiresAt" | "primaryWindowId"
+  "chatThreadId" | "state" | "expiresAt" | "primaryWindowId"
 >;
 interface BrowserView {
   readonly profile: ProfileRow;
@@ -152,11 +152,11 @@ function activeInstance(
 
 function ownedWindow(
   owner: BrowserOwnerAuthority,
-  action: { readonly instanceId: string; readonly windowSessionId: string },
+  action: { readonly instanceId: string; readonly primaryWindowId: number },
   now?: Date,
 ) {
   return and(
-    eq(windows.id, action.windowSessionId),
+    eq(windows.primaryWindowId, action.primaryWindowId),
     eq(windows.instanceId, action.instanceId),
     eq(windows.chatThreadId, owner.chatThreadId),
     exists(
@@ -165,7 +165,7 @@ function ownedWindow(
         .from(profiles)
         .where(
           and(
-            eq(profiles.id, windows.ownerProfileId),
+            eq(profiles.instanceId, windows.instanceId),
             now === undefined
               ? ownedInstance(owner, action.instanceId)
               : activeInstance(owner, action.instanceId, now),
@@ -176,7 +176,7 @@ function ownedWindow(
 }
 
 function windowHardDeadline() {
-  return sql`(${new QueryBuilder().select({ timeoutAt: profiles.timeoutAt }).from(profiles).where(eq(profiles.id, windows.ownerProfileId))})`;
+  return sql`(${new QueryBuilder().select({ timeoutAt: profiles.timeoutAt }).from(profiles).where(eq(profiles.instanceId, windows.instanceId))})`;
 }
 
 function response(row: BrowserView | undefined): RunnerBrowserResponse {
@@ -194,16 +194,14 @@ function response(row: BrowserView | undefined): RunnerBrowserResponse {
       status: profile.status,
       creationExpiresAt: profile.creationExpiresAt.toISOString(),
       timeoutAt: profile.timeoutAt.toISOString(),
-      windows: window
+      window: window
         ? {
-            [window.id]: {
-              chatThreadId: window.chatThreadId,
-              state: window.state,
-              expiresAt: window.expiresAt.getTime(),
-              primaryWindowId: window.primaryWindowId,
-            },
+            chatThreadId: window.chatThreadId,
+            state: window.state,
+            expiresAt: window.expiresAt.getTime(),
+            primaryWindowId: window.primaryWindowId,
           }
-        : {},
+        : null,
     },
   };
 }
@@ -244,7 +242,6 @@ export function createRunnerBrowserInspection(
       .select({
         profile: getTableColumns(profiles),
         window: {
-          id: windows.id,
           chatThreadId: windows.chatThreadId,
           state: windows.state,
           expiresAt: windows.expiresAt,
@@ -255,7 +252,7 @@ export function createRunnerBrowserInspection(
       .leftJoin(
         windows,
         and(
-          eq(windows.ownerProfileId, profiles.id),
+          eq(windows.instanceId, profiles.instanceId),
           eq(windows.chatThreadId, owner.chatThreadId),
         ),
       )
@@ -282,7 +279,8 @@ function lifecycleCompetition(error: unknown): boolean {
       typeof error.cause === "object" &&
       error.cause !== null &&
       "constraint" in error.cause &&
-      error.cause.constraint === "browser_owner_windows_active_instance_fk")
+      (error.cause.constraint === "browser_owner_windows_active_instance_fk" ||
+        error.cause.constraint === "browser_owner_windows_instance_fk"))
   );
 }
 
@@ -454,8 +452,6 @@ const admitOwnerBrowserWindow$ = command(
     signal: AbortSignal,
   ): Promise<BrowserView[]> => {
     const db = set(writeDb$);
-    const nowMs = now.getTime();
-
     const changed = db.$with("admitted_browser_window").as(
       db
         .insert(windows)
@@ -464,18 +460,16 @@ const admitOwnerBrowserWindow$ = command(
         .select(
           new QueryBuilder()
             .select({
-              id: sql`${randomUUID()}::uuid`.mapWith(windows.id).as("id"),
-              ownerProfileId: profiles.id,
-              instanceId: profiles.instanceId,
               chatThreadId: sql`${owner.chatThreadId}::uuid`
                 .mapWith(windows.chatThreadId)
                 .as("chat_thread_id"),
-              state: sql`'creating'`.mapWith(windows.state).as("state"),
-              primaryWindowId: sql`NULL::bigint`
+              instanceId: profiles.instanceId,
+              state: sql`'active'`.mapWith(windows.state).as("state"),
+              primaryWindowId: sql`${action.primaryWindowId}::bigint`
                 .mapWith(windows.primaryWindowId)
                 .as("primary_window_id"),
               expiresAt:
-                sql`least(${profiles.timeoutAt}, ${sql.param(new Date(nowMs + SETUP_MS), windows.expiresAt)}::timestamp)`
+                sql`least(${profiles.timeoutAt}, ${sql.param(new Date(now.getTime() + IDLE_MS), windows.expiresAt)}::timestamp)`
                   .mapWith(windows.expiresAt)
                   .as("expires_at"),
               createdAt: sql`${sql.param(now, windows.createdAt)}::timestamp`
@@ -489,9 +483,7 @@ const admitOwnerBrowserWindow$ = command(
             .where(activeInstance(owner, action.instanceId, now))
             .getSQL(),
         )
-        .onConflictDoNothing({
-          target: [windows.ownerProfileId, windows.chatThreadId],
-        })
+        .onConflictDoNothing({ target: windows.chatThreadId })
         .returning(),
     );
     const rows = await db
@@ -499,7 +491,6 @@ const admitOwnerBrowserWindow$ = command(
       .select({
         profile: getTableColumns(profiles),
         window: {
-          id: changed.id,
           chatThreadId: changed.chatThreadId,
           state: changed.state,
           expiresAt: changed.expiresAt,
@@ -507,55 +498,7 @@ const admitOwnerBrowserWindow$ = command(
         },
       })
       .from(changed)
-      .innerJoin(profiles, eq(profiles.id, changed.ownerProfileId));
-    signal.throwIfAborted();
-    return rows;
-  },
-);
-
-const activateOwnerBrowserWindow$ = command(
-  async (
-    { set },
-    owner: BrowserOwnerAuthority,
-    action: BrowserAction<"activate">,
-    now: Date,
-    signal: AbortSignal,
-  ): Promise<BrowserView[]> => {
-    const db = set(writeDb$);
-    const nowMs = now.getTime();
-
-    const changed = db.$with("activated_browser_window").as(
-      db
-        .update(windows)
-        .set({
-          state: "active",
-          primaryWindowId: action.nativeWindowId,
-          expiresAt: sql`least(${windowHardDeadline()}, ${sql.param(new Date(nowMs + IDLE_MS), windows.expiresAt)}::timestamp)`,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            ownedWindow(owner, action, now),
-            eq(windows.state, "creating"),
-            gt(windows.expiresAt, now),
-          ),
-        )
-        .returning(),
-    );
-    const rows = await db
-      .with(changed)
-      .select({
-        profile: getTableColumns(profiles),
-        window: {
-          id: changed.id,
-          chatThreadId: changed.chatThreadId,
-          state: changed.state,
-          expiresAt: changed.expiresAt,
-          primaryWindowId: changed.primaryWindowId,
-        },
-      })
-      .from(changed)
-      .innerJoin(profiles, eq(profiles.id, changed.ownerProfileId));
+      .innerJoin(profiles, eq(profiles.instanceId, changed.instanceId));
     signal.throwIfAborted();
     return rows;
   },
@@ -593,7 +536,6 @@ const renewOwnerBrowserWindow$ = command(
       .select({
         profile: getTableColumns(profiles),
         window: {
-          id: changed.id,
           chatThreadId: changed.chatThreadId,
           state: changed.state,
           expiresAt: changed.expiresAt,
@@ -601,7 +543,7 @@ const renewOwnerBrowserWindow$ = command(
         },
       })
       .from(changed)
-      .innerJoin(profiles, eq(profiles.id, changed.ownerProfileId));
+      .innerJoin(profiles, eq(profiles.instanceId, changed.instanceId));
     signal.throwIfAborted();
     return rows;
   },
@@ -624,7 +566,7 @@ const retireOwnerBrowserWindow$ = command(
         .where(
           and(
             ownedWindow(owner, action),
-            inArray(windows.state, ["creating", "active"]),
+            eq(windows.state, "active"),
             action.reason === "expired"
               ? lte(windows.expiresAt, now)
               : undefined,
@@ -637,7 +579,6 @@ const retireOwnerBrowserWindow$ = command(
       .select({
         profile: getTableColumns(profiles),
         window: {
-          id: changed.id,
           chatThreadId: changed.chatThreadId,
           state: changed.state,
           expiresAt: changed.expiresAt,
@@ -645,7 +586,7 @@ const retireOwnerBrowserWindow$ = command(
         },
       })
       .from(changed)
-      .innerJoin(profiles, eq(profiles.id, changed.ownerProfileId));
+      .innerJoin(profiles, eq(profiles.instanceId, changed.instanceId));
     signal.throwIfAborted();
     return rows;
   },
@@ -656,7 +597,6 @@ const completeOwnerBrowserWindowClose$ = command(
     { set },
     owner: BrowserOwnerAuthority,
     action: BrowserAction<"completeWindowClose">,
-    now: Date,
     signal: AbortSignal,
   ): Promise<BrowserView[]> => {
     const db = set(writeDb$);
@@ -665,13 +605,13 @@ const completeOwnerBrowserWindowClose$ = command(
       db
         .delete(windows)
         .where(and(ownedWindow(owner, action), eq(windows.state, "closing")))
-        .returning({ ownerProfileId: windows.ownerProfileId }),
+        .returning({ instanceId: windows.instanceId }),
     );
     const rows = await db
       .with(changed)
       .select({ profile: getTableColumns(profiles) })
       .from(changed)
-      .innerJoin(profiles, eq(profiles.id, changed.ownerProfileId));
+      .innerJoin(profiles, eq(profiles.instanceId, changed.instanceId));
     signal.throwIfAborted();
     return rows;
   },
@@ -705,12 +645,12 @@ const beginOwnerBrowserStop$ = command(
             ),
             notExists(
               new QueryBuilder()
-                .select({ id: windows.id })
+                .select({ chatThreadId: windows.chatThreadId })
                 .from(windows)
                 .where(
                   and(
-                    eq(windows.ownerProfileId, profiles.id),
-                    inArray(windows.state, ["creating", "active"]),
+                    eq(windows.instanceId, profiles.instanceId),
+                    eq(windows.state, "active"),
                   ),
                 ),
             ),
@@ -735,7 +675,6 @@ const beginOwnerBrowserStop$ = command(
           updatedAt: stopping.updatedAt,
         },
         window: {
-          id: windows.id,
           chatThreadId: windows.chatThreadId,
           state: windows.state,
           expiresAt: windows.expiresAt,
@@ -746,7 +685,6 @@ const beginOwnerBrowserStop$ = command(
       .leftJoin(
         windows,
         and(
-          eq(windows.ownerProfileId, stopping.id),
           eq(windows.instanceId, stopping.instanceId),
           eq(windows.chatThreadId, owner.chatThreadId),
         ),
@@ -791,11 +729,11 @@ const completeOwnerBrowserStop$ = command(
               new QueryBuilder()
                 .select({ id: stopped.id })
                 .from(stopped)
-                .where(eq(stopped.id, windows.ownerProfileId)),
+                .where(eq(stopped.instanceId, windows.instanceId)),
             ),
           ),
         )
-        .returning({ id: windows.id }),
+        .returning({ chatThreadId: windows.chatThreadId }),
     );
     const rows = (await db.with(stopped, closed).select().from(stopped)).map(
       (profile) => {
@@ -825,15 +763,6 @@ const mutateBrowserOwner$ = command(
       case "admit": {
         return await set(admitOwnerBrowserWindow$, owner, action, now, signal);
       }
-      case "activate": {
-        return await set(
-          activateOwnerBrowserWindow$,
-          owner,
-          action,
-          now,
-          signal,
-        );
-      }
       case "renew": {
         return await set(renewOwnerBrowserWindow$, owner, action, now, signal);
       }
@@ -845,7 +774,6 @@ const mutateBrowserOwner$ = command(
           completeOwnerBrowserWindowClose$,
           owner,
           action,
-          now,
           signal,
         );
       }

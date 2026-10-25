@@ -1,5 +1,5 @@
 {
-  "id": "5b4dd886-4346-48dd-84a0-c14dcdd9cbb3",
+  "id": "3e2c4aa4-b794-4988-a904-b13fedc5b79b",
   "prevId": "d2149a80-1ef2-451d-a3fd-88fbef1675b3",
   "version": "7",
   "dialect": "postgresql",
@@ -4562,21 +4562,6 @@
           "method": "btree",
           "with": {}
         },
-        "uq_browser_owner_profiles_instance": {
-          "name": "uq_browser_owner_profiles_instance",
-          "columns": [
-            {
-              "expression": "instance_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "uq_browser_owner_profiles_session": {
           "name": "uq_browser_owner_profiles_session",
           "columns": [
@@ -4617,11 +4602,17 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
+        "uq_browser_owner_profiles_instance": {
+          "name": "uq_browser_owner_profiles_instance",
+          "nullsNotDistinct": false,
+          "columns": [
+            "instance_id"
+          ]
+        },
         "uq_browser_owner_profiles_instance_state": {
           "name": "uq_browser_owner_profiles_instance_state",
           "nullsNotDistinct": false,
           "columns": [
-            "id",
             "instance_id",
             "status"
           ]
@@ -4648,27 +4639,14 @@
       "name": "browser_owner_windows",
       "schema": "",
       "columns": {
-        "id": {
-          "name": "id",
+        "chat_thread_id": {
+          "name": "chat_thread_id",
           "type": "uuid",
           "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "owner_profile_id": {
-          "name": "owner_profile_id",
-          "type": "uuid",
-          "primaryKey": false,
           "notNull": true
         },
         "instance_id": {
           "name": "instance_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "chat_thread_id": {
-          "name": "chat_thread_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -4683,7 +4661,7 @@
           "name": "primary_window_id",
           "type": "bigint",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "expires_at": {
           "name": "expires_at",
@@ -4711,33 +4689,12 @@
           "primaryKey": false,
           "notNull": false,
           "generated": {
-            "as": "CASE WHEN state IN ('creating', 'active') THEN 'active' END",
+            "as": "CASE WHEN state = 'active' THEN 'active' END",
             "type": "stored"
           }
         }
       },
       "indexes": {
-        "uq_browser_owner_windows_chat": {
-          "name": "uq_browser_owner_windows_chat",
-          "columns": [
-            {
-              "expression": "owner_profile_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "chat_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "uq_browser_owner_windows_native_window": {
           "name": "uq_browser_owner_windows_native_window",
           "columns": [
@@ -4782,15 +4739,15 @@
         }
       },
       "foreignKeys": {
-        "browser_owner_windows_owner_profile_id_browser_owner_profiles_id_fk": {
-          "name": "browser_owner_windows_owner_profile_id_browser_owner_profiles_id_fk",
+        "browser_owner_windows_instance_fk": {
+          "name": "browser_owner_windows_instance_fk",
           "tableFrom": "browser_owner_windows",
           "tableTo": "browser_owner_profiles",
           "columnsFrom": [
-            "owner_profile_id"
+            "instance_id"
           ],
           "columnsTo": [
-            "id"
+            "instance_id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -4800,12 +4757,10 @@
           "tableFrom": "browser_owner_windows",
           "tableTo": "browser_owner_profiles",
           "columnsFrom": [
-            "owner_profile_id",
             "instance_id",
             "live_browser_status"
           ],
           "columnsTo": [
-            "id",
             "instance_id",
             "status"
           ],
@@ -4819,11 +4774,11 @@
       "checkConstraints": {
         "browser_owner_windows_state_check": {
           "name": "browser_owner_windows_state_check",
-          "value": "\"browser_owner_windows\".\"state\" IN ('creating', 'active', 'closing')"
+          "value": "\"browser_owner_windows\".\"state\" IN ('active', 'closing')"
         },
         "browser_owner_windows_primary_check": {
           "name": "browser_owner_windows_primary_check",
-          "value": "(\"browser_owner_windows\".\"primary_window_id\" IS NULL OR\n          \"browser_owner_windows\".\"primary_window_id\" BETWEEN 0 AND 9007199254740991)\n          AND (\"browser_owner_windows\".\"state\" <> 'active' OR \"browser_owner_windows\".\"primary_window_id\" IS NOT NULL)\n          AND (\"browser_owner_windows\".\"state\" <> 'creating' OR \"browser_owner_windows\".\"primary_window_id\" IS NULL)"
+          "value": "\"browser_owner_windows\".\"primary_window_id\" BETWEEN 0 AND 9007199254740991"
         },
         "browser_owner_windows_deadline_check": {
           "name": "browser_owner_windows_deadline_check",
@@ -5835,12 +5790,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
-        },
-        "window_session_id": {
-          "name": "window_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         },
         "payload": {
           "name": "payload",

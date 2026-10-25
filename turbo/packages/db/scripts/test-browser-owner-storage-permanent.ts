@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
-import { z } from "zod";
 import {
   browserOwnerProfiles,
   browserOwnerWindows,
@@ -20,7 +19,6 @@ export async function validatePermanentBrowserOwnerStorage(
     instanceId = randomUUID(),
     replacementId = randomUUID();
   const providerProfileId = randomUUID(),
-    windowSessionId = randomUUID(),
     chatThreadId = randomUUID();
   const orgId = `browser-owner-schema-${randomUUID()}`;
   const now = new Date();
@@ -74,8 +72,8 @@ export async function validatePermanentBrowserOwnerStorage(
 
     await assert.rejects(
       client.query(
-        "INSERT INTO browser_owner_windows (owner_profile_id, instance_id, chat_thread_id, state, expires_at) VALUES ($1, $2, $3, 'creating', $4)",
-        [profileId, instanceId, chatThreadId, creationExpiresAt],
+        "INSERT INTO browser_owner_windows (instance_id, chat_thread_id, state, primary_window_id, expires_at) VALUES ($1, $2, 'active', 0, $3)",
+        [instanceId, chatThreadId, timeoutAt],
       ),
       { code: "23503", constraint: "browser_owner_windows_active_instance_fk" },
     );
@@ -85,8 +83,6 @@ export async function validatePermanentBrowserOwnerStorage(
       .set({ status: "active", providerSessionId: randomUUID() })
       .where(eq(browserOwnerProfiles.id, profileId));
     await db.insert(browserOwnerWindows).values({
-      id: windowSessionId,
-      ownerProfileId: profileId,
       instanceId,
       chatThreadId,
       state: "active",
@@ -95,22 +91,22 @@ export async function validatePermanentBrowserOwnerStorage(
     });
     await assert.rejects(
       client.query(
-        "INSERT INTO browser_owner_windows (owner_profile_id, instance_id, chat_thread_id, state, expires_at) VALUES ($1, $2, $3, 'creating', $4)",
-        [profileId, instanceId, chatThreadId, creationExpiresAt],
+        "INSERT INTO browser_owner_windows (instance_id, chat_thread_id, state, primary_window_id, expires_at) VALUES ($1, $2, 'active', 0, $3)",
+        [instanceId, chatThreadId, timeoutAt],
       ),
-      { code: "23505", constraint: "uq_browser_owner_windows_chat" },
+      { code: "23505", constraint: "browser_owner_windows_pkey" },
     );
     await assert.rejects(
       client.query(
-        "INSERT INTO browser_owner_windows (owner_profile_id, instance_id, chat_thread_id, state, primary_window_id, expires_at) VALUES ($1, $2, $3, 'active', 0, $4)",
-        [profileId, instanceId, randomUUID(), timeoutAt],
+        "INSERT INTO browser_owner_windows (instance_id, chat_thread_id, state, primary_window_id, expires_at) VALUES ($1, $2, 'active', 0, $3)",
+        [instanceId, randomUUID(), timeoutAt],
       ),
       { code: "23505", constraint: "uq_browser_owner_windows_native_window" },
     );
     await assert.rejects(
       client.query(
-        "UPDATE browser_owner_windows SET primary_window_id = NULL WHERE id = $1",
-        [windowSessionId],
+        "UPDATE browser_owner_windows SET primary_window_id = -1 WHERE chat_thread_id = $1",
+        [chatThreadId],
       ),
       { code: "23514", constraint: "browser_owner_windows_primary_check" },
     );
@@ -124,7 +120,7 @@ export async function validatePermanentBrowserOwnerStorage(
     await db
       .update(browserOwnerWindows)
       .set({ state: "closing" })
-      .where(eq(browserOwnerWindows.id, windowSessionId));
+      .where(eq(browserOwnerWindows.chatThreadId, chatThreadId));
     // Retiring authority is not proof of native closure. Its identity remains
     // while the provider is stopped, without retaining live admission.
     await db
@@ -137,9 +133,16 @@ export async function validatePermanentBrowserOwnerStorage(
       ]),
       { code: "23503" },
     );
+    await assert.rejects(
+      client.query(
+        "UPDATE browser_owner_profiles SET instance_id = $1 WHERE id = $2",
+        [replacementId, profileId],
+      ),
+      { code: "23503", constraint: "browser_owner_windows_instance_fk" },
+    );
     await db
       .delete(browserOwnerWindows)
-      .where(eq(browserOwnerWindows.id, windowSessionId));
+      .where(eq(browserOwnerWindows.chatThreadId, chatThreadId));
     await db
       .update(browserOwnerProfiles)
       .set({ status: "stopped" })
@@ -160,36 +163,10 @@ export async function validatePermanentBrowserOwnerStorage(
       [profileId, instanceId],
     );
     assert.equal(stale.rowCount, 0);
-
-    const column = z
-      .object({ is_nullable: z.literal("YES") })
-      .parse(
-        (
-          await client.query(
-            "SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'browser_user_action_requests' AND column_name = 'window_session_id'",
-          )
-        ).rows[0],
-      );
-    assert.equal(column.is_nullable, "YES");
-    // Frozen outgoing ORM column lists stay legal while the additive nullable
-    // identity ships. Remove transition-only proof with #42932 after its gate.
-    await client.query(`PREPARE outgoing_browser_input_read(uuid) AS
-      SELECT request_token_hash, org_id, user_id, agent_id, chat_thread_id,
-        status, provider_session_id, payload, apply_started_at, completed_at
-      FROM browser_user_action_requests WHERE provider_session_id = $1`);
-    await client.query("DEALLOCATE outgoing_browser_input_read");
-    await client.query(`PREPARE outgoing_browser_input_write AS
-      INSERT INTO browser_user_action_requests (request_token_hash, org_id,
-        user_id, agent_id, chat_thread_id, status, provider_session_id, payload,
-        apply_started_at, completed_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      RETURNING request_token_hash, org_id, user_id, agent_id, chat_thread_id,
-        status, provider_session_id, payload, apply_started_at, completed_at`);
-    await client.query("DEALLOCATE outgoing_browser_input_write");
   } finally {
     await db
       .delete(browserOwnerWindows)
-      .where(eq(browserOwnerWindows.ownerProfileId, profileId));
+      .where(eq(browserOwnerWindows.instanceId, instanceId));
     await db
       .delete(browserOwnerProfiles)
       .where(eq(browserOwnerProfiles.id, profileId));
