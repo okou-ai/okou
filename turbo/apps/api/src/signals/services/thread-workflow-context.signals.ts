@@ -42,12 +42,14 @@ function createProactiveTargetEligibility(
     if (proactiveKind !== null) {
       if (
         !isFeatureEnabled(
-          FeatureSwitchKey.ProactiveAgent,
+          proactiveKind === "suggestions"
+            ? FeatureSwitchKey.AgentSuggestion
+            : FeatureSwitchKey.ProactiveAgent,
           await get(bootstrap.featureSwitches$),
         )
       ) {
         throw new OfficialWorkflowRunAdmissionError({
-          message: "Proactive Agent is not enabled.",
+          message: "Proactive workflow is not enabled.",
         });
       }
       const [eligible] = await get(db$)

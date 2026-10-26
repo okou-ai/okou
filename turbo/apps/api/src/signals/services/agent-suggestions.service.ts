@@ -76,7 +76,7 @@ export const suggestionAccess$ = command(
     );
     signal.throwIfAborted();
     if (
-      !isFeatureEnabled(FeatureSwitchKey.ProactiveAgent, {
+      !isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, {
         userId: auth.userId,
         orgId: auth.orgId,
         overrides,

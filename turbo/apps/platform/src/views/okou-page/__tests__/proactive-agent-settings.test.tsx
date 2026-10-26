@@ -14,7 +14,10 @@ test("offers Learning, Planning and action, and Suggestions as independent prefe
   await setupPage({
     context,
     path: "/agents?settings=proactive-agent",
-    featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.ProactiveAgent]: true,
+      [FeatureSwitchKey.AgentSuggestion]: true,
+    },
   });
   const learning = await screen.findByRole("switch", { name: "Learning" });
   const planning = await screen.findByRole("switch", {
@@ -63,7 +66,10 @@ test("redirects an unavailable Proactive deep link without hiding Morning Brief"
   await setupPage({
     context,
     path: "/agents?settings=proactive-agent",
-    featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: false },
+    featureSwitches: {
+      [FeatureSwitchKey.ProactiveAgent]: false,
+      [FeatureSwitchKey.AgentSuggestion]: false,
+    },
   });
   await expect(
     screen.findByRole("switch", { name: "Morning brief" }),
@@ -76,4 +82,39 @@ test("redirects an unavailable Proactive deep link without hiding Morning Brief"
   expect(
     screen.queryByRole("switch", { name: "Learning" }),
   ).not.toBeInTheDocument();
+});
+
+test.each([
+  {
+    rollout: "Suggestions",
+    proactiveAgent: false,
+    suggestions: true,
+    labels: ["Suggestions"],
+  },
+  {
+    rollout: "Learning and Planning & action",
+    proactiveAgent: true,
+    suggestions: false,
+    labels: ["Learning", "Planning & action"],
+  },
+])("offers $rollout independently of the other rollout", async (flags) => {
+  await setupPage({
+    context,
+    path: "/agents?settings=proactive-agent",
+    featureSwitches: {
+      [FeatureSwitchKey.ProactiveAgent]: flags.proactiveAgent,
+      [FeatureSwitchKey.AgentSuggestion]: flags.suggestions,
+    },
+  });
+  await screen.findByRole("heading", { name: "Proactive" });
+  await waitFor(() => {
+    for (const name of flags.labels) {
+      expect(screen.getByRole("switch", { name })).toBeEnabled();
+    }
+  });
+  expect(
+    screen.getAllByRole("switch").map((toggle) => {
+      return toggle.getAttribute("aria-label");
+    }),
+  ).toStrictEqual(flags.labels);
 });

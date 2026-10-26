@@ -69,6 +69,7 @@ export enum FeatureSwitchKey {
   BrowserNativeInput = "browserNativeInput",
   BrowserCdpViewer = "browserCdpViewer",
   BrowserSharedOwner = "browserSharedOwner",
+  AgentSuggestion = "agentSuggestion",
   ProactiveAgent = "proactiveAgent",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
   SlashActions = "slashActions",
