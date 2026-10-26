@@ -56,7 +56,7 @@ export const SOURCES_FIRST_STEP_ROUTES: Readonly<
 export type SubscriptionProvider = OnboardingSubscriptionProvider;
 
 /** The other places a mention works, offered beside Slack on the same step. */
-export type ChatChannelId = "telegram" | "imessage" | "teams";
+export type ChatChannelId = "telegram" | "imessage" | "teams" | "discord";
 
 /**
  * The invitation API result for an address. Request lifecycle belongs to
