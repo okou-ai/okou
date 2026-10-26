@@ -1235,13 +1235,7 @@ function FeishuSetupWizard({
       return;
     }
     if (step === "credentials" && !data) {
-      detach(
-        (async () => {
-          await checkAppId(form.appId.trim(), signal);
-          advanceStep();
-        })(),
-        Reason.DomCallback,
-      );
+      detach(checkAppId(form.appId.trim(), signal), Reason.DomCallback);
       return;
     }
     advanceStep();
