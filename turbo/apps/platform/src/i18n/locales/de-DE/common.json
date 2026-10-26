@@ -607,7 +607,8 @@
       },
       "slideTitle": "Folie {{number}}",
       "unavailable": "{{kind}}-Vorschau nicht verfügbar.",
-      "videoLabel": "Videovorschau für {{filename}}"
+      "videoLabel": "Videovorschau für {{filename}}",
+      "wordLayoutNotice": "Das Layout der Vorschau kann von Word abweichen."
     },
     "sharing": {
       "accessLabel": "Wer hat Zugriff",

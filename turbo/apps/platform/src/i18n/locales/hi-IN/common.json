@@ -607,7 +607,8 @@
       },
       "slideTitle": "स्लाइड {{number}}",
       "unavailable": "{{kind}} पूर्वावलोकन अनुपलब्ध है.",
-      "videoLabel": "{{filename}} के लिए वीडियो पूर्वावलोकन"
+      "videoLabel": "{{filename}} के लिए वीडियो पूर्वावलोकन",
+      "wordLayoutNotice": "पूर्वावलोकन का लेआउट Word से अलग हो सकता है।"
     },
     "sharing": {
       "accessLabel": "किसे ऐक्सेस है",

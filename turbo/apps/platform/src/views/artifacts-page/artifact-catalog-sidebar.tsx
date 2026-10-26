@@ -78,6 +78,7 @@ export function ArtifactCatalogSidebar() {
           filename: preview.filename,
           kind: preview.kind,
           resourceUrl$: artifactCatalogSidebar.preview.resourceUrl$,
+          wordDocumentHtml$: artifactCatalogSidebar.preview.wordDocumentHtml$,
           shareUrl$: artifactCatalogSidebar.preview.shareUrl$,
         }}
         artifactKind={

@@ -606,7 +606,8 @@
       },
       "slideTitle": "Slide {{number}}",
       "unavailable": "Pratinjau {{kind}} tidak tersedia.",
-      "videoLabel": "Pratinjau video untuk {{filename}}"
+      "videoLabel": "Pratinjau video untuk {{filename}}",
+      "wordLayoutNotice": "Tata letak pratinjau mungkin berbeda dari Word."
     },
     "sharing": {
       "accessLabel": "Siapa yang dapat mengakses",

@@ -623,7 +623,8 @@
       },
       "slideTitle": "Slide {{number}}",
       "unavailable": "Visualização de {{kind}} indisponível.",
-      "videoLabel": "Visualização de vídeo de {{filename}}"
+      "videoLabel": "Visualização de vídeo de {{filename}}",
+      "wordLayoutNotice": "O layout da prévia pode ser diferente do Word."
     },
     "sharing": {
       "accessLabel": "Quem pode acessar",

@@ -606,7 +606,8 @@
       },
       "slideTitle": "第 {{number}} 页",
       "unavailable": "无法预览 {{kind}}。",
-      "videoLabel": "{{filename}} 的视频预览"
+      "videoLabel": "{{filename}} 的视频预览",
+      "wordLayoutNotice": "预览排版可能与 Word 有所不同。"
     },
     "sharing": {
       "accessLabel": "谁可以访问",

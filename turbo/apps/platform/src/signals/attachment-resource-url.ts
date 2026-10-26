@@ -21,6 +21,7 @@ import {
   currentHostedSiteUrl,
   hostedSiteUrlChanges$,
 } from "./hosted-site-url-changes.ts";
+import { createWordDocumentHtml$ } from "./word-document-preview.ts";
 
 const AUTHENTICATED_FILE_PATH = "/api/web/file-url";
 
@@ -228,6 +229,7 @@ export function createAttachmentPreviewSignals(
       resolveArtifactImageTransformOrigin(),
     );
   });
+  const wordDocumentHtml$ = createWordDocumentHtml$(resourceUrl$);
   return {
     linkUrl$: resourceUrl$,
     presignedToken$,
@@ -235,6 +237,7 @@ export function createAttachmentPreviewSignals(
     shareUrl$,
     artifactShareIdentity$,
     thumbnailUrl$,
+    wordDocumentHtml$,
   };
 }
 

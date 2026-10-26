@@ -16,6 +16,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
+import { wordDocumentFixture } from "./word-document-test-fixture.ts";
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
@@ -674,22 +675,22 @@ test("A document template with a cover is tiled by its first page over a stack",
   expect(within(dialog).getAllByTestId("document-cover-sheet")).toHaveLength(2);
 });
 
-test("Opening a Word template hands the source file to the Office viewer", async () => {
+test("Opening a Word template renders an isolated document preview", async () => {
   mockCustomTemplateStore([documentTemplate()]);
+  context.mocks.http.get(DOCUMENT_SOURCE_URL, () => {
+    return new Response(wordDocumentFixture());
+  });
 
   const { dialog } = await openCustomPanel("Document");
   click(tabByText("Document"));
   await within(dialog).findByText("Brand report");
   click(buttonByName("Preview Brand report", dialog)!);
 
-  // The browser cannot draw a Word document, so the file goes to the viewer
-  // that can — the same one an attached document already opens in.
   const frame = await screen.findByTitle("brand-report.docx preview");
-  const viewerUrl = new URL(frame.getAttribute("src") ?? "");
-  expect(`${viewerUrl.origin}${viewerUrl.pathname}`).toBe(
-    "https://view.officeapps.live.com/op/embed.aspx",
+  expect(frame).toHaveAttribute(
+    "srcdoc",
+    expect.stringContaining("Word preview keeps document gestures local."),
   );
-  expect(viewerUrl.searchParams.get("src")).toBe(DOCUMENT_SOURCE_URL);
 
   // The dialog carries the management column a deck shows, so what a member
   // can do to a template does not depend on its kind.

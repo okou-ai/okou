@@ -3,6 +3,7 @@ import { computed } from "ccstate";
 import type { ArtifactCatalogSignals } from "./create-artifact-catalog-signals.ts";
 import type { MermaidDiagramPreviewCommand } from "../mermaid-diagram.ts";
 import { createMarkdownPreviewTree } from "../markdown-preview-tree.ts";
+import { createWordDocumentHtml$ } from "../word-document-preview.ts";
 import {
   fetchPreviewText,
   isTextPreviewKind,
@@ -51,6 +52,7 @@ export function createCatalogArtifactPreviewSignals(
   });
   return {
     resourceUrl$,
+    wordDocumentHtml$: createWordDocumentHtml$(resourceUrl$),
     shareUrl$,
     text$,
     markdownTree$: createMarkdownPreviewTree(text$, openDiagram$),

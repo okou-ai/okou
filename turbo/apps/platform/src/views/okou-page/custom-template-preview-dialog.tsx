@@ -37,6 +37,7 @@ import {
   openCustomTemplateDetail$,
   openCustomTemplateKind$,
   openCustomTemplatePageIndex$,
+  openCustomTemplateWordHtml$,
   projectCustomTemplate$,
   reloadCustomTemplates$,
   selectCustomTemplatePage$,
@@ -154,11 +155,8 @@ function CustomTemplateGallery({
 /**
  * A document, as the file it was compiled from.
  *
- * A document template renders no pages, so the source file is the only thing
- * there is to look at — and the browser cannot draw a Word document at all.
- * Both branches therefore hand the file to a renderer that can: the Office web
- * viewer for the formats it covers, and the browser's own PDF viewer for the
- * rest.
+ * A document template renders no pages, so preview its source through the
+ * shared Word preview or the browser's PDF viewer.
  */
 function CustomTemplateSourcePreview({
   detail,
@@ -181,6 +179,7 @@ function CustomTemplateSourcePreview({
           focusKey={detail.id}
           focusOnMount={false}
           testId="custom-template-source-preview"
+          wordDocumentHtml$={openCustomTemplateWordHtml$}
         />
       ) : (
         <iframe

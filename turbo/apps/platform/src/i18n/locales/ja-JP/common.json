@@ -606,7 +606,8 @@
       },
       "slideTitle": "スライド {{number}}",
       "unavailable": "{{kind}} プレビューは利用できません。",
-      "videoLabel": "{{filename}} のビデオ プレビュー"
+      "videoLabel": "{{filename}} のビデオ プレビュー",
+      "wordLayoutNotice": "プレビューのレイアウトは Word と異なる場合があります。"
     },
     "sharing": {
       "accessLabel": "アクセスできるユーザー",
