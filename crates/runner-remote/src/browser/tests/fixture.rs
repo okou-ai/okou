@@ -34,6 +34,16 @@ pub(super) const FOREIGN: &str = "page-foreign";
 pub(super) struct State {
     pub moved: AtomicBool,
     pub navigated: AtomicBool,
+    pub move_on_metadata: AtomicBool,
+    pub move_after_window_check: AtomicBool,
+    pub window_checks: AtomicUsize,
+    pub malformed_window: AtomicBool,
+    pub pause_auto_attach: AtomicBool,
+    pub child_tree_pending: AtomicBool,
+    pub child_tree_entered: tokio::sync::Notify,
+    pub child_tree_release: tokio::sync::Notify,
+    pub drop_input_ack: AtomicBool,
+    pub inserted: Mutex<String>,
     pub methods: Mutex<Vec<String>>,
     pub connections: AtomicUsize,
     pub closed: tokio::sync::Notify,
@@ -140,7 +150,12 @@ impl Peer {
                                 let request: Value = serde_json::from_str(&text).unwrap();
                                 let method = request["method"].as_str().unwrap();
                                 state.methods.lock().unwrap().push(method.to_owned());
+                                if method == "Page.getFrameTree" && state.child_tree_pending.swap(false,Ordering::SeqCst) {
+                                    state.child_tree_entered.notify_one();
+                                    state.child_tree_release.notified().await;
+                                }
                                 let result = response(method, &request, &state);
+                                if method == "Input.insertText" && state.drop_input_ack.swap(false,Ordering::SeqCst) { break; }
                                 let message = json!({"id":request["id"],"result":result});
                                 if socket.send(Message::Text(message.to_string().into())).await.is_err() { break; }
                                 for event in events(method, &request) {
@@ -249,9 +264,30 @@ fn response(method: &str, request: &Value, state: &State) -> Value {
             {"targetId":FOREIGN,"type":"page","title":"Foreign","url":"https://foreign.example/","attached":false}
         ]}),
         "Browser.getWindowForTarget" => {
-            json!({"windowId":if request["params"]["targetId"] == OWNED && !state.moved.load(Ordering::SeqCst) { 0 } else { 102 },"bounds":{}})
+            if state.malformed_window.load(Ordering::SeqCst) {
+                return json!({});
+            }
+            if state.move_after_window_check.load(Ordering::SeqCst)
+                && state.window_checks.fetch_add(1, Ordering::SeqCst) == 1
+            {
+                state.moved.store(true, Ordering::SeqCst);
+            }
+            json!({"windowId":if request["params"]["targetId"] == OWNED && !state.moved.load(Ordering::SeqCst) { 0 } else { 102 },"bounds":{"left":100}})
+        }
+        "Target.getTargetInfo" => {
+            if state.move_on_metadata.load(Ordering::SeqCst) {
+                state.moved.store(true, Ordering::SeqCst);
+            }
+            json!({"targetInfo":{"targetId":OWNED,"type":"page","title":"Native metadata","url":"https://owned.example/","attached":false}})
         }
         "Target.attachToTarget" => json!({"sessionId":"session-owned"}),
+        "Target.setAutoAttach" => {
+            state.child_tree_pending.store(
+                state.pause_auto_attach.load(Ordering::SeqCst),
+                Ordering::SeqCst,
+            );
+            json!({})
+        }
         "Page.getFrameTree" if request["sessionId"] == "session-child" => {
             json!({"frameTree":{"frame":{"id":"frame-child","loaderId":"loader","url":"https://owned.example/child"}}})
         }
@@ -264,6 +300,17 @@ fn response(method: &str, request: &Value, state: &State) -> Value {
         }
         "Runtime.evaluate" if request["params"]["expression"] == "object" => {
             json!({"result":{"type":"object","objectId":"object-owned"}})
+        }
+        "Runtime.evaluate" if request["params"]["expression"] == "inserted" => {
+            json!({"result":{"type":"string","value":state.inserted.lock().unwrap().clone()}})
+        }
+        "Input.insertText" => {
+            state
+                .inserted
+                .lock()
+                .unwrap()
+                .push_str(request["params"]["text"].as_str().unwrap());
+            json!({})
         }
         "Runtime.evaluate" => {
             json!({"result":{"type":"object","value":{"objectId":"forged-object","frameId":"forged-frame"}}})
@@ -508,7 +555,7 @@ impl Harness {
 
     pub async fn connect(&self) -> WebSocketStream<TcpStream> {
         let tcp = TcpStream::connect(self.address).await.unwrap();
-        tokio_tungstenite::client_async(format!("ws://{}", self.address), tcp)
+        tokio_tungstenite::client_async(format!("ws://127.0.0.1:{}", self.address.port()), tcp)
             .await
             .unwrap()
             .0

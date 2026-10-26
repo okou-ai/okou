@@ -231,6 +231,10 @@ impl BrowserRuntime {
                         .await
                         .ok_or(Failure)??
                     {
+                        guard
+                            .wait(self.refresh(run, &mut broker))
+                            .await
+                            .ok_or(Failure)??;
                         let bytes = serde_json::to_vec(&event).map_err(|_| Failure)?;
                         guard
                             .wait(messages::write(&mut output, &bytes, MAX_MESSAGE_BYTES))

@@ -42,7 +42,7 @@ impl Broker {
         }
     }
 
-    async fn window(&self, target: &str) -> Result<()> {
+    async fn window_id(&self, target: &str) -> Result<u64> {
         let result = self
             .client
             .command(
@@ -51,7 +51,14 @@ impl Broker {
                 None,
             )
             .await?;
-        if result.get("windowId").and_then(Value::as_u64) == Some(self.scope.window) {
+        result
+            .get("windowId")
+            .and_then(Value::as_u64)
+            .ok_or(Failure)
+    }
+
+    async fn window(&self, target: &str) -> Result<()> {
+        if self.window_id(target).await? == self.scope.window {
             Ok(())
         } else {
             Err(Failure)
@@ -84,7 +91,7 @@ impl Broker {
                 continue;
             }
             let target = info["targetId"].as_str().ok_or(Failure)?;
-            if self.window(target).await.is_ok() {
+            if self.window_id(target).await? == self.scope.window {
                 targets.insert(target.to_owned());
                 owned.push(target_info(info)?);
             }
@@ -202,11 +209,20 @@ impl Broker {
                         self.prepare_page(&session).await?;
                     }
                     "Target.getTargetInfo" => {
-                        return Ok(
-                            json!({"id":id,"result":{"targetInfo":target_info(result.get("targetInfo").ok_or(Failure)?)?}}),
-                        );
+                        self.window(&target).await?;
+                        let info = result.get("targetInfo").ok_or(Failure)?;
+                        if info.get("targetId").and_then(Value::as_str) != Some(target.as_str())
+                            || info.get("type").and_then(Value::as_str) != Some("page")
+                        {
+                            return Err(Failure);
+                        }
+                        return Ok(json!({"id":id,"result":{"targetInfo":target_info(info)?}}));
                     }
                     "Browser.getWindowForTarget" => {
+                        if result.get("windowId").and_then(Value::as_u64) != Some(self.scope.window)
+                        {
+                            return Err(Failure);
+                        }
                         return Ok(
                             json!({"id":id,"result":{"windowId":self.scope.window,"bounds":result.get("bounds").ok_or(Failure)?}}),
                         );
@@ -353,7 +369,7 @@ impl Broker {
             "Target.targetCreated" | "Target.targetInfoChanged" if self.discover => {
                 let info = &params["targetInfo"];
                 let target = info["targetId"].as_str().ok_or(Failure)?;
-                if info["type"] != "page" || self.window(target).await.is_err() {
+                if info["type"] != "page" || self.window_id(target).await? != self.scope.window {
                     return Ok(None);
                 }
                 self.targets.insert(target.to_owned());

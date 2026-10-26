@@ -27,7 +27,7 @@ pub async fn run() -> io::Result<bool> {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await?;
     println!(
         "{}",
-        serde_json::json!({"cdpUrl": format!("ws://{}", listener.local_addr()?)})
+        serde_json::json!({"cdpUrl": format!("ws://127.0.0.1:{}", listener.local_addr()?.port())})
     );
     serve(listener, crate::connect_vsock, std::future::pending()).await?;
     Ok(true)

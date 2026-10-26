@@ -24,6 +24,20 @@ import {
 } from "../../contracts/webhooks";
 
 const expectedBindings = [
+  ...["Control", "Connection"].flatMap((name) => {
+    return [
+      {
+        rustModulePath: ["runners", "browser"],
+        rustTypeName: `${name}Request`,
+        direction: "request",
+      },
+      {
+        rustModulePath: ["runners", "browser"],
+        rustTypeName: `${name}Response`,
+        direction: "response",
+      },
+    ];
+  }),
   {
     rustModulePath: ["runners", "runs", "startup"],
     rustTypeName: "Request",

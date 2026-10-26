@@ -2,6 +2,14 @@ import { normalizeRouteBindings, renderRustRoutes } from "../generate";
 import { type RustRouteBinding, rustRouteBindings } from "../routes";
 
 const expectedBindings = [
+  ...(["control", "connection"] as const).map((action) => {
+    return {
+      method: "POST",
+      path: `/api/runners/runs/:runId/browser/${action}`,
+      rustModulePath: ["runners", "runs", "by_run_id", "browser", action],
+      rustConstName: action.toUpperCase(),
+    };
+  }),
   {
     method: "PUT",
     path: "/api/runners/runs/:runId/startup",

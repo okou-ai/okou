@@ -230,6 +230,168 @@ async fn real_guest_stream_filters_targets_selectors_and_global_methods_and_chun
 }
 
 #[tokio::test]
+async fn native_metadata_races_and_invalid_window_replies_cannot_release_results() {
+    for method in [
+        "Target.getTargetInfo",
+        "Browser.getWindowForTarget",
+        "Target.getTargets",
+    ] {
+        let peer = Peer::new().await;
+        let harness = Harness::new(&peer).await;
+        let mut socket = harness.connect().await;
+        command(&mut socket, 1, "Target.getTargets", json!({}), None).await;
+        match method {
+            "Target.getTargetInfo" => peer.state.move_on_metadata.store(true, Ordering::SeqCst),
+            "Browser.getWindowForTarget" => peer
+                .state
+                .move_after_window_check
+                .store(true, Ordering::SeqCst),
+            _ => peer.state.malformed_window.store(true, Ordering::SeqCst),
+        }
+        let params = if method == "Target.getTargets" {
+            json!({})
+        } else {
+            json!({"targetId":OWNED})
+        };
+        socket
+            .send(Message::Text(
+                json!({"id":2,"method":method,"params":params})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while let Some(Ok(message)) = socket.next().await {
+                if message.is_close() {
+                    break;
+                }
+                if let Message::Text(text) = message {
+                    let value: Value = serde_json::from_str(&text).unwrap();
+                    assert!(
+                        !(value["id"] == 2 && value.get("result").is_some()),
+                        "released stale or malformed metadata for {method}"
+                    );
+                }
+            }
+        })
+        .await
+        .unwrap();
+        harness.shutdown().await;
+        peer.wait_closed().await;
+        peer.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn revocation_during_native_event_validation_withholds_the_event() {
+    let peer = Peer::new().await;
+    let mut harness = Harness::new(&peer).await;
+    let mut socket = harness.connect().await;
+    command(&mut socket, 1, "Target.getTargets", json!({}), None).await;
+    command(
+        &mut socket,
+        2,
+        "Target.attachToTarget",
+        json!({"targetId":OWNED,"flatten":true}),
+        None,
+    )
+    .await;
+    peer.state.pause_auto_attach.store(true, Ordering::SeqCst);
+    command(
+        &mut socket,
+        3,
+        "Target.setAutoAttach",
+        json!({"autoAttach":true,"waitForDebuggerOnStart":true,"flatten":true}),
+        Some("session-owned"),
+    )
+    .await;
+    // Only the owned child-attachment event asks for a frame tree after
+    // setAutoAttach has completed. Periodic checks cannot consume this gate.
+    tokio::time::timeout(
+        Duration::from_secs(3),
+        peer.state.child_tree_entered.notified(),
+    )
+    .await
+    .unwrap();
+    harness.set_api(false).await;
+    peer.state.child_tree_release.notify_one();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while let Some(Ok(message)) = socket.next().await {
+            if message.is_close() {
+                break;
+            }
+            if let Message::Text(text) = message {
+                let value: Value = serde_json::from_str(&text).unwrap();
+                assert_ne!(value["method"], "Target.attachedToTarget");
+            }
+        }
+    })
+    .await
+    .unwrap();
+    harness.shutdown().await;
+    peer.wait_closed().await;
+    peer.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_new_stream_observes_the_effect_without_replaying_a_lost_acknowledgement() {
+    let peer = Peer::new().await;
+    let harness = Harness::new(&peer).await;
+    let mut socket = harness.connect().await;
+    command(&mut socket, 1, "Target.getTargets", json!({}), None).await;
+    command(
+        &mut socket,
+        2,
+        "Target.attachToTarget",
+        json!({"targetId":OWNED,"flatten":true}),
+        None,
+    )
+    .await;
+    peer.state.drop_input_ack.store(true, Ordering::SeqCst);
+    socket.send(Message::Text(json!({"id":3,"method":"Input.insertText","sessionId":"session-owned","params":{"text":"A"}}).to_string().into())).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while let Some(Ok(message)) = socket.next().await {
+            if message.is_close() {
+                break;
+            }
+            if let Message::Text(text) = message {
+                let value: Value = serde_json::from_str(&text).unwrap();
+                assert!(!(value["id"] == 3 && value.get("result").is_some()));
+            }
+        }
+    })
+    .await
+    .unwrap();
+    peer.wait_closed().await;
+    let mut next = harness.connect().await;
+    command(&mut next, 1, "Target.getTargets", json!({}), None).await;
+    command(
+        &mut next,
+        2,
+        "Target.attachToTarget",
+        json!({"targetId":OWNED,"flatten":true}),
+        None,
+    )
+    .await;
+    assert_eq!(
+        command(
+            &mut next,
+            3,
+            "Runtime.evaluate",
+            json!({"expression":"inserted","returnByValue":true}),
+            Some("session-owned")
+        )
+        .await["result"]["result"]["value"],
+        "A"
+    );
+    next.close(None).await.unwrap();
+    harness.shutdown().await;
+    peer.wait_closed().await;
+    peer.shutdown().await;
+}
+
+#[tokio::test]
 async fn browser_stream_outlives_sixty_seconds_then_run_cancellation_joins_it() {
     let peer = Peer::new().await;
     let mut harness = Harness::new(&peer).await;

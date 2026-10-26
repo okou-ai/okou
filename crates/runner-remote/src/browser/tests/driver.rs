@@ -168,7 +168,7 @@ async fn immutable_driver_through_actual_guest_adapter_and_runner_dispatch() {
     harness.window = window;
     harness.set_api(true).await;
     let namespace = format!("issue43119-{}", uuid::Uuid::new_v4().simple());
-    let address = format!("ws://{}", harness.address);
+    let address = format!("ws://127.0.0.1:{}", harness.address.port());
     use futures_util::FutureExt;
     let outcome = std::panic::AssertUnwindSafe(async {
         driver(&namespace, &["connect", &address]).await;

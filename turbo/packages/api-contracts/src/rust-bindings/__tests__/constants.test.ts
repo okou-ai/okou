@@ -74,6 +74,7 @@ import {
   STORAGE_MANIFEST_MAX_PATH_BYTES,
 } from "../../contracts/storages";
 import { DATA_ROUTER_REQUEST_BODY_MAX_BYTES } from "../../contracts/data-router";
+import { BROWSER_PROVIDER_TIMEOUT_MINUTES } from "../../contracts/browser";
 
 const codexOauthPlaceholders =
   MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"].placeholders!;
@@ -205,6 +206,12 @@ function placeholderRustDoc(name: string): readonly string[] {
 }
 
 const expectedBindings = [
+  {
+    rustModulePath: ["browser"],
+    rustConstName: "BROWSER_PROVIDER_TIMEOUT_MINUTES",
+    value: rustU64(BROWSER_PROVIDER_TIMEOUT_MINUTES),
+    rustDoc: ["Existing maximum provider lifetime, not a new CDP lease."],
+  },
   {
     rustModulePath: ["data_router"],
     rustConstName: "DATA_ROUTER_REQUEST_BODY_MAX_BYTES",
