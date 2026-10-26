@@ -344,6 +344,7 @@
     "src/signals/services/chat-event-snapshot-body.service.ts",
     "src/signals/services/run-native-session.service.ts",
     "src/signals/services/usage-pack-upgrade-invoice-sql.ts",
+    "src/signals/services/usage-pack-subscription-invoice-sql.ts",
     "src/signals/services/usage-pack-retained-sql.ts",
     "src/signals/services/usage-pack-pending-snapshot-plan.ts",
     "src/signals/services/usage-pack-member-removal-plan.ts",
