@@ -8,9 +8,13 @@ import { promisify } from "node:util";
 import postgres from "postgres";
 import { z } from "zod";
 import { archiveSchema, preparationCommit, sha256, tables } from "./format";
+import { jsonQuery, queryRows, statement } from "./libpq";
 
 const exec = promisify(execFile);
 const baseUri = z.string().parse(process.env.DATABASE_URL);
+const pgBin = z
+  .object({ PG_BIN: z.string().optional() })
+  .parse(process.env).PG_BIN;
 const database = postgres(baseUri, { max: 1, onnotice() {} });
 const root = await mkdtemp(path.join(os.tmpdir(), "managed-retirement-test-"));
 const sourceName = `managed_source_${randomUUID().replaceAll("-", "")}`;
@@ -52,8 +56,14 @@ try {
       created_at timestamp NOT NULL DEFAULT now(), exact_integer bigint
     )`;
     await source.unsafe(ddl);
-    await restore.unsafe(ddl);
   }
+  // A restored table does not retain physical attribute-number holes. Its
+  // definitions must come from the dump while row fields remain exactly equal.
+  await source`ALTER TABLE socialkit_download_jobs ADD COLUMN retired_field text`;
+  await source`ALTER TABLE socialkit_download_jobs ADD COLUMN retained_field text`;
+  await source`ALTER TABLE socialkit_download_jobs DROP COLUMN retired_field`;
+  await source`ALTER TABLE data_search_jobs ALTER COLUMN status TYPE varchar(16)`;
+  await source`ALTER TABLE data_search_jobs ADD CONSTRAINT source_status_check CHECK (status IN ('pending','completed','unknown'))`;
   await source`CREATE TABLE usage_event (id integer PRIMARY KEY, kind text, provider text,
     status text, processed_at timestamp, credits_charged bigint, billing_error text,
     pricing_unit_price bigint, pricing_unit_size bigint, pricing_credits_limit bigint)`;
@@ -87,6 +97,37 @@ try {
     await source`SELECT to_jsonb(t)::text FROM org_metadata t`,
     await source`SELECT to_jsonb(t)::text FROM usage_pack_credit_grants t`,
   ]);
+  const privateText =
+    "quote ' slash \\ newline\n Unicode 中文 ; SELECT 'injected'";
+  assert.deepEqual(
+    await queryRows(
+      statement`SELECT ${privateText}::text AS value, ${[privateText, "second"]}::text[] AS items`,
+      sourceUri.toString(),
+      pgBin,
+      true,
+    ),
+    [{ value: privateText, items: [privateText, "second"] }],
+  );
+  // Required channel binding must fail before SQL on non-TLS/trust auth. The
+  // marker would persist if the transport silently dropped that requirement.
+  await source`CREATE TABLE channel_binding_probe (id integer)`;
+  const unboundUri = new URL(sourceUri);
+  unboundUri.searchParams.set("sslmode", "disable");
+  unboundUri.searchParams.set("channel_binding", "require");
+  await assert.rejects(
+    jsonQuery(
+      "WITH inserted AS (INSERT INTO channel_binding_probe VALUES (1) RETURNING id) SELECT jsonb_agg(inserted)::text FROM inserted",
+      unboundUri.toString(),
+      pgBin,
+      false,
+    ),
+    /PostgresToolFailedInspectPrivateTarget/u,
+  );
+  assert.equal(
+    (await source`SELECT count(*)::int AS count FROM channel_binding_probe`)[0]
+      ?.count,
+    0,
+  );
   const initial = await run([]);
   assert.equal(JSON.parse(initial.stdout).result, "dry-run");
   assert.equal(initial.stdout.includes("private-request"), false);
@@ -102,14 +143,25 @@ try {
       return row.document.includes("9007199254740993");
     }),
   );
-  const verified = await run([
+  const verify = [
     "--verify-restore",
     archiveDir,
     "--expect-restore-host",
     `${restoreUri.hostname}:${restoreUri.port || "5432"}`,
     "--expect-restore-database",
     restoreName,
-  ]);
+  ];
+  await restore`CREATE TABLE commerce_jobs (id uuid)`;
+  await assert.rejects(run(verify), (error: unknown) => {
+    return (
+      error instanceof Error &&
+      "stderr" in error &&
+      typeof error.stderr === "string" &&
+      error.stderr.includes("RestoreTargetTablesMustBeAbsent")
+    );
+  });
+  await restore`DROP TABLE commerce_jobs`;
+  const verified = await run(verify);
   assert.equal(JSON.parse(verified.stdout).result, "restore-verified");
   assert.equal(
     (

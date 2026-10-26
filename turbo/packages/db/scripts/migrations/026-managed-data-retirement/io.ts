@@ -2,6 +2,8 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { open, readFile } from "node:fs/promises";
 import path from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { sourceSchema } from "./format";
@@ -12,8 +14,27 @@ export function identity(uri: string) {
   if (parsed.protocol !== "postgresql:" && parsed.protocol !== "postgres:")
     throw new Error("UnsupportedDatabaseProtocol");
   for (const name of parsed.searchParams.keys()) {
-    if (name !== "sslmode") throw new Error("UnsupportedDatabaseUriSetting");
+    if (!["sslmode", "channel_binding"].includes(name))
+      throw new Error("UnsupportedDatabaseUriSetting");
+    if (parsed.searchParams.getAll(name).length !== 1)
+      throw new Error("DuplicateDatabaseUriSetting");
   }
+  const sslmode = parsed.searchParams.get("sslmode");
+  if (
+    sslmode !== null &&
+    ![
+      "disable",
+      "allow",
+      "prefer",
+      "require",
+      "verify-ca",
+      "verify-full",
+    ].includes(sslmode)
+  )
+    throw new Error("UnsupportedSslMode");
+  const binding = parsed.searchParams.get("channel_binding");
+  if (binding !== null && !["disable", "prefer", "require"].includes(binding))
+    throw new Error("UnsupportedChannelBinding");
   const database = decodeURIComponent(parsed.pathname.slice(1));
   if (!/^[A-Za-z_][A-Za-z0-9_-]*$/u.test(database))
     throw new Error("UnsupportedDatabaseName");
@@ -27,7 +48,10 @@ export async function pg(
   args: string[],
   uri: string,
   bin: string | undefined,
+  input?: string,
+  readOnly = false,
 ) {
+  identity(uri);
   const parsed = new URL(uri);
   // Never inherit libpq routing/service/password-file overrides from the shell.
   const ordinaryEnvironment = Object.fromEntries(
@@ -36,7 +60,7 @@ export async function pg(
     }),
   );
   try {
-    await exec(path.join(bin ?? "", command), args, {
+    const pending = exec(path.join(bin ?? "", command), args, {
       env: {
         ...ordinaryEnvironment,
         PGHOST: parsed.hostname,
@@ -45,9 +69,20 @@ export async function pg(
         PGUSER: decodeURIComponent(parsed.username),
         PGPASSWORD: decodeURIComponent(parsed.password),
         PGSSLMODE: parsed.searchParams.get("sslmode") ?? "prefer",
+        PGCHANNELBINDING:
+          parsed.searchParams.get("channel_binding") ?? "prefer",
+        PGOPTIONS: `-c timezone=UTC -c default_transaction_read_only=${readOnly ? "on" : "off"}`,
       },
-      maxBuffer: 1024 * 1024,
+      maxBuffer: 16 * 1024 * 1024,
     });
+    // SQL and private row parameters travel through stdin, never argv.
+    const inputStream = pending.child.stdin;
+    if (!inputStream) throw new Error("PostgresInputUnavailable");
+    const [result] = await Promise.all([
+      pending,
+      pipeline(Readable.from([input ?? ""]), inputStream),
+    ]);
+    return result.stdout;
   } catch {
     throw new Error("PostgresToolFailedInspectPrivateTarget");
   }

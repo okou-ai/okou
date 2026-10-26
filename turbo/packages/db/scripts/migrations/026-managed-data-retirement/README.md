@@ -31,10 +31,12 @@ this operator is not evidence of their root cause.
   files contain private requests and provider references: never publish them in
   PRs, CI artifacts or chat. Credentials travel to PostgreSQL tools through a
   clean libpq environment, never command arguments or output. Target identity
-  includes the port. The only supported URI parameter is `sslmode`; other
-  parameters, including `channel_binding`, are rejected. The JavaScript driver
-  cannot enforce required SCRAM-PLUS channel binding, so the operator refuses
-  that requirement instead of silently weakening it.
+  includes the port. The supported URI parameters are `sslmode` and
+  `channel_binding`; their exact values pass to libpq for every query, dump and
+  restore. In particular, `channel_binding=require` fails before SQL if the
+  server cannot authenticate with channel binding. Other parameters and duplicate
+  settings are rejected. Queries use `psql` with no startup file and SQL through
+  stdin; private values never enter command arguments.
 
 ## Inventory and archive
 
@@ -54,10 +56,15 @@ are not accepted and are not automatically retried or deleted.
 
 ## Verify recovery and retain a private durable copy
 
-Provision a distinct disposable database with matching pre-contraction schema
-and all four tables empty. `RESTORE_DATABASE_URL_FILE` contains its private URI.
-The operator refuses source identity or nonempty target tables. It restores data
-and compares every original field, schema and dependency definition.
+Provision a distinct disposable database with all four job tables absent.
+Required external dependencies, such as the referenced `agent_runs` records,
+must already exist. `RESTORE_DATABASE_URL_FILE` contains its private URI. The
+operator refuses source identity or any existing target job table. It recreates
+the definitions and data from the verified `jobs.dump`, then compares every
+original row field exactly. Physical column-number gaps and equivalent
+PostgreSQL expression formatting need not survive reconstruction. The archive
+retains the original raw schema fingerprint, which must still match the source
+exactly before retirement.
 
 ```bash
 node --import tsx scripts/migrations/026-managed-data-retirement/retire.ts \
@@ -66,9 +73,9 @@ node --import tsx scripts/migrations/026-managed-data-retirement/retire.ts \
 ```
 
 Success writes `restore-receipt.json`, bound to both archive digests. A failure
-may leave partial disposable-target data: inspect it and provision another empty
-target before a deliberate retry. After physical DROP, recover the definitions
-from `jobs.dump` or the exact pre-contraction revision before restoring data.
+may leave partial disposable-target definitions or data: inspect it and provision
+another fresh target before a deliberate retry. The same full dump recreates
+the retired definitions after physical DROP; retain its external dependencies.
 
 Copy the complete archive directory to restricted durable storage outside the
 workspace and temporary clone. Read/download that retained copy, verify both
@@ -145,7 +152,9 @@ PG_BIN=/usr/lib/postgresql/18/bin \
 `DATABASE_URL` must address a disposable local PostgreSQL administrator database.
 The native test creates/drops uniquely named source and restore databases and
 uses the real CLI and PostgreSQL tools. It covers lossless large integers and
-private fields, real restore, stale-row and incoming-CASCADE refusal, no
+private fields, quoted/backslash/Unicode values, required-channel-binding refusal,
+full schema/data restore with dropped-column history, existing-target refusal,
+stale-row and incoming-CASCADE refusal, no
 compensation, unchanged financial data, idempotent replay and missing-receipt
 reconciliation. It also runs in migration consistency CI. Retire this directory
 and its CI invocation after production acceptance; preserve immutable schema
