@@ -66,10 +66,8 @@ export function ArtifactBanner({
 /** Small native actions that can run on a publisher origin without App state. */
 export function HostedSiteBannerActions({
   continueUrl,
-  downloadUrl,
 }: {
   readonly continueUrl: string;
-  readonly downloadUrl: string;
 }) {
   return (
     <div className="flex shrink-0 items-center gap-1">
@@ -81,14 +79,14 @@ export function HostedSiteBannerActions({
       >
         <Share2 size={16} aria-hidden />
       </button>
-      <a
-        href={downloadUrl}
-        referrerPolicy="no-referrer"
+      <button
+        type="button"
+        data-okou-banner-download=""
         aria-label="Download"
         className={buttonVariants({ variant: "quiet", size: "icon-sm" })}
       >
         <Download size={16} aria-hidden />
-      </a>
+      </button>
       <button
         type="button"
         data-okou-banner-fullscreen=""
