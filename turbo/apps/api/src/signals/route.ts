@@ -180,6 +180,7 @@ import { runModelsRoutes } from "./routes/run-models";
 import { runnerCancellationRoutes } from "./routes/runner-cancellation";
 import { runnerSshRoutes } from "./routes/runner-ssh";
 import { runnerVncRoutes } from "./routes/runner-vnc";
+import { runnerBrowserRoutes } from "./routes/runner-browser";
 import { runnersRoutes } from "./routes/runners";
 import { runsRoutes } from "./routes/runs";
 import { runsCancelRoutes } from "./routes/runs-cancel";
@@ -363,6 +364,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...chatRemoteAccessRoutes,
   ...vncAccessRoutes,
   ...runnerVncRoutes,
+  ...runnerBrowserRoutes,
   ...cloudflareAccessRoutes,
   ...tailscaleRoutes,
   ...sshAccessRoutes,

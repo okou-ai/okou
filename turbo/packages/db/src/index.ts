@@ -149,6 +149,7 @@ import * as connectorCatalogSchema from "./runtime/connector-catalog";
 import * as officialWorkflowCatalogSchema from "./schema/official-workflow-catalog";
 import * as mailDraftSchema from "./schema/mail-draft";
 import * as browserSessionSchema from "./schema/browser-session";
+import * as browserOwnerSchema from "./schema/browser-owner";
 import * as presentationTemplateSchema from "./schema/presentation-template";
 import * as userTemplateSchema from "./schema/user-template";
 import * as piResourceVersionIndexSchema from "./schema/pi-resource-version-index";
@@ -311,6 +312,7 @@ export const schema = {
   ...officialWorkflowCatalogSchema,
   ...mailDraftSchema,
   ...browserSessionSchema,
+  ...browserOwnerSchema,
   ...presentationTemplateSchema,
   ...userTemplateSchema,
   ...piResourceVersionIndexSchema,

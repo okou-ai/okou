@@ -2682,6 +2682,13 @@
       "when": 1792906284816,
       "tag": "1461_data_router_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 1462,
+      "version": "7",
+      "when": 1792953672040,
+      "tag": "1462_browser_owner_windows",
+      "breakpoints": true
     }
   ]
 }
