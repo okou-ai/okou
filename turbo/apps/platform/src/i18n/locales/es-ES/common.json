@@ -1579,8 +1579,7 @@
         "whatsCooking": "¿Qué se está cocinando, {{userName}}?",
         "whatsOnYourMind": "¿Qué tienes en mente, {{userName}}?",
         "whatsTheMove": "¿Cuál es el plan, {{userName}}?"
-      },
-      "viewAgentProfile": "Ver perfil del agente"
+      }
     },
     "agentSuggestions": {
       "dismiss": "Descartar",
@@ -3704,7 +3703,6 @@
         "createCodeError": "No se pudo crear un código de conexión.",
         "creatingCode": "Creando código de conexión…",
         "description": "Acceso por mensajes de texto a {{assistantName}}",
-        "destination": "iMessage o SMS a",
         "openMessages": "Abrir Mensajes",
         "options": "Opciones de teléfono",
         "phoneLabel": "Teléfono",

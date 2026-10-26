@@ -389,6 +389,7 @@ test("hides home Tasks when Planning and action is off and restores saved Tasks 
     path: `/agents/${agentId}/chat?settings=proactive-agent`,
     featureSwitches: {
       [FeatureSwitchKey.ProactiveAgent]: true,
+      [FeatureSwitchKey.AgentSuggestion]: true,
     },
   });
   const jobs = await screen.findByRole("switch", { name: "Planning & action" });

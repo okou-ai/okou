@@ -153,11 +153,18 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.AgentSuggestion]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "Suggestions",
+    description: "Discover and curate useful next-step suggestions.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ProactiveAgent]: {
     maintainer: "lancy@okou.ai",
     displayName: "Proactive",
     description:
-      "Review activity, learn, plan next steps, advance entrusted Tasks and curate Suggestions.",
+      "Review activity, learn, plan next steps and advance entrusted Tasks.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

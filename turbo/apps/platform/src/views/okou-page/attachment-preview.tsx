@@ -1,7 +1,7 @@
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { Eye, FileMusic, Play, Video } from "lucide-react";
-import { useGet, useLastResolved, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import type { TextPreviewComputed } from "../../signals/text-preview.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
@@ -317,8 +317,39 @@ export function SitePreviewCard({
   );
 }
 
-/** Thread cards never execute publisher code before the viewer opens them. */
-export function SitePreviewPlaceholder({ title }: { readonly title: string }) {
+/** The site itself, scaled down to fill a card's frame. */
+export function SitePreviewViewport({
+  src,
+  title,
+}: {
+  readonly src: string;
+  readonly title: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      data-testid="attachment-preview-html-viewport"
+      className="pointer-events-none absolute left-0 top-0 h-[400%] w-[400%] origin-top-left scale-[0.25]"
+    >
+      <iframe
+        src={src}
+        title={t(
+          ($) => {
+            return $.artifacts.preview.dialogLabel;
+          },
+          { filename: title },
+        )}
+        sandbox="allow-same-origin allow-scripts"
+        tabIndex={-1}
+        loading="lazy"
+        scrolling="no"
+        className="pointer-events-none h-full w-full border-0 bg-background"
+      />
+    </div>
+  );
+}
+
+function SitePreviewPlaceholder({ title }: { readonly title: string }) {
   return (
     <div
       data-testid="attachment-preview-site-placeholder"
@@ -379,6 +410,7 @@ function HtmlSitePreviewCard({
       title={title}
     >
       <SitePreviewContent
+        resourceUrl$={preview.resourceUrl$}
         title={title}
         previewImageLoad={previewImageLoad}
         previewImagePending={previewImagePending}
@@ -390,11 +422,13 @@ function HtmlSitePreviewCard({
 
 /** Shared visual content; the enclosing surface owns navigation and actions. */
 export function SitePreviewContent({
+  resourceUrl$,
   title,
   previewImageLoad,
   previewImagePending,
   previewImageUrl,
 }: {
+  resourceUrl$: AttachmentPreviewSignals["resourceUrl$"];
   title: string;
   previewImageLoad?: ImageLoadSignals;
   previewImagePending?: boolean;
@@ -406,13 +440,30 @@ export function SitePreviewContent({
       load={previewImageLoad}
       testId="attachment-preview-thumbnail"
       className="absolute inset-0 h-full w-full object-cover"
-      fallback={<SitePreviewPlaceholder title={title} />}
+      fallback={
+        <HtmlSitePreviewViewport resourceUrl$={resourceUrl$} title={title} />
+      }
     />
   ) : previewImagePending ? (
     <span
       className="absolute inset-0 bg-muted/30"
       data-testid="attachment-preview-thumbnail-pending"
     />
+  ) : (
+    <HtmlSitePreviewViewport resourceUrl$={resourceUrl$} title={title} />
+  );
+}
+
+function HtmlSitePreviewViewport({
+  resourceUrl$,
+  title,
+}: {
+  resourceUrl$: AttachmentPreviewSignals["resourceUrl$"];
+  title: string;
+}) {
+  const resourceUrl = useLoadable(resourceUrl$);
+  return resourceUrl.state === "hasData" ? (
+    <SitePreviewViewport src={resourceUrl.data} title={title} />
   ) : (
     <SitePreviewPlaceholder title={title} />
   );

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.36](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.35...runner-executor-v0.15.36) (2026-10-26)
+
+
+### Performance Improvements
+
+* **runner-executor:** encode validated storage payloads per batch ([#43099](https://github.com/okou-ai/okou/issues/43099)) ([6b8bf73](https://github.com/okou-ai/okou/commit/6b8bf73c0148dead786b8ecd48caefa5e2c9947e))
+
 ## [0.15.35](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.34...runner-executor-v0.15.35) (2026-10-26)
 
 ## [0.15.34](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.33...runner-executor-v0.15.34) (2026-10-26)

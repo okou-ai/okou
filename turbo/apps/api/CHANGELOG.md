@@ -9,6 +9,42 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.12.0](https://github.com/okou-ai/okou/compare/api-v2.11.0...api-v2.12.0) (2026-10-26)
+
+
+### Features
+
+* add expanded action options to homepage suggestions ([#43104](https://github.com/okou-ai/okou/issues/43104)) ([fdf92c5](https://github.com/okou-ai/okou/commit/fdf92c5beea97015267ae6dbb74e7db58ce0a344))
+
+
+### Bug Fixes
+
+* **api:** prevent runner usage publication deadlocks ([#43117](https://github.com/okou-ai/okou/issues/43117)) ([423e716](https://github.com/okou-ai/okou/commit/423e71638493dac434aaf645bafda0ac17f8f1bb))
+* **api:** return conflict for competing expired usage pack previews ([#43102](https://github.com/okou-ai/okou/issues/43102)) ([56826ea](https://github.com/okou-ai/okou/commit/56826eae800835f13959846e54691425cd8bbe86))
+
+
+### CI
+
+* **api:** deploy an auxiliary production worker during releases ([#43073](https://github.com/okou-ai/okou/issues/43073)) ([df5501e](https://github.com/okou-ai/okou/commit/df5501ecbfbde69111c9067cdbe77c2ed0e0203e))
+* retire github desktop manifest mirror ([#43097](https://github.com/okou-ai/okou/issues/43097)) ([7b91141](https://github.com/okou-ai/okou/commit/7b91141956c5bb4581f5e422144f34e1d3971243))
+
+
+### Refactoring
+
+* **api:** own runner claim transition writes ([#43101](https://github.com/okou-ai/okou/issues/43101)) ([713d396](https://github.com/okou-ai/okou/commit/713d396bf5901781d8278a07c2b35ca4cbb30a76))
+* **api:** read native predecessors from thread state ([#43106](https://github.com/okou-ai/okou/issues/43106)) ([158c2bd](https://github.com/okou-ai/okou/commit/158c2bd59b402738e501a1dc1b82c93c4af41061))
+* **data:** drop retired managed data storage ([#42942](https://github.com/okou-ai/okou/issues/42942)) ([c9b25eb](https://github.com/okou-ai/okou/commit/c9b25eb26d18dab6cb01c60453fa4729fdd50247))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.0
+    * @okouai/core bumped to 8.790.3
+    * @okouai/db bumped to 2.6.1
+    * @okouai/pi-agent-runtime bumped to 1.50.76
+
 ## [2.11.0](https://github.com/okou-ai/okou/compare/api-v2.10.0...api-v2.11.0) (2026-10-26)
 
 

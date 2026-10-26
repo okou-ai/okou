@@ -1554,8 +1554,7 @@
         "whatsCooking": "Ada apa, {{userName}}?",
         "whatsOnYourMind": "Apa yang ada di pikiranmu, {{userName}}?",
         "whatsTheMove": "Mau ngapain, {{userName}}?"
-      },
-      "viewAgentProfile": "Lihat profil agen"
+      }
     },
     "agentSuggestions": {
       "dismiss": "Abaikan",
@@ -3635,7 +3634,6 @@
         "createCodeError": "Tidak dapat membuat kode koneksi.",
         "creatingCode": "Membuat kode koneksi…",
         "description": "Akses {{assistantName}} lewat pesan teks",
-        "destination": "iMessage atau SMS ke",
         "openMessages": "Buka Pesan",
         "options": "Opsi telepon",
         "phoneLabel": "Telepon",

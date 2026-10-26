@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.7](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.6...guest-contracts-v0.27.7) (2026-10-26)
+
+
+### Performance Improvements
+
+* **runner-executor:** encode validated storage payloads per batch ([#43099](https://github.com/okou-ai/okou/issues/43099)) ([6b8bf73](https://github.com/okou-ai/okou/commit/6b8bf73c0148dead786b8ecd48caefa5e2c9947e))
+
 ## [0.27.6](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.5...guest-contracts-v0.27.6) (2026-10-26)
 
 

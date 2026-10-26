@@ -32,17 +32,14 @@ function canReadAgent(
 
 function proactiveRunDefinitionCondition(
   kind: keyof typeof PROACTIVE_WORKFLOW_DEFINITIONS,
-  jobsAvailable: boolean,
 ) {
-  const definitions = jobsAvailable
-    ? [PROACTIVE_WORKFLOW_DEFINITIONS[kind]]
-    : Object.values(PROACTIVE_WORKFLOW_DEFINITIONS);
   return or(
-    ...[...definitions, { name: RETIRED_PROACTIVE_DEFINITION_NAME }].map(
-      (definition) => {
-        return sql`${agentRuns.officialWorkflowProvenance} @> ${JSON.stringify({ definitions: [{ name: definition.name }] })}::jsonb`;
-      },
-    ),
+    ...[
+      PROACTIVE_WORKFLOW_DEFINITIONS[kind],
+      { name: RETIRED_PROACTIVE_DEFINITION_NAME },
+    ].map((definition) => {
+      return sql`${agentRuns.officialWorkflowProvenance} @> ${JSON.stringify({ definitions: [{ name: definition.name }] })}::jsonb`;
+    }),
   );
 }
 
@@ -158,10 +155,7 @@ export const workflowAutomationCanFire$ = command(
             eq(activeAgentRuns.userId, automation.ownerUserId),
             inArray(agentRuns.status, ["pending", "running"]),
             sql`${agentRuns.workflowAutomationId} IS DISTINCT FROM ${automation.id}::uuid`,
-            proactiveRunDefinitionCondition(
-              proactiveKind,
-              eligibility.jobs.available,
-            ),
+            proactiveRunDefinitionCondition(proactiveKind),
           ),
         )
         .limit(1);

@@ -1556,8 +1556,7 @@
         "whatsCooking": "Was steht an, {{userName}}?",
         "whatsOnYourMind": "Was beschäftigt Sie, {{userName}}?",
         "whatsTheMove": "Was ist der nächste Schritt, {{userName}}?"
-      },
-      "viewAgentProfile": "Agentenprofil anzeigen"
+      }
     },
     "agentSuggestions": {
       "dismiss": "Verwerfen",
@@ -3650,7 +3649,6 @@
         "createCodeError": "Verbindungscode konnte nicht erstellt werden.",
         "creatingCode": "Verbindungscode wird erstellt…",
         "description": "SMS-Zugriff auf {{assistantName}}",
-        "destination": "iMessage oder SMS an",
         "openMessages": "Nachrichten öffnen",
         "options": "Telefonoptionen",
         "phoneLabel": "Telefon",

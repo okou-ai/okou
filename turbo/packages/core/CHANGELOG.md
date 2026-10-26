@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.790.3](https://github.com/okou-ai/okou/compare/core-v8.790.2...core-v8.790.3) (2026-10-26)
+
+
+### Bug Fixes
+
+* download hosted sites in place and enable staff rollout ([#43111](https://github.com/okou-ai/okou/issues/43111)) ([ef21e30](https://github.com/okou-ai/okou/commit/ef21e303274787f2cfff446e747505b5849e9b18))
+
+
+### Refactoring
+
+* **data:** drop retired managed data storage ([#42942](https://github.com/okou-ai/okou/issues/42942)) ([c9b25eb](https://github.com/okou-ai/okou/commit/c9b25eb26d18dab6cb01c60453fa4729fdd50247))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.0
+
 ## [8.790.2](https://github.com/okou-ai/okou/compare/core-v8.790.1...core-v8.790.2) (2026-10-26)
 
 

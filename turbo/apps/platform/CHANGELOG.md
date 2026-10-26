@@ -12,6 +12,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1066.0](https://github.com/okou-ai/okou/compare/app-v0.1065.0...app-v0.1066.0) (2026-10-26)
+
+
+### Features
+
+* add expanded action options to homepage suggestions ([#43104](https://github.com/okou-ai/okou/issues/43104)) ([fdf92c5](https://github.com/okou-ai/okou/commit/fdf92c5beea97015267ae6dbb74e7db58ce0a344))
+
+
+### Bug Fixes
+
+* download hosted sites in place and enable staff rollout ([#43111](https://github.com/okou-ai/okou/issues/43111)) ([ef21e30](https://github.com/okou-ai/okou/commit/ef21e303274787f2cfff446e747505b5849e9b18))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.0
+    * @okouai/core bumped to 8.790.3
+    * @okouai/ui bumped to 1.18.2
+
 ## [0.1065.0](https://github.com/okou-ai/okou/compare/app-v0.1064.2...app-v0.1065.0) (2026-10-26)
 
 

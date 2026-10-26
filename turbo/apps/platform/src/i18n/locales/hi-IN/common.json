@@ -1556,8 +1556,7 @@
         "whatsCooking": "क्या पक रहा है, {{userName}}?",
         "whatsOnYourMind": "आपके मन में क्या है, {{userName}}?",
         "whatsTheMove": "क्या चाल है, {{userName}}?"
-      },
-      "viewAgentProfile": "एजेंट प्रोफ़ाइल देखें"
+      }
     },
     "agentSuggestions": {
       "dismiss": "खारिज करें",
@@ -3650,7 +3649,6 @@
         "createCodeError": "कनेक्शन कोड नहीं बनाया जा सका।",
         "creatingCode": "कनेक्शन कोड बनाया जा रहा है…",
         "description": "{{assistantName}} तक टेक्स्ट-संदेश पहुंच",
-        "destination": "iMessage या SMS को",
         "openMessages": "मैसेज खोलें",
         "options": "फ़ोन विकल्प",
         "phoneLabel": "फ़ोन",

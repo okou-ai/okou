@@ -21,7 +21,7 @@ import {
 import { ensureAgentDraft$ } from "./agent-draft.ts";
 
 export const agentSuggestionsEnabled$ = computed(async (get) => {
-  if (!get(featureSwitch$)[FeatureSwitchKey.ProactiveAgent]) {
+  if (!get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion]) {
     return false;
   }
   const [current, primary] = await Promise.all([
@@ -75,7 +75,7 @@ export const enterAgentSuggestions$ = command(({ set }) => {
 });
 export const subscribeAgentSuggestions$ = command(
   ({ get, set }, signal: AbortSignal) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.ProactiveAgent]) {
+    if (!get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion]) {
       return;
     }
     set(

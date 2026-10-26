@@ -1556,8 +1556,7 @@
         "whatsCooking": "What's cooking, {{userName}}?",
         "whatsOnYourMind": "What's on your mind, {{userName}}?",
         "whatsTheMove": "What's the move, {{userName}}?"
-      },
-      "viewAgentProfile": "View agent profile"
+      }
     },
     "agentSuggestions": {
       "dismiss": "Dismiss",
@@ -3648,7 +3647,6 @@
         "createCodeError": "Couldn't create a connection code.",
         "creatingCode": "Creating connection code…",
         "description": "Text-message access to {{assistantName}}",
-        "destination": "iMessage or SMS to",
         "openMessages": "Open Messages",
         "options": "Phone options",
         "phoneLabel": "Phone",

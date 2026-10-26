@@ -120,7 +120,7 @@ function ProactivePreference({ kind }: { kind: ProactivePreferenceKind }) {
 export function ProactiveSuggestionsSettings() {
   const flags = useLoadable(featureSwitch$);
   return flags.state === "hasData" &&
-    flags.data[FeatureSwitchKey.ProactiveAgent] ? (
+    flags.data[FeatureSwitchKey.AgentSuggestion] ? (
     <ProactivePreference kind="suggestions" />
   ) : null;
 }
@@ -134,5 +134,9 @@ export function ProactivePlanningActionSettings() {
 }
 
 export function ProactiveLearningSettings() {
-  return <ProactivePreference kind="learning" />;
+  const flags = useLoadable(featureSwitch$);
+  return flags.state === "hasData" &&
+    flags.data[FeatureSwitchKey.ProactiveAgent] ? (
+    <ProactivePreference kind="learning" />
+  ) : null;
 }
