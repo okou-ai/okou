@@ -1,6 +1,6 @@
 //! Controlled external SDK peers over actual loopback UDP. No provider access.
 //! SDK endpoint maps retain SmallBox storage, without mutating key identities.
-use crate::tailscale::peers::{Binding, Frames, Peers, Received};
+use crate::tailscale::peers::{Binding, Clock, Frames, Peers, Received};
 use crate::tailscale::tcp::{Connection, Stream};
 use std::{
     collections::VecDeque,
@@ -461,11 +461,15 @@ pub(super) struct Fixture {
 }
 impl Fixture {
     pub(super) async fn new() -> Self {
+        Self::with_clock(Clock::default()).await
+    }
+
+    pub(super) async fn with_clock(clock: Clock) -> Self {
         let keys = NodeKeyPair::random();
         let a = NodeKeyPair::random();
         let b = NodeKeyPair::random();
         let b_key = b.public;
-        let mut peers = super::fixture_peers(&keys, &a, &b).await;
+        let mut peers = super::fixture_peers_with_clock(&keys, &a, &b, clock).await;
         let client = Arc::new(UdpSocket::bind("127.0.0.1:0").unwrap());
         client.set_nonblocking(true).unwrap();
         let a = Side::new(a, keys.public, 2, Arc::clone(&client));
