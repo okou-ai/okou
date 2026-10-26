@@ -1,13 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Readable } from "node:stream";
 
-import {
-  DeleteObjectsCommand,
-  GetObjectCommand,
-  HeadObjectCommand,
-  ListObjectsV2Command,
-  PutObjectCommand,
-} from "@aws-sdk/client-s3";
 import {
   SKILL_IMPORT_LIMITS,
   skillImportSessionsContract,
@@ -23,7 +15,7 @@ import {
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { nowDate, now } from "../../../lib/time";
+import { now } from "../../../lib/time";
 import { signSkillImportJwtForTests } from "../../auth/tokens";
 import { skillImportRoutes } from "../skill-import";
 import { workflowsRoutes } from "../workflows";
@@ -33,67 +25,13 @@ import {
   type ApiTestUser,
 } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const mocks = createRouteMocks(context);
 
 type OrgActor = ApiTestUser & { readonly orgId: string };
-
-/**
- * Object-store boundary for skill volumes, so an imported skill can be read
- * back through the workflow detail endpoint.
- */
-function installVolumeStorage(): void {
-  const objects = new Map<string, Buffer>();
-  context.mocks.s3.send.mockImplementation((command: unknown) => {
-    if (command instanceof PutObjectCommand) {
-      const { Key: key, Body: body } = command.input;
-      if (!key || !(typeof body === "string" || body instanceof Uint8Array)) {
-        throw new Error("Expected a volume object body and key");
-      }
-      objects.set(key, Buffer.from(body));
-      return Promise.resolve({});
-    }
-    if (
-      command instanceof HeadObjectCommand ||
-      command instanceof GetObjectCommand
-    ) {
-      const key = command.input.Key;
-      const body = key ? objects.get(key) : undefined;
-      if (!body) {
-        throw Object.assign(new Error("Object not found"), {
-          name: "NotFound",
-          $metadata: { httpStatusCode: 404 },
-        });
-      }
-      return Promise.resolve({
-        ContentLength: body.length,
-        Body: Readable.from([body]),
-      });
-    }
-    if (command instanceof ListObjectsV2Command) {
-      const prefix = command.input.Prefix ?? "";
-      return Promise.resolve({
-        Contents: [...objects]
-          .filter(([key]) => {
-            return key.startsWith(prefix);
-          })
-          .map(([Key, body]) => {
-            return { Key, Size: body.length, LastModified: nowDate() };
-          }),
-      });
-    }
-    if (command instanceof DeleteObjectsCommand) {
-      for (const object of command.input.Delete?.Objects ?? []) {
-        if (object.Key) {
-          objects.delete(object.Key);
-        }
-      }
-    }
-    return Promise.resolve({});
-  });
-}
 
 function clerkHeaders(actor: ApiTestUser) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -149,7 +87,7 @@ async function bootstrapActor(): Promise<{
     throw new Error("Expected the test actor to have an organization");
   }
   bdd.acceptAgentStorageWrites();
-  installVolumeStorage();
+  installWorkflowVolumeS3Fixture(context);
   const status = await bdd.readOnboardingStatus(actor);
   if (!status.defaultAgentId) {
     throw new Error("Expected onboarding to bootstrap a default agent");

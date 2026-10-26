@@ -369,13 +369,12 @@ fn verify_workflow_archive(name: &str, version: &str, bytes: &[u8]) -> io::Resul
     use sha2::{Digest, Sha256};
     if let Some(expected) =
         guest_contracts::workflow_attachments::archive_sha256(Some(name), Some(version))
+        && hex::encode(Sha256::digest(bytes)) != expected
     {
-        if hex::encode(Sha256::digest(bytes)) != expected {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Workflow attachment archive integrity mismatch",
-            ));
-        }
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Workflow attachment archive integrity mismatch",
+        ));
     }
     Ok(())
 }

@@ -238,7 +238,13 @@ async fn successful_split_claim_bodies_use_one_aggregate_output() -> TestResult 
         assert_eq!(captured.len(), 1);
         assert_eq!(
             captured[0].lines().next(),
-            Some(format!("POST /api/runners/jobs/{}/claim HTTP/1.1", expected.run_id).as_str()),
+            Some(
+                format!(
+                    "POST /api/runners/jobs/{}/claim?workflowSkills=1 HTTP/1.1",
+                    expected.run_id
+                )
+                .as_str()
+            ),
         );
         eprintln!(
             "chunked={chunked}, fragmented={fragmented}: source={source_bytes}, aggregate requests={requests}, aggregate requested bytes={allocated_bytes}, largest={largest}"

@@ -7095,7 +7095,9 @@ mod tests {
                     .await
             });
             let request = server.next_request("claim before eligibility").await;
-            assert!(request.starts_with(&format!("POST /api/runners/jobs/{run_id}/claim ")));
+            assert!(request.starts_with(&format!(
+                "POST /api/runners/jobs/{run_id}/claim?workflowSkills=1 "
+            )));
             assert!(!registration.is_cancelled());
             release.send(()).unwrap();
             let claimed = claim_task.await.unwrap().unwrap();
