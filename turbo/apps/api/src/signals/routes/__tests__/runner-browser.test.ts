@@ -777,9 +777,75 @@ describe("owner provider profiles", () => {
           404,
         );
       }
-      await expect(b.request({ kind: "allocate" })).resolves.toStrictEqual({
-        outcome: "unavailable",
+      const recovered = accepted(await b.request({ kind: "allocate" }));
+      expect(recovered.ownerProfileId).toBe(winner.ownerProfileId);
+      expect(recovered.id).not.toBe(winner.id);
+      expect(recovered.providerProfileId).not.toBe(winner.providerProfileId);
+      expect(f.provider.createdIds).toHaveLength(3);
+    });
+  });
+
+  it("replaces a missing stopped profile once and rejects a late recovery after its winner stops", async () => {
+    const prepared = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    let arrivals = 0;
+    const f = await fixture(
+      true,
+      profileProvider(async () => {
+        if (++arrivals === 2) {
+          prepared.resolve();
+          await release.promise;
+        }
+      }),
+    );
+    await f.owned.run(async () => {
+      const a = await f.start(),
+        b = await f.start();
+      const original = await allocate(a);
+      accepted(await a.request({ kind: "beginStop", instanceId: original.id }));
+      accepted(
+        await a.request({ kind: "completeStop", instanceId: original.id }),
+      );
+      expect(
+        (
+          await fetch(
+            `${PROVIDER_URL}/profiles/${original.providerProfileId}`,
+            {
+              method: "DELETE",
+            },
+          )
+        ).status,
+      ).toBe(204);
+
+      const late = settle(a.request({ kind: "allocate" }));
+      await prepared.promise;
+      const winner = await allocate(b);
+      accepted(await b.request({ kind: "beginStop", instanceId: winner.id }));
+      accepted(
+        await b.request({ kind: "completeStop", instanceId: winner.id }),
+      );
+      release.resolve();
+      const result = await late;
+      if (!result.ok) {
+        throw result.error;
+      }
+      expect(result.value).toStrictEqual({ outcome: "unavailable" });
+      expect(winner.ownerProfileId).toBe(original.ownerProfileId);
+      expect(winner.providerProfileId).not.toBe(original.providerProfileId);
+      expect(accepted(await b.request({ kind: "inspect" }))).toMatchObject({
+        id: winner.id,
+        providerProfileId: winner.providerProfileId,
+        status: "stopped",
       });
+      expect(f.provider.createdIds).toHaveLength(3);
+      for (const id of f.provider.createdIds) {
+        expect((await fetch(`${PROVIDER_URL}/profiles/${id}`)).status).toBe(
+          id === winner.providerProfileId ? 200 : 404,
+        );
+      }
+      const reused = await allocate(b);
+      expect(reused.providerProfileId).toBe(winner.providerProfileId);
+      expect(f.provider.createdIds).toHaveLength(3);
     });
   });
 
@@ -933,7 +999,7 @@ describe("owner provider profiles", () => {
     });
   });
 
-  it("separates provider failure, invalid identity and an actually missing retained profile", async () => {
+  it("keeps the profile on lookup failures and recovers only after confirmed deletion", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
       const chat = await f.start();
@@ -984,6 +1050,14 @@ describe("owner provider profiles", () => {
           expected,
         ]);
         expect(JSON.stringify(lookup.body)).not.toContain(privateDetail);
+        expect(accepted(await chat.request({ kind: "inspect" }))).toMatchObject(
+          {
+            id: instance.id,
+            providerProfileId: instance.providerProfileId,
+            status: "stopped",
+          },
+        );
+        expect(f.provider.createdIds).toHaveLength(1);
       }
       server.use(
         http.get(`${PROVIDER_URL}/profiles/:id`, () => {
@@ -1007,14 +1081,15 @@ describe("owner provider profiles", () => {
           )
         ).status,
       ).toBe(204);
-      await expect(chat.request({ kind: "allocate" })).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
+      const recovered = accepted(await chat.request({ kind: "allocate" }));
+      expect(recovered.ownerProfileId).toBe(instance.ownerProfileId);
+      expect(recovered.id).not.toBe(instance.id);
+      expect(recovered.providerProfileId).not.toBe(instance.providerProfileId);
       expect(accepted(await chat.request({ kind: "inspect" }))).toMatchObject({
-        providerProfileId: instance.providerProfileId,
-        status: "stopped",
+        providerProfileId: recovered.providerProfileId,
+        status: "creating",
       });
-      expect(f.provider.createdIds).toHaveLength(1);
+      expect(f.provider.createdIds).toHaveLength(2);
     });
   });
 });

@@ -29,7 +29,13 @@ const cleanupProfileCandidate$ = command(
   async (
     { get },
     owner: BrowserOwnerAuthority,
-    providerProfileId: string,
+    {
+      providerProfileId,
+      previousProfileId,
+    }: {
+      readonly providerProfileId: string;
+      readonly previousProfileId: string | null;
+    },
     publicationUncertain: boolean,
     signal: AbortSignal,
   ): Promise<void> => {
@@ -67,12 +73,16 @@ const cleanupProfileCandidate$ = command(
       references.some((row) => {
         return row.providerProfileId === providerProfileId;
       }) ||
-      (publicationUncertain && references.length === 0)
+      (publicationUncertain &&
+        (references.length === 0 ||
+          references.some((row) => {
+            return row.providerProfileId === previousProfileId;
+          })))
     ) {
       return;
     }
-    // A different accepted owner profile is immutable through ordinary
-    // allocation, so a late publication cannot adopt this candidate.
+    // A different accepted profile proves a loser only after the expected
+    // predecessor is gone; its presence still permits late recovery publication.
     const deleted = await settle(
       deleteBrowserUseProfile(providerProfileId, signal),
     );
@@ -102,6 +112,7 @@ export function createRunnerBrowserAllocation(
       .select({
         profile: {
           providerProfileId: browserOwnerProfiles.providerProfileId,
+          instanceId: browserOwnerProfiles.instanceId,
           status: browserOwnerProfiles.status,
         },
       })
@@ -131,23 +142,30 @@ export function createRunnerBrowserAllocation(
         return { outcome: "unavailable" };
       }
       const { owner, profile } = context;
-      const providerProfileId = profile
+      const retainedProfileId = profile
         ? await getBrowserUseProfile(profile.providerProfileId, signal)
-        : await createBrowserUseProfile(
-            `okou-owner-profile-${createHash("sha256")
-              .update(JSON.stringify([owner.orgId, owner.userId]))
-              .digest("hex")}`,
-            signal,
-          );
-      if (providerProfileId === null) {
-        return { outcome: "unavailable" };
-      }
+        : null;
+      signal.throwIfAborted();
+      // Only a confirmed missing profile permits fresh, empty-state recovery.
+      const created = retainedProfileId === null;
+      const providerProfileId =
+        retainedProfileId ??
+        (await createBrowserUseProfile(
+          `okou-owner-profile-${createHash("sha256")
+            .update(JSON.stringify([owner.orgId, owner.userId]))
+            .digest("hex")}`,
+          signal,
+        ));
+      const candidate = {
+        providerProfileId,
+        previousProfileId: profile?.providerProfileId ?? null,
+      };
       if (signal.aborted) {
-        if (!profile) {
+        if (created) {
           await set(
             cleanupProfileCandidate$,
             owner,
-            providerProfileId,
+            candidate,
             false,
             AbortSignal.timeout(PROFILE_CLEANUP_TIMEOUT_MS),
           );
@@ -159,17 +177,21 @@ export function createRunnerBrowserAllocation(
         set(
           controlBrowserOwner$,
           owner,
-          { kind: "allocate", providerProfileId },
+          {
+            kind: "allocate",
+            providerProfileId,
+            previousProfile: profile,
+          },
           signal,
         ),
       );
       if (signal.aborted) {
-        if (!profile) {
+        if (created) {
           await settle(
             set(
               cleanupProfileCandidate$,
               owner,
-              providerProfileId,
+              candidate,
               !published.ok,
               AbortSignal.timeout(PROFILE_CLEANUP_TIMEOUT_MS),
             ),
@@ -183,12 +205,12 @@ export function createRunnerBrowserAllocation(
         published.value.outcome === "accepted" &&
         published.value.instance.providerProfileId === providerProfileId;
       const cleaned =
-        !profile && !adopted
+        created && !adopted
           ? await settle(
               set(
                 cleanupProfileCandidate$,
                 owner,
-                providerProfileId,
+                candidate,
                 !published.ok,
                 AbortSignal.timeout(PROFILE_CLEANUP_TIMEOUT_MS),
               ),

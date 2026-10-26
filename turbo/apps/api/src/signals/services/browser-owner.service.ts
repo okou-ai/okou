@@ -55,7 +55,14 @@ type BrowserAction<K extends RunnerBrowserAction["kind"]> = Extract<
 >;
 type BrowserOwnerMutation =
   | Exclude<RunnerBrowserAction, { kind: "inspect" | "allocate" }>
-  | { readonly kind: "allocate"; readonly providerProfileId: string };
+  | {
+      readonly kind: "allocate";
+      readonly providerProfileId: string;
+      readonly previousProfile: {
+        readonly providerProfileId: string;
+        readonly instanceId: string;
+      } | null;
+    };
 
 interface RunnerBrowserIdentity {
   readonly runId: string;
@@ -301,8 +308,18 @@ const allocateOwnerBrowser$ = command(
     const instanceId = randomUUID();
     const creationExpiresAt = new Date(nowMs + SETUP_MS);
     const timeoutAt = new Date(nowMs + MAX_BROWSER_MS);
-    // A losing provider candidate is reconciled by exact ID; it must never
-    // overwrite the accepted persistent profile.
+    const expectedProfile = and(
+      eq(profiles.status, "stopped"),
+      eq(
+        profiles.providerProfileId,
+        action.previousProfile?.providerProfileId ?? action.providerProfileId,
+      ),
+      action.previousProfile
+        ? eq(profiles.instanceId, action.previousProfile.instanceId)
+        : undefined,
+    );
+    // Missing-provider recovery replaces only the exact stopped lifetime
+    // whose profile the server resolved, never a concurrent winner.
     const rows = (
       await db
         .insert(profiles)
@@ -341,6 +358,20 @@ const allocateOwnerBrowser$ = command(
             .where(
               and(
                 currentRun(owner),
+                action.previousProfile
+                  ? exists(
+                      new QueryBuilder()
+                        .select({ id: profiles.id })
+                        .from(profiles)
+                        .where(
+                          and(
+                            eq(profiles.orgId, owner.orgId),
+                            eq(profiles.userId, owner.userId),
+                            expectedProfile,
+                          ),
+                        ),
+                    )
+                  : undefined,
                 notExists(
                   new QueryBuilder()
                     .select({ id: browserProfiles.id })
@@ -369,6 +400,7 @@ const allocateOwnerBrowser$ = command(
         .onConflictDoUpdate({
           target: [profiles.orgId, profiles.userId],
           set: {
+            providerProfileId: action.providerProfileId,
             instanceId,
             providerSessionId: null,
             status: "creating",
@@ -376,11 +408,7 @@ const allocateOwnerBrowser$ = command(
             timeoutAt,
             updatedAt: now,
           },
-          setWhere: and(
-            eq(profiles.status, "stopped"),
-            eq(profiles.providerProfileId, action.providerProfileId),
-            authorityStillCurrent(owner),
-          ),
+          setWhere: and(expectedProfile, authorityStillCurrent(owner)),
         })
         .returning()
     ).map((profile) => {
