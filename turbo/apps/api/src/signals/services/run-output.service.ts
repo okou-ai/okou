@@ -1,6 +1,5 @@
 import { eq } from "drizzle-orm";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
-import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
 import { db$ } from "../external/db";
 import { command } from "ccstate";
@@ -20,8 +19,6 @@ export const getRunOutputText$ = command(
       .where(eq(runOutputMaterializations.runId, runId))
       .limit(1);
     signal.throwIfAborted();
-    return output?.text === null || output?.text === undefined
-      ? undefined
-      : visiblePiMemoryCitationText(output.text);
+    return output?.text ?? undefined;
   },
 );

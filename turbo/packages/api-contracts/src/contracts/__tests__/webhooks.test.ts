@@ -400,71 +400,6 @@ describe("Sandbox transient session output", () => {
   });
 });
 
-describe("Pi memory citation event transport", () => {
-  const citation = {
-    entries: [
-      {
-        path: "memory.md",
-        lineStart: 1,
-        lineEnd: 2,
-        note: "used",
-      },
-    ],
-    rolloutIds: ["019c6e27-e55b-73d1-87d8-4e01f1f75043"],
-  };
-  const event = { type: "assistant", sequenceNumber: 7 };
-
-  it("accepts an empty marker or sequence-bound private citations", () => {
-    for (const citations of [
-      [],
-      [{ sequenceNumber: event.sequenceNumber, citation }],
-    ]) {
-      expect(
-        webhookEventsContract.send.body.safeParse({
-          runId: "run",
-          events: [event],
-          piMemoryCitationTransport: { schemaVersion: 1, citations },
-        }).success,
-      ).toBe(true);
-    }
-  });
-
-  it("rejects unbound, duplicate, oversized, or structurally loose sidecars", () => {
-    const invalidTransports = [
-      {
-        schemaVersion: 1,
-        citations: [{ sequenceNumber: 8, citation }],
-      },
-      {
-        schemaVersion: 1,
-        citations: [
-          { sequenceNumber: 7, citation },
-          { sequenceNumber: 7, citation },
-        ],
-      },
-      {
-        schemaVersion: 1,
-        citations: Array.from({ length: 33 }, () => {
-          return { sequenceNumber: 7, citation };
-        }),
-      },
-      {
-        schemaVersion: 1,
-        citations: [{ sequenceNumber: 7, citation, public: true }],
-      },
-    ];
-    for (const piMemoryCitationTransport of invalidTransports) {
-      expect(
-        webhookEventsContract.send.body.safeParse({
-          runId: "run",
-          events: [event],
-          piMemoryCitationTransport,
-        }).success,
-      ).toBe(false);
-    }
-  });
-});
-
 describe("Run completion metadata", () => {
   const completion = {
     cliAgentType: "codex",
@@ -1067,14 +1002,6 @@ it("accepts existing Pi and Codex shapes used by bounded delivery", () => {
       },
     },
   ];
-  for (const transport of [undefined, { schemaVersion: 1, citations: [] }]) {
-    const payload = {
-      runId: "bounded-delivery",
-      events,
-      piMemoryCitationTransport: transport,
-    };
-    expect(webhookEventsContract.send.body.parse(payload)).toStrictEqual(
-      payload,
-    );
-  }
+  const payload = { runId: "bounded-delivery", events };
+  expect(webhookEventsContract.send.body.parse(payload)).toStrictEqual(payload);
 });

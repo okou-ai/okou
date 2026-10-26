@@ -38,7 +38,6 @@ const EVENT_DELIVERY_RETAINED_ATTEMPTS: usize = 3;
 struct PreparedEvent {
     sequence: u32,
     event: Bytes,
-    private_citation: Option<Bytes>,
     conservative_bytes: usize,
     labels: EventLabels,
     byte_budget: OwnedSemaphorePermit,
@@ -88,17 +87,14 @@ impl EventQueue {
 }
 
 impl EventDeliverySender {
-    /// Admit a canonical event, separating private metadata before masking keys.
+    /// Mask and admit a canonical event within the delivery byte budget.
     pub(super) fn try_send_for_framework(
         &self,
         sequence: u32,
-        mut event: serde_json::Value,
+        event: serde_json::Value,
         framework: crate::env::Framework,
         masker: &SecretMasker,
     ) -> Result<(), AgentError> {
-        let private_citation = self
-            .payload_envelope
-            .take_private_citation(sequence, &mut event, masker)?;
         let event = events::prepare_event_for_delivery(event, sequence, masker);
         let framework = match framework {
             crate::env::Framework::ClaudeCode => {
@@ -107,9 +103,7 @@ impl EventDeliverySender {
             crate::env::Framework::Pi => super::bounded_event_delivery::Framework::Pi,
             crate::env::Framework::Codex => super::bounded_event_delivery::Framework::Codex,
         };
-        let envelope_bytes = self
-            .payload_envelope
-            .singleton_bytes(0, private_citation.as_ref().map_or(0, Bytes::len));
+        let envelope_bytes = self.payload_envelope.singleton_bytes(0);
         let budget = EVENT_DELIVERY_MAX_REQUEST_BYTES.saturating_sub(envelope_bytes);
         let prepared =
             super::bounded_event_delivery::prepare_for_delivery(event, budget, framework)?;
@@ -126,7 +120,7 @@ impl EventDeliverySender {
             );
             return Ok(());
         };
-        self.try_send_prepared(sequence, serialized, private_citation, labels)?;
+        self.try_send_prepared(sequence, serialized, labels)?;
         if let Some(reduction) = reduction {
             log_info!(
                 LOG_TAG,
@@ -150,13 +144,10 @@ impl EventDeliverySender {
         &self,
         sequence: u32,
         serialized_event: Vec<u8>,
-        private_citation: Option<Bytes>,
         labels: EventLabels,
     ) -> Result<(), AgentError> {
         let event = Bytes::from(serialized_event.into_boxed_slice());
-        let conservative_bytes = self
-            .payload_envelope
-            .singleton_bytes(event.len(), private_citation.as_ref().map_or(0, Bytes::len));
+        let conservative_bytes = self.payload_envelope.singleton_bytes(event.len());
         if conservative_bytes > EVENT_DELIVERY_MAX_REQUEST_BYTES {
             log_warn!(
                 LOG_TAG,
@@ -200,7 +191,6 @@ impl EventDeliverySender {
         let prepared = PreparedEvent {
             sequence,
             event,
-            private_citation,
             conservative_bytes,
             labels,
             byte_budget,
@@ -234,18 +224,11 @@ pub(super) struct EventDeliveryRuntime {
 }
 
 impl EventDeliveryRuntime {
-    pub(super) fn start(
-        http: HttpClient,
-        run_id: &str,
-        pi_memory_citation_transport: bool,
-    ) -> Result<Self, AgentError> {
+    pub(super) fn start(http: HttpClient, run_id: &str) -> Result<Self, AgentError> {
         let queue = Arc::new(EventQueue::default());
         let pressure = Arc::new(DeliveryPressure::default());
         let progress = Arc::new(Mutex::new(DeliveryProgress::default()));
-        let payload_envelope = Arc::new(events::EventPayloadEnvelope::new(
-            run_id,
-            pi_memory_citation_transport,
-        )?);
+        let payload_envelope = Arc::new(events::EventPayloadEnvelope::new(run_id)?);
         let sender = EventDeliverySender {
             queue: Arc::clone(&queue),
             byte_budget: Arc::new(Semaphore::new(EVENT_DELIVERY_MAX_BYTES)),
@@ -686,7 +669,6 @@ impl EventBatch {
     fn new(events: Vec<PreparedEvent>, payload_envelope: &events::EventPayloadEnvelope) -> Self {
         let mut sequences = Vec::with_capacity(events.len());
         let mut event_bytes = Vec::with_capacity(events.len());
-        let mut private_citations = Vec::new();
         let mut conservative_bytes = 0usize;
         let mut byte_budgets = Vec::with_capacity(events.len());
         let mut labels = EventLabels::UNKNOWN;
@@ -695,9 +677,6 @@ impl EventBatch {
         for event in events {
             sequences.push(event.sequence);
             event_bytes.push(event.event);
-            if let Some(citation) = event.private_citation {
-                private_citations.push(citation);
-            }
             conservative_bytes += event.conservative_bytes;
             if event.conservative_bytes > largest_event_bytes {
                 largest_event_bytes = event.conservative_bytes;
@@ -708,7 +687,7 @@ impl EventBatch {
 
         Self {
             sequences,
-            payload: payload_envelope.payload(&event_bytes, &private_citations),
+            payload: payload_envelope.payload(&event_bytes),
             conservative_bytes,
             labels,
             byte_budgets,

@@ -77,8 +77,10 @@ reloads the authoritative persistent state, restoring eventual consistency.
 
 Sandbox runs can publish sanitized text deltas through the session-output
 webhook on a separate
-`run-output:<userId>:<orgId>:<runId>` Ably channel. Thinking and private memory
-citation markup are excluded. Pi runtime admission follows the route policy.
+`run-output:<userId>:<orgId>:<runId>` Ably channel. Thinking is excluded and the
+configured secret-masking policy applies. Assistant text otherwise follows the
+provider output without interpreting memory citation markup. Pi runtime
+admission follows the route policy.
 A visible chat panel subscribes while it has a pending or running run; queued
 runs do not subscribe. Run changes and page cancellation reset that subscription.
 The SharedWorker shares the transport across tabs and releases the channel

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { SharedMessage } from "@okouai/api-contracts/contracts/shared-threads";
 import { joinAll, onRejection, settle } from "../utils";
-import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { agents } from "@okouai/db/schema/agent";
 import { artifacts } from "@okouai/db/schema/artifact";
@@ -768,15 +767,11 @@ export const readSharedThread$ = command(
     return row && (await set(sharedThreadArtifactsReadable$, row, signal))
       ? {
           id: row.id,
-          title: visiblePiMemoryCitationText(row.title),
+          title: row.title,
           messages: row.messages.map((message) => {
             const attachments = row.messageAttachments[message.messageIndex];
             return {
               ...message,
-              content:
-                message.role === "assistant"
-                  ? visiblePiMemoryCitationText(message.content)
-                  : message.content,
               ...(attachments === undefined ? {} : { attachments }),
             };
           }),
@@ -803,7 +798,7 @@ export const readSharedThreadMeta$ = command(
     signal.throwIfAborted();
     return row && (await set(sharedThreadArtifactsReadable$, row, signal))
       ? {
-          title: visiblePiMemoryCitationText(row.title),
+          title: row.title,
           hasArtifactSnapshot: row.hasArtifactSnapshot,
         }
       : null;

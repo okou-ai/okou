@@ -60,7 +60,6 @@ struct PreparedNotificationIngest {
 
 #[derive(Default)]
 struct CodexNotificationState {
-    citation_repair: super::codex_citation_repair::NativeCitationRepair,
     thread_started_emitted: bool,
     secondary_thread_notification_logged: bool,
     turn_usage: CodexTurnUsageTracker,
@@ -297,7 +296,7 @@ pub(super) async fn execute_codex_app_server_for_runtime(
     log_info!(LOG_TAG, "Starting codex app-server execution...");
 
     let should_send_events = http.has_api();
-    let event_delivery = EventDeliveryRuntime::start(http.clone(), &runtime.run_id, false)?;
+    let event_delivery = EventDeliveryRuntime::start(http.clone(), &runtime.run_id)?;
 
     let run_result = run_codex_app_server(
         masker,
@@ -396,13 +395,6 @@ async fn run_codex_app_server(
             },
         )?;
         notification_state.allow_historical_usage = native_resumed;
-        notification_state.citation_repair =
-            super::codex_citation_repair::NativeCitationRepair::new(
-                runtime.codex_home(),
-                &thread_identity.canonical_id,
-                native_resumed,
-            );
-
         while let Some(notification) = client.pop_notification() {
             let mut sink = EventIngestSink {
                 ingestor: &mut ingestor,
@@ -653,17 +645,6 @@ async fn run_codex_app_server(
         .finalize_steered_declarations()
         .await;
     let stderr_lines = masker.mask_diagnostic_lines(client.stderr_tail().to_vec());
-    for event in notification_state.citation_repair.abandon() {
-        let mut sink = EventIngestSink {
-            ingestor: &mut ingestor,
-            output_timing: &mut output_timing,
-            agent_log: &mut agent_log,
-            masker,
-            should_send_events,
-            event_tx,
-        };
-        ingest_event(event, &mut sink).await?;
-    }
     // Publish buffered event-log bytes after the child is stopped and before
     // callers observe the finished app-server execution.
     agent_log.flush().await;
@@ -1336,7 +1317,6 @@ fn prepare_notification_ingest(
         .map_err(|error| AgentError::Execution(error.to_string()))?
     else {
         return Ok(PreparedNotificationIngest {
-            events: notification_state.citation_repair.drain(false),
             output_item_start,
             ..PreparedNotificationIngest::default()
         });
@@ -1366,15 +1346,7 @@ fn prepare_notification_ingest(
     let active_input_ready = is_turn_started_event(&event);
     let terminal_exit_code = terminal_exit_code(&event, expected_thread_id, active_turn_id);
     Ok(PreparedNotificationIngest {
-        events: notification_state.citation_repair.submit(
-            event,
-            notification
-                .params
-                .as_ref()
-                .and_then(|params| params.pointer("/item/phase"))
-                .and_then(Value::as_str),
-            terminal_exit_code.is_some(),
-        ),
+        events: vec![event],
         output_item_start,
         emitted_thread_started,
         active_input_ready,

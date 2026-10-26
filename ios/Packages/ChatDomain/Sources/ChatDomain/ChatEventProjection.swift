@@ -75,7 +75,7 @@ public enum ChatEventProjection {
         guard let content = row.payload?.content else {
           throw ChatError.invalidContract("Assistant output is missing its content.")
         }
-        text = visibleOutput(content)
+        text = content
         role = .assistant
         isError = false
       case .outputError, .runFailed:
@@ -182,18 +182,5 @@ public enum ChatEventProjection {
       }
     }
     return candidate.flatMap { $0.error.isEmpty ? nil : $0.id }
-  }
-
-  /// Raw history may contain historical private memory-citation envelopes.
-  /// They are transport metadata, not assistant output (including incomplete envelopes).
-  private static func visibleOutput(_ source: String) -> String {
-    var text = source
-    while let opening = text.range(of: "<oai-mem-citation>") {
-      let end =
-        text.range(of: "</oai-mem-citation>", range: opening.upperBound..<text.endIndex)?.upperBound
-        ?? text.endIndex
-      text.removeSubrange(opening.lowerBound..<end)
-    }
-    return text.replacingOccurrences(of: "</oai-mem-citation>", with: "")
   }
 }

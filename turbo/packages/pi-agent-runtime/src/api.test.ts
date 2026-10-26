@@ -1,18 +1,9 @@
-import {
-  fauxAssistantMessage,
-  fauxToolCall,
-  type AssistantMessage,
-} from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { CURRENT_SESSION_VERSION } from "@earendil-works/pi-coding-agent";
-import {
-  PI_MEMORY_CITATION_OPEN,
-  PI_MEMORY_CITATION_CLOSE,
-} from "@okouai/api-contracts/contracts/pi-memory-citations";
 import { describe, expect, it } from "vitest";
 import {
   createPiSessionJsonl,
   inspectPiSessionJsonl,
-  projectPiSessionJsonlForExport,
   UnsupportedPiSessionVersionError,
 } from "./api";
 import { MemoryPiSession } from "./session-memory";
@@ -38,69 +29,6 @@ describe("Pi API facade", () => {
       id: SESSION_ID,
       timestamp: SESSION_TIMESTAMP,
     });
-  });
-
-  it("hides citation envelopes in exports while preserving canonical JSONL", () => {
-    const hidden =
-      "<oai-mem-citation><citation_entries>memory.md:2-3|note=[used]</citation_entries><rollout_ids>019c6e27-e55b-73d1-87d8-4e01f1f75043</rollout_ids></oai-mem-citation>";
-    const nativeMessage: AssistantMessage = {
-      ...fauxAssistantMessage(
-        [
-          { type: "text", text: `before${hidden.slice(0, 10)}` },
-          { type: "text", text: `${hidden.slice(10)}after` },
-        ],
-        { timestamp: 123 },
-      ),
-      errorMessage: `provider failed${hidden}`,
-    };
-    const session = MemoryPiSession.create({
-      cwd: "/workspace",
-      id: SESSION_ID,
-    });
-    session.appendMessage(nativeMessage);
-    const canonical = session.toJsonl();
-    expect(canonical).toContain(hidden.slice(0, 10));
-    expect(canonical).toContain(hidden.slice(10));
-    const exported = projectPiSessionJsonlForExport(canonical);
-    expect(exported).not.toContain("<oai-mem-citation>");
-    expect(exported).toContain('"errorMessage":"provider failed"');
-    expect(session.toJsonl()).toBe(canonical);
-  });
-
-  it("preserves split delimiter examples through immutable session export", () => {
-    const literal = `explain \`${PI_MEMORY_CITATION_OPEN}\` suffix`;
-    const hidden = `${PI_MEMORY_CITATION_OPEN}<citation_entries>private.md:1-1|note=[private note]</citation_entries>${PI_MEMORY_CITATION_CLOSE}`;
-    const expected = `explain \`&lt;${PI_MEMORY_CITATION_OPEN.slice(1, -1)}&gt;\` suffix`;
-    const native = fauxAssistantMessage([
-      { type: "text", text: literal.slice(0, 14) },
-      { type: "text", text: literal.slice(14) + hidden },
-    ]);
-    const session = MemoryPiSession.create({
-      cwd: "/workspace",
-      id: SESSION_ID,
-    });
-    session.appendMessage(native);
-    const canonical = session.toJsonl();
-    const exported = projectPiSessionJsonlForExport(canonical);
-    const exportedText = MemoryPiSession.fromJsonl(exported)
-      .buildSessionContext()
-      .messages.flatMap((message) => {
-        return message.role === "assistant"
-          ? message.content
-              .filter((block) => {
-                return block.type === "text";
-              })
-              .map((block) => {
-                return block.text;
-              })
-          : [];
-      })
-      .join("");
-    expect(exportedText).toBe(expected);
-    expect(exported).not.toContain("private.md");
-    expect(exported).not.toContain("private note");
-    expect(projectPiSessionJsonlForExport(exported)).toBe(exported);
-    expect(session.toJsonl()).toBe(canonical);
   });
 
   it("projects native session state into a narrow inspection result", () => {

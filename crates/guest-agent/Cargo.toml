@@ -45,9 +45,5 @@ guest-control-proto.workspace = true
 name = "integration"
 path = "tests/integration.rs"
 
-[[example]]
-name = "pi_memory_citation_bench"
-path = "src/cli/pi_memory_citation_bench.rs"
-
 [lints]
 workspace = true

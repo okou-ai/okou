@@ -1,4 +1,10 @@
-import type { PiMemoryCitation } from "@okouai/api-contracts/contracts/pi-memory-citations";
-
-/** Private bounded provenance owned by the run-output projection. */
-export type RunOutputMemoryCitation = PiMemoryCitation;
+/** Persisted shape retained for API versions that still write this table. */
+export interface RunOutputMemoryCitation {
+  readonly entries: readonly {
+    readonly path: string;
+    readonly lineStart: number;
+    readonly lineEnd: number;
+    readonly note: string;
+  }[];
+  readonly rolloutIds: readonly string[];
+}

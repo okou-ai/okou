@@ -18,7 +18,6 @@ import {
   serializeChatFollowupsContent,
   type ChatRecommendedFollowup,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
 import { publicProviderBalanceFailureReason } from "@okouai/api-contracts/contracts/run-balance-errors";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
@@ -767,7 +766,7 @@ async function loadDbCompletedChatOutput(args: {
     state.latestResultText !== null
       ? {
           sequenceNumber: state.latestResultSequence,
-          content: visiblePiMemoryCitationText(state.latestResultText),
+          content: state.latestResultText,
         }
       : null;
   return {
