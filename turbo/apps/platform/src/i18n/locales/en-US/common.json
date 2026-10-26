@@ -4283,6 +4283,8 @@
         "teamTitle": "Invite a teammate"
       },
       "prompt": {
+        "connectorsDescription": "Choose a recommended app below to connect your account. You can also connect later.",
+        "connectorsTitle": "Connect your work tools",
         "intro": "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud."
       },
       "skills": {

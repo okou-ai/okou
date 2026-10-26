@@ -828,25 +828,32 @@ test("A new user who brings a prompt tries it on the source-first flow's single 
   ).not.toBeInTheDocument();
 });
 
-test("A prompt that asks for a connector shows its Connect card", async () => {
+test("A prompt link prioritizes its connectors without duplicating recommendations", async () => {
   mockOnboardingNeeded();
 
   await setupPage({
     context,
     locale: "en-US",
-    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent("Review last week's Google Ads campaign performance")}&connector=google-ads`,
+    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent("Review last week's Google Ads campaign performance")}&connector=google-ads,gmail,gmail`,
   });
 
   await expect(
     screen.findByRole("heading", { name: PROMPT_TITLE }),
   ).resolves.toBeInTheDocument();
-  // The source step's own card, connected from anywhere on it.
   await waitFor(() => {
     expect(getButtonByName("Connect Google Ads")).toBeEnabled();
   });
+  const recommendations = screen.getByRole("region", {
+    name: "Connect your work tools",
+  });
+  const connections = queryAllByRoleFast("button", recommendations);
+  expect(connections[0]).toHaveAttribute("aria-label", "Connect Google Ads");
   expect(
-    screen.getByText("Manage Google Ads campaigns and reports."),
-  ).toBeInTheDocument();
+    connections.filter((button) => {
+      return button.getAttribute("aria-label") === "Connect Gmail";
+    }),
+  ).toHaveLength(1);
+  expect(getButtonByName("Connect Notion", recommendations)).toBeEnabled();
 });
 
 test("A prompt link can retry unavailable account information", async () => {

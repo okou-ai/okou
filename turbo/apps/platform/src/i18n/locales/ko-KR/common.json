@@ -4270,6 +4270,8 @@
         "teamTitle": "팀원 초대"
       },
       "prompt": {
+        "connectorsDescription": "아래 추천 앱을 선택해 계정을 연결하세요. 나중에 연결해도 됩니다.",
+        "connectorsTitle": "업무 도구 연결",
         "intro": "Okou는 나와 팀을 위한 업무 어시스턴트입니다. 흩어진 정보를 클라우드에서 완료된 업무로 바꿉니다."
       },
       "skills": {

@@ -3,12 +3,12 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { Textarea, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { runPromptOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
+import { onboardingMakeConnectorSlugs$ } from "../../signals/onboarding/onboarding-connector-items.ts";
 import {
   onboardingDraft$,
   updateOnboardingDraft$,
 } from "../../signals/onboarding/onboarding-state.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { searchParams$ } from "../../signals/route.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
 import { OnboardingConnectorSetup } from "../onboarding/onboarding-connectors.tsx";
@@ -22,21 +22,15 @@ import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 
 /**
  * What the prompt handoff does: the prompt the visitor brought stays editable,
- * the tools its link names can be connected, and running it completes
- * onboarding before the first request.
+ * recommended tools and those its link names can be connected, and running it
+ * completes onboarding before the first request.
  */
 function usePromptOnboarding() {
   const draft = useGet(onboardingDraft$);
   const setDraft = useSet(updateOnboardingDraft$);
   const [runLoadable, runPrompt] = useLoadableSet(runPromptOnboarding$);
-  const searchParams = useGet(searchParams$);
   const pageSignal = useGet(pageSignal$);
-  const connectorSlugs = (searchParams.get("connector") ?? "")
-    .split(",")
-    .map((value) => {
-      return value.trim();
-    })
-    .filter(Boolean);
+  const connectorSlugs = useGet(onboardingMakeConnectorSlugs$);
 
   const run = (): void => {
     detach(runPrompt(pageSignal), Reason.DomCallback);
@@ -57,7 +51,7 @@ function usePromptOnboarding() {
  * The prompt handoff in the source-first flow's look. A visitor who brings a
  * prompt skips that flow's questions, so this is their whole onboarding: one
  * step that introduces Okou as the first question does, the prompt they
- * brought on the sheet, and the tools its link names above it.
+ * brought on the sheet, and recommended connections below it.
  */
 export function OnboardingSourcesFirstPromptPage() {
   const { t } = useTranslation();
@@ -118,12 +112,31 @@ export function OnboardingSourcesFirstPromptPage() {
         <div className="flex justify-center pb-6 max-sm:hidden">
           <ProductBrandMark decorative size="hero" />
         </div>
-        {mobile ? promptInput : null}
-        <OnboardingConnectorSetup
-          connectorSlugs={connectorSlugs}
-          variant="sheet"
-        />
-        {mobile ? null : promptInput}
+        {promptInput}
+        <section
+          aria-labelledby="onboarding-prompt-connectors-title"
+          className="mt-3 space-y-3"
+        >
+          <div className="space-y-1">
+            <h2
+              id="onboarding-prompt-connectors-title"
+              className="text-sm font-medium"
+            >
+              {t(($) => {
+                return $.onboarding.sourcesFirst.prompt.connectorsTitle;
+              })}
+            </h2>
+            <p className="text-sm leading-6 text-muted-foreground">
+              {t(($) => {
+                return $.onboarding.sourcesFirst.prompt.connectorsDescription;
+              })}
+            </p>
+          </div>
+          <OnboardingConnectorSetup
+            connectorSlugs={connectorSlugs}
+            variant="sheet"
+          />
+        </section>
       </div>
     </OnboardingStepLayout>
   );

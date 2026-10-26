@@ -4339,6 +4339,8 @@
         "teamTitle": "Convide alguém da equipe"
       },
       "prompt": {
+        "connectorsDescription": "Escolha um dos aplicativos recomendados abaixo para conectar sua conta. Você também pode fazer isso depois.",
+        "connectorsTitle": "Conecte suas ferramentas de trabalho",
         "intro": "O Okou é o assistente de trabalho para você e sua equipe. Ele transforma informações dispersas em trabalho concluído, na nuvem."
       },
       "skills": {

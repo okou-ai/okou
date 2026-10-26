@@ -4270,6 +4270,8 @@
         "teamTitle": "邀請同事"
       },
       "prompt": {
+        "connectorsDescription": "從下方推薦的應用程式中選擇並連接帳戶，也可以稍後再連接。",
+        "connectorsTitle": "連接你的工作工具",
         "intro": "Okou 是你和團隊的工作助理，在雲端把零散的資訊變成完成的工作。"
       },
       "skills": {
