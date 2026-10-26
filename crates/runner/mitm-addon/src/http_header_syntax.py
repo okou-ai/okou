@@ -111,15 +111,16 @@ def single_header_value(
     *,
     max_fields: int,
     max_value_bytes: int,
+    strip_chars: bytes = _HTTP_OWS_BYTES,
 ) -> bytes | None:
-    """Return one bounded raw value with SP/HTAB stripped, or ``None``.
+    """Return one bounded raw value with caller-selected stripping, or ``None``.
 
     Reject excess field count, missing/repeated ``name`` fields, and values above
     ``max_value_bytes`` before stripping or decoding anything. Check cardinality
-    across the complete bounded field tuple before copying a singleton. Only SP
-    and HTAB are stripped, so a blank singleton returns empty bytes and other
-    whitespace is preserved. Callers provide lowercase ASCII ``name`` and remain
-    responsible for content validation.
+    across the complete bounded field tuple before copying a singleton. Strip SP
+    and HTAB by default; callers can select narrower whitespace semantics. A blank
+    singleton returns empty bytes. Callers provide lowercase ASCII ``name`` and
+    remain responsible for content validation.
     """
     if len(fields) > max_fields:
         return None
@@ -132,4 +133,4 @@ def single_header_value(
         value = raw_value
     if value is None:
         return None
-    return value.strip(_HTTP_OWS_BYTES)
+    return value.strip(strip_chars)
