@@ -23,6 +23,14 @@ export const GLOBAL_KEYBOARD_SHORTCUTS = {
     binding: "mod+shift+d",
     ariaKeyShortcuts: "Meta+Shift+D Control+Shift+D",
   },
+  moveChatPinUp: {
+    binding: "alt+shift+arrowup",
+    ariaKeyShortcuts: "Alt+Shift+ArrowUp",
+  },
+  moveChatPinDown: {
+    binding: "alt+shift+arrowdown",
+    ariaKeyShortcuts: "Alt+Shift+ArrowDown",
+  },
   toggleChatArchive: {
     binding: "mod+shift+x",
     ariaKeyShortcuts: "Meta+Shift+X Control+Shift+X",
