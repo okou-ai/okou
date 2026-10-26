@@ -152,11 +152,6 @@
       "owner": "ensureOrgLimitedFreeBootstrap$/bootstrap"
     },
     {
-      "id": "TX-0220",
-      "file": "turbo/apps/api/src/signals/services/org-member-cleanup.service.ts",
-      "owner": "revokeOrgMemberRunAuthority"
-    },
-    {
       "id": "TX-0236",
       "file": "turbo/apps/api/src/signals/services/run-built-in-admission.service.ts",
       "owner": "startRunBuiltInAdmission$"

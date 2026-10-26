@@ -513,23 +513,6 @@ interface TerminalRunTransition {
   readonly startedAt: Date | null;
 }
 
-/** Runs that became terminal before reaching `running` have no runner that
- * will report completion, so their active row is released by the transaction
- * that made them terminal. Started runs keep their row until the completion
- * webhook or timeout cleanup releases it.
- */
-export function neverStartedRunIds(
-  transitions: readonly TerminalRunTransition[],
-): readonly string[] {
-  return transitions
-    .filter((transition) => {
-      return transition.startedAt === null;
-    })
-    .map((transition) => {
-      return transition.runId;
-    });
-}
-
 export interface ReleasedRunSlot {
   readonly runId: string;
   readonly orgId: string;

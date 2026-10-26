@@ -15,10 +15,9 @@ import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
-import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
@@ -160,46 +159,6 @@ export const isCanonicalMorningBriefAutomation$ = command(
     );
   },
 );
-
-interface MorningBriefScheduleRevocationScope {
-  readonly kind: "membership";
-  readonly orgId: string;
-  readonly userId: string;
-}
-
-/**
- * Revoke a departing member's legacy schedule occurrences inside the existing
- * membership cleanup transaction. Agent retention does not remove this journal.
- *
- * It scrubs owner identity rather than deleting the row. Deleting would make a
- * callback that is still in flight look like an execution this table never
- * recorded, which is exactly the untracked legacy branch that may advance a
- * schedule. What remains is content-free: automation, workflow, occurrence
- * identity and timestamps, with a terminal `revoked` settlement that makes any
- * later callback a no-op. Only this scope's own occurrences change; no
- * automation, workflow or other owner is touched.
- */
-export async function revokeMorningBriefScheduleOwnership(
-  executor: Pick<Db, "update"> | Tx,
-  scope: MorningBriefScheduleRevocationScope,
-): Promise<void> {
-  const revokedAt = nowDate();
-  await executor
-    .update(morningBriefScheduleClaims)
-    .set({
-      orgId: null,
-      ownerUserId: null,
-      settlement: "revoked",
-      settledAt: revokedAt,
-      updatedAt: revokedAt,
-    })
-    .where(
-      and(
-        eq(morningBriefScheduleClaims.orgId, scope.orgId),
-        eq(morningBriefScheduleClaims.ownerUserId, scope.userId),
-      ),
-    );
-}
 
 /** How the caller identifies the occurrence it is settling. */
 type MorningBriefScheduleSettlementSubject =
