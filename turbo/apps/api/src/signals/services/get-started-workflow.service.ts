@@ -1,7 +1,7 @@
 import { GET_STARTED_REWARDS } from "@okouai/api-contracts/contracts/get-started";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { workflows } from "@okouai/db/schema/workflow";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 
 /** Pure statement builder: snapshot provenance with the queued input.
  * The enqueue owner executes this SQL; no database capability escapes it.
@@ -14,6 +14,7 @@ export function recordGetStartedWorkflowSql(
     readonly sourceEventId: string;
   },
   at: Date,
+  eligibility?: SQL,
 ) {
   const reward = GET_STARTED_REWARDS.workflow;
   return sql`INSERT INTO ${getStartedClaims} (
@@ -28,5 +29,7 @@ export function recordGetStartedWorkflowSql(
   WHERE ${and(eq(workflows.id, args.workflowId), eq(workflows.orgId, args.orgId), isNull(workflows.officialDefinitionName))}
     AND NOT EXISTS (SELECT 1 FROM ${getStartedClaims}
       WHERE ${getStartedClaims.rewardKey} = 'workflow:' || ${workflows.createdBy})
-  ON CONFLICT (actor_user_id, quest_key, source_key) DO NOTHING`;
+    ${eligibility ? sql`AND ${eligibility}` : sql.empty()}
+  ON CONFLICT (actor_user_id, quest_key, source_key) DO NOTHING
+  ${eligibility ? sql`RETURNING id` : sql.empty()}`;
 }
