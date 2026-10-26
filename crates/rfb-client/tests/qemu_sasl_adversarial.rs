@@ -336,7 +336,7 @@ async fn valid_server_proof_cannot_override_rejected_security_result() {
 async fn silent_sasl_peer_respects_absolute_deadline() {
     let (roots, acceptor) = tls_fixture();
     let (client, server) = tokio::io::duplex(64 * 1024);
-    let (ready_tx, mut ready_rx) = oneshot::channel();
+    let (ready_tx, ready_rx) = oneshot::channel();
     let peer = tokio::spawn(peer(server, acceptor, Peer::Silent, Some(ready_tx)));
     let mut authentication = std::pin::pin!(authenticate(
         client,
@@ -345,26 +345,14 @@ async fn silent_sasl_peer_respects_absolute_deadline() {
         roots,
         Instant::now() + Duration::from_millis(200),
     ));
-    let preparation_started = std::time::Instant::now();
-    loop {
-        tokio::select! {
-            biased;
-            result = &mut authentication => {
-                panic!("authentication completed before SASL readiness: {:?}", result.err());
-            }
-            ready = &mut ready_rx => {
-                ready.expect("peer must receive SASL client-start");
-                break;
-            }
-            // SASL uses spawn_blocking. Keep this paused runtime runnable so
-            // it cannot auto-advance the deadline while that work prepares.
-            () = tokio::task::yield_now() => {
-                assert!(
-                    preparation_started.elapsed() < Duration::from_secs(5),
-                    "SASL preparation must be bounded",
-                );
-            }
+    // Tokio inhibits paused-clock auto-advance during SASL's blocking task;
+    // the remaining preparation I/O uses this runtime's in-memory duplex.
+    tokio::select! {
+        biased;
+        result = &mut authentication => {
+            panic!("authentication completed before SASL readiness: {:?}", result.err());
         }
+        ready = ready_rx => ready.expect("peer must receive SASL client-start"),
     }
 
     tokio::time::advance(Duration::from_millis(199)).await;
