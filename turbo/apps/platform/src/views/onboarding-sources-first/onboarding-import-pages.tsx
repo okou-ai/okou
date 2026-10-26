@@ -107,7 +107,7 @@ export function OnboardingSkillsPage() {
       onSecondary={flow.goSkip}
       onBack={flow.goBack}
     >
-      <div className="mx-auto flex w-full max-w-[600px] flex-col gap-6">
+      <div className="mx-auto flex w-full max-w-[600px] flex-col gap-6 max-sm:gap-4">
         <SkillImportPanel
           signals={signals}
           provider={provider}
@@ -124,7 +124,7 @@ export function OnboardingSkillsPage() {
               : undefined
           }
         />
-        <SkillImportResults signals={signals} />
+        <SkillImportResults signals={signals} compact={mobile} />
       </div>
     </OnboardingStepLayout>
   );
