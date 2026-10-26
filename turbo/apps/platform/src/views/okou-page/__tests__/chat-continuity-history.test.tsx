@@ -227,11 +227,9 @@ test("Render the latest turns of a long conversation", async () => {
     expect(container).toHaveTextContent(
       "Neighboring answer after repeated work",
     );
-    expect(container).toHaveTextContent("launch-evidence.pdf");
+    expect(container).toHaveTextContent("Most recent answer");
   });
   expect(composer).toBeVisible();
-  expect(container).toHaveTextContent("First launch brief result");
-  expect(container).toHaveTextContent("Second launch brief result");
   expect(container).not.toHaveTextContent(
     "Neighboring answer before repeated work",
   );
@@ -247,6 +245,17 @@ test("Page older conversation history without losing turn anchors", async () => 
   expect(container).not.toHaveTextContent("Earliest retained request");
   const scroller = scrollContainer(thread.id);
   setScrollableGeometry(scroller, 2400, 600);
+  scroller.scrollTop = 50;
+  fireEvent.scroll(scroller);
+  await waitFor(() => {
+    expect(container).toHaveTextContent(
+      "Neighboring answer before repeated work",
+    );
+    expect(container).toHaveTextContent("launch-evidence.pdf");
+  });
+  expect(container).toHaveTextContent("First launch brief result");
+  expect(container).toHaveTextContent("Second launch brief result");
+
   scroller.scrollTop = 50;
   fireEvent.scroll(scroller);
   await waitFor(() => {

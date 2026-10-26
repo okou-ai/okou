@@ -2476,7 +2476,7 @@ interface ChatRenderWindowState {
   cursorGroupId: string | null;
 }
 
-const INITIAL_RENDER_GROUP_COUNT = 10;
+const INITIAL_RENDER_GROUP_COUNT = 5;
 const RENDER_GROUP_LOAD_INCREMENT = 10;
 
 const renderWindowStateByThreadId$ = state(

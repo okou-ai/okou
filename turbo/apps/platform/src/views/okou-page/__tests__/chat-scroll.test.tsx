@@ -28,8 +28,9 @@ const context = testContext();
 const { mockChatLifecycleWithoutBrowserSession } =
   createChatLifecycleHelpers(context);
 
-const ROW_HEIGHT_PX = 100;
-const ROW_CONTENT_HEIGHT_PX = 80;
+// Keep the transcript scrollable even with the compact initial window.
+const ROW_HEIGHT_PX = 200;
+const ROW_CONTENT_HEIGHT_PX = 180;
 const CONTENT_BOTTOM_PADDING_PX = 100;
 const INITIAL_VIEWPORT_HEIGHT_PX = 300;
 
@@ -225,7 +226,7 @@ function completedHistoryEvents(turnCount: number): MockChatEventInput[] {
 
 function historyWithLateImage(turnCount: number): MockChatEventInput[] {
   return completedHistoryEvents(turnCount).map((event) => {
-    return event.id === "scroll-assistant-4"
+    return event.id === "scroll-assistant-6"
       ? {
           ...event,
           content: `${event.content}\n\n![Late history image](https://example.com/history.png)`,
@@ -671,7 +672,7 @@ test("Loading older messages preserves the reading position", async () => {
     "History answer 12",
   );
   const geometry = installChatScrollGeometry(container);
-  expect(screen.queryByText("History question 3")).toBeNull();
+  expect(screen.queryByText("History question 6")).toBeNull();
   container.scrollTop = 40;
   const readingAnchor = geometry.firstVisibleAnchor();
   const readingAnchorId = anchorId(readingAnchor);
@@ -679,7 +680,7 @@ test("Loading older messages preserves the reading position", async () => {
 
   fireEvent.scroll(container);
 
-  const olderMessage = await screen.findByText("History question 3");
+  const olderMessage = await screen.findByText("History question 6");
   expect(olderMessage).toBeVisible();
   await waitFor(() => {
     expect(
