@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.789.0](https://github.com/okou-ai/okou/compare/core-v8.788.0...core-v8.789.0) (2026-10-26)
+
+
+### Features
+
+* **browser:** model owner sessions and chat primary windows ([#42938](https://github.com/okou-ai/okou/issues/42938)) ([5cd8ddb](https://github.com/okou-ai/okou/commit/5cd8ddb331eff41efb1504416ad0f2619e5ed62b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.4.0
+
 ## [8.788.0](https://github.com/okou-ai/okou/compare/core-v8.787.1...core-v8.788.0) (2026-10-26)
 
 

@@ -9,6 +9,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.7.0](https://github.com/okou-ai/okou/compare/api-v2.6.1...api-v2.7.0) (2026-10-26)
+
+
+### Features
+
+* **browser:** model owner sessions and chat primary windows ([#42938](https://github.com/okou-ai/okou/issues/42938)) ([5cd8ddb](https://github.com/okou-ai/okou/commit/5cd8ddb331eff41efb1504416ad0f2619e5ed62b))
+
+
+### Refactoring
+
+* **api:** publish deferred schedules atomically ([#42993](https://github.com/okou-ai/okou/issues/42993)) ([1ae5da7](https://github.com/okou-ai/okou/commit/1ae5da71f9242e3edc27836ffa86ed4dc4963bc6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.4.0
+    * @okouai/core bumped to 8.789.0
+    * @okouai/db bumped to 2.4.0
+    * @okouai/pi-agent-runtime bumped to 1.50.72
+
 ## [2.6.1](https://github.com/okou-ai/okou/compare/api-v2.6.0...api-v2.6.1) (2026-10-26)
 
 
