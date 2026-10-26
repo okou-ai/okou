@@ -133,6 +133,7 @@ export const uninstallSlackOrg$ = command(
     await accept(client.disconnect({ query: { action: "uninstall" } }), [200]);
     signal.throwIfAborted();
     set(reloadSlackOrg$);
+    set(showUninstallDialogState$, false);
   },
 );
 
