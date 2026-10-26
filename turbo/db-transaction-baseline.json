@@ -97,11 +97,6 @@
       "owner": "upsertBuiltinConnectorTokenConnection$"
     },
     {
-      "id": "TX-0128",
-      "file": "turbo/apps/api/src/signals/services/cron-cleanup-sandboxes.service.ts",
-      "owner": "commitStaleRunTimeout"
-    },
-    {
       "id": "TX-0130",
       "file": "turbo/apps/api/src/signals/services/cron-project-chat-event-search.service.ts",
       "owner": "projectThread"

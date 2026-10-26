@@ -15,6 +15,8 @@ import {
   count,
   gte,
   eq,
+  exists,
+  lt,
   inArray,
   isNotNull,
   isNull,
@@ -880,5 +882,385 @@ export const cancelClerkBannedUserRuns$ = command(
       })
       .from(cancelled)
       .leftJoin(released, eq(released.runId, cancelled.runId));
+  },
+);
+
+interface StaleRunTimeoutCandidate {
+  readonly id: string;
+  readonly status: string;
+  readonly chatThreadId: string | null;
+}
+
+type LockedTimeoutRun = Pick<
+  typeof agentRuns.$inferSelect,
+  | "status"
+  | "launchSnapshot"
+  | "orgId"
+  | "userId"
+  | "sandboxId"
+  | "runnerGroup"
+  | "chatThreadId"
+>;
+
+export interface StaleRunTimeoutResult {
+  readonly previousStatus: "pending" | "running";
+  readonly orgId: string;
+  readonly userId: string;
+  readonly sandboxId: string | null;
+  readonly runnerGroup: string | null;
+  readonly chatThreadId: string | null;
+  readonly releasedSlots: readonly ReleasedRunSlot[];
+}
+
+type TimeoutTransactionResult =
+  | { readonly kind: "retry"; readonly chatThreadId: string | null }
+  | { readonly kind: "skipped" }
+  | { readonly kind: "committed"; readonly timeout: StaleRunTimeoutResult };
+
+const timeoutLockedRows = alias(agentRuns, "timeout_locked_run");
+const timeoutActiveRows = alias(activeAgentRuns, "timeout_locked_active");
+const timeoutTerminalRows = alias(agentRuns, "timeout_terminal_runs");
+
+function timeoutRunLockQuery(runId: string) {
+  return new QueryBuilder()
+    .select({
+      id: agentRuns.id,
+      status: agentRuns.status,
+      launchSnapshot: agentRuns.launchSnapshot,
+      orgId: agentRuns.orgId,
+      userId: agentRuns.userId,
+      sandboxId: agentRuns.sandboxId,
+      runnerGroup: agentRuns.runnerGroup,
+      chatThreadId: agentRuns.chatThreadId,
+    })
+    .from(agentRuns)
+    .where(eq(agentRuns.id, runId))
+    .for("update", { of: agentRuns })
+    .limit(1);
+}
+
+function timeoutActiveLockQuery(
+  runId: string,
+  status: string,
+  expectedChatThreadId: string | null,
+) {
+  const query = new QueryBuilder();
+  return query
+    .select({
+      runId: activeAgentRuns.runId,
+      lastHeartbeatAt: activeAgentRuns.lastHeartbeatAt,
+    })
+    .from(activeAgentRuns)
+    .where(
+      and(
+        eq(activeAgentRuns.runId, runId),
+        exists(
+          query
+            .select({ id: sql`${timeoutLockedRows.id}`.mapWith(agentRuns.id) })
+            .from(sql`timeout_locked_run`)
+            .where(
+              and(
+                eq(timeoutLockedRows.status, status),
+                inArray(timeoutLockedRows.status, ["pending", "running"]),
+                expectedChatThreadId === null
+                  ? isNull(timeoutLockedRows.chatThreadId)
+                  : eq(timeoutLockedRows.chatThreadId, expectedChatThreadId),
+              ),
+            ),
+        ),
+      ),
+    )
+    .for("update", { of: activeAgentRuns });
+}
+
+function timeoutTransitionCondition(cutoff: Date) {
+  // Both original locks precede the decision. Test the heartbeat returned by
+  // its lock, so a refresh that committed while we waited prevents all writes.
+  return and(
+    eq(agentRuns.id, timeoutLockedRows.id),
+    exists(
+      new QueryBuilder()
+        .select({
+          id: sql`${timeoutActiveRows.runId}`.mapWith(activeAgentRuns.runId),
+        })
+        .from(sql`timeout_locked_active`)
+        .where(lt(timeoutActiveRows.lastHeartbeatAt, cutoff)),
+    ),
+  );
+}
+
+function timeoutAccountCleanupCondition() {
+  const query = new QueryBuilder();
+  return and(
+    isNotNull(modelProviderAccounts.disconnectedAt),
+    gte(query.select({ count: count() }).from(sql`timeout_run_billing`), 0),
+    gte(
+      query.select({ count: count() }).from(sql`timeout_removed_diagnostics`),
+      0,
+    ),
+    sql`EXISTS (
+      SELECT 1 FROM timeout_terminal_runs
+      WHERE timeout_terminal_runs.model_provider_id = ${modelProviderAccounts.id}
+        AND timeout_terminal_runs.org_id = ${modelProviderAccounts.orgId}
+        AND timeout_terminal_runs.user_id = ${modelProviderAccounts.userId}
+    ) AND NOT EXISTS (
+      SELECT 1 FROM ${agentRuns}
+      WHERE ${eq(agentRuns.modelProviderId, modelProviderAccounts.id)}
+        AND ${eq(agentRuns.orgId, modelProviderAccounts.orgId)}
+        AND ${eq(agentRuns.userId, modelProviderAccounts.userId)}
+        AND ${agentRuns.status} IN ('pending', 'running')
+        AND NOT EXISTS (
+          SELECT 1 FROM timeout_terminal_runs
+          WHERE timeout_terminal_runs.id = ${agentRuns.id}
+        )
+    )`,
+  );
+}
+
+function timeoutProviderCleanupCondition() {
+  return sql`${modelProviders.id} IN (
+    SELECT model_provider_id FROM timeout_removed_accounts
+  ) AND NOT EXISTS (
+    SELECT 1 FROM ${modelProviderAccounts}
+    WHERE ${eq(modelProviderAccounts.modelProviderId, modelProviders.id)}
+      AND NOT EXISTS (
+        SELECT 1 FROM timeout_removed_accounts
+        WHERE timeout_removed_accounts.id = ${modelProviderAccounts.id}
+      )
+  )`;
+}
+
+function timeoutJobCleanupCondition() {
+  const query = new QueryBuilder();
+  return and(
+    inArray(
+      runnerJobQueue.runId,
+      query
+        .select({ id: sql`${timeoutTerminalRows.id}`.mapWith(agentRuns.id) })
+        .from(sql`timeout_terminal_runs`),
+    ),
+    gte(query.select({ count: count() }).from(sql`timeout_run_billing`), 0),
+    gte(
+      query.select({ count: count() }).from(sql`timeout_removed_diagnostics`),
+      0,
+    ),
+    gte(
+      query.select({ count: count() }).from(sql`timeout_removed_providers`),
+      0,
+    ),
+  );
+}
+
+function timeoutSlotReleaseCondition() {
+  const query = new QueryBuilder();
+  return and(
+    inArray(
+      activeAgentRuns.runId,
+      query
+        .select({ id: sql`${timeoutTerminalRows.id}`.mapWith(agentRuns.id) })
+        .from(sql`timeout_terminal_runs`),
+    ),
+    gte(query.select({ count: count() }).from(sql`timeout_run_billing`), 0),
+    gte(
+      query.select({ count: count() }).from(sql`timeout_removed_diagnostics`),
+      0,
+    ),
+    gte(
+      query.select({ count: count() }).from(sql`timeout_removed_providers`),
+      0,
+    ),
+    gte(query.select({ count: count() }).from(sql`timeout_removed_jobs`), 0),
+  );
+}
+
+type TimeoutStatementRow = LockedTimeoutRun & {
+  readonly id: string;
+  readonly lastHeartbeatAt: Date | null;
+  readonly terminalRunId: string | null;
+  readonly releasedOrgId: string | null;
+};
+
+function timeoutStatementResult(
+  row: TimeoutStatementRow | undefined,
+  run: StaleRunTimeoutCandidate,
+  expectedChatThreadId: string | null,
+  cutoff: Date,
+): TimeoutTransactionResult {
+  if (!row) {
+    return { kind: "skipped" };
+  }
+  if (row.chatThreadId !== expectedChatThreadId) {
+    return { kind: "retry", chatThreadId: row.chatThreadId };
+  }
+  if (
+    row.status !== run.status ||
+    (row.status !== "pending" && row.status !== "running") ||
+    row.lastHeartbeatAt === null ||
+    row.lastHeartbeatAt >= cutoff
+  ) {
+    return { kind: "skipped" };
+  }
+  if (row.terminalRunId === null) {
+    throw new Error("Locked stale run lost its timeout transition");
+  }
+  return {
+    kind: "committed",
+    timeout: {
+      previousStatus: row.status,
+      orgId: row.orgId,
+      userId: row.userId,
+      sandboxId: row.sandboxId,
+      runnerGroup: row.runnerGroup,
+      chatThreadId: row.chatThreadId,
+      releasedSlots:
+        row.releasedOrgId === null
+          ? []
+          : [{ runId: row.id, orgId: row.releasedOrgId }],
+    },
+  };
+}
+
+const timeoutTerminalFields = {
+  id: agentRuns.id,
+  orgId: agentRuns.orgId,
+  userId: agentRuns.userId,
+  modelProviderId: agentRuns.modelProviderId,
+} as const;
+
+function timeoutTerminalValues(completedAt: Date, timeoutReason: string) {
+  return {
+    status: "timeout" as const,
+    runnerCancellationMode: "hard" as const,
+    completedAt,
+    error: timeoutReason,
+  };
+}
+
+export const commitStaleRunTimeout$ = command(
+  async (
+    { set },
+    run: StaleRunTimeoutCandidate,
+    cutoff: Date,
+    timeoutReason: string,
+    signal: AbortSignal,
+  ): Promise<StaleRunTimeoutResult | undefined> => {
+    const db = set(writeDb$);
+    let expectedChatThreadId = run.chatThreadId;
+    while (true) {
+      signal.throwIfAborted();
+      const completedAt = nowDate();
+      const locked = db
+        .$with("timeout_locked_run")
+        .as(timeoutRunLockQuery(run.id));
+      const active = db
+        .$with("timeout_locked_active")
+        .as(timeoutActiveLockQuery(run.id, run.status, expectedChatThreadId));
+      const terminal = db.$with("timeout_terminal_runs").as(
+        db
+          .update(agentRuns)
+          .set(timeoutTerminalValues(completedAt, timeoutReason))
+          .from(locked)
+          .where(timeoutTransitionCondition(cutoff))
+          .returning({ ...timeoutTerminalFields }),
+      );
+      const billing = db
+        .$with("timeout_run_billing", { runId: billingRunAttribution.runId })
+        .as(
+          captureBillingRunTerminalSql({
+            condition: inArray(
+              agentRuns.id,
+              db.select({ id: terminal.id }).from(terminal),
+            ),
+            status: "timeout",
+            completedAt,
+          }),
+        );
+      const diagnostics = db.$with("timeout_removed_diagnostics").as(
+        db
+          .delete(agentRunConnectorDiagnosticRegistrations)
+          .where(
+            inArray(
+              agentRunConnectorDiagnosticRegistrations.runId,
+              db.select({ id: terminal.id }).from(terminal),
+            ),
+          )
+          .returning({ runId: agentRunConnectorDiagnosticRegistrations.runId }),
+      );
+      const accounts = db.$with("timeout_removed_accounts").as(
+        db
+          .delete(modelProviderAccounts)
+          .where(timeoutAccountCleanupCondition())
+          .returning({
+            id: modelProviderAccounts.id,
+            modelProviderId: modelProviderAccounts.modelProviderId,
+          }),
+      );
+      const providers = db
+        .$with("timeout_removed_providers")
+        .as(
+          db
+            .delete(modelProviders)
+            .where(timeoutProviderCleanupCondition())
+            .returning({ id: modelProviders.id }),
+        );
+      const jobs = db
+        .$with("timeout_removed_jobs")
+        .as(
+          db
+            .delete(runnerJobQueue)
+            .where(timeoutJobCleanupCondition())
+            .returning({ runId: runnerJobQueue.runId }),
+        );
+      const released = db.$with("timeout_released_slots").as(
+        db
+          .delete(activeAgentRuns)
+          .where(timeoutSlotReleaseCondition())
+          .returning({
+            runId: activeAgentRuns.runId,
+            orgId: activeAgentRuns.orgId,
+          }),
+      );
+      const [row] = await db
+        .with(
+          locked,
+          active,
+          terminal,
+          billing,
+          diagnostics,
+          accounts,
+          providers,
+          jobs,
+          released,
+        )
+        .select({
+          id: locked.id,
+          status: locked.status,
+          launchSnapshot: locked.launchSnapshot,
+          orgId: locked.orgId,
+          userId: locked.userId,
+          sandboxId: locked.sandboxId,
+          runnerGroup: locked.runnerGroup,
+          chatThreadId: locked.chatThreadId,
+          lastHeartbeatAt: active.lastHeartbeatAt,
+          terminalRunId: terminal.id,
+          releasedOrgId: released.orgId,
+        })
+        .from(locked)
+        .leftJoin(active, eq(active.runId, locked.id))
+        .leftJoin(terminal, eq(terminal.id, locked.id))
+        .leftJoin(released, eq(released.runId, locked.id));
+      signal.throwIfAborted();
+      const result = timeoutStatementResult(
+        row,
+        run,
+        expectedChatThreadId,
+        cutoff,
+      );
+      if (result.kind === "retry") {
+        expectedChatThreadId = result.chatThreadId;
+        continue;
+      }
+      return result.kind === "committed" ? result.timeout : undefined;
+    }
   },
 );
