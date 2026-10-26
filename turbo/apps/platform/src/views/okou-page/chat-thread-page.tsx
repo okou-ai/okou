@@ -5500,9 +5500,13 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
 
 function structuredFailureHasActions(reason: KnownRunFailureReason): boolean {
   return (
-    reason !== "insufficient_credits" &&
-    reason !== "input_too_large" &&
-    reason !== "provider_image_too_large"
+    reason === "session_history_limit" ||
+    reason === "context_window_exceeded" ||
+    reason === "provider_insufficient_credits" ||
+    reason === "invalid_api_key" ||
+    reason === "invalid_credentials" ||
+    reason === "reconnect_required" ||
+    reason === "terms_acceptance_required"
   );
 }
 
@@ -5857,7 +5861,6 @@ function assistantErrorFallbackContent(
 
   const description = localizedRunError(error);
   const showDetails = /[\r\n]/u.test(description) || description.length > 240;
-  const legacyUsageLimit = isLegacyUsageLimitError(error, failureReason);
   return {
     icon: AlertCircle,
     title: t(($) => {
@@ -5873,7 +5876,7 @@ function assistantErrorFallbackContent(
           ),
         }
       : {}),
-    reserveActions: showDetails || legacyUsageLimit,
+    reserveActions: showDetails,
   };
 }
 

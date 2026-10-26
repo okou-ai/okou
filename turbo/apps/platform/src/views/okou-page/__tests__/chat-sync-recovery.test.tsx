@@ -109,6 +109,38 @@ async function openChat(transport: "direct" | "message-port" = "message-port") {
   await expect(screen.findByText("Earlier title")).resolves.toBeInTheDocument();
 }
 
+test.each(["direct", "message-port"] as const)(
+  "Ordinary notifications update a hidden chat tab through %s",
+  async (transport) => {
+    const visibility = context.mocks.browser.visibilityState("visible");
+    const fixture = installChat();
+    await openChat(transport);
+    await waitFor(() => {
+      expect(
+        context.mocks.ably.hasSubscriptionOnChannel(
+          "user:test-user-123",
+          "userPreferenceChanged",
+        ),
+      ).toBeTruthy();
+    });
+    act(() => {
+      visibility.changeTo("hidden");
+    });
+    fixture.advance();
+    act(() => {
+      context.mocks.ably.trigger("threadListChanged");
+    });
+    await expect(
+      screen.findByText("Updated while away"),
+    ).resolves.toBeInTheDocument();
+    act(() => {
+      visibility.changeTo("visible");
+    });
+    expect(screen.getByText("Updated while away")).toBeInTheDocument();
+    expect(screen.queryByText("Earlier title")).not.toBeInTheDocument();
+  },
+);
+
 test("A realtime continuity gap catches up without another chat notification", async () => {
   const fixture = installChat();
   await openChat();

@@ -212,16 +212,16 @@ function createConnectorAccountConfirmSignal(
   descriptor: ConnectorAccountActionDescriptor,
   status$: ConnectorAccountActionSignals["status$"],
 ): ConnectorAccountActionSignals["confirm$"] {
-  const callbackIds = {
-    clientEventId: crypto.randomUUID(),
-    chatThreadSortEventId: crypto.randomUUID(),
-  };
   return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const status = await get(status$);
     signal.throwIfAborted();
     if (status.kind !== "ready" || status.selected) {
       return;
     }
+    const callbackIds = {
+      clientEventId: crypto.randomUUID(),
+      chatThreadSortEventId: crypto.randomUUID(),
+    };
     await accept(
       get(apiClient$)(chatThreadConnectorSelectionContract).update({
         params: { id: descriptor.threadId },

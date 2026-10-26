@@ -227,9 +227,6 @@ const prepareSharedDatabaseBridge$ = command(
       },
       events: {
         databaseInvalidated: async (dataKey) => {
-          if (document.visibilityState !== "visible") {
-            return;
-          }
           await set(syncSharedDatabaseInvalidation$, dataKey, signal);
         },
         realtimeResynced: () => {
