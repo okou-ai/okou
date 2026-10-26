@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
   runnerBrowserContract,
   type RunnerBrowserAction,
@@ -7,15 +8,21 @@ import {
 import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
+import { browserUseCdpHandler } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { env } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
+import { server } from "../../../mocks/server";
+import { createDeferredPromise, settle } from "../../utils";
 import {
   mockNow,
   withMockNowForTest,
   withNowScopeForTest,
 } from "../../../lib/time";
 import { runnerBrowserRoutes } from "../runner-browser";
+import { browserRoutes } from "../browser";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -31,6 +38,46 @@ const context = testContext();
 const START = Date.parse("2026-10-25T14:00:00.000Z");
 const MINUTE = 60_000;
 const runs = createRunsApi(context);
+const PROVIDER_URL = "https://api.browser-use.com/api/v3";
+
+function profileProvider(beforeResponse?: () => Promise<void>) {
+  const profiles = new Map<
+    string,
+    { readonly id: string; readonly name: string }
+  >();
+  const createdIds: string[] = [];
+  function profile(id: string, name = "owned-provider-profile") {
+    return {
+      id,
+      name,
+      createdAt: new Date(START).toISOString(),
+      updatedAt: new Date(START).toISOString(),
+    };
+  }
+  const handlers = [
+    http.post(`${PROVIDER_URL}/profiles`, async ({ request }) => {
+      const { name } = z
+        .strictObject({ name: z.string() })
+        .parse(await request.json());
+      const id = randomUUID();
+      profiles.set(id, { id, name });
+      createdIds.push(id);
+      await beforeResponse?.();
+      return HttpResponse.json(profile(id, name), { status: 201 });
+    }),
+    http.get(`${PROVIDER_URL}/profiles/:id`, ({ params }) => {
+      const stored = profiles.get(String(params.id));
+      return stored
+        ? HttpResponse.json(profile(stored.id, stored.name))
+        : HttpResponse.json({ detail: "Profile missing" }, { status: 404 });
+    }),
+    http.delete(`${PROVIDER_URL}/profiles/:id`, ({ params }) => {
+      profiles.delete(String(params.id));
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+  return { handlers, createdIds, profile };
+}
 
 function client() {
   return setupApp({ context, routes: runnerBrowserRoutes })(
@@ -52,8 +99,13 @@ function accepted(result: RunnerBrowserResponse) {
   return result.instance;
 }
 
-async function fixture(enabled = true) {
-  const owned = await publicChatActor(context, { clockTime: START });
+async function fixture(enabled = true, provider = profileProvider()) {
+  mockEnv("OKOU_BROWSER_USE_API_KEY", "owner-profile-test-key");
+  server.use(...provider.handlers);
+  const owned = await publicChatActor(context, {
+    clockTime: START,
+    optionalEnvironmentNames: ["OKOU_BROWSER_USE_API_KEY"],
+  });
   const featureActor = { ...owned.actor, orgId: requireOrgId(owned.actor) };
   const chat = createChatFilesBddApi(context);
   if (enabled) {
@@ -80,29 +132,27 @@ async function fixture(enabled = true) {
         });
       });
       const claim = await owned.claimRunnerRun(sent.runId, { runnerIdentity });
+      function control(action: RunnerBrowserAction) {
+        return client().control({
+          headers: officialHeaders(),
+          params: { runId: sent.runId },
+          body: { runnerIdentity, action },
+        });
+      }
       async function request(action: RunnerBrowserAction) {
-        const result = await accept(
-          client().control({
-            headers: officialHeaders(),
-            params: { runId: sent.runId },
-            body: { runnerIdentity, action },
-          }),
-          [200],
-        );
+        const result = await accept(control(action), [200]);
         return result.body;
       }
-      return { ...sent, runnerIdentity, claim, request };
+      return { ...sent, runnerIdentity, claim, request, control };
     });
   }
-  return { owned, start, featureActor };
+  return { owned, start, featureActor, provider };
 }
 
 type Chat = Awaited<ReturnType<Awaited<ReturnType<typeof fixture>>["start"]>>;
 
 async function allocate(chat: Chat) {
-  const instance = accepted(
-    await chat.request({ kind: "allocate", providerProfileId: randomUUID() }),
-  );
+  const instance = accepted(await chat.request({ kind: "allocate" }));
   return accepted(
     await chat.request({
       kind: "publish",
@@ -160,7 +210,6 @@ describe("official Runner Browser lifecycle", () => {
       await expect(
         chat.request({
           kind: "allocate",
-          providerProfileId: randomUUID(),
         }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
       f.owned.ownsFeatureSwitches();
@@ -213,7 +262,6 @@ describe("official Runner Browser lifecycle", () => {
       await expect(
         denied.request({
           kind: "allocate",
-          providerProfileId: randomUUID(),
         }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
 
@@ -270,7 +318,17 @@ describe("official Runner Browser lifecycle", () => {
   });
 
   it("publishes one physical instance and admits one native candidate per chat", async () => {
-    const f = await fixture();
+    const both = createDeferredPromise<void>(context.signal);
+    let arrivals = 0;
+    const f = await fixture(
+      true,
+      profileProvider(async () => {
+        if (++arrivals === 2) {
+          both.resolve();
+        }
+        await both.promise;
+      }),
+    );
     await f.owned.run(async () => {
       const a = await f.start(),
         b = await f.start();
@@ -278,7 +336,6 @@ describe("official Runner Browser lifecycle", () => {
         [a, b].map((chat) => {
           return chat.request({
             kind: "allocate",
-            providerProfileId: randomUUID(),
           });
         }),
       );
@@ -290,6 +347,12 @@ describe("official Runner Browser lifecycle", () => {
           .sort(),
       ).toStrictEqual(["accepted", "unavailable"]);
       const initial = accepted(await a.request({ kind: "inspect" }));
+      expect(f.provider.createdIds).toHaveLength(2);
+      for (const id of f.provider.createdIds) {
+        expect((await fetch(`${PROVIDER_URL}/profiles/${id}`)).status).toBe(
+          id === initial.providerProfileId ? 200 : 404,
+        );
+      }
       expect(accepted(await b.request({ kind: "inspect" })).id).toBe(
         initial.id,
       );
@@ -387,9 +450,9 @@ describe("official Runner Browser lifecycle", () => {
       await expect(
         a.request({ kind: "renew", ...replacement }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
-      await expect(
-        a.request({ kind: "allocate", providerProfileId: randomUUID() }),
-      ).resolves.toStrictEqual({ outcome: "unavailable" });
+      await expect(a.request({ kind: "allocate" })).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
       accepted(
         await a.request({ kind: "retire", ...replacement, reason: "closed" }),
       );
@@ -498,6 +561,11 @@ describe("official Runner Browser lifecycle", () => {
       expect(replacement.id).not.toBe(instance.id);
       expect(replacement.ownerProfileId).toBe(instance.ownerProfileId);
       expect(replacement.providerProfileId).toBe(instance.providerProfileId);
+      expect(f.provider.createdIds).toHaveLength(1);
+      expect(
+        (await fetch(`${PROVIDER_URL}/profiles/${instance.providerProfileId}`))
+          .status,
+      ).toBe(200);
       const current = await admit(a, replacement.id, 101);
       await expect(
         a.request({ kind: "completeStop", instanceId: instance.id }),
@@ -528,7 +596,6 @@ describe("official Runner Browser lifecycle", () => {
       const abandoned = accepted(
         await b.request({
           kind: "allocate",
-          providerProfileId: randomUUID(),
         }),
       );
       await expect(
@@ -549,6 +616,477 @@ describe("official Runner Browser lifecycle", () => {
       accepted(
         await b.request({ kind: "completeStop", instanceId: abandoned.id }),
       );
+    });
+  });
+});
+
+describe("owner provider profiles", () => {
+  it("reports a cleanup deadline that expires before candidate reference reconciliation", async () => {
+    const both = createDeferredPromise<void>(context.signal);
+    const deadline = new AbortController();
+    let arrivals = 0;
+    const f = await fixture(
+      true,
+      profileProvider(async () => {
+        if (++arrivals === 2) {
+          deadline.abort(new DOMException("Cleanup deadline", "TimeoutError"));
+          context.mocks.abortSignal.timeout.mockReturnValueOnce(
+            deadline.signal,
+          );
+          both.resolve();
+        }
+        await both.promise;
+      }),
+    );
+    await f.owned.run(async () => {
+      const a = await f.start(),
+        b = await f.start();
+      const results = await Promise.all([
+        a.control({ kind: "allocate" }),
+        b.control({ kind: "allocate" }),
+      ]);
+      context.mocks.abortSignal.timeout.mockReset();
+      expect(
+        results
+          .map((result) => {
+            return result.status;
+          })
+          .sort(),
+      ).toStrictEqual([200, 502]);
+      expect(
+        results.find((result) => {
+          return result.status === 502;
+        }),
+      ).toMatchObject({
+        body: { error: { code: "BROWSER_USE_TIMEOUT" } },
+      });
+      const winner = accepted(await a.request({ kind: "inspect" }));
+      expect(
+        (await fetch(`${PROVIDER_URL}/profiles/${winner.providerProfileId}`))
+          .status,
+      ).toBe(200);
+    });
+  });
+
+  it("reports a losing candidate's cleanup deadline without deleting the winner", async () => {
+    const both = createDeferredPromise<void>(context.signal);
+    const deleting = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const deadline = new AbortController();
+    let arrivals = 0;
+    const f = await fixture(
+      true,
+      profileProvider(async () => {
+        if (++arrivals === 2) {
+          context.mocks.abortSignal.timeout.mockReturnValueOnce(
+            deadline.signal,
+          );
+          both.resolve();
+        }
+        await both.promise;
+      }),
+    );
+    await f.owned.run(async () => {
+      const a = await f.start(),
+        b = await f.start();
+      server.use(
+        http.delete(`${PROVIDER_URL}/profiles/:id`, async () => {
+          deleting.resolve();
+          await release.promise;
+          return HttpResponse.error();
+        }),
+      );
+      const allocations = Promise.all([
+        a.control({ kind: "allocate" }),
+        b.control({ kind: "allocate" }),
+      ]);
+      await deleting.promise;
+      deadline.abort(new DOMException("Cleanup deadline", "TimeoutError"));
+      release.resolve();
+      const results = await allocations;
+      context.mocks.abortSignal.timeout.mockReset();
+      expect(
+        results
+          .map((result) => {
+            return result.status;
+          })
+          .sort(),
+      ).toStrictEqual([200, 502]);
+      expect(
+        results.find((result) => {
+          return result.status === 502;
+        }),
+      ).toMatchObject({
+        body: { error: { code: "BROWSER_USE_TIMEOUT" } },
+      });
+      const winner = accepted(await a.request({ kind: "inspect" }));
+      expect(
+        (await fetch(`${PROVIDER_URL}/profiles/${winner.providerProfileId}`))
+          .status,
+      ).toBe(200);
+    });
+  });
+
+  it("rejects a late candidate after another request's retained profile disappears", async () => {
+    const prepared = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    let arrivals = 0;
+    const f = await fixture(
+      true,
+      profileProvider(async () => {
+        if (++arrivals === 1) {
+          prepared.resolve();
+          await release.promise;
+        }
+      }),
+    );
+    await f.owned.run(async () => {
+      const a = await f.start(),
+        b = await f.start();
+      const late = settle(a.request({ kind: "allocate" }));
+      await prepared.promise;
+      const winner = await allocate(b);
+      accepted(await b.request({ kind: "beginStop", instanceId: winner.id }));
+      accepted(
+        await b.request({ kind: "completeStop", instanceId: winner.id }),
+      );
+      expect(
+        (
+          await fetch(`${PROVIDER_URL}/profiles/${winner.providerProfileId}`, {
+            method: "DELETE",
+          })
+        ).status,
+      ).toBe(204);
+      release.resolve();
+      const result = await late;
+      if (!result.ok) {
+        throw result.error;
+      }
+      expect(result.value).toStrictEqual({ outcome: "unavailable" });
+      expect(accepted(await b.request({ kind: "inspect" }))).toMatchObject({
+        id: winner.id,
+        providerProfileId: winner.providerProfileId,
+        status: "stopped",
+      });
+      expect(f.provider.createdIds).toHaveLength(2);
+      for (const id of f.provider.createdIds) {
+        expect((await fetch(`${PROVIDER_URL}/profiles/${id}`)).status).toBe(
+          404,
+        );
+      }
+      const recovered = accepted(await b.request({ kind: "allocate" }));
+      expect(recovered.ownerProfileId).toBe(winner.ownerProfileId);
+      expect(recovered.id).not.toBe(winner.id);
+      expect(recovered.providerProfileId).not.toBe(winner.providerProfileId);
+      expect(f.provider.createdIds).toHaveLength(3);
+    });
+  });
+
+  it("replaces a missing stopped profile once and rejects a late recovery after its winner stops", async () => {
+    const prepared = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    let arrivals = 0;
+    const f = await fixture(
+      true,
+      profileProvider(async () => {
+        if (++arrivals === 2) {
+          prepared.resolve();
+          await release.promise;
+        }
+      }),
+    );
+    await f.owned.run(async () => {
+      const a = await f.start(),
+        b = await f.start();
+      const original = await allocate(a);
+      accepted(await a.request({ kind: "beginStop", instanceId: original.id }));
+      accepted(
+        await a.request({ kind: "completeStop", instanceId: original.id }),
+      );
+      expect(
+        (
+          await fetch(
+            `${PROVIDER_URL}/profiles/${original.providerProfileId}`,
+            {
+              method: "DELETE",
+            },
+          )
+        ).status,
+      ).toBe(204);
+
+      const late = settle(a.request({ kind: "allocate" }));
+      await prepared.promise;
+      const winner = await allocate(b);
+      accepted(await b.request({ kind: "beginStop", instanceId: winner.id }));
+      accepted(
+        await b.request({ kind: "completeStop", instanceId: winner.id }),
+      );
+      release.resolve();
+      const result = await late;
+      if (!result.ok) {
+        throw result.error;
+      }
+      expect(result.value).toStrictEqual({ outcome: "unavailable" });
+      expect(winner.ownerProfileId).toBe(original.ownerProfileId);
+      expect(winner.providerProfileId).not.toBe(original.providerProfileId);
+      expect(accepted(await b.request({ kind: "inspect" }))).toMatchObject({
+        id: winner.id,
+        providerProfileId: winner.providerProfileId,
+        status: "stopped",
+      });
+      expect(f.provider.createdIds).toHaveLength(3);
+      for (const id of f.provider.createdIds) {
+        expect((await fetch(`${PROVIDER_URL}/profiles/${id}`)).status).toBe(
+          id === winner.providerProfileId ? 200 : 404,
+        );
+      }
+      const reused = await allocate(b);
+      expect(reused.providerProfileId).toBe(winner.providerProfileId);
+      expect(f.provider.createdIds).toHaveLength(3);
+    });
+  });
+
+  it("preserves a legacy thread profile when the provider repeats its identity", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      mockEnv("APP_URL", "https://app.okou.ai");
+      const providerSessionId = randomUUID();
+      let status: "active" | "stopped" = "active";
+      const webSocketUrl = `wss://${providerSessionId}.cdp.browser-use.com/devtools/browser/test`;
+      function session() {
+        return {
+          id: providerSessionId,
+          status,
+          liveUrl:
+            status === "active"
+              ? "https://live.browser-use.com/?wss=legacy"
+              : null,
+          cdpUrl:
+            status === "active"
+              ? `https://${providerSessionId}.cdp.browser-use.com/`
+              : null,
+          startedAt: new Date(START).toISOString(),
+          timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
+          finishedAt:
+            status === "active" ? null : new Date(START).toISOString(),
+        };
+      }
+      server.use(
+        http.post(`${PROVIDER_URL}/browsers`, () => {
+          return HttpResponse.json(session(), { status: 201 });
+        }),
+        http.get(`${PROVIDER_URL}/browsers/:id`, () => {
+          return HttpResponse.json(session());
+        }),
+        http.patch(`${PROVIDER_URL}/browsers/:id`, () => {
+          status = "stopped";
+          return HttpResponse.json(session());
+        }),
+        http.get(
+          `https://${providerSessionId}.cdp.browser-use.com/json/version`,
+          () => {
+            return HttpResponse.json({ webSocketDebuggerUrl: webSocketUrl });
+          },
+        ),
+        browserUseCdpHandler(webSocketUrl),
+      );
+      const legacy = setupApp({ context, routes: browserRoutes })(
+        browserContract,
+      );
+      const headers = {
+        authorization: `Bearer ${okouTokenFromClaim(chat.claim)}`,
+      };
+      const original = await accept(legacy.use({ headers, body: {} }), [200]);
+      const id = f.provider.createdIds[0];
+      if (!id) {
+        throw new Error("Expected the provider's legacy profile");
+      }
+      server.use(
+        http.post(`${PROVIDER_URL}/profiles`, () => {
+          return HttpResponse.json(f.provider.profile(id), { status: 201 });
+        }),
+      );
+      await expect(chat.request({ kind: "allocate" })).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      await expect(chat.request({ kind: "inspect" })).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect((await fetch(`${PROVIDER_URL}/profiles/${id}`)).status).toBe(200);
+      const retained = await accept(legacy.use({ headers, body: {} }), [200]);
+      expect(retained.body.cdpUrl).toBe(original.body.cdpUrl);
+    });
+  });
+
+  it("deletes only an unadopted candidate after the Run ends during provider preparation", async () => {
+    const created = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const f = await fixture(
+      true,
+      profileProvider(async () => {
+        created.resolve();
+        await release.promise;
+      }),
+    );
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const allocating = chat.request({ kind: "allocate" });
+      await created.promise;
+      const revoked = await settle(
+        createWebhookCallbackApi(context).requestAgentComplete(
+          {
+            runId: chat.runId,
+            exitCode: 1,
+            error: "Run ended during preparation",
+          },
+          { authorization: `Bearer ${chat.claim.sandboxToken}` },
+          [200],
+        ),
+      );
+      release.resolve();
+      const result = await allocating;
+      if (!revoked.ok) {
+        throw revoked.error;
+      }
+      expect(result).toStrictEqual({ outcome: "unavailable" });
+      expect(f.provider.createdIds).toHaveLength(1);
+      for (const id of f.provider.createdIds) {
+        expect((await fetch(`${PROVIDER_URL}/profiles/${id}`)).status).toBe(
+          404,
+        );
+      }
+    });
+  });
+
+  it("keeps another owner's accepted profile when the provider repeats its identity", async () => {
+    const provider = profileProvider();
+    const first = await fixture(true, provider);
+    const other = await fixture(true, provider);
+    await first.owned.run(async () => {
+      const a = await first.start();
+      const acceptedProfile = await allocate(a);
+      await other.owned.run(async () => {
+        const b = await other.start();
+        server.use(
+          http.post(`${PROVIDER_URL}/profiles`, () => {
+            return HttpResponse.json(
+              provider.profile(acceptedProfile.providerProfileId),
+              {
+                status: 201,
+              },
+            );
+          }),
+        );
+        await accept(b.control({ kind: "allocate" }), [500]);
+        await expect(b.request({ kind: "inspect" })).resolves.toStrictEqual({
+          outcome: "unavailable",
+        });
+        expect(
+          (
+            await fetch(
+              `${PROVIDER_URL}/profiles/${acceptedProfile.providerProfileId}`,
+            )
+          ).status,
+        ).toBe(200);
+      });
+      expect(
+        accepted(await a.request({ kind: "inspect" })).providerProfileId,
+      ).toBe(acceptedProfile.providerProfileId);
+    });
+  });
+
+  it("keeps the profile on lookup failures and recovers only after confirmed deletion", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const privateDetail = "provider-private-detail-do-not-echo";
+      server.use(
+        http.post(`${PROVIDER_URL}/profiles`, () => {
+          return HttpResponse.json({ detail: privateDetail }, { status: 500 });
+        }),
+      );
+      const failed = await accept(chat.control({ kind: "allocate" }), [502]);
+      expect(failed.body.error.message).toBe(
+        "Managed browser provider profile is unavailable",
+      );
+      expect(JSON.stringify(failed.body)).not.toContain(privateDetail);
+      await expect(chat.request({ kind: "inspect" })).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      server.use(
+        http.post(`${PROVIDER_URL}/profiles`, () => {
+          return HttpResponse.json({ id: "invalid-profile" }, { status: 201 });
+        }),
+      );
+      const invalid = await accept(chat.control({ kind: "allocate" }), [502]);
+      expect(invalid.body.error.code).toBe("BROWSER_USE_INVALID_RESPONSE");
+
+      server.use(...f.provider.handlers);
+      const instance = await allocate(chat);
+      accepted(
+        await chat.request({ kind: "beginStop", instanceId: instance.id }),
+      );
+      accepted(
+        await chat.request({ kind: "completeStop", instanceId: instance.id }),
+      );
+
+      for (const [providerStatus, expected] of [
+        [500, 502],
+        [403, 503],
+      ] as const) {
+        server.use(
+          http.get(`${PROVIDER_URL}/profiles/:id`, () => {
+            return HttpResponse.json(
+              { detail: privateDetail },
+              { status: providerStatus },
+            );
+          }),
+        );
+        const lookup = await accept(chat.control({ kind: "allocate" }), [
+          expected,
+        ]);
+        expect(JSON.stringify(lookup.body)).not.toContain(privateDetail);
+        expect(accepted(await chat.request({ kind: "inspect" }))).toMatchObject(
+          {
+            id: instance.id,
+            providerProfileId: instance.providerProfileId,
+            status: "stopped",
+          },
+        );
+        expect(f.provider.createdIds).toHaveLength(1);
+      }
+      server.use(
+        http.get(`${PROVIDER_URL}/profiles/:id`, () => {
+          return HttpResponse.json(f.provider.profile(randomUUID()));
+        }),
+      );
+      const mismatched = await accept(
+        chat.control({ kind: "allocate" }),
+        [502],
+      );
+      expect(mismatched.body.error.code).toBe("BROWSER_USE_INVALID_RESPONSE");
+
+      server.use(...f.provider.handlers);
+      expect(
+        (
+          await fetch(
+            `${PROVIDER_URL}/profiles/${instance.providerProfileId}`,
+            {
+              method: "DELETE",
+            },
+          )
+        ).status,
+      ).toBe(204);
+      const recovered = accepted(await chat.request({ kind: "allocate" }));
+      expect(recovered.ownerProfileId).toBe(instance.ownerProfileId);
+      expect(recovered.id).not.toBe(instance.id);
+      expect(recovered.providerProfileId).not.toBe(instance.providerProfileId);
+      expect(accepted(await chat.request({ kind: "inspect" }))).toMatchObject({
+        providerProfileId: recovered.providerProfileId,
+        status: "creating",
+      });
+      expect(f.provider.createdIds).toHaveLength(2);
     });
   });
 });

@@ -6,6 +6,7 @@ ruby - "$repo_root" <<'RUBY'
 require "yaml"
 require "tmpdir"
 require "open3"
+require "json"
 root = ARGV[0]
 desktop = YAML.safe_load(File.read("#{root}/.github/workflows/desktop.yml"), aliases: true).fetch("jobs")
 release = YAML.safe_load(File.read("#{root}/.github/workflows/release-please.yml"), aliases: true).fetch("jobs")
@@ -113,11 +114,96 @@ end
 publish = release.fetch("publish-desktop-update-manifest")
 raise "feed must wait for notarized release assets" unless publish.fetch("needs").include?("promote-desktop-release") && publish.fetch("if").include?("needs.promote-desktop-release.result == 'success'")
 raise "feed must wait for the API appcast deployment" unless publish.fetch("needs").include?("promote-api-production") && publish.fetch("if").include?("needs.promote-api-production.result == 'success'")
+condition = publish.fetch("if")
+evaluate_publication = lambda do |created, desktop_result, api_result, ancestors, cancelled|
+  expression = condition.strip.delete_prefix('${{').delete_suffix('}}')
+    .gsub("needs.release-please.outputs.desktop_release_created", created.inspect)
+    .gsub("needs.promote-desktop-release.result", desktop_result.inspect)
+    .gsub("needs.promote-api-production.result", api_result.inspect)
+    .gsub("always()", "true").gsub("cancelled()", cancelled.inspect)
+  # Actions injects success() when no status function overrides it, including
+  # skipped transitive Runner dependencies in an API + Desktop release.
+  default_success = condition.match?(/\b(?:always|cancelled|success|failure)\(/) || ancestors.all? { |result| result == "success" }
+  default_success && eval(expression, binding)
+end
+[
+  ["true", "success", "success", ["success"], false, true],
+  ["true", "success", "success", ["success", "skipped"], false, true],
+  ["true", "success", "success", ["success"], true, false],
+  ["false", "success", "success", ["success"], false, false],
+  ["true", "failure", "success", ["failure"], false, false],
+  ["true", "success", "failure", ["failure"], false, false],
+  ["true", "skipped", "success", ["skipped"], false, false],
+  ["true", "success", "skipped", ["skipped"], false, false]
+].each do |created, desktop_result, api_result, ancestors, cancelled, expected|
+  raise "unexpected manifest publication selection" unless evaluate_publication.call(created, desktop_result, api_result, ancestors, cancelled) == expected
+end
+raise "normal publication must reuse the recovery workflow" unless publish.fetch("uses") == "./.github/workflows/desktop-update-manifest.yml"
+raise "publication must verify the source workflow run" unless publish.fetch("with").fetch("release_run_id") == '${{ github.run_id }}'
+manifest_workflow = YAML.safe_load(File.read("#{root}/.github/workflows/desktop-update-manifest.yml"), aliases: true)
+publish = manifest_workflow.fetch("jobs").fetch("publish")
+raise "publication requires production approval" unless publish.fetch("environment") == "production"
+raise "publication must use trusted main workflow definitions" unless publish.fetch("if") == "github.ref == 'refs/heads/main'"
+source = publish.fetch("steps").find { |step| step["id"] == "source" }.fetch("run")
+Dir.mktmpdir("desktop-manifest-source") do |dir|
+  bin = "#{dir}/bin"
+  Dir.mkdir(bin)
+  File.write("#{bin}/gh", <<~'SH')
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "$*" in
+      *"--json targetCommitish"*) printf '%s\n' "$MOCK_DESKTOP_TARGET" ;;
+      *"--json assets"*) printf '%s\n' "$MOCK_DESKTOP_ASSETS" ;;
+      *"/jobs?"*) cat "$MOCK_SOURCE_JOBS" ;;
+      *) cat "$MOCK_SOURCE_RUN" ;;
+    esac
+  SH
+  File.chmod(0755, "#{bin}/gh")
+  target = "a" * 40
+  run = {"path" => ".github/workflows/release-please.yml", "event" => "push", "head_branch" => "main", "head_sha" => target, "conclusion" => "success"}
+  jobs = %w[release-please promote-desktop-release promote-api-production].map { |name| {"name" => name, "conclusion" => "success"} }
+  cases = [[run, jobs, true], [run.merge("conclusion" => nil), jobs, true],
+    [run.merge("path" => ".github/workflows/desktop.yml"), jobs, false],
+    [run.merge("head_branch" => "feature"), jobs, false],
+    [run.merge("event" => "pull_request"), jobs, false],
+    [run.merge("head_sha" => "main"), jobs, false],
+    [run.merge("conclusion" => "cancelled"), jobs, false],
+    [run, jobs[0..1], false]]
+  %w[failure cancelled skipped].each do |result|
+    [1, 2].each do |index|
+      cases << [run, jobs.each_with_index.map { |job, i| i == index ? job.merge("conclusion" => result) : job }, false]
+    end
+  end
+  cases.each do |source_run, source_jobs, expected|
+    File.write("#{dir}/run.json", JSON.generate(source_run))
+    File.write("#{dir}/jobs.jsonl", source_jobs.map { |job| JSON.generate(job) }.join("\n"))
+    output_file = "#{dir}/outputs"
+    File.write(output_file, "")
+    env = {"PATH" => "#{bin}:#{ENV.fetch('PATH')}", "GITHUB_REPOSITORY" => "okou-ai/okou", "RELEASE_RUN_ID" => "123",
+      "GITHUB_OUTPUT" => output_file, "MOCK_SOURCE_RUN" => "#{dir}/run.json", "MOCK_SOURCE_JOBS" => "#{dir}/jobs.jsonl"}
+    output, status = Open3.capture2e(env, "bash", "-c", source)
+    raise "unexpected source release acceptance: #{output}" unless status.success? == expected
+    expected_output = expected ? "sha=#{target}\n" : ""
+    raise "unverified source SHA escaped" unless File.read(output_file) == expected_output
+  end
+  assets = publish.fetch("steps").find { |step| step["name"] == "Verify Desktop release assets" }.fetch("run")
+    .gsub('${{ github.repository }}', 'okou-ai/okou')
+  zip = "Okou-darwin-arm64-0.54.6.zip"
+  dmg = "Okou-darwin-arm64-0.54.6.dmg"
+  [[target, "#{zip}\n#{dmg}", true], ["b" * 40, "#{zip}\n#{dmg}", false],
+    [target, zip, false], [target, dmg, false]].each do |asset_target, names, expected|
+    env = {"PATH" => "#{bin}:#{ENV.fetch('PATH')}", "GITHUB_REPOSITORY" => "okou-ai/okou",
+      "RELEASE_TARGET" => target, "DESKTOP_VERSION" => "0.54.6", "OKOU_RELEASE_TAG" => "okou-desktop-v0.54.6",
+      "MOCK_DESKTOP_TARGET" => asset_target, "MOCK_DESKTOP_ASSETS" => names}
+    output, status = Open3.capture2e(env, "bash", "-c", assets)
+    raise "unexpected Desktop asset acceptance: #{output}" unless status.success? == expected
+  end
+end
 raise "Native updater manifest must retain its published identity" unless publish.fetch("steps").any? { |step| step.fetch("run", "").include?("ai-okou-desktop-update-manifest.json") }
 publication = publish.fetch("steps").find { |step| step["name"] == "Publish Desktop update manifest to R2" }
 mirror = publish.fetch("steps").find { |step| step["name"] == "Mirror Desktop update manifest for previous API releases" }
 raise "R2 publication must precede the compatibility mirror" unless publish.fetch("steps").index(publication) < publish.fetch("steps").index(mirror)
-raise "R2 publication must retain the exact release identity" unless publication.fetch("env").fetch("PUBLICATION_SHA") == '${{ needs.release-please.outputs.release_target }}'
+raise "R2 publication must retain the verified release identity" unless publication.fetch("env").fetch("PUBLICATION_SHA") == '${{ steps.source.outputs.sha }}'
 raise "R2 publication must use the static bucket" unless publication.fetch("env").fetch("R2_BUCKET_NAME") == '${{ vars.R2_STATIC_BUCKET_NAME }}'
 RUBY
 node --test "$repo_root/.github/scripts/tests/desktop-release-manifest-test.mjs"

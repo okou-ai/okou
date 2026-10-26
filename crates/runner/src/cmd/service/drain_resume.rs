@@ -58,8 +58,9 @@
 //! Reload, signal, or acknowledgement failure uses
 //! [`rollback_resume_transition`] to restore captured boot enablement and
 //! reload systemd. If this attempt removed a `Restart=no` override, rollback
-//! recreates it first. This applies even after SIGUSR2 was sent; any rollback
-//! failure is added to the transition error.
+//! recreates it first. Directory-only cleanup does not own file restoration.
+//! This applies even after SIGUSR2 was sent; any rollback failure is added to
+//! the transition error.
 //!
 //! ## Enforcement
 //!
@@ -85,7 +86,8 @@ use crate::status_file;
 use runner_host::paths::HomePaths;
 
 use super::drain_override::{
-    DrainRestartOverrideWrite, remove_drain_restart_override, write_drain_restart_override,
+    DrainRestartOverrideRemoval, DrainRestartOverrideWrite, remove_drain_restart_override,
+    remove_drain_restart_override_outcome, write_drain_restart_override,
 };
 use super::gate::read_runner_status;
 use super::reload::{SystemdReloadRequirement, coordinate_systemd_reload};
@@ -191,7 +193,10 @@ trait ServiceResumeOps {
         unit: &'a RunnerServiceUnit,
     ) -> ServiceFuture<'a, SystemdUnitEnablement>;
     fn write_restart_override(&mut self, unit: &RunnerServiceUnit) -> RunnerResult<()>;
-    fn remove_restart_override(&mut self, unit: &RunnerServiceUnit) -> RunnerResult<bool>;
+    fn remove_restart_override(
+        &mut self,
+        unit: &RunnerServiceUnit,
+    ) -> RunnerResult<DrainRestartOverrideRemoval>;
     fn daemon_reload<'a>(
         &'a mut self,
         unit: &'a RunnerServiceUnit,
@@ -335,8 +340,11 @@ impl ServiceResumeOps for RealServiceResumeOps {
         write_drain_restart_override(unit).map(|_| ())
     }
 
-    fn remove_restart_override(&mut self, unit: &RunnerServiceUnit) -> RunnerResult<bool> {
-        remove_drain_restart_override(unit)
+    fn remove_restart_override(
+        &mut self,
+        unit: &RunnerServiceUnit,
+    ) -> RunnerResult<DrainRestartOverrideRemoval> {
+        remove_drain_restart_override_outcome(unit)
     }
 
     fn daemon_reload<'a>(
@@ -455,14 +463,16 @@ async fn rollback_drain_transition(
 
 async fn rollback_resume_transition(
     unit: &RunnerServiceUnit,
-    drain_override_removed: bool,
+    drain_override_removal: DrainRestartOverrideRemoval,
     prior_enablement: Option<SystemdUnitEnablement>,
     ops: &mut impl ServiceResumeOps,
     context: &str,
 ) -> RunnerResult<()> {
     let mut failures = Vec::new();
 
-    if drain_override_removed && let Err(error) = ops.write_restart_override(unit) {
+    if drain_override_removal.override_removed()
+        && let Err(error) = ops.write_restart_override(unit)
+    {
         failures.push(format!("restore drain restart override: {error}"));
     }
 
@@ -475,7 +485,7 @@ async fn rollback_resume_transition(
         None => failures.push("prior boot enablement is unavailable".to_string()),
     }
 
-    let reload_requirement = if drain_override_removed {
+    let reload_requirement = if drain_override_removal.override_removed() {
         SystemdReloadRequirement::dirty().with_drain_override(true)
     } else {
         SystemdReloadRequirement::dirty()
@@ -515,13 +525,13 @@ async fn drain_error_after_rollback(
 
 async fn resume_error_after_rollback(
     unit: &RunnerServiceUnit,
-    drain_override_removed: bool,
+    drain_override_removal: DrainRestartOverrideRemoval,
     prior_enablement: Option<SystemdUnitEnablement>,
     ops: &mut impl ServiceResumeOps,
     context: &str,
     error: RunnerError,
 ) -> RunnerError {
-    match rollback_resume_transition(unit, drain_override_removed, prior_enablement, ops, context)
+    match rollback_resume_transition(unit, drain_override_removal, prior_enablement, ops, context)
         .await
     {
         Ok(()) => error,
@@ -1206,7 +1216,7 @@ async fn resume_after_preflight_with_ops(
     ops: &mut impl ServiceResumeOps,
 ) -> RunnerResult<()> {
     let prior_enablement = resume_enablement_before_transition(unit, ops).await;
-    let drain_override_removed = ops.remove_restart_override(unit)?;
+    let drain_override_removal = ops.remove_restart_override(unit)?;
 
     if let Err(error) = ops.enable(unit).await {
         warn!(unit = %unit.unit_name(), error = %error, "failed to re-enable unit");
@@ -1228,7 +1238,7 @@ async fn resume_after_preflight_with_ops(
     {
         return Err(resume_error_after_rollback(
             unit,
-            drain_override_removed,
+            drain_override_removal,
             prior_enablement,
             ops,
             "daemon_reload",
@@ -1263,7 +1273,7 @@ async fn resume_after_preflight_with_ops(
 
     Err(resume_error_after_rollback(
         unit,
-        drain_override_removed,
+        drain_override_removal,
         prior_enablement,
         ops,
         failure_context,
@@ -1348,6 +1358,9 @@ mod tests {
     use std::collections::VecDeque;
     use std::path::{Path, PathBuf};
 
+    use super::super::drain_override::{
+        remove_drain_restart_override_at, write_drain_restart_override_at,
+    };
     use super::*;
     use runner_host::service::test_support;
 
@@ -1492,7 +1505,8 @@ mod tests {
         enablement_results: VecDeque<RunnerResult<SystemdUnitEnablement>>,
         write_error: bool,
         remove_error: bool,
-        removed_restart_override: bool,
+        restart_override_removal: DrainRestartOverrideRemoval,
+        systemd_root: Option<PathBuf>,
         reload_errors: VecDeque<bool>,
         reload_requirements: Vec<SystemdReloadRequirement>,
         signal_error: bool,
@@ -1535,7 +1549,8 @@ mod tests {
                 enablement_results: VecDeque::from([Ok(SystemdUnitEnablement::NotEnabled)]),
                 write_error: false,
                 remove_error: false,
-                removed_restart_override: true,
+                restart_override_removal: DrainRestartOverrideRemoval::OverrideRemoved,
+                systemd_root: None,
                 reload_errors: VecDeque::new(),
                 reload_requirements: Vec::new(),
                 signal_error: false,
@@ -1734,21 +1749,28 @@ mod tests {
             ))
         }
 
-        fn write_restart_override(&mut self, _unit: &RunnerServiceUnit) -> RunnerResult<()> {
+        fn write_restart_override(&mut self, unit: &RunnerServiceUnit) -> RunnerResult<()> {
             self.events.push("write_restart_override");
             if self.write_error {
                 Err(fake_error("write failed"))
+            } else if let Some(root) = &self.systemd_root {
+                write_drain_restart_override_at(root, unit).map(|_| ())
             } else {
                 Ok(())
             }
         }
 
-        fn remove_restart_override(&mut self, _unit: &RunnerServiceUnit) -> RunnerResult<bool> {
+        fn remove_restart_override(
+            &mut self,
+            unit: &RunnerServiceUnit,
+        ) -> RunnerResult<DrainRestartOverrideRemoval> {
             self.events.push("remove_restart_override");
             if self.remove_error {
                 Err(fake_error("remove failed"))
+            } else if let Some(root) = &self.systemd_root {
+                remove_drain_restart_override_at(root, unit)
             } else {
-                Ok(self.removed_restart_override)
+                Ok(self.restart_override_removal)
             }
         }
 
@@ -3307,10 +3329,140 @@ mod tests {
         );
     }
 
+    #[derive(Clone, Copy, Debug)]
+    enum ResumeFailure {
+        Reload,
+        Signal,
+        Acknowledgement,
+    }
+
+    async fn assert_resume_failure_preserves_filesystem_override_ownership(failure: ResumeFailure) {
+        for initial_state in [
+            DrainRestartOverrideRemoval::DirectoryRemoved,
+            DrainRestartOverrideRemoval::AlreadyAbsent,
+            DrainRestartOverrideRemoval::OverrideRemoved,
+        ] {
+            let (dir, home, config_path, base_dir, _handle) = setup_drain_target("draining").await;
+            let unit = service_unit();
+            let systemd_root = dir.path().join("systemd");
+            let drop_in_dir = systemd_root.join(format!("{}.d", unit.service_name()));
+            let override_path = drop_in_dir.join("50-vm0-drain.conf");
+            match initial_state {
+                DrainRestartOverrideRemoval::DirectoryRemoved => {
+                    std::fs::create_dir_all(&drop_in_dir).unwrap();
+                }
+                DrainRestartOverrideRemoval::AlreadyAbsent => {}
+                DrainRestartOverrideRemoval::OverrideRemoved => {
+                    write_drain_restart_override_at(&systemd_root, &unit).unwrap();
+                }
+            }
+            let acknowledgement_mode = if matches!(failure, ResumeFailure::Acknowledgement) {
+                "stopping"
+            } else {
+                "running"
+            };
+            let mut ops = FakeResumeOps {
+                active_results: active_results(2),
+                config_path: Some(config_path),
+                enablement_results: VecDeque::from([Ok(SystemdUnitEnablement::EnabledRuntime)]),
+                systemd_root: Some(systemd_root),
+                reload_errors: VecDeque::from([matches!(failure, ResumeFailure::Reload), false]),
+                signal_error: matches!(failure, ResumeFailure::Signal),
+                status_update_on_signal: Some((
+                    base_dir.join("status.json"),
+                    test_status_content(acknowledgement_mode, TEST_RUNNER_STARTED_AT),
+                )),
+                ..FakeResumeOps::default()
+            };
+
+            let error = resume_with_ops(&unit, &home, &mut ops).await.unwrap_err();
+
+            let expected_error = match failure {
+                ResumeFailure::Reload => "reload failed",
+                ResumeFailure::Signal => "signal failed",
+                ResumeFailure::Acknowledgement => {
+                    "entered mode=stopping before acknowledging resume"
+                }
+            };
+            assert!(error.to_string().contains(expected_error), "{error}");
+            if initial_state.override_removed() {
+                assert_eq!(
+                    std::fs::read_to_string(&override_path).unwrap(),
+                    "[Service]\nRestart=no\n"
+                );
+            } else {
+                assert!(
+                    !override_path.exists(),
+                    "{failure:?} recreated an initially absent override after {initial_state:?}"
+                );
+                assert!(!drop_in_dir.exists());
+            }
+            assert!(ops.events.contains(&"restore_enabled_runtime"));
+            assert_eq!(
+                ops.reload_requirements,
+                [
+                    SystemdReloadRequirement::dirty().with_drain_override(false),
+                    if initial_state.override_removed() {
+                        SystemdReloadRequirement::dirty().with_drain_override(true)
+                    } else {
+                        SystemdReloadRequirement::dirty()
+                    },
+                ],
+                "{failure:?} after {initial_state:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn resume_reload_failure_preserves_filesystem_override_ownership() {
+        assert_resume_failure_preserves_filesystem_override_ownership(ResumeFailure::Reload).await;
+    }
+
+    #[tokio::test]
+    async fn resume_signal_failure_preserves_filesystem_override_ownership() {
+        assert_resume_failure_preserves_filesystem_override_ownership(ResumeFailure::Signal).await;
+    }
+
+    #[tokio::test]
+    async fn resume_acknowledgement_failure_preserves_filesystem_override_ownership() {
+        assert_resume_failure_preserves_filesystem_override_ownership(
+            ResumeFailure::Acknowledgement,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn resume_after_directory_only_cleanup_reloads_and_acknowledges() {
+        let (dir, home, config_path, base_dir, _handle) = setup_drain_target("draining").await;
+        let unit = service_unit();
+        let systemd_root = dir.path().join("systemd");
+        let drop_in_dir = systemd_root.join(format!("{}.d", unit.service_name()));
+        std::fs::create_dir_all(&drop_in_dir).unwrap();
+        let mut ops = FakeResumeOps {
+            active_results: active_results(2),
+            config_path: Some(config_path),
+            systemd_root: Some(systemd_root),
+            status_update_on_signal: Some((
+                base_dir.join("status.json"),
+                test_status_content("running", TEST_RUNNER_STARTED_AT),
+            )),
+            ..FakeResumeOps::default()
+        };
+
+        resume_with_ops(&unit, &home, &mut ops).await.unwrap();
+
+        assert!(!drop_in_dir.exists());
+        assert_eq!(read_runner_status(&base_dir).await.unwrap().mode, "running");
+        assert_eq!(
+            ops.reload_requirements,
+            [SystemdReloadRequirement::dirty().with_drain_override(false)]
+        );
+    }
+
     #[tokio::test]
     async fn resume_failure_without_override_restores_only_enablement() {
         let mut ops = FakeResumeOps {
-            removed_restart_override: false,
+            restart_override_removal: DrainRestartOverrideRemoval::AlreadyAbsent,
             signal_error: true,
             ..FakeResumeOps::default()
         };

@@ -834,10 +834,10 @@ impl server::Handler for Peer {
     async fn auth_publickey(
         &mut self,
         user: &str,
-        key: &PublicKey,
+        key: server::VerifiedPublicKey<'_>,
     ) -> Result<server::Auth, Self::Error> {
         self.observed.auth.fetch_add(1, Ordering::SeqCst);
-        Ok(if user == "test-user" && key == &self.key {
+        Ok(if user == "test-user" && key.public_key == &self.key {
             server::Auth::Accept
         } else {
             server::Auth::Reject {

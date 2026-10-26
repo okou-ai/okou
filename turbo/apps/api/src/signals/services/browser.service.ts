@@ -1580,7 +1580,10 @@ const getOrCreateBrowserProfile$ = command(
     }
 
     const provider = await providerCall(
-      createBrowserUseProfile(context.chatThreadId, get(rootSignal$)),
+      createBrowserUseProfile(
+        `okou-browser-profile-${context.chatThreadId}`,
+        get(rootSignal$),
+      ),
     );
     if (provider.kind === "error") {
       return provider;
