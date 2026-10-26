@@ -143,7 +143,23 @@ async function fixture(enabled = true, provider = profileProvider()) {
         const result = await accept(control(action), [200]);
         return result.body;
       }
-      return { ...sent, runnerIdentity, claim, request, control };
+      function connect(identity: {
+        readonly instanceId: string;
+        readonly providerSessionId: string;
+        readonly primaryWindowId: number;
+      }) {
+        return client().connection({
+          headers: officialHeaders(),
+          params: { runId: sent.runId },
+          body: {
+            runnerIdentity,
+            instanceId: identity.instanceId,
+            providerSessionId: identity.providerSessionId,
+            primaryWindowId: identity.primaryWindowId,
+          },
+        });
+      }
+      return { ...sent, runnerIdentity, claim, request, control, connect };
     });
   }
   return { owned, start, featureActor, provider };
@@ -185,6 +201,449 @@ function authorization(
     primaryWindowId,
   };
 }
+
+const RUNNER_CDP_URL =
+  "wss://connect.browser-use.com/?token=private-runner-capability";
+
+function connectionSession(id: string) {
+  return {
+    id,
+    status: "active",
+    timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
+    startedAt: new Date(START).toISOString(),
+    cdpUrl: RUNNER_CDP_URL,
+    liveUrl: null,
+    finishedAt: null,
+  };
+}
+
+describe("official Runner Browser connections", () => {
+  it("returns an exact connection with original chat and provider deadlines without renewing", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const instance = await allocate(chat);
+      await admit(chat, instance.id, 0);
+      const identity = authorization(instance, 0);
+      const before = accepted(await chat.request({ kind: "inspect" }));
+      let timeoutAt = new Date(START + 5 * MINUTE).toISOString();
+      server.use(
+        http.get(`${PROVIDER_URL}/browsers/:id`, ({ request, params }) => {
+          expect(params.id).toBe(identity.providerSessionId);
+          expect(request.headers.get("X-Browser-Use-API-Key")).toBe(
+            "owner-profile-test-key",
+          );
+          return HttpResponse.json({
+            ...connectionSession(identity.providerSessionId),
+            timeoutAt,
+          });
+        }),
+      );
+      const first = await accept(chat.connect(identity), [200]);
+      expect(first.headers.get("Cache-Control")).toBe("no-store");
+      expect(first.body).toStrictEqual({
+        outcome: "accepted",
+        connection: {
+          instanceId: instance.id,
+          providerSessionId: identity.providerSessionId,
+          chatThreadId: chat.threadId,
+          primaryWindowId: 0,
+          cdpUrl: RUNNER_CDP_URL,
+          expiresAt: START + 5 * MINUTE,
+        },
+      });
+      mockNow(START + 4 * MINUTE);
+      expect((await accept(chat.connect(identity), [200])).body).toStrictEqual(
+        first.body,
+      );
+      expect(accepted(await chat.request({ kind: "inspect" }))).toStrictEqual(
+        before,
+      );
+      mockNow(START + 5 * MINUTE);
+      expect((await accept(chat.connect(identity), [200])).body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      timeoutAt = instance.timeoutAt;
+      expect((await accept(chat.connect(identity), [200])).body).toMatchObject({
+        outcome: "accepted",
+        connection: { expiresAt: START + 10 * MINUTE },
+      });
+      mockNow(START + 10 * MINUTE);
+      expect((await accept(chat.connect(identity), [200])).body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(accepted(await chat.request({ kind: "inspect" }))).toStrictEqual(
+        before,
+      );
+    });
+  });
+
+  it("denies untrusted credentials and foreign selectors before provider lookup", async () => {
+    const f = await fixture();
+    const other = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const sibling = await f.start();
+      const instance = await allocate(chat);
+      await admit(chat, instance.id, 0);
+      await admit(sibling, instance.id, 102);
+      const identity = authorization(instance, 0);
+      let lookups = 0;
+      server.use(
+        http.get(`${PROVIDER_URL}/browsers/:id`, () => {
+          ++lookups;
+          return HttpResponse.json(
+            connectionSession(identity.providerSessionId),
+          );
+        }),
+      );
+      const pat = await createAuthOrgAgentsBddApi(context).createCliToken(
+        f.owned.actor,
+      );
+      for (const [token, status] of [
+        [undefined, 401],
+        [okouTokenFromClaim(chat.claim), 401],
+        [chat.claim.sandboxToken, 401],
+        [pat.token, 403],
+      ] as const) {
+        await accept(
+          client().connection({
+            headers: token ? { authorization: `Bearer ${token}` } : {},
+            params: { runId: chat.runId },
+            body: {
+              runnerIdentity: chat.runnerIdentity,
+              instanceId: identity.instanceId,
+              providerSessionId: identity.providerSessionId,
+              primaryWindowId: 0,
+            },
+          }),
+          [status],
+        );
+      }
+      for (const forged of [
+        { ...identity, instanceId: randomUUID() },
+        { ...identity, providerSessionId: randomUUID() },
+        { ...identity, primaryWindowId: 102 },
+      ]) {
+        expect((await accept(chat.connect(forged), [200])).body).toStrictEqual({
+          outcome: "unavailable",
+        });
+      }
+      expect(
+        (await accept(sibling.connect(identity), [200])).body,
+      ).toStrictEqual({ outcome: "unavailable" });
+      const wrongRunner = await accept(
+        client().connection({
+          headers: officialHeaders(),
+          params: { runId: chat.runId },
+          body: {
+            runnerIdentity: { ...chat.runnerIdentity, runnerId: randomUUID() },
+            instanceId: identity.instanceId,
+            providerSessionId: identity.providerSessionId,
+            primaryWindowId: 0,
+          },
+        }),
+        [200],
+      );
+      expect(wrongRunner.body).toStrictEqual({ outcome: "unavailable" });
+      await other.owned.run(async () => {
+        const foreign = await other.start();
+        expect(
+          (await accept(foreign.connect(identity), [200])).body,
+        ).toStrictEqual({ outcome: "unavailable" });
+      });
+      const denied = await f.start(false);
+      expect(
+        (await accept(denied.connect(identity), [200])).body,
+      ).toStrictEqual({ outcome: "unavailable" });
+      await updateFeatureSwitchesForUser(context, f.featureActor, {
+        [FeatureSwitchKey.BrowserSharedOwner]: false,
+      });
+      expect((await accept(chat.connect(identity), [200])).body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(lookups).toBe(0);
+    });
+  });
+
+  it.each([
+    "permission",
+    "switch",
+    "runner",
+    "run",
+    "retire",
+    "window",
+    "instance",
+    "expiry",
+  ] as const)(
+    "withholds the endpoint when %s authority changes during provider lookup",
+    async (revocation) => {
+      const f = await fixture();
+      await f.owned.run(async () => {
+        const chat = await f.start();
+        const instance = await allocate(chat);
+        const window = await admit(chat, instance.id, 0);
+        const identity = authorization(instance, 0);
+        const entered = createDeferredPromise<void>(context.signal);
+        const release = createDeferredPromise<void>(context.signal);
+        server.use(
+          http.get(`${PROVIDER_URL}/browsers/:id`, async () => {
+            entered.resolve();
+            await release.promise;
+            return HttpResponse.json(
+              connectionSession(identity.providerSessionId),
+            );
+          }),
+        );
+        const pending = settle(chat.connect(identity));
+        await entered.promise;
+        const changed = await settle(
+          (async () => {
+            switch (revocation) {
+              case "permission": {
+                await createChatFilesBddApi(
+                  context,
+                ).updateThreadComputerUseHost(
+                  f.owned.actor,
+                  chat.threadId,
+                  null,
+                  { cloudBrowserEnabled: false },
+                );
+                break;
+              }
+              case "switch": {
+                await updateFeatureSwitchesForUser(context, f.featureActor, {
+                  [FeatureSwitchKey.BrowserSharedOwner]: false,
+                });
+                break;
+              }
+              case "runner": {
+                await withNowScopeForTest(() => {
+                  return runs.requestHeartbeatRunner(true, [200], {
+                    group: f.owned.runnerGroup,
+                    runnerId: chat.runnerIdentity.runnerId,
+                    snapshotGeneration: 8,
+                  });
+                });
+                break;
+              }
+              case "run": {
+                await createWebhookCallbackApi(context).requestAgentComplete(
+                  {
+                    runId: chat.runId,
+                    exitCode: 1,
+                    error: "Run ended during Browser connection lookup",
+                  },
+                  { authorization: `Bearer ${chat.claim.sandboxToken}` },
+                  [200],
+                );
+                break;
+              }
+              case "retire": {
+                accepted(
+                  await chat.request({
+                    kind: "retire",
+                    ...window,
+                    reason: "closed",
+                  }),
+                );
+                break;
+              }
+              case "window": {
+                accepted(
+                  await chat.request({
+                    kind: "retire",
+                    ...window,
+                    reason: "closed",
+                  }),
+                );
+                accepted(
+                  await chat.request({
+                    kind: "completeWindowClose",
+                    ...window,
+                  }),
+                );
+                await admit(chat, instance.id, 1);
+                break;
+              }
+              case "instance": {
+                accepted(
+                  await chat.request({
+                    kind: "retire",
+                    ...window,
+                    reason: "closed",
+                  }),
+                );
+                accepted(
+                  await chat.request({
+                    kind: "beginStop",
+                    instanceId: instance.id,
+                  }),
+                );
+                accepted(
+                  await chat.request({
+                    kind: "completeStop",
+                    instanceId: instance.id,
+                  }),
+                );
+                const replacement = await allocate(chat);
+                await admit(chat, replacement.id, 0);
+                break;
+              }
+              case "expiry": {
+                mockNow(START + 10 * MINUTE);
+                break;
+              }
+            }
+          })(),
+        );
+        release.resolve();
+        const result = await pending;
+        if (!changed.ok) {
+          throw changed.error;
+        }
+        if (!result.ok) {
+          throw result.error;
+        }
+        expect(result.value).toMatchObject({
+          status: 200,
+          body: { outcome: "unavailable" },
+        });
+        expect(JSON.stringify(result.value.body)).not.toContain(RUNNER_CDP_URL);
+      });
+    },
+  );
+
+  it("distinguishes missing provider sessions from sanitized invalid and dependency failures", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const instance = await allocate(chat);
+      await admit(chat, instance.id, 0);
+      const identity = authorization(instance, 0);
+      const session = connectionSession(identity.providerSessionId);
+      const privateDetail = "provider-private-connection-detail";
+      for (const body of [
+        { ...session, status: "stopped" },
+        { ...session, cdpUrl: null },
+        { ...session, timeoutAt: new Date(START).toISOString() },
+      ]) {
+        server.use(
+          http.get(`${PROVIDER_URL}/browsers/:id`, () => {
+            return HttpResponse.json(body);
+          }),
+        );
+        expect(
+          (await accept(chat.connect(identity), [200])).body,
+        ).toStrictEqual({ outcome: "unavailable" });
+      }
+      server.use(
+        http.get(`${PROVIDER_URL}/browsers/:id`, () => {
+          return HttpResponse.json({ detail: privateDetail }, { status: 404 });
+        }),
+      );
+      expect((await accept(chat.connect(identity), [200])).body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      for (const body of [
+        { ...session, id: randomUUID() },
+        { ...session, timeoutAt: privateDetail },
+        { ...session, cdpUrl: `wss://foreign.example/?token=${privateDetail}` },
+        {
+          ...session,
+          cdpUrl: `wss://user:${privateDetail}@connect.browser-use.com/`,
+        },
+      ]) {
+        server.use(
+          http.get(`${PROVIDER_URL}/browsers/:id`, () => {
+            return HttpResponse.json(body);
+          }),
+        );
+        const result = await accept(chat.connect(identity), [502]);
+        expect(result.body.error.code).toBe("BROWSER_USE_INVALID_RESPONSE");
+        expect(JSON.stringify(result.body)).not.toContain(privateDetail);
+        expect(JSON.stringify(result.body)).not.toContain(RUNNER_CDP_URL);
+      }
+      for (const [providerStatus, expectedStatus, code] of [
+        [500, 502, "BROWSER_USE_ERROR"],
+        [403, 503, "BROWSER_USE_AUTH_ERROR"],
+        [429, 503, "BROWSER_USE_CAPACITY"],
+      ] as const) {
+        server.use(
+          http.get(`${PROVIDER_URL}/browsers/:id`, () => {
+            return HttpResponse.json(
+              { detail: `${privateDetail} ${RUNNER_CDP_URL}` },
+              { status: providerStatus },
+            );
+          }),
+        );
+        const result = await accept(chat.connect(identity), [expectedStatus]);
+        expect(result.body.error).toStrictEqual({
+          code,
+          message: "Managed browser provider connection is unavailable",
+        });
+        expect(JSON.stringify(result.body)).not.toContain(privateDetail);
+        expect(JSON.stringify(result.body)).not.toContain(RUNNER_CDP_URL);
+      }
+      let redirected = false;
+      server.use(
+        http.get(`${PROVIDER_URL}/browsers/:id`, () => {
+          return HttpResponse.redirect(
+            "https://foreign.example/connection",
+            302,
+          );
+        }),
+        http.get("https://foreign.example/connection", () => {
+          redirected = true;
+          return HttpResponse.json(session);
+        }),
+      );
+      const redirect = await accept(chat.connect(identity), [502]);
+      expect(redirect.body.error.code).toBe("BROWSER_USE_ERROR");
+      expect(redirected).toBeFalsy();
+    });
+  });
+
+  it("bounds the provider read and reports a sanitized timeout", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const instance = await allocate(chat);
+      await admit(chat, instance.id, 0);
+      const identity = authorization(instance, 0);
+      const entered = createDeferredPromise<void>(context.signal);
+      const aborted = createDeferredPromise<void>(context.signal);
+      const deadline = new AbortController();
+      context.mocks.abortSignal.timeout.mockReturnValueOnce(deadline.signal);
+      server.use(
+        http.get(`${PROVIDER_URL}/browsers/:id`, async ({ request }) => {
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              return aborted.resolve();
+            },
+            {
+              once: true,
+            },
+          );
+          entered.resolve();
+          await aborted.promise;
+          return HttpResponse.error();
+        }),
+      );
+      const pending = chat.connect(identity);
+      await entered.promise;
+      deadline.abort(new DOMException("Provider deadline", "TimeoutError"));
+      const result = await accept(pending, [502]);
+      await aborted.promise;
+      context.mocks.abortSignal.timeout.mockReset();
+      expect(result.body.error).toStrictEqual({
+        code: "BROWSER_USE_TIMEOUT",
+        message: "Managed browser provider connection is unavailable",
+      });
+    });
+  });
+});
 
 describe("official Runner Browser authorization", () => {
   it("authorizes only the exact live chat window without renewing its lease", async () => {
