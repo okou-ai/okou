@@ -7,8 +7,6 @@ import {
 } from "../connector-accounts.ts";
 import { openBuiltinAccountManager$ } from "./connector-account-dialogs.ts";
 import { setManagedConnectorAccessSlug$ } from "./connector-access-management.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
 import { filteredDirectoryCustomConnectors$ } from "./connector-directory-custom.ts";
 import {
   connectorCatalogDiscovery$,
@@ -66,8 +64,5 @@ export const connectorDirectoryPageSignals = Object.freeze({
   }),
   customCount$: computed(async (get) => {
     return (await get(filteredDirectoryCustomConnectors$)).length;
-  }),
-  vncEnabled$: computed((get) => {
-    return get(featureSwitch$)[FeatureSwitchKey.VncAccess] === true;
   }),
 });

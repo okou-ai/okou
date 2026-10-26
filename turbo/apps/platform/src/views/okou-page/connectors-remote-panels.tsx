@@ -1,4 +1,3 @@
-import { connectorDirectoryPageSignals } from "../../signals/okou-page/settings/connector-directory-page.ts";
 import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 import {
   GuidedRemoteControlPanel,
@@ -39,14 +38,9 @@ import {
   mountRemoteControlPanel$,
 } from "../../signals/remote-management-realtime.ts";
 
-function ConnectionTypeFilter({
-  vncEnabled,
-}: {
-  readonly vncEnabled: boolean;
-}) {
+function ConnectionTypeFilter() {
   const { t } = useTranslation();
-  const type = useGet(remoteControlType$);
-  const selectedType = type === "vnc" && !vncEnabled ? "all" : type;
+  const selectedType = useGet(remoteControlType$);
   const setType = useSet(setRemoteControlType$);
   const label =
     selectedType === "ssh"
@@ -60,9 +54,7 @@ function ConnectionTypeFilter({
         : t(($) => {
             return $.connectors.catalog.filters.all;
           });
-  const options: readonly RemoteControlType[] = vncEnabled
-    ? ["all", "ssh", "vnc"]
-    : ["all", "ssh"];
+  const options: readonly RemoteControlType[] = ["all", "ssh", "vnc"];
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -110,20 +102,14 @@ function ConnectionTypeFilter({
   );
 }
 
-function LegacyRemoteControlPanel({
-  vncEnabled,
-}: {
-  readonly vncEnabled: boolean;
-}) {
+function LegacyRemoteControlPanel() {
   const { t } = useTranslation();
-  const type = useGet(remoteControlType$);
-  const selectedType = type === "vnc" && !vncEnabled ? "all" : type;
+  const selectedType = useGet(remoteControlType$);
   const view = useGet(remoteControlView$);
   const setView = useSet(setRemoteControlView$);
   const mount = useSet(mountRemoteControlPanel$);
   const showSsh = selectedType === "all" || selectedType === "ssh";
-  const showVnc =
-    vncEnabled && (selectedType === "all" || selectedType === "vnc");
+  const showVnc = selectedType === "all" || selectedType === "vnc";
   return (
     <div ref={mount} className="grid gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -147,7 +133,7 @@ function LegacyRemoteControlPanel({
             })}
           </SegmentControlItem>
         </SegmentControl>
-        <ConnectionTypeFilter vncEnabled={vncEnabled} />
+        <ConnectionTypeFilter />
       </div>
       {showSsh && (
         <section
@@ -184,7 +170,7 @@ function LegacyRemoteControlPanel({
         </section>
       )}
       <SshDialog />
-      {vncEnabled && <VncDialog />}
+      <VncDialog />
     </div>
   );
 }
@@ -217,13 +203,8 @@ function LegacyPrivateNetworkPanel() {
 }
 
 export function RemoteControlPanel() {
-  const vncEnabled = useGet(connectorDirectoryPageSignals.vncEnabled$);
   const guided = useGet(remoteControlGuidedEnabled$);
-  return guided ? (
-    <GuidedRemoteControlPanel vncEnabled={vncEnabled} />
-  ) : (
-    <LegacyRemoteControlPanel vncEnabled={vncEnabled} />
-  );
+  return guided ? <GuidedRemoteControlPanel /> : <LegacyRemoteControlPanel />;
 }
 export function PrivateNetworkPanel() {
   const guided = useGet(remoteControlGuidedEnabled$);

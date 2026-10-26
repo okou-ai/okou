@@ -6,8 +6,8 @@ It provides verified authentication, framebuffer decoding and caller-driven
 capture/input sessions for the documented reference-server profile. Runner
 integrates this engine through [Run-owned guest RPC](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/runner-vnc-execution.md)
 and the private authority API. The CLI, owner configuration and Agent inventory
-compose those contracts without changing this engine; VNC remains disabled by
-default and product acceptance is recorded separately.
+compose those contracts without changing this engine. Product acceptance is
+recorded separately.
 
 ## Contract
 
@@ -20,8 +20,8 @@ stream. This crate never resolves a hostname or opens a second socket.
 `authenticate_with_client_certificate` is a separate **engine-only** entry point
 requiring an in-memory `ClientIdentity` for either X509None (260, no inner RFB
 credential) or X509Vnc (261, classic password). It does not reinterpret any
-existing saved X509None or X509Vnc profile, expose a new Runner profile or
-turn on the default-off `VncAccess` switch. `ClientIdentity::from_pkcs8_der`
+existing saved X509None or X509Vnc profile or expose a new Runner profile.
+`ClientIdentity::from_pkcs8_der`
 accepts 1–8 DER certificates totaling at most 64 KiB and an unencrypted,
 nonempty PKCS#8 key of at most 16 KiB; key/certificate match must be provable.
 PEM decoding, encrypted-key passphrases, owner rotation, at-rest encryption and
@@ -54,7 +54,7 @@ Apple RSA/SRP security type 33. None of these raw-stream entry points supplies
 post-authentication encryption or an authorization decision. The Runner admits
 types 30, 33 and 36 as distinct saved profiles only through an independently
 authorized SSH host and literal Mac loopback VNC destination. There is no saved
-type-2 profile. `VncAccess` remains disabled by default.
+type-2 profile.
 
 RFB 3.8 / VeNCrypt 0.2 supports the caller-selected X509None (subtype 260),
 X509Vnc (261), X509Plain (262), or the separate **QEMU-specific** SCRAM profile
@@ -160,8 +160,8 @@ password limit is a protocol weakness even when a random password is used.
 requiring Okou's SSH route alone cannot restrict that listener. A future
 product admission must separately review host-side ingress isolation, keep SSH
 host-key verification ending on the controlled Mac and literal RFB loopback,
-and retain exact grants/capabilities. This engine PR does not add a saved profile,
-change Mac settings, or activate the default-off `VncAccess` feature.
+and retain exact grants/capabilities. This engine PR does not add a saved profile
+or change Mac settings.
 
 ## Apple DH / ARD type 30 engine boundary
 
@@ -259,8 +259,8 @@ caller deadline applies. This establishes the observed Mac profile only, not
 all macOS versions or settings. The issued key does not encrypt post-auth RFB
 traffic. A future product admission requires its own policy review, verified
 SSH **terminating on the Mac** and literal Mac loopback; raw/direct internet
-connections are not authorized. This engine change does not enable `VncAccess`
-or change any saved Runner profile.
+connections are not authorized. This engine change does not change any saved
+Runner profile.
 
 ## Shared deadlines and failure handling
 

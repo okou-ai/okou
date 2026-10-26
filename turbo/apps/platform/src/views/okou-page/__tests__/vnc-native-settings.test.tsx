@@ -13,7 +13,6 @@ import {
   type TailscaleConfig,
 } from "@okouai/api-contracts/contracts/tailscale";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -104,7 +103,6 @@ async function page() {
     context,
     path: "/connectors?scope=remote-control&type=vnc",
     auth,
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
 }
 async function openAddHostPage() {
@@ -174,9 +172,6 @@ test("Network settings can create a reusable Tailscale configuration for VNC", a
     context,
     path: "/connectors?scope=private-network",
     auth,
-    featureSwitches: {
-      [FeatureSwitchKey.VncAccess]: true,
-    },
   });
   const section = await screen.findByRole("region", { name: "Tailscale" });
   click(

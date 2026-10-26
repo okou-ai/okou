@@ -88,13 +88,7 @@ function ComputerUseChoice() {
   );
 }
 
-function ProtocolChoice({
-  setup,
-  vncEnabled,
-}: {
-  readonly setup: RemoteSetup;
-  readonly vncEnabled: boolean;
-}) {
+function ProtocolChoice({ setup }: { readonly setup: RemoteSetup }) {
   const { t } = useTranslation();
   const choose = useSet(chooseRemoteProtocol$);
   const [opening, open] = useLoadableSet(openRemoteLogin$);
@@ -112,22 +106,16 @@ function ProtocolChoice({
       }),
       icon: <Terminal size={22} aria-hidden />,
     },
-    ...(vncEnabled
-      ? [
-          {
-            value: "vnc" as const,
-            label: t(($) => {
-              return setup.fromComputer
-                ? $.remoteComputerSetup.screen
-                : $.vnc.label;
-            }),
-            description: t(($) => {
-              return $.remoteControlSetup.vncDescription;
-            }),
-            icon: <Monitor size={22} aria-hidden />,
-          },
-        ]
-      : []),
+    {
+      value: "vnc" as const,
+      label: t(($) => {
+        return setup.fromComputer ? $.remoteComputerSetup.screen : $.vnc.label;
+      }),
+      description: t(($) => {
+        return $.remoteControlSetup.vncDescription;
+      }),
+      icon: <Monitor size={22} aria-hidden />,
+    },
   ];
   return (
     <div className="grid gap-3">
@@ -167,13 +155,7 @@ function ProtocolChoice({
     </div>
   );
 }
-function SetupEntry({
-  setup,
-  vncEnabled,
-}: {
-  readonly setup: RemoteSetup;
-  readonly vncEnabled: boolean;
-}) {
+function SetupEntry({ setup }: { readonly setup: RemoteSetup }) {
   const { t } = useTranslation();
   return (
     <div className="grid gap-6">
@@ -193,7 +175,7 @@ function SetupEntry({
           </p>
         )}
       </header>
-      <ProtocolChoice setup={setup} vncEnabled={vncEnabled} />
+      <ProtocolChoice setup={setup} />
     </div>
   );
 }
@@ -317,11 +299,7 @@ function RemoteSetupHeader({ setup }: { readonly setup: RemoteSetup }) {
     </div>
   );
 }
-export function RemoteConnectionSetup({
-  vncEnabled,
-}: {
-  readonly vncEnabled: boolean;
-}) {
+export function RemoteConnectionSetup() {
   const setup = useGet(remoteSetup$);
   if (!setup) {
     return null;
@@ -337,9 +315,7 @@ export function RemoteConnectionSetup({
       {(setup.step !== "entry" || setup.fromComputer) && (
         <RemoteSetupHeader setup={setup} />
       )}
-      {setup.step === "entry" && (
-        <SetupEntry setup={setup} vncEnabled={vncEnabled} />
-      )}
+      {setup.step === "entry" && <SetupEntry setup={setup} />}
       {setup.step === "computer-network" && <RemoteComputerNetwork />}
       <RemoteSetupForms setup={setup} />
       {setup.step === "saved" && <RemoteSetupSaved setup={setup} />}

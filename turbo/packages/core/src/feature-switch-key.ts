@@ -52,7 +52,6 @@ export enum FeatureSwitchKey {
   LarkIntegration = "larkIntegration",
   WechatIntegration = "wechatIntegration",
   DiscordIntegration = "discordIntegration",
-  VncAccess = "vncAccess",
   RemoteConnectionDiagnostics = "remoteConnectionDiagnostics",
   CodexExecution = "_codexExecution",
   ChatHomeCompliance = "chatHomeCompliance",

@@ -11,7 +11,6 @@ import {
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 
@@ -239,9 +238,6 @@ describe("POST /api/chat-threads", () => {
   it("creates initial SSH and VNC overrides and preserves them on replay", async () => {
     initializeVncRuntimeTest();
     const fixture = await seedAgent();
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.VncAccess]: true,
-    });
     vnc.authenticate({ orgId: fixture.orgId, userId: fixture.userId });
     const headers = { authorization: "Bearer clerk-session" };
     const hostId = randomUUID();
