@@ -36,38 +36,6 @@ function buttonNamed(name: string): HTMLElement {
   return button;
 }
 
-test.each([
-  { email: "bingjie@okou.ai", enabled: true },
-  { email: "ethan@okou.ai", enabled: false },
-])("PWA keyboard viewport defaults for $email", async ({ email, enabled }) => {
-  context.mocks.browser.matchMedia((query) => {
-    return query === "(display-mode: standalone)";
-  });
-  await setupPage({
-    context,
-    path: "/_/lab",
-    auth: {
-      user: { id: "keyboard-rollout-user", fullName: "Rollout Tester", email },
-      organization: {
-        activeOrg: {
-          id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-          name: "Staff",
-        },
-        memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
-      },
-    },
-    featureSwitches: { [FeatureSwitchKey.Lab]: true },
-  });
-  await screen.findByRole("heading", { name: "Lab" });
-  const control = within(
-    featureSwitchRow(FeatureSwitchKey.PwaKeyboardViewport),
-  ).getByRole("switch");
-  expect(control).toHaveAttribute("aria-checked", String(enabled));
-  expect(document.documentElement.dataset.pwaKeyboardViewport).toBe(
-    enabled ? "true" : undefined,
-  );
-});
-
 test("Lab remains available while onboarding is required", async () => {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
@@ -201,7 +169,6 @@ test("Maintainer filters narrow the feature list", async () => {
 
 test.each([
   FeatureSwitchKey.TestOauthConnector,
-  FeatureSwitchKey.PwaKeyboardViewport,
   FeatureSwitchKey.RemoteControlGuidedSetup,
 ])("Toggle and reset a Lab override: %s", async (featureKey) => {
   const user = userEvent.setup();
@@ -251,9 +218,6 @@ test.each([
   await waitFor(() => {
     expect(featureControl).toBeChecked();
   });
-  expect(document.documentElement.dataset.pwaKeyboardViewport).toBe(
-    featureKey === FeatureSwitchKey.PwaKeyboardViewport ? "true" : undefined,
-  );
   expect(updatedSwitches).toStrictEqual([{ [featureKey]: true }]);
 
   await user.click(buttonNamed("Reset all"));
@@ -262,7 +226,4 @@ test.each([
     expect(resetRequested).toBeTruthy();
     expect(featureControl).not.toBeChecked();
   });
-  expect(document.documentElement).not.toHaveAttribute(
-    "data-pwa-keyboard-viewport",
-  );
 });

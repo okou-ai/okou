@@ -10,7 +10,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { authenticatedSessionKey$, clerk$ } from "../auth";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
-import { syncShellDocumentAttributes$ } from "../theme.ts";
 import {
   featureSwitchState$,
   setFeatureSwitchState$,
@@ -115,7 +114,6 @@ export const applyFeatureSwitches$ = command(
   ({ set }, { owner, switches }: FeatureSwitchSnapshot) => {
     set(remoteUiOwner$, owner);
     set(setFeatureSwitchState$, switches);
-    set(syncShellDocumentAttributes$);
   },
 );
 

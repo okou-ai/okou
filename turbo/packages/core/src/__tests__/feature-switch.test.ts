@@ -27,30 +27,6 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
-  it("limits the PWA keyboard viewport rollout to Bingjie across workspaces", () => {
-    const key = FeatureSwitchKey.PwaKeyboardViewport;
-    for (const orgId of [
-      undefined,
-      "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-      "org_nonexistent",
-    ]) {
-      expect(isFeatureEnabled(key, { email: "BINGJIE@OKOU.AI", orgId })).toBe(
-        true,
-      );
-      expect(isFeatureEnabled(key, { email: "ethan@okou.ai", orgId })).toBe(
-        false,
-      );
-      expect(isFeatureEnabled(key, { orgId })).toBe(false);
-      expect(
-        isFeatureEnabled(key, {
-          email: "bingjie@okou.ai",
-          orgId,
-          overrides: { [key]: false },
-        }),
-      ).toBe(false);
-    }
-  });
-
   it("keeps Codex execution test-only and off for everyone without an override", () => {
     const key = FeatureSwitchKey.CodexExecution;
     expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");

@@ -561,25 +561,6 @@ body {
     height: var(--okou-keyboard-scroll-reserve, 0px);
     pointer-events: none;
   }
-
-  /* Keep editable content in document coordinates for WebKit's native caret.
-     Size only the app shell to the visual viewport: html/body retain the
-     layout viewport used as the keyboard baseline. Clip, rather than hide,
-     overflow so native focus scrolling cannot scroll the entire shell away.
-     Transcript and editor scrollports own their respective scrolling. */
-  :root[data-pwa-keyboard-viewport="true"] #root {
-    top: var(--okou-keyboard-viewport-top, 0px);
-    height: var(--okou-keyboard-viewport-height, var(--okou-viewport-height));
-    min-height: var(
-      --okou-keyboard-viewport-height,
-      var(--okou-viewport-height)
-    );
-    overflow: clip;
-  }
-
-  :root[data-pwa-keyboard-viewport="true"] #root::after {
-    content: none;
-  }
 }
 
 /* Shimmer text effect for active/thinking states. Reached through

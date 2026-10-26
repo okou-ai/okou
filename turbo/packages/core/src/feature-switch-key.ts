@@ -49,7 +49,6 @@ export enum FeatureSwitchKey {
   ThreadEmailManager = "threadEmailManager",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
-  PwaKeyboardViewport = "pwaKeyboardViewport",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "larkIntegration",
   WechatIntegration = "wechatIntegration",
