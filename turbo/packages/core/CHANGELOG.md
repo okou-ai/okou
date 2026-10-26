@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.790.2](https://github.com/okou-ai/okou/compare/core-v8.790.1...core-v8.790.2) (2026-10-26)
+
+
+### Refactoring
+
+* **api:** simplify outbound http and request lifetimes ([#43014](https://github.com/okou-ai/okou/issues/43014)) ([747df24](https://github.com/okou-ai/okou/commit/747df241cd867a5d56fae3be119bb6c14b3b23a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.7.0
+
 ## [8.790.1](https://github.com/okou-ai/okou/compare/core-v8.790.0...core-v8.790.1) (2026-10-26)
 
 

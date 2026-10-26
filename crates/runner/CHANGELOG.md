@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.237.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.5...runner-rs-v0.237.6) (2026-10-26)
+
+
+### Bug Fixes
+
+* **runner:** preserve install drain override restoration ownership ([#43065](https://github.com/okou-ai/okou/issues/43065)) ([a58905f](https://github.com/okou-ai/okou/commit/a58905f3d24b473202c28ba520507bf17463bb28))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.237.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.4...runner-rs-v0.237.5) (2026-10-26)
 
 
