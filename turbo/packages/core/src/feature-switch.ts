@@ -46,13 +46,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.IosPushNotifications]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "iOS notifications",
-    description:
-      "Receive iOS run notifications and refresh chats in the background.",
-    enabled: false,
-  },
   [FeatureSwitchKey.IosComposerConnectors]: {
     maintainer: "lancy@okou.ai",
     displayName: "iOS composer connectors",

@@ -1,8 +1,6 @@
 import { command } from "ccstate";
-import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
 import { iosPushRegistrations } from "@okouai/db/schema/ios-push-registration";
 import { hasApnsConfiguration, sendApnsNotification } from "../external/apns";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { isActiveIosPushSession$ } from "./ios-push-registrations.service";
 import webpush, { WebPushError } from "web-push";
 import { and, eq } from "drizzle-orm";
@@ -55,11 +53,9 @@ export const sendUserPushNotifications$ = command(
     signal.throwIfAborted();
     const publicKey = optionalEnv("VAPID_PUBLIC_KEY");
     const privateKey = optionalEnv("VAPID_PRIVATE_KEY");
-    const nativeEnabled = isFeatureEnabled(
-      FeatureSwitchKey.IosPushNotifications,
-      await set(loadUserFeatureSwitchContext$, args.orgId, args.userId, signal),
-    );
-    if ((!publicKey || !privateKey) && !nativeEnabled) {
+    const nativeConfigured =
+      hasApnsConfiguration("production") || hasApnsConfiguration("sandbox");
+    if ((!publicKey || !privateKey) && !nativeConfigured) {
       return;
     }
 
@@ -84,7 +80,7 @@ export const sendUserPushNotifications$ = command(
       .from(pushSubscriptions)
       .where(eq(pushSubscriptions.userId, args.userId));
     signal.throwIfAborted();
-    const nativeSubscriptions = nativeEnabled
+    const nativeSubscriptions = nativeConfigured
       ? await get(db$)
           .select()
           .from(iosPushRegistrations)

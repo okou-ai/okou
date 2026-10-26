@@ -363,13 +363,11 @@ struct ChatSidebarView: View {
       Spacer()
       Menu {
         Link("Open Okou on web", destination: store.webURL)
-        if store.list.canUsePushNotifications {
-          Button(
-            notifications.status == .authorized ? "Notifications enabled" : "Enable notifications",
-            systemImage: "bell"
-          ) {
-            Task { await notifications.enable() }
-          }
+        Button(
+          notifications.status == .authorized ? "Notifications enabled" : "Enable notifications",
+          systemImage: "bell"
+        ) {
+          Task { await notifications.enable() }
         }
         Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
           Task {

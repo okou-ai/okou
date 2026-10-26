@@ -5034,11 +5034,6 @@ describe("CHAT-02: push notification gating", () => {
   it("delivers native completion without VAPID, uses a versioned envelope, and retires only invalid tokens", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context);
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId! },
-      { iosPushNotifications: true },
-    );
     const registration = await registerIosPush(context, {
       ...actor,
       orgId: actor.orgId!,
@@ -5145,11 +5140,6 @@ describe("CHAT-02: push notification gating", () => {
   it("uses sandbox credentials and the sandbox APNs destination independently of production", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context, "sandbox");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId! },
-      { iosPushNotifications: true },
-    );
     await registerIosPush(context, { ...actor, orgId: actor.orgId! });
     await registerIosPush(
       context,
@@ -5185,7 +5175,7 @@ describe("CHAT-02: push notification gating", () => {
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId: actor.orgId! },
-        { iosPushNotifications: true, chatThreadMuting: true },
+        { chatThreadMuting: true },
       );
       await registerIosPush(context, { ...actor, orgId: actor.orgId! });
       const run = await startChatRun(actor, {

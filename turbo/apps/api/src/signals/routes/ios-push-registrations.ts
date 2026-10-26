@@ -1,10 +1,8 @@
 import { command } from "ccstate";
 import { iosPushRegistrationsContract } from "@okouai/api-contracts/contracts/ios-push-registrations";
-import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import {
   isActiveIosPushSession$,
   updateIosPushRegistration$,
@@ -35,29 +33,6 @@ function updateRegistration(enabled: boolean) {
     signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
-    }
-    if (
-      enabled &&
-      (!auth.orgId ||
-        !isFeatureEnabled(
-          FeatureSwitchKey.IosPushNotifications,
-          await set(
-            loadUserFeatureSwitchContext$,
-            auth.orgId,
-            auth.userId,
-            signal,
-          ),
-        ))
-    ) {
-      return {
-        status: 403 as const,
-        body: {
-          error: {
-            code: "FORBIDDEN",
-            message: "iOS notifications are not enabled",
-          },
-        },
-      };
     }
     if (
       enabled &&

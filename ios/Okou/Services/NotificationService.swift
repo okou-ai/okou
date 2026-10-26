@@ -148,12 +148,9 @@ final class NotificationService {
   func enable() async {
     do {
       guard let workspace else { return }
-      let features: SidebarFeatureSwitches = try await workspace.client.request(
-        "/api/feature-switches")
-      guard features.effectiveSwitches["iosPushNotifications"] == true,
-        self.workspace?.scopeID == workspace.scopeID, !Task.isCancelled
-      else { return }
       let status = await system.authorizationStatus()
+      guard self.workspace?.scopeID == workspace.scopeID, !Task.isCancelled
+      else { return }
       if status != .notDetermined {
         await system.openSettings()
         return
@@ -183,17 +180,11 @@ final class NotificationService {
     self.status = status
     guard let workspace else { return }
     do {
-      let features: SidebarFeatureSwitches = try await workspace.client.request(
-        "/api/feature-switches")
-      try Task.checkCancellation()
-      guard self.generation == generation else { return }
       let authorized = status == .authorized || status == .provisional || status == .ephemeral
       guard authorized else {
         try await unregister()
         return
       }
-      // A device binding serves all authorized workspaces. Delivery checks each target's switch.
-      guard features.effectiveSwitches["iosPushNotifications"] == true else { return }
       if !requestedDeviceToken {
         requestedDeviceToken = true
         system.register()
@@ -371,9 +362,6 @@ final class NotificationService {
     else { return false }
     let generation = generation
     do {
-      let features: SidebarFeatureSwitches = try await workspace.client.request(
-        "/api/feature-switches")
-      guard features.effectiveSwitches["iosPushNotifications"] == true else { return false }
       try await workspace.sync.prefetchHistory(threadID: destination.threadId)
       try Task.checkCancellation()
       guard self.generation == generation else { return false }

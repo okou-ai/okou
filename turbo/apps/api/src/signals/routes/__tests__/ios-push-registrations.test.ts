@@ -5,7 +5,6 @@ import { now } from "../../../lib/time";
 import { testContext, accept } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { iosPushRegistrationsRoutes } from "../ios-push-registrations";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { authenticateIosSession } from "./helpers/ios-push";
 
 const context = testContext();
@@ -25,37 +24,29 @@ const binding = () => {
 };
 
 describe("native iOS push registration", () => {
-  it("requires the feature and a session, while disable still fences a late register with the switch off", async () => {
+  it("requires an active session and fences a late registration after unregister", async () => {
     const actor = {
       userId: `user_${randomUUID()}`,
       orgId: `org_${randomUUID()}`,
     };
     const body = binding();
-    authenticateIosSession(context, actor.userId, actor.orgId);
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: true,
+      toAuth: () => {
+        return { ...actor, orgRole: "org:admin" };
+      },
+    });
     const unavailable = await accept(
       client().register({ headers, body }),
       [403],
     );
     expect(unavailable.body.error.code).toBe("FORBIDDEN");
-    await updateFeatureSwitchesForUser(context, actor, {
-      iosPushNotifications: true,
-    });
-    // An authenticated identity without a session id cannot bind a device.
-    await accept(client().register({ headers, body }), [403]);
     authenticateIosSession(context, actor.userId, actor.orgId);
     await accept(client().register({ headers, body }), [200]);
-    await updateFeatureSwitchesForUser(context, actor, {
-      iosPushNotifications: false,
-    });
-    authenticateIosSession(context, actor.userId, actor.orgId);
     await accept(
       client().unregister({ headers, body: { ...body, revision: 3 } }),
       [200],
     );
-    await updateFeatureSwitchesForUser(context, actor, {
-      iosPushNotifications: true,
-    });
-    authenticateIosSession(context, actor.userId, actor.orgId);
     await accept(
       client().register({ headers, body: { ...body, revision: 2 } }),
       [409],
@@ -72,11 +63,6 @@ describe("native iOS push registration", () => {
       orgId: `org_${randomUUID()}`,
     };
     const second = { userId: `user_${randomUUID()}`, orgId: first.orgId };
-    for (const actor of [first, second]) {
-      await updateFeatureSwitchesForUser(context, actor, {
-        iosPushNotifications: true,
-      });
-    }
     const body = binding();
     authenticateIosSession(context, first.userId, first.orgId);
     await accept(client().register({ headers, body }), [200]);
@@ -124,9 +110,6 @@ describe("native iOS push registration", () => {
         userId: `user_${randomUUID()}`,
         orgId: `org_${randomUUID()}`,
       };
-      await updateFeatureSwitchesForUser(context, actor, {
-        iosPushNotifications: true,
-      });
       authenticateIosSession(context, actor.userId, actor.orgId);
       context.mocks.clerk.sessions.getSession.mockResolvedValue({
         id: `sess_${actor.userId}`,

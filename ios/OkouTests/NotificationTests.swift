@@ -16,7 +16,6 @@ final class NotificationTests: XCTestCase {
     let writes = Mutex<[(String, Data)]>([])
     let registered = expectation(description: "OS token registered through canonical API")
     let fixture = ConversationHistoryFixture(additional: { request in
-      if request.url?.path == "/api/feature-switches" { return Self.features }
       if request.url?.path == "/api/ios-push-registrations" {
         writes.withLock { $0.append((request.httpMethod!, chatRequestBody(request))) }
         if request.httpMethod == "POST" { registered.fulfill() }
@@ -49,12 +48,7 @@ final class NotificationTests: XCTestCase {
   func testBackgroundDelegatePersistsAuthoritativeHistoryForOfflineReopenWithoutMarkingRead()
     async throws
   {
-    let fixture = ConversationHistoryFixture(
-      count: 2,
-      additional: { request in
-        if request.url?.path == "/api/feature-switches" { return Self.features }
-        throw URLError(.unsupportedURL)
-      })
+    let fixture = ConversationHistoryFixture(count: 2)
     let http = fixture.http
     let directory = directory()
     let scope = ChatCacheScope(
@@ -104,10 +98,6 @@ final class NotificationTests: XCTestCase {
         return ChatHTTPResponse(
           status: 404,
           body: #"{"error":{"code":"CHAT_EVENT_SNAPSHOT_NOT_FOUND","message":"No snapshot"}}"#)
-      },
-      additional: { request in
-        if request.url?.path == "/api/feature-switches" { return Self.features }
-        throw URLError(.unsupportedURL)
       })
     let service = notifications()
     await service.update(workspace: workspace(fixture))
@@ -144,10 +134,6 @@ final class NotificationTests: XCTestCase {
           networkStarted.fulfill()
           await release.enter()
         }
-      },
-      additional: { request in
-        if request.url?.path == "/api/feature-switches" { return Self.features }
-        throw URLError(.unsupportedURL)
       })
     let data = workspace(fixture)
     let conversation = fixture.conversation(sharedSync: data.sync, isVisible: { false })
@@ -261,10 +247,6 @@ final class NotificationTests: XCTestCase {
         "notificationId": run + ":completed",
       ]
     ]
-  }
-
-  nonisolated private static var features: ChatHTTPResponse {
-    ChatHTTPResponse(body: #"{"effectiveSwitches":{"iosPushNotifications":true}}"#)
   }
 
   private struct Registration: Decodable {
