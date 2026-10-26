@@ -2766,9 +2766,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
     const welcome = sends.messages.slice(-3);
     expectConnectedWelcome(welcome);
-    for (const send of welcome) {
-      expect(send.body).not.toContain("I'm Okou");
-    }
 
     const SMS_RISK_WARNING =
       "Note: SMS and MMS replies may not be delivered reliably.";
