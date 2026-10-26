@@ -747,7 +747,7 @@ const completeOwnerBrowserStop$ = command(
     return rows;
   },
 );
-/** Each action owns one atomic statement; provider effects stay on the host. */
+/** Each action owns one atomic statement; provider effects stay outside it. */
 const mutateBrowserOwner$ = command(
   async (
     { set },
