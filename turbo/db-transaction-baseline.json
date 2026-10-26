@@ -27,11 +27,6 @@
       "owner": "commitWorkflowCopy$"
     },
     {
-      "id": "TX-0046",
-      "file": "turbo/apps/api/src/signals/routes/workflows.ts",
-      "owner": "applyWorkflowVisibility$"
-    },
-    {
       "id": "TX-0047",
       "file": "turbo/apps/api/src/signals/services/agent-deletion.service.ts",
       "owner": "deleteAgentRows$"
