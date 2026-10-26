@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { getVercelOidcTokenSync } from "@vercel/oidc";
 import { delay } from "signal-timers";
 import { z } from "zod";
@@ -11,7 +12,6 @@ import {
   type GcpLlmTransportReason,
 } from "./gcp-llm-transport";
 import {
-  awaitWithSignal,
   onRejection,
   readBoundedResponseText,
   safeJsonParse,
@@ -26,7 +26,6 @@ const SCOPE = "https://www.googleapis.com/auth/cloud-platform";
 const ACCESS_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:access_token";
 const REFRESH_SKEW_MS = 5 * 60_000;
 const CLOCK_SKEW_MS = 5 * 60_000;
-const AUTH_TIMEOUT_MS = 10_000;
 const MAX_TOKEN_ATTEMPTS = 3;
 const INITIAL_BACKOFF_MS = 1000;
 const MAX_RESPONSE_BYTES = 64 * 1024;
@@ -58,15 +57,14 @@ export function gcpLlmConfiguration(): Configuration | undefined {
 
 export class GcpLlmAuthError extends Error {
   constructor(
-    readonly stage: "oidc" | "sts" | "impersonation" | "deadline",
+    readonly stage: "oidc" | "sts" | "impersonation",
     readonly status: number,
     readonly temporary = false,
     readonly reason:
       | GcpLlmTransportReason
       | "http"
       | "invalid_response"
-      | "missing_identity"
-      | "deadline" = "invalid_response",
+      | "missing_identity" = "invalid_response",
     readonly retryAfterMs?: number,
   ) {
     super("Google Cloud LLM authentication failed");
@@ -118,20 +116,23 @@ async function readTokenResponse(
       throw new GcpLlmAuthError(stage, 503, true, reason);
     }
   };
-  const response = await onRejection(pending, rejectTransport);
-  signal.throwIfAborted();
-  if (!response.ok) {
-    if (response.body) {
-      startUntrackedBestEffortCleanup(response.body.cancel());
+  const response = await onRejection(accept(pending, [200]), (error) => {
+    signal.throwIfAborted();
+    if (error instanceof HttpStatusError) {
+      if (error.response.body) {
+        startUntrackedBestEffortCleanup(error.response.body.cancel());
+      }
+      throw new GcpLlmAuthError(
+        stage,
+        error.status,
+        error.status === 429 || error.status >= 500,
+        "http",
+        retryAfterMs(error.response.headers.get("Retry-After")),
+      );
     }
-    throw new GcpLlmAuthError(
-      stage,
-      response.status,
-      response.status === 429 || response.status >= 500,
-      "http",
-      retryAfterMs(response.headers.get("Retry-After")),
-    );
-  }
+    rejectTransport(error);
+  });
+  signal.throwIfAborted();
   const body = await onRejection(
     readBoundedResponseText(response, MAX_RESPONSE_BYTES),
     rejectTransport,
@@ -143,19 +144,15 @@ async function readTokenResponse(
   return safeJsonParse(body.text);
 }
 
-/** Recover only the failed token endpoint, within the request's auth budget. */
+/** Recover only the failed token endpoint. */
 async function tokenResponse(
   request: () => Promise<Response>,
   stage: "sts" | "impersonation",
-  deadlineAt: number,
   signal: AbortSignal,
 ): Promise<unknown> {
   let attempts = 0;
   while (true) {
     signal.throwIfAborted();
-    if (now() >= deadlineAt) {
-      throw new GcpLlmAuthError("deadline", 503, true, "deadline");
-    }
     attempts += 1;
     const result = await settle(
       readTokenResponse(request(), stage, signal),
@@ -181,18 +178,12 @@ async function tokenResponse(
         Math.floor(Math.random() * INITIAL_BACKOFF_MS),
       error.retryAfterMs ?? 0,
     );
-    // A provider's minimum delay cannot extend the deadline or permit an
-    // earlier retry. The original signal also bounds I/O and the wait itself.
-    if (wait >= deadlineAt - now()) {
-      throw error;
-    }
     await delay(wait, { signal });
   }
 }
 
 async function exchange(
   configuration: Configuration,
-  deadlineAt: number,
   signal: AbortSignal,
 ): Promise<Credential> {
   signal.throwIfAborted();
@@ -217,7 +208,7 @@ async function exchange(
     });
   };
   const sts = stsResponseSchema.safeParse(
-    await tokenResponse(stsResponse, "sts", deadlineAt, signal),
+    await tokenResponse(stsResponse, "sts", signal),
   );
   if (!sts.success) {
     throw new GcpLlmAuthError("sts", 502);
@@ -237,7 +228,7 @@ async function exchange(
     );
   };
   const token = impersonationResponseSchema.safeParse(
-    await tokenResponse(response, "impersonation", deadlineAt, signal),
+    await tokenResponse(response, "impersonation", signal),
   );
   if (!token.success) {
     throw new GcpLlmAuthError("impersonation", 502);
@@ -262,34 +253,18 @@ async function exchange(
 
 async function refreshCredential(
   configuration: Configuration,
-  ownerSignal: AbortSignal,
+  signal: AbortSignal,
 ): Promise<Credential> {
-  const deadlineAt = now() + AUTH_TIMEOUT_MS;
-  const deadline = AbortSignal.timeout(AUTH_TIMEOUT_MS);
-  const signal = AbortSignal.any([ownerSignal, deadline]);
-  const credential = await onRejection(
-    awaitWithSignal(exchange(configuration, deadlineAt, signal), signal),
-    (error) => {
-      ownerSignal.throwIfAborted();
-      if (deadline.aborted) {
-        L.warn("Google Cloud LLM authentication rejected", {
-          stage: "deadline",
-          status: 503,
-          reason: "deadline",
-        });
-        throw new GcpLlmAuthError("deadline", 503, true, "deadline");
-      }
-      if (error instanceof GcpLlmAuthError) {
-        L.warn("Google Cloud LLM authentication rejected", {
-          stage: error.stage,
-          status: error.status,
-          reason: error.reason,
-        });
-      }
-    },
-  );
-  signal.throwIfAborted();
-  return credential;
+  return await onRejection(exchange(configuration, signal), (error) => {
+    signal.throwIfAborted();
+    if (error instanceof GcpLlmAuthError) {
+      L.warn("Google Cloud LLM authentication rejected", {
+        stage: error.stage,
+        status: error.status,
+        reason: error.reason,
+      });
+    }
+  });
 }
 
 /** Reuse completed tokens without sharing request-owned authentication I/O. */

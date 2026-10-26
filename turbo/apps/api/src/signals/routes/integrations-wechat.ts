@@ -256,12 +256,9 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
   await startWechatPoller(row.id, generation, signal);
   // The binding succeeds independently of this one best-effort delivery.
   waitUntil(
-    tapError(
-      set(sendWechatWelcome$, row.id, generation, AbortSignal.timeout(60_000)),
-      (error) => {
-        log.warn("WeChat welcome failed", { error });
-      },
-    ),
+    tapError(set(sendWechatWelcome$, row.id, generation, signal), (error) => {
+      log.warn("WeChat welcome failed", { error });
+    }),
   );
   return { status: 200 as const, body: { status: "connected" as const } };
 });
@@ -353,12 +350,9 @@ const reconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   await startWechatPoller(row.id, generation, signal);
   waitUntil(
-    tapError(
-      set(sendWechatWelcome$, row.id, generation, AbortSignal.timeout(60_000)),
-      (error) => {
-        log.warn("WeChat welcome failed", { error });
-      },
-    ),
+    tapError(set(sendWechatWelcome$, row.id, generation, signal), (error) => {
+      log.warn("WeChat welcome failed", { error });
+    }),
   );
   return { status: 204 as const, body: undefined };
 });

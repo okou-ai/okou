@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import {
   settle,
   safeSync,
@@ -183,14 +184,28 @@ export async function downloadWechatMedia(
   }
   const { key, url } = source.ok;
   const controller = new AbortController();
-  const response = await fetch(url, {
-    signal: AbortSignal.any([
-      signal,
-      controller.signal,
-      AbortSignal.timeout(40_000),
-    ]),
-  });
-  if (!response.ok || !response.body) {
+  const fetched = await settle(
+    accept(
+      fetch(url, {
+        signal: AbortSignal.any([signal, controller.signal]),
+      }),
+      [200],
+    ),
+    signal,
+  );
+  if (!fetched.ok) {
+    controller.abort();
+    if (fetched.error instanceof HttpStatusError) {
+      throw new WechatMediaDownloadError(
+        "download-failed",
+        "WeChat attachment is unavailable or expired",
+        fetched.error.status,
+      );
+    }
+    throw fetched.error;
+  }
+  const response = fetched.value;
+  if (!response.body) {
     controller.abort();
     throw new WechatMediaDownloadError(
       "download-failed",
@@ -348,22 +363,29 @@ async function uploadEncryptedMedia(
 ): Promise<string> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const result = await settle(
-      fetch(url, {
-        method: "POST",
-        body: new Uint8Array(encrypted),
-        headers: { "Content-Type": "application/octet-stream" },
-        signal: AbortSignal.any([signal, AbortSignal.timeout(40_000)]),
-      }),
+      accept(
+        fetch(url, {
+          method: "POST",
+          body: new Uint8Array(encrypted),
+          headers: { "Content-Type": "application/octet-stream" },
+          signal,
+        }),
+        [200],
+      ),
       signal,
     );
     signal.throwIfAborted();
-    const response = result.ok ? result.value : undefined;
+    const response = result.ok
+      ? result.value
+      : result.error instanceof HttpStatusError
+        ? result.error.response
+        : undefined;
     const downloadParam = response?.headers.get("x-encrypted-param");
     if (response?.body) {
       await response.body.cancel();
       signal.throwIfAborted();
     }
-    if (response?.ok && downloadParam) {
+    if (result.ok && downloadParam) {
       return downloadParam;
     }
     if (

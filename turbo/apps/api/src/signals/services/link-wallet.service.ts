@@ -1,3 +1,4 @@
+import { rootSignal$ } from "../context/root";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { WalletChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 
@@ -425,7 +426,7 @@ export const startWalletOAuth$ = command(
 
 export const completeWalletOAuth$ = command(
   async (
-    { set },
+    { get, set },
     input: {
       readonly orgId: string;
       readonly userId: string;
@@ -490,10 +491,7 @@ export const completeWalletOAuth$ = command(
           readOnly &&
           token.scope.split(/[ ,]+/).includes("payment_methods.agentic")
         ) {
-          await revokeLinkToken(
-            token.refresh_token,
-            AbortSignal.timeout(15_000),
-          );
+          await revokeLinkToken(token.refresh_token, get(rootSignal$));
           throw new LinkWalletError(
             403,
             "WALLET_SCOPE_REQUIRED",
@@ -543,7 +541,7 @@ const failWalletOAuth$ = command(
 // Finish publishing or revoking a received grant before observing cancellation.
 const publishWalletOAuth$ = command(
   async (
-    { set },
+    { get, set },
     input: {
       readonly attempt: typeof linkWalletOAuthAttempts.$inferSelect;
       readonly token: Awaited<ReturnType<typeof linkTokenRequest>>;
@@ -587,7 +585,7 @@ const publishWalletOAuth$ = command(
     `),
     );
     if (result.length === 0) {
-      await revokeLinkToken(token.refresh_token, AbortSignal.timeout(15_000));
+      await revokeLinkToken(token.refresh_token, get(rootSignal$));
       throw new LinkWalletError(
         409,
         "WALLET_AUTHORIZATION_CANCELED",
@@ -604,7 +602,7 @@ const publishWalletOAuth$ = command(
 // is observed afterward: dropping a response after Link rotates would lose the grant.
 const refreshWalletConnection$ = command(
   async (
-    { set },
+    { get, set },
     input: {
       readonly owner: WalletOwner;
       readonly connection: Connection & {
@@ -623,7 +621,7 @@ const refreshWalletConnection$ = command(
     const refreshed = await onRejection(
       linkTokenRequest(
         { grant_type: "refresh_token", refresh_token: input.refreshToken },
-        AbortSignal.timeout(15_000),
+        get(rootSignal$),
       ),
       async (error) => {
         if (
@@ -655,10 +653,7 @@ const refreshWalletConnection$ = command(
       input.readOnly &&
       refreshed.scope.split(/[ ,]+/).includes("payment_methods.agentic")
     ) {
-      await revokeLinkToken(
-        refreshed.refresh_token,
-        AbortSignal.timeout(15_000),
-      );
+      await revokeLinkToken(refreshed.refresh_token, get(rootSignal$));
       throw new LinkWalletError(
         403,
         "WALLET_SCOPE_REQUIRED",
@@ -777,7 +772,7 @@ const walletAccess$ = command(
 
 const revokeWalletConnection$ = command(
   async (
-    { set },
+    { get, set },
     connection: Connection & { readonly encryptedCredentials: string },
   ) => {
     const credentials = linkCredentialsSchema.parse(
@@ -785,10 +780,7 @@ const revokeWalletConnection$ = command(
         await decryptStoredSecretValue(connection.encryptedCredentials),
       ) as unknown,
     );
-    await revokeLinkToken(
-      credentials.refreshToken,
-      AbortSignal.timeout(15_000),
-    );
+    await revokeLinkToken(credentials.refreshToken, get(rootSignal$));
     const db = set(writeDb$);
     const [confirmed] = await db
       .update(linkWalletConnections)

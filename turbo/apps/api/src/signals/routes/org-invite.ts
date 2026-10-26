@@ -25,7 +25,6 @@ import {
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { requestSignal$ } from "../context/hono";
 import {
   clerk$,
   clerkOrganizationInvitationConflict,
@@ -464,7 +463,6 @@ const purchasePreviewInner$ = command(
         "returnUrl must match the platform origin for in-app billing",
       );
     }
-    const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const result = await set(
       createUsagePackInvitationPreview$,
       {
@@ -474,10 +472,10 @@ const purchasePreviewInner$ = command(
         role: body.data.role,
         usagePackUsd: body.data.usagePackUsd,
       },
-      readSignal,
+      signal,
     );
     signal.throwIfAborted();
-    readSignal.throwIfAborted();
+    signal.throwIfAborted();
     if (result.status === "not_found") {
       return invitationPurchaseError({
         phase: "preview",
@@ -704,14 +702,13 @@ const purchaseConfirmInner$ = command(
       }
       paymentMethod = revalidated.paymentMethod;
     }
-    const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const result = await set(
       confirmUsagePackInvitationPurchase$,
       { orgId: auth.orgId, purchaseId, paymentMethod },
-      readSignal,
+      signal,
     );
     signal.throwIfAborted();
-    readSignal.throwIfAborted();
+    signal.throwIfAborted();
     if (result.status === "not_found") {
       return invitationPurchaseError({
         phase: "confirm",

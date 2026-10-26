@@ -1,22 +1,25 @@
+import { accept } from "@okouai/connectors/accept";
 import { htmlOpenGraphMetadata } from "@okouai/core/artifact-og";
 import { settleIncludingAbort } from "../utils";
 
 const MAX_HTML_BYTES = 4 * 1024 * 1024;
 
 async function readPublicHtml(url: URL, signal: AbortSignal) {
-  const response = await fetch(url, {
-    headers: { Accept: "text/html, application/xhtml+xml" },
-    credentials: "omit",
-    cache: "no-store",
-    signal,
-  });
+  const response = await accept(
+    fetch(url, {
+      headers: { Accept: "text/html, application/xhtml+xml" },
+      credentials: "omit",
+      cache: "no-store",
+      signal,
+    }),
+    [200],
+  );
   const contentType = response.headers
     .get("content-type")
     ?.split(";")[0]
     ?.trim()
     .toLowerCase();
   if (
-    !response.ok ||
     !["text/html", "application/xhtml+xml"].includes(contentType ?? "") ||
     Number(response.headers.get("content-length")) > MAX_HTML_BYTES
   ) {
@@ -58,10 +61,7 @@ export async function fetchSlackPageMetadata(url: URL, signal: AbortSignal) {
   // A failed optional page read must not discard previews for sibling links.
   const controller = new AbortController();
   const result = await settleIncludingAbort(
-    readPublicHtml(
-      url,
-      AbortSignal.any([signal, controller.signal, AbortSignal.timeout(5000)]),
-    ),
+    readPublicHtml(url, AbortSignal.any([signal, controller.signal])),
   ).finally(() => {
     // Abort rejected bodies without waiting for a cloned stream to cancel.
     controller.abort();

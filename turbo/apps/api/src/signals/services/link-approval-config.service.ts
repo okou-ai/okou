@@ -1,3 +1,4 @@
+import { accept } from "@okouai/connectors/accept";
 import { command } from "ccstate";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -34,7 +35,7 @@ export const linkApprovalEnabled$ = command(
 
 export async function startLinkApprovalWorkflow(
   params: LinkApprovalWorkflowParams,
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ) {
   const origin = env("LINK_APPROVAL_WORKER_URL");
   const secret = env("LINK_APPROVAL_CONTROL_SECRET");
@@ -45,16 +46,15 @@ export async function startLinkApprovalWorkflow(
   if (url.protocol !== "https:" || url.username || url.password) {
     throw new Error("Link approval Worker must use HTTPS");
   }
-  const response = await fetch(url, {
-    method: "POST",
-    signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
-    headers: {
-      authorization: `Bearer ${secret}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(params),
-  });
-  if (!response.ok) {
-    throw new Error(`Link approval Workflow start failed: ${response.status}`);
-  }
+  await accept(
+    fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${secret}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(params),
+    }),
+    [200],
+  );
 }

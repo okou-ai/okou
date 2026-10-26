@@ -57,6 +57,7 @@ describe("Telegram connection readiness diagnostics", () => {
     { length: "1000", status: 200, configured: false },
     { length: null, status: 200, configured: false },
     { length: "38", status: 503, configured: false },
+    { length: "5000", status: 503, configured: false },
   ])(
     "reports a $status probe with length $length without guessing domain configuration",
     async ({ length, status, configured }) => {
@@ -76,7 +77,12 @@ describe("Telegram connection readiness diagnostics", () => {
 
       expect(response.body).toStrictEqual({
         linked: false,
-        ...(configured ? {} : { readinessError: "domain_not_verified" }),
+        ...(configured
+          ? {}
+          : {
+              readinessError:
+                status === 200 ? "domain_not_verified" : "domain_check_failed",
+            }),
         installation: {
           id: OFFICIAL_TELEGRAM_BOT_ID,
           botUsername: "test_okou_bot",
@@ -146,28 +152,5 @@ describe("Telegram connection readiness diagnostics", () => {
       installation: { domainConfigured: true },
     });
     expect(retried.body).not.toHaveProperty("readinessError");
-  });
-
-  it("reports a probe deadline as a temporary check failure", async () => {
-    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-      return milliseconds === 3000
-        ? AbortSignal.abort(new DOMException("Probe timed out", "TimeoutError"))
-        : context.signal;
-    });
-    server.use(
-      http.head(OAUTH_URL, () => {
-        return new HttpResponse(null, {
-          headers: { "content-length": "5000" },
-        });
-      }),
-    );
-
-    const response = await linkStatus("onboarding");
-
-    expect(response.body).toMatchObject({
-      linked: false,
-      readinessError: "domain_check_failed",
-      installation: { domainConfigured: false },
-    });
   });
 });

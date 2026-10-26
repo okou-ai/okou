@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { command, computed } from "ccstate";
 import {
   integrationsTelegramBotListContract,
@@ -33,7 +34,7 @@ import {
   telegramBots,
 } from "../services/telegram-data.service";
 import { telegramWebhook$ } from "../services/telegram-post.service";
-import { tapError } from "../utils";
+import { settle, tapError } from "../utils";
 import type { RouteEntry } from "../route-entry";
 import { requireTelegramFileAccess$ } from "../services/telegram-access.service";
 
@@ -233,16 +234,20 @@ async function downloadTelegramFile(
 
   const fileName = file.file_path.split("/").pop() ?? args.fileId;
   const downloadUrl = buildFileDownloadUrl(args.botToken, file.file_path);
-  const fileResponse = await fetch(downloadUrl, { signal });
+  const downloaded = await settle(accept(fetch(downloadUrl), [200]), signal);
   signal.throwIfAborted();
-  if (!fileResponse.ok) {
+  if (!downloaded.ok) {
+    if (!(downloaded.error instanceof HttpStatusError)) {
+      throw downloaded.error;
+    }
     return errorResponse(
       502,
-      `Failed to download file from Telegram: ${fileResponse.status}`,
+      `Failed to download file from Telegram: ${downloaded.error.status}`,
       "BAD_GATEWAY",
     );
   }
 
+  const fileResponse = downloaded.value;
   const responseContentType = fileResponse.headers.get("content-type") ?? "";
   if (responseContentType.includes("text/html")) {
     return errorResponse(
@@ -364,18 +369,22 @@ async function loadTelegramAvatar(
     return avatarPayloadTooLargeResponse();
   }
 
-  const downloadResponse = await fetch(
-    buildFileDownloadUrl(args.botToken, file.file_path),
-    { signal },
+  const downloaded = await settle(
+    accept(fetch(buildFileDownloadUrl(args.botToken, file.file_path)), [200]),
+    signal,
   );
   signal.throwIfAborted();
-  if (!downloadResponse.ok) {
+  if (!downloaded.ok) {
+    if (!(downloaded.error instanceof HttpStatusError)) {
+      throw downloaded.error;
+    }
     return errorResponse(
       502,
-      `Failed to download avatar from Telegram: ${downloadResponse.status}`,
+      `Failed to download avatar from Telegram: ${downloaded.error.status}`,
       "BAD_GATEWAY",
     );
   }
+  const downloadResponse = downloaded.value;
 
   const responseContentType =
     downloadResponse.headers.get("content-type") ?? "";

@@ -298,130 +298,29 @@ describe("Google token recovery through the public voice API", () => {
     },
   );
 
-  it.each(["seconds", "http-date"])(
-    "does not bypass a Retry-After %s outside the refresh budget",
-    async (kind) => {
-      mockNow(new Date("2026-10-10T00:00:00Z"));
-      const retryAfter =
-        kind === "seconds" ? "60" : new Date(now() + 60_000).toUTCString();
-      let attempts = 0;
-      server.use(
-        http.post(GOOGLE_IMPERSONATION_URL, () => {
-          attempts += 1;
-          return new HttpResponse(null, {
-            status: 429,
-            headers: { "Retry-After": retryAfter },
-          });
-        }),
-      );
-      const failed = await accept(polish(), [503]);
-      expect(failed.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-      expect(attempts).toBe(1);
-    },
-  );
-
-  it("does not start another attempt after the original budget elapses during backoff", async () => {
-    mockNow(new Date("2026-10-10T00:00:00Z"));
-    let attempts = 0;
-    context.mocks.signalTimers.delay.mockImplementation(() => {
-      mockNow(now() + 10_000);
-      return Promise.resolve();
-    });
-    server.use(
-      http.post(GOOGLE_IMPERSONATION_URL, () => {
-        attempts += 1;
-        return new HttpResponse(null, { status: 503 });
-      }),
-    );
-    const failed = await accept(polish(), [503]);
-    expect(failed.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-    expect(attempts).toBe(1);
-  });
-
-  it("shares the original auth deadline with an in-flight retry and permits a later refresh", async () => {
-    const deadline = new AbortController();
-    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-      return milliseconds === 10_000 ? deadline.signal : undefined;
-    });
-    const entered = createDeferredPromise<void>(context.signal);
-    const aborted = createDeferredPromise<void>(context.signal);
-    let attempts = 0;
-    server.use(
-      http.post(GOOGLE_IMPERSONATION_URL, async ({ request }) => {
-        attempts += 1;
-        if (attempts === 1) {
-          return new HttpResponse(null, { status: 503 });
-        }
-        request.signal.addEventListener(
-          "abort",
-          () => {
-            aborted.resolve();
-          },
-          { once: true },
-        );
-        entered.resolve();
-        await aborted.promise;
-        return token("impersonation");
-      }),
-    );
-    const pending = polish();
-    await entered.promise;
-    deadline.abort(new DOMException("Auth deadline", "TimeoutError"));
-    const failed = await accept(pending, [503]);
-    expect(failed.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-    await aborted.promise;
-    expect(attempts).toBe(2);
-    context.mocks.abortSignal.timeout.mockReset();
-    server.use(
-      http.post(GOOGLE_IMPERSONATION_URL, () => {
-        return token("impersonation");
-      }),
-    );
-    await accept(polish(), [200]);
-  });
-
-  it("cancels a request's backoff and permits a later request", async () => {
+  it("finishes token recovery after the client disconnects", async () => {
     const controller = new AbortController();
     const entered = createDeferredPromise<void>(context.signal);
-    const stopped = createDeferredPromise<void>(context.signal);
+    const complete = createDeferredPromise<void>(context.signal);
     let attempts = 0;
-    context.mocks.signalTimers.delay.mockImplementation(
-      (_milliseconds, options) => {
-        const signal = options?.signal;
-        if (!signal) {
-          throw new Error("Expected owned token backoff");
-        }
-        signal.throwIfAborted();
-        const wait = createDeferredPromise<void>(signal);
-        signal.addEventListener(
-          "abort",
-          () => {
-            stopped.resolve();
-          },
-          { once: true },
-        );
-        entered.resolve();
-        return wait.promise;
-      },
-    );
+    context.mocks.signalTimers.delay.mockImplementation(() => {
+      entered.resolve();
+      return complete.promise;
+    });
     server.use(
       http.post(GOOGLE_IMPERSONATION_URL, () => {
         attempts += 1;
-        return new HttpResponse(null, { status: 503 });
+        return attempts === 1
+          ? new HttpResponse(null, { status: 503 })
+          : token("impersonation");
       }),
     );
     const pending = polish(controller.signal);
     await entered.promise;
     controller.abort();
-    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
-    await stopped.promise;
-    expect(attempts).toBe(1);
-    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-    server.use(
-      http.post(GOOGLE_IMPERSONATION_URL, () => {
-        return token("impersonation");
-      }),
-    );
-    await accept(polish(), [200]);
+    complete.resolve();
+    const response = await accept(pending, [200]);
+    expect(response.body).toStrictEqual({ text: "Recovered dictation." });
+    expect(attempts).toBe(2);
   });
 });

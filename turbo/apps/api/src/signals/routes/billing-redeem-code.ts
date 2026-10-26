@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { command } from "ccstate";
 import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
 
@@ -9,7 +10,7 @@ import { bodyResultOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import type { RouteEntry } from "../route-entry";
-import { safeJsonParse, tapError } from "../utils";
+import { safeJsonParse, settle, tapError } from "../utils";
 
 const adminRequired = Object.freeze({
   status: 403 as const,
@@ -211,29 +212,36 @@ const redeemCodeAuthed$ = command(async ({ get }, signal: AbortSignal) => {
 
   const url = new URL("/api/redeem-codes/consume", atomUrl);
 
-  const response = await tapError(
-    fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${m2mToken.token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        code: bodyResult.data.code,
-        email,
-        org_id: auth.orgId,
-        user_id: auth.userId,
+  const result = await settle(
+    accept(
+      fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${m2mToken.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          code: bodyResult.data.code,
+          email,
+          org_id: auth.orgId,
+          user_id: auth.userId,
+        }),
+        signal,
       }),
-      signal,
-    }),
+      [200],
+    ),
+    signal,
   );
   signal.throwIfAborted();
-  if (!response) {
-    return providerUnavailable("Redeem service unavailable");
-  }
-  if (!response.ok) {
-    if (response.status >= 400 && response.status < 500) {
-      return badRequestMessage(await atomRedeemErrorMessage(response, signal));
+  if (!result.ok) {
+    if (
+      result.error instanceof HttpStatusError &&
+      result.error.status >= 400 &&
+      result.error.status < 500
+    ) {
+      return badRequestMessage(
+        await atomRedeemErrorMessage(result.error.response, signal),
+      );
     }
     return providerUnavailable("Redeem service unavailable");
   }

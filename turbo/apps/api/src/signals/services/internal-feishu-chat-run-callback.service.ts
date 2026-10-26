@@ -361,7 +361,7 @@ export const deliverFeishuChatAdmissionFailure$ = command(
       })();
       const url = feishuMessageSendUrl(apiOrigin);
       url.searchParams.set("receive_id_type", sendArgs.receiveIdType);
-      const response = await fetch(url, {
+      const response = fetch(url, {
         method: "POST",
         headers: {
           authorization: `Bearer ${token}`,
@@ -374,7 +374,6 @@ export const deliverFeishuChatAdmissionFailure$ = command(
             sendArgs.idempotencyKey,
           ),
         ),
-        signal: sendSignal,
       });
       return parseFeishuSentMessage(
         await readFeishuResponseJson(response, providerName),
@@ -489,7 +488,7 @@ const deliverClaimedFeishuChatCallback$ = command(
       signal.throwIfAborted();
       const url = feishuMessageSendUrl(apiOrigin);
       url.searchParams.set("receive_id_type", sendArgs.receiveIdType);
-      const response = await fetch(url, {
+      const response = fetch(url, {
         method: "POST",
         headers: {
           authorization: `Bearer ${token}`,
@@ -502,7 +501,6 @@ const deliverClaimedFeishuChatCallback$ = command(
             sendArgs.idempotencyKey,
           ),
         ),
-        signal,
       });
       parseFeishuSentMessage(
         await readFeishuResponseJson(response, providerName),
@@ -563,7 +561,7 @@ export const removeFeishuThinkingReaction$ = command(
         }
         return credentials.context;
       })();
-      const response = await fetch(
+      const response = fetch(
         feishuReactionRemovalUrl(
           apiOrigin,
           target.messageId,
@@ -575,7 +573,6 @@ export const removeFeishuThinkingReaction$ = command(
             authorization: `Bearer ${token}`,
             "content-type": "application/json; charset=utf-8",
           },
-          signal,
         },
       );
       parseFeishuReactionRemovalResponse(

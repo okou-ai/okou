@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { z } from "zod";
 import {
   slackHistoryMessageSchema,
@@ -57,15 +58,24 @@ async function callSlackApi<T>(
     }
   }
 
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    signal,
-  });
-
-  if (!response.ok) {
+  const [responseResult] = await Promise.allSettled([
+    accept(
+      fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        signal,
+      }),
+      [200],
+    ),
+  ]);
+  if (responseResult.status === "rejected") {
+    const error: unknown = responseResult.reason;
+    if (!(error instanceof HttpStatusError)) {
+      throw error;
+    }
+    const response = error.response;
     const retryAfter = response.headers.get("retry-after");
     const retryAfterSeconds =
       retryAfter === null ? undefined : Number(retryAfter);
@@ -80,6 +90,7 @@ async function callSlackApi<T>(
         : undefined,
     );
   }
+  const response = responseResult.value;
 
   const data: unknown = await response.json();
   signal?.throwIfAborted();

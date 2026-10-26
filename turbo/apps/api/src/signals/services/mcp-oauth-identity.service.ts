@@ -1,3 +1,4 @@
+import { accept } from "@okouai/connectors/accept";
 import { buildDiscoveryUrls } from "@modelcontextprotocol/client";
 import {
   createLocalJWKSet,
@@ -13,7 +14,6 @@ import { safeJsonParse, safeSync, settle } from "../utils";
 import { mcpOAuthSafeFetch } from "./mcp-oauth-safe-fetch.service";
 
 const ID_TOKEN_FUTURE_IAT_TOLERANCE_SECONDS = 60;
-const MCP_OAUTH_IDENTITY_TIMEOUT_MS = 10_000;
 
 const oidcDiscoveryIdentitySchema = z
   .object({
@@ -145,19 +145,19 @@ async function discoverOptionalOidcIdentityMetadata(
   );
   for (const candidate of oidcDiscoveryUrls) {
     const fetched = await settle(
-      mcpOAuthSafeFetch(candidate.url, {
-        headers: { accept: "application/json" },
-        signal,
-      }),
+      accept(
+        mcpOAuthSafeFetch(candidate.url, {
+          headers: { accept: "application/json" },
+          signal,
+        }),
+        [200],
+      ),
       signal,
     );
     if (!fetched.ok) {
       continue;
     }
     const response = fetched.value;
-    if (!response.ok) {
-      continue;
-    }
     const metadata = oidcDiscoveryIdentitySchema.safeParse(
       safeJsonParse(await response.text()),
     );
@@ -222,10 +222,10 @@ async function fetchOptionalIdentityJson(
   init: RequestInit,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const response = await mcpOAuthSafeFetch(url, { ...init, signal });
-  if (!response.ok) {
-    throw new Error("MCP OAuth identity endpoint returned an error");
-  }
+  const response = await accept(
+    mcpOAuthSafeFetch(url, { ...init, signal }),
+    [200],
+  );
   return safeJsonParse(await response.text());
 }
 
@@ -264,7 +264,7 @@ async function optionalUserInfoClaims(
   return result.value;
 }
 
-async function discoverMcpAutomaticOAuthUserInfoWithinDeadline(
+async function discoverMcpAutomaticOAuthUserInfoResponse(
   args: {
     readonly context: McpAutomaticOAuthIdentityContext;
     readonly accessToken: string;
@@ -346,12 +346,8 @@ export async function discoverMcpAutomaticOAuthUserInfo(
   },
   signal: AbortSignal,
 ): Promise<McpAutomaticOAuthUserInfo | null> {
-  const identitySignal = AbortSignal.any([
-    signal,
-    AbortSignal.timeout(MCP_OAUTH_IDENTITY_TIMEOUT_MS),
-  ]);
   const result = await settle(
-    discoverMcpAutomaticOAuthUserInfoWithinDeadline(args, identitySignal),
+    discoverMcpAutomaticOAuthUserInfoResponse(args, signal),
     signal,
   );
   signal.throwIfAborted();

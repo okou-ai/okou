@@ -371,7 +371,6 @@ async function acknowledgeDiscordInteraction(
   interaction: AccountInteraction,
   signal: AbortSignal,
 ): Promise<ReturnType<typeof discordAcknowledgementOutcome>> {
-  const deadline = AbortSignal.timeout(2000);
   const acknowledgement = await settleIncludingAbort(
     discordClient.createDiscordInteractionResponse(
       {
@@ -382,11 +381,11 @@ async function acknowledgeDiscordInteraction(
             ? { type: 6 }
             : { type: 5, data: { flags: 64 } },
       },
-      AbortSignal.any([signal, deadline]),
+      signal,
     ),
   );
   signal.throwIfAborted();
-  if (!acknowledgement.ok && !deadline.aborted) {
+  if (!acknowledgement.ok) {
     throw acknowledgement.error;
   }
   return discordAcknowledgementOutcome(

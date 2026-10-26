@@ -213,7 +213,6 @@ function buildWebClient(token: string, automaticRetries = true): WebClient {
     slackApiUrl,
     retryConfig: { retries: automaticRetries ? 1 : 0 },
     rejectRateLimitedCalls: !automaticRetries,
-    timeout: 5000,
   });
 }
 
@@ -221,7 +220,7 @@ export interface SlackLinkUnfurl {
   readonly blocks: SlackKnownBlock[];
 }
 
-/** Bound optional previews independently of the longer-lived chat client. */
+/** Publish optional previews independently of the chat client. */
 export async function unfurlSlackLinks(
   token: string,
   args: {
@@ -234,7 +233,6 @@ export async function unfurlSlackLinks(
   signal.throwIfAborted();
   const web = new WebClient(token, {
     slackApiUrl: resolveSlackApiUrl(),
-    timeout: 5000,
     retryConfig: { retries: 2, minTimeout: 1000, maxTimeout: 2000 },
     rejectRateLimitedCalls: true,
   });

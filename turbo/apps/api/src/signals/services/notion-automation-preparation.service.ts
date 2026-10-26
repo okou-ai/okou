@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import {
   notionChildPageCreatedEventConfigSchema,
   notionDatabaseItemCreatedEventConfigSchema,
@@ -15,7 +16,7 @@ import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { command } from "ccstate";
 import { z } from "zod";
 import { nowDate } from "../../lib/time";
-import { safeJsonParse, safeUrlParse, tapError } from "../utils";
+import { settle, safeJsonParse, safeUrlParse, tapError } from "../utils";
 import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
@@ -364,37 +365,39 @@ async function notionFetchJson<T>(
   url: string,
   signal: AbortSignal,
 ): Promise<NotionFetchResult<T>> {
-  const response = await tapError(
-    fetch(url, {
-      method: "GET",
-      signal,
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Notion-Version": NOTION_VERSION,
-      },
-    }),
+  const fetched = await settle(
+    accept(
+      fetch(url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Notion-Version": NOTION_VERSION,
+        },
+      }),
+      [200, 401, 403, 404],
+    ),
   );
   signal.throwIfAborted();
-  if (!response) {
+  if (!fetched.ok) {
+    if (fetched.error instanceof HttpStatusError) {
+      return {
+        kind: "transient_error",
+        status: fetched.error.status,
+        message: await fetched.error.response.text(),
+      };
+    }
     return {
       kind: "transient_error",
       status: null,
       message: "Failed to reach Notion API",
     };
   }
-
+  const response = fetched.value;
   if (response.status === 401) {
     return { kind: "unauthorized" };
   }
   if (response.status === 403 || response.status === 404) {
     return { kind: "not_found" };
-  }
-  if (!response.ok) {
-    return {
-      kind: "transient_error",
-      status: response.status,
-      message: await response.text(),
-    };
   }
 
   const responseText = await tapError(response.text());

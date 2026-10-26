@@ -1,3 +1,4 @@
+import { accept } from "@okouai/connectors/accept";
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { z } from "zod";
@@ -8,11 +9,10 @@ import {
 } from "@okouai/api-contracts/contracts/data-router-tools";
 import { env } from "../../lib/env";
 import { authRoute } from "../auth/auth-route";
-import { requestSignal$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
 import { settleIncludingAbort } from "../utils";
 
-const list$ = command(async ({ get }, signal: AbortSignal) => {
+const list$ = command(async (_, signal: AbortSignal) => {
   const endpoint = env("OKOU_DATA_ROUTER_URL");
   const token = env("OKOU_DATA_TOKEN");
   if (!endpoint || !token) {
@@ -26,35 +26,29 @@ const list$ = command(async ({ get }, signal: AbortSignal) => {
       },
     };
   }
-  const requestSignal = AbortSignal.any([
-    signal,
-    get(requestSignal$),
-    AbortSignal.timeout(20_000),
-  ]);
   const result = await settleIncludingAbort(
     (async () => {
       const tools: DataRouterTool[] = [];
       const cursors = new Set<string>();
       let cursor: string | undefined;
       do {
-        const response = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-            Accept: "application/json, text/event-stream",
-          },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            id: randomUUID(),
-            method: "tools/list",
-            params: cursor ? { cursor } : {},
+        const response = await accept(
+          fetch(endpoint, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+              Accept: "application/json, text/event-stream",
+            },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: randomUUID(),
+              method: "tools/list",
+              params: cursor ? { cursor } : {},
+            }),
           }),
-          signal: requestSignal,
-        });
-        if (!response.ok) {
-          throw new Error("Data Router discovery failed");
-        }
+          [200],
+        );
         const page = z
           .object({ result: dataRouterToolsPageSchema })
           .parse(await response.json()).result;

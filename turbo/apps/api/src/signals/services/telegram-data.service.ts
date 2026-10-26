@@ -258,8 +258,7 @@ export function telegramIntegrationLinkStatus(args: {
         ? "bot_not_configured"
         : domainCheck.configured
           ? undefined
-          : domainCheck.reason === "request_failed" ||
-              domainCheck.reason === "request_timeout"
+          : domainCheck.reason === "request_failed"
             ? "domain_check_failed"
             : "domain_not_verified";
       // One info record per check makes transient failures diagnosable without

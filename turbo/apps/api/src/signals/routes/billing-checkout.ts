@@ -24,7 +24,6 @@ import {
 } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { requestSignal$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import {
   clerk$,
@@ -695,14 +694,13 @@ const usagePackCheckoutAuthed$ = command(
       );
     }
 
-    const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const allocations = await loadUsagePackCheckoutAllocations(
       {
         clerk,
         orgId: auth.orgId,
         selections: body.memberUsagePacks,
       },
-      readSignal,
+      signal,
     );
     signal.throwIfAborted();
     if (!allocations) {
@@ -1129,11 +1127,10 @@ const usagePackMigrationPreviewAuthed$ = command(
       return bodyResult.response;
     }
     const clerk = get(clerk$);
-    const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const { memberships, invitations } = await loadBillingOrganizationDirectory(
       clerk,
       access.auth.orgId,
-      readSignal,
+      signal,
     );
     signal.throwIfAborted();
     const result = await set(
@@ -1182,11 +1179,10 @@ const usagePackMigrationConfirmAuthed$ = command(
       pathParamsOf(billingUsagePackMigrationContract.confirm),
     );
     const clerk = get(clerk$);
-    const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const { memberships, invitations } = await loadBillingOrganizationDirectory(
       clerk,
       access.auth.orgId,
-      readSignal,
+      signal,
     );
     signal.throwIfAborted();
     const ownerIds = usagePackMigrationOwners(
@@ -1240,11 +1236,10 @@ const usagePackMigrationRevisionPreviewAuthed$ = command(
       pathParamsOf(billingUsagePackMigrationContract.previewRevision),
     );
     const clerk = get(clerk$);
-    const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const { memberships, invitations } = await loadBillingOrganizationDirectory(
       clerk,
       access.auth.orgId,
-      readSignal,
+      signal,
     );
     signal.throwIfAborted();
     const result = await set(
@@ -1297,11 +1292,10 @@ const usagePackMigrationRevisionConfirmAuthed$ = command(
       pathParamsOf(billingUsagePackMigrationContract.confirmRevision),
     );
     const clerk = get(clerk$);
-    const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const { memberships, invitations } = await loadBillingOrganizationDirectory(
       clerk,
       access.auth.orgId,
-      readSignal,
+      signal,
     );
     signal.throwIfAborted();
     const result = await set(
@@ -1419,7 +1413,6 @@ const usagePackSubscriptionChangePreviewAuthed$ = command(
     if (!management) {
       return notFound("Usage pack subscription not found");
     }
-    const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const memberValidation = await validateUsagePackSubscriptionMembers(
       {
         clerk: get(clerk$),
@@ -1429,7 +1422,7 @@ const usagePackSubscriptionChangePreviewAuthed$ = command(
           return allocation.memberId;
         }),
       },
-      readSignal,
+      signal,
     );
     signal.throwIfAborted();
     if (memberValidation === "members_changed") {

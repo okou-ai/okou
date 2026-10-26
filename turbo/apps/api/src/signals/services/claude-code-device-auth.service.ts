@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { createHash, randomBytes } from "node:crypto";
 import type { DeviceAuthSessionPublication } from "./model-provider-device-session-publication";
 
@@ -548,22 +549,37 @@ async function exchangeClaudeCodeAuthorizationCode(
     readonly state: string;
     readonly codeVerifier: string;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<ClaudeCodeOAuthTokens> {
-  const response = await fetch(CLAUDE_CODE_DEVICE_AUTH_TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      grant_type: "authorization_code",
-      code: args.authorizationCode,
-      redirect_uri: CLAUDE_CODE_DEVICE_AUTH_REDIRECT_URI,
-      client_id: CLAUDE_CODE_DEVICE_AUTH_CLIENT_ID,
-      code_verifier: args.codeVerifier,
-      state: args.state,
-      expires_in: CLAUDE_CODE_DEVICE_AUTH_TOKEN_TTL_SECONDS,
-    }),
-    signal,
-  });
+  const acceptedResponse = await settle(
+    accept(
+      fetch(CLAUDE_CODE_DEVICE_AUTH_TOKEN_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grant_type: "authorization_code",
+          code: args.authorizationCode,
+          redirect_uri: CLAUDE_CODE_DEVICE_AUTH_REDIRECT_URI,
+          client_id: CLAUDE_CODE_DEVICE_AUTH_CLIENT_ID,
+          code_verifier: args.codeVerifier,
+          state: args.state,
+          expires_in: CLAUDE_CODE_DEVICE_AUTH_TOKEN_TTL_SECONDS,
+        }),
+      }),
+      [200],
+    ),
+  );
+  let response: Response;
+  if (acceptedResponse.ok) {
+    response = acceptedResponse.value;
+  } else if (
+    acceptedResponse.error instanceof HttpStatusError &&
+    acceptedResponse.error.status >= 300
+  ) {
+    response = acceptedResponse.error.response;
+  } else {
+    throw acceptedResponse.error;
+  }
 
   if (!response.ok) {
     throw new Error(

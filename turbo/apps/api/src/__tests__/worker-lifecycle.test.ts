@@ -216,7 +216,7 @@ test.each(["eof", "cancel", "abort"] as const)(
   },
 );
 
-test("joins cancelled foreground upload work through the provider's multipart cleanup", async () => {
+test("completes admitted foreground upload after the HTTP caller disconnects", async () => {
   actor();
   const entered = latch();
   const release = latch();
@@ -264,11 +264,13 @@ test("joins cancelled foreground upload work through the provider's multipart cl
   controller.abort(new DOMException("Caller disconnected", "AbortError"));
   await createAgent("Surviving foreground");
   release.resolve();
-  const cancelled = await response;
-  expect(cancelled.status).toBe(500);
-  await cancelled.body?.cancel();
+  const completed = await response;
+  expect(completed.status).toBe(200);
+  await expect(completed.json()).resolves.toMatchObject({
+    multipart: { uploadId: "owned-worker-upload" },
+  });
   await expect(http.settle()).resolves.toStrictEqual([]);
-  expect(receipts).toStrictEqual(["owned-worker-upload"]);
+  expect(receipts).toStrictEqual([]);
 });
 
 test("retains the publicly accepted export job after a background provider receipt fails", async () => {

@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { linkAgentPhoneIdentity$ } from "../services/agentphone-link.service";
 import { prepareAgentPhoneContactCard$ } from "../services/agentphone-contact-card.service";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
@@ -49,7 +50,7 @@ import {
   isAgentPhoneMentionText,
   type AgentPhoneUserLink,
 } from "../services/agentphone-shared.service";
-import { safeJsonParse, tapError } from "../utils";
+import { safeJsonParse, settle, tapError } from "../utils";
 
 interface AgentPhoneConfig {
   readonly agentphoneAgentId: string | null;
@@ -199,21 +200,31 @@ async function sendAgentPhoneVerificationMessage(
   },
   signal: AbortSignal,
 ): Promise<boolean> {
-  const response = await fetch(`${params.config.apiBaseUrl}/v1/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${params.config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      agent_id: params.config.agentphoneAgentId,
-      to_number: params.toNumber,
-      body: params.body,
-    }),
+  const result = await settle(
+    accept(
+      fetch(`${params.config.apiBaseUrl}/v1/messages`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${params.config.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          agent_id: params.config.agentphoneAgentId,
+          to_number: params.toNumber,
+          body: params.body,
+        }),
+        signal,
+      }),
+      [200, 201],
+    ),
     signal,
-  });
+  );
 
-  if (!response.ok) {
+  if (!result.ok) {
+    if (!(result.error instanceof HttpStatusError)) {
+      throw result.error;
+    }
+    const response = result.error.response;
     log.warn("AgentPhone verification text provider rejected send", {
       agentphoneAgentId: params.config.agentphoneAgentId,
       phoneHandle: maskPhoneHandle(params.toNumber),

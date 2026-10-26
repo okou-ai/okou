@@ -1,3 +1,4 @@
+import { accept } from "@okouai/connectors/accept";
 import { command } from "ccstate";
 import { integrationsPhoneDownloadFileContract } from "@okouai/api-contracts/contracts/integrations";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
@@ -147,7 +148,7 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const downloadResponse = await tapError(
-    fetch(downloadUrl, { signal }),
+    accept(fetch(downloadUrl, { signal }), [200]),
     (error) => {
       log.warn("AgentPhone file download failed", {
         fileId: query.file_id,
@@ -160,17 +161,6 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
     return jsonResponse(502, "Failed to download phone file", "BAD_GATEWAY");
   }
   signal.throwIfAborted();
-  if (!downloadResponse.ok) {
-    log.warn("AgentPhone media download failed", {
-      fileId: query.file_id,
-      status: downloadResponse.status,
-    });
-    return jsonResponse(
-      502,
-      `Failed to download phone file: ${downloadResponse.status}`,
-      "BAD_GATEWAY",
-    );
-  }
   const contentLength = downloadResponse.headers.get("content-length");
   const contentLengthBytes = parseContentLength(contentLength);
   if (

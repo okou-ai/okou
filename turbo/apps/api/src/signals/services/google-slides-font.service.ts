@@ -1,3 +1,4 @@
+import { accept } from "@okouai/connectors/accept";
 import { create, type Font } from "fontkit";
 import { settleIncludingAbort } from "../utils";
 
@@ -74,28 +75,26 @@ async function boundedBody(
 /** Fetch public font data, never document text or caller-supplied font URLs. */
 export async function loadSlidesFont(
   face: SlidesFontFace,
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<Font | undefined> {
-  const fontSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
   const url = new URL("https://fonts.googleapis.com/css2");
   const variant = face.italic
     ? `ital,wght@1,${String(face.weight)}`
     : `wght@${String(face.weight)}`;
   url.searchParams.set("family", `${face.family}:${variant}`);
-  const css = await fetch(url, {
-    signal: fontSignal,
-    // The legacy stylesheet serves a complete static TrueType face instead
-    // of browser-specific Unicode subsets or a variable-font default weight.
-    headers: { "User-Agent": "Okou-Presentation-Import/1.0" },
-  });
+  const css = await accept(
+    fetch(url, {
+      // The legacy stylesheet serves a complete static TrueType face instead
+      // of browser-specific Unicode subsets or a variable-font default weight.
+      headers: { "User-Agent": "Okou-Presentation-Import/1.0" },
+    }),
+    [200, 400],
+  );
   const stylesheet = (await boundedBody(css, 256 * 1024)).toString("utf8");
   // A missing family/style is an expected catalog miss. Do not substitute a
   // different font, and do not treat outages or rate limits as catalog misses.
   if (css.status === 400) {
     return undefined;
-  }
-  if (!css.ok) {
-    throw new Error(`Google Fonts lookup failed: ${String(css.status)}`);
   }
   const sources = [
     ...stylesheet.matchAll(
@@ -109,12 +108,7 @@ export async function loadSlidesFont(
   if (fontUrl.origin !== "https://fonts.gstatic.com") {
     return undefined;
   }
-  const response = await fetch(fontUrl, {
-    signal: fontSignal,
-  });
-  if (!response.ok) {
-    throw new Error(`Google Fonts download failed: ${String(response.status)}`);
-  }
+  const response = await accept(fetch(fontUrl), [200]);
   const font = create(await boundedBody(response, 8 * 1024 * 1024));
   return "glyphForCodePoint" in font ? font : undefined;
 }

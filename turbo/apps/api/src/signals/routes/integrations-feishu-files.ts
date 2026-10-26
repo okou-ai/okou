@@ -574,7 +574,7 @@ const uploadFeishuFile$ = command(
         return credentials.context;
       })();
       const form = feishuFileUploadForm(args);
-      const response = await fetch(`${apiOrigin}/open-apis/im/v1/files`, {
+      const response = fetch(`${apiOrigin}/open-apis/im/v1/files`, {
         method: "POST",
         headers: { authorization: `Bearer ${token}` },
         body: form,

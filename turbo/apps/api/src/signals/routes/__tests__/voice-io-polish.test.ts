@@ -202,8 +202,9 @@ describe("POST /api/voice-io/polish", () => {
     expect(response.body.error.code).toBe("VOICE_POLISH_FAILED");
   });
 
-  it("preserves public provider errors, respects long Retry-After, and rejects incomplete polish", async () => {
+  it("preserves public provider errors and rejects incomplete polish", async () => {
     await setupVoicePolish();
+    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
     const cases = [
       {
         status: 400,
@@ -300,45 +301,28 @@ describe("POST /api/voice-io/polish", () => {
     }
   });
 
-  it("cancels the provider request when the client disconnects", async () => {
+  it("finishes the provider request after the client disconnects", async () => {
     await setupVoicePolish();
     const controller = new AbortController();
-    context.signal.addEventListener(
-      "abort",
-      () => {
-        controller.abort();
-      },
-      { once: true },
-    );
     const entered = createDeferredPromise<void>(context.signal);
-    const aborted = createDeferredPromise<void>(context.signal);
+    const complete = createDeferredPromise<void>(context.signal);
     server.use(
-      http.post(VERTEX_VOICE_URL, async ({ request }) => {
-        request.signal.addEventListener(
-          "abort",
-          () => {
-            aborted.resolve();
-          },
-          { once: true },
-        );
+      http.post(VERTEX_VOICE_URL, async () => {
         entered.resolve();
-        await aborted.promise;
-        return HttpResponse.json({});
+        await complete.promise;
+        return vertexVoiceResponse("Prepare the update.");
       }),
     );
-    const result = setupApp({
-      context,
-      routes: voiceIoPolishRoutes,
-      rethrowErrors: true,
-    })(voiceIoPolishSegmentsContract).post({
+    const pending = client().post({
       headers: { authorization: "Bearer clerk-session" },
       body: { segments: ["um prepare the update"] },
       fetchOptions: { signal: controller.signal },
     });
     await entered.promise;
     controller.abort();
-    await expect(result).rejects.toMatchObject({ name: "AbortError" });
-    await aborted.promise;
+    complete.resolve();
+    const response = await accept(pending, [200]);
+    expect(response.body.text).toBe("Prepare the update.");
   });
 
   it("merges ordered segments without answering speech or translating it", async () => {
@@ -421,47 +405,6 @@ describe("POST /api/voice-io/polish", () => {
       expect(result.status).toBe(400);
     },
   );
-
-  it("bounds an independent polish attempt and permits retry", async () => {
-    await setupVoicePolish();
-    const deadline = new AbortController();
-    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-      return milliseconds === 60_000 ? deadline.signal : context.signal;
-    });
-    const entered = createDeferredPromise<void>(context.signal);
-    const aborted = createDeferredPromise<void>(context.signal);
-    server.use(
-      http.post(VERTEX_VOICE_URL, async ({ request }) => {
-        request.signal.addEventListener(
-          "abort",
-          () => {
-            aborted.resolve();
-          },
-          { once: true },
-        );
-        entered.resolve();
-        await aborted.promise;
-        return vertexVoiceResponse("Late polish.");
-      }),
-    );
-    const body = { segments: ["Saved first part.", "Saved final part."] };
-    const headers = { authorization: "Bearer clerk-session" };
-    const pending = client().post({ headers, body });
-    await entered.promise;
-    deadline.abort();
-    const failed = await accept(pending, [503]);
-    expect(failed.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-    context.mocks.abortSignal.timeout.mockImplementation(() => {
-      return context.signal;
-    });
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        return vertexVoiceResponse("Saved first part. Saved final part.");
-      }),
-    );
-    const retried = await accept(client().post({ headers, body }), [200]);
-    expect(retried.body.text).toBe("Saved first part. Saved final part.");
-  });
 
   it("requires session auth", async () => {
     const unauthenticated = await client().post({

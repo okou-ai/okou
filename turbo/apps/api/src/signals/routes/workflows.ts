@@ -1,3 +1,4 @@
+import { rootSignal$ } from "../context/root";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   readWorkflowCopySnapshot$,
@@ -679,15 +680,14 @@ const commitPreparedWorkflow$ = command(
 
 const cleanupUnpublishedWorkflow$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly workflowId: string;
     },
   ): Promise<void> => {
-    // Cleanup gets its own bounded lifetime, including when create was aborted.
-    // Its failure (including timeout) must never replace the creation error.
-    const signal = AbortSignal.timeout(5000);
+    // Cleanup remains owned by the API lifetime and preserves the creation error.
+    const signal = get(rootSignal$);
     const [result] = await Promise.allSettled([
       awaitWithSignal(set(deleteOrphanedWorkflowVolume$, args, signal), signal),
     ]);

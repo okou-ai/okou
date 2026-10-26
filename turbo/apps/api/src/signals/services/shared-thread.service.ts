@@ -556,9 +556,7 @@ const persistSharedThread$ = command(
     }
     return await onRejection(persistAndPublish(), async () => {
       if (plan && policyClaimed) {
-        // Cleanup owns a bounded lifetime even after the HTTP client disconnects.
         // Retain the identity if cleanup fails, so deletion can be retried.
-        const cleanupSignal = AbortSignal.timeout(30_000);
         await set(
           removeSharedThreadArtifactCopies$,
           {
@@ -568,9 +566,9 @@ const persistSharedThread$ = command(
             linkLayoutSegment: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
             hasArtifactSnapshot: true,
           },
-          cleanupSignal,
+          signal,
         );
-        cleanupSignal.throwIfAborted();
+        signal.throwIfAborted();
         if (
           get(insertedSharedThreads$).some((receipt) => {
             return receipt.publicationId === publicationId && receipt.id === id;
@@ -579,7 +577,7 @@ const persistSharedThread$ = command(
           await set(
             removeSharedThreadIdentity$,
             { id, userId: args.userId, orgId: args.orgId },
-            cleanupSignal,
+            signal,
           );
         }
       }

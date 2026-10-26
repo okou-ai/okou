@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import {
   discordFilenameSchema,
   MAX_DISCORD_FILE_SIZE_BYTES,
@@ -161,29 +162,33 @@ async function downloadAttachment(
   // Signed Discord CDN URLs carry their own short-lived authorization. Never
   // forward the bot credential.
   const fetched = await settle(
-    fetch(args.url, {
-      credentials: "omit",
-      signal,
-    }),
+    accept(
+      fetch(args.url, {
+        credentials: "omit",
+        signal,
+      }),
+      [200],
+    ),
     signal,
   );
   if (!fetched.ok) {
+    if (fetched.error instanceof HttpStatusError) {
+      const response = fetched.error.response;
+      startUntrackedBestEffortCleanup(
+        response.body?.cancel() ?? Promise.resolve(),
+      );
+      throw new DiscordFileFetchError(
+        "download-failed",
+        `Discord attachment download failed (${response.status})`,
+        response.status,
+      );
+    }
     throw new DiscordFileFetchError(
       "download-failed",
       "Discord attachment download could not be completed",
     );
   }
   const response = fetched.value;
-  if (!response.ok) {
-    startUntrackedBestEffortCleanup(
-      response.body?.cancel() ?? Promise.resolve(),
-    );
-    throw new DiscordFileFetchError(
-      "download-failed",
-      `Discord attachment download failed (${response.status})`,
-      response.status,
-    );
-  }
   const contentType = attachmentContentType(
     args.contentType,
     response.headers.get("content-type"),
@@ -223,25 +228,14 @@ export async function fetchDiscordAttachment(
 ): Promise<DownloadedDiscordAttachment> {
   validateAttachment(args);
   const controller = new AbortController();
-  const downloadSignal = AbortSignal.any([
-    signal,
-    controller.signal,
-    AbortSignal.timeout(10_000),
-  ]);
+  const downloadSignal = AbortSignal.any([signal, controller.signal]);
   // Capture cancellation only to release the provider request, then propagate
   // the caller's cancellation before returning an HTTP result.
   const result = await settleIncludingAbort(
     downloadAttachment(args, downloadSignal),
   );
-  const timedOut = downloadSignal.aborted && !signal.aborted;
   controller.abort();
   signal.throwIfAborted();
-  if (timedOut) {
-    throw new DiscordFileFetchError(
-      "download-failed",
-      "Discord attachment download timed out",
-    );
-  }
   if (!result.ok) {
     throw result.error;
   }

@@ -1,8 +1,8 @@
+import { accept } from "@okouai/connectors/accept";
 import type { OnboardingRecommendationConnectorSlug } from "@okouai/api-contracts/contracts/onboarding";
 
 import { readBoundedResponseText, safeJsonParse } from "../utils";
 
-const PROVIDER_TIMEOUT_MS = 8000;
 const PROVIDER_RESPONSE_MAX_BYTES = 128 * 1024;
 const MAX_FACTS = 18;
 const MAX_FACT_LENGTH = 280;
@@ -111,25 +111,27 @@ async function providerJson(
   },
   signal: AbortSignal,
 ): Promise<unknown> {
-  const response = await fetch(args.url, {
-    method: args.method ?? "GET",
-    headers: {
-      Authorization: `Bearer ${args.token}`,
-      Accept: "application/json",
-      ...(args.body === undefined
-        ? {}
-        : { "Content-Type": "application/json" }),
-      ...args.headers,
-    },
-    ...(args.body === undefined ? {} : { body: JSON.stringify(args.body) }),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(PROVIDER_TIMEOUT_MS)]),
-  });
+  const response = await accept(
+    fetch(args.url, {
+      method: args.method ?? "GET",
+      headers: {
+        Authorization: `Bearer ${args.token}`,
+        Accept: "application/json",
+        ...(args.body === undefined
+          ? {}
+          : { "Content-Type": "application/json" }),
+        ...args.headers,
+      },
+      ...(args.body === undefined ? {} : { body: JSON.stringify(args.body) }),
+    }),
+    [200],
+  );
   const body = await readBoundedResponseText(
     response,
     PROVIDER_RESPONSE_MAX_BYTES,
   );
   signal.throwIfAborted();
-  if (!response.ok || body.kind !== "text") {
+  if (body.kind !== "text") {
     throw new Error(`Connector context request failed (${response.status})`);
   }
   const parsed = safeJsonParse(body.text);

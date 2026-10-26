@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { z } from "zod";
 
 import { monotonicNow } from "../../lib/time";
@@ -11,7 +12,6 @@ import {
   mcpOAuthSafeFetch,
 } from "./mcp-oauth-safe-fetch.service";
 
-const MCP_CLIENT_NAME_LOOKUP_MS = 2500;
 const clientMetadataSchema = z.object({
   client_id: z.string(),
   client_name: z.string(),
@@ -32,7 +32,6 @@ export async function mcpClientDisplayName(
   const startedAt = monotonicNow();
   let outcome: McpClientNameLookupOutcome = "lookup_failed";
   let fetchInvoked = false;
-  let deadline: AbortSignal | undefined;
 
   const operation = await settleIncludingAbort(async () => {
     const url = metadataDocumentUrl(clientId);
@@ -40,19 +39,16 @@ export async function mcpClientDisplayName(
       outcome = "ineligible";
       return undefined;
     }
-    const lookupDeadline = AbortSignal.timeout(MCP_CLIENT_NAME_LOOKUP_MS);
-    deadline = lookupDeadline;
     const result = await settle(
       (async () => {
         fetchInvoked = true;
-        const response = await mcpOAuthSafeFetch(url, {
-          headers: { accept: "application/json" },
-          signal: AbortSignal.any([signal, lookupDeadline]),
-        });
-        if (!response.ok) {
-          outcome = "http_unavailable";
-          return undefined;
-        }
+        const response = await accept(
+          mcpOAuthSafeFetch(url, {
+            headers: { accept: "application/json" },
+            signal,
+          }),
+          [200],
+        );
         const metadata: unknown = await response.json();
         const parsed = clientMetadataSchema.safeParse(metadata);
         if (!parsed.success || parsed.data.client_id !== clientId) {
@@ -69,17 +65,16 @@ export async function mcpClientDisplayName(
       })(),
       signal,
     );
-    // A cancelled MCP operation must not continue to enqueue an input. Only the
-    // independent metadata deadline/network failure is a display fallback.
     signal.throwIfAborted();
     if (!result.ok) {
-      outcome = lookupDeadline.aborted
-        ? "timeout"
-        : result.error instanceof McpOAuthUnsafeUrlError
-          ? "unsafe_url"
-          : result.error instanceof SyntaxError
-            ? "invalid_metadata"
-            : "lookup_failed";
+      outcome =
+        result.error instanceof HttpStatusError
+          ? "http_unavailable"
+          : result.error instanceof McpOAuthUnsafeUrlError
+            ? "unsafe_url"
+            : result.error instanceof SyntaxError
+              ? "invalid_metadata"
+              : "lookup_failed";
       return undefined;
     }
     return result.value;
@@ -88,11 +83,7 @@ export async function mcpClientDisplayName(
   // exception. The timing interface only enqueues detached delivery, and its
   // own failures (including AbortError) cannot replace the lookup result.
   await recordMcpClientNameLookup({
-    outcome: signal.aborted
-      ? "caller_cancelled"
-      : deadline?.aborted && outcome === "lookup_failed"
-        ? "timeout"
-        : outcome,
+    outcome: signal.aborted ? "caller_cancelled" : outcome,
     fetchInvoked,
     startedAt,
   });
