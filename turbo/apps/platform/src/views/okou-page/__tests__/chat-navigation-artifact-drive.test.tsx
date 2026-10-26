@@ -541,7 +541,6 @@ test.each([
       context,
       path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.GoogleDocsSheetsConversion]: true },
     });
 
     await openDriveArtifactMenu(action, "report.txt");
@@ -1115,9 +1114,6 @@ describe("google editor conversion", () => {
         context,
         path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
         host: "app.okou.ai",
-        featureSwitches: {
-          [FeatureSwitchKey.GoogleDocsSheetsConversion]: true,
-        },
       });
 
       await openDriveArtifactMenu("Upload to Google Docs", "report.txt");
@@ -1207,7 +1203,6 @@ describe("google editor conversion", () => {
         path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
         host: "app.okou.ai",
         featureSwitches: {
-          [FeatureSwitchKey.GoogleDocsSheetsConversion]: app !== "Slides",
           [FeatureSwitchKey.GoogleSlidesConversion]: app === "Slides",
         },
       });
@@ -1258,12 +1253,11 @@ describe("google editor conversion", () => {
   );
 
   it.each([
-    { filename: "report.txt", contentType: "text/plain", enabled: false },
-    { filename: "script.py", contentType: "text/plain", enabled: true },
-    { filename: "report.pdf", contentType: "application/pdf", enabled: true },
+    { filename: "script.py", contentType: "text/plain" },
+    { filename: "report.pdf", contentType: "application/pdf" },
   ])(
     "keeps $filename on the original upload path when conversion is unavailable",
-    async ({ filename, contentType, enabled }) => {
+    async ({ filename, contentType }) => {
       mockWideScreen();
       const drive = installDriveMocks(context, "connected", {
         filename,
@@ -1274,9 +1268,6 @@ describe("google editor conversion", () => {
         context,
         path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
         host: "app.okou.ai",
-        featureSwitches: {
-          [FeatureSwitchKey.GoogleDocsSheetsConversion]: enabled,
-        },
       });
       await openDriveArtifactMenu("Upload to Google Drive", filename);
       click(roleItemNamed("menuitem", "Upload to Google Drive"));
@@ -1311,7 +1302,6 @@ describe("google editor conversion", () => {
         path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
         host: "app.okou.ai",
         featureSwitches: {
-          [FeatureSwitchKey.GoogleDocsSheetsConversion]: !slides,
           [FeatureSwitchKey.GoogleSlidesConversion]: slides,
         },
       });
@@ -1347,7 +1337,6 @@ describe("google editor conversion", () => {
       context,
       path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.GoogleDocsSheetsConversion]: true },
     });
     click(await findNamedLink("Drive preview"));
     const preview = await screen.findByRole("dialog", {
@@ -1415,7 +1404,6 @@ describe("google editor conversion", () => {
       context,
       path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.GoogleDocsSheetsConversion]: true },
     });
     await openDriveArtifactMenu("Upload to Google Docs", "report.txt");
     click(roleItemNamed("menuitem", "Upload to Google Docs"));

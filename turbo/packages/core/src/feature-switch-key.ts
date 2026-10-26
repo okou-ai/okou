@@ -65,7 +65,6 @@ export enum FeatureSwitchKey {
   BuiltinDocumentTemplates = "builtinDocumentTemplates",
   PresentationConvert = "presentationConvert",
   GoogleSlidesConversion = "googleSlidesConversion",
-  GoogleDocsSheetsConversion = "googleDocsSheetsConversion",
   BrowserNativeInput = "browserNativeInput",
   BrowserCdpViewer = "browserCdpViewer",
   BrowserSharedOwner = "browserSharedOwner",
