@@ -6,7 +6,7 @@ import { createOfficialWorkflowCatalogSyncCommand } from "../services/official-w
 import { OFFICIAL_WORKFLOW_SOURCE_CATALOG } from "./official-workflow-catalog-input";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
-export function createCronOfficialWorkflowCatalogRoutes(
+function createCronOfficialWorkflowCatalogRoutes(
   candidate: unknown,
 ): readonly RouteEntry[] {
   const syncCommand = createOfficialWorkflowCatalogSyncCommand(candidate);
