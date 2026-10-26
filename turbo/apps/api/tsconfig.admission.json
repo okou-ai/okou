@@ -187,8 +187,6 @@
     "src/signals/services/official-workflow-reconciliation.service.ts",
     "src/signals/services/official-workflow-reconciliation.types.ts",
     "src/signals/services/official-workflow-thread.service.ts",
-    "src/signals/services/storage-prefix-purge.service.ts",
-    "src/signals/services/storage-publication-fence.service.ts",
     "src/signals/services/workflow-automation.service.ts",
     "src/signals/services/workflow-delete.service.ts",
     "src/signals/services/workflow-webhook-automation-config.service.ts",

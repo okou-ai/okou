@@ -1,3 +1,4 @@
+import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
 import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
 import { and, eq } from "drizzle-orm";
@@ -15,15 +16,36 @@ import {
   type WorkflowMember,
   readWorkflowShadowWinner$,
 } from "./workflow-data.service";
-import {
-  loadWorkflowVolumeFiles,
-  SKILL_FILENAME,
-} from "./workflow-volume.service";
+import { workflowAttachmentFiles } from "./workflow-attachments.service";
 import { loadWorkflowAutomations$ } from "./workflow-automation.service";
 import {
   readAcceptedOfficialWorkflowCatalog$,
   readAcceptedOfficialWorkflowRevision$,
 } from "./official-workflow-catalog-read.service";
+
+function detailFileMetadata(
+  workflow: {
+    readonly officialDefinitionName: string | null;
+    readonly attachments: WorkflowAttachments | null;
+  },
+  volumeFiles:
+    readonly (WorkflowFileEntry & { readonly size: number })[] | null,
+) {
+  const files: WorkflowFileMetadata[] | null =
+    (workflow.officialDefinitionName === null
+      ? workflow.attachments?.kind === "bundle"
+        ? workflow.attachments.files
+        : []
+      : volumeFiles
+    )?.map((file) => {
+      return { path: file.path, size: file.size };
+    }) ?? null;
+  const fileContents =
+    volumeFiles?.map((file) => {
+      return { path: file.path, content: file.content };
+    }) ?? null;
+  return { files, fileContents };
+}
 
 export const workflowDetail$ = command(
   async (
@@ -32,6 +54,7 @@ export const workflowDetail$ = command(
       readonly orgId: string;
       readonly member: WorkflowMember;
       readonly workflowId: string;
+      readonly includeFileContents?: boolean;
     },
     signal: AbortSignal,
   ): Promise<WorkflowDetailResponse | null> => {
@@ -106,16 +129,14 @@ export const workflowDetail$ = command(
         }
       : baseSummary;
 
-    // The synthesized SKILL.md is derived from the DB instruction; users never
-    // see it in the file list, so exclude it from both files and fileContents.
-    // A `null` volume (no backing storage, or its objects are missing) surfaces
-    // as `null` files/fileContents, distinct from an empty-but-loaded volume.
     const loadedVolume =
-      workflow.officialDefinitionName === null
+      workflow.officialDefinitionName === null &&
+      args.includeFileContents !== false
         ? await get(
-            loadWorkflowVolumeFiles({
+            workflowAttachmentFiles({
               orgId: args.orgId,
               workflowId: workflow.id,
+              attachments: workflow.attachments,
             }),
           )
         : null;
@@ -127,18 +148,9 @@ export const workflowDetail$ = command(
             size: new TextEncoder().encode(file.content).length,
           };
         })
-      : loadedVolume?.filter((file) => {
-          return file.path !== SKILL_FILENAME;
-        });
+      : loadedVolume;
 
-    const files: WorkflowFileMetadata[] | null =
-      volumeFiles?.map((file) => {
-        return { path: file.path, size: file.size };
-      }) ?? null;
-    const fileContents: WorkflowFileEntry[] | null =
-      volumeFiles?.map((file) => {
-        return { path: file.path, content: file.content };
-      }) ?? null;
+    const { files, fileContents } = detailFileMetadata(workflow, volumeFiles);
 
     const automations = await set(
       loadWorkflowAutomations$,

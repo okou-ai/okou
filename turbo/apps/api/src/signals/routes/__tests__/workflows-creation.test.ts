@@ -1,649 +1,255 @@
 import { randomUUID } from "node:crypto";
-import { Readable } from "node:stream";
-import { gunzipSync } from "node:zlib";
-
-import {
-  DeleteObjectsCommand,
-  GetObjectCommand,
-  HeadObjectCommand,
-  ListObjectsV2Command,
-  PutObjectCommand,
-} from "@aws-sdk/client-s3";
 import {
   workflowsCollectionContract,
   workflowsDetailContract,
-  type WorkflowCreateRequest,
 } from "@okouai/api-contracts/contracts/workflows";
-import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
+import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
 import { onTestFinished } from "vitest";
-
-import { nowDate } from "../../../lib/time";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockEnv } from "../../../lib/env";
 import { createDeferredPromise } from "../../utils";
 import { workflowsRoutes } from "../workflows";
+import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const mocks = createRouteMocks(context);
-const chat = createChatFilesBddApi(context);
-type OrgActor = ApiTestUser & { readonly orgId: string };
-
-function deferred<T>() {
-  const pending = createDeferredPromise<T>(context.signal);
-  return {
-    promise: pending.promise,
-    resolve: (value: T) => {
-      if (!pending.settled()) {
-        pending.resolve(value);
-      }
-    },
-  };
-}
-
 function headers(actor: ApiTestUser) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   return { authorization: "Bearer clerk-session" };
 }
-
-function client(signal = context.signal, rethrowErrors = false) {
+function collection(signal = context.signal, rethrowErrors = false) {
   return setupApp({ context, routes: workflowsRoutes, signal, rethrowErrors })(
     workflowsCollectionContract,
   );
 }
-
-function detailClient() {
+function detail() {
   return setupApp({ context, routes: workflowsRoutes })(
     workflowsDetailContract,
   );
 }
-
-async function setupCreation() {
+async function fixture() {
+  mockEnv("WORKFLOW_ATTACHMENT_CLEANUP_ENABLED", "true");
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
   const agent = await bdd.createAgent(actor, {
-    displayName: "Atomic publication agent",
+    displayName: "Atomic attachment owner",
     visibility: "public",
   });
-  const thread = await chat.createThread(actor, {
+  const s3 = installWorkflowVolumeS3Fixture(context);
+  const body = {
     agentId: agent.agentId,
-    title: "Creation thread",
-  });
-  const body: WorkflowCreateRequest = {
-    agentId: agent.agentId,
-    chatThreadId: thread.id,
     name: `atomic-${randomUUID().slice(0, 8)}`,
-    description: "Creation publication regression",
-    instruction: "Read the attached reference and produce the report.",
-    files: [
-      { path: "references/input.txt", content: "Original attachment: 世界" },
-      { path: "script.sh", content: "echo report" },
-    ],
+    instruction: "Read the attached reference",
+    files: [{ path: "reference.md", content: "附件" }],
   };
-  if (!actor.orgId) {
-    throw new Error("Expected an organization");
-  }
-  return { actor: { ...actor, orgId: actor.orgId }, agent, thread, body };
+  return { actor, agent, s3, body };
+}
+async function sweep() {
+  mockEnv("CRON_SECRET", "workflow-creation-cleanup");
+  await accept(
+    setupApp({ context, routes: cronProcessBackgroundJobsRoutes })(
+      cronProcessBackgroundJobsContract,
+    ).process({
+      headers: { authorization: "Bearer workflow-creation-cleanup" },
+    }),
+    [200],
+  );
 }
 
-function installS3Fixture() {
-  const objects = new Map<string, Buffer>();
-  let beforeCommand: (command: unknown) => void | Promise<void> = () => {};
-  context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-    await beforeCommand(command);
-    if (command instanceof PutObjectCommand) {
-      const { Key: key, Body: body } = command.input;
-      if (!key || !(typeof body === "string" || body instanceof Uint8Array)) {
-        throw new Error("Expected a volume object body and key");
-      }
-      objects.set(key, Buffer.from(body));
-      return {};
-    }
-    if (
-      command instanceof HeadObjectCommand ||
-      command instanceof GetObjectCommand
-    ) {
-      const key = command.input.Key;
-      const body = key ? objects.get(key) : undefined;
-      if (!body) {
-        throw Object.assign(new Error("Object not found"), {
-          name: "NotFound",
-          $metadata: { httpStatusCode: 404 },
-        });
-      }
-      return { ContentLength: body.length, Body: Readable.from([body]) };
-    }
-    if (command instanceof ListObjectsV2Command) {
-      const prefix = command.input.Prefix;
-      if (!prefix) {
-        throw new Error("Expected a scoped cleanup prefix");
-      }
-      return {
-        Contents: [...objects]
-          .filter(([key]) => {
-            return key.startsWith(prefix);
-          })
-          .map(([Key, body]) => {
-            return {
-              Key,
-              Size: body.length,
-              LastModified: nowDate(),
-            };
-          }),
-      };
-    }
-    if (command instanceof DeleteObjectsCommand) {
-      for (const object of command.input.Delete?.Objects ?? []) {
-        if (object.Key) {
-          objects.delete(object.Key);
-        }
-      }
-    }
-    return {};
+test("keeps a Workflow unlisted until its attachment is ready and publishes readable contents", async () => {
+  const { actor, s3, body } = await fixture();
+  const entered = createDeferredPromise<void>(context.signal);
+  const released = createDeferredPromise<void>(context.signal);
+  s3.beforeNextArchiveWrite(async () => {
+    entered.resolve();
+    await released.promise;
   });
-  return {
-    objects,
-    intercept(callback: (command: unknown) => void | Promise<void>) {
-      beforeCommand = callback;
-    },
-  };
-}
-
-async function assertAbsent(actor: OrgActor, name: string) {
-  const listed = await accept(
-    client().list({ headers: headers(actor) }),
+  const pending = collection().create({ headers: headers(actor), body });
+  onTestFinished(async () => {
+    if (!released.settled()) {
+      released.resolve();
+    }
+    await pending;
+  });
+  await entered.promise;
+  const before = await accept(
+    collection().list({ headers: headers(actor) }),
     [200],
   );
   expect(
-    listed.body.map((workflow) => {
-      return workflow.name;
+    before.body.some((workflow) => {
+      return workflow.name === body.name;
     }),
-  ).not.toContain(name);
-}
-
-async function assertReadable(
-  actor: OrgActor,
-  workflowId: string,
-  body: WorkflowCreateRequest,
-) {
-  const detail = await accept(
-    detailClient().get({ headers: headers(actor), params: { workflowId } }),
+  ).toBeFalsy();
+  released.resolve();
+  const created = await accept(pending, [201]);
+  const read = await accept(
+    detail().get({
+      headers: headers(actor),
+      params: { workflowId: created.body.id },
+    }),
     [200],
   );
-  expect(detail.body).toMatchObject({
-    id: workflowId,
+  expect(read.body).toMatchObject({
     instruction: body.instruction,
     fileContents: body.files,
   });
-}
+});
 
-describe("Workflow creation publication", () => {
-  it("keeps the Workflow unlisted until its files are ready and publishes readable contents", async () => {
-    const { actor, thread, body } = await setupCreation();
-    const s3 = installS3Fixture();
-    const started = deferred<string>();
-    const release = deferred<void>();
-    s3.intercept(async (command) => {
-      if (command instanceof PutObjectCommand && command.input.Key) {
-        started.resolve(command.input.Key);
-        await release.promise;
-      }
-    });
-    const creating = client().create({ headers: headers(actor), body });
-    onTestFinished(async () => {
-      release.resolve();
-      await creating;
-    });
-    await started.promise;
-    await assertAbsent(actor, body.name);
-    release.resolve();
-    const created = await accept(creating, [201]);
-    expect(created.body).toMatchObject({
-      id: expect.any(String),
-      name: body.name,
-      visibility: "private",
-    });
-    await assertReadable(actor, created.body.id, body);
-    const sharedThread = await accept(
-      detailClient().chatThread({
-        headers: headers(actor),
-        params: { workflowId: created.body.id },
-      }),
-      [200],
-    );
-    expect(sharedThread.body.chatThreadId).toBe(thread.id);
-    const archive = [...s3.objects].find(([key]) => {
-      return key.endsWith("/archive.tar.gz");
-    })?.[1];
-    expect(archive).toBeDefined();
-    if (!archive) {
-      throw new Error("Expected the published archive");
-    }
-    expect(gunzipSync(archive).toString("utf8")).toContain(
-      synthesizeWorkflowSkillMd({
-        name: body.name,
-        description: body.description ?? null,
-        instruction: body.instruction ?? null,
-      }),
-    );
+test("publishes one readable Workflow for duplicate creates and durably cleans only the losing candidate", async () => {
+  await setupApp({
+    context,
+    routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
+    isolatePg: true,
   });
-
-  it("publishes one readable Workflow when two creates share a private name", async () => {
-    const { actor, thread, body } = await setupCreation();
-    const s3 = installS3Fixture();
-    const bothUploading = deferred<void>();
-    const release = deferred<void>();
-    let uploads = 0;
-    s3.intercept(async (command) => {
-      if (
-        command instanceof PutObjectCommand &&
-        command.input.Key?.endsWith("/archive.tar.gz")
-      ) {
-        uploads += 1;
-        if (uploads === 2) {
-          bothUploading.resolve();
-        }
-        await release.promise;
-      }
-    });
-    const creating = Promise.all([
-      accept(client().create({ headers: headers(actor), body }), [201, 409]),
-      accept(client().create({ headers: headers(actor), body }), [201, 409]),
-    ]);
-    onTestFinished(async () => {
-      release.resolve();
-      await creating;
-    });
-    await bothUploading.promise;
-    release.resolve();
-    const results = await creating;
-    expect(
-      results
-        .map((result) => {
-          return result.status;
-        })
-        .sort(),
-    ).toStrictEqual([201, 409]);
-    const created = results.find((result) => {
-      return result.status === 201;
-    });
-    if (!created || created.status !== 201) {
-      throw new Error("Expected one successful Workflow publication");
-    }
-    const listed = await accept(
-      client().list({ headers: headers(actor) }),
-      [200],
-    );
-    expect(
-      listed.body.filter((workflow) => {
-        return workflow.name === body.name;
-      }),
-    ).toStrictEqual([
-      expect.objectContaining({ id: created.body.id, name: body.name }),
-    ]);
-    await assertReadable(actor, created.body.id, body);
-    const shared = await accept(
-      detailClient().chatThread({
-        headers: headers(actor),
-        params: { workflowId: created.body.id },
-      }),
-      [200],
-    );
-    expect(shared.body.chatThreadId).toBe(thread.id);
+  const { actor, s3, body } = await fixture();
+  const entered = createDeferredPromise<void>(context.signal);
+  const released = createDeferredPromise<void>(context.signal);
+  let losingKey = "";
+  s3.beforeNextArchiveWrite(async (key) => {
+    losingKey = key;
+    entered.resolve();
+    await released.promise;
   });
-
-  it.each(["archive upload", "manifest upload"])(
-    "does not publish after %s fails and permits the same create after recovery",
-    async (phase) => {
-      const { actor, body } = await setupCreation();
-      const s3 = installS3Fixture();
-      const started = deferred<string>();
-      const release = deferred<void>();
-      s3.intercept(async (command) => {
-        if (command instanceof PutObjectCommand && command.input.Key) {
-          started.resolve(command.input.Key);
-          await release.promise;
-        }
-        if (command instanceof PutObjectCommand) {
-          const suffix = phase.startsWith("archive")
-            ? "/archive.tar.gz"
-            : "/manifest.json";
-          if (command.input.Key?.endsWith(suffix)) {
-            throw Object.assign(
-              new Error("Storage unavailable after SDK attempts"),
-              {
-                name: "ServiceUnavailable",
-                $metadata: { httpStatusCode: 503, attempts: 3 },
-              },
-            );
-          }
-        }
-      });
-      const creating = Promise.allSettled([
-        client(context.signal, true).create({ headers: headers(actor), body }),
-      ]);
-      onTestFinished(async () => {
-        release.resolve();
-        await creating;
-      });
-      await started.promise;
-      release.resolve();
-      expect((await creating)[0]).toMatchObject({
-        status: "rejected",
-        reason: {
-          name: "ServiceUnavailable",
-          $metadata: { httpStatusCode: 503, attempts: 3 },
-        },
-      });
-      await assertAbsent(actor, body.name);
-      expect(s3.objects.size).toBe(0);
-      s3.intercept(() => {});
-      const recovered = await accept(
-        client().create({ headers: headers(actor), body }),
-        [201],
-      );
-      await assertReadable(actor, recovered.body.id, body);
-    },
+  const first = collection().create({ headers: headers(actor), body });
+  onTestFinished(async () => {
+    if (!released.settled()) {
+      released.resolve();
+    }
+    await first;
+  });
+  await entered.promise;
+  const winner = await accept(
+    collection().create({ headers: headers(actor), body }),
+    [201],
   );
+  released.resolve();
+  await accept(first, [409]);
+  await sweep();
+  expect(s3.objects.has(losingKey)).toBeFalsy();
+  const read = await accept(
+    detail().get({
+      headers: headers(actor),
+      params: { workflowId: winner.body.id },
+    }),
+    [200],
+  );
+  expect(read.body.fileContents).toStrictEqual(body.files);
+});
 
-  it("cleans up an aborted upload with a separate signal and leaves the name available", async () => {
-    const { actor, body } = await setupCreation();
-    const s3 = installS3Fixture();
-    const controller = new AbortController();
-    const started = deferred<string>();
-    const release = deferred<void>();
-    s3.intercept(async (command) => {
-      if (command instanceof PutObjectCommand && command.input.Key) {
-        started.resolve(command.input.Key);
-        await release.promise;
-      }
-    });
-    const creating = Promise.allSettled([
-      client(AbortSignal.any([context.signal, controller.signal]), true).create(
-        { headers: headers(actor), body },
-      ),
-    ]);
-    onTestFinished(async () => {
-      release.resolve();
-      await creating;
-    });
-    await started.promise;
+test("leaves an aborted upload durably cleanable with a new owner signal and keeps the name available", async () => {
+  await setupApp({
+    context,
+    routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
+    isolatePg: true,
+  });
+  const { actor, s3, body } = await fixture();
+  const controller = new AbortController();
+  onTestFinished(() => {
+    return controller.abort();
+  });
+  let key = "";
+  s3.afterNextArchiveWrite((objectKey) => {
+    key = objectKey;
     controller.abort();
-    release.resolve();
-    expect((await creating)[0]).toMatchObject({
-      status: "rejected",
-      reason: { name: "AbortError" },
-    });
-    await assertAbsent(actor, body.name);
-    expect(s3.objects.size).toBe(0);
-    const recovered = await accept(
-      client().create({ headers: headers(actor), body }),
-      [201],
-    );
-    await assertReadable(actor, recovered.body.id, body);
   });
-
-  it.each(["public", "private"] as const)(
-    "publishes one winner for concurrent %s creates and preserves its files",
-    async (visibility) => {
-      const { actor, body: input } = await setupCreation();
-      const body = { ...input, visibility };
-      const s3 = installS3Fixture();
-      const started = deferred<void>();
-      const release = deferred<void>();
-      let uploadsStarted = 0;
-      s3.intercept(async (command) => {
-        if (
-          command instanceof PutObjectCommand &&
-          command.input.Key?.endsWith("/archive.tar.gz")
-        ) {
-          uploadsStarted += 1;
-          if (uploadsStarted === 2) {
-            started.resolve();
-          }
-          await release.promise;
-        }
-      });
-      const requests = Promise.all([
-        client().create({ headers: headers(actor), body }),
-        client().create({ headers: headers(actor), body }),
-      ]);
-      onTestFinished(async () => {
-        release.resolve();
-        await requests;
-      });
-      await started.promise;
-      release.resolve();
-      const results = await requests;
-      expect(
-        results
-          .map((result) => {
-            return result.status;
-          })
-          .sort(),
-      ).toStrictEqual([201, 409]);
-      const winner = results.find((result) => {
-        return result.status === 201;
-      });
-      if (!winner || winner.status !== 201) {
-        throw new Error("Expected one successful creation");
-      }
-      const listed = await accept(
-        client().list({ headers: headers(actor) }),
-        [200],
-      );
-      expect(
-        listed.body.filter((workflow) => {
-          return workflow.name === body.name;
-        }),
-      ).toMatchObject([{ id: winner.body.id, visibility }]);
-      expect(
-        [...s3.objects.keys()].filter((key) => {
-          return !key.startsWith("workflow-attachments/");
-        }),
-      ).toHaveLength(2);
-      expect(
-        [...s3.objects.keys()].filter((key) => {
-          return key.startsWith("workflow-attachments/");
-        }),
-      ).toHaveLength(2);
-      await assertReadable(actor, winner.body.id, body);
-    },
+  await expect(
+    collection(controller.signal, true).create({
+      headers: headers(actor),
+      body,
+    }),
+  ).rejects.toMatchObject({ name: "AbortError" });
+  expect(s3.objects.has(key)).toBeTruthy();
+  await sweep();
+  expect(s3.objects.has(key)).toBeFalsy();
+  const created = await accept(
+    collection().create({ headers: headers(actor), body }),
+    [201],
   );
-
-  it.each(["notification failure", "post-commit cancellation"])(
-    "preserves the committed Workflow after %s",
-    async (failure) => {
-      const { actor, thread, body } = await setupCreation();
-      const s3 = installS3Fixture();
-      const controller = new AbortController();
-      context.mocks.ably.publish.mockImplementationOnce(() => {
-        if (failure === "post-commit cancellation") {
-          controller.abort();
-        }
-        throw new Error("Notification unavailable");
-      });
-      const [response] = await Promise.allSettled([
-        client(
-          AbortSignal.any([context.signal, controller.signal]),
-          true,
-        ).create({ headers: headers(actor), body }),
-      ]);
-      expect(response).toMatchObject(
-        failure === "notification failure"
-          ? { status: "fulfilled", value: { status: 201 } }
-          : { status: "rejected", reason: { name: "AbortError" } },
-      );
-      const listed = await accept(
-        client().list({ headers: headers(actor) }),
-        [200],
-      );
-      const workflow = listed.body.find((workflow) => {
-        return workflow.name === body.name;
-      });
-      if (!workflow) {
-        throw new Error("Expected the committed Workflow");
-      }
-      await assertReadable(actor, workflow.id, body);
-      const sharedThread = await accept(
-        detailClient().chatThread({
-          headers: headers(actor),
-          params: { workflowId: workflow.id },
-        }),
-        [200],
-      );
-      expect(sharedThread.body.chatThreadId).toBe(thread.id);
-      expect(
-        [...s3.objects.keys()].filter((key) => {
-          return !key.startsWith("workflow-attachments/");
-        }),
-      ).toHaveLength(2);
-      expect(
-        [...s3.objects.keys()].filter((key) => {
-          return key.startsWith("workflow-attachments/");
-        }),
-      ).toHaveLength(1);
-    },
+  const read = await accept(
+    detail().get({
+      headers: headers(actor),
+      params: { workflowId: created.body.id },
+    }),
+    [200],
   );
+  expect(read.body.fileContents).toStrictEqual(body.files);
+});
 
-  it("preserves the original upload error when cleanup fails and leaves other Workflows intact", async () => {
-    const { actor, body } = await setupCreation();
-    const other = await setupCreation();
-    const s3 = installS3Fixture();
-    const sameOrg = await accept(
-      client().create({
-        headers: headers(actor),
-        body: { ...body, name: `${body.name}-existing` },
-      }),
-      [201],
-    );
-    const otherOrg = await accept(
-      client().create({ headers: headers(other.actor), body: other.body }),
-      [201],
-    );
-    const originalError = new Error("Original archive upload failure");
-    s3.intercept((command) => {
-      if (
-        command instanceof PutObjectCommand &&
-        command.input.Key?.endsWith("/archive.tar.gz")
-      ) {
-        throw originalError;
-      }
-      if (command instanceof ListObjectsV2Command) {
-        throw new Error("Cleanup storage unavailable");
-      }
-    });
-    await expect(
-      client(context.signal, true).create({ headers: headers(actor), body }),
-    ).rejects.toBe(originalError);
-    const listed = await accept(
-      client().list({ headers: headers(actor) }),
-      [200],
-    );
-    expect(
-      listed.body.map((workflow) => {
-        return workflow.name;
-      }),
-    ).not.toContain(body.name);
-    await assertReadable(actor, sameOrg.body.id, body);
-    await assertReadable(other.actor, otherOrg.body.id, other.body);
+test("preserves the original upload error and another Workflow's files", async () => {
+  const { actor, s3, body } = await fixture();
+  const existing = await accept(
+    collection().create({ headers: headers(actor), body }),
+    [201],
+  );
+  s3.beforeNextArchiveWrite(() => {
+    throw new Error("Original provider upload failure");
   });
-  it.each(["agent deleted", "agent access revoked", "thread deleted"])(
-    "revalidates publication after %s during upload",
-    async (change) => {
-      const { actor, agent, thread, body } = await setupCreation();
-      const creator =
-        change === "agent access revoked"
-          ? {
-              ...bdd.user({ orgId: actor.orgId, orgRole: "org:member" }),
-              orgId: actor.orgId,
-            }
-          : actor;
-      const s3 = installS3Fixture();
-      const started = deferred<string>();
-      const release = deferred<void>();
-      s3.intercept(async (command) => {
-        if (command instanceof PutObjectCommand && command.input.Key) {
-          started.resolve(command.input.Key);
-          await release.promise;
-        }
-      });
-      const creating = client().create({ headers: headers(creator), body });
-      onTestFinished(async () => {
-        release.resolve();
-        await creating;
-      });
-      await started.promise;
-      if (change === "agent deleted") {
-        await bdd.deleteAgent(actor, agent.agentId);
-      } else if (change === "agent access revoked") {
-        await bdd.updateAgentMetadata(actor, agent.agentId, {
-          visibility: "private",
-        });
-      } else {
-        await chat.deleteThread(actor, thread.id);
-      }
-      release.resolve();
-      const result = await creating;
-      if (change === "thread deleted") {
-        const created = await accept(Promise.resolve(result), [201]);
-        await assertReadable(actor, created.body.id, body);
-        const sharedThread = await accept(
-          detailClient().chatThread({
-            headers: headers(actor),
-            params: { workflowId: created.body.id },
-          }),
-          [200],
-        );
-        expect(sharedThread.body.chatThreadId).not.toBe(thread.id);
-        const replacement = await chat.readThreadMetadata(
-          actor,
-          sharedThread.body.chatThreadId,
-        );
-        expect(replacement.id).toBe(sharedThread.body.chatThreadId);
-      } else {
-        expect(result.status).toBe(change === "agent deleted" ? 404 : 403);
-        await assertAbsent(creator, body.name);
-      }
-    },
+  await expect(
+    collection(context.signal, true).create({
+      headers: headers(actor),
+      body: { ...body, name: `failed-${randomUUID().slice(0, 8)}` },
+    }),
+  ).rejects.toThrow("Original provider upload failure");
+  const read = await accept(
+    detail().get({
+      headers: headers(actor),
+      params: { workflowId: existing.body.id },
+    }),
+    [200],
   );
+  expect(read.body.fileContents).toStrictEqual(body.files);
+});
 
-  it("does not reserve the name when the supplied files cannot be materialized", async () => {
-    const { actor, body } = await setupCreation();
-    const s3 = installS3Fixture();
-    const [failed] = await Promise.allSettled([
-      client(context.signal, true).create({
-        headers: headers(actor),
-        body: {
-          ...body,
-          files: [
-            { path: "directory", content: "file" },
-            { path: "directory/child.txt", content: "nested file" },
-          ],
-        },
-      }),
-    ]);
-    expect(failed).toMatchObject({
-      status: "rejected",
-      reason: { code: "EEXIST" },
-    });
-    const listed = await accept(
-      client().list({ headers: headers(actor) }),
-      [200],
-    );
-    expect(
-      listed.body.map((workflow) => {
-        return workflow.name;
-      }),
-    ).not.toContain(body.name);
-    expect(s3.objects.size).toBe(0);
-    const recovered = await accept(
-      client().create({ headers: headers(actor), body }),
-      [201],
-    );
-    await assertReadable(actor, recovered.body.id, body);
+test("does not reserve a Workflow name when its files conflict with a directory", async () => {
+  const { actor, s3, body } = await fixture();
+  await expect(
+    collection(context.signal, true).create({
+      headers: headers(actor),
+      body: {
+        ...body,
+        files: [
+          { path: "reference", content: "file" },
+          { path: "reference/nested.md", content: "child" },
+        ],
+      },
+    }),
+  ).rejects.toThrow("Workflow attachment file conflicts with a directory");
+  expect(s3.writes).toHaveLength(0);
+  await accept(collection().create({ headers: headers(actor), body }), [201]);
+});
+
+test("cannot resurrect a parent deleted while its attachment upload is in flight", async () => {
+  await setupApp({
+    context,
+    routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
+    isolatePg: true,
   });
+  const { actor, agent, s3, body } = await fixture();
+  const entered = createDeferredPromise<void>(context.signal);
+  const released = createDeferredPromise<void>(context.signal);
+  let key = "";
+  s3.beforeNextArchiveWrite(async (objectKey) => {
+    key = objectKey;
+    entered.resolve();
+    await released.promise;
+  });
+  const pending = collection().create({ headers: headers(actor), body });
+  onTestFinished(async () => {
+    if (!released.settled()) {
+      released.resolve();
+    }
+    await pending;
+  });
+  await entered.promise;
+  await bdd.deleteAgent(actor, agent.agentId);
+  released.resolve();
+  await accept(pending, [404]);
+  await sweep();
+  expect(s3.objects.has(key)).toBeFalsy();
 });

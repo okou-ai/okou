@@ -6,7 +6,6 @@ import {
 import {
   workflowCopyAgentQuery,
   workflowCopyVisibleQuery,
-  workflowCopyStorageQuery,
   type WorkflowCopySource,
 } from "./workflow-copy-source";
 import {
@@ -15,15 +14,6 @@ import {
   type PreparedCopiedWebhook,
   type CopyWorkflowDatabaseResult,
 } from "./workflow-copy-publication-plans";
-import {
-  publicationGenerationValues,
-  publicationKeyCondition,
-  retirePublicationSql,
-  lockPublicationScopeSql,
-  workflowPublicationKey,
-} from "../services/storage-publication-fence.service";
-import { preparedVolumePublicationPlan } from "../services/storage-volume-publication-sql";
-import { StorageVersionIdentityConflictError } from "../services/storage-version-registration.service";
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
@@ -35,15 +25,9 @@ import {
   type WorkflowImportSource,
 } from "@okouai/api-contracts/contracts/workflows";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
-import { getCustomSkillStorageName } from "@okouai/core/storage-names";
-import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
-import { storages } from "@okouai/db/schema/storage";
-import {
-  storagePublicationGenerations,
-  storagePublicationTokens,
-} from "@okouai/db/schema/storage-publication-fence";
+import { storagePublicationTokens } from "@okouai/db/schema/storage-publication-fence";
 import {
   workflowUserAutomationThreads,
   workflows,
@@ -85,13 +69,9 @@ import {
   providerUnavailable,
 } from "../../lib/error";
 import { nowDate } from "../../lib/time";
-import { logger } from "../../lib/log";
 import { isOrdinaryWorkflowNameConflict } from "./workflow-name-conflicts";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
-import {
-  deleteOrphanedWorkflowVolume$,
-  deleteWorkflow$,
-} from "../services/workflow-delete.service";
+import { deleteWorkflow$ } from "../services/workflow-delete.service";
 import { clerkRateLimit, clerkReadUnavailable } from "../external/clerk";
 import { loadWorkflowOwnerProfile$ } from "../services/workflow-owner-profile.service";
 import { workflowDetail$ } from "../services/workflow-detail.service";
@@ -102,9 +82,15 @@ import {
 } from "../services/workflow-user-automation-thread.service";
 import { updateWorkflow$ } from "../services/workflow-update.service";
 import { createUserMessageDocument } from "../services/chat-user-message.service";
-import { loadWorkflowVolumeFiles } from "../services/workflow-volume.service";
-import { prepareWorkflowAttachments$ } from "../services/workflow-attachments.service";
-import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
+import {
+  prepareWorkflowAttachments$,
+  workflowAttachmentFiles,
+  type PreparedWorkflowAttachments,
+} from "../services/workflow-attachments.service";
+import {
+  consumeWorkflowAttachmentCandidateSql,
+  restoreWorkflowAttachmentCandidateSql,
+} from "../services/workflow-attachment-cleanup.service";
 import {
   encryptWorkflowWebhookSecret,
   encryptWorkflowWebhookToken,
@@ -113,7 +99,7 @@ import {
   mintWorkflowWebhookToken,
 } from "../services/workflow-webhook-automation-config.service";
 import { childAutonomyBudget } from "../services/autonomy-budget.service";
-import { bestEffort, onRejection, settle } from "../utils";
+import { bestEffort, settle } from "../utils";
 import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-watch.service";
 import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-watch.service";
 import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-watch.service";
@@ -135,10 +121,6 @@ import {
   OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE,
   OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE,
 } from "../services/official-workflow-constants";
-import {
-  prepareVolumeServerSide$,
-  type PreparedServerSideVolume,
-} from "../services/storage-volume-publication.service";
 
 const workflowReadAuth = {
   requireOrganization: true,
@@ -373,10 +355,9 @@ const validateWorkflowCreation$ = command(
   },
 );
 
-interface PreparedWorkflowCreation extends WorkflowCreationInput {
+interface PreparedWorkflowCreation
+  extends WorkflowCreationInput, PreparedWorkflowAttachments {
   readonly workflowId: string;
-  readonly volume: PreparedServerSideVolume;
-  readonly attachments: WorkflowAttachments;
 }
 
 /** Statement data only; execution and every write belong to the creation owner. */
@@ -423,24 +404,11 @@ function workflowCreationAdmissionPlan(args: PreparedWorkflowCreation) {
       )
       .limit(1),
   );
-  const storage = query.$with("creation_storage").as(
-    query
-      .select({ id: storages.id })
-      .from(storages)
-      .crossJoin(admitted)
-      .where(
-        and(
-          eq(storages.id, args.volume.version.storageId),
-          notExists(query.select({ id: slug.id }).from(slug)),
-        ),
-      )
-      .for("update", { of: storages }),
-  );
   const thread = query.$with("creation_thread").as(
     query
       .select({ id: chatThreads.id })
       .from(chatThreads)
-      .crossJoin(storage)
+      .crossJoin(admitted)
       .where(
         and(
           body.chatThreadId
@@ -453,15 +421,13 @@ function workflowCreationAdmissionPlan(args: PreparedWorkflowCreation) {
       .limit(1)
       .for("update", { of: chatThreads }),
   );
-  return { agent, admitted, slug, storage, thread };
+  return { agent, admitted, slug, thread };
 }
 
 interface WorkflowCreationOutcomeRow {
   readonly agentOwner: string | null;
   readonly agentVisibility: "public" | "private" | null;
   readonly slugExists: boolean;
-  readonly storageId: string | null;
-  readonly publishedStorageId: string | null;
   readonly workflowId: string | null;
   readonly chatThreadId: string | null;
 }
@@ -501,16 +467,13 @@ function workflowCreationOutcome(
       response: workflowSlugConflict(args.visibility, body.name),
     };
   }
-  if (result.storageId === null) {
-    throw new Error(`Prepared workflow storage not found: ${args.workflowId}`);
-  }
-  if (result.publishedStorageId === null) {
-    throw new StorageVersionIdentityConflictError(
-      args.volume.version.versionId,
-    );
-  }
   if (result.workflowId === null) {
-    throw new Error("Failed to create workflow");
+    return {
+      kind: "error" as const,
+      response: conflict(
+        "Workflow attachment preparation changed; retry creation",
+      ),
+    };
   }
   return {
     kind: "created" as const,
@@ -590,21 +553,21 @@ const commitPreparedWorkflow$ = command(
   async ({ set }, args: PreparedWorkflowCreation, signal: AbortSignal) => {
     const db = set(writeDb$);
     const { member } = args;
-    const { agent, admitted, slug, storage, thread } =
+    const { agent, admitted, slug, thread } =
       workflowCreationAdmissionPlan(args);
     const currentTime = nowDate();
-    // Storage admission is consumed by registration, HEAD and index publication.
-    // A version conflict returns no publication and cannot create a Workflow.
-    const volume = preparedVolumePublicationPlan(
-      args.volume,
-      nowDate(),
-      exists(db.select({ id: storage.id }).from(storage)),
-    );
+    const candidate = db
+      .$with("consumed_attachment_candidate", {})
+      .as(consumeWorkflowAttachmentCandidateSql(args.cleanupJobId));
     const created = db.$with("created_workflow").as(
       db
         .insert(workflows)
         .select(
-          workflowCreationSource(args, currentTime, sql`${volume.published}`),
+          workflowCreationSource(
+            args,
+            currentTime,
+            sql`${admitted}, ${candidate}`,
+          ).where(notExists(db.select({ id: slug.id }).from(slug))),
         )
         .returning({ id: workflows.id }),
     );
@@ -643,33 +606,28 @@ const commitPreparedWorkflow$ = command(
           chatThreadId: workflowUserAutomationThreads.chatThreadId,
         }),
     );
+    const restored = db
+      .$with("restored_attachment_candidate", {})
+      .as(
+        restoreWorkflowAttachmentCandidateSql(
+          args.cleanupJobId,
+          sql`SELECT 1 FROM ${created}`,
+        ),
+      );
     signal.throwIfAborted();
     const [result] = await db
-      .with(
-        agent,
-        admitted,
-        slug,
-        storage,
-        thread,
-        ...volume.ctes,
-        created,
-        linked,
-      )
+      .with(agent, admitted, slug, thread, candidate, created, restored, linked)
       .select({
         agentOwner: agent.owner,
         agentVisibility: agent.visibility,
         slugExists: exists(db.select({ id: slug.id }).from(slug)).mapWith(
           pgBooleanDecoder,
         ),
-        storageId: storage.id,
-        publishedStorageId: volume.published.id,
         workflowId: created.id,
         chatThreadId: linked.chatThreadId,
       })
       .from(sql`(SELECT true) AS result`)
       .leftJoin(agent, sql`true`)
-      .leftJoin(storage, sql`true`)
-      .leftJoin(volume.published, sql`true`)
       .leftJoin(created, sql`true`)
       .leftJoin(linked, sql`true`);
     signal.throwIfAborted();
@@ -677,109 +635,47 @@ const commitPreparedWorkflow$ = command(
   },
 );
 
-const cleanupUnpublishedWorkflow$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly workflowId: string;
-    },
-  ): Promise<void> => {
-    // Cleanup must finish even when the creation owner has already stopped.
-    const cleanup = new AbortController();
-    const [result] = await Promise.allSettled([
-      set(deleteOrphanedWorkflowVolume$, args, cleanup.signal),
-    ]).finally(() => {
-      cleanup.abort();
-    });
-    if (result.status === "rejected") {
-      logger("WorkflowCreate").warn(
-        "Failed to clean up unpublished workflow volume",
-        {
-          ...args,
-          error: result.reason,
-        },
-      );
-    }
-  },
-);
-
 const prepareAndCreateWorkflow$ = command(
   async ({ set }, args: WorkflowCreationInput, signal: AbortSignal) => {
     const workflowId = randomUUID();
-    const cleanup = { orgId: args.orgId, workflowId };
-    const result = await onRejection(
-      (async () => {
-        const volume = await set(
-          prepareVolumeServerSide$,
-          {
-            orgId: args.orgId,
-            storageName: getCustomSkillStorageName(workflowId),
-            piResourceIndex: true,
-            files: [
-              {
-                path: "SKILL.md",
-                content: synthesizeWorkflowSkillMd({
-                  name: args.body.name,
-                  description: args.body.description ?? null,
-                  instruction: args.body.instruction ?? null,
-                }),
-              },
-              ...(args.body.files ?? []),
-            ],
-          },
-          signal,
-        );
-        const attachments = await set(
-          prepareWorkflowAttachments$,
-          {
-            orgId: args.orgId,
-            workflowId,
-            files: args.body.files ?? [],
-          },
-          signal,
-        );
-        const pendingPublication = set(
-          commitPreparedWorkflow$,
-          { ...args, workflowId, volume, attachments },
-          signal,
-        );
-        // A committed import remains observable if its caller is cancelled.
-        if (args.importSource) {
-          waitUntil(
-            publishSkillImportAfterCommit(pendingPublication, {
-              userId: args.member.userId,
-              orgId: args.orgId,
-              sessionId: args.importSessionId ?? null,
-              provider: args.importSource,
-            }),
-          );
-        }
-        const publication = await settle(pendingPublication, signal);
-        if (!publication.ok) {
-          if (
-            !isOrdinaryWorkflowNameConflict(publication.error, args.visibility)
-          ) {
-            throw publication.error;
-          }
-          await set(cleanupUnpublishedWorkflow$, cleanup);
-          return {
-            kind: "error" as const,
-            response: workflowSlugConflict(args.visibility, args.body.name),
-          };
-        }
-        const created = publication.value;
-        if (created.kind === "error") {
-          await set(cleanupUnpublishedWorkflow$, cleanup);
-        }
-        return created;
-      })(),
-      async () => {
-        await set(cleanupUnpublishedWorkflow$, cleanup);
+    const prepared = await set(
+      prepareWorkflowAttachments$,
+      {
+        orgId: args.orgId,
+        workflowId,
+        userId: args.member.userId,
+        files: args.body.files ?? [],
       },
+      signal,
     );
+    const pendingPublication = set(
+      commitPreparedWorkflow$,
+      { ...args, workflowId, ...prepared },
+      signal,
+    );
+    // Import observation follows the committed outcome even after request abort.
+    if (args.importSource) {
+      waitUntil(
+        publishSkillImportAfterCommit(pendingPublication, {
+          userId: args.member.userId,
+          orgId: args.orgId,
+          sessionId: args.importSessionId ?? null,
+          provider: args.importSource,
+        }),
+      );
+    }
+    const publication = await settle(pendingPublication, signal);
+    if (!publication.ok) {
+      if (!isOrdinaryWorkflowNameConflict(publication.error, args.visibility)) {
+        throw publication.error;
+      }
+      return {
+        kind: "error" as const,
+        response: workflowSlugConflict(args.visibility, args.body.name),
+      };
+    }
     signal.throwIfAborted();
-    return result;
+    return publication.value;
   },
 );
 /** Agent visibility, agent existence, and slug conflicts, in that order. */
@@ -1036,6 +932,7 @@ const updateWorkflowInner$ = command(
           workflow: visible.workflow,
           body: bodyResult.data,
           updatedByUserId: auth.userId,
+          member,
         },
         signal,
       ),
@@ -1066,6 +963,7 @@ const updateWorkflowInner$ = command(
         orgId: auth.orgId,
         member,
         workflowId: params.workflowId,
+        includeFileContents: false,
       },
       signal,
     );
@@ -1170,29 +1068,6 @@ async function prepareCopiedWebhooks(
   return prepared;
 }
 
-function copiedWorkflowVolumeFiles(
-  sourceWorkflow: Pick<WorkflowRow, "name" | "description" | "instruction">,
-  sourceFiles:
-    | readonly {
-        readonly path: string;
-        readonly content: string;
-      }[]
-    | null,
-) {
-  const skillMd = synthesizeWorkflowSkillMd({
-    name: sourceWorkflow.name,
-    description: sourceWorkflow.description,
-    instruction: sourceWorkflow.instruction,
-  });
-  const attachedFiles = (sourceFiles ?? [])
-    .filter((file) => {
-      return file.path !== "SKILL.md";
-    })
-    .map((file) => {
-      return { path: file.path, content: file.content };
-    });
-  return [{ path: "SKILL.md", content: skillMd }, ...attachedFiles];
-}
 const reconcileCopiedWorkflowAutomationWatches$ = command(
   async (
     { set },
@@ -1250,47 +1125,30 @@ const reconcileCopiedWorkflowAutomationWatches$ = command(
     }
   },
 );
-function copiedWorkflowVolumeInput(
-  orgId: string,
-  targetWorkflowId: string,
-  source: WorkflowCopySource,
-) {
-  return {
-    orgId,
-    storageName: getCustomSkillStorageName(targetWorkflowId),
-    piResourceIndex: true as const,
-    files: copiedWorkflowVolumeFiles(source.sourceWorkflow, source.files),
-  };
-}
-
 const prepareCopiedWorkflowContent$ = command(
   async (
     { set },
     args: {
       readonly orgId: string;
+      readonly userId: string;
       readonly workflowId: string;
       readonly source: WorkflowCopySource;
     },
     signal: AbortSignal,
   ) => {
-    const input = copiedWorkflowVolumeInput(
-      args.orgId,
-      args.workflowId,
-      args.source,
-    );
-    const volume = await set(prepareVolumeServerSide$, input, signal);
-    const attachments = await set(
+    if (args.source.files === null) {
+      throw new Error("Workflow attachment source is unavailable");
+    }
+    return await set(
       prepareWorkflowAttachments$,
       {
         orgId: args.orgId,
+        userId: args.userId,
         workflowId: args.workflowId,
-        files: input.files.filter((file) => {
-          return file.path !== "SKILL.md";
-        }),
+        files: args.source.files,
       },
       signal,
     );
-    return { volume, attachments };
   },
 );
 
@@ -1323,7 +1181,6 @@ interface CopiedWorkflowPublicationInput {
         readonly content: string;
       }[]
     | null;
-  readonly sourceStorage: WorkflowCopySource["storage"];
   readonly targetAgentId: string;
   readonly inheritedAutonomyBudget: number | undefined;
   readonly currentTime: Date;
@@ -1363,100 +1220,91 @@ const publishCopiedWorkflow$ = command(
       },
       signal,
     );
-    const cleanup = { orgId: args.orgId, workflowId: targetWorkflowId };
-    return await onRejection(
-      (async () => {
-        const content = await set(
-          prepareCopiedWorkflowContent$,
-          {
-            orgId: args.orgId,
-            workflowId: targetWorkflowId,
-            source: snapshot.source,
-          },
-          signal,
-        );
-        const publication = await settle(
-          set(
-            commitWorkflowCopy$,
-            {
-              orgId: args.orgId,
-              userId: args.userId,
-              member: args.member,
-              sourceWorkflow: args.sourceWorkflow,
-              sourceFiles: args.sourceFiles,
-              sourceStorage: args.sourceStorage,
-              targetAgentId: args.targetAgentId,
-              targetWorkflowId,
-              threadPreparation,
-              currentTime: args.currentTime,
-              inheritedAutonomyBudget: args.inheritedAutonomyBudget,
-              source: snapshot.source,
-              preparedWebhooks,
-              ...content,
-            },
-            signal,
-          ),
-          signal,
-        );
-        if (!publication.ok) {
-          if (!isOrdinaryWorkflowNameConflict(publication.error, "private")) {
-            throw publication.error;
-          }
-          // Different sources can race for the same target slug. The whole
-          // publication transaction has rolled back before its volume is removed.
-          await set(cleanupUnpublishedWorkflow$, cleanup);
-          return workflowSlugConflict(
-            "private",
-            snapshot.source.sourceWorkflow.name,
-          );
-        }
-        const copied = publication.value;
-        if (copied.kind === "conflict") {
-          await set(cleanupUnpublishedWorkflow$, cleanup);
-          return conflict(copied.message);
-        }
-        await set(
-          reconcileCopiedWorkflowAutomationWatches$,
+    return await (async () => {
+      const content = await set(
+        prepareCopiedWorkflowContent$,
+        {
+          orgId: args.orgId,
+          workflowId: targetWorkflowId,
+          userId: args.userId,
+          source: snapshot.source,
+        },
+        signal,
+      );
+      const publication = await settle(
+        set(
+          commitWorkflowCopy$,
           {
             orgId: args.orgId,
             userId: args.userId,
-            copied,
+            member: args.member,
+            sourceWorkflow: args.sourceWorkflow,
+            sourceFiles: args.sourceFiles,
+            targetAgentId: args.targetAgentId,
+            targetWorkflowId,
+            threadPreparation,
+            currentTime: args.currentTime,
+            inheritedAutonomyBudget: args.inheritedAutonomyBudget,
+            source: snapshot.source,
+            preparedWebhooks,
+            ...content,
           },
           signal,
+        ),
+        signal,
+      );
+      if (!publication.ok) {
+        if (!isOrdinaryWorkflowNameConflict(publication.error, "private")) {
+          throw publication.error;
+        }
+        // A rolled-back candidate remains durably queued for exact cleanup.
+        return workflowSlugConflict(
+          "private",
+          snapshot.source.sourceWorkflow.name,
         );
-        const [visible] = await get(db$)
-          .select({
-            workflow: workflows,
-            agent: {
-              id: agents.id,
-              orgId: agents.orgId,
-              owner: agents.owner,
-              visibility: agents.visibility,
-              name: agents.name,
-              displayName: agents.displayName,
-            },
-          })
-          .from(workflows)
-          .innerJoin(agents, eq(workflows.agentId, agents.id))
-          .where(
-            and(
-              eq(workflows.orgId, args.orgId),
-              eq(workflows.id, targetWorkflowId),
-              visibleWorkflowCondition(args.member),
-            ),
-          )
-          .limit(1);
-        signal.throwIfAborted();
-        return copiedWorkflowResponse(
-          visible ?? null,
-          args.member,
-          targetWorkflowId,
-        );
-      })(),
-      async () => {
-        await set(cleanupUnpublishedWorkflow$, cleanup);
-      },
-    );
+      }
+      const copied = publication.value;
+      if (copied.kind === "conflict") {
+        return conflict(copied.message);
+      }
+      await set(
+        reconcileCopiedWorkflowAutomationWatches$,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          copied,
+        },
+        signal,
+      );
+      const [visible] = await get(db$)
+        .select({
+          workflow: workflows,
+          agent: {
+            id: agents.id,
+            orgId: agents.orgId,
+            owner: agents.owner,
+            visibility: agents.visibility,
+            name: agents.name,
+            displayName: agents.displayName,
+          },
+        })
+        .from(workflows)
+        .innerJoin(agents, eq(workflows.agentId, agents.id))
+        .where(
+          and(
+            eq(workflows.orgId, args.orgId),
+            eq(workflows.id, targetWorkflowId),
+            visibleWorkflowCondition(args.member),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      return copiedWorkflowResponse(
+        visible ?? null,
+        args.member,
+        targetWorkflowId,
+      );
+    })();
   },
 );
 const copyWorkflowInner$ = command(
@@ -1536,31 +1384,16 @@ const copyWorkflowInner$ = command(
     if (slugError) {
       return slugError;
     }
-    const sourceStorage =
+    const sourceFiles =
       sourceWorkflow.officialDefinitionName === null
-        ? ((
-            await db
-              .select()
-              .from(
-                workflowCopyStorageQuery(
-                  { orgId: auth.orgId, sourceWorkflow },
-                  false,
-                ),
-              )
-          )[0] ?? null)
+        ? await get(
+            workflowAttachmentFiles({
+              orgId: auth.orgId,
+              workflowId: sourceWorkflow.id,
+              attachments: sourceWorkflow.attachments,
+            }),
+          )
         : null;
-    const sourceFiles = sourceStorage?.headVersionId
-      ? await get(
-          loadWorkflowVolumeFiles({
-            orgId: auth.orgId,
-            workflowId: sourceWorkflow.id,
-            version: {
-              storageId: sourceStorage.id,
-              versionId: sourceStorage.headVersionId,
-            },
-          }),
-        )
-      : null;
     signal.throwIfAborted();
     // A copy is a fork owned by the caller: a new private workflow under the
     // target agent. User-scoped runtime configuration is cloned only for the
@@ -1573,7 +1406,6 @@ const copyWorkflowInner$ = command(
         member,
         sourceWorkflow: sourceWorkflow,
         sourceFiles,
-        sourceStorage,
         targetAgentId: targetAgent.id,
         inheritedAutonomyBudget,
         currentTime: nowDate(),
@@ -1816,42 +1648,20 @@ const applyWorkflowVisibility$ = command(
           return false;
         }
 
-        const scopes = [
-          { orgId: args.workflow.orgId, agentId: args.workflow.agentId },
-          {
-            orgId: args.workflow.orgId,
-            agentId: args.workflow.agentId,
-            userId: args.workflow.ownerUserId,
-          },
-        ] as const;
-        await tx
-          .insert(storagePublicationGenerations)
-          .values(publicationGenerationValues(scopes))
-          .onConflictDoNothing();
-        const publicationKey = workflowPublicationKey(args.workflow.id);
-        const currentScope =
-          args.workflow.visibility === "public" ? scopes[0] : scopes[1];
+        // Reject an outgoing Stage 1 writer until its exact package is ready.
         const [publication] = await tx
           .select({ token: storagePublicationTokens.token })
           .from(storagePublicationTokens)
-          .innerJoin(
-            storagePublicationGenerations,
+          .where(
             and(
+              eq(storagePublicationTokens.orgId, args.workflow.orgId),
+              eq(storagePublicationTokens.agentId, args.workflow.agentId),
               eq(
-                storagePublicationGenerations.orgId,
-                storagePublicationTokens.orgId,
-              ),
-              eq(
-                storagePublicationGenerations.agentId,
-                storagePublicationTokens.agentId,
-              ),
-              eq(
-                storagePublicationGenerations.subject,
-                storagePublicationTokens.subject,
+                storagePublicationTokens.publicationKey,
+                `workflow:${args.workflow.id}`,
               ),
             ),
           )
-          .where(publicationKeyCondition(currentScope, publicationKey))
           .limit(1);
         if (publication) {
           return false;
@@ -1868,10 +1678,6 @@ const applyWorkflowVisibility$ = command(
           .returning({ id: workflows.id });
         if (!updated) {
           return false;
-        }
-        for (const scope of scopes) {
-          await tx.execute(lockPublicationScopeSql(scope, nowDate()));
-          await tx.execute(retirePublicationSql(scope, publicationKey));
         }
         return true;
       }),

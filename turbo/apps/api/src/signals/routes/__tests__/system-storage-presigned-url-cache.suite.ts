@@ -1,12 +1,10 @@
+import { readonlyConnectorSkills } from "./helpers/readonly-connector-skills";
 import { readPublishedArchive } from "./helpers/published-archive";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { cronPruneStoragePresignedUrlsContract } from "@okouai/api-contracts/contracts/cron";
 
-import {
-  getCustomConnectorSkillStorageName,
-  getCustomSkillStorageName,
-} from "@okouai/core/storage-names";
+import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -19,7 +17,6 @@ import { cronPruneStoragePresignedUrlsRoutes } from "../cron-prune-storage-presi
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
   createRunsApi,
   expectCanonicalStorageManifest,
@@ -243,59 +240,28 @@ describe("system storage presigned URL cache", () => {
     },
   );
 
-  it("preserves 51 workflow and connector mounts across Runner claims", async () => {
+  it("preserves 51 ordinary read-only Storage mounts across Runner claims", async () => {
     const runFixture = await entitledDirectRunActor();
     const { actor } = runFixture;
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped cache actor");
-    }
     context.mocks.s3.send.mockResolvedValue({ ContentLength: 2048 });
-    // All selected mounts come from normal workflow and connector creation.
-    const misc = createMiscRoutesApi(context);
-    const storageNames: string[] = [];
-    const workflowMountPaths = new Map<string, string>();
-    for (let index = 0; index < 50; index += 1) {
-      const workflowName = `mixed-batch-${String(index)}-${randomUUID().slice(0, 8)}`;
-      const workflow = await misc.createWorkflow(
-        actor,
-        runFixture.agentId,
-        workflowName,
-        { content: `# Mixed batch ${String(index)}\nUse for cache tests.` },
-        [201],
-      );
-      if (workflow.status !== 201) {
-        throw new Error("Expected workflow creation to succeed");
-      }
-      storageNames.push(getCustomSkillStorageName(workflow.body.id));
-      workflowMountPaths.set(
-        getCustomSkillStorageName(workflow.body.id),
-        `/home/user/.claude/skills/${workflowName}`,
-      );
-    }
-    const connectors = createConnectorBddApi(context);
-    const custom = await connectors.createCustomConnector(actor, {
-      displayName: "Mixed batch connector",
-      prefixTemplates: [
-        `https://mixed-batch-${randomUUID().slice(0, 8)}.example.test/api/`,
-      ],
-      fields: [
-        { key: "secret", label: "API token", kind: "secret", required: true },
-      ],
-      headerInjections: [
-        { name: "Authorization", valueTemplate: "Bearer {{secrets.secret}}" },
-      ],
-      queryInjections: [],
-      authMode: "manual",
-      skillMarkdown: "Use the mixed batch connector.",
-    });
-    onTestFinished(async () => {
-      await connectors.deleteCustomConnector(actor, custom.id);
-    });
-    await connectors.updateAgentCustomConnectors(actor, runFixture.agentId, [
-      custom.id,
-    ]);
-    const readOnlyStorageName = getCustomConnectorSkillStorageName(custom.id);
-    const expectedStorageNames = [...storageNames, readOnlyStorageName].sort();
+    const fixtures = await readonlyConnectorSkills(
+      context,
+      actor,
+      runFixture.agentId,
+      Array.from({ length: 51 }, (_, index) => {
+        return `cache batch ${String(index)}`;
+      }),
+    );
+    const expectedStorageNames = fixtures
+      .map((entry) => {
+        return entry.name;
+      })
+      .sort();
+    const workflowMountPaths = new Map(
+      fixtures.map((entry) => {
+        return [entry.name, entry.mountPath];
+      }),
+    );
     const signedCount = mockUniquePresignedUrls();
     const api = createRunsApi(context);
     const createAndClaim = async (prompt: string) => {
@@ -355,7 +321,7 @@ describe("system storage presigned URL cache", () => {
       ).toBeTruthy();
       return objectKey;
     });
-    // Workflow skills mount exactly at their slug; all paths remain distinct.
+    // All owner-specific Connector paths remain distinct.
     expect(
       expected
         .filter((mount) => {

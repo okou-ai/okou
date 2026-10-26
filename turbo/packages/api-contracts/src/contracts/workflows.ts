@@ -1373,6 +1373,7 @@ export const workflowDetailResponseSchema = workflowSummarySchema.extend({
   updatedAt: string().datetime(),
   instruction: string().nullable(),
   files: array(workflowFileMetadataSchema).nullable(),
+  // Updates return metadata without reading R2. GET supplies file bodies.
   fileContents: array(workflowFileEntrySchema).nullable(),
   automations: array(workflowAutomationSummarySchema),
 });

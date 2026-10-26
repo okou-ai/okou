@@ -55,15 +55,18 @@ test.each([
         "X-Client-Version": "1.0.0",
       };
       const pending = runnerIds.map((runnerId, index) => {
-        return fetch(`${fixture.url}/api/runners/jobs/${run.runId}/claim`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            runnerIdentity: { runnerId, heartbeatGeneration: index + 1 },
-            runnerHostname: `native-claim-${index}`,
-            capabilities: { piModelConfigGenerations: [2, 3, 5] },
-          }),
-        });
+        return fetch(
+          `${fixture.url}/api/runners/jobs/${run.runId}/claim?workflowSkills=1`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              runnerIdentity: { runnerId, heartbeatGeneration: index + 1 },
+              runnerHostname: `native-claim-${index}`,
+              capabilities: { piModelConfigGenerations: [2, 3, 5] },
+            }),
+          },
+        );
       });
       const outcome = await settleIncludingAbort(async () => {
         await fixture.waitForClaims(run.runId);
@@ -109,7 +112,7 @@ test.each([
           runnerVersion: "1.0.0",
         });
         const retry = await fetch(
-          `${fixture.url}/api/runners/jobs/${run.runId}/claim`,
+          `${fixture.url}/api/runners/jobs/${run.runId}/claim?workflowSkills=1`,
           {
             method: "POST",
             headers: { "content-type": "application/json" },

@@ -24,6 +24,12 @@ legacy objects and the new packages throughout Stage 2 acceptance. Stage 1 does
 not delete superseded/prepared attachment packages; inventory them for the later
 retirement after publication and execution retention gates have been proved.
 
+Once the Stage 2 `claimed_workflow_attachments` schema is installed, this
+operator refuses all modes with `WorkflowStorageCutoverInstalled`. New-only
+edits intentionally leave legacy Storage stale; reconciling from it could
+overwrite accepted attachments. Keep these sources until final contraction,
+but do not use a historical operator to bypass that cutover guard.
+
 ## Dry-run and bounded apply
 
 ```bash

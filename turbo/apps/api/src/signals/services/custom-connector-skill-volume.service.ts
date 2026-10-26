@@ -9,7 +9,7 @@ import {
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
 } from "./storage-volume-publication.service";
-import { SKILL_FILENAME } from "./workflow-volume.service";
+const SKILL_FILENAME = "SKILL.md";
 
 interface CustomConnectorSkillContentInput {
   readonly connectorId: string;

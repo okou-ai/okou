@@ -12,3 +12,4 @@ mod preparation_failure;
 mod process;
 mod rooted_extraction;
 mod scheduling;
+mod workflow_attachments;

@@ -106,6 +106,7 @@ readonly RUN_STORAGE_OUTPUT_READER_PATH=.github/rollback-floors/run-storage-outp
 readonly GUEST_STORAGE_OUTPUT_COMPLETION_READER_PATH=.github/rollback-floors/guest-storage-output-completion-reader
 readonly DECODED_STORAGE_CAPACITY_READER_PATH=.github/rollback-floors/decoded-storage-capacity-reader
 readonly DESKTOP_MANIFEST_R2_READER_PATH=.github/rollback-floors/desktop-manifest-r2-reader
+readonly WORKFLOW_ATTACHMENTS_DIRECT_PATH=.github/rollback-floors/workflow-attachments-direct
 readonly STORAGE_DEBUG_CONTRACTS_PATH=.github/rollback-floors/storage-debug-contracts
 readonly PI_MEMORY_RETIRED_PATH=.github/rollback-floors/pi-memory-retired
 # Completion now accepts only storageOutputs. The selected Runner must embed
@@ -197,6 +198,17 @@ wechat_workflows_only_commit=$(git log --reverse --first-parent --diff-filter=A 
   origin/main -- "$WECHAT_WORKFLOWS_ONLY_PATH" | sed -n '1p')
 if [[ ! "$wechat_workflows_only_commit" =~ ^[0-9a-f]{40}$ ]]; then
   fail "Cannot resolve the merged WeChat Workflows-only receiver on main."
+fi
+
+# New-only Workflow edits leave legacy Storage packages stale. Resolve the
+# merged cutover itself, including squash merges, before any provider access.
+workflow_attachments_direct_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$WORKFLOW_ATTACHMENTS_DIRECT_PATH" | sed -n '1p')
+if [[ ! "$workflow_attachments_direct_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged direct Workflow attachment runtime on main."
+fi
+if ! git merge-base --is-ancestor "$workflow_attachments_direct_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates direct Workflow attachment ownership: ${workflow_attachments_direct_commit}."
 fi
 if ! git merge-base --is-ancestor "$wechat_workflows_only_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the WeChat Workflows-only receiver: ${wechat_workflows_only_commit}."
@@ -866,6 +878,9 @@ fi
 
 if ! git merge-base --is-ancestor "$decoded_storage_capacity_reader_commit" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates the decoded storage capacity reader: ${decoded_storage_capacity_reader_commit}."
+fi
+if ! git merge-base --is-ancestor "$workflow_attachments_direct_commit" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates verified Workflow attachment delivery: ${workflow_attachments_direct_commit}."
 fi
 
 runner_matrix=$("${script_dir}/../runner/runner-host-architecture-groups.sh" target-matrix)

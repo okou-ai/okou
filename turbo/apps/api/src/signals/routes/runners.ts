@@ -1,3 +1,4 @@
+import type { WorkflowSkillDocument } from "@okouai/api-contracts/contracts/workflow-attachments";
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import {
@@ -31,7 +32,6 @@ import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
-import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 
@@ -85,6 +85,11 @@ import type { JsonResponseObserver } from "../context/route";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
 import { readAgentInstructionsForClaim$ } from "../services/agent-instructions-claim.service";
+import {
+  workflowClaimInput,
+  materializeClaimedWorkflowDocuments$,
+  type WorkflowClaimInput,
+} from "../services/workflow-claim.service";
 import {
   createRunnerGroupRealtimeToken,
   publishChatThreadMessageCreatedSafely,
@@ -1072,12 +1077,40 @@ type ClaimedTransitionResult = Extract<
   ClaimTransitionResult,
   { readonly status: "claimed" }
 >;
+function withClaimedWorkflowDocuments(
+  responseBody: ExecutionContext,
+  workflowSkills: WorkflowSkillDocument[],
+): ExecutionContext {
+  const workflowMountPaths = new Set(
+    workflowSkills.map((skill) => {
+      return skill.mountPath;
+    }),
+  );
+  return {
+    ...responseBody,
+    storageManifest: {
+      storageMounts: (responseBody.storageManifest?.storageMounts ?? []).filter(
+        (mount) => {
+          return (
+            !mount.name.startsWith("custom-skill@") &&
+            !workflowMountPaths.has(mount.mountPath)
+          );
+        },
+      ),
+      workflowSkills,
+    },
+  };
+}
+
 type FailedClaimTransitionResult = Exclude<
   ClaimTransitionResult,
   { readonly status: "claimed" }
 >;
 
 function claimTransitionErrorResponse(result: FailedClaimTransitionResult) {
+  if (result.status === "workflow-unavailable") {
+    return notFound("Workflow is no longer available for this claim");
+  }
   if (result.status === "job-not-found") {
     return notFound("Job not found in queue");
   }
@@ -1087,19 +1120,27 @@ function claimTransitionErrorResponse(result: FailedClaimTransitionResult) {
 const transitionClaimedJobToRunning$ = command(
   (
     { set },
-    runId: string,
-    runnerAttribution: RunnerClaimAttribution | undefined,
-    timing: ClaimRouteTimingCollector,
+    args: {
+      readonly runId: string;
+      readonly workflowInput: WorkflowClaimInput;
+      readonly runnerAttribution: RunnerClaimAttribution | undefined;
+      readonly timing: ClaimRouteTimingCollector;
+    },
     signal: AbortSignal,
   ): Promise<ClaimTransitionResult> => {
+    const { runId, workflowInput, runnerAttribution, timing } = args;
     const db = set(writeDb$);
     return (async () => {
       const query = buildClaimTransitionSql(
         runId,
-        runnerAttribution?.runnerIdentity.runnerId ?? null,
-        runnerAttribution?.runnerIdentity.heartbeatGeneration ?? null,
-        runnerAttribution?.runnerHostname ?? null,
-        runnerAttribution?.runnerVersion ?? null,
+        {
+          id: runnerAttribution?.runnerIdentity.runnerId ?? null,
+          heartbeatGeneration:
+            runnerAttribution?.runnerIdentity.heartbeatGeneration ?? null,
+          hostname: runnerAttribution?.runnerHostname ?? null,
+          version: runnerAttribution?.runnerVersion ?? null,
+        },
+        workflowInput,
       );
       const result = await timing.measure(
         "claim_route_transition_execute",
@@ -1112,12 +1153,6 @@ const transitionClaimedJobToRunning$ = command(
         },
       );
       const transition = decodeClaimTransitionResult(result);
-      if (transition.status === "claimed") {
-        await db
-          .update(activeAgentRuns)
-          .set({ lastHeartbeatAt: transition.claimedAt })
-          .where(eq(activeAgentRuns.runId, runId));
-      }
       signal.throwIfAborted();
       return transition;
     })();
@@ -1885,7 +1920,7 @@ const resolveStoredExecutionContextForClaim$ = command(
 
 const claimAuthorizedJob$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly runId: string;
       readonly authType: RunnerAuthContext["type"];
@@ -1916,6 +1951,10 @@ const claimAuthorizedJob$ = command(
       return storedContextResult.response;
     }
     const storedContext = storedContextResult.value;
+    if (run.agentId !== null && get(request$).query("workflowSkills") !== "1") {
+      return notFound("Job requires a Workflow document reader");
+    }
+    const workflowInput = workflowClaimInput(storedContext, run.prompt);
 
     let responseBody = await set(
       buildClaimResponseBodyForClaim$,
@@ -1959,9 +1998,12 @@ const claimAuthorizedJob$ = command(
       async () => {
         return await set(
           transitionClaimedJobToRunning$,
-          runId,
-          args.runnerAttribution,
-          claimRouteTiming,
+          {
+            runId,
+            workflowInput,
+            runnerAttribution: args.runnerAttribution,
+            timing: claimRouteTiming,
+          },
           signal,
         );
       },
@@ -1975,6 +2017,13 @@ const claimAuthorizedJob$ = command(
     if (claimResult.status !== "claimed") {
       return claimTransitionErrorResponse(claimResult);
     }
+
+    const workflowSkills = await set(
+      materializeClaimedWorkflowDocuments$,
+      { workflows: claimResult.workflows, skillRoot: workflowInput.skillRoot },
+      signal,
+    );
+    responseBody = withClaimedWorkflowDocuments(responseBody, workflowSkills);
 
     const response = {
       status: 200 as const,
@@ -2333,6 +2382,7 @@ export const runnersRoutes: readonly RouteEntry[] = [
     route: runnersJobClaimContract.claim,
     handler: claimInner$,
     observeJsonResponse: observeClaimJsonResponse,
+    streamJsonResponse: true,
   },
   {
     route: runnersSteerContract.next,

@@ -7,6 +7,7 @@ import {
 import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { claimedWorkflowAttachments } from "@okouai/db/schema/claimed-workflow-attachment";
 import { command, computed } from "ccstate";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { infer as zInfer } from "zod";
@@ -771,6 +772,12 @@ export function createAgentRunCompletion(runId: string, userId: string) {
         return notFound("Agent run not found");
       }
       if (initialRun.status === "timeout") {
+        // Terminal status or silence did not release the claim's packages.
+        // This authenticated completion is the Runner's actual acknowledgement.
+        await db
+          .delete(claimedWorkflowAttachments)
+          .where(eq(claimedWorkflowAttachments.runId, runId));
+        signal.throwIfAborted();
         return settledRunCompletionResponse(initialRun);
       }
       const outputInput = runOutputInputForCompletion(input);
@@ -791,6 +798,9 @@ export function createAgentRunCompletion(runId: string, userId: string) {
           if (transition.kind !== "committed") {
             return transition;
           }
+          await tx
+            .delete(claimedWorkflowAttachments)
+            .where(eq(claimedWorkflowAttachments.runId, input.body.runId));
           // The runner reported completion, so the active row is released
           // whether or not the run ever started. Must stay last in the tx.
           const releaseRunIds = [input.body.runId];

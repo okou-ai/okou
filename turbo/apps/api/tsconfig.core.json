@@ -310,7 +310,6 @@
     "src/signals/services/workflow-automation-account.service.ts",
     "src/signals/services/workflow-data.service.ts",
     "src/signals/services/workflow-user-automation-thread.service.ts",
-    "src/signals/services/workflow-volume.service.ts",
     "src/signals/usage-underbilling.ts",
     "src/lib/connector-oauth-state.ts",
     "src/lib/oauth-origin.ts",
@@ -569,8 +568,6 @@
     "src/signals/services/official-workflow-reconciliation.service.ts",
     "src/signals/services/official-workflow-reconciliation.types.ts",
     "src/signals/services/official-workflow-thread.service.ts",
-    "src/signals/services/storage-prefix-purge.service.ts",
-    "src/signals/services/storage-publication-fence.service.ts",
     "src/signals/services/workflow-automation.service.ts",
     "src/signals/services/workflow-delete.service.ts",
     "src/signals/services/workflow-webhook-automation-config.service.ts",
@@ -597,7 +594,10 @@
     "src/signals/services/usage-pack-member-removal-plan.ts",
     "src/signals/services/proactive-workflows-eligibility.service.ts",
     "src/signals/services/proactive-workflow-owner.ts",
-    "src/signals/services/proactive-workflow-definitions.ts"
+    "src/signals/services/proactive-workflow-definitions.ts",
+    "src/signals/services/workflow-attachment-cleanup.service.ts",
+    "src/signals/services/background-job-command.service.ts",
+    "src/signals/services/background-job.service.ts"
   ],
   "references": [
     {

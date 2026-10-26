@@ -1646,7 +1646,7 @@ impl ApiClient {
             ),
             &self.token,
         );
-        let request = request.json(&body);
+        let request = request.query(&[("workflowSkills", "1")]).json(&body);
         let request_to_response_headers_started_at = Instant::now();
         let request = request.prepare("claim").map_err(|error| match error {
             ProviderError::Api(message) => ProviderError::Api(format!("claim: {message}")),
