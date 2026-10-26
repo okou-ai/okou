@@ -372,6 +372,11 @@ fn events(method: &str, request: &Value) -> Vec<Value> {
             json!({"method":"Runtime.executionContextCreated","sessionId":request["sessionId"],"params":{"context":{"id":100,"uniqueId":"context-owned","auxData":{"frameId":"frame-owned"}}}}),
             json!({"method":"Runtime.executionContextCreated","sessionId":request["sessionId"],"params":{"context":{"id":200,"uniqueId":"context-foreign","auxData":{"frameId":"frame-foreign"}}}}),
         ],
+        "Runtime.disable" => vec![
+            json!({"method":"Runtime.executionContextDestroyed","sessionId":request["sessionId"],"params":{"executionContextId":200}}),
+            json!({"method":"Page.frameDetached","sessionId":request["sessionId"],"params":{"frameId":"frame-foreign","reason":"remove"}}),
+            json!({"method":"Runtime.executionContextDestroyed","sessionId":request["sessionId"],"params":{"executionContextId":100}}),
+        ],
         "Target.setAutoAttach" => {
             assert_eq!(request["sessionId"], "session-owned");
             assert_eq!(

@@ -451,8 +451,9 @@ impl Page {
             }
             "Runtime.executionContextsCleared" => self.reset_document(),
             "Runtime.executionContextDestroyed" => {
-                if let Some(id) = params["executionContextId"].as_i64() {
-                    self.contexts.remove(&id);
+                let id = params["executionContextId"].as_i64().ok_or(Failure)?;
+                if !self.contexts.remove(&id) {
+                    return Ok(false);
                 }
                 self.unique_contexts.clear();
                 self.objects.clear();
@@ -470,10 +471,11 @@ impl Page {
                     .insert(params["frameId"].as_str().ok_or(Failure)?.to_owned());
             }
             "Page.frameDetached" => {
-                if let Some(id) = params["frameId"].as_str() {
-                    self.frames.remove(id);
-                    self.loaders.remove(id);
+                let id = params["frameId"].as_str().ok_or(Failure)?;
+                if !self.frames.remove(id) {
+                    return Ok(false);
                 }
+                self.loaders.remove(id);
                 self.reset_document();
             }
             "Page.frameNavigated" => {

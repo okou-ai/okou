@@ -384,6 +384,77 @@ async fn moving_a_page_during_frame_validation_denies_the_following_edit() {
 }
 
 #[tokio::test]
+async fn lifecycle_events_require_known_context_and_frame_authority() {
+    let peer = Peer::new().await;
+    let harness = Harness::new(&peer).await;
+    let mut socket = harness.connect().await;
+    command(&mut socket, 1, "Target.getTargets", json!({}), None).await;
+    command(
+        &mut socket,
+        2,
+        "Target.attachToTarget",
+        json!({"targetId":OWNED,"flatten":true}),
+        None,
+    )
+    .await;
+    command(
+        &mut socket,
+        3,
+        "Runtime.enable",
+        json!({}),
+        Some("session-owned"),
+    )
+    .await;
+    let created: Value = serde_json::from_str(
+        &tokio::time::timeout(Duration::from_secs(3), socket.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .into_text()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(created["params"]["context"]["id"], 100);
+    command(
+        &mut socket,
+        4,
+        "Runtime.disable",
+        json!({}),
+        Some("session-owned"),
+    )
+    .await;
+    let destroyed: Value = serde_json::from_str(
+        &tokio::time::timeout(Duration::from_secs(3), socket.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .into_text()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(destroyed["method"], "Runtime.executionContextDestroyed");
+    assert_eq!(destroyed["params"]["executionContextId"], 100);
+    assert!(
+        command(
+            &mut socket,
+            5,
+            "Runtime.evaluate",
+            json!({"expression":"1","contextId":100}),
+            Some("session-owned")
+        )
+        .await
+        .get("error")
+        .is_some()
+    );
+    socket.close(None).await.unwrap();
+    harness.shutdown().await;
+    peer.wait_closed().await;
+    peer.shutdown().await;
+}
+
+#[tokio::test]
 async fn cancelled_setup_retains_host_capacity_until_its_resolver_finishes() {
     use tokio::io::AsyncReadExt;
     let peer = Peer::new().await;
