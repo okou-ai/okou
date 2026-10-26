@@ -5,7 +5,7 @@ use super::{bounded, inside, local, node, own, remote, update, wire};
 use crate::tailscale::tests::derp::fixture::{self, PausedTcp, Server, WriteGate};
 use crate::tailscale::{
     Failure,
-    peers::{Binding, Frames, Peers},
+    peers::{Binding, Clock, Frames, Peers},
     relay::Relay,
 };
 use futures_util::StreamExt;
@@ -69,15 +69,16 @@ pub(super) async fn connect(
 pub(super) async fn packets() -> (NodeKeyPair, NodeKeyPair, Peers, Arc<Binding>, Frames) {
     let keys = NodeKeyPair::random();
     let peer = NodeKeyPair::random();
-    packets_with_keys(keys, peer, None).await
+    packets_with_keys(keys, peer, None, Clock::default()).await
 }
 
 async fn packets_with_keys(
     keys: NodeKeyPair,
     peer: NodeKeyPair,
     expires: Option<chrono::DateTime<chrono::Utc>>,
+    clock: Clock,
 ) -> (NodeKeyPair, NodeKeyPair, Peers, Arc<Binding>, Frames) {
-    let mut peers = Peers::new(keys.clone(), own(&keys).await).unwrap();
+    let mut peers = Peers::with_clock(keys.clone(), own(&keys).await, clock).unwrap();
     let mut metadata = node(2, "a.tail-okou.ts.net.", 2, &peer);
     if let Some(expires) = expires {
         metadata["KeyExpiry"] = json!(expires.to_rfc3339());
@@ -293,9 +294,10 @@ async fn natural_key_expiry_wakes_the_actual_pending_tls_writer_without_a_map_up
         let keys = NodeKeyPair::random();
         let (relay, server, gate) = relay(&keys, control.cancelled(), true).await;
         let (mut frames, _) = bounded(server.task).await.unwrap();
-        let expires = chrono::Utc::now() + chrono::Duration::milliseconds(250);
+        let clock = Clock::held();
+        let expires = clock.now() + chrono::Duration::milliseconds(250);
         let (_, _, mut peers, binding, mut output) =
-            packets_with_keys(keys, NodeKeyPair::random(), Some(expires)).await;
+            packets_with_keys(keys, NodeKeyPair::random(), Some(expires), clock.clone()).await;
         control.ready();
         gate.pause_after(0);
         let mut sending = Box::pin(relay.send(peers.prepare_derp(&mut output).unwrap().unwrap()));
@@ -303,8 +305,13 @@ async fn natural_key_expiry_wakes_the_actual_pending_tls_writer_without_a_map_up
             result=&mut sending=>panic!("writer unexpectedly completed before expiry: {result:?}"),
             _=bounded(gate.pending())=>{}
         }
-        // Only the identity's actual expiry deadline can wake this blocked IO.
-        // There is no map update, fake clock, write release or arbitrary sleep.
+        assert!(
+            binding.live(),
+            "the actual TLS writer is pending before expiry"
+        );
+        // Start the natural timer after observing the actual blocked writer.
+        // There is no map update, write release or binding cancellation.
+        clock.start();
         assert!(bounded(sending).await.is_err());
         drop(relay);
         bounded(gate.destroyed()).await;
@@ -349,7 +356,7 @@ async fn run_retirement_joins_a_partial_tls_sdk_frame_and_closes_the_actual_os_d
             )
             .await;
             let (_, _, mut peers, _binding, mut output) =
-                packets_with_keys(keys, NodeKeyPair::random(), None).await;
+                packets_with_keys(keys, NodeKeyPair::random(), None, Clock::default()).await;
             owned_gate.pause_after(12);
             control.ready();
             relay
