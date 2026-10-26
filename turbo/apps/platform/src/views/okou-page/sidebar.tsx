@@ -603,6 +603,7 @@ function LabeledRailLink({
 
 function ThreeColumnChatListToggle({
   hidden,
+  size = "icon-sm",
   ...props
 }: ComponentProps<typeof Button> & {
   hidden: boolean;
@@ -618,7 +619,7 @@ function ThreeColumnChatListToggle({
         GLOBAL_KEYBOARD_SHORTCUTS.toggleChatList.ariaKeyShortcuts
       }
       variant="quiet"
-      size="icon-sm"
+      size={size}
       iconSize="md"
     >
       <PanelLeftClose
@@ -730,9 +731,11 @@ function LabeledNavRailFrame({
             items={[
               {
                 shortcut: GLOBAL_KEYBOARD_SHORTCUTS.toggleChatList.binding,
+                // Match the rail's 36px nav chips, not the header's 32px.
                 trigger: (
                   <ThreeColumnChatListToggle
                     hidden
+                    size="icon"
                     aria-label={t(($) => {
                       return $.appShell.sidebar.showChatList;
                     })}
