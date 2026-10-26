@@ -430,6 +430,14 @@ function AgentComposerPage() {
       <main
         className={cn(
           "flex flex-1 min-h-0 flex-col overflow-y-auto px-4 sm:px-6",
+          // From `md` the corner controls sit over the scroller's top 56px
+          // (16px gutter, 32px control, 8px below). The distance is padding
+          // inside the scroller rather than a band above it, so at rest the
+          // content starts where it always has, and once the page scrolls the
+          // content passes under the transparent corner to the top edge
+          // instead of being sliced flat 56px down on an edge that reads as
+          // an opaque bar.
+          "md:pt-14",
           // On a short window the column scrolls above the compliance row;
           // fade it rather than slicing it flat on the row's edge. Desktop
           // only, because the row is: below `sm` the composer owns that edge.
@@ -531,9 +539,10 @@ function AgentComposerPage() {
 
               The box starts at that step plus the row's 36px, so the row
               counts as part of the centred block rather than overhanging it.
-              From `md` it also carries the 56px the corner header reserves
-              above the scroller: that band is empty and reads as part of the
-              page's top margin, so the margin under the row has to match it.
+              From `md` it also carries the scroller's 56px top padding, kept
+              clear for the corner controls: at rest that distance is empty and
+              reads as the page's top margin, so the margin under the row has
+              to match it.
 
               Keep the content-based minimum height: taller panels, such as
               Document's portrait covers, use the free space above the greeting
