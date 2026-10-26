@@ -8,9 +8,9 @@ schema or remediation-code translation.
 
 Runner and CLI always use matching versions. Existing SSH exec, session and file requests
 use their ordinary methods and parameters, without a version marker, opt-in,
-capability request or business retry. The existing staff rollout of the
-`remoteConnectionDiagnostics` switch gates evidence alongside current
-assignment/subject checks. Disabled diagnostics omit explanation text.
+capability request or business retry. Evidence requires trusted Run authority and
+current assignment/subject checks. Without trusted authority, diagnostics omit
+explanation text.
 
 A failed result may contain one `diagnostic_text` string, at most
 8192 UTF-8 bytes. Runner renders the exact committed report, observed route,
@@ -68,8 +68,8 @@ The existing bounded DERP reader optionally observes complete KeepAlive/Ping
 frames and SDK-typed PeerGone reasons. Controls belong to a regional incarnation;
 PeerGone is correlated to the selected peer before capture. A private 64-entry
 recent buffer discards keys from snapshots and marks history overflow explicitly.
-An old notification is not global peer state. Disabled diagnostics allocate no
-control observer and perform no diagnostic packet classification or peer traversal.
+An old notification is not global peer state. Without diagnostic authority, no
+control observer is allocated and no diagnostic packet classification or peer traversal occurs.
 
 Both retained evidence and rendered text keep the 8192-byte limit. Lower-priority
 completed detail can be omitted with an explicit notice to preserve the incident,
@@ -106,7 +106,7 @@ End or a completed image. Binary framing, EOF/exit verification, PNG publication
 input outcome and delivery uncertainty remain authoritative. CLI only validates
 text size/terminal safety and forwards it in human/JSON output. Missing or unsafe
 optional text cannot replace a verified result; no diagnosis query or action is
-replayed automatically. Collection uses the same default-off switch and current
+replayed automatically. Collection uses the same trusted Run authority and current
 assignment/host/dependency authority as passive history.
 
 ## Same-Run passive history
@@ -116,7 +116,7 @@ assignment/host/dependency authority as passive history.
 protocol's latest retained operational failure. CLI exposes `okou ssh diagnose`
 and `okou vnc diagnose`, including `--attempt-id`, `--session-id` and `--json`.
 One passive request returns `status` and a bounded Runner-authored `message`.
-These non-GA query formats do not retain old report-format decoders.
+These query formats do not retain old report-format decoders.
 
 `--checks` explicitly selects completed active-check receipts instead of failures
 (RPC: optional boolean `checks`, default false). The same protocol and intersecting
@@ -178,7 +178,7 @@ no screenshot or desktop input. Mode can affect remote viewers; exclusive mode
 can disconnect them or be refused. Checks never evict foreground sessions to
 make room. Kerberos ticket acquisition remains an authentication effect.
 
-Both require enabled diagnostics, the exact current assignment and a trusted
+Both require the exact current assignment and a trusted
 API-installed Run token with the corresponding execution (`ssh:write` or
 `vnc:write`) capability. Passive read authority cannot authorize a login.
 Current host/dependency authority and normal configuration invalidation remain

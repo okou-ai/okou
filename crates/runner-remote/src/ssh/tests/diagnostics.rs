@@ -11,53 +11,44 @@ use serde_json::{Value, json};
 mod authority;
 
 #[tokio::test]
-async fn installation_requires_trusted_agent_token_and_feature_without_disrupting_ssh() {
-    for (feature_enabled, trusted_token_present) in [(true, false), (false, true)] {
-        let mut h = Harness::new(Reply::default()).await;
-        let token = crate::test_fixtures::check_token(h.run, &["ssh:read", "ssh:write"]);
-        let mut context =
-            crate::test_fixtures::execution_context::diagnostic_context_for_test(h.run, &token);
-        context.sandbox_token = token.clone();
-        context
-            .environment
-            .as_mut()
-            .unwrap()
-            .insert("OKOU_TOKEN".into(), token);
-        context
-            .feature_flags
-            .as_mut()
-            .unwrap()
-            .insert("remoteConnectionDiagnostics".into(), feature_enabled);
-        if !trusted_token_present {
-            context.platform_environment.remove("OKOU_TOKEN");
-        }
-        h.install_context(&context).await;
-        let inventory = h
-            .api
-            .mock_async(|when, then| {
-                when.method("GET").path("/api/ssh/hosts");
-                then.status(200)
-                    .json_body(remote_inventory(&[(CONNECTION, 7)], CREATED_AT));
-            })
-            .await;
-        let resolve = h.resolve(h.credential(true)).await;
-        assert_eq!(query(&h, json!({})).await["status"], "unavailable");
-        assert_eq!(
-            h.raw(
-                json!({"version":1,"method":"ssh.check","remaining_ms":10000,
-                "params":{"connectionId":CONNECTION}})
-                .to_string()
-            )
-            .await,
-            vec![json!({"type":"error","code":"unavailable","delivery":"not_dispatched"})],
-        );
-        inventory.assert_calls_async(0).await;
-        resolve.assert_calls_async(0).await;
-        assert!(h.observed.attempts.lock().unwrap().is_empty());
-        assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
-        resolve.assert_calls_async(1).await;
-        h.shutdown().await;
-    }
+async fn installation_requires_trusted_agent_token_without_disrupting_ssh() {
+    let mut h = Harness::new(Reply::default()).await;
+    let token = crate::test_fixtures::check_token(h.run, &["ssh:read", "ssh:write"]);
+    let mut context =
+        crate::test_fixtures::execution_context::diagnostic_context_for_test(h.run, &token);
+    context.sandbox_token = token.clone();
+    context
+        .environment
+        .as_mut()
+        .unwrap()
+        .insert("OKOU_TOKEN".into(), token);
+    context.platform_environment.remove("OKOU_TOKEN");
+    h.install_context(&context).await;
+    let inventory = h
+        .api
+        .mock_async(|when, then| {
+            when.method("GET").path("/api/ssh/hosts");
+            then.status(200)
+                .json_body(remote_inventory(&[(CONNECTION, 7)], CREATED_AT));
+        })
+        .await;
+    let resolve = h.resolve(h.credential(true)).await;
+    assert_eq!(query(&h, json!({})).await["status"], "unavailable");
+    assert_eq!(
+        h.raw(
+            json!({"version":1,"method":"ssh.check","remaining_ms":10000,
+            "params":{"connectionId":CONNECTION}})
+            .to_string()
+        )
+        .await,
+        vec![json!({"type":"error","code":"unavailable","delivery":"not_dispatched"})],
+    );
+    inventory.assert_calls_async(0).await;
+    resolve.assert_calls_async(0).await;
+    assert!(h.observed.attempts.lock().unwrap().is_empty());
+    assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
+    resolve.assert_calls_async(1).await;
+    h.shutdown().await;
 }
 
 async fn query(h: &Harness, params: Value) -> Value {
