@@ -3670,7 +3670,6 @@
         "createCodeError": "無法建立連線碼，請重試。",
         "creatingCode": "正在建立連線碼…",
         "description": "透過簡訊使用 {{assistantName}}",
-        "destination": "iMessage 或簡訊傳送至",
         "openMessages": "開啟 Messages",
         "options": "手機選項",
         "phoneLabel": "電話",
