@@ -1,6 +1,5 @@
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
 import { discordSnowflakeSchema } from "@okouai/api-contracts/contracts/integrations-discord-read";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { buttonVariants, cn } from "@okouai/ui";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -18,7 +17,6 @@ import {
   discordApprovalSucceeded$,
 } from "../../signals/okou-page/discord-oauth-approval.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pathname$, searchParams$ } from "../../signals/route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -48,10 +46,9 @@ export function DiscordConnectPage() {
 }
 
 function PageContent() {
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.DiscordIntegration];
   const approvalAvailable = useGet(discordApprovalAvailable$);
   const approved = useGet(discordApprovalSucceeded$);
-  if (enabled && (approvalAvailable || approved)) {
+  if (approvalAvailable || approved) {
     return <DiscordApprovalState />;
   }
   return <DiscordConnectionState />;
@@ -103,10 +100,8 @@ function DiscordConnectionState() {
   const status = useLastLoadable(discordOrgData$);
   const params = useGet(searchParams$);
   const guildId = params.get("guild_id");
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.DiscordIntegration];
   const failedAttempt =
-    enabled &&
-    (params.get("status") === "pending" || params.get("status") === "error");
+    params.get("status") === "pending" || params.get("status") === "error";
   const installing = useGet(pathname$) === ROUTES.settingsDiscordInstall;
   if (status.state === "loading") {
     return <ConnectCheckingState />;
@@ -123,7 +118,7 @@ function DiscordConnectionState() {
       />
     );
   }
-  const data = status.state === "hasData" ? status.data : null;
+  const data = status.data;
   if (guildId !== null && !discordSnowflakeSchema.safeParse(guildId).success) {
     return (
       <ConnectErrorState
@@ -135,7 +130,7 @@ function DiscordConnectionState() {
   }
   // A callback URL is presentation metadata, not evidence of a connection.
   // An existing account connection does not prove this installation completed.
-  if (data?.isConnected && !installing && !failedAttempt) {
+  if (data.isConnected && !installing && !failedAttempt) {
     return <DiscordSuccessState data={data} guildId={guildId} />;
   }
   return (
@@ -154,7 +149,7 @@ function DiscordConnectionActions({
   installing,
   failedAttempt,
 }: {
-  data: DiscordOrgStatus | null;
+  data: DiscordOrgStatus;
   guildId: string | null;
   installing: boolean;
   failedAttempt: boolean;
@@ -187,10 +182,11 @@ function DiscordConnectionActions({
         <DiscordConnectIntro data={data} installing={installing} />
       )}
       <ConnectErrorAlert error={error} />
-      {data &&
-      (installing || failedAttempt
-        ? data.isAvailable
-        : canAuthorizeDiscord(data)) ? (
+      {(
+        installing || failedAttempt
+          ? data.isAvailable
+          : canAuthorizeDiscord(data)
+      ) ? (
         <ConnectSubmitButton
           connecting={connecting}
           spinnerClassName="animate-spin mr-2"
@@ -275,7 +271,7 @@ function DiscordConnectIntro({
   data,
   installing,
 }: {
-  data: DiscordOrgStatus | null;
+  data: DiscordOrgStatus;
   installing: boolean;
 }) {
   const { t } = useTranslation();
@@ -293,7 +289,7 @@ function DiscordConnectIntro({
               })
         }
         body={
-          data?.isAvailable
+          data.isAvailable
             ? installing
               ? t(($) => {
                   return $.works.discord.installDescription;
@@ -301,11 +297,7 @@ function DiscordConnectIntro({
               : t(($) => {
                   return $.works.discord.connectDescription;
                 })
-            : data
-              ? discordDescription(data)
-              : t(($) => {
-                  return $.works.discord.unconfigured;
-                })
+            : discordDescription(data)
         }
       />
     </>

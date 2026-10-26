@@ -412,11 +412,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.DiscordIntegration]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the verified Discord guild and bot DM integration.",
-    enabled: true,
-  },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "yuma@okou.ai",
     description:

@@ -2,7 +2,6 @@ import { initWechat$, wechatStatus$ } from "../okou-page/wechat.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { WorksPage } from "../../views/okou-page/works-page.tsx";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
@@ -27,7 +26,6 @@ import {
   searchParams$,
 } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setupDiscordConnectPage$ } from "../okou-page/discord-connect-page.ts";
 import { discordConnectParams } from "../okou-page/discord-connect-params.ts";
 import { i18n } from "../../i18n/index.ts";
@@ -59,10 +57,9 @@ export const setupWorksPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const discordStatus = get(searchParams$).get("discord");
     if (
-      get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration] &&
-      (discordStatus === "pending" ||
-        discordStatus === "error" ||
-        discordStatus === "connected")
+      discordStatus === "pending" ||
+      discordStatus === "error" ||
+      discordStatus === "connected"
     ) {
       // OAuth callbacks land in the separate authorization tab. The original
       // Works tab has no callback marker and keeps its card in place.

@@ -12,7 +12,6 @@ import {
   MAX_DISCORD_FILE_SIZE_BYTES,
   type DiscordUploadInitBody,
 } from "@okouai/api-contracts/contracts/integrations-discord-files";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { array, literal, object, string, uuid } from "zod";
@@ -55,7 +54,6 @@ import {
   mockDiscordMemberships,
   createPublicDiscordBinding,
 } from "./helpers/discord";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { claimPublicDiscordTestRun } from "./helpers/discord-run";
 import { createFixtureLifecycle } from "./helpers/fixture-lifecycle";
 import { artifactCatalogRoutes } from "../artifact-catalog";
@@ -199,9 +197,6 @@ async function boundFixture(
   mockEnv("DISCORD_APPLICATION_ID", identity.botUserId);
   mockDiscordMemberships(context, [actor]);
   mockDiscordFileProvider(identity);
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.DiscordIntegration]: true,
-  });
   const binding = await createPublicDiscordBinding(context, {
     flow: "install",
     userId: actor.userId,
@@ -231,9 +226,6 @@ async function canonicalUpload(
   fixture: BoundFixture,
   overrides: Partial<DiscordUploadInitBody> = {},
 ) {
-  await updateFeatureSwitchesForUser(context, fixture.actor, {
-    [FeatureSwitchKey.DiscordIntegration]: true,
-  });
   const objectStore = storage.acceptChatObjectStorage();
   const bytes = Buffer.from("a,b\n1,2\n");
   const body = uploadBody({
@@ -610,36 +602,10 @@ describe("Discord file authorization and input validation", () => {
     expect(download.body.error.message).toContain("discord:read");
   });
 
-  it("keeps file reads and writes unavailable while Discord is disabled", async () => {
-    const actor = await actorSession();
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.DiscordIntegration]: false,
-    });
-    const client = fileClients();
-    const headers = { authorization: "Bearer clerk-session" };
-    const upload = await accept(
-      client.init({ headers, body: uploadBody() }),
-      [403],
-    );
-    const download = await accept(
-      client.fileUrl({
-        headers,
-        query: { channelId, messageId, attachmentId },
-      }),
-      [403],
-    );
-
-    expect(upload.body.error.code).toBe("FORBIDDEN");
-    expect(download.body.error.code).toBe("FORBIDDEN");
-  });
-
-  it("rejects an enabled but unbound caller", async () => {
+  it("rejects an unbound caller", async () => {
     const actor = await actorSession();
     configureDiscordApp();
     mockDiscordMemberships(context, [actor]);
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.DiscordIntegration]: true,
-    });
     const response = await accept(
       fileClients().fileUrl({
         headers: { authorization: "Bearer clerk-session" },
@@ -890,42 +856,6 @@ describe("Canonical Discord file publication and delivery", () => {
       expect(complete.body.error.code).toBe("NOT_FOUND");
     },
   );
-
-  it("rechecks the live feature gate before delivering a published file", async () => {
-    const fixture = await boundFixture();
-    const upload = await canonicalUpload(fixture);
-    const client = fileClients();
-    await accept(
-      client.materialize({ headers: fixture.headers, body: upload.operation }),
-      [200],
-    );
-    await updateFeatureSwitchesForUser(context, fixture.actor, {
-      [FeatureSwitchKey.DiscordIntegration]: false,
-    });
-    const deliveredMessages: string[] = [];
-    server.use(
-      http.post(
-        `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
-        ({ request }) => {
-          deliveredMessages.push(request.url);
-          return new HttpResponse(null, { status: 500 });
-        },
-      ),
-    );
-
-    const response = await accept(
-      client.complete({ headers: fixture.headers, body: upload.operation }),
-      [403],
-    );
-
-    expect(response.body.error.code).toBe("FORBIDDEN");
-    expect(deliveredMessages).toStrictEqual([]);
-    const catalog = await accept(
-      catalogClient().list({ headers: fixture.headers }),
-      [200],
-    );
-    expect(catalog.body.artifacts).toHaveLength(1);
-  });
 
   it(
     "publishes one canonical artifact before delivery and reuses its receipt",

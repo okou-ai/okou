@@ -11,8 +11,6 @@ import {
   type DiscordComponentInteraction,
 } from "@okouai/api-contracts/contracts/discord-interactions";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
-
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import {
@@ -43,10 +41,6 @@ import {
   uniqueDiscordSnowflake,
 } from "./helpers/discord";
 import { DISCORD_TEST_APPLICATION_ID } from "./helpers/discord-fixture";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
 
 const context = testContext();
 const accountApi = createAuthOrgAgentsBddApi(context);
@@ -112,18 +106,11 @@ function actor(
 
 type Actor = ReturnType<typeof actor>;
 
-async function enableDiscord(owner: Actor, enabled = true): Promise<void> {
-  await updateFeatureSwitchesForUser(context, owner, {
-    [FeatureSwitchKey.DiscordIntegration]: enabled,
-  });
-}
-
 async function fixture(
   owner = actor(),
   discordUserId = uniqueDiscordSnowflake(),
 ) {
   mockDiscordMemberships(context, [owner]);
-  await enableDiscord(owner);
   const binding = await createPublicDiscordBinding(context, {
     flow: "install",
     userId: owner.userId,
@@ -136,7 +123,6 @@ async function fixture(
   onTestFinished(async () => {
     mockDiscordMemberships(context, [owner]);
     await removePublicDiscordBinding(context, binding);
-    await deleteFeatureSwitchesForUser(context, owner);
   });
   return {
     owner,
@@ -443,32 +429,6 @@ beforeEach(() => {
 });
 
 describe("Discord account preferences through private controls", () => {
-  it("does not disconnect a configured account while the feature is disabled", async () => {
-    const scope = await fixture();
-    const discord = discordHttp([scope]);
-    await enableDiscord(scope.owner, false);
-
-    const message = await discord.send(
-      commandPayload(guildSender(scope), "disconnect"),
-    );
-
-    expect(message.components).toMatchObject([
-      {
-        type: 1,
-        components: [
-          {
-            type: 2,
-            label: "Connect",
-            url: expect.stringContaining("/settings/discord?"),
-          },
-        ],
-      },
-    ]);
-    expect((await readStatus(scope.owner)).isAvailable).toBeFalsy();
-    await enableDiscord(scope.owner);
-    expect((await readStatus(scope.owner)).isConnected).toBeTruthy();
-  });
-
   it("disconnects only the invoked workspace and exposes that change through status", async () => {
     const first = await fixture();
     const second = await fixture(
@@ -568,7 +528,6 @@ describe("Discord account preferences through private controls", () => {
     "channel",
     "expired",
     "disconnect",
-    "feature",
     "membership",
   ] as const)(
     "keeps the selected DM workspace when an org control changes %s authority",
@@ -592,8 +551,6 @@ describe("Discord account preferences through private controls", () => {
       );
       if (changed === "disconnect") {
         await disconnect(second.owner);
-      } else if (changed === "feature") {
-        await enableDiscord(second.owner, false);
       } else if (changed === "membership") {
         mockDiscordMemberships(context, [first.owner]);
       } else if (changed === "expired") {

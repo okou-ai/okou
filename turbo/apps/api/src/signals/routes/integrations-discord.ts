@@ -11,10 +11,7 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import { discordClient } from "../external/discord-client";
-import {
-  discordIntegrationEnabledForOwner$,
-  getDiscordAppConfig,
-} from "../services/discord-config";
+import { getDiscordAppConfig } from "../services/discord-config";
 import type { RouteEntry } from "../route-entry";
 import {
   discordOrgStatus,
@@ -56,27 +53,13 @@ function inviteCode(invite: string): string | null {
 }
 
 const createDiscordInstallLink$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
+  async ({ get }, signal: AbortSignal) => {
     const body = await get(
       bodyResultOf(integrationsDiscordContract.installLink),
     );
     signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
-    }
-    if (
-      !(await set(
-        discordIntegrationEnabledForOwner$,
-        auth.orgId,
-        auth.userId,
-        signal,
-      ))
-    ) {
-      return createErrorResponse(
-        "FORBIDDEN",
-        "Discord integration is not enabled.",
-      );
     }
     if (!getDiscordAppConfig() || !env("DISCORD_OAUTH_CLIENT_SECRET")) {
       return createErrorResponse(
@@ -156,7 +139,6 @@ const getDiscordStatus$ = computed(async (get) => {
 const deleteDiscordIntegration$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    // Data removal stays available while the feature is rolled back.
     const role = await get(discordMemberRole(auth));
     signal.throwIfAborted();
     if (!role) {
