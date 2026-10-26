@@ -1,6 +1,7 @@
 // The skill import prompt and its imported list, shared by the onboarding
 // skills step and the workflows page's import dialog.
 import type { Command } from "ccstate";
+import type { ReactNode } from "react";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -99,13 +100,19 @@ function SkillImportPromptFailed({
 }
 
 /** Copies the prompt, and says whether the clipboard took it. */
-function SkillImportCopyButton({
+export function SkillImportCopyButton({
   copyPrompt$,
   primary = false,
+  className,
+  label,
+  disabled = false,
 }: {
   readonly copyPrompt$: Command<Promise<boolean>, [AbortSignal]>;
   /** Where copying is the one thing to do, it is the primary action. */
   readonly primary?: boolean;
+  readonly className?: string;
+  readonly label?: string;
+  readonly disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const [copyResult, copyPrompt] = useLoadableSet(copyPrompt$);
@@ -117,8 +124,8 @@ function SkillImportCopyButton({
       type="button"
       variant={primary ? "default" : "outline"}
       size="sm"
-      className="shrink-0 gap-1.5"
-      disabled={copyResult.state === "loading"}
+      className={cn("shrink-0 gap-1.5", className)}
+      disabled={disabled || copyResult.state === "loading"}
       onClick={() => {
         detach(
           (async () => {
@@ -144,9 +151,10 @@ function SkillImportCopyButton({
         ? t(($) => {
             return $.onboarding.sourcesFirst.skills.copied;
           })
-        : t(($) => {
+        : (label ??
+          t(($) => {
             return $.onboarding.sourcesFirst.skills.copyPrompt;
-          })}
+          }))}
     </Button>
   );
 }
@@ -320,7 +328,7 @@ function SkillImportFullPromptToggle({
       type="button"
       variant="quiet"
       size="xs"
-      className="-ml-2.5 gap-1 text-xs"
+      className="-ml-2.5 gap-1 text-xs max-sm:min-h-11"
       aria-expanded={toggle.shown}
       onClick={() => {
         toggle.setShown(!toggle.shown);
@@ -342,6 +350,64 @@ function SkillImportFullPromptToggle({
   );
 }
 
+function CompactSkillImportPanel({
+  provider,
+  providerName,
+  prompt,
+  pending,
+  signals,
+  promptToggle,
+}: {
+  readonly provider: SkillImportProvider;
+  readonly providerName: string;
+  readonly prompt: string | null;
+  readonly pending: ReactNode;
+  readonly signals: SkillImportSignals;
+  readonly promptToggle: SkillImportPromptToggle;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex flex-col gap-4">
+      <ol className="list-inside list-decimal space-y-4 text-sm leading-6">
+        <li>
+          {t(($) => {
+            return $.onboarding.sourcesFirst.mobile.copyImportPrompt;
+          })}
+        </li>
+        <li>
+          {t(
+            ($) => {
+              return $.onboarding.sourcesFirst.mobile.pasteIntoProvider;
+            },
+            {
+              provider: providerName,
+            },
+          )}
+        </li>
+      </ol>
+      <details className="text-sm text-muted-foreground">
+        <summary className="cursor-pointer rounded-lg py-3 hover:text-foreground">
+          {t(($) => {
+            return $.onboarding.sourcesFirst.mobile.instructions;
+          })}
+        </summary>
+        <SkillImportGuide provider={provider} />
+      </details>
+      {prompt === null ? (
+        pending
+      ) : (
+        <div>
+          <SkillImportFullPromptToggle toggle={promptToggle} />
+          {promptToggle.shown ? (
+            <SkillImportPromptBody prompt={prompt} signals={signals} />
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * The prompt for one tool, with its copy button and where in the tool to run
  * it, or where it will be while the session opens or after it could not.
@@ -353,11 +419,13 @@ export function SkillImportPanel({
   provider,
   providerName,
   promptToggle,
+  compact = false,
 }: {
   readonly signals: SkillImportSignals;
   readonly provider: SkillImportProvider;
   readonly providerName: string;
   readonly promptToggle?: SkillImportPromptToggle;
+  readonly compact?: boolean;
 }) {
   const preparation = useLoadable(signals.session$);
   const results = useLoadable(signals.imported$);
@@ -370,6 +438,19 @@ export function SkillImportPanel({
     ) : (
       <SkillImportPromptPending />
     );
+
+  if (compact && promptToggle) {
+    return (
+      <CompactSkillImportPanel
+        provider={provider}
+        providerName={providerName}
+        prompt={prompt}
+        pending={pending}
+        signals={signals}
+        promptToggle={promptToggle}
+      />
+    );
+  }
 
   if (promptToggle) {
     // Until a skill arrives, copying is the one thing to do; after that,

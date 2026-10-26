@@ -5,4 +5,4 @@
  * shared field style stays a single deliberate decision.
  */
 export const ONBOARDING_TEXTAREA_CLASS =
-  "rounded-xl border border-border bg-background focus:ring-2 focus:ring-primary/15";
+  "rounded-xl max-sm:rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/15";

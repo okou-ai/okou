@@ -8,7 +8,15 @@ import {
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
-import { Button, Card } from "@okouai/ui";
+import {
+  Button,
+  Card,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogTrigger,
+  cn,
+} from "@okouai/ui";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import {
   captureSourceOnboardingChannelClicked$,
@@ -35,6 +43,7 @@ import {
 import { ProductMark } from "./onboarding-step-parts.tsx";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
+import { useMobileOnboarding } from "../onboarding/use-mobile-onboarding.ts";
 
 /** Install permission and account connection remain the provider's authority. */
 type ChannelState =
@@ -119,6 +128,7 @@ function ChannelButtonContent({
   readonly connected: boolean;
 }) {
   const { t } = useTranslation();
+  const mobile = useMobileOnboarding();
   const label =
     channel === "slack"
       ? t(($) => {
@@ -133,7 +143,7 @@ function ChannelButtonContent({
           });
   return (
     <>
-      <ProductMark name={channel} alt="" size="mark" />
+      <ProductMark name={channel} alt="" size={mobile ? "header" : "mark"} />
       {label}
       {connected && (
         <>
@@ -168,7 +178,7 @@ function InstalledChannelButton({
     <Button
       type="button"
       variant="outline"
-      className="min-w-0 flex-1 gap-2 px-3"
+      className="min-w-0 flex-1 gap-2 px-3 max-sm:h-28 max-sm:flex-col max-sm:whitespace-normal max-sm:rounded-surface"
       aria-pressed={connected}
       aria-label={
         channel === "slack"
@@ -212,7 +222,7 @@ function TelegramButton({ connected }: { readonly connected: boolean }) {
       <Button
         type="button"
         variant="outline"
-        className="min-w-0 flex-1 gap-2 px-3"
+        className="min-w-0 flex-1 gap-2 px-3 max-sm:h-28 max-sm:flex-none max-sm:flex-col max-sm:whitespace-normal max-sm:rounded-surface"
         aria-pressed={connected}
         disabled={connected || connection.state === "loading"}
         onClick={() => {
@@ -252,8 +262,8 @@ function InlineImessageConnection() {
     detach(requestCode(pageSignal), Reason.DomCallback);
   };
   return (
-    <Card className="rounded-xl border border-border bg-background p-6 max-sm:p-5">
-      <div className="mb-2 flex items-center gap-3">
+    <Card className="rounded-xl border border-border bg-background p-6 max-sm:rounded-none max-sm:border-0 max-sm:p-0 max-sm:shadow-none">
+      <div className="mb-2 flex items-center gap-3 max-sm:pr-8">
         <ProductMark name="imessage" alt="" />
         <h2 className="text-xl font-semibold tracking-tight">
           {t(($) => {
@@ -324,8 +334,44 @@ function InlineImessageConnection() {
   );
 }
 
+function MobileImessageTile({ connected }: { readonly connected: boolean }) {
+  const { t } = useTranslation();
+  const label = t(($) => {
+    return $.onboarding.sourcesFirst.slack.otherImessage;
+  });
+  return (
+    <Dialog>
+      <DialogTrigger
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            className="h-28 flex-col gap-2 rounded-surface"
+          />
+        }
+      >
+        <ProductMark name="imessage" alt="" />
+        {label}
+        {connected ? (
+          <Check
+            size={16}
+            aria-label={t(($) => {
+              return $.onboarding.sourcesFirst.chatChannels.imessageConnected;
+            })}
+          />
+        ) : null}
+      </DialogTrigger>
+      <DialogContent>
+        <DialogTitle className="sr-only">{label}</DialogTitle>
+        <InlineImessageConnection />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function OnboardingSlackPage() {
   const { t } = useTranslation();
+  const mobile = useMobileOnboarding();
   const flow = useSourcesFirstFlow("slack");
   const slack = loadedChannelState(useLastLoadable(slackOrgData$), (status) => {
     return {
@@ -376,6 +422,18 @@ export function OnboardingSlackPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.chatChannels.copy;
       })}
+      mobileTitle={
+        connected
+          ? t(($) => {
+              return $.onboarding.sourcesFirst.chatChannels.connectedTitle;
+            })
+          : t(($) => {
+              return $.onboarding.sourcesFirst.mobile.channelsTitle;
+            })
+      }
+      mobileDescription={t(($) => {
+        return $.onboarding.sourcesFirst.mobile.channelsCopy;
+      })}
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
@@ -388,14 +446,19 @@ export function OnboardingSlackPage() {
       onBack={flow.goBack}
     >
       <div className="mx-auto flex w-full max-w-[600px] flex-col gap-5">
-        <InlineImessageConnection />
+        {mobile ? null : <InlineImessageConnection />}
         <div>
-          <p className="mb-2 text-xs text-muted-foreground">
+          <p className="mb-2 text-xs text-muted-foreground max-sm:hidden">
             {t(($) => {
               return $.onboarding.sourcesFirst.chatChannels.othersLabel;
             })}
           </p>
-          <div className="flex gap-2">
+          <div className={cn("gap-2", mobile ? "grid grid-cols-2" : "flex")}>
+            {mobile ? (
+              <MobileImessageTile
+                connected={phone.state === "hasData" && phone.data.linked}
+              />
+            ) : null}
             <InstalledChannelButton channel="slack" state={slack} />
             <TelegramButton connected={telegramConnected} />
             <InstalledChannelButton channel="teams" state={teams} />

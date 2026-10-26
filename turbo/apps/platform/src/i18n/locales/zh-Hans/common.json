@@ -4196,46 +4196,57 @@
       },
       "industries": {
         "coaching": {
+          "mobileName": "教练与培训",
           "name": "教练与培训",
           "summary": "教练、课程与培训"
         },
         "consulting": {
+          "mobileName": "独立咨询",
           "name": "独立咨询",
           "summary": "商业、人力与 IT 咨询"
         },
         "design": {
+          "mobileName": "设计与创意",
           "name": "设计与创意",
           "summary": "平面、网站与创意工作"
         },
         "finance": {
+          "mobileName": "会计与记账",
           "name": "会计与记账",
           "summary": "账目、报表与对账"
         },
         "investing": {
+          "mobileName": "投资与市场研究",
           "name": "投资与市场研究",
           "summary": "投资、市场与投资组合"
         },
         "marketing": {
+          "mobileName": "市场与内容",
           "name": "市场与内容",
           "summary": "社交媒体、内容与品牌"
         },
         "operations": {
+          "mobileName": "商业与运营",
           "name": "商业与运营",
           "summary": "企业主、助理与运营人员"
         },
         "other": {
+          "mobileName": "其他／还在摸索",
           "name": "其他／还在摸索",
           "summary": "别的领域，或还在摸索"
         },
         "research": {
+          "mobileName": "研究与学习",
           "name": "研究与学习",
           "summary": "调研、学习与进修"
         },
         "sales": {
+          "mobileName": "销售与客户开发",
           "name": "销售与客户开发",
           "summary": "线索开发、销售与客户增长"
         },
         "software": {
+          "mobileName": "软件与应用",
           "name": "软件与应用",
           "summary": "应用、游戏与开发"
         }
@@ -4243,6 +4254,30 @@
       "industry": {
         "copy": "Okou 是你和团队的工作助手，在云端把零散的信息变成完成的工作。选择你的领域，获取适合你的第一项任务。",
         "title": "你主要做哪类工作？"
+      },
+      "mobile": {
+        "channelsCopy": "在常用聊天工具中联系 Okou。",
+        "channelsTitle": "选择聊天工具",
+        "connect": "连接",
+        "copyImportPrompt": "复制导入提示词",
+        "existingPlan": "使用我的 {{provider}} 订阅",
+        "experienceTitle": "选择开始方式",
+        "industryCopy": "我们会推荐适合你的首个任务。",
+        "industryTitle": "选择你的工作领域",
+        "instructions": "操作说明",
+        "newCopy": "帮你开始第一个任务。",
+        "newTitle": "从 Okou 开始",
+        "pasteIntoProvider": "粘贴到 {{provider}} 并发送。",
+        "permissionsLabel": "权限与隐私",
+        "planCopy": "用现有订阅运行任务。",
+        "promptTitle": "你想完成什么？",
+        "readyTitle": "开始你的第一个任务",
+        "skillsCopy": "在电脑上使用 {{provider}}。",
+        "skillsTitle": "导入你的技能",
+        "sourcesCopy": "为首个任务连接一个工具。",
+        "startTask": "开始任务",
+        "teamCopy": "在同一个工作区协作。",
+        "teamTitle": "邀请同事"
       },
       "prompt": {
         "intro": "Okou 是你和团队的工作助手，在云端把零散的信息变成完成的工作。"

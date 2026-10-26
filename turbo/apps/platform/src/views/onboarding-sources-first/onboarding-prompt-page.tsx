@@ -13,7 +13,11 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
 import { OnboardingConnectorSetup } from "../onboarding/onboarding-connectors.tsx";
 import { ONBOARDING_TEXTAREA_CLASS } from "../onboarding/onboarding-shell.tsx";
-import { OnboardingCompliance } from "./onboarding-industry-parts.tsx";
+import {
+  OnboardingCompliance,
+  OnboardingSecurityLink,
+} from "./onboarding-industry-parts.tsx";
+import { useMobileOnboarding } from "../onboarding/use-mobile-onboarding.ts";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 
 /**
@@ -57,8 +61,26 @@ function usePromptOnboarding() {
  */
 export function OnboardingSourcesFirstPromptPage() {
   const { t } = useTranslation();
+  const mobile = useMobileOnboarding();
   const { prompt, setPrompt, connectorSlugs, run, busy } =
     usePromptOnboarding();
+
+  const promptInput = (
+    <Textarea
+      id="onboarding-prompt"
+      aria-label={t(($) => {
+        return $.onboarding.make.promptLabel;
+      })}
+      value={prompt}
+      onChange={(event) => {
+        setPrompt(event.target.value);
+      }}
+      className={cn(
+        ONBOARDING_TEXTAREA_CLASS,
+        "min-h-40 resize-none px-4 py-3 leading-[1.625] max-sm:min-h-48 max-sm:text-base",
+      )}
+    />
+  );
 
   return (
     <OnboardingStepLayout
@@ -70,6 +92,11 @@ export function OnboardingSourcesFirstPromptPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.prompt.intro;
       })}
+      mobileTitle={t(($) => {
+        return $.onboarding.sourcesFirst.mobile.promptTitle;
+      })}
+      mobileDescription=""
+      mobileFooter={<OnboardingSecurityLink />}
       trustPoints={[
         t(($) => {
           return $.onboarding.make.promptDescription;
@@ -77,7 +104,9 @@ export function OnboardingSourcesFirstPromptPage() {
       ]}
       supplement={<OnboardingCompliance />}
       primaryLabel={t(($) => {
-        return $.onboarding.common.next;
+        return mobile
+          ? $.onboarding.sourcesFirst.mobile.startTask
+          : $.onboarding.common.next;
       })}
       onPrimary={run}
       primaryDisabled={!prompt.trim()}
@@ -89,24 +118,12 @@ export function OnboardingSourcesFirstPromptPage() {
         <div className="flex justify-center pb-6 max-sm:hidden">
           <ProductBrandMark decorative size="hero" />
         </div>
+        {mobile ? promptInput : null}
         <OnboardingConnectorSetup
           connectorSlugs={connectorSlugs}
           variant="sheet"
         />
-        <Textarea
-          id="onboarding-prompt"
-          aria-label={t(($) => {
-            return $.onboarding.make.promptLabel;
-          })}
-          value={prompt}
-          onChange={(event) => {
-            setPrompt(event.target.value);
-          }}
-          className={cn(
-            ONBOARDING_TEXTAREA_CLASS,
-            "min-h-40 resize-none px-4 py-3 leading-[1.625]",
-          )}
-        />
+        {mobile ? null : promptInput}
       </div>
     </OnboardingStepLayout>
   );

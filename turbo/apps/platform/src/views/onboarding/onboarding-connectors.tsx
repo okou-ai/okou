@@ -38,6 +38,7 @@ import {
 } from "../okou-page/components/settings/launch-connector-connect.ts";
 import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { useMobileOnboarding } from "./use-mobile-onboarding.ts";
 
 interface ConnectorSetupBaseProps {
   readonly connectorSlugs: readonly string[];
@@ -94,6 +95,51 @@ function SourceConnectorCard({
 }) {
   const { t } = useTranslation();
   const interactive = !busy && onActivate !== undefined;
+  const mobile = useMobileOnboarding();
+
+  if (mobile) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        className="h-16 w-full justify-start gap-3 rounded-surface px-4 text-left"
+        disabled={busy || onActivate === undefined}
+        aria-busy={busy}
+        aria-label={t(
+          ($) => {
+            return $.connectors.card.connectAria;
+          },
+          {
+            connector: connector.label,
+          },
+        )}
+        data-connector-slug={connectorSlug}
+        onClick={onActivate}
+      >
+        <ConnectorIcon icon={connector.icon} size={20} />
+        <span className="min-w-0 flex-1 whitespace-normal text-sm font-medium">
+          {connector.label}
+        </span>
+        {busy ? (
+          <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+        ) : connected ? (
+          <ConnectorEntryStatus
+            tone="success"
+            label={t(($) => {
+              return $.connectors.card.connected;
+            })}
+            className="shrink-0 text-xs"
+          />
+        ) : (
+          <span className="text-sm">
+            {t(($) => {
+              return $.onboarding.sourcesFirst.mobile.connect;
+            })}
+          </span>
+        )}
+      </Button>
+    );
+  }
 
   return (
     <ConnectorEntryCard

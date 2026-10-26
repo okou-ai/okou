@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Check } from "lucide-react";
 import { Card, Radio, surfaceVariants, cn } from "@okouai/ui";
 import { settingsIconAssetUrl } from "../okou-page/components/settings/settings-icon-assets.ts";
+import { useMobileOnboarding } from "../onboarding/use-mobile-onboarding.ts";
 
 /** Okou's own onboarding illustrations. */
 export const ILLUSTRATION_BASE =
@@ -96,13 +97,18 @@ export function OnboardingPosterCard({
   mark,
   title,
   description,
+  mobileTitle,
+  mobileDescription,
 }: {
   readonly value: string;
   readonly selected: boolean;
   readonly mark: ReactNode;
   readonly title: string;
   readonly description: string;
+  readonly mobileTitle?: string;
+  readonly mobileDescription?: string;
 }) {
+  const mobile = useMobileOnboarding();
   return (
     <label
       className={cn(
@@ -132,15 +138,15 @@ export function OnboardingPosterCard({
           aria-hidden="true"
         />
       )}
-      <span className="flex flex-1 items-center justify-center px-8 pb-7 pt-12 max-sm:size-11 max-sm:flex-none max-sm:rounded-xl max-sm:bg-muted max-sm:p-0">
+      <span className="flex flex-1 items-center justify-center px-8 pb-7 pt-12 max-sm:size-11 max-sm:flex-none max-sm:rounded-xl max-sm:bg-gray-50 max-sm:p-0">
         {mark}
       </span>
       <span className="block px-8 pb-9 max-sm:min-w-0 max-sm:flex-1 max-sm:p-0">
         <span className="block text-sm font-medium text-foreground max-sm:text-base">
-          {title}
+          {mobile ? (mobileTitle ?? title) : title}
         </span>
         <span className="mt-1 block text-sm leading-5 text-muted-foreground">
-          {description}
+          {mobile ? (mobileDescription ?? description) : description}
         </span>
       </span>
     </label>
@@ -153,28 +159,31 @@ export function OnboardingChoiceCard({
   selected,
   title,
   description,
+  mobileTitle,
 }: {
   readonly value: string;
   readonly selected: boolean;
   readonly title: string;
   readonly description: string;
+  readonly mobileTitle: string;
 }) {
+  const mobile = useMobileOnboarding();
   return (
     <label
       className={cn(
         surfaceVariants({ interactive: true }),
-        "block px-4 py-3.5",
+        "block px-4 py-3.5 max-sm:flex max-sm:min-h-16 max-sm:items-center max-sm:px-3 max-sm:py-2.5 max-sm:last:col-span-2",
         selected && "border-primary",
       )}
     >
       {/* The control sits on the title's line, with the summary under it. */}
-      <span className="flex items-center gap-3">
+      <span className="flex items-center gap-3 max-sm:gap-2">
         <Radio value={value} />
-        <span className="min-w-0 truncate text-sm font-medium text-foreground">
-          {title}
+        <span className="min-w-0 text-sm font-medium text-foreground sm:truncate">
+          {mobile ? mobileTitle : title}
         </span>
       </span>
-      <span className="mt-0.5 block pl-7 text-xs leading-5 text-muted-foreground">
+      <span className="mt-0.5 block pl-7 text-xs leading-5 text-muted-foreground max-sm:hidden">
         {description}
       </span>
     </label>
@@ -192,14 +201,14 @@ export function OnboardingPanel({
   readonly children: ReactNode;
 }) {
   return (
-    <Card className="flex min-h-[300px] flex-col">
-      <div className="px-5 py-4">
+    <Card className="flex min-h-[300px] flex-col max-sm:min-h-0 max-sm:rounded-none max-sm:border-0 max-sm:shadow-none">
+      <div className="px-5 py-4 max-sm:hidden">
         <p className="text-sm font-medium text-foreground">{title}</p>
         <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
           {description}
         </p>
       </div>
-      <div className="flex flex-1 flex-col border-t border-border/60">
+      <div className="flex flex-1 flex-col border-t border-border/60 max-sm:border-0">
         {children}
       </div>
     </Card>
