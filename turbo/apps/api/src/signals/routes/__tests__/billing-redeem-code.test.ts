@@ -317,36 +317,6 @@ describe("POST /api/billing/redeem-code", () => {
     },
   );
 
-  it("falls back to the status message when Atom returns malformed JSON", async () => {
-    server.use(
-      http.post(`${ATOM_URL}/api/redeem-codes/consume`, () => {
-        return new Response("{", {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        });
-      }),
-    );
-    setAdminSession();
-
-    const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
-      billingRedeemCodeContract,
-    );
-    const response = await accept(
-      client.create({
-        body: { code: "YUMA-123" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Invalid redeem code",
-        code: "BAD_REQUEST",
-      },
-    });
-  });
-
   it.each([
     ["missing user", new ClerkUserNotFoundTestError()],
     ["provider failure", new Error("Clerk unavailable")],

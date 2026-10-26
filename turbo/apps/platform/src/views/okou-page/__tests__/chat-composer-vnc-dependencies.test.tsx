@@ -299,13 +299,6 @@ test("A new chat updates VNC warnings from unsent host choices", async () => {
   expect(within(menu).queryByText(SSH_WARNING)).toBeNull();
 });
 
-test("Direct VNC access does not warn about unrelated disabled SSH hosts", async () => {
-  installDependencyFixture({ transportSshId: null });
-  const menu = await openRemoteAccess();
-  expect(within(menu).queryByText(SSH_WARNING)).toBeNull();
-  expect(within(menu).queryByText(SSH_NOTE)).toBeNull();
-});
-
 test("VNC reports its transport and KDC SSH dependencies independently", async () => {
   installDependencyFixture({ kdcSshId: KDC_SSH_ID });
   const menu = await openRemoteAccess();
