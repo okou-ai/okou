@@ -140,7 +140,7 @@ test("Linking iMessage replaces the QR and enables Continue without Slack", asyn
   });
 });
 
-test("The mobile iMessage tile opens its connection and advances only after linking", async () => {
+test("Mobile shows the iMessage connection inline and advances only after linking", async () => {
   mockCode();
   context.mocks.data.agentPhoneIntegration({
     linked: false,
@@ -152,10 +152,6 @@ test("The mobile iMessage tile opens its connection and advances only after link
   expect(getButton("Add to Slack")).toBeEnabled();
   expect(getButton("Telegram")).toBeEnabled();
   expect(getButton("Teams")).toBeEnabled();
-  click(getButton("iMessage"));
-  await expect(
-    screen.findByRole("dialog", { name: "iMessage" }),
-  ).resolves.toBeInTheDocument();
   await expect(
     screen.findByTestId("agentphone-open-messages"),
   ).resolves.toHaveAttribute(
@@ -174,7 +170,6 @@ test("The mobile iMessage tile opens its connection and advances only after link
   await expect(
     screen.findByText("iMessage is connected"),
   ).resolves.toBeInTheDocument();
-  click(getButton("Close"));
   await waitFor(() => {
     return expect(getButton("Continue")).toBeEnabled();
   });

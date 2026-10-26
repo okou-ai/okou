@@ -8,15 +8,7 @@ import {
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
-import {
-  Button,
-  Card,
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogTrigger,
-  cn,
-} from "@okouai/ui";
+import { Button, Card, cn, surfaceVariants } from "@okouai/ui";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import {
   captureSourceOnboardingChannelClicked$,
@@ -251,6 +243,7 @@ function TelegramButton({ connected }: { readonly connected: boolean }) {
 
 function InlineImessageConnection() {
   const { t } = useTranslation();
+  const mobile = useMobileOnboarding();
   const statusLoadable = useLastLoadable(agentPhoneLinkStatus$);
   const codeLoadable = useLoadable(onboardingPhoneCode$);
   const code = codeLoadable.state === "hasData" ? codeLoadable.data : null;
@@ -263,20 +256,35 @@ function InlineImessageConnection() {
     detach(requestCode(pageSignal), Reason.DomCallback);
   };
   return (
-    <Card className="rounded-xl border border-border bg-background p-6 max-sm:rounded-none max-sm:border-0 max-sm:p-0 max-sm:shadow-none">
-      <div className="mb-2 flex items-center gap-3 max-sm:pr-8">
+    <Card
+      className={
+        mobile
+          ? surfaceVariants({ className: "p-5" })
+          : "rounded-xl border border-border bg-background p-6"
+      }
+    >
+      <div className={cn("flex items-center gap-3", mobile ? "mb-4" : "mb-2")}>
         <ProductMark name="imessage" alt="" />
-        <h2 className="text-xl font-semibold tracking-tight">
+        <h2
+          className={cn(
+            "font-semibold tracking-tight",
+            mobile ? "text-base" : "text-xl",
+          )}
+        >
           {t(($) => {
-            return $.onboarding.sourcesFirst.chatChannels.imessageTitle;
+            return mobile
+              ? $.onboarding.sourcesFirst.slack.otherImessage
+              : $.onboarding.sourcesFirst.chatChannels.imessageTitle;
           })}
         </h2>
       </div>
-      <p className="mb-5 text-sm text-muted-foreground">
-        {t(($) => {
-          return $.onboarding.sourcesFirst.chatChannels.imessageCopy;
-        })}
-      </p>
+      {!mobile && (
+        <p className="mb-5 text-sm text-muted-foreground">
+          {t(($) => {
+            return $.onboarding.sourcesFirst.chatChannels.imessageCopy;
+          })}
+        </p>
+      )}
       {status?.linked ? (
         <p className="flex items-center gap-2 text-sm" role="status">
           <Check size={16} aria-hidden="true" />
@@ -294,7 +302,7 @@ function InlineImessageConnection() {
           <AgentPhoneConnectionCodeContent
             phoneNumber={status.agentPhoneNumber}
             connectionCode={code.code}
-            inline
+            inline={!mobile}
             onOpenMessages={() => {
               captureChannelClicked("imessage", true);
             }}
@@ -332,35 +340,6 @@ function InlineImessageConnection() {
         <AgentPhoneConnectionCodeLoading />
       )}
     </Card>
-  );
-}
-
-function MobileImessageButton({ connected }: { readonly connected: boolean }) {
-  const { t } = useTranslation();
-  const label = t(($) => {
-    return $.onboarding.sourcesFirst.slack.otherImessage;
-  });
-  return (
-    <Dialog>
-      <DialogTrigger
-        render={<Button type="button" variant="outline" size="lg" />}
-      >
-        <ProductMark name="imessage" alt="" size="mark" />
-        {label}
-        {connected ? (
-          <Check
-            size={16}
-            aria-label={t(($) => {
-              return $.onboarding.sourcesFirst.chatChannels.imessageConnected;
-            })}
-          />
-        ) : null}
-      </DialogTrigger>
-      <DialogContent>
-        <DialogTitle className="sr-only">{label}</DialogTitle>
-        <InlineImessageConnection />
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -441,19 +420,14 @@ export function OnboardingSlackPage() {
       onBack={flow.goBack}
     >
       <div className="mx-auto flex w-full max-w-[600px] flex-col gap-5">
-        {mobile ? null : <InlineImessageConnection />}
+        <InlineImessageConnection />
         <div>
-          <p className="mb-2 text-xs text-muted-foreground max-sm:hidden">
+          <p className="mb-2 text-xs text-muted-foreground">
             {t(($) => {
               return $.onboarding.sourcesFirst.chatChannels.othersLabel;
             })}
           </p>
-          <div className={cn("gap-2", mobile ? "grid grid-cols-2" : "flex")}>
-            {mobile ? (
-              <MobileImessageButton
-                connected={phone.state === "hasData" && phone.data.linked}
-              />
-            ) : null}
+          <div className={cn("gap-2", mobile ? "grid" : "flex")}>
             <InstalledChannelButton channel="slack" state={slack} />
             <TelegramButton connected={telegramConnected} />
             <InstalledChannelButton channel="teams" state={teams} />
