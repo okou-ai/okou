@@ -1,9 +1,9 @@
 # Copy legacy presentation templates
 
 Copy the current `presentation_templates` records into `user_templates`, keeping
-the legacy records and packages intact. The old catalog remains usable with
-`customTemplates` off; with it on, the new catalog can use the copied templates.
-Enabling flags and later removing the legacy table are separate changes.
+the legacy records and packages intact. The custom catalog can use the copied
+templates, while retained presentation references still resolve the original
+records and packages. Retiring the legacy table is a separate change.
 
 This is an external-data operator because the new catalog resolves a different
 package name. It copies the current package archive to a new Storage/prefix,

@@ -678,7 +678,6 @@
       "previewSlide": "预览第 {{slideNumber}} 页",
       "previewWebsite": "预览网站模板 {{title}}",
       "previousSlide": "预览上一页",
-      "renameImportedTemplate": "重命名模板",
       "searchConnector": "搜索模板",
       "searchConnectors": "搜索模板",
       "selectStyle": "选择风格 {{style}}",
@@ -717,9 +716,7 @@
       "use": "使用",
       "useThisTemplate": "使用这个模板",
       "visibility": {
-        "changeLabel": "修改模板可见范围",
-        "privateState": "只有你能看到和使用",
-        "workspaceState": "这个工作区里的所有人都能使用"
+        "changeLabel": "修改模板可见范围"
       },
       "website": "网站",
       "websitePreview": "{{title}} 网站模板预览",
@@ -2918,15 +2915,12 @@
         "website": "网站",
         "workflow": "工作流"
       },
-      "importedLoadFailed": "无法加载已上传的模板。",
-      "importedUnavailable": "已上传的模板暂时不可用。",
       "previewTemplate": "预览模板 {{title}}",
       "previewWebsite": "预览网站模板 {{title}}",
       "previewWorkflow": "预览工作流模板 {{title}}",
       "removeTemplate": "移除模板 {{title}}",
       "removeWebsite": "移除网站模板 {{title}}",
-      "removeWorkflow": "移除工作流模板 {{title}}",
-      "retry": "重试"
+      "removeWorkflow": "移除工作流模板 {{title}}"
     },
     "thread": {
       "ariaLabel": "聊天会话",

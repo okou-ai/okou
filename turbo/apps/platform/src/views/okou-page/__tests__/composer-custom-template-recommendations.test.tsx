@@ -24,13 +24,11 @@ import {
 import { buildRunModel } from "./chat-model-builders.ts";
 import {
   AGENT_ID,
-  createUploadedTemplate,
   createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
 const context = testContext();
-const { mockPresentationTemplateLibrary, mockTemplateChat } =
-  createTemplateGalleryHelpers(context);
+const { mockTemplateChat } = createTemplateGalleryHelpers(context);
 
 function template(kind: UserTemplateKind): UserTemplateCatalogEntry {
   const id = {
@@ -93,7 +91,6 @@ const SHELVES = [
 async function openShelf(
   task: string,
   label: string,
-  enabled = true,
   draft = "Keep my launch brief",
   builtinDocumentTemplates = task === "Document",
 ) {
@@ -101,7 +98,6 @@ async function openShelf(
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.CustomTemplates]: enabled,
       [FeatureSwitchKey.BuiltinDocumentTemplates]: builtinDocumentTemplates,
     },
   });
@@ -133,13 +129,6 @@ function mockShelfCatalog(kind: UserTemplateKind) {
       shared,
     ]);
   });
-  mockPresentationTemplateLibrary([
-    createUploadedTemplate({
-      id: own.id,
-      title: "Legacy deck",
-      canManage: true,
-    }),
-  ]);
   return { capture, own, shared };
 }
 
@@ -147,14 +136,13 @@ test.each(SHELVES)(
   "$task shows accessible custom templates only of its kind",
   async ({ task, kind, label, builtInTitle }) => {
     const { own, shared } = mockShelfCatalog(kind);
-    const { shelf } = await openShelf(task, label, true, "");
+    const { shelf } = await openShelf(task, label, "");
     await within(shelf).findByText(own.title);
     expect(within(shelf).getByText(shared.title)).toBeInTheDocument();
     expect(within(shelf).getByText(builtInTitle)).toBeInTheDocument();
     expect(
       within(shelf).queryByText("My document template"),
     ).not.toBeInTheDocument();
-    expect(within(shelf).queryByText("Legacy deck")).not.toBeInTheDocument();
     const otherKind = kind === "presentation" ? "illustration" : "presentation";
     expect(
       within(shelf).queryByText(template(otherKind).title),
@@ -233,7 +221,6 @@ test.each([
     await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.CustomTemplates]: true },
     });
     const editor = await findComposerEditor();
     await fill(editor, "Keep my launch brief /");
@@ -283,31 +270,6 @@ test.each([
         return part.type === "additional_info" ? [part.text] : [];
       }),
     ).toStrictEqual(instructions);
-  },
-);
-
-test.each(SHELVES)(
-  "$task keeps its existing catalog when Custom is disabled",
-  async ({ task, kind, label, builtInTitle }) => {
-    mockTemplateChat();
-    context.mocks.api(userTemplatesContract.list, () => {
-      throw new Error("A disabled custom catalog must not be requested");
-    });
-    const legacy = createUploadedTemplate({
-      id: "55555555-5555-4555-8555-555555555555",
-      title: "Existing uploaded deck",
-      canManage: true,
-    });
-    mockPresentationTemplateLibrary([legacy]);
-
-    const { shelf } = await openShelf(task, label, false);
-    expect(
-      within(shelf).queryByLabelText("Import your own"),
-    ).not.toBeInTheDocument();
-    expect(within(shelf).getByText(builtInTitle)).toBeInTheDocument();
-    if (kind === "presentation") {
-      await within(shelf).findByText(legacy.title);
-    }
   },
 );
 
@@ -493,12 +455,11 @@ test("A late document catalog and later refresh preserve an explicit category ch
   expect(within(shelf).queryByText("Initial document")).not.toBeInTheDocument();
 });
 
-test("Custom alone enables the Document task and sends the selected custom reference", async () => {
+test("Document uses custom templates when built-in documents are disabled", async () => {
   const { capture, own } = mockShelfCatalog("document");
   const { editor, shelf } = await openShelf(
     "Document",
     "Document templates",
-    true,
     "Keep my launch brief",
     false,
   );
@@ -534,7 +495,6 @@ test.each(["shelf", "picker"] as const)(
     const { shelf } = await openShelf(
       "Document",
       "Document templates",
-      true,
       "",
       false,
     );

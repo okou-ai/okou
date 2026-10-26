@@ -1,110 +1,13 @@
 import { testContext } from "./test-helpers.ts";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { setupPage, startPage } from "../../__tests__/page-helper.ts";
-import {
-  AGENT_ID,
-  createChatComposerHelpers,
-} from "../../views/okou-page/__tests__/chat-composer-test-helpers.ts";
 import { bootstrapSkeleton } from "../../test/bootstrap-skeleton.ts";
-import { clickComposerAddMenuItem } from "../../views/okou-page/__tests__/chat-composer-add-menu-test-helpers.ts";
 
 const context = testContext();
-const { mockAgent, mockPersonalModelRoutes } =
-  createChatComposerHelpers(context);
-
-const CUSTOMER_ORG_ID = "org_customer_workspace";
-
-async function openTemplates() {
-  await clickComposerAddMenuItem("Template");
-  await screen.findByRole("dialog");
-}
-
-test("A signed-in workspace receives its enabled features", async () => {
-  mockPersonalModelRoutes();
-  mockAgent();
-
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.CustomTemplates]: true,
-    },
-  });
-
-  await screen.findByRole("textbox", { name: "Message" });
-  await openTemplates();
-  await waitFor(() => {
-    expect(customTemplatesSection()).toBeVisible();
-  });
-});
-
-// The workspace response cannot evaluate an email allowlist, so the email
-// defaults are reapplied on top of it. Custom templates own that allowlist.
-async function setupEmailRolloutPage(args: {
-  readonly email: string;
-  readonly fullName: string;
-  readonly userId: string;
-}) {
-  mockPersonalModelRoutes();
-  mockAgent();
-  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
-    return respond(200, {
-      switches: {},
-      effectiveSwitches: {
-        [FeatureSwitchKey.CustomTemplates]: false,
-      },
-    });
-  });
-
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    auth: {
-      user: { id: args.userId, fullName: args.fullName, email: args.email },
-      organization: {
-        activeOrg: { id: CUSTOMER_ORG_ID, name: "Customer" },
-        memberships: [{ id: CUSTOMER_ORG_ID }],
-      },
-    },
-  });
-
-  // Routes start only after the workspace feature response has been applied,
-  // so reaching the composer already proves the server payload landed and the
-  // email defaults were reapplied on top of it.
-  await screen.findByRole("textbox", { name: "Message" });
-  await openTemplates();
-}
-
-function customTemplatesSection(): HTMLElement | null {
-  return screen.queryByRole("region", { name: "Custom" });
-}
-
-test("Bingjie retains the custom template rollout after feature loading", async () => {
-  await setupEmailRolloutPage({
-    email: "BINGJIE@OKOU.AI",
-    fullName: "Bingjie",
-    userId: "user_bingjie",
-  });
-
-  await waitFor(() => {
-    expect(customTemplatesSection()).toBeVisible();
-  });
-});
-
-test("another member does not receive the custom template rollout", async () => {
-  await setupEmailRolloutPage({
-    email: "ethan@okou.ai",
-    fullName: "Another member",
-    userId: "user_other_member",
-  });
-
-  expect(customTemplatesSection()).not.toBeInTheDocument();
-});
-
 test("A signed-out page does not load workspace features", async () => {
   let workspaceFeatureRequested = false;
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
