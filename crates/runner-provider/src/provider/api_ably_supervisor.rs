@@ -33,7 +33,9 @@ use super::connector_runtime_sync::ConnectorRuntimeSyncHandle;
 use super::{RunnerPreferenceContext, parse_runner_preference};
 use crate::active_input::ActiveInputNotifications;
 use crate::duration::duration_ms;
-use crate::run_cancellation::{RunCancellationHandle, RunCancellationRegistry};
+use crate::run_cancellation::{
+    RunCancellationHandle, RunCancellationMode, RunCancellationRegistry,
+};
 use runner_types::ids::RunId;
 use runner_types::types::ConnectorRuntimeTarget;
 
@@ -972,15 +974,9 @@ fn log_direct_candidate_pruned(
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum CancelNotificationMode {
-    Cooperative,
-    Hard,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CancelNotification {
     run_id: RunId,
-    mode: CancelNotificationMode,
+    mode: RunCancellationMode,
 }
 
 async fn prepare_cancel_delivery(
@@ -1011,11 +1007,11 @@ async fn deliver_cancel_notification(
 ) {
     let run_id = notification.run_id;
     match notification.mode {
-        CancelNotificationMode::Cooperative => {
+        RunCancellationMode::Cooperative => {
             info!(run_id = %run_id, "ably: cancel notification, requesting cooperative cancellation");
             handle.request_cooperative_user_cancellation().await;
         }
-        CancelNotificationMode::Hard => {
+        RunCancellationMode::Hard => {
             info!(run_id = %run_id, "ably: cancel notification, requesting hard cancellation");
             handle.request_hard_cancellation().await;
         }
@@ -1036,20 +1032,20 @@ fn parse_cancel_notification(msg: &ably_subscriber::Message) -> Option<CancelNot
     };
     let mode = match msg.data.get("mode") {
         Some(serde_json::Value::String(mode)) if mode == "cooperative" => {
-            CancelNotificationMode::Cooperative
+            RunCancellationMode::Cooperative
         }
-        Some(serde_json::Value::String(mode)) if mode == "hard" => CancelNotificationMode::Hard,
+        Some(serde_json::Value::String(mode)) if mode == "hard" => RunCancellationMode::Hard,
         Some(mode) => {
             warn!(
                 run_id = %run_id,
                 mode = %mode,
                 "ably: unknown cancel mode, using hard cancellation"
             );
-            CancelNotificationMode::Hard
+            RunCancellationMode::Hard
         }
         // Default to hard cancellation when the API omits the mode so a
         // malformed or stale notification still stops the run safely.
-        None => CancelNotificationMode::Hard,
+        None => RunCancellationMode::Hard,
     };
     Some(CancelNotification { run_id, mode })
 }
@@ -2632,6 +2628,6 @@ mod tests {
             notification.run_id.to_string(),
             "00000000-0000-0000-0000-000000000002"
         );
-        assert_eq!(notification.mode, CancelNotificationMode::Cooperative);
+        assert_eq!(notification.mode, RunCancellationMode::Cooperative);
     }
 }
