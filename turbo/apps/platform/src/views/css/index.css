@@ -729,6 +729,23 @@ body {
    (OKLab ΔE 4.6 / 3.8 in light, 3.4 / 2.9 in dark), so every palette's
    ambient light is equally visible instead of scaling with how dark its
    anchor happens to be. */
+/* Caramel, not amber: an amber anchor lands within ΔE 2 (OKLab) of the
+   product's own Amber brand stop and would duplicate Default. */
+[data-color-theme="golden-hour"] {
+  --okou-color-theme-primary: 33.1 74.6% 41.9%;
+  --okou-color-theme-primary-foreground: 0 0% 100%;
+  --okou-color-theme-primary-dark: var(--okou-color-theme-primary);
+  --okou-color-theme-primary-dark-foreground: 0 0% 100%;
+  --okou-color-theme-anchor: hsl(var(--okou-color-theme-primary));
+  --okou-color-theme-companion: #f4e33c;
+  --okou-color-theme-hue: 33.1;
+  --okou-color-theme-ring: 33.1 60% 48%;
+  --okou-color-theme-ambient-anchor: 11.3%;
+  --okou-color-theme-ambient-companion: 15.6%;
+  --okou-color-theme-ambient-anchor-dark: 9%;
+  --okou-color-theme-ambient-companion-dark: 3.9%;
+}
+
 [data-color-theme="citrus-spark"] {
   --okou-color-theme-primary: 54.5 89.3% 59.6%;
   --okou-color-theme-primary-foreground: 40 4.3% 13.5%;
@@ -744,9 +761,9 @@ body {
   --okou-color-theme-ambient-companion-dark: 4.5%;
 }
 
-/* Raspberry rather than a pure red: at 1.6deg the fill sat 11deg of OKLCH hue
-   from the destructive and interrupt corals, so every primary action read as
-   a delete. */
+/* Raspberry, not a pure red: a red anchor lands within about 11deg of OKLCH
+   hue of the destructive and interrupt corals, and every primary action would
+   read as a delete. */
 [data-color-theme="berry-blush"] {
   --okou-color-theme-primary: 342 62% 47%;
   --okou-color-theme-primary-foreground: 0 0% 100%;
@@ -792,8 +809,7 @@ body {
   --okou-color-theme-ambient-companion-dark: 4.4%;
 }
 
-/* Lifted from 74.1% to 78%: at 74% neither label cleared Lc 60 (white 50,
-   Ink 55). */
+/* 78% lightness: around 74% neither label clears Lc 60 (white 50, Ink 55). */
 [data-color-theme="daydream"] {
   --okou-color-theme-primary: 221.2 77.3% 78%;
   --okou-color-theme-primary-foreground: 40 4.3% 13.5%;

@@ -232,11 +232,6 @@ brand fill, which is correct, because the default state has no second colour and
 no gradient to show. The picker marks the selected option with its ring border
 and a check only, so no option's selected card reads heavier than another's.
 
-`golden-hour` is retired from the picker: its anchor sat ΔE 1.8 from the
-product's own Amber, so it duplicated Default. Members who chose it keep the
-stored value, which the API contract still accepts, and `colorTheme$` resolves
-it to the default palette, so they see Default selected.
-
 When a preset carries the palette attributes on the document, each preset's HSL primary
 value supplies both its anchor color and the shared `--primary` token. Primary
 actions, including portaled dialog buttons, immediately use that fill and the

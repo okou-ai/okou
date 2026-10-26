@@ -51,19 +51,10 @@ export const themePreference$ = computed((get) => {
 });
 
 /**
- * A palette retired from the picker because it duplicated the product's own.
- * Golden hour's anchor sat ΔE 1.8 (OKLab) from the Amber brand stop. Members
- * who chose it keep the stored value, which the preference contract still
- * accepts, and see the default palette it matched.
- */
-const RETIRED_COLOR_THEME: ColorTheme = "golden-hour";
-
-/**
  * User's palette-derived workspace color theme.
  */
 export const colorTheme$ = computed((get) => {
-  const colorTheme = get(internalColorTheme$);
-  return colorTheme === RETIRED_COLOR_THEME ? DEFAULT_COLOR_THEME : colorTheme;
+  return get(internalColorTheme$);
 });
 
 /**

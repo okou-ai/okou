@@ -130,7 +130,7 @@ test("Theme preferences initialize from the shared cookie", async () => {
 test("Cookie theme and account-backed color theme are restored and saved", async () => {
   const updates = mockPreferences({
     theme: "dark",
-    colorTheme: "citrus-spark",
+    colorTheme: "golden-hour",
   });
   const cookieWrites: string[] = [];
   vi.spyOn(document, "cookie", "set").mockImplementation((value) => {
@@ -149,7 +149,7 @@ test("Cookie theme and account-backed color theme are restored and saved", async
   ).resolves.toBeVisible();
   const colorTheme = await screen.findByRole("group", { name: "Color theme" });
   expectSelected(getFastRole("button", "Light"));
-  expectSelected(getFastRole("button", "Citrus spark", colorTheme));
+  expectSelected(getFastRole("button", "Golden hour", colorTheme));
 
   click(getFastRole("button", "Dark"));
 
@@ -185,7 +185,7 @@ test("Cookie theme and account-backed color theme are restored and saved", async
   expect(cookieWrites).toContain(
     "__Secure-okou-theme=v1.dark; Domain=.okou.ai; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
   );
-  expect(cookieWrites.join("\n")).not.toMatch(/citrus-spark|deep-lagoon/u);
+  expect(cookieWrites.join("\n")).not.toMatch(/golden-hour|deep-lagoon/u);
 });
 
 test("A workspace without a saved color theme starts on the default palette", async () => {
@@ -206,38 +206,16 @@ test("A workspace without a saved color theme starts on the default palette", as
 
   // An absent palette stays absent until the member picks one, so the first
   // palette this workspace records is the one they click.
-  click(getFastRole("button", "Berry blush", colorTheme));
+  click(getFastRole("button", "Golden hour", colorTheme));
 
   await waitFor(() => {
-    expectSelected(getFastRole("button", "Berry blush", colorTheme));
+    expectSelected(getFastRole("button", "Golden hour", colorTheme));
   });
   expect(
     updates.filter((update) => {
       return update.colorTheme !== undefined;
     }),
-  ).toStrictEqual([{ colorTheme: "berry-blush" }]);
-});
-
-test("A member who chose the retired Golden hour palette sees the default palette", async () => {
-  const updates = mockPreferences({ colorTheme: "golden-hour" });
-
-  await setupPage({
-    context,
-    path: "/settings",
-    host: "app.okou.ai",
-  });
-
-  const colorTheme = await screen.findByRole("group", { name: "Color theme" });
-  expectSelected(getFastRole("button", "Default", colorTheme));
-  expect(document.documentElement).not.toHaveAttribute("data-color-theme");
-  expect(document.documentElement).not.toHaveAttribute(
-    "data-gradient-color-themes",
-  );
-  expect(
-    updates.filter((update) => {
-      return update.colorTheme !== undefined;
-    }),
-  ).toStrictEqual([]);
+  ).toStrictEqual([{ colorTheme: "golden-hour" }]);
 });
 
 test("Chat settings select models without changing the current model's options", async () => {

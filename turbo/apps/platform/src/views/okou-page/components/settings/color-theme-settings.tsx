@@ -36,6 +36,12 @@ function useColorThemeOptions(): readonly ColorThemeOption[] {
       }),
     },
     {
+      value: "golden-hour",
+      label: t(($) => {
+        return $.settings.preferences.appearance.colorTheme.options.goldenHour;
+      }),
+    },
+    {
       value: "citrus-spark",
       label: t(($) => {
         return $.settings.preferences.appearance.colorTheme.options.citrusSpark;
