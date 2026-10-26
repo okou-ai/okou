@@ -1909,15 +1909,7 @@ async def request(flow: http.HTTPFlow) -> None:
                 terminal_usage.release_tracked_flow(flow)
             elif auth_result is FirewallAuthHandlingResult.CONTINUE_UPSTREAM:
                 if allow.name == data_router.OWNER:
-                    await data_router.register_request(flow)
-                    if not _revalidate_current_firewall_authorization_for_request(
-                        flow,
-                        allow,
-                        expected_run_id=expected_run_id,
-                        expected_request=expected_request,
-                    ):
-                        terminal_usage.release_tracked_flow(flow)
-                        return
+                    data_router.prepare_request(flow)
                 await _prepare_codex_catalog_request_with_upstream_revalidation(
                     flow,
                     allow,
@@ -2211,6 +2203,15 @@ def _handle_response(flow: http.HTTPFlow) -> Awaitable[None] | None:
     firewall_action = flow_metadata.firewall_action(flow.metadata)
 
     connector_diagnostics.maybe_replace_response(flow, original_url=original_url)
+    if flow_metadata.firewall_name(flow.metadata) == data_router.OWNER:
+        return _finish_response_after_terminal_work(
+            flow,
+            data_router.register_response(flow),
+            run_id=run_id,
+            latency_ms=latency_ms,
+            original_url=original_url,
+            firewall_action=firewall_action,
+        )
     validation = codex_model_catalog_cache.finalize_response(flow)
     if validation is not None:
         return _finish_response_after_terminal_work(

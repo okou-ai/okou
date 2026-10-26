@@ -63,7 +63,7 @@ test("expired website sessions offer a fresh authorization for the original path
   expect(action("button", "Switch account")).toBeEnabled();
 });
 
-test("a denied website uses the artifact recovery actions", async () => {
+test("a denied website offers account switching and access guidance", async () => {
   await setupPage({ context, host: "app.okou.ai", path: path("denied") });
   expect(
     screen.getByRole("heading", { name: "You can’t view this website" }),
@@ -75,7 +75,7 @@ test("a denied website uses the artifact recovery actions", async () => {
   ).toBeInTheDocument();
 });
 
-test("dependency failures remain visible without claiming an access denial", async () => {
+test("dependency failures explain temporary website unavailability", async () => {
   await setupPage({ context, host: "app.okou.ai", path: path("unavailable") });
   expect(
     screen.getByRole("heading", {
@@ -92,7 +92,7 @@ test.each([
   `https://pv-${"a".repeat(48)}.okou.app/`,
   "https://demo.okou.app/.okou/auth/callback?code=secret",
 ])(
-  "an invalid authentication target %s cannot become a sign-in destination",
+  "an invalid recovery target %s cannot become a sign-in destination",
   async (url) => {
     await setupPage({
       context,

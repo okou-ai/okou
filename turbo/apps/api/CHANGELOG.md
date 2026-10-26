@@ -9,6 +9,39 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.13.1](https://github.com/okou-ai/okou/compare/api-v2.13.0...api-v2.13.1) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.1
+    * @okouai/core bumped to 8.791.1
+    * @okouai/db bumped to 2.6.3
+    * @okouai/pi-agent-runtime bumped to 1.50.78
+
+## [2.13.0](https://github.com/okou-ai/okou/compare/api-v2.12.0...api-v2.13.0) (2026-10-26)
+
+
+### Features
+
+* **slack:** enable workspace identity by default ([#43130](https://github.com/okou-ai/okou/issues/43130)) ([8973aac](https://github.com/okou-ai/okou/commit/8973aacb5a62e2a072b9dcd7669135813960110d))
+
+
+### Refactoring
+
+* decouple suggestions from proactive agent ([#43143](https://github.com/okou-ai/okou/issues/43143)) ([dc2aa55](https://github.com/okou-ai/okou/commit/dc2aa5555eb6930828b7dd4ddf47d8e3b8379da2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.791.0
+    * @okouai/db bumped to 2.6.2
+    * @okouai/pi-agent-runtime bumped to 1.50.77
+
 ## [2.12.0](https://github.com/okou-ai/okou/compare/api-v2.11.0...api-v2.12.0) (2026-10-26)
 
 

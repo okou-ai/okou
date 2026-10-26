@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.237.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.8...runner-rs-v0.237.9) (2026-10-26)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.237.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.7...runner-rs-v0.237.8) (2026-10-26)
+
+
+### Performance Improvements
+
+* **runner:** bound catalog etag acquisition before conversion ([#43133](https://github.com/okou-ai/okou/issues/43133)) ([39697fc](https://github.com/okou-ai/okou/commit/39697fcccf62f713d93ba37b7df46bbf38fe9da8))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.237.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.6...runner-rs-v0.237.7) (2026-10-26)
 
 

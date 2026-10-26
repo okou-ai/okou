@@ -91,6 +91,17 @@ type BoundedRequestCallback = (
   },
 ) => void;
 
+export interface SlackFixtureIdentity {
+  readonly id: string;
+  readonly team_id: string;
+  readonly real_name: string;
+  readonly profile: {
+    readonly email?: string;
+    readonly display_name: string;
+  };
+  readonly is_bot?: boolean;
+}
+
 export interface ApiTestMocks {
   readonly clerkRetryJitter: (value: number) => () => void;
   readonly abortSignal: {
@@ -208,6 +219,7 @@ export interface ApiTestMocks {
     };
     readonly users: {
       readonly info: AsyncMock;
+      readonly identities: Map<string, SlackFixtureIdentity>;
     };
     readonly fetchFile: AsyncMock;
   };
@@ -430,6 +442,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
     },
     users: {
       info: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+      identities: new Map<string, SlackFixtureIdentity>(),
     },
     fetchFile: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   };
@@ -1191,6 +1204,7 @@ vi.mock("@slack/web-api", () => {
         },
         users: {
           info: apiTestMocks.slack.users.info,
+          identities: apiTestMocks.slack.users.identities,
         },
       };
       return client;
@@ -1512,6 +1526,7 @@ export function resetApiTestMocks(): void {
   apiTestMocks.slack.views.publish.mockReset();
   apiTestMocks.slack.views.open.mockReset();
   apiTestMocks.slack.users.info.mockReset();
+  apiTestMocks.slack.users.identities.clear();
   apiTestMocks.slack.fetchFile.mockReset();
   apiTestMocks.stripe.paymentMethods.list.mockReset();
   apiTestMocks.stripe.paymentMethods.list.mockResolvedValue({ data: [] });

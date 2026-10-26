@@ -12,6 +12,44 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1066.2](https://github.com/okou-ai/okou/compare/app-v0.1066.1...app-v0.1066.2) (2026-10-26)
+
+
+### Bug Fixes
+
+* **app:** remove retry links from website access errors ([#43149](https://github.com/okou-ai/okou/issues/43149)) ([be4d917](https://github.com/okou-ai/okou/commit/be4d9177193837325b15d315967bc5254dd3054d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.1
+    * @okouai/core bumped to 8.791.1
+
+## [0.1066.1](https://github.com/okou-ai/okou/compare/app-v0.1066.0...app-v0.1066.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **app:** align chat replies and share selection on one reading edge ([#43141](https://github.com/okou-ai/okou/issues/43141)) ([d2f4c35](https://github.com/okou-ai/okou/commit/d2f4c35aea564157e85b2a8f90e161a7e2587807))
+* **app:** fall back to iframes for missing site covers ([#43140](https://github.com/okou-ai/okou/issues/43140)) ([faa802e](https://github.com/okou-ai/okou/commit/faa802e4e8fe7ae3276e5223b3d69e03304a4504))
+* **app:** let the model panel list scroll out at its edges ([#43146](https://github.com/okou-ai/okou/issues/43146)) ([4d7a4cf](https://github.com/okou-ai/okou/commit/4d7a4cfaadec83f9cf9d3e154dbee1530b03246d))
+* **app:** rebalance color themes for contrast, ambience and neutrals ([#43137](https://github.com/okou-ai/okou/issues/43137)) ([fc129c2](https://github.com/okou-ai/okou/commit/fc129c2c83043e1fdc565fc2987c8b3396714f47))
+* **app:** replace the works phone number with a description ([#43139](https://github.com/okou-ai/okou/issues/43139)) ([5087825](https://github.com/okou-ai/okou/commit/5087825c874cbad399da321657cd16f2bffd384a))
+
+
+### Refactoring
+
+* decouple suggestions from proactive agent ([#43143](https://github.com/okou-ai/okou/issues/43143)) ([dc2aa55](https://github.com/okou-ai/okou/commit/dc2aa5555eb6930828b7dd4ddf47d8e3b8379da2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.791.0
+
 ## [0.1066.0](https://github.com/okou-ai/okou/compare/app-v0.1065.0...app-v0.1066.0) (2026-10-26)
 
 

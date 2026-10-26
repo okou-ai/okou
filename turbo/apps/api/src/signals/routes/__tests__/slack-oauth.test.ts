@@ -10,6 +10,7 @@ import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-conn
 import { slackConnectRoutes } from "../slack-connect";
 import { createRouteMocks } from "./helpers/route-test";
 import { uniqueSlackUserId } from "./helpers/slack-public-install";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const API_ORIGIN = "https://api.okou.ai";
@@ -423,6 +424,11 @@ describe("GET /api/integrations/slack/oauth/callback", () => {
       fixture.userId,
       fixture.orgId,
       "org:member",
+    );
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: fixture.userId, orgId: fixture.orgId, orgRole: "org:member" },
+      { slackWorkspaceIdentity: false },
     );
     const memberConnect = await accept(
       setupApp({ context, routes: slackConnectRoutes })(

@@ -1,5 +1,26 @@
 # Changelog
 
+## [8.791.1](https://github.com/okou-ai/okou/compare/core-v8.791.0...core-v8.791.1) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.1
+
+## [8.791.0](https://github.com/okou-ai/okou/compare/core-v8.790.3...core-v8.791.0) (2026-10-26)
+
+
+### Features
+
+* **slack:** enable workspace identity by default ([#43130](https://github.com/okou-ai/okou/issues/43130)) ([8973aac](https://github.com/okou-ai/okou/commit/8973aacb5a62e2a072b9dcd7669135813960110d))
+
+
+### Refactoring
+
+* decouple suggestions from proactive agent ([#43143](https://github.com/okou-ai/okou/issues/43143)) ([dc2aa55](https://github.com/okou-ai/okou/commit/dc2aa5555eb6930828b7dd4ddf47d8e3b8379da2))
+
 ## [8.790.3](https://github.com/okou-ai/okou/compare/core-v8.790.2...core-v8.790.3) (2026-10-26)
 
 

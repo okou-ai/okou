@@ -54,6 +54,9 @@ cache-policy inspection also bounds field traversal and stops at the first unsaf
 Policy exhaustion follows the same storage-bypass lifecycle without rewriting the response.
 Vary presence rejects storage using only raw field names, without inspecting values;
 the preceding encoding and cache-policy gates bound this field traversal.
+Ordinary catalog ETag acquisition checks 8,192 fields and an 8 KiB raw singleton
+before conversion, then retains the 512-byte limit on the trimmed UTF-8 validator.
+Missing, duplicate or exhausted acquisition uses the same storage-bypass lifecycle.
 Ordinary owners require identity responses. Prefetch owners request Brotli; for an eligible
 Brotli response, the compressed stream passes downstream unchanged while validation decodes
 the bounded capture. A successful response to an authenticated Codex Responses request can
@@ -125,6 +128,8 @@ _RAW_ACCEPT_ENCODING = b"accept-encoding"
 _MAX_ACCEPT_ENCODING_VALUE_BYTES = 64 * 1024
 _MAX_RESPONSE_CACHE_POLICY_FIELDS = 8 * 1024
 _MAX_RESPONSE_CACHE_POLICY_VALUE_BYTES = 8 * 1024
+_MAX_RESPONSE_ETAG_FIELDS = 8 * 1024
+_MAX_RESPONSE_ETAG_VALUE_BYTES = 8 * 1024
 _MAX_MODELS_ETAG_FIELDS = 8 * 1024
 _MAX_MODELS_ETAG_VALUE_BYTES = 8 * 1024
 _MAX_ETAG_BYTES = 512
@@ -435,10 +440,15 @@ def _usable_etag_value(value: str) -> str | None:
 
 
 def _single_usable_etag(headers: http.Headers) -> str | None:
-    values = headers.get_all("ETag")
-    if len(values) != 1:
+    raw_value = http_header_syntax.single_header_value(
+        headers.fields,
+        b"etag",
+        max_fields=_MAX_RESPONSE_ETAG_FIELDS,
+        max_value_bytes=_MAX_RESPONSE_ETAG_VALUE_BYTES,
+    )
+    if raw_value is None:
         return None
-    return _usable_etag_value(values[0])
+    return _usable_etag_value(raw_value.decode("utf-8", "surrogateescape"))
 
 
 def _single_content_encoding(values: tuple[str, ...]) -> str | None:
