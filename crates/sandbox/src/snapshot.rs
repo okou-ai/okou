@@ -40,6 +40,27 @@ pub struct SnapshotCreateConfig {
     /// Path to the root filesystem image.
     pub rootfs_path: PathBuf,
     /// Directory where snapshot artifacts will be written.
+    ///
+    /// With the Firecracker provider, the caller must hold exclusive access to
+    /// this directory, coordinated with other builders, snapshot consumers,
+    /// and cleanup through the existing snapshot lock or equivalent. Neither
+    /// the provider nor its convenience creation helpers acquire this
+    /// coordination. A unique [`id`](Self::id) isolates runtime socket paths,
+    /// not a shared output directory.
+    ///
+    /// Acquire exclusivity before creation and retain it throughout the call.
+    /// When using [`SnapshotProvider::create_uncommitted_snapshot`], retain it
+    /// until [`PendingSnapshotPublish::commit`] succeeds or an explicit
+    /// [`PendingSnapshotPublish::discard`] finishes. If publication or discard
+    /// continues after the waiting task is cancelled, its coordination must
+    /// remain held until that work finishes; the provider does not shield the
+    /// caller's publication task from cancellation.
+    ///
+    /// Firecracker creation removes the existing completion marker, work
+    /// directory, and snapshot-specific artifacts before rebuilding, while
+    /// preserving unrelated files. Callers must not rely on an old complete
+    /// snapshot surviving a failed rebuild; treat the attempted output as
+    /// incomplete.
     pub output_dir: PathBuf,
     /// Number of vCPUs for the VM.
     pub vcpu_count: u32,
@@ -149,6 +170,9 @@ pub trait SnapshotProvider: Send + Sync {
     ///
     /// The pending object represents the boundary after provider runtime
     /// resources have been cleaned up and before the snapshot is made reusable.
+    /// Observe the provider-specific output ownership and replacement contract
+    /// on [`SnapshotCreateConfig::output_dir`], including coordination through
+    /// commit or explicit discard.
     async fn create_uncommitted_snapshot(
         &self,
         config: SnapshotCreateConfig,
@@ -161,6 +185,8 @@ pub trait SnapshotProvider: Send + Sync {
     /// [`create_uncommitted_snapshot`](Self::create_uncommitted_snapshot),
     /// then commits the returned [`PendingSnapshotPublish`]. It returns the
     /// stable output paths only after the pending publish commits successfully.
+    /// The same provider-specific output ownership and replacement contract on
+    /// [`SnapshotCreateConfig::output_dir`] applies throughout this call.
     ///
     /// If the pending publish commit fails, the default implementation calls
     /// [`PendingSnapshotPublish::discard`] best-effort and returns the original

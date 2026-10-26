@@ -17,6 +17,12 @@ use super::{SnapshotError, create_uncommitted_snapshot};
 /// validation. Other [`SnapshotProvider`] implementations may impose different
 /// requirements on the same provider-neutral configuration type.
 ///
+/// Creation requires the caller-controlled exclusive output access documented
+/// on [`SnapshotCreateConfig::output_dir`], including its destructive replacement
+/// and publication/discard lifetime requirements. This provider does not acquire
+/// the snapshot lock or equivalent coordination for the caller. Both
+/// [`SnapshotProvider`] creation methods follow that contract.
+///
 /// Stateless — can be created with zero cost and used immediately.
 pub struct FirecrackerSnapshotProvider;
 
