@@ -113,7 +113,7 @@ async fn active_check_is_fresh_has_no_channels_and_preserves_operational_history
 }
 
 #[tokio::test]
-async fn active_check_denied_before_target_io_without_feature_or_execution_authority() {
+async fn active_check_denied_before_target_io_without_diagnostic_or_execution_authority() {
     let mut h = Harness::new(Reply::default()).await;
     let request = || {
         json!({"version":1,"method":"ssh.check","remaining_ms":10000,"params":{"connectionId":CONNECTION}}).to_string()

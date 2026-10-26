@@ -12,10 +12,6 @@ pub(crate) fn diagnostic_context_for_test(run_id: RunId, token: &str) -> Executi
     context
         .platform_environment
         .insert("OKOU_TOKEN".into(), token.into());
-    context.feature_flags = Some(HashMap::from([(
-        "remoteConnectionDiagnostics".into(),
-        true,
-    )]));
     context
 }
 
