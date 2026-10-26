@@ -13,6 +13,11 @@ on:
     workflows: [iOS]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      package_compiler_probe:
+        description: Inspect native SwiftPM compiler cache support
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -28,6 +33,29 @@ env:
   GIT_CONFIG_VALUE_0: HTTP/1.1
 
 jobs:
+  package-compiler-probe:
+    if: github.event_name == 'workflow_dispatch' && inputs.package_compiler_probe
+    runs-on: xcode-27
+    timeout-minutes: 5
+    steps:
+      - name: Read SwiftPM and compiler capabilities
+        run: |
+          mkdir "$RUNNER_TEMP/package-compiler-probe"
+          xcrun swift --version > "$RUNNER_TEMP/package-compiler-probe/swift-version.txt"
+          xcrun swift test --help > "$RUNNER_TEMP/package-compiler-probe/swift-test-help.txt"
+          xcrun swiftc -help-hidden > "$RUNNER_TEMP/package-compiler-probe/swiftc-help.txt"
+          xcrun clang -cc1 -help > "$RUNNER_TEMP/package-compiler-probe/clang-help.txt"
+          xcrun --sdk macosx --show-sdk-build-version > "$RUNNER_TEMP/package-compiler-probe/macos-sdk-build.txt"
+          xcodebuild -version > "$RUNNER_TEMP/package-compiler-probe/xcode-version.txt"
+          sw_vers > "$RUNNER_TEMP/package-compiler-probe/macos-version.txt"
+      - name: Upload compiler capability evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: package-compiler-probe-${{ github.run_id }}
+          path: ${{ runner.temp }}/package-compiler-probe
+          if-no-files-found: error
+          retention-days: 1
+
   detect:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
