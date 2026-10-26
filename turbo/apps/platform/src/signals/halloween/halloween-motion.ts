@@ -36,9 +36,9 @@ export const halloweenStageMotion$ = onRef(
       element.querySelectorAll<HTMLElement>("[data-beam]"),
     ).map((beam, index) => {
       return beam.animate(
-        [{ transform: "rotate(-18deg)" }, { transform: "rotate(18deg)" }],
+        [{ transform: "rotate(-8deg)" }, { transform: "rotate(8deg)" }],
         {
-          duration: index === 2 ? 12_500 : 9000,
+          duration: index === 2 ? 22_000 : 16_000,
           delay: -index * 5000,
           direction: index === 1 ? "alternate-reverse" : "alternate",
           iterations: Infinity,
@@ -51,11 +51,11 @@ export const halloweenStageMotion$ = onRef(
     ).map((art, index) => {
       return art.animate(
         [
-          { transform: "translate(-8px, 12px) rotate(-9deg)" },
-          { transform: "translate(14px, -20px) rotate(10deg)" },
+          { transform: "translate(-4px, 6px) rotate(-6deg)" },
+          { transform: "translate(6px, -8px) rotate(6deg)" },
         ],
         {
-          duration: 9000 + (index % 3) * 1500,
+          duration: 14_000 + (index % 3) * 1800,
           delay: -index * 1800,
           direction: "alternate",
           iterations: Infinity,

@@ -111,7 +111,7 @@ function getInternalAllowedLiterals() {
       "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
     ],
     [
-      "src/signals/halloween/halloween-content.ts\u0000Four right answers. One sweet finale. 🎃✨",
+      "src/signals/halloween/halloween-content.ts\u0000Four right answers. One sweet finale.",
       "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
     ],
     [

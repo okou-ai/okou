@@ -39,35 +39,36 @@ function StartScreen() {
         ? copy.upcomingSub
         : copy.unavailableSub;
   return (
-    <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-[22px] py-7 pb-[55px] text-center md:px-6 md:pt-6">
-      <h1 className="mb-[30px] mt-[18px] text-[43px] font-bold leading-[1.22] tracking-[-.045em] text-[#f1f5ff] [text-shadow:0_3px_30px_#0005] md:text-[64px]">
+    <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-14 pb-20 text-center md:py-20 md:pb-24">
+      <h1 className="mb-9 max-w-[900px] text-balance text-[42px] font-medium leading-[1.14] tracking-[-.045em] text-[#f6f3ed] md:text-[68px]">
         {open ? (
           <>
             {copy.title}
-            <br />
-            <span className="text-[#edc987]">{copy.subtitle}</span>
+            <span className="mt-2 block text-[1.03em] font-normal italic tracking-[-.045em] text-[#e8c68d] [font-family:Georgia,'Times_New_Roman',serif]">
+              {copy.subtitle}
+            </span>
           </>
         ) : (
           title
         )}
       </h1>
       {open ? (
-        <p className="mb-[26px] text-sm leading-[1.9] text-[#a9bddd]">
+        <p className="mb-8 text-sm leading-[1.9] text-[#96a5b9]">
           {copy.rewardPrefix}
-          <strong className="text-xl text-[#ebd5a9]">
+          <strong className="text-[17px] font-medium text-[#e8cfaa]">
             {copy.rewardEmphasis}
           </strong>
           <br />
           {copy.review}
         </p>
       ) : (
-        <p className="mb-6 max-w-[600px] text-base leading-relaxed text-[#c7d9fa]">
+        <p className="mb-8 max-w-[560px] text-base leading-relaxed text-[#a9b8ca]">
           {subtitle}
         </p>
       )}
       {open ? (
         <Button
-          className={goldButton}
+          className={cn(goldButton, "min-w-[184px]")}
           pending={operation.state === "loading"}
           onClick={() => {
             detach(start(signal), Reason.DomCallback);
@@ -87,7 +88,7 @@ function StartScreen() {
         </Button>
       )}
       {open && (
-        <p className="mt-5 max-w-[420px] text-[11px] text-[#7f95ba]">
+        <p className="mt-6 max-w-[420px] text-xs leading-relaxed text-[#8292a9]">
           {copy.hint}
         </p>
       )}
@@ -105,10 +106,10 @@ export function HalloweenPage() {
   return (
     <div
       className={cn(
-        "relative isolate flex min-h-full w-full flex-col overflow-hidden text-[#eff3ff] [font-family:Inter,'Segoe_UI',Arial,sans-serif]",
+        "relative isolate flex min-h-full w-full flex-col overflow-hidden text-[#f6f3ed] antialiased [font-family:Geist,system-ui,sans-serif]",
         screen === "result"
-          ? "bg-[radial-gradient(ellipse_at_50%_35%,#17366b,#040b20_80%)]"
-          : "bg-[radial-gradient(ellipse_at_50%_38%,#183b79_0,#0b1d48_38%,#03091d_78%)]",
+          ? "bg-[radial-gradient(ellipse_at_50%_25%,#172c48,#091426_58%,#060d19)]"
+          : "bg-[radial-gradient(ellipse_at_50%_42%,#183452_0,#0c1d34_42%,#060d19_85%)]",
       )}
     >
       {screen !== "result" && <HalloweenStage />}

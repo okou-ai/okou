@@ -21,6 +21,7 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
+import { goldButton } from "./halloween-layout.tsx";
 
 function Confetti() {
   const motion = useSet(halloweenConfetti$);
@@ -55,22 +56,22 @@ function ResultTasks({ won }: { readonly won: boolean }) {
   const prepareReturn = useSet(prepareHalloweenReturn$);
   const icons = [Sparkle, Command, Zap];
   return (
-    <section className="mt-[22px] w-full max-w-[800px] text-left">
-      <div className="mb-5 flex flex-wrap items-baseline justify-center gap-x-[10px] gap-y-[6px] text-center">
+    <section className="mt-8 w-full max-w-[820px] text-left">
+      <div className="mb-5 flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1.5 text-center">
         {won ? (
           <>
-            <h2 className="text-xl font-bold text-[#fff0d4]">
+            <h2 className="text-lg font-medium tracking-tight text-[#e9e8e5]">
               {copy.taskTitle}
             </h2>
-            <p className="text-xs text-[#acbfd8]">{copy.taskSub}</p>
+            <p className="text-[13px] text-[#8e9fb6]">{copy.taskSub}</p>
           </>
         ) : (
-          <p className="text-xs leading-relaxed text-[#acbfd8]">
+          <p className="text-[13px] leading-relaxed text-[#8e9fb6]">
             {copy.optional}
           </p>
         )}
       </div>
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-3 md:gap-4">
         {copy.tasks.map((task, index) => {
           const Icon = icons[index]!;
           return (
@@ -85,18 +86,20 @@ function ResultTasks({ won }: { readonly won: boolean }) {
               onClick={() => {
                 prepareReturn();
               }}
-              className="flex items-start gap-3 rounded-[14px] border border-[#ffffff23] bg-[#ffffff06] p-[14px] text-left transition-all hover:-translate-y-px hover:border-[#eac58a] hover:bg-[#ffffff12] md:flex-col md:px-4 md:py-5"
+              className="group relative flex items-center gap-4 rounded-2xl border border-[#b6cae21c] bg-[linear-gradient(145deg,#ffffff07,#ffffff02)] p-4 pr-9 text-left transition-all duration-200 hover:border-[#d8b77f66] hover:bg-[#ffffff07] motion-safe:hover:-translate-y-0.5 md:flex-col md:items-start md:gap-4 md:rounded-3xl md:p-5"
             >
-              <Icon className="size-6 shrink-0 text-[#ffd280]" />
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-[#e8c68d1a] bg-[#e8c68d08] text-[#dbbc89]">
+                <Icon className="size-[18px]" />
+              </span>
               <div>
-                <h3 className="mb-1 flex items-center gap-1 text-[13px] font-semibold text-[#ffe0a0]">
+                <h3 className="mb-1.5 text-sm font-medium tracking-[-.015em] text-[#e4e8ef] transition-colors group-hover:text-[#e8c68d]">
                   {task.title}
-                  <ArrowUpRight className="size-3 shrink-0" />
                 </h3>
-                <p className="text-[11px] leading-relaxed text-[#acbfd8]">
+                <p className="text-xs leading-relaxed text-[#92a3bb]">
                   {task.text}
                 </p>
               </div>
+              <ArrowUpRight className="absolute right-4 top-4 size-3.5 text-[#71849e] transition-colors group-hover:text-[#e8c68d] md:right-5 md:top-5" />
             </Link>
           );
         })}
@@ -116,30 +119,40 @@ export function HalloweenResultScreen() {
   return (
     <>
       {won && <Confetti />}
-      <main className="relative z-10 mx-auto flex w-[calc(100%-36px)] max-w-[880px] flex-1 flex-col items-center justify-center py-[55px] pb-[45px] text-center md:w-[calc(100%-88px)]">
-        <h1 className="mb-3 text-[34px] font-extrabold leading-[1.15] tracking-[-.035em] text-[#f0d29a] md:text-[46px]">
+      <main className="relative z-10 mx-auto flex w-[calc(100%-40px)] max-w-[880px] flex-1 flex-col items-center justify-center py-10 pb-12 text-center md:w-[calc(100%-96px)]">
+        <div
+          className="mb-6 flex size-14 items-center justify-center rounded-full border border-[#e8c68d33] bg-[radial-gradient(circle_at_50%_0,#e8c68d15,#e8c68d03)] text-[#e8c68d] shadow-[0_0_40px_#e8c68d08]"
+          aria-hidden="true"
+        >
+          {won ? (
+            <Sparkle className="size-6" />
+          ) : (
+            <RotateCcw className="size-5" />
+          )}
+        </div>
+        <h1 className="mb-3 text-balance text-[35px] font-medium leading-[1.15] tracking-[-.04em] text-[#f4f1eb] md:text-[48px]">
           {won ? copy.won : copy.lost}
         </h1>
-        <p className="text-[15px] leading-[1.7] text-[#b3c6e7]">
+        <p className="text-sm leading-relaxed text-[#95a6be]">
           {won ? copy.wonSub : copy.lostSub}
         </p>
         <p
           className={cn(
-            "text-[17px] leading-relaxed text-[#b3c6e7]",
-            won ? "mt-5" : "mb-2 mt-8",
+            "text-[15px] leading-relaxed text-[#95a6be]",
+            won ? "mt-5" : "mt-6",
           )}
         >
-          <strong className="text-[#ffd280]">
+          <strong className="font-medium text-[#e8c68d]">
             {copy.resultRewardEmphasis}
           </strong>
           {copy.resultRewardRest}
         </p>
         <ResultTasks won={won} />
-        <div className="mt-6 flex w-full max-w-[360px] flex-col items-stretch gap-3 md:w-auto md:max-w-none md:flex-row">
+        <div className="mt-7 flex w-full max-w-[360px] flex-col items-stretch gap-3 md:w-auto md:max-w-none md:flex-row">
           <Button
             nativeButton={false}
             render={<Link pathname="/" />}
-            className="h-auto min-h-[50px] gap-2 rounded-xl bg-[#f6a21b] px-[26px] py-[15px] text-[15px] font-semibold text-white shadow-[0_8px_20px_#f6a21b42] hover:-translate-y-px hover:bg-[#f79e0e] hover:shadow-[0_12px_26px_#f6a21b52]"
+            className={goldButton}
             onClick={() => {
               prepareReturn();
             }}
@@ -150,7 +163,7 @@ export function HalloweenResultScreen() {
           {phase === "open" && (
             <Button
               variant="quiet"
-              className="h-auto min-h-[50px] gap-2 rounded-xl border border-[#ffffff30] bg-[#ffffff06] px-[26px] py-[15px] text-[15px] font-semibold text-[#d9e5ff] hover:border-[#eac58a] hover:bg-[#ffffff12] hover:text-[#d9e5ff]"
+              className="h-auto min-h-12 gap-3 rounded-xl border border-[#b4c5dc26] bg-[#ffffff03] px-7 py-3.5 text-sm font-medium text-[#b9c5d6] transition-all duration-200 hover:border-[#e8c68d66] hover:bg-[#ffffff07] hover:text-[#e8c68d]"
               pending={operation.state === "loading"}
               onClick={() => {
                 detach(replay(signal), Reason.DomCallback);
@@ -161,12 +174,12 @@ export function HalloweenResultScreen() {
             </Button>
           )}
         </div>
-        <p className="mt-[14px] text-xs text-[#7d94ba]">
+        <p className="mt-5 text-[11px] leading-relaxed text-[#7b8da5]">
           {copy.footerBefore}
           <Button
             variant="quiet"
             size="sm"
-            className="h-auto rounded-none p-0 text-xs text-inherit underline underline-offset-[3px] hover:bg-transparent hover:text-[#edc987]"
+            className="h-auto rounded-none p-0 text-[11px] text-inherit underline decoration-[#7b8da560] underline-offset-4 hover:bg-transparent hover:text-[#e8c68d]"
             onClick={() => {
               setRules(true);
             }}

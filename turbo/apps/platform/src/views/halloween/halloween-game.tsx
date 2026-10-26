@@ -19,11 +19,11 @@ import { goldButton } from "./halloween-layout.tsx";
 
 function Progress({ round }: { readonly round: HalloweenRound }) {
   return (
-    <aside className="order-first flex items-center justify-between gap-[15px] rounded-lg border border-[#8faace42] bg-[linear-gradient(160deg,#122a50bf,#07142ed9)] px-[14px] py-[10px] shadow-[0_12px_35px_#0003] md:order-last md:flex-col md:items-stretch md:py-5">
-      <h2 className="text-center text-[9px] font-bold tracking-[.23em] text-[#acbbd5]">
+    <aside className="order-first flex items-center justify-between gap-5 rounded-2xl border border-[#a9c1df1c] bg-[linear-gradient(150deg,#ffffff05,#ffffff01)] px-4 py-3 md:order-last md:rounded-3xl md:flex-col md:items-stretch md:p-5">
+      <h2 className="text-xs font-medium text-[#b2bfd0] md:mb-1">
         {copy.climb}
       </h2>
-      <ol className="hidden flex-col-reverse gap-2 md:flex">
+      <ol className="hidden flex-col-reverse gap-1.5 md:flex">
         {copy.levels.map((level, index) => {
           const done = index < round.correct;
           const current = !done && index + 1 === round.questionNumber;
@@ -31,16 +31,16 @@ function Progress({ round }: { readonly round: HalloweenRound }) {
             <li
               key={level}
               className={cn(
-                "flex h-9 items-center gap-[10px] rounded-[3px_10px_3px_10px] border border-[#6b86b14a] bg-[#0a1734] px-[10px] text-[#6e87b1]",
-                current && "border-[#e2bf7a] bg-[#183560] text-[#f5d9a1]",
-                done &&
-                  "border-[#ebcd94] bg-[linear-gradient(110deg,#93723b,#d9bc81)] text-[#17233b]",
+                "flex h-11 items-center gap-3 rounded-lg border border-transparent px-3 text-[#8090a7]",
+                current &&
+                  "border-[#eed2a0] bg-[linear-gradient(120deg,#e7c793,#d5ad70)] text-[#30291e]",
+                done && "border-[#e6c58e14] bg-[#e6c58e07] text-[#c9b28a]",
               )}
             >
-              <span className="min-w-[17px] text-xs font-bold">
+              <span className="min-w-[17px] text-[11px] font-medium tabular-nums opacity-70">
                 {String(index + 1).padStart(2, "0")}
               </span>
-              <span className="text-[9px] leading-tight tracking-[.08em]">
+              <span className="text-[11px] font-medium leading-tight">
                 {level}
               </span>
               {done && <Check className="ml-auto size-[11px] shrink-0" />}
@@ -51,9 +51,11 @@ function Progress({ round }: { readonly round: HalloweenRound }) {
           );
         })}
       </ol>
-      <p className="text-center text-xs text-[#8fa8cf] md:border-t md:border-[#8faace25] md:pt-[5px] md:text-[10px]">
+      <p className="text-xs text-[#8fa0b7] md:border-t md:border-[#a9c1df14] md:pt-4">
         {copy.correct}{" "}
-        <strong className="text-[15px] text-[#f1d39a]">{round.correct}</strong>{" "}
+        <strong className="ml-1 text-base font-medium tabular-nums text-[#ead0a7]">
+          {round.correct}
+        </strong>{" "}
         / 5
       </p>
     </aside>
@@ -72,7 +74,7 @@ function AnswerOptions({
   const signal = useGet(pageSignal$);
   const playSound = useSet(playHalloweenClick$);
   return (
-    <div className="mx-auto flex w-fit min-w-[min(300px,100%)] max-w-full flex-col gap-[10px] md:max-w-[520px]">
+    <div className="mx-auto flex w-full max-w-[540px] flex-col gap-3">
       {round.question?.options.map((option, index) => {
         const selected = round.feedback?.selectedId === option.id;
         return (
@@ -82,23 +84,26 @@ function AnswerOptions({
             disabled={busy || Boolean(round.feedback)}
             aria-pressed={selected}
             className={cn(
-              "relative isolate h-auto min-h-[45px] w-full whitespace-normal rounded-none border-0 bg-[#93afd1] px-12 py-3 text-center text-sm font-normal text-[#dce7ff] [clip-path:polygon(20px_0,calc(100%-20px)_0,100%_50%,calc(100%-20px)_100%,20px_100%,0_50%)] before:absolute before:inset-px before:-z-10 before:bg-[linear-gradient(100deg,#0d2046,#142c57_50%,#0d2046)] before:[clip-path:polygon(19px_0,calc(100%-19px)_0,100%_50%,calc(100%-19px)_100%,19px_100%,0_50%)] hover:-translate-y-px hover:bg-[#e6c78e] hover:text-[#dce7ff] hover:before:bg-[linear-gradient(100deg,#19315e,#25477b,#19315e)] focus-visible:brightness-125 disabled:opacity-100",
+              "relative isolate h-auto min-h-14 w-full whitespace-normal rounded-none border-0 bg-[#8ba6c34d] px-16 py-3.5 text-center text-sm font-normal leading-relaxed text-[#dce4ef] transition-all duration-200 [clip-path:polygon(16px_0,calc(100%-16px)_0,100%_50%,calc(100%-16px)_100%,16px_100%,0_50%)] before:absolute before:inset-px before:-z-10 before:bg-[linear-gradient(110deg,#10243b,#142b45_50%,#10243b)] before:[clip-path:polygon(15px_0,calc(100%-15px)_0,100%_50%,calc(100%-15px)_100%,15px_100%,0_50%)] hover:bg-[#d8b77f] hover:text-[#f3eadb] hover:before:bg-[linear-gradient(110deg,#1d3147,#263e58,#1d3147)] focus-visible:brightness-125 disabled:opacity-100 md:text-[15px]",
               selected &&
                 round.feedback?.correct &&
-                "bg-[#ffe2a5] text-[#fff8e5] before:bg-[linear-gradient(110deg,#775b25,#d1b16e,#775b25)]",
+                "bg-[#dfc089] text-[#f7e5c5] before:bg-[linear-gradient(110deg,#343225,#4b4130,#343225)]",
               selected &&
                 !round.feedback?.correct &&
-                "bg-[#c886a3] text-[#ffe7ef] before:bg-[#572841] before:bg-none",
+                "bg-[#b57b8f] text-[#f5dce5] before:bg-[#432b3b] before:bg-none",
             )}
             onClick={() => {
               detach(playSound(signal), Reason.DomCallback);
               onAnswer(option.id);
             }}
           >
-            <span className="absolute left-[22px] top-1/2 -translate-y-1/2 text-xs font-bold text-[#eac382]">
+            <span className="absolute left-6 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md bg-[#ffffff06] text-[11px] font-medium text-[#dbc39d]">
               {String.fromCharCode(65 + index)}
             </span>
             <span>{option.text}</span>
+            {selected && round.feedback?.correct && (
+              <Check className="absolute right-6 size-4 text-[#e8c68d]" />
+            )}
           </Button>
         );
       })}
@@ -118,9 +123,9 @@ export function HalloweenQuestionScreen() {
   const busy =
     answerOperation.state === "loading" || nextOperation.state === "loading";
   return (
-    <main className="relative z-10 mx-auto grid w-[calc(100%-40px)] max-w-[1080px] flex-1 content-center items-center gap-5 py-6 pb-[38px] md:w-[calc(100%-70px)] md:grid-cols-[minmax(0,1fr)_220px] md:gap-[50px]">
+    <main className="relative z-10 mx-auto grid w-[calc(100%-40px)] max-w-[1064px] flex-1 content-center items-center gap-8 py-8 pb-12 md:w-[calc(100%-96px)] md:grid-cols-[minmax(0,1fr)_224px] md:gap-14 md:py-14">
       <div className="min-w-0 text-center">
-        <p className="mb-[13px] text-[9px] tracking-[.2em] text-[#b49a6c]">
+        <p className="mb-5 text-xs font-medium tracking-[.025em] text-[#b5a07e]">
           {copy.round} {String(round.questionNumber).padStart(2, "0")} ·{" "}
           {copy.roundTitles[round.questionNumber - 1]}
         </p>
@@ -128,7 +133,7 @@ export function HalloweenQuestionScreen() {
           key={round.question.id}
           ref={focusHeading}
           tabIndex={-1}
-          className="mx-auto mb-6 w-fit max-w-[680px] border-y border-[#abc4ed38] bg-[linear-gradient(90deg,transparent,#0b1b3d8c,transparent)] px-[6px] py-4 text-[25px] font-bold leading-[1.3] tracking-tight text-[#f1f5ff] outline-none md:px-[25px] md:text-[32px]"
+          className="mx-auto mb-9 max-w-[640px] text-balance text-[27px] font-medium leading-[1.32] tracking-[-.035em] text-[#f4f1eb] outline-none md:text-[36px]"
         >
           {round.question.text}
         </h1>
@@ -142,24 +147,24 @@ export function HalloweenQuestionScreen() {
         {round.feedback && (
           <div
             role="status"
-            className="mx-auto mt-[18px] w-full max-w-[580px] border-t border-[#a2b9df26] pt-[14px]"
+            className="mx-auto mt-6 w-full max-w-[540px] border-t border-[#a9c1df1c] pt-5"
           >
             <p
               className={cn(
-                "mb-1 text-sm font-semibold",
-                round.feedback.correct ? "text-[#e5ca91]" : "text-[#ffccde]",
+                "mb-1.5 text-sm font-medium",
+                round.feedback.correct ? "text-[#e8c68d]" : "text-[#e8afc5]",
               )}
             >
               {round.feedback.correct ? copy.correct : copy.lost}
             </p>
-            <p className="mb-3 text-xs leading-relaxed text-[#9eb5d9]">
+            <p className="mb-5 text-[13px] leading-relaxed text-[#9aabc1]">
               {round.feedback.explanation}
             </p>
             {round.feedback.correct && (
               <Button
                 className={cn(
                   goldButton,
-                  "mx-auto min-h-10 min-w-[180px] px-[42px] py-[11px] text-[13.5px]",
+                  "mx-auto min-h-11 min-w-[188px] px-6 py-3 text-[13px]",
                 )}
                 pending={nextOperation.state === "loading"}
                 onClick={() => {
@@ -167,7 +172,7 @@ export function HalloweenQuestionScreen() {
                 }}
               >
                 {round.questionNumber === 5 ? copy.result : copy.next}
-                <ArrowRight className="absolute right-[14px] size-4" />
+                <ArrowRight className="size-4" />
               </Button>
             )}
           </div>

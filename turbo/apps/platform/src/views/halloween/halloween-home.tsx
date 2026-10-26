@@ -43,11 +43,11 @@ export function HalloweenHomeSound({
   }
   const control = (
     <Button
-      variant="quiet"
+      variant="neutral"
       size="sm"
       aria-label={sound ? copy.soundOn : copy.soundOff}
       aria-pressed={sound}
-      className="h-auto gap-1 rounded-full border border-[#a9bbd54d] bg-[#172234e8] px-[13px] py-[9px] text-[11px] font-semibold text-[#e7f1ff] hover:bg-[#2b3c55] hover:text-[#e7f1ff]"
+      className="h-8 gap-2 rounded-full px-3 text-[11px] font-medium"
       onClick={() => {
         toggle();
         detach(play(signal), Reason.DomCallback);
@@ -151,7 +151,7 @@ export function HalloweenEntry() {
     >
       <span
         className={cn(
-          "pointer-events-none absolute right-[90px] top-[70px] w-[220px] max-w-[calc(100vw-130px)] whitespace-pre-line text-right text-sm font-semibold leading-[1.5] text-[#573a21] transition-all duration-300 motion-reduce:transition-none",
+          "pointer-events-none absolute right-[90px] top-[70px] w-[220px] max-w-[calc(100vw-130px)] whitespace-pre-line text-right text-[13px] font-medium leading-relaxed text-[#716456] transition-all duration-300 motion-reduce:transition-none",
           expanded ? "translate-x-0 opacity-100" : "translate-x-3 opacity-0",
         )}
       >
@@ -160,7 +160,7 @@ export function HalloweenEntry() {
       <span
         aria-hidden="true"
         className={cn(
-          "pointer-events-none absolute right-[9px] top-2 -rotate-[23deg] -skew-x-[10deg] text-[37px] font-black italic leading-none tracking-[-2px] text-[#ffb12d] [font-family:Georgia,serif] [-webkit-text-stroke:1px_#6a361f] [text-shadow:2px_3px_0_#fff3d7,3px_5px_0_#6a361f33] transition-opacity motion-reduce:transition-none",
+          "pointer-events-none absolute right-3 top-3 -rotate-[16deg] text-[33px] font-bold italic leading-none tracking-[-1px] text-[#e9bb65] [font-family:Georgia,serif] [-webkit-text-stroke:.5px_#8c673e] [text-shadow:1px_2px_0_#fff3d7] transition-opacity motion-reduce:transition-none",
           expanded ? "opacity-100" : "opacity-0",
         )}
       >
