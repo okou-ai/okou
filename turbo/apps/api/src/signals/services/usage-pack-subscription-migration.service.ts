@@ -2706,8 +2706,8 @@ interface MigrationInvitationCompletion {
 }
 
 const readMigrationInvitationCompletion$ = command(
-  async ({ set }, args: MigrationInvitationCompletion) => {
-    const db = set(writeDb$);
+  async ({ get }, args: MigrationInvitationCompletion) => {
+    const db = get(db$);
     const validating = notInArray(usagePackSubscriptionMigrations.status, [
       "failed",
       "completed",
