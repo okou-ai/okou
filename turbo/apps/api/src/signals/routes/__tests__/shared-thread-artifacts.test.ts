@@ -23,6 +23,9 @@ import {
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
+import type { SharedThreadArtifactPolicy } from "@okouai/api-contracts/contracts/shared-thread-artifacts";
+import { now, nowDate } from "../../../lib/time";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -35,6 +38,9 @@ import { artifactDownloadRoutes } from "../artifact-downloads";
 import { sharedThreadRoutes } from "../shared-threads";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
+import { hostRoutes } from "../host";
+import { createHostBddApi } from "./helpers/api-bdd-host";
+import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
@@ -68,6 +74,7 @@ function api(rethrowErrors = false) {
       ...artifactDownloadRoutes,
       ...uploadsPrepareRoutes,
       ...uploadsCompleteRoutes,
+      ...hostRoutes,
     ],
   });
 }
@@ -368,6 +375,91 @@ function referenceName(url: string): string {
     "/artifacts/".length,
   );
 }
+
+test("previews the persisted Quick Start alias and honors its conversation policy revocation", async () => {
+  const f = await fixture();
+  if (!f.actor.orgId) {
+    throw new Error("Expected the publication owner to have an organization");
+  }
+  const host = createHostBddApi(context);
+  const content = "<main>Published welcome example</main>";
+  const prepared = await host.prepareHostedSite(f.actor, {
+    site: `welcome-${randomUUID().slice(0, 8)}`,
+    artifactKind: "presentation-html",
+    spaFallback: false,
+    files: [hostedTextFile("/index.html", content)],
+  });
+  for (const upload of prepared.uploads) {
+    const key = decodeURIComponent(new URL(upload.uploadUrl).pathname.slice(1));
+    f.objects.set(key, Buffer.from(content));
+  }
+  await host.completeHostedSite(f.actor, prepared.deploymentId);
+  // Current conversation sharing preserves hosted URLs. Model the persisted
+  // R2 format of the older HTML snapshots still used by the welcome thread.
+  const threadId = randomUUID();
+  const token = "4nnp6iwpss";
+  const policyKey = `test-hosted-sites/shared-thread-artifacts/okou/${threadId}.json`;
+  const policy = {
+    version: 1,
+    threadId,
+    ownerId: f.actor.userId,
+    orgId: f.actor.orgId,
+    publicBrand: "okou",
+    status: "active",
+    resources: {
+      [token]: {
+        kind: "html",
+        id: prepared.deploymentId,
+        siteId: prepared.siteId,
+        snapshotId: threadId,
+        deploymentVersion: 1,
+        manifest: {
+          version: 1,
+          access: "owner-private-v1",
+          publicBrand: "okou",
+          deploymentId: prepared.deploymentId,
+          siteId: prepared.siteId,
+          publicSlug: prepared.publicSlug,
+          createdAt: nowDate().toISOString(),
+          spaFallback: false,
+          files: { "/index.html": hostedTextFile("/index.html", content) },
+        },
+      },
+    },
+  } satisfies SharedThreadArtifactPolicy;
+  f.objects.set(policyKey, Buffer.from(JSON.stringify(policy)));
+  f.objects.set(
+    `test-hosted-sites/artifact-delivery/okou/html/${token}.json`,
+    Buffer.from(
+      JSON.stringify({
+        version: 1,
+        kind: "thread-resource",
+        publicBrand: "okou",
+        threadId,
+        publicToken: token,
+        targetKind: "html",
+        targetId: prepared.deploymentId,
+      }),
+    ),
+  );
+  const outsider = bdd.user();
+  const request = {
+    headers: headers(outsider),
+    params: { publicSlug: token },
+    query: { hostname: `${token}.okou.app` },
+  };
+  const first = await accept(api()(hostContract).sitePreview(request), [200]);
+  expect(first.body.url).toMatch(/^https:\/\/ps-[a-f0-9]+\.okou\.app\//u);
+  expect(Date.parse(first.body.expiresAt!)).toBeGreaterThan(now());
+  expect(first.body.previewImageUrl).toBe(
+    "https://static.vm0.io/vm0/welcome-thread/2026-10-26-previews/quick-start-eb0e18d9a32b.png",
+  );
+  f.objects.set(
+    policyKey,
+    Buffer.from(JSON.stringify({ ...policy, status: "revoked" })),
+  );
+  await accept(api()(hostContract).sitePreview(request), [404]);
+});
 
 test("copies only selected artifacts, rewrites the snapshot, and preserves source messages and permissions", async () => {
   const f = await fixture();

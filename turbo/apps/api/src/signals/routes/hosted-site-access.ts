@@ -2,6 +2,7 @@ import { command } from "ccstate";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { welcomeThreadPreviewImageUrl } from "@okouai/core/welcome-thread-assets";
 import { resolveHostedSitePreview$ } from "../services/hosted-site-preview.service";
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -28,6 +29,7 @@ import type { RouteEntry } from "../route-entry";
 
 const preview$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
+  const { hostname } = get(queryOf(hostContract.sitePreview));
   const body = await set(
     resolveHostedSitePreview$,
     {
@@ -37,9 +39,16 @@ const preview$ = command(async ({ get, set }, signal: AbortSignal) => {
     },
     signal,
   );
-  return body
-    ? { status: 200 as const, body }
-    : notFound("Website preview is unavailable");
+  if (!body) {
+    return notFound("Website preview is unavailable");
+  }
+  const previewImageUrl =
+    body.previewImageUrl ??
+    welcomeThreadPreviewImageUrl(`https://${hostname}/`);
+  return {
+    status: 200 as const,
+    body: { ...body, ...(previewImageUrl ? { previewImageUrl } : {}) },
+  };
 });
 
 const admission$ = command(async ({ get, set }, signal: AbortSignal) => {

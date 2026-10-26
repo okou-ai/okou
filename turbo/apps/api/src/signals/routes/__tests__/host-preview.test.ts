@@ -20,6 +20,7 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { server } from "../../../mocks/server";
@@ -181,6 +182,61 @@ async function upload(prepared: HostedSitePrepareResponse, bytes: Buffer) {
 }
 
 describe("sandbox hosted previews", () => {
+  it("supplies the official welcome cover only after authorizing the publication", async () => {
+    // The production cover catalog matches this exact, globally unique hostname.
+    // Isolate the global hosted-address namespace so repeat runs can claim it.
+    const app = await setupApp({
+      context,
+      routes: hostRoutes,
+      isolatePg: true,
+    });
+    const api = app(hostContract);
+    const owner = createBddApi(context).user();
+    previewStorage();
+    const prepared = await host.prepareHostedSite(owner, {
+      site: "sproutpop-launch-deck-p9jk",
+      artifactKind: "presentation-html",
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", "<main>Welcome example</main>")],
+    });
+    await host.completeHostedSite(owner, prepared.deploymentId);
+    const headers = { authorization: "Bearer clerk-session" };
+    const request = {
+      headers,
+      params: { publicSlug: prepared.publicSlug },
+      query: { hostname: `${prepared.publicSlug}.okou.app` },
+    };
+    const outsider = createBddApi(context).user();
+    const mocks = createRouteMocks(context);
+    mocks.clerk.session(outsider.userId, outsider.orgId);
+    expect((await accept(api.sitePreview(request), [200])).body).toStrictEqual({
+      url: "https://sproutpop-launch-deck-p9jk.okou.app/",
+      expiresAt: null,
+      previewImageUrl:
+        "https://static.vm0.io/vm0/welcome-thread/2026-10-26-previews/sproutpop-a826bd3d2831.png",
+    });
+    mocks.clerk.session(owner.userId, owner.orgId);
+    await accept(
+      setupAppWithRoutes({ context, routes: featureSwitchesRoutes })(
+        featureSwitchesContract,
+      ).update({
+        headers,
+        body: { switches: { [FeatureSwitchKey.HostedSiteVisibility]: true } },
+      }),
+      [200],
+    );
+    await accept(
+      api.updateSiteVisibility({
+        headers,
+        params: { siteId: prepared.siteId },
+        body: { visibility: "private", expectedRevision: null },
+      }),
+      [200],
+    );
+    mocks.clerk.session(outsider.userId, outsider.orgId);
+    await accept(api.sitePreview(request), [404]);
+  });
+
   it.each([
     { bytes: png, contentType: "image/png", extension: "png" },
     { bytes: jpeg, contentType: "image/jpeg", extension: "jpg" },
