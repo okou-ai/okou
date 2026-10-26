@@ -1,4 +1,4 @@
-import { useGet, useLoadable } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { sourcesFirstSkillImportSignals$ } from "../../signals/onboarding/onboarding-skill-import.ts";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
@@ -6,13 +6,23 @@ import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 import {
   SkillImportResults,
   SkillImportPanel,
+  SkillImportCopyButton,
 } from "../skill-import/skill-import-panel.tsx";
+import { useMobileOnboarding } from "../onboarding/use-mobile-onboarding.ts";
+import {
+  sourcesFirstUi$,
+  updateSourcesFirstUi$,
+} from "../../signals/onboarding/onboarding-sources-first-state.ts";
 
 export function OnboardingSkillsPage() {
   const { t } = useTranslation();
+  const mobile = useMobileOnboarding();
+  const ui = useGet(sourcesFirstUi$);
+  const updateUi = useSet(updateSourcesFirstUi$);
   const flow = useSourcesFirstFlow("skills");
   const signals = useGet(sourcesFirstSkillImportSignals$);
   const results = useLoadable(signals.imported$);
+  const session = useLoadable(signals.session$);
   const provider = flow.draft.provider;
   const providerName =
     provider === "codex"
@@ -49,6 +59,43 @@ export function OnboardingSkillsPage() {
         },
         { provider: providerName },
       )}
+      mobileTitle={
+        imported
+          ? t(($) => {
+              return $.onboarding.sourcesFirst.skills.importedTitle;
+            })
+          : t(($) => {
+              return $.onboarding.sourcesFirst.mobile.skillsTitle;
+            })
+      }
+      mobileDescription={
+        imported
+          ? ""
+          : t(
+              ($) => {
+                return $.onboarding.sourcesFirst.mobile.skillsCopy;
+              },
+              {
+                provider: providerName,
+              },
+            )
+      }
+      primaryAction={
+        mobile && !imported ? (
+          <SkillImportCopyButton
+            key={session.state === "hasData" ? session.data.id : "preparing"}
+            copyPrompt$={signals.copyPrompt$}
+            disabled={session.state !== "hasData"}
+            primary
+            showPending
+            size="lg"
+            label={t(($) => {
+              return $.onboarding.sourcesFirst.mobile.copyImportPrompt;
+            })}
+            className="w-full"
+          />
+        ) : undefined
+      }
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
@@ -61,13 +108,24 @@ export function OnboardingSkillsPage() {
       onSecondary={flow.goSkip}
       onBack={flow.goBack}
     >
-      <div className="mx-auto flex w-full max-w-[600px] flex-col gap-6">
+      <div className="mx-auto flex w-full max-w-[600px] flex-col gap-6 max-sm:gap-4">
         <SkillImportPanel
           signals={signals}
           provider={provider}
           providerName={providerName}
+          compact={mobile}
+          promptToggle={
+            mobile
+              ? {
+                  shown: ui.importPromptShown,
+                  setShown: (shown) => {
+                    updateUi({ importPromptShown: shown });
+                  },
+                }
+              : undefined
+          }
         />
-        <SkillImportResults signals={signals} />
+        <SkillImportResults signals={signals} compact={mobile} />
       </div>
     </OnboardingStepLayout>
   );

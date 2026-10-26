@@ -263,11 +263,13 @@ interface SourcesFirstUi {
   readonly inviteEmail: string;
   /** The field was left since it last changed, so its address is final. */
   readonly inviteEmailLeft: boolean;
+  readonly importPromptShown: boolean;
 }
 
 const internalUi$ = state<SourcesFirstUi>({
   inviteEmail: "",
   inviteEmailLeft: false,
+  importPromptShown: false,
 });
 
 export const sourcesFirstUi$ = computed((get) => {

@@ -46,7 +46,12 @@ function mockDiscord(overrides: Partial<DiscordOrgStatus> = {}) {
   };
 }
 
-function openChatChannelStep(enabled = true) {
+function openChatChannelStep(enabled = true, mobile = false) {
+  if (mobile) {
+    context.mocks.browser.matchMedia((query) => {
+      return query === "(width < 640px)";
+    });
+  }
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
@@ -80,66 +85,69 @@ function getButton(name: string): HTMLElement {
   return button;
 }
 
-test("Discord verifies in a separate tab before allowing onboarding to continue", async () => {
-  const setDiscord = mockDiscord();
-  const state = "s".repeat(43);
-  const completionToken = "c".repeat(43);
-  const authorizationUrl = `https://discord.com/oauth2/authorize?client_id=123456789012345678&state=${state}&scope=identify`;
-  context.mocks.api(discordOauthContract.start, ({ respond }) => {
-    return respond(200, { authorizationUrl, completionToken });
-  });
-  const completionRequested = context.mocks.deferred<void>();
-  const finishCompletion = context.mocks.deferred<void>();
-  context.mocks.api(discordOauthContract.complete, async ({ respond }) => {
-    completionRequested.resolve();
-    await finishCompletion.promise;
-    setDiscord({
-      isConnected: true,
-      discordUserId: "234567890123456789",
+test.each([false, true])(
+  "Discord verifies before allowing onboarding to continue (mobile=%s)",
+  async (mobile) => {
+    const setDiscord = mockDiscord();
+    const state = "s".repeat(43);
+    const completionToken = "c".repeat(43);
+    const authorizationUrl = `https://discord.com/oauth2/authorize?client_id=123456789012345678&state=${state}&scope=identify`;
+    context.mocks.api(discordOauthContract.start, ({ respond }) => {
+      return respond(200, { authorizationUrl, completionToken });
     });
-    return respond(200, { status: "connected" });
-  });
-  const popup = context.mocks.browser.authWindow();
-  Object.defineProperty(popup, "location", {
-    configurable: true,
-    value: { href: "" },
-  });
-  const opened = context.mocks.browser.open(popup);
+    const completionRequested = context.mocks.deferred<void>();
+    const finishCompletion = context.mocks.deferred<void>();
+    context.mocks.api(discordOauthContract.complete, async ({ respond }) => {
+      completionRequested.resolve();
+      await finishCompletion.promise;
+      setDiscord({
+        isConnected: true,
+        discordUserId: "234567890123456789",
+      });
+      return respond(200, { status: "connected" });
+    });
+    const popup = context.mocks.browser.authWindow();
+    Object.defineProperty(popup, "location", {
+      configurable: true,
+      value: { href: "" },
+    });
+    const opened = context.mocks.browser.open(popup);
 
-  await openChatChannelStep();
+    await openChatChannelStep(true, mobile);
 
-  await waitFor(() => {
-    expect(getButton("Discord")).toBeEnabled();
-  });
-  expect(getButton("Continue")).toBeDisabled();
-  click(getButton("Discord"));
+    await waitFor(() => {
+      expect(getButton("Discord")).toBeEnabled();
+    });
+    expect(getButton("Continue")).toBeDisabled();
+    click(getButton("Discord"));
 
-  expect(opened.calls).toStrictEqual([
-    { url: "about:blank", target: "_blank", features: null },
-  ]);
-  await completionRequested.promise;
-  expect(popup.location.href).toBe(authorizationUrl);
-  expect(getButton("Discord")).toBeDisabled();
-  expect(getButton("Continue")).toBeDisabled();
-  expect(pathname()).toBe(ROUTES.onboardingSlack);
+    expect(opened.calls).toStrictEqual([
+      { url: "about:blank", target: "_blank", features: null },
+    ]);
+    await completionRequested.promise;
+    expect(popup.location.href).toBe(authorizationUrl);
+    expect(getButton("Discord")).toBeDisabled();
+    expect(getButton("Continue")).toBeDisabled();
+    expect(pathname()).toBe(ROUTES.onboardingSlack);
 
-  finishCompletion.resolve();
+    finishCompletion.resolve();
 
-  await expect(
-    screen.findByRole("heading", { name: "Your chat is connected" }),
-  ).resolves.toBeInTheDocument();
-  expect(getButton("Discord")).toHaveTextContent("Added");
-  expect(getButton("Discord")).toBeDisabled();
-  expect(getButton("Continue")).toBeEnabled();
-  expect(pathname()).toBe(ROUTES.onboardingSlack);
+    await expect(
+      screen.findByRole("heading", { name: "Your chat is connected" }),
+    ).resolves.toBeInTheDocument();
+    expect(getButton("Discord")).toHaveTextContent("Added");
+    expect(getButton("Discord")).toBeDisabled();
+    expect(getButton("Continue")).toBeEnabled();
+    expect(pathname()).toBe(ROUTES.onboardingSlack);
 
-  click(getButton("Continue"));
+    click(getButton("Continue"));
 
-  await expect(
-    screen.findByLabelText("Your starting prompt"),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(ROUTES.onboardingReady);
-});
+    await expect(
+      screen.findByLabelText("Your starting prompt"),
+    ).resolves.toBeInTheDocument();
+    expect(pathname()).toBe(ROUTES.onboardingReady);
+  },
+);
 
 test("An existing Discord connection follows live connection changes during onboarding", async () => {
   const setDiscord = mockDiscord({

@@ -1,5 +1,5 @@
 import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -41,7 +41,12 @@ function getButtonByName(name: string): HTMLElement {
   return button;
 }
 
-async function openTeamStep(): Promise<void> {
+async function openTeamStep(mobile = false): Promise<void> {
+  if (mobile) {
+    context.mocks.browser.matchMedia((query) => {
+      return query === "(width < 640px)";
+    });
+  }
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
@@ -55,7 +60,9 @@ async function openTeamStep(): Promise<void> {
   });
 
   await expect(
-    screen.findByRole("heading", { name: TEAM_QUESTION }),
+    screen.findByRole("heading", {
+      name: mobile ? "Invite a teammate" : TEAM_QUESTION,
+    }),
   ).resolves.toBeInTheDocument();
 }
 
@@ -83,6 +90,56 @@ test("An invited teammate is only marked invited once the API accepts the addres
   // The workspace invites a member, and no usage pack keeps onboarding clear
   // of the seat-purchase branch.
   expect(requested[0]).toStrictEqual({ email: TEAMMATE, role: "member" });
+});
+
+test("The mobile footer sends the invite, waits for acceptance, then continues", async () => {
+  const sent = context.mocks.deferred<void>();
+  context.mocks.api(orgInviteContract.invite, async ({ body, respond }) => {
+    await sent.promise;
+    return respond(200, { message: `Invitation sent to ${body.email}` });
+  });
+  await openTeamStep(true);
+  expect(getButtonByName("Send invite")).toBeDisabled();
+  await typeInvite(TEAMMATE);
+  expect(
+    queryAllByRoleFast("button").filter((button) => {
+      return button.textContent?.trim() === "Send invite";
+    }),
+  ).toHaveLength(1);
+  const inviteButton = getButtonByName("Send invite");
+  await userEvent.click(inviteButton);
+  await waitFor(() => {
+    expect(inviteButton).toHaveAttribute("aria-disabled", "true");
+    expect(inviteButton).toHaveAttribute("aria-busy", "true");
+    expect(inviteButton).toHaveFocus();
+  });
+  sent.resolve();
+  await expect(screen.findByText("Invited")).resolves.toBeInTheDocument();
+  click(getButtonByName("Continue"));
+  await expect(
+    screen.findByRole("heading", { name: "Choose how to start" }),
+  ).resolves.toBeInTheDocument();
+});
+
+test("A refused mobile invite keeps retry and Not now available", async () => {
+  context.mocks.api(orgInviteContract.invite, ({ respond }) => {
+    return respond(409, {
+      error: {
+        code: "INVITATION_ALREADY_EXISTS",
+        message: "This person already has a pending invitation.",
+      },
+    });
+  });
+  await openTeamStep(true);
+  await typeInvite(TEAMMATE);
+  click(getButtonByName("Send invite"));
+  await expect(screen.findByText("Not sent")).resolves.toBeInTheDocument();
+  await typeInvite(TEAMMATE);
+  expect(getButtonByName("Send invite")).toBeEnabled();
+  click(getButtonByName("Not now"));
+  await expect(
+    screen.findByRole("heading", { name: "Choose how to start" }),
+  ).resolves.toBeInTheDocument();
 });
 
 test.each([

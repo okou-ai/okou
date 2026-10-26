@@ -276,7 +276,11 @@ test("Waiting for the source catalog keeps onboarding in place and preserves its
   });
   click(getButtonByName("Continue"));
   await waitFor(() => {
-    expect(getButtonByName("Continue")).toBeDisabled();
+    expect(getButtonByName("Continue")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(getButtonByName("Continue")).toHaveAttribute("aria-busy", "true");
   });
   expect(
     screen.getByRole("heading", { name: INDUSTRY_QUESTION }),

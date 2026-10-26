@@ -4255,46 +4255,57 @@
       },
       "industries": {
         "coaching": {
+          "mobileName": "Coaching e formazione",
           "name": "Coaching e formazione",
           "summary": "Coaching, corsi e formazione"
         },
         "consulting": {
+          "mobileName": "Consulenza indipendente",
           "name": "Consulenza indipendente",
           "summary": "Consulenza business, HR e IT"
         },
         "design": {
+          "mobileName": "Design e creatività",
           "name": "Design e creatività",
           "summary": "Grafica, siti web e lavoro creativo"
         },
         "finance": {
+          "mobileName": "Contabilità e tenuta libri",
           "name": "Contabilità e tenuta libri",
           "summary": "Libri, report e riconciliazioni"
         },
         "investing": {
+          "mobileName": "Investimenti e ricerca di mercato",
           "name": "Investimenti e ricerca di mercato",
           "summary": "Investimenti, mercati e portafogli"
         },
         "marketing": {
+          "mobileName": "Marketing e contenuti",
           "name": "Marketing e contenuti",
           "summary": "Social, contenuti e brand"
         },
         "operations": {
+          "mobileName": "Business e operations",
           "name": "Business e operations",
           "summary": "Titolari, assistenti e operations"
         },
         "other": {
+          "mobileName": "Altro / sto ancora esplorando",
           "name": "Altro / sto ancora esplorando",
           "summary": "Un altro ambito, o sto ancora esplorando"
         },
         "research": {
+          "mobileName": "Ricerca e studio",
           "name": "Ricerca e studio",
           "summary": "Ricerca, studio e apprendimento"
         },
         "sales": {
+          "mobileName": "Vendite e sviluppo clienti",
           "name": "Vendite e sviluppo clienti",
           "summary": "Prospezione, vendite e crescita clienti"
         },
         "software": {
+          "mobileName": "Software e app",
           "name": "Software e app",
           "summary": "App, giochi e sviluppo"
         }
@@ -4302,6 +4313,30 @@
       "industry": {
         "copy": "Okou è l’assistente di lavoro per te e il tuo team. Trasforma le informazioni sparse in lavoro fatto, nel cloud. Scegli il tuo settore per una prima attività su misura.",
         "title": "Che tipo di lavoro fai?"
+      },
+      "mobile": {
+        "channelsCopy": "Scrivi a Okou dove lavori già.",
+        "channelsTitle": "Scegli un’app di chat",
+        "connect": "Collega",
+        "copyImportPrompt": "Copia il prompt di importazione",
+        "existingPlan": "Usa il mio piano {{provider}}",
+        "experienceTitle": "Scegli come iniziare",
+        "industryCopy": "Ti suggeriremo una prima attività adatta a te.",
+        "industryTitle": "Scegli il tuo settore",
+        "instructions": "Istruzioni",
+        "newCopy": "Ricevi aiuto per la prima attività.",
+        "newTitle": "Inizia con Okou",
+        "pasteIntoProvider": "Incolla in {{provider}} e invia.",
+        "permissionsLabel": "Permessi e privacy",
+        "planCopy": "Esegui attività con il tuo abbonamento.",
+        "promptTitle": "Cosa vuoi fare?",
+        "readyTitle": "Inizia la prima attività",
+        "skillsCopy": "Usa {{provider}} sul computer.",
+        "skillsTitle": "Importa le tue competenze",
+        "sourcesCopy": "Collega uno strumento per la prima attività.",
+        "startTask": "Avvia attività",
+        "teamCopy": "Lavorate nello stesso spazio.",
+        "teamTitle": "Invita un collega"
       },
       "prompt": {
         "intro": "Okou è l’assistente di lavoro per te e il tuo team. Trasforma le informazioni sparse in lavoro fatto, nel cloud."
