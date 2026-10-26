@@ -27,6 +27,7 @@ import {
   inArray,
   isNull,
   lte,
+  notInArray,
   or,
   sql,
 } from "drizzle-orm";
@@ -2698,14 +2699,350 @@ function migrationInvitationValues(args: {
   };
 }
 
-const completeMigrationInvitations$ = command(
+interface MigrationInvitationCompletion {
+  readonly migration: MigrationRow;
+  readonly invoice: StripeInvoice;
+  readonly usagePackSubscriptionId: string;
+}
+
+const readMigrationInvitationCompletion$ = command(
+  async ({ set }, args: MigrationInvitationCompletion) => {
+    const db = set(writeDb$);
+    const validating = notInArray(usagePackSubscriptionMigrations.status, [
+      "failed",
+      "completed",
+    ]);
+    const selectionColumns = getTableColumns(
+      usagePackSubscriptionMigrationSelections,
+    );
+    const allocationColumns = getTableColumns(usagePackAllocations);
+    const selections = db
+      .select({
+        payload: contextJsonProjection(selectionColumns)
+          .mapWith(
+            zodDriverValueDecoder(contextProjectionSchema(selectionColumns)),
+          )
+          .as("payload"),
+      })
+      .from(usagePackSubscriptionMigrationSelections)
+      .where(and(validating, migrationSelectionsWhere(args.migration.id)));
+    const allocations = db
+      .select({
+        payload: contextJsonProjection(allocationColumns)
+          .mapWith(
+            zodDriverValueDecoder(contextProjectionSchema(allocationColumns)),
+          )
+          .as("payload"),
+      })
+      .from(usagePackAllocations)
+      .where(
+        and(
+          validating,
+          eq(
+            usagePackAllocations.usagePackSubscriptionId,
+            args.usagePackSubscriptionId,
+          ),
+          eq(usagePackSubscriptions.id, args.usagePackSubscriptionId),
+          eq(usagePackSubscriptions.orgId, args.migration.orgId),
+          eq(
+            usagePackSubscriptions.stripeCustomerId,
+            args.migration.stripeCustomerId,
+          ),
+        ),
+      );
+    const [current] = await db
+      .select({
+        migration: migrationColumnsWithRowVersion(),
+        selections: contextJsonRows(selections).mapWith(
+          zodDriverValueDecoder(
+            contextProjectionSchema(selectionColumns).array(),
+          ),
+        ),
+        root: usagePackSubscriptions,
+        allocations: contextJsonRows(allocations).mapWith(
+          zodDriverValueDecoder(
+            contextProjectionSchema(allocationColumns).array(),
+          ),
+        ),
+      })
+      .from(usagePackSubscriptionMigrations)
+      .leftJoin(
+        usagePackSubscriptions,
+        and(validating, migrationSubscriptionRootWhere(args.migration)),
+      )
+      .where(eq(usagePackSubscriptionMigrations.id, args.migration.id))
+      .limit(1);
+    return current ?? null;
+  },
+);
+
+function migrationInvitationIdentitySelection() {
+  return {
+    id: sql`gen_random_uuid()`
+      .mapWith(usagePackInvitationPurchases.id)
+      .as("id"),
+    usagePackSubscriptionId:
+      sql`prepared_migration_invitations."usagePackSubscriptionId"`
+        .mapWith(usagePackInvitationPurchases.usagePackSubscriptionId)
+        .as("usagePackSubscriptionId"),
+    allocationId: sql`prepared_migration_invitations."allocationId"`
+      .mapWith(
+        nullableDriverValueDecoder(usagePackInvitationPurchases.allocationId),
+      )
+      .as("allocationId"),
+    orgId: sql`prepared_migration_invitations."orgId"`
+      .mapWith(usagePackInvitationPurchases.orgId)
+      .as("orgId"),
+    normalizedEmail: sql`prepared_migration_invitations."normalizedEmail"`
+      .mapWith(usagePackInvitationPurchases.normalizedEmail)
+      .as("normalizedEmail"),
+    role: sql`prepared_migration_invitations."role"`
+      .mapWith(usagePackInvitationPurchases.role)
+      .as("role"),
+    inviterUserId: sql`prepared_migration_invitations."inviterUserId"`
+      .mapWith(usagePackInvitationPurchases.inviterUserId)
+      .as("inviterUserId"),
+    impactClickId: sql`null`
+      .mapWith(
+        nullableDriverValueDecoder(usagePackInvitationPurchases.impactClickId),
+      )
+      .as("impactClickId"),
+    impactClickAt: sql`null`
+      .mapWith(
+        nullableDriverValueDecoder(usagePackInvitationPurchases.impactClickAt),
+      )
+      .as("impactClickAt"),
+  };
+}
+
+function migrationInvitationPaymentSelection() {
+  return {
+    usagePackUsd: sql`prepared_migration_invitations."usagePackUsd"`
+      .mapWith(usagePackInvitationPurchases.usagePackUsd)
+      .as("usagePackUsd"),
+    stripePriceId: sql`prepared_migration_invitations."stripePriceId"`
+      .mapWith(usagePackInvitationPurchases.stripePriceId)
+      .as("stripePriceId"),
+    status: sql`prepared_migration_invitations."status"`
+      .mapWith(usagePackInvitationPurchases.status)
+      .as("status"),
+    currentPeriodStart: sql`prepared_migration_invitations."currentPeriodStart"`
+      .mapWith(usagePackInvitationPurchases.currentPeriodStart)
+      .as("currentPeriodStart"),
+    currentPeriodEnd: sql`prepared_migration_invitations."currentPeriodEnd"`
+      .mapWith(usagePackInvitationPurchases.currentPeriodEnd)
+      .as("currentPeriodEnd"),
+    prorationTimestamp: sql`prepared_migration_invitations."prorationTimestamp"`
+      .mapWith(usagePackInvitationPurchases.prorationTimestamp)
+      .as("prorationTimestamp"),
+    unitAmountCents: sql`prepared_migration_invitations."unitAmountCents"`
+      .mapWith(usagePackInvitationPurchases.unitAmountCents)
+      .as("unitAmountCents"),
+    expectedAmountCents:
+      sql`prepared_migration_invitations."expectedAmountCents"`
+        .mapWith(usagePackInvitationPurchases.expectedAmountCents)
+        .as("expectedAmountCents"),
+    amountPaidCents: sql`prepared_migration_invitations."amountPaidCents"`
+      .mapWith(
+        nullableDriverValueDecoder(
+          usagePackInvitationPurchases.amountPaidCents,
+        ),
+      )
+      .as("amountPaidCents"),
+    currency: sql`prepared_migration_invitations."currency"`
+      .mapWith(usagePackInvitationPurchases.currency)
+      .as("currency"),
+    purchasedCredits: sql`prepared_migration_invitations."purchasedCredits"`
+      .mapWith(usagePackInvitationPurchases.purchasedCredits)
+      .as("purchasedCredits"),
+    bonusCredits: sql`prepared_migration_invitations."bonusCredits"`
+      .mapWith(usagePackInvitationPurchases.bonusCredits)
+      .as("bonusCredits"),
+    stripeCheckoutSessionId: sql`null`
+      .mapWith(
+        nullableDriverValueDecoder(
+          usagePackInvitationPurchases.stripeCheckoutSessionId,
+        ),
+      )
+      .as("stripeCheckoutSessionId"),
+    stripeCheckoutExpiresAt: sql`null`
+      .mapWith(
+        nullableDriverValueDecoder(
+          usagePackInvitationPurchases.stripeCheckoutExpiresAt,
+        ),
+      )
+      .as("stripeCheckoutExpiresAt"),
+    stripePaymentIntentId:
+      sql`prepared_migration_invitations."stripePaymentIntentId"`
+        .mapWith(
+          nullableDriverValueDecoder(
+            usagePackInvitationPurchases.stripePaymentIntentId,
+          ),
+        )
+        .as("stripePaymentIntentId"),
+    stripeRefundId: sql`null`
+      .mapWith(
+        nullableDriverValueDecoder(usagePackInvitationPurchases.stripeRefundId),
+      )
+      .as("stripeRefundId"),
+    refundAttempt: sql`1`
+      .mapWith(usagePackInvitationPurchases.refundAttempt)
+      .as("refundAttempt"),
+  };
+}
+
+function migrationInvitationLifecycleSelection() {
+  return {
+    clerkInvitationId: sql`prepared_migration_invitations."clerkInvitationId"`
+      .mapWith(
+        nullableDriverValueDecoder(
+          usagePackInvitationPurchases.clerkInvitationId,
+        ),
+      )
+      .as("clerkInvitationId"),
+    acceptedUserId: sql`null`
+      .mapWith(
+        nullableDriverValueDecoder(usagePackInvitationPurchases.acceptedUserId),
+      )
+      .as("acceptedUserId"),
+    failureReason: sql`null`
+      .mapWith(
+        nullableDriverValueDecoder(usagePackInvitationPurchases.failureReason),
+      )
+      .as("failureReason"),
+    paidAt: sql`prepared_migration_invitations."paidAt"`
+      .mapWith(nullableDriverValueDecoder(usagePackInvitationPurchases.paidAt))
+      .as("paidAt"),
+    acceptedAt: sql`null`
+      .mapWith(
+        nullableDriverValueDecoder(usagePackInvitationPurchases.acceptedAt),
+      )
+      .as("acceptedAt"),
+    refundedAt: sql`null`
+      .mapWith(
+        nullableDriverValueDecoder(usagePackInvitationPurchases.refundedAt),
+      )
+      .as("refundedAt"),
+    createdAt: sql`now()`
+      .mapWith(usagePackInvitationPurchases.createdAt)
+      .as("createdAt"),
+    updatedAt: sql`now()`
+      .mapWith(usagePackInvitationPurchases.updatedAt)
+      .as("updatedAt"),
+  };
+}
+
+function migrationInvitationInsertSelection() {
+  return {
+    ...migrationInvitationIdentitySelection(),
+    ...migrationInvitationPaymentSelection(),
+    ...migrationInvitationLifecycleSelection(),
+  };
+}
+
+/** Preserve the original column encoders and PostgreSQL numeric input strings. */
+function migrationInvitationRecordset(
+  invitations: readonly ReturnType<typeof migrationInvitationValues>[],
+) {
+  const values = invitations.map((row) => {
+    return {
+      ...row,
+      currentPeriodStart:
+        usagePackInvitationPurchases.currentPeriodStart.mapToDriverValue(
+          row.currentPeriodStart,
+        ),
+      currentPeriodEnd:
+        usagePackInvitationPurchases.currentPeriodEnd.mapToDriverValue(
+          row.currentPeriodEnd,
+        ),
+      paidAt: usagePackInvitationPurchases.paidAt.mapToDriverValue(row.paidAt),
+      usagePackUsd: row.usagePackUsd.toString(),
+      prorationTimestamp: row.prorationTimestamp.toString(),
+      unitAmountCents: row.unitAmountCents.toString(),
+      expectedAmountCents: row.expectedAmountCents.toString(),
+      amountPaidCents: row.amountPaidCents.toString(),
+      purchasedCredits: row.purchasedCredits.toString(),
+      bonusCredits: row.bonusCredits.toString(),
+    };
+  });
+  return sql`jsonb_to_recordset(${JSON.stringify(values)}::jsonb)
+    as prepared_migration_invitations(
+      "usagePackSubscriptionId" uuid,
+      "allocationId" uuid,
+      "orgId" text,
+      "normalizedEmail" text,
+      "role" text,
+      "inviterUserId" text,
+      "usagePackUsd" integer,
+      "stripePriceId" text,
+      "status" text,
+      "currentPeriodStart" timestamp,
+      "currentPeriodEnd" timestamp,
+      "prorationTimestamp" bigint,
+      "unitAmountCents" integer,
+      "expectedAmountCents" integer,
+      "amountPaidCents" integer,
+      "currency" text,
+      "purchasedCredits" bigint,
+      "bonusCredits" bigint,
+      "stripePaymentIntentId" text,
+      "clerkInvitationId" text,
+      "paidAt" timestamp
+    )`;
+}
+
+const publishMigrationInvitationCompletion$ = command(
   async (
     { set },
     args: {
-      readonly migration: MigrationRow;
-      readonly invoice: StripeInvoice;
-      readonly usagePackSubscriptionId: string;
+      readonly migrationId: string;
+      readonly rowVersion: string;
+      readonly values: ReturnType<typeof migrationCompletionValues>;
+      readonly invitations: readonly ReturnType<
+        typeof migrationInvitationValues
+      >[];
     },
+  ) => {
+    const db = set(writeDb$);
+    const completed = db
+      .$with("completed_invitation_migration")
+      .as(
+        db
+          .update(usagePackSubscriptionMigrations)
+          .set(args.values)
+          .where(migrationCompletionWhere(args.migrationId, args.rowVersion))
+          .returning({ id: usagePackSubscriptionMigrations.id }),
+      );
+    if (args.invitations.length === 0) {
+      const [winner] = await db
+        .with(completed)
+        .select({ id: completed.id })
+        .from(completed);
+      return winner !== undefined;
+    }
+    const invitations = db.$with("completed_migration_invitations").as(
+      db
+        .insert(usagePackInvitationPurchases)
+        .select(
+          db
+            .select(migrationInvitationInsertSelection())
+            .from(migrationInvitationRecordset(args.invitations))
+            .crossJoin(completed),
+        )
+        .returning({ id: usagePackInvitationPurchases.id }),
+    );
+    const [winner] = await db
+      .with(completed, invitations)
+      .select({ id: completed.id })
+      .from(completed);
+    return winner !== undefined;
+  },
+);
+
+const completeMigrationInvitations$ = command(
+  async (
+    { set },
+    args: MigrationInvitationCompletion,
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
@@ -2730,90 +3067,46 @@ const completeMigrationInvitations$ = command(
       migration,
       selections,
     );
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0299; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      const [locked] = await tx
-        .select(migrationColumnsWithRowVersion())
-        .from(usagePackSubscriptionMigrations)
-        .where(eq(usagePackSubscriptionMigrations.id, migration.id))
-        .limit(1);
-      if (!locked || locked.status === "failed") {
-        throw new Error(`Usage pack migration ${migration.id} cannot complete`);
-      }
-      if (locked.status === "completed") {
-        return;
-      }
-      const currentSelections = await tx
-        .select()
-        .from(usagePackSubscriptionMigrationSelections)
-        .where(migrationSelectionsWhere(migration.id));
-      assertMigrationConfiguration(
-        expectedConfiguration,
-        locked,
-        currentSelections,
+    const prepared = await set(readMigrationInvitationCompletion$, args);
+    signal.throwIfAborted();
+    if (!prepared || prepared.migration.status === "failed") {
+      throw new Error(`Usage pack migration ${migration.id} cannot complete`);
+    }
+    const locked = prepared.migration;
+    if (locked.status === "completed") {
+      signal.throwIfAborted();
+      return;
+    }
+    assertMigrationConfiguration(
+      expectedConfiguration,
+      locked,
+      prepared.selections,
+    );
+    const root = validatedMigrationSubscriptionRoot(
+      migration,
+      prepared.root ?? undefined,
+    );
+    if (root?.id !== usagePackSubscriptionId) {
+      throw new Error(`Usage pack migration ${migration.id} lost correlation`);
+    }
+    const completedAt = nowDate();
+    const values = migrationCompletionValues(
+      invoice,
+      paymentIntentId,
+      completedAt,
+    );
+    const { allocations } = prepared;
+    if (allocations.length !== selections.length) {
+      throw new Error(
+        `Usage pack migration ${migration.id} allocations changed`,
       );
-      const [selectedRoot] = await tx
-        .select()
-        .from(usagePackSubscriptions)
-        .where(migrationSubscriptionRootWhere(migration))
-        .limit(1);
-      const root = validatedMigrationSubscriptionRoot(migration, selectedRoot);
-      if (root?.id !== usagePackSubscriptionId) {
-        throw new Error(
-          `Usage pack migration ${migration.id} lost correlation`,
-        );
-      }
-      // Exact-row CAS keeps the completed transition and invitation payments
-      // atomic if another writer moved the migration after the read.
-      const completedAt = nowDate();
-      const [completed] = await tx
-        .update(usagePackSubscriptionMigrations)
-        .set(migrationCompletionValues(invoice, paymentIntentId, completedAt))
-        .where(migrationCompletionWhere(migration.id, locked.rowVersion))
-        .returning({ id: usagePackSubscriptionMigrations.id });
-      if (!completed) {
-        const [winner] = await tx
-          .select()
-          .from(usagePackSubscriptionMigrations)
-          .where(
-            and(
-              eq(usagePackSubscriptionMigrations.id, migration.id),
-              eq(usagePackSubscriptionMigrations.orgId, migration.orgId),
-            ),
-          )
-          .limit(1);
-        if (
-          winner?.status === "completed" &&
-          winner.stripeInvoiceId === invoice.id &&
-          winner.stripePaymentIntentId === paymentIntentId
-        ) {
-          return;
-        }
-        throw new Error(
-          `Usage pack migration ${migration.id} changed during completion`,
-        );
-      }
-      // The real completed transition and invitation payment rows share this
-      // commit. Any failed ownership/amount/insertion check rolls it back too.
-      const allocations = await tx
-        .select()
-        .from(usagePackAllocations)
-        .where(
-          eq(
-            usagePackAllocations.usagePackSubscriptionId,
-            usagePackSubscriptionId,
-          ),
-        );
-      if (allocations.length !== selections.length) {
-        throw new Error(
-          `Usage pack migration ${migration.id} allocations changed`,
-        );
-      }
-      for (const selection of selections) {
-        if (!selection.invitationId) {
-          continue;
-        }
-        const values = migrationInvitationValues({
+    }
+    const invitations = selections
+      .filter((selection) => {
+        return Boolean(selection.invitationId);
+      })
+      .map((selection) => {
+        return migrationInvitationValues({
           migration,
           invoice,
           usagePackSubscriptionId,
@@ -2825,10 +3118,39 @@ const completeMigrationInvitations$ = command(
           amountPaidCents: paidAmounts.get(selection.id) ?? 0,
           paymentIntentId,
         });
-        await tx.insert(usagePackInvitationPurchases).values(values);
-      }
-      signal.throwIfAborted();
+      });
+    signal.throwIfAborted();
+    const completed = await set(publishMigrationInvitationCompletion$, {
+      migrationId: migration.id,
+      rowVersion: locked.rowVersion,
+      values,
+      invitations,
     });
+    signal.throwIfAborted();
+    if (!completed) {
+      const [winner] = await db
+        .select()
+        .from(usagePackSubscriptionMigrations)
+        .where(
+          and(
+            eq(usagePackSubscriptionMigrations.id, migration.id),
+            eq(usagePackSubscriptionMigrations.orgId, migration.orgId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (
+        winner?.status === "completed" &&
+        winner.stripeInvoiceId === invoice.id &&
+        winner.stripePaymentIntentId === paymentIntentId
+      ) {
+        signal.throwIfAborted();
+        return;
+      }
+      throw new Error(
+        `Usage pack migration ${migration.id} changed during completion`,
+      );
+    }
     signal.throwIfAborted();
   },
 );
