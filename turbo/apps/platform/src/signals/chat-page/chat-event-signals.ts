@@ -18,11 +18,7 @@ import {
   touchOptimisticChatThreadSort$,
 } from "./chat-thread-event-sourcing.ts";
 import { registerActiveChatEventSignals$ } from "./chat-event-signal-registry.ts";
-import { logger } from "../log.ts";
-import { chatEventTraceTime } from "./chat-event-debug.ts";
 import { withSelectedModelAnnotation } from "./model-selection-request.ts";
-
-const L = logger("ChatEventSignals");
 
 export interface ChatAgentRunSource {
   readonly runId: string;
@@ -117,13 +113,6 @@ function createSendInputChatEvent({
       const optimisticUserMessage = input.source
         ? withOptimisticAgentRunSource(userMessage, input.source)
         : userMessage;
-      L.debug("send input prepared", {
-        traceTime: chatEventTraceTime(),
-        threadId,
-        clientEventId,
-        delivery: input.delivery,
-        createdAt,
-      });
       set(touchOptimisticChatThreadSort$, {
         id: chatThreadSortEventId,
         threadId,
@@ -149,11 +138,6 @@ function createSendInputChatEvent({
         },
         signal,
       );
-      L.debug("send input optimistic event appended", {
-        traceTime: chatEventTraceTime(),
-        threadId,
-        clientEventId,
-      });
       await Promise.all([
         optimisticEventChanged,
         sendChatEvent(

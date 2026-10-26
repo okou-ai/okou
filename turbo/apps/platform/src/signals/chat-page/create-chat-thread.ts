@@ -43,10 +43,6 @@ import {
 } from "../okou-page/chat-draft.ts";
 import { buildDraftPersistencePayload } from "../okou-page/draft-persistence.ts";
 import { resetSignal, settle } from "../utils.ts";
-import {
-  chatEventDebugSummaries,
-  chatEventTraceTime,
-} from "./chat-event-debug.ts";
 import type {
   ChatEvent,
   OptimisticChatEvent,
@@ -2169,17 +2165,6 @@ function createEventChangeEffects({
       const scrollPosition = hasOptimisticUserMessage
         ? null
         : get(scroll.threadScrollPosition$);
-      L.debug("events change scroll decision", {
-        traceTime: chatEventTraceTime(),
-        threadId,
-        hasOptimisticUserMessage,
-        storedTargetEventId:
-          get(scroll.threadScrollPosition$)?.targetEventId ?? null,
-        targetEventId: scrollPosition?.targetEventId ?? null,
-        eventTail: chatEventDebugSummaries(
-          get(chatEvents.chatEvents$).slice(-10),
-        ),
-      });
       await Promise.all([
         set(updateEventPresentation$, scrollPosition, signal),
         set(markThreadReadIfNeeded$, signal),
