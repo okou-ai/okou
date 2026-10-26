@@ -1,6 +1,6 @@
 {
   "name": "@okouai/cli",
-  "version": "10.2.3",
+  "version": "10.2.4",
   "private": true,
   "description": "Okou command-line interface",
   "repository": {
