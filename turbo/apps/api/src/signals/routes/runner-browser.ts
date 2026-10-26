@@ -13,6 +13,7 @@ import {
 } from "../services/browser-owner.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { createRunnerBrowserAllocation } from "../services/browser-owner-profile.service";
+import { createRunnerBrowserConnection } from "../services/browser-owner-connection.service";
 import { BrowserUseProviderError } from "../services/browser-use.service";
 import { settle } from "../utils";
 
@@ -40,28 +41,62 @@ const readAction$ = computed(async (get) => {
 const browserRead$ = createRunnerBrowserRead(owner$, readAction$);
 const allocation$ = createRunnerBrowserAllocation(owner$);
 
+const connectionInput$ = computed(async (get) => {
+  const body = await get(bodyResultOf(runnerBrowserContract.connection));
+  return body.ok
+    ? { ...get(pathParamsOf(runnerBrowserContract.connection)), ...body.data }
+    : null;
+});
+const connectionOwner$ = createRunnerBrowserAuthority(connectionInput$);
+const connectionAction$ = computed(async (get) => {
+  const input = await get(connectionInput$);
+  return input
+    ? {
+        kind: "authorize" as const,
+        instanceId: input.instanceId,
+        providerSessionId: input.providerSessionId,
+        primaryWindowId: input.primaryWindowId,
+      }
+    : null;
+});
+const connection$ = createRunnerBrowserConnection(
+  connectionOwner$,
+  connectionAction$,
+);
+
+const officialRunnerError$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = await set(runnerAuth$, get(authorization$), signal);
+    signal.throwIfAborted();
+    if (!auth) {
+      return {
+        status: 401 as const,
+        body: {
+          error: { code: "UNAUTHORIZED", message: "Authentication required" },
+        },
+      };
+    }
+    if (auth.type !== "official-runner") {
+      return {
+        status: 403 as const,
+        body: {
+          error: {
+            code: "FORBIDDEN",
+            message: "Official Runner authentication required",
+          },
+        },
+      };
+    }
+    return null;
+  },
+);
+
 const control$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
-  const auth = await set(runnerAuth$, get(authorization$), signal);
+  const authError = await set(officialRunnerError$, signal);
   signal.throwIfAborted();
-  if (!auth) {
-    return {
-      status: 401 as const,
-      body: {
-        error: { code: "UNAUTHORIZED", message: "Authentication required" },
-      },
-    };
-  }
-  if (auth.type !== "official-runner") {
-    return {
-      status: 403 as const,
-      body: {
-        error: {
-          code: "FORBIDDEN",
-          message: "Official Runner authentication required",
-        },
-      },
-    };
+  if (authError) {
+    return authError;
   }
   const body = await get(bodyResultOf(runnerBrowserContract.control));
   signal.throwIfAborted();
@@ -127,6 +162,38 @@ const control$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: result };
 });
 
+const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const authError = await set(officialRunnerError$, signal);
+  signal.throwIfAborted();
+  if (authError) {
+    return authError;
+  }
+  const body = await get(bodyResultOf(runnerBrowserContract.connection));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const result = await settle(set(connection$, signal));
+  signal.throwIfAborted();
+  if (!result.ok) {
+    if (result.error instanceof BrowserUseProviderError) {
+      return {
+        status: result.error.status,
+        body: {
+          error: {
+            code: result.error.code,
+            message: "Managed browser provider connection is unavailable",
+          },
+        },
+      };
+    }
+    throw result.error;
+  }
+  return { status: 200 as const, body: result.value };
+});
+
 export const runnerBrowserRoutes: readonly RouteEntry[] = [
   { route: runnerBrowserContract.control, handler: control$ },
+  { route: runnerBrowserContract.connection, handler: connect$ },
 ];

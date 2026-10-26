@@ -3378,6 +3378,64 @@ export async function getBrowserUseSession(
   return parseBrowserUseSession(body);
 }
 
+/** Release only a validated exact session endpoint, without provider diagnostics. */
+export async function getBrowserUseRunnerConnection(
+  providerSessionId: string,
+  signal: AbortSignal,
+): Promise<{ readonly cdpUrl: string; readonly timeoutAt: string } | null> {
+  const boundedSignal = browserUseCdpSignal(signal);
+  const result = await settle(
+    browserUseResponse(
+      `/browsers/${encodeURIComponent(providerSessionId)}`,
+      { method: "GET", signal: boundedSignal, redirect: "error" },
+      signal,
+      [404],
+    ),
+  );
+  signal.throwIfAborted();
+  if (!result.ok) {
+    if (boundedSignal.aborted) {
+      throw new BrowserUseProviderError(
+        502,
+        "BROWSER_USE_TIMEOUT",
+        "Managed browser provider connection timed out",
+      );
+    }
+    if (result.error instanceof BrowserUseProviderError) {
+      throw new BrowserUseProviderError(
+        result.error.status,
+        result.error.code,
+        "Managed browser provider connection is unavailable",
+      );
+    }
+    throw result.error;
+  }
+  if (result.value.response.status === 404) {
+    return null;
+  }
+  const parsed = browserUseSessionSchema.safeParse(result.value.body);
+  if (!parsed.success || parsed.data.id !== providerSessionId) {
+    throw new BrowserUseProviderError(
+      502,
+      "BROWSER_USE_INVALID_RESPONSE",
+      "Managed browser provider returned an invalid connection",
+    );
+  }
+  const session = parsed.data;
+  if (session.status !== "active" || session.cdpUrl === null) {
+    return null;
+  }
+  const endpoint = new URL(session.cdpUrl);
+  if (endpoint.username || endpoint.password || endpoint.hash) {
+    throw new BrowserUseProviderError(
+      502,
+      "BROWSER_USE_INVALID_RESPONSE",
+      "Managed browser provider returned an invalid connection",
+    );
+  }
+  return { cdpUrl: session.cdpUrl, timeoutAt: session.timeoutAt };
+}
+
 export async function stopBrowserUseSession(
   providerSessionId: string,
   signal: AbortSignal,
