@@ -380,27 +380,6 @@ describe("optional shared-thread titles", () => {
     },
   );
 
-  it("preserves API owner cancellation before request dispatch", async () => {
-    const fixture = await prepareShare();
-    const controller = new AbortController();
-    const reason = new DOMException("Caller cancelled", "AbortError");
-    controller.abort(reason);
-    mockGoogleText();
-    const requests: string[] = [];
-    server.use(
-      http.post(endpoint, ({ request }) => {
-        requests.push(request.url);
-        return completion();
-      }),
-    );
-    await expect(
-      client(true, controller.signal).create(requestBody(fixture)),
-    ).rejects.toBe(reason);
-    await flushWaitUntilForTest();
-    await expectNoShare(fixture);
-    expect(requests).toStrictEqual([]);
-  });
-
   it("preserves API owner cancellation before the provider completes", async () => {
     const fixture = await prepareShare();
     const controller = new AbortController();

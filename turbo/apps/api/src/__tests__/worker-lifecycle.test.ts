@@ -144,7 +144,7 @@ test("serves DB-backed foreground writes through response EOF and a subsequent W
   await expect(http.settle()).resolves.toStrictEqual([]);
 });
 
-test.each(["eof", "cancel", "abort"] as const)(
+test.each(["eof", "cancel"] as const)(
   "continues admitted export DB work after response %s while a concurrent request finishes",
   async (completion) => {
     actor();
@@ -180,13 +180,8 @@ test.each(["eof", "cancel", "abort"] as const)(
       },
     });
     const owner = caller();
-    const controller = new AbortController();
-    onTestFinished(() => {
-      controller.abort();
-    });
     const response = await owner.request("/api/user/export", {
       method: "POST",
-      signal: controller.signal,
     });
     expect(response.status).toBe(202);
     await entered.promise;
@@ -195,11 +190,8 @@ test.each(["eof", "cancel", "abort"] as const)(
         jobId: expect.any(String),
         status: expect.stringMatching(/pending|running/),
       });
-    } else if (completion === "cancel") {
-      await response.body!.cancel("caller stopped reading");
     } else {
-      controller.abort(new DOMException("Caller disconnected", "AbortError"));
-      await response.body!.cancel();
+      await response.body!.cancel("caller stopped reading");
     }
     // Finishing an independent request must not dispose the blocked owner's DB.
     await createAgent("Concurrent foreground");

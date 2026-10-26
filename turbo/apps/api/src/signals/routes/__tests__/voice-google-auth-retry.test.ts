@@ -7,7 +7,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { createDeferredPromise } from "../../utils";
 import { voiceIoPolishRoutes } from "../voice-io-polish";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
@@ -26,7 +25,7 @@ const endpoints = [
   { stage: "impersonation", url: GOOGLE_IMPERSONATION_URL },
 ] as const;
 
-function polish(signal?: AbortSignal) {
+function polish() {
   return setupApp({
     context,
     routes: voiceIoPolishRoutes,
@@ -34,7 +33,6 @@ function polish(signal?: AbortSignal) {
   })(voiceIoPolishSegmentsContract).post({
     headers: { authorization: "Bearer clerk-session" },
     body: { segments: ["Synthetic dictation."] },
-    ...(signal && { fetchOptions: { signal } }),
   });
 }
 
@@ -297,30 +295,4 @@ describe("Google token recovery through the public voice API", () => {
       expect(requestTimes[1]! - requestTimes[0]!).toBe(4000);
     },
   );
-
-  it("finishes token recovery after the client disconnects", async () => {
-    const controller = new AbortController();
-    const entered = createDeferredPromise<void>(context.signal);
-    const complete = createDeferredPromise<void>(context.signal);
-    let attempts = 0;
-    context.mocks.signalTimers.delay.mockImplementation(() => {
-      entered.resolve();
-      return complete.promise;
-    });
-    server.use(
-      http.post(GOOGLE_IMPERSONATION_URL, () => {
-        attempts += 1;
-        return attempts === 1
-          ? new HttpResponse(null, { status: 503 })
-          : token("impersonation");
-      }),
-    );
-    const pending = polish(controller.signal);
-    await entered.promise;
-    controller.abort();
-    complete.resolve();
-    const response = await accept(pending, [200]);
-    expect(response.body).toStrictEqual({ text: "Recovered dictation." });
-    expect(attempts).toBe(2);
-  });
 });

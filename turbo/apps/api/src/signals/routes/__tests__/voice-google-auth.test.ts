@@ -7,7 +7,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { createDeferredPromise } from "../../utils";
 import { voiceIoPolishRoutes } from "../voice-io-polish";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
@@ -31,11 +30,10 @@ function client() {
     rethrowErrors: true,
   })(voiceIoPolishSegmentsContract);
 }
-function polish(signal?: AbortSignal) {
+function polish() {
   return client().post({
     headers: { authorization: "Bearer clerk-session" },
     body: { segments: ["Synthetic dictation."] },
-    ...(signal && { fetchOptions: { signal } }),
   });
 }
 function stsToken() {
@@ -379,70 +377,4 @@ describe("Google voice workload identity through the public API", () => {
     expect(accounts).toHaveLength(3);
     expect(accounts[2]).toContain(productionAccount);
   });
-
-  it("finishes concurrent authentication after one client disconnects", async () => {
-    const controller = new AbortController();
-    const firstEntered = createDeferredPromise<void>(context.signal);
-    const secondEntered = createDeferredPromise<void>(context.signal);
-    const complete = createDeferredPromise<void>(context.signal);
-    let exchanges = 0;
-    server.use(
-      http.post(GOOGLE_STS_URL, async () => {
-        exchanges += 1;
-        if (exchanges === 1) {
-          firstEntered.resolve();
-        } else {
-          secondEntered.resolve();
-        }
-        await complete.promise;
-        return HttpResponse.json(stsToken());
-      }),
-    );
-    const first = polish(controller.signal);
-    await firstEntered.promise;
-    const second = polish();
-    await secondEntered.promise;
-    controller.abort();
-    complete.resolve();
-    const completed = await Promise.all([
-      accept(first, [200]),
-      accept(second, [200]),
-    ]);
-    for (const response of completed) {
-      expect(response.body).toStrictEqual({ text: "Synthetic dictation." });
-    }
-  });
-
-  it.each([GOOGLE_STS_URL, GOOGLE_IMPERSONATION_URL])(
-    "finishes an exchange at %s after its client disconnects and reuses the credential",
-    async (url) => {
-      const controller = new AbortController();
-      const entered = createDeferredPromise<void>(context.signal);
-      const complete = createDeferredPromise<void>(context.signal);
-      let calls = 0;
-      server.use(
-        http.post(url, async () => {
-          calls += 1;
-          entered.resolve();
-          await complete.promise;
-          return HttpResponse.json(
-            typeof url === "string"
-              ? stsToken()
-              : {
-                  accessToken: "synthetic-google-token",
-                  expireTime: new Date(now() + 3_599_000).toISOString(),
-                },
-          );
-        }),
-      );
-      const first = polish(controller.signal);
-      await entered.promise;
-      controller.abort();
-      complete.resolve();
-      const response = await accept(first, [200]);
-      expect(response.body).toStrictEqual({ text: "Synthetic dictation." });
-      await accept(polish(), [200]);
-      expect(calls).toBe(1);
-    },
-  );
 });

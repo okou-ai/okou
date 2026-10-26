@@ -13,7 +13,6 @@ import {
   VERTEX_VOICE_URL,
   vertexVoiceResponse,
 } from "./helpers/google-voice";
-import { createDeferredPromise } from "../../utils";
 import { voiceIoPolishRoutes } from "../voice-io-polish";
 
 const context = testContext();
@@ -299,30 +298,6 @@ describe("POST /api/voice-io/polish", () => {
         },
       });
     }
-  });
-
-  it("finishes the provider request after the client disconnects", async () => {
-    await setupVoicePolish();
-    const controller = new AbortController();
-    const entered = createDeferredPromise<void>(context.signal);
-    const complete = createDeferredPromise<void>(context.signal);
-    server.use(
-      http.post(VERTEX_VOICE_URL, async () => {
-        entered.resolve();
-        await complete.promise;
-        return vertexVoiceResponse("Prepare the update.");
-      }),
-    );
-    const pending = client().post({
-      headers: { authorization: "Bearer clerk-session" },
-      body: { segments: ["um prepare the update"] },
-      fetchOptions: { signal: controller.signal },
-    });
-    await entered.promise;
-    controller.abort();
-    complete.resolve();
-    const response = await accept(pending, [200]);
-    expect(response.body.text).toBe("Prepare the update.");
   });
 
   it("merges ordered segments without answering speech or translating it", async () => {

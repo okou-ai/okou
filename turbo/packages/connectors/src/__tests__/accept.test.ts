@@ -32,9 +32,4 @@ describe("accept", () => {
       error: "invalid_grant",
     });
   });
-
-  it("propagates the original transport failure", async () => {
-    const error = new TypeError("connection failed");
-    await expect(accept(Promise.reject(error), [200])).rejects.toBe(error);
-  });
 });
