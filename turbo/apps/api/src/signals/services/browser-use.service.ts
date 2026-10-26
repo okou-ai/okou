@@ -3185,12 +3185,12 @@ function providerError(response: Response, body: unknown) {
   );
 }
 
-async function browserUseRequest(
+async function browserUseResponse(
   path: string,
   init: RequestInit,
   signal: AbortSignal,
   acceptedStatuses: readonly number[] = [],
-): Promise<unknown> {
+): Promise<{ readonly response: Response; readonly body: unknown }> {
   const apiKey = env("OKOU_BROWSER_USE_API_KEY");
   if (!apiKey) {
     throw new BrowserUseProviderError(
@@ -3250,11 +3250,32 @@ async function browserUseRequest(
   ) {
     throw providerError(result.value.response, result.value.body);
   }
-  return result.value.body;
+  return result.value;
+}
+
+async function browserUseRequest(
+  path: string,
+  init: RequestInit,
+  signal: AbortSignal,
+  acceptedStatuses: readonly number[] = [],
+): Promise<unknown> {
+  return (await browserUseResponse(path, init, signal, acceptedStatuses)).body;
+}
+
+function parseBrowserUseProfile(body: unknown) {
+  const parsed = browserUseProfileSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new BrowserUseProviderError(
+      502,
+      "BROWSER_USE_INVALID_RESPONSE",
+      "Managed browser provider returned an invalid profile",
+    );
+  }
+  return parsed.data;
 }
 
 export async function createBrowserUseProfile(
-  chatThreadId: string,
+  name: string,
   signal: AbortSignal,
 ): Promise<string> {
   const body = await browserUseRequest(
@@ -3262,12 +3283,36 @@ export async function createBrowserUseProfile(
     {
       method: "POST",
       body: JSON.stringify({
-        name: `okou-browser-profile-${chatThreadId}`,
+        name,
       }),
     },
     signal,
   );
-  return browserUseProfileSchema.parse(body).id;
+  return parseBrowserUseProfile(body).id;
+}
+
+export async function getBrowserUseProfile(
+  profileId: string,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const result = await browserUseResponse(
+    `/profiles/${encodeURIComponent(profileId)}`,
+    { method: "GET" },
+    signal,
+    [404],
+  );
+  if (result.response.status === 404) {
+    return null;
+  }
+  const profile = parseBrowserUseProfile(result.body);
+  if (profile.id !== profileId) {
+    throw new BrowserUseProviderError(
+      502,
+      "BROWSER_USE_INVALID_RESPONSE",
+      "Managed browser provider returned a different profile",
+    );
+  }
+  return profile.id;
 }
 
 export async function deleteBrowserUseProfile(

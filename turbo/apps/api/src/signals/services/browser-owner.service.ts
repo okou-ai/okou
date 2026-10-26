@@ -53,6 +53,9 @@ type BrowserAction<K extends RunnerBrowserAction["kind"]> = Extract<
   RunnerBrowserAction,
   { kind: K }
 >;
+type BrowserOwnerMutation =
+  | Exclude<RunnerBrowserAction, { kind: "inspect" | "allocate" }>
+  | { readonly kind: "allocate"; readonly providerProfileId: string };
 
 interface RunnerBrowserIdentity {
   readonly runId: string;
@@ -112,7 +115,7 @@ function currentRun(input: RunnerBrowserIdentity) {
   );
 }
 
-function authorityStillCurrent(owner: BrowserOwnerAuthority) {
+export function authorityStillCurrent(owner: BrowserOwnerAuthority) {
   return exists(
     new QueryBuilder()
       .select({ id: agentRuns.id })
@@ -288,7 +291,7 @@ const allocateOwnerBrowser$ = command(
   async (
     { set },
     owner: BrowserOwnerAuthority,
-    action: BrowserAction<"allocate">,
+    action: Extract<BrowserOwnerMutation, { kind: "allocate" }>,
     now: Date,
     signal: AbortSignal,
   ): Promise<BrowserView[]> => {
@@ -749,7 +752,7 @@ const mutateBrowserOwner$ = command(
   async (
     { set },
     owner: BrowserOwnerAuthority,
-    action: Exclude<RunnerBrowserAction, { kind: "inspect" }>,
+    action: BrowserOwnerMutation,
     signal: AbortSignal,
   ): Promise<BrowserView[]> => {
     const now = nowDate();
@@ -791,7 +794,7 @@ export const controlBrowserOwner$ = command(
   async (
     { set },
     owner: BrowserOwnerAuthority,
-    action: Exclude<RunnerBrowserAction, { kind: "inspect" }>,
+    action: BrowserOwnerMutation,
     signal: AbortSignal,
   ): Promise<RunnerBrowserResponse> => {
     const result = await settle(
