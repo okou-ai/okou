@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.8.17](https://github.com/okou-ai/okou/compare/host-worker-v1.8.16...host-worker-v1.8.17) (2026-10-26)
+
+
+### Bug Fixes
+
+* download hosted sites in place and enable staff rollout ([#43111](https://github.com/okou-ai/okou/issues/43111)) ([ef21e30](https://github.com/okou-ai/okou/commit/ef21e303274787f2cfff446e747505b5849e9b18))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.0
+    * @okouai/core bumped to 8.790.3
+    * @okouai/ui bumped to 1.18.2
+
 ## [1.8.16](https://github.com/okou-ai/okou/compare/host-worker-v1.8.15...host-worker-v1.8.16) (2026-10-26)
 
 

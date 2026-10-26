@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.87](https://github.com/okou-ai/okou/compare/runner-network-v0.2.86...runner-network-v0.2.87) (2026-10-26)
+
+
+### Bug Fixes
+
+* **runner:** cap buffered data router request bodies ([#43112](https://github.com/okou-ai/okou/issues/43112)) ([4b48b9d](https://github.com/okou-ai/okou/commit/4b48b9da3ecaa6620ca5c6e2cd3d2af0dfbbb7d8))
+
 ## [0.2.86](https://github.com/okou-ai/okou/compare/runner-network-v0.2.85...runner-network-v0.2.86) (2026-10-26)
 
 
