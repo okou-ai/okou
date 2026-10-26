@@ -358,6 +358,9 @@ export const answerHalloween$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (get(roundState$)?.id !== round.id) {
+      return;
+    }
     set(storeRound$, {
       ...result.body,
       question: result.body.question ?? round.question,
@@ -365,6 +368,12 @@ export const answerHalloween$ = command(
     if (result.body.outcome === "wrong") {
       await delay(1100, { signal });
       signal.throwIfAborted();
+      if (
+        get(roundState$)?.id !== round.id ||
+        get(screenState$) !== "question"
+      ) {
+        return;
+      }
       set(screenState$, "result");
       await set(refreshHalloweenPhase$, signal);
     }
@@ -391,6 +400,9 @@ export const nextHalloween$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (get(roundState$)?.id !== round.id) {
+      return;
+    }
     set(storeRound$, result.body);
     if (result.body.outcome !== "playing") {
       set(screenState$, "result");
@@ -436,9 +448,10 @@ export const leaveHalloween$ = command(
         ),
       );
       signal.throwIfAborted();
+    } else {
+      set(screenState$, "start");
+      set(roundState$, null);
     }
-    set(screenState$, "start");
-    set(roundState$, null);
     await set(refreshHalloweenPhase$, signal);
   },
 );

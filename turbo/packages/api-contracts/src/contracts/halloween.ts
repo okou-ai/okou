@@ -60,12 +60,13 @@ const errors = {
   409: apiErrorSchema,
   500: apiErrorSchema,
   503: apiErrorSchema,
-} as const;
+};
 const c = initContract();
 export const halloweenContract = c.router({
   status: {
     method: "GET",
     path: "/api/halloween",
+    headers: authHeadersSchema,
     responses: {
       200: object({
         phase: halloweenPhaseSchema,
@@ -77,6 +78,7 @@ export const halloweenContract = c.router({
   start: {
     method: "POST",
     path: "/api/halloween/rounds",
+    headers: authHeadersSchema,
     body: credential,
     responses: { 200: halloweenRoundSchema, ...errors },
   },

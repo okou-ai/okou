@@ -173,7 +173,7 @@ function HalloweenBubble({ index }: { index: number }) {
           pathname="/halloween"
           aria-label={copy.nudgeLabel}
           tabIndex={-1}
-          className="relative pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full border border-brand/20 bg-background/90 text-brand shadow-sm hover:bg-brand/10"
+          className="relative pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full border border-primary/20 bg-background/90 text-brand-text shadow-sm hover:bg-primary/10"
           onClick={(event) => {
             if (!shouldHandleLinkClick(event)) {
               return;
@@ -194,7 +194,7 @@ function HalloweenBubble({ index }: { index: number }) {
                 return (
                   <Candy
                     key={particle}
-                    className="absolute left-4 top-4 h-4 w-4 text-brand"
+                    className="absolute left-4 top-4 h-4 w-4 text-brand-text"
                   />
                 );
               })}

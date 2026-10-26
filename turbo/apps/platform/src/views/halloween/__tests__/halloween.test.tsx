@@ -219,3 +219,43 @@ test("closed events retain direct rules access but have no play button", async (
   ).toBeUndefined();
   expect(screen.getByRole("dialog")).toBeInTheDocument();
 });
+
+test("a delayed leave response cannot erase a newly started round", async () => {
+  const releaseLeave = createDeferredPromise<void>(context.signal);
+  let phaseReads = 0;
+  const startedIds: string[] = [];
+  context.mocks.api(halloweenContract.status, ({ respond }) => {
+    phaseReads++;
+    return respond(200, { phase: "open", changesInMs: null });
+  });
+  context.mocks.api(halloweenContract.start, ({ body, respond }) => {
+    startedIds.push(body.id);
+    return respond(200, {
+      ...round(body.id),
+      question: { ...question, text: `Round ${startedIds.length}` },
+    });
+  });
+  context.mocks.api(halloweenContract.leave, async ({ body, respond }) => {
+    await releaseLeave.promise;
+    return respond(200, {
+      ...round(body.id),
+      outcome: "left",
+      question: null,
+      completedAt: "2026-10-30T12:01:00Z",
+    });
+  });
+  await setupPage({ context, path: "/halloween", auth: null });
+  await click(control("button", "Let’s play"));
+  await screen.findByRole("heading", { name: "Round 1" });
+  await click(control("button", "Leave quiz"));
+  await click(control("button", "Let’s play"));
+  await screen.findByRole("heading", { name: "Round 2" });
+  expect(startedIds).toHaveLength(2);
+  expect(startedIds[0]).not.toBe(startedIds[1]);
+  const readsBeforeCompletion = phaseReads;
+  releaseLeave.resolve();
+  await waitFor(() => {
+    expect(phaseReads).toBeGreaterThan(readsBeforeCompletion);
+  });
+  expect(screen.getByRole("heading", { name: "Round 2" })).toBeInTheDocument();
+});
