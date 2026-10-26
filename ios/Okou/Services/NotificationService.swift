@@ -286,33 +286,37 @@ final class NotificationService {
   }
 
   /// Invoked after identity/membership startup, never by background prefetch.
-  func openPending(authentication: AuthenticationService, store: WorkspaceStore) async {
+  /// Returns whether the current notification opened in this workspace.
+  func openPending(authentication: AuthenticationService, store: WorkspaceStore) async -> Bool {
     guard let destination = pendingDestination, !authentication.isLoading,
       let userID = authentication.userID
-    else { return }
+    else { return false }
     if let workspaceNavigation { await workspaceNavigation.value }
-    guard pendingDestination == destination, !Task.isCancelled else { return }
+    guard pendingDestination == destination, !Task.isCancelled else { return false }
     let request = navigationRequest
-    guard openingRequest != request else { return }
+    guard openingRequest != request else { return false }
     openingRequest = request
     defer { if openingRequest == request { openingRequest = nil } }
     guard destination.userId == userID else {
       pendingDestination = nil
-      return
+      return false
     }
     do {
       try await authentication.switchWorkspace(destination.workspaceId)
       try Task.checkCancellation()
-      guard navigationRequest == request, authentication.userID == userID else { return }
+      guard navigationRequest == request, authentication.userID == userID else { return false }
       // The new workspace's root will consume the pending destination after startup.
-      guard workspace?.workspaceID == destination.workspaceId else { return }
-      _ = await store.openChatLink(.thread(id: destination.threadId, runID: destination.runId))
-      guard navigationRequest == request, !Task.isCancelled else { return }
+      guard workspace?.workspaceID == destination.workspaceId else { return false }
+      let opened = await store.openChatLink(
+        .thread(id: destination.threadId, runID: destination.runId))
+      guard navigationRequest == request, !Task.isCancelled else { return false }
       pendingDestination = nil
+      return opened
     } catch {
-      guard navigationRequest == request, !Task.isCancelled else { return }
+      guard navigationRequest == request, !Task.isCancelled else { return false }
       pendingDestination = nil
       self.error = error.localizedDescription
+      return false
     }
   }
 

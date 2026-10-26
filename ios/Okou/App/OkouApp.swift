@@ -298,10 +298,10 @@ private struct WorkspaceRootView: View {
       }
       store.setForeground(scenePhase == .active)
       await store.start(userID: userID, workspaceID: workspaceID)
-      await notifications.openPending(authentication: authentication, store: store)
+      await openPendingNotification()
     }
     .task(id: notifications.pendingDestination) {
-      await notifications.openPending(authentication: authentication, store: store)
+      await openPendingNotification()
     }
     .onDisappear {
       sidebar.cancelDrag()
@@ -381,6 +381,12 @@ private struct WorkspaceRootView: View {
       return "What are we working on, \(name)?"
     }
     return "What are we working on?"
+  }
+
+  private func openPendingNotification() async {
+    if await notifications.openPending(authentication: authentication, store: store) {
+      closeSidebar()
+    }
   }
 
   private func openSidebar() {
