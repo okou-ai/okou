@@ -1120,7 +1120,7 @@ test("A failed deletion is not reported again on the next confirmation", async (
   const first = await askToDelete();
   click(buttonByName("Delete template", first)!);
   await expect(
-    within(first).findByText("Couldn't delete the template. Try again."),
+    within(first).findByText("Couldn't delete the template."),
   ).resolves.toBeInTheDocument();
   click(buttonByName("Cancel", first)!);
   await waitFor(() => {
@@ -1133,7 +1133,7 @@ test("A failed deletion is not reported again on the next confirmation", async (
   const second = await askToDelete();
   expect(within(second).getByText(/Q3 board review/)).toBeInTheDocument();
   expect(
-    within(second).queryByText("Couldn't delete the template. Try again."),
+    within(second).queryByText("Couldn't delete the template."),
   ).not.toBeInTheDocument();
 
   click(buttonByName("Delete template", second)!);

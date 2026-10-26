@@ -31,7 +31,6 @@ import {
   setAgentDeleteCopyChoices$,
   setAgentDeleteDialogOpen$,
   type AgentDeleteWorkflow,
-  type AgentDeleteSession,
 } from "../../../signals/okou-page/settings/settings-tab.ts";
 
 export interface AgentDeleteCopyTarget {
@@ -390,16 +389,11 @@ function AgentDeleteError({ error }: { error: unknown }) {
 }
 
 function AgentDeleteFeedback({
-  session,
   error,
   deleteWorkflowsState,
-  deleteCopyTargets,
 }: {
-  session: AgentDeleteSession | null;
-  busy: boolean;
   error: unknown;
   deleteWorkflowsState: "loading" | "error" | "ready";
-  deleteCopyTargets: readonly AgentDeleteCopyTarget[];
 }) {
   const { t } = useTranslation("agents");
   return (
@@ -424,43 +418,6 @@ function AgentDeleteFeedback({
         </div>
       ) : (
         <AgentDeleteError error={error} />
-      )}
-      {session && session.completedRescues.length > 0 && (
-        <div role="status" className="space-y-2 px-6 pb-6 text-sm">
-          <p className="font-medium">
-            {t(($) => {
-              return $.delete.workflows.copiedTitle;
-            })}
-          </p>
-          <ul className="space-y-1 break-words text-muted-foreground">
-            {session.completedRescues.map(([workflowId, targetId]) => {
-              const workflowTitle =
-                session.workflows.find((workflow) => {
-                  return workflow.id === workflowId;
-                })?.title ??
-                t(($) => {
-                  return $.delete.workflows.untitled;
-                });
-              const agentName =
-                deleteCopyTargets.find((target) => {
-                  return target.id === targetId;
-                })?.displayName ??
-                t(($) => {
-                  return $.fallbackName;
-                });
-              return (
-                <li key={`${workflowId}:${targetId}`}>
-                  {t(
-                    ($) => {
-                      return $.delete.workflows.copiedTo;
-                    },
-                    { workflowTitle, agentName },
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
       )}
     </>
   );
@@ -502,14 +459,12 @@ function useAgentDeleteConfirmation({
         targetId !== DELETE_WITH_AGENT &&
         workflows.some((workflow) => {
           return workflow.id === workflowId;
-        }) &&
-        !session?.completedRescues.some(([copiedId, copiedTo]) => {
-          return copiedId === workflowId && copiedTo === targetId;
         })
       );
     });
   const deleting = busy && !copying;
-  const workflowsReady = deleteWorkflowsState === "ready";
+  const workflowsReady =
+    deleteWorkflowsState === "ready" && deletion.state !== "hasError";
   const setCopyChoices = (choices: Record<string, string>) => {
     if (session) {
       updateCopyChoices(session.id, choices, workflows);
@@ -646,11 +601,8 @@ function AgentDeleteDialogContent(props: AgentDeleteDialogProps) {
                   />
                 )}
                 <AgentDeleteFeedback
-                  session={session}
-                  busy={busy}
                   error={error}
                   deleteWorkflowsState={deleteWorkflowsState}
-                  deleteCopyTargets={deleteCopyTargets}
                 />
               </DialogContent>
             </Dialog>

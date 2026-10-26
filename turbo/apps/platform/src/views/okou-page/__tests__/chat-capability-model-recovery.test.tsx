@@ -45,7 +45,7 @@ test("Match model-provider recovery guidance to the failure", async () => {
   await readyChat();
   const card = await screen.findByRole("status");
   expect(card).toHaveTextContent(
-    "No model provider is available for this run. Try again, or connect a personal subscription.",
+    "No model provider is available for this run. Connect a personal subscription.",
   );
   const configureProvider = await findButton("Manage subscriptions");
   expect(card).toContainElement(configureProvider);

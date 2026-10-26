@@ -219,7 +219,7 @@ test("A failed QR request can be restarted by reopening authorization", async ()
   click(getAction("button", "Connect", getIntegrationCard("WeChat")));
   const dialog = await screen.findByRole("dialog");
   await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
-    "Could not connect to WeChat. Please try again.",
+    "Could not connect to WeChat.",
   );
   context.store.set(available$, true);
   click(within(dialog).getByLabelText("Close"));

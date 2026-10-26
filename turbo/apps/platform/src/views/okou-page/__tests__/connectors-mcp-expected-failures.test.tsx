@@ -33,7 +33,7 @@ test.each([
     status: 502,
     code: CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.PROVIDER_UNAVAILABLE,
     message:
-      "The MCP OAuth provider is temporarily unavailable or rate-limited. Try again later and check the provider's availability.",
+      "The MCP OAuth provider is temporarily unavailable or rate-limited. Check the provider's availability.",
     report: false,
   },
   {

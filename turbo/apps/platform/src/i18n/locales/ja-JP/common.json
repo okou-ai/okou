@@ -87,7 +87,7 @@
           "title": "クレジットが枯渇しました"
         },
         "noModelProvider": {
-          "guidance": "しばらくしてからもう一度お試しいただくか、設定で個人の Claude Code または Codex サブスクリプションを接続してください。",
+          "guidance": "設定で個人の Claude Code または Codex サブスクリプションを接続してください。",
           "title": "この実行に使用できるモデルプロバイダーがありません"
         },
         "paidPlanRequired": {
@@ -99,7 +99,7 @@
           "title": "プロバイダーに互換性がありません"
         },
         "providerTemporarilyUnavailable": {
-          "guidance": "モデルプロバイダーは一時的に利用できません。後でもう一度試してください。",
+          "guidance": "モデルプロバイダーは一時的に利用できません。",
           "title": "モデルプロバイダーが一時的に利用できません"
         }
       },
@@ -435,9 +435,9 @@
       "signedInAs": "{{email}} としてログイン中",
       "signedInDescription": "存在しないか、別のアカウントまたは組織に共有されている可能性があります。",
       "signIn": "ログイン",
-      "signInFailed": "ログイン画面を開けませんでした。もう一度お試しください。",
+      "signInFailed": "ログイン画面を開けませんでした。",
       "switchAccount": "アカウントを切り替える",
-      "switchAccountFailed": "アカウント切り替え画面を開けませんでした。もう一度お試しください。",
+      "switchAccountFailed": "アカウント切り替え画面を開けませんでした。",
       "title": "このアーティファクトを表示できません",
       "websiteAuthenticationDescription": "このウェブサイトにアクセスできるアカウントでログインしてください。",
       "websiteAuthenticationSignedInDescription": "現在のアカウントでアクセス権を確認するには、続行してください。",
@@ -1266,7 +1266,7 @@
         "packCreditsDiscount": "{{credits}} クレジット · {{discount}}% オフ",
         "packOption": "{{price}} · {{credits}} クレジット · {{discount}}%オフ",
         "paidPackageRequired": "続行するには、少なくとも1人のメンバーに有料パッケージを選択してください。",
-        "planChangeError": "サブスクリプションの変更を準備できませんでした。もう一度お試しください。",
+        "planChangeError": "サブスクリプションの変更を準備できませんでした。",
         "planPlusPackages": "プラン {{plan}} · メンバーパッケージ 各 {{lowest}}〜{{highest}}",
         "planStep": "プラン",
         "priceFrom": "最低",
@@ -1392,7 +1392,7 @@
       "generatePdf": "PDFを生成",
       "generatingPdf": "PDFを生成中…",
       "more": "さらなるアクション",
-      "pdfGenerationFailed": "PDFを生成できませんでした。もう一度お試しください。",
+      "pdfGenerationFailed": "PDFを生成できませんでした。",
       "remove": "削除",
       "rename": "名前の変更",
       "saving": "保存中...",
@@ -1569,7 +1569,7 @@
       "title": "添付ファイル",
       "unavailable": "{{filename}} は利用できなくなりました。送信するにはもう一度アップロードしてください。",
       "unavailableCount_other": "{{count}} 件の添付ファイルは利用できなくなりました。送信するにはもう一度アップロードしてください。",
-      "uploadFailedRetry": "{{filename}} のアップロードに失敗しました。"
+      "uploadFailed": "{{filename}} のアップロードに失敗しました。"
     },
     "automations": {
       "active": "アクティブ",
@@ -1952,15 +1952,15 @@
       "genericTitle": "この実行を完了できませんでした",
       "loadMessages": "メッセージの読み込みに失敗しました",
       "noModelProviderAction": "サブスクリプションを管理",
-      "noModelProviderPrefix": "この実行に使用できるモデルプロバイダーがありません。もう一度お試しいただくか、個人サブスクリプションを接続してください。",
+      "noModelProviderPrefix": "この実行に使用できるモデルプロバイダーがありません。個人サブスクリプションを接続してください。",
       "providerIncompatibleAction": "新しいセッションを開始する",
       "providerIncompatiblePrefix": "このセッションは別のモデル プロバイダーで開始されたため、現在のモデル プロバイダーでは続行できません。",
       "recovery": {
-        "accessProgramDescription": "少し時間をおいて再試行してください。このチャットは開いたままにできます。",
+        "accessProgramDescription": "このチャットは開いたままにできます。",
         "accessProgramTitle": "Codex へのアクセスは一時的に利用できません",
         "autonomyLimitDescription": "連続自動実行の上限に達しました。",
         "autonomyLimitTitle": "自動実行の上限に達しました",
-        "capacityDescription": "少し待ってから再試行するか、別のモデルで続けてください。",
+        "capacityDescription": "別のモデルで続けてください。",
         "capacityTitle": "このモデルは現在混雑しています",
         "claudeCode": "Claude Code",
         "codex": "Codex",
@@ -2251,10 +2251,10 @@
       "copyFailed": "リンクをコピーできませんでした",
       "copyLink": "リンクをコピー",
       "create": "共有",
-      "createFailed": "共有された会話を作成できませんでした。もう一度お試しください。",
+      "createFailed": "共有された会話を作成できませんでした。",
       "deselectGroup": "メッセージグループの選択を解除",
       "linkCopied": "リンクをコピーしました",
-      "messageShareFailed": "共有リンクを作成できませんでした。もう一度お試しください。",
+      "messageShareFailed": "共有リンクを作成できませんでした。",
       "publicDescription": "選択したメッセージと添付ファイルが公開されます。",
       "selectedCount_other": "{{count}}件選択中",
       "selectGroup": "メッセージグループを選択",
@@ -3294,7 +3294,7 @@
         "denied": "接続が拒否されました。もう一度やり直してください。",
         "expired": "接続セッションの有効期限が切れました。もう一度やり直してください。",
         "failed": "接続に失敗しました。もう一度やり直してください。",
-        "verificationOpen": "確認ページを開けませんでした。もう一度やり直してください。"
+        "verificationOpen": "確認ページを開けませんでした。"
       },
       "external": {
         "code": "コード",
@@ -3335,7 +3335,7 @@
           "clientRegistrationRejected": "OAuth プロバイダーが自動クライアント登録を拒否しました。サポート対象の MCP クライアントまたは登録メタデータが制限されている可能性があります。プロバイダーがサポートする MCP クライアントを使用するか、登録済みのクライアント認証情報をすでにお持ちの場合のみカスタム OAuth を使用するか、Okou サポートにお問い合わせください。",
           "clientRegistrationUnavailable": "OAuth プロバイダーはサポート対象の自動クライアント登録方法を提供していません。登録済みのクライアント認証情報をすでにお持ちの場合はカスタム OAuth を使用するか、Okou サポートにお問い合わせください。",
           "discoveryInvalid": "MCP サーバーの OAuth ディスカバリメタデータが不完全または不整合です。サーバーを管理している場合は公開メタデータを修正するか、サーバー管理者にお問い合わせください。",
-          "providerUnavailable": "MCP OAuth プロバイダーは一時的に利用できないか、リクエストを制限しています。時間をおいて再試行し、プロバイダーの稼働状況を確認してください。",
+          "providerUnavailable": "MCP OAuth プロバイダーは一時的に利用できないか、リクエストを制限しています。プロバイダーの稼働状況を確認してください。",
           "unsafeUrl": "MCP サーバーが公開 HTTPS エンドポイントではない OAuth URL を通知しました。サーバーが通知する OAuth URL を修正してから、もう一度お試しください。"
         },
         "save": "保存",
@@ -3547,7 +3547,7 @@
         "connectDescription": "アカウントをこの Slack ワークスペースにリンクすると、Slack からエージェントと直接対話できるようになります。",
         "connectTitle": "Slack に接続します",
         "currentConnection": "Slack に接続済み",
-        "errorFallback": "Slack接続を確認または開始できませんでした。もう一度お試しください。",
+        "errorFallback": "Slack接続を確認または開始できませんでした。",
         "invalidDescription": "このページは、Slack 接続リンクから開かれるように設計されています。",
         "keepAccount": "{{account}}を維持",
         "open": "Slack を開く",
@@ -3590,7 +3590,7 @@
         "connectionCheckFailed": "接続を確認するために Telegram にアクセスできませんでした。",
         "connectTitle": "Telegram に接続します",
         "continue": "Telegram に進みます",
-        "domainNotVerified": "このアプリの Telegram ログインを確認できませんでした。もう一度お試しください。問題が続く場合はサポートにお問い合わせください。",
+        "domainNotVerified": "このアプリの Telegram ログインを確認できませんでした。問題が続く場合はサポートにお問い合わせください。",
         "errorFallback": "Telegram に接続できませんでした。 Telegram から再試行してください。",
         "interrupted": "今回の操作では接続を確認できませんでした。現在の状態を確認してから再試行してください。",
         "invalidSignature": "このリンクの署名は無効です。",
@@ -5015,12 +5015,12 @@
     "contentPolicyRejected": "モデルプロバイダーのコンテンツ安全ポリシーにより、このリクエストは拒否されました。同じ入力で再試行しても失敗します。リクエストを言い換えるか、新しい会話を始めるか、別のモデルに切り替えてください。",
     "executionTimeout": "この実行は時間制限に達しました。",
     "failed": "実行に失敗しました",
-    "modelRoutesUnavailable": "このモデルのすべての組み込みルートは一時的に利用できません。しばらくしてからもう一度お試しください。",
+    "modelRoutesUnavailable": "このモデルのすべての組み込みルートは一時的に利用できません。",
     "modelTemporarilyUnavailable": "モデルは一時的に利用できません",
     "modelUnavailable": "現在のモデルは利用できません。",
-    "overloaded": "{{model}} は混雑しています。数分待ってからもう一度試すか、別のモデルに切り替えてください。",
+    "overloaded": "{{model}} は混雑しています。別のモデルに切り替えてください。",
     "providerBalance": "接続されたサブスクリプションアカウントの残高が不足しています。",
-    "transient": "エラーが発生しました。しばらくしてからもう一度お試しください。",
+    "transient": "エラーが発生しました。",
     "vm0Credits": "クレジットが不足しています。続行するにはクレジットを追加するか、個人の Codex または Claude サブスクリプションを接続してください。"
   },
   "serviceStatus": {
@@ -5460,7 +5460,7 @@
           "create": "ウェルカムチャットを作成",
           "creating": "作成中…",
           "description": "紹介とサンプルを含むウェルカムチャットを作成します。",
-          "failed": "ウェルカムチャットを作成できませんでした。もう一度お試しください。",
+          "failed": "ウェルカムチャットを作成できませんでした。",
           "title": "ウェルカムチャット"
         }
       },
@@ -5494,38 +5494,38 @@
       "morningBrief": {
         "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。",
         "description": "お使いのタイムゾーンの午前7:00までに毎日の優先事項を受け取ります。",
+        "errorMessage": "Morning Brief の設定を読み込むか更新できませんでした。",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
         "preparationFailed": "一時的に利用できません。",
         "preparing": "最初のモーニングブリーフを準備中です。いつでもオフにできます。",
-        "retryMessage": "Morning Brief の設定を読み込むか更新できませんでした。",
         "title": "モーニングブリーフ"
       },
       "proactiveLearning": {
         "description": "夜間に活動を振り返り、個人の記憶と理解を更新します。",
+        "errorMessage": "設定を読み込むか更新できませんでした。",
         "missingDefaultAgent": "利用可能な既定の Agent を選択してください。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "このワークフローは一時的に利用できません。",
         "preparing": "ワークフローを準備しています。",
-        "retryMessage": "設定を読み込むか更新できませんでした。",
         "title": "学習"
       },
       "proactivePlanningAction": {
         "description": "依頼された作業を計画・実行し、あなたの対応が必要なときに通知します。",
+        "errorMessage": "設定を読み込むか更新できませんでした。",
         "missingDefaultAgent": "利用可能な既定の Agent を選択してください。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "このワークフローは一時的に利用できません。",
         "preparing": "ワークフローを準備しています。",
-        "retryMessage": "設定を読み込むか更新できませんでした。",
         "title": "計画と実行"
       },
       "proactiveSuggestions": {
         "description": "Okou が接続済みの情報源を毎時間確認し、役立つ次のアクションをホームに提案します。",
+        "errorMessage": "提案の設定を読み込みまたは更新できませんでした。",
         "missingDefaultAgent": "先回りの提案を受け取るには、利用可能なデフォルトの Agent を選択してください。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "一時的に利用できません。",
         "preparing": "毎時間の提案を準備しています。いつでもオフにできます。",
-        "retryMessage": "提案の設定を読み込みまたは更新できませんでした。",
         "title": "提案"
       },
       "send": {
@@ -5989,7 +5989,7 @@
       "confirm": "テンプレートを削除",
       "deleting": "削除中...",
       "description": "「{{title}}」は、閲覧できるすべてのユーザーから削除されます。この操作は取り消せません。",
-      "failed": "テンプレートを削除できませんでした。もう一度お試しください。",
+      "failed": "テンプレートを削除できませんでした。",
       "title": "テンプレートを削除しますか？"
     },
     "detail": {
@@ -6312,7 +6312,7 @@
         "updatedDescription": "カレンダーイベントが更新されたときに実行します。",
         "updatedRule": "カレンダー {{calendar}} イベントが更新されたとき",
         "updatedTitle": "Google Calendar イベントが更新されました",
-        "updateError": "このカレンダーを変更できませんでした。もう一度お試しください。"
+        "updateError": "このカレンダーを変更できませんでした。"
       },
       "chat": {
         "addAction": "チャットオートメーションを追加する",
@@ -6989,7 +6989,7 @@
       "description": "WeChatでエージェントとチャットできます。",
       "disconnect": "接続解除",
       "expired": "このQRコードは期限切れです。新しく作成してください。",
-      "failed": "WeChatに接続できませんでした。もう一度お試しください。",
+      "failed": "WeChatに接続できませんでした。",
       "instructions": "WeChatでこのQRコードをスキャンし、スマートフォンで確認してください。",
       "linkUnavailable": "このリンクは利用できません。元のアカウントとワークスペースを使用し、WeChat で再度メッセージを送信して新しいリンクを取得してください。新しい QR コードでも接続できます。",
       "name": "WeChat",

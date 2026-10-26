@@ -60,16 +60,13 @@
     "success": "Agent deleted",
     "title": "Delete {{agentName}}?",
     "workflows": {
-      "copiedTitle": "Already copied",
-      "copiedTo": "{{workflowTitle}} copied to {{agentName}}",
       "copyTo": "Copy to {{agentName}}",
       "deleteWithAgent": "Delete with agent",
       "description": "Copy a workflow to another agent to keep it. Anything left is deleted.",
       "handle": "Handle workflow {{workflowTitle}}",
       "loadFailed": "Could not load workflows.",
       "loading": "Loading workflows…",
-      "title": "Keep any workflows?",
-      "untitled": "Workflow"
+      "title": "Keep any workflows?"
     }
   },
   "detail": {

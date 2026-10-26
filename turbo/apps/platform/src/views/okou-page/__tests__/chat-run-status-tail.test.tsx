@@ -23,7 +23,7 @@ const RUN_B = "a0000000-0000-4000-a000-000000000292";
 const RESULT = "The API is checking dependencies. No errors so far.";
 const OLD_ERROR = "The provider could not complete the previous request.";
 const NEW_ERROR = "The provider could not complete the next request.";
-const GENERIC_ERROR = "Oops, something went wrong. Please try again later.";
+const GENERIC_ERROR = "Oops, something went wrong.";
 
 function failedEvent(
   runId = RUN_A,

@@ -29,7 +29,7 @@ function preferenceStatusKey(
   failed: boolean,
 ) {
   return failed
-    ? "retryMessage"
+    ? "errorMessage"
     : value?.unavailableReason === "missing-default-agent"
       ? "missingDefaultAgent"
       : value?.unavailableReason === "missing-timezone"

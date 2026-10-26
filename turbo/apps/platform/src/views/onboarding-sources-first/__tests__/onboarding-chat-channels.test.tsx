@@ -303,7 +303,7 @@ test.each([
   {
     reason: "domain_not_verified",
     message:
-      "We couldn't verify Telegram login for this app. Try again, or contact support if the problem continues.",
+      "We couldn't verify Telegram login for this app. Contact support if the problem continues.",
   },
   {
     reason: "domain_check_failed",

@@ -87,7 +87,7 @@
           "title": "Credits depleted"
         },
         "noModelProvider": {
-          "guidance": "Try again shortly, or connect a personal Claude Code or Codex subscription in Settings.",
+          "guidance": "Connect a personal Claude Code or Codex subscription in Settings.",
           "title": "No model provider is available for this run"
         },
         "paidPlanRequired": {
@@ -99,7 +99,7 @@
           "title": "Provider not compatible"
         },
         "providerTemporarilyUnavailable": {
-          "guidance": "The model provider is temporarily unavailable. Please try again later.",
+          "guidance": "The model provider is temporarily unavailable.",
           "title": "Provider temporarily unavailable"
         }
       },
@@ -435,9 +435,9 @@
       "signedInAs": "Signed in as {{email}}",
       "signedInDescription": "It may not exist, or it may be shared with a different account or organization.",
       "signIn": "Sign in",
-      "signInFailed": "Could not open sign-in. Please try again.",
+      "signInFailed": "Could not open sign-in.",
       "switchAccount": "Switch account",
-      "switchAccountFailed": "Could not open the account switcher. Please try again.",
+      "switchAccountFailed": "Could not open the account switcher.",
       "title": "You can’t view this artifact",
       "websiteAuthenticationDescription": "Sign in with an account that can access this website.",
       "websiteAuthenticationSignedInDescription": "Continue to verify access with your current account.",
@@ -1268,7 +1268,7 @@
         "packCreditsDiscount": "{{credits}} credits · {{discount}}% off",
         "packOption": "{{price}} · {{credits}} credits · {{discount}}% off",
         "paidPackageRequired": "Select a paid package for at least one member to continue.",
-        "planChangeError": "Could not prepare the subscription change. Try again.",
+        "planChangeError": "Could not prepare the subscription change.",
         "planPlusPackages": "Plan {{plan}} · member packages {{lowest}}–{{highest}} each",
         "planStep": "Plan",
         "priceFrom": "from",
@@ -1394,7 +1394,7 @@
       "generatePdf": "Generate PDF",
       "generatingPdf": "Generating PDF…",
       "more": "More actions",
-      "pdfGenerationFailed": "Could not generate PDF. Try again.",
+      "pdfGenerationFailed": "Could not generate PDF.",
       "remove": "Remove",
       "rename": "Rename",
       "saving": "Saving...",
@@ -1572,7 +1572,7 @@
       "unavailable": "{{filename}} is no longer available. Upload it again to send.",
       "unavailableCount_one": "{{count}} attachment is no longer available. Upload it again to send.",
       "unavailableCount_other": "{{count}} attachments are no longer available. Upload them again to send.",
-      "uploadFailedRetry": "Failed to upload {{filename}}."
+      "uploadFailed": "Failed to upload {{filename}}."
     },
     "automations": {
       "active": "Active",
@@ -1959,15 +1959,15 @@
       "genericTitle": "This run couldn't finish",
       "loadMessages": "Failed to load messages",
       "noModelProviderAction": "Manage subscriptions",
-      "noModelProviderPrefix": "No model provider is available for this run. Try again, or connect a personal subscription.",
+      "noModelProviderPrefix": "No model provider is available for this run. Connect a personal subscription.",
       "providerIncompatibleAction": "Start a new session",
       "providerIncompatiblePrefix": "This session was started with a different model provider and can't be continued with the current one.",
       "recovery": {
-        "accessProgramDescription": "Try again in a little while. You can keep this chat open.",
+        "accessProgramDescription": "You can keep this chat open.",
         "accessProgramTitle": "Codex access is temporarily unavailable",
         "autonomyLimitDescription": "The limit for consecutive automatic runs has been reached.",
         "autonomyLimitTitle": "Automatic run limit reached",
-        "capacityDescription": "Try again in a moment, or choose another model to keep working.",
+        "capacityDescription": "Choose another model to keep working.",
         "capacityTitle": "This model is busy right now",
         "claudeCode": "Claude Code",
         "codex": "Codex",
@@ -2259,10 +2259,10 @@
       "copyFailed": "Could not copy the link",
       "copyLink": "Copy link",
       "create": "Share",
-      "createFailed": "Could not create the shared conversation. Try again.",
+      "createFailed": "Could not create the shared conversation.",
       "deselectGroup": "Deselect message group",
       "linkCopied": "Link copied",
-      "messageShareFailed": "The shared link could not be created. Try again.",
+      "messageShareFailed": "The shared link could not be created.",
       "publicDescription": "Selected messages and their attachments will be public.",
       "selectedCount_one": "{{count}} selected",
       "selectedCount_other": "{{count}} selected",
@@ -3307,7 +3307,7 @@
         "denied": "Connection was denied. Start again to retry.",
         "expired": "Connection session expired. Start again to retry.",
         "failed": "Connection failed. Start again to retry.",
-        "verificationOpen": "Could not open the verification page. Try again."
+        "verificationOpen": "Could not open the verification page."
       },
       "external": {
         "code": "Code",
@@ -3348,7 +3348,7 @@
           "clientRegistrationRejected": "The OAuth provider rejected automatic client registration and may restrict supported MCP clients or registration metadata. Use a provider-supported MCP client, use Custom OAuth only if you already have registered client credentials, or contact Okou support.",
           "clientRegistrationUnavailable": "The OAuth provider does not offer a supported automatic client registration method. Use Custom OAuth if you already have registered client credentials, or contact Okou support.",
           "discoveryInvalid": "The MCP server's OAuth discovery metadata is incomplete or inconsistent. Fix the advertised metadata if you manage the server, or contact the server administrator.",
-          "providerUnavailable": "The MCP OAuth provider is temporarily unavailable or rate-limited. Try again later and check the provider's availability.",
+          "providerUnavailable": "The MCP OAuth provider is temporarily unavailable or rate-limited. Check the provider's availability.",
           "unsafeUrl": "The MCP server advertised an OAuth URL that is not a public HTTPS endpoint. Fix the server's advertised OAuth URLs before trying again."
         },
         "save": "Save",
@@ -3560,7 +3560,7 @@
         "connectDescription": "Link your account to this Slack workspace so you can interact with your agent directly from Slack.",
         "connectTitle": "Connect to Slack",
         "currentConnection": "Slack is connected",
-        "errorFallback": "Could not check or start the Slack connection. Try again.",
+        "errorFallback": "Could not check or start the Slack connection.",
         "invalidDescription": "This page is meant to be opened from a Slack connect link.",
         "keepAccount": "Keep {{account}}",
         "open": "Open Slack",
@@ -3603,7 +3603,7 @@
         "connectionCheckFailed": "We couldn't reach Telegram to check the connection.",
         "connectTitle": "Connect to Telegram",
         "continue": "Continue with Telegram",
-        "domainNotVerified": "We couldn't verify Telegram login for this app. Try again, or contact support if the problem continues.",
+        "domainNotVerified": "We couldn't verify Telegram login for this app. Contact support if the problem continues.",
         "errorFallback": "We couldn't connect Telegram. Try again from Telegram.",
         "interrupted": "This attempt did not confirm a connection. Check your current status before trying again.",
         "invalidSignature": "The signature on this link is not valid.",
@@ -5029,12 +5029,12 @@
     "contentPolicyRejected": "The model provider rejected this request under its content safety policy. Retrying the same input will fail again. Try rephrasing the request, starting a new conversation, or switching to a different model.",
     "executionTimeout": "This run reached its execution time limit.",
     "failed": "Run failed",
-    "modelRoutesUnavailable": "Every built-in model route for this model is temporarily unavailable. Please try again later.",
+    "modelRoutesUnavailable": "Every built-in model route for this model is temporarily unavailable.",
     "modelTemporarilyUnavailable": "Model temporarily unavailable",
     "modelUnavailable": "The current model is unavailable.",
-    "overloaded": "{{model}} is overloaded. Please wait a few minutes and try again, or switch to another model.",
+    "overloaded": "{{model}} is overloaded. Switch to another model.",
     "providerBalance": "Your connected subscription account has insufficient balance.",
-    "transient": "Oops, something went wrong. Please try again later.",
+    "transient": "Oops, something went wrong.",
     "vm0Credits": "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue."
   },
   "serviceStatus": {
@@ -5475,7 +5475,7 @@
           "create": "Create welcome thread",
           "creating": "Creating…",
           "description": "Create a welcome chat with the introduction and examples.",
-          "failed": "Could not create the welcome thread. Try again.",
+          "failed": "Could not create the welcome thread.",
           "title": "Welcome thread"
         }
       },
@@ -5509,38 +5509,38 @@
       "morningBrief": {
         "conflict": "Morning Brief is temporarily unavailable because its installation state is inconsistent.",
         "description": "Daily priorities by 7:00 AM in your time zone.",
+        "errorMessage": "Morning Brief settings could not be loaded or updated.",
         "missingDefaultAgent": "Choose a usable default Agent before enabling Morning Brief.",
         "missingTimezone": "Set a valid time zone before enabling Morning Brief.",
         "preparationFailed": "Temporarily unavailable.",
         "preparing": "Preparing your first Morning Brief. You can turn it off at any time.",
-        "retryMessage": "Morning Brief settings could not be loaded or updated.",
         "title": "Morning brief"
       },
       "proactiveLearning": {
         "description": "Review your activity overnight and improve personal memory.",
+        "errorMessage": "Could not load or update this setting.",
         "missingDefaultAgent": "Choose an available default Agent.",
         "missingTimezone": "Set your time zone in Preferences.",
         "preparationFailed": "This workflow is temporarily unavailable.",
         "preparing": "Preparing this workflow.",
-        "retryMessage": "Could not load or update this setting.",
         "title": "Learning"
       },
       "proactivePlanningAction": {
         "description": "Plan and carry out your delegated work, and notify you when your input is needed.",
+        "errorMessage": "Could not load or update this setting.",
         "missingDefaultAgent": "Choose an available default Agent.",
         "missingTimezone": "Set your time zone in Preferences.",
         "preparationFailed": "This workflow is temporarily unavailable.",
         "preparing": "Preparing this workflow.",
-        "retryMessage": "Could not load or update this setting.",
         "title": "Planning & action"
       },
       "proactiveSuggestions": {
         "description": "Let Okou check your connected sources every hour and suggest useful next steps on your home page.",
+        "errorMessage": "Proactive Suggestions settings could not be loaded or updated.",
         "missingDefaultAgent": "Choose a usable default Agent to receive proactive suggestions.",
         "missingTimezone": "Set your time zone in Preferences.",
         "preparationFailed": "Temporarily unavailable.",
         "preparing": "Preparing hourly suggestions. You can turn this off at any time.",
-        "retryMessage": "Proactive Suggestions settings could not be loaded or updated.",
         "title": "Suggestions"
       },
       "send": {
@@ -6008,7 +6008,7 @@
       "confirm": "Delete template",
       "deleting": "Deleting...",
       "description": "\"{{title}}\" will be removed for everyone who can see it. This action cannot be undone.",
-      "failed": "Couldn't delete the template. Try again.",
+      "failed": "Couldn't delete the template.",
       "title": "Delete template?"
     },
     "detail": {
@@ -6334,7 +6334,7 @@
         "updatedDescription": "Run when a calendar event is updated.",
         "updatedRule": "When calendar {{calendar}} event is updated",
         "updatedTitle": "Google Calendar event updated",
-        "updateError": "We couldn't change this calendar. Try again."
+        "updateError": "We couldn't change this calendar."
       },
       "chat": {
         "addAction": "Add chat automation",
@@ -7011,7 +7011,7 @@
       "description": "Chat with your agent in WeChat.",
       "disconnect": "Disconnect",
       "expired": "This QR code expired. Create a new one.",
-      "failed": "Could not connect to WeChat. Please try again.",
+      "failed": "Could not connect to WeChat.",
       "instructions": "Scan this QR code with WeChat, then confirm on your phone.",
       "linkUnavailable": "This link is unavailable. Use the original account and workspace, and send another message in WeChat for a fresh link. You can also connect by scanning a new QR code.",
       "name": "WeChat",

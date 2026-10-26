@@ -29,8 +29,7 @@ export const deleteAgent$ = command(
       throw new Error(identityError.message);
     }
 
-    // Copy acknowledgements belong to the rescue session. Waiting here keeps a
-    // failed refresh from forgetting successful copies or racing agent deletion.
+    // Confirm the current workflow list before deleting its source agent.
     set(reloadWorkflows$);
     await get(currentAgentVisibleWorkflows$);
     signal.throwIfAborted();

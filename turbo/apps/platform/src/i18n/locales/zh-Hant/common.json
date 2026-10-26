@@ -87,7 +87,7 @@
           "title": "積分已用完"
         },
         "noModelProvider": {
-          "guidance": "請稍後重試，或在設定中連結個人 Claude Code 或 Codex 訂閱。",
+          "guidance": "請在設定中連結個人 Claude Code 或 Codex 訂閱。",
           "title": "此次執行沒有可用的模型提供者"
         },
         "paidPlanRequired": {
@@ -99,7 +99,7 @@
           "title": "提供方不相容"
         },
         "providerTemporarilyUnavailable": {
-          "guidance": "模型提供方暫時不可用，請稍後重試。",
+          "guidance": "模型提供方暫時不可用。",
           "title": "提供方暫時不可用"
         }
       },
@@ -435,9 +435,9 @@
       "signedInAs": "當前登入帳號：{{email}}",
       "signedInDescription": "它可能不存在，也可能分享給了其他帳號或組織。",
       "signIn": "登入",
-      "signInFailed": "無法開啟登入頁面，請重試。",
+      "signInFailed": "無法開啟登入頁面。",
       "switchAccount": "切換帳號",
-      "switchAccountFailed": "無法開啟帳號切換器，請重試。",
+      "switchAccountFailed": "無法開啟帳號切換器。",
       "title": "你沒有權限檢視這個成果",
       "websiteAuthenticationDescription": "請使用有權存取此網站的帳號登入。",
       "websiteAuthenticationSignedInDescription": "繼續以目前帳號驗證存取權限。",
@@ -1266,7 +1266,7 @@
         "packCreditsDiscount": "{{credits}} 積分 · 省 {{discount}}%",
         "packOption": "{{price}} · {{credits}} 積分 · 省 {{discount}}%",
         "paidPackageRequired": "至少為一位成員選擇付費套包才能繼續。",
-        "planChangeError": "無法準備這次訂閱變更，請重試。",
+        "planChangeError": "無法準備這次訂閱變更。",
         "planPlusPackages": "套餐 {{plan}} · 成員套包每人 {{lowest}}–{{highest}}",
         "planStep": "套餐",
         "priceFrom": "起價",
@@ -1392,7 +1392,7 @@
       "generatePdf": "產生 PDF",
       "generatingPdf": "正在產生 PDF…",
       "more": "更多操作",
-      "pdfGenerationFailed": "無法產生 PDF，請重試。",
+      "pdfGenerationFailed": "無法產生 PDF。",
       "remove": "移除",
       "rename": "重新命名",
       "saving": "正在儲存…",
@@ -1569,7 +1569,7 @@
       "title": "附件",
       "unavailable": "{{filename}} 已不可用。重新上傳後才能傳送。",
       "unavailableCount_other": "有 {{count}} 個附件已不可用。重新上傳後才能傳送。",
-      "uploadFailedRetry": "{{filename}} 上傳失敗。"
+      "uploadFailed": "{{filename}} 上傳失敗。"
     },
     "automations": {
       "active": "已啟用",
@@ -1952,15 +1952,15 @@
       "genericTitle": "這次執行沒能完成",
       "loadMessages": "訊息載入失敗",
       "noModelProviderAction": "管理訂閱",
-      "noModelProviderPrefix": "此次執行沒有可用的模型提供者。請重試，或連結個人訂閱。",
+      "noModelProviderPrefix": "此次執行沒有可用的模型提供者。請連結個人訂閱。",
       "providerIncompatibleAction": "開始新會話",
       "providerIncompatiblePrefix": "這個會話是用另一個模型提供方開始的，無法用當前的提供方繼續。",
       "recovery": {
-        "accessProgramDescription": "稍後再試，仍可在這段聊天中繼續。",
+        "accessProgramDescription": "仍可在這段聊天中繼續。",
         "accessProgramTitle": "Codex 暫時無法存取",
         "autonomyLimitDescription": "連續自動執行的次數已達上限。",
         "autonomyLimitTitle": "已達自動執行上限",
-        "capacityDescription": "可以稍等片刻再試，或換個模型繼續。",
+        "capacityDescription": "可以換個模型繼續。",
         "capacityTitle": "這個模型現在很忙",
         "claudeCode": "Claude Code",
         "codex": "Codex",
@@ -2251,10 +2251,10 @@
       "copyFailed": "無法複製連結",
       "copyLink": "複製連結",
       "create": "分享",
-      "createFailed": "無法建立分享對話，請重試。",
+      "createFailed": "無法建立分享對話。",
       "deselectGroup": "取消選擇該組訊息",
       "linkCopied": "連結已複製",
-      "messageShareFailed": "分享連結建立失敗，請再試一次。",
+      "messageShareFailed": "分享連結建立失敗。",
       "publicDescription": "選中的訊息及其附件將公開可見。",
       "selectedCount_other": "已選 {{count}} 條",
       "selectGroup": "選擇該組訊息",
@@ -3294,7 +3294,7 @@
         "denied": "連線被拒絕，請重新發起。",
         "expired": "連線會話已過期，請重新發起。",
         "failed": "連線失敗，請重新發起。",
-        "verificationOpen": "無法開啟驗證頁面，請重試。"
+        "verificationOpen": "無法開啟驗證頁面。"
       },
       "external": {
         "code": "驗證碼",
@@ -3335,7 +3335,7 @@
           "clientRegistrationRejected": "該 OAuth 服務商拒絕了自動客戶端註冊，可能限制了支援的 MCP 客戶端或註冊資訊。請改用該服務商支援的 MCP 客戶端；如果你已有註冊的客戶端憑據，可改用自定義 OAuth；也可以聯絡 Okou 支援團隊。",
           "clientRegistrationUnavailable": "該 OAuth 服務商沒有提供受支援的自動客戶端註冊方式。如果你已有註冊的客戶端憑據，請改用自定義 OAuth，或聯絡 Okou 支援團隊。",
           "discoveryInvalid": "MCP 伺服器的 OAuth 發現資訊不完整或不一致。如果伺服器由你管理，請修正對外公佈的後設資料，否則請聯絡伺服器管理員。",
-          "providerUnavailable": "MCP 的 OAuth 服務商暫時不可用或已觸發限流。請稍後重試，並確認該服務商的可用狀態。",
+          "providerUnavailable": "MCP 的 OAuth 服務商暫時不可用或已觸發限流。請確認該服務商的可用狀態。",
           "unsafeUrl": "MCP 伺服器公佈的 OAuth 地址不是公開的 HTTPS 端點。請先修正伺服器公佈的 OAuth 地址再重試。"
         },
         "save": "儲存",
@@ -3547,7 +3547,7 @@
         "connectDescription": "把你的帳號關聯到這個 Slack 工作區，就可以直接在 Slack 裡與你的智能體交流。",
         "connectTitle": "連線到 Slack",
         "currentConnection": "Slack 已連線",
-        "errorFallback": "無法檢查或開始 Slack 連線，請重試。",
+        "errorFallback": "無法檢查或開始 Slack 連線。",
         "invalidDescription": "此頁面需要從 Slack 連線連結開啟。",
         "keepAccount": "保留{{account}}",
         "open": "開啟 Slack",
@@ -3590,7 +3590,7 @@
         "connectionCheckFailed": "暫時無法存取 Telegram 以檢查連線。",
         "connectTitle": "連線到 Telegram",
         "continue": "使用 Telegram 繼續",
-        "domainNotVerified": "暫時無法驗證此應用程式的 Telegram 登入。請重試；如果問題持續，請聯絡支援團隊。",
+        "domainNotVerified": "暫時無法驗證此應用程式的 Telegram 登入。如果問題持續，請聯絡支援團隊。",
         "errorFallback": "我們無法連線 Telegram。請從 Telegram 重試。",
         "interrupted": "本次操作未能確認連接。請檢查目前狀態後再重試。",
         "invalidSignature": "此連結的簽名無效。",
@@ -5015,12 +5015,12 @@
     "contentPolicyRejected": "模型服務商依據內容安全政策拒絕了這次請求。用相同內容重試仍會失敗。可以換一種說法、開啟新對話，或改用其他模型。",
     "executionTimeout": "本次執行已達到執行時長上限。",
     "failed": "執行失敗",
-    "modelRoutesUnavailable": "該模型的所有內建線路都暫時不可用，請稍後再試。",
+    "modelRoutesUnavailable": "該模型的所有內建線路都暫時不可用。",
     "modelTemporarilyUnavailable": "模型暫時不可用",
     "modelUnavailable": "當前模型不可用。",
-    "overloaded": "{{model}}負載過高。請稍等幾分鐘後重試，或改用其他模型。",
+    "overloaded": "{{model}}負載過高。請改用其他模型。",
     "providerBalance": "你連結的訂閱帳號餘額不足。",
-    "transient": "出了點問題，請稍後再試。",
+    "transient": "出了點問題。",
     "vm0Credits": "積分不足。請充值積分，或連接個人 Codex 或 Claude 訂閱後繼續。"
   },
   "serviceStatus": {
@@ -5460,7 +5460,7 @@
           "create": "建立歡迎會話",
           "creating": "建立中…",
           "description": "建立一個包含介紹和示例的歡迎對話。",
-          "failed": "無法建立歡迎會話，請重試。",
+          "failed": "無法建立歡迎會話。",
           "title": "歡迎會話"
         }
       },
@@ -5494,38 +5494,38 @@
       "morningBrief": {
         "conflict": "晨報的安裝狀態不一致，暫時無法使用。",
         "description": "每天早上 7:00 前（按你的時區）接收當日重點。",
+        "errorMessage": "晨報設定無法載入或更新。",
         "missingDefaultAgent": "啟用晨報前，請先選擇一個可用的預設智能體。",
         "missingTimezone": "啟用晨報前，請先設定有效的時區。",
         "preparationFailed": "暫時無法執行。",
         "preparing": "正在準備你的第一份晨報，你可以隨時關閉。",
-        "retryMessage": "晨報設定無法載入或更新。",
         "title": "晨報"
       },
       "proactiveLearning": {
         "description": "夜間回顧你的資訊和工作，整理個人記憶、更新理解。",
+        "errorMessage": "無法載入或更新此設定。",
         "missingDefaultAgent": "請先選擇可用的預設 Agent。",
         "missingTimezone": "請在偏好設定中設定時區。",
         "preparationFailed": "此工作流程暫不可用。",
         "preparing": "正在準備此工作流程。",
-        "retryMessage": "無法載入或更新此設定。",
         "title": "主動學習"
       },
       "proactivePlanningAction": {
         "description": "在你交辦的範圍內規劃並推進任務，需要你處理時提醒你。",
+        "errorMessage": "無法載入或更新此設定。",
         "missingDefaultAgent": "請先選擇可用的預設 Agent。",
         "missingTimezone": "請在偏好設定中設定時區。",
         "preparationFailed": "此工作流程暫不可用。",
         "preparing": "正在準備此工作流程。",
-        "retryMessage": "無法載入或更新此設定。",
         "title": "規劃與執行"
       },
       "proactiveSuggestions": {
         "description": "讓 Okou 每小時檢查已連接的資訊來源，並在首頁推薦實用的下一步行動。",
+        "errorMessage": "無法載入或更新主動建議設定。",
         "missingDefaultAgent": "請選擇可用的預設 Agent 以接收主動建議。",
         "missingTimezone": "請在偏好設定中設定時區。",
         "preparationFailed": "暫時無法執行。",
         "preparing": "正在準備每小時建議，你可以隨時關閉。",
-        "retryMessage": "無法載入或更新主動建議設定。",
         "title": "建議"
       },
       "send": {
@@ -5989,7 +5989,7 @@
       "confirm": "刪除範本",
       "deleting": "正在刪除...",
       "description": "「{{title}}」將對所有可以看到它的人移除。此操作無法復原。",
-      "failed": "無法刪除範本，請再試一次。",
+      "failed": "無法刪除範本。",
       "title": "刪除範本？"
     },
     "detail": {
@@ -6312,7 +6312,7 @@
         "updatedDescription": "當日歷中的日程更新時執行。",
         "updatedRule": "當日歷{{calendar}}中的日程更新時",
         "updatedTitle": "Google Calendar 日程已更新",
-        "updateError": "無法更換日曆，請重試。"
+        "updateError": "無法更換日曆。"
       },
       "chat": {
         "addAction": "新增聊天自動化",
@@ -6989,7 +6989,7 @@
       "description": "在微信中與智能體對話。",
       "disconnect": "中斷連接",
       "expired": "QR code 已過期，請重新產生。",
-      "failed": "連接微信失敗，請重試。",
+      "failed": "連接微信失敗。",
       "instructions": "使用微信掃描 QR code，然後在手機上確認。",
       "linkUnavailable": "此連結無法使用。請使用原帳號和工作區，並在微信中再傳送一則訊息以取得新連結。也可以重新掃碼連接。",
       "name": "微信",

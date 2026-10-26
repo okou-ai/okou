@@ -87,7 +87,7 @@
           "title": "积分已用完"
         },
         "noModelProvider": {
-          "guidance": "请稍后重试，或在设置中连接个人 Claude Code 或 Codex 订阅。",
+          "guidance": "请在设置中连接个人 Claude Code 或 Codex 订阅。",
           "title": "此次运行没有可用的模型提供方"
         },
         "paidPlanRequired": {
@@ -99,7 +99,7 @@
           "title": "提供方不兼容"
         },
         "providerTemporarilyUnavailable": {
-          "guidance": "模型提供方暂时不可用，请稍后重试。",
+          "guidance": "模型提供方暂时不可用。",
           "title": "提供方暂时不可用"
         }
       },
@@ -435,9 +435,9 @@
       "signedInAs": "当前登录账号：{{email}}",
       "signedInDescription": "它可能不存在，也可能分享给了其他账号或组织。",
       "signIn": "登录",
-      "signInFailed": "无法打开登录页面，请重试。",
+      "signInFailed": "无法打开登录页面。",
       "switchAccount": "切换账号",
-      "switchAccountFailed": "无法打开账号切换器，请重试。",
+      "switchAccountFailed": "无法打开账号切换器。",
       "title": "你没有权限查看这个成果",
       "websiteAuthenticationDescription": "请使用有权访问此网站的账号登录。",
       "websiteAuthenticationSignedInDescription": "继续以当前账号验证访问权限。",
@@ -1266,7 +1266,7 @@
         "packCreditsDiscount": "{{credits}} 积分 · 省 {{discount}}%",
         "packOption": "{{price}} · {{credits}} 积分 · 省 {{discount}}%",
         "paidPackageRequired": "至少为一位成员选择付费套包才能继续。",
-        "planChangeError": "无法准备这次订阅变更，请重试。",
+        "planChangeError": "无法准备这次订阅变更。",
         "planPlusPackages": "套餐 {{plan}} · 成员套包每人 {{lowest}}–{{highest}}",
         "planStep": "套餐",
         "priceFrom": "起价",
@@ -1392,7 +1392,7 @@
       "generatePdf": "生成 PDF",
       "generatingPdf": "正在生成 PDF…",
       "more": "更多操作",
-      "pdfGenerationFailed": "无法生成 PDF，请重试。",
+      "pdfGenerationFailed": "无法生成 PDF。",
       "remove": "移除",
       "rename": "重命名",
       "saving": "正在保存…",
@@ -1569,7 +1569,7 @@
       "title": "附件",
       "unavailable": "{{filename}} 已不可用。重新上传后才能发送。",
       "unavailableCount_other": "有 {{count}} 个附件已不可用。重新上传后才能发送。",
-      "uploadFailedRetry": "{{filename}} 上传失败。"
+      "uploadFailed": "{{filename}} 上传失败。"
     },
     "automations": {
       "active": "已启用",
@@ -1952,15 +1952,15 @@
       "genericTitle": "这次运行没能完成",
       "loadMessages": "消息加载失败",
       "noModelProviderAction": "管理订阅",
-      "noModelProviderPrefix": "此次运行没有可用的模型提供方。请重试，或连接个人订阅。",
+      "noModelProviderPrefix": "此次运行没有可用的模型提供方。请连接个人订阅。",
       "providerIncompatibleAction": "开始新会话",
       "providerIncompatiblePrefix": "这个会话是用另一个模型提供方开始的，无法用当前的提供方继续。",
       "recovery": {
-        "accessProgramDescription": "稍后再试，仍可在这段聊天中继续。",
+        "accessProgramDescription": "仍可在这段聊天中继续。",
         "accessProgramTitle": "Codex 暂时无法访问",
         "autonomyLimitDescription": "连续自动运行的次数已达上限。",
         "autonomyLimitTitle": "已达自动运行上限",
-        "capacityDescription": "可以稍等片刻再试，或换个模型继续。",
+        "capacityDescription": "可以换个模型继续。",
         "capacityTitle": "这个模型现在很忙",
         "claudeCode": "Claude Code",
         "codex": "Codex",
@@ -2251,10 +2251,10 @@
       "copyFailed": "无法复制链接",
       "copyLink": "复制链接",
       "create": "分享",
-      "createFailed": "无法创建分享对话，请重试。",
+      "createFailed": "无法创建分享对话。",
       "deselectGroup": "取消选择该组消息",
       "linkCopied": "链接已复制",
-      "messageShareFailed": "分享链接创建失败，请重试。",
+      "messageShareFailed": "分享链接创建失败。",
       "publicDescription": "选中的消息及其附件将公开可见。",
       "selectedCount_other": "已选 {{count}} 条",
       "selectGroup": "选择该组消息",
@@ -3294,7 +3294,7 @@
         "denied": "连接被拒绝，请重新发起。",
         "expired": "连接会话已过期，请重新发起。",
         "failed": "连接失败，请重新发起。",
-        "verificationOpen": "无法打开验证页面，请重试。"
+        "verificationOpen": "无法打开验证页面。"
       },
       "external": {
         "code": "验证码",
@@ -3335,7 +3335,7 @@
           "clientRegistrationRejected": "该 OAuth 服务商拒绝了自动客户端注册，可能限制了支持的 MCP 客户端或注册信息。请改用该服务商支持的 MCP 客户端；如果你已有注册的客户端凭据，可改用自定义 OAuth；也可以联系 Okou 支持团队。",
           "clientRegistrationUnavailable": "该 OAuth 服务商没有提供受支持的自动客户端注册方式。如果你已有注册的客户端凭据，请改用自定义 OAuth，或联系 Okou 支持团队。",
           "discoveryInvalid": "MCP 服务器的 OAuth 发现信息不完整或不一致。如果服务器由你管理，请修正对外公布的元数据，否则请联系服务器管理员。",
-          "providerUnavailable": "MCP 的 OAuth 服务商暂时不可用或已触发限流。请稍后重试，并确认该服务商的可用状态。",
+          "providerUnavailable": "MCP 的 OAuth 服务商暂时不可用或已触发限流。请确认该服务商的可用状态。",
           "unsafeUrl": "MCP 服务器公布的 OAuth 地址不是公开的 HTTPS 端点。请先修正服务器公布的 OAuth 地址再重试。"
         },
         "save": "保存",
@@ -3547,7 +3547,7 @@
         "connectDescription": "把你的账号关联到这个 Slack 工作区，就可以直接在 Slack 里与你的智能体交流。",
         "connectTitle": "连接到 Slack",
         "currentConnection": "Slack 已连接",
-        "errorFallback": "无法检查或开始 Slack 连接，请重试。",
+        "errorFallback": "无法检查或开始 Slack 连接。",
         "invalidDescription": "此页面需要从 Slack 连接链接打开。",
         "keepAccount": "保留{{account}}",
         "open": "打开 Slack",
@@ -3590,7 +3590,7 @@
         "connectionCheckFailed": "暂时无法访问 Telegram 来检查连接。",
         "connectTitle": "连接到 Telegram",
         "continue": "使用 Telegram 继续",
-        "domainNotVerified": "暂时无法验证此应用的 Telegram 登录。请重试；如果问题持续，请联系支持团队。",
+        "domainNotVerified": "暂时无法验证此应用的 Telegram 登录。如果问题持续，请联系支持团队。",
         "errorFallback": "我们无法连接 Telegram。请从 Telegram 重试。",
         "interrupted": "本次操作未能确认连接。请检查当前状态后再重试。",
         "invalidSignature": "此链接的签名无效。",
@@ -5015,12 +5015,12 @@
     "contentPolicyRejected": "模型服务商依据内容安全政策拒绝了这次请求。用相同内容重试仍会失败。可以换一种说法、开启新对话，或改用其他模型。",
     "executionTimeout": "本次运行已达到执行时长上限。",
     "failed": "运行失败",
-    "modelRoutesUnavailable": "该模型的所有内置线路都暂时不可用，请稍后再试。",
+    "modelRoutesUnavailable": "该模型的所有内置线路都暂时不可用。",
     "modelTemporarilyUnavailable": "模型暂时不可用",
     "modelUnavailable": "当前模型不可用。",
-    "overloaded": "{{model}}负载过高。请稍等几分钟后重试，或改用其他模型。",
+    "overloaded": "{{model}}负载过高。请改用其他模型。",
     "providerBalance": "你连接的订阅账号余额不足。",
-    "transient": "出了点问题，请稍后再试。",
+    "transient": "出了点问题。",
     "vm0Credits": "积分不足。请充值积分，或连接个人 Codex 或 Claude 订阅后继续。"
   },
   "serviceStatus": {
@@ -5460,7 +5460,7 @@
           "create": "创建欢迎会话",
           "creating": "创建中…",
           "description": "创建一个包含介绍和示例的欢迎对话。",
-          "failed": "无法创建欢迎会话，请重试。",
+          "failed": "无法创建欢迎会话。",
           "title": "欢迎会话"
         }
       },
@@ -5494,38 +5494,38 @@
       "morningBrief": {
         "conflict": "晨报的安装状态不一致，暂时无法使用。",
         "description": "每天早上 7:00 前（按你的时区）接收当日重点。",
+        "errorMessage": "晨报设置无法加载或更新。",
         "missingDefaultAgent": "启用晨报前，请先选择一个可用的默认智能体。",
         "missingTimezone": "启用晨报前，请先设置有效的时区。",
         "preparationFailed": "暂时无法运行。",
         "preparing": "正在准备你的第一份晨报，你可以随时关闭。",
-        "retryMessage": "晨报设置无法加载或更新。",
         "title": "晨报"
       },
       "proactiveLearning": {
         "description": "夜间回顾你的信息和工作，整理个人记忆、更新理解。",
+        "errorMessage": "无法加载或更新此设置。",
         "missingDefaultAgent": "请先选择可用的默认 Agent。",
         "missingTimezone": "请在偏好设置中设置时区。",
         "preparationFailed": "此工作流暂不可用。",
         "preparing": "正在准备此工作流。",
-        "retryMessage": "无法加载或更新此设置。",
         "title": "主动学习"
       },
       "proactivePlanningAction": {
         "description": "在你交办的范围内规划并推进任务，需要你处理时提醒你。",
+        "errorMessage": "无法加载或更新此设置。",
         "missingDefaultAgent": "请先选择可用的默认 Agent。",
         "missingTimezone": "请在偏好设置中设置时区。",
         "preparationFailed": "此工作流暂不可用。",
         "preparing": "正在准备此工作流。",
-        "retryMessage": "无法加载或更新此设置。",
         "title": "规划与执行"
       },
       "proactiveSuggestions": {
         "description": "让 Okou 每小时检查已连接的信息来源，并在主页推荐有用的下一步行动。",
+        "errorMessage": "无法加载或更新主动建议设置。",
         "missingDefaultAgent": "请选择可用的默认 Agent 以接收主动建议。",
         "missingTimezone": "请在偏好设置中设置时区。",
         "preparationFailed": "暂时无法运行。",
         "preparing": "正在准备每小时建议，你可以随时关闭。",
-        "retryMessage": "无法加载或更新主动建议设置。",
         "title": "建议"
       },
       "send": {
@@ -5989,7 +5989,7 @@
       "confirm": "删除模板",
       "deleting": "正在删除...",
       "description": "「{{title}}」将对所有可以看到它的人移除。此操作无法撤销。",
-      "failed": "无法删除模板，请重试。",
+      "failed": "无法删除模板。",
       "title": "删除模板？"
     },
     "detail": {
@@ -6312,7 +6312,7 @@
         "updatedDescription": "当日历中的日程更新时运行。",
         "updatedRule": "当日历{{calendar}}中的日程更新时",
         "updatedTitle": "Google Calendar 日程已更新",
-        "updateError": "无法更换日历，请重试。"
+        "updateError": "无法更换日历。"
       },
       "chat": {
         "addAction": "添加聊天自动化",
@@ -6989,7 +6989,7 @@
       "description": "在微信中与智能体对话。",
       "disconnect": "断开连接",
       "expired": "二维码已过期，请重新生成。",
-      "failed": "连接微信失败，请重试。",
+      "failed": "连接微信失败。",
       "instructions": "使用微信扫描二维码，然后在手机上确认。",
       "linkUnavailable": "此链接不可用。请使用原账号和工作区，并在微信中再发一条消息获取新链接。也可以重新扫码连接。",
       "name": "微信",

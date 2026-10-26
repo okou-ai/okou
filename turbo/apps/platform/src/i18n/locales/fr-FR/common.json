@@ -89,7 +89,7 @@
           "title": "Crédits épuisés"
         },
         "noModelProvider": {
-          "guidance": "Réessayez dans un instant ou connectez un abonnement personnel Claude Code ou Codex dans les paramètres.",
+          "guidance": "Connectez un abonnement personnel Claude Code ou Codex dans les paramètres.",
           "title": "Aucun fournisseur de modèles n'est disponible pour cette exécution"
         },
         "paidPlanRequired": {
@@ -101,7 +101,7 @@
           "title": "Fournisseur non compatible"
         },
         "providerTemporarilyUnavailable": {
-          "guidance": "Le fournisseur de modèle est temporairement indisponible. Veuillez réessayer plus tard.",
+          "guidance": "Le fournisseur de modèle est temporairement indisponible.",
           "title": "Fournisseur temporairement indisponible"
         }
       },
@@ -449,9 +449,9 @@
       "signedInAs": "Connecté en tant que {{email}}",
       "signedInDescription": "Il n’existe peut-être pas, ou il est partagé avec un autre compte ou une autre organisation.",
       "signIn": "Se connecter",
-      "signInFailed": "Impossible d’ouvrir la connexion. Réessayez.",
+      "signInFailed": "Impossible d’ouvrir la connexion.",
       "switchAccount": "Changer de compte",
-      "switchAccountFailed": "Impossible d’ouvrir le sélecteur de compte. Veuillez réessayer.",
+      "switchAccountFailed": "Impossible d’ouvrir le sélecteur de compte.",
       "title": "Vous ne pouvez pas consulter cet artefact",
       "websiteAuthenticationDescription": "Connectez-vous avec un compte autorisé à accéder à ce site web.",
       "websiteAuthenticationSignedInDescription": "Continuez pour vérifier l’accès avec votre compte actuel.",
@@ -1290,7 +1290,7 @@
         "packCreditsDiscount": "{{credits}} crédits · {{discount}} % de remise",
         "packOption": "{{price}} · {{credits}} crédits · {{discount}} % de réduction",
         "paidPackageRequired": "Sélectionnez un forfait payant pour au moins un membre afin de continuer.",
-        "planChangeError": "Impossible de préparer la modification de l’abonnement. Réessayez.",
+        "planChangeError": "Impossible de préparer la modification de l’abonnement.",
         "planPlusPackages": "Forfait {{plan}} · packs par membre de {{lowest}} à {{highest}}",
         "planStep": "Forfait",
         "priceFrom": "à partir de",
@@ -1417,7 +1417,7 @@
       "generatePdf": "Générer un PDF",
       "generatingPdf": "Génération du PDF…",
       "more": "Plus d'actions",
-      "pdfGenerationFailed": "Impossible de générer le PDF. Réessayez.",
+      "pdfGenerationFailed": "Impossible de générer le PDF.",
       "remove": "Retirer",
       "rename": "Renommer",
       "saving": "Enregistrement...",
@@ -1596,7 +1596,7 @@
       "unavailableCount_one": "{{count}} pièce jointe n'est plus disponible. Importez-la à nouveau pour l'envoyer.",
       "unavailableCount_many": "{{count}} pièces jointes ne sont plus disponibles. Importez-les à nouveau pour les envoyer.",
       "unavailableCount_other": "{{count}} pièces jointes ne sont plus disponibles. Importez-les à nouveau pour les envoyer.",
-      "uploadFailedRetry": "Échec du téléchargement de {{filename}}."
+      "uploadFailed": "Échec du téléchargement de {{filename}}."
     },
     "automations": {
       "active": "Actif",
@@ -1990,15 +1990,15 @@
       "genericTitle": "Cette exécution n’a pas pu se terminer",
       "loadMessages": "Échec du chargement des messages",
       "noModelProviderAction": "Gérer les abonnements",
-      "noModelProviderPrefix": "Aucun fournisseur de modèles n'est disponible pour cette exécution. Réessayez ou connectez un abonnement personnel.",
+      "noModelProviderPrefix": "Aucun fournisseur de modèles n'est disponible pour cette exécution. Connectez un abonnement personnel.",
       "providerIncompatibleAction": "Commencer une nouvelle session",
       "providerIncompatiblePrefix": "Cette session a été commencée avec un fournisseur de modèle différent et ne peut pas être continuée avec le fournisseur actuel.",
       "recovery": {
-        "accessProgramDescription": "Réessayez dans quelques instants. Vous pouvez laisser cette conversation ouverte.",
+        "accessProgramDescription": "Vous pouvez laisser cette conversation ouverte.",
         "accessProgramTitle": "L’accès à Codex est temporairement indisponible",
         "autonomyLimitDescription": "La limite des exécutions automatiques consécutives a été atteinte.",
         "autonomyLimitTitle": "Limite des exécutions automatiques atteinte",
-        "capacityDescription": "Réessayez dans un instant ou choisissez un autre modèle pour continuer.",
+        "capacityDescription": "Choisissez un autre modèle pour continuer.",
         "capacityTitle": "Ce modèle est saturé pour le moment",
         "claudeCode": "Claude Code",
         "codex": "Codex",
@@ -2302,10 +2302,10 @@
       "copyFailed": "Impossible de copier le lien",
       "copyLink": "Copier le lien",
       "create": "Partager",
-      "createFailed": "Impossible de créer la conversation partagée. Réessayez.",
+      "createFailed": "Impossible de créer la conversation partagée.",
       "deselectGroup": "Désélectionner le groupe de messages",
       "linkCopied": "Lien copié",
-      "messageShareFailed": "Impossible de créer le lien de partage. Réessayez.",
+      "messageShareFailed": "Impossible de créer le lien de partage.",
       "publicDescription": "Les messages sélectionnés et leurs pièces jointes seront publics.",
       "selectedCount_one": "{{count}} sélectionné",
       "selectedCount_many": "{{count}} sélectionnés",
@@ -3360,7 +3360,7 @@
         "denied": "La connexion a été refusée. Redémarrez pour réessayer.",
         "expired": "La session de connexion a expiré. Redémarrez pour réessayer.",
         "failed": "Échec de la connexion. Recommencez pour réessayer.",
-        "verificationOpen": "Impossible d'ouvrir la page de vérification. Réessayez."
+        "verificationOpen": "Impossible d'ouvrir la page de vérification."
       },
       "external": {
         "code": "Code",
@@ -3401,7 +3401,7 @@
           "clientRegistrationRejected": "Le fournisseur OAuth a refusé l’enregistrement automatique du client et peut limiter les clients MCP ou les métadonnées d’enregistrement pris en charge. Utilisez un client MCP pris en charge par le fournisseur, OAuth personnalisé uniquement avec des identifiants client déjà enregistrés, ou contactez l’assistance Okou.",
           "clientRegistrationUnavailable": "Le fournisseur OAuth ne propose aucune méthode prise en charge pour l’enregistrement automatique du client. Utilisez OAuth personnalisé si vous disposez déjà d’identifiants client enregistrés, ou contactez l’assistance Okou.",
           "discoveryInvalid": "Les métadonnées de découverte OAuth du serveur MCP sont incomplètes ou incohérentes. Corrigez les métadonnées publiées si vous gérez le serveur, ou contactez l’administrateur du serveur.",
-          "providerUnavailable": "Le fournisseur OAuth MCP est temporairement indisponible ou limite les requêtes. Réessayez plus tard et vérifiez la disponibilité du fournisseur.",
+          "providerUnavailable": "Le fournisseur OAuth MCP est temporairement indisponible ou limite les requêtes. Vérifiez la disponibilité du fournisseur.",
           "unsafeUrl": "Le serveur MCP a publié une URL OAuth qui n’est pas un point de terminaison HTTPS public. Corrigez les URL OAuth publiées par le serveur avant de réessayer."
         },
         "save": "Enregistrer",
@@ -3616,7 +3616,7 @@
         "connectDescription": "Liez votre compte à cet espace de travail Slack afin de pouvoir interagir avec votre agent directement depuis Slack.",
         "connectTitle": "Connectez-vous à Slack",
         "currentConnection": "Slack est connecté",
-        "errorFallback": "Impossible de vérifier ou de démarrer la connexion Slack. Réessayez.",
+        "errorFallback": "Impossible de vérifier ou de démarrer la connexion Slack.",
         "invalidDescription": "Cette page est destinée à être ouverte à partir d'un lien de connexion Slack.",
         "keepAccount": "Conserver {{account}}",
         "open": "Ouvrir Slack",
@@ -3659,7 +3659,7 @@
         "connectionCheckFailed": "Impossible de joindre Telegram pour vérifier la connexion.",
         "connectTitle": "Se connecter à Telegram",
         "continue": "Continuer avec Telegram",
-        "domainNotVerified": "Impossible de vérifier la connexion à Telegram pour cette application. Réessayez ou contactez l'assistance si le problème persiste.",
+        "domainNotVerified": "Impossible de vérifier la connexion à Telegram pour cette application. Contactez l'assistance si le problème persiste.",
         "errorFallback": "Nous n'avons pas pu connecter Telegram. Réessayez depuis Telegram.",
         "interrupted": "Cette tentative n’a pas confirmé la connexion. Vérifiez votre état actuel avant de réessayer.",
         "invalidSignature": "La signature sur ce lien n'est pas valide.",
@@ -5090,12 +5090,12 @@
     "contentPolicyRejected": "Le fournisseur de modèle a refusé cette demande en raison de sa politique de sécurité du contenu. Réessayer avec la même saisie échouera à nouveau. Reformulez la demande, commencez une nouvelle conversation ou choisissez un autre modèle.",
     "executionTimeout": "Cette exécution a atteint sa limite de temps.",
     "failed": "Échec de l’exécution",
-    "modelRoutesUnavailable": "Toutes les routes intégrées de ce modèle sont temporairement indisponibles. Veuillez réessayer plus tard.",
+    "modelRoutesUnavailable": "Toutes les routes intégrées de ce modèle sont temporairement indisponibles.",
     "modelTemporarilyUnavailable": "Modèle temporairement indisponible",
     "modelUnavailable": "Le modèle actuel est indisponible.",
-    "overloaded": "{{model}} est surchargé. Patientez quelques minutes avant de réessayer, ou choisissez un autre modèle.",
+    "overloaded": "{{model}} est surchargé. Choisissez un autre modèle.",
     "providerBalance": "Le solde de votre compte d'abonnement connecté est insuffisant.",
-    "transient": "Une erreur s’est produite. Veuillez réessayer plus tard.",
+    "transient": "Une erreur s’est produite.",
     "vm0Credits": "Crédits insuffisants. Ajoutez des crédits ou connectez un abonnement personnel Codex ou Claude pour continuer."
   },
   "serviceStatus": {
@@ -5540,7 +5540,7 @@
           "create": "Créer une discussion de bienvenue",
           "creating": "Création…",
           "description": "Créez une discussion de bienvenue avec la présentation et les exemples.",
-          "failed": "Impossible de créer la discussion de bienvenue. Réessayez.",
+          "failed": "Impossible de créer la discussion de bienvenue.",
           "title": "Discussion de bienvenue"
         }
       },
@@ -5574,38 +5574,38 @@
       "morningBrief": {
         "conflict": "Morning Brief est temporairement indisponible, car l'état de son installation est incohérent.",
         "description": "Vos priorités quotidiennes avant 7 h dans votre fuseau horaire.",
+        "errorMessage": "Les paramètres de Morning Brief n'ont pas pu être chargés ou mis à jour.",
         "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",
         "preparationFailed": "Temporairement indisponible.",
         "preparing": "Préparation de votre premier briefing matinal. Vous pouvez le désactiver à tout moment.",
-        "retryMessage": "Les paramètres de Morning Brief n'ont pas pu être chargés ou mis à jour.",
         "title": "Résumé du matin"
       },
       "proactiveLearning": {
         "description": "Passe en revue votre activité la nuit et améliore la mémoire personnelle.",
+        "errorMessage": "Impossible de charger ou modifier ce réglage.",
         "missingDefaultAgent": "Choisissez un Agent par défaut disponible.",
         "missingTimezone": "Définissez votre fuseau horaire dans les préférences.",
         "preparationFailed": "Ce workflow est temporairement indisponible.",
         "preparing": "Préparation de ce workflow.",
-        "retryMessage": "Impossible de charger ou modifier ce réglage.",
         "title": "Apprentissage"
       },
       "proactivePlanningAction": {
         "description": "Planifie et réalise le travail que vous déléguez et vous prévient lorsque votre intervention est nécessaire.",
+        "errorMessage": "Impossible de charger ou modifier ce réglage.",
         "missingDefaultAgent": "Choisissez un Agent par défaut disponible.",
         "missingTimezone": "Définissez votre fuseau horaire dans les préférences.",
         "preparationFailed": "Ce workflow est temporairement indisponible.",
         "preparing": "Préparation de ce workflow.",
-        "retryMessage": "Impossible de charger ou modifier ce réglage.",
         "title": "Planification et action"
       },
       "proactiveSuggestions": {
         "description": "Okou consulte vos sources connectées chaque heure et propose des actions utiles sur votre page d’accueil.",
+        "errorMessage": "Impossible de charger ou de modifier ces paramètres.",
         "missingDefaultAgent": "Choisissez un Agent par défaut disponible pour recevoir des suggestions proactives.",
         "missingTimezone": "Définissez votre fuseau horaire dans les préférences.",
         "preparationFailed": "Temporairement indisponible.",
         "preparing": "Préparation des suggestions horaires. Vous pouvez les désactiver à tout moment.",
-        "retryMessage": "Impossible de charger ou de modifier ces paramètres.",
         "title": "Suggestions"
       },
       "send": {
@@ -6078,7 +6078,7 @@
       "confirm": "Supprimer le modèle",
       "deleting": "Suppression...",
       "description": "« {{title}} » sera supprimé pour tous ceux qui peuvent le voir. Cette action est irréversible.",
-      "failed": "Impossible de supprimer le modèle. Réessayez.",
+      "failed": "Impossible de supprimer le modèle.",
       "title": "Supprimer le modèle ?"
     },
     "detail": {
@@ -6411,7 +6411,7 @@
         "updatedDescription": "Exécuter lorsqu'un événement du calendrier est mis à jour.",
         "updatedRule": "Lorsque l'événement de calendrier {{calendar}} est mis à jour",
         "updatedTitle": "Événement Google Calendar mis à jour",
-        "updateError": "Impossible de changer ce calendrier. Réessayez."
+        "updateError": "Impossible de changer ce calendrier."
       },
       "chat": {
         "addAction": "Ajouter une automatisation de chat",
@@ -7092,7 +7092,7 @@
       "description": "Discutez avec votre agent dans WeChat.",
       "disconnect": "Déconnecter",
       "expired": "Ce code QR a expiré. Créez-en un nouveau.",
-      "failed": "Impossible de se connecter à WeChat. Réessayez.",
+      "failed": "Impossible de se connecter à WeChat.",
       "instructions": "Scannez ce code QR avec WeChat, puis confirmez sur votre téléphone.",
       "linkUnavailable": "Ce lien n’est pas disponible. Utilisez le compte et l’espace de travail d’origine et envoyez un autre message sur WeChat pour obtenir un nouveau lien. Vous pouvez aussi scanner un nouveau code QR.",
       "name": "WeChat",

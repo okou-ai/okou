@@ -72,7 +72,6 @@ export type AssistantErrorRecovery = ClassifiedAssistantError & {
   /** Present when the current route is a personal subscription. */
   readonly personalSubscription: "connected" | "disconnected" | null;
   readonly accountLabel: string | null;
-  readonly retryAt: string | null;
   readonly resetWindows: readonly {
     readonly limitWindow: SubscriptionResetWindow;
     readonly resetAt: string | null;
@@ -453,22 +452,6 @@ function providerSubscriptionResets(
   return limitWindow === "unknown" ? exhaustedUsageWindows(provider) : [];
 }
 
-function latestKnownResetAt(
-  resets: readonly SubscriptionReset[],
-): string | null {
-  let latest: { readonly value: string; readonly time: number } | null = null;
-  for (const reset of resets) {
-    if (!reset.resetAt) {
-      continue;
-    }
-    const time = new Date(reset.resetAt).getTime();
-    if (!Number.isNaN(time) && (latest === null || time > latest.time)) {
-      latest = { value: reset.resetAt, time };
-    }
-  }
-  return latest?.value ?? null;
-}
-
 function createCurrentPersonalSubscriptionComputed(
   selectedModel$: Computed<string | null>,
 ): Computed<Promise<CurrentPersonalSubscription | null>> {
@@ -682,7 +665,7 @@ function recoveryForAccount(
   provider: ModelProviderResponse | undefined,
 ): Pick<
   AssistantErrorRecovery,
-  "accountLabel" | "limitWindow" | "resetWindows" | "retryAt"
+  "accountLabel" | "limitWindow" | "resetWindows"
 > {
   const resetWindows = providerSubscriptionResets(
     provider,
@@ -690,7 +673,6 @@ function recoveryForAccount(
   );
   return {
     accountLabel: provider?.accountEmail ?? provider?.workspaceName ?? null,
-    retryAt: latestKnownResetAt(resetWindows),
     resetWindows,
     limitWindow:
       resetWindows.length === 1
@@ -732,7 +714,6 @@ function createAssistantErrorRecoveryComputed(
       personalSubscription,
       accountLabel: recovery.accountLabel,
       limitWindow: recovery.limitWindow,
-      retryAt: recovery.retryAt,
       resetWindows: recovery.resetWindows,
     };
   });

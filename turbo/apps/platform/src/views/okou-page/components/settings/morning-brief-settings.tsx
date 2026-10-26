@@ -22,7 +22,7 @@ interface MorningBriefStatusProps {
 }
 
 type MorningBriefStatusKey =
-  | "retryMessage"
+  | "errorMessage"
   | "conflict"
   | "missingTimezone"
   | "missingDefaultAgent"
@@ -35,7 +35,7 @@ function morningBriefStatusKey({
   mutationFailed,
 }: MorningBriefStatusProps): MorningBriefStatusKey | null {
   if (loadFailed || mutationFailed) {
-    return "retryMessage";
+    return "errorMessage";
   }
   if (state?.kind !== "ready") {
     return state?.kind === "error" ? "conflict" : null;

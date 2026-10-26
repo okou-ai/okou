@@ -60,16 +60,13 @@
     "success": "Agente eliminado",
     "title": "¿Eliminar {{agentName}}?",
     "workflows": {
-      "copiedTitle": "Ya copiados",
-      "copiedTo": "{{workflowTitle}} copiado a {{agentName}}",
       "copyTo": "Copiar a {{agentName}}",
       "deleteWithAgent": "Eliminar con el agente",
       "description": "Copia un flujo de trabajo a otro agente para conservarlo. Todo lo que quede se eliminará.",
       "handle": "Gestiona el flujo de trabajo {{workflowTitle}}",
       "loadFailed": "No se pudieron cargar los flujos de trabajo.",
       "loading": "Cargando flujos de trabajo…",
-      "title": "¿Mantener algún flujo de trabajo?",
-      "untitled": "Flujo de trabajo"
+      "title": "¿Mantener algún flujo de trabajo?"
     }
   },
   "detail": {

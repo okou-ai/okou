@@ -60,16 +60,13 @@
     "success": "エージェントが削除されました",
     "title": "{{agentName}} を削除しますか?",
     "workflows": {
-      "copiedTitle": "コピー済み",
-      "copiedTo": "{{workflowTitle}} を {{agentName}} にコピーしました",
       "copyTo": "{{agentName}} にコピーします",
       "deleteWithAgent": "エージェントと一緒に削除",
       "description": "ワークフローを別のエージェントにコピーして保持します。残ったものはすべて削除されます。",
       "handle": "ワークフロー「{{workflowTitle}}」を処理",
       "loadFailed": "ワークフローを読み込めませんでした。",
       "loading": "ワークフローを読み込み中…",
-      "title": "ワークフローを残しますか？",
-      "untitled": "ワークフロー"
+      "title": "ワークフローを残しますか？"
     }
   },
   "detail": {

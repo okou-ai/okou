@@ -87,7 +87,7 @@
           "title": "Kredit habis"
         },
         "noModelProvider": {
-          "guidance": "Coba lagi sebentar lagi, atau hubungkan langganan pribadi Claude Code atau Codex di Pengaturan.",
+          "guidance": "Hubungkan langganan pribadi Claude Code atau Codex di Pengaturan.",
           "title": "Tidak ada penyedia model yang tersedia untuk eksekusi ini"
         },
         "paidPlanRequired": {
@@ -99,7 +99,7 @@
           "title": "Provider tidak kompatibel"
         },
         "providerTemporarilyUnavailable": {
-          "guidance": "Provider model sedang tidak tersedia. Silakan coba lagi nanti.",
+          "guidance": "Provider model sedang tidak tersedia.",
           "title": "Provider sementara tidak tersedia"
         }
       },
@@ -435,9 +435,9 @@
       "signedInAs": "Masuk sebagai {{email}}",
       "signedInDescription": "Artefak ini mungkin tidak ada atau dibagikan ke akun atau organisasi lain.",
       "signIn": "Masuk",
-      "signInFailed": "Tidak dapat membuka halaman masuk. Silakan coba lagi.",
+      "signInFailed": "Tidak dapat membuka halaman masuk.",
       "switchAccount": "Ganti akun",
-      "switchAccountFailed": "Tidak dapat membuka pemilih akun. Silakan coba lagi.",
+      "switchAccountFailed": "Tidak dapat membuka pemilih akun.",
       "title": "Anda tidak dapat melihat artefak ini",
       "websiteAuthenticationDescription": "Masuk dengan akun yang memiliki akses ke situs web ini.",
       "websiteAuthenticationSignedInDescription": "Lanjutkan untuk memverifikasi akses dengan akun Anda saat ini.",
@@ -1266,7 +1266,7 @@
         "packCreditsDiscount": "{{credits}} kredit · diskon {{discount}}%",
         "packOption": "{{price}} · {{credits}} kredit · Diskon {{discount}}%",
         "paidPackageRequired": "Pilih paket berbayar untuk setidaknya satu anggota agar dapat melanjutkan.",
-        "planChangeError": "Perubahan langganan tidak dapat disiapkan. Coba lagi.",
+        "planChangeError": "Perubahan langganan tidak dapat disiapkan.",
         "planPlusPackages": "Paket {{plan}} · paket anggota {{lowest}}–{{highest}} per orang",
         "planStep": "Paket",
         "priceFrom": "mulai",
@@ -1392,7 +1392,7 @@
       "generatePdf": "Buat PDF",
       "generatingPdf": "Membuat PDF…",
       "more": "Tindakan lainnya",
-      "pdfGenerationFailed": "Tidak dapat membuat PDF. Coba lagi.",
+      "pdfGenerationFailed": "Tidak dapat membuat PDF.",
       "remove": "Hapus",
       "rename": "Ubah nama",
       "saving": "Menyimpan...",
@@ -1569,7 +1569,7 @@
       "title": "Lampiran",
       "unavailable": "{{filename}} tidak lagi tersedia. Unggah ulang untuk mengirimnya.",
       "unavailableCount_other": "{{count}} lampiran tidak lagi tersedia. Unggah ulang untuk mengirimnya.",
-      "uploadFailedRetry": "Gagal mengunggah {{filename}}."
+      "uploadFailed": "Gagal mengunggah {{filename}}."
     },
     "automations": {
       "active": "Aktif",
@@ -1952,15 +1952,15 @@
       "genericTitle": "Proses ini tidak dapat diselesaikan",
       "loadMessages": "Gagal memuat pesan",
       "noModelProviderAction": "Kelola langganan",
-      "noModelProviderPrefix": "Tidak ada penyedia model yang tersedia untuk eksekusi ini. Coba lagi, atau hubungkan langganan pribadi.",
+      "noModelProviderPrefix": "Tidak ada penyedia model yang tersedia untuk eksekusi ini. Hubungkan langganan pribadi.",
       "providerIncompatibleAction": "Mulai sesi baru",
       "providerIncompatiblePrefix": "Sesi ini dimulai dengan provider model yang berbeda dan tidak bisa dilanjutkan dengan yang saat ini.",
       "recovery": {
-        "accessProgramDescription": "Coba lagi sebentar lagi. Chat ini bisa tetap terbuka.",
+        "accessProgramDescription": "Chat ini bisa tetap terbuka.",
         "accessProgramTitle": "Akses Codex sementara tidak tersedia",
         "autonomyLimitDescription": "Batas proses otomatis berturut-turut telah tercapai.",
         "autonomyLimitTitle": "Batas proses otomatis tercapai",
-        "capacityDescription": "Coba lagi sebentar, atau pilih model lain agar pekerjaan tetap berjalan.",
+        "capacityDescription": "Pilih model lain agar pekerjaan tetap berjalan.",
         "capacityTitle": "Model ini sedang sibuk",
         "claudeCode": "Claude Code",
         "codex": "Codex",
@@ -2251,10 +2251,10 @@
       "copyFailed": "Tautan tidak dapat disalin",
       "copyLink": "Salin tautan",
       "create": "Bagikan",
-      "createFailed": "Percakapan yang dibagikan tidak dapat dibuat. Coba lagi.",
+      "createFailed": "Percakapan yang dibagikan tidak dapat dibuat.",
       "deselectGroup": "Batalkan pilihan grup pesan",
       "linkCopied": "Tautan disalin",
-      "messageShareFailed": "Tautan berbagi tidak dapat dibuat. Coba lagi.",
+      "messageShareFailed": "Tautan berbagi tidak dapat dibuat.",
       "publicDescription": "Pesan yang dipilih dan lampirannya akan menjadi publik.",
       "selectedCount_other": "{{count}} dipilih",
       "selectGroup": "Pilih grup pesan",
@@ -3294,7 +3294,7 @@
         "denied": "Koneksi ditolak. Mulai lagi untuk mencoba ulang.",
         "expired": "Sesi koneksi kedaluwarsa. Mulai lagi untuk mencoba ulang.",
         "failed": "Koneksi gagal. Mulai lagi untuk mencoba ulang.",
-        "verificationOpen": "Tidak dapat membuka halaman verifikasi. Coba lagi."
+        "verificationOpen": "Tidak dapat membuka halaman verifikasi."
       },
       "external": {
         "code": "Kode",
@@ -3335,7 +3335,7 @@
           "clientRegistrationRejected": "Penyedia OAuth menolak pendaftaran klien otomatis dan mungkin membatasi klien MCP atau metadata pendaftaran yang didukung. Gunakan klien MCP yang didukung penyedia, OAuth Kustom hanya jika Anda sudah memiliki kredensial klien terdaftar, atau hubungi dukungan Okou.",
           "clientRegistrationUnavailable": "Penyedia OAuth tidak menawarkan metode pendaftaran klien otomatis yang didukung. Gunakan OAuth Kustom jika Anda sudah memiliki kredensial klien terdaftar, atau hubungi dukungan Okou.",
           "discoveryInvalid": "Metadata discovery OAuth server MCP tidak lengkap atau tidak konsisten. Perbaiki metadata yang dipublikasikan jika Anda mengelola server, atau hubungi administrator server.",
-          "providerUnavailable": "Penyedia OAuth MCP untuk sementara tidak tersedia atau sedang membatasi permintaan. Coba lagi nanti dan periksa ketersediaan penyedia.",
+          "providerUnavailable": "Penyedia OAuth MCP untuk sementara tidak tersedia atau sedang membatasi permintaan. Periksa ketersediaan penyedia.",
           "unsafeUrl": "Server MCP memublikasikan URL OAuth yang bukan endpoint HTTPS publik. Perbaiki URL OAuth yang dipublikasikan server sebelum mencoba lagi."
         },
         "save": "Simpan",
@@ -3547,7 +3547,7 @@
         "connectDescription": "Tautkan akun Anda ke workspace Slack ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Slack.",
         "connectTitle": "Hubungkan ke Slack",
         "currentConnection": "Slack terhubung",
-        "errorFallback": "Tidak dapat memeriksa atau memulai koneksi Slack. Coba lagi.",
+        "errorFallback": "Tidak dapat memeriksa atau memulai koneksi Slack.",
         "invalidDescription": "Halaman ini dimaksudkan untuk dibuka dari tautan koneksi Slack.",
         "keepAccount": "Pertahankan {{account}}",
         "open": "Buka Slack",
@@ -3590,7 +3590,7 @@
         "connectionCheckFailed": "Telegram tidak dapat dijangkau untuk memeriksa koneksi.",
         "connectTitle": "Hubungkan ke Telegram",
         "continue": "Lanjutkan dengan Telegram",
-        "domainNotVerified": "Login Telegram untuk aplikasi ini tidak dapat diverifikasi. Coba lagi, atau hubungi dukungan jika masalah berlanjut.",
+        "domainNotVerified": "Login Telegram untuk aplikasi ini tidak dapat diverifikasi. Hubungi dukungan jika masalah berlanjut.",
         "errorFallback": "Kami tidak dapat menghubungkan Telegram. Coba lagi dari Telegram.",
         "interrupted": "Percobaan ini tidak mengonfirmasi koneksi. Periksa status saat ini sebelum mencoba lagi.",
         "invalidSignature": "Tanda tangan pada tautan ini tidak valid.",
@@ -5015,12 +5015,12 @@
     "contentPolicyRejected": "Penyedia model menolak permintaan ini berdasarkan kebijakan keamanan kontennya. Mencoba lagi dengan masukan yang sama akan tetap gagal. Ubah kalimat permintaan, mulai percakapan baru, atau beralih ke model lain.",
     "executionTimeout": "Proses ini mencapai batas waktu eksekusi.",
     "failed": "Eksekusi gagal",
-    "modelRoutesUnavailable": "Semua rute bawaan untuk model ini sementara tidak tersedia. Silakan coba lagi nanti.",
+    "modelRoutesUnavailable": "Semua rute bawaan untuk model ini sementara tidak tersedia.",
     "modelTemporarilyUnavailable": "Model sementara tidak tersedia",
     "modelUnavailable": "Model saat ini tidak tersedia.",
-    "overloaded": "{{model}} sedang kelebihan beban. Tunggu beberapa menit dan coba lagi, atau beralih ke model lain.",
+    "overloaded": "{{model}} sedang kelebihan beban. Beralih ke model lain.",
     "providerBalance": "Saldo akun langganan yang terhubung tidak mencukupi.",
-    "transient": "Terjadi kesalahan. Silakan coba lagi nanti.",
+    "transient": "Terjadi kesalahan.",
     "vm0Credits": "Kredit tidak mencukupi. Tambah kredit atau hubungkan langganan Codex atau Claude pribadi Anda untuk melanjutkan."
   },
   "serviceStatus": {
@@ -5460,7 +5460,7 @@
           "create": "Buat obrolan sambutan",
           "creating": "Membuat…",
           "description": "Buat obrolan sambutan berisi pengantar dan contoh.",
-          "failed": "Tidak dapat membuat obrolan sambutan. Coba lagi.",
+          "failed": "Tidak dapat membuat obrolan sambutan.",
           "title": "Obrolan sambutan"
         }
       },
@@ -5494,38 +5494,38 @@
       "morningBrief": {
         "conflict": "Morning Brief untuk sementara tidak tersedia karena status instalasinya tidak konsisten.",
         "description": "Prioritas harian sebelum pukul 07.00 sesuai zona waktu Anda.",
+        "errorMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui.",
         "missingDefaultAgent": "Pilih Agent default yang dapat digunakan sebelum mengaktifkan Morning Brief.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
         "preparationFailed": "Untuk sementara tidak tersedia.",
         "preparing": "Menyiapkan ringkasan pagi pertama Anda. Anda dapat menonaktifkannya kapan saja.",
-        "retryMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui.",
         "title": "Brief Pagi"
       },
       "proactiveLearning": {
         "description": "Tinjau aktivitas pada malam hari dan perbarui memori pribadi.",
+        "errorMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui.",
         "missingDefaultAgent": "Pilih Agent default yang tersedia.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Alur kerja ini sementara tidak tersedia.",
         "preparing": "Menyiapkan alur kerja ini.",
-        "retryMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui.",
         "title": "Pembelajaran"
       },
       "proactivePlanningAction": {
         "description": "Rencanakan dan kerjakan tugas yang Anda delegasikan, serta beri tahu saat masukan Anda diperlukan.",
+        "errorMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui.",
         "missingDefaultAgent": "Pilih Agent default yang tersedia.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Alur kerja ini sementara tidak tersedia.",
         "preparing": "Menyiapkan alur kerja ini.",
-        "retryMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui.",
         "title": "Perencanaan & tindakan"
       },
       "proactiveSuggestions": {
         "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
+        "errorMessage": "Pengaturan tidak dapat dimuat atau diperbarui.",
         "missingDefaultAgent": "Pilih Agent default yang tersedia untuk menerima saran proaktif.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Untuk sementara tidak tersedia.",
         "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",
-        "retryMessage": "Pengaturan tidak dapat dimuat atau diperbarui.",
         "title": "Saran"
       },
       "send": {
@@ -5989,7 +5989,7 @@
       "confirm": "Hapus templat",
       "deleting": "Menghapus...",
       "description": "\"{{title}}\" akan dihapus untuk semua orang yang dapat melihatnya. Tindakan ini tidak dapat dibatalkan.",
-      "failed": "Templat tidak dapat dihapus. Coba lagi.",
+      "failed": "Templat tidak dapat dihapus.",
       "title": "Hapus templat?"
     },
     "detail": {
@@ -6312,7 +6312,7 @@
         "updatedDescription": "Jalankan saat acara kalender diperbarui.",
         "updatedRule": "Saat acara kalender {{calendar}} diperbarui",
         "updatedTitle": "Acara Google Calendar diperbarui",
-        "updateError": "Kami tidak dapat mengubah kalender ini. Coba lagi."
+        "updateError": "Kami tidak dapat mengubah kalender ini."
       },
       "chat": {
         "addAction": "Tambahkan otomatisasi chat",
@@ -6989,7 +6989,7 @@
       "description": "Mengobrol dengan agen Anda di WeChat.",
       "disconnect": "Putuskan koneksi",
       "expired": "Kode QR ini telah kedaluwarsa. Buat yang baru.",
-      "failed": "Tidak dapat terhubung ke WeChat. Coba lagi.",
+      "failed": "Tidak dapat terhubung ke WeChat.",
       "instructions": "Pindai kode QR ini dengan WeChat, lalu konfirmasi di ponsel Anda.",
       "linkUnavailable": "Tautan ini tidak tersedia. Gunakan akun dan ruang kerja semula, lalu kirim pesan lagi di WeChat untuk mendapatkan tautan baru. Anda juga dapat memindai kode QR baru.",
       "name": "WeChat",

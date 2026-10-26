@@ -60,16 +60,13 @@
     "success": "Agent supprimé",
     "title": "Supprimer {{agentName}} ?",
     "workflows": {
-      "copiedTitle": "Déjà copiés",
-      "copiedTo": "{{workflowTitle}} copié vers {{agentName}}",
       "copyTo": "Copier vers {{agentName}}",
       "deleteWithAgent": "Supprimer avec l'agent",
       "description": "Copiez un workflow vers un autre agent pour le conserver. Tout le reste sera supprimé.",
       "handle": "Gérer le workflow {{workflowTitle}}",
       "loadFailed": "Impossible de charger les workflows.",
       "loading": "Chargement des workflows…",
-      "title": "Conserver les workflows ?",
-      "untitled": "Workflow"
+      "title": "Conserver les workflows ?"
     }
   },
   "detail": {
