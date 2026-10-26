@@ -416,8 +416,13 @@ describe("official Runner Browser lifecycle", () => {
         accepted(await a.request({ kind: "inspect", instanceId: instance.id }))
           .window,
       ).toBeNull();
-      await expect(a.request({ kind: "inspect" })).resolves.toStrictEqual({
-        outcome: "unavailable",
+      const later = await f.start();
+      expect(accepted(await later.request({ kind: "inspect" }))).toMatchObject({
+        id: instance.id,
+        ownerProfileId: instance.ownerProfileId,
+        providerProfileId: instance.providerProfileId,
+        status: "stopped",
+        window: null,
       });
     });
   });

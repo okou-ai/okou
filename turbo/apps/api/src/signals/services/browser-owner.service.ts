@@ -24,7 +24,6 @@ import {
   exists,
   getTableColumns,
   gt,
-  inArray,
   lte,
   notExists,
   or,
@@ -228,6 +227,7 @@ export function createRunnerBrowserAuthority(
   });
 }
 
+/** Physical stop retains the owner's reusable profile for later Runners. */
 export function createRunnerBrowserInspection(
   owner$: Computed<Promise<BrowserOwnerAuthority | null>>,
   action$: Computed<Promise<BrowserAction<"inspect"> | null>>,
@@ -262,7 +262,7 @@ export function createRunnerBrowserInspection(
           eq(profiles.userId, owner.userId),
           authorityStillCurrent(owner),
           action.instanceId === undefined
-            ? inArray(profiles.status, ["creating", "active", "stopping"])
+            ? undefined
             : eq(profiles.instanceId, action.instanceId),
         ),
       );
