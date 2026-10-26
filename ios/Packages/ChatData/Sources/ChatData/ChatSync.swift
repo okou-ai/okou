@@ -31,6 +31,25 @@ public actor ChatSync {
     return true
   }
 
+  public func cachedNavigation() async -> SidebarNavigationSnapshot? {
+    do {
+      return try await cache?.loadNavigation()
+    } catch {
+      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+        .error("Cannot read cached navigation: \(error.localizedDescription, privacy: .public)")
+      return nil
+    }
+  }
+
+  public func persistNavigation(_ snapshot: SidebarNavigationSnapshot) async {
+    do {
+      try await cache?.saveNavigation(snapshot)
+    } catch {
+      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+        .error("Cannot save navigation cache: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
   public func cachedThreads() async -> [ChatThread]? {
     guard let cached = await readCachedThreadList() else { return nil }
     return ChatThreadReplay.sidebarOrder(

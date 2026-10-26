@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 import XCTest
 
 @testable import ChatData
@@ -17,7 +18,31 @@ final class ChatCacheTests: XCTestCase {
       snapshot: snapshot, cursor: ChatCacheCursor(eventID: nil, seqID: 10),
       events: [event(11), event(13)])
 
+    // Reproduce the preceding build's version-one cache: the authoritative
+    // thread tables exist, but the additive navigation table does not.
+    let file = try XCTUnwrap(
+      FileManager.default.contentsOfDirectory(
+        at: directory.appendingPathComponent("ChatCache"), includingPropertiesForKeys: nil
+      ).first { $0.pathExtension == "sqlite" })
+    var handle: OpaquePointer?
+    let opened = sqlite3_open(file.path, &handle)
+    defer { sqlite3_close(handle) }
+    XCTAssertEqual(opened, SQLITE_OK)
+    XCTAssertEqual(sqlite3_exec(handle, "DROP TABLE sidebar_navigation", nil, nil, nil), SQLITE_OK)
+
     let reopened = ChatCache(scope: scope, directory: directory)
+    let navigation = try JSONDecoder().decode(
+      SidebarNavigationSnapshot.self,
+      from: Data(
+        #"{"agents":[{"agentId":"agent-a","isDefaultAgent":true,"displayName":"Assistant"}],"preferences":{"pinnedAgentIds":["agent-a"]},"featureSwitches":{"effectiveSwitches":{"chatThreadArchiving":true}}}"#
+          .utf8))
+    try await reopened.saveNavigation(navigation)
+    let persistedNavigation = try await ChatCache(scope: scope, directory: directory)
+      .loadNavigation()
+    XCTAssertEqual(persistedNavigation?.agents.first?.displayName, "Assistant")
+    XCTAssertEqual(persistedNavigation?.preferences.pinnedAgentIds, ["agent-a"])
+    XCTAssertEqual(
+      persistedNavigation?.featureSwitches.effectiveSwitches["chatThreadArchiving"], true)
     let loaded = try await reopened.loadThreadList()
     let stored = try XCTUnwrap(loaded)
     XCTAssertEqual(stored.snapshot, snapshot)
@@ -47,6 +72,12 @@ final class ChatCacheTests: XCTestCase {
     XCTAssertNil(foreignUser)
     XCTAssertNil(foreignWorkspace)
     XCTAssertNil(foreignAPI)
+    let foreignUserNavigation = try await otherUser.loadNavigation()
+    let foreignWorkspaceNavigation = try await otherWorkspace.loadNavigation()
+    let foreignAPINavigation = try await otherAPI.loadNavigation()
+    XCTAssertNil(foreignUserNavigation)
+    XCTAssertNil(foreignWorkspaceNavigation)
+    XCTAssertNil(foreignAPINavigation)
   }
 
   func testFailedAppendRollsBackEarlierRowsInSamePage() async throws {
