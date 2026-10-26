@@ -816,9 +816,8 @@ function ShareOnXDialog() {
  * destinations belong to the links in the intro dialog.
  */
 function useQuestHandoffs(
-  checkIn: (signal: AbortSignal) => Promise<void>,
   connectPhone: () => void,
-): Record<"imessage" | "invite" | "share" | "checkin", () => void> {
+): Record<"imessage" | "invite" | "share", () => void> {
   const pageSignal = useGet(pageSignal$);
   const openSettings = useSet(openSettingsDialogAt$);
   const setShareDialogOpen = useSet(setShareDialogOpen$);
@@ -829,9 +828,6 @@ function useQuestHandoffs(
     },
     share: () => {
       setShareDialogOpen(true);
-    },
-    checkin: () => {
-      detach(checkIn(pageSignal), Reason.DomCallback);
     },
   };
 }
@@ -845,10 +841,12 @@ function useQuestHandoffs(
  */
 function useQuestActions(
   handoffs: ReturnType<typeof useQuestHandoffs>,
+  checkIn: () => void,
 ): Record<GetStartedQuestKey, () => void> {
   const setQuestIntroKey = useSet(setQuestIntroKey$);
   return {
     ...handoffs,
+    checkin: checkIn,
     connector: () => {
       setQuestIntroKey("connector");
     },
@@ -903,16 +901,20 @@ function GetStartedPanel({
   quests,
   summary,
   handoffs,
-  checkinPending,
 }: {
   quests: readonly GetStartedQuest[];
   summary: GetStartedSummary;
   handoffs: ReturnType<typeof useQuestHandoffs>;
-  checkinPending: boolean;
 }) {
   const { t } = useTranslation();
   const copy = useQuestCopy();
-  const actions = useQuestActions(handoffs);
+  const pageSignal = useGet(pageSignal$);
+  // This component stays mounted when its dropdown content closes. Keep the
+  // action's loading updates here so they do not rerender the reward dialog.
+  const [checkinLoadable, checkIn] = useLoadableSet(checkInGetStarted$);
+  const actions = useQuestActions(handoffs, () => {
+    detach(checkIn(pageSignal), Reason.DomCallback);
+  });
   const opensModal = (quest: GetStartedQuest): boolean => {
     return (
       quest.key === "share" ||
@@ -972,7 +974,9 @@ function GetStartedPanel({
               onSelect={selectHandler(quest)}
               checkinStreak={summary.checkinStreak}
               opensModal={opensModal(quest)}
-              pending={quest.key === "checkin" && checkinPending}
+              pending={
+                quest.key === "checkin" && checkinLoadable.state === "loading"
+              }
             />
           );
         })}
@@ -994,9 +998,8 @@ export function GetStartedEntry() {
   const questsLoadable = useLastLoadable(getStartedQuests$);
   const summaryLoadable = useLastLoadable(getStartedSummary$);
   const setMenuOpen = useSet(setGetStartedMenuOpen$);
-  // The dialogs outlive the dropdown that opened them, so the handoffs they
-  // run are built here rather than inside the panel's own tree.
-  const [checkinLoadable, checkIn] = useLoadableSet(checkInGetStarted$);
+  // The phone dialog outlives the dropdown that opened it, so its connection
+  // code stays with this shared owner.
   const [connectionCodeLoadable, createConnectionCode] = useLoadableSet(
     createAgentPhoneLinkCode$,
   );
@@ -1005,7 +1008,7 @@ export function GetStartedEntry() {
   const requestConnectionCode = () => {
     detach(createConnectionCode(pageSignal), Reason.DomCallback);
   };
-  const handoffs = useQuestHandoffs(checkIn, () => {
+  const handoffs = useQuestHandoffs(() => {
     requestConnectionCode();
     setConnectOpen(true);
   });
@@ -1061,7 +1064,6 @@ export function GetStartedEntry() {
           quests={questsLoadable.data}
           summary={summary}
           handoffs={handoffs}
-          checkinPending={checkinLoadable.state === "loading"}
         />
       </DropdownMenu>
       <ShareOnXDialog />

@@ -1354,6 +1354,12 @@ test("Check-in waits for refreshed rewards before showing the success dialog", a
   expect(
     screen.queryByRole("dialog", { name: "Checked in for today" }),
   ).not.toBeInTheDocument();
+  const reopenedPanel = await openQuestPanel();
+  expect(
+    within(reopenedPanel).getByTestId("get-started-quest-checkin"),
+  ).toHaveAttribute("aria-busy", "true");
+  await userEvent.setup({ delay: null }).keyboard("{Escape}");
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   refreshReady.resolve();
   const dialog = await screen.findByRole("dialog", {
     name: "Checked in for today",
