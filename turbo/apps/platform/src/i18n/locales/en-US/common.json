@@ -1574,10 +1574,7 @@
       "position": "{{current}} of {{total}}",
       "previous": "Previous suggestion",
       "recoveryHint": "Check the chat before sending again. You can restore the suggestion to your draft.",
-      "restoreDraft": "Restore draft",
-      "runInChat": "Run in this chat",
-      "runNewChat": "Run in a new chat",
-      "starting": "Starting…"
+      "restoreDraft": "Restore draft"
     },
     "attachments": {
       "attach": "Attach",

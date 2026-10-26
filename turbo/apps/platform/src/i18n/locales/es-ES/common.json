@@ -1597,10 +1597,7 @@
       "position": "{{current}} de {{total}}",
       "previous": "Sugerencia anterior",
       "recoveryHint": "Revisa el chat antes de volver a enviar. Puedes restaurar la sugerencia en tu borrador.",
-      "restoreDraft": "Restaurar borrador",
-      "runInChat": "Ejecutar en este chat",
-      "runNewChat": "Ejecutar en un chat nuevo",
-      "starting": "Iniciando…"
+      "restoreDraft": "Restaurar borrador"
     },
     "attachments": {
       "attach": "Adjuntar",

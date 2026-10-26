@@ -1572,10 +1572,7 @@
       "position": "{{current}} / {{total}}",
       "previous": "上一条建议",
       "recoveryHint": "重新发送前请先检查聊天。你可以将建议恢复到草稿。",
-      "restoreDraft": "恢复到草稿",
-      "runInChat": "在原聊天运行",
-      "runNewChat": "在新聊天运行",
-      "starting": "正在启动…"
+      "restoreDraft": "恢复到草稿"
     },
     "attachments": {
       "attach": "添加附件",

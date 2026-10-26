@@ -1572,10 +1572,7 @@
       "position": "{{current}} / {{total}}",
       "previous": "前の提案",
       "recoveryHint": "再送信する前にチャットを確認してください。提案を下書きに戻せます。",
-      "restoreDraft": "下書きに戻す",
-      "runInChat": "このチャットで実行",
-      "runNewChat": "新しいチャットで実行",
-      "starting": "開始中…"
+      "restoreDraft": "下書きに戻す"
     },
     "attachments": {
       "attach": "添付する",

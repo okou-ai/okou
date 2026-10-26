@@ -1597,10 +1597,7 @@
       "position": "{{current}} di {{total}}",
       "previous": "Suggerimento precedente",
       "recoveryHint": "Controlla la chat prima di inviare di nuovo. Puoi ripristinare il suggerimento nella bozza.",
-      "restoreDraft": "Ripristina bozza",
-      "runInChat": "Esegui in questa chat",
-      "runNewChat": "Esegui in una nuova chat",
-      "starting": "Avvio…"
+      "restoreDraft": "Ripristina bozza"
     },
     "attachments": {
       "attach": "Allega",
