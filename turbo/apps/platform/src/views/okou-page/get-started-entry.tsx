@@ -1091,7 +1091,6 @@ export function GetStartedEntry() {
               : null
           }
           connectionCodeFailed={connectionCodeLoadable.state === "hasError"}
-          onRetry={requestConnectionCode}
         />
       )}
     </>
@@ -1102,11 +1101,9 @@ export function GetStartedEntry() {
 function ImessageQuestDialog({
   connectionCode,
   connectionCodeFailed,
-  onRetry,
 }: {
   readonly connectionCode: AgentPhoneLinkCodeResponse | null;
   readonly connectionCodeFailed: boolean;
-  readonly onRetry: () => void;
 }) {
   const statusLoadable = useLastLoadable(agentPhoneLinkStatus$);
   return (
@@ -1118,7 +1115,6 @@ function ImessageQuestDialog({
       }
       connectionCode={connectionCode}
       connectionCodeFailed={connectionCodeFailed}
-      onRetry={onRetry}
     />
   );
 }

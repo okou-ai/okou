@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
 import { Button, LoadErrorRow } from "@okouai/ui";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
-import { reloadBuiltinConnectors$ } from "../../signals/external/connectors.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import {
   connectorDirectoryCustomScope$,
@@ -15,10 +14,7 @@ import {
   connectorsSearch$,
   filteredConnectorCatalogItems$,
 } from "../../signals/okou-page/settings/connectors.ts";
-import {
-  openCustomConnectorCreateDialog$,
-  retryCustomConnectors$,
-} from "../../signals/okou-page/settings/custom-connectors.ts";
+import { openCustomConnectorCreateDialog$ } from "../../signals/okou-page/settings/custom-connectors.ts";
 import { filteredDirectoryCustomConnectors$ } from "../../signals/okou-page/settings/connector-directory-custom.ts";
 import { CustomConnectorGrid } from "./components/settings/custom-connectors-panel.tsx";
 
@@ -42,23 +38,9 @@ export function NewCustomConnectorButton() {
   );
 }
 
-function DirectoryLoadError({
-  message,
-  retry,
-}: {
-  readonly message: string;
-  readonly retry: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <LoadErrorRow
-      message={message}
-      retryLabel={t(($) => {
-        return $.connectors.catalog.directory.retry;
-      })}
-      onRetry={retry}
-    />
-  );
+function DirectoryLoadError({ message }: { readonly message: string }) {
+  useTranslation();
+  return <LoadErrorRow message={message} />;
 }
 
 function DirectoryCustomSection({
@@ -75,7 +57,6 @@ function DirectoryCustomSection({
   readonly searching: boolean;
 }) {
   const { t } = useTranslation();
-  const retry = useSet(retryCustomConnectors$);
   if (
     sourceState === "hasData" &&
     connectors.length === 0 &&
@@ -101,7 +82,6 @@ function DirectoryCustomSection({
           message={t(($) => {
             return $.connectors.catalog.directory.customLoadFailed;
           })}
-          retry={retry}
         />
       ) : sourceState === "loading" ? (
         <p role="status" className="text-sm text-muted-foreground">
@@ -211,7 +191,6 @@ function DiscoverDirectoryContent({
   const category = useGet(connectorsCategoryFilter$);
   const custom = useLoadable(filteredDirectoryCustomConnectors$);
   const isAdmin = useLastResolved(isOrgAdmin$) ?? false;
-  const retryCatalog = useSet(reloadBuiltinConnectors$);
   const catalog = useLoadable(filteredConnectorCatalogItems$);
   const builtinState = catalog.state;
   const builtinCount = catalog.state === "hasData" ? catalog.data.length : 0;
@@ -236,7 +215,6 @@ function DiscoverDirectoryContent({
           message={t(($) => {
             return $.connectors.catalog.directory.builtinLoadFailed;
           })}
-          retry={retryCatalog}
         />
       ) : search && category === null && builtinCount > 0 ? (
         <section

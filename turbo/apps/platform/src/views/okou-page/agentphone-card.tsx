@@ -211,7 +211,6 @@ export function AgentPhoneCard() {
         phoneNumber={agentPhoneNumber}
         connectionCode={connectionCode}
         connectionCodeFailed={connectionCodeLoadable.state === "hasError"}
-        onRetry={requestConnectionCode}
       />
     </>
   );

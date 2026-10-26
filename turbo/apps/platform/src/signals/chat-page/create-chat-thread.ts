@@ -1881,6 +1881,8 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
       set(registries.bankingCardSignals.subscribe$, signal);
       set(registries.desktopShellAuthorizationCardSignals.subscribe$, signal);
       set(registries.browserUserActionCardSignals.subscribe$, signal);
+      set(registries.browserAuthorizationCardSignals.subscribe$, signal);
+      set(registries.walletCardSignals.subscribe$, signal);
     },
   );
 
@@ -3477,8 +3479,6 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     initialEventsReady$: events.initialEventsReady$,
     assistantErrorRecovery$: events.assistantErrorRecovery$,
     assistantErrorRecoveryEventId$: events.assistantErrorRecoveryEventId$,
-    retryAssistantError$: events.retryAssistantError$,
-    resetCodexSubscriptionAndRetry$: events.resetCodexSubscriptionAndRetry$,
     eventImageGroups$: events.eventImageGroups$,
     browserSessionSignals: events.browserSessionSignals,
     hasEvents$: events.hasEvents$,
@@ -3643,7 +3643,7 @@ function createChatThreadComposerSignals(
   });
 }
 
-// Recovery owns a finite load/save even before the destination page mounts.
+// A draft handoff owns a finite load/save before the destination page mounts.
 // A previous save can fail after finish cleared its merge marker, so absence
 // of that marker is not proof that the installed handoff reached storage.
 export const resumeThreadDraftHandoff$ = command(

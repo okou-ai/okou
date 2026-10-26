@@ -6,8 +6,6 @@ import { Sunrise } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   debugMorningBriefEnabled$,
-  debugMorningBriefResponse$,
-  refreshDebugMorningBrief$,
   runDebugMorningBrief$,
 } from "../../../../signals/okou-page/settings/debug-morning-brief.ts";
 import { Link } from "../../../router/link.tsx";
@@ -17,16 +15,13 @@ import { detach, isAbortError, Reason } from "../../../../signals/utils.ts";
 export function MorningBriefRunCard() {
   const { t } = useTranslation();
   const enabled = useLoadable(debugMorningBriefEnabled$);
-  const receipt = useLoadable(debugMorningBriefResponse$);
   const [starting, run] = useLoadableSet(runDebugMorningBrief$);
-  const [refreshing, refresh] = useLoadableSet(refreshDebugMorningBrief$);
   const signal = useGet(settingsActionSignal$);
   if (enabled.state !== "hasData" || !enabled.data) {
     return null;
   }
-  const response = receipt.state === "hasData" ? receipt.data : null;
-  const pending =
-    starting.state === "loading" || refreshing.state === "loading";
+  const response = starting.state === "hasData" ? starting.data : null;
+  const pending = starting.state === "loading";
   const error = starting.state === "hasError" ? starting.error : undefined;
   const statuses = {
     queued: t(($) => {
@@ -72,7 +67,9 @@ export function MorningBriefRunCard() {
         </div>
         <Button
           type="button"
-          disabled={pending || !signal || active}
+          disabled={
+            pending || !signal || active || starting.state === "hasError"
+          }
           onClick={() => {
             if (signal) {
               detach(run(signal), Reason.DomCallback);
@@ -87,13 +84,9 @@ export function MorningBriefRunCard() {
               ? t(($) => {
                   return $.settings.preferences.debug.morningBrief.runAgain;
                 })
-              : error
-                ? t(($) => {
-                    return $.settings.preferences.debug.morningBrief.retry;
-                  })
-                : t(($) => {
-                    return $.settings.preferences.debug.morningBrief.run;
-                  })}
+              : t(($) => {
+                  return $.settings.preferences.debug.morningBrief.run;
+                })}
         </Button>
       </div>
       {response && (
@@ -103,22 +96,6 @@ export function MorningBriefRunCard() {
       )}
       {response && (
         <div className="flex items-center gap-4">
-          {active && (
-            <Button
-              type="button"
-              variant="neutral"
-              disabled={pending || !signal}
-              onClick={() => {
-                if (signal) {
-                  detach(refresh(signal), Reason.DomCallback);
-                }
-              }}
-            >
-              {t(($) => {
-                return $.settings.preferences.debug.morningBrief.checkStatus;
-              })}
-            </Button>
-          )}
           <Link
             pathname="/chats/:threadId"
             options={{ pathParams: { threadId: response.chatThreadId } }}

@@ -176,10 +176,6 @@ const bumpReload$ = command(({ set }) => {
   set(reloadUserConnectedConnectors$);
 });
 
-export const retryCustomConnectors$ = command(({ set }) => {
-  set(bumpReload$);
-});
-
 type CustomConnectorAuthorizationTarget =
   | { readonly kind: "visible-agents" }
   | { readonly kind: "agent"; readonly agentId: string };

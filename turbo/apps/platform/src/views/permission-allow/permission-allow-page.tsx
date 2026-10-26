@@ -340,18 +340,6 @@ interface ConfirmGrantCardProps {
   action: "allow" | "deny";
   initialExpiresIn: UserPermissionGrantExpiresIn | null;
   userName: string;
-  grantLoadable: { state: string };
-  applyGrant: (
-    params: {
-      agentId: string;
-      connectorSlug: string;
-      permission: string;
-      action: "allow" | "deny";
-      expiresIn?: UserPermissionGrantExpiresIn;
-    },
-    callback: ChatActionCallback,
-    signal: AbortSignal,
-  ) => Promise<PlatformUserPermissionGrant>;
   actionCallback: ChatActionCallback;
 }
 
@@ -393,10 +381,11 @@ function ConfirmGrantCard({
   action,
   initialExpiresIn,
   userName,
-  grantLoadable,
-  applyGrant,
   actionCallback,
 }: ConfirmGrantCardProps) {
+  const [grantLoadable, applyGrant] = useLoadableSet(
+    applyPermissionAndResumeChat$,
+  );
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const durationScope = `agent\u0000${target.id}\u0000${connectorSlug}\u0000${permission.name}\u0000${action}\u0000${initialExpiresIn ?? ""}`;
@@ -409,6 +398,16 @@ function ConfirmGrantCard({
   const expirationAvailable = action === "allow";
   const saving = grantLoadable.state === "loading";
   const saveError = grantLoadable.state === "hasError";
+
+  if (grantLoadable.state === "hasData") {
+    return (
+      <ResultCard
+        action={action}
+        expiresAt={grantLoadable.data.expiresAt}
+        showExpiry={action === "allow"}
+      />
+    );
+  }
 
   const handleSave = () => {
     detach(
@@ -463,7 +462,7 @@ function ConfirmGrantCard({
           {expirationAvailable && (
             <GrantDurationField
               value={expiresIn}
-              disabled={saving}
+              disabled={saving || saveError}
               onChange={(value) => {
                 setExpiresInForScope(durationScope, value);
               }}
@@ -485,7 +484,7 @@ function ConfirmGrantCard({
           <Button
             type="button"
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || saveError}
             className="h-9 w-full rounded-[10px]"
           >
             {saving
@@ -523,12 +522,7 @@ function PermissionAllowDoctorPage({
   const metadataLoadable = useLoadable(
     permissionAllowFirewallPermissionMetadata$,
   );
-  const [grantLoadable, applyGrant] = useLoadableSet(
-    applyPermissionAndResumeChat$,
-  );
   const grants = grantsLoadable.state === "hasData" ? grantsLoadable.data : [];
-  const savedGrant =
-    grantLoadable.state === "hasData" ? grantLoadable.data : null;
   if (
     anyLoadableIsLoading([
       agentLoadable,
@@ -587,16 +581,6 @@ function PermissionAllowDoctorPage({
     );
   }
 
-  if (savedGrant && isActiveUserPermissionGrant(savedGrant)) {
-    return (
-      <ResultCard
-        action={action}
-        expiresAt={savedGrant.expiresAt}
-        showExpiry={action === "allow"}
-      />
-    );
-  }
-
   const existingGrantResult = resolveExistingPermissionGrantResult({
     action,
     connectorSlug,
@@ -604,11 +588,7 @@ function PermissionAllowDoctorPage({
     grants,
     metadata,
   });
-  if (
-    existingGrantResult &&
-    grantLoadable.state !== "loading" &&
-    grantLoadable.state !== "hasError"
-  ) {
+  if (existingGrantResult) {
     return (
       <ResultCard
         action={action}
@@ -631,8 +611,6 @@ function PermissionAllowDoctorPage({
       action={action}
       initialExpiresIn={initialExpiresIn}
       userName={resolveUserName(currentUser)}
-      grantLoadable={grantLoadable}
-      applyGrant={applyGrant}
       actionCallback={actionCallback}
     />
   );

@@ -105,7 +105,7 @@ export const loadCustomTemplateCatalog$ = command(
   },
 );
 
-/** Refetch after a mutation, or after the user asks to try again. */
+/** Invalidate the catalog after a mutation or resource notification. */
 export const reloadCustomTemplates$ = command(({ get, set }) => {
   set(catalogVersion$, get(catalogVersion$) + 1);
 });
@@ -252,7 +252,7 @@ export const openCustomTemplateDetail$ = computed(
     get(catalogVersion$);
     const client = get(apiClient$)(userTemplatesContract);
     // A delete notification can revalidate the detail before its dialog closes.
-    // Load failures already have an inline retry; do not toast a stale preview.
+    // Load failures appear inline; do not toast a stale preview.
     const result = await accept(
       client.get({ params: { templateId } }),
       [200],

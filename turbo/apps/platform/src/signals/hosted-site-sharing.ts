@@ -22,7 +22,7 @@ import {
 } from "./hosted-site-url-changes.ts";
 import { createShareLinkCopy } from "./share-link-copy.ts";
 import { recordHostedSiteVisibilityChange$ } from "./hosted-site-visibility-changes.ts";
-import { onRef, resetSignal, settle } from "./utils.ts";
+import { onRef, resetSignal } from "./utils.ts";
 import { createHostedSiteBannerSignals } from "./hosted-site-banner.ts";
 
 type SiteUrl = z.infer<typeof hostedSiteUrlSchema>;
@@ -71,24 +71,15 @@ function createSiteVisibilitySignals(sourceUrl: string) {
       if (!details || details.visibility === visibility) {
         return false;
       }
-      const response = await accept(
+      const updated = await accept(
         get(apiClient$)(hostContract).updateSiteVisibility({
           params: { siteId: details.siteId },
           body: { visibility, expectedRevision: details.revision },
           fetchOptions: { signal },
         }),
-        [200, 409],
+        [200],
         signal,
       );
-      signal.throwIfAborted();
-      if (response.status === 409) {
-        set(reload$, (value) => {
-          return value + 1;
-        });
-        await get(details$);
-        signal.throwIfAborted();
-      }
-      const updated = await accept(Promise.resolve(response), [200], signal);
       signal.throwIfAborted();
       set(reload$, (value) => {
         return value + 1;
@@ -115,24 +106,9 @@ function createSiteVisibilitySignals(sourceUrl: string) {
       }
     },
   );
-  const refresh$ = command(async ({ get, set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    set(reload$, (value) => {
-      return value + 1;
-    });
-    const details = await settle(get(details$), signal);
-    signal.throwIfAborted();
-    if (details.ok && details.value) {
-      set(recordHostedSiteVisibilityChange$, {
-        url: sourceUrl,
-        revision: details.value.revision,
-      });
-    }
-  });
   return {
     visibility$: details$,
     changeVisibility$: change$,
-    refreshVisibility$: refresh$,
   };
 }
 
@@ -265,7 +241,6 @@ function createSiteUrlEditorSignals(
 function createHostedSiteShareSession(sourceUrl: string) {
   const signal$ = state<AbortSignal | null>(null);
   const saved$ = state<SiteUrl | null>(null);
-  const reload$ = state(0);
   const details$ = computed(async (get) => {
     if (!get(featureSwitch$)[FeatureSwitchKey.HostedSiteUrlEditing]) {
       return null;
@@ -280,7 +255,6 @@ function createHostedSiteShareSession(sourceUrl: string) {
         publicSlug: new URL(url).hostname.split(".")[0]!,
       };
     }
-    get(reload$);
     const url = new URL(
       currentHostedSiteUrl(sourceUrl, get(hostedSiteUrlChanges$)),
     );
@@ -319,11 +293,6 @@ function createHostedSiteShareSession(sourceUrl: string) {
       set(linkCopy.clear$);
     }
   });
-  const refresh$ = command(({ set }) => {
-    set(reload$, (value) => {
-      return value + 1;
-    });
-  });
   const copy$ = command(async ({ get, set }, signal: AbortSignal) => {
     const url = await get(copyUrl$);
     signal.throwIfAborted();
@@ -340,7 +309,6 @@ function createHostedSiteShareSession(sourceUrl: string) {
     ...editor,
     inputId: `hosted-site-url-${crypto.randomUUID()}`,
     setOpen$,
-    refresh$,
     copy$,
     copiedUrl$: linkCopy.copiedUrl$,
   };

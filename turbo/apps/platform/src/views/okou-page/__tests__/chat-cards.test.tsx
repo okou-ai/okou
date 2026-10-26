@@ -1088,7 +1088,7 @@ test("A missing exact reconnect account never falls back to the default", async 
   expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
 });
 
-test("A connector account switch keeps its icon and retries its continuation with the same identity", async () => {
+test("A connector account switch keeps its icon and continues the conversation", async () => {
   const github = connectorSlugSchema.parse("github");
   const connectionId = "f0000000-0000-4000-a000-000000000901";
   const iconUrl = "https://icons.example.test/account-switch-github.svg";
@@ -1210,27 +1210,16 @@ test("A connector account switch keeps its icon and retries its continuation wit
       clientEventId: body.clientEventId,
       chatThreadSortEventId: body.chatThreadSortEventId,
     });
-    return callbackIds.length === 1
-      ? respond(500, {
-          error: { code: "INTERNAL_SERVER_ERROR", message: "Response lost" },
-        })
-      : respond(201, { threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   click(buttonIn(card, "Switch"));
-  click(
-    await waitFor(() => {
-      return buttonIn(card, "Retry");
-    }),
-  );
   await waitFor(() => {
-    expect(callbackIds).toHaveLength(2);
-    expect(queryAllByRoleFast("button", card)).toHaveLength(0);
+    expect(callbackIds).toHaveLength(1);
   });
   expect(callbackIds[0]).toStrictEqual({
     clientEventId: expect.any(String),
     chatThreadSortEventId: expect.any(String),
   });
-  expect(callbackIds[1]).toStrictEqual(callbackIds[0]);
   expect(selectionWrites).toBe(1);
 });
 

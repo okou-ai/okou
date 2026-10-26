@@ -167,26 +167,20 @@ test("Advanced data research saves independently and retains preferences across 
   ]);
 });
 
-test("A failed load shows no assumed enabled tools and can be retried", async () => {
-  let available = false;
+test("A failed load shows no assumed enabled tools", async () => {
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return available
-      ? respond(200, { disabledTools: ["web-search"] })
-      : respond(500, {
-          error: {
-            message: "Preferences temporarily unavailable",
-            code: "INTERNAL_SERVER_ERROR",
-          },
-        });
+    return respond(500, {
+      error: {
+        message: "Preferences temporarily unavailable",
+        code: "INTERNAL_SERVER_ERROR",
+      },
+    });
   });
   const dialog = await openPaidTools();
   await within(dialog).findByText("Your tool settings could not be loaded.");
   expect(
     within(dialog).queryByRole("switch", { name: "Web search" }),
   ).not.toBeInTheDocument();
-  available = true;
-  click(button("Retry", dialog));
-  await expect(readySwitch("Web search")).resolves.not.toBeChecked();
 });
 
 test("A workspace switch while a save obtains its token prevents sending that save under the new workspace", async () => {
@@ -310,24 +304,16 @@ test("Choosing an image model saves it with the stored run model", async () => {
   ]);
 });
 
-test("A failed image model save retains the unsaved choice and can be retried", async () => {
-  let failing = true;
+test("A failed image model save retains the unsaved choice", async () => {
   const updates: UpdateUserModelPreferenceRequest[] = [];
   context.mocks.api(userModelPreferenceContract.update, ({ body, respond }) => {
     updates.push(body);
-    if (failing) {
-      return respond(500, {
-        error: {
-          message: "Preferences temporarily unavailable",
-          code: "INTERNAL_SERVER_ERROR",
-        },
-      });
-    }
-    const stored = modelPreference({
-      selectedImageModel: body.selectedImageModel ?? null,
+    return respond(500, {
+      error: {
+        message: "Preferences temporarily unavailable",
+        code: "INTERNAL_SERVER_ERROR",
+      },
     });
-    context.mocks.data.userModelPreference(stored);
-    return respond(200, stored);
   });
   const dialog = await openPaidTools();
   const select = await imageModelSelect();
@@ -341,28 +327,6 @@ test("A failed image model save retains the unsaved choice and can be retried", 
   );
   await within(dialog).findByText("Your image model was not saved.");
   expect(select).toHaveTextContent("Nano Banana 2 Lite");
-  failing = false;
-  click(button("Retry", dialog));
-  await waitFor(() => {
-    expect(
-      within(dialog).queryByText("Your image model was not saved."),
-    ).not.toBeInTheDocument();
-    expect(select).not.toBeDisabled();
-  });
-  expect(select).toHaveTextContent("Nano Banana 2 Lite");
-  expect(updates).toHaveLength(2);
-  expect(updates[1]?.selectedImageModel).toBe("google/nano-banana-2-lite");
-  context.mocks.data.userModelPreference(
-    modelPreference({ selectedImageModel: "gpt-image-2" }),
-  );
-  act(() => {
-    context.mocks.ably.trigger("userPreferenceChanged", {
-      kinds: ["defaultImageModel"],
-    });
-  });
-  await waitFor(() => {
-    expect(select).toHaveTextContent("GPT Image 2");
-  });
 });
 
 test.each(["disable image generation", "leave Tools"] as const)(

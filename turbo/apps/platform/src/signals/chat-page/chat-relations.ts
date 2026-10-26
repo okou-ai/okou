@@ -146,7 +146,6 @@ export function createChatRelationSignals(
     readonly initialEventsReady$: Computed<boolean>;
   },
 ) {
-  const retryRevision$ = state(0);
   const eventRevision$ = computed((get) => {
     const events = get(events$);
     for (let index = events.length - 1; index >= 0; index--) {
@@ -167,7 +166,6 @@ export function createChatRelationSignals(
     return {
       threads: get(eventDrivenChatThreads$),
       latestEventId: get(eventRevision$),
-      retry: get(retryRevision$),
     };
   });
   const origin$ = computed((get): ChatOrigin | null => {
@@ -207,11 +205,6 @@ export function createChatRelationSignals(
     origin$,
     chats: createResourceChats(children, communications),
     ...createPeerMessages(threadId, revision$),
-    retry$: command(({ set }) => {
-      set(retryRevision$, (value) => {
-        return value + 1;
-      });
-    }),
   };
 }
 export type ChatRelationSignals = ReturnType<typeof createChatRelationSignals>;

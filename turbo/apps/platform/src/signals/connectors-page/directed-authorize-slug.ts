@@ -27,7 +27,6 @@ import {
 import {
   connectorCatalogItemForSlug,
   withMemberAccount,
-  reloadBuiltinConnectors$,
   builtinConnectorsReloadVersion$,
 } from "../external/connectors.ts";
 import { createConnectorAccountListSignals } from "../okou-page/connector-accounts.ts";
@@ -50,10 +49,6 @@ const directedAuthorizeDefinition$ = connectorCatalogItemForSlug(
 const directedAuthorizeAccounts = createConnectorAccountListSignals({
   includeBuiltinScopeMismatch: true,
   refreshVersion$: builtinConnectorsReloadVersion$,
-});
-
-export const retryDirectedAuthorize$ = command(({ set }) => {
-  set(reloadBuiltinConnectors$);
 });
 
 export const initializeDirectedAuthorizeAccounts$ = command(

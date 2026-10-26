@@ -53,26 +53,30 @@ function useBatchResources(signals: PermissionBatchSignals) {
   // Retain the last data during refresh, but never approve against a failed read.
   const currentGrants = useLoadable(signals.grants$);
   const currentMetadata = useLoadable(signals.metadata$);
-  const savedSnapshot = useGet(signals.savedSnapshot$);
-  const continued = useGet(signals.continued$);
   const dismissed = useGet(signals.dismissed$);
   const expiresIn = useGet(signals.expiresIn$);
   const setExpiresIn = useSet(signals.setExpiresIn$);
   const dismiss = useSet(signals.dismiss$);
   const [confirmState, confirm] = useLoadableSet(signals.confirm$);
-  const [continueState, continueChat] = useLoadableSet(signals.continue$);
   const descriptor = signals.descriptor;
-  const busy =
-    confirmState.state === "loading" || continueState.state === "loading";
-  const hasCallback = Boolean(descriptor.callbackPrompt && descriptor.threadId);
+  const busy = confirmState.state === "loading";
+  const continued =
+    Boolean(descriptor.threadId && descriptor.callbackPrompt) &&
+    confirmState.state === "hasData" &&
+    confirmState.data === true;
   return {
-    agent,
-    user,
-    grants,
-    metadata,
-    currentGrants,
-    currentMetadata,
-    savedSnapshot,
+    agent: agent.state === "hasData" ? agent.data : null,
+    user: user.state === "hasData" ? user.data : null,
+    grants: grants.state === "hasData" ? grants.data : [],
+    metadata: metadata.state === "hasData" ? metadata.data : [],
+    ready:
+      agent.state === "hasData" &&
+      grants.state === "hasData" &&
+      metadata.state === "hasData",
+    loadFailed:
+      agent.state === "hasError" ||
+      currentGrants.state === "hasError" ||
+      currentMetadata.state === "hasError",
     continued,
     dismissed,
     expiresIn,
@@ -80,11 +84,8 @@ function useBatchResources(signals: PermissionBatchSignals) {
     dismiss,
     saveFailed: confirmState.state === "hasError",
     confirm,
-    continueFailed: continueState.state === "hasError",
-    continueChat,
     descriptor,
     busy,
-    hasCallback,
   };
 }
 
@@ -94,21 +95,18 @@ function getBatchMetadata(
   { metadata, descriptor }: BatchResources,
   ready: boolean,
 ) {
-  const groups =
-    metadata.state === "hasData"
-      ? metadata.data
-          .map((connector) => {
-            return {
-              connector,
-              items: descriptor.items.filter((item) => {
-                return item.connectorSlug === connector.connectorSlug;
-              }),
-            };
-          })
-          .filter((group) => {
-            return group.items.length > 0;
-          })
-      : [];
+  const groups = metadata
+    .map((connector) => {
+      return {
+        connector,
+        items: descriptor.items.filter((item) => {
+          return item.connectorSlug === connector.connectorSlug;
+        }),
+      };
+    })
+    .filter((group) => {
+      return group.items.length > 0;
+    });
   const complete =
     ready &&
     descriptor.items.every((item) => {
@@ -128,23 +126,8 @@ function getBatchPolicy(
   { groups, complete }: ReturnType<typeof getBatchMetadata>,
   loadFailed: boolean,
 ) {
-  const {
-    grants,
-    currentGrants,
-    savedSnapshot,
-    descriptor,
-    saveFailed,
-    continueFailed,
-    continued,
-  } = resources;
-  const chosenGrants =
-    grants.state === "hasData"
-      ? currentGrants.state === "loading" &&
-        savedSnapshot &&
-        grants.data === savedSnapshot.previousGrants
-        ? savedSnapshot.grants
-        : grants.data
-      : [];
+  const { grants, descriptor, saveFailed, continued } = resources;
+  const chosenGrants = grants;
   const allowedCount =
     complete && !loadFailed
       ? descriptor.items.filter((item) => {
@@ -163,23 +146,14 @@ function getBatchPolicy(
       : 0;
   const allowed =
     complete && !loadFailed && allowedCount === descriptor.items.length;
-  const callbackFailed =
-    allowed && !continued && (saveFailed || continueFailed);
+  const callbackFailed = allowed && !continued && saveFailed;
 
   return { allowedCount, allowed, callbackFailed, chosenGrants };
 }
 
 function useBatchState(signals: PermissionBatchSignals) {
   const resources = useBatchResources(signals);
-  const { agent, grants, metadata, currentGrants, currentMetadata } = resources;
-  const ready =
-    agent.state === "hasData" &&
-    grants.state === "hasData" &&
-    metadata.state === "hasData";
-  const loadFailed =
-    agent.state === "hasError" ||
-    currentGrants.state === "hasError" ||
-    currentMetadata.state === "hasError";
+  const { ready, loadFailed } = resources;
   const metadataState = getBatchMetadata(resources, ready);
   const policy = getBatchPolicy(resources, metadataState, loadFailed);
   return { ...resources, ...metadataState, ...policy, ready, loadFailed };
@@ -217,7 +191,7 @@ function BatchHeader({
         </div>
       ) : (
         <>
-          {standalone && agent.state === "hasData" && (
+          {standalone && agent !== null && (
             <>
               <p className="text-center text-lg font-medium leading-7 text-foreground">
                 {t(
@@ -226,27 +200,27 @@ function BatchHeader({
                   },
                   {
                     userName:
-                      user.state === "hasData"
-                        ? (user.data?.firstName ??
-                          user.data?.username ??
+                      user !== null
+                        ? (user?.firstName ??
+                          user?.username ??
                           t(($) => {
                             return $.authorization.permission.userFallback;
                           }))
                         : t(($) => {
                             return $.authorization.permission.userFallback;
                           }),
-                    targetName: agent.data.displayName ?? descriptor.agentId,
+                    targetName: agent.displayName ?? descriptor.agentId,
                   },
                 )}
               </p>
               <div className="flex w-full items-center gap-2 rounded-lg border border-border bg-muted/30 py-3 pl-2 pr-8">
                 <AvatarFromUrl
-                  avatarUrl={agent.data.avatarUrl ?? null}
+                  avatarUrl={agent.avatarUrl ?? null}
                   alt=""
                   className="h-10 w-10 shrink-0 rounded-full object-cover object-top"
                 />
                 <span className="text-sm font-medium text-foreground">
-                  {agent.data.displayName ?? descriptor.agentId}
+                  {agent.displayName ?? descriptor.agentId}
                 </span>
               </div>
             </>
@@ -431,11 +405,9 @@ function BatchActions({
     busy,
     loadFailed,
     complete,
+    saveFailed,
     confirm,
     descriptor,
-    hasCallback,
-    continued,
-    continueChat,
     dismiss,
   } = batch;
   return (
@@ -443,7 +415,7 @@ function BatchActions({
       {!allowed && (
         <Button
           type="button"
-          disabled={busy || loadFailed || !complete}
+          disabled={busy || loadFailed || !complete || saveFailed}
           onClick={() => {
             detach(confirm(pageSignal), Reason.DomCallback);
           }}
@@ -459,24 +431,6 @@ function BatchActions({
                 },
                 { count: descriptor.items.length },
               )}
-        </Button>
-      )}
-      {allowed && hasCallback && !continued && (
-        <Button
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            detach(continueChat(pageSignal), Reason.DomCallback);
-          }}
-          className="h-9 w-full rounded-[10px]"
-        >
-          {busy
-            ? t(($) => {
-                return $.authorization.permissionBatch.continuing;
-              })
-            : t(($) => {
-                return $.authorization.permissionBatch.continue;
-              })}
         </Button>
       )}
       {standalone && !allowed && (

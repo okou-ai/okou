@@ -794,7 +794,6 @@ export function createImportedPresentationTemplateSignals() {
 
   return {
     presentationTemplatesInitialized$,
-    retryImportedPresentationTemplates$: refreshPresentationTemplates$,
     importedPresentationTemplates$,
     loadImportedPresentationTemplates$,
     importedPresentationTemplatePickerItems$,

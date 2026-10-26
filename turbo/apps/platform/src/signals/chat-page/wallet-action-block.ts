@@ -1,6 +1,6 @@
 import { walletUserContract } from "@okouai/api-contracts/contracts/wallet";
 import { walletChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
-import { command, computed, state } from "ccstate";
+import { command, computed, state, type Command } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { i18n } from "../../i18n/index.ts";
@@ -9,7 +9,6 @@ import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { apiClient$ } from "../api-client.ts";
 import { setAblyPayloadLoop$, waitAblyPayloadLoopUntil$ } from "../realtime.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { onRef } from "../utils.ts";
 import { runChatActionCallback$ } from "./action-callback.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import type { ChatActionContext } from "./chat-action-context.ts";
@@ -71,7 +70,6 @@ function createWalletConnectSignals(
   context: ChatActionContext,
 ) {
   const reload$ = state(0);
-  const continued$ = state(false);
   const status$ = computed(async (get) => {
     get(reload$);
     const result = await accept(
@@ -110,19 +108,16 @@ function createWalletConnectSignals(
   );
   const continueAfterAuthorization$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      if (get(continued$)) {
-        return;
-      }
-      // Refresh for this user action so stale consent and failed reads can
-      // recover before waiting for future notifications.
-      if (!(await set(refreshCompletion$, signal))) {
+      const initial = await get(status$);
+      signal.throwIfAborted();
+      if (initial.status === "pending") {
         await set(
           waitAblyPayloadLoopUntil$,
           {
             topic: "wallet:changed",
             loopCommand$: onWalletChanged$,
             initializeCommand$: refreshCompletion$,
-            options: { runOnSubscribe: false },
+            options: { runOnSubscribe: true },
           },
           signal,
         );
@@ -130,7 +125,7 @@ function createWalletConnectSignals(
       const status = await get(status$);
       signal.throwIfAborted();
       if (status.status !== "authorized") {
-        return;
+        return false;
       }
       await set(
         runChatActionCallback$,
@@ -140,7 +135,7 @@ function createWalletConnectSignals(
             return $.chat.walletAction.callbackPrompt;
           }),
           // The authorization identifies this continuation in both event
-          // tables, so retries and other tabs cannot create another run.
+          // tables, so other tabs cannot create another run.
           callbackIds: {
             clientEventId: status.authorizationId,
             chatThreadSortEventId: status.authorizationId,
@@ -149,14 +144,22 @@ function createWalletConnectSignals(
         signal,
       );
       signal.throwIfAborted();
-      set(continued$, true);
+      return true;
     },
   );
-  return {
-    status$,
-    continued$,
-    start$: continueAfterAuthorization$,
-  };
+  const subscribe$ = command(({ set }, signal: AbortSignal) => {
+    set(
+      setAblyPayloadLoop$,
+      {
+        topic: "wallet:changed",
+        loopCommand$: onWalletChanged$,
+        initializeCommand$: refreshCompletion$,
+        options: { runOnSubscribe: true },
+      },
+      signal,
+    );
+  });
+  return { status$, start$: continueAfterAuthorization$, subscribe$ };
 }
 
 export type WalletConnectSignals = ReturnType<
@@ -208,27 +211,23 @@ function createWalletApprovalSignals(
       return await set(refresh$, signal);
     },
   );
-  const mounted$ = onRef(
-    command(
-      async ({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
-        if (!get(enabled$)) {
-          return;
-        }
-        await set(
-          setAblyPayloadLoop$,
-          {
-            topic: "wallet:changed",
-            loopCommand$: changed$,
-            initializeCommand$: refresh$,
-            options: { runOnSubscribe: false },
-          },
-          signal,
-        );
-        signal.throwIfAborted();
+  const subscribe$ = command(({ get, set }, signal: AbortSignal) => {
+    if (!get(enabled$)) {
+      return;
+    }
+    set(
+      setAblyPayloadLoop$,
+      {
+        topic: "wallet:changed",
+        loopCommand$: changed$,
+        initializeCommand$: refresh$,
+        options: { runOnSubscribe: false },
       },
-    ),
-  );
-  return { status$, mounted$ };
+      signal,
+    );
+    signal.throwIfAborted();
+  });
+  return { status$, subscribe$ };
 }
 
 export type WalletApprovalSignals = ReturnType<
@@ -237,6 +236,7 @@ export type WalletApprovalSignals = ReturnType<
 export type WalletActionSignals = WalletActionDescriptor & {
   readonly connect: WalletConnectSignals | null;
   readonly approval: WalletApprovalSignals | null;
+  readonly subscribe$: Command<void, [AbortSignal]>;
 };
 
 export function createWalletCardSignalsRegistry(context: ChatActionContext) {
@@ -248,20 +248,29 @@ export function createWalletCardSignalsRegistry(context: ChatActionContext) {
       const oauthState = new URL(descriptor.originalUrl).searchParams.get(
         "state",
       );
-      return {
-        ...descriptor,
-        approval:
-          descriptor.action === "approve"
-            ? createWalletApprovalSignals(descriptor.originalUrl, context)
-            : null,
-        connect:
-          descriptor.action === "connect" &&
-          oauthState &&
-          oauthState.length >= 43 &&
-          oauthState.length <= 128
-            ? createWalletConnectSignals(oauthState, context)
-            : null,
-      };
+      const approval =
+        descriptor.action === "approve"
+          ? createWalletApprovalSignals(descriptor.originalUrl, context)
+          : null;
+      const connect =
+        descriptor.action === "connect" &&
+        oauthState &&
+        oauthState.length >= 43 &&
+        oauthState.length <= 128
+          ? createWalletConnectSignals(oauthState, context)
+          : null;
+      const subscribe$ = command(({ set }, signal: AbortSignal) => {
+        if (connect) {
+          set(connect.subscribe$, signal);
+        }
+        if (approval) {
+          set(approval.subscribe$, signal);
+        }
+      });
+      return { ...descriptor, approval, connect, subscribe$ };
+    },
+    (signals) => {
+      return signals.subscribe$;
     },
   );
 }

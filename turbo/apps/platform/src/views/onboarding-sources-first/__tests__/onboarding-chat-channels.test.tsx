@@ -307,8 +307,7 @@ test.each([
   },
   {
     reason: "domain_check_failed",
-    message:
-      "We couldn't reach Telegram to check the connection. Please try again in a moment.",
+    message: "We couldn't reach Telegram to check the connection.",
   },
 ] satisfies {
   reason: Extract<

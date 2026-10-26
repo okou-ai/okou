@@ -311,18 +311,15 @@ test("Show loading rather than a connect prompt before the first account read co
   await page.ready;
 });
 
-test("Show a retryable account read error instead of claiming there are no connected accounts", async () => {
+test("Keep account read failures distinct from having no connected accounts", async () => {
   mockAutoMode();
-  let failed = true;
   context.mocks.api(thirdPartySubscriptionsMainContract.list, ({ respond }) => {
-    return failed
-      ? respond(500, {
-          error: {
-            message: "Upstream unavailable",
-            code: "INTERNAL_SERVER_ERROR",
-          },
-        })
-      : respond(200, { subscriptions: [] });
+    return respond(500, {
+      error: {
+        message: "Upstream unavailable",
+        code: "INTERNAL_SERVER_ERROR",
+      },
+    });
   });
   const settings = await openSettings();
   await within(settings).findByText("Couldn’t load your accounts.");
@@ -331,9 +328,4 @@ test("Show a retryable account read error instead of claiming there are no conne
       return element.textContent?.trim() === "Connect account";
     }),
   ).toBeFalsy();
-  failed = false;
-  click(button("Try again", settings));
-  await waitFor(() => {
-    return expect(button("Connect account", settings)).toBeEnabled();
-  });
 });

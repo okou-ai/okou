@@ -15,7 +15,6 @@ import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import {
   agentSuggestionIndex$,
-  agentSuggestionRecoveryId$,
   dismissAgentSuggestion$,
   showAgentSuggestion$,
   startAgentSuggestion$,
@@ -141,7 +140,6 @@ export function AgentSuggestions() {
   const result = useLastLoadable(visibleAgentSuggestions$);
   const [operation, start] = useLoadableSet(startAgentSuggestion$);
   const starting = operation.state === "loading";
-  const recoveryId = useGet(agentSuggestionRecoveryId$);
   const signal = useGet(pageSignal$);
   const requested = useGet(agentSuggestionIndex$);
   // The tab exists only for a resolved, non-empty pool, so a read that is
@@ -152,7 +150,6 @@ export function AgentSuggestions() {
   const items = result.data;
   const index = Math.min(requested, items.length - 1);
   const item = items[index];
-  const recoverable = item.id === recoveryId;
   const behind = Math.min(items.length - 1, 2);
   return (
     <section
@@ -189,8 +186,6 @@ export function AgentSuggestions() {
           <span className="inline-flex items-center gap-1.5 pt-2 text-xs text-muted-foreground">
             {starting ? (
               <LoaderCircle aria-hidden className="animate-spin" />
-            ) : recoverable ? (
-              <MessageSquarePlus aria-hidden />
             ) : item.threadId ? (
               <MessageSquare aria-hidden />
             ) : (
@@ -200,29 +195,14 @@ export function AgentSuggestions() {
               ? t(($) => {
                   return $.chat.agentSuggestions.starting;
                 })
-              : recoverable
-                ? t(($) => {
-                    return $.chat.agentSuggestions.restoreDraft;
-                  })
-                : item.threadId
-                  ? t(($) => {
-                      return $.chat.agentSuggestions.runInChat;
-                    })
-                  : t(($) => {
-                      return $.chat.agentSuggestions.runNewChat;
-                    })}
+              : t(($) => {
+                  return $.chat.agentSuggestions.useSuggestion;
+                })}
             <ArrowRight
               aria-hidden
               className="opacity-0 transition-opacity group-hover/suggestion:opacity-100"
             />
           </span>
-          {recoverable && !starting && (
-            <span className="text-xs text-muted-foreground">
-              {t(($) => {
-                return $.chat.agentSuggestions.recoveryHint;
-              })}
-            </span>
-          )}
         </Button>
         <AgentSuggestionHeader item={item} index={index} total={items.length} />
       </fieldset>

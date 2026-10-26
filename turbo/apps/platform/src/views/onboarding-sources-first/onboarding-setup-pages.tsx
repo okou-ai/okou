@@ -5,7 +5,6 @@ import { Check, Loader2, TriangleAlert } from "lucide-react";
 import { Button, Input, RadioGroup } from "@okouai/ui";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { OnboardingCompliance } from "./onboarding-industry-parts.tsx";
-import { reloadBuiltinConnectors$ } from "../../signals/external/connectors.ts";
 import {
   sendSourcesFirstInvite$,
   sourcesFirstInviteEmailValid,
@@ -58,7 +57,6 @@ export function OnboardingIndustryPage() {
   const [catalogWait, waitForCatalog] = useLoadableSet(
     waitForSourcesFirstCatalog$,
   );
-  const retryCatalog = useSet(reloadBuiltinConnectors$);
   const captureIndustrySelected = useSet(
     captureSourceOnboardingIndustrySelected$,
   );
@@ -132,16 +130,6 @@ export function OnboardingIndustryPage() {
               return $.connectors.catalog.directory.builtinLoadFailed;
             })}
           </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={retryCatalog}
-          >
-            {t(($) => {
-              return $.connectors.catalog.directory.retry;
-            })}
-          </Button>
         </div>
       ) : null}
     </OnboardingStepLayout>
@@ -481,17 +469,12 @@ function SubscriptionConnectLabel({
       return $.onboarding.sourcesFirst.subscription.connecting;
     });
   }
-  if (status === "idle") {
-    return t(
-      ($) => {
-        return $.onboarding.sourcesFirst.subscription.connect;
-      },
-      { provider: providerName },
-    );
-  }
-  return t(($) => {
-    return $.onboarding.sourcesFirst.subscription.retry;
-  });
+  return t(
+    ($) => {
+      return $.onboarding.sourcesFirst.subscription.connect;
+    },
+    { provider: providerName },
+  );
 }
 
 /**

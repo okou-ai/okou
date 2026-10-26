@@ -7,11 +7,8 @@ import {
   finishConnectorAccountConnection$,
   openBuiltinAccountManager$,
 } from "../okou-page/settings/connector-account-dialogs.ts";
-import { resetSignal, waitLoopUntil } from "../utils.ts";
 import {
   currentWorkflowId$,
-  isGoogleCalendarWorkflowAutomation,
-  reloadCurrentWorkflowDetail$,
   type GoogleCalendarWorkflowAutomationSummary,
 } from "./workflows-signals.ts";
 
@@ -19,17 +16,14 @@ interface CalendarRecoveryTarget {
   readonly workflowId: string;
   readonly automationId: string;
   readonly eventType: GoogleCalendarWorkflowAutomationSummary["eventType"];
-  readonly phase: "reconnect" | "confirm";
 }
 
 const internalRecoveryTarget$ = state<CalendarRecoveryTarget | null>(null);
-const resetConfirmation$ = resetSignal();
 export const googleCalendarRecoveryTarget$ = computed((get) => {
   return get(internalRecoveryTarget$);
 });
 
 export const cancelGoogleCalendarRecovery$ = command(({ set }) => {
-  set(resetConfirmation$);
   set(internalRecoveryTarget$, null);
   set(closeBuiltinAccountManager$);
   set(closeBuiltinAccountConnectDialog$);
@@ -51,7 +45,6 @@ export const openGoogleCalendarRecovery$ = command(
       workflowId,
       automationId: automation.id,
       eventType: automation.eventType,
-      phase: "reconnect",
     });
     set(openBuiltinAccountManager$, connector, signal);
   },
@@ -59,51 +52,13 @@ export const openGoogleCalendarRecovery$ = command(
 
 export const closeGoogleCalendarReconnect$ = command(
   ({ get, set }, target: CalendarRecoveryTarget) => {
-    // ConnectModal also closes after onSuccess; that must not dismiss confirmation.
-    if (
-      get(internalRecoveryTarget$) === target &&
-      target.phase === "reconnect"
-    ) {
+    if (get(internalRecoveryTarget$) === target) {
       set(cancelGoogleCalendarRecovery$);
     }
   },
 );
 
-const confirmRecovery$ = command(
-  async ({ get, set }, target: CalendarRecoveryTarget, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    let recovered = false;
-    await waitLoopUntil(
-      async () => {
-        if (get(currentWorkflowId$) !== target.workflowId) {
-          return true;
-        }
-        const detail = await set(reloadCurrentWorkflowDetail$, signal);
-        signal.throwIfAborted();
-        const automation = detail?.automations.find((candidate) => {
-          return candidate.id === target.automationId;
-        });
-        if (
-          detail?.id !== target.workflowId ||
-          !automation ||
-          !isGoogleCalendarWorkflowAutomation(automation) ||
-          automation.eventType !== target.eventType
-        ) {
-          return true;
-        }
-        recovered = automation.warning === undefined;
-        return recovered || automation.warning !== "reconnect_required";
-      },
-      2000,
-      signal,
-      { retryTransientErrors: false },
-    );
-    signal.throwIfAborted();
-    return recovered;
-  },
-);
-
-export const checkGoogleCalendarRecovery$ = command(
+export const finishGoogleCalendarReconnect$ = command(
   async (
     { get, set },
     target: CalendarRecoveryTarget,
@@ -114,39 +69,25 @@ export const checkGoogleCalendarRecovery$ = command(
     if (get(internalRecoveryTarget$) !== target) {
       return;
     }
-    const attemptSignal = set(resetConfirmation$, signal);
-    let confirmationTarget = target;
-    if (target.phase === "reconnect") {
-      const dialog = get(builtinAccountConnectDialog$);
-      if (
-        !dialog ||
-        dialog.mode.kind !== "reconnect" ||
-        connectionId === undefined
-      ) {
-        return;
-      }
-      await set(
-        finishConnectorAccountConnection$,
-        {
-          target: { kind: "builtin", connectorSlug: dialog.connector.slug },
-          connectionId,
-          connectorLabel: dialog.connector.label,
-          mode: dialog.mode,
-        },
-        attemptSignal,
-      );
-      signal.throwIfAborted();
-      attemptSignal.throwIfAborted();
-      confirmationTarget = { ...target, phase: "confirm" };
-      set(internalRecoveryTarget$, confirmationTarget);
-      // The inline recovery status now owns progress and cancellation.
-      set(closeBuiltinAccountConnectDialog$);
+    const dialog = get(builtinAccountConnectDialog$);
+    if (
+      !dialog ||
+      dialog.mode.kind !== "reconnect" ||
+      connectionId === undefined
+    ) {
+      return;
     }
-    const recovered = await set(confirmRecovery$, target, attemptSignal);
+    await set(
+      finishConnectorAccountConnection$,
+      {
+        target: { kind: "builtin", connectorSlug: dialog.connector.slug },
+        connectionId,
+        connectorLabel: dialog.connector.label,
+        mode: dialog.mode,
+      },
+      signal,
+    );
     signal.throwIfAborted();
-    attemptSignal.throwIfAborted();
-    if (recovered && get(internalRecoveryTarget$) === confirmationTarget) {
-      set(internalRecoveryTarget$, null);
-    }
+    set(cancelGoogleCalendarRecovery$);
   },
 );

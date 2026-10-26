@@ -1,10 +1,5 @@
-import { closeSshDialog$, openSshDialog$, invalidateSsh$ } from "./ssh.ts";
-import {
-  closeVncDialog$,
-  openVncDialog$,
-  invalidateVnc$,
-  vncEnabled$,
-} from "./vnc.ts";
+import { closeSshDialog$, openSshDialog$ } from "./ssh.ts";
+import { closeVncDialog$, openVncDialog$, vncEnabled$ } from "./vnc.ts";
 import type { SshConnectionResponse } from "@okouai/api-contracts/contracts/ssh-connections";
 import type { VncConnectionResponse } from "@okouai/api-contracts/contracts/vnc-connections";
 import { command, computed } from "ccstate";
@@ -52,21 +47,10 @@ export type RemoteConnectionEditor =
   | { readonly kind: "vnc"; readonly connection: VncConnectionResponse };
 
 export const openRemoteConnectionEditor$ = command(
-  async (
-    { set },
-    resource: RemoteConnectionEditor,
-    retry: boolean,
-    signal: AbortSignal,
-  ) => {
+  async ({ set }, resource: RemoteConnectionEditor, signal: AbortSignal) => {
     if (resource.kind === "ssh") {
-      if (retry) {
-        set(invalidateSsh$);
-      }
       await set(openSshDialog$, "edit", resource.connection, signal);
     } else {
-      if (retry) {
-        set(invalidateVnc$);
-      }
       await set(openVncDialog$, "edit", resource.connection, signal);
     }
     signal.throwIfAborted();

@@ -85,7 +85,6 @@ const noOpEventAction$ = command(
 interface AgentComposerOptions {
   readonly forward?: ChatForwardContext;
   readonly onOptimisticSend?: () => void;
-  readonly preserveAgentDraft?: boolean;
 }
 
 function createAgentSubmitMessage(
@@ -120,7 +119,6 @@ function createAgentSubmitMessage(
         {
           agentId,
           draft,
-          preserveAgentDraft: options.preserveAgentDraft,
           prompt: submission.prompt,
           generationTemplate: submission.generationTemplate,
           editorDocument: submission.editorDocument,
@@ -181,14 +179,8 @@ function createAgentComposerSignalsWithDraft(
     pendingRemoteAccess,
     draft: {
       signals: agentDraft.draft,
-      load$:
-        options.forward || options.preserveAgentDraft
-          ? noOpAction$
-          : agentDraft.load$,
-      save$:
-        options.forward || options.preserveAgentDraft
-          ? noOpAction$
-          : agentDraft.queueDraftSync$,
+      load$: options.forward ? noOpAction$ : agentDraft.load$,
+      save$: options.forward ? noOpAction$ : agentDraft.queueDraftSync$,
     },
     chatEvents$,
     voiceDraftTarget: `agent:${agentId}`,
@@ -208,15 +200,6 @@ function createAgentComposerSignalsWithDraft(
     removeQueuedMessage$: noOpEventAction$,
     removeAutomationEvent$: noOpEventAction$,
   });
-}
-
-/** An independent send must not read or clear the Agent's saved composer. */
-export function createIsolatedAgentComposerSignals(agentId: string) {
-  return createAgentComposerSignalsWithDraft(
-    agentId,
-    createAgentDraftSignals(agentId),
-    { preserveAgentDraft: true },
-  );
 }
 
 export function createForwardAgentComposerSignals(

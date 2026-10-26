@@ -213,7 +213,6 @@ test("A known credential rejection leaves the retained input editable", async ()
   await within(dialog).findByRole("alert");
   expect(secret).toBeEnabled();
   expect(secret).toHaveValue("owned-secret");
-  expect(queryAction("button", "Retry", dialog)).not.toBeInTheDocument();
   expect(document.body.textContent).not.toContain("private server detail");
 });
 

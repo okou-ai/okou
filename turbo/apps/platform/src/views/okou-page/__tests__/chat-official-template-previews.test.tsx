@@ -1,5 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   click,
@@ -141,7 +142,14 @@ test("Welcome diagrams and the quick start open without uploaded artifacts", asy
   context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
     return respond(200, { runs: [] });
   });
-  await setupPage({ context, path: chat.path });
+  const previewUrl = `https://ps-${"c".repeat(48)}.okou.app/`;
+  context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+    return respond(200, {
+      url: previewUrl,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+  });
+  await setupPage({ context, path: chat.path, host: "app.okou.ai" });
   await screen.findByText("View the quick start");
   for (const [name, url] of diagrams) {
     click(link(name));
@@ -150,10 +158,15 @@ test("Welcome diagrams and the quick start open without uploaded artifacts", asy
     ).resolves.toHaveAttribute("src", url);
     await closePreview();
   }
-  // The quick start is a hosted site on okou.app, and hosted-site framing is
-  // resolved per environment (resolveHostedSiteDomains), so its in-thread frame
-  // only exists on production hostnames. Assert the link survives here.
-  expect(link("View the quick start")).toHaveAttribute("href", QUICK_START);
+  click(link("View the quick start"));
+  await waitFor(() => {
+    const element = screen.getByTestId("artifact-dialog-site-frame");
+    const frame =
+      element instanceof HTMLIFrameElement
+        ? element
+        : element.querySelector("iframe");
+    expect(frame).toHaveAttribute("src", previewUrl);
+  });
 });
 
 test("Unlisted external HTML and altered catalog URLs keep ordinary link behavior", async () => {

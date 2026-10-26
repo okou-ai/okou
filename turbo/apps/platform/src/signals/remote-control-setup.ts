@@ -51,14 +51,12 @@ import {
   openTailscaleDialog$,
   tailscaleConfigs$,
   tailscaleDialog$,
-  retryTailscale$,
 } from "./tailscale.ts";
 import {
   closeCloudflareAccessDialog$,
   openCloudflareAccessDialog$,
   cloudflareAccessDialog$,
   cloudflareAccessConfigs$,
-  retryCloudflareAccess$,
 } from "./cloudflare-access.ts";
 
 export type RemoteSetupStep = "entry" | "computer-network" | "login" | "saved";
@@ -339,13 +337,6 @@ export const remoteSetupNetworks$ = computed(
     ];
   },
 );
-export const retryRemoteSetupNetworks$ = command(
-  ({ set }, signal: AbortSignal) => {
-    set(retryTailscale$, signal);
-    set(retryCloudflareAccess$, signal);
-  },
-);
-
 export const remoteVncConnectionOptionsAvailable$ = computed(async (get) => {
   const transport = get(vncTransport$);
   if (transport === "direct") {

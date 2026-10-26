@@ -34,6 +34,7 @@ import {
   sshConnections$,
   sshConflict$,
   sshConflictReview$,
+  isNewSshConflictReview,
   acceptSshConflictReview$,
   sshDialog$,
   openSshDialog$,
@@ -1186,7 +1187,9 @@ function SshConflictReview({ dialog }: { readonly dialog: SshDialogState }) {
             })}
           </p>
         )}
-      {current && <SshConflictDetails current={current} />}
+      {current && isNewSshConflictReview(current) && (
+        <SshConflictDetails current={current} />
+      )}
     </div>
   );
 }
@@ -1627,24 +1630,20 @@ function useSshFormSubmission(
     isSaving,
     uncertain,
     destructive,
-    submitDisabled: isSaving || (!uncertain && blocked),
+    submitDisabled: isSaving || uncertain || blocked,
     submitLabel: isSaving
       ? t(($) => {
           return $.connectors.actions.saving;
         })
-      : uncertain
-        ? t(($) => {
-            return $.ssh.retry;
-          })
-        : destructive
-          ? title
-          : t(($) => {
-              return inline && dialog.kind === "create"
-                ? $.remoteControlSetup.add
-                : $.ssh.save;
-            }),
+      : destructive
+        ? title
+        : t(($) => {
+            return inline && dialog.kind === "create"
+              ? $.remoteControlSetup.add
+              : $.ssh.save;
+          }),
     submit(form: HTMLFormElement) {
-      if (isSaving || (!uncertain && blocked)) {
+      if (isSaving || uncertain || blocked) {
         return;
       }
       if (
@@ -1665,7 +1664,7 @@ function useSshFormSubmission(
       ) {
         return;
       }
-      // Keep retryable input only in this form, never in ccstate or caches.
+      // Keep sensitive input only in this form, never in ccstate or caches.
       detach(save(form, signal), Reason.DomCallback);
     },
   };

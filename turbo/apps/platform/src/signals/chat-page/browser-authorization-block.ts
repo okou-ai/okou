@@ -3,6 +3,7 @@ import { command, computed, state } from "ccstate";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
+import { setAblyLoop$ } from "../realtime.ts";
 import { runChatActionCallback$ } from "./action-callback.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import {
@@ -31,7 +32,6 @@ function createBrowserAuthorizationSignals(
   context: ChatActionContext,
 ) {
   const revision$ = state(0);
-  const phase$ = state<"authorize" | "continue" | "done">("authorize");
   const request$ = computed(async (get) => {
     get(revision$);
     const result = await accept(
@@ -51,9 +51,6 @@ function createBrowserAuthorizationSignals(
     });
   });
   const allow$ = command(async ({ get, set }, signal: AbortSignal) => {
-    if (get(phase$) === "done") {
-      return;
-    }
     const request = await get(request$);
     signal.throwIfAborted();
     if (!request) {
@@ -61,19 +58,15 @@ function createBrowserAuthorizationSignals(
         "Cloud browser authorization is unavailable in this chat",
       );
     }
-    if (get(phase$) === "authorize") {
-      await accept(
-        get(apiClient$)(browserAuthorizationRequestsContract).apply({
-          params: { requestToken: descriptor.requestToken },
-          body: {},
-          fetchOptions: { signal },
-        }),
-        [200],
-        signal,
-      );
-      signal.throwIfAborted();
-      set(phase$, "continue");
-    }
+    await accept(
+      get(apiClient$)(browserAuthorizationRequestsContract).apply({
+        params: { requestToken: descriptor.requestToken },
+        body: {},
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+    );
     await set(
       runChatActionCallback$,
       {
@@ -81,7 +74,7 @@ function createBrowserAuthorizationSignals(
         callbackPrompt: i18n.t(($) => {
           return $.authorization.browser.callbackPrompt;
         }),
-        // The request owns one continuation, including retries and other tabs.
+        // The request identifies its single continuation across tabs.
         callbackIds: {
           clientEventId: request.id,
           chatThreadSortEventId: request.id,
@@ -89,9 +82,23 @@ function createBrowserAuthorizationSignals(
       },
       signal,
     );
-    set(phase$, "done");
   });
-  return { ...descriptor, request$, phase$, refresh$, allow$ };
+  const invalidate$ = command(({ set }) => {
+    set(refresh$);
+    return false;
+  });
+  const subscribe$ = command(({ set }, signal: AbortSignal) => {
+    set(
+      setAblyLoop$,
+      {
+        topic: "desktopShellAuthorizationChanged",
+        loopCommand$: invalidate$,
+        options: { runOnSubscribe: true },
+      },
+      signal,
+    );
+  });
+  return { ...descriptor, request$, allow$, subscribe$ };
 }
 
 export type BrowserAuthorizationSignals = ReturnType<
@@ -107,6 +114,9 @@ export function createBrowserAuthorizationCardSignalsRegistry(
     },
     (descriptor) => {
       return createBrowserAuthorizationSignals(descriptor, context);
+    },
+    (signals) => {
+      return signals.subscribe$;
     },
   );
 }

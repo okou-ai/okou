@@ -11,7 +11,7 @@ import { searchParams$, updateSearchParams$ } from "../../route.ts";
 import { reloadIndexedDbDiagnosticsFromWorker$ } from "../../shared-database.ts";
 import { resetSignal } from "../../utils.ts";
 import { usagePackManagementAsync$ } from "../billing.ts";
-import { retryEmailSubscription$ } from "./email-subscription.ts";
+import { invalidateEmailSubscription$ } from "./email-subscription.ts";
 import {
   managedUsagePackSelection,
   resetUsagePackPricing$,
@@ -23,8 +23,6 @@ import {
   billingSubPage$,
   clearBillingScrollTarget$,
   clearPendingLogo$,
-  resetOrgLogo$,
-  startOrgLogoLoading$,
   initProfileName$,
   requestBuyCreditsScroll$,
   resetDeleteConfirm$,
@@ -118,13 +116,11 @@ export const settingsActiveSection$ = computed((get) => {
 
 export const setSettingsActiveSection$ = command(
   ({ get, set }, section: SettingsSection, signal: AbortSignal) => {
+    signal.throwIfAborted();
     if (section === "debug" && get(internalActiveSection$) !== "debug") {
       set(reloadIndexedDbDiagnosticsFromWorker$);
     }
     set(internalActiveSection$, section);
-    if (section === "general") {
-      set(startOrgLogoLoading$, signal);
-    }
     if (section !== "billing") {
       set(clearBillingScrollTarget$);
       set(resetUsagePackPricing$);
@@ -204,7 +200,6 @@ const releaseSettingsDialogSession$ = command(({ set }) => {
   set(internalSettingsDialogSignal$, null);
   set(internalSettingsDialogSessionActive$, false);
   set(clearPendingLogo$);
-  set(resetOrgLogo$);
   set(resetDeleteConfirm$);
   set(resetUsagePackPricing$);
   // The billing sub-page belongs to the session, not to the tab: a closed
@@ -256,7 +251,7 @@ export const setSettingsDialogOpen$ = command(
       return;
     }
 
-    set(retryEmailSubscription$);
+    set(invalidateEmailSubscription$);
     set(refreshWalletConnection$);
     if (!get(internalSettingsDialogOpen$)) {
       set(internalSettingsVisit$, (visit) => {
@@ -282,9 +277,6 @@ export const setSettingsDialogOpen$ = command(
       { once: true },
     );
     set(internalSettingsDialogSignal$, modalSignal);
-    if (get(internalActiveSection$) === "general") {
-      set(startOrgLogoLoading$, modalSignal);
-    }
     set(observeWalletConnection$, modalSignal);
     set(internalSettingsDialogSessionActive$, true);
     // A plans sub-page that is already open when the session starts was opened

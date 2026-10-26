@@ -59,7 +59,6 @@ import {
   invalidateVncObservationConfiguration$,
   vncObservationConfigurationRevision$,
 } from "./remote-access-refresh.ts";
-import { invalidateSsh$ } from "./ssh.ts";
 import { invalidateCloudflareAccess$ } from "./cloudflare-access.ts";
 import { invalidateTailscale$ } from "./tailscale.ts";
 import { onRef, resetSignal, settle, withCleanup } from "./utils.ts";
@@ -120,10 +119,6 @@ export const invalidateVnc$ = command(({ set }) => {
   set(invalidateRemoteAccess$);
   set(invalidateCloudflareAccess$);
   set(invalidateTailscale$);
-});
-
-export const retryVnc$ = command(({ set }) => {
-  set(invalidateVnc$);
 });
 
 export const vncConnections$ = computed(async (get) => {
@@ -445,7 +440,6 @@ const notice$ = state<{
   readonly source: "save" | "rsa-import" | "kerberos-import";
 } | null>(null);
 const conflict$ = state(false);
-const reviewedVersion$ = state<number | null>(null);
 const resetSave$ = resetSignal();
 const resetRsaImport$ = resetSignal();
 const resetKerberosImport$ = resetSignal();
@@ -525,149 +519,6 @@ export const vncConflict$ = computed((get) => {
   return get(conflict$);
 });
 
-export type VncConflictReviewState = VncDialogState &
-  (
-    | {
-        readonly kind: "edit";
-        readonly connection: VncConnectionResponse;
-      }
-    | {
-        readonly kind: "delete";
-        readonly connection: VncConnectionResponse;
-      }
-    | {
-        readonly kind: "edit-credential";
-        readonly credential: VncCredentialResponse;
-      }
-    | {
-        readonly kind: "delete-credential";
-        readonly credential: VncCredentialResponse;
-      }
-  );
-
-export function isVncReviewableConflict(
-  dialog: VncDialogState,
-  message: string | null,
-) {
-  return (
-    ((dialog.kind === "edit" || dialog.kind === "delete") &&
-      message === VNC_ERROR_CODES.GENERATION_CONFLICT) ||
-    (dialog.kind === "edit" &&
-      dialog.loginCredential !== undefined &&
-      message === VNC_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT) ||
-    ((dialog.kind === "edit-credential" ||
-      dialog.kind === "delete-credential") &&
-      message === VNC_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT) ||
-    (dialog.kind === "delete-credential" &&
-      message === VNC_ERROR_CODES.CREDENTIAL_IN_USE)
-  );
-}
-
-function isSameVncDialog(current: VncDialogState, reviewed: VncDialogState) {
-  return (
-    reviewed.identity === current.identity &&
-    reviewed.sessionKey === current.sessionKey &&
-    reviewed.creationId === current.creationId &&
-    reviewed.kind === current.kind &&
-    reviewed.connection?.id === current.connection?.id &&
-    reviewed.credential?.id === current.credential?.id
-  );
-}
-
-export const vncConflictReview$ = computed(
-  async (get): Promise<VncConflictReviewState | null> => {
-    const dialog = await get(vncDialog$);
-    const message = get(vncSaveMessage$);
-    if (
-      !dialog ||
-      !get(conflict$) ||
-      !isVncReviewableConflict(dialog, message)
-    ) {
-      return null;
-    }
-    if (
-      dialog.kind === "edit" &&
-      dialog.connection &&
-      dialog.loginCredential &&
-      message === VNC_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT
-    ) {
-      const loginCredential = (await get(vncCredentials$))?.find(
-        (candidate) => {
-          return candidate.id === dialog.loginCredential?.id;
-        },
-      );
-      return loginCredential
-        ? {
-            ...dialog,
-            kind: "edit",
-            connection: dialog.connection,
-            loginCredential,
-          }
-        : null;
-    }
-    if (dialog.kind === "edit" || dialog.kind === "delete") {
-      const connection = (await get(vncConnections$))?.find((candidate) => {
-        return candidate.id === dialog.connection?.id;
-      });
-      return connection ? { ...dialog, kind: dialog.kind, connection } : null;
-    }
-    if (
-      dialog.kind === "edit-credential" ||
-      dialog.kind === "delete-credential"
-    ) {
-      const credential = (await get(vncCredentials$))?.find((candidate) => {
-        return candidate.id === dialog.credential?.id;
-      });
-      return credential ? { ...dialog, kind: dialog.kind, credential } : null;
-    }
-    return null;
-  },
-);
-
-export const acceptVncConflictReview$ = command(
-  async (
-    { get, set },
-    reviewed: VncConflictReviewState,
-    signal: AbortSignal,
-  ) => {
-    const current = await get(vncDialog$);
-    signal.throwIfAborted();
-    const message = get(vncSaveMessage$);
-    if (
-      !current ||
-      get(dialog$) !== current ||
-      !get(conflict$) ||
-      !isSameVncDialog(current, reviewed) ||
-      (current.kind === "edit-credential" &&
-        reviewed.credential?.authMethod !== current.credential?.authMethod) ||
-      (reviewed.kind === "delete-credential" &&
-        reviewed.credential.hosts.length > 0) ||
-      !isVncReviewableConflict(current, message)
-    ) {
-      return;
-    }
-    if (
-      current.kind === "edit" &&
-      reviewed.loginCredential &&
-      message === VNC_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT
-    ) {
-      set(dialog$, { ...current, loginCredential: reviewed.loginCredential });
-      set(conflict$, false);
-      set(notice$, null);
-      return;
-    }
-    set(resetRsaImport$);
-    set(resetKerberosImport$);
-    set(
-      reviewedVersion$,
-      reviewed.kind === "edit" || reviewed.kind === "delete"
-        ? reviewed.connection.generation
-        : reviewed.credential.revision,
-    );
-    set(conflict$, false);
-    set(notice$, null);
-  },
-);
 export const chooseVncCredential$ = command(
   ({ get, set }, selection: string | null) => {
     if (selection !== null && !get(editorLocked$)) {
@@ -967,7 +818,6 @@ export const closeVncDialog$ = command(({ set }) => {
   set(uncertain$, false);
   set(notice$, null);
   set(conflict$, false);
-  set(reviewedVersion$, null);
   set(editor$, {
     selection: "",
     profile: "x509_vnc",
@@ -1632,15 +1482,11 @@ function connectionFields(form: HTMLFormElement, editor: Editor) {
   };
 }
 
-interface RequestEditor extends Editor {
-  readonly reviewedVersion: number | null;
-}
-
 function connectionRequest(
   clients: VncClients,
   dialog: VncDialogState,
   form: HTMLFormElement,
-  editor: RequestEditor,
+  editor: Editor,
   signal: AbortSignal,
 ) {
   if (dialog.kind === "create") {
@@ -1667,7 +1513,7 @@ function connectionRequest(
       return clients.connections.delete({
         params,
         body: {
-          expectedGeneration: editor.reviewedVersion ?? connection.generation,
+          expectedGeneration: connection.generation,
         },
         fetchOptions: { signal },
       });
@@ -1675,7 +1521,7 @@ function connectionRequest(
   }
   const body = updateVncConnectionRequestSchema.safeParse({
     ...connectionFields(form, editor),
-    expectedGeneration: editor.reviewedVersion ?? connection.generation,
+    expectedGeneration: connection.generation,
   });
   return body.success
     ? () => {
@@ -1692,7 +1538,7 @@ function credentialRequest(
   clients: VncClients,
   dialog: VncDialogState,
   form: HTMLFormElement,
-  editor: RequestEditor,
+  editor: Editor,
   signal: AbortSignal,
 ) {
   if (dialog.kind === "create-credential") {
@@ -1718,14 +1564,14 @@ function credentialRequest(
       return clients.credentials.delete({
         params,
         body: {
-          expectedRevision: editor.reviewedVersion ?? credential.revision,
+          expectedRevision: credential.revision,
         },
         fetchOptions: { signal },
       });
     };
   }
   const body = updateVncCredentialRequestSchema.safeParse({
-    expectedRevision: editor.reviewedVersion ?? credential.revision,
+    expectedRevision: credential.revision,
     name: textField(form, "credentialName"),
     ...(editor.replace
       ? {
@@ -1785,17 +1631,6 @@ function vncLoginPatch(
     : null;
 }
 
-function hasNativeVncDraft(editor: Editor) {
-  return (
-    editor.transport === "cloudflare_access" ||
-    editor.transport === "tailscale" ||
-    (isVncKerberosMethod(editor.profile) &&
-      editor.profile !== "qemu_kerberos_ticket" &&
-      (editor.kdcTransport === "cloudflare_access" ||
-        editor.kdcTransport === "tailscale"))
-  );
-}
-
 const prepareVncFormSave$ = command(
   async ({ get, set }, form: HTMLFormElement, signal: AbortSignal) => {
     const dialog = await get(vncDialog$);
@@ -1808,10 +1643,7 @@ const prepareVncFormSave$ = command(
     if (clients.identity !== dialog.identity) {
       return;
     }
-    const editor = {
-      ...get(editor$),
-      reviewedVersion: get(reviewedVersion$),
-    };
+    const editor = get(editor$);
     const guided =
       get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup];
     if (
@@ -1848,45 +1680,17 @@ const prepareVncFormSave$ = command(
 );
 
 const handleVncSaveFailure$ = command(
-  (
-    { set },
-    failure: { readonly status: number; readonly code: string },
-    retrying: boolean,
-    dialog: VncDialogState,
-    editor: Editor,
-  ) => {
+  ({ set }, failure: { readonly status: number; readonly code: string }) => {
     const { status, code } = failure;
     if (status === 500) {
       return;
     }
-    const versionConflict =
-      code === VNC_ERROR_CODES.GENERATION_CONFLICT ||
-      code === VNC_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT;
-    // A later rejection cannot prove that an earlier ambiguous create failed.
-    if (retrying && !versionConflict) {
-      return;
-    }
     set(uncertain$, false);
     set(notice$, { code, source: "save" });
-    if (
-      status === 404 &&
-      code === VNC_ERROR_CODES.UNAVAILABLE &&
-      hasNativeVncDraft(editor)
-    ) {
-      // A rejected first publication can be repaired with an available config.
-      // The earlier retrying guard still protects an ambiguous prior write.
-      set(invalidateVnc$);
-      return;
-    }
     if (status !== 400) {
       set(resetRsaImport$);
       set(resetKerberosImport$);
-      set(reviewedVersion$, null);
       set(conflict$, true);
-      set(invalidateVnc$);
-      if (dialog.kind === "edit") {
-        set(invalidateSsh$);
-      }
     }
     return undefined;
   },
@@ -1894,14 +1698,16 @@ const handleVncSaveFailure$ = command(
 
 export const saveVnc$ = command(
   async ({ get, set }, form: HTMLFormElement, parentSignal: AbortSignal) => {
+    if (get(uncertain$)) {
+      return;
+    }
     const signal = set(resetSave$, parentSignal);
     const prepared = await set(prepareVncFormSave$, form, signal);
     signal.throwIfAborted();
     if (!prepared) {
       return;
     }
-    const { dialog, clients, editor, login, request } = prepared;
-    const retrying = get(uncertain$);
+    const { dialog, clients, login, request } = prepared;
     set(notice$, null);
     set(uncertain$, true);
     let result = await accept<
@@ -1934,7 +1740,6 @@ export const saveVnc$ = command(
         connectionSaved: true,
       };
       set(dialog$, activeDialog);
-      set(reviewedVersion$, null);
       result = await accept(
         clients.credentials.update({
           params: { credentialId: dialog.loginCredential.id },
@@ -1962,12 +1767,9 @@ export const saveVnc$ = command(
       set(invalidateVnc$);
       return savedConnectionId;
     }
-    return set(
-      handleVncSaveFailure$,
-      { status: result.status, code: result.body.error.code },
-      retrying,
-      dialog,
-      editor,
-    );
+    return set(handleVncSaveFailure$, {
+      status: result.status,
+      code: result.body.error.code,
+    });
   },
 );

@@ -74,35 +74,24 @@ export function HostedSiteAccessCard({
             : undefined
         }
       >
-        {target && (
-          <a
-            href={
-              reason === "unavailable"
-                ? target.href
-                : hostedSiteSignInUrl(target)
-            }
-            className={buttonVariants({
-              variant: user ? "outline" : "default",
-            })}
-          >
-            {!user && reason !== "unavailable" && <LogIn aria-hidden />}
-            {reason === "unavailable"
-              ? t(($) => {
-                  return $.artifacts.access.tryAgain;
-                })
-              : !user
-                ? t(($) => {
-                    return $.artifacts.access.signIn;
-                  })
-                : reason === "denied"
-                  ? t(($) => {
-                      return $.artifacts.access.tryAgain;
-                    })
-                  : t(($) => {
-                      return $.artifacts.access.continue;
-                    })}
-          </a>
-        )}
+        {target &&
+          (reason === "authenticate" ||
+            reason === "expired" ||
+            (!user && reason === "denied")) && (
+            <a
+              href={hostedSiteSignInUrl(target)}
+              className={buttonVariants({
+                variant: user ? "outline" : "default",
+              })}
+            >
+              {!user && <LogIn aria-hidden />}
+              {t(($) => {
+                return !user
+                  ? $.artifacts.access.signIn
+                  : $.artifacts.access.continue;
+              })}
+            </a>
+          )}
         {user && reason !== "unavailable" && (
           <Button
             variant="outline"

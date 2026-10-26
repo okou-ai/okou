@@ -53,7 +53,7 @@ function createTranscriptionState() {
     VoiceDraftTranscriptionResult | undefined
   > | null>(null);
   // Each append starts finite, ordered command work. Its promise is also the
-  // drain handle used by Stop, Retry, and cancellation; no state read starts I/O.
+  // drain handle used by completion and cancellation; no state read starts I/O.
   const enqueue$ = command(
     (
       { get, set },
@@ -91,7 +91,7 @@ function createTranscriptionState() {
       const entry = { segment, totalDurationSeconds, result };
       detach(
         (async (ownerSignal: AbortSignal): Promise<void> => {
-          // A failed segment stays available to the explicit Stop/Retry command.
+          // Segment failure propagates when the recording is completed.
           // It must not reject the PCM writer or stop subsequent audio persistence.
           const [outcome] = await Promise.allSettled([result]);
           ownerSignal.throwIfAborted();
@@ -268,46 +268,6 @@ function createSegmentPreparation(
   return append$;
 }
 
-function createCheckpointRetry(state: TranscriptionState) {
-  const { session$, segments$, enqueue$ } = state;
-  const retry$ = command(async ({ get, set }, signal: AbortSignal) => {
-    const session = get(session$);
-    if (!session) {
-      return;
-    }
-    const entries = get(segments$);
-    if (entries.length === 0) {
-      return;
-    }
-    const recording = await readVoiceDraftRecording(session.recording.key);
-    signal.throwIfAborted();
-    if (recording?.id !== session.recording.recordingId) {
-      throw new Error("Voice recording changed during transcription");
-    }
-    if (get(segments$) !== entries || recording.progress?.text !== undefined) {
-      return;
-    }
-    const firstUnfinished = entries.findIndex(({ segment }) => {
-      return (
-        !segment ||
-        recording.progress?.segments.find((saved) => {
-          return saved.endSample === segment.endSample;
-        })?.transcript === undefined
-      );
-    });
-    const completed = firstUnfinished === -1 ? entries.length : firstUnfinished;
-    const retried = entries.slice(0, completed);
-    for (const entry of entries.slice(completed)) {
-      retried.push(
-        set(enqueue$, session.recording, entry, retried.at(-1), session.signal),
-      );
-    }
-    set(segments$, retried);
-  });
-
-  return retry$;
-}
-
 /** Commands own the ordered segment chain and its recording-session lifetime. */
 export function createVoiceDraftTranscriptionSignals(
   options: VoiceDraftTranscriptionOptions,
@@ -316,29 +276,9 @@ export function createVoiceDraftTranscriptionSignals(
   const { session$, segments$, polishResult$, resetSession$ } = state;
   const initialize$ = createInitialization(options, state);
   const append$ = createSegmentPreparation(options, state);
-  const retry$ = createCheckpointRetry(state);
   const transcribe$ = command(async ({ get, set }, signal: AbortSignal) => {
-    const current = get(session$);
-    const previous =
-      current && !current.signal.aborted && get(segments$).length > 0
-        ? Promise.allSettled([get(segments$).at(-1)?.result])
-        : undefined;
     await set(initialize$, signal);
     await set(append$, true, signal);
-    // Seal the tail immediately, even while its predecessor is requesting.
-    // Only an already-started failed chain needs its unfinished suffix rebuilt.
-    if (previous) {
-      const [outcome] = await previous;
-      signal.throwIfAborted();
-      if (
-        outcome?.status === "rejected" ||
-        !outcome?.value ||
-        outcome.value.kind === "unavailable"
-      ) {
-        await set(retry$, signal);
-        await set(append$, true, signal);
-      }
-    }
     let result = await get(segments$).at(-1)?.result;
     signal.throwIfAborted();
     if (!result) {

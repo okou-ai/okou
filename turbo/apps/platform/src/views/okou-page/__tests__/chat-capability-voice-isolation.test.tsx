@@ -61,7 +61,7 @@ test("Release a VAD session initialized after the old composer was cancelled", a
   expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
     "",
   );
-  expect(queryButton("Retry")).toBeNull();
+  expect(queryButton("Use recording")).toBeNull();
 });
 
 function restoreHistory() {
@@ -114,7 +114,7 @@ describe.each(["user", "org"] as const)(
       const { resetFirstPage$ } = preparedScenario;
       click(await findEnabledButton("Voice input"));
       click(await findEnabledButton("Stop recording"));
-      await findEnabledButton("Retry");
+      await findEnabledButton("Remove voice draft");
       context.store.set(resetFirstPage$);
       releasePageDom();
       await setupPage({
@@ -137,7 +137,7 @@ describe.each(["user", "org"] as const)(
         },
       });
       await findEnabledButton("Voice input");
-      expect(queryButton("Retry")).toBeNull();
+      expect(queryButton("Use recording")).toBeNull();
     });
   },
 );

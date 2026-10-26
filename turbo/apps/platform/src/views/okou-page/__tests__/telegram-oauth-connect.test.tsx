@@ -308,8 +308,7 @@ test.each([
         domainConfigured: false,
       },
     },
-    message:
-      "We couldn't reach Telegram to check the connection. Please try again in a moment.",
+    message: "We couldn't reach Telegram to check the connection.",
   },
 ] satisfies {
   name: string;

@@ -26,7 +26,6 @@ export const completePaidCheckout$ = command(
       },
       CHECKOUT_POLL_INTERVAL_MS,
       signal,
-      { retryTransientErrors: false },
     );
   },
 );

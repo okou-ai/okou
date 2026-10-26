@@ -7,7 +7,6 @@
     "delete": "Eliminar agente",
     "deleting": "Eliminando…",
     "discard": "Descartar",
-    "retry": "Reintentar",
     "save": "Guardar",
     "saving": "Guardando…"
   },
@@ -67,7 +66,7 @@
       "deleteWithAgent": "Eliminar con el agente",
       "description": "Copia un flujo de trabajo a otro agente para conservarlo. Todo lo que quede se eliminará.",
       "handle": "Gestiona el flujo de trabajo {{workflowTitle}}",
-      "loadFailed": "No se pudieron cargar los flujos de trabajo. Vuelve a intentarlo antes de eliminar este agente.",
+      "loadFailed": "No se pudieron cargar los flujos de trabajo.",
       "loading": "Cargando flujos de trabajo…",
       "title": "¿Mantener algún flujo de trabajo?",
       "untitled": "Flujo de trabajo"

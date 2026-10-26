@@ -31,8 +31,7 @@ const host: SshConnectionResponse = Object.freeze({
   createdAt: "2026-09-01T00:00:00.000Z",
   updatedAt: "2026-09-01T00:00:00.000Z",
 });
-const unavailable =
-  "This host is no longer available. Close this dialog and refresh the configuration before trying again.";
+const unavailable = "This host is no longer available.";
 const empty =
   "No SSH hosts configured. Add a host, then enable it by default or in individual chats.";
 
@@ -89,11 +88,13 @@ test.each(["click", "Enter", "Space"])(
             generation: 5,
           },
         ];
+        context.mocks.ably.trigger("ssh:changed", { orgId });
         return respond(409, {
           error: { code: "SSH_GENERATION_CONFLICT", message: "changed" },
         });
       }
       data.connections = [];
+      context.mocks.ably.trigger("ssh:changed", { orgId });
       return respond(204);
     });
     const dialog = await openDeletion();
@@ -151,6 +152,7 @@ test("A Tailscale SSH deletion reviews credential-free identity before acknowled
     },
   };
   data.connections = [identity];
+  context.mocks.ably.trigger("ssh:changed", { orgId });
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
     return respond(200, {
       configs: [
@@ -174,11 +176,13 @@ test("A Tailscale SSH deletion reviews credential-free identity before acknowled
     requests.push(body);
     if (body.expectedGeneration === 4) {
       data.connections = [{ ...identity, host: "updated-peer", generation: 5 }];
+      context.mocks.ably.trigger("ssh:changed", { orgId });
       return respond(409, {
         error: { code: "SSH_GENERATION_CONFLICT", message: "changed" },
       });
     }
     data.connections = [];
+    context.mocks.ably.trigger("ssh:changed", { orgId });
     return respond(204);
   });
   const dialog = await openDeletion();
@@ -212,6 +216,7 @@ test("Passive refresh preserves original and acknowledged deletion generations a
       });
     }
     data.connections = [];
+    context.mocks.ably.trigger("ssh:changed", { orgId });
     return respond(204);
   });
   const dialog = await openDeletion();
@@ -219,6 +224,7 @@ test("Passive refresh preserves original and acknowledged deletion generations a
     expect(context.mocks.ably.hasSubscription("ssh:changed")).toBeTruthy();
   });
   data.connections = [{ ...host, displayName: "Version five", generation: 5 }];
+  context.mocks.ably.trigger("ssh:changed", { orgId });
   context.mocks.ably.trigger("ssh:changed", { orgId });
   await screen.findByText("Version five");
   click(getAction("button", "Delete host", dialog));
@@ -228,6 +234,7 @@ test("Passive refresh preserves original and acknowledged deletion generations a
     expect(getAction("button", "Delete host", dialog)).toBeEnabled();
   });
   data.connections = [{ ...host, displayName: "Version six", generation: 6 }];
+  context.mocks.ably.trigger("ssh:changed", { orgId });
   context.mocks.ably.trigger("ssh:changed", { orgId });
   await screen.findByText("Version six");
   click(getAction("button", "Delete host", dialog));
@@ -268,6 +275,7 @@ test.each([404, 409] as const)(
                 generation: 99,
               },
             ];
+      context.mocks.ably.trigger("ssh:changed", { orgId });
       return respond(status, {
         error: {
           code:
@@ -311,43 +319,6 @@ test("A host referenced by VNC remains blocked without a deletion acknowledgemen
   expect(requests).toStrictEqual([{ expectedGeneration: 4 }]);
 });
 
-test("A failed metadata refresh requires successful review before deleting again", async () => {
-  const data = mockSettings();
-  const requests: unknown[] = [];
-  context.mocks.api(sshConnectionsContract.delete, ({ body, respond }) => {
-    requests.push(body);
-    if (body.expectedGeneration === 4) {
-      data.failed = true;
-      data.connections = [{ ...host, generation: 5 }];
-      return respond(409, {
-        error: { code: "SSH_GENERATION_CONFLICT", message: "changed" },
-      });
-    }
-    data.connections = [];
-    return respond(204);
-  });
-  const dialog = await openDeletion();
-  click(getAction("button", "Delete host", dialog));
-  await within(dialog).findByText("Could not load SSH settings. Try again.");
-  expect(getAction("button", "Delete host", dialog)).toBeDisabled();
-  expect(
-    queryAction("button", "Use this version for deletion", dialog),
-  ).toBeNull();
-  data.failed = false;
-  click(getAction("button", "Try again", dialog));
-  await within(dialog).findByText("Version 5");
-  click(getAction("button", "Use this version for deletion", dialog));
-  await waitFor(() => {
-    expect(getAction("button", "Delete host", dialog)).toBeEnabled();
-  });
-  click(getAction("button", "Delete host", dialog));
-  await screen.findByText(empty);
-  expect(requests).toStrictEqual([
-    { expectedGeneration: 4 },
-    { expectedGeneration: 5 },
-  ]);
-});
-
 test("Closing a reviewed deletion discards its acknowledgement for the next dialog", async () => {
   const data = mockSettings();
   const requests: unknown[] = [];
@@ -355,11 +326,13 @@ test("Closing a reviewed deletion discards its acknowledgement for the next dial
     requests.push(body);
     if (body.expectedGeneration === 4) {
       data.connections = [{ ...host, generation: 5 }];
+      context.mocks.ably.trigger("ssh:changed", { orgId });
       return respond(409, {
         error: { code: "SSH_GENERATION_CONFLICT", message: "changed" },
       });
     }
     data.connections = [];
+    context.mocks.ably.trigger("ssh:changed", { orgId });
     return respond(204);
   });
   const dialog = await openDeletion();
@@ -379,6 +352,7 @@ test("Closing a reviewed deletion discards its acknowledgement for the next dial
   data.connections = [
     { ...host, displayName: "Reopened version", generation: 6 },
   ];
+  context.mocks.ably.trigger("ssh:changed", { orgId });
   context.mocks.ably.trigger("ssh:changed", { orgId });
   await screen.findByText("Reopened version");
   click(getAction("button", "Delete host"));
@@ -444,6 +418,7 @@ test("A same-session token refresh preserves the deletion snapshot and uses the 
         authorization: request.headers.get("authorization"),
       });
       data.connections = [];
+      context.mocks.ably.trigger("ssh:changed", { orgId });
       return respond(204);
     },
   );

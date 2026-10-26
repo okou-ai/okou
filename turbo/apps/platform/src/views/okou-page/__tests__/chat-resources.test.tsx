@@ -190,23 +190,15 @@ test("Keep loading when the panel loses its room before the resources answer", a
   expect(resourceButton()).not.toHaveAttribute("aria-disabled");
 });
 
-test("Retry a resource loading error without showing an empty state", async () => {
+test("Display a resource loading error without showing an empty state", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
   mockArtifactConversation(context, { catalog: [], chatEvents: [] });
-  let failed = true;
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return failed
-      ? respond(500, {
-          error: { message: "Attachments are unavailable" },
-        })
-      : respond(200, {
-          artifacts: [
-            artifactSummary(RESOURCE_ARTIFACT_ID, "file", "recovered.pdf"),
-          ],
-          nextCursor: null,
-        });
+    return respond(500, {
+      error: { message: "Attachments are unavailable" },
+    });
   });
   await setupPage({
     context,
@@ -223,11 +215,6 @@ test("Retry a resource loading error without showing an empty state", async () =
   await expect(
     within(panel).findByText("Could not load resources"),
   ).resolves.toBeInTheDocument();
-
-  failed = false;
-  click(buttonNamed("Try again", panel));
-  await within(panel).findByText("recovered.pdf");
-  expect(within(panel).queryByRole("alert")).not.toBeInTheDocument();
 });
 
 test("Name the closed resource trigger in a tooltip until the panel opens", async () => {

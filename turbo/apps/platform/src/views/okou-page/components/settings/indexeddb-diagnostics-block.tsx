@@ -253,7 +253,6 @@ export function IndexedDbDiagnosticsBlock() {
   const diagnostics = useLastResolved(indexedDbDiagnosticsFromWorker$);
   const loadableState = useLoadableState(indexedDbDiagnosticsFromWorker$);
   const loading = loadableState === "loading";
-  const reload = useSet(reloadIndexedDbDiagnosticsFromWorker$);
 
   return (
     <section
@@ -295,22 +294,6 @@ export function IndexedDbDiagnosticsBlock() {
                       return $.settings.preferences.debug.indexedDb.unavailable;
                     })}
               </div>
-              {!loading && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1.5 px-2.5 text-xs"
-                  onClick={() => {
-                    reload();
-                  }}
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  {t(($) => {
-                    return $.settings.preferences.debug.indexedDb.refresh;
-                  })}
-                </Button>
-              )}
             </div>
           </div>
         </div>

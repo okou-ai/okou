@@ -1,6 +1,5 @@
 import {
   cloudflareAccessContract,
-  type CloudflareAccessImpactPreview,
   type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { act, screen, waitFor, within } from "@testing-library/react";
@@ -490,15 +489,13 @@ test("Cloudflare Access CRUD uses the canonical API", async () => {
   await screen.findByText("0 Cloudflare Access configured");
 });
 
-test("A committed Access creation completes on same-ID retry without another configuration", async () => {
+test("An unconfirmed Access creation preserves its frozen credentials", async () => {
   const submitted: unknown[] = [];
   context.mocks.api(cloudflareAccessContract.create, ({ body, respond }) => {
     submitted.push(body);
-    return submitted.length > 1
-      ? respond(204)
-      : respond(500, {
-          error: { code: "INTERNAL_ERROR", message: "Response unavailable" },
-        });
+    return respond(500, {
+      error: { code: "INTERNAL_ERROR", message: "Response unavailable" },
+    });
   });
   await page();
   click(getAction("button", "Add Cloudflare Access"));
@@ -510,14 +507,7 @@ test("A committed Access creation completes on same-ID retry without another con
   expect(secret).toHaveValue("test-client-secret");
   expect(secret).toBeDisabled();
   expect(submitted).toHaveLength(1);
-  click(getAction("button", "Retry", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  expect(submitted).toHaveLength(2);
-  expect(submitted[0]).toHaveProperty("id", expect.any(String));
-  expect(submitted[0]).toStrictEqual(submitted[1]);
-  expect(secret).toHaveValue("");
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
 });
 
 test("Changing the owner clears Access secrets and hides the previous owner's configurations", async () => {
@@ -571,7 +561,7 @@ test("Access load failure does not expose provider details", async () => {
     });
   });
   await page();
-  await screen.findByText("Could not load Cloudflare Access. Try again.");
+  await screen.findByText("Could not load Cloudflare Access.");
   expect(
     queryAction("button", "Add Cloudflare Access"),
   ).not.toBeInTheDocument();
@@ -689,7 +679,7 @@ test("zero-impact conversion needs no other-user warning", async () => {
   expect(within(dialog).queryByRole("checkbox")).toBeNull();
 });
 
-test("changed conversion impact requires a fresh warning and confirmation", async () => {
+test("changed conversion impact blocks the outdated confirmation", async () => {
   const shared: ScopedCloudflareAccessConfig = {
     ...config,
     scope: "organization",
@@ -739,65 +729,6 @@ test("changed conversion impact requires a fresh warning and confirmation", asyn
     { expectedRevision: 1, impactSnapshot: "a".repeat(64) },
   ]);
   expect(queryAction("button", "Make personal", dialog)).toBeNull();
-  click(getAction("button", "Review latest impact", dialog));
-  await within(dialog).findByText(/1 member and 2 hosts/u);
-  expect(getAction("button", "Make personal", dialog)).toBeDisabled();
-  expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
-});
-
-test("uncertain conversion result requires a fresh named impact review", async () => {
-  const shared: ScopedCloudflareAccessConfig = {
-    ...config,
-    scope: "organization",
-  };
-  let currentImpact: CloudflareAccessImpactPreview = {
-    expectedRevision: 1,
-    ownHostCount: 0,
-    otherHostCount: 1,
-    affectedOwners: [{ userId: "user-member-1", displayName: "Member One" }],
-    impactSnapshot: "a".repeat(64),
-  };
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: [shared] });
-  });
-  context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
-    return respond(200, currentImpact);
-  });
-  context.mocks.api(
-    cloudflareAccessContract.convertToPersonal,
-    ({ respond }) => {
-      currentImpact = {
-        ...currentImpact,
-        affectedOwners: [
-          { userId: "user-member-1", displayName: "Member Latest" },
-        ],
-        impactSnapshot: "b".repeat(64),
-      };
-      return respond(500, {
-        error: { code: "INTERNAL_ERROR", message: "private provider detail" },
-      });
-    },
-  );
-  await page(undefined, "admin");
-  const organization = await screen.findByRole("region", {
-    name: "Organization",
-  });
-  await within(organization).findByText(shared.name);
-  click(getAction("button", "Make personal", organization));
-  const dialog = await screen.findByRole("dialog", { name: "Make personal" });
-  await within(dialog).findByText(/1 member and 1 host/u);
-  expect(dialog).toHaveTextContent("Member One");
-  await userEvent.click(within(dialog).getByRole("checkbox"));
-  click(getAction("button", "Make personal", dialog));
-  await within(dialog).findByText(/could not confirm the conversion/u);
-  expect(queryAction("button", "Make personal", dialog)).toBeNull();
-  expect(dialog.textContent).not.toContain("private provider detail");
-  click(getAction("button", "Review latest impact", dialog));
-  await within(dialog).findByText(/Member Latest/u);
-  await waitFor(() => {
-    expect(getAction("button", "Make personal", dialog)).toBeDisabled();
-  });
-  expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
 });
 
 test("conversion preview 403 blocks conversion", async () => {
@@ -921,7 +852,7 @@ test("deletion preview 403 blocks deletion", async () => {
   expect(queryAction("button", "Delete Cloudflare Access", dialog)).toBeNull();
 });
 
-test("reviewed shared deletion names affected owners and requires re-review when the host set changes", async () => {
+test("reviewed shared deletion rejects a changed host set", async () => {
   const shared = {
     ...config,
     scope: "organization" as const,
@@ -982,9 +913,4 @@ test("reviewed shared deletion names affected owners and requires re-review when
   expect(bodies).toStrictEqual([
     { expectedRevision: 1, impactSnapshot: "a".repeat(64) },
   ]);
-  click(getAction("button", "Review latest impact", dialog));
-  await within(dialog).findByText(/2 members and 4 hosts/u);
-  expect(
-    getAction("button", "Delete Cloudflare Access", dialog),
-  ).toBeDisabled();
 });

@@ -1,7 +1,7 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, within } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
@@ -84,53 +84,4 @@ test("Chat VNC setup appears and filters", async () => {
     "/connectors?scope=remote-control&type=vnc",
   );
   expect(queryFastControl("link", "Manage SSH hosts", dialog)).toBeNull();
-});
-
-test("Chat VNC discovery can retry a failed summary", async () => {
-  installComposerConnectorFixture();
-  let failed = true;
-  const recovery = context.mocks.deferred<void>();
-  context.mocks.api(vncConnectionsContract.summary, async ({ respond }) => {
-    if (failed) {
-      return respond(500, {
-        error: { code: "INTERNAL_ERROR", message: "private VNC error" },
-      });
-    }
-    await recovery.promise;
-    return respond(200, { configuredCount: 0 });
-  });
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
-  });
-  click(await findFastControl("button", "Connectors"));
-  click(await findFastControl("button", "Add connectors"));
-  const search = await screen.findByPlaceholderText("Find connectors...");
-  const dialog = search.closest('[role="dialog"]');
-  if (!(dialog instanceof HTMLElement)) {
-    throw new Error("Missing connector dialog");
-  }
-  await fill(search, "vnc");
-  await expect(
-    within(dialog).findByText("Could not load VNC configuration."),
-  ).resolves.toBeInTheDocument();
-  expect(within(dialog).queryByText("No connector matches “vnc”")).toBeNull();
-  expect(dialog.textContent).not.toContain("private VNC error");
-  failed = false;
-  click(await findFastControl("button", "Try again", dialog));
-  await expect(
-    within(dialog).findByText("Loading VNC configuration…"),
-  ).resolves.toBeInTheDocument();
-  expect(within(dialog).queryByText("No connector matches “vnc”")).toBeNull();
-  recovery.resolve();
-  await expect(
-    findFastControl("link", "Manage VNC", dialog),
-  ).resolves.toHaveAttribute(
-    "href",
-    "/connectors?scope=remote-control&type=vnc",
-  );
-  expect(
-    within(dialog).queryByText("Could not load VNC configuration."),
-  ).toBeNull();
 });

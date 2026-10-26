@@ -22,12 +22,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@okouai/ui";
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { EllipsisVertical, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { subscriptionUsageWindows } from "../../../../lib/subscription-usage-windows.ts";
-import { reloadThirdPartySubscriptions$ } from "../../../../signals/external/third-party-subscriptions.ts";
 import { openClaudeCodeDeviceAuthDialogPersonal$ } from "../../../../signals/okou-page/settings/claude-code-device-auth.ts";
 import { openCodexDeviceAuthDialogPersonal$ } from "../../../../signals/okou-page/settings/codex-device-auth.ts";
 import {
@@ -175,8 +174,6 @@ function AutoPersonalAccountsReadState({
   readonly failed: boolean;
 }) {
   const { t } = useTranslation();
-  const reload = useSet(reloadThirdPartySubscriptions$);
-  const providers = useLoadable(personalConfiguredProviders$);
   return (
     <section className="flex flex-col gap-6">
       <PersonalModelsHeading />
@@ -187,17 +184,6 @@ function AutoPersonalAccountsReadState({
               return $.settings.models.personal.loadError;
             })}
           </p>
-          <Button
-            variant="neutral"
-            disabled={providers.state === "loading"}
-            onClick={() => {
-              return reload();
-            }}
-          >
-            {t(($) => {
-              return $.settings.models.personal.retry;
-            })}
-          </Button>
         </div>
       ) : (
         <div

@@ -79,13 +79,15 @@ function ChatResourcesButtonInner({
   const popupRef = useSet(thread.resources.popupOnRef$);
   const resources = thread.resources;
   const chosen = useGet(resources.chosen$);
+  const [preference, press] = useLoadableSet(resources.press$);
   const requested = useLastResolved(resources.requested$) ?? false;
   const wanted = useLastResolved(resources.wanted$) ?? false;
   const settled = useLastResolved(resources.settled$) ?? null;
   // Nothing draws before the resources have answered. Until then the button
   // breathes and takes no presses, however long the answer takes and even if
   // the layout no longer has room for the panel.
-  const loading = wanted && settled === null;
+  const loading =
+    (wanted && settled === null) || preference.state === "loading";
   // An automatic opening waits for something to show; a press shows the panel
   // even when it is empty.
   const shown = settled !== null && requested && (settled || chosen !== null);
@@ -96,7 +98,6 @@ function ChatResourcesButtonInner({
   const collisionBoundary = useGet(resources.collisionBoundary$);
   const popupAnchor = useGet(resources.popupAnchor$);
   const setOpen = useSet(resources.setOpen$);
-  const press = useSet(resources.press$);
   const rootSignal = useGet(rootSignal$);
   const visible = shown && boundary !== null;
   const copyLabel = t(($) => {
@@ -205,7 +206,6 @@ function ChatResourcesTrigger({
   });
   return (
     <TooltipProvider delay={300}>
-      {/* The open panel sits below the button, where the tooltip would cover it. */}
       <Tooltip disabled={open}>
         <TooltipTrigger
           render={
@@ -243,8 +243,6 @@ function ChatResourcesTrigger({
             />
           }
         >
-          {/* A quick load finishes before the delayed pulse ever starts.
-              Without motion the icon dims instead. */}
           <Package
             size={18}
             className={cn(
@@ -319,7 +317,6 @@ function ChatResourcesStatus({
   const { t } = useTranslation();
   const content = useLastLoadable(thread.resources.content$);
   const data = useLastResolved(thread.resources.content$);
-  const reload = useSet(thread.resources.catalog.reload$);
   const origin = useGet(thread.relations.origin$);
   const chats = useLastLoadable(thread.relations.chats.data$);
   if (content.state === "hasError") {
@@ -333,11 +330,6 @@ function ChatResourcesStatus({
             return $.chat.resources.loadFailed;
           })}
         </p>
-        <Button variant="quiet" size="xs" onClick={reload}>
-          {t(($) => {
-            return $.chat.resources.retry;
-          })}
-        </Button>
       </div>
     );
   }

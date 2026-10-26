@@ -7,7 +7,6 @@
     "delete": "Excluir agente",
     "deleting": "Excluindo…",
     "discard": "Descartar",
-    "retry": "Tentar novamente",
     "save": "Salvar",
     "saving": "Salvando…"
   },
@@ -67,7 +66,7 @@
       "deleteWithAgent": "Excluir com o agente",
       "description": "Copie um workflow para outro agente para mantê-lo. Todo o restante será excluído.",
       "handle": "Definir destino do workflow {{workflowTitle}}",
-      "loadFailed": "Não foi possível carregar os workflows. Tente novamente antes de excluir este agente.",
+      "loadFailed": "Não foi possível carregar os fluxos de trabalho.",
       "loading": "Carregando workflows…",
       "title": "Manter algum workflow?",
       "untitled": "Workflow"

@@ -3,9 +3,8 @@ import type {
   ProactivePreference as ProactivePreferenceValue,
   ProactiveWorkflowKind,
 } from "@okouai/api-contracts/contracts/proactive";
-import { Button } from "@okouai/ui/components/ui/button";
 import { Switch } from "@okouai/ui/components/ui/switch";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -67,21 +66,14 @@ const PREFERENCE_KEYS = {
 function ProactivePreference({ kind }: { kind: ProactivePreferenceKind }) {
   const { t } = useTranslation();
   const key = PREFERENCE_KEYS[kind];
-  const { preference$, update$, reload$ } = PREFERENCE_SIGNALS[kind];
+  const { preference$, update$ } = PREFERENCE_SIGNALS[kind];
   const preference = useLoadable(preference$);
   const [mutation, update] = useLoadableSet(update$);
-  const reload = useSet(reload$);
   const signal = useGet(pageSignal$);
-  const value =
-    mutation.state === "hasData" && mutation.data.status === "error"
-      ? mutation.data
-      : preference.state === "hasData"
-        ? preference.data
-        : undefined;
+  const value = preference.state === "hasData" ? preference.data : undefined;
   const failed =
     preference.state === "hasError" || mutation.state === "hasError";
   const busy = preference.state === "loading" || mutation.state === "loading";
-  const hasPreferenceError = value?.status === "error";
   const statusKey = preferenceStatusKey(value, failed);
 
   return (
@@ -109,25 +101,6 @@ function ProactivePreference({ kind }: { kind: ProactivePreferenceKind }) {
         }
       >
         <div className="flex shrink-0 items-center gap-2">
-          {(failed || (hasPreferenceError && !value.enabled)) && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={busy}
-              onClick={() => {
-                if (hasPreferenceError) {
-                  detach(update(value.enabled, signal), Reason.DomCallback);
-                } else {
-                  reload();
-                }
-              }}
-            >
-              {t(($) => {
-                return $.settings.preferences[key].retry;
-              })}
-            </Button>
-          )}
           <Switch
             aria-label={t(($) => {
               return $.settings.preferences[key].title;

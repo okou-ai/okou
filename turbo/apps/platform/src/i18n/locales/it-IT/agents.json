@@ -7,7 +7,6 @@
     "delete": "Elimina agente",
     "deleting": "Eliminazione in corso…",
     "discard": "Scarta",
-    "retry": "Riprova",
     "save": "Salva",
     "saving": "Salvataggio…"
   },
@@ -67,7 +66,7 @@
       "deleteWithAgent": "Elimina con l'agente",
       "description": "Copia un flusso di lavoro su un altro agente per conservarlo. Tutto ciò che resta viene cancellato.",
       "handle": "Gestisci workflow {{workflowTitle}}",
-      "loadFailed": "Impossibile caricare i workflow. Riprova prima di eliminare questo agente.",
+      "loadFailed": "Impossibile caricare i workflow.",
       "loading": "Caricamento dei workflow…",
       "title": "Vuoi conservare dei workflow?",
       "untitled": "Workflow"

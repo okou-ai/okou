@@ -20,7 +20,6 @@ import {
   remoteComputerNetworks$,
   updateRemoteSetup$,
 } from "../../signals/remote-control-setup.ts";
-import { retryTailscale$ } from "../../signals/tailscale.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { REMOTE_PAGE_ACTION } from "./remote-editor-frame.tsx";
@@ -31,8 +30,6 @@ function ComputerNetworkSelection() {
   const setup = useGet(remoteSetup$);
   const update = useSet(updateRemoteSetup$);
   const enter = useSet(enterRemoteSetup$);
-  const retry = useSet(retryTailscale$);
-  const signal = useGet(pageSignal$);
   const available = networks.state === "hasData" ? networks.data : [];
   const selected = available.find((network) => {
     return network.id === setup?.networkId && network.route === setup.route;
@@ -57,12 +54,6 @@ function ComputerNetworkSelection() {
           message={t(($) => {
             return $.remoteControlSetup.failedLoad;
           })}
-          retryLabel={t(($) => {
-            return $.remoteControlSetup.retry;
-          })}
-          onRetry={() => {
-            return retry(signal);
-          }}
         />
       )}
       {available.length > 0 && (
@@ -188,8 +179,6 @@ export function ComputerNetworkSummary() {
   const { t } = useTranslation();
   const setup = useGet(remoteSetup$);
   const networks = useLoadable(remoteComputerNetworks$);
-  const retry = useSet(retryTailscale$);
-  const signal = useGet(pageSignal$);
   const selected =
     networks.state === "hasData"
       ? networks.data.find((network) => {
@@ -202,12 +191,6 @@ export function ComputerNetworkSummary() {
         message={t(($) => {
           return $.remoteControlSetup.failedLoad;
         })}
-        retryLabel={t(($) => {
-          return $.remoteControlSetup.retry;
-        })}
-        onRetry={() => {
-          return retry(signal);
-        }}
       />
     );
   }

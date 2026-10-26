@@ -565,29 +565,6 @@ test("A refreshed computer network setup returns to the computer guide, not the 
   expect(getAction("button", "Set up Tailscale")).toBeInTheDocument();
 });
 
-test("Computer setup retries Tailscale loading independently of Cloudflare", async () => {
-  let unavailable = true;
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return unavailable
-      ? respond(503, { error: { message: "Network unavailable" } })
-      : respond(200, { configs: [network] });
-  });
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(503, { error: { message: "Network unavailable" } });
-  });
-  await page("/connectors?scope=remote-control&setup=computer");
-  const retry = await waitFor(() => {
-    return getAction("button", "Try again");
-  });
-  expect(queryAction("button", "Continue with this network")).toBeNull();
-  unavailable = false;
-  click(retry);
-  const selector = await screen.findByLabelText("Saved network");
-  click(selector);
-  click(await screen.findByRole("option", { name: network.name }));
-  expect(getAction("button", "Continue with this network")).toBeEnabled();
-});
-
 async function computerForm(protocol: "ssh" | "vnc") {
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
     return respond(200, { configs: [network] });
@@ -634,19 +611,12 @@ test("Computer SSH saves the chosen network without exposing route selection or 
 });
 
 test.each(["", "My Mac"])(
-  "Computer screen sharing keeps the selected network and retries an optional name %j",
+  "Computer screen sharing saves the selected network and optional name %j",
   async (name) => {
     const requests: unknown[] = [];
     context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
       requests.push(body);
-      return requests.length === 1
-        ? respond(500, {
-            error: {
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Save outcome unknown",
-            },
-          })
-        : respond(204);
+      return respond(204);
     });
     await computerForm("vnc");
     const service = await screen.findByLabelText("Screen-sharing service");
@@ -687,11 +657,8 @@ test.each(["", "My Mac"])(
     expect(screen.queryByLabelText("Server certificate trust")).toBeNull();
     expect(requests).toHaveLength(0);
     click(getAction("button", "Save"));
-    await screen.findByText("Save failed.");
-    click(getAction("button", "Retry"));
     await screen.findByRole("heading", { name: "Connection added" });
-    expect(requests).toHaveLength(2);
-    expect(requests[1]).toStrictEqual(requests[0]);
+    expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
       displayName: name || "100.64.0.24",
       host: "100.64.0.24",
@@ -1201,40 +1168,26 @@ test("Manual SSH chooses a saved Tailscale SSH route and saves without SSH crede
 });
 
 test.each(["Tailscale", "Cloudflare Access"] as const)(
-  "An uncertain %s network save retries the same creation in Private networks",
+  "An uncertain %s network save retains the locked draft",
   async (provider) => {
-    const submittedIds: string[] = [];
     if (provider === "Tailscale") {
-      context.mocks.api(tailscaleContract.create, ({ body, respond }) => {
-        submittedIds.push(body.id);
-        return submittedIds.length === 1
-          ? respond(500, {
-              error: {
-                code: "INTERNAL_ERROR",
-                message: "Response unavailable",
-              },
-            })
-          : respond(201, { ...network, id: body.id, name: body.name });
+      context.mocks.api(tailscaleContract.create, ({ respond }) => {
+        return respond(500, {
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "Response unavailable",
+          },
+        });
       });
     } else {
-      context.mocks.api(
-        cloudflareAccessContract.create,
-        ({ body, respond }) => {
-          submittedIds.push(body.id);
-          return submittedIds.length === 1
-            ? respond(500, {
-                error: {
-                  code: "INTERNAL_ERROR",
-                  message: "Response unavailable",
-                },
-              })
-            : respond(201, {
-                ...cloudflareNetwork,
-                id: body.id,
-                name: body.name,
-              });
-        },
-      );
+      context.mocks.api(cloudflareAccessContract.create, ({ respond }) => {
+        return respond(500, {
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "Response unavailable",
+          },
+        });
+      });
     }
     const name = await openNetworkForm(provider);
     await fill(name, "Recovered network");
@@ -1244,12 +1197,6 @@ test.each(["Tailscale", "Cloudflare Access"] as const)(
     await screen.findByText("Save failed.");
     expect(name).toHaveValue("Recovered network");
     expect(name).toBeDisabled();
-    click(getAction("button", "Retry"));
-    await waitFor(() => {
-      return expect(submittedIds).toHaveLength(2);
-    });
-    expect(submittedIds[0]).toBe(submittedIds[1]);
-    expect(screen.queryByLabelText("SSH username")).toBeNull();
   },
 );
 test.each(["tailscale", "cloudflare"] as const)(
@@ -1512,20 +1459,15 @@ test("Empty private networks show disabled options and guidance only inside the 
   expect(screen.getByLabelText("Device address")).toBeEnabled();
 });
 
-test("Saved network loading failures offer retry without blocking direct access", async () => {
-  let unavailable = true;
+test("Saved network loading failures leave direct access available", async () => {
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return unavailable
-      ? respond(503, { error: { message: "Network unavailable" } })
-      : respond(200, { configs: [network] });
+    return respond(503, { error: { message: "Network unavailable" } });
   });
   await page("/connectors?scope=remote-control&setup=ssh");
   await screen.findByRole("heading", { name: "Add remote connection" });
   click(screen.getByText("Run commands on the device."));
   await screen.findByLabelText("SSH username");
-  await waitFor(() => {
-    return expect(getAction("button", "Try again")).toBeInTheDocument();
-  });
+  await screen.findByText("Could not load Tailscale.");
   expect(screen.getByLabelText("Connection method")).toHaveTextContent(
     "Direct connection",
   );
@@ -1534,14 +1476,6 @@ test("Saved network loading failures offer retry without blocking direct access"
   expect(screen.queryByRole("option", { name: "Private networks" })).toBeNull();
   expect(screen.queryByText(/Add a network in “Private networks”/u)).toBeNull();
   await userEvent.keyboard("{Escape}");
-  unavailable = false;
-  click(getAction("button", "Try again"));
-  await selectConnectionNetwork("Tailscale");
-  await screen.findByLabelText("SSH username");
-  expect(screen.getByLabelText("Connection method")).toHaveTextContent(
-    network.name,
-  );
-  expect(screen.queryByText(/Add a network in “Private networks”/u)).toBeNull();
 });
 test("The remote selector lists all saved networks without auto-selecting a single provider", async () => {
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
@@ -1685,12 +1619,9 @@ test("VNC with no saved network hides dependent fields and preserves the address
   expect(address).toHaveValue("screen.example.com");
 });
 
-test("VNC restores Cloudflare connection details after retrying network loading", async () => {
-  let unavailable = true;
+test("VNC displays saved Cloudflare connection details", async () => {
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return unavailable
-      ? respond(503, { error: { message: "Network unavailable" } })
-      : respond(200, { configs: [cloudflareNetwork] });
+    return respond(200, { configs: [cloudflareNetwork] });
   });
   await page("/connectors?scope=remote-control&setup=vnc");
   await screen.findByRole("heading", { name: "Add remote connection" });
@@ -1703,13 +1634,6 @@ test("VNC restores Cloudflare connection details after retrying network loading"
   await screen.findByRole("heading", { name: "Connect a device" });
   click(screen.getByLabelText("Connection method"));
   click(await screen.findByRole("option", { name: "Cloudflare Access" }));
-  const retry = await waitFor(() => {
-    return getAction("button", "Try again");
-  });
-  expect(queryAction("button", "Continue")).toBeNull();
-  expect(screen.getByLabelText("Origin TLS server name")).not.toBeVisible();
-  unavailable = false;
-  click(retry);
   const selector = await screen.findByLabelText("Saved network");
   click(selector);
   click(await screen.findByRole("option", { name: /Office network/u }));
@@ -2269,7 +2193,7 @@ test.each(["rsa", "kerberos"] as const)(
 );
 
 test.each([500, 409] as const)(
-  "VNC keeps %s recovery notices on the save step while preserving recovery locks",
+  "VNC keeps %s failure notices on the save step while preserving the locked draft",
   async (status) => {
     context.mocks.api(vncConnectionsContract.create, ({ respond }) => {
       return status === 500
@@ -2296,9 +2220,7 @@ test.each([500, 409] as const)(
     click(getAction("button", "Continue"));
     await screen.findByRole("heading", { name: "Review and save" });
     expect(screen.getByRole("alert")).toHaveTextContent(message);
-    expect(
-      getAction("button", status === 500 ? "Retry" : "Save"),
-    ).toHaveProperty("disabled", status === 409);
+    expect(getAction("button", "Save")).toBeDisabled();
   },
 );
 
@@ -2451,19 +2373,15 @@ test("Leaving setup cancels pending credential loading", async () => {
 });
 
 test.each(["Office retry", ""])(
-  "An idempotent retry keeps the connection name %j from the locked draft",
+  "An unknown save outcome locks the connection draft named %j",
   async (connectionLabel) => {
-    const requests: unknown[] = [];
-    context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
-      requests.push(body);
-      return requests.length === 1
-        ? respond(500, {
-            error: {
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Save outcome unknown",
-            },
-          })
-        : respond(204);
+    context.mocks.api(sshConnectionsContract.create, ({ respond }) => {
+      return respond(500, {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Save outcome unknown",
+        },
+      });
     });
     const username = await directForm();
     await fill(screen.getByLabelText("Device address"), "retry.example.com");
@@ -2484,13 +2402,6 @@ test.each(["Office retry", ""])(
       "aria-disabled",
       "true",
     );
-    click(getAction("button", "Retry"));
-    await screen.findByRole("heading", { name: "Connection added" });
-    expect(
-      screen.getByText(connectionLabel || "retry.example.com"),
-    ).toBeInTheDocument();
-    expect(requests).toHaveLength(2);
-    expect(requests[1]).toStrictEqual(requests[0]);
   },
 );
 
@@ -2712,7 +2623,7 @@ test.each(["tailscale", "cloudflare"] as const)(
 
     release.resolve();
     await screen.findByText(
-      `Could not load ${provider === "tailscale" ? "Tailscale" : "Cloudflare Access"}. Try again.`,
+      `Could not load ${provider === "tailscale" ? "Tailscale" : "Cloudflare Access"}.`,
     );
     expect(dialog).toBeVisible();
     expect(
@@ -2724,26 +2635,22 @@ test.each(["tailscale", "cloudflare"] as const)(
         screen.queryByRole("dialog", { name: title }),
       ).not.toBeInTheDocument();
     });
-    refreshing = false;
-    click(getAction("button", "Try again"));
-    await screen.findByRole("heading", { name: config.name });
   },
 );
 
 test.each(["ssh", "vnc"] as const)(
-  "The guided %s edit entry shows pending credentials and retries a failed load",
+  "The guided %s edit entry displays pending credentials and a failed load",
   async (protocol) => {
     mockSavedConnections();
     const release = context.mocks.deferred<void>();
-    let failed = true;
     if (protocol === "ssh") {
       context.mocks.api(
         sshCredentialsContract.list,
         async ({ respond, withSignal }) => {
           await withSignal(release.promise);
-          return failed
-            ? respond(503, { error: { message: "Credentials unavailable" } })
-            : respond(200, { credentials: [sshLogin] });
+          return respond(503, {
+            error: { message: "Credentials unavailable" },
+          });
         },
       );
     } else {
@@ -2751,9 +2658,9 @@ test.each(["ssh", "vnc"] as const)(
         vncCredentialsContract.list,
         async ({ respond, withSignal }) => {
           await withSignal(release.promise);
-          return failed
-            ? respond(503, { error: { message: "Credentials unavailable" } })
-            : respond(200, { credentials: [vncLogin] });
+          return respond(503, {
+            error: { message: "Credentials unavailable" },
+          });
         },
       );
     }
@@ -2771,15 +2678,9 @@ test.each(["ssh", "vnc"] as const)(
     release.resolve();
     await screen.findByText(
       protocol === "ssh"
-        ? "Could not load SSH settings. Try again."
+        ? "Could not load SSH settings."
         : "Could not load VNC configuration.",
     );
-    failed = false;
-    click(getAction("button", "Try again"));
-    await screen.findByRole("heading", { name: "Edit connection", level: 2 });
-    await expect(
-      screen.findByDisplayValue(host.host),
-    ).resolves.toBeInTheDocument();
   },
 );
 
@@ -2935,7 +2836,7 @@ test.each(["Tailscale", "Cloudflare Access"] as const)(
 );
 
 test.each(["Tailscale", "Cloudflare Access"] as const)(
-  "A failed %s network refresh removes stale data and can recover",
+  "A failed %s network refresh removes stale data",
   async (provider) => {
     let failed = false;
     const config = provider === "Tailscale" ? network : cloudflareNetwork;
@@ -2951,12 +2852,8 @@ test.each(["Tailscale", "Cloudflare Access"] as const)(
 
     failed = true;
     context.mocks.ably.trigger("ssh:changed", { orgId: "org_network_scope" });
-    await screen.findByText(`Could not load ${provider}. Try again.`);
+    await screen.findByText(`Could not load ${provider}.`);
     expect(screen.queryByText(network.name)).not.toBeInTheDocument();
-
-    failed = false;
-    click(getAction("button", "Try again"));
-    await screen.findByText(network.name);
   },
 );
 
@@ -3713,7 +3610,7 @@ test("A resource deep link cannot expose the new editor when the switch is off",
 });
 
 test.each(["ssh", "vnc"] as const)(
-  "%s revision conflicts retain the login draft and require review of the new shared impact",
+  "%s revision conflicts preserve the login draft and partial save result",
   async (protocol) => {
     mockSavedConnections();
     let savedSsh = sshHost;
@@ -3795,32 +3692,11 @@ test.each(["ssh", "vnc"] as const)(
       name: "Update shared login information?",
     });
     click(getAction("button", "Confirm update", impact));
-    const keep = await waitFor(() => {
-      return getAction("button", "Keep my changes with this version");
-    });
     expect(secret).toHaveValue("newpass");
-    expect(
-      screen.getByText(
-        "Connection settings are saved. Review the login information update before leaving.",
-      ),
-    ).toBeInTheDocument();
-    click(keep);
-    await waitFor(() => {
-      return expect(getAction("button", "Save")).toBeEnabled();
-    });
-    expect(secret).toHaveValue("newpass");
-    click(getAction("button", "Save"));
-    const latestImpact = await screen.findByRole("dialog", {
-      name: "Update shared login information?",
-    });
-    expect(latestImpact).toHaveTextContent("3 connections");
-    expect(latestImpact).toHaveTextContent(addedHost.displayName);
-    click(getAction("button", "Confirm update", latestImpact));
-    await screen.findByRole("heading", {
-      name: protocol === "ssh" ? sshHost.displayName : vncHost.displayName,
-    });
-    expect(generations).toStrictEqual(protocol === "ssh" ? [1, 2] : [2, 3]);
-    expect(revisions).toStrictEqual(protocol === "ssh" ? [3, 4] : [4, 5]);
+    await screen.findByText(
+      "Connection settings are saved. Review the login information update before leaving.",
+    );
+    expect(getAction("button", "Save")).toBeDisabled();
   },
 );
 
@@ -4205,30 +4081,21 @@ test.each(["Tailscale", "Cloudflare Access"] as const)(
 );
 
 test.each(["Tailscale", "Cloudflare Access"] as const)(
-  "Private network directory shows a %s error instead of an empty state and can retry",
+  "Private network directory shows a %s error instead of an empty state",
   async (provider) => {
-    let failed = true;
     const contract =
       provider === "Tailscale" ? tailscaleContract : cloudflareAccessContract;
     context.mocks.api(contract.list, ({ respond }) => {
-      return failed
-        ? respond(503, { error: { message: "Network unavailable" } })
-        : respond(200, { configs: [] });
+      return respond(503, { error: { message: "Network unavailable" } });
     });
     await page("/connectors?scope=private-network");
-    await screen.findByText(`Could not load ${provider}. Try again.`);
+    await screen.findByText(`Could not load ${provider}.`);
     expect(screen.queryByText("No networks added yet")).toBeNull();
     expect(
       screen.queryByRole("region", { name: "Personal networks" }),
     ).toBeNull();
     expect(
       screen.queryByRole("region", { name: "Organization networks" }),
-    ).toBeNull();
-    failed = false;
-    click(getAction("button", "Try again"));
-    await screen.findByRole("heading", { name: "No networks added yet" });
-    expect(
-      screen.queryByText(`Could not load ${provider}. Try again.`),
     ).toBeNull();
   },
 );
@@ -4652,32 +4519,14 @@ test.each(["ssh", "vnc"] as const)(
   },
 );
 
-test("The remote directory can recover chat defaults without hiding its connections", async () => {
+test("The remote directory keeps connections visible when chat defaults fail", async () => {
   mockSavedConnections();
-  let failed = true;
   context.mocks.api(
     chatRemoteAccessContract.listHostDefaults,
     ({ respond }) => {
-      return failed
-        ? respond(500, {
-            error: { code: "INTERNAL_ERROR", message: "Private default error" },
-          })
-        : respond(200, {
-            ssh: [
-              {
-                connectionId: sshHost.id,
-                displayName: sshHost.displayName,
-                defaultEnabled: true,
-              },
-            ],
-            vnc: [
-              {
-                connectionId: vncHost.id,
-                displayName: vncHost.displayName,
-                defaultEnabled: false,
-              },
-            ],
-          });
+      return respond(500, {
+        error: { code: "INTERNAL_ERROR", message: "Private default error" },
+      });
     },
   );
   await page();
@@ -4692,20 +4541,6 @@ test("The remote directory can recover chat defaults without hiding its connecti
   expect(
     screen.getByRole("listitem", { name: vncHost.displayName }),
   ).toBeInTheDocument();
-  failed = false;
-  click(getAction("button", "Retry", row));
-  await waitFor(() => {
-    expect(
-      within(
-        screen.getByRole("listitem", { name: sshHost.displayName }),
-      ).getByRole("switch"),
-    ).toBeChecked();
-  });
-  expect(
-    within(
-      screen.getByRole("listitem", { name: vncHost.displayName }),
-    ).getByRole("switch"),
-  ).not.toBeChecked();
 });
 
 test("The remote directory cannot change a host with unavailable chat defaults", async () => {

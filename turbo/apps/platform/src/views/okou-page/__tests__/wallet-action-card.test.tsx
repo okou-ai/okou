@@ -173,13 +173,14 @@ test("wallet consent completed before the user's click continues from the curren
   await openChat(TRACKED_CONNECT_URL);
   await authorization.read;
   const link = await findControl("link", "Authorize Link wallet");
+  expect(link).toHaveAttribute("href", TRACKED_CONNECT_URL);
   await expect(
     screen.findByText("login.link.com"),
   ).resolves.toBeInTheDocument();
 
   authorization.complete();
   expect(prompts).toStrictEqual([]);
-  click(link);
+  click(await findControl("button", "Continue"));
 
   await expect(findControl("button", "Authorized")).resolves.toBeDisabled();
   expect(prompts).toStrictEqual([CONTINUATION_PROMPT]);
@@ -240,37 +241,6 @@ test.each([
     expect(prompts).toStrictEqual([]);
   },
 );
-
-test("retrying a wallet continuation preserves the accepted event identity", async () => {
-  const authorization = mockAuthorization();
-  const sentIds: (string | undefined)[] = [];
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    sentIds.push(body.clientEventId);
-    if (sentIds.length === 1) {
-      return respond(500, {
-        error: { code: "INTERNAL_ERROR", message: "Response lost" },
-      });
-    }
-    return respond(201, {
-      threadId: context.resourceId,
-    });
-  });
-  await openChat(TRACKED_CONNECT_URL);
-  await authorization.read;
-  const link = await findControl("link", "Authorize Link wallet");
-  click(link);
-  await waitFor(() => {
-    expect(context.mocks.ably.hasSubscription("wallet:changed")).toBeTruthy();
-  });
-  authorization.complete();
-  await screen.findByText(
-    "Authorized. Continue to retry sending your message.",
-  );
-  const retry = await findControl("button", "Continue");
-  click(retry);
-  await expect(findControl("button", "Authorized")).resolves.toBeDisabled();
-  expect(sentIds).toStrictEqual([AUTHORIZATION_ID, AUTHORIZATION_ID]);
-});
 
 test("an already authorized wallet card waits for an explicit continuation", async () => {
   mockAuthorization({
@@ -537,7 +507,7 @@ test("purchase approval cards show approval and continuation after notifications
   ).resolves.toBeDisabled();
 });
 
-test("ending the automatic approval watch keeps the original Link action available for manual continuation", async () => {
+test("a stopped approval watch shows its terminal status", async () => {
   let status: "approved" | "stopped" = "approved";
   context.mocks.api(walletUserContract.spendStatus, ({ respond }) => {
     return respond(200, { status });
@@ -551,7 +521,8 @@ test("ending the automatic approval watch keeps the original Link action availab
   ).resolves.toBeDisabled();
   status = "stopped";
   context.mocks.ably.trigger("wallet:changed", { orgId: "org_default" });
-  await screen.findByText("Automatic waiting ended; you can continue manually");
-  const link = await findControl("link", "Review purchase");
-  expect(link).toHaveAttribute("href", APPROVAL_URL);
+  await screen.findByText("Automatic waiting has ended.");
+  await expect(
+    findControl("button", "Status recorded"),
+  ).resolves.toBeDisabled();
 });

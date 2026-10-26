@@ -351,49 +351,6 @@ test("Permission confirmation stays pending until its chat callback completes", 
   ).resolves.toBeInTheDocument();
 });
 
-test("A failed chat callback remains a retryable permission action error after the grant is applied", async () => {
-  const grants: UserPermissionGrantResponse[] = [];
-  let callbackAvailable = false;
-  context.mocks.api(userPermissionGrantsContract.apply, ({ respond }) => {
-    const grant = permissionGrant({ expiresAt: null });
-    grants.push(grant);
-    return respond(200, [grant]);
-  });
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    if (!callbackAvailable) {
-      return respond(500, {
-        error: { code: "INTERNAL_SERVER_ERROR", message: "Chat unavailable" },
-      });
-    }
-    return respond(201, {
-      threadId: THREAD_ID,
-    });
-  });
-  await setupPermissionPage({
-    userName: "Dana",
-    agentName: "Research Bot",
-    grants,
-    callback: { prompt: "Resume the review", threadId: THREAD_ID },
-  });
-  await screen.findByText(
-    "Hey Dana, you're updating your permissions for Research Bot.",
-  );
-
-  click(buttonByText("Confirm"));
-
-  await expect(
-    screen.findByText("Couldn't update permissions"),
-  ).resolves.toBeInTheDocument();
-  expect(buttonByText("Confirm")).toBeEnabled();
-  expect(screen.queryByText("Permissions updated")).not.toBeInTheDocument();
-  expect(screen.queryByText("Already allowed")).not.toBeInTheDocument();
-  callbackAvailable = true;
-  click(buttonByText("Confirm"));
-  await expect(
-    screen.findByText("Permissions updated"),
-  ).resolves.toBeInTheDocument();
-});
-
 test("A user can allow a connector's uncatalogued endpoints without exposing an internal token", async () => {
   let applied: ApplyUserPermissionGrantsRequest | null = null;
   context.mocks.api(userPermissionGrantsContract.apply, ({ body, respond }) => {

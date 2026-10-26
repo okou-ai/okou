@@ -1160,21 +1160,11 @@ export function ActivityDetailPage() {
 
 function ActivityLoadError() {
   const { t } = useTranslation("common");
-  const [refresh, retry] = useLoadableSet(refreshActivity$);
-  const signal = useGet(pageSignal$);
   return (
     <LoadErrorRow
       message={t(($) => {
         return $.global.errors.requestFailed;
       })}
-      retryLabel={t(($) => {
-        return $.global.actions.tryAgain;
-      })}
-      onRetry={() => {
-        if (refresh.state !== "loading") {
-          detach(retry(signal), Reason.DomCallback);
-        }
-      }}
     />
   );
 }
@@ -1194,7 +1184,6 @@ function ActivitySkeleton() {
           <div className="h-4 w-20 rounded bg-muted/50 animate-pulse" />
         </nav>
         <div className="mx-auto max-w-[900px] px-4 sm:px-6 pt-4 pb-safe-or-8 w-full">
-          {/* Header card skeleton */}
           <div className={surfaceVariants({ className: "shrink-0 px-4 py-3" })}>
             <div className="flex flex-wrap items-center gap-y-2 gap-x-3">
               <div className="h-5 w-28 rounded bg-muted/50 animate-pulse" />
@@ -1208,7 +1197,6 @@ function ActivitySkeleton() {
             </div>
           </div>
 
-          {/* Steps skeleton */}
           <div className="flex flex-col gap-4 flex-1 min-h-0 mt-6">
             <div className="flex items-center gap-3">
               <div className="h-5 w-12 rounded bg-muted/50 animate-pulse" />

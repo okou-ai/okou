@@ -1,5 +1,4 @@
 import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { updateAgentSettings$ } from "../../../signals/okou-page/job-detail/settings.ts";
 import { deleteAgent$ } from "../../../signals/okou-page/job-detail/delete.ts";
@@ -788,17 +787,6 @@ function linkTo(path: string): HTMLElement {
   return link;
 }
 
-async function chooseWorkflowCopy(
-  dialog: HTMLElement,
-  title = "Daily research",
-) {
-  const user = userEvent.setup({ delay: null });
-  await user.click(
-    within(dialog).getByRole("combobox", { name: `Handle workflow ${title}` }),
-  );
-  await user.click(await screen.findByRole("option", { name: "Copy to Nova" }));
-}
-
 async function chooseBothWorkflowCopies(dialog: HTMLElement) {
   for (const title of ["Daily research", "Weekly research"]) {
     const selects = queryAllByRoleFast("combobox", dialog).filter((select) => {
@@ -933,9 +921,8 @@ test("Keep the source agent when its workflow refresh fails after copying", asyn
   prepareAgentProfile();
   const workflow = prepareDeleteWorkflow();
   let copySucceeded = false;
-  let refreshRecovered = false;
   context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
-    return copySucceeded && !refreshRecovered
+    return copySucceeded
       ? respond(403, {
           error: { code: "FORBIDDEN", message: "Refresh failed" },
         })
@@ -967,7 +954,7 @@ test("Keep the source agent when its workflow refresh fails after copying", asyn
   click(within(dialog).getByText("Delete agent"));
 
   await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
-    "Could not load workflows. Retry before deleting this agent.",
+    "Could not load workflows.",
   );
   await waitFor(() => {
     expect(within(dialog).getByText("Delete agent")).toBeDisabled();
@@ -992,13 +979,4 @@ test("Keep the source agent when its workflow refresh fails after copying", asyn
   expect(within(reopened).getByRole("combobox")).toHaveTextContent(
     "Delete with agent",
   );
-  refreshRecovered = true;
-  click(within(reopened).getByText("Retry"));
-  await waitFor(() => {
-    expect(within(reopened).getByText("Delete agent")).toBeEnabled();
-  });
-  expect(within(reopened).queryByRole("alert")).not.toBeInTheDocument();
-  await chooseWorkflowCopy(reopened);
-  click(within(reopened).getByText("Delete agent"));
-  await screen.findByText("Agent deleted");
 });

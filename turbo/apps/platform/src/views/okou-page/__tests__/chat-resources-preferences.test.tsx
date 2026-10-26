@@ -67,31 +67,24 @@ test("Keep the existing artifact entry when the rollout switch is off", async ()
   expect(all).toHaveAccessibleName("Artifacts");
 });
 
-test("Apply a second press while the first save is still in flight", async () => {
+test("Keep the saved preference while its update is pending", async () => {
   const saving = createDeferredPromise<void>(context.signal);
   const updates = recordPreferenceUpdates(false, saving.promise);
   await setupResources();
   await screen.findByTestId("chat-thread-header-title");
   click(resourceButton());
   await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
-  });
-  expect(updates).toContainEqual({ chatResourcesEnabledByDefault: true });
-  expect(resourceButton()).toBeEnabled();
-  click(resourceButton());
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+    expect(updates).toContainEqual({ chatResourcesEnabledByDefault: true });
+    expect(resourceButton()).toHaveAttribute("aria-busy", "true");
   });
   saving.resolve();
   await waitFor(() => {
-    expect(updates.at(-1)).toStrictEqual({
-      chatResourcesEnabledByDefault: false,
-    });
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+    expect(resourceButton()).not.toHaveAttribute("aria-disabled", "true");
   });
-  expect(resourceState()).toStrictEqual({ open: false, visible: false });
 });
 
-test("Roll back the panel and explain a failed preference save", async () => {
+test("Keep the saved preference and explain a failed update", async () => {
   context.mocks.api(userPreferencesContract.update, ({ respond }) => {
     return respond(500, {
       error: { code: "INTERNAL_ERROR", message: "Preference update failed" },

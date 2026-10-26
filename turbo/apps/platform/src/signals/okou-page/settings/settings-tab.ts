@@ -1,9 +1,6 @@
 import { command, computed, state } from "ccstate";
 import type { Tone } from "../../../views/okou-page/tone-constants.ts";
-import {
-  currentAgentVisibleWorkflows$,
-  reloadWorkflows$,
-} from "../../workflows-page/workflows-signals.ts";
+import { currentAgentVisibleWorkflows$ } from "../../workflows-page/workflows-signals.ts";
 
 interface SettingsFormValues {
   name: string;
@@ -137,16 +134,6 @@ export const setAgentDeleteCopyChoices$ = command(
     const session = get(internalAgentDeleteSession$);
     if (session?.id === sessionId && session.open) {
       set(internalAgentDeleteSession$, { ...session, choices, workflows });
-    }
-  },
-);
-
-export const reloadAgentDeleteWorkflows$ = command(
-  ({ get, set }, sessionId: string) => {
-    const session = get(internalAgentDeleteSession$);
-    if (session?.id === sessionId && session.open) {
-      session.owner.throwIfAborted();
-      set(reloadWorkflows$);
     }
   },
 );

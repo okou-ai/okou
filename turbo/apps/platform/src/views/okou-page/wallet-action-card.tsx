@@ -1,6 +1,6 @@
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Button, buttonVariants, cn } from "@okouai/ui";
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
 import { ArrowUpRight, Check, Loader2, Wallet } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -97,7 +97,6 @@ function WalletConnectCard({
       : last.state === "hasData"
         ? last.data
         : null;
-  const continued = useGet(connect.continued$);
   const pageSignal = useGet(pageSignal$);
   const [continuation, start] = useLoadableSet(connect.start$);
   const busy = continuation.state === "loading";
@@ -134,7 +133,11 @@ function WalletConnectCard({
           ? statusLabels[status.status]
           : descriptor.hostname;
   const activate = () => {
-    if (busy || continued) {
+    if (
+      busy ||
+      continuation.state === "hasError" ||
+      (continuation.state === "hasData" && continuation.data === true)
+    ) {
       return;
     }
     detach(
@@ -150,15 +153,11 @@ function WalletConnectCard({
           variant="outline"
           size="sm"
           className="h-9 w-full shrink-0 gap-1.5 @[640px]:w-auto"
-          disabled={busy || continued}
+          disabled={continuation.state !== "idle"}
           onClick={activate}
         >
-          {busy ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Check size={14} />
-          )}
-          {continued
+          <Check size={14} />
+          {continuation.state === "hasData" && continuation.data === true
             ? statusLabels.authorized
             : t(($) => {
                 return $.chat.walletAction.continueButton;
@@ -199,7 +198,6 @@ function WalletApprovalCard({
   const current = useLastLoadable(approval.status$);
   const status =
     current.state === "hasData" ? current.data.status : "unavailable";
-  const mounted = useSet(approval.mounted$);
   const title = t(($) => {
     return $.chat.walletAction.approveTitle;
   });
@@ -219,11 +217,9 @@ function WalletApprovalCard({
     unavailable: descriptor.hostname,
   };
   return (
-    <div ref={mounted}>
+    <div>
       <WalletCard title={title} description={descriptions[status]}>
-        {status === "pending" ||
-        status === "unavailable" ||
-        status === "stopped" ? (
+        {status === "pending" || status === "unavailable" ? (
           <WalletActionLink
             descriptor={descriptor}
             title={title}

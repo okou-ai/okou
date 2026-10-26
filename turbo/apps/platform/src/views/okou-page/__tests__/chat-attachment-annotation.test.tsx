@@ -341,9 +341,10 @@ test("A confirmed annotation blocks sending while its image uploads", async () =
   drawBox(surface);
   click(await findNamedButton("Attach marks"));
 
+  const attachMarks = await findNamedButton("Attach marks");
   await waitFor(() => {
-    expect(screen.queryByTestId("image-annotation-editor")).toBeNull();
-    expect(screen.getByLabelText("Send")).toBeDisabled();
+    expect(screen.getByTestId("image-annotation-editor")).toBeVisible();
+    expect(attachMarks).toBeDisabled();
   });
 });
 

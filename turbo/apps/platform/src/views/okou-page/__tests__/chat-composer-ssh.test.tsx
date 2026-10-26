@@ -474,27 +474,12 @@ test("A new chat leaves host defaults untouched when no choice is changed", asyn
   });
 });
 
-test("Remote access remains visible and can retry when host discovery fails", async () => {
+test("Remote access remains visible when host discovery fails", async () => {
   installComposerConnectorFixture();
-  let failed = true;
   context.mocks.api(remotesContract.overview, ({ respond }) => {
-    return failed
-      ? respond(500, {
-          error: { code: "INTERNAL_ERROR", message: "private host error" },
-        })
-      : respond(200, {
-          computerUseHosts: [],
-          cloudBrowserAvailable: true,
-          cloudBrowserEnabledByDefault: true,
-          sshHosts: [
-            {
-              connectionId: "b0000000-0000-4000-8000-000000000001",
-              displayName: "SSH host",
-              defaultEnabled: true,
-            },
-          ],
-          vncHosts: [],
-        });
+    return respond(500, {
+      error: { code: "INTERNAL_ERROR", message: "private host error" },
+    });
   });
   await setupPage({
     context,
@@ -507,24 +492,17 @@ test("Remote access remains visible and can retry when host discovery fails", as
     "Couldn't load remote access.",
   );
   click(remoteAccess);
-  const retry = await findFastControl("button", "Retry");
-  expect(retry.closest('[role="alert"]')).toHaveTextContent(
-    "Couldn't load remote access.",
-  );
+  await screen.findByRole("alert");
   expect(document.body.textContent).not.toContain("private host error");
-  failed = false;
-  click(retry);
-  await screen.findByText("1 enabled");
 });
 
-test("Remote access can retry a failed chat permission read", async () => {
+test("Remote access displays a failed chat permission read", async () => {
   installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
   const host = {
     connectionId: "b0000000-0000-4000-8000-000000000001",
     displayName: "SSH host",
     defaultEnabled: true,
   };
-  let failed = true;
   context.mocks.api(remotesContract.overview, ({ respond }) => {
     return respond(200, {
       computerUseHosts: [],
@@ -537,21 +515,9 @@ test("Remote access can retry a failed chat permission read", async () => {
   context.mocks.api(
     chatRemoteAccessContract.listThreadAccess,
     ({ respond }) => {
-      return failed
-        ? respond(500, {
-            error: { code: "INTERNAL_ERROR", message: "private chat error" },
-          })
-        : respond(200, {
-            ssh: [
-              {
-                ...host,
-                overrideEnabled: null,
-                enabled: true,
-                source: "default",
-              },
-            ],
-            vnc: [],
-          });
+      return respond(500, {
+        error: { code: "INTERNAL_ERROR", message: "private chat error" },
+      });
     },
   );
   await setupPage({
@@ -565,14 +531,8 @@ test("Remote access can retry a failed chat permission read", async () => {
     "Couldn't load remote access.",
   );
   click(remoteAccess);
-  const retry = await findFastControl("button", "Retry");
-  expect(retry.closest('[role="alert"]')).toHaveTextContent(
-    "Couldn't load remote access.",
-  );
+  await screen.findByRole("alert");
   expect(document.body.textContent).not.toContain("private chat error");
-  failed = false;
-  click(retry);
-  await screen.findByText("1 enabled");
 });
 
 async function prepareDraftHostChoices() {

@@ -10,12 +10,8 @@ import { command, computed, state, type Computed } from "ccstate";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
 import { authenticatedSessionKey$, clerk$ } from "../../auth.ts";
-import {
-  effectiveImageModel$,
-  reloadUserModelPreference$,
-  userModelPreference$,
-} from "../../external/user-model-preference.ts";
-import { reloadDisabledPaidTools$ } from "../paid-tools.ts";
+import { effectiveImageModel$ } from "../../external/user-model-preference.ts";
+import { disabledPaidTools$, reloadDisabledPaidTools$ } from "../paid-tools.ts";
 import {
   settingsActiveSection$,
   settingsDialogOpen$,
@@ -32,38 +28,19 @@ function createPaidToolsSignals(
       return assertCurrent;
     },
   });
-  const revision$ = state(0);
-  const confirmedChanges$ = state<Partial<Record<PaidToolId, boolean>>>({});
-  const disabledTools$ = computed(async (get) => {
-    get(revision$);
-    assertCurrent();
-    const response = await accept(client.get(), [200]);
-    assertCurrent();
-    return response.body.disabledTools;
-  });
-  const retry$ = command(({ set }) => {
-    assertCurrent();
-    set(revision$, (revision) => {
-      return revision + 1;
-    });
-  });
+  const disabledTools$ = disabledPaidTools$;
   const imageModel = createImageModelSignals(createClient, assertCurrent);
   function createTool<T extends PaidToolId>(toolId: T, family?: PaidToolId) {
     const familyEnabled$ = computed(async (get) => {
       if (!family) {
         return true;
       }
-      const changes = get(confirmedChanges$);
       const disabled = await get(disabledTools$);
-      return !(changes[family] ?? disabled.includes(family));
+      return !disabled.includes(family);
     });
     const enabled$ = computed(async (get) => {
-      const changes = get(confirmedChanges$);
       const disabledTools = await get(disabledTools$);
-      return (
-        (await get(familyEnabled$)) &&
-        !(changes[toolId] ?? disabledTools.includes(toolId))
-      );
+      return (await get(familyEnabled$)) && !disabledTools.includes(toolId);
     });
     const update$ = command(
       async ({ set }, enabled: boolean, signal: AbortSignal) => {
@@ -80,14 +57,6 @@ function createPaidToolsSignals(
         );
         signal.throwIfAborted();
         assertCurrent();
-        // Merge only the confirmed tool so simultaneous saves cannot replace
-        // another row's result with an older full-list response.
-        set(confirmedChanges$, (changes) => {
-          return {
-            ...changes,
-            [response.body.toolId]: response.body.disabled,
-          };
-        });
         if (toolId === "image-generation" && response.body.disabled) {
           set(imageModel.discardDraft$);
         }
@@ -105,8 +74,7 @@ function createPaidToolsSignals(
       return assertCurrent;
     },
   });
-  const dataTools$ = computed(async (get) => {
-    get(revision$);
+  const dataTools$ = computed(async () => {
     assertCurrent();
     const response = await accept(routerClient.list(), [200]);
     assertCurrent();
@@ -130,7 +98,6 @@ function createPaidToolsSignals(
   });
   return {
     disabledTools$,
-    retry$,
     tools,
     dataTools$,
     imageModel,
@@ -162,7 +129,7 @@ function createImageModelSignals(
     set(draft$, null);
   });
   const update$ = command(
-    async ({ get, set }, model: ImageModel, signal: AbortSignal) => {
+    async ({ set }, model: ImageModel, signal: AbortSignal) => {
       signal.throwIfAborted();
       assertCurrent();
       set(draft$, model);
@@ -185,12 +152,6 @@ function createImageModelSignals(
         [200],
         signal,
       );
-      signal.throwIfAborted();
-      assertCurrent();
-      // The realtime push refreshes other sessions; this one reads its own
-      // write back so the save settles on the stored value.
-      set(reloadUserModelPreference$);
-      await get(userModelPreference$);
       signal.throwIfAborted();
       assertCurrent();
       set(draft$, null);

@@ -7,7 +7,6 @@
     "delete": "Delete agent",
     "deleting": "Deleting…",
     "discard": "Discard",
-    "retry": "Retry",
     "save": "Save",
     "saving": "Saving…"
   },
@@ -67,7 +66,7 @@
       "deleteWithAgent": "Delete with agent",
       "description": "Copy a workflow to another agent to keep it. Anything left is deleted.",
       "handle": "Handle workflow {{workflowTitle}}",
-      "loadFailed": "Could not load workflows. Retry before deleting this agent.",
+      "loadFailed": "Could not load workflows.",
       "loading": "Loading workflows…",
       "title": "Keep any workflows?",
       "untitled": "Workflow"

@@ -248,7 +248,7 @@ function InlineImessageConnection() {
   const pageSignal = useGet(pageSignal$);
   const status =
     statusLoadable.state === "hasData" ? statusLoadable.data : null;
-  const onRetry = () => {
+  const createCode = () => {
     detach(requestCode(pageSignal), Reason.DomCallback);
   };
   return (
@@ -296,14 +296,19 @@ function InlineImessageConnection() {
               return $.onboarding.sourcesFirst.chatChannels.imessageExpired;
             })}
           </p>
-          <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={createCode}
+          >
             {t(($) => {
               return $.onboarding.sourcesFirst.chatChannels.imessageRefresh;
             })}
           </Button>
         </div>
       ) : codeLoadable.state === "hasError" ? (
-        <AgentPhoneConnectionCodeError onRetry={onRetry} />
+        <AgentPhoneConnectionCodeError />
       ) : code?.kind === "unavailable" ? (
         <p className="text-sm text-muted-foreground" role="status">
           {t(

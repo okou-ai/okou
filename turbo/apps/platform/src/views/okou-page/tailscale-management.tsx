@@ -43,8 +43,6 @@ import {
   closeTailscaleDialog$,
   mountTailscaleForm$,
   openTailscaleDialog$,
-  refreshTailscaleReview$,
-  retryTailscale$,
   actOnTailscaleDialog$,
   saveTailscale$,
   tailscaleAcknowledged$,
@@ -221,13 +219,11 @@ function TailscaleReview({
   error,
   reviewing,
   review,
-  refresh,
 }: {
   readonly dialog: TailscaleDialogState;
   readonly error: string | null;
   readonly reviewing: boolean;
   readonly review: (config: TailscaleConfig) => void;
-  readonly refresh: () => void;
 }) {
   const { t } = useTranslation();
   const uncertain = useGet(tailscaleSaveUncertain$);
@@ -255,19 +251,6 @@ function TailscaleReview({
                 return $.tailscale.failed;
               }))}
         </p>
-        {shared && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              return refresh();
-            }}
-          >
-            {t(($) => {
-              return $.cloudflareAccess.reviewLatest;
-            })}
-          </Button>
-        )}
       </div>
     );
   }
@@ -313,19 +296,7 @@ function TailscaleReview({
           </Button>
         </div>
       )}
-      {latest.state === "hasError" && (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            return refresh();
-          }}
-        >
-          {t(($) => {
-            return $.global.actions.tryAgain;
-          })}
-        </Button>
-      )}
+      {latest.state === "hasError" && null}
     </div>
   );
 }
@@ -343,8 +314,6 @@ function TailscaleOperationBody({
   const impact = useLoadable(tailscaleImpact$);
   const acknowledged = useGet(tailscaleAcknowledged$);
   const acknowledge = useSet(acknowledgeTailscale$);
-  const refresh = useSet(refreshTailscaleReview$);
-  const signal = useGet(pageSignal$);
   return (
     <div className="grid gap-3">
       <p className="font-medium">{config.name}</p>
@@ -378,12 +347,6 @@ function TailscaleOperationBody({
                 message={t(($) => {
                   return $.tailscale.loadFailed;
                 })}
-                retryLabel={t(($) => {
-                  return $.global.actions.tryAgain;
-                })}
-                onRetry={() => {
-                  return refresh(signal);
-                }}
               />
             )}
             {impact.state === "hasData" && impact.data && (
@@ -522,27 +485,20 @@ function useTailscaleFormSubmission(
     review(config: TailscaleConfig) {
       detach(act({ kind: "review", config }, signal), Reason.DomCallback);
     },
-    refresh() {
-      detach(act({ kind: "refresh" }, signal), Reason.DomCallback);
-    },
-    submitDisabled: busy || (!uncertain && (blocked || !!scopeStatus.error)),
+    submitDisabled: busy || uncertain || blocked || !!scopeStatus.error,
     submitLabel: busy
       ? t(($) => {
           return $.connectors.actions.saving;
         })
-      : uncertain
-        ? t(($) => {
-            return $.cloudflareAccess.retry;
-          })
-        : guided && dialog?.kind !== "delete"
-          ? saveLabel
-          : edit
-            ? t(($) => {
-                return $.cloudflareAccess.save;
-              })
-            : title,
+      : guided && dialog?.kind !== "delete"
+        ? saveLabel
+        : edit
+          ? t(($) => {
+              return $.cloudflareAccess.save;
+            })
+          : title,
     submit(form: HTMLFormElement) {
-      if (!busy && !scopeStatus.error && (uncertain || !blocked)) {
+      if (!busy && !uncertain && !scopeStatus.error && !blocked) {
         detach(
           act({ kind: "save", form, save$: saveAction }, signal),
           Reason.DomCallback,
@@ -588,7 +544,6 @@ function TailscaleDialogForm({
     uncertain,
     error,
     review,
-    refresh,
     submitDisabled,
     submitLabel,
     submit,
@@ -623,7 +578,6 @@ function TailscaleDialogForm({
               error={error}
               reviewing={busy}
               review={review}
-              refresh={refresh}
             />
           )}
           <RemoteNetworkScopeConfirmation
@@ -807,7 +761,6 @@ export function TailscaleManagement() {
   const configs = useLoadable(tailscaleConfigs$);
   const admin = useLoadable(isOrgAdmin$);
   const open = useSet(openTailscaleDialog$);
-  const retry = useSet(retryTailscale$);
   const signal = useGet(pageSignal$);
   return (
     <section
@@ -851,12 +804,6 @@ export function TailscaleManagement() {
           message={t(($) => {
             return $.tailscale.loadFailed;
           })}
-          retryLabel={t(($) => {
-            return $.global.actions.tryAgain;
-          })}
-          onRetry={() => {
-            return retry(signal);
-          }}
         />
       )}
       {configs.state === "hasData" && configs.data && (

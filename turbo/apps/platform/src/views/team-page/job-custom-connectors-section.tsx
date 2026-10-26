@@ -15,12 +15,8 @@ import {
   customConnectorManagedStatusSchema,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import {
-  customConnectors$,
-  retryCustomConnectors$,
-} from "../../signals/okou-page/settings/custom-connectors.ts";
+import { customConnectors$ } from "../../signals/okou-page/settings/custom-connectors.ts";
 import { connectedConnectorTargetKeys$ } from "../../signals/okou-page/connector-accounts.ts";
-import { reloadUserConnectedConnectors$ } from "../../signals/okou-page/connector-overview.ts";
 import {
   agentCustomConnectorGrants$,
   agentAddedCustomConnectors$,
@@ -170,8 +166,6 @@ export function JobCustomConnectorsSection() {
   const { t } = useTranslation();
   const connectors = useLoadable(customConnectors$);
   const connectedTargets = useLoadable(connectedConnectorTargetKeys$);
-  const retryConnectors = useSet(retryCustomConnectors$);
-  const retryConnectedTargets = useSet(reloadUserConnectedConnectors$);
   if (
     connectors.state === "hasError" ||
     connectedTargets.state === "hasError"
@@ -181,13 +175,6 @@ export function JobCustomConnectorsSection() {
         message={t(($) => {
           return $.connectors.accounts.accountsUnavailable;
         })}
-        retryLabel={t(($) => {
-          return $.connectors.actions.tryAgain;
-        })}
-        onRetry={() => {
-          retryConnectors();
-          retryConnectedTargets();
-        }}
       />
     );
   }

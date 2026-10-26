@@ -156,7 +156,6 @@ test.each([imagePath])(
     expect(screen.queryByText(/Signed in as/)).not.toBeInTheDocument();
     expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
     expect(action("button", "Sign in")).toBeEnabled();
-    expect(action("button", "Try again")).toBeEnabled();
     expect(action("link", "Back to Okou")).toHaveAttribute("href", "/");
     expect(
       screen.getByText(/It may be private or no longer available\./u),

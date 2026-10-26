@@ -2,7 +2,7 @@ import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrati
 import { discordSnowflakeSchema } from "@okouai/api-contracts/contracts/integrations-discord-read";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { buttonVariants, cn } from "@okouai/ui";
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../lib/api-error.ts";
@@ -12,7 +12,6 @@ import {
 } from "../../signals/okou-page/discord.ts";
 import { connectDiscordAccount$ } from "../../signals/okou-page/discord-connect-signals.ts";
 import {
-  approveDiscordAuthorization$,
   discordApprovalAvailable$,
   discordApprovalRequest$,
   discordApprovalSucceeded$,
@@ -60,8 +59,6 @@ function PageContent() {
 function DiscordApprovalState() {
   const { t } = useTranslation();
   const request = useLoadable(discordApprovalRequest$);
-  const approve = useSet(approveDiscordAuthorization$);
-  const pageSignal = useGet(pageSignal$);
   const failed = request.state === "hasError";
   if (failed) {
     return (
@@ -77,15 +74,6 @@ function DiscordApprovalState() {
             })}
           />
         </div>
-        <ConnectSubmitButton
-          connecting={false}
-          label={t(($) => {
-            return $.works.discord.retry;
-          })}
-          onConnect={() => {
-            detach(approve(pageSignal), Reason.DomCallback);
-          }}
-        />
         <SettingsBackLink />
       </>
     );
@@ -188,28 +176,20 @@ function DiscordConnectionActions({
       )}
       <ConnectErrorAlert error={error} />
       {data &&
-      (installing || failedAttempt
-        ? data.isAvailable
-        : canAuthorizeDiscord(data)) ? (
+      !failedAttempt &&
+      authorization.state !== "hasError" &&
+      (installing ? data.isAvailable : canAuthorizeDiscord(data)) ? (
         <ConnectSubmitButton
           connecting={connecting}
           spinnerClassName="animate-spin mr-2"
           label={
-            failedAttempt
+            installing
               ? t(($) => {
-                  return $.works.discord.restartAuthorization;
+                  return $.works.discord.addNewServer;
                 })
-              : error
-                ? t(($) => {
-                    return $.works.discord.retry;
-                  })
-                : installing
-                  ? t(($) => {
-                      return $.works.discord.addNewServer;
-                    })
-                  : t(($) => {
-                      return $.works.actions.connect;
-                    })
+              : t(($) => {
+                  return $.works.actions.connect;
+                })
           }
           onConnect={() => {
             detach(

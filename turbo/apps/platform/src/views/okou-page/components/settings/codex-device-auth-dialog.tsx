@@ -18,7 +18,7 @@ import { detach, Reason } from "../../../../signals/utils.ts";
 import {
   DeviceAuthDialogShell,
   DeviceAuthLoadingContent,
-  DeviceAuthRetryContent,
+  DeviceAuthStartContent,
 } from "./device-auth-dialog-shell.tsx";
 
 type CodexDeviceAuthDialogState = {
@@ -125,7 +125,7 @@ function CodexDeviceAuthBody({
     flow.status !== "pending"
   ) {
     return (
-      <DeviceAuthRetryContent
+      <DeviceAuthStartContent
         message={
           flow.status === "expired" || flow.status === "error"
             ? flow.message

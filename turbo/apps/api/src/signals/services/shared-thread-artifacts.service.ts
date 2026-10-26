@@ -29,6 +29,9 @@ import {
 import { settle } from "../utils";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
+import { createHostedPreviewGrant$ } from "./private-hosted-preview.service";
+import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
+import { env } from "../../lib/env";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
 import { checkHostedSiteAccess$ } from "./hosted-site-access.service";
 import { privateArtifactsBucket } from "./private-artifact-storage.service";
@@ -49,7 +52,7 @@ type SnapshotIdentity = Pick<
 };
 
 /** Match the delivery Worker's authority without reopening the owner's live resource. */
-export const resolveSharedThreadHostedDownload$ = command(
+const readSharedThreadHostedResource$ = command(
   async (
     { get, set },
     args: {
@@ -61,7 +64,7 @@ export const resolveSharedThreadHostedDownload$ = command(
       >;
     },
     signal: AbortSignal,
-  ): Promise<HostedSiteFilesResponse | null> => {
+  ) => {
     const { record } = args;
     const stored = await settle(
       get(
@@ -108,16 +111,85 @@ export const resolveSharedThreadHostedDownload$ = command(
     ) {
       return null;
     }
+    const preview = policy.previews?.[record.publicToken];
+    const cover = preview ? policy.resources[preview.token] : undefined;
+    return {
+      target,
+      previewImageUrl:
+        preview && cover?.kind === "file"
+          ? new URL(
+              artifactShareReferencePath(preview.reference, cover.filename),
+              env("APP_URL"),
+            ).href
+          : undefined,
+    };
+  },
+);
+
+export const resolveSharedThreadHostedDownload$ = command(
+  async (
+    { set },
+    args: {
+      readonly publicSlug: string;
+      readonly viewerId?: string;
+      readonly record: Pick<
+        Extract<ArtifactDeliveryRecord, { kind: "thread-resource" }>,
+        "publicBrand" | "threadId" | "publicToken" | "targetKind" | "targetId"
+      >;
+    },
+    signal: AbortSignal,
+  ): Promise<HostedSiteFilesResponse | null> => {
+    const resource = await set(readSharedThreadHostedResource$, args, signal);
+    if (!resource) {
+      return null;
+    }
     return await set(
       signSharedThreadHostedDownload$,
       {
         publicSlug: args.publicSlug,
         viewerId: args.viewerId,
-        layoutSegment: record.publicBrand,
-        target,
+        layoutSegment: args.record.publicBrand,
+        target: resource.target,
       },
       signal,
     );
+  },
+);
+
+/** Resolve the publication selected by the alias before requesting its preview. */
+export const resolveSharedThreadHostedPreview$ = command(
+  async (
+    { set },
+    args: {
+      readonly publicSlug: string;
+      readonly viewerId: string;
+      readonly record: Extract<
+        ArtifactDeliveryRecord,
+        { kind: "thread-resource" }
+      >;
+    },
+    signal: AbortSignal,
+  ) => {
+    const resource = await set(readSharedThreadHostedResource$, args, signal);
+    if (!resource) {
+      return null;
+    }
+    const preview = await set(
+      createHostedPreviewGrant$,
+      {
+        siteId: resource.target.siteId,
+        deploymentId: resource.target.id,
+        layout: linkLayoutFromSegment(args.record.publicBrand),
+        snapshotId: resource.target.snapshotId,
+      },
+      signal,
+    );
+    return {
+      ...preview,
+      ...(resource.previewImageUrl
+        ? { previewImageUrl: resource.previewImageUrl }
+        : {}),
+    };
   },
 );
 

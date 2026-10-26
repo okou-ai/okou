@@ -29,7 +29,6 @@ import {
   Maximize2,
   Minimize2,
   Pencil,
-  RotateCcw,
   X,
 } from "lucide-react";
 import type {
@@ -1900,39 +1899,6 @@ function ComposerImagePreviewButton({
   );
 }
 
-function AnnotationUploadRetry({
-  attachment,
-  annotationActions,
-}: {
-  readonly attachment: ChatAttachment;
-  readonly annotationActions: ComposerAttachmentAnnotationActions;
-}) {
-  const { t } = useTranslation();
-  const operation = useLoadable(attachment.annotationOperation$);
-  const retry = useSet(annotationActions.retryAttachmentAnnotations$);
-  const pageSignal = useGet(pageSignal$);
-  if (operation.state !== "hasError") {
-    return null;
-  }
-  return (
-    <IconTooltipButton
-      type="button"
-      className="absolute -top-1 -left-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-destructive text-destructive-foreground"
-      aria-label={t(
-        ($) => {
-          return $.chat.attachments.uploadFailedRetry;
-        },
-        { filename: attachment.filename },
-      )}
-      onClick={() => {
-        detach(retry(attachment, pageSignal), Reason.DomCallback);
-      }}
-    >
-      <RotateCcw size={9} />
-    </IconTooltipButton>
-  );
-}
-
 function AttachmentChip({
   attachment,
   annotationSignals,
@@ -1947,9 +1913,7 @@ function AttachmentChip({
   const { t } = useTranslation();
   const infoLoadable = useLoadable(attachment.fileInfo$);
   const preview = useLastResolved(attachment.preview$) ?? null;
-  const annotationOperation = useLoadable(attachment.annotationOperation$);
-  const uploading =
-    infoLoadable.state === "loading" || annotationOperation.state === "loading";
+  const uploading = infoLoadable.state === "loading";
   const url =
     infoLoadable.state === "hasData" && infoLoadable.data
       ? canonicalUserMessageFileUrl(infoLoadable.data.id)
@@ -2023,10 +1987,6 @@ function AttachmentChip({
           <Loader2 size={10} className="animate-spin text-muted-foreground" />
         </span>
       )}
-      <AnnotationUploadRetry
-        attachment={attachment}
-        annotationActions={annotationActions}
-      />
       <IconTooltipButton
         type="button"
         onClick={onRemove}

@@ -168,33 +168,25 @@ test("Offer a Team upgrade when a Pro admin exhausts voice quota", async () => {
   ).resolves.toBeVisible();
 });
 
-test("Keep a recorded draft retryable after a quota response", async () => {
+test("Keep a recorded draft after a quota response", async () => {
   context.mocks.browser.voiceInput({ rms: 0.12 });
   installVoicePlan("team", "admin");
   context.mocks.api(voiceIoQuotaContract.get, ({ respond }) => {
     return respond(200, { allowed: true, count: 0, limit: 60 });
   });
-  let exhausted = true;
   context.mocks.http.post("*/api/voice-io/polish/segments", () => {
     return HttpResponse.json({ text: "Retained recording." });
   });
   context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
-    if (exhausted) {
-      return HttpResponse.json(
-        {
-          error: {
-            code: "DAILY_RATE_LIMIT_EXCEEDED",
-            message: "Daily voice request limit reached",
-          },
+    return HttpResponse.json(
+      {
+        error: {
+          code: "DAILY_RATE_LIMIT_EXCEEDED",
+          message: "Daily voice request limit reached",
         },
-        { status: 429 },
-      );
-    }
-    return HttpResponse.json({
-      transcript: "retained recording",
-
-      language: "en-US",
-    });
+      },
+      { status: 429 },
+    );
   });
   installRunChat();
   await setupPage({
@@ -210,14 +202,7 @@ test("Keep a recorded draft retryable after a quota response", async () => {
   await expectVoiceLimitMessage(
     "Voice input limit reached. Please wait for your limit to reset.",
   );
-  const retry = await findEnabledButton("Retry");
-
-  exhausted = false;
-  click(retry);
-  await findEnabledButton("Send");
-  expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-    "Retained recording.",
-  );
+  await expect(findEnabledButton("Remove voice draft")).resolves.toBeVisible();
 });
 
 test("Ask an admin when a member exhausts voice quota", async () => {

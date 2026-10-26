@@ -1,4 +1,4 @@
-import { createHostedSitePreviewGrant$ } from "./hosted-site-preview.service";
+import { createHostedSitePreviewGrant$ } from "./hosted-site-preview-grant.service";
 import { readHostedSitePolicy$ } from "./hosted-site-access.service";
 import { randomBytes } from "node:crypto";
 import { command } from "ccstate";

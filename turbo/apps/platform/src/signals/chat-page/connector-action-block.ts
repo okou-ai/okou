@@ -22,7 +22,6 @@ import {
 import type { PlatformConnectorCatalogStatusItem } from "../connector-domain.ts";
 import {
   connectorCatalogItemBySlug,
-  reloadBuiltinConnectors$,
   withMemberAccount,
 } from "../external/connectors.ts";
 import {
@@ -115,7 +114,6 @@ export type ExactReconnectConnectorSignals =
       >
     >;
     readonly activate$: Command<Promise<void>, [AbortSignal]>;
-    readonly refresh$: Command<void, []>;
     readonly subscribe$: Command<void, [AbortSignal]>;
   };
 
@@ -410,9 +408,7 @@ function createCatalogConnectorActivation(
         ? null
         : builtinConnectorCurrentConnectionStatus(catalogItem);
     if (status === "unavailable") {
-      throw new Error(
-        "Connector account metadata is unavailable. Refresh and try again.",
-      );
+      throw new Error("Connector account metadata is unavailable.");
     }
     const reconnectRequired = status === "reconnect-required";
     if (connected && !reconnectRequired) {
@@ -684,16 +680,10 @@ function createExactReconnectConnectorSignals(
     });
   });
 
-  const refresh$ = command(({ set }) => {
-    set(reloadBuiltinConnectors$);
-    set(accountChanges.invalidate$);
-  });
-
   return {
     ...descriptor,
     status$,
     activate$,
-    refresh$,
     subscribe$: accountChanges.subscribe$,
   };
 }

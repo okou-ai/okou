@@ -1791,7 +1791,7 @@ export const saveAutoRecharge$ = command(
     // the unsaved-bar briefly disappears because `autoRechargeDirty$` goes
     // false when all overrides are null against the stale config. If the
     // refetch fails, `accept()` inside billingStatusAsync$ already surfaces
-    // the error; leaving overrides in place lets the user retry or discard.
+    // the error; the unsaved form values remain available to edit or discard.
     await get(autoRechargeConfig$);
     signal.throwIfAborted();
     set(internalPendingEnabled$, null);

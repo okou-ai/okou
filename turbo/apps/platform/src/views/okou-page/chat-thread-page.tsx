@@ -26,11 +26,7 @@ import {
 import type { TFunction } from "i18next";
 import { equalArrays, equalSets } from "../../lib/equality.ts";
 import { useTranslation } from "react-i18next";
-import {
-  formatAppNumber,
-  formatChatTimestamp,
-  formatLocalizedNumber,
-} from "../../i18n/format.ts";
+import { formatAppNumber, formatChatTimestamp } from "../../i18n/format.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { hideAppSkeletonOnContentReadyRef$ } from "../../signals/app-skeleton.ts";
 import {
@@ -316,10 +312,6 @@ import {
 } from "../../signals/chat-page/chat-thread-emoji.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
 import { ChatComposer } from "./chat-composer.tsx";
-import {
-  ModelProviderPicker,
-  type ModelProviderSelection,
-} from "./components/model-provider-picker.tsx";
 import { ChatFeedbackSelection } from "./chat-feedback-selection.tsx";
 import { formatSubscriptionUsageReset } from "./subscription-usage-format.ts";
 import { AgentAvatarImg, AvatarFromUrl } from "./sidebar-shared.tsx";
@@ -5121,66 +5113,6 @@ function assistantRecoveryResetTexts(
   ];
 }
 
-function AssistantRecoveryActionSpinner({ loading }: { loading: boolean }) {
-  return loading ? <Loader2 size={16} className="animate-spin" /> : null;
-}
-
-function hasAssistantRecoveryModelPicker(
-  recovery: AssistantErrorRecovery,
-): boolean {
-  return (
-    recovery.kind === "subscription-error" ||
-    recovery.kind === "usage-limit" ||
-    recovery.kind === "model-capacity" ||
-    recovery.kind === "model-unavailable" ||
-    recovery.kind === "safety-policy-refusal" ||
-    (recovery.kind === "provider-retryable" &&
-      recovery.failureReason !== "guest_root_filesystem_full" &&
-      recovery.failureReason !== "guest_home_filesystem_full" &&
-      recovery.failureReason !== "codex_access_program_unavailable")
-  );
-}
-
-/**
- * The retry reads the thread's persisted model, so the card's actions wait for
- * the selection write this picker starts. `onSelect` is owned by the actions
- * row, which disables its buttons while the write is pending.
- */
-function AssistantRecoveryModelPicker({
-  recovery,
-  thread,
-  onSelect,
-}: {
-  readonly recovery: AssistantErrorRecovery;
-  readonly thread: ChatPanelSignals;
-  readonly onSelect: (selection: ModelProviderSelection) => void;
-}) {
-  const { t } = useTranslation();
-  const modelSelection =
-    useLastResolved(thread.composer.model.modelSelection$) ?? null;
-  if (!hasAssistantRecoveryModelPicker(recovery)) {
-    return null;
-  }
-  const handleModelSelection = (
-    selection: ModelProviderSelection | null,
-  ): void => {
-    if (!selection) {
-      return;
-    }
-    onSelect(selection);
-  };
-  return (
-    <ModelProviderPicker
-      value={modelSelection}
-      onChange={handleModelSelection}
-      placeholder={t(($) => {
-        return $.chat.errors.recovery.selectModel;
-      })}
-      triggerClassName="h-8 w-auto min-w-24 max-w-36 bg-background text-sm"
-    />
-  );
-}
-
 function AssistantRecoveryDestinationAction({
   recovery,
 }: {
@@ -5239,88 +5171,6 @@ function AssistantRecoveryDestinationAction({
     );
   }
   return null;
-}
-
-function AssistantRecoveryActions({
-  recovery,
-  thread,
-}: {
-  recovery: AssistantErrorRecovery;
-  thread: ChatPanelSignals;
-}) {
-  const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const [retryLoadable, retry] = useLoadableSet(thread.retryAssistantError$);
-  const [resetLoadable, resetAndRetry] = useLoadableSet(
-    thread.resetCodexSubscriptionAndRetry$,
-  );
-  const [selectModelLoadable, selectModel] = useLoadableSet(
-    thread.composer.model.setModelSelection$,
-  );
-  const retrying = retryLoadable.state === "loading";
-  const resetting = resetLoadable.state === "loading";
-  const selectingModel = selectModelLoadable.state === "loading";
-  const actionsDisabled = retrying || resetting || selectingModel;
-  const resetAction = recovery.actions.resetAndTryAgain;
-  const hasRetryAction = recovery.actions.tryAgain !== null;
-  const continueAction =
-    recovery.kind === "execution-timeout" ||
-    recovery.kind === "autonomy-budget-exhausted" ||
-    recovery.kind === "output-token-limit";
-
-  return (
-    <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
-      <AssistantRecoveryModelPicker
-        recovery={recovery}
-        thread={thread}
-        onSelect={(selection) => {
-          detach(selectModel(selection, pageSignal), Reason.DomCallback);
-        }}
-      />
-      {hasRetryAction && (
-        <Button
-          type="button"
-          size="sm"
-          variant="neutral"
-          className={ERROR_CARD_ACTION_CLASS}
-          disabled={actionsDisabled}
-          onClick={() => {
-            detach(retry(pageSignal), Reason.DomCallback);
-          }}
-        >
-          <AssistantRecoveryActionSpinner loading={retrying} />
-          {continueAction
-            ? t(($) => {
-                return $.chat.errors.recovery.continue;
-              })
-            : t(($) => {
-                return $.chat.errors.recovery.tryAgain;
-              })}
-        </Button>
-      )}
-      {resetAction && (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className={ERROR_CARD_ACTION_CLASS}
-          disabled={actionsDisabled}
-          onClick={() => {
-            detach(resetAndRetry(pageSignal), Reason.DomCallback);
-          }}
-        >
-          <AssistantRecoveryActionSpinner loading={resetting} />
-          {t(
-            ($) => {
-              return $.chat.errors.recovery.resetUsageRemaining;
-            },
-            { value: formatLocalizedNumber(resetAction.resetsRemaining) },
-          )}
-        </Button>
-      )}
-      <AssistantRecoveryDestinationAction recovery={recovery} />
-    </div>
-  );
 }
 
 /**
@@ -5873,13 +5723,12 @@ function assistantRecoveryIcon(recovery: AssistantErrorRecovery): LucideIcon {
 
 function assistantErrorRecoveryContent(
   recovery: AssistantErrorRecovery,
-  thread: ChatPanelSignals,
   t: TFunction<"common">,
 ): AssistantErrorCardContent {
   const hasActions =
-    recovery.kind !== "input-too-large" &&
-    (recovery.failureReason === null ||
-      structuredFailureHasActions(recovery.failureReason));
+    recovery.kind === "provider-settings" ||
+    recovery.kind === "new-chat-required" ||
+    recovery.kind === "terms-acceptance-required";
   const description = assistantRecoveryDescription(recovery, t);
   return {
     icon: assistantRecoveryIcon(recovery),
@@ -5892,9 +5741,7 @@ function assistantErrorRecoveryContent(
       : {}),
     ...(hasActions
       ? {
-          actions: (
-            <AssistantRecoveryActions recovery={recovery} thread={thread} />
-          ),
+          actions: <AssistantRecoveryDestinationAction recovery={recovery} />,
         }
       : {}),
     reserveActions: hasActions,
@@ -6121,7 +5968,7 @@ function AssistantErrorState({
   // not a component: choosing between two card components here would remove
   // the mounted card and move the transcript by its height.
   const content = recovery
-    ? assistantErrorRecoveryContent(recovery, thread, t)
+    ? assistantErrorRecoveryContent(recovery, t)
     : fallback;
   return (
     <AssistantErrorCard

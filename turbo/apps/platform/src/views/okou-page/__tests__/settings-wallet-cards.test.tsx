@@ -326,7 +326,7 @@ test("shows a failed wallet refresh and retries with the updated default card", 
   await within(region).findByText("Everyday");
   fail = true;
   context.mocks.ably.trigger("wallet:changed", { orgId: "org_1" });
-  await within(region).findByText("Couldn’t load your cards. Try again.");
+  await within(region).findByText("Couldn’t load your cards.");
   expect(within(region).queryByText("Everyday")).not.toBeInTheDocument();
   expect(manageCards(region)).toBeInTheDocument();
   fail = false;

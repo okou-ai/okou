@@ -63,17 +63,8 @@ function SkillImportPromptPending() {
   );
 }
 
-/**
- * The session could not be opened. The import offers it again and stays out
- * of the way otherwise: nothing around it waited on it.
- */
-function SkillImportPromptFailed({
-  retry$,
-}: {
-  readonly retry$: Command<void, []>;
-}) {
+function SkillImportPromptFailed() {
   const { t } = useTranslation();
-  const retry = useSet(retry$);
 
   return (
     <div className="flex flex-col items-start gap-3 rounded-xl border border-border/60 bg-muted/30 p-4">
@@ -82,18 +73,6 @@ function SkillImportPromptFailed({
           return $.onboarding.sourcesFirst.skills.startError;
         })}
       </p>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => {
-          retry();
-        }}
-      >
-        {t(($) => {
-          return $.onboarding.sourcesFirst.skills.tryAgain;
-        })}
-      </Button>
     </div>
   );
 }
@@ -234,7 +213,6 @@ export function SkillImportResults({
   readonly scroll?: boolean;
 }) {
   const result = useLoadable(signals.imported$);
-  const retry = useSet(signals.reloadImported$);
   const { t } = useTranslation();
   if (result.state === "hasError") {
     return (
@@ -245,18 +223,6 @@ export function SkillImportResults({
         {t(($) => {
           return $.onboarding.sourcesFirst.skills.resultsError;
         })}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            return retry();
-          }}
-        >
-          {t(($) => {
-            return $.onboarding.sourcesFirst.skills.tryAgain;
-          })}
-        </Button>
       </div>
     );
   }
@@ -366,7 +332,7 @@ export function SkillImportPanel({
   const { t } = useTranslation();
   const pending =
     preparation.state === "hasError" ? (
-      <SkillImportPromptFailed retry$={signals.retry$} />
+      <SkillImportPromptFailed />
     ) : (
       <SkillImportPromptPending />
     );

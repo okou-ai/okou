@@ -2,9 +2,9 @@ import type {
   TelegramBot,
   TelegramLinkStatusResponse,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
-import { useGet, useLoadable, useSet, type Loadable } from "ccstate-react";
+import { useGet, useLoadable, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { BrandTelegram, Button, buttonVariants, cn } from "@okouai/ui";
+import { BrandTelegram, buttonVariants, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { searchParams$ } from "../../signals/route.ts";
@@ -12,7 +12,6 @@ import { ROUTES } from "../../signals/route-paths.ts";
 import { onboardingStatus$ } from "../../signals/okou-page/onboarding.ts";
 import {
   connectTelegramAccount$,
-  refreshTelegramConnection$,
   telegramConnectLinkStatus$,
 } from "../../signals/okou-page/telegram-connect-signals.ts";
 import { parseTelegramConnectParams } from "../../signals/okou-page/telegram-connect-params.ts";
@@ -42,23 +41,6 @@ function TelegramMark({ state }: { state?: MarkState }) {
         />
       }
     />
-  );
-}
-
-function RetryButton() {
-  const { t } = useTranslation();
-  const refresh = useSet(refreshTelegramConnection$);
-  return (
-    <Button
-      className="w-full"
-      onClick={() => {
-        refresh();
-      }}
-    >
-      {t(($) => {
-        return $.connectors.actions.tryAgain;
-      })}
-    </Button>
   );
 }
 
@@ -302,14 +284,6 @@ export function TelegramConnectPage() {
       <PageShell>
         <TelegramMark state="error" />
         <CenterText title={parsed.error.title} body={parsed.error.message} />
-        <a
-          href={ROUTES.settingsTelegram}
-          className={cn(buttonVariants(), "w-full")}
-        >
-          {t(($) => {
-            return $.connectors.actions.tryAgain;
-          })}
-        </a>
         <SettingsBackLink />
       </PageShell>
     );
@@ -347,7 +321,6 @@ export function TelegramConnectPage() {
             return $.connectors.providerSettings.telegram.loadError;
           })}
         />
-        <RetryButton />
         <SettingsBackLink />
       </PageShell>
     );

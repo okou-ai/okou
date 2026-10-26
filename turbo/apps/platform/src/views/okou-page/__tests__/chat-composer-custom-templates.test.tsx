@@ -1322,29 +1322,17 @@ test("Custom is a document filter beside All and the built-in purposes", async (
   ).not.toBeInTheDocument();
 });
 
-test("A failed custom catalog leaves built-in templates available and can retry", async () => {
-  let fail = true;
+test("A failed custom catalog leaves built-in templates available", async () => {
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-    return fail
-      ? respond(500, {
-          error: { code: "INTERNAL_SERVER_ERROR", message: "Unavailable" },
-        })
-      : respond(200, [customTemplate()]);
+    return respond(500, {
+      error: { code: "INTERNAL_SERVER_ERROR", message: "Unavailable" },
+    });
   });
   const { dialog } = await openCustomPanel();
   const custom = within(dialog).getByRole("region", { name: "Custom" });
-  const retry = await waitFor(() => {
-    const button = buttonByName("Try again", custom);
-    expect(button).toBeTruthy();
-    return button!;
-  });
+  await within(custom).findByText("Couldn't load templates.");
   expect(
     within(dialog).getByRole("region", { name: "Built-in" }),
   ).toBeInTheDocument();
   expect(within(custom).getByLabelText("Import your own deck")).toBeEnabled();
-  fail = false;
-  click(retry);
-  await expect(
-    within(custom).findByText("Q3 board review"),
-  ).resolves.toBeInTheDocument();
 });

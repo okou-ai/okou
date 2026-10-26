@@ -99,11 +99,6 @@ export const tailscaleConfigs$ = computed(async (get) => {
   return result.body.configs;
 });
 
-export const retryTailscale$ = command(({ set }, signal: AbortSignal) => {
-  signal.throwIfAborted();
-  set(invalidateTailscale$);
-});
-
 const catchUpTailscale$ = command(({ set }) => {
   set(invalidateTailscale$);
   return false;
@@ -381,7 +376,6 @@ export const reviewTailscale$ = command(
       latest.scope !== reviewed.scope ||
       latest.scope !== dialog.config?.scope
     ) {
-      set(invalidateTailscale$);
       throw new ApiError(
         "Tailscale revision changed",
         TAILSCALE_ERROR_CODES.REVISION_CONFLICT,
@@ -399,17 +393,6 @@ export const reviewTailscale$ = command(
     set(invalidateTailscale$);
   },
 );
-export const refreshTailscaleReview$ = command(
-  ({ set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    set(acknowledged$, null);
-    set(previewReload$, (value) => {
-      return value + 1;
-    });
-    set(invalidateTailscale$);
-  },
-);
-
 function formText(form: HTMLFormElement, name: string): string {
   const field = form.elements.namedItem(name);
   if (!(
@@ -444,8 +427,10 @@ const createTailscale$ = command(
     if (clients.identity !== dialog.identity || get(dialog$) !== dialog) {
       return false;
     }
-    const attempt = get(attempt$);
-    const id = attempt?.dialog === dialog ? attempt.id : crypto.randomUUID();
+    if (get(tailscaleSaveUncertain$)) {
+      return false;
+    }
+    const id = crypto.randomUUID();
     const parsed = tailscaleContract.create.body.safeParse({
       id,
       scope: get(scope$),
@@ -470,7 +455,6 @@ const createTailscale$ = command(
     if (result.status !== 500) {
       set(attempt$, null);
     }
-    set(invalidateTailscale$);
     throw new ApiError(
       "Tailscale request failed",
       result.status >= 500 ? "uncertain" : result.body.error.code,
@@ -482,7 +466,7 @@ const createTailscale$ = command(
 
 const editTailscale$ = command(
   async (
-    { get, set },
+    { get },
     dialog: TailscaleDialogState,
     form: HTMLFormElement,
     signal: AbortSignal,
@@ -536,7 +520,6 @@ const editTailscale$ = command(
     if (result.status === 200) {
       return true;
     }
-    set(invalidateTailscale$);
     throw new ApiError(
       "Tailscale request failed",
       result.status >= 500 ? "uncertain" : result.body.error.code,
@@ -642,7 +625,6 @@ const confirmTailscaleChange$ = command(
     if (result.status === 200 || result.status === 204) {
       return true;
     }
-    set(invalidateTailscale$);
     throw new ApiError(
       "Tailscale request failed",
       result.status >= 500 ? "uncertain" : result.body.error.code,
@@ -694,7 +676,6 @@ export const saveTailscale$ = command(
       );
       signal.throwIfAborted();
       if (!config) {
-        set(invalidateTailscale$);
         return;
       }
       if (get(dialog$) !== dialog) {
@@ -740,8 +721,7 @@ export const actOnTailscaleDialog$ = command(
           readonly form: HTMLFormElement;
           readonly save$: typeof saveTailscale$;
         }
-      | { readonly kind: "review"; readonly config: TailscaleConfig }
-      | { readonly kind: "refresh" },
+      | { readonly kind: "review"; readonly config: TailscaleConfig },
     signal: AbortSignal,
   ) => {
     switch (action.kind) {
@@ -750,9 +730,6 @@ export const actOnTailscaleDialog$ = command(
       }
       case "review": {
         return await set(reviewTailscale$, action.config, signal);
-      }
-      case "refresh": {
-        return set(refreshTailscaleReview$, signal);
       }
     }
   },

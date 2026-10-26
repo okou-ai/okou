@@ -611,7 +611,7 @@ describe("thread email manager", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("keeps a failed initial list read accessible and retries from the manager", async () => {
+  it("keeps a failed initial list read accessible", async () => {
     const fixture = installMails();
     fixture.listing.fail = true;
     await openChat(true, false);
@@ -619,12 +619,9 @@ describe("thread email manager", () => {
     const list = await openList();
     await within(list).findByRole("alert");
     expect(within(list).getByText("Unable to load emails")).toBeInTheDocument();
-    fixture.listing.fail = false;
-    click(await button("Try again", list));
-    await within(list).findByLabelText("Select email: Proposal 1");
   });
 
-  it("returns to the list while its read is pending and exposes failure recovery", async () => {
+  it("returns to the list while its read is pending and displays its failure", async () => {
     const fixture = installMails(2);
     await openChat();
     const list = await openList();
@@ -641,10 +638,6 @@ describe("thread email manager", () => {
     );
     releaseList.resolve();
     await within(returned).findByRole("alert");
-    fixture.listing.fail = false;
-    fixture.listing.wait = null;
-    click(await button("Try again", returned));
-    await within(returned).findByLabelText("Select email: Proposal 2");
   });
 
   it("sends only drafts, retains failures for retry, and never resends successes", async () => {

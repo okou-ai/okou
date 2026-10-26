@@ -79,7 +79,7 @@ export function DeviceAuthLoadingContent({
   );
 }
 
-export function DeviceAuthRetryContent({
+export function DeviceAuthStartContent({
   message,
   testId,
   label,

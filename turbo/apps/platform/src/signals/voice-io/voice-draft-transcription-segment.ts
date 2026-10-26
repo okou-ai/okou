@@ -190,7 +190,7 @@ export const transcribeVoiceDraftSegment$ = command(
       ? await predecessor
       : { kind: "transcribed" as const, transcript: "" };
     signal.throwIfAborted();
-    // An exhausted quota stops the rest of the chain until an explicit retry.
+    // An exhausted quota stops the rest of this recording’s transcription chain.
     if (!previous) {
       return;
     }
