@@ -161,6 +161,50 @@ final class NotificationTests: XCTestCase {
     await refreshing.value
   }
 
+  func testWarmTapOpensAndReselectsTheCurrentChatAndReportsUnavailableTargets() async throws {
+    let identity = try AuthenticationHTTPFixture()
+    addTeardownBlock { await identity.close() }
+    let authentication = try await identity.authentication()
+    addTeardownBlock { try? await authentication.signOut() }
+    await authentication.refresh()
+    let service = notifications()
+    let chat = ChatLinkFixture()
+    let store = chat.workspace()
+    defer { store.close() }
+    await store.refresh()
+    store.selectChat(ChatLinkFixture.homeID)
+    let userID = identity.state.withLock { $0.userID }
+    await service.update(
+      workspace: NotificationWorkspace(
+        scopeID: try XCTUnwrap(authentication.scopeID), userID: userID, workspaceID: "org_one",
+        client: chat.http.client, sync: ChatSync(client: chat.http.client)))
+    let destination = try XCTUnwrap(
+      NotificationDestination(
+        userInfo: payload(
+          user: userID, workspace: "org_one", thread: ChatLinkFixture.sourceID,
+          run: ChatLinkFixture.runID(1))))
+
+    // Reselecting the current chat is still a completed notification navigation.
+    for _ in 0..<2 {
+      service.receiveTap(destination)
+      let opened = await service.openPending(authentication: authentication, store: store)
+      XCTAssertTrue(opened)
+      XCTAssertEqual(store.selectedThreadID, ChatLinkFixture.sourceID)
+      XCTAssertEqual(
+        store.selectedConversation?.readingPosition?.messageID, ChatLinkFixture.eventID(1))
+    }
+
+    service.receiveTap(
+      try XCTUnwrap(
+        NotificationDestination(
+          userInfo: payload(
+            user: userID, workspace: "org_one", thread: UUID().uuidString.lowercased()))))
+    let unavailable = await service.openPending(authentication: authentication, store: store)
+    XCTAssertFalse(unavailable)
+    XCTAssertEqual(store.selectedThreadID, ChatLinkFixture.sourceID)
+    XCTAssertEqual(store.chatLinkError, "This chat is no longer available in this workspace.")
+  }
+
   func testColdTapWaitsForMembershipAndWorkspaceStartupAndRejectsAnotherAccount() async throws {
     let identity = try AuthenticationHTTPFixture()
     addTeardownBlock { await identity.close() }
@@ -181,12 +225,14 @@ final class NotificationTests: XCTestCase {
           user: userID, workspace: "org_two", thread: ChatLinkFixture.sourceID,
           run: ChatLinkFixture.runID(1))))
     service.receiveTap(destination)
-    await service.openPending(authentication: authentication, store: initial)
+    let beforeMembership = await service.openPending(authentication: authentication, store: initial)
+    XCTAssertFalse(beforeMembership)
     XCTAssertNil(initial.selectedThreadID)
     await authentication.refresh()
     XCTAssertNil(authentication.activeWorkspaceID)
     service.preparePending(authentication: authentication)
-    await service.openPending(authentication: authentication, store: initial)
+    let beforeWorkspace = await service.openPending(authentication: authentication, store: initial)
+    XCTAssertFalse(beforeWorkspace)
     XCTAssertEqual(authentication.activeWorkspaceID, "org_two")
     XCTAssertNil(initial.selectedThreadID)
     let target = chat.workspace()
@@ -195,18 +241,21 @@ final class NotificationTests: XCTestCase {
       workspace: NotificationWorkspace(
         scopeID: "second", userID: userID, workspaceID: "org_two", client: identity.api.client,
         sync: ChatSync(client: identity.api.client)))
-    await service.openPending(authentication: authentication, store: target)
+    let opened = await service.openPending(authentication: authentication, store: target)
+    XCTAssertTrue(opened)
     XCTAssertEqual(target.selectedThreadID, ChatLinkFixture.sourceID)
     service.receiveTap(
       try XCTUnwrap(
         NotificationDestination(userInfo: payload(user: "different_account", workspace: "org_one")))
     )
-    await service.openPending(authentication: authentication, store: target)
+    let anotherAccount = await service.openPending(authentication: authentication, store: target)
+    XCTAssertFalse(anotherAccount)
     XCTAssertEqual(authentication.activeWorkspaceID, "org_two")
     service.receiveTap(
       try XCTUnwrap(
         NotificationDestination(userInfo: payload(user: userID, workspace: "org_unavailable"))))
-    await service.openPending(authentication: authentication, store: target)
+    let unavailableWorkspace = await service.openPending(authentication: authentication, store: target)
+    XCTAssertFalse(unavailableWorkspace)
     XCTAssertEqual(authentication.activeWorkspaceID, "org_two")
   }
 
