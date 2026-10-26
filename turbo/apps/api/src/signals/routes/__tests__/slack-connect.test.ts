@@ -79,7 +79,7 @@ describe("GET /api/integrations/slack/connect", () => {
     });
   });
 
-  it("reports when the requested Slack account belongs to another Okou user", async () => {
+  it("offers OAuth before resolving another user's Slack account ownership", async () => {
     const fixture = await slackOrgs.installOrg({ withConnection: true });
     const currentUserId = `user_${randomUUID()}`;
     mocks.clerk.session(currentUserId, fixture.orgId, "org:admin");
@@ -101,11 +101,11 @@ describe("GET /api/integrations/slack/connect", () => {
     expect(response.body).toStrictEqual({
       isConnected: false,
       isAdmin: true,
-      linkStatus: { kind: "slack_account_in_use" },
+      linkStatus: { kind: "connect" },
     });
   });
 
-  it("reports when the requested Slack workspace belongs to another organization", async () => {
+  it("reports the identity switch when another workspace belongs to another organization", async () => {
     const current = await slackOrgs.installOrg({ withConnection: true });
     const requested = await slackOrgs.installOrg({ withConnection: true });
     mocks.clerk.session(current.userId, current.orgId, "org:admin");
@@ -130,8 +130,9 @@ describe("GET /api/integrations/slack/connect", () => {
       workspaceName: current.slackWorkspaceName,
       defaultAgentName: null,
       linkStatus: {
-        kind: "workspace_mismatch",
-        currentWorkspaceName: current.slackWorkspaceName,
+        kind: "slack_account_mismatch",
+        currentSlackUserId: current.slackUserId,
+        requestedSlackUserId: requested.slackUserId,
       },
     });
   });
@@ -217,7 +218,7 @@ describe("GET /api/integrations/slack/connect", () => {
         isConnected: false,
         isAdmin: role === "org:admin",
         linkStatus: {
-          kind: role === "org:admin" ? "connect" : "workspace_mismatch",
+          kind: "connect",
         },
       });
     },
@@ -248,13 +249,14 @@ describe("GET /api/integrations/slack/connect", () => {
       workspaceName: current.slackWorkspaceName,
       defaultAgentName: null,
       linkStatus: {
-        kind: "workspace_mismatch",
-        currentWorkspaceName: current.slackWorkspaceName,
+        kind: "slack_account_mismatch",
+        currentSlackUserId: current.slackUserId,
+        requestedSlackUserId: requested.slackUserId,
       },
     });
   });
 
-  it("reports a missing workspace without inventing a current workspace name", async () => {
+  it("offers identity OAuth without requiring an installed workspace", async () => {
     mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     const client = setupApp({ context, routes: slackConnectRoutes })(
       slackConnectContract,
@@ -274,7 +276,7 @@ describe("GET /api/integrations/slack/connect", () => {
     expect(response.body).toStrictEqual({
       isConnected: false,
       isAdmin: true,
-      linkStatus: { kind: "workspace_mismatch" },
+      linkStatus: { kind: "connect" },
     });
   });
 
@@ -341,7 +343,7 @@ describe("POST /api/integrations/slack/connect", () => {
     });
   });
 
-  it("returns 404 when workspace does not exist", async () => {
+  it("starts identity OAuth when the workspace has no installation", async () => {
     const fixture = await slackOrgs.installOrg();
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
@@ -357,15 +359,12 @@ describe("POST /api/integrations/slack/connect", () => {
           slackUserId: fixture.slackUserId,
         },
       }),
-      [404],
+      [202],
     );
 
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Slack workspace not found",
-        code: "NOT_FOUND",
-      },
-    });
+    expect(new URL(response.body.authorizationUrl).pathname).toBe(
+      "/api/slack/oauth/connect",
+    );
   });
 
   it("member starts user OAuth before connecting to a bound workspace", async () => {
@@ -399,7 +398,7 @@ describe("POST /api/integrations/slack/connect", () => {
     expect(status.body.isConnected).toBeFalsy();
   });
 
-  it("returns 403 when non-admin tries to connect unbound workspace", async () => {
+  it("starts identity OAuth for a member of an unbound workspace", async () => {
     const fixture = await slackOrgs.installOrg({ installation: "unbound" });
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
 
@@ -415,14 +414,15 @@ describe("POST /api/integrations/slack/connect", () => {
           slackUserId: fixture.slackUserId,
         },
       }),
-      [403],
+      [202],
     );
 
-    expect(response.body.error.code).toBe("FORBIDDEN");
-    expect(response.body.error.message).toContain("Only admins");
+    expect(new URL(response.body.authorizationUrl).pathname).toBe(
+      "/api/slack/oauth/connect",
+    );
   });
 
-  it("returns 404 when workspace is bound to a different org", async () => {
+  it("starts identity OAuth through another organization's installation", async () => {
     const fixture = await slackOrgs.installOrg({ installation: "other-org" });
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
@@ -438,12 +438,12 @@ describe("POST /api/integrations/slack/connect", () => {
           slackUserId: fixture.slackUserId,
         },
       }),
-      [404],
+      [202],
     );
 
-    expect(response.body).toStrictEqual({
-      error: { message: "Slack workspace not found", code: "NOT_FOUND" },
-    });
+    expect(new URL(response.body.authorizationUrl).pathname).toBe(
+      "/api/slack/oauth/connect",
+    );
   });
 });
 

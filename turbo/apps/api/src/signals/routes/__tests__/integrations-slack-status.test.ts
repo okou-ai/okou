@@ -27,68 +27,22 @@ describe("GET /api/integrations/slack", () => {
   });
 
   async function installSlackViaOAuth(args: {
-    readonly apiOrigin: string;
     readonly botScopes?: string;
     readonly installerUserId: string;
     readonly orgId: string;
     readonly slackWorkspaceId: string;
   }): Promise<{ readonly orgId: string; readonly slackWorkspaceId: string }> {
-    mocks.clerk.session(args.installerUserId, args.orgId, "org:admin");
-    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-      data: [
-        {
-          organization: { id: args.orgId },
-          role: "org:admin",
-          createdAt: 1,
-        },
-      ],
-    });
-
-    const oauthClient = setupApp({
-      baseUrl: args.apiOrigin,
-      context,
-      routes: slackOauthRoutes,
-    })(slackOauthContract);
-    const started = await accept(
-      oauthClient.install({
-        query: {},
-        extraHeaders: { authorization: "Bearer clerk-session" },
-      }),
-      [307],
-    );
-    const authorizationUrl = new URL(started.headers.get("location") ?? "");
-    const state = authorizationUrl.searchParams.get("state");
-    if (!state) {
-      throw new Error("Expected Slack OAuth install state");
-    }
-
-    context.mocks.slack.oauth.v2.access.mockResolvedValueOnce({
-      ok: true,
-      access_token: `xoxb-${args.slackWorkspaceId}`,
-      bot_user_id: `B_${args.slackWorkspaceId}`,
-      team: {
-        id: args.slackWorkspaceId,
-        name: `Workspace ${args.slackWorkspaceId}`,
-      },
-      authed_user: { id: `U_${args.slackWorkspaceId}` },
-      scope: args.botScopes ?? authorizationUrl.searchParams.get("scope") ?? "",
-    });
-    await accept(
-      oauthClient.callback({
-        extraHeaders: { authorization: "Bearer clerk-session" },
-        query: { code: `code-${args.slackWorkspaceId}`, state },
-      }),
-      [307],
-    );
-    await integrations.connectSlackUser(
+    await integrations.installSlackWorkspace(
       integrations.user({
         userId: args.installerUserId,
         orgId: args.orgId,
         orgRole: "org:admin",
       }),
       {
-        workspaceId: args.slackWorkspaceId,
-        slackUserId: `U_${args.slackWorkspaceId}`,
+        teamId: args.slackWorkspaceId,
+        teamName: `Workspace ${args.slackWorkspaceId}`,
+        installerSlackUserId: `U_${args.slackWorkspaceId}`,
+        ...(args.botScopes === undefined ? {} : { botScopes: args.botScopes }),
       },
     );
 
@@ -163,7 +117,6 @@ describe("GET /api/integrations/slack", () => {
     const slackWorkspaceId = `T_${randomUUID()}`;
     await track(
       installSlackViaOAuth({
-        apiOrigin: "https://api.okou.ai",
         installerUserId: adminUserId,
         orgId,
         slackWorkspaceId,
@@ -210,9 +163,9 @@ describe("GET /api/integrations/slack", () => {
       connectUrl.toString(),
       orgId,
     );
-    expect(connectAuthorization.searchParams.get("team")).toBe(
-      slackWorkspaceId,
-    );
+    expect(
+      connectAuthorization.searchParams.get("user_scope")?.split(","),
+    ).toContain("users:read");
 
     mocks.clerk.session(adminUserId, otherOrgId, "org:admin");
     const uninstalled = await accept(firstClient.getStatus(request), [200]);
@@ -221,7 +174,7 @@ describe("GET /api/integrations/slack", () => {
       isInstalled: false,
       isAdmin: true,
       installUrl: expect.any(String),
-      connectUrl: null,
+      connectUrl: expect.any(String),
     });
     const installUrl = new URL(uninstalled.body.installUrl!);
     expect(`${installUrl.origin}${installUrl.pathname}`).toBe(
@@ -238,7 +191,6 @@ describe("GET /api/integrations/slack", () => {
     const userId = `user_${randomUUID()}`;
     await track(
       installSlackViaOAuth({
-        apiOrigin: "https://api.okou.ai",
         botScopes: "chat:write",
         installerUserId: `user_${randomUUID()}`,
         orgId,
@@ -277,7 +229,7 @@ describe("GET /api/integrations/slack", () => {
   it("returns isConnected=false when user has no connection", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
-    const fixture = await slackOrgs.installForOrg({ orgId });
+    await slackOrgs.installForOrg({ orgId });
     mocks.clerk.session(userId, orgId);
 
     const client = setupApp({ context, routes: integrationsSlackRoutes })(
@@ -303,9 +255,9 @@ describe("GET /api/integrations/slack", () => {
     expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
       "https://slack.com/oauth/v2/authorize",
     );
-    expect(authorizationUrl.searchParams.get("team")).toBe(
-      fixture.slackWorkspaceId,
-    );
+    expect(
+      authorizationUrl.searchParams.get("user_scope")?.split(","),
+    ).toContain("users:read");
     expect(authorizationUrl.searchParams.has("user_scope")).toBeTruthy();
   });
 
@@ -371,7 +323,6 @@ describe("GET /api/integrations/slack", () => {
     const slackWorkspaceId = `T_${randomUUID()}`;
     await track(
       installSlackViaOAuth({
-        apiOrigin: "https://api.okou.ai",
         installerUserId,
         orgId,
         slackWorkspaceId,
@@ -445,7 +396,6 @@ describe("GET /api/integrations/slack", () => {
     const slackWorkspaceId = `T_${randomUUID()}`;
     await track(
       installSlackViaOAuth({
-        apiOrigin: "https://api.okou.ai",
         botScopes: "chat:write",
         installerUserId: userId,
         orgId,

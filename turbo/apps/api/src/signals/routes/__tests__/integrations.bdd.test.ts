@@ -41,6 +41,7 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
   agentPhoneBddWebhookSecret,
   createBddIntegrationApi,
+  mockSlackIdentityLookup,
   telegramLoginAuth,
 } from "./helpers/api-bdd-integrations";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
@@ -1305,7 +1306,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
     );
     expect(missingChannels.body).toStrictEqual({
       error: {
-        message: "No Slack installation found for this org",
+        message: "No Slack account connected for this user",
         code: "NOT_FOUND",
       },
     });
@@ -1512,7 +1513,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
     expect(connectedMemberStatus.body).toMatchObject({
       isConnected: true,
       isAdmin: false,
-      workspaceName,
+      workspaceName: `BDD Slack App ${workspaceId}`,
     });
 
     const disconnected = await integrations.requestSlackDisconnect(
@@ -1565,7 +1566,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
     const adminAfterUninstall =
       await integrations.requestSlackIntegrationStatus(admin, [200]);
     expect(adminAfterUninstall.body).toMatchObject({
-      isConnected: false,
+      isConnected: true,
       isInstalled: false,
       isAdmin: true,
     });
@@ -2585,7 +2586,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
         "The messages below are from a Slack conversation. When responding:\n" +
         "- Messages closer to RELATIVE_INDEX 0 are more recent — prioritize them.\n\n" +
         "---\n\n- RELATIVE_INDEX: -1\n" +
-        `- SENDER: {id: ${slackUserId}, name: Slack User, email: slack@example.com, timezone: UTC}\n\n` +
+        `- SENDER: {id: ${slackUserId}, name: Slack User, email: ${actor.email}, timezone: UTC}\n\n` +
         "This article is still broken: https://example.com/article\n" +
         "[Slack file] article.png (image/png)\n   [ID] F_ARTICLE_SCREENSHOT\n\n---",
     );
@@ -2616,6 +2617,14 @@ describe("INT-01: Slack app deep webhook flows", () => {
         installerSlackUserId: slackUserId,
       },
     );
+    for (const userId of [mentionedSlackUserId, secondMentionedSlackUserId]) {
+      mockSlackIdentityLookup(context, {
+        id: userId,
+        team_id: teamId,
+        real_name: "Slack User",
+        profile: { display_name: "Slack User" },
+      });
+    }
     if (!actor.orgId) {
       throw new Error("Expected organization");
     }
@@ -4883,7 +4892,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(responseJson).toContain("connect");
   });
 
-  it("refreshes Slack App Home, welcomes once, and cleans up lifecycle events", async () => {
+  it("keeps the disabled-identity App Home, welcome and lifecycle behavior", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
@@ -4891,6 +4900,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await bdd.readOnboardingStatus(actor);
     await bdd.completeOnboarding(actor);
     const slackUserId = uniqueSlackUserId();
+    await integrations.enableSlackWorkspaceIdentity(actor, false);
     const install = await integrations.installSlackWorkspace(null);
     await integrations.connectSlackUser(actor, {
       workspaceId: install.teamId,
@@ -5177,13 +5187,25 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await runs.updateUserModelPreference(actor, "gpt-6-astra");
     await bdd.readOnboardingStatus(actor);
     const slackUserId = uniqueSlackUserId();
-    const { teamId } = await integrations.installSlackWorkspace(actor, {
-      installerSlackUserId: slackUserId,
-    });
+    const { teamId, botUserId } = await integrations.installSlackWorkspace(
+      actor,
+      {
+        installerSlackUserId: slackUserId,
+      },
+    );
     integrations.clearSlackCallHistory();
 
     const channelId = "C_BDD_FAST_FOOTER";
     mockSharedSlackConversations([channelId]);
+    server.use(
+      http.get("https://slack.com/api/conversations.members", () => {
+        return HttpResponse.json({
+          ok: true,
+          members: [slackUserId, botUserId],
+          response_metadata: { next_cursor: "" },
+        });
+      }),
+    );
     const threadTs = "3999.000100";
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
