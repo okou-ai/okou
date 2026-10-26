@@ -60,6 +60,7 @@ import { validateOfficialAutomationBindingSchema } from "./test-official-automat
 import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
 import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
 import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage-permanent";
+import { validatePermanentBrowserOwnerStorage } from "./test-browser-owner-storage-permanent";
 import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
 import { validatePermanentStorageLineage } from "./test-storage-lineage-permanent";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
@@ -2836,6 +2837,13 @@ async function main(): Promise<void> {
     await validatePiMemoryRetirement(dbUrl1);
     await validateStripeInvoicePaidRetirement(dbUrl1);
     await validateManagedDataRetirement(dbUrl1);
+    console.log("=== Managed Data retirement operator CLI ===");
+    console.log(
+      execCommand(
+        "node --import tsx scripts/migrations/026-managed-data-retirement/test-retire.ts",
+        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
+      ),
+    );
     console.log("=== Workflow attachment migration CLI ===");
     console.log(
       execCommand(
@@ -2865,6 +2873,7 @@ async function main(): Promise<void> {
     await validatePermanentPlatformGenerationReceipts(dbUrl1);
     await validateChatRelations(dbUrl1);
     await validatePermanentRunnerStateStorage(dbUrl1);
+    await validatePermanentBrowserOwnerStorage(dbUrl1);
     await validatePermanentModelCatalogConstraints(dbUrl1);
     await validateCanonicalModelSelections(dbUrl1);
     await validateModelCatalogSeed(dbUrl1);
@@ -2909,6 +2918,7 @@ async function main(): Promise<void> {
     await validatePermanentPlatformGenerationReceipts(dbUrl2);
     await validateChatRelations(dbUrl2);
     await validatePermanentRunnerStateStorage(dbUrl2);
+    await validatePermanentBrowserOwnerStorage(dbUrl2);
     await validatePermanentModelCatalogConstraints(dbUrl2);
     await validateCanonicalModelSelections(dbUrl2);
     await validateXResourceUsageSchema(dbUrl2);

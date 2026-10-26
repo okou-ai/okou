@@ -2,6 +2,7 @@ import { command, computed, state } from "ccstate";
 import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorPermissionBundleResponse,
+  type CustomConnectorResponse,
   customConnectorByIdContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
@@ -72,6 +73,44 @@ export const openCustomConnectorPermissions$ = command(
       initialPermissionNames: [...args.permissionNames],
       permissionNames: [...args.permissionNames],
     });
+  },
+);
+
+export const prepareCustomConnectorPermissions$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly surface: CustomConnectorPermissionSurface;
+      readonly agentId: string;
+      readonly connector: CustomConnectorResponse;
+      readonly initiallyAuthorized: boolean;
+      readonly permissionNames: readonly string[];
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const attemptSignal = set(resetPermissionSignal$, signal);
+    if (
+      !args.initiallyAuthorized &&
+      !isIntegrationManagedCustomConnector(args.connector)
+    ) {
+      await requireCustomConnectorAccountReady(
+        get(apiClient$),
+        args.connector.id,
+        attemptSignal,
+      );
+    }
+    attemptSignal.throwIfAborted();
+    set(
+      openCustomConnectorPermissions$,
+      {
+        surface: args.surface,
+        agentId: args.agentId,
+        connectorId: args.connector.id,
+        initiallyAuthorized: args.initiallyAuthorized,
+        permissionNames: args.permissionNames,
+      },
+      signal,
+    );
   },
 );
 

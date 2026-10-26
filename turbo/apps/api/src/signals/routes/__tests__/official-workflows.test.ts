@@ -117,6 +117,7 @@ import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
+import { OFFICIAL_WORKFLOW_SOURCE_CATALOG } from "../official-workflow-catalog-input";
 import {
   activeDefinition,
   installCatalogStorageFixture,
@@ -133,16 +134,25 @@ const chat = createChatFilesBddApi(context);
 const mocks = createRouteMocks(context);
 const CRON_SECRET = "official-workflow-installation-cron-secret";
 function createCatalogPublicationFixture() {
-  let published = false;
+  let publishedNames = new Set<string>();
   return {
     reset() {
-      published = false;
+      publishedNames = new Set();
     },
-    hasProactiveDefinition() {
-      return published;
+    hasPublishedDefinition(name: string) {
+      return publishedNames.has(name);
     },
-    recordPublished(outcome: string) {
-      published = outcome !== "rejected";
+    recordPublished(
+      outcome: string,
+      definitions: readonly { readonly name: string }[],
+    ) {
+      publishedNames = new Set(
+        outcome === "rejected"
+          ? []
+          : definitions.map(({ name }) => {
+              return name;
+            }),
+      );
     },
   };
 }
@@ -167,27 +177,28 @@ function catalog(
     schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
     definitions: [
       ...definitions,
-      ...(catalogPublication.hasProactiveDefinition()
-        ? [
-            "agent-suggestions",
-            "proactive-action",
-            "proactive-jobs",
-            "proactive-learning",
-            "proactive-planning",
-          ]
-            .filter((name) => {
-              return !definitions.some((definition) => {
-                return definition.name === name;
-              });
+      ...[
+        "agent-suggestions",
+        "proactive-action",
+        "proactive-jobs",
+        "proactive-learning",
+        "proactive-planning",
+      ]
+        .filter((name) => {
+          return (
+            catalogPublication.hasPublishedDefinition(name) &&
+            !definitions.some((definition) => {
+              return definition.name === name;
             })
-            .map((name) => {
-              return {
-                name,
-                lifecycle: "retired" as const,
-                presentation: { category: "productivity" },
-              };
-            })
-        : []),
+          );
+        })
+        .map((name) => {
+          return {
+            name,
+            lifecycle: "retired" as const,
+            presentation: { category: "productivity" },
+          };
+        }),
     ],
   };
 }
@@ -225,23 +236,19 @@ function connectorDoctorDefinition(): ActiveDefinition {
   ]);
 }
 
-async function syncDeployedCatalog() {
-  await syncCatalog(
-    catalog([
-      connectorDoctorDefinition(),
-      activeDefinition("proactive-action", [
-        {
-          key: "hourly-check",
-          parameters: [],
-          desiredState: {
-            kind: "schedule",
-            schedule: { type: "cron", cronExpression: "0 * * * *" },
-          },
-        },
-      ]),
-    ]),
-  );
-  return await syncSourceCatalog();
+async function syncActiveSourceCatalog() {
+  const source = {
+    ...OFFICIAL_WORKFLOW_SOURCE_CATALOG,
+    definitions: OFFICIAL_WORKFLOW_SOURCE_CATALOG.definitions.filter(
+      ({ lifecycle }) => {
+        return lifecycle === "active";
+      },
+    ),
+  };
+  const result = await syncCatalog(source);
+  expect(["accepted", "unchanged"]).toContain(result.body.outcome);
+  catalogPublication.recordPublished(result.body.outcome, source.definitions);
+  return result;
 }
 
 /** Publishes the deployed source catalog through its production cron route. */
@@ -252,7 +259,10 @@ async function syncSourceCatalog() {
     ).sync({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
     [200],
   );
-  catalogPublication.recordPublished(result.body.outcome);
+  catalogPublication.recordPublished(
+    result.body.outcome,
+    OFFICIAL_WORKFLOW_SOURCE_CATALOG.definitions,
+  );
   return result;
 }
 
@@ -529,7 +539,7 @@ describe("Proactive nightly workflows", () => {
     const { actor } = await prepareBriefMember({
       bootstrap: false,
     });
-    await runs.grantProEntitlement(actor);
+    const { defaultAgentId } = await runs.grantProEntitlement(actor);
     await initializeBriefMember(actor, "Asia/Shanghai");
     if (!actor.orgId) {
       throw new Error("Expected organization");
@@ -546,7 +556,7 @@ describe("Proactive nightly workflows", () => {
     runs.acceptTelemetryIngest();
     await selectPersonalDefaultModel(actor);
     await runs.heartbeatRunner(runnerGroup);
-    return { actor, runnerGroup };
+    return { actor, runnerGroup, defaultAgentId };
   }
 
   async function schedule(actor: ApiTestUser, definition: string) {
@@ -590,8 +600,7 @@ describe("Proactive nightly workflows", () => {
       routes: workflowAutomationsRoutes,
       isolatePg: true,
     });
-    const { actor, runnerGroup } = await nightlyMember();
-    const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+    const { actor, defaultAgentId } = await nightlyMember();
     if (!defaultAgentId) {
       throw new Error("Expected primary Agent");
     }
@@ -618,7 +627,6 @@ describe("Proactive nightly workflows", () => {
       )
     ).body;
     const started = await fireOfficialSchedule(actor, automation);
-    await runs.heartbeatRunner(runnerGroup);
     const claim = await runs.claimRunnerJob(started.runId);
     expect(claim.prompt).toContain("proactive-learning");
     expect(
@@ -1977,7 +1985,7 @@ async function prepareBriefMember({
   // Catalog publication and organization bootstrap own independent resources.
   // Both must finish before preference initialization can install the Brief.
   await Promise.all([
-    catalogAvailable ? syncDeployedCatalog() : Promise.resolve(),
+    catalogAvailable ? syncActiveSourceCatalog() : Promise.resolve(),
     bootstrap
       ? deliverClerkOrganizationCreated(actor, createdAt)
       : Promise.resolve(),
@@ -1989,18 +1997,12 @@ describe("Official Workflow failure recovery", () => {
   async function failScheduleOccurrence(
     actor: ApiTestUser,
     automation: WorkflowAutomationSummary,
-    runnerGroup: ReturnType<typeof runs.configureRunnerGroup>,
   ) {
     if (!automation.nextRunAt) {
       throw new Error("Expected the next schedule occurrence");
     }
     const scheduledAt = new Date(automation.nextRunAt).getTime();
-    // The scheduler and heartbeat own separate clock scopes. Complete both
-    // before claiming the same genuine scheduled Run.
-    const [fired] = await Promise.all([
-      fireOfficialSchedule(actor, automation),
-      runs.heartbeatRunner(runnerGroup),
-    ]);
+    const fired = await fireOfficialSchedule(actor, automation);
     mockNow(scheduledAt + 1000);
     const claim = await runs.claimRunnerJob(fired.runId);
     await webhooks.requestAgentComplete(
@@ -2073,8 +2075,10 @@ describe("Official Workflow failure recovery", () => {
     }
     const runnerGroup = runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
+    // One live Runner handles all three sequential failed occurrences.
+    await runs.heartbeatRunner(runnerGroup);
     for (let failure = 0; failure < 3; failure += 1) {
-      automation = await failScheduleOccurrence(actor, automation, runnerGroup);
+      automation = await failScheduleOccurrence(actor, automation);
     }
     expect(automation).toMatchObject({
       enabled: false,
@@ -2295,8 +2299,9 @@ describe("Official Workflow failure recovery", () => {
     ).body;
     const runnerGroup = runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
+    await runs.heartbeatRunner(runnerGroup);
     for (let failure = 0; failure < 3; failure += 1) {
-      automation = await failScheduleOccurrence(actor, automation, runnerGroup);
+      automation = await failScheduleOccurrence(actor, automation);
     }
     expect(automation).toMatchObject({ enabled: false, nextRunAt: null });
     mockNow(new Date("2030-01-02T00:00:00.000Z"));
@@ -2879,7 +2884,7 @@ describe("Morning Brief suggestion instruction rollout", () => {
       });
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
         installCatalogStorageFixture(context);
-        await syncDeployedCatalog();
+        await syncActiveSourceCatalog();
 
         const { actor } = await workflowBdd.setupWorkflowOrg({
           timezone: "Asia/Shanghai",
@@ -3756,7 +3761,7 @@ describe("Official schedule expiry", () => {
       });
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
         installCatalogStorageFixture(context);
-        await syncDeployedCatalog();
+        await syncActiveSourceCatalog();
         const { actor } = await workflowBdd.setupWorkflowOrg({
           timezone: "Asia/Shanghai",
         });

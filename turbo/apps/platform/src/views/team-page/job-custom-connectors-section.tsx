@@ -31,11 +31,11 @@ import {
   closeCustomConnectorPermissions$,
   customConnectorPermissionBundle$,
   customConnectorPermissionDraft$,
-  openCustomConnectorPermissions$,
+  prepareCustomConnectorPermissions$,
 } from "../../signals/okou-page/settings/custom-connector-permissions.ts";
 import { agentDetail$ } from "../../signals/okou-page/job-detail/detail.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { detach, Reason } from "../../signals/utils.ts";
+import { detach, isAbortError, Reason } from "../../signals/utils.ts";
 import { CustomConnectorIcon } from "../okou-page/components/settings/custom-connector-icon.tsx";
 import { ConnectorPermissionRow } from "../okou-page/components/settings/connector-permission-row.tsx";
 import { CustomConnectorPermissionsDrawer } from "../okou-page/components/settings/custom-connector-permissions-drawer.tsx";
@@ -64,9 +64,19 @@ function JobCustomConnectorRow({
   const [prepareLoadable, prepare] = useLoadableSet(
     prepareJobCustomConnectorAccess$,
   );
+  const [permissionsLoadable, openPermissions] = useLoadableSet(
+    prepareCustomConnectorPermissions$,
+  );
   const saving =
-    toggleLoadable.state === "loading" || prepareLoadable.state === "loading";
-  const openPermissions = useSet(openCustomConnectorPermissions$);
+    toggleLoadable.state === "loading" ||
+    prepareLoadable.state === "loading" ||
+    permissionsLoadable.state === "loading";
+  const prepareError =
+    permissionsLoadable.state === "hasError"
+      ? permissionsLoadable.error
+      : prepareLoadable.state === "hasError"
+        ? prepareLoadable.error
+        : null;
   const hasPermissionBundle =
     connector.kind === "http" && Boolean(connector.permissionBundleRef);
   const permissionNames =
@@ -74,23 +84,22 @@ function JobCustomConnectorRow({
       return grant.customConnectorId === connector.id;
     })?.permissionNames ?? [];
 
-  const openPermissionDrawer = async (initiallyAuthorized: boolean) => {
+  const openPermissionDrawer = (initiallyAuthorized: boolean) => {
     if (!agentId) {
       return;
     }
-    if (!initiallyAuthorized) {
-      await prepare(connector, signal);
-      signal.throwIfAborted();
-    }
-    openPermissions(
-      {
-        surface: "agent-detail",
-        agentId,
-        connectorId: connector.id,
-        initiallyAuthorized,
-        permissionNames,
-      },
-      signal,
+    detach(
+      openPermissions(
+        {
+          surface: "agent-detail",
+          agentId,
+          connector,
+          initiallyAuthorized,
+          permissionNames,
+        },
+        signal,
+      ),
+      Reason.DomCallback,
     );
   };
 
@@ -119,7 +128,7 @@ function JobCustomConnectorRow({
         onToggle={(checked) => {
           if (checked && hasPermissionBundle) {
             if (grants !== null && agentId) {
-              detach(openPermissionDrawer(false), Reason.DomCallback);
+              openPermissionDrawer(false);
             }
             return;
           }
@@ -144,13 +153,13 @@ function JobCustomConnectorRow({
         }}
         onManage={() => {
           if (!saving) {
-            detach(openPermissionDrawer(enabled), Reason.DomCallback);
+            openPermissionDrawer(enabled);
           }
         }}
       />
-      {prepareLoadable.state === "hasError" && (
+      {prepareError !== null && !isAbortError(prepareError) && (
         <p role="alert" className="px-5 pb-3 text-sm text-destructive">
-          {String(prepareLoadable.error)}
+          {String(prepareError)}
         </p>
       )}
     </>

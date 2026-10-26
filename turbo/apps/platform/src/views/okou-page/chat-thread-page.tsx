@@ -2132,14 +2132,15 @@ function HeaderWorkflowAutomationCard({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const editingAutomationId = useGet(threadSidebar.editingAutomationId$);
-  const setEditingAutomationId = useSet(threadSidebar.setEditingAutomationId$);
+  const editor = useGet(threadSidebar.editingAutomation$);
+  const closeEditor = useSet(threadSidebar.closeEditingAutomation$);
+  const setEditingAutomation = useSet(threadSidebar.setEditingAutomation$);
   const [runningLoadable, runNow] = useLoadableSet(headerAutomations.runNow$);
   const running = runningLoadable.state === "loading";
   const title =
     automation.workflowDisplayName?.trim() || automation.workflowName;
   const rows = headerWorkflowAutomationRows(automation);
-  const editing = editingAutomationId === automation.id;
+  const editing = editor?.automation.id === automation.id;
 
   return (
     <div className="min-w-0">
@@ -2177,7 +2178,7 @@ function HeaderWorkflowAutomationCard({
                 type="button"
                 className="rounded-md px-1 py-1 text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                 onClick={() => {
-                  setEditingAutomationId(automation.id);
+                  setEditingAutomation(automation.automation);
                 }}
               >
                 {t(($) => {
@@ -2218,12 +2219,20 @@ function HeaderWorkflowAutomationCard({
         }
       />
       <HeaderWorkflowAutomationEditDialog
-        automation={automation.automation}
+        automation={
+          editor?.automation.id === automation.id
+            ? editor.automation
+            : automation.automation
+        }
         headerAutomations={headerAutomations}
         displayTimezone={automation.timezone}
         open={editing}
         onOpenChange={(open) => {
-          setEditingAutomationId(open ? automation.id : null);
+          if (open) {
+            setEditingAutomation(automation.automation);
+          } else {
+            closeEditor(editor);
+          }
         }}
       />
     </div>
@@ -2366,7 +2375,7 @@ function HeaderScheduleAutomationEditForm({
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const [updateLoadable, updateAutomation] = useLoadableSet(
-    headerAutomations.updateSchedule$,
+    headerAutomations.save$,
   );
   const saving = updateLoadable.state === "loading";
   const schedule = automation.schedule;
@@ -2384,13 +2393,11 @@ function HeaderScheduleAutomationEditForm({
           return;
         }
         detach(
-          (async () => {
-            await updateAutomation(
-              { automationId: automation.id, schedule: scheduleValue },
-              pageSignal,
-            );
-            onDone();
-          })(),
+          updateAutomation(
+            { automationId: automation.id, schedule: scheduleValue },
+            onDone,
+            pageSignal,
+          ),
           Reason.DomCallback,
           "update header workflow schedule automation",
         );
@@ -2681,7 +2688,7 @@ function HeaderGmailNewMessageAutomationEditForm({
 }) {
   const pageSignal = useGet(pageSignal$);
   const [updateLoadable, updateAutomation] = useLoadableSet(
-    headerAutomations.updateGmailNewMessage$,
+    headerAutomations.save$,
   );
   const saving = updateLoadable.state === "loading";
 
@@ -2692,19 +2699,17 @@ function HeaderGmailNewMessageAutomationEditForm({
         event.preventDefault();
         const form = new FormData(event.currentTarget);
         detach(
-          (async () => {
-            await updateAutomation(
-              {
-                automationId: automation.id,
-                eventConfig: buildGmailNewMessageEventConfig(
-                  form,
-                  automation.eventConfig,
-                ),
-              },
-              pageSignal,
-            );
-            onDone();
-          })(),
+          updateAutomation(
+            {
+              automationId: automation.id,
+              eventConfig: buildGmailNewMessageEventConfig(
+                form,
+                automation.eventConfig,
+              ),
+            },
+            onDone,
+            pageSignal,
+          ),
           Reason.DomCallback,
           "update header workflow Gmail automation",
         );
@@ -2738,7 +2743,7 @@ function HeaderGmailLabelAutomationEditForm({
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const [updateLoadable, updateAutomation] = useLoadableSet(
-    headerAutomations.updateGmailLabelApplied$,
+    headerAutomations.save$,
   );
   const saving = updateLoadable.state === "loading";
 
@@ -2754,13 +2759,11 @@ function HeaderGmailLabelAutomationEditForm({
           return;
         }
         detach(
-          (async () => {
-            await updateAutomation(
-              { automationId: automation.id, eventConfig },
-              pageSignal,
-            );
-            onDone();
-          })(),
+          updateAutomation(
+            { automationId: automation.id, eventConfig },
+            onDone,
+            pageSignal,
+          ),
           Reason.DomCallback,
           "update header workflow Gmail label automation",
         );

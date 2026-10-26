@@ -31,7 +31,7 @@ impl LocalFilePublish {
     /// Keep this synchronous while the caller owns the rootfs lock. A cancelled
     /// Tokio fs operation can continue on the blocking pool after the lock is
     /// dropped, which is not safe for the fixed staging path.
-    pub(super) async fn cleanup_stale_staging_best_effort(&self) {
+    pub(super) fn cleanup_stale_staging_best_effort(&self) {
         match std::fs::symlink_metadata(&self.staging) {
             Ok(metadata) => {
                 tracing::warn!(
@@ -64,7 +64,7 @@ impl LocalFilePublish {
     ///
     /// Same-filesystem rename is POSIX-atomic, so this is the single step
     /// that makes the published file visible to future presence checks.
-    pub(super) async fn commit(&self) -> RunnerResult<()> {
+    pub(super) fn commit(&self) -> RunnerResult<()> {
         std::fs::rename(&self.staging, &self.stable).map_err(|e| {
             RunnerError::Internal(format!(
                 "commit rootfs {} → {}: {e}",
@@ -74,7 +74,7 @@ impl LocalFilePublish {
         })
     }
 
-    pub(super) async fn finish_after_result(&self, result: RunnerResult<()>) -> RunnerResult<()> {
+    pub(super) fn finish_after_result(&self, result: RunnerResult<()>) -> RunnerResult<()> {
         match result {
             Ok(()) => Ok(()),
             Err(original_err) => {
@@ -122,7 +122,7 @@ mod tests {
             .unwrap();
         assert!(rootfs.rootfs_staging().exists());
 
-        publish.cleanup_stale_staging_best_effort().await;
+        publish.cleanup_stale_staging_best_effort();
         assert!(!rootfs.rootfs_staging().exists());
     }
 
@@ -143,7 +143,7 @@ mod tests {
         .await
         .unwrap();
 
-        publish.cleanup_stale_staging_best_effort().await;
+        publish.cleanup_stale_staging_best_effort();
         assert!(!rootfs.rootfs_staging().exists());
     }
 
@@ -156,7 +156,7 @@ mod tests {
         tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
 
         // No staging file: must not error.
-        publish.cleanup_stale_staging_best_effort().await;
+        publish.cleanup_stale_staging_best_effort();
         assert!(!rootfs.rootfs_staging().exists());
     }
 
@@ -175,7 +175,7 @@ mod tests {
             .await
             .unwrap();
 
-        publish.cleanup_stale_staging_best_effort().await;
+        publish.cleanup_stale_staging_best_effort();
         assert!(rootfs.rootfs().exists(), "committed rootfs must survive");
         assert!(!rootfs.rootfs_staging().exists());
     }
@@ -193,7 +193,6 @@ mod tests {
 
         let err = publish
             .finish_after_result(Err(RunnerError::Internal("customize failed".into())))
-            .await
             .unwrap_err();
 
         assert!(err.to_string().contains("customize failed"));
@@ -212,7 +211,6 @@ mod tests {
 
         let err = publish
             .finish_after_result(Err(RunnerError::Internal("verify failed".into())))
-            .await
             .unwrap_err();
 
         assert!(err.to_string().contains("verify failed"));
@@ -234,7 +232,7 @@ mod tests {
             .await
             .unwrap();
 
-        publish.commit().await.unwrap();
+        publish.commit().unwrap();
 
         assert!(!rootfs.rootfs_staging().exists());
         assert!(rootfs.rootfs().exists());

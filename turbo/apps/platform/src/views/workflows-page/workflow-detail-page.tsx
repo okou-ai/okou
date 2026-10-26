@@ -129,7 +129,7 @@ import {
   editingGithubPullRequestAction$,
   editingGmailMatchConditions$,
   editingGoogleCalendarId$,
-  editingWorkflowAutomationId$,
+  editingWorkflowAutomation$,
   isGoogleCalendarWorkflowAutomation,
   patchWorkflowMetadataForm$,
   openWorkflowChat$,
@@ -147,7 +147,7 @@ import {
   setEditingGmailMatchConditions$,
   setEditingGoogleCalendarId$,
   setEditingScheduleCronFields$,
-  setEditingWorkflowAutomationId$,
+  setEditingWorkflowAutomation$,
   setRevealWebhookSecretAutomationId$,
   setSelectedWorkflowFilePath$,
   setWorkflowActionDialog$,
@@ -160,9 +160,7 @@ import {
   setWorkflowAutomationCreateDialog$,
   setWorkflowAutomationEnabled$,
   scrollTargetedWorkflowAutomationIntoViewRef$,
-  updateWorkflowAutomationEventConfig$,
-  updateWorkflowGoogleCalendarAutomationEventConfig$,
-  updateWorkflowScheduleAutomation$,
+  saveWorkflowAutomation$,
   updateWorkflow$,
   workflowActionDialog$,
   workflowDemoteConfirmOpen$,
@@ -4102,23 +4100,17 @@ function CreateGoogleFormsResponseSubmittedAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                const warning = await createAutomation(
-                  {
-                    workflowId,
-                    eventConfig: {
-                      provider: "google-forms",
-                      event: "response_submitted",
-                      formUrl,
-                    },
+              createAutomation(
+                {
+                  workflowId,
+                  eventConfig: {
+                    provider: "google-forms",
+                    event: "response_submitted",
+                    formUrl,
                   },
-                  pageSignal,
-                );
-                onOpenChange(false);
-                if (warning) {
-                  toast.warning(warning);
-                }
-              })(),
+                },
+                pageSignal,
+              ),
               Reason.DomCallback,
             );
           }}
@@ -4198,20 +4190,17 @@ function CreateGoogleMeetTranscriptGeneratedAutomationDialog({
           onSubmit={(event) => {
             event.preventDefault();
             detach(
-              (async () => {
-                await createGoogleMeetAutomation(
-                  {
-                    workflowId,
-                    eventConfig: {
-                      provider: "google-meet",
-                      event: "transcript_generated",
-                      scope: { type: "organizer_user" },
-                    },
+              createGoogleMeetAutomation(
+                {
+                  workflowId,
+                  eventConfig: {
+                    provider: "google-meet",
+                    event: "transcript_generated",
+                    scope: { type: "organizer_user" },
                   },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+                },
+                pageSignal,
+              ),
               Reason.DomCallback,
             );
           }}
@@ -4385,10 +4374,7 @@ function CreateChatRunFinishedAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                await createAutomation({ workflowId, eventConfig }, pageSignal);
-                onOpenChange(false);
-              })(),
+              createAutomation({ workflowId, eventConfig }, pageSignal),
               Reason.DomCallback,
             );
           }}
@@ -4644,20 +4630,17 @@ function CreateNotionDatabaseItemAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                await createNotionAutomation(
-                  {
-                    workflowId,
-                    eventConfig: {
-                      provider: "notion",
-                      event: "database_item_created",
-                      databaseUrl,
-                    },
+              createNotionAutomation(
+                {
+                  workflowId,
+                  eventConfig: {
+                    provider: "notion",
+                    event: "database_item_created",
+                    databaseUrl,
                   },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+                },
+                pageSignal,
+              ),
               Reason.DomCallback,
             );
           }}
@@ -4873,16 +4856,13 @@ function CreateNotionPageContentUpdatedAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                await createNotionAutomation(
-                  {
-                    workflowId,
-                    eventConfig,
-                  },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+              createNotionAutomation(
+                {
+                  workflowId,
+                  eventConfig,
+                },
+                pageSignal,
+              ),
               Reason.DomCallback,
             );
           }}
@@ -4956,20 +4936,17 @@ function CreateNotionChildPageAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                await createNotionAutomation(
-                  {
-                    workflowId,
-                    eventConfig: {
-                      provider: "notion",
-                      event: "child_page_created",
-                      parentPageUrl,
-                    },
+              createNotionAutomation(
+                {
+                  workflowId,
+                  eventConfig: {
+                    provider: "notion",
+                    event: "child_page_created",
+                    parentPageUrl,
                   },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+                },
+                pageSignal,
+              ),
               Reason.DomCallback,
             );
           }}
@@ -5062,13 +5039,7 @@ function CreateIntervalAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                await createScheduleAutomation(
-                  { workflowId, schedule },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+              createScheduleAutomation({ workflowId, schedule }, pageSignal),
               Reason.DomCallback,
             );
           }}
@@ -5147,13 +5118,7 @@ function CreateScheduledAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                await createScheduleAutomation(
-                  { workflowId, schedule },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+              createScheduleAutomation({ workflowId, schedule }, pageSignal),
               Reason.DomCallback,
             );
           }}
@@ -5237,13 +5202,7 @@ function CreateOnceAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                await createScheduleAutomation(
-                  { workflowId, schedule },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+              createScheduleAutomation({ workflowId, schedule }, pageSignal),
               Reason.DomCallback,
             );
           }}
@@ -6039,16 +5998,13 @@ function CreateGmailNewMessageAutomationDialog({
             event.preventDefault();
             const form = new FormData(event.currentTarget);
             detach(
-              (async () => {
-                await createGmailAutomation(
-                  {
-                    workflowId,
-                    eventConfig: buildGmailNewMessageEventConfig(form),
-                  },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+              createGmailAutomation(
+                {
+                  workflowId,
+                  eventConfig: buildGmailNewMessageEventConfig(form),
+                },
+                pageSignal,
+              ),
               Reason.DomCallback,
             );
           }}
@@ -6138,13 +6094,10 @@ function CreateGmailLabelAppliedAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                await createGmailLabelAutomation(
-                  { workflowId, eventConfig },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+              createGmailLabelAutomation(
+                { workflowId, eventConfig },
+                pageSignal,
+              ),
               Reason.DomCallback,
             );
           }}
@@ -7089,13 +7042,10 @@ function CreateGithubWorkflowRunCompletedAutomationDialog({
               new FormData(event.currentTarget),
             );
             detach(
-              (async () => {
-                await createGithubWorkflowRunAutomation(
-                  { workflowId, eventConfig },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+              createGithubWorkflowRunAutomation(
+                { workflowId, eventConfig },
+                pageSignal,
+              ),
               Reason.DomCallback,
             );
           }}
@@ -7263,7 +7213,6 @@ function CreateGithubWebhookAutomationDialog({
                     pageSignal,
                   );
                 }
-                onOpenChange(false);
               })(),
               Reason.DomCallback,
             );
@@ -7404,7 +7353,6 @@ function CreateGoogleCalendarEventAutomationDialog({
                     pageSignal,
                   );
                 }
-                onOpenChange(false);
               })(),
               Reason.DomCallback,
             );
@@ -7502,15 +7450,7 @@ function CreateWebhookAutomationDialog({
             }}
             onCreate={() => {
               detach(
-                (async () => {
-                  const automation = await createWebhookAutomation(
-                    { workflowId },
-                    pageSignal,
-                  );
-                  if (automation) {
-                    setCreatedAutomation(automation);
-                  }
-                })(),
+                createWebhookAutomation({ workflowId }, pageSignal),
                 Reason.DomCallback,
               );
             }}
@@ -7938,10 +7878,10 @@ function AutomationRow({
 }: AutomationRowProps) {
   const targetedAutomationId = useGet(targetedWorkflowAutomationId$);
   const scrollRef = useSet(scrollTargetedWorkflowAutomationIntoViewRef$);
-  const editingAutomationId = useGet(editingWorkflowAutomationId$);
-  const setEditingAutomationId = useSet(setEditingWorkflowAutomationId$);
+  const editingAutomation = useGet(editingWorkflowAutomation$);
+  const setEditingAutomation = useSet(setEditingWorkflowAutomation$);
   const setEditingGoogleCalendarId = useSet(setEditingGoogleCalendarId$);
-  const editing = editingAutomationId === automation.id;
+  const editing = editingAutomation?.id === automation.id;
   const targeted = targetedAutomationId === automation.id;
   const title = workflowScheduleTitle(automation, displayTimezone);
   const subtitle = workflowAutomationSubtitle(automation);
@@ -7993,7 +7933,7 @@ function AutomationRow({
               setEditingGoogleCalendarId(
                 calendarAutomation.eventConfig.calendarId,
               );
-              setEditingAutomationId(calendarAutomation.id);
+              setEditingAutomation(calendarAutomation);
             }}
           />
         ) : null}
@@ -8003,12 +7943,16 @@ function AutomationRow({
       ) : null}
       {canEditStructure ? (
         <EditWorkflowAutomationDialog
-          automation={automation}
+          automation={
+            editingAutomation?.id === automation.id
+              ? editingAutomation
+              : automation
+          }
           displayTimezone={displayTimezone}
           open={editing}
           onOpenChange={(open) => {
             if (!open) {
-              setEditingAutomationId(null);
+              setEditingAutomation(null);
             }
           }}
         />
@@ -8139,7 +8083,7 @@ function AutomationEditButton({
   readonly busy: boolean;
 }) {
   const copy = automationActionCopy();
-  const setEditingAutomationId = useSet(setEditingWorkflowAutomationId$);
+  const setEditingAutomation = useSet(setEditingWorkflowAutomation$);
   const setEditingGoogleCalendarId = useSet(setEditingGoogleCalendarId$);
   const setEditingScheduleCronFields = useSet(setEditingScheduleCronFields$);
 
@@ -8166,7 +8110,7 @@ function AutomationEditButton({
               if (isGoogleCalendarWorkflowAutomation(automation)) {
                 setEditingGoogleCalendarId(automation.eventConfig.calendarId);
               }
-              setEditingAutomationId(automation.id);
+              setEditingAutomation(automation);
             }}
           >
             <Pencil size={14} />
@@ -8589,7 +8533,7 @@ function UpdateScheduleAutomationForm({
   const setCronFields = useSet(setEditingScheduleCronFields$);
   const pageSignal = useGet(pageSignal$);
   const [updateLoadable, updateScheduleAutomation] = useLoadableSet(
-    updateWorkflowScheduleAutomation$,
+    saveWorkflowAutomation$,
   );
   const saving = updateLoadable.state === "loading";
   const schedule = automation.schedule;
@@ -8616,16 +8560,13 @@ function UpdateScheduleAutomationForm({
           return;
         }
         detach(
-          (async () => {
-            await updateScheduleAutomation(
-              {
-                automationId: automation.id,
-                schedule: scheduleValue,
-              },
-              pageSignal,
-            );
-            onCancel();
-          })(),
+          updateScheduleAutomation(
+            {
+              automationId: automation.id,
+              schedule: scheduleValue,
+            },
+            pageSignal,
+          ),
           Reason.DomCallback,
         );
       }}
@@ -8672,7 +8613,7 @@ function UpdateGoogleCalendarAutomationForm({
   const calendarId = useGet(editingGoogleCalendarId$);
   const setCalendarId = useSet(setEditingGoogleCalendarId$);
   const [updateLoadable, updateGoogleCalendarAutomation] = useLoadableSet(
-    updateWorkflowGoogleCalendarAutomationEventConfig$,
+    saveWorkflowAutomation$,
   );
   const saving = updateLoadable.state === "loading";
 
@@ -8689,19 +8630,16 @@ function UpdateGoogleCalendarAutomationForm({
           return;
         }
         detach(
-          (async () => {
-            await updateGoogleCalendarAutomation(
-              {
-                automationId: automation.id,
-                eventConfig: updatedGoogleCalendarEventConfig(
-                  automation,
-                  submittedCalendarId,
-                ),
-              },
-              pageSignal,
-            );
-            onCancel();
-          })(),
+          updateGoogleCalendarAutomation(
+            {
+              automationId: automation.id,
+              eventConfig: updatedGoogleCalendarEventConfig(
+                automation,
+                submittedCalendarId,
+              ),
+            },
+            pageSignal,
+          ),
           Reason.DomCallback,
         );
       }}
@@ -8769,7 +8707,7 @@ function UpdateGmailNewMessageAutomationForm({
 }) {
   const pageSignal = useGet(pageSignal$);
   const [updateLoadable, updateGmailAutomation] = useLoadableSet(
-    updateWorkflowAutomationEventConfig$,
+    saveWorkflowAutomation$,
   );
   const matchConditionsByAutomationId = useGet(editingGmailMatchConditions$);
   const setMatchConditions = useSet(setEditingGmailMatchConditions$);
@@ -8788,19 +8726,16 @@ function UpdateGmailNewMessageAutomationForm({
         event.preventDefault();
         const form = new FormData(event.currentTarget);
         detach(
-          (async () => {
-            await updateGmailAutomation(
-              {
-                automationId: automation.id,
-                eventConfig: buildGmailNewMessageEventConfig(
-                  form,
-                  automation.eventConfig,
-                ),
-              },
-              pageSignal,
-            );
-            onCancel();
-          })(),
+          updateGmailAutomation(
+            {
+              automationId: automation.id,
+              eventConfig: buildGmailNewMessageEventConfig(
+                form,
+                automation.eventConfig,
+              ),
+            },
+            pageSignal,
+          ),
           Reason.DomCallback,
         );
       }}
@@ -8840,7 +8775,7 @@ function UpdateGmailLabelAppliedAutomationForm({
 }) {
   const pageSignal = useGet(pageSignal$);
   const [updateLoadable, updateGmailLabelAutomation] = useLoadableSet(
-    updateWorkflowAutomationEventConfig$,
+    saveWorkflowAutomation$,
   );
   const saving = updateLoadable.state === "loading";
 
@@ -8858,16 +8793,13 @@ function UpdateGmailLabelAppliedAutomationForm({
           return;
         }
         detach(
-          (async () => {
-            await updateGmailLabelAutomation(
-              {
-                automationId: automation.id,
-                eventConfig,
-              },
-              pageSignal,
-            );
-            onCancel();
-          })(),
+          updateGmailLabelAutomation(
+            {
+              automationId: automation.id,
+              eventConfig,
+            },
+            pageSignal,
+          ),
           Reason.DomCallback,
         );
       }}
@@ -8918,7 +8850,7 @@ function UpdateGithubWorkflowRunCompletedAutomationForm({
 }) {
   const pageSignal = useGet(pageSignal$);
   const [updateLoadable, updateGithubWorkflowRunAutomation] = useLoadableSet(
-    updateWorkflowAutomationEventConfig$,
+    saveWorkflowAutomation$,
   );
   const saving = updateLoadable.state === "loading";
   return (
@@ -8933,16 +8865,13 @@ function UpdateGithubWorkflowRunCompletedAutomationForm({
           new FormData(event.currentTarget),
         );
         detach(
-          (async () => {
-            await updateGithubWorkflowRunAutomation(
-              {
-                automationId: automation.id,
-                eventConfig,
-              },
-              pageSignal,
-            );
-            onCancel();
-          })(),
+          updateGithubWorkflowRunAutomation(
+            {
+              automationId: automation.id,
+              eventConfig,
+            },
+            pageSignal,
+          ),
           Reason.DomCallback,
         );
       }}
@@ -8976,7 +8905,7 @@ function UpdateGithubWebhookAutomationForm({
 }) {
   const pageSignal = useGet(pageSignal$);
   const [updateLoadable, updateGithubWebhookAutomation] = useLoadableSet(
-    updateWorkflowAutomationEventConfig$,
+    saveWorkflowAutomation$,
   );
   const saving = updateLoadable.state === "loading";
   return (
@@ -8995,13 +8924,10 @@ function UpdateGithubWebhookAutomationForm({
           new FormData(event.currentTarget),
         );
         detach(
-          (async () => {
-            await updateGithubWebhookAutomation(
-              { automationId: automation.id, eventConfig },
-              pageSignal,
-            );
-            onCancel();
-          })(),
+          updateGithubWebhookAutomation(
+            { automationId: automation.id, eventConfig },
+            pageSignal,
+          ),
           Reason.DomCallback,
         );
       }}

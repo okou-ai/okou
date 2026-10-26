@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.5](https://github.com/okou-ai/okou/compare/ios-v0.19.4...ios-v0.19.5) (2026-10-26)
+
+
+### Bug Fixes
+
+* **ios:** preserve transcript continuity when sending ([#42937](https://github.com/okou-ai/okou/issues/42937)) ([d0565a6](https://github.com/okou-ai/okou/commit/d0565a6f4e21bf0a919e3853f613e8c75417233c))
+
 ## [0.19.4](https://github.com/okou-ai/okou/compare/ios-v0.19.3...ios-v0.19.4) (2026-10-25)
 
 

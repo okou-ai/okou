@@ -172,7 +172,7 @@ export async function validateManagedDataRetirement(databaseUrl: string) {
     ),
   );
   const retirement = journal.entries.find((entry) => {
-    return entry.tag === "1462_retire_managed_data_storage";
+    return entry.tag === "1463_retire_managed_data_storage";
   });
   assert.ok(retirement);
   const admin = postgres(databaseUrl, { max: 1 });

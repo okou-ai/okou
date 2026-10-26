@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.788.0](https://github.com/okou-ai/okou/compare/core-v8.787.1...core-v8.788.0) (2026-10-26)
+
+
+### Features
+
+* **core:** enable custom templates for all users ([#42921](https://github.com/okou-ai/okou/issues/42921)) ([1cc417d](https://github.com/okou-ai/okou/commit/1cc417d66219754cfeefbdd01df557f84a245a02))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.3.1
+
 ## [8.787.1](https://github.com/okou-ai/okou/compare/core-v8.787.0...core-v8.787.1) (2026-10-25)
 
 

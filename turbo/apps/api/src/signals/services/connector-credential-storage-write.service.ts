@@ -14,6 +14,18 @@ export interface ConnectorCredentialStorageDeclaration {
   readonly variables: readonly string[];
 }
 
+export interface PreparedBuiltinConnectorTokenState {
+  readonly secrets: readonly {
+    readonly name: string;
+    readonly encryptedValue: string;
+    readonly description: string;
+  }[];
+  readonly variables: readonly {
+    readonly name: string;
+    readonly value: string;
+  }[];
+}
+
 interface ConnectorOwnedCredentialWrite {
   readonly connectorId: string;
   readonly storage: ConnectorCredentialStorageDeclaration;
@@ -33,7 +45,7 @@ interface ManualGrantUserCredentialDeletion {
   readonly name: string;
 }
 
-interface ManualGrantCredentialScope {
+interface ConnectorCredentialWriteScope {
   readonly connectorId: string;
   readonly method: Pick<ConnectorRuntimeMethod["method"], "storage">;
   readonly orgId: string;
@@ -99,8 +111,75 @@ export function manualGrantConnectionMetadata(args: {
   };
 }
 
-export function manualGrantSecretWrite(
-  args: ManualGrantCredentialScope,
+type ManualGrantCredentialEntry =
+  | {
+      readonly kind: "secret";
+      readonly field: ManualGrantCredentialInputs["encryptedSecrets"][number];
+    }
+  | {
+      readonly kind: "variable";
+      readonly field: ManualGrantCredentialInputs["prepared"]["variableValues"][number];
+    };
+
+export function* manualGrantCredentialFields(
+  args: ReturnType<typeof manualGrantCredentialArgs>,
+): Generator<ManualGrantCredentialEntry, void> {
+  for (const field of args.encryptedSecrets) {
+    yield { kind: "secret" as const, field };
+  }
+  for (const field of args.variableValues) {
+    yield { kind: "variable" as const, field };
+  }
+}
+
+export function manualGrantCredentialWrite(
+  args: ConnectorCredentialWriteScope,
+  entry: ManualGrantCredentialEntry,
+) {
+  return entry.kind === "secret"
+    ? { table: secrets, ...manualGrantSecretWrite(args, entry.field) }
+    : { table: variables, ...manualGrantVariableWrite(args, entry.field) };
+}
+
+export function* builtinTokenCredentialWrites(
+  connectorId: string,
+  args: Omit<ConnectorCredentialWriteScope, "connectorId"> & {
+    readonly state: PreparedBuiltinConnectorTokenState;
+  },
+) {
+  const scope = {
+    connectorId,
+    storage: args.method.storage,
+    orgId: args.orgId,
+    userId: args.userId,
+  };
+  for (const secret of args.state.secrets) {
+    yield {
+      kind: "secret" as const,
+      table: secrets,
+      ...connectorOwnedSecretWrite({
+        ...scope,
+        ...secret,
+        updatedDescription: secret.description,
+      }),
+    };
+  }
+  for (const variable of args.state.variables) {
+    yield {
+      kind: "variable" as const,
+      table: variables,
+      ...connectorOwnedVariableWrite({
+        ...scope,
+        ...variable,
+        description: null,
+        updatedDescription: null,
+      }),
+    };
+  }
+}
+
+function manualGrantSecretWrite(
+  args: ConnectorCredentialWriteScope,
   field: { readonly name: string; readonly encryptedValue: string },
 ) {
   return connectorOwnedSecretWrite({
@@ -115,8 +194,8 @@ export function manualGrantSecretWrite(
   });
 }
 
-export function manualGrantVariableWrite(
-  args: ManualGrantCredentialScope,
+function manualGrantVariableWrite(
+  args: ConnectorCredentialWriteScope,
   field: { readonly name: string; readonly value: string },
 ) {
   return connectorOwnedVariableWrite({
@@ -146,8 +225,10 @@ export function manualGrantUserSecretDeletion(
 }
 
 export function manualGrantUserVariableDeletion(
-  args: ManualGrantUserCredentialDeletion,
+  scope: Omit<ManualGrantUserCredentialDeletion, "name">,
+  name: string,
 ) {
+  const args = { ...scope, name };
   return {
     from: variables,
     where: and(

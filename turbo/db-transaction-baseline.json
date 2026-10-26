@@ -22,11 +22,6 @@
       "owner": "sendAgentPhoneVerificationText$"
     },
     {
-      "id": "TX-0022",
-      "file": "turbo/apps/api/src/signals/routes/runners.ts",
-      "owner": "failPoisonQueuedJob"
-    },
-    {
       "id": "TX-0044",
       "file": "turbo/apps/api/src/signals/routes/workflow-copy-publication.ts",
       "owner": "commitWorkflowCopy$"
@@ -40,11 +35,6 @@
       "id": "TX-0047",
       "file": "turbo/apps/api/src/signals/services/agent-deletion.service.ts",
       "owner": "deleteAgentRows$"
-    },
-    {
-      "id": "TX-0049",
-      "file": "turbo/apps/api/src/signals/services/agent-run-terminal-transition.service.ts",
-      "owner": "cancelRun$"
     },
     {
       "id": "TX-0050",
@@ -102,11 +92,6 @@
       "owner": "upsertBuiltinConnectorTokenConnection$"
     },
     {
-      "id": "TX-0128",
-      "file": "turbo/apps/api/src/signals/services/cron-cleanup-sandboxes.service.ts",
-      "owner": "commitStaleRunTimeout"
-    },
-    {
       "id": "TX-0130",
       "file": "turbo/apps/api/src/signals/services/cron-project-chat-event-search.service.ts",
       "owner": "projectThread"
@@ -135,16 +120,6 @@
       "id": "TX-0161",
       "file": "turbo/apps/api/src/signals/services/feishu-connect.service.ts",
       "owner": "disconnectFeishuConnection$"
-    },
-    {
-      "id": "TX-0162",
-      "file": "turbo/apps/api/src/signals/services/feishu-custom-connector.service.ts",
-      "owner": "ensureFeishuCustomConnector$"
-    },
-    {
-      "id": "TX-0163",
-      "file": "turbo/apps/api/src/signals/services/feishu-custom-connector.service.ts",
-      "owner": "deleteFeishuInstallationAndCustomConnector$"
     },
     {
       "id": "TX-0164",
@@ -182,11 +157,6 @@
       "owner": "commitMorningBriefScheduleSettlement$"
     },
     {
-      "id": "TX-0195",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-catalog-sync.service.ts",
-      "owner": "activateCandidate$"
-    },
-    {
       "id": "TX-0218",
       "file": "turbo/apps/api/src/signals/services/org-limited-free-bootstrap.service.ts",
       "owner": "ensureOrgLimitedFreeBootstrap$/bootstrap"
@@ -222,11 +192,6 @@
       "owner": "deleteIfStillEligible"
     },
     {
-      "id": "TX-0266",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
-      "owner": "persistUsagePackChangePreview$"
-    },
-    {
       "id": "TX-0267",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "reserveUsagePackMemberRemoval"
@@ -235,11 +200,6 @@
       "id": "TX-0268",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "prepareUsagePackMemberRemoval"
-    },
-    {
-      "id": "TX-0269",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
-      "owner": "commitReflectedUsagePackChanges"
     },
     {
       "id": "TX-0272",
@@ -272,11 +232,6 @@
       "owner": "commitUsagePackPlanActivation$"
     },
     {
-      "id": "TX-0306",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
-      "owner": "retireReconciledUsagePackSnapshot$"
-    },
-    {
       "id": "TX-0308",
       "file": "turbo/apps/api/src/signals/services/user-connectors.service.ts",
       "owner": "updateUserBuiltinConnectors$"
@@ -285,11 +240,6 @@
       "id": "TX-0314",
       "file": "turbo/apps/api/src/signals/services/user-permission-grants.service.ts",
       "owner": "applyVisibleAgentGrantRows"
-    },
-    {
-      "id": "TX-0320",
-      "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
-      "owner": "cancelUserRuns"
     },
     {
       "id": "TX-0325",

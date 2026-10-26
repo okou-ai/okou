@@ -289,8 +289,7 @@ function installViewportGeometry(
   };
 }
 
-test("The embedded Okou viewer owns its shortcuts while the conversation keeps its shortcuts", async () => {
-  const user = userEvent.setup({ delay: null });
+test("The embedded Okou viewer retains its sizing preference when the menu reopens", async () => {
   mockWideScreen();
   context.mocks.browser.userAgent(
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
@@ -323,7 +322,25 @@ test("The embedded Okou viewer owns its shortcuts while the conversation keeps i
   await waitFor(() => {
     expect(updatedSizingMenu).not.toBeInTheDocument();
   });
+});
 
+test("The embedded Okou viewer owns its shortcuts while the conversation keeps its shortcuts", async () => {
+  const user = userEvent.setup({ delay: null });
+  mockWideScreen();
+  context.mocks.browser.userAgent(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+  );
+  mockBrowserApi(liveBrowserSession());
+  const cdpUrl = "wss://cdp.browser-use.com/sidebar";
+  mockBrowserCdp(context, cdpUrl);
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, { cdpUrl });
+  });
+  await openConversation(completedConversationEvents(), true);
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const address = await screen.findByDisplayValue("https://example.com");
+  expect(address).toBeEnabled();
   await user.click(address);
   expect(address).toHaveFocus();
   await user.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");

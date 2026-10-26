@@ -29,7 +29,10 @@ final class ConversationScrollCoordinator {
   @ObservationIgnored private var earlierExpansionFinished = false
   @ObservationIgnored private var presentedFirstItemID: String?
 
-  init(conversation: ConversationStore) { self.conversation = conversation }
+  init(conversation: ConversationStore) {
+    self.conversation = conversation
+    sendTransition.didEnd = { [weak conversation] in conversation?.releaseRenderWindow() }
+  }
 
   var followsBottom: Bool {
     if case .latest = intent { return true }
@@ -90,6 +93,7 @@ final class ConversationScrollCoordinator {
     anchor.cancel()
     conversation.rememberReadingPosition(nil)
     sendTransition.begin(messageID: messageID, reduceMotion: reduceMotion)
+    if sendTransition.isActive { conversation.preserveRenderWindow() }
   }
 
   func jumpToLatest() {

@@ -1,4 +1,3 @@
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { agents } from "@okouai/db/schema/agent";
@@ -12,7 +11,7 @@ import { command } from "ccstate";
 import { and, count, eq, inArray } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { publishCancelToRunnerGroup } from "../external/realtime";
 import {
   getStripeClient,
@@ -21,9 +20,8 @@ import {
 import { tapError } from "../utils";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
 import {
+  cancelClerkBannedUserRuns$,
   cancelClerkDeletedOwnerRuns$,
-  releaseNeverStartedRunSlots,
-  transitionAgentRunsToTerminal,
   type DeletedOwner,
   type ReleasedRunSlot,
 } from "./agent-run-terminal-transition.service";
@@ -57,36 +55,6 @@ async function publishCancelBestEffort(
         error,
       });
     },
-  );
-}
-
-// Ban behavior is deliberately separate from account-deletion stop behavior.
-async function cancelUserRuns(
-  db: Db,
-  userId: string,
-  onSlotsReleased: SlotsReleased,
-): Promise<void> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0320; new non-billing transactions are prohibited.
-  const { cancelled, releasedSlots } = await db.transaction(async (tx) => {
-    const rows = await transitionAgentRunsToTerminal(tx, {
-      values: {
-        status: "cancelled",
-        completedAt: nowDate(),
-        runnerCancellationMode: "hard",
-      },
-      conditions: [
-        eq(agentRuns.userId, userId),
-        inArray(agentRuns.status, ["pending", "running"]),
-      ],
-    });
-    const released = await releaseNeverStartedRunSlots(tx, rows);
-    return { cancelled: rows, releasedSlots: released };
-  });
-  onSlotsReleased(releasedSlots);
-  await Promise.all(
-    cancelled.map((run) => {
-      return publishCancelBestEffort(run.runnerGroup, run.runId);
-    }),
   );
 }
 
@@ -343,9 +311,21 @@ export const cleanupClerkDeletedOrgMembership$ = command(
 export const cleanupClerkBannedUser$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
-    await cancelUserRuns(db, userId, (slots) => {
-      set(scheduleReleasedSlotPicks$, slots, signal);
-    });
+    const cancelled = await set(cancelClerkBannedUserRuns$, userId, signal);
+    set(
+      scheduleReleasedSlotPicks$,
+      cancelled.flatMap((run) => {
+        return run.releasedOrgId === null
+          ? []
+          : [{ runId: run.runId, orgId: run.releasedOrgId }];
+      }),
+      signal,
+    );
+    await Promise.all(
+      cancelled.map((run) => {
+        return publishCancelBestEffort(run.runnerGroup, run.runId);
+      }),
+    );
     signal.throwIfAborted();
     await (async (): Promise<void> => {
       const adminOrgs = await db

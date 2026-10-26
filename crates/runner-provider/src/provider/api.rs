@@ -2013,19 +2013,28 @@ async fn read_claim_response_body(
     if !first_chunk.is_empty() {
         first_chunk_observed();
     }
-    let remaining = resp
-        .bytes()
+    // Retain received chunks until EOF instead of coalescing the tail before
+    // copying it again into the complete body. Never reserve an advertised size.
+    let mut tail = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
         .await
-        .map_err(|error| ClaimApiError::ResponseRead(error.to_string()))?;
-    // The common one-chunk case stays zero-copy; a split needs one concatenation.
-    let body = if first_chunk.is_empty() {
-        remaining
-    } else if remaining.is_empty() {
+        .map_err(|error| ClaimApiError::ResponseRead(error.to_string()))?
+    {
+        if !chunk.is_empty() {
+            tail.push(chunk);
+        }
+    }
+    // The common one-chunk case stays zero-copy; split input is coalesced once.
+    let body = if tail.is_empty() {
         first_chunk
     } else {
-        let mut combined = Vec::with_capacity(first_chunk.len() + remaining.len());
+        let body_len = first_chunk.len() + tail.iter().map(Bytes::len).sum::<usize>();
+        let mut combined = Vec::with_capacity(body_len);
         combined.extend_from_slice(&first_chunk);
-        combined.extend_from_slice(&remaining);
+        for chunk in tail {
+            combined.extend_from_slice(&chunk);
+        }
         Bytes::from(combined)
     };
     let response_body_read_elapsed = response_body_read_started_at.elapsed();
