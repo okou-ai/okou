@@ -1,7 +1,7 @@
 import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Textarea } from "@okouai/ui";
+import { Textarea, cn, surfaceVariants } from "@okouai/ui";
 import { Loader2 } from "lucide-react";
 import {
   ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
@@ -31,6 +31,7 @@ import {
 } from "./onboarding-starting-prompt.ts";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
+import { useMobileOnboarding } from "../onboarding/use-mobile-onboarding.ts";
 
 const STARTING_PROMPT_MAX_LENGTH = 1000;
 const CELEBRATION_URL =
@@ -68,8 +69,14 @@ function StartingPromptPanel({
   readonly onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
+  const mobile = useMobileOnboarding();
   return (
-    <div className="mt-8">
+    <div
+      className={cn(
+        "mt-8",
+        mobile && surfaceVariants({ className: "mt-0 p-4" }),
+      )}
+    >
       {isLoading ? (
         <div
           className="flex min-h-[148px] flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground"
@@ -84,7 +91,7 @@ function StartingPromptPanel({
         </div>
       ) : (
         <>
-          <div className="flex items-baseline gap-2">
+          <div className="flex items-baseline gap-2 max-sm:flex-col max-sm:gap-1">
             <h2 className="min-w-0 flex-1 text-sm font-semibold text-foreground">
               {outcome}
             </h2>
@@ -106,7 +113,7 @@ function StartingPromptPanel({
           </label>
           <Textarea
             id="onboarding-starting-prompt"
-            className={`mt-3 min-h-[120px] ${ONBOARDING_TEXTAREA_CLASS}`}
+            className={`mt-3 min-h-[120px] max-sm:min-h-48 max-sm:resize-none max-sm:text-base ${ONBOARDING_TEXTAREA_CLASS}`}
             maxLength={STARTING_PROMPT_MAX_LENGTH}
             spellCheck={false}
             value={text}
@@ -162,6 +169,7 @@ function readyPromptView(
  */
 export function OnboardingReadyPage() {
   const { t } = useTranslation();
+  const mobile = useMobileOnboarding();
   const flow = useSourcesFirstFlow("ready");
   const updateDraft = useSet(updateSourcesFirstDraft$);
   const capturePromptEdited = useSet(captureSourceOnboardingPromptEdited$);
@@ -214,8 +222,14 @@ export function OnboardingReadyPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.welcome.copy;
       })}
+      mobileTitle={t(($) => {
+        return $.onboarding.sourcesFirst.mobile.readyTitle;
+      })}
+      mobileDescription=""
       primaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.welcome.start;
+        return mobile
+          ? $.onboarding.sourcesFirst.mobile.startTask
+          : $.onboarding.sourcesFirst.welcome.start;
       })}
       onPrimary={() => {
         const request = text.trim();
@@ -236,7 +250,7 @@ export function OnboardingReadyPage() {
           src={CELEBRATION_URL}
           srcSet={`${CELEBRATION_2X_URL} 2x`}
           alt=""
-          className="mx-auto h-40 max-w-full object-contain"
+          className="mx-auto h-40 max-w-full object-contain max-sm:hidden"
         />
         <StartingPromptPanel
           isLoading={isLoading}

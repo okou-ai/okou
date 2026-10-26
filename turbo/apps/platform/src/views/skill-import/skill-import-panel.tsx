@@ -1,11 +1,18 @@
 // The skill import prompt and its imported list, shared by the onboarding
 // skills step and the workflows page's import dialog.
 import type { Command } from "ccstate";
+import type { ReactNode } from "react";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, Copy, FileText, Loader2 } from "lucide-react";
-import { Button, cn } from "@okouai/ui";
+import {
+  Button,
+  buttonVariants,
+  cn,
+  surfaceVariants,
+  type ButtonProps,
+} from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -20,9 +27,11 @@ import { SkillImportGuide } from "./skill-import-guide.tsx";
 function SkillImportPromptBody({
   prompt,
   signals,
+  embedded = false,
 }: {
   readonly prompt: string;
   readonly signals: SkillImportSignals;
+  readonly embedded?: boolean;
 }) {
   const { t } = useTranslation();
   const displayed = useSet(signals.promptDisplayed$);
@@ -39,7 +48,12 @@ function SkillImportPromptBody({
       aria-label={t(($) => {
         return $.onboarding.sourcesFirst.skills.promptLabel;
       })}
-      className="max-h-[240px] overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere] rounded-xl border border-border/60 bg-muted/30 p-4 font-mono text-xs leading-5 text-muted-foreground"
+      className={cn(
+        "max-h-[240px] overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere] p-4 font-mono text-xs leading-5 text-muted-foreground",
+        embedded
+          ? "border-t border-divider bg-gray-50"
+          : "rounded-xl border border-border/60 bg-muted/30",
+      )}
     >
       {prompt}
     </pre>
@@ -47,13 +61,20 @@ function SkillImportPromptBody({
 }
 
 /** The session is still opening: the import says so where the prompt will be. */
-function SkillImportPromptPending() {
+function SkillImportPromptPending({
+  embedded,
+}: {
+  readonly embedded: boolean;
+}) {
   const { t } = useTranslation();
 
   return (
     <p
       role="status"
-      className="flex items-center gap-2 rounded-xl border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground"
+      className={cn(
+        "flex items-center gap-2 p-4 text-sm text-muted-foreground",
+        !embedded && "rounded-xl border border-border/60 bg-muted/30",
+      )}
     >
       <Loader2 size={16} className="animate-spin" aria-hidden="true" />
       {t(($) => {
@@ -63,11 +84,16 @@ function SkillImportPromptPending() {
   );
 }
 
-function SkillImportPromptFailed() {
+function SkillImportPromptFailed({ embedded }: { readonly embedded: boolean }) {
   const { t } = useTranslation();
 
   return (
-    <div className="flex flex-col items-start gap-3 rounded-xl border border-border/60 bg-muted/30 p-4">
+    <div
+      className={cn(
+        "flex flex-col items-start gap-3 p-4",
+        !embedded && "rounded-xl border border-border/60 bg-muted/30",
+      )}
+    >
       <p role="alert" className="text-sm text-muted-foreground">
         {t(($) => {
           return $.onboarding.sourcesFirst.skills.startError;
@@ -78,13 +104,23 @@ function SkillImportPromptFailed() {
 }
 
 /** Copies the prompt, and says whether the clipboard took it. */
-function SkillImportCopyButton({
+export function SkillImportCopyButton({
   copyPrompt$,
   primary = false,
+  size = "sm",
+  className,
+  label,
+  disabled = false,
+  showPending = false,
 }: {
   readonly copyPrompt$: Command<Promise<boolean>, [AbortSignal]>;
   /** Where copying is the one thing to do, it is the primary action. */
   readonly primary?: boolean;
+  readonly size?: ButtonProps["size"];
+  readonly className?: string;
+  readonly label?: string;
+  readonly disabled?: boolean;
+  readonly showPending?: boolean;
 }) {
   const { t } = useTranslation();
   const [copyResult, copyPrompt] = useLoadableSet(copyPrompt$);
@@ -95,9 +131,10 @@ function SkillImportCopyButton({
     <Button
       type="button"
       variant={primary ? "default" : "outline"}
-      size="sm"
-      className="shrink-0 gap-1.5"
-      disabled={copyResult.state === "loading"}
+      size={size}
+      className={cn("shrink-0 gap-1.5", className)}
+      disabled={disabled || copyResult.state === "loading"}
+      pending={showPending && copyResult.state === "loading"}
       onClick={() => {
         detach(
           (async () => {
@@ -123,9 +160,10 @@ function SkillImportCopyButton({
         ? t(($) => {
             return $.onboarding.sourcesFirst.skills.copied;
           })
-        : t(($) => {
+        : (label ??
+          t(($) => {
             return $.onboarding.sourcesFirst.skills.copyPrompt;
-          })}
+          }))}
     </Button>
   );
 }
@@ -163,10 +201,12 @@ function ImportedSkillRow({ skill }: { readonly skill: WorkflowSummary }) {
 function ImportedSkillList({
   skills,
   scroll = false,
+  compact = false,
 }: {
   readonly skills: readonly WorkflowSummary[];
   /** Keeps a long import to a few rows, scrolling within the list. */
   readonly scroll?: boolean;
+  readonly compact?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -183,7 +223,14 @@ function ImportedSkillList({
         ) : null}
       </p>
       {skills.length === 0 ? (
-        <p className="mt-2 rounded-xl border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">
+        <p
+          className={cn(
+            "text-sm text-muted-foreground",
+            compact
+              ? "mt-1 leading-6"
+              : "mt-2 rounded-xl border border-dashed border-border/70 px-4 py-3",
+          )}
+        >
           {t(($) => {
             return $.onboarding.sourcesFirst.skills.waiting;
           })}
@@ -191,7 +238,10 @@ function ImportedSkillList({
       ) : (
         <div
           className={cn(
-            "mt-2 divide-y divide-border/60 rounded-xl border border-border/60",
+            "mt-2 divide-y",
+            compact
+              ? "divide-divider"
+              : "divide-border/60 rounded-xl border border-border/60",
             scroll && "max-h-[228px] overflow-y-auto",
           )}
         >
@@ -205,12 +255,14 @@ function ImportedSkillList({
 }
 
 /** A failed result read must not look like an empty import. */
-export function SkillImportResults({
+function SkillImportResultsContent({
   signals,
   scroll = false,
+  compact = false,
 }: {
   readonly signals: SkillImportSignals;
   readonly scroll?: boolean;
+  readonly compact?: boolean;
 }) {
   const result = useLoadable(signals.imported$);
   const { t } = useTranslation();
@@ -235,7 +287,32 @@ export function SkillImportResults({
       </p>
     );
   }
-  return <ImportedSkillList skills={result.data} scroll={scroll} />;
+  return (
+    <ImportedSkillList skills={result.data} scroll={scroll} compact={compact} />
+  );
+}
+
+export function SkillImportResults({
+  signals,
+  scroll = false,
+  compact = false,
+}: {
+  readonly signals: SkillImportSignals;
+  readonly scroll?: boolean;
+  readonly compact?: boolean;
+}) {
+  const content = (
+    <SkillImportResultsContent
+      signals={signals}
+      scroll={scroll}
+      compact={compact}
+    />
+  );
+  return compact ? (
+    <div className={surfaceVariants({ className: "p-5" })}>{content}</div>
+  ) : (
+    content
+  );
 }
 
 /**
@@ -276,8 +353,10 @@ export interface SkillImportPromptToggle {
 /** Copying is all most people need; the full text stays one click away. */
 function SkillImportFullPromptToggle({
   toggle,
+  fullWidth = false,
 }: {
   readonly toggle: SkillImportPromptToggle;
+  readonly fullWidth?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -285,8 +364,8 @@ function SkillImportFullPromptToggle({
     <Button
       type="button"
       variant="quiet"
-      size="xs"
-      className="-ml-2.5 gap-1 text-xs"
+      size={fullWidth ? "default" : "xs"}
+      className={fullWidth ? "w-full justify-between" : "-ml-2.5 gap-1 text-xs"}
       aria-expanded={toggle.shown}
       onClick={() => {
         toggle.setShown(!toggle.shown);
@@ -295,7 +374,11 @@ function SkillImportFullPromptToggle({
       <ChevronDown
         size={14}
         aria-hidden="true"
-        className={cn("transition-transform", toggle.shown && "rotate-180")}
+        className={cn(
+          "transition-transform",
+          toggle.shown && "rotate-180",
+          fullWidth && "order-last",
+        )}
       />
       {toggle.shown
         ? t(($) => {
@@ -305,6 +388,73 @@ function SkillImportFullPromptToggle({
             return $.onboarding.sourcesFirst.skills.showFullPrompt;
           })}
     </Button>
+  );
+}
+
+function CompactSkillImportPanel({
+  provider,
+  providerName,
+  prompt,
+  pending,
+  signals,
+  promptToggle,
+}: {
+  readonly provider: SkillImportProvider;
+  readonly providerName: string;
+  readonly prompt: string | null;
+  readonly pending: ReactNode;
+  readonly signals: SkillImportSignals;
+  readonly promptToggle: SkillImportPromptToggle;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className={surfaceVariants({ className: "overflow-hidden" })}>
+      <ol className="list-inside list-decimal space-y-2 p-5 text-sm leading-6">
+        <li>
+          {t(($) => {
+            return $.onboarding.sourcesFirst.mobile.copyImportPrompt;
+          })}
+        </li>
+        <li>
+          {t(
+            ($) => {
+              return $.onboarding.sourcesFirst.mobile.pasteIntoProvider;
+            },
+            {
+              provider: providerName,
+            },
+          )}
+        </li>
+      </ol>
+      <div className="border-t border-divider p-1">
+        <details className="group">
+          <summary
+            className={cn(
+              buttonVariants({ variant: "quiet", size: "default" }),
+              "flex w-full list-none justify-between [&::-webkit-details-marker]:hidden",
+            )}
+          >
+            {t(($) => {
+              return $.onboarding.sourcesFirst.mobile.instructions;
+            })}
+            <ChevronDown
+              aria-hidden="true"
+              className="transition-transform group-open:rotate-180"
+            />
+          </summary>
+          <SkillImportGuide provider={provider} className="px-4 pb-4 pt-2" />
+        </details>
+        {prompt === null ? null : (
+          <SkillImportFullPromptToggle toggle={promptToggle} fullWidth />
+        )}
+      </div>
+      {prompt === null ? (
+        pending
+      ) : promptToggle.shown ? (
+        <SkillImportPromptBody prompt={prompt} signals={signals} embedded />
+      ) : null}
+    </div>
   );
 }
 
@@ -319,11 +469,13 @@ export function SkillImportPanel({
   provider,
   providerName,
   promptToggle,
+  compact = false,
 }: {
   readonly signals: SkillImportSignals;
   readonly provider: SkillImportProvider;
   readonly providerName: string;
   readonly promptToggle?: SkillImportPromptToggle;
+  readonly compact?: boolean;
 }) {
   const preparation = useLoadable(signals.session$);
   const results = useLoadable(signals.imported$);
@@ -332,10 +484,23 @@ export function SkillImportPanel({
   const { t } = useTranslation();
   const pending =
     preparation.state === "hasError" ? (
-      <SkillImportPromptFailed />
+      <SkillImportPromptFailed embedded={compact} />
     ) : (
-      <SkillImportPromptPending />
+      <SkillImportPromptPending embedded={compact} />
     );
+
+  if (compact && promptToggle) {
+    return (
+      <CompactSkillImportPanel
+        provider={provider}
+        providerName={providerName}
+        prompt={prompt}
+        pending={pending}
+        signals={signals}
+        promptToggle={promptToggle}
+      />
+    );
+  }
 
   if (promptToggle) {
     // Until a skill arrives, copying is the one thing to do; after that,

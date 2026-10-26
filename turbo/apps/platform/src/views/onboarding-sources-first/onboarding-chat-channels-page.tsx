@@ -8,7 +8,7 @@ import {
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
-import { Button, Card } from "@okouai/ui";
+import { Button, Card, cn, surfaceVariants } from "@okouai/ui";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -45,6 +45,7 @@ import {
 import { ProductMark } from "./onboarding-step-parts.tsx";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
+import { useMobileOnboarding } from "../onboarding/use-mobile-onboarding.ts";
 
 /** Install permission and account connection remain the provider's authority. */
 type ChannelState =
@@ -186,7 +187,8 @@ function InstalledChannelButton({
     <Button
       type="button"
       variant="outline"
-      className="min-w-0 flex-1 gap-2 px-3"
+      size="lg"
+      className="min-w-0 flex-1 px-3"
       aria-pressed={connected}
       aria-label={
         channel === "slack"
@@ -230,7 +232,8 @@ function TelegramButton({ connected }: { readonly connected: boolean }) {
       <Button
         type="button"
         variant="outline"
-        className="min-w-0 flex-1 gap-2 px-3"
+        size="lg"
+        className="min-w-0 px-3"
         aria-pressed={connected}
         disabled={connected || connection.state === "loading"}
         onClick={() => {
@@ -265,7 +268,8 @@ function DiscordButton({ data }: { readonly data: DiscordOrgStatus | null }) {
       <Button
         type="button"
         variant="outline"
-        className="min-w-0 flex-1 gap-2 px-3"
+        size="lg"
+        className="min-w-0 px-3"
         aria-pressed={data?.isConnected === true}
         disabled={
           !data || !canAuthorizeDiscord(data) || connection.state === "loading"
@@ -291,6 +295,7 @@ function DiscordButton({ data }: { readonly data: DiscordOrgStatus | null }) {
 
 function InlineImessageConnection() {
   const { t } = useTranslation();
+  const mobile = useMobileOnboarding();
   const statusLoadable = useLastLoadable(agentPhoneLinkStatus$);
   const codeLoadable = useLoadable(onboardingPhoneCode$);
   const code = codeLoadable.state === "hasData" ? codeLoadable.data : null;
@@ -303,20 +308,35 @@ function InlineImessageConnection() {
     detach(requestCode(pageSignal), Reason.DomCallback);
   };
   return (
-    <Card className="rounded-xl border border-border bg-background p-6 max-sm:p-5">
-      <div className="mb-2 flex items-center gap-3">
+    <Card
+      className={
+        mobile
+          ? surfaceVariants({ className: "p-5" })
+          : "rounded-xl border border-border bg-background p-6"
+      }
+    >
+      <div className={cn("flex items-center gap-3", mobile ? "mb-4" : "mb-2")}>
         <ProductMark name="imessage" alt="" />
-        <h2 className="text-xl font-semibold tracking-tight">
+        <h2
+          className={cn(
+            "font-semibold tracking-tight",
+            mobile ? "text-base" : "text-xl",
+          )}
+        >
           {t(($) => {
-            return $.onboarding.sourcesFirst.chatChannels.imessageTitle;
+            return mobile
+              ? $.onboarding.sourcesFirst.slack.otherImessage
+              : $.onboarding.sourcesFirst.chatChannels.imessageTitle;
           })}
         </h2>
       </div>
-      <p className="mb-5 text-sm text-muted-foreground">
-        {t(($) => {
-          return $.onboarding.sourcesFirst.chatChannels.imessageCopy;
-        })}
-      </p>
+      {!mobile && (
+        <p className="mb-5 text-sm text-muted-foreground">
+          {t(($) => {
+            return $.onboarding.sourcesFirst.chatChannels.imessageCopy;
+          })}
+        </p>
+      )}
       {status?.linked ? (
         <p className="flex items-center gap-2 text-sm" role="status">
           <Check size={16} aria-hidden="true" />
@@ -334,7 +354,7 @@ function InlineImessageConnection() {
           <AgentPhoneConnectionCodeContent
             phoneNumber={status.agentPhoneNumber}
             connectionCode={code.code}
-            inline
+            inline={!mobile}
             onOpenMessages={() => {
               captureChannelClicked("imessage", true);
             }}
@@ -382,6 +402,7 @@ function InlineImessageConnection() {
 
 export function OnboardingSlackPage() {
   const { t } = useTranslation();
+  const mobile = useMobileOnboarding();
   const flow = useSourcesFirstFlow("slack");
   const discordEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.DiscordIntegration];
@@ -437,6 +458,18 @@ export function OnboardingSlackPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.chatChannels.copy;
       })}
+      mobileTitle={
+        connected
+          ? t(($) => {
+              return $.onboarding.sourcesFirst.chatChannels.connectedTitle;
+            })
+          : t(($) => {
+              return $.onboarding.sourcesFirst.mobile.channelsTitle;
+            })
+      }
+      mobileDescription={t(($) => {
+        return $.onboarding.sourcesFirst.mobile.channelsCopy;
+      })}
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
@@ -456,7 +489,7 @@ export function OnboardingSlackPage() {
               return $.onboarding.sourcesFirst.chatChannels.othersLabel;
             })}
           </p>
-          <div className="grid grid-cols-2 gap-2 sm:flex">
+          <div className={cn("gap-2", mobile ? "grid" : "flex")}>
             <InstalledChannelButton channel="slack" state={slack} />
             <TelegramButton connected={telegramConnected} />
             <InstalledChannelButton channel="teams" state={teams} />

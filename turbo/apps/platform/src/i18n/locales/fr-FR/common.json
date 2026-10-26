@@ -4215,46 +4215,57 @@
       },
       "industries": {
         "coaching": {
+          "mobileName": "Coaching et formation",
           "name": "Coaching et formation",
           "summary": "Coaching, cours et formation"
         },
         "consulting": {
+          "mobileName": "Conseil indépendant",
           "name": "Conseil indépendant",
           "summary": "Conseil business, RH et IT"
         },
         "design": {
+          "mobileName": "Design et création",
           "name": "Design et création",
           "summary": "Graphisme, sites web et création"
         },
         "finance": {
+          "mobileName": "Comptabilité et tenue de livres",
           "name": "Comptabilité et tenue de livres",
           "summary": "Livres, rapports et rapprochements"
         },
         "investing": {
+          "mobileName": "Investissement et étude de marché",
           "name": "Investissement et étude de marché",
           "summary": "Investissements, marchés et portefeuilles"
         },
         "marketing": {
+          "mobileName": "Marketing et contenu",
           "name": "Marketing et contenu",
           "summary": "Réseaux sociaux, contenu et marque"
         },
         "operations": {
+          "mobileName": "Business et opérations",
           "name": "Business et opérations",
           "summary": "Dirigeants, assistants et opérations"
         },
         "other": {
+          "mobileName": "Autre / encore en réflexion",
           "name": "Autre / encore en réflexion",
           "summary": "Un autre domaine, ou encore en réflexion"
         },
         "research": {
+          "mobileName": "Recherche et apprentissage",
           "name": "Recherche et apprentissage",
           "summary": "Recherche, études et apprentissage"
         },
         "sales": {
+          "mobileName": "Vente et développement client",
           "name": "Vente et développement client",
           "summary": "Prospection, vente et croissance client"
         },
         "software": {
+          "mobileName": "Logiciels et applis",
           "name": "Logiciels et applis",
           "summary": "Applis, jeux et développement"
         }
@@ -4262,6 +4273,30 @@
       "industry": {
         "copy": "Okou est l’assistant de travail pour vous et votre équipe. Il transforme les informations dispersées en travail accompli, dans le cloud. Choisissez votre domaine pour une première tâche adaptée.",
         "title": "Quel type de travail faites-vous ?"
+      },
+      "mobile": {
+        "channelsCopy": "Écrivez à Okou là où vous travaillez déjà.",
+        "channelsTitle": "Choisissez une messagerie",
+        "connect": "Connecter",
+        "copyImportPrompt": "Copier le prompt d’import",
+        "existingPlan": "Utiliser mon offre {{provider}}",
+        "experienceTitle": "Choisissez comment commencer",
+        "industryCopy": "Nous vous proposerons une première tâche adaptée.",
+        "industryTitle": "Choisissez votre domaine",
+        "instructions": "Instructions",
+        "newCopy": "De l’aide pour votre première tâche.",
+        "newTitle": "Commencer avec Okou",
+        "pasteIntoProvider": "Collez dans {{provider}} et envoyez.",
+        "permissionsLabel": "Autorisations et confidentialité",
+        "planCopy": "Exécutez des tâches avec votre abonnement.",
+        "promptTitle": "Que souhaitez-vous faire ?",
+        "readyTitle": "Lancez votre première tâche",
+        "skillsCopy": "Utilisez {{provider}} sur votre ordinateur.",
+        "skillsTitle": "Importez vos compétences",
+        "sourcesCopy": "Connectez un outil pour la première tâche.",
+        "startTask": "Lancer la tâche",
+        "teamCopy": "Travaillez dans le même espace.",
+        "teamTitle": "Invitez un collègue"
       },
       "prompt": {
         "intro": "Okou est l’assistant de travail pour vous et votre équipe. Il transforme les informations dispersées en travail accompli, dans le cloud."

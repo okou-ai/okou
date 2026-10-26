@@ -2,7 +2,7 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Loader2, Plus } from "lucide-react";
-import { cn } from "@okouai/ui";
+import { cn, Button, Card, surfaceVariants } from "@okouai/ui";
 import {
   connectorSlugSchema,
   type ConnectorSlug,
@@ -37,6 +37,7 @@ import {
 } from "../okou-page/components/settings/launch-connector-connect.ts";
 import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { useMobileOnboarding } from "./use-mobile-onboarding.ts";
 
 interface ConnectorSetupBaseProps {
   readonly connectorSlugs: readonly string[];
@@ -75,13 +76,7 @@ function parseConnectorSlugs(values: readonly string[]): ConnectorSlug[] {
  * catalog description until the source is connected and an account status strip
  * after that. Without `onActivate` the card only reports its status.
  */
-function SourceConnectorCard({
-  connectorSlug,
-  connector,
-  connected,
-  busy,
-  onActivate,
-}: {
+interface SourceConnectorCardProps {
   readonly connectorSlug: ConnectorSlug;
   readonly connector: Pick<
     PlatformConnectorCatalogConnectItem,
@@ -90,9 +85,71 @@ function SourceConnectorCard({
   readonly connected: boolean;
   readonly busy: boolean;
   readonly onActivate?: () => void;
-}) {
+}
+
+function MobileSourceConnectorCard({
+  connectorSlug,
+  connector,
+  connected,
+  busy,
+  onActivate,
+}: SourceConnectorCardProps) {
+  const { t } = useTranslation();
+  return (
+    <Card
+      data-slot="connector-card"
+      className={surfaceVariants({
+        className: "flex min-h-16 items-center gap-3 p-3 text-left",
+      })}
+    >
+      <ConnectorIcon icon={connector.icon} size={20} />
+      <span className="min-w-0 flex-1 whitespace-normal text-sm font-medium">
+        {connector.label}
+      </span>
+      <Button
+        type="button"
+        variant={connected ? "quiet" : "ghost"}
+        size="sm"
+        className="shrink-0"
+        disabled={onActivate === undefined}
+        pending={busy}
+        aria-label={t(
+          ($) => {
+            return connected
+              ? $.connectors.catalog.access.manage
+              : $.connectors.card.connectAria;
+          },
+          { connector: connector.label },
+        )}
+        data-connector-slug={connectorSlug}
+        onClick={onActivate}
+      >
+        {connected ? (
+          <ConnectorEntryStatus
+            tone="success"
+            label={t(($) => {
+              return $.connectors.card.connected;
+            })}
+          />
+        ) : (
+          t(($) => {
+            return $.onboarding.sourcesFirst.mobile.connect;
+          })
+        )}
+      </Button>
+    </Card>
+  );
+}
+
+function SourceConnectorCard(props: SourceConnectorCardProps) {
+  const { connectorSlug, connector, connected, busy, onActivate } = props;
   const { t } = useTranslation();
   const interactive = !busy && onActivate !== undefined;
+  const mobile = useMobileOnboarding();
+
+  if (mobile) {
+    return <MobileSourceConnectorCard {...props} />;
+  }
 
   return (
     <ConnectorEntryCard

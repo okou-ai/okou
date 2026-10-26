@@ -20,6 +20,7 @@ import {
   INDUSTRY_SOURCE_SLUGS,
 } from "./onboarding-sources-first-data.ts";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
+import { OnboardingSecurityLink } from "./onboarding-industry-parts.tsx";
 
 /** The field answered on the step before decides which sources appear. */
 function featuredSlugsFor(
@@ -77,6 +78,24 @@ export function OnboardingSourcesPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.sources.copy;
       })}
+      mobileDescription={t(($) => {
+        return $.onboarding.sourcesFirst.mobile.sourcesCopy;
+      })}
+      mobileFooter={
+        <details className="text-sm text-muted-foreground">
+          <summary className="cursor-pointer rounded-lg py-3 hover:text-foreground">
+            {t(($) => {
+              return $.onboarding.sourcesFirst.mobile.permissionsLabel;
+            })}
+          </summary>
+          <p className="mt-1 leading-6">
+            {t(($) => {
+              return $.onboarding.sourcesFirst.sources.permissions;
+            })}
+          </p>
+          <OnboardingSecurityLink />
+        </details>
+      }
       trustPoints={[
         t(($) => {
           return $.onboarding.sourcesFirst.sources.permissions;
