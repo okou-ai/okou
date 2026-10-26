@@ -169,16 +169,11 @@ export function subscriptionInvoicePublicationPlan(
           sql`SELECT w.id, f.* FROM grant_winner w JOIN grant_facts f ON w.idempotency_key = f.idempotency_key WHERE w.org_id = f.org_id AND w.user_id = f.user_id AND w.grant_type = f.grant_type AND w.original_amount = f.original_amount AND date_trunc('milliseconds', w.expires_at) = f.expires_at`,
         ),
       qb.$with("refund_winner", {}).as(refundWinners()),
-      qb
-        .$with("refund_valid", {})
-        .as(
-          sql`SELECT w.credit_grant_id FROM refund_winner w JOIN grant_valid f ON w.credit_grant_id = f.id WHERE w.org_id = f.org_id AND w.user_id = f.user_id AND w.source_type = f.source_type AND w.stripe_invoice_id IS NOT DISTINCT FROM f.stripe_invoice_id AND w.stripe_invoice_line_id IS NOT DISTINCT FROM f.stripe_invoice_line_id AND w.stripe_payment_intent_id IS NOT DISTINCT FROM f.stripe_payment_intent_id AND w.source_amount_cents = f.source_amount_cents`,
-        ),
       qb.$with("failures", {}).as(sql`
  SELECT change_index, -1 AS grant_index, 0 AS stage, '__TX0272_ATOMIC_GUARD_V1_CHANGE_' || change_index || '__' AS token FROM change_facts f WHERE NOT EXISTS (SELECT 1 FROM claimed c WHERE c.id = f.change_id)
  UNION ALL SELECT f.change_index, f.grant_index, 0, '__TX0272_ATOMIC_GUARD_V1_GRANT_' || f.change_index || '_' || f.grant_index || '__' FROM grant_facts f JOIN claimed c ON c.id = f.change_id WHERE NOT EXISTS (SELECT 1 FROM grant_valid v WHERE v.idempotency_key = f.idempotency_key)
  UNION ALL SELECT change_index, grant_index, 1, '__TX0272_ATOMIC_GUARD_V1_REFUND_AMOUNT_' || change_index || '_' || grant_index || '__' FROM grant_valid WHERE has_refund AND NOT source_valid
- UNION ALL SELECT f.change_index, f.grant_index, 2, '__TX0272_ATOMIC_GUARD_V1_REFUND_SOURCE_' || f.change_index || '_' || f.grant_index || '__' FROM grant_valid f WHERE has_refund AND source_valid AND NOT EXISTS (SELECT 1 FROM refund_valid v WHERE v.credit_grant_id = f.id)`),
+ UNION ALL SELECT f.change_index, f.grant_index, 2, '__TX0272_ATOMIC_GUARD_V1_REFUND_SOURCE_' || f.change_index || '_' || f.grant_index || '__' FROM grant_valid f WHERE has_refund AND source_valid AND NOT EXISTS (SELECT 1 FROM refund_winner w WHERE w.credit_grant_id = f.id AND w.org_id = f.org_id AND w.user_id = f.user_id AND w.source_type = f.source_type AND w.stripe_invoice_id IS NOT DISTINCT FROM f.stripe_invoice_id AND w.stripe_invoice_line_id IS NOT DISTINCT FROM f.stripe_invoice_line_id AND w.stripe_payment_intent_id IS NOT DISTINCT FROM f.stripe_payment_intent_id AND w.source_amount_cents = f.source_amount_cents)`),
     ],
     from: sql`(SELECT 1) AS publication`,
     fields: {
