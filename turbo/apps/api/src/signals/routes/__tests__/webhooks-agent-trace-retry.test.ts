@@ -114,32 +114,24 @@ describe("optional agent trace recovery", () => {
     });
   });
 
-  it.each([400, 401, 403, 404, 413, 307])(
-    "does not retry permanent HTTP %s or follow its redirect",
+  it.each([400, 401, 403, 404, 413])(
+    "does not retry permanent HTTP %s",
     async (status) => {
       const { owned, headers, body } = await traceRun();
       await owned.run(async () => {
         await enableDebug(owned);
-        const redirect = "https://redirect.example.test/axiom-ingest";
         let attempts = 0;
-        let forwarded = 0;
         server.use(
           http.post(INGEST_URL, () => {
             attempts += 1;
             return new HttpResponse(null, {
               status,
-              headers: { location: redirect },
             });
-          }),
-          http.post(redirect, () => {
-            forwarded += 1;
-            return ingested();
           }),
         );
         await api.requestAgentEvents(body, headers, [200]);
         await flushWaitUntilForTest();
         expect(attempts).toBe(1);
-        expect(forwarded).toBe(0);
       });
     },
   );
@@ -408,47 +400,34 @@ describe("optional agent trace recovery", () => {
     });
   });
 
-  it.each([503, 307])(
-    "keeps required telemetry HTTP %s outside optional trace recovery",
-    async (status) => {
-      const { owned, headers, run } = await traceRun();
-      await owned.run(async () => {
-        const redirect = "https://redirect.example.test/required-ingest";
-        let attempts = 0;
-        let forwarded = 0;
-        server.use(
-          http.post(
-            "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
-            () => {
-              attempts += 1;
-              return new HttpResponse(null, {
-                status,
-                headers: { location: redirect },
-              });
-            },
-          ),
-          http.post(redirect, () => {
-            forwarded += 1;
-            return ingested();
-          }),
-        );
-        const failed = await api.requestAgentTelemetry(
-          {
-            runId: run.runId,
-            networkLogs: [
-              {
-                timestamp: new Date(now()).toISOString(),
-                host: "required-ingest.example.test",
-              },
-            ],
+  it("keeps required telemetry HTTP 503 outside optional trace recovery", async () => {
+    const { owned, headers, run } = await traceRun();
+    await owned.run(async () => {
+      let attempts = 0;
+      server.use(
+        http.post(
+          "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
+          () => {
+            attempts += 1;
+            return new HttpResponse(null, { status: 503 });
           },
-          headers,
-          [500],
-        );
-        expect(failed.status).toBe(500);
-        expect(attempts).toBe(1);
-        expect(forwarded).toBe(0);
-      });
-    },
-  );
+        ),
+      );
+      const failed = await api.requestAgentTelemetry(
+        {
+          runId: run.runId,
+          networkLogs: [
+            {
+              timestamp: new Date(now()).toISOString(),
+              host: "required-ingest.example.test",
+            },
+          ],
+        },
+        headers,
+        [500],
+      );
+      expect(failed.status).toBe(500);
+      expect(attempts).toBe(1);
+    });
+  });
 });

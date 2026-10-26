@@ -81,7 +81,6 @@ async function commandRequest(url, token, method, body) {
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    redirect: "error",
     signal: globalThis.AbortSignal.timeout(15_000),
   });
   // Another registration may already have removed the superseded command.

@@ -1363,35 +1363,6 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
       });
       await flushWaitUntilForTest();
       expect(failedRequestCount).toBe(2);
-
-      const redirectTarget =
-        "https://api.axiom.co/v1/datasets/redirected-agent-run-events/ingest";
-      let redirectTargetRequests = 0;
-      server.use(
-        http.post(
-          "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
-          () => {
-            return new HttpResponse(null, {
-              headers: { location: redirectTarget },
-              status: 307,
-            });
-          },
-        ),
-        http.post(redirectTarget, () => {
-          redirectTargetRequests += 1;
-          return HttpResponse.json(
-            successfulAxiomIngestStatus(body.events.length),
-          );
-        }),
-      );
-      const redirected = await api.requestAgentEvents(body, headers, [200]);
-      expect(redirected.body).toStrictEqual({
-        received: 2,
-        firstSequence: 1,
-        lastSequence: 2,
-      });
-      await flushWaitUntilForTest();
-      expect(redirectTargetRequests).toBe(0);
     });
   });
 

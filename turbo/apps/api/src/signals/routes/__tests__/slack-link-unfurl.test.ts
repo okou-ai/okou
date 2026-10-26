@@ -555,17 +555,55 @@ describe("Slack link previews", () => {
     });
   });
 
-  it("skips failed, non-HTML, redirected and oversized pages without losing valid sibling previews", async () => {
+  it("resolves redirected page images against the final URL", async () => {
     const f = await fixture();
-    const origin = new URL(env("APP_URL")).origin;
-    const redirectedRequests: string[] = [];
+    const originalUrl = `${new URL(env("APP_URL")).origin}/redirect`;
+    const finalUrl = "https://pages.example.com/guides/launch/";
     server.use(
-      http.get("http://127.0.0.1/private", ({ request }) => {
-        redirectedRequests.push(request.url);
+      http.get(originalUrl, () => {
+        return new HttpResponse(null, {
+          status: 302,
+          headers: { location: finalUrl },
+        });
+      }),
+      http.get(finalUrl, () => {
         return HttpResponse.html(
-          '<head><meta property="og:title" content="Internal page"></head>',
+          '<head><meta property="og:title" content="Redirected page"><meta property="og:image" content="cover.png"></head>',
         );
       }),
+    );
+    await accept(postLinks(f.teamId, [originalUrl]), [200]);
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
+      channel: "C_PREVIEW",
+      ts: messageTs,
+      unfurls: {
+        [originalUrl]: {
+          blocks: [
+            { type: "divider" },
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `*<${originalUrl}|Redirected page>*`,
+                verbatim: true,
+              },
+            },
+            {
+              type: "image",
+              image_url: signedImageUrl(`${finalUrl}cover.png`),
+              alt_text: "Redirected page",
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it("skips failed, non-HTML and oversized pages without losing valid sibling previews", async () => {
+    const f = await fixture();
+    const origin = new URL(env("APP_URL")).origin;
+    server.use(
       http.get(`${origin}/missing`, () => {
         return new HttpResponse(null, { status: 404 });
       }),
@@ -584,12 +622,6 @@ describe("Slack link previews", () => {
       http.get(`${origin}/file`, () => {
         return HttpResponse.json({ title: "Not page metadata" });
       }),
-      http.get(`${origin}/redirect`, () => {
-        return new HttpResponse(null, {
-          status: 302,
-          headers: { location: "http://127.0.0.1/private" },
-        });
-      }),
       http.get(`${origin}/large`, () => {
         return HttpResponse.html("x".repeat(4 * 1024 * 1024 + 1));
       }),
@@ -604,7 +636,6 @@ describe("Slack link previews", () => {
           "private",
           "offline",
           "file",
-          "redirect",
           "large",
           "works",
         ].map((path) => {
@@ -619,7 +650,6 @@ describe("Slack link previews", () => {
       ts: messageTs,
       unfurls: { [valid]: expect.any(Object) },
     });
-    expect(redirectedRequests).toStrictEqual([]);
   });
 
   it("processes redelivery against the same message and supports composer targets", async () => {

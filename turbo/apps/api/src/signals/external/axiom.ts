@@ -518,9 +518,6 @@ async function ingestAxiomRequest(
     awaitWithSignal(
       fetch(axiomIngestUrl(dataset), {
         method: "POST",
-        // Workers do not support "error". Reject non-2xx below without
-        // forwarding the ingest token or payload to a redirect destination.
-        redirect: "manual",
         headers: {
           accept: "application/json",
           authorization: `Bearer ${token}`,

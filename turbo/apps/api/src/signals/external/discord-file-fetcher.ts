@@ -159,10 +159,9 @@ async function downloadAttachment(
   signal: AbortSignal,
 ): Promise<DownloadedDiscordAttachment> {
   // Signed Discord CDN URLs carry their own short-lived authorization. Never
-  // forward the bot credential or follow a redirect to another host.
+  // forward the bot credential.
   const fetched = await settle(
     fetch(args.url, {
-      redirect: "manual",
       credentials: "omit",
       signal,
     }),

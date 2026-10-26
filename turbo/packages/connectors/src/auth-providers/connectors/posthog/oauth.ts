@@ -74,7 +74,6 @@ async function requestToken(
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
     signal,
-    redirect: "error",
   });
   if (!response.ok) {
     await throwOAuthError("PostHog", operation, response);
@@ -156,7 +155,6 @@ export async function refreshPosthogToken(
 async function fetchPosthogUserInfo(baseUrl: string, accessToken: string) {
   const response = await fetch(`${baseUrl}/api/users/@me/`, {
     headers: { Authorization: `Bearer ${accessToken}` },
-    redirect: "error",
   });
   if (!response.ok) {
     throw new Error(`PostHog user info fetch failed: ${response.status}`);

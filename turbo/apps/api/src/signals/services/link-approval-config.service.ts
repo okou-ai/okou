@@ -47,7 +47,6 @@ export async function startLinkApprovalWorkflow(
   }
   const response = await fetch(url, {
     method: "POST",
-    redirect: "manual",
     signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
     headers: {
       authorization: `Bearer ${secret}`,

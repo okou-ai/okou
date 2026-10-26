@@ -8,7 +8,6 @@ async function readPublicHtml(url: URL, signal: AbortSignal) {
     headers: { Accept: "text/html, application/xhtml+xml" },
     credentials: "omit",
     cache: "no-store",
-    redirect: "manual",
     signal,
   });
   const contentType = response.headers
@@ -27,9 +26,10 @@ async function readPublicHtml(url: URL, signal: AbortSignal) {
     return null;
   }
   const reader = response.body.getReader();
-  return readHtmlBody(reader, signal).finally(() => {
+  const html = await readHtmlBody(reader, signal).finally(() => {
     reader.releaseLock();
   });
+  return html === null ? null : { html, url: response.url };
 }
 
 async function readHtmlBody(
@@ -56,7 +56,6 @@ async function readHtmlBody(
 /** The caller restricts the destination to a supported origin before this anonymous read. */
 export async function fetchSlackPageMetadata(url: URL, signal: AbortSignal) {
   // A failed optional page read must not discard previews for sibling links.
-  // Never follow redirects out of the caller's checked origin or send auth.
   const controller = new AbortController();
   const result = await settleIncludingAbort(
     readPublicHtml(
@@ -69,6 +68,6 @@ export async function fetchSlackPageMetadata(url: URL, signal: AbortSignal) {
   });
   signal.throwIfAborted();
   return result.ok && result.value !== null
-    ? htmlOpenGraphMetadata(result.value, url.href)
+    ? htmlOpenGraphMetadata(result.value.html, result.value.url)
     : null;
 }
