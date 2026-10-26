@@ -218,9 +218,7 @@ describe("POST /api/me/model-provider-accounts/:id/activate", () => {
       const actor = bdd.user();
       const connect = type === "codex" ? connectCodex : connectClaude;
       const first = await connect(actor);
-      mockNow(new Date("2026-10-09T14:01:00Z"));
       const second = await connect(actor);
-      mockNow(new Date("2026-10-09T14:02:00Z"));
       const third = await connect(actor);
 
       await support.deletePersonalModelProviderAccount(actor, first.id);
