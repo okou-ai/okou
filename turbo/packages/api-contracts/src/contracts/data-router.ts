@@ -4,7 +4,7 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-/** MITM registers trusted Run attribution before forwarding a Router tool call. */
+/** MITM records Router-generated response IDs against trusted Run attribution. */
 export const dataRouterRequestContract = c.router({
   register: {
     method: "POST",

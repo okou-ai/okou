@@ -51,7 +51,6 @@ export async function readGetStartedRewardPost(
               Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
               Accept: "application/json, text/event-stream",
-              "X-Okou-Data-Request-Id": randomUUID(),
             },
             body: JSON.stringify({
               jsonrpc: "2.0",
