@@ -49,9 +49,12 @@ function contains(id: string, active: boolean) {
   const identity = active ? { id, status: "active" } : { id };
   return sql`${agentSuggestions.entries} @> ${sql.param(JSON.stringify([identity]))}::jsonb`;
 }
+function containsOption(id: string, optionId: string) {
+  return sql`${agentSuggestions.entries} @> ${sql.param(JSON.stringify([{ id, options: [{ id: optionId }] }]))}::jsonb`;
+}
 /** Compact terminal business receipts without changing the active suggestions. */
 function compactEntries() {
-  return sql`COALESCE((SELECT jsonb_agg(CASE WHEN item->>'status' = 'active' THEN item ELSE jsonb_build_object('id', item->>'id', 'status', item->>'status', 'createdAt', item->>'createdAt', 'updatedAt', item->>'updatedAt') END) FROM jsonb_array_elements(${agentSuggestions.entries}) AS item), '[]'::jsonb)`;
+  return sql`COALESCE((SELECT jsonb_agg(CASE WHEN item->>'status' = 'active' THEN item ELSE jsonb_build_object('id', item->>'id', 'status', item->>'status', 'selectedOptionId', item->'selectedOptionId', 'createdAt', item->>'createdAt', 'updatedAt', item->>'updatedAt') END) FROM jsonb_array_elements(${agentSuggestions.entries}) AS item), '[]'::jsonb)`;
 }
 function capacityViolation(error: unknown): boolean {
   return (
@@ -227,14 +230,22 @@ export const createSuggestion$ = command(
     input: SuggestionCreate,
     signal: AbortSignal,
   ) => {
-    const invalid = await set(validateThread$, owner, input.threadId, signal);
-    if (invalid) {
-      return invalid;
+    for (const option of input.options) {
+      const invalid = await set(
+        validateThread$,
+        owner,
+        option.threadId,
+        signal,
+      );
+      if (invalid) {
+        return invalid;
+      }
     }
     const timestamp = nowDate().toISOString();
     const item = suggestionSchema.parse({
       ...input,
       status: "active",
+      selectedOptionId: null,
       createdAt: timestamp,
       updatedAt: timestamp,
     });
@@ -275,9 +286,8 @@ export const createSuggestion$ = command(
       existing?.status === "active" &&
       existing.title === input.title &&
       existing.rationale === input.rationale &&
-      existing.threadId === input.threadId &&
       existing.priority === input.priority &&
-      isDeepStrictEqual(existing.draft, input.draft)
+      isDeepStrictEqual(existing.options, input.options)
     ) {
       return { status: 200 as const, body: existing };
     }
@@ -292,16 +302,27 @@ const changeSuggestion$ = command(
     { set },
     owner: Owner,
     id: string,
-    patch: SuggestionUpdate & { readonly status?: "consumed" | "removed" },
+    patch: SuggestionUpdate & {
+      readonly status?: "consumed" | "removed";
+      readonly selectedOptionId?: string | null;
+    },
     signal: AbortSignal,
   ) => {
     const data = { ...patch, updatedAt: nowDate().toISOString() };
     const [row] = await set(writeDb$)
       .update(agentSuggestions)
       .set({
-        entries: sql`(SELECT jsonb_agg(CASE WHEN item->>'id' = ${id} THEN item || ${sql.param(JSON.stringify(data))}::jsonb WHEN item->>'status' = 'active' THEN item ELSE jsonb_build_object('id', item->>'id', 'status', item->>'status', 'createdAt', item->>'createdAt', 'updatedAt', item->>'updatedAt') END) FROM jsonb_array_elements(${agentSuggestions.entries}) AS item)`,
+        entries: sql`(SELECT jsonb_agg(CASE WHEN item->>'id' = ${id} THEN item || ${sql.param(JSON.stringify(data))}::jsonb WHEN item->>'status' = 'active' THEN item ELSE jsonb_build_object('id', item->>'id', 'status', item->>'status', 'selectedOptionId', item->'selectedOptionId', 'createdAt', item->>'createdAt', 'updatedAt', item->>'updatedAt') END) FROM jsonb_array_elements(${agentSuggestions.entries}) AS item)`,
       })
-      .where(and(scope(owner), contains(id, true)))
+      .where(
+        and(
+          scope(owner),
+          contains(id, true),
+          typeof patch.selectedOptionId === "string"
+            ? containsOption(id, patch.selectedOptionId)
+            : undefined,
+        ),
+      )
       .returning({ entries: agentSuggestions.entries });
     signal.throwIfAborted();
     if (!row) {
@@ -325,10 +346,17 @@ export const updateSuggestion$ = command(
     input: SuggestionUpdate,
     signal: AbortSignal,
   ) => {
-    if (input.threadId !== undefined) {
-      const invalid = await set(validateThread$, owner, input.threadId, signal);
-      if (invalid) {
-        return invalid;
+    if (input.options) {
+      for (const option of input.options) {
+        const invalid = await set(
+          validateThread$,
+          owner,
+          option.threadId,
+          signal,
+        );
+        if (invalid) {
+          return invalid;
+        }
       }
     }
     const item = await set(changeSuggestion$, owner, id, input, signal);
@@ -344,16 +372,22 @@ export const removeSuggestion$ = command(
   },
 );
 export const consumeSuggestion$ = command(
-  async ({ set }, owner: Owner, id: string, signal: AbortSignal) => {
+  async (
+    { set },
+    owner: Owner,
+    id: string,
+    optionId: string | null,
+    signal: AbortSignal,
+  ) => {
     const item = await set(
       changeSuggestion$,
       owner,
       id,
-      { status: "consumed" },
+      { status: "consumed", selectedOptionId: optionId },
       signal,
     );
     return item
       ? { status: 200 as const, body: item }
-      : conflict("Suggestion has already been consumed or is unavailable.");
+      : conflict("Suggestion or selected option is no longer available.");
   },
 );

@@ -3,6 +3,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   suggestionsContract,
   type Suggestion,
+  type SuggestionOption,
 } from "@okouai/api-contracts/contracts/suggestions";
 import { accept } from "../../lib/accept.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -46,6 +47,7 @@ const revision$ = state(0);
 const consumedIds$ = state<readonly string[]>([]);
 interface SuggestionCardContext {
   readonly item: Suggestion;
+  readonly option: SuggestionOption;
   // Once consumed, this card is a recoverable draft, not another consume/send.
   readonly recoveryAgentId: string | null;
   // Domain receipt: this consumed suggestion is already in the member's draft.
@@ -55,6 +57,9 @@ const cardContext$ = state<SuggestionCardContext | null>(null);
 export const agentSuggestionRecoveryId$ = computed((get) => {
   const context = get(cardContext$);
   return context?.recoveryAgentId ? context.item.id : null;
+});
+export const agentSuggestionSelectedOptionId$ = computed((get) => {
+  return get(cardContext$)?.option.id ?? null;
 });
 // The panel shows one suggestion at a time. A position rather than an id, so
 // consuming the card on screen brings up the one after it, and consuming the
@@ -128,7 +133,12 @@ export const subscribeAgentSuggestions$ = command(
  * elsewhere.
  */
 export const consumeAgentSuggestion$ = command(
-  async ({ get, set }, item: Suggestion, signal: AbortSignal) => {
+  async (
+    { get, set },
+    item: Suggestion,
+    optionId: string | null,
+    signal: AbortSignal,
+  ) => {
     signal.throwIfAborted();
     if (get(consumedIds$).includes(item.id)) {
       return null;
@@ -143,7 +153,7 @@ export const consumeAgentSuggestion$ = command(
         const response = await accept(
           get(apiClient$)(suggestionsContract).consume({
             params: { id: item.id },
-            body: {},
+            body: { optionId },
             fetchOptions: { signal },
           }),
           [200, 409],
@@ -206,29 +216,35 @@ const restoreAgentSuggestionDraft$ = command(
   async (
     { get, set },
     item: Suggestion,
+    option: SuggestionOption,
     agentId: string,
     signal: AbortSignal,
   ) => {
     const target =
-      item.threadId === null ? set(ensureAgentDraft$, agentId) : null;
+      option.threadId === null ? set(ensureAgentDraft$, agentId) : null;
     const draft =
-      item.threadId !== null
-        ? set(ensureDraft$, item.threadId)
+      option.threadId !== null
+        ? set(ensureDraft$, option.threadId)
         : set(ensureAgentDraft$, agentId).draft;
     if (!get(cardContext$)?.draftApplied) {
       // Validation/application throw synchronously. Only a returned command
       // result certifies that retry must never prepend this suggestion again.
-      const pending = set(draft.prependComposerDraft$, item.draft, signal);
-      set(cardContext$, { item, recoveryAgentId: agentId, draftApplied: true });
+      const pending = set(draft.prependComposerDraft$, option.draft, signal);
+      set(cardContext$, {
+        item,
+        option,
+        recoveryAgentId: agentId,
+        draftApplied: true,
+      });
       await pending;
     } else {
       await set(draft.reconcileComposerDraft$, signal);
     }
-    if (item.threadId !== null) {
-      await set(resumeThreadDraftHandoff$, item.threadId, signal);
+    if (option.threadId !== null) {
+      await set(resumeThreadDraftHandoff$, option.threadId, signal);
       signal.throwIfAborted();
       set(detachedNavigateTo$, ROUTES.chat, {
-        pathParams: { threadId: item.threadId },
+        pathParams: { threadId: option.threadId },
       });
       return;
     }
@@ -253,6 +269,7 @@ const sendAgentSuggestion$ = command(
   async (
     { get, set },
     item: Suggestion,
+    option: SuggestionOption,
     primary: string,
     parentSignal: AbortSignal,
   ) => {
@@ -262,15 +279,20 @@ const sendAgentSuggestion$ = command(
     return await withCleanup(
       (async () => {
         const agentId =
-          item.threadId === null
+          option.threadId === null
             ? primary
-            : (await set(lookupSuggestionThread$, item.threadId, parentSignal))
-                .meta?.agentId;
+            : (
+                await set(
+                  lookupSuggestionThread$,
+                  option.threadId,
+                  parentSignal,
+                )
+              ).meta?.agentId;
         parentSignal.throwIfAborted();
         if (!agentId) {
           throw new Error("Suggestion target is unavailable");
         }
-        const target = { agentId, threadId: item.threadId };
+        const target = { agentId, threadId: option.threadId };
         set(target$, target);
         const runner = get(runner$);
         if (!runner) {
@@ -289,7 +311,7 @@ const sendAgentSuggestion$ = command(
             get(runner$);
           }
         };
-        const message = item.draft.draftUserMessage;
+        const message = option.draft.draftUserMessage;
         const document = draftToEditorDoc(message);
         const content = message ? messageDocumentToPrompt(message) : null;
         if (!message || !document || content === null) {
@@ -297,7 +319,7 @@ const sendAgentSuggestion$ = command(
         }
         const attachments = userMessageDraftAttachments(
           message,
-          item.draft.draftAttachments ?? [],
+          option.draft.draftAttachments ?? [],
         );
         if (
           attachments.length !==
@@ -342,9 +364,9 @@ const sendAgentSuggestion$ = command(
           signal,
         );
         signal.throwIfAborted();
-        if (sent && item.threadId !== null) {
+        if (sent && option.threadId !== null) {
           set(detachedNavigateTo$, ROUTES.chat, {
-            pathParams: { threadId: item.threadId },
+            pathParams: { threadId: option.threadId },
           });
         }
         return sent;
@@ -354,7 +376,7 @@ const sendAgentSuggestion$ = command(
         const recovery = get(cardContext$);
         if (!parentSignal.aborted && !sent && recovery?.item.id === item.id) {
           set(cardContext$, { ...recovery, recoveryAgentId: primary });
-          set(showAgentSuggestionRecovery$, recovery.item);
+          set(showAgentSuggestionRecovery$, recovery.item, recovery.option.id);
         } else {
           toast.dismiss(`suggestion-recovery-${item.id}`);
         }
@@ -364,13 +386,18 @@ const sendAgentSuggestion$ = command(
 );
 
 const consumeAndRunAgentSuggestion$ = command(
-  async ({ get, set }, item: Suggestion, signal: AbortSignal) => {
+  async (
+    { get, set },
+    item: Suggestion,
+    optionId: string,
+    signal: AbortSignal,
+  ) => {
     const primary = await get(defaultAgentId$);
     signal.throwIfAborted();
     if (!primary) {
       throw new Error("Primary Agent is unavailable");
     }
-    const selected = await set(consumeAgentSuggestion$, item, signal);
+    const selected = await set(consumeAgentSuggestion$, item, optionId, signal);
     if (selected === null) {
       set(cardContext$, null);
       return;
@@ -378,21 +405,38 @@ const consumeAndRunAgentSuggestion$ = command(
     // The consume response owns the current content and destination. Preserve
     // it for recovery on both a domain refusal and a rejected send, without
     // turning transport failures into fulfilled operations.
-    set(cardContext$, { item: selected, recoveryAgentId: null });
-    if (await set(sendAgentSuggestion$, selected, primary, signal)) {
+    const option = selected.options.find((entry) => {
+      return entry.id === selected.selectedOptionId;
+    });
+    if (!option || option.id !== optionId) {
+      throw new Error(
+        "Consumed suggestion does not contain the selected option",
+      );
+    }
+    set(cardContext$, { item: selected, option, recoveryAgentId: null });
+    if (await set(sendAgentSuggestion$, selected, option, primary, signal)) {
       set(cardContext$, null);
     }
   },
 );
 
 const runAgentSuggestion$ = command(
-  async ({ get, set }, item: Suggestion, signal: AbortSignal) => {
+  async (
+    { get, set },
+    item: Suggestion,
+    optionId: string,
+    signal: AbortSignal,
+  ) => {
     signal.throwIfAborted();
     const context = get(cardContext$);
     if (context?.item.id === item.id && context.recoveryAgentId) {
+      if (context.option.id !== optionId) {
+        return;
+      }
       await set(
         restoreAgentSuggestionDraft$,
         context.item,
+        context.option,
         context.recoveryAgentId,
         signal,
       );
@@ -401,13 +445,19 @@ const runAgentSuggestion$ = command(
       toast.dismiss(`suggestion-recovery-${item.id}`);
       return;
     }
-    set(cardContext$, { item, recoveryAgentId: null });
-    await set(consumeAndRunAgentSuggestion$, item, signal);
+    const option = item.options.find((entry) => {
+      return entry.id === optionId;
+    });
+    if (!option) {
+      throw new Error("Suggestion option is unavailable");
+    }
+    set(cardContext$, { item, option, recoveryAgentId: null });
+    await set(consumeAndRunAgentSuggestion$, item, optionId, signal);
   },
 );
 
 const showAgentSuggestionRecovery$ = command(
-  ({ get, set }, item: Suggestion): void => {
+  ({ get, set }, item: Suggestion, optionId: string): void => {
     // This is a retained consumed-draft action, not a second HTTP error report.
     // It must survive the page that starting a new thread can unmount.
     toast.info(
@@ -423,7 +473,7 @@ const showAgentSuggestionRecovery$ = command(
           }),
           onClick: () => {
             detach(
-              set(startAgentSuggestion$, item, get(rootSignal$)),
+              set(startAgentSuggestion$, item, optionId, get(rootSignal$)),
               Reason.DomCallback,
             );
           },
@@ -437,6 +487,7 @@ export const startAgentSuggestion$ = command(
   async (
     { get, set },
     item: Suggestion,
+    optionId: string,
     pageSignal: AbortSignal,
   ): Promise<void> => {
     pageSignal.throwIfAborted();
@@ -449,7 +500,7 @@ export const startAgentSuggestion$ = command(
     }
     // Consumption and draft recovery survive the navigation initiated by sending.
     const signal = get(rootSignal$);
-    await set(runAgentSuggestion$, item, signal);
+    await set(runAgentSuggestion$, item, optionId, signal);
   },
 );
 
@@ -464,6 +515,6 @@ export const dismissAgentSuggestion$ = command(
         return;
       }
     }
-    await set(consumeAgentSuggestion$, item, signal);
+    await set(consumeAgentSuggestion$, item, null, signal);
   },
 );
