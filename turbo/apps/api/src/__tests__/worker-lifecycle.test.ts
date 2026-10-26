@@ -7,13 +7,23 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import type { ExecutionContext, Hyperdrive } from "@cloudflare/workers-types";
+import { HttpResponse, http } from "msw";
 import { onTestFinished } from "vitest";
-import { env } from "../lib/env";
+import { env, mockOptionalEnv } from "../lib/env";
+import { now } from "../lib/time";
+import { server } from "../mocks/server";
 import { createDeferredPromise } from "../signals/utils";
 import { testContext } from "./test-context";
+import { stubTestVercelRuntimeToken } from "./env-stub";
 import { createRouteMocks } from "../signals/routes/__tests__/helpers/route-test";
 import { installDurableUserExportStorage } from "../signals/routes/__tests__/helpers/durable-user-export-storage";
 import { mockClerkUsers } from "../signals/routes/__tests__/helpers/clerk-users";
+import {
+  GOOGLE_IMPERSONATION_URL,
+  VERTEX_VOICE_URL,
+  mockGoogleVoice,
+  vertexVoiceResponse,
+} from "../signals/routes/__tests__/helpers/google-voice";
 // Do not call setupApp/isolatePg here. The common case-database adapter has no
 // selected database and delegates to original.db(), so Worker AsyncLocalStorage
 // selects the request's real pg Pool, not a PGlite or test-owned DB handle.
@@ -47,7 +57,9 @@ function actor() {
   });
 }
 
-function caller() {
+function caller(gcpMtls?: {
+  fetch: (url: string, init?: RequestInit) => Promise<Response>;
+}) {
   const pending: Promise<unknown>[] = [];
   const failures: unknown[] = [];
   const execution = {
@@ -109,7 +121,7 @@ function caller() {
             ...init.headers,
           },
         }),
-        { HYPERDRIVE: binding },
+        { HYPERDRIVE: binding, GCP_MTLS: gcpMtls },
         execution,
       );
     },
@@ -317,4 +329,214 @@ test("retains the publicly accepted export job after a background provider recei
     status: "pending",
   });
   await expect(observer.settle()).resolves.toStrictEqual([]);
+});
+
+describe("Google authentication through the Worker HTTP entrypoint", () => {
+  const stsUrl = "https://sts.mtls.googleapis.com/v1/token";
+  const provider =
+    "projects/123456789/locations/global/workloadIdentityPools/worker-preview/providers/x509";
+  const certificateChain = ["cHJldmlldy1sZWFm", "cHJldmlldy1jYQ=="];
+  const scope = "https://www.googleapis.com/auth/cloud-platform";
+
+  function stsToken() {
+    return HttpResponse.json({
+      access_token: "worker-sts-token",
+      token_type: "Bearer",
+      issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+      expires_in: 3600,
+    });
+  }
+
+  function polish(client: ReturnType<typeof caller>, signal?: AbortSignal) {
+    return client.request("/api/voice-io/polish/segments", {
+      method: "POST",
+      body: JSON.stringify({ segments: ["Synthetic worker dictation."] }),
+      signal,
+    });
+  }
+
+  async function prepareVoice() {
+    actor();
+    const setup = caller();
+    const response = await setup.request("/api/onboarding/complete", {
+      method: "POST",
+      body: "{}",
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      onboardingComplete: true,
+    });
+    await expect(setup.settle()).resolves.toStrictEqual([]);
+
+    mockGoogleVoice();
+    mockOptionalEnv("GCP_LLM_WORKLOAD_IDENTITY_PROVIDER", provider);
+    mockOptionalEnv(
+      "GCP_MTLS_CERTIFICATE_CHAIN",
+      JSON.stringify(certificateChain),
+    );
+    server.use(
+      http.post(stsUrl, stsToken),
+      http.post(VERTEX_VOICE_URL, () => {
+        return vertexVoiceResponse("Synthetic worker dictation.");
+      }),
+    );
+  }
+
+  afterEach(() => {
+    stubTestVercelRuntimeToken(undefined);
+  });
+
+  it("uses the certificate binding for Vertex and reuses credentials only in a configured Worker", async () => {
+    await prepareVoice();
+    stubTestVercelRuntimeToken(undefined);
+    let certificateExchanges = 0;
+    const binding = {
+      fetch(url: string, init?: RequestInit) {
+        certificateExchanges += 1;
+        return fetch(url, init);
+      },
+    };
+    server.use(
+      http.post(stsUrl, async ({ request }) => {
+        expect(request.headers.get("content-type")).toBe("application/json");
+        await expect(request.json()).resolves.toStrictEqual({
+          grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+          audience: `//iam.googleapis.com/${provider}`,
+          scope,
+          requested_token_type: "urn:ietf:params:oauth:token-type:access_token",
+          subject_token_type: "urn:ietf:params:oauth:token-type:mtls",
+          subject_token: JSON.stringify(certificateChain),
+        });
+        return stsToken();
+      }),
+      http.post(GOOGLE_IMPERSONATION_URL, async ({ request }) => {
+        expect(request.headers.get("authorization")).toBe(
+          "Bearer worker-sts-token",
+        );
+        await expect(request.json()).resolves.toStrictEqual({
+          scope: [scope],
+          lifetime: "3600s",
+        });
+        return HttpResponse.json({
+          accessToken: "worker-impersonated-token",
+          expireTime: new Date(now() + 3_599_000).toISOString(),
+        });
+      }),
+      http.post(VERTEX_VOICE_URL, ({ request }) => {
+        expect(request.headers.get("authorization")).toBe(
+          "Bearer worker-impersonated-token",
+        );
+        return vertexVoiceResponse("Synthetic worker dictation.");
+      }),
+    );
+
+    for (let request = 0; request < 2; request += 1) {
+      const client = caller(binding);
+      const response = await polish(client);
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toStrictEqual({
+        text: "Synthetic worker dictation.",
+      });
+      await expect(client.settle()).resolves.toStrictEqual([]);
+    }
+    expect(certificateExchanges).toBe(1);
+
+    // A warm credential must not let a Worker without its identity binding
+    // authenticate, even if a Vercel identity is available in the host.
+    stubTestVercelRuntimeToken("synthetic-vercel-runtime-token");
+    const unconfigured = caller();
+    const rejected = await polish(unconfigured);
+    expect(rejected.status).toBe(503);
+    await expect(rejected.json()).resolves.toMatchObject({
+      error: { code: "NOT_CONFIGURED" },
+    });
+    await expect(unconfigured.settle()).resolves.toStrictEqual([]);
+  });
+
+  it.each([403, 302])(
+    "rejects certificate exchange HTTP %i without falling back to Vercel identity",
+    async (status) => {
+      await prepareVoice();
+      server.use(
+        http.post(stsUrl, () => {
+          return HttpResponse.json(
+            { error: "Certificate identity was not accepted" },
+            {
+              status,
+              headers: { Location: "https://unexpected.example/token" },
+            },
+          );
+        }),
+      );
+      const client = caller({
+        fetch(url, init) {
+          return fetch(url, init);
+        },
+      });
+      const response = await polish(client);
+      expect(response.status).toBe(502);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: "VOICE_POLISH_FAILED" },
+      });
+      await expect(client.settle()).resolves.toStrictEqual([]);
+    },
+  );
+
+  it("finishes an independent certificate exchange after another caller disconnects", async () => {
+    await prepareVoice();
+    const firstEntered = latch();
+    const firstAborted = latch();
+    const secondEntered = latch();
+    const releaseSecond = latch();
+    let exchanges = 0;
+    server.use(
+      http.post(stsUrl, async ({ request }) => {
+        exchanges += 1;
+        if (exchanges === 1) {
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              firstAborted.resolve();
+            },
+            { once: true },
+          );
+          firstEntered.resolve();
+          await firstAborted.promise;
+        } else {
+          secondEntered.resolve();
+          await releaseSecond.promise;
+        }
+        return stsToken();
+      }),
+    );
+    const binding = {
+      fetch(url: string, init?: RequestInit) {
+        return fetch(url, init);
+      },
+    };
+    const disconnected = caller(binding);
+    const surviving = caller(binding);
+    const controller = new AbortController();
+    onTestFinished(() => {
+      controller.abort();
+    });
+    const first = polish(disconnected, controller.signal);
+    await firstEntered.promise;
+    const second = polish(surviving);
+    await secondEntered.promise;
+    controller.abort(new DOMException("Caller disconnected", "AbortError"));
+    await firstAborted.promise;
+    releaseSecond.resolve();
+
+    const cancelled = await first;
+    expect(cancelled.status).toBe(500);
+    await cancelled.body?.cancel();
+    await expect(disconnected.settle()).resolves.toStrictEqual([]);
+    const completed = await second;
+    expect(completed.status).toBe(200);
+    await expect(completed.json()).resolves.toStrictEqual({
+      text: "Synthetic worker dictation.",
+    });
+    await expect(surviving.settle()).resolves.toStrictEqual([]);
+  });
 });

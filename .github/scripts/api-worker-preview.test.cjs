@@ -221,6 +221,9 @@ function deploymentFixture(t, environment = {}) {
     CF_API_TRACES_DESTINATION: "okou-api-dev-traces",
     CF_API_LOGS_DESTINATION: "okou-api-dev-logs",
     CF_API_NATIVE_TELEMETRY: "true",
+    GCP_MTLS_CERTIFICATE_ID: undefined,
+    GCP_MTLS_CERTIFICATE_CHAIN: undefined,
+    GCP_MTLS_WORKLOAD_IDENTITY_PROVIDER: undefined,
     GITHUB_OUTPUT: outputFile,
     GITHUB_STEP_SUMMARY: undefined,
     ...environment,
@@ -357,6 +360,95 @@ test("native deployment binds preconfigured exports without requiring an Axiom d
   );
   assert.equal(fs.existsSync(generatedPath), false);
   assert.equal(fs.existsSync(path.dirname(secretsPath)), false);
+});
+
+test("Worker deployment binds certificate federation while preserving the shared Vercel environment", async (t) => {
+  const provider =
+    "projects/123456789/locations/global/workloadIdentityPools/api-preview/providers/x509";
+  const certificateChain = JSON.stringify(["bGVhZg==", "cm9vdA=="]);
+  const { envFile } = deploymentFixture(t, {
+    GCP_MTLS_CERTIFICATE_ID: "c".repeat(32),
+    GCP_MTLS_CERTIFICATE_CHAIN: certificateChain,
+    GCP_MTLS_WORKLOAD_IDENTITY_PROVIDER: provider,
+  });
+  fs.appendFileSync(
+    envFile,
+    "GCP_LLM_PROJECT_ID=test-project\n" +
+      "GCP_LLM_SERVICE_ACCOUNT_EMAIL=llm-dev@test-project.iam.gserviceaccount.com\n" +
+      "GCP_LLM_WORKLOAD_IDENTITY_PROVIDER=projects/123456789/locations/global/workloadIdentityPools/vercel/providers/oidc\n",
+  );
+  const sharedEnvironment = fs.readFileSync(envFile, "utf8");
+  let deployedRuntime;
+  t.mock.method(childProcess, "spawnSync", (_command, args) => {
+    if (args.includes("deploy")) {
+      const config = JSON.parse(
+        fs.readFileSync(args[args.indexOf("--config") + 1], "utf8"),
+      );
+      assert.deepEqual(config.mtls_certificates, [
+        { binding: "GCP_MTLS", certificate_id: "c".repeat(32) },
+      ]);
+      const secrets = JSON.parse(
+        fs.readFileSync(args[args.indexOf("--secrets-file") + 1], "utf8"),
+      );
+      deployedRuntime = JSON.parse(
+        Array.from(
+          { length: Number(secrets.API_ENV_JSON_PARTS) },
+          (_, i) => secrets[`API_ENV_JSON_${i}`],
+        ).join(""),
+      );
+    }
+    return { status: 0 };
+  });
+  await main("deploy");
+  assert.equal(deployedRuntime.GCP_LLM_WORKLOAD_IDENTITY_PROVIDER, provider);
+  assert.equal(deployedRuntime.GCP_MTLS_CERTIFICATE_CHAIN, certificateChain);
+  assert.equal(deployedRuntime.GCP_LLM_PROJECT_ID, "test-project");
+  assert.equal(
+    deployedRuntime.GCP_LLM_SERVICE_ACCOUNT_EMAIL,
+    "llm-dev@test-project.iam.gserviceaccount.com",
+  );
+  assert.equal(fs.readFileSync(envFile, "utf8"), sharedEnvironment);
+});
+
+test("configured Google operations without a certificate identity stop before resource mutations", async (t) => {
+  const { envFile, mutations } = deploymentFixture(t);
+  fs.appendFileSync(
+    envFile,
+    "GCP_LLM_PROJECT_ID=test-project\n" +
+      "GCP_LLM_SERVICE_ACCOUNT_EMAIL=llm-dev@test-project.iam.gserviceaccount.com\n" +
+      "GCP_LLM_WORKLOAD_IDENTITY_PROVIDER=projects/123456789/locations/global/workloadIdentityPools/vercel/providers/oidc\n",
+  );
+  const processBoundary = t.mock.method(childProcess, "spawnSync", () => {
+    throw new Error("Deployment requires a Worker certificate identity");
+  });
+  await assert.rejects(main("deploy"), /complete GCP mTLS configuration/);
+  assert.equal(processBoundary.mock.callCount(), 0);
+  assert.deepEqual(mutations, []);
+});
+
+test("Worker deployment rejects the Vercel OIDC provider as its certificate identity", async (t) => {
+  const provider =
+    "projects/123456789/locations/global/workloadIdentityPools/vercel/providers/oidc";
+  const { envFile, mutations } = deploymentFixture(t, {
+    GCP_MTLS_CERTIFICATE_ID: "c".repeat(32),
+    GCP_MTLS_CERTIFICATE_CHAIN: JSON.stringify(["bGVhZg=="]),
+    GCP_MTLS_WORKLOAD_IDENTITY_PROVIDER: provider,
+  });
+  fs.appendFileSync(
+    envFile,
+    "GCP_LLM_PROJECT_ID=test-project\n" +
+      "GCP_LLM_SERVICE_ACCOUNT_EMAIL=llm-dev@test-project.iam.gserviceaccount.com\n" +
+      `GCP_LLM_WORKLOAD_IDENTITY_PROVIDER=${provider}\n`,
+  );
+  const processBoundary = t.mock.method(childProcess, "spawnSync", () => {
+    throw new Error("Deployment requires an X.509 provider");
+  });
+  await assert.rejects(
+    main("deploy"),
+    /distinct X\.509 workload identity provider/,
+  );
+  assert.equal(processBoundary.mock.callCount(), 0);
+  assert.deepEqual(mutations, []);
 });
 
 for (const kind of ["logs", "traces"]) {
