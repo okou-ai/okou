@@ -260,6 +260,19 @@ export const recordRunnerUsageBatch$ = command(
             }
           }
         }
+        const lockedRun = db.$with("runner_locked_run").as(
+          db
+            .select({ id: agentRuns.id })
+            .from(agentRuns)
+            .where(
+              and(
+                eq(agentRuns.id, args.runId),
+                eq(agentRuns.orgId, args.orgId),
+                eq(agentRuns.userId, args.userId),
+              ),
+            )
+            .for("key share"),
+        );
         const inserted = db
           .$with("runner_inserted_usage")
           .as(
@@ -278,11 +291,15 @@ export const recordRunnerUsageBatch$ = command(
                 eq(billingRunAttribution.runId, args.runId),
                 eq(billingRunAttribution.usageObserved, false),
                 exists(db.select({ id: inserted.id }).from(inserted)),
+                // INSERT's Run FK checks run after the modifying CTEs. Resolve
+                // the FK-compatible Run lock before attribution, matching
+                // completion's Run-first lock order.
+                exists(db.select({ id: lockedRun.id }).from(lockedRun)),
               ),
             ),
         );
         await db
-          .with(inserted, observed)
+          .with(lockedRun, inserted, observed)
           .select({ id: inserted.id })
           .from(inserted);
         signal.throwIfAborted();
