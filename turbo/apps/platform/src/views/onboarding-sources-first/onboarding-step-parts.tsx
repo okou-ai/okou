@@ -177,9 +177,9 @@ export function OnboardingChoiceCard({
       )}
     >
       {/* The control sits on the title's line, with the summary under it. */}
-      <span className="flex items-center gap-3 max-sm:gap-2">
+      <span className="flex min-w-0 items-center gap-3 max-sm:w-full max-sm:gap-2">
         <Radio value={value} />
-        <span className="min-w-0 text-sm font-medium text-foreground sm:truncate">
+        <span className="min-w-0 text-sm font-medium text-foreground max-sm:[overflow-wrap:anywhere] sm:truncate">
           {mobile ? mobileTitle : title}
         </span>
       </span>
