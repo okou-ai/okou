@@ -9,7 +9,7 @@ import type { RouteEntry } from "../route-entry";
 import {
   controlBrowserOwner$,
   createRunnerBrowserAuthority,
-  createRunnerBrowserInspection,
+  createRunnerBrowserRead,
 } from "../services/browser-owner.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { createRunnerBrowserAllocation } from "../services/browser-owner-profile.service";
@@ -31,11 +31,13 @@ const controlInput$ = computed(async (get) => {
     : null;
 });
 const owner$ = createRunnerBrowserAuthority(controlInput$);
-const inspectAction$ = computed(async (get) => {
+const readAction$ = computed(async (get) => {
   const input = await get(controlInput$);
-  return input?.action.kind === "inspect" ? input.action : null;
+  return input?.action.kind === "inspect" || input?.action.kind === "authorize"
+    ? input.action
+    : null;
 });
-const inspection$ = createRunnerBrowserInspection(owner$, inspectAction$);
+const browserRead$ = createRunnerBrowserRead(owner$, readAction$);
 const allocation$ = createRunnerBrowserAllocation(owner$);
 
 const control$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -89,8 +91,11 @@ const control$ = command(async ({ get, set }, signal: AbortSignal) => {
   ) {
     return { status: 200 as const, body: { outcome: "unavailable" as const } };
   }
-  if (body.data.action.kind === "inspect") {
-    const result = await get(inspection$);
+  if (
+    body.data.action.kind === "inspect" ||
+    body.data.action.kind === "authorize"
+  ) {
+    const result = await get(browserRead$);
     signal.throwIfAborted();
     return { status: 200 as const, body: result };
   }

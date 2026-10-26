@@ -171,6 +171,190 @@ async function admit(chat: Chat, instanceId: string, primaryWindowId: number) {
   return { instanceId, primaryWindowId };
 }
 
+function authorization(
+  instance: ReturnType<typeof accepted>,
+  primaryWindowId: number,
+) {
+  if (instance.providerSessionId === null) {
+    throw new Error("Expected a published provider session");
+  }
+  return {
+    kind: "authorize" as const,
+    instanceId: instance.id,
+    providerSessionId: instance.providerSessionId,
+    primaryWindowId,
+  };
+}
+
+describe("official Runner Browser authorization", () => {
+  it("authorizes only the exact live chat window without renewing its lease", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const a = await f.start(),
+        b = await f.start();
+      await expect(
+        a.request({
+          kind: "authorize",
+          instanceId: randomUUID(),
+          providerSessionId: randomUUID(),
+          primaryWindowId: 0,
+        }),
+      ).resolves.toStrictEqual({ outcome: "unavailable" });
+      const instance = await allocate(a);
+      const action = authorization(instance, 0);
+      await expect(a.request(action)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      await admit(a, instance.id, 0);
+      const wb = await admit(b, instance.id, 102);
+      const before = accepted(await a.request({ kind: "inspect" }));
+      expect(accepted(await a.request(action))).toStrictEqual(before);
+      expect(before.window).toMatchObject({
+        primaryWindowId: 0,
+        expiresAt: START + 10 * MINUTE,
+      });
+      for (const forged of [
+        { ...action, instanceId: randomUUID() },
+        { ...action, providerSessionId: randomUUID() },
+        { ...action, primaryWindowId: wb.primaryWindowId },
+      ]) {
+        await expect(a.request(forged)).resolves.toStrictEqual({
+          outcome: "unavailable",
+        });
+      }
+      await expect(b.request(action)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      const siblingAction = authorization(instance, wb.primaryWindowId);
+      expect(
+        accepted(await b.request(siblingAction)).window?.chatThreadId,
+      ).toBe(b.threadId);
+
+      mockNow(START + 9 * MINUTE);
+      expect(accepted(await a.request(action))).toStrictEqual(before);
+      accepted(await b.request({ kind: "renew", ...wb }));
+      mockNow(START + 10 * MINUTE);
+      await expect(a.request(action)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(accepted(await a.request({ kind: "inspect" }))).toStrictEqual(
+        before,
+      );
+      expect(accepted(await b.request(siblingAction)).window?.state).toBe(
+        "active",
+      );
+    });
+  });
+
+  it("retains cleanup identities while rejecting unpublished, closing, stopped and replaced windows", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const creating = accepted(await chat.request({ kind: "allocate" }));
+      const action = {
+        kind: "authorize" as const,
+        instanceId: creating.id,
+        providerSessionId: randomUUID(),
+        primaryWindowId: 0,
+      };
+      await expect(chat.request(action)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(accepted(await chat.request({ kind: "inspect" })).status).toBe(
+        "creating",
+      );
+      accepted(
+        await chat.request({
+          kind: "publish",
+          instanceId: creating.id,
+          providerSessionId: action.providerSessionId,
+          timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
+        }),
+      );
+      const original = await admit(chat, creating.id, 0);
+      accepted(await chat.request(action));
+      accepted(
+        await chat.request({ kind: "retire", ...original, reason: "closed" }),
+      );
+      await expect(chat.request(action)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(
+        accepted(await chat.request({ kind: "inspect" })).window?.state,
+      ).toBe("closing");
+      accepted(
+        await chat.request({ kind: "completeWindowClose", ...original }),
+      );
+      await expect(chat.request(action)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      const reopened = await admit(chat, creating.id, 1);
+      await expect(chat.request(action)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      const currentAction = { ...action, primaryWindowId: 1 };
+      accepted(await chat.request(currentAction));
+      accepted(
+        await chat.request({ kind: "retire", ...reopened, reason: "closed" }),
+      );
+      accepted(
+        await chat.request({ kind: "beginStop", instanceId: creating.id }),
+      );
+      await expect(chat.request(currentAction)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(accepted(await chat.request({ kind: "inspect" })).status).toBe(
+        "stopping",
+      );
+      accepted(
+        await chat.request({ kind: "completeStop", instanceId: creating.id }),
+      );
+      await expect(chat.request(currentAction)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(accepted(await chat.request({ kind: "inspect" })).status).toBe(
+        "stopped",
+      );
+      const replacement = await allocate(chat);
+      await admit(chat, replacement.id, 1);
+      await expect(chat.request(currentAction)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(
+        accepted(await chat.request(authorization(replacement, 1))).id,
+      ).toBe(replacement.id);
+    });
+  });
+
+  it("rejects authorization at the physical deadline without changing lifecycle metadata", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const creating = accepted(await chat.request({ kind: "allocate" }));
+      const instance = accepted(
+        await chat.request({
+          kind: "publish",
+          instanceId: creating.id,
+          providerSessionId: randomUUID(),
+          timeoutAt: new Date(START + 5 * MINUTE).toISOString(),
+        }),
+      );
+      await admit(chat, instance.id, 0);
+      const action = authorization(instance, 0);
+      const before = accepted(await chat.request({ kind: "inspect" }));
+      mockNow(START + 4 * MINUTE);
+      expect(accepted(await chat.request(action))).toStrictEqual(before);
+      mockNow(START + 5 * MINUTE);
+      await expect(chat.request(action)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(accepted(await chat.request({ kind: "inspect" }))).toStrictEqual(
+        before,
+      );
+    });
+  });
+});
+
 describe("official Runner Browser lifecycle", () => {
   it("does not expose or mutate another owner's Browser generation", async () => {
     const first = await fixture();
@@ -178,8 +362,12 @@ describe("official Runner Browser lifecycle", () => {
     await first.owned.run(async () => {
       const a = await first.start();
       const instance = await allocate(a);
+      await admit(a, instance.id, 0);
       await other.owned.run(async () => {
         const b = await other.start();
+        await expect(
+          b.request(authorization(instance, 0)),
+        ).resolves.toStrictEqual({ outcome: "unavailable" });
         await expect(
           b.request({ kind: "inspect", instanceId: instance.id }),
         ).resolves.toStrictEqual({ outcome: "unavailable" });
@@ -266,6 +454,22 @@ describe("official Runner Browser lifecycle", () => {
       ).resolves.toStrictEqual({ outcome: "unavailable" });
 
       const instance = await allocate(chat);
+      await admit(chat, instance.id, 0);
+      const action = authorization(instance, 0);
+      accepted(await chat.request(action));
+      await updateFeatureSwitchesForUser(context, f.featureActor, {
+        [FeatureSwitchKey.BrowserSharedOwner]: false,
+      });
+      await expect(chat.request(action)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect(
+        accepted(await chat.request({ kind: "inspect" })).window
+          ?.primaryWindowId,
+      ).toBe(0);
+      await updateFeatureSwitchesForUser(context, f.featureActor, {
+        [FeatureSwitchKey.BrowserSharedOwner]: true,
+      });
       expect(JSON.stringify(instance)).not.toMatch(
         /cdpUrl|liveUrl|secret|token/u,
       );
@@ -279,6 +483,9 @@ describe("official Runner Browser lifecycle", () => {
       await expect(
         chat.request({ kind: "inspect", instanceId: instance.id }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
+      await expect(chat.request(action)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
       await chatApi.updateThreadComputerUseHost(
         f.owned.actor,
         chat.threadId,
@@ -288,6 +495,7 @@ describe("official Runner Browser lifecycle", () => {
       expect(accepted(await chat.request({ kind: "inspect" })).id).toBe(
         instance.id,
       );
+      accepted(await chat.request(action));
       await withNowScopeForTest(() => {
         return runs.requestHeartbeatRunner(true, [200], {
           group: f.owned.runnerGroup,
@@ -298,7 +506,13 @@ describe("official Runner Browser lifecycle", () => {
       await expect(
         chat.request({ kind: "inspect", instanceId: instance.id }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
+      await expect(chat.request(action)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
       const terminal = await f.start();
+      await admit(terminal, instance.id, 1);
+      const terminalAction = authorization(instance, 1);
+      accepted(await terminal.request(terminalAction));
       expect(accepted(await terminal.request({ kind: "inspect" })).id).toBe(
         instance.id,
       );
@@ -314,6 +528,9 @@ describe("official Runner Browser lifecycle", () => {
       await expect(
         terminal.request({ kind: "inspect", instanceId: instance.id }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
+      await expect(terminal.request(terminalAction)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
     });
   });
 
