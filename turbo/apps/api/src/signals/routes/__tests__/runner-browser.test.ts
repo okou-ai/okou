@@ -621,6 +621,53 @@ describe("official Runner Browser lifecycle", () => {
 });
 
 describe("owner provider profiles", () => {
+  it("reports a cleanup deadline that expires before candidate reference reconciliation", async () => {
+    const both = createDeferredPromise<void>(context.signal);
+    const deadline = new AbortController();
+    let arrivals = 0;
+    const f = await fixture(
+      true,
+      profileProvider(async () => {
+        if (++arrivals === 2) {
+          deadline.abort(new DOMException("Cleanup deadline", "TimeoutError"));
+          context.mocks.abortSignal.timeout.mockReturnValueOnce(
+            deadline.signal,
+          );
+          both.resolve();
+        }
+        await both.promise;
+      }),
+    );
+    await f.owned.run(async () => {
+      const a = await f.start(),
+        b = await f.start();
+      const results = await Promise.all([
+        a.control({ kind: "allocate" }),
+        b.control({ kind: "allocate" }),
+      ]);
+      context.mocks.abortSignal.timeout.mockReset();
+      expect(
+        results
+          .map((result) => {
+            return result.status;
+          })
+          .sort(),
+      ).toStrictEqual([200, 502]);
+      expect(
+        results.find((result) => {
+          return result.status === 502;
+        }),
+      ).toMatchObject({
+        body: { error: { code: "BROWSER_USE_TIMEOUT" } },
+      });
+      const winner = accepted(await a.request({ kind: "inspect" }));
+      expect(
+        (await fetch(`${PROVIDER_URL}/profiles/${winner.providerProfileId}`))
+          .status,
+      ).toBe(200);
+    });
+  });
+
   it("reports a losing candidate's cleanup deadline without deleting the winner", async () => {
     const both = createDeferredPromise<void>(context.signal);
     const deleting = createDeferredPromise<void>(context.signal);

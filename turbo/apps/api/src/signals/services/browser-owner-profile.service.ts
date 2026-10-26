@@ -68,7 +68,13 @@ const cleanupProfileCandidate$ = command(
             eq(browserThreadProfiles.providerProfileId, providerProfileId),
           ),
       );
-    signal.throwIfAborted();
+    if (signal.aborted) {
+      throw new BrowserUseProviderError(
+        502,
+        "BROWSER_USE_TIMEOUT",
+        "Managed browser provider profile cleanup timed out",
+      );
+    }
     if (
       references.some((row) => {
         return row.providerProfileId === providerProfileId;
