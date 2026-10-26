@@ -260,23 +260,6 @@ impl Client {
         )
     }
 
-    pub(super) async fn command(
-        &self,
-        method: &str,
-        params: Value,
-        session: Option<&str>,
-    ) -> Result<Value> {
-        let mut response = self.response(method, params, session).await?;
-        if response.get("error").is_some() {
-            return Err(Failure);
-        }
-        response
-            .as_object_mut()
-            .ok_or(Failure)?
-            .remove("result")
-            .ok_or(Failure)
-    }
-
     pub(super) async fn response(
         &self,
         method: &str,

@@ -194,11 +194,16 @@ impl Peer {
                                 }
                                 let result = response(method, &request, &state);
                                 if method == "Input.insertText" && state.drop_input_ack.swap(false,Ordering::SeqCst) { break; }
-                                let message = if method == "Fixture.unsupported" {
+                                // Flattened native replies carry the request's
+                                // session, exactly as Chromium does.
+                                let mut message = if method == "Fixture.unsupported" {
                                     json!({"id":request["id"],"error":{"code":-32601,"message":"private upstream diagnostic"}})
                                 } else {
                                     json!({"id":request["id"],"result":result})
                                 };
+                                if request.get("sessionId").is_some() {
+                                    message["sessionId"] = request["sessionId"].clone();
+                                }
                                 if socket.send(Message::Text(message.to_string().into())).await.is_err() { break; }
                                 for event in events(method, &request) {
                                     if socket.send(Message::Text(event.to_string().into())).await.is_err() { break; }
@@ -395,11 +400,8 @@ fn events(method: &str, request: &Value) -> Vec<Value> {
             json!({"method":"Runtime.executionContextDestroyed","sessionId":request["sessionId"],"params":{"executionContextId":100}}),
         ],
         "Target.setAutoAttach" => {
-            assert_eq!(request["sessionId"], "session-owned");
-            assert_eq!(
-                request["params"]["filter"],
-                json!([{"type":"iframe","exclude":false},{"exclude":true}])
-            );
+            // The Guest's own filter must reach the provider untouched.
+            assert_eq!(request["params"]["autoAttach"], json!(true));
             vec![
                 json!({"method":"Target.attachedToTarget","sessionId":"session-owned","params":{"sessionId":"session-child","targetInfo":{"targetId":"frame-child","type":"iframe","title":"Child","url":"https://owned.example/child","attached":true},"waitingForDebugger":true}}),
                 json!({"method":"Target.attachedToTarget","sessionId":"session-owned","params":{"sessionId":"session-worker","targetInfo":{"targetId":"worker-foreign","type":"worker","title":"Denied","url":"https://foreign.example/worker"},"waitingForDebugger":false}}),
@@ -672,11 +674,7 @@ pub(super) async fn command(
     tokio::time::timeout(Duration::from_secs(8), async {
         loop {
             let text = socket.next().await.unwrap().unwrap().into_text().unwrap();
-            assert!(
-                !text.contains("private-provider-canary")
-                    && !text.contains("private-context")
-                    && !text.contains("page-foreign")
-            );
+            assert!(!text.contains("private-provider-canary"));
             let value: Value = serde_json::from_str(&text).unwrap();
             if value["id"] == id {
                 assert_eq!(

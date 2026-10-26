@@ -1,9 +1,8 @@
-//! Window-scoped CDP using existing Runner authority and binary Guest RPC.
+//! Full CDP forwarding over an established, chat-owned Browser connection.
 
 mod authority;
-mod broker;
 mod client;
-mod policy;
+mod forward;
 #[cfg(test)]
 mod tests;
 
@@ -24,7 +23,7 @@ use crate::{
     destination::{Network, PublicNetwork},
     guest_rpc,
 };
-use broker::Broker;
+use forward::Forwarder;
 
 // Match tungstenite's normal complete-message scale, including large captures.
 pub(super) const MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
@@ -99,9 +98,9 @@ impl BrowserRuntime {
                 Arc::clone(&capacity),
             )
             .await?;
-            Ok::<_, Failure>((scope, socket))
+            Ok::<_, Failure>(socket)
         };
-        let Some(Ok((scope, socket))) = initial.wait(setup).await else {
+        let Some(Ok(socket)) = initial.wait(setup).await else {
             initial.error(input, ErrorCode::Unavailable).await;
             return;
         };
@@ -109,7 +108,7 @@ impl BrowserRuntime {
         let guest_ended = tokio_util::sync::CancellationToken::new();
         let (client, mut events) = client::Client::start(socket, &stream_cancelled);
         let upstream_cancelled = client.cancelled();
-        let mut broker = Broker::new(client, scope);
+        let mut forwarder = Forwarder::new(client);
         let (read, write) = tokio::io::split(input);
         let mut output = Writer::responses(write);
         let (send, mut receive) = mpsc::channel(8);
@@ -159,20 +158,18 @@ impl BrowserRuntime {
                     }
                     let message: Value = serde_json::from_slice(&bytes).map_err(|_| Failure)?;
                     drop(bytes);
-                    let result = broker.dispatch(message).await?;
+                    let result = forwarder.dispatch(message).await?;
                     let bytes = serde_json::to_vec(&result).map_err(|_| Failure)?;
                     drop(result);
                     messages::write(&mut output, &bytes, MAX_MESSAGE_BYTES)
                         .await
                         .map_err(|_| Failure)?;
                 } else if let Some(event) = next.1 {
-                    if let Some(event) = broker.event(event.value).await? {
-                        let bytes = serde_json::to_vec(&event).map_err(|_| Failure)?;
-                        drop(event);
-                        messages::write(&mut output, &bytes, MAX_MESSAGE_BYTES)
-                            .await
-                            .map_err(|_| Failure)?;
-                    }
+                    let bytes = serde_json::to_vec(&event.value).map_err(|_| Failure)?;
+                    drop(event);
+                    messages::write(&mut output, &bytes, MAX_MESSAGE_BYTES)
+                        .await
+                        .map_err(|_| Failure)?;
                 } else {
                     return Ok(());
                 }
@@ -190,7 +187,7 @@ impl BrowserRuntime {
         };
         reader.abort();
         let _ = reader.await;
-        broker.client.shutdown().await;
+        forwarder.client.shutdown().await;
         let terminal = async {
             if result.is_ok() {
                 output.send(&Frame::End).await?;

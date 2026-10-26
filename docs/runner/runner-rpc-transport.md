@@ -354,9 +354,13 @@ until resolution finishes, independently of the Guest stream and park reservatio
 An explicitly validated continuous consumer may use its existing owner lifecycle
 without increasing ordinary RPC or file-transfer defaults. The Browser adapter
 uses one `browser.cdp` operation for each Guest-loopback WebSocket. API authority
-is checked during establishment only; established commands/events retain native
-window/resource checks without API polling. Run/Guest termination cancels the
-stream, and native physical Browser instance expiry/stop closes the upstream.
+is checked during establishment only. Established streams forward every CDP
+method, parameter, session and event unchanged, including browser-wide
+operations, storage and cookie access, nested `Target` messages and unknown
+methods; the transport adds no command/parameter denial, resource index,
+filtering, rewriting or per-message control query. Native reply and error
+payloads stay faithful, and Run/Guest termination cancels the stream while
+native physical Browser instance expiry/stop closes the upstream.
 The stream adds no separate expiry, window-idle timer or renewal observer;
 initial handshake and cleanup waits remain bounded I/O operations. The adapter
 and handler retain the same byte, frame-count, backpressure and unique-terminal/EOF
