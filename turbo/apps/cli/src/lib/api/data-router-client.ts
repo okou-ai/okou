@@ -100,7 +100,7 @@ export async function listDataRouterTools(): Promise<DataRouterTool[]> {
   return withDataRouter(discoverTools);
 }
 
-/** The privileged MITM injects authentication and a managed request ID. */
+/** MITM injects authentication and records the billing identity returned by Router. */
 export async function callDataRouterTool(
   name: string,
   input: Record<string, unknown>,
