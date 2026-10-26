@@ -13,6 +13,7 @@ cd "$repo_root"
 build_root="$RUNNER_TEMP/okou-ios-ci"
 mkdir -p "$build_root"
 resolved=ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+combine_resolution=${IOS_COMBINE_DEPENDENCY_RESOLUTION:-false}
 # CI resolves dependencies and compiles before simulator startup, then runs tests.
 # Prepare/compile/run phases belong to CI; build retains the combined build entry.
 # Package CI has its own runner.
@@ -54,6 +55,16 @@ if [[ "${IOS_BUILD_CACHE_ENABLED:-false}" == true ]]; then
   )
 fi
 
+report_package_repositories() {
+  local repository
+  for repository in "$build_root"/SourcePackages/repositories/*; do
+    printf 'Resolved package repository %s shallow: ' "${repository##*/}"
+    git --git-dir="$repository" rev-parse --is-shallow-repository
+    printf 'Resolved package repository %s commits: ' "${repository##*/}"
+    git --git-dir="$repository" rev-list --count --all
+  done
+}
+
 if [[ "$ios_test_phase" == all ]]; then
   bash ios/scripts/ci-package-test.sh
 fi
@@ -75,16 +86,14 @@ export "GIT_CONFIG_VALUE_${git_config_index}=$build_root/package-sources.gitconf
 export GIT_CONFIG_COUNT=$((git_config_index + 1))
 
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == prepare ]]; then
-  # Resolve the locked graph before CI starts CoreSimulator so both cold
-  # initializations do not compete. Compilation still waits for system readiness.
-  xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
+  # Both modes finish locked graph resolution and compilation before simulator boot.
+  if [[ "$combine_resolution" != true ]]; then
+    xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
+  fi
   cmp "$resolved" "$build_root/Package.resolved.before"
-  for repository in "$build_root"/SourcePackages/repositories/*; do
-    printf 'Resolved package repository %s shallow: ' "${repository##*/}"
-    git --git-dir="$repository" rev-parse --is-shallow-repository
-    printf 'Resolved package repository %s commits: ' "${repository##*/}"
-    git --git-dir="$repository" rev-list --count --all
-  done
+  if [[ "$combine_resolution" != true ]]; then
+    report_package_repositories
+  fi
   echo "iOS dependency preparation: $((SECONDS - ios_phase_started)) seconds"
 fi
 
@@ -99,6 +108,9 @@ if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase
     xcodebuild "${xcode_args[@]}" -showBuildTimingSummary build-for-testing
   fi
   cmp "$resolved" "$build_root/Package.resolved.before"
+  if [[ "$combine_resolution" == true ]]; then
+    report_package_repositories
+  fi
   echo "iOS build-for-testing: $((SECONDS - ios_phase_started)) seconds"
 fi
 

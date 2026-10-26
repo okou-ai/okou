@@ -70,6 +70,10 @@ elif command == 'xcodebuild':
         sys.exit(0)
     if 'build-for-testing' in args:
         role = 'build'
+        if os.environ.get('IOS_COMBINE_DEPENDENCY_RESOLUTION') == 'true':
+            if scenario == 'prepare-failure':
+                sys.exit(17)
+            mark('prepare-finished')
         if not (state / 'prepare-finished').exists():
             sys.exit('Compilation started before locked dependency resolution finished')
         if (state / 'boot-started').exists():
@@ -83,6 +87,9 @@ elif command == 'xcodebuild':
             wait_for('allow-build')
         if scenario == 'build-failure':
             sys.exit(23)
+        if scenario == 'lock-mutated':
+            resolved = pathlib.Path('ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved')
+            resolved.write_text('{"pins": ["changed"]}\n')
         products = pathlib.Path(args[args.index('-derivedDataPath') + 1]) / 'Build/Products'
         products.mkdir(parents=True)
         if scenario != 'missing-products':
@@ -150,6 +157,7 @@ class CIProcessTests(unittest.TestCase):
             "IOS_TEST_DESTINATION": "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2",
             "CI_PROCESS_STATE": str(self.state),
             "CI_PROCESS_SCENARIO": "success",
+            "IOS_COMBINE_DEPENDENCY_RESOLUTION": "false",
         }
 
     def command(self, script="run-ci-tests.sh"):
@@ -194,6 +202,30 @@ class CIProcessTests(unittest.TestCase):
         self.env["CI_PROCESS_SCENARIO"] = "package-failure"
         result = self.invoke("ci-package-test.sh")
         self.assertEqual(result.returncode, 19, result.stderr)
+
+    def test_combined_resolution_preserves_the_complete_build_and_test_suite(self):
+        self.env["IOS_COMBINE_DEPENDENCY_RESOLUTION"] = "true"
+        packages = self.invoke("ci-package-test.sh")
+        self.assertEqual(packages.returncode, 0, packages.stderr)
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_complete_suite()
+
+    def test_combined_resolution_failure_blocks_simulator_startup_and_tests(self):
+        self.env["IOS_COMBINE_DEPENDENCY_RESOLUTION"] = "true"
+        self.env["CI_PROCESS_SCENARIO"] = "prepare-failure"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 17, result.stderr)
+        self.assertFalse((self.state / "boot-started").exists())
+        self.assertFalse((self.state / "tests-ran").exists())
+
+    def test_combined_build_rejects_a_changed_lockfile_before_simulator_startup(self):
+        self.env["IOS_COMBINE_DEPENDENCY_RESOLUTION"] = "true"
+        self.env["CI_PROCESS_SCENARIO"] = "lock-mutated"
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.state / "boot-started").exists())
+        self.assertFalse((self.state / "tests-ran").exists())
 
     def test_resolution_failure_does_not_start_the_simulator_or_native_tests(self):
         self.env["CI_PROCESS_SCENARIO"] = "prepare-failure"

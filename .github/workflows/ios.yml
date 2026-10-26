@@ -8,6 +8,14 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      combine_dependency_resolution:
+        description: Resolve locked packages during build-for-testing
+        type: boolean
+        default: false
+      cold_package_sources:
+        description: Qualify an empty Xcode package directory before building
+        type: boolean
+        default: false
       sample_xcode_startup:
         description: Sample the compile-phase Xcode startup
         type: boolean
@@ -177,6 +185,7 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
       IOS_BUILD_CACHE_ENABLED: "true"
+      IOS_COMBINE_DEPENDENCY_RESOLUTION: ${{ github.event_name == 'workflow_dispatch' && inputs.combine_dependency_resolution && 'true' || 'false' }}
       IOS_XCODE_STARTUP_SAMPLING: ${{ github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -195,6 +204,19 @@ jobs:
         with:
           name: ios-package-sources-${{ github.sha }}
           path: ${{ env.IOS_PACKAGE_SOURCES_DIR }}
+      - name: Qualify an empty Xcode package directory
+        if: github.event_name == 'workflow_dispatch' && inputs.cold_package_sources
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import shutil
+          source_root = pathlib.Path(os.environ["RUNNER_TEMP"]) / "okou-ios-ci/SourcePackages"
+          if source_root.exists():
+              shutil.rmtree(source_root)
+          assert not source_root.exists()
+          print("Cold-source qualification: no restored Xcode package graph or checkouts")
+          PY
       - name: Configure locked package sources
         run: |
           mkdir -p "$RUNNER_TEMP/okou-ios-ci"
