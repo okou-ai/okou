@@ -61,7 +61,6 @@ export interface AgentToolsPromptInputs {
   readonly bankingEnabled: boolean;
   readonly remoteConnectionDiagnosticsEnabled: boolean;
   readonly larkEnabled: boolean;
-  readonly discordEnabled: boolean;
   readonly wechatEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
   readonly browserNativeInputEnabled: boolean;
@@ -84,10 +83,6 @@ export function buildAgentToolsPromptInputs(args: {
     bankingEnabled: isFeatureEnabled(FeatureSwitchKey.Banking, context),
     remoteConnectionDiagnosticsEnabled: isFeatureEnabled(
       FeatureSwitchKey.RemoteConnectionDiagnostics,
-      context,
-    ),
-    discordEnabled: isFeatureEnabled(
-      FeatureSwitchKey.DiscordIntegration,
       context,
     ),
     larkEnabled: isFeatureEnabled(FeatureSwitchKey.LarkIntegration, context),
@@ -247,13 +242,9 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     "- Slack channel discovery and history: use `okou slack channel list --help` to find channels shared by the connected user and bot, then `okou slack message history --help` to read shared channel or bot DM history.",
     "- Feishu messages: when the task explicitly asks to send or post to Feishu, use `okou feishu message send --help` for chats, DMs, and replies.",
     ...(args.wechatEnabled ? wechatToolsGuidance : []),
-    ...(args.discordEnabled
-      ? [
-          "- Discord: use `okou discord channel list --help` and `okou discord message history --help` for guild channels and threads shared by the connected user and Okou. `message replies` reads a native thread; a Discord reply reference is not itself a thread. Read one bounded page at a time and continue with `nextBefore`; do not infer unread messages are absent. Ordinary context can be limited by the bot MESSAGE_CONTENT intent.",
-          "- When explicitly asked to send to Discord, use `okou discord message send --help` with the destination channel or native thread ID. Long text is split without truncation; report partial delivery and already-delivered message links instead of blindly retrying the entire send. These commands require your own verified Discord binding. Connect from the authenticated App's Works settings to choose a server, or use a server's connection link to connect without choosing it again; use `okou discord connect --help` for setup guidance, never collect OAuth codes or provider tokens.",
-          "- Discord files: when the task explicitly asks to share a file in Discord, use `okou discord upload-file --help` with the destination channel or native thread ID; publication succeeds before delivery; retry with the printed `--operation-id` only when the JSON output reports the delivery as pending or retryable. Use `okou discord download-file --help` with the channel, message, and attachment IDs to read an attachment in a guild channel or thread the connected user and Okou can both access.",
-        ]
-      : []),
+    "- Discord: use `okou discord channel list --help` and `okou discord message history --help` for guild channels and threads shared by the connected user and Okou. `message replies` reads a native thread; a Discord reply reference is not itself a thread. Read one bounded page at a time and continue with `nextBefore`; do not infer unread messages are absent. Ordinary context can be limited by the bot MESSAGE_CONTENT intent.",
+    "- When explicitly asked to send to Discord, use `okou discord message send --help` with the destination channel or native thread ID. Long text is split without truncation; report partial delivery and already-delivered message links instead of blindly retrying the entire send. These commands require your own verified Discord binding. Connect from the authenticated App's Works settings to choose a server, or use a server's connection link to connect without choosing it again; use `okou discord connect --help` for setup guidance, never collect OAuth codes or provider tokens.",
+    "- Discord files: when the task explicitly asks to share a file in Discord, use `okou discord upload-file --help` with the destination channel or native thread ID; publication succeeds before delivery; retry with the printed `--operation-id` only when the JSON output reports the delivery as pending or retryable. Use `okou discord download-file --help` with the channel, message, and attachment IDs to read an attachment in a guild channel or thread the connected user and Okou can both access.",
     ...(args.larkEnabled
       ? [
           "- Lark messages: when the task explicitly asks to send or post to Lark, use `okou lark message send --help` for chats, DMs, and replies.",

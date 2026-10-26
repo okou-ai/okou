@@ -85,12 +85,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.HostedSiteTitleEditing]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Website title editing",
-    description: "Rename a hosted website without changing its address.",
-    enabled: true,
-  },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
     displayName: "Desktop Shell",
@@ -417,11 +411,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Connect WeChat by QR code and chat with Okou in direct messages.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.DiscordIntegration]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the verified Discord guild and bot DM integration.",
-    enabled: true,
   },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "yuma@okou.ai",

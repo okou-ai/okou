@@ -1,6 +1,5 @@
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 
 import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
@@ -236,7 +235,6 @@ test("A sanitized Discord return after login or actor change reports interrupted
     context,
     host: "app.okou.ai",
     path: "/settings/discord?status=pending&guild_id=123456789012345678",
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     auth: {
       user: { id: "replacement-user", fullName: "Replacement User" },
     },

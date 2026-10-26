@@ -6,10 +6,6 @@ import { hostCommand } from "../index";
 
 describe("okou host title", () => {
   const logs = vi.spyOn(console, "log").mockImplementation(() => {});
-  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
-  vi.spyOn(process, "exit").mockImplementation(() => {
-    throw new Error("process.exit called");
-  });
 
   beforeEach(() => {
     chalk.level = 0;
@@ -25,7 +21,6 @@ describe("okou host title", () => {
 
   afterEach(() => {
     logs.mockClear();
-    errors.mockClear();
     vi.unstubAllEnvs();
   });
 
@@ -64,33 +59,4 @@ describe("okou host title", () => {
       });
     },
   );
-
-  it("reports unavailable title editing without claiming success", async () => {
-    server.use(
-      http.patch("http://localhost:3000/api/host/sites/demo-site/title", () => {
-        return HttpResponse.json(
-          {
-            error: {
-              code: "RESOURCE_UNAVAILABLE",
-              message: "Website title editing is not available",
-            },
-          },
-          { status: 403 },
-        );
-      }),
-    );
-    await expect(
-      hostCommand.parseAsync([
-        "node",
-        "okou",
-        "title",
-        "demo-site",
-        "Quarterly report",
-      ]),
-    ).rejects.toThrow("process.exit called");
-    expect(errors.mock.calls.flat().join("\n")).toContain(
-      "Website title editing is not available",
-    );
-    expect(logs.mock.calls).toHaveLength(0);
-  });
 });

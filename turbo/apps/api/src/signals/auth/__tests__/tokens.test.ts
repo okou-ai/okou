@@ -229,8 +229,6 @@ describe("auth tokens", () => {
     [FeatureSwitchKey.LarkIntegration, "lark:write"],
     [FeatureSwitchKey.WechatIntegration, "wechat:read"],
     [FeatureSwitchKey.WechatIntegration, "wechat:write"],
-    [FeatureSwitchKey.DiscordIntegration, "discord:read"],
-    [FeatureSwitchKey.DiscordIntegration, "discord:write"],
   ] as const)(
     "gates %s capability behind its feature switch",
     (feature, capability) => {
@@ -257,6 +255,8 @@ describe("auth tokens", () => {
   it.each([
     "artifact:read",
     "artifact:write",
+    "discord:read",
+    "discord:write",
     "vnc:read",
     "vnc:write",
   ] as const)("grants %s by default", (capability) => {
