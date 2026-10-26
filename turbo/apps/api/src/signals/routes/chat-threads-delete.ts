@@ -1,3 +1,4 @@
+import { synchronizeUserPushBadge$ } from "../services/push-notifications.service";
 import { isOfficialWorkflowThread$ } from "../services/official-workflow-policy.service";
 import { command } from "ccstate";
 import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
@@ -50,6 +51,10 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!result.deleted) {
     return chatThreadNotFound();
   }
+
+  waitUntil(
+    set(synchronizeUserPushBadge$, auth.userId, new AbortController().signal),
+  );
 
   await set(stopThreadBrowsers$, { chatThreadId: params.id }, signal);
   signal.throwIfAborted();

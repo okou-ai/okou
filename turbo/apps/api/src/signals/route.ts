@@ -172,6 +172,7 @@ import { orgOpenrouterPresetRoutes } from "./routes/org-openrouter-preset";
 import { paidToolsRoutes } from "./routes/paid-tools";
 import { presentationTemplatesRoutes } from "./routes/presentation-templates";
 import { iosPushRegistrationsRoutes } from "./routes/ios-push-registrations";
+import { iosNotificationsRoutes } from "./routes/ios-notifications";
 import { pushSubscriptionsRoutes } from "./routes/push-subscriptions";
 import { realtimeTokenRoutes } from "./routes/realtime-token";
 import { registryResourceDownloadRoutes } from "./routes/registry-resources-download";
@@ -402,6 +403,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...orgOpenrouterPresetRoutes,
   ...pushSubscriptionsRoutes,
   ...iosPushRegistrationsRoutes,
+  ...iosNotificationsRoutes,
   ...userPermissionGrantsRoutes,
   ...userPreferencesRoutes,
   ...paidToolsRoutes,

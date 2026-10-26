@@ -5089,7 +5089,7 @@ describe("CHAT-02: push notification gating", () => {
       issuer: "TESTTEAM01",
     });
     expect(request.payload).toMatchObject({
-      aps: { "content-available": 1 },
+      aps: { "content-available": 1, badge: 1 },
       okou: {
         version: 1,
         userId: actor.userId,
@@ -5137,6 +5137,58 @@ describe("CHAT-02: push notification gating", () => {
     expect(provider.requests).toHaveLength(2);
   }, 60_000);
 
+  it("updates the icon badge after reads, unread changes, muting, and bulk reads without another alert", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const provider = await createApnsFixture(context);
+    await registerIosPush(context, { ...actor, orgId: actor.orgId! });
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId! },
+      {
+        chatThreadMuting: true,
+      },
+    );
+    const run = await startChatRun(actor, {
+      agentId,
+      prompt: "Badge lifecycle",
+    });
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(
+      run.runId,
+      await claimChatRun(runnerGroup, run.runId),
+    );
+    await flushWaitUntilForTest();
+    expect(provider.requests.at(-1)?.payload).toMatchObject({
+      aps: { badge: 1 },
+    });
+
+    await chat.markThreadRead(actor, run.threadId);
+    await flushWaitUntilForTest();
+    expect(provider.requests.at(-1)?.payload).toStrictEqual({
+      aps: { badge: 0 },
+    });
+    await chat.markThreadUnread(actor, run.threadId);
+    await flushWaitUntilForTest();
+    expect(provider.requests.at(-1)?.payload).toStrictEqual({
+      aps: { badge: 1 },
+    });
+    await chat.requestSetThreadMuted(actor, run.threadId, true, [204]);
+    await flushWaitUntilForTest();
+    expect(provider.requests.at(-1)?.payload).toStrictEqual({
+      aps: { badge: 0 },
+    });
+    await chat.requestSetThreadMuted(actor, run.threadId, false, [204]);
+    await flushWaitUntilForTest();
+    expect(provider.requests.at(-1)?.payload).toStrictEqual({
+      aps: { badge: 1 },
+    });
+    await chat.markAgentThreadsRead(actor, agentId);
+    await flushWaitUntilForTest();
+    expect(provider.requests.at(-1)?.payload).toStrictEqual({
+      aps: { badge: 0 },
+    });
+  }, 60_000);
+
   it("uses sandbox credentials and the sandbox APNs destination independently of production", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context, "sandbox");
@@ -5168,7 +5220,7 @@ describe("CHAT-02: push notification gating", () => {
   }, 60_000);
 
   it.each(["foreground", "revoked", "muted", "membership"] as const)(
-    "withholds native pushes for %s eligibility",
+    "withholds native run alerts for %s eligibility",
     async (scenario) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const provider = await createApnsFixture(context);
@@ -5209,7 +5261,13 @@ describe("CHAT-02: push notification gating", () => {
         await claimChatRun(runnerGroup, run.runId),
       );
       await flushWaitUntilForTest();
-      expect(provider.requests).toHaveLength(0);
+      if (scenario === "muted" || scenario === "foreground") {
+        expect(
+          provider.requests.map((request) => request.payload),
+        ).toStrictEqual([{ aps: { badge: scenario === "muted" ? 0 : 1 } }]);
+      } else {
+        expect(provider.requests).toHaveLength(0);
+      }
     },
     60_000,
   );

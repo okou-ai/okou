@@ -1,3 +1,5 @@
+import { synchronizeUserPushBadge$ } from "../services/push-notifications.service";
+import { waitUntil } from "../context/wait-until";
 import { command, computed } from "ccstate";
 import { chatThreadMarkAgentReadContract } from "@okouai/api-contracts/contracts/chat-threads";
 
@@ -72,6 +74,9 @@ const markAgentReadInner$ = command(
     }
 
     if (updatedThreadIds.length > 0) {
+      waitUntil(
+        set(synchronizeUserPushBadge$, userId, new AbortController().signal),
+      );
       await publishChatThreadReadCursorUpdatedSafely(
         { userId, orgId },
         updatedThreadIds.length > NOTIFIED_THREAD_ID_BUDGET
