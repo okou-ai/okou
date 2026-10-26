@@ -35,7 +35,7 @@ import {
 } from "../../lib/db-structured-result";
 import { notFound, runNotCancellable } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
 
 import type { Tx } from "../../lib/db-types";
@@ -536,40 +536,26 @@ export interface ReleasedRunSlot {
 }
 
 /**
- * The single release of run slots: deletes the active rows of the given runs
- * and returns the slots this call freed. Callers with other writes pass their
- * transaction; standalone releases pass the database directly. Schedule
+ * Pure description of the active rows to release and the freed-slot result.
+ * Each caller executes it on its own database or existing transaction. Schedule
  * `scheduleReleasedSlotPicks$` after commit, before any other side effect.
  * The row is the per-thread active-run lock, so a concurrent launch may wait
  * on this uncommitted DELETE while holding other locks. When called inside a
  * transaction, this MUST be its last statement. `condition` narrows the release
  * to rows that still match it at delete time.
  */
-export async function releaseRunSlots(
-  db: Db,
-  runIds: readonly string[],
-  condition?: SQL,
-): Promise<readonly ReleasedRunSlot[]> {
+export function runSlotReleasePlan(runIds: readonly string[], condition?: SQL) {
   if (runIds.length === 0) {
-    return [];
+    return null;
   }
-  return await db
-    .delete(activeAgentRuns)
-    .where(and(inArray(activeAgentRuns.runId, [...runIds]), condition))
-    .returning({
+  return {
+    from: activeAgentRuns,
+    where: and(inArray(activeAgentRuns.runId, [...runIds]), condition),
+    returning: {
       runId: activeAgentRuns.runId,
       orgId: activeAgentRuns.orgId,
-    });
-}
-
-/** Release the slots of the never-started runs among `transitions`. Same
- * last-statement rule as `releaseRunSlots`.
- */
-export async function releaseNeverStartedRunSlots(
-  tx: Tx,
-  transitions: readonly TerminalRunTransition[],
-): Promise<readonly ReleasedRunSlot[]> {
-  return await releaseRunSlots(tx, neverStartedRunIds(transitions));
+    },
+  };
 }
 
 export async function transitionAgentRunsToTerminal(

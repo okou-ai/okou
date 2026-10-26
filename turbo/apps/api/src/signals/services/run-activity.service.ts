@@ -24,7 +24,7 @@ import {
 } from "../external/realtime";
 import { settleIncludingAbort } from "../utils";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
-import { releaseRunSlots } from "./agent-run-terminal-transition.service";
+import { runSlotReleasePlan } from "./agent-run-terminal-transition.service";
 
 const log = logger("api:run-activity");
 
@@ -147,13 +147,23 @@ export const releaseStaleTerminalActiveAgentRuns$ = command(
         }
         // Recheck the silence: a sandbox that resumed heartbeating since the
         // candidate read still has a runner and keeps its row.
-        const released = await releaseRunSlots(
-          db,
-          silent.map((row) => {
-            return row.runId;
-          }),
-          lt(activeAgentRuns.lastHeartbeatAt, staleBefore),
+        const releaseRunIds = silent.map((row) => {
+          return row.runId;
+        });
+        const releaseCondition = lt(
+          activeAgentRuns.lastHeartbeatAt,
+          staleBefore,
         );
+        const released = await (async () => {
+          const plan = runSlotReleasePlan(releaseRunIds, releaseCondition);
+          if (plan === null) {
+            return [];
+          }
+          return await db
+            .delete(plan.from)
+            .where(plan.where)
+            .returning(plan.returning);
+        })();
         return { released, silent };
       })(),
     );
