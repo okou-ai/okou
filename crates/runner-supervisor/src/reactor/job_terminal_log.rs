@@ -1379,11 +1379,11 @@ mod tests {
             ..failed_attempt.clone()
         };
         let diagnostic = FailureDiagnostic::new(
-            FailureClass::EventUploadFailed,
+            FailureClass::CliNonzero,
             AgentFramework::ClaudeCode,
             PromptMetadata::from_prompt("continue"),
         )
-        .with_cli_exit_code(0)
+        .with_cli_exit_code(1)
         .with_event_delivery(EventDeliveryDiagnostic {
             total_events: 43,
             total_batches: 2,
@@ -1420,7 +1420,8 @@ mod tests {
                 }),
             }),
         });
-        let failure = executor::ExecutionFailure::new(1, "event delivery failed", Some(diagnostic));
+        let failure =
+            executor::ExecutionFailure::new(1, "Agent exited with code 1", Some(diagnostic));
 
         let event = capture_job_failure_log(&failure);
 
@@ -1599,11 +1600,11 @@ mod tests {
     #[test]
     fn diagnostic_failure_logs_event_transport_observations() {
         let diagnostic = FailureDiagnostic::new(
-            FailureClass::EventUploadFailed,
+            FailureClass::CliNonzero,
             AgentFramework::ClaudeCode,
             PromptMetadata::from_prompt("continue"),
         )
-        .with_cli_exit_code(0)
+        .with_cli_exit_code(1)
         .with_event_delivery(EventDeliveryDiagnostic {
             total_events: 1,
             total_batches: 1,
@@ -1627,7 +1628,8 @@ mod tests {
             }),
             drain_timeout: None,
         });
-        let failure = executor::ExecutionFailure::new(1, "event delivery failed", Some(diagnostic));
+        let failure =
+            executor::ExecutionFailure::new(1, "Agent exited with code 1", Some(diagnostic));
 
         let event = capture_job_failure_log(&failure);
 
