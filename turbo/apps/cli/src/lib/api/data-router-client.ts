@@ -123,7 +123,7 @@ export async function callDataRouterTool(
       )
       .catch((cause: unknown) => {
         throw new Error(
-          "Data Router did not return a complete response; a paid operation may have executed. Do not resubmit automatically; inspect saved jobs when available.",
+          "Data Router did not return a complete response; the request may have executed and incurred a charge. Do not repeat it automatically.",
           { cause },
         );
       });
@@ -131,7 +131,7 @@ export async function callDataRouterTool(
     if (!parsed.success && result.isError) return { status: 400, body: result };
     if (!parsed.success)
       throw new ApiRequestError(
-        "Data Router returned an invalid tool response; a paid operation may have executed. Do not resubmit automatically; inspect saved jobs when available.",
+        "Data Router returned an invalid tool response; the request may have executed and incurred a charge. Do not repeat it automatically.",
         "INVALID_DATA_RESPONSE",
         502,
       );

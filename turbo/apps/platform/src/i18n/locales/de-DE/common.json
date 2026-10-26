@@ -1574,10 +1574,7 @@
       "position": "{{current}} von {{total}}",
       "previous": "Vorheriger Vorschlag",
       "recoveryHint": "Prüfe den Chat, bevor du erneut sendest. Du kannst den Vorschlag im Entwurf wiederherstellen.",
-      "restoreDraft": "Entwurf wiederherstellen",
-      "runInChat": "In diesem Chat ausführen",
-      "runNewChat": "In einem neuen Chat ausführen",
-      "starting": "Wird gestartet…"
+      "restoreDraft": "Entwurf wiederherstellen"
     },
     "attachments": {
       "attach": "Anhängen",

@@ -3,6 +3,8 @@ import {
   type RunnerPreference,
 } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agents } from "@okouai/db/schema/agent";
+import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { runnerState } from "@okouai/db/runtime/runner-state";
 import {
@@ -25,10 +27,12 @@ import {
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { command } from "ccstate";
 
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  pgBooleanDecoder,
+} from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
-import { previousChatRunPlan } from "./previous-chat-run";
 
 const RUNNER_REUSE_PROTECTION_MS = 2000;
 const RUNNER_EXACT_SOURCE_PROTECTION_MS = Math.min(
@@ -44,34 +48,38 @@ const finalizingSourceRun = alias(agentRuns, "finalizing_source_run");
 const peerFinalizingRunnerState = alias(runnerState, "peer_finalizing_runner");
 const currentRun = alias(agentRuns, "finalizing_current_run");
 
-/** Select identity before eligibility; an older compatible Run is not the predecessor. */
-function runnerFinalizingSourceRunId(args: {
+/**
+ * Pending discovery reads the owned Thread's durable predecessor, independently
+ * of its native readiness or a retained producer row. The first claim advances
+ * the Thread to this Run; discovery must then stop treating it as a source.
+ * Native intent is already frozen in the job's execution context before claim.
+ */
+function runnerThreadPredecessorRunId(args: {
   readonly runId: SQLWrapper;
   readonly reuseKey: SQLWrapper;
 }): SQL {
-  const plan = previousChatRunPlan({
-    runId: currentRun.id,
-    chatThreadId: currentRun.chatThreadId,
-    userId: currentRun.userId,
-    orgId: currentRun.orgId,
-    createdAt: currentRun.createdAt,
-  });
-  const preceding = new QueryBuilder()
-    .select(plan.fields)
-    .from(plan.table)
-    .where(plan.where)
-    .orderBy(...plan.orderBy)
-    .limit(1)
-    .as("finalizing_predecessor");
-  // Keep the ordered LIMIT inside a parameterized Chat lookup. Joining all
-  // history before limiting otherwise makes PostgreSQL sort the whole Chat.
   const source = new QueryBuilder()
-    .select({ id: preceding.id })
+    .select({ id: chatThreads.frameworkSessionRunId })
     .from(currentRun)
-    .innerJoinLateral(preceding, sql`true`)
+    .innerJoin(
+      chatThreads,
+      and(
+        eq(chatThreads.id, currentRun.chatThreadId),
+        eq(chatThreads.userId, currentRun.userId),
+      ),
+    )
+    .innerJoin(
+      agents,
+      and(
+        eq(agents.id, chatThreads.agentId),
+        eq(agents.orgId, currentRun.orgId),
+      ),
+    )
     .where(
       and(
         eq(currentRun.id, args.runId),
+        eq(currentRun.status, "pending"),
+        ne(chatThreads.frameworkSessionRunId, currentRun.id),
         eq(
           args.reuseKey,
           sql`'thread:' || cast(${currentRun.chatThreadId} as text)`,
@@ -369,7 +377,7 @@ export function runnerReusePreferencePollPriority(args: {
   const freshAfter = runnerReuseHolderFreshAfter(args.currentDate);
   const reuseKey = runnerJobQueue.reuseKey;
   const profile = runnerJobQueue.profile;
-  const sourceRunId = runnerFinalizingSourceRunId({
+  const sourceRunId = runnerThreadPredecessorRunId({
     runId: runnerJobQueue.runId,
     reuseKey,
   });
@@ -551,6 +559,10 @@ function runnerReuseHolderPlan(args: {
   readonly finalizingCompletedAfter: Date;
   readonly shouldLookUpFinalizingProducer: boolean;
 }) {
+  const sourceRunId = runnerThreadPredecessorRunId({
+    runId: sql.param(args.runId),
+    reuseKey: sql.param(args.reuseKey),
+  });
   const reusableCondition = args.shouldLookUpGenericReuse
     ? reusableSandboxCondition({
         reuseKey: sql.param(args.reuseKey),
@@ -567,14 +579,14 @@ function runnerReuseHolderPlan(args: {
     ? reusableSandboxCondition({
         reuseKey: sql.param(args.reuseKey),
         profile: sql.param(args.profile),
-        sourceRunId: finalizingSourceRun.id,
+        sourceRunId,
       })
     : sql`false`;
   const sourceHomeCondition = args.shouldLookUpGenericReuse
     ? capableHomeCondition({
         reuseKey: sql.param(args.reuseKey),
         profile: sql.param(args.profile),
-        sourceRunId: finalizingSourceRun.id,
+        sourceRunId,
       })
     : sql`false`;
   const producerCondition = args.shouldLookUpFinalizingProducer
@@ -643,15 +655,13 @@ function runnerReuseHolderPlan(args: {
       END`.mapWith(pgBooleanDecoder),
       hasReusableSandbox: sql`${reusableCondition}`.mapWith(pgBooleanDecoder),
       sourceCompletedAt: finalizingSourceRun.completedAt,
-      finalizingSourceRunId: finalizingSourceRun.id,
+      // Ready sandbox/home provenance survives deletion of the settled Run.
+      finalizingSourceRunId: sourceRunId.mapWith(
+        nullableDriverValueDecoder(chatThreads.frameworkSessionRunId),
+      ),
     },
-    joinCondition: eq(
-      finalizingSourceRun.id,
-      runnerFinalizingSourceRunId({
-        runId: sql.param(args.runId),
-        reuseKey: sql.param(args.reuseKey),
-      }),
-    ),
+    // Only unsettled finalization needs the producer's completion/process facts.
+    joinCondition: eq(finalizingSourceRun.id, sourceRunId),
     where: and(
       eq(runnerState.runnerGroup, args.runnerGroup),
       eq(runnerState.mode, "running"),

@@ -125,7 +125,7 @@ export function createSuggestionCommand() {
     )
     .option(
       "--file <path>",
-      "JSON containing id, title, rationale, threadId, priority and a canonical composer draft",
+      "JSON containing id, title, rationale, priority and one to three action options with composer drafts",
     )
     .option("--text <text>", "Text converted to the normal composer document")
     .option(
@@ -167,9 +167,16 @@ export function createSuggestionCommand() {
                 id: options.id,
                 title: options.title,
                 rationale: options.rationale ?? "",
-                threadId: options.threadId ?? null,
                 priority: Number(options.priority ?? "0"),
-                draft: textDraft(options.text ?? ""),
+                options: [
+                  {
+                    id: "default",
+                    label: options.title,
+                    description: options.rationale ?? "",
+                    threadId: options.threadId ?? null,
+                    draft: textDraft(options.text ?? ""),
+                  },
+                ],
               },
         );
         printSuggestion(await createSuggestion(body), options.json);
@@ -181,7 +188,6 @@ export function createSuggestionCommand() {
     .argument("<id>", "Suggestion UUID")
     .option("--file <path>", "JSON containing the fields to update")
     .option("--priority <integer>", "Change this suggestion's priority")
-    .option("--text <text>", "Replace the draft with a canonical text document")
     .option("--json", "Output JSON")
     .action(
       withErrorHandler(
@@ -190,26 +196,17 @@ export function createSuggestionCommand() {
           options: {
             readonly file?: string;
             readonly priority?: string;
-            readonly text?: string;
             readonly json?: boolean;
           },
         ) => {
-          if (
-            options.file &&
-            (options.priority !== undefined || options.text !== undefined)
-          )
+          if (options.file && options.priority !== undefined)
             throw new Error("Use --file or field options, not both.");
           const body = suggestionUpdateSchema.parse(
             options.file
               ? await readInput(options.file)
-              : {
-                  ...(options.priority !== undefined
-                    ? { priority: Number(options.priority) }
-                    : {}),
-                  ...(options.text !== undefined
-                    ? { draft: textDraft(options.text) }
-                    : {}),
-                },
+              : options.priority !== undefined
+                ? { priority: Number(options.priority) }
+                : {},
           );
           printSuggestion(
             await updateSuggestion(z.uuid().parse(id), body),

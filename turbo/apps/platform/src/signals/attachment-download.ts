@@ -8,7 +8,6 @@ import {
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { accept } from "../lib/accept.ts";
-import { resolveEditableHostedSiteDomain } from "../lib/platform-host.ts";
 import { writeHostedPublicationZip } from "../lib/hosted-publication-zip.ts";
 import {
   downloadAttachmentUrl,
@@ -30,46 +29,6 @@ type AttachmentDownload = {
   readonly filename: string;
   readonly url: string;
 };
-
-/** The trusted App owns authenticated downloads reached from a Site's brand bar. */
-export const downloadHostedSite$ = command(
-  async ({ get }, publicSlug: string, signal: AbortSignal) => {
-    const domain = resolveEditableHostedSiteDomain();
-    const hostname = `${publicSlug}.${domain}`;
-    const response = await accept(
-      get(apiClient$)(hostContract).files({
-        params: { publicSlug },
-        query: { hostname },
-        fetchOptions: { signal, cache: "no-store" },
-      }),
-      [200],
-      signal,
-    );
-    const site = response.body;
-    if (site.files.length === 1) {
-      const file = site.files[0]!;
-      await downloadAttachmentUrl(
-        file.downloadUrl,
-        signal,
-        file.path.slice(file.path.lastIndexOf("/") + 1),
-        "native",
-      );
-      return;
-    }
-    const complete = await writePublicationArchive(
-      site,
-      `https://dpl-${site.deploymentId}.${domain}/`,
-      signal,
-    );
-    if (!complete) {
-      toast.error(
-        i18n.t(($) => {
-          return $.artifacts.toasts.downloadFailed;
-        }),
-      );
-    }
-  },
-);
 
 function hostedPublicationUrl(url: string): URL | null {
   if (!isHostedSiteUrl(url)) {

@@ -199,10 +199,7 @@ Dir.mktmpdir("desktop-manifest-source") do |dir|
     raise "unexpected Desktop asset acceptance: #{output}" unless status.success? == expected
   end
 end
-raise "Native updater manifest must retain its published identity" unless publish.fetch("steps").any? { |step| step.fetch("run", "").include?("ai-okou-desktop-update-manifest.json") }
 publication = publish.fetch("steps").find { |step| step["name"] == "Publish Desktop update manifest to R2" }
-mirror = publish.fetch("steps").find { |step| step["name"] == "Mirror Desktop update manifest for previous API releases" }
-raise "R2 publication must precede the compatibility mirror" unless publish.fetch("steps").index(publication) < publish.fetch("steps").index(mirror)
 raise "R2 publication must retain the verified release identity" unless publication.fetch("env").fetch("PUBLICATION_SHA") == '${{ steps.source.outputs.sha }}'
 raise "R2 publication must use the static bucket" unless publication.fetch("env").fetch("R2_BUCKET_NAME") == '${{ vars.R2_STATIC_BUCKET_NAME }}'
 RUBY

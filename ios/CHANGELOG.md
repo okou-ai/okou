@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/okou-ai/okou/compare/ios-v0.19.5...ios-v0.20.0) (2026-10-26)
+
+
+### Features
+
+* **ios:** add native push notifications and background chat sync ([#43061](https://github.com/okou-ai/okou/issues/43061)) ([bf9afc5](https://github.com/okou-ai/okou/commit/bf9afc5c36eb41eb67a9be3e7f8ec99fcbaad217))
+
 ## [0.19.5](https://github.com/okou-ai/okou/compare/ios-v0.19.4...ios-v0.19.5) (2026-10-26)
 
 

@@ -34,18 +34,67 @@ pub use bindings::{conflicting_mounts, validate_bindings};
 
 /// Build binary helper input containing a canonical manifest and decoded groups.
 pub fn encode_input(manifest: &[u8], groups: &[(&str, &[StorageFile])]) -> io::Result<Vec<u8>> {
+    let payload_len = input_payload_len(manifest, groups)?;
+    Ok(encode_validated_input(manifest, groups, payload_len))
+}
+
+/// Validated immutable input whose final byte copy may be deferred until use.
+///
+/// Construction checks all codec bounds without copying file contents. The
+/// caller remains responsible for manifest semantics and mount bindings.
+#[derive(Debug)]
+pub struct PreparedInput<'a> {
+    manifest: Box<[u8]>,
+    groups: Vec<(&'a str, &'a [StorageFile])>,
+    payload_len: usize,
+}
+
+impl<'a> PreparedInput<'a> {
+    /// Validate owned manifest/descriptors while borrowing immutable file data.
+    pub fn new(manifest: Vec<u8>, groups: Vec<(&'a str, &'a [StorageFile])>) -> io::Result<Self> {
+        let payload_len = input_payload_len(&manifest, &groups)?;
+        Ok(Self {
+            // Do not retain serializer growth capacity for every future batch.
+            manifest: manifest.into_boxed_slice(),
+            groups,
+            payload_len,
+        })
+    }
+
+    /// Exact canonical manifest byte length.
+    pub fn manifest_len(&self) -> usize {
+        self.manifest.len()
+    }
+
+    /// Exact binary payload byte length, including its framing and metadata.
+    pub fn payload_len(&self) -> usize {
+        self.payload_len
+    }
+
+    /// Emit the already validated input without another fallible codec stage.
+    pub fn into_bytes(self) -> Vec<u8> {
+        encode_validated_input(&self.manifest, &self.groups, self.payload_len)
+    }
+}
+
+fn input_payload_len(manifest: &[u8], groups: &[(&str, &[StorageFile])]) -> io::Result<usize> {
     if manifest.len() > MAX_MANIFEST_BYTES {
         return Err(invalid());
     }
-    // Validate every group before constructing any output, then write directly
-    // into the final input buffer instead of allocating and copying the payload.
-    let payload_len = encoded_payload_len(groups)?;
+    encoded_payload_len(groups)
+}
+
+fn encode_validated_input(
+    manifest: &[u8],
+    groups: &[(&str, &[StorageFile])],
+    payload_len: usize,
+) -> Vec<u8> {
     let mut out = Vec::with_capacity(16 + manifest.len() + payload_len);
     out.extend_from_slice(INPUT_MAGIC);
     put_bytes(&mut out, manifest);
     out.extend_from_slice(&(payload_len as u32).to_be_bytes());
     encode_groups_into(&mut out, groups);
-    Ok(out)
+    out
 }
 
 /// Split bounded binary input without copying its content.
@@ -286,6 +335,7 @@ mod tests {
         assert_eq!(decode(payload).unwrap()[0].files, files);
         files[0].content.push(0);
         assert!(encode_input(b"{}", &[("/mount", &files)]).is_err());
+        assert!(PreparedInput::new(b"{}".to_vec(), vec![("/mount", &files)]).is_err());
         for end in [0, 7, 8, 12, encoded.len() - 1] {
             assert!(split_input(&encoded[..end]).is_err());
         }
@@ -340,6 +390,10 @@ mod tests {
         fixture.extend_from_slice(&1_u32.to_be_bytes());
         fixture.push(42);
         assert_eq!(encode_input(b"{}", &one).unwrap(), fixture);
+        let prepared = PreparedInput::new(b"{}".to_vec(), one.to_vec()).unwrap();
+        assert_eq!(prepared.manifest_len(), 2);
+        assert_eq!(prepared.payload_len(), 36);
+        assert_eq!(prepared.into_bytes(), fixture);
     }
 
     #[test]
@@ -372,7 +426,10 @@ mod tests {
             .map(|(mount, files)| (mount.as_str(), files.as_slice()))
             .collect();
         assert_eq!(encoded_payload_len(&groups).unwrap(), MAX_PAYLOAD_BYTES);
-        let encoded = encode_input(&vec![b' '; MAX_MANIFEST_BYTES], &groups).unwrap();
+        let prepared = PreparedInput::new(vec![b' '; MAX_MANIFEST_BYTES], groups).unwrap();
+        assert_eq!(prepared.manifest_len(), MAX_MANIFEST_BYTES);
+        assert_eq!(prepared.payload_len(), MAX_PAYLOAD_BYTES);
+        let encoded = prepared.into_bytes();
         assert_eq!(encoded.len(), MAX_INPUT_BYTES);
         let (manifest, payload) = split_input(&encoded).unwrap();
         assert_eq!(manifest.len(), MAX_MANIFEST_BYTES);
@@ -384,7 +441,7 @@ mod tests {
             .zip(&files)
             .map(|(mount, files)| (mount.as_str(), files.as_slice()))
             .collect();
-        assert!(encode_input(b"{}", &groups).is_err());
+        assert!(PreparedInput::new(b"{}".to_vec(), groups).is_err());
         assert_eq!(files[14][3].content.len(), remaining + 1);
     }
 
@@ -423,6 +480,10 @@ mod tests {
         files[0].mtime = 1;
         assert!(encode_input(&vec![b' '; MAX_MANIFEST_BYTES], &[("/mount", &files)]).is_ok());
         assert!(encode_input(&vec![b' '; MAX_MANIFEST_BYTES + 1], &[("/mount", &files)]).is_err());
+        assert!(
+            PreparedInput::new(vec![b' '; MAX_MANIFEST_BYTES + 1], vec![("/mount", &files)])
+                .is_err()
+        );
     }
 
     #[test]

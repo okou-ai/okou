@@ -4,6 +4,9 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
+/** Raw request-body cap matching the standalone Router's MCP endpoint. */
+export const DATA_ROUTER_REQUEST_BODY_MAX_BYTES = 1024 * 1024;
+
 /** MITM records Router-generated response IDs against trusted Run attribution. */
 export const dataRouterRequestContract = c.router({
   register: {

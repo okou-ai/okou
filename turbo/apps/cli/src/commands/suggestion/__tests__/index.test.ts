@@ -11,19 +11,27 @@ const content = {
   id,
   title: "Review the launch",
   rationale: "A decision is pending",
-  threadId: null,
   priority: 20,
-  draft: {
-    draftUserMessage: {
-      version: 1,
-      parts: [{ type: "text", text: "Review the launch plan." }],
+  options: [
+    {
+      id: "default",
+      label: "Review the launch",
+      description: "A decision is pending",
+      threadId: null,
+      draft: {
+        draftUserMessage: {
+          version: 1,
+          parts: [{ type: "text", text: "Review the launch plan." }],
+        },
+        draftAttachments: null,
+      },
     },
-    draftAttachments: null,
-  },
+  ],
 };
 const item = {
   ...content,
   status: "active",
+  selectedOptionId: null,
   createdAt: "2026-10-13T00:00:00.000Z",
   updatedAt: "2026-10-13T00:00:00.000Z",
 };
@@ -97,9 +105,13 @@ it("converts convenient text input into the same saved composer format", async (
     http.post("http://localhost:3000/api/suggestions", async ({ request }) => {
       expect(await request.json()).toMatchObject({
         id,
-        threadId: null,
         priority: 0,
-        draft: content.draft,
+        options: [
+          {
+            ...content.options[0],
+            description: "",
+          },
+        ],
       });
       return HttpResponse.json({ ...item, priority: 0 });
     }),
@@ -154,6 +166,64 @@ it("updates one priority without requiring a file or other suggestions' position
   await run("update", id, "--priority", "90", "--json");
   expect(log).toHaveBeenCalledWith(JSON.stringify({ ...item, priority: 90 }));
 });
+it("publishes and updates multiple action options without changing their identities or drafts", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "suggestion-test-"));
+  const options = [
+    ...content.options,
+    {
+      ...content.options[0],
+      id: "prepare",
+      label: "Prepare a reply",
+      description: "Draft a reply for review",
+      threadId: "b0000000-0000-4000-a000-000000000001",
+      draft: {
+        draftUserMessage: {
+          version: 1,
+          parts: [
+            { type: "text", text: "Prepare a reply without sending it." },
+          ],
+        },
+        draftAttachments: null,
+      },
+    },
+  ];
+  const reordered = [...options].reverse();
+  try {
+    const path = join(directory, "suggestion.json");
+    const updated = { ...item, options };
+    server.use(
+      http.post(
+        "http://localhost:3000/api/suggestions",
+        async ({ request }) => {
+          expect(await request.json()).toEqual({ ...content, options });
+          return HttpResponse.json(updated);
+        },
+      ),
+      http.patch(
+        `http://localhost:3000/api/suggestions/${id}`,
+        async ({ request }) => {
+          expect(await request.json()).toEqual({
+            options: reordered,
+          });
+          return HttpResponse.json({
+            ...updated,
+            options: reordered,
+          });
+        },
+      ),
+    );
+    await writeFile(path, JSON.stringify({ ...content, options }));
+    await run("create", "--file", path, "--json");
+    expect(log).toHaveBeenLastCalledWith(JSON.stringify(updated));
+    await writeFile(path, JSON.stringify({ options: reordered }));
+    await run("update", id, "--file", path, "--json");
+    expect(log).toHaveBeenLastCalledWith(
+      JSON.stringify({ ...updated, options: reordered }),
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 it("prints structured capacity errors with the API's next-action guidance", async () => {
   server.use(
     http.post("http://localhost:3000/api/suggestions", () => {
@@ -205,6 +275,7 @@ it("lists the active pool and terminal receipts as machine-readable JSON", async
       {
         id: "a0000000-0000-4000-a000-000000000002",
         status: "consumed",
+        selectedOptionId: null,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
       },

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.20](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.19...runner-provider-v0.11.20) (2026-10-26)
+
+
+### Bug Fixes
+
+* **runner:** back off local poison jobs when result publication fails ([#43081](https://github.com/okou-ai/okou/issues/43081)) ([405285d](https://github.com/okou-ai/okou/commit/405285d5cc8a63548e4259ddfd953ea1a65e8d8f))
+
 ## [0.11.19](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.18...runner-provider-v0.11.19) (2026-10-26)
 
 ## [0.11.18](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.17...runner-provider-v0.11.18) (2026-10-26)

@@ -1574,10 +1574,7 @@
       "position": "{{total}} में से {{current}}",
       "previous": "पिछला सुझाव",
       "recoveryHint": "दोबारा भेजने से पहले चैट देखें। आप सुझाव को ड्राफ़्ट में वापस ला सकते हैं।",
-      "restoreDraft": "ड्राफ़्ट वापस लाएँ",
-      "runInChat": "इस चैट में चलाएँ",
-      "runNewChat": "नई चैट में चलाएँ",
-      "starting": "शुरू हो रहा है…"
+      "restoreDraft": "ड्राफ़्ट वापस लाएँ"
     },
     "attachments": {
       "attach": "अटैच करें",

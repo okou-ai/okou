@@ -1572,10 +1572,7 @@
       "position": "{{current}} dari {{total}}",
       "previous": "Saran sebelumnya",
       "recoveryHint": "Periksa chat sebelum mengirim lagi. Anda dapat memulihkan saran ke draf.",
-      "restoreDraft": "Pulihkan draf",
-      "runInChat": "Jalankan di chat ini",
-      "runNewChat": "Jalankan di chat baru",
-      "starting": "Memulai…"
+      "restoreDraft": "Pulihkan draf"
     },
     "attachments": {
       "attach": "Lampirkan",

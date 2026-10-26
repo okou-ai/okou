@@ -6,44 +6,72 @@ import { apiErrorSchema } from "./errors";
 const SUGGESTION_LIMIT = 10;
 // UUID aliases must share one terminal identity in the JSONB collection.
 const suggestionIdSchema = z.uuid().toLowerCase();
+const suggestionOptionIdSchema = z.string().trim().min(1).max(64);
 const suggestionStatusSchema = z.enum(["active", "consumed", "removed"]);
-const suggestionDraftSchema = composerDraftSchema
+const suggestionDraftSchema = composerDraftSchema.refine(
+  (draft) => {
+    return (
+      draft.draftUserMessage?.parts.some((part) => {
+        return part.type !== "text" || part.text.trim().length > 0;
+      }) ?? false
+    );
+  },
+  {
+    message: "A suggestion requires a composer message",
+    path: ["draftUserMessage"],
+  },
+);
+export const suggestionOptionSchema = z.object({
+  id: suggestionOptionIdSchema,
+  label: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(160),
+  threadId: z.uuid().toLowerCase().nullable(),
+  draft: suggestionDraftSchema,
+});
+export type SuggestionOption = z.infer<typeof suggestionOptionSchema>;
+const suggestionOptionsSchema = z
+  .array(suggestionOptionSchema)
+  .min(1)
+  .max(3)
   .refine(
-    (draft) => {
+    (options) => {
       return (
-        draft.draftUserMessage?.parts.some((part) => {
-          return part.type !== "text" || part.text.trim().length > 0;
-        }) ?? false
+        new Set(
+          options.map((option) => {
+            return option.id;
+          }),
+        ).size === options.length
       );
     },
-    {
-      message: "A suggestion requires a composer message",
-      path: ["draftUserMessage"],
-    },
+    { message: "Suggestion option IDs must be unique" },
   )
   .refine(
-    (draft) => {
-      return JSON.stringify(draft).length <= 65536;
+    (options) => {
+      return JSON.stringify(options).length <= 65536;
     },
-    {
-      message: "Suggestion draft exceeds 65536 characters",
-    },
+    { message: "Suggestion options exceed 65536 characters" },
   );
 const suggestionContentSchema = z.object({
   title: z.string().trim().min(1).max(120),
   rationale: z.string().trim().max(200),
-  threadId: z.uuid().toLowerCase().nullable(),
   priority: z.number().int().min(-2147483648).max(2147483647),
-  draft: suggestionDraftSchema,
+  options: suggestionOptionsSchema,
 });
 export const suggestionSchema = suggestionContentSchema.extend({
   id: suggestionIdSchema,
   status: suggestionStatusSchema,
+  selectedOptionId: suggestionOptionIdSchema.nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
 export const suggestionReceiptSchema = suggestionSchema
-  .pick({ id: true, status: true, createdAt: true, updatedAt: true })
+  .pick({
+    id: true,
+    status: true,
+    selectedOptionId: true,
+    createdAt: true,
+    updatedAt: true,
+  })
   .extend({ status: z.enum(["consumed", "removed"]) });
 export type SuggestionReceipt = z.infer<typeof suggestionReceiptSchema>;
 export const suggestionCreateSchema = suggestionContentSchema.extend({
@@ -115,8 +143,8 @@ export const suggestionsContract = c.router({
     path: "/api/suggestions/:id/consume",
     headers: authHeadersSchema,
     pathParams: params,
-    body: z.object({}),
+    body: z.object({ optionId: suggestionOptionIdSchema.nullable() }),
     responses: { 200: suggestionSchema, ...errors },
-    summary: "Consume a suggestion and obtain its composer draft",
+    summary: "Choose a suggestion option, or dismiss it with a null option ID",
   },
 });

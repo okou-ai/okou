@@ -1597,10 +1597,7 @@
       "position": "{{current}} sur {{total}}",
       "previous": "Suggestion précédente",
       "recoveryHint": "Vérifiez la conversation avant de renvoyer. Vous pouvez restaurer la suggestion dans votre brouillon.",
-      "restoreDraft": "Restaurer le brouillon",
-      "runInChat": "Exécuter dans cette conversation",
-      "runNewChat": "Exécuter dans une nouvelle conversation",
-      "starting": "Démarrage…"
+      "restoreDraft": "Restaurer le brouillon"
     },
     "attachments": {
       "attach": "Joindre",

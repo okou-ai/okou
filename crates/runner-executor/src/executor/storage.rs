@@ -232,14 +232,17 @@ pub(super) async fn download_storages_with_files(
     files: &[(String, Arc<CachedFiles>)],
     telemetry: &mut JobTelemetry,
 ) -> RunnerResult<()> {
-    // Validate and encode every batch before the first storage-apply operation.
-    let encode_started = Instant::now();
+    // Complete all fallible preparation before the first Guest mutation.
+    let prepare_started = Instant::now();
     let inputs = storage_inputs(manifest, files);
     telemetry.record(
-        "runner_storage_manifest_batch_encode",
-        encode_started.elapsed(),
+        "runner_storage_manifest_batch_prepare",
+        prepare_started.elapsed(),
         inputs.is_ok(),
-        inputs.as_ref().err().map(|_| "storage_batch_encode_failed"),
+        inputs
+            .as_ref()
+            .err()
+            .map(|_| "storage_batch_prepare_failed"),
     );
     let inputs = inputs?;
     let batch_count = inputs.len();
@@ -249,9 +252,10 @@ pub(super) async fn download_storages_with_files(
         batch_count_bucket(batch_count),
         None,
     );
-    // Release each completed buffer before later Guest operations await.
-    for (index, input) in inputs.into_iter().enumerate() {
+    // Only the current transport buffer is materialized across Guest IO.
+    for (index, prepared) in inputs.into_iter().enumerate() {
         let started = Instant::now();
+        let input = prepared.into_input();
         let mut guest_duration_ms = None;
         let mut host_timing = StorageManifestTiming::default();
         let result = apply_storage_input(
@@ -280,6 +284,28 @@ pub(super) async fn download_storages_with_files(
         result?;
     }
     Ok(())
+}
+
+enum PreparedStorageInput<'a> {
+    Json(Vec<u8>),
+    Files(storage_files::PreparedInput<'a>),
+}
+
+impl PreparedStorageInput<'_> {
+    fn into_input(self) -> StorageInput {
+        match self {
+            Self::Json(bytes) => StorageInput::Json(bytes),
+            Self::Files(input) => {
+                let manifest_bytes = input.manifest_len();
+                let payload_size_bucket = binary_payload_size_bucket(input.payload_len());
+                StorageInput::Files {
+                    bytes: input.into_bytes(),
+                    manifest_bytes,
+                    payload_size_bucket,
+                }
+            }
+        }
+    }
 }
 
 enum StorageInput {
@@ -415,17 +441,12 @@ fn manifest_json_size(manifest: &Manifest) -> RunnerResult<usize> {
     Ok(size.0)
 }
 
-fn files_input(json: &[u8], groups: &[(&str, &[StorageFile])]) -> RunnerResult<StorageInput> {
-    storage_files::encode_input(json, groups)
-        .and_then(|bytes| {
-            let (_, payload) = storage_files::split_input(&bytes)?;
-            let payload_size_bucket = binary_payload_size_bucket(payload.len());
-            Ok(StorageInput::Files {
-                bytes,
-                manifest_bytes: json.len(),
-                payload_size_bucket,
-            })
-        })
+fn files_input<'a>(
+    json: Vec<u8>,
+    groups: Vec<(&'a str, &'a [StorageFile])>,
+) -> RunnerResult<PreparedStorageInput<'a>> {
+    storage_files::PreparedInput::new(json, groups)
+        .map(PreparedStorageInput::Files)
         .map_err(|e| RunnerError::Internal(format!("storage files input: {e}")))
 }
 
@@ -441,9 +462,9 @@ fn empty_storage_manifest() -> Manifest {
 fn storage_inputs(
     mut manifest: Manifest,
     files: &[(String, Arc<CachedFiles>)],
-) -> RunnerResult<Vec<StorageInput>> {
+) -> RunnerResult<Vec<PreparedStorageInput<'_>>> {
     if files.is_empty() {
-        return Ok(vec![StorageInput::Json(manifest_json(&manifest)?)]);
+        return Ok(vec![PreparedStorageInput::Json(manifest_json(&manifest)?)]);
     }
     let groups = files
         .iter()
@@ -452,11 +473,11 @@ fn storage_inputs(
     storage_files::validate_bindings(&manifest, groups.iter().map(|(mount, _)| *mount))
         .map_err(|e| RunnerError::Internal(format!("storage files bindings: {e}")))?;
     if manifest_json_size(&manifest)? <= storage_files::MAX_MANIFEST_BYTES {
-        return Ok(vec![files_input(&manifest_json(&manifest)?, &groups)?]);
+        return Ok(vec![files_input(manifest_json(&manifest)?, groups)?]);
     }
     // A split request alone cannot see conflicts with entries in another batch.
     // Validate the aggregate selected-file and mount budget without copying the
-    // complete payload. Each emitted batch is encoded and checked below.
+    // complete payload. Each emitted batch is prepared and checked below.
     storage_files::encoded_payload_len(&groups)
         .map_err(|e| RunnerError::Internal(format!("storage files payload: {e}")))?;
     let files_by_mount = groups.into_iter().collect::<HashMap<_, _>>();
@@ -477,7 +498,7 @@ fn storage_inputs(
         || !manifest.cleanup_paths.is_empty()
         || !manifest.instruction_cleanups.is_empty()
     {
-        inputs.push(StorageInput::Json(manifest_json(&manifest)?));
+        inputs.push(PreparedStorageInput::Json(manifest_json(&manifest)?));
     }
     let mut batch = empty_storage_manifest();
     let empty_bytes = manifest_json_size(&batch)?;
@@ -503,7 +524,7 @@ fn storage_inputs(
         let entry_bytes = single_bytes - empty_bytes;
         let comma_bytes = usize::from(manifest_entry_count(&batch) > 0);
         if batch_bytes + comma_bytes + entry_bytes > storage_files::MAX_MANIFEST_BYTES {
-            inputs.push(encode_decoded_batch(&batch, &files_by_mount)?);
+            inputs.push(prepare_decoded_batch(&batch, &files_by_mount)?);
             batch = empty_storage_manifest();
             batch_bytes = empty_bytes;
         }
@@ -512,7 +533,7 @@ fn storage_inputs(
         batch.artifacts.append(&mut single.artifacts);
     }
     if manifest_entry_count(&batch) > 0 {
-        inputs.push(encode_decoded_batch(&batch, &files_by_mount)?);
+        inputs.push(prepare_decoded_batch(&batch, &files_by_mount)?);
     }
     Ok(inputs)
 }
@@ -541,10 +562,10 @@ fn manifest_entry_count(manifest: &Manifest) -> usize {
     manifest.storages.len() + manifest.artifacts.len()
 }
 
-fn encode_decoded_batch(
+fn prepare_decoded_batch<'a>(
     manifest: &Manifest,
-    files: &HashMap<&str, &[StorageFile]>,
-) -> RunnerResult<StorageInput> {
+    files: &HashMap<&'a str, &'a [StorageFile]>,
+) -> RunnerResult<PreparedStorageInput<'a>> {
     let groups = manifest
         .storages
         .iter()
@@ -557,12 +578,12 @@ fn encode_decoded_batch(
         )
         .map(|entry| {
             files
-                .get(entry)
-                .map(|files| (entry, *files))
+                .get_key_value(entry)
+                .map(|(mount, files)| (*mount, *files))
                 .ok_or_else(|| RunnerError::Internal("decoded files absent".into()))
         })
         .collect::<RunnerResult<Vec<_>>>()?;
-    files_input(&manifest_json(manifest)?, &groups)
+    files_input(manifest_json(manifest)?, groups)
 }
 
 async fn apply_storage_input(

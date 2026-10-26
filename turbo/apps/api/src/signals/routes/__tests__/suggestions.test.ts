@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   suggestionsContract,
   type SuggestionCreate,
+  type SuggestionOption,
 } from "@okouai/api-contracts/contracts/suggestions";
 import {
   chatThreadsContract,
@@ -29,8 +30,18 @@ function input(priority = 0): SuggestionCreate {
     id: randomUUID(),
     title: "Review the project update",
     rationale: "A decision needs your input",
-    threadId: null,
     priority,
+    options: [makeOption()],
+  };
+}
+function makeOption(
+  overrides: Partial<SuggestionOption> = {},
+): SuggestionOption {
+  return {
+    id: "review",
+    label: "Review update",
+    description: "Review the project and prepare the next step",
+    threadId: null,
     draft: {
       draftUserMessage: {
         version: 1,
@@ -43,6 +54,7 @@ function input(priority = 0): SuggestionCreate {
       },
       draftAttachments: null,
     },
+    ...overrides,
   };
 }
 async function primaryRun(enabled = true, secondary = false) {
@@ -101,7 +113,7 @@ describe("Agent suggestions", () => {
       client().consume({
         headers: humanHeaders,
         params: { id: suggestion.id },
-        body: {},
+        body: { optionId: "review" },
       }),
       [200],
     );
@@ -127,7 +139,7 @@ describe("Agent suggestions", () => {
       client().consume({
         headers: humanHeaders,
         params: { id: suggestion.id.toUpperCase() },
-        body: {},
+        body: { optionId: "review" },
       }),
       [200],
     );
@@ -141,13 +153,17 @@ describe("Agent suggestions", () => {
         headers: fixture.headers,
         body: {
           ...empty,
-          draft: {
-            draftUserMessage: {
-              version: 1,
-              parts: [{ type: "text", text: "  " }],
-            },
-            draftAttachments: null,
-          },
+          options: [
+            makeOption({
+              draft: {
+                draftUserMessage: {
+                  version: 1,
+                  parts: [{ type: "text", text: "  " }],
+                },
+                draftAttachments: null,
+              },
+            }),
+          ],
         },
       }),
       [400],
@@ -157,7 +173,11 @@ describe("Agent suggestions", () => {
         headers: fixture.headers,
         body: {
           ...empty,
-          draft: { draftUserMessage: null, draftAttachments: null },
+          options: [
+            makeOption({
+              draft: { draftUserMessage: null, draftAttachments: null },
+            }),
+          ],
         },
       }),
       [400],
@@ -248,7 +268,7 @@ describe("Agent suggestions", () => {
           client().consume({
             headers: humanHeaders,
             params: { id: selected.id },
-            body: {},
+            body: { optionId: "review" },
           }),
           [200, 409],
         );
@@ -266,7 +286,8 @@ describe("Agent suggestions", () => {
     });
     expect(consumed?.body).toMatchObject({
       status: "consumed",
-      draft: selected.draft,
+      selectedOptionId: "review",
+      options: selected.options,
     });
     await accept(
       client().create({ headers: fixture.headers, body: retry }),
@@ -349,10 +370,210 @@ describe("Agent suggestions", () => {
       client().consume({
         headers: humanHeaders,
         params: { id: second.id },
-        body: {},
+        body: { optionId: "review" },
       }),
       [403],
     );
+  });
+  it("selects one of several options once and retains the choice in compacted receipts", async () => {
+    const fixture = await primaryRun();
+    const suggestion = {
+      ...input(),
+      options: [
+        makeOption(),
+        makeOption({ id: "prepare", label: "Prepare a draft" }),
+      ],
+    };
+    await accept(
+      client().create({ headers: fixture.headers, body: suggestion }),
+      [200],
+    );
+    const clicks = await Promise.all(
+      suggestion.options.map((option) => {
+        return accept(
+          client().consume({
+            headers: humanHeaders,
+            params: { id: suggestion.id },
+            body: { optionId: option.id },
+          }),
+          [200, 409],
+        );
+      }),
+    );
+    expect(
+      clicks
+        .map((result) => {
+          return result.status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 409]);
+    const chosen =
+      suggestion.options[
+        clicks.findIndex((result) => {
+          return result.status === 200;
+        })
+      ];
+    if (!chosen) {
+      throw new Error("Expected exactly one selected option");
+    }
+    const accepted = clicks.find((result) => {
+      return result.status === 200;
+    });
+    expect(accepted?.body).toMatchObject({
+      status: "consumed",
+      selectedOptionId: chosen.id,
+      options: suggestion.options,
+    });
+    await accept(
+      client().create({ headers: fixture.headers, body: input() }),
+      [200],
+    );
+    const pool = await accept(client().list({ headers: humanHeaders }), [200]);
+    expect(pool.body.receipts).toContainEqual({
+      id: suggestion.id,
+      status: "consumed",
+      selectedOptionId: chosen.id,
+      createdAt: expect.any(String),
+      updatedAt: expect.any(String),
+    });
+  });
+  it("rejects a removed option without consuming the card, then accepts dismissal with no selected option", async () => {
+    const fixture = await primaryRun();
+    const suggestion = input();
+    await accept(
+      client().create({ headers: fixture.headers, body: suggestion }),
+      [200],
+    );
+    await accept(
+      client().update({
+        headers: fixture.headers,
+        params: { id: suggestion.id },
+        body: {
+          options: [makeOption({ id: "prepare", label: "Prepare a draft" })],
+        },
+      }),
+      [200],
+    );
+    await accept(
+      client().consume({
+        headers: humanHeaders,
+        params: { id: suggestion.id },
+        body: { optionId: "review" },
+      }),
+      [409],
+    );
+    const active = await accept(
+      client().list({ headers: humanHeaders }),
+      [200],
+    );
+    expect(active.body.suggestions).toHaveLength(1);
+    expect(active.body.suggestions[0]?.selectedOptionId).toBeNull();
+    const dismissed = await accept(
+      client().consume({
+        headers: humanHeaders,
+        params: { id: suggestion.id },
+        body: { optionId: null },
+      }),
+      [200],
+    );
+    expect(dismissed.body).toMatchObject({
+      status: "consumed",
+      selectedOptionId: null,
+    });
+    const pool = await accept(client().list({ headers: humanHeaders }), [200]);
+    expect(pool.body.suggestions).toStrictEqual([]);
+    expect(pool.body.receipts).toContainEqual({
+      id: suggestion.id,
+      status: "consumed",
+      selectedOptionId: null,
+      createdAt: expect.any(String),
+      updatedAt: expect.any(String),
+    });
+  });
+  it("returns the current draft for the chosen second option after a refresh", async () => {
+    const fixture = await primaryRun();
+    const suggestion = {
+      ...input(),
+      options: [
+        makeOption(),
+        makeOption({ id: "prepare", label: "Prepare a draft" }),
+      ],
+    };
+    await accept(
+      client().create({ headers: fixture.headers, body: suggestion }),
+      [200],
+    );
+    const options = [
+      makeOption(),
+      makeOption({
+        id: "prepare",
+        label: "Prepare the updated draft",
+        draft: {
+          draftUserMessage: {
+            version: 1 as const,
+            parts: [
+              {
+                type: "text" as const,
+                text: "Prepare a draft using the updated context.",
+              },
+            ],
+          },
+          draftAttachments: null,
+        },
+      }),
+    ];
+    await accept(
+      client().update({
+        headers: fixture.headers,
+        params: { id: suggestion.id },
+        body: { options },
+      }),
+      [200],
+    );
+    const consumed = await accept(
+      client().consume({
+        headers: humanHeaders,
+        params: { id: suggestion.id },
+        body: { optionId: "prepare" },
+      }),
+      [200],
+    );
+    expect(consumed.body).toMatchObject({
+      status: "consumed",
+      selectedOptionId: "prepare",
+      options,
+    });
+  });
+  it("requires one to three options with unique identities and a bounded payload", async () => {
+    const fixture = await primaryRun();
+    for (const options of [
+      [],
+      [makeOption(), makeOption()],
+      Array.from({ length: 4 }, (_, index) => {
+        return makeOption({ id: `option-${index}` });
+      }),
+      [
+        makeOption({
+          draft: {
+            draftUserMessage: {
+              version: 1,
+              parts: [{ type: "text", text: "x".repeat(65_536) }],
+            },
+            draftAttachments: null,
+          },
+        }),
+      ],
+    ]) {
+      await accept(
+        client().create({
+          headers: fixture.headers,
+          body: { ...input(), options },
+        }),
+        [400],
+      );
+    }
+    const pool = await accept(client().list({ headers: humanHeaders }), [200]);
+    expect(pool.body.suggestions).toStrictEqual([]);
   });
   it("isolates owners and refuses a suggestion targeting another user's thread", async () => {
     const owner = await primaryRun();
@@ -370,7 +591,14 @@ describe("Agent suggestions", () => {
     await accept(
       client().create({
         headers: owner.headers,
-        body: { ...suggestion, threadId: thread.body.id },
+        body: {
+          ...suggestion,
+          options: [
+            makeOption({
+              threadId: thread.body.id,
+            }),
+          ],
+        },
       }),
       [200],
     );
@@ -381,7 +609,7 @@ describe("Agent suggestions", () => {
       client().consume({
         headers: humanHeaders,
         params: { id: suggestion.id },
-        body: {},
+        body: { optionId: "review" },
       }),
       [409],
     );
@@ -396,10 +624,39 @@ describe("Agent suggestions", () => {
     await accept(
       client().create({
         headers: other.headers,
-        body: { ...input(), threadId: thread.body.id },
+        body: {
+          ...input(),
+          options: [
+            makeOption(),
+            makeOption({
+              id: "continue",
+              threadId: thread.body.id,
+            }),
+          ],
+        },
       }),
       [404],
     );
+    const own = input();
+    await accept(client().create({ headers: other.headers, body: own }), [200]);
+    await accept(
+      client().update({
+        headers: other.headers,
+        params: { id: own.id },
+        body: {
+          options: [
+            makeOption(),
+            makeOption({ id: "continue", threadId: thread.body.id }),
+          ],
+        },
+      }),
+      [404],
+    );
+    const unchanged = await accept(
+      client().list({ headers: humanHeaders }),
+      [200],
+    );
+    expect(unchanged.body.suggestions[0]?.options).toStrictEqual(own.options);
     await createBddApi(context).readMe(owner.actor);
     const retained = await accept(
       client().list({ headers: humanHeaders }),
@@ -425,7 +682,14 @@ describe("Agent suggestions", () => {
       }),
       [201],
     );
-    const suggestion = { ...input(), threadId: thread.body.id };
+    const suggestion = {
+      ...input(),
+      options: [
+        makeOption({
+          threadId: thread.body.id,
+        }),
+      ],
+    };
     await accept(
       client().create({ headers: fixture.headers, body: suggestion }),
       [200],
@@ -444,14 +708,14 @@ describe("Agent suggestions", () => {
       client().consume({
         headers: humanHeaders,
         params: { id: suggestion.id },
-        body: {},
+        body: { optionId: "review" },
       }),
       [200],
     );
     expect(consumed.body).toMatchObject({
       status: "consumed",
-      threadId: thread.body.id,
-      draft: suggestion.draft,
+      selectedOptionId: "review",
+      options: suggestion.options,
     });
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
     expect(pool.body.suggestions).toStrictEqual([]);

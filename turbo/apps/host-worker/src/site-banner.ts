@@ -61,11 +61,6 @@ export async function withSiteBanner(
   );
   continueUrl.searchParams.set("utm_source", "hosted_site");
   continueUrl.searchParams.set("utm_medium", "artifact_banner");
-  const downloadUrl = new URL("/artifacts", home);
-  downloadUrl.searchParams.set(
-    "downloadSite",
-    new URL(presentation.siteUrl).hostname.split(".")[0]!,
-  );
   const nonce = btoa(
     String.fromCharCode(...crypto.getRandomValues(new Uint8Array(24))),
   );
@@ -86,7 +81,6 @@ export async function withSiteBanner(
       }),
       children: createElement(HostedSiteBannerActions, {
         continueUrl: continueUrl.href,
-        downloadUrl: downloadUrl.href,
       }),
     }),
     { signal: request.signal },
@@ -99,13 +93,17 @@ export async function withSiteBanner(
     body = body.pipeThrough(new DecompressionStream(encoding));
   }
   const original = await new Response(body).text();
-  const html = injectHostedSiteBanner(original, banner, nonce);
+  const siteOrigin = new URL(request.url).origin;
+  const html = injectHostedSiteBanner(original, banner, nonce, siteOrigin);
   const headers = new Headers(response.headers);
   for (const key of ["Content-Length", "ETag", "Content-Encoding"])
     headers.delete(key);
   const csp = headers.get("Content-Security-Policy");
   if (csp)
-    headers.set("Content-Security-Policy", hostedSiteBannerCsp(csp, nonce));
+    headers.set(
+      "Content-Security-Policy",
+      hostedSiteBannerCsp(csp, nonce, siteOrigin),
+    );
   headers.set("Cache-Control", "private, no-store");
   headers.set("CDN-Cache-Control", "no-store");
   headers.set("Cloudflare-CDN-Cache-Control", "no-store");

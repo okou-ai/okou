@@ -1,6 +1,6 @@
 {
   "name": "@okouai/host-worker",
-  "version": "1.8.15",
+  "version": "1.8.16",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,6 +17,7 @@
     "@okouai/typescript-config": "workspace:*",
     "@typescript/native": "npm:typescript@7.0.2",
     "eslint": "^9.34.0",
+    "fflate": "^0.8.3",
     "happy-dom": "^21.0.4",
     "msw": "^2.13.2",
     "oxlint": "^1.75.0",

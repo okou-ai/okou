@@ -12,6 +12,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1065.0](https://github.com/okou-ai/okou/compare/app-v0.1064.2...app-v0.1065.0) (2026-10-26)
+
+
+### Features
+
+* **app:** add pinned chat reorder shortcuts ([#43033](https://github.com/okou-ai/okou/issues/43033)) ([cd36185](https://github.com/okou-ai/okou/commit/cd361857d93b96c297e9099fffdfc1b80bacccb7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.7.0
+    * @okouai/connectors bumped to 3.16.13
+    * @okouai/core bumped to 8.790.2
+
 ## [0.1064.2](https://github.com/okou-ai/okou/compare/app-v0.1064.1...app-v0.1064.2) (2026-10-26)
 
 
