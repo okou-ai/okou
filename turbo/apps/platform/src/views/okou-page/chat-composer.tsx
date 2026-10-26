@@ -3082,6 +3082,36 @@ function TemplatePickerHeader() {
   );
 }
 
+/**
+ * Every category names itself above its grid, in the rail's own words, so no
+ * tab opens onto a bare header band while its neighbours carry a title.
+ */
+function TemplatePickerCategoryTitle({ category }: { category: string }) {
+  const { t } = useTranslation();
+  const titles: Record<string, string> = {
+    slides: t(($) => {
+      return $.artifacts.kinds.presentation;
+    }),
+    document: t(($) => {
+      return $.documentTemplates.title;
+    }),
+    website: t(($) => {
+      return $.artifacts.templates.website;
+    }),
+    illustration: t(($) => {
+      return $.artifacts.kinds.image;
+    }),
+    workflow: t(($) => {
+      return $.artifacts.templates.workflow;
+    }),
+  };
+  return (
+    <h2 className="mr-auto hidden text-base font-semibold sm:block">
+      {titles[category]}
+    </h2>
+  );
+}
+
 function TemplatePickerSearch({
   search,
   onSearchChange,
@@ -4766,18 +4796,6 @@ function TemplatePickerDialog({
     ["slides", "document", "illustration"].includes(selectedCategory);
   const showTemplatePickerSearch =
     selectedCategory === "workflow" || showCustomTemplates;
-  const categoryTitle =
-    selectedCategory === "slides"
-      ? t(($) => {
-          return $.artifacts.kinds.presentation;
-        })
-      : selectedCategory === "document"
-        ? t(($) => {
-            return $.documentTemplates.title;
-          })
-        : t(($) => {
-            return $.artifacts.kinds.image;
-          });
 
   const closeTemplatePicker = () => {
     onClose();
@@ -4932,10 +4950,10 @@ function TemplatePickerDialog({
                       showTemplatePickerSearch ? "flex" : "hidden sm:flex",
                     )}
                   >
-                    {showCustomTemplates ? (
-                      <h2 className="mr-auto hidden text-base font-semibold sm:block">
-                        {categoryTitle}
-                      </h2>
+                    {customTemplatesEnabled ? (
+                      <TemplatePickerCategoryTitle
+                        category={selectedCategory}
+                      />
                     ) : null}
                     {showTemplatePickerSearch ? (
                       <TemplatePickerSearch
