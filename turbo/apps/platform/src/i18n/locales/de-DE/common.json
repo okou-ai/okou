@@ -3685,7 +3685,6 @@
         "createCodeError": "Verbindungscode konnte nicht erstellt werden. Versuchen Sie es erneut.",
         "creatingCode": "Verbindungscode wird erstellt…",
         "description": "SMS-Zugriff auf {{assistantName}}",
-        "destination": "iMessage oder SMS an",
         "openMessages": "Nachrichten öffnen",
         "options": "Telefonoptionen",
         "phoneLabel": "Telefon",

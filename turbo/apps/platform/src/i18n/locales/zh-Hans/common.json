@@ -3670,7 +3670,6 @@
         "createCodeError": "无法创建连接码，请重试。",
         "creatingCode": "正在创建连接码…",
         "description": "通过短信使用 {{assistantName}}",
-        "destination": "iMessage 或短信发送至",
         "openMessages": "打开 Messages",
         "options": "手机选项",
         "phoneLabel": "电话",

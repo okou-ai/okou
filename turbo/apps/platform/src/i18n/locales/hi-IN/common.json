@@ -3685,7 +3685,6 @@
         "createCodeError": "कनेक्शन कोड नहीं बनाया जा सका। फिर से कोशिश करें।",
         "creatingCode": "कनेक्शन कोड बनाया जा रहा है…",
         "description": "{{assistantName}} तक टेक्स्ट-संदेश पहुंच",
-        "destination": "iMessage या SMS को",
         "openMessages": "मैसेज खोलें",
         "options": "फ़ोन विकल्प",
         "phoneLabel": "फ़ोन",

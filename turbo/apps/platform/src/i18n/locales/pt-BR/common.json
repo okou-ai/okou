@@ -3739,7 +3739,6 @@
         "createCodeError": "Não foi possível criar um código de conexão. Tente novamente.",
         "creatingCode": "Criando código de conexão…",
         "description": "Acesso ao {{assistantName}} por mensagens de texto",
-        "destination": "iMessage ou SMS para",
         "openMessages": "Abrir Mensagens",
         "options": "Opções do telefone",
         "phoneLabel": "Telefone",

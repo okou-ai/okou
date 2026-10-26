@@ -3670,7 +3670,6 @@
         "createCodeError": "接続コードを作成できませんでした。もう一度お試しください。",
         "creatingCode": "接続コードを作成中…",
         "description": "{{assistantName}} へのテキスト メッセージ アクセス",
-        "destination": "iMessage または SMS で",
         "openMessages": "メッセージを開く",
         "options": "電話オプション",
         "phoneLabel": "電話",
