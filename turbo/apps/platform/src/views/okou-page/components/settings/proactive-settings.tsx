@@ -13,12 +13,10 @@ import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import {
   proactiveSuggestionsPreference$,
-  reloadProactiveSuggestionsPreference$,
   updateProactiveSuggestionsPreference$,
 } from "../../../../signals/okou-page/settings/proactive-suggestions.ts";
 import {
   proactiveJobsPreference$,
-  reloadProactiveJobsPreference$,
   updateProactiveJobsPreference$,
 } from "../../../../signals/okou-page/settings/proactive-jobs.ts";
 import { PreferenceCardRow } from "./preference-card-row.tsx";
@@ -47,12 +45,10 @@ const PREFERENCE_SIGNALS = {
   jobs: {
     preference$: proactiveJobsPreference$,
     update$: updateProactiveJobsPreference$,
-    reload$: reloadProactiveJobsPreference$,
   },
   suggestions: {
     preference$: proactiveSuggestionsPreference$,
     update$: updateProactiveSuggestionsPreference$,
-    reload$: reloadProactiveSuggestionsPreference$,
   },
   learning: proactiveLearningSignals,
 } as const;

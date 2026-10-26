@@ -216,11 +216,9 @@ test("Copying an unavailable artifact reports failure", async () => {
 });
 
 test("Copying an artifact reports a browser clipboard failure", async () => {
-  context.mocks.browser.clipboardExecCommand();
   vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
     new DOMException("Clipboard unavailable", "NotAllowedError"),
   );
-  vi.spyOn(document, "execCommand").mockReturnValue(false);
   await setupResources();
   const resources = await screen.findByRole("region", { name: "Resources" });
   const artifacts = within(resources).getByRole("region", {

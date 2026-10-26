@@ -1033,7 +1033,7 @@
       "allowedCount": "{{total}} 件中 {{allowed}} 件の権限を許可済み",
       "alwaysNote": "これらの権限は、変更または取り消すまで許可されたままになります。",
       "continued": "会話を再開しました。",
-      "continueFailed": "権限は許可されましたが、会話を再開できませんでした。もう一度「続ける」をお試しください。",
+      "continueFailed": "権限は許可されましたが、会話を再開できませんでした。",
       "details": "権限の詳細を表示",
       "dismissed": "権限は変更されませんでした。",
       "invalid": "この権限リンクは無効か、利用できません。",
@@ -1756,7 +1756,7 @@
       "title": "ブラウザに情報を入力",
       "unavailable": "リクエストを利用できません",
       "uncertain": "ブラウザを確認してください",
-      "uncertainDescription": "ブラウザが情報を受け取った可能性があります。再試行する前にエージェントに確認を依頼してください。"
+      "uncertainDescription": "ブラウザが情報を受け取った可能性があります。エージェントに結果の確認を依頼してください。"
     },
     "cards": {
       "viewDetails": "詳細を表示"
@@ -1958,7 +1958,7 @@
       "recovery": {
         "accessProgramDescription": "少し時間をおいて再試行してください。このチャットは開いたままにできます。",
         "accessProgramTitle": "Codex へのアクセスは一時的に利用できません",
-        "autonomyLimitDescription": "連続自動実行の上限に達しました。続行するには確認が必要です。",
+        "autonomyLimitDescription": "連続自動実行の上限に達しました。",
         "autonomyLimitTitle": "自動実行の上限に達しました",
         "capacityDescription": "少し待ってから再試行するか、別のモデルで続けてください。",
         "capacityTitle": "このモデルは現在混雑しています",
@@ -1966,7 +1966,7 @@
         "codex": "Codex",
         "connectionLostTitle": "応答が途中で途切れました",
         "contextWindowTitle": "このチャットは長すぎます",
-        "filesystemFullDescription": "この実行ではこれ以上ファイルを保存できません。再試行して続けてください。",
+        "filesystemFullDescription": "この実行ではこれ以上ファイルを保存できません。",
         "filesystemFullTitle": "この実行の保存容量が足りません",
         "fiveHourReset": "5時間の上限は {{time}} にリセット",
         "inputTooLargeDescription": "メッセージを短くして、もう一度送信してください。",
@@ -1976,7 +1976,7 @@
         "newChat": "新しいチャット",
         "newChatDescription": "新しいチャットを始め、引き継ぎたい大切な情報を含めてください。",
         "openClaude": "Claude を開く",
-        "outputLimitDescription": "応答が完了する前に止まりました。「続ける」を選ぶと続きから生成できます。",
+        "outputLimitDescription": "応答が完了する前に止まりました。",
         "outputLimitTitle": "応答が長さの上限に達しました",
         "personalAccount": "個人サブスクリプション {{account}}",
         "personalAccountDisconnected": "個人サブスクリプションの接続が切れています",
@@ -1994,7 +1994,7 @@
         "sessionHistoryTitle": "このチャットは上限に達しました",
         "termsDescription": "Claude で最新の利用規約に同意してから、こちらで再試行してください。",
         "termsTitle": "Claude の規約への同意が必要です",
-        "timeoutDescription": "停止したところから続けられます。",
+        "timeoutDescription": "続けるには新しいメッセージを送信してください。",
         "timeoutTitle": "時間制限に達しました",
         "unavailableDescription": "このプロバイダーアカウントで使える別のモデルを選んでください。",
         "unavailableTitle": "選択したモデルは利用できません",
@@ -3005,11 +3005,11 @@
     "configuration": "Cloudflare Access",
     "convert": "個人用に変更",
     "convertHelp": "この組織の Cloudflare Access は、作成者が別の人でも、操作しているあなた自身の個人用設定になります。Service Token はそのままで、自分の SSH ホストは接続を維持できます。",
-    "convertUncertain": "変更を確認できませんでした。再試行する前に最新の設定を確認してください。",
+    "convertUncertain": "変更を確認できませんでした。",
     "createNew": "新しい Cloudflare Access を作成",
     "delete": "Cloudflare Access を削除",
     "deleteHelp": "この Cloudflare Access を削除しますか？保存された Service Token は復元できません。自分のホストは先に再バインドしてください。",
-    "deleteUncertain": "削除結果を確認できませんでした。再試行する前に最新の影響を確認してください。",
+    "deleteUncertain": "削除結果を確認できませんでした。",
     "edit": "Cloudflare Access を編集",
     "failed": "Cloudflare Accessの変更を保存できませんでした。",
     "forbidden": "共有 Cloudflare Access を変更できるのは組織の管理者だけです。",
@@ -4071,11 +4071,11 @@
           "title": "あなたはすでにこの特典を利用しています"
         },
         "billingUnavailable": {
-          "body": "現在、弊社の支払いシステムはご利用いただけません。数分後にもう一度試してください。",
+          "body": "現在、弊社の支払いシステムはご利用いただけません。",
           "title": "課金は一時的に利用できません"
         },
         "broken": {
-          "body": "あなたの償還を完了できませんでした。もう一度試すか、サポートにお問い合わせください。",
+          "body": "あなたの償還を完了できませんでした。サポートにお問い合わせください。",
           "title": "何か問題が発生しました"
         },
         "campaignUnavailable": {

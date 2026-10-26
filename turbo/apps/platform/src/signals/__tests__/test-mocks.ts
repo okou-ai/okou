@@ -157,10 +157,6 @@ interface ClipboardRichWriteMock {
   rejectWith: (error: Error) => void;
 }
 
-interface ClipboardExecCommandMock {
-  writes: Record<string, string>[];
-}
-
 interface BrowserDownload {
   readonly url: string;
   readonly filename: string;
@@ -632,9 +628,6 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       clipboardWrite: (): ClipboardRichWriteMock => {
         return mockClipboardWrite();
       },
-      clipboardExecCommand: (): ClipboardExecCommandMock => {
-        return mockClipboardExecCommand(getSignal());
-      },
       dedicatedWorker: (
         respond: (message: unknown) => Promise<unknown>,
       ): void => {
@@ -1056,49 +1049,6 @@ function mockClipboardWrite(): ClipboardRichWriteMock {
       rejection = error;
     },
   };
-}
-
-function mockClipboardExecCommand(
-  signal: AbortSignal,
-): ClipboardExecCommandMock {
-  const writes: Record<string, string>[] = [];
-  const descriptor = Object.getOwnPropertyDescriptor(document, "execCommand");
-  Object.defineProperty(document, "execCommand", {
-    configurable: true,
-    value: (command: string) => {
-      if (command !== "copy") {
-        return false;
-      }
-      if (document.getSelection()?.rangeCount === 0) {
-        return false;
-      }
-      const data: Record<string, string> = {};
-      const event = new Event("copy", {
-        bubbles: true,
-        cancelable: true,
-      });
-      Object.defineProperty(event, "clipboardData", {
-        value: {
-          setData(type: string, value: string) {
-            data[type] = value;
-          },
-        },
-      });
-      const handled = !document.dispatchEvent(event);
-      if (handled) {
-        writes.push(data);
-      }
-      return handled;
-    },
-  });
-  restoreOnAbort(signal, () => {
-    if (descriptor) {
-      Object.defineProperty(document, "execCommand", descriptor);
-    } else {
-      Reflect.deleteProperty(document, "execCommand");
-    }
-  });
-  return { writes };
 }
 
 function mockBlobDownload(

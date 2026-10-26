@@ -1033,7 +1033,7 @@
       "allowedCount": "已允许 {{allowed}} / {{total}} 项权限",
       "alwaysNote": "这些权限会持续允许，直到你更改或撤销为止。",
       "continued": "对话已继续。",
-      "continueFailed": "权限已允许，但未能继续对话。请重试继续。",
+      "continueFailed": "权限已允许，但未能继续对话。",
       "details": "查看权限详情",
       "dismissed": "未更改任何权限。",
       "invalid": "此权限链接无效或不可用。",
@@ -1756,7 +1756,7 @@
       "title": "在浏览器中输入信息",
       "unavailable": "请求不可用",
       "uncertain": "请检查浏览器",
-      "uncertainDescription": "浏览器可能已收到这些信息。重试前，请先让 Agent 检查。"
+      "uncertainDescription": "浏览器可能已收到这些信息。请让代理检查结果。"
     },
     "cards": {
       "viewDetails": "查看详情"
@@ -1958,7 +1958,7 @@
       "recovery": {
         "accessProgramDescription": "稍后再试，仍可在这段聊天中继续。",
         "accessProgramTitle": "Codex 暂时无法访问",
-        "autonomyLimitDescription": "连续自动运行的次数已达上限。确认后可以继续。",
+        "autonomyLimitDescription": "连续自动运行的次数已达上限。",
         "autonomyLimitTitle": "已达自动运行上限",
         "capacityDescription": "可以稍等片刻再试，或换个模型继续。",
         "capacityTitle": "这个模型现在很忙",
@@ -1966,7 +1966,7 @@
         "codex": "Codex",
         "connectionLostTitle": "回复中途断开了",
         "contextWindowTitle": "这个聊天太长了",
-        "filesystemFullDescription": "这次运行没法再保存文件。请重试后继续。",
+        "filesystemFullDescription": "这次运行没法再保存文件。",
         "filesystemFullTitle": "这次运行的存储空间用完了",
         "fiveHourReset": "5 小时额度于 {{time}} 重置",
         "inputTooLargeDescription": "请缩短消息内容后重新发送。",
@@ -1976,7 +1976,7 @@
         "newChat": "新聊天",
         "newChatDescription": "新建一段聊天，并带上想继续使用的重要信息。",
         "openClaude": "打开 Claude",
-        "outputLimitDescription": "回复还没完成就停止了。点击“继续”可以接着生成。",
+        "outputLimitDescription": "回复还没完成就停止了。",
         "outputLimitTitle": "回复达到了长度上限",
         "personalAccount": "个人订阅 {{account}}",
         "personalAccountDisconnected": "个人订阅已断开",
@@ -1994,7 +1994,7 @@
         "sessionHistoryTitle": "这段聊天已达到上限",
         "termsDescription": "先在 Claude 接受最新条款，再回来重试。",
         "termsTitle": "需要接受 Claude 新条款",
-        "timeoutDescription": "可以从上次停止的地方继续。",
+        "timeoutDescription": "发送新消息以继续。",
         "timeoutTitle": "已达时间上限",
         "unavailableDescription": "请选择当前服务商账户支持的其他模型。",
         "unavailableTitle": "所选模型不可用",
@@ -3005,11 +3005,11 @@
     "configuration": "Cloudflare Access",
     "convert": "转为个人配置",
     "convertHelp": "此组织 Cloudflare Access 将转为你自己的个人配置，即使它是由其他人创建的。Service Token 保持不变，你的 SSH 主机可以保持连接。",
-    "convertUncertain": "无法确认转换是否成功。请查看最新配置后再尝试。",
+    "convertUncertain": "无法确认转换是否成功。",
     "createNew": "新建 Cloudflare Access",
     "delete": "删除 Cloudflare Access",
     "deleteHelp": "确定删除这个 Cloudflare Access？保存的 Service Token 无法恢复。你自己的主机必须先重新绑定。",
-    "deleteUncertain": "无法确认是否已删除。请查看最新影响范围后再尝试。",
+    "deleteUncertain": "无法确认是否已删除。",
     "edit": "编辑 Cloudflare Access",
     "failed": "无法保存 Cloudflare Access 更改。",
     "forbidden": "只有组织管理员可以修改共享的 Cloudflare Access。",
@@ -4071,11 +4071,11 @@
           "title": "你已经兑换过这个优惠"
         },
         "billingUnavailable": {
-          "body": "支付系统暂时不可用，请过几分钟再试。",
+          "body": "支付系统暂时不可用。",
           "title": "账单服务暂时不可用"
         },
         "broken": {
-          "body": "兑换没有完成。请重试，或联系客服。",
+          "body": "兑换没有完成。请联系客服。",
           "title": "出了点问题"
         },
         "campaignUnavailable": {

@@ -1055,7 +1055,7 @@
       "allowedCount": "{{allowed}} de {{total}} permisos concedidos",
       "alwaysNote": "Estos permisos seguirán concedidos hasta que los cambies o revoques.",
       "continued": "La conversación ha continuado.",
-      "continueFailed": "Se han concedido los permisos, pero no se ha podido continuar la conversación. Vuelve a intentar continuar.",
+      "continueFailed": "Se han concedido los permisos, pero no se ha podido continuar la conversación.",
       "details": "Ver detalles de los permisos",
       "dismissed": "No se ha cambiado ningún permiso.",
       "invalid": "Este enlace de permisos no es válido o no está disponible.",
@@ -1788,7 +1788,7 @@
       "title": "Introducir información en el navegador",
       "unavailable": "Solicitud no disponible",
       "uncertain": "Comprueba el navegador",
-      "uncertainDescription": "Es posible que el navegador haya recibido la información. Pide al agente que lo compruebe antes de volver a intentarlo."
+      "uncertainDescription": "Es posible que el navegador haya recibido la información. Pide al agente que compruebe el resultado."
     },
     "cards": {
       "viewDetails": "Ver detalles"
@@ -1996,7 +1996,7 @@
       "recovery": {
         "accessProgramDescription": "Vuelve a intentarlo dentro de un momento. Puedes dejar este chat abierto.",
         "accessProgramTitle": "El acceso a Codex no está disponible temporalmente",
-        "autonomyLimitDescription": "Se ha alcanzado el límite de ejecuciones automáticas consecutivas. Confirma para continuar.",
+        "autonomyLimitDescription": "Se ha alcanzado el límite de ejecuciones automáticas consecutivas.",
         "autonomyLimitTitle": "Límite de ejecuciones automáticas alcanzado",
         "capacityDescription": "Vuelve a intentarlo en un momento o elige otro modelo para seguir trabajando.",
         "capacityTitle": "Este modelo está ocupado ahora mismo",
@@ -2004,7 +2004,7 @@
         "codex": "Codex",
         "connectionLostTitle": "La respuesta se interrumpió",
         "contextWindowTitle": "Este chat es demasiado largo",
-        "filesystemFullDescription": "Este proceso no pudo guardar más archivos. Vuelve a intentarlo para continuar.",
+        "filesystemFullDescription": "Este proceso no pudo guardar más archivos.",
         "filesystemFullTitle": "Este proceso se quedó sin espacio",
         "fiveHourReset": "El límite de 5 h se restablece {{time}}",
         "inputTooLargeDescription": "Acorta el mensaje y vuelve a enviarlo.",
@@ -2014,7 +2014,7 @@
         "newChat": "Nuevo chat",
         "newChatDescription": "Inicia un chat nuevo e incluye los detalles importantes que quieras conservar.",
         "openClaude": "Abrir Claude",
-        "outputLimitDescription": "La respuesta se detuvo antes de terminar. Pulsa «Continuar» para retomarla.",
+        "outputLimitDescription": "La respuesta se detuvo antes de terminar.",
         "outputLimitTitle": "La respuesta alcanzó el límite de longitud",
         "personalAccount": "Suscripción personal {{account}}",
         "personalAccountDisconnected": "Suscripción personal desconectada",
@@ -2032,7 +2032,7 @@
         "sessionHistoryTitle": "Este chat llegó a su límite",
         "termsDescription": "Acepta las condiciones más recientes en Claude y vuelve para intentarlo de nuevo.",
         "termsTitle": "Debes aceptar los términos de Claude",
-        "timeoutDescription": "Puedes continuar desde donde se detuvo este proceso.",
+        "timeoutDescription": "Envía un nuevo mensaje para continuar.",
         "timeoutTitle": "Se alcanzó el límite de tiempo",
         "unavailableDescription": "Elige otro modelo que funcione con tu cuenta del proveedor.",
         "unavailableTitle": "El modelo seleccionado no está disponible",
@@ -3064,11 +3064,11 @@
     "configuration": "Cloudflare Access",
     "convert": "Hacer personal",
     "convertHelp": "Este Cloudflare Access de la organización pasará a ser tu propia configuración personal, aunque lo haya creado otra persona. El Service Token no cambiará y tus hosts SSH podrán seguir conectados.",
-    "convertUncertain": "No se pudo confirmar la conversión. Revisa la configuración actual antes de volver a intentarlo.",
+    "convertUncertain": "No se pudo confirmar la conversión.",
     "createNew": "Crear nuevo Cloudflare Access",
     "delete": "Eliminar Cloudflare Access",
     "deleteHelp": "¿Eliminar este Cloudflare Access? El Service Token guardado no se podrá recuperar. Primero debes volver a vincular tus propios hosts.",
-    "deleteUncertain": "No pudimos confirmar la eliminación. Revisa el impacto más reciente antes de volver a intentarlo.",
+    "deleteUncertain": "No pudimos confirmar la eliminación.",
     "edit": "Editar Cloudflare Access",
     "failed": "No se pudo guardar el cambio de Cloudflare Access.",
     "forbidden": "Solo los administradores de la organización pueden modificar Cloudflare Access compartido.",
@@ -4140,11 +4140,11 @@
           "title": "Ya has canjeado esta oferta"
         },
         "billingUnavailable": {
-          "body": "Nuestro sistema de pagos no está disponible ahora mismo. Por favor, inténtalo de nuevo en unos minutos.",
+          "body": "Nuestro sistema de pagos no está disponible ahora mismo.",
           "title": "La facturación está temporalmente indisponible"
         },
         "broken": {
-          "body": "No pudimos completar el canje. Inténtalo de nuevo o contacta con el servicio de asistencia.",
+          "body": "No pudimos completar el canje. Contacta con el servicio de asistencia.",
           "title": "Algo salió mal"
         },
         "campaignUnavailable": {

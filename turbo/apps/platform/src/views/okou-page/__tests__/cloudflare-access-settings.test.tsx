@@ -679,57 +679,76 @@ test("zero-impact conversion needs no other-user warning", async () => {
   expect(within(dialog).queryByRole("checkbox")).toBeNull();
 });
 
-test("changed conversion impact blocks the outdated confirmation", async () => {
-  const shared: ScopedCloudflareAccessConfig = {
-    ...config,
-    scope: "organization",
-  };
-  const requests: unknown[] = [];
-  let count = 1;
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: [shared] });
-  });
-  context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
-    return respond(200, {
-      expectedRevision: 1,
-      ownHostCount: 0,
-      otherHostCount: count,
-      affectedOwners: [{ userId: "user-member-1", displayName: "Member One" }],
-      impactSnapshot: (count === 1 ? "a" : "b").repeat(64),
+test.each([
+  {
+    outcome: "changed impact",
+    status: 409,
+    code: "CLOUDFLARE_ACCESS_IMPACT_CONFLICT",
+    message: /affected hosts changed/u,
+  },
+  {
+    outcome: "unconfirmed result",
+    status: 500,
+    code: "INTERNAL_ERROR",
+    message: /could not confirm the conversion/u,
+  },
+] as const)(
+  "a conversion with $outcome blocks the confirmation and protects provider details",
+  async ({ status, code, message }) => {
+    const shared: ScopedCloudflareAccessConfig = {
+      ...config,
+      scope: "organization",
+    };
+    let submitted: unknown;
+    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+      return respond(200, { configs: [shared] });
     });
-  });
-  context.mocks.api(
-    cloudflareAccessContract.convertToPersonal,
-    ({ body, respond }) => {
-      requests.push(body);
-      count = 2;
-      return respond(409, {
-        error: {
-          code: "CLOUDFLARE_ACCESS_IMPACT_CONFLICT",
-          message: "Impact changed",
-        },
+    context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
+      return respond(200, {
+        expectedRevision: 1,
+        ownHostCount: 0,
+        otherHostCount: 1,
+        affectedOwners: [
+          { userId: "user-member-1", displayName: "Member One" },
+        ],
+        impactSnapshot: "a".repeat(64),
       });
-    },
-  );
-  await page(undefined, "admin");
-  const organization = await screen.findByRole("region", {
-    name: "Organization",
-  });
-  await within(organization).findByText(shared.name);
-  click(getAction("button", "Make personal", organization));
-  const dialog = await screen.findByRole("dialog", { name: "Make personal" });
-  await within(dialog).findByText(/1 member and 1 host/u);
-  const acknowledge = within(dialog).getByRole("checkbox", {
-    name: impactAcknowledgement,
-  });
-  await userEvent.click(acknowledge);
-  click(getAction("button", "Make personal", dialog));
-  await within(dialog).findByText(/affected hosts changed/u);
-  expect(requests).toStrictEqual([
-    { expectedRevision: 1, impactSnapshot: "a".repeat(64) },
-  ]);
-  expect(queryAction("button", "Make personal", dialog)).toBeNull();
-});
+    });
+    context.mocks.api(
+      cloudflareAccessContract.convertToPersonal,
+      ({ body, respond }) => {
+        submitted = body;
+        return respond(status, {
+          error: { code, message: "private provider detail" },
+        });
+      },
+    );
+    await page(undefined, "admin");
+    const organization = await screen.findByRole("region", {
+      name: "Organization",
+    });
+    await within(organization).findByText(shared.name);
+    click(getAction("button", "Make personal", organization));
+    const dialog = await screen.findByRole("dialog", { name: "Make personal" });
+    await within(dialog).findByText(/1 member and 1 host/u);
+    expect(dialog).toHaveTextContent("Member One");
+    const acknowledge = within(dialog).getByRole("checkbox", {
+      name: impactAcknowledgement,
+    });
+    await userEvent.click(acknowledge);
+    click(getAction("button", "Make personal", dialog));
+    await expect(
+      within(dialog).findByText(message),
+    ).resolves.toBeInTheDocument();
+    expect(submitted).toStrictEqual({
+      expectedRevision: 1,
+      impactSnapshot: "a".repeat(64),
+    });
+    expect(queryAction("button", "Make personal", dialog)).toBeNull();
+    expect(getAction("button", "Cancel", dialog)).toBeEnabled();
+    expect(dialog.textContent).not.toContain("private provider detail");
+  },
+);
 
 test("conversion preview 403 blocks conversion", async () => {
   const shared = { ...config, scope: "organization" as const };

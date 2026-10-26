@@ -1896,6 +1896,54 @@ test("The standalone form records cancellation before notifying the agent", asyn
   expect(ordering).toStrictEqual(["cancel", "callback"]);
 });
 
+test("A completed Browser input clears sensitive values when its callback fails", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, sensitiveAction(state));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, sensitiveAction("pending"));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
+    state = "succeeded";
+    notifyBrowserUserActionChanged();
+    return respond(200, sensitiveAction(state));
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(503, {
+      error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
+    });
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Sign in to download invoices",
+  });
+  await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
+  await fill(within(form).getByLabelText("Password"), "synthetic-password");
+  await fill(within(form).getByLabelText("Verification code"), "012345");
+  click(button("Add to browser"));
+
+  await expect(
+    screen.findByText("Chat unavailable"),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    screen.findByText("Information added"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByDisplayValue("owner@example.test"),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByDisplayValue("synthetic-password"),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByDisplayValue("012345")).not.toBeInTheDocument();
+});
+
 test("A fresh standalone action page reads accepted callback delivery", async () => {
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, { ...action("succeeded"), callbackDelivered: true });

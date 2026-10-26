@@ -1055,7 +1055,7 @@
       "allowedCount": "{{allowed}} autorisations accordées sur {{total}}",
       "alwaysNote": "Ces autorisations restent accordées jusqu’à ce que vous les modifiiez ou les révoquiez.",
       "continued": "La conversation a repris.",
-      "continueFailed": "Les autorisations ont été accordées, mais la conversation n’a pas pu reprendre. Réessayez de continuer.",
+      "continueFailed": "Les autorisations ont été accordées, mais la conversation n’a pas pu reprendre.",
       "details": "Voir le détail des autorisations",
       "dismissed": "Aucune autorisation n’a été modifiée.",
       "invalid": "Ce lien d’autorisation est invalide ou indisponible.",
@@ -1788,7 +1788,7 @@
       "title": "Saisir des informations dans le navigateur",
       "unavailable": "Demande indisponible",
       "uncertain": "Vérifiez le navigateur",
-      "uncertainDescription": "Le navigateur a peut-être reçu les informations. Demandez à l’agent de vérifier avant de réessayer."
+      "uncertainDescription": "Le navigateur a peut-être reçu les informations. Demandez à l’agent de vérifier le résultat."
     },
     "cards": {
       "viewDetails": "Voir les détails"
@@ -1996,7 +1996,7 @@
       "recovery": {
         "accessProgramDescription": "Réessayez dans quelques instants. Vous pouvez laisser cette conversation ouverte.",
         "accessProgramTitle": "L’accès à Codex est temporairement indisponible",
-        "autonomyLimitDescription": "La limite des exécutions automatiques consécutives a été atteinte. Confirmez pour continuer.",
+        "autonomyLimitDescription": "La limite des exécutions automatiques consécutives a été atteinte.",
         "autonomyLimitTitle": "Limite des exécutions automatiques atteinte",
         "capacityDescription": "Réessayez dans un instant ou choisissez un autre modèle pour continuer.",
         "capacityTitle": "Ce modèle est saturé pour le moment",
@@ -2004,7 +2004,7 @@
         "codex": "Codex",
         "connectionLostTitle": "La réponse a été interrompue",
         "contextWindowTitle": "Cette conversation est trop longue",
-        "filesystemFullDescription": "Cette exécution n’a pas pu enregistrer d’autres fichiers. Réessayez pour continuer.",
+        "filesystemFullDescription": "Cette exécution n’a pas pu enregistrer d’autres fichiers.",
         "filesystemFullTitle": "L’espace de stockage de cette exécution est épuisé",
         "fiveHourReset": "La limite de 5 h se réinitialise {{time}}",
         "inputTooLargeDescription": "Raccourcissez votre message et renvoyez-le.",
@@ -2014,7 +2014,7 @@
         "newChat": "Nouvelle conversation",
         "newChatDescription": "Démarrez une nouvelle conversation et ajoutez les informations importantes à reprendre.",
         "openClaude": "Ouvrir Claude",
-        "outputLimitDescription": "La réponse s’est arrêtée avant la fin. Choisissez « Continuer » pour reprendre.",
+        "outputLimitDescription": "La réponse s’est arrêtée avant la fin.",
         "outputLimitTitle": "La réponse a atteint sa limite de longueur",
         "personalAccount": "Abonnement personnel {{account}}",
         "personalAccountDisconnected": "Abonnement personnel déconnecté",
@@ -2032,7 +2032,7 @@
         "sessionHistoryTitle": "Cette conversation a atteint sa limite",
         "termsDescription": "Acceptez les dernières conditions sur Claude, puis revenez et réessayez.",
         "termsTitle": "Les conditions de Claude doivent être acceptées",
-        "timeoutDescription": "Vous pouvez reprendre là où cette exécution s’est arrêtée.",
+        "timeoutDescription": "Envoyez un nouveau message pour continuer.",
         "timeoutTitle": "Limite de temps atteinte",
         "unavailableDescription": "Choisissez un autre modèle compatible avec votre compte fournisseur.",
         "unavailableTitle": "Le modèle sélectionné n’est pas disponible",
@@ -3064,11 +3064,11 @@
     "configuration": "Cloudflare Access",
     "convert": "Rendre personnel",
     "convertHelp": "Cette configuration Cloudflare Access de l’organisation deviendra votre propre configuration personnelle, même si une autre personne l’a créée. Le Service Token restera inchangé et vos hôtes SSH pourront rester connectés.",
-    "convertUncertain": "Impossible de confirmer la conversion. Vérifiez la configuration actuelle avant de réessayer.",
+    "convertUncertain": "Impossible de confirmer la conversion.",
     "createNew": "Créer un Cloudflare Access",
     "delete": "Supprimer Cloudflare Access",
     "deleteHelp": "Supprimer ce Cloudflare Access ? Le Service Token enregistré ne pourra pas être récupéré. Vous devez d'abord relier vos propres hôtes à une autre configuration.",
-    "deleteUncertain": "Impossible de confirmer la suppression. Vérifiez les conséquences actuelles avant de réessayer.",
+    "deleteUncertain": "Impossible de confirmer la suppression.",
     "edit": "Modifier Cloudflare Access",
     "failed": "Impossible d’enregistrer la modification Cloudflare Access.",
     "forbidden": "Seuls les administrateurs de l'organisation peuvent modifier l'accès Cloudflare partagé.",
@@ -4140,11 +4140,11 @@
           "title": "Vous avez déjà utilisé cette offre"
         },
         "billingUnavailable": {
-          "body": "Notre système de paiement n'est pas disponible pour le moment. Veuillez réessayer dans quelques minutes.",
+          "body": "Notre système de paiement n'est pas disponible pour le moment.",
           "title": "La facturation est temporairement indisponible"
         },
         "broken": {
-          "body": "Nous n'avons pas pu compléter votre remboursement. Veuillez réessayer ou contacter le support.",
+          "body": "Nous n'avons pas pu compléter votre remboursement. Veuillez contacter le support.",
           "title": "Quelque chose a mal tourné"
         },
         "campaignUnavailable": {

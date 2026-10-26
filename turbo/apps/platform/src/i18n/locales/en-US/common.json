@@ -1035,7 +1035,7 @@
       "allowedCount": "{{allowed}} of {{total}} permissions allowed",
       "alwaysNote": "These permissions stay allowed until you change or revoke them.",
       "continued": "The conversation has continued.",
-      "continueFailed": "Permissions allowed, but could not continue. Try continuing again.",
+      "continueFailed": "Permissions allowed, but could not continue.",
       "details": "View permission details",
       "dismissed": "No permissions were changed.",
       "invalid": "This permission link is invalid or unavailable.",
@@ -1760,7 +1760,7 @@
       "title": "Enter information in browser",
       "unavailable": "Request unavailable",
       "uncertain": "Check the browser",
-      "uncertainDescription": "The browser may have received the information. Ask the agent to check before trying again."
+      "uncertainDescription": "The browser may have received the information. Ask the agent to check the result."
     },
     "cards": {
       "viewDetails": "View details"
@@ -1965,7 +1965,7 @@
       "recovery": {
         "accessProgramDescription": "Try again in a little while. You can keep this chat open.",
         "accessProgramTitle": "Codex access is temporarily unavailable",
-        "autonomyLimitDescription": "The limit for consecutive automatic runs has been reached. Confirm to continue.",
+        "autonomyLimitDescription": "The limit for consecutive automatic runs has been reached.",
         "autonomyLimitTitle": "Automatic run limit reached",
         "capacityDescription": "Try again in a moment, or choose another model to keep working.",
         "capacityTitle": "This model is busy right now",
@@ -1973,7 +1973,7 @@
         "codex": "Codex",
         "connectionLostTitle": "The response was interrupted",
         "contextWindowTitle": "This chat is too long",
-        "filesystemFullDescription": "This run couldn't save more files. Try again to continue.",
+        "filesystemFullDescription": "This run couldn't save more files.",
         "filesystemFullTitle": "This run ran out of space",
         "fiveHourReset": "5h resets {{time}}",
         "inputTooLargeDescription": "Shorten your message and send it again.",
@@ -1983,7 +1983,7 @@
         "newChat": "New chat",
         "newChatDescription": "Start a new chat and include any important details you want to carry over.",
         "openClaude": "Open Claude",
-        "outputLimitDescription": "The response stopped before it finished. Continue to pick up from there.",
+        "outputLimitDescription": "The response stopped before it finished.",
         "outputLimitTitle": "The response reached its length limit",
         "personalAccount": "Personal subscription {{account}}",
         "personalAccountDisconnected": "Personal subscription disconnected",
@@ -2001,7 +2001,7 @@
         "sessionHistoryTitle": "This chat has reached its limit",
         "termsDescription": "Accept Claude's latest terms, then come back and try again.",
         "termsTitle": "Claude terms need acceptance",
-        "timeoutDescription": "You can continue from where this run stopped.",
+        "timeoutDescription": "Send a new message to continue.",
         "timeoutTitle": "Time limit reached",
         "unavailableDescription": "Choose a different model that works with your provider account.",
         "unavailableTitle": "Selected model isn't available",
@@ -3017,11 +3017,11 @@
     "configuration": "Cloudflare Access",
     "convert": "Make personal",
     "convertHelp": "This organization Cloudflare Access will become your own Personal configuration, even if someone else created it. Its Service Token stays the same, and your SSH hosts can stay connected.",
-    "convertUncertain": "We could not confirm the conversion. Review the latest configuration before trying again.",
+    "convertUncertain": "We could not confirm the conversion.",
     "createNew": "Create new Cloudflare Access",
     "delete": "Delete Cloudflare Access",
     "deleteHelp": "Delete this Cloudflare Access? Its stored Service Token cannot be recovered. Your own hosts must be rebound first.",
-    "deleteUncertain": "We could not confirm the deletion. Review the latest impact before trying again.",
+    "deleteUncertain": "We could not confirm the deletion.",
     "edit": "Edit Cloudflare Access",
     "failed": "Could not save the Cloudflare Access change.",
     "forbidden": "Only organization admins can change shared Cloudflare Access.",
@@ -4084,11 +4084,11 @@
           "title": "You've already redeemed this offer"
         },
         "billingUnavailable": {
-          "body": "Our payment system isn't available right now. Please try again in a few minutes.",
+          "body": "Our payment system isn't available right now.",
           "title": "Billing is temporarily unavailable"
         },
         "broken": {
-          "body": "We couldn't complete your redemption. Please try again or contact support.",
+          "body": "We couldn't complete your redemption. Please contact support.",
           "title": "Something went wrong"
         },
         "campaignUnavailable": {

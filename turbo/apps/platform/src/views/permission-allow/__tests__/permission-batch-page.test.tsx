@@ -124,55 +124,72 @@ function openPage({
   });
 }
 
-test("A user allows grouped permissions and continues the conversation", async () => {
-  const grants = installResources();
-  const sent: ChatEventSendBody[] = [];
-  const applied: string[] = [];
-  context.mocks.api(
-    userPermissionGrantsContract.applyBatch,
-    ({ body, respond }) => {
-      for (const group of body.groups) {
-        for (const grant of group.grants) {
-          expect(grant.expiresIn).toBe("1h");
-          applied.push(`${group.connectorSlug}:${grant.permission}`);
-          grants.push({
-            agentId: AGENT_ID,
-            connectorSlug: group.connectorSlug,
-            permission: grant.permission,
-            action: "allow",
-            expiresAt: "2099-01-01T00:00:00.000Z",
-            createdAt: "2030-01-01T00:00:00.000Z",
-            updatedAt: "2030-01-01T00:00:00.000Z",
-          });
+test.each([
+  {
+    outcome: "success",
+    message: "The conversation has continued.",
+  },
+  {
+    outcome: "failure",
+    message: /^Permissions allowed, but could not continue\./u,
+  },
+] as const)(
+  "Grouped permissions remain allowed after continuation $outcome",
+  async ({ outcome, message }) => {
+    const grants = installResources();
+    const applied: string[] = [];
+    context.mocks.api(
+      userPermissionGrantsContract.applyBatch,
+      ({ body, respond }) => {
+        for (const group of body.groups) {
+          for (const grant of group.grants) {
+            expect(grant.expiresIn).toBe("1h");
+            applied.push(`${group.connectorSlug}:${grant.permission}`);
+            grants.push({
+              agentId: AGENT_ID,
+              connectorSlug: group.connectorSlug,
+              permission: grant.permission,
+              action: "allow",
+              expiresAt: "2099-01-01T00:00:00.000Z",
+              createdAt: "2030-01-01T00:00:00.000Z",
+              updatedAt: "2030-01-01T00:00:00.000Z",
+            });
+          }
         }
-      }
-      context.mocks.ably.trigger("connectorPermissionUpdated");
-      return respond(200, grants);
-    },
-  );
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    sent.push(body);
-    return respond(201, { threadId: THREAD_ID });
-  });
-  await openPage({ callback: true });
-  await screen.findByText("Description for chat:write");
-  expect(screen.getByText("GitHub")).toBeInTheDocument();
-  expect(screen.getByText("Description for issues:read")).toBeInTheDocument();
-  expect(screen.getByLabelText("Permission duration")).toHaveTextContent(
-    "1 hour",
-  );
-  await waitFor(() => {
-    expect(button("Allow all 2 permissions")).toBeEnabled();
-  });
-  click(button("Allow all 2 permissions"));
-  await screen.findByText("Permissions allowed");
-  await screen.findByText("The conversation has continued.");
-  expect(applied.sort()).toStrictEqual([
-    "github:issues:read",
-    "slack:chat:write",
-  ]);
-  expect(sent).toHaveLength(1);
-});
+        context.mocks.ably.trigger("connectorPermissionUpdated");
+        return respond(200, grants);
+      },
+    );
+    context.mocks.api(chatEventsContract.send, ({ respond }) => {
+      return outcome === "success"
+        ? respond(201, { threadId: THREAD_ID })
+        : respond(500, {
+            error: {
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Chat unavailable",
+            },
+          });
+    });
+    await openPage({ callback: true });
+    await screen.findByText("Description for chat:write");
+    expect(screen.getByText("GitHub")).toBeInTheDocument();
+    expect(screen.getByText("Description for issues:read")).toBeInTheDocument();
+    expect(screen.getByLabelText("Permission duration")).toHaveTextContent(
+      "1 hour",
+    );
+    await waitFor(() => {
+      expect(button("Allow all 2 permissions")).toBeEnabled();
+    });
+    click(button("Allow all 2 permissions"));
+    await screen.findByText("Permissions allowed");
+    await expect(screen.findByText(message)).resolves.toBeInTheDocument();
+    expect(screen.getByText("2 of 2 permissions allowed")).toBeInTheDocument();
+    expect(applied.sort()).toStrictEqual([
+      "github:issues:read",
+      "slack:chat:write",
+    ]);
+  },
+);
 
 test.each(["dismissed", "continued"] as const)(
   "Navigating from a %s batch isolates the next agent's permissions and continuation",

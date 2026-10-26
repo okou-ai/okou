@@ -146,10 +146,6 @@ function formatMessageHtml(payload: ChatClipboardPayload): string {
   return `<div ${CHAT_MESSAGE_CLIPBOARD_ATTR}="${encoded}">${textHtml}${attachmentsHtml}</div>`;
 }
 
-async function writeClipboardItem(items: Record<string, Blob>): Promise<void> {
-  await navigator.clipboard.write([new ClipboardItem(items)]);
-}
-
 function executeLegacyCopyCommand(): boolean {
   const command: unknown = Reflect.get(document, "execCommand");
   if (typeof command !== "function") {
@@ -173,7 +169,7 @@ async function runLegacyClipboardCopy(
   return result.ok ? result.value : false;
 }
 
-async function writeRichClipboardFallback(
+async function writeLegacyRichClipboard(
   plainText: string,
   html: string,
 ): Promise<boolean> {
@@ -231,38 +227,16 @@ async function writeRichClipboardFallback(
 }
 
 /**
- * Write text to the clipboard with a legacy fallback.
- *
- * Tries the Clipboard API first. When it throws (e.g. NotAllowedError on iOS
- * Safari after an async boundary loses the user-gesture context), falls back to
- * the deprecated `document.execCommand("copy")` approach.
- *
- * Returns `true` if the text was copied, `false` if both methods failed.
+ * Write text to the clipboard once and report whether the browser accepted it.
  */
 export async function writeToClipboard(text: string): Promise<boolean> {
-  // eslint-disable-next-line no-restricted-syntax -- clipboard API requires try/catch for browser compatibility fallback
+  // eslint-disable-next-line no-restricted-syntax -- clipboard failures are reported through the existing boolean result
   try {
     await navigator.clipboard.writeText(text);
     return true;
   } catch (error: unknown) {
     throwIfAbort(error);
-    // Clipboard API can throw NotAllowedError on iOS Safari when the user
-    // gesture context is lost (e.g. after an async boundary). Fall back to
-    // the legacy execCommand approach.
-    let textarea: HTMLTextAreaElement | null = null;
-    return await runLegacyClipboardCopy(
-      () => {
-        textarea = document.createElement("textarea");
-        textarea.value = text;
-        textarea.style.position = "fixed";
-        textarea.style.opacity = "0";
-        document.body.appendChild(textarea);
-        textarea.select();
-      },
-      () => {
-        textarea?.remove();
-      },
-    );
+    return false;
   }
 }
 
@@ -276,26 +250,20 @@ export async function writeChatMessageToClipboard(
 
   const html = formatMessageHtml(payload);
   if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
-    if (await writeRichClipboardFallback(plainText, html)) {
-      return true;
-    }
-    return await writeToClipboard(plainText);
+    return await writeLegacyRichClipboard(plainText, html);
   }
   const baseItems: Record<string, Blob> = {
     "text/plain": new Blob([plainText], { type: "text/plain" }),
     "text/html": new Blob([html], { type: "text/html" }),
   };
 
-  // eslint-disable-next-line no-restricted-syntax -- rich clipboard writes fall back to text when the browser blocks ClipboardItem
+  // eslint-disable-next-line no-restricted-syntax -- clipboard failures are reported through the existing boolean result
   try {
-    await writeClipboardItem(baseItems);
+    await navigator.clipboard.write([new ClipboardItem(baseItems)]);
     return true;
   } catch (error: unknown) {
     throwIfAbort(error);
-    if (await writeRichClipboardFallback(plainText, html)) {
-      return true;
-    }
-    return await writeToClipboard(plainText);
+    return false;
   }
 }
 

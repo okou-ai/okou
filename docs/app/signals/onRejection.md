@@ -28,8 +28,8 @@ issued another request, duplicated a notification, or obscured the failure.
 
 Use the typed client and `accept` with explicit accepted statuses and the owning
 signal. Unexpected responses become `ApiError`; the common boundary owns error
-presentation and the authenticated client owns sign-in recovery. Do not add a
-second toast, catch-and-refresh flow, or replacement error around it.
+presentation, and failures propagate without replaying the request. Do not add
+a second toast, catch-and-refresh flow, or replacement error around it.
 
 ```ts
 // Wrong: duplicates the common API failure boundary.
@@ -76,7 +76,7 @@ owner.
 
 For pagination, commit the returned page and next cursor only after success;
 a failed request then needs no cursor rollback. Give caches explicit retention,
-invalidation, and retry semantics rather than depending on catch-time deletion
+invalidation, and ownership rather than depending on catch-time deletion
 of a permanently rejected entry. Do not move the same repair logic into another
 helper and call that a cleanup.
 
@@ -102,7 +102,7 @@ server state, including attachment/reconnection reconciliation. Keep mutation
 request state in its Promise/loadable and server progress in the server model.
 A background starter means **started**, not subscribed or loaded; use the
 appropriate readiness callback or waiting entry point when subsequent work
-requires it. Preserve the operation's retry and idempotency semantics.
+requires it. Preserve the operation's cancellation and idempotency semantics.
 
 ### Depending on compensating cleanup
 

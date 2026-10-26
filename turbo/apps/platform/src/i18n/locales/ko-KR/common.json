@@ -1033,7 +1033,7 @@
       "allowedCount": "권한 {{total}}개 중 {{allowed}}개 허용됨",
       "alwaysNote": "이 권한은 변경하거나 철회할 때까지 허용된 상태로 유지됩니다.",
       "continued": "대화가 재개되었습니다.",
-      "continueFailed": "권한은 허용되었지만 대화를 재개하지 못했습니다. 다시 계속해 주세요.",
+      "continueFailed": "권한은 허용되었지만 대화를 재개하지 못했습니다.",
       "details": "권한 세부 정보 보기",
       "dismissed": "변경된 권한이 없습니다.",
       "invalid": "이 권한 링크는 유효하지 않거나 사용할 수 없습니다.",
@@ -1756,7 +1756,7 @@
       "title": "브라우저에 정보 입력",
       "unavailable": "요청을 사용할 수 없음",
       "uncertain": "브라우저를 확인하세요",
-      "uncertainDescription": "브라우저가 정보를 받았을 수 있습니다. 다시 시도하기 전에 에이전트에게 확인을 요청하세요."
+      "uncertainDescription": "브라우저가 정보를 받았을 수 있습니다. 에이전트에게 결과를 확인해 달라고 요청하세요."
     },
     "cards": {
       "viewDetails": "세부 정보 보기"
@@ -1958,7 +1958,7 @@
       "recovery": {
         "accessProgramDescription": "잠시 후 다시 시도하세요. 이 채팅은 그대로 열어 둘 수 있습니다.",
         "accessProgramTitle": "Codex 액세스를 일시적으로 사용할 수 없습니다",
-        "autonomyLimitDescription": "연속 자동 실행 한도에 도달했습니다. 계속하려면 확인해 주세요.",
+        "autonomyLimitDescription": "연속 자동 실행 한도에 도달했습니다.",
         "autonomyLimitTitle": "자동 실행 한도에 도달했습니다",
         "capacityDescription": "잠시 후 다시 시도하거나 다른 모델로 작업을 계속하세요.",
         "capacityTitle": "이 모델은 지금 혼잡합니다",
@@ -1966,7 +1966,7 @@
         "codex": "Codex",
         "connectionLostTitle": "응답이 중간에 끊겼습니다",
         "contextWindowTitle": "이 채팅이 너무 깁니다",
-        "filesystemFullDescription": "이 실행에서 더 이상 파일을 저장할 수 없습니다. 다시 시도해 계속하세요.",
+        "filesystemFullDescription": "이 실행에서 더 이상 파일을 저장할 수 없습니다.",
         "filesystemFullTitle": "이 실행의 저장 공간이 부족합니다",
         "fiveHourReset": "5시간 한도는 {{time}}에 재설정",
         "inputTooLargeDescription": "메시지를 줄인 다음 다시 보내세요.",
@@ -1976,7 +1976,7 @@
         "newChat": "새 채팅",
         "newChatDescription": "새 채팅을 시작하고 이어서 필요한 중요한 정보를 포함하세요.",
         "openClaude": "Claude 열기",
-        "outputLimitDescription": "응답이 완료되기 전에 멈췄습니다. '계속'을 눌러 이어서 생성하세요.",
+        "outputLimitDescription": "응답이 완료되기 전에 멈췄습니다.",
         "outputLimitTitle": "응답이 길이 제한에 도달했습니다",
         "personalAccount": "개인 구독 {{account}}",
         "personalAccountDisconnected": "개인 구독 연결이 끊어졌습니다",
@@ -1994,7 +1994,7 @@
         "sessionHistoryTitle": "이 채팅이 한도에 도달했습니다",
         "termsDescription": "Claude에서 최신 약관에 동의한 다음 돌아와 다시 시도하세요.",
         "termsTitle": "Claude 약관에 동의해야 합니다",
-        "timeoutDescription": "중단된 지점부터 계속할 수 있습니다.",
+        "timeoutDescription": "계속하려면 새 메시지를 보내세요.",
         "timeoutTitle": "시간 제한에 도달했습니다",
         "unavailableDescription": "현재 제공자 계정에서 사용할 수 있는 다른 모델을 선택하세요.",
         "unavailableTitle": "선택한 모델을 사용할 수 없습니다",
@@ -3005,11 +3005,11 @@
     "configuration": "Cloudflare Access",
     "convert": "개인용으로 전환",
     "convertHelp": "이 조직의 Cloudflare Access는 다른 사람이 만들었더라도 현재 작업 중인 관리자 본인의 개인 설정이 됩니다. Service Token은 그대로 유지되며 본인의 SSH 호스트는 연결을 유지할 수 있습니다.",
-    "convertUncertain": "전환 완료 여부를 확인할 수 없습니다. 다시 시도하기 전에 최신 설정을 확인하세요.",
+    "convertUncertain": "전환 완료 여부를 확인할 수 없습니다.",
     "createNew": "새 Cloudflare Access 만들기",
     "delete": "Cloudflare Access 삭제",
     "deleteHelp": "이 Cloudflare Access를 삭제할까요? 저장된 Service Token은 복구할 수 없습니다. 내 호스트는 먼저 다시 연결해야 합니다.",
-    "deleteUncertain": "삭제 여부를 확인할 수 없습니다. 다시 시도하기 전에 최신 영향을 확인하세요.",
+    "deleteUncertain": "삭제 여부를 확인할 수 없습니다.",
     "edit": "Cloudflare Access 편집",
     "failed": "Cloudflare Access 변경 사항을 저장하지 못했습니다.",
     "forbidden": "조직 관리자만 공유 Cloudflare Access를 변경할 수 있습니다.",
@@ -4071,11 +4071,11 @@
           "title": "이미 이 혜택을 받으셨습니다"
         },
         "billingUnavailable": {
-          "body": "결제 시스템을 현재 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+          "body": "결제 시스템을 현재 사용할 수 없습니다.",
           "title": "결제 서비스 일시 중단"
         },
         "broken": {
-          "body": "크레딧 사용을 완료하지 못했습니다. 다시 시도하거나 지원팀에 문의하세요.",
+          "body": "크레딧 사용을 완료하지 못했습니다. 지원팀에 문의하세요.",
           "title": "문제가 발생했습니다"
         },
         "campaignUnavailable": {

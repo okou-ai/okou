@@ -242,26 +242,46 @@ test.each([
   },
 );
 
-test("an already authorized wallet card waits for an explicit continuation", async () => {
-  mockAuthorization({
-    status: "authorized",
-    authorizationId: AUTHORIZATION_ID,
-  });
-  const prompts: string[] = [];
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    prompts.push(body.prompt ?? "");
-    return respond(201, {
-      threadId: context.resourceId,
+test.each([
+  {
+    outcome: "success",
+    message: "Authorized",
+    buttonLabel: "Authorized",
+  },
+  {
+    outcome: "failure",
+    message: "Authorized. Your message could not be sent.",
+    buttonLabel: "Continue",
+  },
+] as const)(
+  "an authorized wallet card reports continuation $outcome after confirmation",
+  async ({ outcome, message, buttonLabel }) => {
+    mockAuthorization({
+      status: "authorized",
+      authorizationId: AUTHORIZATION_ID,
     });
-  });
-  await openChat(TRACKED_CONNECT_URL);
-  const next = await findControl("button", "Continue");
-  expect(prompts).toStrictEqual([]);
-  click(next);
-  await expect(findControl("button", "Authorized")).resolves.toBeDisabled();
-  expect(prompts).toStrictEqual([CONTINUATION_PROMPT]);
-  expect(context.mocks.ably.hasSubscription("wallet:changed")).toBeFalsy();
-});
+    const callbackResponse = context.mocks.deferred<void>();
+    context.mocks.api(chatEventsContract.send, async ({ respond }) => {
+      await callbackResponse.promise;
+      return outcome === "success"
+        ? respond(201, { threadId: context.resourceId })
+        : respond(500, {
+            error: { code: "INTERNAL_ERROR", message: "Response lost" },
+          });
+    });
+    await openChat(TRACKED_CONNECT_URL);
+    const next = await findControl("button", "Continue");
+    expect(next).toBeEnabled();
+    click(next);
+    await waitFor(() => {
+      expect(next).toBeDisabled();
+    });
+    callbackResponse.resolve(undefined);
+    const [description] = await screen.findAllByText(message);
+    expect(description).toBeInTheDocument();
+    await expect(findControl("button", buttonLabel)).resolves.toBeDisabled();
+  },
+);
 
 test.each([
   ["expired", "Authorization expired"],
