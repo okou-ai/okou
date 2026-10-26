@@ -47,11 +47,6 @@
       "owner": "completeClaimedSession$"
     },
     {
-      "id": "TX-0091",
-      "file": "turbo/apps/api/src/signals/services/chat-events.command.ts",
-      "owner": "appendNormalSendInput$"
-    },
-    {
       "id": "TX-0095",
       "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
       "owner": "createChatThread$"
