@@ -181,6 +181,7 @@ jobs:
           python3 ios/scripts/run-ci-tests.test.py
           python3 ios/scripts/sample-xcode-startup.test.py
           python3 ios/scripts/build-cache.test.py
+          python3 ops/ios-ci/package-object-cache.test.py
 
   test-packages:
     needs: detect

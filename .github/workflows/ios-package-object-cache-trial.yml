@@ -38,7 +38,8 @@ jobs:
             ${{ runner.temp }}/okou-ios-ci/ChatDomain
             ${{ runner.temp }}/okou-ios-ci/ChatData
             ${{ runner.temp }}/okou-ios-ci/package-cache-identity.json
-          key: ios-package-objects-experiment-v1-${{ github.run_id }}-${{ github.run_attempt }}
+            ${{ runner.temp }}/okou-ios-ci/package-cache-source-times.json
+          key: ios-package-objects-experiment-v2-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Validate exact cache reuse before building
         if: inputs.mode == 'warm'
         env:
@@ -60,7 +61,8 @@ jobs:
             ${{ runner.temp }}/okou-ios-ci/ChatDomain
             ${{ runner.temp }}/okou-ios-ci/ChatData
             ${{ runner.temp }}/okou-ios-ci/package-cache-identity.json
-          key: ios-package-objects-experiment-v1-${{ github.run_id }}-${{ github.run_attempt }}
+            ${{ runner.temp }}/okou-ios-ci/package-cache-source-times.json
+          key: ios-package-objects-experiment-v2-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Record package trial measurements
         run: python3 ops/ios-ci/package-object-cache.py report
       - name: Retain trial evidence

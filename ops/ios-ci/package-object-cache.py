@@ -6,6 +6,7 @@ import os
 import pathlib
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -15,6 +16,7 @@ output = temporary / "package-object-trial"
 build = temporary / "okou-ios-ci"
 mode = os.environ["PACKAGE_CACHE_TRIAL_MODE"]
 label = os.environ["PACKAGE_CACHE_TRIAL_LABEL"]
+SOURCE_ROOTS = ["ios/Packages/ChatDomain", "ios/Packages/ChatData", "ios/scripts/ci-package-test.sh"]
 
 
 def command(*args):
@@ -26,7 +28,7 @@ def write(name, data):
 
 
 def identity():
-    roots = ["ios/Packages/ChatDomain", "ios/Packages/ChatData", "ios/scripts/ci-package-test.sh"]
+    roots = SOURCE_ROOTS
     if command("git", "status", "--porcelain", "--untracked-files=all", "--", *roots):
         raise RuntimeError("Package build inputs must match the frozen checkout")
     files = command("git", "ls-tree", "-r", "HEAD", "--", *roots)
@@ -46,6 +48,19 @@ def retained_test_products():
     return [str(path.relative_to(build)) for package in ("ChatDomain", "ChatData")
             for path in (build / package).rglob("*")
             if path.suffix in (".xctest", ".xcresult")]
+
+
+def source_metadata():
+    files = command("git", "ls-files", "--", *SOURCE_ROOTS).splitlines()
+    result = {}
+    for name in files:
+        path = pathlib.Path(name)
+        if path.is_symlink() or not path.is_file():
+            raise RuntimeError("Expected regular tracked package input: " + name)
+        info = path.stat()
+        result[name] = {"sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                        "mode": stat.S_IMODE(info.st_mode), "mtime_ns": info.st_mtime_ns}
+    return result
 
 
 operation = sys.argv[1]
@@ -69,8 +84,22 @@ elif operation == "validate":
     products = retained_test_products()
     if products:
         raise RuntimeError("Executable test products or results were restored: " + repr(products))
+    saved = json.loads((build / "package-cache-source-times.json").read_text())
+    actual = source_metadata()
+    if saved.keys() != actual.keys():
+        raise RuntimeError("Cached package input inventory differs")
+    for name, data in actual.items():
+        if data["sha256"] != saved[name]["sha256"] or data["mode"] != saved[name]["mode"]:
+            raise RuntimeError("Cached package input bytes or permissions differ: " + name)
+    # SwiftPM's incremental input checks use source timestamps. Restore metadata
+    # only after every file's current bytes, mode and build identity are verified.
+    for name, data in saved.items():
+        path = pathlib.Path(name)
+        os.utime(path, ns=(path.stat().st_atime_ns, data["mtime_ns"]))
     write("cache-validation.json", {"exact_hit": True, "identity_verified": True,
-                                    "restored_test_products": products})
+                                    "restored_test_products": products,
+                                    "source_timestamps_restored": len(saved),
+                                    "all_source_bytes_and_modes_verified": True})
 elif operation == "snapshot":
     start = json.loads((output / "start.json").read_text())
     removed = retained_test_products()
@@ -85,6 +114,7 @@ elif operation == "snapshot":
     if identity() != start["identity"]:
         raise RuntimeError("Inputs changed while producing the snapshot")
     (build / "package-cache-identity.json").write_text(json.dumps(start["identity"], indent=2) + "\n")
+    (build / "package-cache-source-times.json").write_text(json.dumps(source_metadata(), indent=2) + "\n")
     write("snapshot.json", {"removed_test_products": removed,
                             "bytes": sum(path.stat().st_size for package in ("ChatDomain", "ChatData")
                                          for path in (build / package).rglob("*") if path.is_file())})
