@@ -112,7 +112,6 @@
         "time": "时间"
       },
       "log": "日志",
-      "manualReloadNotice": "日志不会自动更新。",
       "modelProvidedBy": "{{model}}，由 {{provider}} 提供",
       "networkEmpty": {
         "description": "本次运行没有记录到网络流量。",
@@ -123,7 +122,6 @@
         "description": "该日志不存在，或者你在当前工作区没有查看权限。",
         "title": "未找到日志"
       },
-      "refresh": "刷新",
       "runner": {
         "environment": "环境",
         "framework": "框架",
@@ -974,7 +972,7 @@
       "lastSeen": "最后在线于{{date}}",
       "linkExpires": "链接将于{{date}}过期。",
       "macRequirement": "需要搭载 Apple 芯片、系统为 macOS 14 或更高版本的 Mac，不支持 Intel 版 Mac。",
-      "noHostsDescription": "在 Mac 上打开 {{desktopApplicationName}}，等它上线后刷新本页。",
+      "noHostsDescription": "在 Mac 上打开 {{desktopApplicationName}}，使设备上线。",
       "noHostsTitle": "没有在线的电脑",
       "sources": {
         "chat": "这个聊天会话",
@@ -3007,7 +3005,7 @@
     "add": "添加 Cloudflare Access",
     "affectedMembers_other": "{{count}} 位成员",
     "cancel": "取消",
-    "changed": "该 Cloudflare Access 在你编辑期间发生了变化。请先查看最新设置，再保存你的更改。",
+    "changed": "此 Cloudflare Access 在编辑期间发生了变化。更改未保存。",
     "clientId": "Service Token Client ID",
     "clientIdPlaceholder": "粘贴 Service Token Client ID",
     "clientSecret": "Service Token Client Secret",
@@ -3023,11 +3021,9 @@
     "edit": "编辑 Cloudflare Access",
     "failed": "无法保存 Cloudflare Access 更改。",
     "forbidden": "只有组织管理员可以修改共享的 Cloudflare Access。",
-    "impactChanged": "受影响的主机发生了变化。请查看最新影响范围后再确认。",
+    "impactChanged": "受影响的主机已发生变化，此次更改未应用。",
     "inUse": "有 SSH 主机正在使用此 Cloudflare Access。主机所有者须先重新绑定或删除该主机。",
     "invalidInput": "部分 Cloudflare Access 设置无效，请检查各字段后重试。",
-    "keepChanges": "在该版本上保留我的更改",
-    "latest": "最新保存的设置",
     "loadFailed": "无法加载 Cloudflare Access。",
     "loading": "正在加载 Cloudflare Access…",
     "memberIdentifier": "（ID {{identifier}}）",
@@ -3041,10 +3037,9 @@
     "promote": "转为组织配置",
     "promoteConfirm": "我了解组织内所有成员都将能够使用这个 Service Token。",
     "promoteHelp": "将你的个人 Cloudflare Access 分享给整个组织。Service Token 和你现有的 SSH 主机绑定保持不变。",
-    "promoteUncertain": "无法确认是否已转换。请关闭此窗口，查看最新配置后再尝试。",
+    "promoteUncertain": "无法确认此次转换。",
     "replace": "替换 Service Token",
     "resourceIdConflict": "该资源 ID 无法使用。",
-    "reviewHelp": "你的草稿已保留。请先确认最新保存的设置，再应用你的更改。",
     "revisionExhausted": "该配置已无法继续更新，请新建一个。",
     "save": "保存",
     "saveUncertain": "保存失败。",
@@ -3537,7 +3532,7 @@
         "linkIncompleteTitle": "连接链接不完整",
         "notInstalledDescription": "请先让组织管理员安装 GitHub，再连接你的账号。",
         "notInstalledTitle": "尚未安装 GitHub",
-        "refresh": "请刷新此页面后重试。",
+        "refresh": "无法检查你的登录状态。",
         "signInButton": "登录 {{brandName}}",
         "signInCheckFailed": "无法检查登录状态",
         "signInDescription": "连接此 GitHub 用户前，请先登录你的 {{brandName}} 账号。",
@@ -4101,7 +4096,7 @@
           "title": "支付成功"
         },
         "processing": {
-          "body": "我们正在把积分发放到{{orgName}}。通常只需几秒，稍后刷新就能看到更新后的余额。",
+          "body": "正在将额度应用到 {{orgName}}，通常只需几秒钟。",
           "title": "已收到付款"
         },
         "ready": {
@@ -4826,7 +4821,7 @@
     "networkSettings": "私有网络设置",
     "networkTailscaleHelp": "连接家中或办公室的电脑，需在设备上安装 Tailscale。",
     "networkTitle": "私有网络",
-    "networkUnavailable": "此网络已不可用，请选择其他网络或刷新页面。",
+    "networkUnavailable": "此网络已不可用，请选择其他网络。",
     "newLogin": "改为手动填写",
     "next": "继续",
     "optionalName": "连接名称（可选）",
@@ -4976,7 +4971,7 @@
     "scopeDescription": "为网络命名，并选择谁可以使用。",
     "scopeSaved": "使用范围已保存，其他字段尚未保存。可继续保存，或返回网络详情。",
     "scopeUnavailable": "此网络已不可用，或你不再具有所需的管理员权限。",
-    "scopeUncertain": "暂时无法确认修改结果。请重新加载并核对已保存的配置，再决定是否提交。",
+    "scopeUncertain": "无法确认此次更改，尚未核实已保存的设置。",
     "unknownOrganization": "当前组织",
     "view": "查看"
   },
@@ -5398,11 +5393,10 @@
           "countExplanation": "计数使用只读事务，不会读取记录内容。",
           "description": "查看共享 Worker 持有的本地聊天缓存中的记录数。",
           "loading": "正在加载 IndexedDB 存储…",
-          "measurementUnavailable": "快照测量失败，请重试。",
+          "measurementUnavailable": "快照测量失败。",
           "measureSnapshot": "测量快照",
           "measuring": "正在测量…",
           "records": "条记录",
-          "refresh": "刷新",
           "schema": "结构版本",
           "snapshotDescription": "一条记录可能包含多个会话。体积按 UTF-8 JSON 估算，不含数据库开销；读取时间不包含体积估算。",
           "snapshotEmpty": "没有缓存的会话快照。",
@@ -5758,8 +5752,7 @@
       "title": "哎呀，出了点小问题"
     },
     "forceUpgrade": {
-      "action": "刷新",
-      "description": "当前版本的 {{brandName}} 已不再支持，请刷新以加载最新版本。",
+      "description": "当前版本的 {{brandName}} 已不再支持。",
       "title": "需要更新"
     },
     "mermaid": {
@@ -5776,9 +5769,8 @@
       "title": "这个页面不在这里。"
     },
     "workerFailure": {
-      "action": "刷新",
-      "description": "连接已中断，请刷新页面以继续。",
-      "title": "刷新以继续"
+      "description": "与此应用的连接已中断。",
+      "title": "连接已中断"
     }
   },
   "sharedThread": {
@@ -5798,14 +5790,11 @@
     "choosePrivateKeyFile": "选择私钥文件",
     "cloudflare": {
       "direct": "直连",
-      "keepChanges": "在该版本上保留我的更改",
-      "latest": "最新保存的设置",
       "mode": "连接方式",
       "needsRebind": "这台主机需要重新绑定 Cloudflare Access。编辑主机并选择新配置或直连；在此之前无法连接。",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "对外发布的主机名",
       "rebindHelp": "选择有权使用的 Cloudflare Access 配置或直连，然后保存以恢复这台主机。保存前不会更改连接方式。",
-      "reviewHelp": "你的草稿已保留。请先确认最新保存的设置，再应用你的更改。",
       "title": "Cloudflare Access",
       "unavailable": "该账号无法使用 Cloudflare Access。"
     },
@@ -5848,21 +5837,14 @@
     "credentialsHelp": "凭据只写入不回显，并且保存在沙箱之外。请粘贴完整的密钥，空白字符会原样保留。关闭此表单时各字段会被清空。",
     "delete": "删除主机",
     "deleteHelp": "确定删除该主机？它的凭据会保留。智能体将不再在可用主机列表中看到它。",
-    "deleteReview": {
-      "acknowledge": "使用此版本删除",
-      "changed": "此主机已更改。删除前请确认最新保存的设置。",
-      "help": "确认这些已保存的设置后，再点击“删除主机”删除此版本。",
-      "unavailable": "此主机已不可用。",
-      "version": "版本 {{version}}"
-    },
     "description": "让你的智能体在远程机器上执行命令。",
     "displayName": "显示名称",
     "edit": "编辑主机",
     "editHelp": "选择其他凭据只会影响该主机。修改直连地址会清除已记录的主机密钥；涉及 Cloudflare Access 的修改则会保留它。",
     "empty": "还没有配置 SSH 主机。添加主机后，可将其设为默认启用，或在单个聊天中启用。",
     "errors": {
-      "configurationChanged": "该主机在你编辑期间发生了变化。你的草稿已保留。请先查看最新设置，再应用你的更改。",
-      "credentialChanged": "该凭据在你编辑期间发生了变化。你的草稿已保留。请先查看最新设置和受影响的主机，再保存你的更改。",
+      "configurationChanged": "此主机在编辑期间发生了变化。更改未保存，草稿已保留。",
+      "credentialChanged": "此凭据在编辑期间发生了变化。更改未保存，草稿已保留。",
       "credentialInUse": "该凭据正在被主机使用。请为这些主机选择其他凭据，或先删除这些主机。",
       "credentialUnavailable": "该 SSH 凭据已不可用。请选择已有凭据或新建一个。",
       "failed": "无法保存 SSH 更改。",
@@ -5919,7 +5901,7 @@
     "add": "添加 Tailscale",
     "addressHelp": "使用已注册的 Tailnet 节点 IP、完整主机名或短名称。仍需 SSH 登录凭据和主机密钥验证。",
     "adoptHelp": "将此组织网络转为你的个人网络。其他所有者须重新绑定已保存的主机。",
-    "changed": "此 Tailscale 网络已更改。保存草稿前，请核对最新设置。",
+    "changed": "此 Tailscale 网络已发生变化。更改未保存，草稿已保留。",
     "clientId": "OAuth 客户端 ID",
     "clientSecret": "OAuth 客户端密钥",
     "createNew": "创建 Tailscale 网络",
@@ -6152,7 +6134,7 @@
       "keytabFile": "密钥表文件（.keytab）",
       "lifetime": "请求的票据有效期（秒）",
       "offlineHelp": "仅使用所选服务票据，不连接 KDC，也不续期。",
-      "onlineHelp": "允许通过独立的 KDC 路由获取票据。刷新仅用于准备新连接；现有会话保留原到期时间。",
+      "onlineHelp": "允许此来源通过独立的 KDC 路由获取票据。新连接会获取新票据，现有会话保留原有到期时间。",
       "password": "Kerberos · 密码",
       "realm": "发起方领域",
       "renewableLifetime": "可续期时限（秒；0 表示禁用）",

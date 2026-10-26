@@ -28,22 +28,27 @@ const reloadQueueDataFromWorker$ = command(({ set }): void => {
 });
 
 const internalReloadIndexedDbDiagnosticsFromWorker$ = state(0);
-const internalIndexedDbSnapshotMeasurementRequest$ = state(0);
 
 export const reloadIndexedDbDiagnosticsFromWorker$ = command(
   ({ set }): void => {
-    set(internalIndexedDbSnapshotMeasurementRequest$, 0);
     set(internalReloadIndexedDbDiagnosticsFromWorker$, (value) => {
       return value + 1;
     });
   },
 );
 
-export const measureIndexedDbSnapshotFromWorker$ = command(({ set }): void => {
-  set(internalIndexedDbSnapshotMeasurementRequest$, (value) => {
-    return value + 1;
-  });
-});
+export const measureIndexedDbSnapshotFromWorker$ = command(
+  async (
+    { get },
+    signal: AbortSignal,
+  ): Promise<IndexedDbSnapshotMeasurement | null> => {
+    return await get(installedSharedDatabaseBridge$).getComputed(
+      "indexeddb-snapshot-measurement",
+      undefined,
+      signal,
+    );
+  },
+);
 
 export const reloadComputedFromWorker$ = command(
   ({ set }, computedKey: ComputedKey): void => {
@@ -61,7 +66,6 @@ export const reloadComputedFromWorker$ = command(
         return;
       }
       case "indexeddb-snapshot-measurement": {
-        set(internalIndexedDbSnapshotMeasurementRequest$, 0);
         return;
       }
       case "queue-data": {
@@ -93,17 +97,6 @@ export const indexedDbDiagnosticsFromWorker$ = computed(
     get(internalReloadIndexedDbDiagnosticsFromWorker$);
     return await get(installedSharedDatabaseBridge$).getComputed(
       "indexeddb-diagnostics",
-    );
-  },
-);
-
-export const indexedDbSnapshotMeasurementFromWorker$ = computed(
-  async (get): Promise<IndexedDbSnapshotMeasurement | null | undefined> => {
-    if (get(internalIndexedDbSnapshotMeasurementRequest$) === 0) {
-      return undefined;
-    }
-    return await get(installedSharedDatabaseBridge$).getComputed(
-      "indexeddb-snapshot-measurement",
     );
   },
 );

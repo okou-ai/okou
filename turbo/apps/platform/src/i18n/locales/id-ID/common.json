@@ -112,7 +112,6 @@
         "time": "Waktu"
       },
       "log": "Log",
-      "manualReloadNotice": "Log tidak diperbarui secara otomatis.",
       "modelProvidedBy": "{{model}} disediakan oleh {{provider}}",
       "networkEmpty": {
         "description": "Tidak ada traffic jaringan yang direkam untuk run ini.",
@@ -123,7 +122,6 @@
         "description": "Log ini tidak ada atau Anda tidak memiliki izin untuk melihatnya di ruang kerja saat ini.",
         "title": "Log tidak ditemukan"
       },
-      "refresh": "Segarkan",
       "runner": {
         "environment": "Lingkungan",
         "framework": "Framework",
@@ -974,7 +972,7 @@
       "lastSeen": "Terakhir terlihat {{date}}",
       "linkExpires": "Tautan kedaluwarsa pada {{date}}.",
       "macRequirement": "Memerlukan Mac Apple silicon dengan macOS 14 atau yang lebih baru. Mac Intel tidak didukung.",
-      "noHostsDescription": "Buka {{desktopApplicationName}} di Mac Anda dan muat ulang halaman ini saat sudah online.",
+      "noHostsDescription": "Buka {{desktopApplicationName}} di Mac Anda agar perangkat terhubung.",
       "noHostsTitle": "Tidak ada komputer online",
       "sources": {
         "chat": "thread chat ini",
@@ -3007,7 +3005,7 @@
     "add": "Tambah Cloudflare Access",
     "affectedMembers_other": "{{count}} anggota",
     "cancel": "Batal",
-    "changed": "Cloudflare Access ini berubah saat Anda mengedit. Tinjau pengaturan terbaru sebelum menyimpan.",
+    "changed": "Cloudflare Access ini berubah saat Anda mengedit. Perubahan Anda tidak disimpan.",
     "clientId": "ID klien Service Token",
     "clientIdPlaceholder": "Tempel Client ID Service Token",
     "clientSecret": "Rahasia klien Service Token",
@@ -3023,11 +3021,9 @@
     "edit": "Edit Cloudflare Access",
     "failed": "Tidak dapat menyimpan perubahan Cloudflare Access.",
     "forbidden": "Hanya admin organisasi yang dapat mengubah Cloudflare Access bersama.",
-    "impactChanged": "Host yang terdampak berubah. Tinjau dampak terbaru sebelum mengonfirmasi lagi.",
+    "impactChanged": "Host yang terdampak telah berubah. Perubahan tidak diterapkan.",
     "inUse": "Sebuah host SSH menggunakan Cloudflare Access ini. Pemiliknya harus mengikat ulang atau menghapus host tersebut terlebih dahulu.",
     "invalidInput": "Beberapa pengaturan Cloudflare Access tidak valid. Periksa kolom dan coba lagi.",
-    "keepChanges": "Terapkan perubahan saya ke versi ini",
-    "latest": "Pengaturan terakhir yang disimpan",
     "loadFailed": "Tidak dapat memuat Cloudflare Access.",
     "loading": "Memuat Cloudflare Access…",
     "memberIdentifier": " (ID {{identifier}})",
@@ -3041,10 +3037,9 @@
     "promote": "Bagikan ke organisasi",
     "promoteConfirm": "Saya memahami semua anggota organisasi dapat menggunakan Service Token ini.",
     "promoteHelp": "Bagikan Cloudflare Access pribadi Anda ke organisasi. Service Token dan ikatan host SSH Anda tetap sama.",
-    "promoteUncertain": "Konversi tidak dapat dipastikan. Tutup dialog ini dan periksa konfigurasi terbaru sebelum mencoba lagi.",
+    "promoteUncertain": "Kami tidak dapat mengonfirmasi konversi.",
     "replace": "Ganti Service Token",
     "resourceIdConflict": "ID sumber daya ini tidak dapat digunakan.",
-    "reviewHelp": "Draf Anda tetap disimpan. Konfirmasikan pengaturan terakhir sebelum menerapkan perubahan.",
     "revisionExhausted": "Konfigurasi ini tidak dapat diperbarui lagi. Buat yang baru.",
     "save": "Simpan",
     "saveUncertain": "Gagal menyimpan.",
@@ -3537,7 +3532,7 @@
         "linkIncompleteTitle": "Tautan koneksi tidak lengkap",
         "notInstalledDescription": "Minta admin organisasi menginstal GitHub sebelum menghubungkan akun Anda.",
         "notInstalledTitle": "GitHub belum diinstal",
-        "refresh": "Muat ulang halaman ini dan coba lagi.",
+        "refresh": "Status masuk Anda tidak dapat diperiksa.",
         "signInButton": "Masuk ke {{brandName}}",
         "signInCheckFailed": "Tidak dapat memeriksa status masuk",
         "signInDescription": "Gunakan akun {{brandName}} Anda sebelum menghubungkan pengguna GitHub ini.",
@@ -4101,7 +4096,7 @@
           "title": "Pembayaran berhasil"
         },
         "processing": {
-          "body": "Kami sedang menerapkan kredit Anda ke {{orgName}} sekarang. Biasanya ini memakan waktu beberapa detik — muat ulang sebentar lagi untuk melihat saldo yang diperbarui.",
+          "body": "Kredit Anda sedang diterapkan ke {{orgName}}. Biasanya proses ini hanya membutuhkan beberapa detik.",
           "title": "Pembayaran diterima"
         },
         "ready": {
@@ -4826,7 +4821,7 @@
     "networkSettings": "Pengaturan jaringan privat",
     "networkTailscaleHelp": "Hubungkan ke perangkat dengan Tailscale",
     "networkTitle": "Jaringan privat",
-    "networkUnavailable": "Jaringan ini tidak lagi tersedia. Pilih jaringan lain atau muat ulang halaman.",
+    "networkUnavailable": "Jaringan ini tidak lagi tersedia. Pilih jaringan lain.",
     "newLogin": "Isi data secara manual",
     "next": "Lanjutkan",
     "optionalName": "Nama koneksi (opsional)",
@@ -4976,7 +4971,7 @@
     "scopeDescription": "Beri nama jaringan dan pilih siapa yang dapat menggunakannya.",
     "scopeSaved": "Pengaturan berbagi jaringan tersimpan. Perubahan lain belum disimpan. Simpan perubahan tersebut atau kembali ke detail jaringan.",
     "scopeUnavailable": "Jaringan ini tidak tersedia atau Anda tidak lagi memiliki izin administrator yang diperlukan.",
-    "scopeUncertain": "Kami tidak dapat memastikan perubahan ini. Muat ulang dan tinjau pengaturan tersimpan sebelum mengirim lagi.",
+    "scopeUncertain": "Kami tidak dapat mengonfirmasi perubahan. Pengaturan yang tersimpan belum diverifikasi.",
     "unknownOrganization": "organisasi Anda",
     "view": "Lihat"
   },
@@ -5398,11 +5393,10 @@
           "countExplanation": "Penghitungan menggunakan transaksi hanya-baca dan tidak membaca isi rekaman.",
           "description": "Periksa jumlah rekaman dalam cache chat lokal yang dikelola shared worker.",
           "loading": "Memuat penyimpanan IndexedDB...",
-          "measurementUnavailable": "Pengukuran snapshot gagal. Coba lagi.",
+          "measurementUnavailable": "Pengukuran snapshot gagal.",
           "measureSnapshot": "Ukur snapshot",
           "measuring": "Mengukur...",
           "records": "rekaman",
-          "refresh": "Segarkan",
           "schema": "skema",
           "snapshotDescription": "Satu rekaman dapat berisi banyak thread. Ukuran memperkirakan JSON UTF-8 tanpa overhead database; waktu baca tidak termasuk perkiraan ukuran.",
           "snapshotEmpty": "Tidak ada snapshot thread dalam cache.",
@@ -5758,8 +5752,7 @@
       "title": "Ups! Ada yang salah"
     },
     "forceUpgrade": {
-      "action": "Muat ulang",
-      "description": "Versi {{brandName}} ini tidak lagi didukung. Muat ulang untuk memuat versi terbaru.",
+      "description": "Versi {{brandName}} ini tidak lagi didukung.",
       "title": "Pembaruan diperlukan"
     },
     "mermaid": {
@@ -5776,9 +5769,8 @@
       "title": "Halaman itu tidak ada di sini."
     },
     "workerFailure": {
-      "action": "Muat ulang",
-      "description": "Koneksi Anda terputus. Muat ulang halaman untuk melanjutkan.",
-      "title": "Muat ulang untuk melanjutkan"
+      "description": "Koneksi ke aplikasi ini terputus.",
+      "title": "Koneksi terputus"
     }
   },
   "sharedThread": {
@@ -5798,14 +5790,11 @@
     "choosePrivateKeyFile": "Pilih file kunci privat",
     "cloudflare": {
       "direct": "Langsung",
-      "keepChanges": "Terapkan perubahan saya ke versi ini",
-      "latest": "Pengaturan terakhir yang disimpan",
       "mode": "Koneksi",
       "needsRebind": "Host ini perlu ditautkan ulang ke konfigurasi Cloudflare Access. Edit host untuk memilih konfigurasi lain atau Direct. Host tidak dapat tersambung sebelum itu.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nama host yang dipublikasikan",
       "rebindHelp": "Pilih konfigurasi Cloudflare Access yang diizinkan atau Direct untuk memulihkan host ini. Tidak ada perubahan hingga Anda menyimpan.",
-      "reviewHelp": "Draf Anda tetap disimpan. Konfirmasikan pengaturan terakhir sebelum menerapkan perubahan.",
       "title": "Cloudflare Access",
       "unavailable": "Cloudflare Access tidak tersedia untuk akun ini."
     },
@@ -5848,21 +5837,14 @@
     "credentialsHelp": "Kredensial hanya dapat ditulis dan tetap berada di luar sandbox. Tempelkan kunci lengkap; spasi dipertahankan. Kolom dikosongkan saat formulir ditutup.",
     "delete": "Hapus host",
     "deleteHelp": "Hapus host ini? Kredensialnya akan tetap disimpan. Agent tidak lagi melihat host ini dalam inventaris.",
-    "deleteReview": {
-      "acknowledge": "Gunakan versi ini untuk penghapusan",
-      "changed": "Host ini telah berubah. Tinjau pengaturan tersimpan terbarunya sebelum menghapus.",
-      "help": "Tinjau pengaturan tersimpan ini, lalu pilih Hapus host untuk menghapus versi ini.",
-      "unavailable": "Host ini tidak lagi tersedia.",
-      "version": "Versi {{version}}"
-    },
     "description": "Konfigurasikan host SSH agar Agen Anda dapat menjalankan perintah jarak jauh.",
     "displayName": "Nama tampilan",
     "edit": "Edit host",
     "editHelp": "Memilih kredensial lain hanya mengubah host ini. Perubahan tujuan langsung menghapus kunci host tersimpan; perubahan yang melibatkan Cloudflare Access mempertahankannya.",
     "empty": "Belum ada host SSH yang dikonfigurasi. Tambahkan host, lalu aktifkan secara default atau di chat tertentu.",
     "errors": {
-      "configurationChanged": "Host ini berubah saat Anda mengeditnya. Draf Anda tetap tersimpan. Tinjau pengaturan terbarunya sebelum menerapkan perubahan Anda.",
-      "credentialChanged": "Kredensial ini berubah saat Anda mengeditnya. Draf Anda tetap tersimpan. Tinjau pengaturan terbaru dan host yang terpengaruh sebelum menyimpan.",
+      "configurationChanged": "Host ini berubah saat Anda mengedit. Perubahan Anda tidak disimpan; draf Anda tetap tersimpan.",
+      "credentialChanged": "Kredensial ini berubah saat Anda mengedit. Perubahan Anda tidak disimpan; draf Anda tetap tersimpan.",
       "credentialInUse": "Kredensial ini sedang digunakan. Pilih kredensial lain untuk host terkait atau hapus host tersebut terlebih dahulu.",
       "credentialUnavailable": "Kredensial SSH ini tidak lagi tersedia. Pilih yang lain atau buat kredensial baru.",
       "failed": "Tidak dapat menyimpan perubahan SSH.",
@@ -5919,7 +5901,7 @@
     "add": "Tambahkan Tailscale",
     "addressHelp": "Gunakan IP, nama host lengkap, atau nama singkat peer tailnet yang terdaftar. Login SSH dan verifikasi kunci host tetap diperlukan.",
     "adoptHelp": "Jadikan jaringan organisasi ini sebagai jaringan pribadi Anda. Pemilik lain harus menghubungkan ulang host tersimpan mereka.",
-    "changed": "Jaringan Tailscale ini berubah. Periksa pengaturan terbaru sebelum menyimpan draf.",
+    "changed": "Jaringan Tailscale ini berubah. Perubahan Anda tidak disimpan; draf Anda tetap tersimpan.",
     "clientId": "ID klien OAuth",
     "clientSecret": "Rahasia klien OAuth",
     "createNew": "Buat jaringan Tailscale",
@@ -6152,7 +6134,7 @@
       "keytabFile": "Berkas keytab (.keytab)",
       "lifetime": "Masa berlaku tiket yang diminta (detik)",
       "offlineHelp": "Hanya gunakan tiket layanan yang dipilih. Tanpa koneksi KDC atau perpanjangan.",
-      "onlineHelp": "Izinkan pengambilan tiket melalui rute KDC terpisah. Pembaruan menyiapkan koneksi baru; sesi yang ada tetap memakai waktu kedaluwarsa awal.",
+      "onlineHelp": "Izinkan sumber ini memperoleh tiket melalui rute KDC terpisah. Koneksi baru memperoleh tiket baru; sesi yang ada tetap menggunakan waktu kedaluwarsa semula.",
       "password": "Kerberos · kata sandi",
       "realm": "Realm pemrakarsa",
       "renewableLifetime": "Masa perpanjangan (detik; 0 menonaktifkan)",

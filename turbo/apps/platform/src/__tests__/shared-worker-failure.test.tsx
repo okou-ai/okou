@@ -4,12 +4,7 @@ import { expect, test, vi } from "vitest";
 
 import { testContext } from "../signals/__tests__/test-helpers.ts";
 import { SharedDatabaseMessagePortServer } from "../shared-database/message-port-server.ts";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-  startPage,
-} from "./page-helper.ts";
+import { setupPage, startPage } from "./page-helper.ts";
 
 const axiomTelemetry = vi.hoisted(() => {
   return {
@@ -105,33 +100,24 @@ function expectFailureTelemetry(): void {
   expect(payload).not.toContain("userId=");
 }
 
-test("Offer a manual refresh when the worker fails during page startup", async () => {
+test("Block the page and report a worker failure during startup", async () => {
   installSharedWorker({ failOnStart: true });
-  const reload = vi
-    .spyOn(window.location, "reload")
-    .mockImplementation(() => {});
 
   await startPage(pageOptions);
 
   const dialog = await screen.findByRole("dialog", {
-    name: "Refresh to continue",
+    name: "Connection interrupted",
   });
   expect(dialog).toHaveTextContent(
-    "Your connection was interrupted. Refresh the page to continue.",
+    "The connection to this app was interrupted.",
   );
-  expect(reload).not.toHaveBeenCalled();
   expectFailureTelemetry();
 
   await userEvent.keyboard("{Escape}");
   expect(dialog).toBeVisible();
-  const buttons = queryAllByRoleFast("button", dialog);
-  expect(buttons).toHaveLength(1);
-  expect(buttons[0]).toHaveTextContent("Refresh");
-  click(buttons[0]!);
-  expect(reload).toHaveBeenCalledTimes(1);
 });
 
-test("Keep refresh available after a connected worker fails and report it once", async () => {
+test("Block the page after a connected worker fails and report it once", async () => {
   const workers = installSharedWorker();
   await setupPage(pageOptions);
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -147,7 +133,7 @@ test("Keep refresh available after a connected worker fails and report it once",
   expect(repeatedError.defaultPrevented).toBeTruthy();
 
   await expect(
-    screen.findByRole("dialog", { name: "Refresh to continue" }),
+    screen.findByRole("dialog", { name: "Connection interrupted" }),
   ).resolves.toBeVisible();
   expectFailureTelemetry();
 });

@@ -216,7 +216,7 @@ test("A known credential rejection leaves the retained input editable", async ()
   expect(document.body.textContent).not.toContain("private server detail");
 });
 
-test("A concurrent shared-credential edit preserves the draft until the newer revision is reviewed", async () => {
+test("A concurrent shared-credential edit preserves its draft and blocks stale saving", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [base] });
   });
@@ -236,13 +236,6 @@ test("A concurrent shared-credential edit preserves the draft until the newer re
   const requests: unknown[] = [];
   context.mocks.api(sshCredentialsContract.update, ({ body, respond }) => {
     requests.push(body);
-    if (body.expectedRevision === 2) {
-      return respond(200, {
-        ...current,
-        username: body.username ?? current.username,
-        revision: 3,
-      });
-    }
     current = { ...current, revision: 2, name: "Edited elsewhere" };
     context.mocks.ably.trigger("ssh:changed", { orgId });
     return respond(409, {
@@ -266,26 +259,13 @@ test("A concurrent shared-credential edit preserves the draft until the newer re
   await fill(within(dialog).getByLabelText("SSH username"), "new-user");
   click(getAction("button", "Save", dialog));
   await screen.findByText("Edited elsewhere");
-  await screen.findByText(/This credential changed while you were editing/u);
+  await screen.findByText(/This credential changed/u);
   expect(dialog).toBeVisible();
   expect(within(dialog).getByLabelText("SSH username")).toHaveValue("new-user");
   expect(getAction("button", "Save", dialog)).toBeDisabled();
   expect(document.body.textContent).not.toContain("not UI copy");
   expect(requests).toStrictEqual([
     { expectedRevision: 1, username: "new-user" },
-  ]);
-  click(getAction("button", "Keep my changes with this version", dialog));
-  await waitFor(() => {
-    return expect(getAction("button", "Save", dialog)).toBeEnabled();
-  });
-  expect(within(dialog).getByLabelText("SSH username")).toHaveValue("new-user");
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests).toStrictEqual([
-    { expectedRevision: 1, username: "new-user" },
-    { expectedRevision: 2, username: "new-user" },
   ]);
 });
 
@@ -426,117 +406,6 @@ async function page(path = "/connectors?scope=remote-control&type=ssh") {
     auth,
   });
 }
-
-test.each([
-  { initialCarrier: "Direct", binding: "bound" },
-  { initialCarrier: "Direct", binding: "retained" },
-  { initialCarrier: "Cloudflare", binding: "bound" },
-  { initialCarrier: "Cloudflare", binding: "retained" },
-] as const)(
-  "A $initialCarrier edit requires Tailscale selection to accept a $binding Tailscale conflict",
-  async ({ initialCarrier, binding }) => {
-    const accessId = "e0000000-0000-4000-8000-000000000001";
-    const initial: SshConnectionResponse =
-      initialCarrier === "Direct"
-        ? base
-        : {
-            ...base,
-            port: 443,
-            transport: { type: "cloudflare_access", configId: accessId },
-          };
-    let current: SshConnectionResponse = initial;
-    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-      return respond(200, {
-        configs: [
-          {
-            id: accessId,
-            name: "Deployment gateway",
-            scope: "personal",
-            revision: 1,
-            generation: 1,
-            sshHosts: [{ id: base.id, displayName: base.displayName }],
-            vncHosts: [],
-            createdAt: base.createdAt,
-            updatedAt: base.updatedAt,
-          },
-        ],
-      });
-    });
-    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-      return respond(200, { connections: [current] });
-    });
-    const requests: unknown[] = [];
-    context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
-      requests.push(body);
-      // Another client may change the saved connection mode.
-      current = {
-        ...base,
-        host: "100.80.10.20",
-        generation: 2,
-        learnedHostKey: {
-          algorithm: "ssh-ed25519",
-          fingerprint: "SHA256:retained",
-        },
-        transport:
-          binding === "bound"
-            ? {
-                type: "tailscale",
-                configId: "f0000000-0000-4000-8000-000000000001",
-              }
-            : { type: "tailscale", needsRebind: true },
-      };
-      context.mocks.ably.trigger("ssh:changed", { orgId });
-      return respond(409, {
-        error: { code: "SSH_GENERATION_CONFLICT", message: "changed" },
-      });
-    });
-    await page();
-    await screen.findByText(
-      `${initial.username}@${initial.host}:${initial.port}`,
-    );
-    click(getAction("button", "Edit host"));
-    const dialog = await screen.findByRole("dialog");
-    await fill(within(dialog).getByLabelText("Display name"), "Unsaved draft");
-    await waitFor(() => {
-      expect(getAction("button", "Save", dialog)).toBeEnabled();
-    });
-    click(getAction("button", "Save", dialog));
-    await within(dialog).findByText("Latest saved settings");
-    await within(dialog).findByText("Tailscale");
-    expect(
-      within(dialog).getByText(
-        "Select or create a Tailscale network to rebind this host. Its SSH login and trusted host key are preserved.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      getAction("button", "Keep my changes with this version", dialog),
-    ).toBeDisabled();
-    expect(getAction("button", "Save", dialog)).toBeDisabled();
-    expect(within(dialog).getByLabelText("Display name")).toHaveValue(
-      "Unsaved draft",
-    );
-    expect(screen.getByText("SHA256:retained")).toBeInTheDocument();
-    expect(requests).toStrictEqual([
-      {
-        expectedGeneration: 1,
-        displayName: "Unsaved draft",
-        host: initial.host,
-        port: initial.port,
-        credential: { id: credential.id },
-        transport:
-          initialCarrier === "Direct"
-            ? { type: "direct" }
-            : { type: "cloudflare_access", configId: accessId },
-      },
-    ]);
-    click(getAction("button", "Cancel", dialog));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-    expect(getAction("button", "Edit host")).toBeEnabled();
-    expect(screen.getByText("SHA256:retained")).toBeInTheDocument();
-  },
-);
 
 test.each([
   {
@@ -942,10 +811,9 @@ test("Credential replacement saves the selected key and clears secrets on close"
 });
 
 test.each([
-  { name: "Direct", carrier: "Direct", connection: base },
+  { name: "Direct", connection: base },
   {
     name: "Cloudflare Access",
-    carrier: "Cloudflare Access",
     connection: {
       ...base,
       port: 443,
@@ -957,7 +825,6 @@ test.each([
   },
   {
     name: "Tailscale",
-    carrier: "Tailscale",
     connection: {
       ...base,
       host: "100.80.10.20",
@@ -969,7 +836,6 @@ test.each([
   },
   {
     name: "Tailscale needs rebind",
-    carrier: "Tailscale",
     connection: {
       ...base,
       host: "100.80.10.20",
@@ -978,11 +844,10 @@ test.each([
   },
 ] satisfies readonly {
   name: string;
-  carrier: string;
   connection: SshConnectionResponse;
 }[])(
-  "$name reset requires confirmation of the newer generation and actual carrier",
-  async ({ carrier, connection }) => {
+  "$name reset keeps its trust warning and uses the original generation",
+  async ({ connection }) => {
     // A saved identity can survive a carrier change before native Tailscale delivery.
     const learned = {
       ...connection,
@@ -1022,15 +887,8 @@ test.each([
       sshConnectionsContract.resetHostKey,
       ({ body, respond }) => {
         resetRequests.push(body);
-        if (body.expectedGeneration === 2) {
-          hosts = [{ ...learned, generation: 3, learnedHostKey: null }];
-          return respond(200, hosts[0]!);
-        }
-        hosts = [{ ...learned, generation: 2 }];
-        context.mocks.ably.trigger("ssh:changed", { orgId });
-        return respond(409, {
-          error: { code: "SSH_GENERATION_CONFLICT", message: "changed" },
-        });
+        hosts = [{ ...learned, generation: 2, learnedHostKey: null }];
+        return respond(200, hosts[0]!);
       },
     );
     context.mocks.api(sshConnectionsContract.delete, ({ respond }) => {
@@ -1049,35 +907,11 @@ test.each([
       "Only reset after independently verifying the new server identity. The next connection will trust and learn a new host key.",
     );
     click(getAction("button", "Reset host key", reset));
-    await within(reset).findByText("Latest saved settings");
-    expect(within(reset).getByRole("alert")).toBeInTheDocument();
-    expect(
-      within(reset)
-        .queryAllByText(/^(Direct|Cloudflare Access|Tailscale)$/u)
-        .map((element) => {
-          return element.textContent;
-        }),
-    ).toStrictEqual([carrier]);
-    expect(screen.getByText("SHA256:fixture")).toBeInTheDocument();
-    expect(getAction("button", "Reset host key", reset)).toBeDisabled();
-    expect(resetRequests).toStrictEqual([{ expectedGeneration: 1 }]);
-    click(
-      await waitFor(() => {
-        return getAction("button", "Keep my changes with this version", reset);
-      }),
-    );
-    await waitFor(() => {
-      return expect(getAction("button", "Reset host key", reset)).toBeEnabled();
-    });
-    click(getAction("button", "Reset host key", reset));
     await waitFor(() => {
       return expect(screen.queryByRole("dialog")).toBeNull();
     });
     expect(screen.queryByText("SHA256:fixture")).toBeNull();
-    expect(resetRequests).toStrictEqual([
-      { expectedGeneration: 1 },
-      { expectedGeneration: 2 },
-    ]);
+    expect(resetRequests).toStrictEqual([{ expectedGeneration: 1 }]);
     click(getAction("button", "Delete host"));
     const remove = await screen.findByRole("dialog");
     expect(

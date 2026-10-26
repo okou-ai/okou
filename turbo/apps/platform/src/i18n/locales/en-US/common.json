@@ -112,7 +112,6 @@
         "time": "Time"
       },
       "log": "Log",
-      "manualReloadNotice": "Logs do not update automatically.",
       "modelProvidedBy": "{{model}} provided by {{provider}}",
       "networkEmpty": {
         "description": "No network traffic was recorded for this run.",
@@ -123,7 +122,6 @@
         "description": "This log doesn't exist or you don't have permission to view it in the current workspace.",
         "title": "Log not found"
       },
-      "refresh": "Refresh",
       "runner": {
         "environment": "Environment",
         "framework": "Framework",
@@ -975,7 +973,7 @@
       "lastSeen": "Last seen {{date}}",
       "linkExpires": "Link expires {{date}}.",
       "macRequirement": "Requires an Apple silicon Mac with macOS 14 or newer. Intel Macs aren't supported.",
-      "noHostsDescription": "Open {{desktopApplicationName}} on your Mac and refresh this page when it comes online.",
+      "noHostsDescription": "Open {{desktopApplicationName}} on your Mac to bring it online.",
       "noHostsTitle": "No online computers",
       "sources": {
         "chat": "this chat thread",
@@ -3019,7 +3017,7 @@
     "affectedMembers_one": "{{count}} member",
     "affectedMembers_other": "{{count}} members",
     "cancel": "Cancel",
-    "changed": "This Cloudflare Access changed while you were editing. Review its latest settings before saving your changes.",
+    "changed": "This Cloudflare Access changed while you were editing. Your changes were not saved.",
     "clientId": "Service Token Client ID",
     "clientIdPlaceholder": "Paste the Service Token Client ID",
     "clientSecret": "Service Token Client Secret",
@@ -3035,11 +3033,9 @@
     "edit": "Edit Cloudflare Access",
     "failed": "Could not save the Cloudflare Access change.",
     "forbidden": "Only organization admins can change shared Cloudflare Access.",
-    "impactChanged": "The affected hosts changed. Review the latest impact before confirming again.",
+    "impactChanged": "The affected hosts changed. The change was not applied.",
     "inUse": "This Cloudflare Access is used by an SSH host. Its owner must rebind or delete that host first.",
     "invalidInput": "Some Cloudflare Access settings are invalid. Check the fields and try again.",
-    "keepChanges": "Keep my changes with this version",
-    "latest": "Latest saved settings",
     "loadFailed": "Could not load Cloudflare Access.",
     "loading": "Loading Cloudflare Access…",
     "memberIdentifier": " (ID {{identifier}})",
@@ -3053,10 +3049,9 @@
     "promote": "Make organization",
     "promoteConfirm": "I understand everyone in this organization will be able to use this Service Token.",
     "promoteHelp": "Share your personal Cloudflare Access with this organization. Its Service Token and your SSH host bindings stay unchanged.",
-    "promoteUncertain": "We could not confirm the conversion. Close this dialog and review the latest configuration before trying again.",
+    "promoteUncertain": "We could not confirm the conversion.",
     "replace": "Replace Service Token",
     "resourceIdConflict": "This resource ID cannot be used.",
-    "reviewHelp": "Your draft is preserved. Confirm the latest saved settings before applying your changes.",
     "revisionExhausted": "This configuration can no longer be updated. Create a new one.",
     "save": "Save",
     "saveUncertain": "Save failed.",
@@ -3550,7 +3545,7 @@
         "linkIncompleteTitle": "Connect link is incomplete",
         "notInstalledDescription": "Ask an organization admin to install GitHub before connecting your account.",
         "notInstalledTitle": "GitHub is not installed",
-        "refresh": "Refresh this page and try again.",
+        "refresh": "Your sign-in status could not be checked.",
         "signInButton": "Sign in to {{brandName}}",
         "signInCheckFailed": "Couldn't check sign-in",
         "signInDescription": "Use your {{brandName}} account before connecting this GitHub user.",
@@ -4114,7 +4109,7 @@
           "title": "Payment successful"
         },
         "processing": {
-          "body": "We're applying your credits to {{orgName}} now. This usually takes a few seconds — refresh in a moment to see the updated balance.",
+          "body": "We're applying your credits to {{orgName}} now. This usually takes a few seconds.",
           "title": "Payment received"
         },
         "ready": {
@@ -4840,7 +4835,7 @@
     "networkSettings": "Private network settings",
     "networkTailscaleHelp": "Connect to devices with Tailscale",
     "networkTitle": "Private networks",
-    "networkUnavailable": "This network is no longer available. Choose another network or refresh the page.",
+    "networkUnavailable": "This network is no longer available. Choose another network.",
     "newLogin": "Enter details manually",
     "next": "Continue",
     "optionalName": "Connection name (optional)",
@@ -4990,7 +4985,7 @@
     "scopeDescription": "Name the network and choose who can use it.",
     "scopeSaved": "Network sharing settings are saved. Other changes are not saved yet. Save them or return to network details.",
     "scopeUnavailable": "This network is unavailable or you no longer have the required administrator permission.",
-    "scopeUncertain": "We could not confirm the change. Reload and review the saved settings before submitting again.",
+    "scopeUncertain": "We could not confirm the change. The saved settings have not been verified.",
     "unknownOrganization": "your organization",
     "view": "View"
   },
@@ -5413,11 +5408,10 @@
           "countExplanation": "Counts use read-only transactions and do not read record bodies.",
           "description": "Inspect record counts in the local chat cache owned by the shared worker.",
           "loading": "Loading IndexedDB storage...",
-          "measurementUnavailable": "Snapshot measurement failed. Try again.",
+          "measurementUnavailable": "Snapshot measurement failed.",
           "measureSnapshot": "Measure snapshot",
           "measuring": "Measuring...",
           "records": "records",
-          "refresh": "Refresh",
           "schema": "schema",
           "snapshotDescription": "One record can contain many threads. Size estimates UTF-8 JSON, excluding database overhead; read time excludes size estimation.",
           "snapshotEmpty": "No cached thread snapshot.",
@@ -5773,8 +5767,7 @@
       "title": "Oops! Something went sideways"
     },
     "forceUpgrade": {
-      "action": "Refresh",
-      "description": "This version of {{brandName}} is no longer supported. Refresh to load the latest version.",
+      "description": "This version of {{brandName}} is no longer supported.",
       "title": "Update required"
     },
     "mermaid": {
@@ -5791,9 +5784,8 @@
       "title": "That page isn't here."
     },
     "workerFailure": {
-      "action": "Refresh",
-      "description": "Your connection was interrupted. Refresh the page to continue.",
-      "title": "Refresh to continue"
+      "description": "The connection to this app was interrupted.",
+      "title": "Connection interrupted"
     }
   },
   "sharedThread": {
@@ -5813,14 +5805,11 @@
     "choosePrivateKeyFile": "Choose private key file",
     "cloudflare": {
       "direct": "Direct",
-      "keepChanges": "Keep my changes with this version",
-      "latest": "Latest saved settings",
       "mode": "Connection",
       "needsRebind": "This host needs a new Cloudflare Access configuration. Edit it to rebind or choose Direct. It will not connect until you do.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Published hostname",
       "rebindHelp": "Choose a permitted Cloudflare Access configuration or Direct to restore this host. Nothing will change until you save.",
-      "reviewHelp": "Your draft is preserved. Confirm the latest saved settings before applying your changes.",
       "title": "Cloudflare Access",
       "unavailable": "Cloudflare Access is not available for this account."
     },
@@ -5866,21 +5855,14 @@
     "credentialsHelp": "Credentials are write-only and stay outside the sandbox. Paste the complete key; whitespace is preserved. Fields are cleared when this form closes.",
     "delete": "Delete host",
     "deleteHelp": "Delete this host? Its credential will be kept. Agents will no longer see this host in the live inventory.",
-    "deleteReview": {
-      "acknowledge": "Use this version for deletion",
-      "changed": "This host changed. Review its latest saved settings before deleting.",
-      "help": "Review these saved settings, then choose Delete host to delete this version.",
-      "unavailable": "This host is no longer available.",
-      "version": "Version {{version}}"
-    },
     "description": "Let your agents run commands on remote machines.",
     "displayName": "Display name",
     "edit": "Edit host",
     "editHelp": "Selecting a different credential changes only this host. Direct endpoint changes clear its learned host key; changes involving Cloudflare Access keep it.",
     "empty": "No SSH hosts configured. Add a host, then enable it by default or in individual chats.",
     "errors": {
-      "configurationChanged": "This host changed while you were editing. Your draft is preserved. Review its latest settings before applying your changes.",
-      "credentialChanged": "This credential changed while you were editing. Your draft is preserved. Review its latest settings and affected hosts before saving your changes.",
+      "configurationChanged": "This host changed while you were editing. Your changes were not saved; your draft is preserved.",
+      "credentialChanged": "This credential changed while you were editing. Your changes were not saved; your draft is preserved.",
       "credentialInUse": "This credential is used by a host. Select another credential for its hosts or delete those hosts first.",
       "credentialUnavailable": "This SSH credential is no longer available. Select an existing credential or create a new one.",
       "failed": "Could not save the SSH change.",
@@ -5937,7 +5919,7 @@
     "add": "Add Tailscale",
     "addressHelp": "Use a registered tailnet peer IP, full hostname or short name. SSH login and host-key verification are still required.",
     "adoptHelp": "Make this organization network your personal network. Other owners must rebind their saved hosts.",
-    "changed": "This Tailscale network changed. Review the latest settings before saving your draft.",
+    "changed": "This Tailscale network changed. Your changes were not saved; your draft is preserved.",
     "clientId": "OAuth client ID",
     "clientSecret": "OAuth client secret",
     "createNew": "Create new Tailscale network",
@@ -6173,7 +6155,7 @@
       "keytabFile": "Keytab file (.keytab)",
       "lifetime": "Requested ticket lifetime (seconds)",
       "offlineHelp": "Use only the selected service ticket. No KDC connection or renewal.",
-      "onlineHelp": "Allow this source to obtain tickets through the separate KDC route. Refresh prepares a new connection; existing sessions keep their original expiry.",
+      "onlineHelp": "Allow this source to obtain tickets through the separate KDC route. New connections obtain new tickets; existing sessions keep their original expiry.",
       "password": "Kerberos · password",
       "realm": "Initiator realm",
       "renewableLifetime": "Renewable lifetime (seconds; 0 disables)",

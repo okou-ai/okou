@@ -2,6 +2,7 @@ import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-ro
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { state } from "ccstate";
 import {
   paidToolsContract,
   type PaidToolId,
@@ -20,6 +21,25 @@ import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
+
+function mockPaidTools(initialDisabledTools: PaidToolId[] = []) {
+  const disabledTools$ = state(initialDisabledTools);
+  const updates: { toolId: string; disabled: boolean }[] = [];
+  context.mocks.api(paidToolsContract.get, ({ respond }) => {
+    return respond(200, { disabledTools: context.store.get(disabledTools$) });
+  });
+  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
+    updates.push({ toolId: params.toolId, disabled: body.disabled });
+    context.store.set(disabledTools$, (previous) => {
+      const enabled = previous.filter((toolId) => {
+        return toolId !== params.toolId;
+      });
+      return body.disabled ? [...enabled, params.toolId] : enabled;
+    });
+    return respond(200, { toolId: params.toolId, disabled: body.disabled });
+  });
+  return updates;
+}
 
 function button(name: string, container: ParentNode = document.body) {
   const element = queryAllByRoleFast("button", container).find((candidate) => {
@@ -99,14 +119,7 @@ test("Members manage Paid tools in Tools", async () => {
 });
 
 test("Paid tools toggles save inverted enabled state and can re-enable a tool", async () => {
-  const updates: { toolId: string; disabled: boolean }[] = [];
-  context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools: ["web-search"] });
-  });
-  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
-    updates.push({ toolId: params.toolId, disabled: body.disabled });
-    return respond(200, { toolId: params.toolId, disabled: body.disabled });
-  });
+  const updates = mockPaidTools(["web-search"]);
   await openPaidTools();
   const toggle = await readySwitch("Web search");
   expect(toggle).not.toBeChecked();
@@ -126,21 +139,7 @@ test("Paid tools toggles save inverted enabled state and can re-enable a tool", 
 });
 
 test("Advanced data research saves independently and retains preferences across Tools visits", async () => {
-  const updates: { toolId: string; disabled: boolean }[] = [];
-  let disabledTools: PaidToolId[] = [];
-  context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools });
-  });
-  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
-    updates.push({ toolId: params.toolId, disabled: body.disabled });
-    disabledTools = disabledTools.filter((toolId) => {
-      return toolId !== params.toolId;
-    });
-    if (body.disabled) {
-      disabledTools.push(params.toolId);
-    }
-    return respond(200, { toolId: params.toolId, disabled: body.disabled });
-  });
+  const updates = mockPaidTools();
   const dialog = await openPaidTools();
   const advanced = await readySwitch("Advanced data research");
   const people = await readySwitch("People search");
@@ -241,12 +240,7 @@ test("The image model is locked but still shown while image generation is off", 
   context.mocks.data.userModelPreference(
     modelPreference({ selectedImageModel: "ideogram/v4" }),
   );
-  context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools: ["image-generation"] });
-  });
-  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
-    return respond(200, { toolId: params.toolId, disabled: body.disabled });
-  });
+  mockPaidTools(["image-generation"]);
   await openPaidTools();
   const toggle = await readySwitch("Image generation");
   expect(toggle).not.toBeChecked();
@@ -279,6 +273,9 @@ test("Choosing an image model saves it with the stored run model", async () => {
       updatedAt: "2026-09-28T00:00:00.000Z",
     });
     context.mocks.data.userModelPreference(stored);
+    context.mocks.ably.trigger("userPreferenceChanged", {
+      kinds: ["defaultImageModel"],
+    });
     return respond(200, stored);
   });
   await openPaidTools();
@@ -340,9 +337,7 @@ test.each(["disable image generation", "leave Tools"] as const)(
         },
       });
     });
-    context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
-      return respond(200, { toolId: params.toolId, disabled: body.disabled });
-    });
+    mockPaidTools();
     const dialog = await openPaidTools();
     const select = await imageModelSelect();
     await waitFor(() => {
@@ -472,14 +467,7 @@ test.each(["preference read", "write token"] as const)(
 );
 
 test("Members control a Router tool individually and through its family", async () => {
-  const updates: { toolId: string; disabled: boolean }[] = [];
-  context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools: ["finance"] });
-  });
-  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
-    updates.push({ toolId: params.toolId, disabled: body.disabled });
-    return respond(200, { toolId: params.toolId, disabled: body.disabled });
-  });
+  const updates = mockPaidTools(["finance"]);
   await openPaidTools();
   const family = await readySwitch("Financial data");
   const quote = await screen.findByRole("switch", { name: "Finance Quote" });
@@ -517,11 +505,7 @@ test("A newly discovered Router tool can be disabled without a local catalog ent
       ],
     });
   });
-  const updates: { toolId: string; disabled: boolean }[] = [];
-  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
-    updates.push({ toolId: params.toolId, disabled: body.disabled });
-    return respond(200, { toolId: params.toolId, disabled: body.disabled });
-  });
+  const updates = mockPaidTools();
   await openPaidTools();
   const toggle = await readySwitch("New research tool");
   expect(

@@ -112,7 +112,6 @@
         "time": "Zeit"
       },
       "log": "Log",
-      "manualReloadNotice": "Protokolle werden nicht automatisch aktualisiert.",
       "modelProvidedBy": "{{model}} bereitgestellt von {{provider}}",
       "networkEmpty": {
         "description": "Für diese Ausführung wurde kein Netzwerkverkehr aufgezeichnet.",
@@ -123,7 +122,6 @@
         "description": "Dieses Protokoll existiert nicht oder Sie haben keine Berechtigung, es im aktuellen Arbeitsbereich anzuzeigen.",
         "title": "Protokoll nicht gefunden"
       },
-      "refresh": "Aktualisieren",
       "runner": {
         "environment": "Umgebung",
         "framework": "Framework",
@@ -975,7 +973,7 @@
       "lastSeen": "Zuletzt gesehen {{date}}",
       "linkExpires": "Link läuft am {{date}} ab.",
       "macRequirement": "Erfordert einen Apple Silicon Mac mit macOS 14 oder neuer. Intel-Macs werden nicht unterstützt.",
-      "noHostsDescription": "Öffnen Sie {{desktopApplicationName}} auf Ihrem Mac und aktualisieren Sie diese Seite, wenn sie online ist.",
+      "noHostsDescription": "Öffne {{desktopApplicationName}} auf deinem Mac, um ihn online zu bringen.",
       "noHostsTitle": "Keine Online-Computer",
       "sources": {
         "chat": "dieser Chat-Thread",
@@ -3019,7 +3017,7 @@
     "affectedMembers_one": "{{count}} Mitglied",
     "affectedMembers_other": "{{count}} Mitglieder",
     "cancel": "Abbrechen",
-    "changed": "Dieser Cloudflare Access wurde während der Bearbeitung geändert. Prüfen Sie vor dem Speichern die neuesten Einstellungen.",
+    "changed": "Dieser Cloudflare Access wurde während der Bearbeitung geändert. Deine Änderungen wurden nicht gespeichert.",
     "clientId": "Client-ID des Service-Tokens",
     "clientIdPlaceholder": "Client-ID des Service-Tokens einfügen",
     "clientSecret": "Client-Secret des Service-Tokens",
@@ -3035,11 +3033,9 @@
     "edit": "Cloudflare Access bearbeiten",
     "failed": "Die Cloudflare-Access-Änderung konnte nicht gespeichert werden.",
     "forbidden": "Nur Organisationsadministratoren können gemeinsam genutzten Cloudflare Access ändern.",
-    "impactChanged": "Die betroffenen Hosts haben sich geändert. Prüfen Sie die aktuellen Auswirkungen erneut.",
+    "impactChanged": "Die betroffenen Hosts haben sich geändert. Die Änderung wurde nicht angewendet.",
     "inUse": "Ein SSH-Host verwendet diesen Cloudflare Access. Sein Besitzer muss ihn zuerst neu zuordnen oder löschen.",
     "invalidInput": "Einige Cloudflare-Access-Einstellungen sind ungültig. Überprüfe die Felder und versuche es erneut.",
-    "keepChanges": "Meine Änderungen mit dieser Version übernehmen",
-    "latest": "Zuletzt gespeicherte Einstellungen",
     "loadFailed": "Cloudflare Access konnte nicht geladen werden.",
     "loading": "Cloudflare Access wird geladen…",
     "memberIdentifier": " (ID {{identifier}})",
@@ -3053,10 +3049,9 @@
     "promote": "Für Organisation freigeben",
     "promoteConfirm": "Ich verstehe, dass alle Mitglieder der Organisation dieses Service-Token verwenden können.",
     "promoteHelp": "Geben Sie Ihren persönlichen Cloudflare Access für die Organisation frei. Service-Token und eigene SSH-Hostbindungen bleiben erhalten.",
-    "promoteUncertain": "Die Umwandlung konnte nicht bestätigt werden. Schließen Sie diesen Dialog und prüfen Sie die aktuelle Konfiguration vor einem erneuten Versuch.",
+    "promoteUncertain": "Die Umwandlung konnte nicht bestätigt werden.",
     "replace": "Service-Token ersetzen",
     "resourceIdConflict": "Diese Ressourcen-ID kann nicht verwendet werden.",
-    "reviewHelp": "Ihr Entwurf bleibt erhalten. Bestätigen Sie die zuletzt gespeicherten Einstellungen, bevor Sie Ihre Änderungen anwenden.",
     "revisionExhausted": "Diese Konfiguration kann nicht mehr aktualisiert werden. Erstelle eine neue.",
     "save": "Speichern",
     "saveUncertain": "Speichern fehlgeschlagen.",
@@ -3552,7 +3547,7 @@
         "linkIncompleteTitle": "Der Connect-Link ist unvollständig",
         "notInstalledDescription": "Bitten Sie einen Organisationsadministrator, GitHub zu installieren, bevor Sie Ihr Konto verbinden.",
         "notInstalledTitle": "GitHub ist nicht installiert",
-        "refresh": "Aktualisieren Sie diese Seite und versuchen Sie es erneut.",
+        "refresh": "Dein Anmeldestatus konnte nicht überprüft werden.",
         "signInButton": "Melden Sie sich bei {{brandName}} an",
         "signInCheckFailed": "Die Anmeldung konnte nicht überprüft werden",
         "signInDescription": "Verwenden Sie Ihr {{brandName}}-Konto, bevor Sie diesen GitHub-Benutzer verbinden.",
@@ -4116,7 +4111,7 @@
           "title": "Zahlung erfolgreich"
         },
         "processing": {
-          "body": "Wir schreiben {{orgName}} Ihre Credits jetzt gut. Dies dauert in der Regel nur wenige Sekunden. Aktualisieren Sie die Seite gleich, um den neuen Kontostand zu sehen.",
+          "body": "Dein Guthaben wird jetzt {{orgName}} gutgeschrieben. Das dauert normalerweise einige Sekunden.",
           "title": "Zahlung erhalten"
         },
         "ready": {
@@ -4842,7 +4837,7 @@
     "networkSettings": "Einstellungen für private Netzwerke",
     "networkTailscaleHelp": "Mit Tailscale auf Geräte zugreifen",
     "networkTitle": "Private Netzwerke",
-    "networkUnavailable": "Dieses Netzwerk ist nicht verfügbar. Wähle ein anderes oder lade die Seite neu.",
+    "networkUnavailable": "Dieses Netzwerk ist nicht mehr verfügbar. Wähle ein anderes Netzwerk.",
     "newLogin": "Daten manuell eingeben",
     "next": "Weiter",
     "optionalName": "Verbindungsname (optional)",
@@ -4992,7 +4987,7 @@
     "scopeDescription": "Benenne das Netzwerk und wähle aus, wer es verwenden kann.",
     "scopeSaved": "Die Freigabeeinstellungen des Netzwerks wurden gespeichert. Andere Änderungen sind noch nicht gespeichert. Speichere sie oder kehre zu den Netzwerkdetails zurück.",
     "scopeUnavailable": "Dieses Netzwerk ist nicht verfügbar oder dir fehlt die erforderliche Administratorberechtigung.",
-    "scopeUncertain": "Die Änderung konnte nicht bestätigt werden. Lade die Seite neu und prüfe die gespeicherten Einstellungen, bevor du sie erneut übermittelst.",
+    "scopeUncertain": "Die Änderung konnte nicht bestätigt werden. Die gespeicherten Einstellungen wurden nicht überprüft.",
     "unknownOrganization": "deine Organisation",
     "view": "Ansehen"
   },
@@ -5415,11 +5410,10 @@
           "countExplanation": "Die Zählung verwendet schreibgeschützte Transaktionen und liest keine Datensatzinhalte.",
           "description": "Datensatzanzahlen im lokalen Chat-Cache des Shared Workers prüfen.",
           "loading": "IndexedDB-Speicher wird geladen...",
-          "measurementUnavailable": "Snapshot-Messung fehlgeschlagen. Erneut versuchen.",
+          "measurementUnavailable": "Snapshot-Messung fehlgeschlagen.",
           "measureSnapshot": "Snapshot messen",
           "measuring": "Messung läuft...",
           "records": "Datensätze",
-          "refresh": "Aktualisieren",
           "schema": "Schema",
           "snapshotDescription": "Ein Datensatz kann viele Threads enthalten. Die Größe schätzt UTF-8-JSON ohne Datenbank-Overhead; die Lesezeit schließt die Größenschätzung aus.",
           "snapshotEmpty": "Kein Thread-Snapshot im Cache.",
@@ -5775,8 +5769,7 @@
       "title": "Hoppla! Etwas ging schief"
     },
     "forceUpgrade": {
-      "action": "Aktualisieren",
-      "description": "Diese Version von {{brandName}} wird nicht mehr unterstützt. Aktualisieren Sie, um die neueste Version zu laden.",
+      "description": "Diese Version von {{brandName}} wird nicht mehr unterstützt.",
       "title": "Update erforderlich"
     },
     "mermaid": {
@@ -5793,9 +5786,8 @@
       "title": "Diese Seite ist nicht hier."
     },
     "workerFailure": {
-      "action": "Aktualisieren",
-      "description": "Deine Verbindung wurde unterbrochen. Aktualisiere die Seite, um fortzufahren.",
-      "title": "Zum Fortfahren aktualisieren"
+      "description": "Die Verbindung zu dieser App wurde unterbrochen.",
+      "title": "Verbindung unterbrochen"
     }
   },
   "sharedThread": {
@@ -5815,14 +5807,11 @@
     "choosePrivateKeyFile": "Datei mit privatem Schlüssel auswählen",
     "cloudflare": {
       "direct": "Direkt",
-      "keepChanges": "Meine Änderungen mit dieser Version übernehmen",
-      "latest": "Zuletzt gespeicherte Einstellungen",
       "mode": "Verbindung",
       "needsRebind": "Dieser Host benötigt eine neue Cloudflare-Access-Konfiguration. Bearbeite ihn, um ihn neu zu verknüpfen oder Direct auszuwählen. Bis dahin ist keine Verbindung möglich.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Veröffentlichter Hostname",
       "rebindHelp": "Wähle eine zulässige Cloudflare-Access-Konfiguration oder Direct, um diesen Host wiederherzustellen. Bis zum Speichern ändert sich nichts.",
-      "reviewHelp": "Ihr Entwurf bleibt erhalten. Bestätigen Sie die zuletzt gespeicherten Einstellungen, bevor Sie Ihre Änderungen anwenden.",
       "title": "Cloudflare Access",
       "unavailable": "Cloudflare Access ist für dieses Konto nicht verfügbar."
     },
@@ -5868,21 +5857,14 @@
     "credentialsHelp": "Zugangsdaten können nur geschrieben werden und bleiben außerhalb der Sandbox. Fügen Sie den vollständigen Schlüssel ein; Leerzeichen bleiben erhalten. Die Felder werden beim Schließen des Formulars geleert.",
     "delete": "Host löschen",
     "deleteHelp": "Diesen Host löschen? Seine Zugangsdaten bleiben erhalten. Agents sehen ihn nicht mehr im Inventar.",
-    "deleteReview": {
-      "acknowledge": "Diese Version zum Löschen verwenden",
-      "changed": "Dieser Host wurde geändert. Prüfe vor dem Löschen die zuletzt gespeicherten Einstellungen.",
-      "help": "Prüfe diese gespeicherten Einstellungen und wähle dann „Host löschen“, um diese Version zu löschen.",
-      "unavailable": "Dieser Host ist nicht mehr verfügbar.",
-      "version": "Version {{version}}"
-    },
     "description": "Konfiguriere SSH-Hosts, auf denen deine Agents Remote-Befehle ausführen können.",
     "displayName": "Anzeigename",
     "edit": "Host bearbeiten",
     "editHelp": "Andere Zugangsdaten auszuwählen ändert nur diesen Host. Änderungen am direkten Endpunkt löschen den gespeicherten Hostschlüssel; Änderungen mit Cloudflare Access behalten ihn bei.",
     "empty": "Keine SSH-Hosts konfiguriert. Füge einen Host hinzu und aktiviere ihn standardmäßig oder in einzelnen Chats.",
     "errors": {
-      "configurationChanged": "Dieser Host wurde während der Bearbeitung geändert. Dein Entwurf bleibt erhalten. Prüfe die aktuellen Einstellungen, bevor du deine Änderungen anwendest.",
-      "credentialChanged": "Diese Zugangsdaten wurden während der Bearbeitung geändert. Ihr Entwurf bleibt erhalten. Prüfen Sie vor dem Speichern die neuesten Einstellungen und betroffenen Hosts.",
+      "configurationChanged": "Dieser Host wurde während der Bearbeitung geändert. Deine Änderungen wurden nicht gespeichert; dein Entwurf bleibt erhalten.",
+      "credentialChanged": "Diese Zugangsdaten wurden während der Bearbeitung geändert. Deine Änderungen wurden nicht gespeichert; dein Entwurf bleibt erhalten.",
       "credentialInUse": "Diese Zugangsdaten werden verwendet. Weisen Sie den Hosts andere zu oder löschen Sie die Hosts zuerst.",
       "credentialUnavailable": "Diese SSH-Zugangsdaten sind nicht mehr verfügbar. Wählen oder erstellen Sie andere Zugangsdaten.",
       "failed": "Die SSH-Änderung konnte nicht gespeichert werden.",
@@ -5939,7 +5921,7 @@
     "add": "Tailscale hinzufügen",
     "addressHelp": "Verwende die IP, den vollständigen Hostnamen oder Kurznamen eines registrierten Tailnet-Peers. SSH-Anmeldung und Hostschlüsselprüfung bleiben erforderlich.",
     "adoptHelp": "Mache dieses Organisationsnetzwerk zu deinem persönlichen Netzwerk. Andere Besitzer müssen ihre gespeicherten Hosts neu binden.",
-    "changed": "Dieses Tailscale-Netzwerk wurde geändert. Prüfe die neuesten Einstellungen vor dem Speichern deines Entwurfs.",
+    "changed": "Dieses Tailscale-Netzwerk wurde geändert. Deine Änderungen wurden nicht gespeichert; dein Entwurf bleibt erhalten.",
     "clientId": "OAuth-Client-ID",
     "clientSecret": "OAuth-Client-Geheimnis",
     "createNew": "Neues Tailscale-Netzwerk erstellen",
@@ -6175,7 +6157,7 @@
       "keytabFile": "Keytab-Datei (.keytab)",
       "lifetime": "Angeforderte Ticketgültigkeit (Sekunden)",
       "offlineHelp": "Nur das ausgewählte Service-Ticket verwenden. Keine KDC-Verbindung oder Verlängerung.",
-      "onlineHelp": "Ticketbezug über den separaten KDC-Verbindungsweg erlauben. Eine Aktualisierung bereitet eine neue Verbindung vor; bestehende Sitzungen behalten ihr Ablaufdatum.",
+      "onlineHelp": "Erlaube dieser Quelle, Tickets über die separate KDC-Route zu beziehen. Neue Verbindungen erhalten neue Tickets; bestehende Sitzungen behalten ihre ursprüngliche Ablaufzeit.",
       "password": "Kerberos · Passwort",
       "realm": "Realm des Initiators",
       "renewableLifetime": "Verlängerungszeitraum (Sekunden; 0 deaktiviert)",

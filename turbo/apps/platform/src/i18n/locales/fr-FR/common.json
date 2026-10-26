@@ -114,7 +114,6 @@
         "time": "Temps"
       },
       "log": "Journal",
-      "manualReloadNotice": "Les journaux ne se mettent pas à jour automatiquement.",
       "modelProvidedBy": "{{model}} fourni par {{provider}}",
       "networkEmpty": {
         "description": "Aucun trafic réseau n'a été enregistré pour cette exécution.",
@@ -125,7 +124,6 @@
         "description": "Ce journal n'existe pas ou vous n'avez pas la permission de le voir dans l'espace de travail actuel.",
         "title": "Journal introuvable"
       },
-      "refresh": "Actualiser",
       "runner": {
         "environment": "Environnement",
         "framework": "Framework",
@@ -992,7 +990,7 @@
       "lastSeen": "Vu pour la dernière fois le {{date}}",
       "linkExpires": "Le lien expire le {{date}}.",
       "macRequirement": "Nécessite un Mac avec puce Apple et macOS 14 ou version ultérieure. Les Mac Intel ne sont pas pris en charge.",
-      "noHostsDescription": "Ouvrez {{desktopApplicationName}} sur votre Mac et actualisez cette page lorsqu'il sera en ligne.",
+      "noHostsDescription": "Ouvrez {{desktopApplicationName}} sur votre Mac pour le connecter.",
       "noHostsTitle": "Aucun ordinateur en ligne",
       "sources": {
         "chat": "ce fil de discussion chat",
@@ -3066,7 +3064,7 @@
     "affectedMembers_many": "",
     "affectedMembers_other": "{{count}} membres",
     "cancel": "Annuler",
-    "changed": "Ce Cloudflare Access a changé pendant la modification. Vérifiez les derniers paramètres avant d’enregistrer.",
+    "changed": "Ce Cloudflare Access a changé pendant la modification. Vos changements n'ont pas été enregistrés.",
     "clientId": "ID client du Service Token",
     "clientIdPlaceholder": "Collez le Client ID du Service Token",
     "clientSecret": "Secret client du Service Token",
@@ -3082,11 +3080,9 @@
     "edit": "Modifier Cloudflare Access",
     "failed": "Impossible d’enregistrer la modification Cloudflare Access.",
     "forbidden": "Seuls les administrateurs de l'organisation peuvent modifier l'accès Cloudflare partagé.",
-    "impactChanged": "Les hôtes concernés ont changé. Vérifiez les conséquences actuelles avant de confirmer à nouveau.",
+    "impactChanged": "Les hôtes concernés ont changé. La modification n’a pas été appliquée.",
     "inUse": "Un hôte SSH utilise ce Cloudflare Access. Son propriétaire doit d'abord le réassocier ou le supprimer.",
     "invalidInput": "Certains paramètres Cloudflare Access ne sont pas valides. Vérifiez les champs et réessayez.",
-    "keepChanges": "Appliquer mes modifications à cette version",
-    "latest": "Derniers paramètres enregistrés",
     "loadFailed": "Impossible de charger Cloudflare Access.",
     "loading": "Chargement de Cloudflare Access…",
     "memberIdentifier": " (ID {{identifier}})",
@@ -3100,10 +3096,9 @@
     "promote": "Partager avec l'organisation",
     "promoteConfirm": "Je comprends que tous les membres de l'organisation pourront utiliser ce Service Token.",
     "promoteHelp": "Partagez votre Cloudflare Access personnel avec l'organisation. Le Service Token et vos liaisons d'hôtes SSH sont conservés.",
-    "promoteUncertain": "Impossible de confirmer la conversion. Fermez cette fenêtre et vérifiez la configuration actuelle avant de réessayer.",
+    "promoteUncertain": "La conversion n’a pas pu être confirmée.",
     "replace": "Remplacer le Service Token",
     "resourceIdConflict": "Cet identifiant de ressource ne peut pas être utilisé.",
-    "reviewHelp": "Votre brouillon est conservé. Confirmez les derniers paramètres enregistrés avant d’appliquer vos modifications.",
     "revisionExhausted": "Cette configuration ne peut plus être mise à jour. Créez-en une nouvelle.",
     "save": "Enregistrer",
     "saveUncertain": "Échec de l’enregistrement.",
@@ -3606,7 +3601,7 @@
         "linkIncompleteTitle": "Le lien de connexion est incomplet",
         "notInstalledDescription": "Demandez à un administrateur de l'organisation d'installer GitHub avant de connecter votre compte.",
         "notInstalledTitle": "GitHub n'est pas installé",
-        "refresh": "Actualisez cette page et réessayez.",
+        "refresh": "Impossible de vérifier l'état de votre connexion.",
         "signInButton": "Connectez-vous à {{brandName}}",
         "signInCheckFailed": "Impossible de vérifier la connexion",
         "signInDescription": "Utilisez votre compte {{brandName}} avant de connecter cet utilisateur GitHub.",
@@ -4170,7 +4165,7 @@
           "title": "Paiement réussi"
         },
         "processing": {
-          "body": "Nous appliquons vos crédits à {{orgName}} maintenant. Cela prend généralement quelques secondes — actualisez dans un instant pour voir le solde mis à jour.",
+          "body": "Vos crédits sont en cours d’application à {{orgName}}. Cela prend généralement quelques secondes.",
           "title": "Paiement reçu"
         },
         "ready": {
@@ -4900,7 +4895,7 @@
     "networkSettings": "Paramètres du réseau privé",
     "networkTailscaleHelp": "Se connecter aux appareils avec Tailscale",
     "networkTitle": "Réseaux privés",
-    "networkUnavailable": "Ce réseau n’est plus disponible. Choisissez-en un autre ou actualisez la page.",
+    "networkUnavailable": "Ce réseau n'est plus disponible. Choisissez un autre réseau.",
     "newLogin": "Saisir manuellement",
     "next": "Continuer",
     "optionalName": "Nom de la connexion (facultatif)",
@@ -5051,7 +5046,7 @@
     "scopeDescription": "Nommez le réseau et choisissez qui peut l’utiliser.",
     "scopeSaved": "Les paramètres de partage du réseau sont enregistrés. Les autres modifications ne le sont pas encore. Enregistrez-les ou revenez aux détails du réseau.",
     "scopeUnavailable": "Ce réseau n’est pas disponible ou vous n’avez plus les autorisations d’administration requises.",
-    "scopeUncertain": "Impossible de confirmer la modification. Rechargez la page et vérifiez les paramètres enregistrés avant de réessayer.",
+    "scopeUncertain": "Nous n'avons pas pu confirmer la modification. Les paramètres enregistrés n'ont pas été vérifiés.",
     "unknownOrganization": "votre organisation",
     "view": "Voir"
   },
@@ -5478,11 +5473,10 @@
           "countExplanation": "Le comptage utilise des transactions en lecture seule et ne lit pas le contenu des enregistrements.",
           "description": "Consultez le nombre d’enregistrements du cache de discussion local géré par le worker partagé.",
           "loading": "Chargement du stockage IndexedDB...",
-          "measurementUnavailable": "La mesure du snapshot a échoué. Réessayez.",
+          "measurementUnavailable": "La mesure du snapshot a échoué.",
           "measureSnapshot": "Mesurer le snapshot",
           "measuring": "Mesure en cours...",
           "records": "enregistrements",
-          "refresh": "Actualiser",
           "schema": "schéma",
           "snapshotDescription": "Un enregistrement peut contenir de nombreuses conversations. La taille estime le JSON UTF-8 hors surcharge de la base ; le temps de lecture exclut cette estimation.",
           "snapshotEmpty": "Aucun snapshot des conversations en cache.",
@@ -5838,8 +5832,7 @@
       "title": "Oups ! Quelque chose a mal tourné"
     },
     "forceUpgrade": {
-      "action": "Actualiser",
-      "description": "Cette version de {{brandName}} n'est plus prise en charge. Actualisez pour charger la dernière version.",
+      "description": "Cette version de {{brandName}} n'est plus prise en charge.",
       "title": "Mise à jour requise"
     },
     "mermaid": {
@@ -5856,9 +5849,8 @@
       "title": "Cette page n'est pas ici."
     },
     "workerFailure": {
-      "action": "Actualiser",
-      "description": "Votre connexion a été interrompue. Actualisez la page pour continuer.",
-      "title": "Actualisez pour continuer"
+      "description": "La connexion à cette application a été interrompue.",
+      "title": "Connexion interrompue"
     }
   },
   "sharedThread": {
@@ -5878,14 +5870,11 @@
     "choosePrivateKeyFile": "Choisir un fichier de clé privée",
     "cloudflare": {
       "direct": "Directe",
-      "keepChanges": "Appliquer mes modifications à cette version",
-      "latest": "Derniers paramètres enregistrés",
       "mode": "Connexion",
       "needsRebind": "Cet hôte nécessite une nouvelle configuration Cloudflare Access. Modifiez-le pour le réassocier ou choisir Direct. Il ne pourra pas se connecter avant cela.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nom d’hôte publié",
       "rebindHelp": "Choisissez une configuration Cloudflare Access autorisée ou Direct pour rétablir cet hôte. Rien ne change avant l'enregistrement.",
-      "reviewHelp": "Votre brouillon est conservé. Confirmez les derniers paramètres enregistrés avant d’appliquer vos modifications.",
       "title": "Cloudflare Access",
       "unavailable": "Cloudflare Access n’est pas disponible pour ce compte."
     },
@@ -5934,21 +5923,14 @@
     "credentialsHelp": "Les identifiants sont accessibles uniquement en écriture et restent hors du sandbox. Collez la clé complète ; les espaces sont conservés. Les champs sont effacés à la fermeture du formulaire.",
     "delete": "Supprimer l’hôte",
     "deleteHelp": "Supprimer cet hôte ? Ses identifiants seront conservés. Les Agents ne le verront plus dans l’inventaire.",
-    "deleteReview": {
-      "acknowledge": "Utiliser cette version pour la suppression",
-      "changed": "Cet hôte a été modifié. Vérifiez ses derniers paramètres enregistrés avant de le supprimer.",
-      "help": "Vérifiez ces paramètres enregistrés, puis choisissez Supprimer l’hôte pour supprimer cette version.",
-      "unavailable": "Cet hôte n’est plus disponible.",
-      "version": "Version {{version}}"
-    },
     "description": "Configurez des hôtes SSH pour que vos agents exécutent des commandes à distance.",
     "displayName": "Nom affiché",
     "edit": "Modifier l’hôte",
     "editHelp": "Changer les identifiants ne modifie que cet hôte. Modifier une destination directe efface sa clé d’hôte enregistrée ; les changements impliquant Cloudflare Access la conservent.",
     "empty": "Aucun hôte SSH configuré. Ajoutez un hôte, puis activez-le par défaut ou dans certains chats.",
     "errors": {
-      "configurationChanged": "Cet hôte a changé pendant votre modification. Votre brouillon est conservé. Vérifiez ses derniers paramètres avant d’appliquer vos modifications.",
-      "credentialChanged": "Cet identifiant a été modifié pendant votre édition. Votre brouillon est conservé. Vérifiez les derniers paramètres et les hôtes concernés avant d’enregistrer.",
+      "configurationChanged": "Cet hôte a changé pendant la modification. Vos changements n'ont pas été enregistrés ; votre brouillon est conservé.",
+      "credentialChanged": "Cet identifiant a changé pendant la modification. Vos changements n'ont pas été enregistrés ; votre brouillon est conservé.",
       "credentialInUse": "Ces identifiants sont utilisés. Réaffectez ou supprimez les hôtes concernés d’abord.",
       "credentialUnavailable": "Ces identifiants SSH ne sont plus disponibles. Sélectionnez-en d’autres ou créez-en de nouveaux.",
       "failed": "Impossible d’enregistrer la modification SSH.",
@@ -6006,7 +5988,7 @@
     "add": "Ajouter Tailscale",
     "addressHelp": "Utilisez l'IP, le nom d'hôte complet ou le nom court d'un pair enregistré du tailnet. L'authentification SSH et la vérification de la clé d'hôte restent nécessaires.",
     "adoptHelp": "Transformez ce réseau d'organisation en votre réseau personnel. Les autres propriétaires devront réassocier leurs hôtes enregistrés.",
-    "changed": "Ce réseau Tailscale a changé. Vérifiez les paramètres actuels avant d'enregistrer votre brouillon.",
+    "changed": "Ce réseau Tailscale a changé. Vos changements n'ont pas été enregistrés ; votre brouillon est conservé.",
     "clientId": "Identifiant du client OAuth",
     "clientSecret": "Secret du client OAuth",
     "createNew": "Créer un réseau Tailscale",
@@ -6248,7 +6230,7 @@
       "keytabFile": "Fichier keytab (.keytab)",
       "lifetime": "Durée du ticket demandée (secondes)",
       "offlineHelp": "Utiliser uniquement le ticket de service sélectionné. Aucune connexion KDC ni renouvellement.",
-      "onlineHelp": "Autoriser l’obtention de tickets via la route KDC distincte. L’actualisation prépare une nouvelle connexion ; les sessions existantes conservent leur expiration.",
+      "onlineHelp": "Autorisez cette source à obtenir des tickets via la route KDC distincte. Les nouvelles connexions obtiennent de nouveaux tickets ; les sessions existantes conservent leur expiration initiale.",
       "password": "Kerberos · mot de passe",
       "realm": "Realm de l’initiateur",
       "renewableLifetime": "Période renouvelable (secondes ; 0 désactive)",

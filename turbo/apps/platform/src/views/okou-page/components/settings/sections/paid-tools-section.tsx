@@ -304,7 +304,7 @@ function PaidToolsContent({
   readonly settings: PaidToolsSettings;
 }) {
   const { t } = useTranslation();
-  const loadable = useLoadable(settings.disabledTools$);
+  const loadable = useLastLoadable(settings.disabledTools$);
   const workspace = useLoadable(currentOrgInfo$);
   const dataTools = useLoadable(settings.dataTools$);
   return (

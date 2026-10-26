@@ -90,7 +90,7 @@ test("Report a preloaded Worker failure that happened before the app started", a
   await startPage(pageOptions);
 
   await expect(
-    screen.findByRole("dialog", { name: "Refresh to continue" }),
+    screen.findByRole("dialog", { name: "Connection interrupted" }),
   ).resolves.toBeVisible();
   expect(workers).toHaveLength(1);
 });

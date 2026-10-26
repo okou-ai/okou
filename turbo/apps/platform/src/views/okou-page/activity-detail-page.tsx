@@ -6,9 +6,8 @@ import {
   useLastLoadable,
   useLastResolved,
 } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
-import { Search, Loader2, Download, ChartLine, RefreshCw } from "lucide-react";
+import { Search, Loader2, Download, ChartLine } from "lucide-react";
 import {
   surfaceVariants,
   Button,
@@ -53,7 +52,6 @@ import { StatusBadge } from "./components/log-views/status-badge.tsx";
 import {
   activityDetail$,
   activityEvents$,
-  refreshActivity$,
   activityVisibleGroups$,
   activityStepSearch$,
   setActivityStepSearch$,
@@ -515,8 +513,6 @@ function ActivityStepsContent({
   const { t } = useTranslation();
   const stepSearch = useGet(activityStepSearch$);
   const setStepSearch = useSet(setActivityStepSearch$);
-  const pageSignal = useGet(pageSignal$);
-  const [refreshState, refresh] = useLoadableSet(refreshActivity$);
   const visibleGroupsLoadable = useLastLoadable(activityVisibleGroups$);
   const visibleGroupsData =
     visibleGroupsLoadable.state === "hasData" &&
@@ -595,31 +591,6 @@ function ActivityStepsContent({
         isLoading={visibleGroupsLoading}
         startedAt={detail.startedAt}
       />
-      {isActiveRunStatus(detail.status) && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <p className="text-sm text-muted-foreground">
-            {t(($) => {
-              return $.activity.detail.manualReloadNotice;
-            })}
-          </p>
-          <Button
-            type="button"
-            variant="neutral"
-            size="sm"
-            className="shrink-0"
-            pending={refreshState.state === "loading"}
-            disabled={visibleGroupsLoading}
-            onClick={() => {
-              detach(refresh(pageSignal), Reason.DomCallback);
-            }}
-          >
-            <RefreshCw aria-hidden />
-            {t(($) => {
-              return $.activity.detail.refresh;
-            })}
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

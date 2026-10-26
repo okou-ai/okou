@@ -50,7 +50,6 @@ import {
   type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import {
-  acceptCloudflareAccessConflictReview$,
   acknowledgeCloudflareAccessConversion$,
   acknowledgeCloudflareAccessDeletion$,
   acknowledgeCloudflareAccessPromotion$,
@@ -72,7 +71,6 @@ import {
   cloudflareAccessPromotionError$,
   cloudflareAccessPromotionAcknowledged$,
   cloudflareAccessConflict$,
-  cloudflareAccessConflictReview$,
   cloudflareAccessCreateScope$,
   cloudflareAccessDialog$,
   cloudflareAccessReplaceToken$,
@@ -96,69 +94,19 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { PrivateNetworkAffectedMembers } from "./private-network-impact.tsx";
 
-export function CloudflareAccessConflictReview() {
+function CloudflareAccessConflictNotice() {
   const { t } = useTranslation();
   const conflict = useGet(cloudflareAccessConflict$);
-  const review = useLoadable(cloudflareAccessConflictReview$);
-  const acceptReview = useSet(acceptCloudflareAccessConflictReview$);
-  const signal = useGet(pageSignal$);
   if (!conflict) {
     return null;
   }
-  const current = review.state === "hasData" ? review.data : null;
   return (
-    <div className="grid gap-3 rounded-lg border p-4 text-sm">
-      <p role="alert">
-        {localizedCloudflareAccessError(conflict) ??
-          t(($) => {
-            return $.cloudflareAccess.failed;
-          })}
-      </p>
-      {review.state === "hasError" && <CloudflareAccessLoadError />}
-      {review.state === "loading" && (
-        <p role="status">
-          {t(($) => {
-            return $.cloudflareAccess.loading;
-          })}
-        </p>
-      )}
-      {current && (
-        <>
-          <h3 className="font-semibold">
-            {t(($) => {
-              return $.cloudflareAccess.latest;
-            })}
-          </h3>
-          {current.config && (
-            <>
-              <p>{current.config.name}</p>
-              <AccessImpact config={current.config} />
-            </>
-          )}
-          <p>
-            {t(($) => {
-              return $.cloudflareAccess.reviewHelp;
-            })}
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={
-              current.kind === "delete" &&
-              !!current.config &&
-              privateNetworkHostCount(current.config) > 0
-            }
-            onClick={() => {
-              return detach(acceptReview(current, signal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.cloudflareAccess.keepChanges;
-            })}
-          </Button>
-        </>
-      )}
-    </div>
+    <p role="alert" className="text-sm text-destructive">
+      {localizedCloudflareAccessError(conflict) ??
+        t(($) => {
+          return $.cloudflareAccess.failed;
+        })}
+    </p>
   );
 }
 
@@ -645,7 +593,7 @@ export function CloudflareAccessDialog({
             dialog={dialog}
             disabled={isSaving || uncertain}
           />
-          <CloudflareAccessConflictReview />
+          <CloudflareAccessConflictNotice />
           {!isSaving && <CloudflareAccessSaveNotice />}
           <RemoteNetworkScopeConfirmation
             busy={isSaving}

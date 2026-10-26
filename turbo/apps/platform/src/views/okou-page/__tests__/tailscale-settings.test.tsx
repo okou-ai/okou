@@ -516,7 +516,7 @@ test("An impact conflict rejects the outdated confirmation", async () => {
   );
   click(getAction("button", "Make personal", dialog));
   await within(dialog).findByText(
-    "The affected hosts changed. Review the latest impact before confirming again.",
+    "The affected hosts changed. The change was not applied.",
   );
   expect(document.body.textContent).not.toContain("private-provider-detail");
   expect(requests).toStrictEqual([
@@ -605,59 +605,6 @@ test("Promotion requires explicit sharing acknowledgement and preserves the reso
   });
   expect(requests).toStrictEqual([
     { params: { configId: config.id }, body: { expectedRevision: 1 } },
-  ]);
-});
-
-test("Revision review preserves a draft and permits restoring the original metadata", async () => {
-  let current = config;
-  const requests: unknown[] = [];
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, { configs: [current] });
-  });
-  context.mocks.api(tailscaleContract.update, ({ body, respond }) => {
-    requests.push(body);
-    if (requests.length === 1) {
-      current = {
-        ...config,
-        name: "Server rename",
-        revision: 2,
-        generation: 2,
-      };
-      return respond(409, {
-        error: {
-          code: TAILSCALE_ERROR_CODES.REVISION_CONFLICT,
-          message: "private-provider-detail",
-        },
-      });
-    }
-    return respond(200, {
-      ...current,
-      name: body.name ?? current.name,
-      revision: 3,
-    });
-  });
-  await page();
-  const section = await networkSection();
-  await within(section).findByText(config.name);
-  click(getAction("button", "Edit Tailscale", section));
-  const dialog = await screen.findByRole("dialog");
-  await fill(within(dialog).getByLabelText("Name"), "My draft");
-  click(getAction("button", "Save", dialog));
-  await within(dialog).findByText("Server rename");
-  expect(within(dialog).getByLabelText("Name")).toHaveValue("My draft");
-  expect(getAction("button", "Save", dialog)).toBeDisabled();
-  await fill(within(dialog).getByLabelText("Name"), config.name);
-  click(getAction("button", "Keep my changes with this version", dialog));
-  await waitFor(() => {
-    return expect(getAction("button", "Save", dialog)).toBeEnabled();
-  });
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests).toStrictEqual([
-    { expectedRevision: 1, name: "My draft", tags: ["tag:okou"] },
-    { expectedRevision: 2, name: config.name, tags: ["tag:okou"] },
   ]);
 });
 

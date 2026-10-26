@@ -43,13 +43,11 @@ import {
   closeTailscaleDialog$,
   mountTailscaleForm$,
   openTailscaleDialog$,
-  actOnTailscaleDialog$,
   saveTailscale$,
   tailscaleAcknowledged$,
   tailscaleConfigs$,
   tailscaleDialog$,
   tailscaleImpact$,
-  tailscaleLatestConfig$,
   tailscaleSaveUncertain$,
   tailscaleScope$,
   type TailscaleOperation,
@@ -214,20 +212,15 @@ function TailscaleImpact({
   );
 }
 
-function TailscaleReview({
+function TailscaleSaveNotice({
   dialog,
   error,
-  reviewing,
-  review,
 }: {
   readonly dialog: TailscaleDialogState;
   readonly error: string | null;
-  readonly reviewing: boolean;
-  readonly review: (config: TailscaleConfig) => void;
 }) {
   const { t } = useTranslation();
   const uncertain = useGet(tailscaleSaveUncertain$);
-  const latest = useLoadable(tailscaleLatestConfig$);
   if (!error && !uncertain) {
     return null;
   }
@@ -254,7 +247,6 @@ function TailscaleReview({
       </div>
     );
   }
-  const config = latest.state === "hasData" ? latest.data : null;
   return (
     <div className="grid gap-3 text-sm">
       <p role="alert">
@@ -267,36 +259,6 @@ function TailscaleReview({
               return $.tailscale.failed;
             }))}
       </p>
-      {config && (
-        <div className="grid gap-2 rounded-lg border p-4">
-          <h3 className="font-semibold">
-            {t(($) => {
-              return $.cloudflareAccess.latest;
-            })}
-          </h3>
-          <p>{config.name}</p>
-          <p>{config.tags.join(", ")}</p>
-          <TailscaleHostReferences config={config} />
-          <p>
-            {t(($) => {
-              return $.cloudflareAccess.reviewHelp;
-            })}
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={reviewing}
-            onClick={() => {
-              return review(config);
-            }}
-          >
-            {t(($) => {
-              return $.cloudflareAccess.keepChanges;
-            })}
-          </Button>
-        </div>
-      )}
-      {latest.state === "hasError" && null}
     </div>
   );
 }
@@ -461,7 +423,7 @@ function useTailscaleFormSubmission(
   const guided = useGet(remoteControlGuidedEnabled$);
   const saveLabel = useRemoteNetworkSaveLabel();
   const uncertain = useGet(tailscaleSaveUncertain$);
-  const [operation, act] = useLoadableSet(actOnTailscaleDialog$);
+  const [operation, save] = useLoadableSet(saveAction);
   const error =
     operation.state === "hasError"
       ? tailscaleRequestErrorCode(operation.error)
@@ -482,9 +444,6 @@ function useTailscaleFormSubmission(
     busy,
     uncertain,
     error,
-    review(config: TailscaleConfig) {
-      detach(act({ kind: "review", config }, signal), Reason.DomCallback);
-    },
     submitDisabled: busy || uncertain || blocked || !!scopeStatus.error,
     submitLabel: busy
       ? t(($) => {
@@ -499,10 +458,7 @@ function useTailscaleFormSubmission(
           : title,
     submit(form: HTMLFormElement) {
       if (!busy && !uncertain && !scopeStatus.error && !blocked) {
-        detach(
-          act({ kind: "save", form, save$: saveAction }, signal),
-          Reason.DomCallback,
-        );
+        detach(save(form, signal), Reason.DomCallback);
       }
     },
   };
@@ -543,7 +499,6 @@ function TailscaleDialogForm({
     busy,
     uncertain,
     error,
-    review,
     submitDisabled,
     submitLabel,
     submit,
@@ -573,12 +528,7 @@ function TailscaleDialogForm({
         <DialogBody className="grid gap-4">
           <TailscaleFormFields dialog={dialog} disabled={busy || uncertain} />
           {!busy && (error !== null || uncertain) && (
-            <TailscaleReview
-              dialog={dialog}
-              error={error}
-              reviewing={busy}
-              review={review}
-            />
+            <TailscaleSaveNotice dialog={dialog} error={error} />
           )}
           <RemoteNetworkScopeConfirmation
             busy={busy}

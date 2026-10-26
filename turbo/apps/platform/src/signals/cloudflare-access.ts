@@ -159,7 +159,6 @@ export const cloudflareAccessCreateScope$ = computed((get) => {
   return get(createScope$);
 });
 const conflict$ = state<string | null>(null);
-const reviewedRevision$ = state<number | null>(null);
 const replaceToken$ = state(false);
 const saveMessage$ = state<string | null>(null);
 const unresolvedSave$ = state<{
@@ -257,7 +256,6 @@ export const openCloudflareAccessDialog$ = command(
     }
     signal.throwIfAborted();
     set(conflict$, null);
-    set(reviewedRevision$, null);
     set(replaceToken$, false);
     set(createScope$, "personal");
     set(dialog$, {
@@ -282,7 +280,6 @@ export const closeCloudflareAccessDialog$ = command(
     set(abandonCloudflareAccessSave$);
     set(conflict$, null);
     set(replaceToken$, false);
-    set(reviewedRevision$, null);
     set(dialog$, null);
   },
 );
@@ -307,7 +304,6 @@ async function updateCloudflareAccessConfig(
   dialog: CloudflareAccessDialogState,
   form: HTMLFormElement,
   editor: {
-    readonly reviewedRevision: number | null;
     readonly replace: boolean;
   },
   signal: AbortSignal,
@@ -317,7 +313,7 @@ async function updateCloudflareAccessConfig(
     throw new Error("Cloudflare Access edit requires a configuration");
   }
   const params = { configId: config.id };
-  const expectedRevision = editor.reviewedRevision ?? config.revision;
+  const expectedRevision = config.revision;
   if (dialog.kind === "delete") {
     const result = await accept(
       client.delete({
@@ -332,11 +328,7 @@ async function updateCloudflareAccessConfig(
     return result.status === 204 ? null : result.body.error.code;
   }
   const name = textField(form, "accessName").trim();
-  if (
-    editor.reviewedRevision === null &&
-    name === config.name &&
-    !editor.replace
-  ) {
+  if (name === config.name && !editor.replace) {
     return null;
   }
   const result = await accept(
@@ -423,7 +415,6 @@ export const saveCloudflareAccess$ = command(
       if (config !== dialog.config) {
         dialog = { ...dialog, config, scope: config.scope };
         set(dialog$, dialog);
-        set(reviewedRevision$, null);
         set(invalidateCloudflareAccess$);
       }
     }
@@ -469,7 +460,6 @@ export const saveCloudflareAccess$ = command(
         dialog,
         form,
         {
-          reviewedRevision: get(reviewedRevision$),
           replace: get(cloudflareAccessReplaceToken$),
         },
         signal,
@@ -490,43 +480,6 @@ export const saveCloudflareAccess$ = command(
     set(closeCloudflareAccessDialog$);
     set(invalidateCloudflareAccess$);
     return savedId;
-  },
-);
-
-export const cloudflareAccessConflictReview$ = computed(async (get) => {
-  const dialog = await get(cloudflareAccessDialog$);
-  const conflict = get(conflict$);
-  if (
-    !dialog?.config ||
-    (conflict !== CLOUDFLARE_ACCESS_ERROR_CODES.REVISION_CONFLICT &&
-      conflict !== CLOUDFLARE_ACCESS_ERROR_CODES.IN_USE)
-  ) {
-    return null;
-  }
-  const config = (await get(cloudflareAccessConfigs$))?.find((value) => {
-    return value.id === dialog.config?.id;
-  });
-  return config ? { ...dialog, config } : null;
-});
-
-export const acceptCloudflareAccessConflictReview$ = command(
-  async (
-    { get, set },
-    reviewed: CloudflareAccessDialogState,
-    signal: AbortSignal,
-  ) => {
-    const current = await get(cloudflareAccessDialog$);
-    signal.throwIfAborted();
-    if (
-      !current ||
-      reviewed.identity !== current.identity ||
-      reviewed.kind !== current.kind ||
-      reviewed.config?.id !== current.config?.id
-    ) {
-      return;
-    }
-    set(reviewedRevision$, reviewed.config?.revision ?? null);
-    set(conflict$, null);
   },
 );
 

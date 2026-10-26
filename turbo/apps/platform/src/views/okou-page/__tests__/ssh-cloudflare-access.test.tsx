@@ -591,7 +591,7 @@ test("An eligible protected host can explicitly change to Direct", async () => {
   ).toHaveTextContent("Direct");
 });
 
-test("Rebinding a host after a concurrent update requires review and preserves its draft", async () => {
+test("A concurrent host update preserves the binding draft and blocks stale saving", async () => {
   const alternate = {
     ...config,
     id: "a0000000-0000-4000-8000-000000000002",
@@ -607,20 +607,11 @@ test("Rebinding a host after a concurrent update requires review and preserves i
   });
   context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
     requests.push(body);
-    if (body.expectedGeneration === 1) {
-      current = { ...host, displayName: "Updated elsewhere", generation: 2 };
-      context.mocks.ably.trigger("ssh:changed", { orgId });
-      return respond(409, {
-        error: { code: "SSH_GENERATION_CONFLICT", message: "not user copy" },
-      });
-    }
-    current = {
-      ...current,
-      displayName: body.displayName ?? current.displayName,
-      transport: { type: "cloudflare_access", configId: alternate.id },
-      generation: 3,
-    };
-    return respond(200, current);
+    current = { ...host, displayName: "Updated elsewhere", generation: 2 };
+    context.mocks.ably.trigger("ssh:changed", { orgId });
+    return respond(409, {
+      error: { code: "SSH_GENERATION_CONFLICT", message: "not user copy" },
+    });
   });
   await page();
   await screen.findByText(host.displayName);
@@ -629,31 +620,21 @@ test("Rebinding a host after a concurrent update requires review and preserves i
   await fill(within(dialog).getByLabelText("Display name"), "My host draft");
   await selectConfig(dialog, alternate.name);
   click(getAction("button", "Save", dialog));
-  await within(dialog).findByText("Updated elsewhere");
+  await within(dialog).findByText(/This host changed/u);
   expect(getAction("button", "Save", dialog)).toBeDisabled();
   expect(within(dialog).getByLabelText("Display name")).toHaveValue(
     "My host draft",
   );
-  click(getAction("button", "Keep my changes with this version", dialog));
-  await waitFor(() => {
-    return expect(getAction("button", "Save", dialog)).toBeEnabled();
-  });
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  expect(requests).toStrictEqual(
-    [1, 2].map((expectedGeneration) => {
-      return {
-        expectedGeneration,
-        displayName: "My host draft",
-        host: host.host,
-        port: 443,
-        credential: { id: credential.id },
-        transport: { type: "cloudflare_access", configId: alternate.id },
-      };
-    }),
-  );
+  expect(requests).toStrictEqual([
+    {
+      expectedGeneration: 1,
+      displayName: "My host draft",
+      host: host.host,
+      port: 443,
+      credential: { id: credential.id },
+      transport: { type: "cloudflare_access", configId: alternate.id },
+    },
+  ]);
 });
 
 test("Pending Access Save is cancelled and secrets cleared on owner loss", async () => {

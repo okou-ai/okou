@@ -86,7 +86,7 @@ async function sharedDialog(operation: (typeof operations)[number]) {
   return { dialog, action };
 }
 
-test("An unchanged unreviewed save closes the editor when updates are unavailable", async () => {
+test("An unchanged save closes the editor without updating the configuration", async () => {
   context.mocks.api(cloudflareAccessContract.update, ({ respond }) => {
     return respond(500, {
       error: { code: "INTERNAL_ERROR", message: "Unavailable" },
@@ -102,50 +102,6 @@ test("An unchanged unreviewed save closes the editor when updates are unavailabl
     return expect(screen.queryByRole("dialog")).toBeNull();
   });
   expect(screen.getByText(config.name)).toBeInTheDocument();
-});
-
-test("Reviewing a conflict permits restoring the original name against the new revision", async () => {
-  let current = config;
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: [current] });
-  });
-  context.mocks.api(cloudflareAccessContract.update, ({ body, respond }) => {
-    if (current.revision === 1) {
-      current = { ...config, name: "Concurrent rename", revision: 2 };
-      context.mocks.ably.trigger("cloudflare-access:changed", { orgId });
-    }
-    if (body.expectedRevision !== current.revision) {
-      return respond(409, {
-        error: {
-          code: "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
-          message: "Changed",
-        },
-      });
-    }
-    current = {
-      ...current,
-      name: body.name ?? current.name,
-      revision: current.revision + 1,
-    };
-    return respond(200, current);
-  });
-  await page();
-  await screen.findByText(config.name);
-  click(getAction("button", "Edit Cloudflare Access"));
-  const dialog = await screen.findByRole("dialog");
-  await fill(within(dialog).getByLabelText("Name"), "My draft");
-  click(getAction("button", "Save", dialog));
-  await within(dialog).findByText("Concurrent rename");
-  await fill(within(dialog).getByLabelText("Name"), config.name);
-  click(getAction("button", "Keep my changes with this version", dialog));
-  await waitFor(() => {
-    return expect(getAction("button", "Save", dialog)).toBeEnabled();
-  });
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  await expect(screen.findByText(config.name)).resolves.toBeInTheDocument();
 });
 
 test.each(

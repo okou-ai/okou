@@ -114,7 +114,6 @@
         "time": "Horário"
       },
       "log": "Log",
-      "manualReloadNotice": "Os registros não são atualizados automaticamente.",
       "modelProvidedBy": "{{model}} fornecido por {{provider}}",
       "networkEmpty": {
         "description": "Nenhum tráfego de rede foi registrado para esta execução.",
@@ -125,7 +124,6 @@
         "description": "Este log não existe ou você não tem permissão para visualizá-lo no espaço de trabalho atual.",
         "title": "Log não encontrado"
       },
-      "refresh": "Atualizar",
       "runner": {
         "environment": "Ambiente",
         "framework": "Framework",
@@ -992,7 +990,7 @@
       "lastSeen": "Visto pela última vez em {{date}}",
       "linkExpires": "O link expira em {{date}}.",
       "macRequirement": "Requer um Mac com Apple silicon e macOS 14 ou mais recente. Macs com Intel não são compatíveis.",
-      "noHostsDescription": "Abra o {{desktopApplicationName}} no Mac e atualize esta página quando ele ficar online.",
+      "noHostsDescription": "Abra o {{desktopApplicationName}} no seu Mac para conectá-lo.",
       "noHostsTitle": "Nenhum computador online",
       "sources": {
         "chat": "nesta conversa",
@@ -3066,7 +3064,7 @@
     "affectedMembers_many": "",
     "affectedMembers_other": "{{count}} membros",
     "cancel": "Cancelar",
-    "changed": "Este Cloudflare Access mudou durante a edição. Revise as configurações mais recentes antes de salvar.",
+    "changed": "Este Cloudflare Access mudou durante a edição. Suas alterações não foram salvas.",
     "clientId": "ID do cliente do Service Token",
     "clientIdPlaceholder": "Cole o Client ID do Service Token",
     "clientSecret": "Segredo do cliente do Service Token",
@@ -3082,11 +3080,9 @@
     "edit": "Editar Cloudflare Access",
     "failed": "Não foi possível salvar a alteração do Cloudflare Access.",
     "forbidden": "Só administradores da organização podem alterar o Cloudflare Access compartilhado.",
-    "impactChanged": "Os hosts afetados mudaram. Revise o impacto atual antes de confirmar novamente.",
+    "impactChanged": "Os hosts afetados mudaram. A alteração não foi aplicada.",
     "inUse": "Um host SSH usa este Cloudflare Access. O proprietário deve primeiro vinculá-lo a outra configuração ou excluí-lo.",
     "invalidInput": "Algumas configurações do Cloudflare Access são inválidas. Verifique os campos e tente novamente.",
-    "keepChanges": "Aplicar minhas alterações a esta versão",
-    "latest": "Últimas configurações salvas",
     "loadFailed": "Não foi possível carregar Cloudflare Access.",
     "loading": "Carregando Cloudflare Access…",
     "memberIdentifier": " (ID {{identifier}})",
@@ -3100,10 +3096,9 @@
     "promote": "Compartilhar com a organização",
     "promoteConfirm": "Entendo que todos os membros da organização poderão usar este Service Token.",
     "promoteHelp": "Compartilhe seu Cloudflare Access pessoal com a organização. O Service Token e os vínculos dos seus hosts SSH permanecem inalterados.",
-    "promoteUncertain": "Não foi possível confirmar a conversão. Feche esta janela e confira a configuração atual antes de tentar novamente.",
+    "promoteUncertain": "Não foi possível confirmar a conversão.",
     "replace": "Substituir Service Token",
     "resourceIdConflict": "Este ID de recurso não pode ser usado.",
-    "reviewHelp": "Seu rascunho foi preservado. Confirme as últimas configurações salvas antes de aplicar suas alterações.",
     "revisionExhausted": "Esta configuração não pode mais ser atualizada. Crie uma nova.",
     "save": "Salvar",
     "saveUncertain": "Não foi possível salvar.",
@@ -3606,7 +3601,7 @@
         "linkIncompleteTitle": "O link de conexão está incompleto",
         "notInstalledDescription": "Peça a um administrador da organização para instalar o GitHub antes de conectar sua conta.",
         "notInstalledTitle": "O GitHub não está instalado",
-        "refresh": "Atualize esta página e tente novamente.",
+        "refresh": "Não foi possível verificar o status do seu login.",
         "signInButton": "Entrar no {{brandName}}",
         "signInCheckFailed": "Não foi possível verificar o login",
         "signInDescription": "Entre com sua conta do {{brandName}} antes de conectar este usuário do GitHub.",
@@ -4170,7 +4165,7 @@
           "title": "Pagamento bem-sucedido"
         },
         "processing": {
-          "body": "Estamos aplicando seus créditos a {{orgName}} agora. Isso geralmente leva alguns segundos — atualize em um momento para ver o saldo atualizado.",
+          "body": "Estamos aplicando seus créditos a {{orgName}}. Isso normalmente leva alguns segundos.",
           "title": "Pagamento recebido"
         },
         "ready": {
@@ -4900,7 +4895,7 @@
     "networkSettings": "Configurações da rede privada",
     "networkTailscaleHelp": "Conecte-se a dispositivos com Tailscale",
     "networkTitle": "Redes privadas",
-    "networkUnavailable": "Esta rede não está mais disponível. Escolha outra ou atualize a página.",
+    "networkUnavailable": "Esta rede não está mais disponível. Escolha outra rede.",
     "newLogin": "Preencher manualmente",
     "next": "Continuar",
     "optionalName": "Nome da conexão (opcional)",
@@ -5051,7 +5046,7 @@
     "scopeDescription": "Dê um nome à rede e escolha quem pode usá-la.",
     "scopeSaved": "As configurações de compartilhamento da rede foram salvas. As outras alterações ainda não foram salvas. Salve-as ou volte aos detalhes da rede.",
     "scopeUnavailable": "Esta rede não está disponível ou você não tem mais a permissão de administrador necessária.",
-    "scopeUncertain": "Não foi possível confirmar a alteração. Recarregue e confira as configurações salvas antes de enviar novamente.",
+    "scopeUncertain": "Não foi possível confirmar a alteração. As configurações salvas não foram verificadas.",
     "unknownOrganization": "sua organização",
     "view": "Ver"
   },
@@ -5478,11 +5473,10 @@
           "countExplanation": "A contagem usa transações somente leitura e não lê o conteúdo dos registros.",
           "description": "Confira a quantidade de registros no cache local de chats gerenciado pelo worker compartilhado.",
           "loading": "Carregando armazenamento do IndexedDB...",
-          "measurementUnavailable": "Falha ao medir o snapshot. Tente novamente.",
+          "measurementUnavailable": "Falha ao medir o snapshot.",
           "measureSnapshot": "Medir snapshot",
           "measuring": "Medindo...",
           "records": "registros",
-          "refresh": "Atualizar",
           "schema": "esquema",
           "snapshotDescription": "Um registro pode conter muitas conversas. O tamanho estima o JSON UTF-8 sem a sobrecarga do banco; o tempo de leitura exclui essa estimativa.",
           "snapshotEmpty": "Nenhum snapshot de conversas em cache.",
@@ -5838,8 +5832,7 @@
       "title": "Ops! Algo deu errado"
     },
     "forceUpgrade": {
-      "action": "Atualizar",
-      "description": "Esta versão do {{brandName}} não é mais compatível. Atualize a página para carregar a versão mais recente.",
+      "description": "Esta versão do {{brandName}} não é mais compatível.",
       "title": "Atualização necessária"
     },
     "mermaid": {
@@ -5856,9 +5849,8 @@
       "title": "Essa página não está aqui."
     },
     "workerFailure": {
-      "action": "Atualizar",
-      "description": "Sua conexão foi interrompida. Atualize a página para continuar.",
-      "title": "Atualize para continuar"
+      "description": "A conexão com este aplicativo foi interrompida.",
+      "title": "Conexão interrompida"
     }
   },
   "sharedThread": {
@@ -5878,14 +5870,11 @@
     "choosePrivateKeyFile": "Escolher arquivo de chave privada",
     "cloudflare": {
       "direct": "Direta",
-      "keepChanges": "Aplicar minhas alterações a esta versão",
-      "latest": "Últimas configurações salvas",
       "mode": "Conexão",
       "needsRebind": "Este host precisa de uma nova configuração do Cloudflare Access. Edite-o para vincular outra configuração ou escolher Direta. Até lá, não será possível conectar.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nome de host publicado",
       "rebindHelp": "Escolha uma configuração permitida do Cloudflare Access ou Direta para restaurar este host. Nada muda até você salvar.",
-      "reviewHelp": "Seu rascunho foi preservado. Confirme as últimas configurações salvas antes de aplicar suas alterações.",
       "title": "Cloudflare Access",
       "unavailable": "Cloudflare Access não está disponível para esta conta."
     },
@@ -5934,21 +5923,14 @@
     "credentialsHelp": "As credenciais são somente para gravação e ficam fora do sandbox. Cole a chave completa; os espaços são preservados. Os campos são limpos ao fechar o formulário.",
     "delete": "Excluir host",
     "deleteHelp": "Excluir este host? A credencial será mantida. Os Agents não o verão mais no inventário.",
-    "deleteReview": {
-      "acknowledge": "Usar esta versão para exclusão",
-      "changed": "Este host foi alterado. Revise as configurações salvas mais recentes antes de excluí-lo.",
-      "help": "Revise estas configurações salvas e escolha Excluir host para excluir esta versão.",
-      "unavailable": "Este host não está mais disponível.",
-      "version": "Versão {{version}}"
-    },
     "description": "Configure hosts SSH para seus agentes executarem comandos remotos.",
     "displayName": "Nome de exibição",
     "edit": "Editar host",
     "editHelp": "Selecionar outra credencial altera apenas este host. Alterações no destino direto apagam a chave de host aprendida; alterações envolvendo Cloudflare Access a preservam.",
     "empty": "Nenhum host SSH configurado. Adicione um host e ative-o por padrão ou em chats específicos.",
     "errors": {
-      "configurationChanged": "Este host mudou durante a edição. Seu rascunho foi preservado. Revise as configurações mais recentes antes de aplicar suas alterações.",
-      "credentialChanged": "Esta credencial mudou enquanto você a editava. Seu rascunho foi preservado. Revise as configurações mais recentes e os hosts afetados antes de salvar.",
+      "configurationChanged": "Este host mudou durante a edição. Suas alterações não foram salvas; seu rascunho foi preservado.",
+      "credentialChanged": "Esta credencial mudou durante a edição. Suas alterações não foram salvas; seu rascunho foi preservado.",
       "credentialInUse": "Esta credencial está em uso. Selecione outra para os hosts ou exclua esses hosts primeiro.",
       "credentialUnavailable": "Esta credencial SSH não está mais disponível. Selecione outra ou crie uma nova.",
       "failed": "Não foi possível salvar a alteração SSH.",
@@ -6006,7 +5988,7 @@
     "add": "Adicionar Tailscale",
     "addressHelp": "Use o IP, o nome completo ou o nome curto de um nó registrado na tailnet. O login SSH e a verificação da chave do host continuam necessários.",
     "adoptHelp": "Transforme esta rede da organização em sua rede pessoal. Outros proprietários precisarão vincular novamente seus hosts salvos.",
-    "changed": "Esta rede Tailscale mudou. Confira as configurações atuais antes de salvar seu rascunho.",
+    "changed": "Esta rede Tailscale mudou. Suas alterações não foram salvas; seu rascunho foi preservado.",
     "clientId": "ID do cliente OAuth",
     "clientSecret": "Segredo do cliente OAuth",
     "createNew": "Criar uma rede Tailscale",
@@ -6248,7 +6230,7 @@
       "keytabFile": "Arquivo keytab (.keytab)",
       "lifetime": "Validade solicitada do ticket (segundos)",
       "offlineHelp": "Usar apenas o ticket de serviço selecionado. Sem conexão ao KDC ou renovação.",
-      "onlineHelp": "Permitir a obtenção de tickets pela rota separada do KDC. A atualização prepara uma nova conexão; as sessões existentes mantêm a expiração original.",
+      "onlineHelp": "Permita que esta origem obtenha tickets pela rota KDC separada. Novas conexões recebem novos tickets; as sessões existentes mantêm a expiração original.",
       "password": "Kerberos · senha",
       "realm": "Realm do iniciador",
       "renewableLifetime": "Período renovável (segundos; 0 desativa)",

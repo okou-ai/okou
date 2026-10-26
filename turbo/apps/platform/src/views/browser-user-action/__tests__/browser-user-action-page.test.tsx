@@ -798,6 +798,8 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
   let state: BrowserUserActionResponse["state"] = "pending";
   let uploaded = false;
   let directPut = false;
+  const transferStarted = context.mocks.deferred<void>();
+  const finishTransfer = context.mocks.deferred<void>();
   const uploadUrl = "https://uploads.example.test/browser-input-test";
   context.mocks.api(
     browserUserActionsContract.prepareFileUpload,
@@ -810,12 +812,14 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
       return respond(200, { uploadUrl });
     },
   );
-  context.mocks.http.put(uploadUrl, ({ request }) => {
+  context.mocks.http.put(uploadUrl, async ({ request }) => {
     expect(request.credentials).toBe("omit");
     expect(request.headers.get("content-type")).toBe(
       "application/octet-stream",
     );
     expect(request.headers.get("x-amz-checksum-sha256")).toBeNull();
+    transferStarted.resolve();
+    await finishTransfer.promise;
     directPut = true;
     return new HttpResponse(null, { status: 200 });
   });
@@ -884,6 +888,13 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
     return expect(button("Add to browser")).toBeEnabled();
   });
   click(button("Add to browser"));
+  await transferStarted.promise;
+  const submitting = button("Adding…");
+  expect(submitting).toBeDisabled();
+  expect(button("Cancel")).toBeDisabled();
+  expect(within(form).getByLabelText(/Document/u)).toBeDisabled();
+  click(submitting);
+  finishTransfer.resolve();
   await waitFor(() => {
     return expect(uploaded).toBeTruthy();
   });

@@ -375,7 +375,6 @@ export const sshCredentials$ = computed(async (get) => {
   return result.status === 200 ? result.body.credentials : null;
 });
 const conflict$ = state<string | null>(null);
-const reviewedVersion$ = state<number | null>(null);
 export const sshConflict$ = computed((get) => {
   return get(conflict$);
 });
@@ -600,7 +599,6 @@ export const openSshDialog$ = command(
     signal.throwIfAborted();
     set(resetRemoteLogin$);
     set(conflict$, null);
-    set(reviewedVersion$, null);
     set(cancelSshPrivateKeyFile$);
     set(credentialEditor$, {
       selection:
@@ -643,7 +641,6 @@ export const openSshCredentialDialog$ = command(
     }
     set(resetRemoteLogin$);
     set(conflict$, null);
-    set(reviewedVersion$, null);
     set(cancelSshPrivateKeyFile$);
     set(credentialEditor$, {
       selection: "new",
@@ -667,94 +664,6 @@ function accessCredentialsFromForm(form: HTMLFormElement) {
     clientSecret: textField(form, "clientSecret"),
   };
 }
-
-export interface SshConflictReviewState extends SshDialogState {
-  readonly dialog: SshDialogState;
-}
-
-export const sshConflictReview$ = computed(async (get) => {
-  const dialog = await get(sshDialog$);
-  const conflict = get(conflict$);
-  if (
-    !dialog ||
-    (conflict !== SSH_ERROR_CODES.GENERATION_CONFLICT &&
-      conflict !== SSH_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT &&
-      conflict !== SSH_ERROR_CODES.CREDENTIAL_IN_USE)
-  ) {
-    return null;
-  }
-  if (
-    dialog.loginCredential &&
-    conflict === SSH_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT
-  ) {
-    const credential = (await get(sshCredentials$))?.find((value) => {
-      return value.id === dialog.loginCredential?.id;
-    });
-    return credential ? { ...dialog, dialog, credential } : null;
-  }
-  if (dialog.credential) {
-    const credential = (await get(sshCredentials$))?.find((value) => {
-      return value.id === dialog.credential?.id;
-    });
-    return credential ? { ...dialog, dialog, credential } : null;
-  }
-  if (dialog.connection) {
-    const connection = (await get(sshConnections$))?.find((value) => {
-      return value.id === dialog.connection?.id;
-    });
-    return connection ? { ...dialog, dialog, connection } : null;
-  }
-  return null;
-});
-
-export function isNewSshConflictReview(reviewed: SshConflictReviewState) {
-  const original = reviewed.dialog;
-  return reviewed.credential
-    ? reviewed.credential.revision >
-        (original.loginCredential?.revision ??
-          original.credential?.revision ??
-          0)
-    : Boolean(
-        reviewed.connection &&
-        original.connection &&
-        reviewed.connection.generation > original.connection.generation,
-      );
-}
-
-export const acceptSshConflictReview$ = command(
-  async (
-    { get, set },
-    reviewed: SshConflictReviewState,
-    signal: AbortSignal,
-  ) => {
-    const current = await get(sshDialog$);
-    signal.throwIfAborted();
-    if (
-      !current ||
-      current !== reviewed.dialog ||
-      !isNewSshConflictReview(reviewed) ||
-      get(dialog$) !== current ||
-      reviewed.sessionKey !== get(authenticatedSessionKey$) ||
-      (current.kind === "edit" &&
-        usesTailscaleNetwork(reviewed.connection) &&
-        !["tailscale", "tailscale_ssh"].includes(
-          get(connectionModeEditor$).mode,
-        ))
-    ) {
-      return;
-    }
-    if (current.loginCredential && reviewed.credential) {
-      set(dialog$, { ...current, loginCredential: reviewed.credential });
-      set(conflict$, null);
-      return;
-    }
-    set(
-      reviewedVersion$,
-      reviewed.credential?.revision ?? reviewed.connection?.generation ?? null,
-    );
-    set(conflict$, null);
-  },
-);
 
 function textField(form: HTMLFormElement, name: string): string {
   const field = form.elements.namedItem(name);
@@ -819,7 +728,6 @@ async function saveCredentialForm(
   editor: {
     readonly method: string;
     readonly replace: boolean;
-    readonly reviewedRevision: number | null;
   },
   signal: AbortSignal,
 ): Promise<string | null> {
@@ -837,7 +745,7 @@ async function saveCredentialForm(
         client.delete({
           params,
           body: {
-            expectedRevision: editor.reviewedRevision ?? credential.revision,
+            expectedRevision: credential.revision,
           },
           fetchOptions: { signal },
         }),
@@ -856,7 +764,7 @@ async function saveCredentialForm(
       return null;
     }
     const body = updateSshCredentialRequestSchema.parse({
-      expectedRevision: editor.reviewedRevision ?? credential.revision,
+      expectedRevision: credential.revision,
       ...(name !== credential.name ? { name } : {}),
       ...(username !== credential.username ? { username } : {}),
       ...(editor.replace
@@ -959,7 +867,7 @@ const deleteSshHost$ = command(
       client.delete({
         params: { connectionId: connection.id },
         body: {
-          expectedGeneration: get(reviewedVersion$) ?? connection.generation,
+          expectedGeneration: connection.generation,
         },
         fetchOptions: { signal },
       }),
@@ -1028,7 +936,7 @@ const saveSshHost$ = command(
         client.resetHostKey({
           params,
           body: {
-            expectedGeneration: get(reviewedVersion$) ?? connection.generation,
+            expectedGeneration: connection.generation,
           },
           fetchOptions: { signal },
         }),
@@ -1038,7 +946,7 @@ const saveSshHost$ = command(
       conflicted = result.status === 409 ? result.body.error.code : null;
     } else {
       const parsed = updateSshConnectionRequestSchema.safeParse({
-        expectedGeneration: get(reviewedVersion$) ?? connection.generation,
+        expectedGeneration: connection.generation,
         ...fields,
       });
       if (!parsed.success) {
@@ -1132,7 +1040,7 @@ export const saveSsh$ = command(
         clients.credentials,
         dialog,
         form,
-        { ...editor, reviewedRevision: get(reviewedVersion$) },
+        editor,
         signal,
       );
     } else {
@@ -1149,7 +1057,6 @@ export const saveSsh$ = command(
             connectionSaved: true,
           };
           set(dialog$, activeDialog);
-          set(reviewedVersion$, null);
           set(beginSshSave$, activeDialog, null);
           const savedLogin = await accept(
             clients.credentials.update({
@@ -1176,9 +1083,6 @@ export const saveSsh$ = command(
     signal.throwIfAborted();
     if (get(dialog$) !== activeDialog) {
       return;
-    }
-    if (dialog.kind === "delete" && conflicted) {
-      set(reviewedVersion$, null);
     }
     if (!conflicted) {
       set(dialog$, null);

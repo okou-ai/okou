@@ -112,7 +112,6 @@
         "time": "시간"
       },
       "log": "로그",
-      "manualReloadNotice": "로그는 자동으로 업데이트되지 않습니다.",
       "modelProvidedBy": "{{provider}}에서 제공하는 {{model}}",
       "networkEmpty": {
         "description": "이 실행에 대한 네트워크 트래픽이 기록되지 않았습니다.",
@@ -123,7 +122,6 @@
         "description": "이 로그가 존재하지 않거나 현재 워크스페이스에서 볼 권한이 없습니다.",
         "title": "로그를 찾을 수 없음"
       },
-      "refresh": "새로고침",
       "runner": {
         "environment": "환경",
         "framework": "프레임워크",
@@ -974,7 +972,7 @@
       "lastSeen": "마지막 접속 {{date}}",
       "linkExpires": "링크는 {{date}}에 만료됩니다.",
       "macRequirement": "Apple 실리콘 Mac과 macOS 14 이상 필요합니다. Intel Mac은 지원되지 않습니다.",
-      "noHostsDescription": "Mac에서 {{desktopApplicationName}}을 열고 온라인 상태가 되면 이 페이지를 새로고침하세요.",
+      "noHostsDescription": "Mac에서 {{desktopApplicationName}}을 열어 온라인으로 연결하세요.",
       "noHostsTitle": "온라인 컴퓨터 없음",
       "sources": {
         "chat": "이 채팅 스레드",
@@ -3007,7 +3005,7 @@
     "add": "Cloudflare Access 추가",
     "affectedMembers_other": "구성원 {{count}}명",
     "cancel": "취소",
-    "changed": "편집 중 이 Cloudflare Access가 변경되었습니다. 저장하기 전에 최신 설정을 검토하세요.",
+    "changed": "편집하는 동안 이 Cloudflare Access가 변경되었습니다. 변경 사항은 저장되지 않았습니다.",
     "clientId": "Service Token 클라이언트 ID",
     "clientIdPlaceholder": "Service Token의 Client ID 붙여넣기",
     "clientSecret": "Service Token 클라이언트 시크릿",
@@ -3023,11 +3021,9 @@
     "edit": "Cloudflare Access 편집",
     "failed": "Cloudflare Access 변경 사항을 저장하지 못했습니다.",
     "forbidden": "조직 관리자만 공유 Cloudflare Access를 변경할 수 있습니다.",
-    "impactChanged": "영향을 받는 호스트가 변경되었습니다. 다시 확인하기 전에 최신 영향을 검토하세요.",
+    "impactChanged": "영향을 받는 호스트가 변경되었습니다. 변경 사항이 적용되지 않았습니다.",
     "inUse": "SSH 호스트가 이 Cloudflare Access를 사용 중입니다. 호스트 소유자가 먼저 다시 연결하거나 호스트를 삭제해야 합니다.",
     "invalidInput": "일부 Cloudflare Access 설정이 올바르지 않습니다. 입력 내용을 확인하고 다시 시도하세요.",
-    "keepChanges": "이 버전에 내 변경 사항 적용",
-    "latest": "최근 저장된 설정",
     "loadFailed": "Cloudflare Access를 불러오지 못했습니다.",
     "loading": "Cloudflare Access 불러오는 중…",
     "memberIdentifier": " (ID {{identifier}})",
@@ -3041,10 +3037,9 @@
     "promote": "조직용으로 전환",
     "promoteConfirm": "조직의 모든 구성원이 이 Service Token을 사용할 수 있음을 이해했습니다.",
     "promoteHelp": "개인 Cloudflare Access를 조직과 공유합니다. Service Token과 내 SSH 호스트 연결은 그대로 유지됩니다.",
-    "promoteUncertain": "전환 결과를 확인할 수 없습니다. 창을 닫고 최신 구성을 확인한 후 다시 시도하세요.",
+    "promoteUncertain": "전환을 확인할 수 없습니다.",
     "replace": "Service Token 교체",
     "resourceIdConflict": "이 리소스 ID는 사용할 수 없습니다.",
-    "reviewHelp": "초안이 보존되었습니다. 변경 사항을 적용하기 전에 최근 저장된 설정을 확인하세요.",
     "revisionExhausted": "더 이상 업데이트할 수 없습니다. 새로 만드세요.",
     "save": "저장",
     "saveUncertain": "저장하지 못했습니다.",
@@ -3537,7 +3532,7 @@
         "linkIncompleteTitle": "연결 링크가 불완전합니다",
         "notInstalledDescription": "계정을 연결하기 전에 조직 관리자에게 GitHub 설치를 요청하세요.",
         "notInstalledTitle": "GitHub가 설치되어 있지 않습니다",
-        "refresh": "이 페이지를 새로고침하고 다시 시도하세요.",
+        "refresh": "로그인 상태를 확인할 수 없습니다.",
         "signInButton": "{{brandName}}에 로그인",
         "signInCheckFailed": "로그인 확인 실패",
         "signInDescription": "이 GitHub 사용자를 연결하기 전에 {{brandName}} 계정을 사용하세요.",
@@ -4101,7 +4096,7 @@
           "title": "결제 성공"
         },
         "processing": {
-          "body": "크레딧을 {{orgName}}에 적용 중입니다. 보통 몇 초 걸리니 잠시 후 새로고침하여 잔액을 확인하세요.",
+          "body": "{{orgName}}에 크레딧을 적용하고 있습니다. 일반적으로 몇 초 정도 걸립니다.",
           "title": "결제 접수 완료"
         },
         "ready": {
@@ -4826,7 +4821,7 @@
     "networkSettings": "비공개 네트워크 설정",
     "networkTailscaleHelp": "Tailscale로 기기 연결",
     "networkTitle": "비공개 네트워크",
-    "networkUnavailable": "이 네트워크를 사용할 수 없습니다. 다른 네트워크를 선택하거나 페이지를 새로고침하세요.",
+    "networkUnavailable": "이 네트워크는 더 이상 사용할 수 없습니다. 다른 네트워크를 선택하세요.",
     "newLogin": "직접 입력하기",
     "next": "계속",
     "optionalName": "연결 이름(선택 사항)",
@@ -4976,7 +4971,7 @@
     "scopeDescription": "네트워크 이름을 지정하고 사용할 사람을 선택하세요.",
     "scopeSaved": "네트워크 공유 설정이 저장되었습니다. 다른 변경 사항은 아직 저장되지 않았습니다. 변경 사항을 저장하거나 네트워크 세부 정보로 돌아가세요.",
     "scopeUnavailable": "이 네트워크를 사용할 수 없거나 필요한 관리자 권한이 없습니다.",
-    "scopeUncertain": "변경 사항을 확인할 수 없습니다. 다시 제출하기 전에 새로고침하고 저장된 설정을 확인하세요.",
+    "scopeUncertain": "변경 사항을 확인할 수 없습니다. 저장된 설정은 아직 확인되지 않았습니다.",
     "unknownOrganization": "내 조직",
     "view": "보기"
   },
@@ -5398,11 +5393,10 @@
           "countExplanation": "읽기 전용 트랜잭션으로 개수를 집계하며 레코드 본문은 읽지 않습니다.",
           "description": "Shared Worker가 관리하는 로컬 채팅 캐시의 레코드 수를 확인합니다.",
           "loading": "IndexedDB 저장소를 불러오는 중...",
-          "measurementUnavailable": "스냅샷 측정에 실패했습니다. 다시 시도하세요.",
+          "measurementUnavailable": "스냅샷 측정에 실패했습니다.",
           "measureSnapshot": "스냅샷 측정",
           "measuring": "측정 중...",
           "records": "레코드",
-          "refresh": "새로고침",
           "schema": "스키마",
           "snapshotDescription": "하나의 레코드에 여러 스레드가 포함될 수 있습니다. 크기는 데이터베이스 오버헤드를 제외한 UTF-8 JSON 추정치이며, 읽기 시간에는 크기 추정 시간이 포함되지 않습니다.",
           "snapshotEmpty": "캐시된 스레드 스냅샷이 없습니다.",
@@ -5758,8 +5752,7 @@
       "title": "앗! 문제가 발생했습니다"
     },
     "forceUpgrade": {
-      "action": "새로 고침",
-      "description": "이 버전의 {{brandName}}은 더 이상 지원되지 않습니다. 최신 버전을 불러오려면 새로 고침하세요.",
+      "description": "이 버전의 {{brandName}}은 더 이상 지원되지 않습니다.",
       "title": "업데이트 필요"
     },
     "mermaid": {
@@ -5776,9 +5769,8 @@
       "title": "해당 페이지는 여기에 없습니다."
     },
     "workerFailure": {
-      "action": "새로 고침",
-      "description": "연결이 중단되었습니다. 계속하려면 페이지를 새로고침하세요.",
-      "title": "계속하려면 새로고침하세요"
+      "description": "이 앱과의 연결이 중단되었습니다.",
+      "title": "연결 중단"
     }
   },
   "sharedThread": {
@@ -5798,14 +5790,11 @@
     "choosePrivateKeyFile": "개인 키 파일 선택",
     "cloudflare": {
       "direct": "직접 연결",
-      "keepChanges": "이 버전에 내 변경 사항 적용",
-      "latest": "최근 저장된 설정",
       "mode": "연결",
       "needsRebind": "이 호스트는 Cloudflare Access를 다시 연결해야 합니다. 호스트를 편집해 다른 설정에 연결하거나 직접 연결을 선택하세요. 그전에는 연결할 수 없습니다.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "공개 호스트 이름",
       "rebindHelp": "허용된 Cloudflare Access 설정 또는 직접 연결을 선택하고 저장해 호스트를 복구하세요. 저장하기 전에는 연결 방식이 바뀌지 않습니다.",
-      "reviewHelp": "초안이 보존되었습니다. 변경 사항을 적용하기 전에 최근 저장된 설정을 확인하세요.",
       "title": "Cloudflare Access",
       "unavailable": "이 계정에서는 Cloudflare Access를 사용할 수 없습니다."
     },
@@ -5848,21 +5837,14 @@
     "credentialsHelp": "인증 정보는 쓰기 전용이며 샌드박스 외부에 보관됩니다. 전체 키를 붙여 넣으세요. 공백은 유지됩니다. 양식을 닫으면 입력란이 지워집니다.",
     "delete": "호스트 삭제",
     "deleteHelp": "이 호스트를 삭제할까요? 자격 증명은 유지됩니다. Agent의 호스트 목록에서 사라집니다.",
-    "deleteReview": {
-      "acknowledge": "이 버전을 삭제 대상으로 사용",
-      "changed": "이 호스트가 변경되었습니다. 삭제하기 전에 최근 저장된 설정을 검토하세요.",
-      "help": "저장된 설정을 검토한 후 호스트 삭제를 선택하여 이 버전을 삭제하세요.",
-      "unavailable": "이 호스트는 더 이상 사용할 수 없습니다.",
-      "version": "버전 {{version}}"
-    },
     "description": "에이전트가 원격 명령을 실행할 SSH 호스트를 구성하세요.",
     "displayName": "표시 이름",
     "edit": "호스트 편집",
     "editHelp": "다른 자격 증명을 선택하면 이 호스트만 변경됩니다. 직접 연결 대상 변경 시 저장된 호스트 키가 지워지며, Cloudflare Access 관련 변경 시에는 유지됩니다.",
     "empty": "구성된 SSH 호스트가 없습니다. 호스트를 추가한 뒤 기본으로 또는 개별 채팅에서 사용하도록 설정하세요.",
     "errors": {
-      "configurationChanged": "편집 중에 이 호스트가 변경되었습니다. 입력 내용은 유지됩니다. 변경 사항을 적용하기 전에 최신 설정을 검토하세요.",
-      "credentialChanged": "편집하는 동안 이 인증 정보가 변경되었습니다. 입력 내용은 유지됩니다. 저장하기 전에 최신 설정과 영향을 받는 호스트를 확인하세요.",
+      "configurationChanged": "편집하는 동안 이 호스트가 변경되었습니다. 변경 사항은 저장되지 않았으며 초안은 유지됩니다.",
+      "credentialChanged": "편집하는 동안 이 자격 증명이 변경되었습니다. 변경 사항은 저장되지 않았으며 초안은 유지됩니다.",
       "credentialInUse": "이 자격 증명은 사용 중입니다. 호스트에 다른 자격 증명을 지정하거나 먼저 호스트를 삭제하세요.",
       "credentialUnavailable": "이 SSH 자격 증명을 더 이상 사용할 수 없습니다. 다른 자격 증명을 선택하거나 새로 만드세요.",
       "failed": "SSH 변경 사항을 저장하지 못했습니다.",
@@ -5919,7 +5901,7 @@
     "add": "Tailscale 추가",
     "addressHelp": "등록된 Tailnet 피어의 IP, 전체 호스트 이름 또는 짧은 이름을 사용하세요. SSH 로그인과 호스트 키 검증은 여전히 필요합니다.",
     "adoptHelp": "이 조직 네트워크를 개인 네트워크로 변경합니다. 다른 소유자는 저장된 호스트를 다시 연결해야 합니다.",
-    "changed": "이 Tailscale 네트워크가 변경되었습니다. 초안을 저장하기 전에 최신 설정을 확인하세요.",
+    "changed": "이 Tailscale 네트워크가 변경되었습니다. 변경 사항은 저장되지 않았으며 초안은 유지됩니다.",
     "clientId": "OAuth 클라이언트 ID",
     "clientSecret": "OAuth 클라이언트 시크릿",
     "createNew": "Tailscale 네트워크 만들기",
@@ -6152,7 +6134,7 @@
       "keytabFile": "키탭 파일 (.keytab)",
       "lifetime": "요청 티켓 유효 기간(초)",
       "offlineHelp": "선택한 서비스 티켓만 사용합니다. KDC 연결이나 갱신은 없습니다.",
-      "onlineHelp": "별도의 KDC 경로를 통한 티켓 발급을 허용합니다. 갱신은 새 연결을 준비하며 기존 세션의 만료 시간은 유지됩니다.",
+      "onlineHelp": "이 소스가 별도의 KDC 경로를 통해 티켓을 얻도록 허용합니다. 새 연결은 새 티켓을 얻으며 기존 세션은 원래 만료 시간을 유지합니다.",
       "password": "Kerberos · 비밀번호",
       "realm": "시작 주체 영역",
       "renewableLifetime": "갱신 가능 기간(초, 0으로 비활성화)",
