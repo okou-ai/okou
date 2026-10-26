@@ -139,6 +139,11 @@
 //! [`validate_exec_process_contract`] is applied by both
 //! [`encode_exec_start_with_expected_exit_codes`] and [`decode_exec_start`].
 //!
+//! The UTF-8 `command` field carries the role-specific payload documented on
+//! [`ExecStartEncodeRequest::command`]. Successful encoding or decoding validates
+//! the process-policy combination, not all role-specific Guest admission
+//! requirements.
+//!
 //! `timeout_policy` values:
 //!
 //! - `0x00`: `[4B positive timeout_ms]`.

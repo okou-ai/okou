@@ -173,6 +173,11 @@ pub enum ExecControlPolicy {
 /// sink. A controlled `Workload` is supervised with an enabled control channel
 /// but `sink: false`. Every other combination is rejected during both encoding
 /// and decoding by [`validate_exec_process_contract`].
+///
+/// This validates the policy combination, not all role-specific Guest admission
+/// requirements. In particular, [`Self::command`] must carry the payload required
+/// by the role. Successfully encoding or decoding a payload does not guarantee
+/// Guest admission.
 pub struct ExecStartEncodeRequest<'a> {
     /// Process lifecycle policy to encode.
     pub lifecycle: ExecLifecyclePolicy,
@@ -180,7 +185,20 @@ pub struct ExecStartEncodeRequest<'a> {
     pub role: ExecProcessRole,
     /// Protocol timeout policy to encode.
     pub timeout: ExecTimeoutPolicy,
-    /// UTF-8 command string to execute.
+    /// UTF-8 payload whose meaning depends on [`Self::role`].
+    ///
+    /// - [`ExecProcessRole::Workload`]: shell command to execute.
+    /// - [`ExecProcessRole::Agent`]: empty string; the Guest selects the Agent
+    ///   program.
+    /// - [`ExecProcessRole::SessionHistoryIdentityVerifier`]: serialized JSON of
+    ///   [`guest_contracts::session_history_identity::SessionHistoryIdentityVerifyRequest`].
+    /// - [`ExecProcessRole::CodexSessionCleanup`]: serialized JSON of
+    ///   [`guest_contracts::codex_session_cleanup::CodexSessionCleanupRequest`].
+    ///
+    /// Prefer the typed client helpers
+    /// `guest_control_client::GuestControlClient::verify_session_history_identity`
+    /// and `guest_control_client::GuestControlClient::cleanup_codex_session` to
+    /// construct the fixed-helper requests.
     pub command: &'a str,
     /// Environment key/value pairs to encode.
     ///
@@ -210,7 +228,8 @@ pub struct ExecStartEncodeRequest<'a> {
 ///
 /// Its `lifecycle`, `role`, and `control` fields satisfy the process contract
 /// documented on [`ExecStartEncodeRequest`]. Decoding rejects every other
-/// combination.
+/// combination. Role-specific Guest admission requirements still apply after
+/// decoding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedExecStart<'a> {
     /// Decoded process lifecycle policy.
@@ -219,7 +238,8 @@ pub struct DecodedExecStart<'a> {
     pub role: ExecProcessRole,
     /// Decoded protocol timeout policy.
     pub timeout: ExecTimeoutPolicy,
-    /// Command string borrowed from the decoded payload.
+    /// UTF-8 payload borrowed from the decoded request, with the role-specific
+    /// meaning documented on [`ExecStartEncodeRequest::command`].
     pub command: &'a str,
     /// Decoded environment key/value pairs.
     ///
