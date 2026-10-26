@@ -145,10 +145,23 @@ final class ChatThreadPinTests: XCTestCase {
     let fixture = PinFixture()
     defer { fixture.releaseAll() }
     let store = fixture.workspace()
+    defer { store.close() }
     await store.refresh()
     let pin = Task { await store.list.togglePinned(PinFixture.target) }
+    addTeardownBlock { @MainActor in
+      store.close()
+      pin.cancel()
+      fixture.releaseAll()
+      await pin.value
+    }
     try await eventually { fixture.writes.count == 1 }
     let unpin = Task { await store.list.togglePinned(PinFixture.target) }
+    addTeardownBlock { @MainActor in
+      store.close()
+      unpin.cancel()
+      fixture.releaseAll()
+      await unpin.value
+    }
     try await eventually {
       store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt == nil
     }

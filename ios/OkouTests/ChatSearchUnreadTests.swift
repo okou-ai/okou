@@ -314,6 +314,7 @@ final class ChatSearchUnreadTests: XCTestCase {
 
   func testSearchDebounceReplacementClearingDismissalAndWorkspaceIsolation() async throws {
     let started = expectation(description: "Old search started")
+    let cancelled = expectation(description: "The old search handler observed cancellation")
     let gate = SearchResponseGate()
     defer { gate.open() }
     let seen = Mutex<[String]>([])
@@ -326,6 +327,8 @@ final class ChatSearchUnreadTests: XCTestCase {
       if keyword == "old" {
         started.fulfill()
         await gate.wait()
+        XCTAssertTrue(Task.isCancelled)
+        cancelled.fulfill()
       }
       return searchResponse(content: keyword)
     }
@@ -339,7 +342,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     try await eventually { !search.isLoading }
     XCTAssertEqual(search.messages.first?.matchedMessage.content, "new")
     gate.open()
-    await Task.yield()
+    await fulfillment(of: [cancelled], timeout: 2)
     XCTAssertEqual(search.messages.first?.matchedMessage.content, "new")
     XCTAssertFalse(seen.withLock { $0.contains("discarded") })
     search.updateQuery("")

@@ -24,6 +24,7 @@ final class FailureRecoveryFixture: Sendable {
     var resetKeys: [String] = []
     var resetGate: ModelResponseGate?
     var accountGate: ModelResponseGate?
+    var accountRequested: (@Sendable () -> Void)?
     var accountStatus = 200
     var billingAdmin = true
     var canBuyCredits = true
@@ -130,7 +131,9 @@ final class FailureRecoveryFixture: Sendable {
               status: value.sendStatus, body: #"{"error":{"message":"Response lost"}}"#)
         }
       case "/api/me/3rd-party-subscriptions":
-        if let gate = state.value.withLock({ $0.accountGate }) { await gate.wait() }
+        let (gate, requested) = state.value.withLock { ($0.accountGate, $0.accountRequested) }
+        requested?()
+        if let gate { await gate.wait() }
         return state.value.withLock {
           $0.accountStatus == 200
             ? ChatHTTPResponse(body: $0.accounts)
