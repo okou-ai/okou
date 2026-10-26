@@ -150,7 +150,7 @@ import {
   modelProviderWriteTypeForLaunch,
   type ModelFirstPin,
 } from "./model-selection.service";
-import { sendUserPushNotifications } from "./push-notifications.service";
+import { sendUserPushNotifications$ } from "./push-notifications.service";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import { saveRunSummary$ } from "./run-summary.service";
 import { loadSlackQueuedLaunchMaterial$ } from "./slack-queued-launch-context.service";
@@ -1927,7 +1927,7 @@ const runCompletedChatCallbackSideEffects$ = command(
       readonly chatThread: ChatThreadForRunRow;
       readonly lastResultText: string | null;
       readonly followupContext: readonly ChatCompletionContextMessage[];
-      readonly sendWebPush: boolean;
+      readonly sendClientPush: boolean;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -1963,7 +1963,7 @@ const runCompletedChatCallbackSideEffects$ = command(
             userId: args.chatThread.userId,
             orgId: args.chatThread.orgId,
             followups,
-            markRead: !args.sendWebPush,
+            markRead: !args.sendClientPush,
           },
           signal,
         );
@@ -1971,9 +1971,10 @@ const runCompletedChatCallbackSideEffects$ = command(
     })();
 
     const pushStep = (async () => {
-      if (!args.sendWebPush) {
+      if (!args.sendClientPush) {
         return;
       }
+      const summaryStarted = performance.now();
       let summary: string | null = null;
       if (args.lastResultText) {
         summary = await generateChatNotificationSummary(
@@ -1986,10 +1987,16 @@ const runCompletedChatCallbackSideEffects$ = command(
         );
       }
 
+      log.debug("Push summary generated", {
+        runId: args.runId,
+        durationMs: performance.now() - summaryStarted,
+      });
       signal.throwIfAborted();
-      await sendUserPushNotifications(
+      await set(
+        sendUserPushNotifications$,
         {
-          db: args.db,
+          runId: args.runId,
+          status: "completed",
           userId: args.chatThread.userId,
           orgId: args.chatThread.orgId,
           threadId: args.chatThread.chatThreadId,
@@ -2084,34 +2091,39 @@ const handleFailedChatCallback$ = command(
   },
 );
 
-async function runFailedChatCallbackSideEffects(
-  args: {
-    readonly db: Db;
-    readonly run: ChatRunInfo;
-    readonly chatThread: ChatThreadForRunRow;
-    readonly displayErrorMessage: string;
-    readonly sendWebPush: boolean;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  if (!args.sendWebPush) {
-    return;
-  }
-  await sendUserPushNotifications(
-    {
-      db: args.db,
-      userId: args.chatThread.userId,
-      orgId: args.chatThread.orgId,
-      threadId: args.chatThread.chatThreadId,
-      notification: {
-        title: args.run.prompt.slice(0, 60),
-        body: `Task failed: ${args.displayErrorMessage.slice(0, 80)}`,
-        url: `/chats/${args.chatThread.chatThreadId}`,
-      },
+const runFailedChatCallbackSideEffects$ = command(
+  async (
+    { set },
+    args: {
+      readonly runId: string;
+      readonly run: ChatRunInfo;
+      readonly chatThread: ChatThreadForRunRow;
+      readonly displayErrorMessage: string;
+      readonly sendClientPush: boolean;
     },
-    signal,
-  );
-}
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (!args.sendClientPush) {
+      return;
+    }
+    await set(
+      sendUserPushNotifications$,
+      {
+        runId: args.runId,
+        status: "failed",
+        userId: args.chatThread.userId,
+        orgId: args.chatThread.orgId,
+        threadId: args.chatThread.chatThreadId,
+        notification: {
+          title: args.run.prompt.slice(0, 60),
+          body: `Task failed: ${args.displayErrorMessage.slice(0, 80)}`,
+          url: `/chats/${args.chatThread.chatThreadId}`,
+        },
+      },
+      signal,
+    );
+  },
+);
 
 async function runTerminalChatCallbackSideEffects(args: {
   readonly runId: string;
@@ -3283,7 +3295,7 @@ const finishTerminalChatCallbackAfterProjection$ = command(
       const backgroundSignal = new AbortController().signal;
       // Use this Run's persisted delivery targets, not thread history or
       // delivery success. Channel failures must not fall back to Web push.
-      const sendWebPush = !hasExternalNotificationDeliveryChannel(
+      const sendClientPush = !hasExternalNotificationDeliveryChannel(
         args.callback.payload,
       );
       waitUntil(
@@ -3301,18 +3313,19 @@ const finishTerminalChatCallbackAfterProjection$ = command(
                     run: deferredSideEffects.run,
                     lastResultText: deferredSideEffects.lastResultText,
                     followupContext: deferredSideEffects.followupContext,
-                    sendWebPush,
+                    sendClientPush,
                   },
                   backgroundSignal,
                 )
-              : runFailedChatCallbackSideEffects(
+              : set(
+                  runFailedChatCallbackSideEffects$,
                   {
-                    db: args.callback.db,
+                    runId: args.runId,
                     run: deferredSideEffects.run,
                     chatThread: args.chatThread,
                     displayErrorMessage:
                       deferredSideEffects.displayErrorMessage,
-                    sendWebPush,
+                    sendClientPush,
                   },
                   backgroundSignal,
                 ),

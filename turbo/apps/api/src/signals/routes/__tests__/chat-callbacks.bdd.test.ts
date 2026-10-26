@@ -1,3 +1,5 @@
+import { jwtVerify, decodeProtectedHeader } from "jose";
+import { createApnsFixture, registerIosPush } from "./helpers/ios-push";
 import { HttpResponse } from "msw";
 import {
   resolveChatEventRecommendedFollowups,
@@ -5029,6 +5031,199 @@ describe("CHAT-02: thread deletion while a run is active", () => {
 });
 
 describe("CHAT-02: push notification gating", () => {
+  it("delivers native completion without VAPID, uses a versioned envelope, and retires only invalid tokens", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const provider = await createApnsFixture(context);
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId! },
+      { iosPushNotifications: true },
+    );
+    const registration = await registerIosPush(context, {
+      ...actor,
+      orgId: actor.orgId!,
+    });
+    await registerIosPush(
+      context,
+      { ...actor, orgId: actor.orgId! },
+      { environment: "sandbox" },
+    );
+    mockOptionalEnv("VAPID_PUBLIC_KEY", undefined);
+    mockOptionalEnv("VAPID_PRIVATE_KEY", undefined);
+    provider.responses.push({
+      status: 410,
+      reason: "Unregistered",
+      pause: true,
+    });
+    const received = provider.nextRequest();
+    const first = await startChatRun(actor, {
+      agentId,
+      prompt: "native completion",
+    });
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(
+      first.runId,
+      await claimChatRun(runnerGroup, first.runId),
+    );
+    await received;
+    await registerIosPush(
+      context,
+      { ...actor, orgId: actor.orgId! },
+      { ...registration, revision: 2, deviceToken: "cd".repeat(32) },
+    );
+    provider.reply();
+    await flushWaitUntilForTest();
+    expect(provider.requests).toHaveLength(1);
+    const request = provider.requests[0]!;
+    expect(request.origin).toBe("https://api.push.apple.com");
+    expect(request.headers).toMatchObject({
+      ":path": `/3/device/${registration.deviceToken}`,
+      "apns-topic": "ai.okou.ios",
+      "apns-push-type": "alert",
+      "apns-priority": "10",
+      "apns-collapse-id": `${first.runId}:completed`,
+    });
+    const authorization = String(request.headers.authorization).slice(
+      "bearer ".length,
+    );
+    expect(decodeProtectedHeader(authorization)).toMatchObject({
+      alg: "ES256",
+      kid: "TESTKEY001",
+    });
+    await jwtVerify(authorization, provider.publicKey, {
+      issuer: "TESTTEAM01",
+    });
+    expect(request.payload).toMatchObject({
+      aps: { "content-available": 1 },
+      okou: {
+        version: 1,
+        userId: actor.userId,
+        workspaceId: actor.orgId,
+        threadId: first.threadId,
+        runId: first.runId,
+        notificationId: `${first.runId}:completed`,
+      },
+    });
+    expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
+    // The old 410 must preserve the fresh binding; a later 410 for that exact binding disables it.
+    provider.responses.push({ status: 410, reason: "Unregistered" });
+    const third = await startChatRun(actor, {
+      agentId,
+      prompt: "fresh token receives failures",
+    });
+    await failChatRun(
+      third.runId,
+      await claimChatRun(runnerGroup, third.runId),
+      "Native failure",
+    );
+    await flushWaitUntilForTest();
+    expect(provider.requests).toHaveLength(2);
+    expect(provider.requests[1]?.headers[":path"]).toBe(
+      `/3/device/${"cd".repeat(32)}`,
+    );
+    expect(provider.requests[1]?.payload).toMatchObject({
+      aps: {
+        alert: {
+          body: "Task failed: Oops, something went wrong. Please try again later.",
+        },
+      },
+      okou: { notificationId: `${third.runId}:failed` },
+    });
+    const fourth = await startChatRun(actor, {
+      agentId,
+      prompt: "invalid token stays disabled",
+    });
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(
+      fourth.runId,
+      await claimChatRun(runnerGroup, fourth.runId),
+    );
+    await flushWaitUntilForTest();
+    expect(provider.requests).toHaveLength(2);
+  }, 60_000);
+
+  it("uses sandbox credentials and the sandbox APNs destination independently of production", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const provider = await createApnsFixture(context, "sandbox");
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId! },
+      { iosPushNotifications: true },
+    );
+    await registerIosPush(context, { ...actor, orgId: actor.orgId! });
+    await registerIosPush(
+      context,
+      { ...actor, orgId: actor.orgId! },
+      { environment: "sandbox" },
+    );
+    const run = await startChatRun(actor, {
+      agentId,
+      prompt: "sandbox delivery",
+    });
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(
+      run.runId,
+      await claimChatRun(runnerGroup, run.runId),
+    );
+    await flushWaitUntilForTest();
+    expect(provider.requests).toHaveLength(1);
+    expect(provider.requests[0]?.origin).toBe(
+      "https://api.sandbox.push.apple.com",
+    );
+    const jwt = String(provider.requests[0]?.headers.authorization).slice(
+      "bearer ".length,
+    );
+    expect(decodeProtectedHeader(jwt).kid).toBe("TESTKEY002");
+    await jwtVerify(jwt, provider.publicKey, { issuer: "TESTTEAM01" });
+  }, 60_000);
+
+  it.each(["foreground", "revoked", "muted", "membership"] as const)(
+    "withholds native pushes for %s eligibility",
+    async (scenario) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const provider = await createApnsFixture(context);
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: actor.orgId! },
+        { iosPushNotifications: true, chatThreadMuting: true },
+      );
+      await registerIosPush(context, { ...actor, orgId: actor.orgId! });
+      const run = await startChatRun(actor, {
+        agentId,
+        prompt: "native eligibility",
+      });
+      if (scenario === "foreground") {
+        context.mocks.ably.presenceGet.mockResolvedValue({
+          items: [{ clientId: actor.userId }],
+        });
+      }
+      if (scenario === "revoked") {
+        context.mocks.clerk.sessions.getSession.mockResolvedValue({
+          id: `sess_${actor.userId}`,
+          userId: actor.userId,
+          status: "revoked",
+          expireAt: 0,
+        });
+      }
+      if (scenario === "membership") {
+        context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+          { data: [] },
+        );
+      }
+      if (scenario === "muted") {
+        await chat.requestSetThreadMuted(actor, run.threadId, true, [204]);
+      }
+      chatCallbacks.mockChatOutputEvents([]);
+      await completeChatRunOk(
+        run.runId,
+        await claimChatRun(runnerGroup, run.runId),
+      );
+      await flushWaitUntilForTest();
+      expect(provider.requests).toHaveLength(0);
+    },
+    60_000,
+  );
+
   it("uses the Okou VAPID contact identity for every subscription", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.enableVapid();

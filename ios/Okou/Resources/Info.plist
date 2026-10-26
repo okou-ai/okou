@@ -11,6 +11,8 @@
     <key>CFBundlePackageType</key><string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
     <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>UIBackgroundModes</key><array><string>remote-notification</string></array>
+    <key>APNsEnvironment</key><string>$(APS_ENVIRONMENT)</string>
     <key>APIBaseURL</key><string>$(OKOU_API_BASE_URL)</string>
     <key>WebBaseURL</key><string>$(OKOU_WEB_BASE_URL)</string>
     <key>ClerkPublishableKey</key><string>$(CLERK_PUBLISHABLE_KEY)</string>

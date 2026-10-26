@@ -10,6 +10,7 @@ final class ThreadListStore {
   private(set) var agents: [AgentRecord] = []
   private(set) var pinnedAgentIDs: [String] = []
   private(set) var unreadAgentIDs: Set<String> = []
+  private(set) var canUsePushNotifications = false
   private(set) var canUseComposerConnectors = false
   private(set) var canArchiveChats = false
   private(set) var canMuteChats = false
@@ -129,6 +130,7 @@ final class ThreadListStore {
     }
     guard !closed, !Task.isCancelled else { return }
     // Keep this workspace's last successful flags until a new response replaces them.
+    canUsePushNotifications = switches.effectiveSwitches["iosPushNotifications"] == true
     canUseComposerConnectors = switches.effectiveSwitches["iosComposerConnectors"] == true
     canArchiveChats = switches.effectiveSwitches["chatThreadArchiving"] == true
     canMuteChats = switches.effectiveSwitches["chatThreadMuting"] == true

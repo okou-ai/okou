@@ -5,6 +5,7 @@ struct ChatSidebarView: View {
   @Bindable var store: WorkspaceStore
   let authentication: AuthenticationService
   let workspaceID: String
+  let notifications: NotificationService
   let headerHeight: CGFloat
   @Binding var accountError: String?
   let close: () -> Void
@@ -362,9 +363,19 @@ struct ChatSidebarView: View {
       Spacer()
       Menu {
         Link("Open Okou on web", destination: store.webURL)
+        if store.list.canUsePushNotifications {
+          Button(
+            notifications.status == .authorized ? "Notifications enabled" : "Enable notifications",
+            systemImage: "bell"
+          ) {
+            Task { await notifications.enable() }
+          }
+        }
         Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
           Task {
-            do { try await authentication.signOut() } catch {
+            do {
+              try await notifications.signOut(authentication: authentication)
+            } catch {
               accountError = error.localizedDescription
             }
           }
