@@ -9,7 +9,9 @@ fn payload_buckets_use_binary_framing_instead_of_manifest_json() {
         content: vec![0; 8 * 1024],
     }];
     let groups = [("/private-mount", files.as_slice())];
-    let input = files_input(b"{}", &groups).unwrap();
+    let input = files_input(b"{}".to_vec(), groups.to_vec())
+        .unwrap()
+        .into_input();
     assert_eq!(
         manifest_size_bucket(input.manifest_bytes()),
         "at_most_4_kib"
