@@ -37,7 +37,6 @@ import {
   openVncDialog$,
   saveVnc$,
   vncDialog$,
-  vncEnabled$,
   chooseVncTransport$,
   chooseVncNetworkConfig$,
   chooseVncProfile$,
@@ -161,7 +160,7 @@ function setupStepsFromLocation(
 const remoteSetupProtocol$ = computed((get) => {
   const requested = get(searchParams$).get("setup");
   if (requested === "vnc") {
-    return get(vncEnabled$) ? "vnc" : null;
+    return "vnc";
   }
   if (
     requested !== "add" &&
@@ -395,11 +394,7 @@ export const enterRemoteSetup$ = command(
     fromComputer?: boolean,
   ) => {
     const sessionKey = get(authenticatedSessionKey$);
-    if (
-      !sessionKey ||
-      !get(remoteControlGuidedEnabled$) ||
-      (protocol === "vnc" && !get(vncEnabled$))
-    ) {
+    if (!sessionKey || !get(remoteControlGuidedEnabled$)) {
       return;
     }
     set(resetRemoteSetup$);

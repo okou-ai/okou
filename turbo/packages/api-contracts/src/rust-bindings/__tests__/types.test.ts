@@ -1,4 +1,17 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  toJSONSchema,
+  union,
+  uuid,
+  enum as zEnum,
+} from "zod";
 import {
   normalizeTypeBindings,
   renderRustTypes,
@@ -226,8 +239,8 @@ function validBinding(
   overrides: Partial<RustTypeBinding> = {},
 ): RustTypeBinding {
   return {
-    schema: z.object({
-      runId: z.string(),
+    schema: object({
+      runId: string(),
     }),
     rustModulePath: ["webhooks", "agent", "example"],
     rustTypeName: "Request",
@@ -289,16 +302,12 @@ describe("Rust type bindings", () => {
   it("rejects incompatible shared fields in sensitive variants", () => {
     const binding = validBinding({
       sensitive: true,
-      schema: z.discriminatedUnion("outcome", [
-        z
-          .object({ outcome: z.literal("key"), shared: z.string().max(8) })
-          .strict(),
-        z
-          .object({
-            outcome: z.literal("password"),
-            shared: z.string().max(16),
-          })
-          .strict(),
+      schema: discriminatedUnion("outcome", [
+        object({ outcome: literal("key"), shared: string().max(8) }).strict(),
+        object({
+          outcome: literal("password"),
+          shared: string().max(16),
+        }).strict(),
       ]),
       declarations: [
         {
@@ -317,11 +326,9 @@ describe("Rust type bindings", () => {
   it("uses an explicit override for incompatible shared sensitive fields", () => {
     const binding = validBinding({
       sensitive: true,
-      schema: z.discriminatedUnion("outcome", [
-        z.object({ outcome: z.literal("key"), shared: z.string() }).strict(),
-        z
-          .object({ outcome: z.literal("password"), shared: z.number() })
-          .strict(),
+      schema: discriminatedUnion("outcome", [
+        object({ outcome: literal("key"), shared: string() }).strict(),
+        object({ outcome: literal("password"), shared: number() }).strict(),
       ]),
       fieldTypeOverrides: { shared: "crate::SecretText<16>" },
       declarations: [
@@ -455,24 +462,22 @@ describe("Rust type bindings", () => {
     expect(binding?.fieldTypeOverrides).toEqual({
       modelCatalog: "serde_json::Value",
     });
-    expect(z.toJSONSchema(modelProviderCodexRuntimeConfigSchema)).toMatchObject(
-      {
-        required: [
-          "providerId",
-          "name",
-          "baseUrl",
-          "envKey",
-          "wireApi",
-          "supportsWebsockets",
-        ],
-        properties: {
-          requiresOpenaiAuth: { type: "boolean" },
-          modelCatalog: {
-            additionalProperties: {},
-          },
+    expect(toJSONSchema(modelProviderCodexRuntimeConfigSchema)).toMatchObject({
+      required: [
+        "providerId",
+        "name",
+        "baseUrl",
+        "envKey",
+        "wireApi",
+        "supportsWebsockets",
+      ],
+      properties: {
+        requiresOpenaiAuth: { type: "boolean" },
+        modelCatalog: {
+          additionalProperties: {},
         },
       },
-    );
+    });
   });
 
   it("keeps the Pi runtime bindings aligned with their canonical schemas", () => {
@@ -496,15 +501,15 @@ describe("Rust type bindings", () => {
     if (!launchBinding) {
       throw new Error("Missing Pi launch binding");
     }
-    expect(z.toJSONSchema(launchBinding.schema)).toEqual(
-      z.toJSONSchema(piLaunchConfigSchema.unwrap()),
+    expect(toJSONSchema(launchBinding.schema)).toEqual(
+      toJSONSchema(piLaunchConfigSchema.unwrap()),
     );
     expect(modelV2Binding?.schema).toBe(piModelConfigV2Schema);
-    expect(z.toJSONSchema(piLaunchConfigSchema.unwrap())).toMatchObject({
+    expect(toJSONSchema(piLaunchConfigSchema.unwrap())).toMatchObject({
       required: ["schemaVersion"],
       properties: { schemaVersion: { const: 2 } },
     });
-    expect(z.toJSONSchema(piModelConfigV2Schema)).toMatchObject({
+    expect(toJSONSchema(piModelConfigV2Schema)).toMatchObject({
       required: [
         "schemaVersion",
         "dialect",
@@ -532,7 +537,7 @@ describe("Rust type bindings", () => {
   });
 
   it("keeps canonical Storage mount override aligned with its schema", () => {
-    const mountSchema = z.toJSONSchema(storageMountEntrySchema);
+    const mountSchema = toJSONSchema(storageMountEntrySchema);
 
     expect(mountSchema).toMatchObject({
       required: ["name", "storageId", "versionId", "mountPath"],
@@ -546,14 +551,14 @@ describe("Rust type bindings", () => {
   });
 
   it("keeps webhook storage file overrides aligned with shared file schema", () => {
-    const requestFileSchema = { ...z.toJSONSchema(fileEntryWithHashSchema) };
+    const requestFileSchema = { ...toJSONSchema(fileEntryWithHashSchema) };
     const prepareFileSchema = {
-      ...z.toJSONSchema(
+      ...toJSONSchema(
         webhookStoragesPrepareContract.prepare.body.shape.files.element,
       ),
     };
     const commitFileSchema = {
-      ...z.toJSONSchema(
+      ...toJSONSchema(
         webhookStoragesCommitContract.commit.body.shape.files.element,
       ),
     };
@@ -567,10 +572,10 @@ describe("Rust type bindings", () => {
   });
 
   it("keeps completion output policy aligned with the runner policy schema", () => {
-    const runnerPolicySchema = z.toJSONSchema(
+    const runnerPolicySchema = toJSONSchema(
       storageMountEntrySchema.shape.missingRootPolicy,
     );
-    const completionPolicySchema = z.toJSONSchema(
+    const completionPolicySchema = toJSONSchema(
       runCompletionMetadataSchema.shape.storageOutputs.unwrap().element.shape
         .missingRootPolicy,
     );
@@ -580,17 +585,17 @@ describe("Rust type bindings", () => {
   it("renders common JSON schema shapes", () => {
     const rendered = renderExampleRustTypes([
       validBinding({
-        schema: z.object({
-          mode: z.enum(["running", "stopping"]),
-          optionalValue: z.string().optional(),
-          nullableValue: z.string().nullable(),
-          labels: z.record(z.string(), z.string()),
-          items: z.array(
-            z.object({
-              someValue: z.number().int().nonnegative(),
+        schema: object({
+          mode: zEnum(["running", "stopping"]),
+          optionalValue: string().optional(),
+          nullableValue: string().nullable(),
+          labels: record(string(), string()),
+          items: array(
+            object({
+              someValue: number().int().nonnegative(),
             }),
           ),
-          ok: z.literal(true),
+          ok: literal(true),
         }),
         declarations: [
           enumDeclaration("RequestMode", {
@@ -628,9 +633,9 @@ describe("Rust type bindings", () => {
   it("renders internally tagged unit unions", () => {
     const rendered = renderExampleRustTypes([
       validBinding({
-        schema: z.discriminatedUnion("outcome", [
-          z.object({ outcome: z.literal("delivered") }),
-          z.object({ outcome: z.literal("rejected") }),
+        schema: discriminatedUnion("outcome", [
+          object({ outcome: literal("delivered") }),
+          object({ outcome: literal("rejected") }),
         ]),
         rustTypeName: "Response",
         declarations: [
@@ -652,16 +657,16 @@ describe("Rust type bindings", () => {
   it("renders internally tagged unions with variant fields", () => {
     const rendered = renderExampleRustTypes([
       validBinding({
-        schema: z.discriminatedUnion("outcome", [
-          z.object({
-            outcome: z.literal("reserved"),
-            deliveryId: z.uuid(),
-            eventIds: z.array(z.uuid()),
+        schema: discriminatedUnion("outcome", [
+          object({
+            outcome: literal("reserved"),
+            deliveryId: uuid(),
+            eventIds: array(uuid()),
           }),
-          z.object({ outcome: z.literal("empty") }),
-          z.object({
-            outcome: z.literal("rejected"),
-            reason: z.enum(["too_large", "not_running"]),
+          object({ outcome: literal("empty") }),
+          object({
+            outcome: literal("rejected"),
+            reason: zEnum(["too_large", "not_running"]),
           }),
         ]),
         rustTypeName: "Response",
@@ -703,14 +708,14 @@ describe("Rust type bindings", () => {
     expect(() => {
       renderExampleRustTypes([
         validBinding({
-          schema: z.discriminatedUnion("outcome", [
-            z.object({
-              kind: z.literal("first"),
-              outcome: z.literal("reserved"),
+          schema: discriminatedUnion("outcome", [
+            object({
+              kind: literal("first"),
+              outcome: literal("reserved"),
             }),
-            z.object({
-              kind: z.literal("second"),
-              outcome: z.literal("empty"),
+            object({
+              kind: literal("second"),
+              outcome: literal("empty"),
             }),
           ]),
         }),
@@ -721,8 +726,8 @@ describe("Rust type bindings", () => {
   it("renders optional nullable fields without nested options", () => {
     const rendered = renderExampleRustTypes([
       validBinding({
-        schema: z.object({
-          maybe: z.string().nullable().optional(),
+        schema: object({
+          maybe: string().nullable().optional(),
         }),
         declarations: [
           requestDeclaration({
@@ -739,8 +744,8 @@ describe("Rust type bindings", () => {
   it("uses explicit field type overrides", () => {
     const rendered = renderExampleRustTypes([
       validBinding({
-        schema: z.object({
-          deliveryMode: z.enum(["stream", "batch"]),
+        schema: object({
+          deliveryMode: zEnum(["stream", "batch"]),
         }),
         fieldTypeOverrides: {
           deliveryMode: "String",
@@ -760,9 +765,9 @@ describe("Rust type bindings", () => {
   it("renames Rust keyword fields", () => {
     const rendered = renderExampleRustTypes([
       validBinding({
-        schema: z.object({
-          type: z.string(),
-          self: z.boolean(),
+        schema: object({
+          type: string(),
+          self: boolean(),
         }),
         declarations: [
           requestDeclaration({
@@ -782,8 +787,8 @@ describe("Rust type bindings", () => {
   it("renames Rust keyword enum variants", () => {
     const rendered = renderExampleRustTypes([
       validBinding({
-        schema: z.object({
-          mode: z.enum(["self", "ready"]),
+        schema: object({
+          mode: zEnum(["self", "ready"]),
         }),
         declarations: [
           enumDeclaration("RequestMode", {
@@ -806,10 +811,7 @@ describe("Rust type bindings", () => {
     expect(() => {
       renderExampleRustTypes([
         validBinding({
-          schema: z.union([
-            z.object({ a: z.string() }),
-            z.object({ b: z.string() }),
-          ]),
+          schema: union([object({ a: string() }), object({ b: string() })]),
         }),
       ]);
     }).toThrow("unsupported anyOf schema");
@@ -819,7 +821,7 @@ describe("Rust type bindings", () => {
     expect(() => {
       renderExampleRustTypes([
         validBinding({
-          schema: z.object({ type: z.string() }).passthrough(),
+          schema: object({ type: string() }).passthrough(),
         }),
       ]);
     }).toThrow("unsupported untyped additionalProperties");
@@ -839,9 +841,9 @@ describe("Rust type bindings", () => {
     expect(() => {
       renderExampleRustTypes([
         validBinding({
-          schema: z.object({
-            apiURL: z.string(),
-            apiUrl: z.string(),
+          schema: object({
+            apiURL: string(),
+            apiUrl: string(),
           }),
           declarations: [
             requestDeclaration({
@@ -857,8 +859,8 @@ describe("Rust type bindings", () => {
     expect(() => {
       renderExampleRustTypes([
         validBinding({
-          schema: z.object({
-            mode: z.enum(["foo-bar", "foo_bar"]),
+          schema: object({
+            mode: zEnum(["foo-bar", "foo_bar"]),
           }),
           declarations: [
             enumDeclaration("RequestMode", {
@@ -877,9 +879,9 @@ describe("Rust type bindings", () => {
     expect(() => {
       renderExampleRustTypes([
         validBinding({
-          schema: z.object({
-            user: z.object({ id: z.string() }),
-            users: z.array(z.object({ name: z.string() })),
+          schema: object({
+            user: object({ id: string() }),
+            users: array(object({ name: string() })),
           }),
           declarations: [
             structDeclaration("RequestUser", {
@@ -899,8 +901,8 @@ describe("Rust type bindings", () => {
       renderExampleRustTypes([
         validBinding({
           rustTypeName: "RequestFile",
-          schema: z.object({
-            path: z.string(),
+          schema: object({
+            path: string(),
           }),
           declarations: [
             structDeclaration("RequestFile", {
@@ -910,8 +912,8 @@ describe("Rust type bindings", () => {
         }),
         validBinding({
           rustTypeName: "Request",
-          schema: z.object({
-            files: z.array(z.object({ path: z.string() })),
+          schema: object({
+            files: array(object({ path: string() })),
           }),
           declarations: [
             structDeclaration("RequestFile", {
@@ -1033,8 +1035,8 @@ describe("Rust type bindings", () => {
     expect(() => {
       renderExampleRustTypes([
         validBinding({
-          schema: z.object({
-            mode: z.enum(["running"]),
+          schema: object({
+            mode: zEnum(["running"]),
           }),
           declarations: [
             enumDeclaration("RequestMode", {}),
@@ -1070,8 +1072,8 @@ describe("Rust type bindings", () => {
     expect(() => {
       renderExampleRustTypes([
         validBinding({
-          schema: z.object({
-            mode: z.enum(["running"]),
+          schema: object({
+            mode: zEnum(["running"]),
           }),
           declarations: [
             enumDeclaration("RequestMode", {

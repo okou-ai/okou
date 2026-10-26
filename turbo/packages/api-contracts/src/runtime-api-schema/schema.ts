@@ -1,5 +1,20 @@
 import { readFile } from "node:fs/promises";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  lazy,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  toJSONSchema,
+  union,
+  enum as zEnum,
+  null as zNull,
+  type ZodType,
+} from "zod";
+
 import packageJson from "../../package.json" with { type: "json" };
 import {
   type RuntimeApiRouteBinding,
@@ -190,7 +205,7 @@ function normalizeSchema(
   if (isZodSchema(schema)) {
     return {
       kind: "json-schema",
-      schema: normalizeJsonValue(z.toJSONSchema(schema), label),
+      schema: normalizeJsonValue(toJSONSchema(schema), label),
     };
   }
 
@@ -200,7 +215,7 @@ function normalizeSchema(
   };
 }
 
-function isZodSchema(schema: unknown): schema is z.ZodType {
+function isZodSchema(schema: unknown): schema is ZodType {
   return (
     typeof schema === "object" &&
     schema !== null &&
@@ -253,55 +268,51 @@ function sortJsonValue(value: unknown): unknown {
   return value;
 }
 
-const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() => {
-  return z.union([
-    z.string(),
-    z.number(),
-    z.boolean(),
-    z.null(),
-    z.array(jsonValueSchema),
-    z.record(z.string(), jsonValueSchema),
+const jsonValueSchema: ZodType<JsonValue> = lazy(() => {
+  return union([
+    string(),
+    number(),
+    boolean(),
+    zNull(),
+    array(jsonValueSchema),
+    record(string(), jsonValueSchema),
   ]);
 });
 
-const jsonObjectSchema: z.ZodType<JsonObject> = z.record(
-  z.string(),
-  jsonValueSchema,
-);
+const jsonObjectSchema: ZodType<JsonObject> = record(string(), jsonValueSchema);
 
-const runtimeSchemaSnapshotSchema: z.ZodType<RuntimeSchemaSnapshot> = z.union([
-  z.object({
-    kind: z.literal("json-schema"),
+const runtimeSchemaSnapshotSchema: ZodType<RuntimeSchemaSnapshot> = union([
+  object({
+    kind: literal("json-schema"),
     schema: jsonObjectSchema,
   }),
-  z.object({
-    kind: z.literal("opaque"),
-    reason: z.string(),
+  object({
+    kind: literal("opaque"),
+    reason: string(),
   }),
 ]);
 
-const runtimeApiRouteSnapshotSchema: z.ZodType<RuntimeApiRouteSnapshot> =
-  z.object({
-    id: z.string().min(1),
-    owner: z.enum(runtimeApiRouteOwners),
-    method: z.string().min(1),
-    path: z.string().min(1),
-    summary: z.string().optional(),
-    contentType: z.string().optional(),
-    request: z.object({
-      headers: runtimeSchemaSnapshotSchema.optional(),
-      query: runtimeSchemaSnapshotSchema.optional(),
-      pathParams: runtimeSchemaSnapshotSchema.optional(),
-      body: runtimeSchemaSnapshotSchema.optional(),
-    }),
-    responses: z.record(z.string(), runtimeSchemaSnapshotSchema),
-  });
+const runtimeApiRouteSnapshotSchema: ZodType<RuntimeApiRouteSnapshot> = object({
+  id: string().min(1),
+  owner: zEnum(runtimeApiRouteOwners),
+  method: string().min(1),
+  path: string().min(1),
+  summary: string().optional(),
+  contentType: string().optional(),
+  request: object({
+    headers: runtimeSchemaSnapshotSchema.optional(),
+    query: runtimeSchemaSnapshotSchema.optional(),
+    pathParams: runtimeSchemaSnapshotSchema.optional(),
+    body: runtimeSchemaSnapshotSchema.optional(),
+  }),
+  responses: record(string(), runtimeSchemaSnapshotSchema),
+});
 
-const runtimeApiSchemaDocumentSchema: z.ZodType<RuntimeApiSchemaDocument> =
-  z.object({
-    schemaFormatVersion: z.number(),
-    packageName: z.string(),
-    packageVersion: z.string(),
-    generatedAt: z.string(),
-    routes: z.array(runtimeApiRouteSnapshotSchema),
+const runtimeApiSchemaDocumentSchema: ZodType<RuntimeApiSchemaDocument> =
+  object({
+    schemaFormatVersion: number(),
+    packageName: string(),
+    packageVersion: string(),
+    generatedAt: string(),
+    routes: array(runtimeApiRouteSnapshotSchema),
   });

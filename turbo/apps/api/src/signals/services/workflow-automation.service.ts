@@ -5,7 +5,7 @@ import {
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { z } from "zod";
+import { object, string } from "zod";
 import { randomUUID } from "node:crypto";
 import {
   chatThreadEventInsertPlan,
@@ -1869,7 +1869,7 @@ const readEventAutomationConnectorId$ = command(
   ): Promise<string | null> => {
     const db = get(rawSqlReadDb$);
     const [selected] = parseRawRows(
-      z.object({ connectorId: z.string().nullable() }),
+      object({ connectorId: string().nullable() }),
       await db.execute(workflowAutomationConnectorSelectionSql(args)),
     );
     signal.throwIfAborted();
@@ -2054,7 +2054,7 @@ const insertEventAutomation$ = command(
         let eventConnectorId: string | null = null;
         if (connectorSlug !== null) {
           const [selected] = parseRawRows(
-            z.object({ connectorId: z.string().nullable() }),
+            object({ connectorId: string().nullable() }),
             await db.execute(
               workflowAutomationConnectorSelectionSql({
                 ...owner,

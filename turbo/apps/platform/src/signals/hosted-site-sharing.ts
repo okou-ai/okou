@@ -1,5 +1,5 @@
 import { command, computed, state, type Computed, type State } from "ccstate";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import {
   hostContract,
   hostedSiteUrlSlugSchema,
@@ -25,9 +25,9 @@ import { recordHostedSiteVisibilityChange$ } from "./hosted-site-visibility-chan
 import { onRef, resetSignal } from "./utils.ts";
 import { createHostedSiteBannerSignals } from "./hosted-site-banner.ts";
 
-type SiteUrl = z.infer<typeof hostedSiteUrlSchema>;
+type SiteUrl = zInfer<typeof hostedSiteUrlSchema>;
 type Validation = "unchanged" | "invalid" | "available" | "taken";
-type Visibility = z.infer<typeof hostedSiteVisibilitySchema>;
+type Visibility = zInfer<typeof hostedSiteVisibilitySchema>;
 
 function createSiteVisibilitySignals(sourceUrl: string) {
   const reload$ = state(0);

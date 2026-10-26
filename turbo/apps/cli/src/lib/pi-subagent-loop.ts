@@ -4,7 +4,7 @@ import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
-import { z } from "zod";
+import { object, string } from "zod";
 
 import { guestTaskStartupSchema } from "./guest-task";
 import { piSandboxAgentConfigFromEnv } from "./pi-agent-loop";
@@ -14,7 +14,7 @@ import {
   validateSubagentDirectory,
 } from "./pi-subagents";
 
-const inputSchema = z.object({ prompt: z.string().trim().min(1) });
+const inputSchema = object({ prompt: string().trim().min(1) });
 const bootstrapSchema = inputSchema.extend({
   handle: guestTaskStartupSchema.shape.handle,
 });

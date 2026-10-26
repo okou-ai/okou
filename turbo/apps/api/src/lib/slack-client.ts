@@ -1,5 +1,5 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import { z } from "zod";
+import { array, boolean, object, string } from "zod";
 import {
   slackHistoryMessageSchema,
   type SlackChannelListQuery,
@@ -102,12 +102,12 @@ async function callSlackApi<T>(
   return data as T;
 }
 
-const sharedChannelPageSchema = z.object({
-  channels: z.array(
-    z.object({
-      id: z.string(),
-      name: z.string(),
-      is_private: z.boolean(),
+const sharedChannelPageSchema = object({
+  channels: array(
+    object({
+      id: string(),
+      name: string(),
+      is_private: boolean(),
       /**
        * Whether the calling token's own identity is in the conversation.
        *
@@ -118,27 +118,21 @@ const sharedChannelPageSchema = z.object({
        * the field for every conversation shape, and an absent value must not be
        * read as either membership or its absence.
        */
-      is_member: z.boolean().optional(),
+      is_member: boolean().optional(),
     }),
   ),
-  response_metadata: z
-    .object({ next_cursor: z.string().optional() })
-    .optional(),
+  response_metadata: object({ next_cursor: string().optional() }).optional(),
 });
 
-const sharedConversationPageSchema = z.object({
-  channels: z.array(z.object({ id: z.string() })),
-  response_metadata: z
-    .object({ next_cursor: z.string().optional() })
-    .optional(),
+const sharedConversationPageSchema = object({
+  channels: array(object({ id: string() })),
+  response_metadata: object({ next_cursor: string().optional() }).optional(),
 });
 
-const historyPageSchema = z.object({
-  messages: z.array(slackHistoryMessageSchema),
-  has_more: z.boolean().optional(),
-  response_metadata: z
-    .object({ next_cursor: z.string().optional() })
-    .optional(),
+const historyPageSchema = object({
+  messages: array(slackHistoryMessageSchema),
+  has_more: boolean().optional(),
+  response_metadata: object({ next_cursor: string().optional() }).optional(),
 });
 
 // For bot tokens, Slack defines `user` as an intersection with the bot's own
@@ -273,25 +267,23 @@ export async function isSlackConversationSharedByMembers(
   let userPresent = false;
   let botPresent = false;
   do {
-    const page = z
-      .object({
-        members: z.array(z.string()),
-        response_metadata: z
-          .object({ next_cursor: z.string().optional() })
-          .optional(),
-      })
-      .parse(
-        await callSlackApi<unknown>(
-          args.token,
-          "conversations.members",
-          {
-            channel: args.channelId,
-            limit: 200,
-            cursor,
-          },
-          signal,
-        ),
-      );
+    const page = object({
+      members: array(string()),
+      response_metadata: object({
+        next_cursor: string().optional(),
+      }).optional(),
+    }).parse(
+      await callSlackApi<unknown>(
+        args.token,
+        "conversations.members",
+        {
+          channel: args.channelId,
+          limit: 200,
+          cursor,
+        },
+        signal,
+      ),
+    );
     userPresent ||= page.members.includes(args.slackUserId);
     botPresent ||= page.members.includes(args.botUserId);
     if (userPresent && botPresent) {
@@ -302,10 +294,10 @@ export async function isSlackConversationSharedByMembers(
   return false;
 }
 
-const slackPostingRestrictionSchema = z.object({
-  type: z.array(z.string()).optional(),
-  user: z.array(z.string()).optional(),
-  subteam: z.array(z.string()).optional(),
+const slackPostingRestrictionSchema = object({
+  type: array(string()).optional(),
+  user: array(string()).optional(),
+  subteam: array(string()).optional(),
 });
 
 async function hasSlackPostingRole(
@@ -329,26 +321,24 @@ async function hasSlackPostingRole(
   ) {
     return false;
   }
-  const current = z
-    .object({
-      user: z.object({
-        id: z.string(),
-        team_id: z.string().optional(),
-        deleted: z.boolean().optional(),
-        is_admin: z.boolean().optional(),
-        is_owner: z.boolean().optional(),
-        is_restricted: z.boolean().optional(),
-        is_ultra_restricted: z.boolean().optional(),
-      }),
-    })
-    .parse(
-      await callSlackApi<unknown>(
-        args.token,
-        "users.info",
-        { user: args.slackUserId },
-        signal,
-      ),
-    );
+  const current = object({
+    user: object({
+      id: string(),
+      team_id: string().optional(),
+      deleted: boolean().optional(),
+      is_admin: boolean().optional(),
+      is_owner: boolean().optional(),
+      is_restricted: boolean().optional(),
+      is_ultra_restricted: boolean().optional(),
+    }),
+  }).parse(
+    await callSlackApi<unknown>(
+      args.token,
+      "users.info",
+      { user: args.slackUserId },
+      signal,
+    ),
+  );
   const user = current.user;
   if (user.id !== args.slackUserId || user.deleted === true) {
     return false;
@@ -395,33 +385,29 @@ export async function isSlackConversationWritable(
   },
   signal: AbortSignal,
 ): Promise<boolean> {
-  const response = z
-    .object({
-      channel: z.object({
-        id: z.string(),
-        is_im: z.boolean().optional(),
-        is_mpim: z.boolean().optional(),
-        user: z.string().optional(),
-        is_archived: z.boolean().optional(),
-        is_read_only: z.boolean().optional(),
-        is_ext_shared: z.boolean().optional(),
-        conversation_host_id: z.string().optional(),
-        properties: z
-          .object({
-            posting_restricted_to: slackPostingRestrictionSchema.optional(),
-            threads_restricted_to: slackPostingRestrictionSchema.optional(),
-          })
-          .optional(),
-      }),
-    })
-    .parse(
-      await callSlackApi<unknown>(
-        args.token,
-        "conversations.info",
-        { channel: args.channelId },
-        signal,
-      ),
-    );
+  const response = object({
+    channel: object({
+      id: string(),
+      is_im: boolean().optional(),
+      is_mpim: boolean().optional(),
+      user: string().optional(),
+      is_archived: boolean().optional(),
+      is_read_only: boolean().optional(),
+      is_ext_shared: boolean().optional(),
+      conversation_host_id: string().optional(),
+      properties: object({
+        posting_restricted_to: slackPostingRestrictionSchema.optional(),
+        threads_restricted_to: slackPostingRestrictionSchema.optional(),
+      }).optional(),
+    }),
+  }).parse(
+    await callSlackApi<unknown>(
+      args.token,
+      "conversations.info",
+      { channel: args.channelId },
+      signal,
+    ),
+  );
   const channel = response.channel;
   if (
     channel.id !== args.channelId ||
@@ -460,16 +446,14 @@ export async function isSlackConversationWritable(
     return true;
   }
   for (const group of restriction.subteam ?? []) {
-    const members = z
-      .object({ users: z.array(z.string()) })
-      .parse(
-        await callSlackApi<unknown>(
-          args.token,
-          "usergroups.users.list",
-          { usergroup: group },
-          signal,
-        ),
-      );
+    const members = object({ users: array(string()) }).parse(
+      await callSlackApi<unknown>(
+        args.token,
+        "usergroups.users.list",
+        { usergroup: group },
+        signal,
+      ),
+    );
     if (members.users.includes(args.slackUserId)) {
       return true;
     }

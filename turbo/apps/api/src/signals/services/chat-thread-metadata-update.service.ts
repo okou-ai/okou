@@ -4,7 +4,13 @@ import {
 } from "@okouai/db/schema/workflow";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { badRequestMessage } from "../../lib/error";
-import { z } from "zod";
+import {
+  boolean,
+  object,
+  string,
+  enum as zEnum,
+  unknown as zUnknown,
+} from "zod";
 import {
   parseRawRows,
   pgTimestampWithoutTimezoneToDateSchema,
@@ -460,21 +466,20 @@ const commitMetadata$ = command(
 );
 
 // Preserve real column decoding; annotations do not decode driver values.
-const metadataCommitRowSchema = z.object({
-  threadId: z.string().uuid(),
-  agentId: z.string().uuid().nullable(),
-  title: z.string().nullable(),
-  titleTruncated: z.boolean(),
-  selectedModel: z.string().nullable(),
-  modelSettings: z.unknown().transform((value) => {
+const metadataCommitRowSchema = object({
+  threadId: string().uuid(),
+  agentId: string().uuid().nullable(),
+  title: string().nullable(),
+  titleTruncated: boolean(),
+  selectedModel: string().nullable(),
+  modelSettings: zUnknown().transform((value) => {
     return value === null
       ? null
       : nullableDriverValueDecoder(
           chatThreads.modelSettings,
         ).mapFromDriverValue(value);
   }),
-  codexServiceTier: z
-    .string()
+  codexServiceTier: string()
     .nullable()
     .transform((value) => {
       return value === null
@@ -486,12 +491,12 @@ const metadataCommitRowSchema = z.object({
   updatedAt: pgTimestampWithoutTimezoneToDateSchema,
 });
 
-const titleMetadataStateSchema = z.object({
-  threadId: z.string().uuid(),
-  title: z.string().nullable(),
-  titleTruncated: z.boolean(),
-  selectedModel: z.string().nullable(),
-  codexServiceTier: z.enum(["fast"]).nullable(),
+const titleMetadataStateSchema = object({
+  threadId: string().uuid(),
+  title: string().nullable(),
+  titleTruncated: boolean(),
+  selectedModel: string().nullable(),
+  codexServiceTier: zEnum(["fast"]).nullable(),
   updatedAt: pgTimestampWithoutTimezoneToDateSchema,
 });
 

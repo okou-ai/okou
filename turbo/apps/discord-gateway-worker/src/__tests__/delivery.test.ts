@@ -1,6 +1,6 @@
 import { Response } from "miniflare";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { array, number, object, string } from "zod";
 import {
   BOT_USER_ID,
   CHANNEL_ID,
@@ -10,13 +10,13 @@ import {
   type RelayFixture,
 } from "./relay-fixture";
 
-const deadLettersSchema = z.object({
-  deadLetters: z.array(
-    z.object({
-      eventType: z.string(),
-      eventId: z.string(),
-      reason: z.string(),
-      bytes: z.number(),
+const deadLettersSchema = object({
+  deadLetters: array(
+    object({
+      eventType: string(),
+      eventId: string(),
+      reason: string(),
+      bytes: number(),
     }),
   ),
 });

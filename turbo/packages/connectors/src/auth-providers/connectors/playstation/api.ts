@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { z } from "zod";
+import { number, object, string, type infer as zInfer } from "zod";
 
 import type { ConnectorExternalCodeGrantConfig } from "@okouai/connectors/connector-config";
 import type { ConnectorAuthProviderGrantUserInfo } from "../../grant-result";
@@ -36,40 +36,34 @@ interface PlaystationIdentity {
   readonly onlineId: string | null;
 }
 
-const playstationAuthTokenSchema = z.object({
-  access_token: z.string().min(1),
-  expires_in: z.number().optional(),
-  id_token: z.string().min(1),
-  refresh_token: z.string().min(1),
-  refresh_token_expires_in: z.number().optional(),
-  scope: z.string().optional(),
-  token_type: z.string().optional(),
+const playstationAuthTokenSchema = object({
+  access_token: string().min(1),
+  expires_in: number().optional(),
+  id_token: string().min(1),
+  refresh_token: string().min(1),
+  refresh_token_expires_in: number().optional(),
+  scope: string().optional(),
+  token_type: string().optional(),
 });
 
 const playstationRefreshTokenSchema = playstationAuthTokenSchema.extend({
-  refresh_token: z.string().min(1).optional(),
+  refresh_token: string().min(1).optional(),
 });
 
-const playstationProfileSchema = z
-  .object({
-    accountId: z.string().min(1).optional(),
-    onlineId: z.string().min(1).optional(),
-  })
-  .passthrough();
+const playstationProfileSchema = object({
+  accountId: string().min(1).optional(),
+  onlineId: string().min(1).optional(),
+}).passthrough();
 
-const playstationIdTokenClaimsSchema = z
-  .object({
-    sub: z.string().min(1).optional(),
-    account_id: z.string().min(1).optional(),
-    online_id: z.string().min(1).optional(),
-  })
-  .passthrough();
+const playstationIdTokenClaimsSchema = object({
+  sub: string().min(1).optional(),
+  account_id: string().min(1).optional(),
+  online_id: string().min(1).optional(),
+}).passthrough();
 
-const playstationNpssoJsonSchema = z
-  .object({
-    npsso: z.string().min(1),
-  })
-  .passthrough();
+const playstationNpssoJsonSchema = object({
+  npsso: string().min(1),
+}).passthrough();
 
 function invalidNpssoError(): OAuthProviderHttpError {
   return new OAuthProviderHttpError(
@@ -195,7 +189,7 @@ export async function exchangePlaystationNpssoForAccessCode(
 }
 
 function playstationTokenFromResponse(
-  raw: z.infer<typeof playstationAuthTokenSchema>,
+  raw: zInfer<typeof playstationAuthTokenSchema>,
 ): PlaystationAuthToken {
   return {
     accessToken: raw.access_token,

@@ -1,4 +1,14 @@
-import { z } from "zod";
+import {
+  literal,
+  number,
+  object,
+  string,
+  union,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { failureReasonSchema } from "./rpc";
 import { rpcErrorSchema } from "../../lib/runner-rpc";
 import { diagnosticTextSchema } from "../../lib/diagnostic-text";
@@ -11,7 +21,7 @@ export const FILE_LIMITS = {
 export const FILE_LIMIT_HELP =
   "Limits: 1 GiB (1,073,741,824 bytes) per file; 15 minutes total per helper invocation, including setup and I/O waits; 2 simultaneous transfers per Run, shared by uploads and downloads. No option overrides these limits.";
 export type Direction = "upload" | "download";
-const fileReasonSchema = z.enum([
+const fileReasonSchema = zEnum([
   "file_too_large",
   "transfer_limit",
   "path_not_found",
@@ -26,38 +36,31 @@ const fileReasonSchema = z.enum([
   "invalid_path",
   "helper_unavailable",
 ]);
-const reasonSchema = z.union([failureReasonSchema, fileReasonSchema]);
-export type FileReason = z.infer<typeof reasonSchema>;
-export const outcomeSchema = z
-  .object({
-    type: z.enum(["completed", "failed"]),
-    diagnostic_text: diagnosticTextSchema,
-    direction: z.enum(["upload", "download"]),
-    ssh_connection_id: z.uuid(),
-    bytes: z.number().int().min(0).max(FILE_LIMITS.max_file_bytes),
-    sha256: z
-      .string()
-      .regex(/^[0-9a-f]{64}$/)
-      .nullable(),
-    effects: z.enum(["not_started", "unknown", "completed"]),
-    failure_reason: reasonSchema.nullable(),
-    residue: z.string().max(4096).nullable(),
-    actual_bytes: z
-      .number()
-      .int()
-      .nonnegative()
-      .max(Number.MAX_SAFE_INTEGER)
-      .nullable(),
-    limits: z
-      .object({
-        max_file_bytes: z.literal(FILE_LIMITS.max_file_bytes),
-        timeout_ms: z.literal(FILE_LIMITS.timeout_ms),
-        max_concurrent_transfers: z.literal(
-          FILE_LIMITS.max_concurrent_transfers,
-        ),
-      })
-      .strict(),
-  })
+const reasonSchema = union([failureReasonSchema, fileReasonSchema]);
+export type FileReason = zInfer<typeof reasonSchema>;
+export const outcomeSchema = object({
+  type: zEnum(["completed", "failed"]),
+  diagnostic_text: diagnosticTextSchema,
+  direction: zEnum(["upload", "download"]),
+  ssh_connection_id: uuid(),
+  bytes: number().int().min(0).max(FILE_LIMITS.max_file_bytes),
+  sha256: string()
+    .regex(/^[0-9a-f]{64}$/)
+    .nullable(),
+  effects: zEnum(["not_started", "unknown", "completed"]),
+  failure_reason: reasonSchema.nullable(),
+  residue: string().max(4096).nullable(),
+  actual_bytes: number()
+    .int()
+    .nonnegative()
+    .max(Number.MAX_SAFE_INTEGER)
+    .nullable(),
+  limits: object({
+    max_file_bytes: literal(FILE_LIMITS.max_file_bytes),
+    timeout_ms: literal(FILE_LIMITS.timeout_ms),
+    max_concurrent_transfers: literal(FILE_LIMITS.max_concurrent_transfers),
+  }).strict(),
+})
   .strict()
   .refine((value) => {
     return value.type === "completed"
@@ -68,12 +71,12 @@ export const outcomeSchema = z
             (value.direction === "upload" ? "completed" : "not_started")
       : value.failure_reason !== null && value.effects !== "completed";
   });
-export type FileOutcome = z.infer<typeof outcomeSchema>;
-const envelopeSchema = z.union([
-  z.object({ type: z.literal("result"), data: outcomeSchema }).strict(),
+export type FileOutcome = zInfer<typeof outcomeSchema>;
+const envelopeSchema = union([
+  object({ type: literal("result"), data: outcomeSchema }).strict(),
   rpcErrorSchema,
 ]);
-export type FileTerminal = z.infer<typeof envelopeSchema>;
+export type FileTerminal = zInfer<typeof envelopeSchema>;
 
 export class FileError extends Error {
   constructor(readonly reason: FileReason) {

@@ -1,5 +1,5 @@
 import { command, computed, state, type Computed } from "ccstate";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import type { hostedSiteVisibilityStatusSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -9,7 +9,7 @@ import { apiClient$ } from "./api-client.ts";
 
 export function createHostedSiteBannerSignals(
   site$: Computed<
-    Promise<z.infer<typeof hostedSiteVisibilityStatusSchema> | null>
+    Promise<zInfer<typeof hostedSiteVisibilityStatusSchema> | null>
   >,
 ) {
   const reload$ = state(0);

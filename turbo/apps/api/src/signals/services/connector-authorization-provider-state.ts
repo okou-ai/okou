@@ -4,35 +4,31 @@ import {
   type ConnectorAuthMethodId,
   type ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import { z } from "zod";
+import { object, string } from "zod";
 
-const deviceProviderStateSchema = z
-  .object({
-    connectorSlug: connectorSlugSchema,
-    deviceCode: z.string(),
-    pollState: z.string().optional(),
-  })
-  .transform((state) => {
-    return {
-      connectorSlug: state.connectorSlug,
-      deviceCode: state.deviceCode,
-      pollState: state.pollState,
-    };
-  });
+const deviceProviderStateSchema = object({
+  connectorSlug: connectorSlugSchema,
+  deviceCode: string(),
+  pollState: string().optional(),
+}).transform((state) => {
+  return {
+    connectorSlug: state.connectorSlug,
+    deviceCode: state.deviceCode,
+    pollState: state.pollState,
+  };
+});
 
-const externalCodeProviderStateSchema = z
-  .object({
-    connectorSlug: connectorSlugSchema,
-    authMethod: connectorAuthMethodIdSchema,
-    providerState: z.string(),
-  })
-  .transform((state) => {
-    return {
-      connectorSlug: state.connectorSlug,
-      authMethod: state.authMethod,
-      providerState: state.providerState,
-    };
-  });
+const externalCodeProviderStateSchema = object({
+  connectorSlug: connectorSlugSchema,
+  authMethod: connectorAuthMethodIdSchema,
+  providerState: string(),
+}).transform((state) => {
+  return {
+    connectorSlug: state.connectorSlug,
+    authMethod: state.authMethod,
+    providerState: state.providerState,
+  };
+});
 
 export function parseBuiltinConnectorOauthDeviceProviderState(args: {
   readonly serializedState: string;

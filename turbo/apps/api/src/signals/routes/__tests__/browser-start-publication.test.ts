@@ -8,7 +8,7 @@ import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { strictObject, string } from "zod";
 
 import { createApp } from "../../../app-factory";
 import { browserUseCdpHandler } from "../../../__tests__/mocks";
@@ -57,9 +57,9 @@ describe("Browser start publication", () => {
     }
     server.use(
       http.post(`${PROVIDER_URL}/profiles`, async ({ request }) => {
-        const { name } = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const { name } = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(
           {
             id: randomUUID(),
@@ -279,9 +279,9 @@ async function prepareScenario() {
   }
   server.use(
     http.post(`${PROVIDER_URL}/profiles`, async ({ request }) => {
-      const { name } = z
-        .strictObject({ name: z.string() })
-        .parse(await request.json());
+      const { name } = strictObject({ name: string() }).parse(
+        await request.json(),
+      );
       return HttpResponse.json(
         {
           id: randomUUID(),

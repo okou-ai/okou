@@ -4,7 +4,6 @@ import {
   type UserTemplateCatalogEntry,
   type UserTemplateKind,
 } from "@okouai/api-contracts/contracts/user-templates";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { DOCUMENT_TEMPLATE_ITEMS } from "@okouai/core/document-template-items";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
@@ -70,17 +69,10 @@ function button(name: string, container: ParentNode = document.body) {
   return result;
 }
 
-async function openSlashMenu(
-  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
-  path = `/agents/${AGENT_ID}/chat`,
-) {
+async function openSlashMenu(path = `/agents/${AGENT_ID}/chat`) {
   await setupPage({
     context,
     path,
-    featureSwitches: {
-      [FeatureSwitchKey.BuiltinDocumentTemplates]: false,
-      ...featureSwitches,
-    },
   });
   const editor = await findComposerEditor();
   await fill(editor, "Keep my brief /");
@@ -93,28 +85,25 @@ const CATEGORIES = [
     category: "Presentation",
     kind: "presentation",
     builtInTitle: PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title,
-    builtInCount: 1,
     path: `/chats/${THREAD_ID}`,
   },
   {
     category: "Illustration",
     kind: "illustration",
     builtInTitle: ILLUSTRATION_TEMPLATE_ITEMS[0]!.title,
-    builtInCount: 1,
     path: `/agents/${AGENT_ID}/chat`,
   },
   {
     category: "Document",
     kind: "document",
     builtInTitle: DOCUMENT_TEMPLATE_ITEMS[0]!.title,
-    builtInCount: 0,
     path: `/agents/${AGENT_ID}/chat`,
   },
 ] as const;
 
 test.each(CATEGORIES)(
   "$category offers accessible custom templates and sends their custom references",
-  async ({ category, kind, builtInTitle, builtInCount, path }) => {
+  async ({ category, kind, builtInTitle, path }) => {
     const capture = mockTemplateChat();
     const own = template(kind);
     const shared = {
@@ -133,14 +122,12 @@ test.each(CATEGORIES)(
         shared,
       ]);
     });
-    const { menu, editor } = await openSlashMenu({}, path);
+    const { menu, editor } = await openSlashMenu(path);
     await userEvent.setup().hover(button(category, menu));
     const pane = await within(menu).findByRole("region", { name: category });
     await within(pane).findByText(own.title);
     expect(within(pane).getByText(shared.title)).toBeInTheDocument();
-    expect(within(pane).queryAllByText(builtInTitle)).toHaveLength(
-      builtInCount,
-    );
+    expect(within(pane).getByText(builtInTitle)).toBeInTheDocument();
     const otherKind = kind === "presentation" ? "illustration" : "presentation";
     expect(
       within(pane).queryByText(template(otherKind).title),
@@ -166,7 +153,7 @@ test.each(CATEGORIES)(
   },
 );
 
-test("The Document row opens custom documents when built-in documents are disabled", async () => {
+test("The Document row opens the document template picker", async () => {
   mockTemplateChat();
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
     return respond(200, [template("presentation"), template("document")]);
@@ -181,14 +168,12 @@ test("The Document row opens custom documents when built-in documents are disabl
   ).not.toBeInTheDocument();
 });
 
-test("Custom documents appear alongside enabled built-in documents", async () => {
+test("Custom documents appear alongside built-in documents", async () => {
   mockTemplateChat();
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
     return respond(200, [template("document")]);
   });
-  const { menu } = await openSlashMenu({
-    [FeatureSwitchKey.BuiltinDocumentTemplates]: true,
-  });
+  const { menu } = await openSlashMenu();
   await userEvent.setup().hover(button("Document", menu));
   const pane = await within(menu).findByRole("region", { name: "Document" });
   await within(pane).findByText(template("document").title);

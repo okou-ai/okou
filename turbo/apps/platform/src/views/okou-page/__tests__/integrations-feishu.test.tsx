@@ -348,6 +348,59 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     expect(within(options).queryByText("Manage")).not.toBeInTheDocument();
   });
 
+  it(`${provider.name} keeps a pending uninstall open and allows retry after failure`, async () => {
+    mockBot({
+      isInstalled: true,
+      installations: [completedInstallation()],
+    });
+    const started = context.mocks.deferred<void>();
+    const response = context.mocks.deferred<void>();
+    let fail = true;
+    context.mocks.api(
+      connectContract.removeInstallation,
+      async ({ respond }) => {
+        if (fail) {
+          started.resolve();
+          await response.promise;
+          return respond(403, {
+            error: { code: "FORBIDDEN", message: "Uninstall unavailable" },
+          });
+        }
+        mockBot({ isInstalled: false, installations: [] });
+        return respond(200, { success: true });
+      },
+    );
+    await setupFeishuSettingsPage(context, platform);
+    await screen.findByText(`Okou ${provider.name}`);
+    const moreOptions = getAction(
+      "button",
+      `More options for Okou ${provider.name}`,
+    );
+    click(moreOptions);
+    const options = await controlledContent(moreOptions);
+    click(getAction("button", "Uninstall", options));
+    const dialog = await screen.findByRole("dialog", {
+      name: `Uninstall ${provider.name} bot?`,
+    });
+    click(getAction("button", "Uninstall", dialog));
+    await started.promise;
+    expect(getAction("button", "Cancel", dialog)).toBeDisabled();
+    expect(getAction("button", "Uninstalling...", dialog)).toBeDisabled();
+    const user = userEvent.setup();
+    await user.keyboard("{Escape}");
+    expect(dialog).toBeInTheDocument();
+    response.resolve();
+    await screen.findByText("Uninstall unavailable");
+    expect(getAction("button", "Uninstall", dialog)).toBeEnabled();
+    fail = false;
+    click(getAction("button", "Uninstall", dialog));
+    await screen.findByText(`${provider.name} bot uninstalled`);
+    await waitFor(() => {
+      expect(dialog).not.toBeInTheDocument();
+    });
+    expect(getAction("button", "Add bot")).toBeEnabled();
+  });
+
   it(`Reviewing a ${provider.name} bot guide never connects`, async () => {
     const browserOpen = context.mocks.browser.open();
     mockBot({

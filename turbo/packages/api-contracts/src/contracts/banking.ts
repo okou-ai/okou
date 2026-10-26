@@ -1,169 +1,175 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  url,
+  uuid,
+  enum as zEnum,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-const dateOnlySchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be formatted as YYYY-MM-DD");
+const dateOnlySchema = string().regex(
+  /^\d{4}-\d{2}-\d{2}$/,
+  "Date must be formatted as YYYY-MM-DD",
+);
 
-export const bankingProviderSchema = z.literal("finicity");
+export const bankingProviderSchema = literal("finicity");
 
-export const bankingAccountSchema = z.object({
-  id: z.string(),
-  name: z.string().nullable(),
-  institutionName: z.string().nullable(),
-  type: z.string().nullable(),
-  last4: z.string().nullable(),
-  status: z.string().nullable(),
-  currency: z.string().nullable(),
+export const bankingAccountSchema = object({
+  id: string(),
+  name: string().nullable(),
+  institutionName: string().nullable(),
+  type: string().nullable(),
+  last4: string().nullable(),
+  status: string().nullable(),
+  currency: string().nullable(),
 });
 
-export const bankingBalanceSchema = z.object({
-  accountId: z.string(),
-  name: z.string().nullable(),
-  type: z.string().nullable(),
-  balance: z.number().nullable(),
-  availableBalance: z.number().nullable(),
-  currency: z.string().nullable(),
-  balanceDate: z.number().nullable(),
+export const bankingBalanceSchema = object({
+  accountId: string(),
+  name: string().nullable(),
+  type: string().nullable(),
+  balance: number().nullable(),
+  availableBalance: number().nullable(),
+  currency: string().nullable(),
+  balanceDate: number().nullable(),
 });
 
-export const bankingTransactionSchema = z.object({
-  id: z.string(),
-  accountId: z.string(),
-  amount: z.number().nullable(),
-  description: z.string().nullable(),
-  memo: z.string().nullable(),
-  postedDate: z.number().nullable(),
-  transactionDate: z.number().nullable(),
-  status: z.string().nullable(),
-  categorization: z.string().nullable(),
-  merchant: z.string().nullable(),
+export const bankingTransactionSchema = object({
+  id: string(),
+  accountId: string(),
+  amount: number().nullable(),
+  description: string().nullable(),
+  memo: string().nullable(),
+  postedDate: number().nullable(),
+  transactionDate: number().nullable(),
+  status: string().nullable(),
+  categorization: string().nullable(),
+  merchant: string().nullable(),
 });
 
-export const bankingAccountsResponseSchema = z.object({
-  operation: z.literal("accounts"),
+export const bankingAccountsResponseSchema = object({
+  operation: literal("accounts"),
   provider: bankingProviderSchema,
-  accounts: z.array(bankingAccountSchema),
+  accounts: array(bankingAccountSchema),
 });
 
-export const bankingBalancesRequestSchema = z.object({
-  accountId: z.string().trim().min(1),
+export const bankingBalancesRequestSchema = object({
+  accountId: string().trim().min(1),
 });
 
-export const bankingBalancesResponseSchema = z.object({
-  operation: z.literal("balances"),
+export const bankingBalancesResponseSchema = object({
+  operation: literal("balances"),
   provider: bankingProviderSchema,
   balance: bankingBalanceSchema,
 });
 
-export const bankingTransactionsRequestSchema = z.object({
-  accountId: z.string().trim().min(1),
+export const bankingTransactionsRequestSchema = object({
+  accountId: string().trim().min(1),
   from: dateOnlySchema,
   to: dateOnlySchema,
-  limit: z.number().int().min(1).max(1000).default(100),
+  limit: number().int().min(1).max(1000).default(100),
 });
 
-export const bankingTransactionsResponseSchema = z.object({
-  operation: z.literal("transactions"),
+export const bankingTransactionsResponseSchema = object({
+  operation: literal("transactions"),
   provider: bankingProviderSchema,
-  accountId: z.string(),
-  transactions: z.array(bankingTransactionSchema),
+  accountId: string(),
+  transactions: array(bankingTransactionSchema),
 });
 
-export const bankingGrantDurationSchema = z.enum(["1h", "24h", "7d", "30d"]);
+export const bankingGrantDurationSchema = zEnum(["1h", "24h", "7d", "30d"]);
 
-export const bankingConnectionAccountSchema = z.object({
-  id: z.uuid(),
-  name: z.string().nullable(),
-  institutionName: z.string().nullable(),
-  type: z.string().nullable(),
-  last4: z.string().nullable(),
-  repairRequired: z.boolean(),
+export const bankingConnectionAccountSchema = object({
+  id: uuid(),
+  name: string().nullable(),
+  institutionName: string().nullable(),
+  type: string().nullable(),
+  last4: string().nullable(),
+  repairRequired: boolean(),
 });
 
-export const bankingRepairInstitutionSchema = z.object({
-  institutionLoginId: z.string(),
-  institutionName: z.string().nullable(),
+export const bankingRepairInstitutionSchema = object({
+  institutionLoginId: string(),
+  institutionName: string().nullable(),
 });
 
-export const bankingAccessRequestStatusResponseSchema = z.object({
-  agent: z.object({
-    id: z.uuid(),
-    name: z.string(),
+export const bankingAccessRequestStatusResponseSchema = object({
+  agent: object({
+    id: uuid(),
+    name: string(),
   }),
-  connection: z
-    .object({
-      id: z.uuid(),
-      status: z.enum(["active", "repair_required"]),
-      accounts: z.array(bankingConnectionAccountSchema),
-      repairInstitutions: z.array(bankingRepairInstitutionSchema),
-    })
-    .nullable(),
-  session: z
-    .object({
-      id: z.uuid(),
-      mode: z.enum(["connect", "fix"]),
-      status: z.enum([
-        "pending",
-        "completed",
-        "cancelled",
-        "failed",
-        "superseded",
-      ]),
-      institutionLoginId: z.string().nullable(),
-    })
-    .nullable(),
-  grant: z
-    .object({
-      status: z.enum(["active", "expired", "revoked"]),
-      accountIds: z.array(z.uuid()),
-      purpose: z.string().nullable(),
-      expiresAt: z.iso.datetime().nullable(),
-    })
-    .nullable(),
+  connection: object({
+    id: uuid(),
+    status: zEnum(["active", "repair_required"]),
+    accounts: array(bankingConnectionAccountSchema),
+    repairInstitutions: array(bankingRepairInstitutionSchema),
+  }).nullable(),
+  session: object({
+    id: uuid(),
+    mode: zEnum(["connect", "fix"]),
+    status: zEnum([
+      "pending",
+      "completed",
+      "cancelled",
+      "failed",
+      "superseded",
+    ]),
+    institutionLoginId: string().nullable(),
+  }).nullable(),
+  grant: object({
+    status: zEnum(["active", "expired", "revoked"]),
+    accountIds: array(uuid()),
+    purpose: string().nullable(),
+    expiresAt: iso.datetime().nullable(),
+  }).nullable(),
 });
 
-export const bankingConnectSessionRequestSchema = z
-  .object({
-    agentId: z.uuid(),
-    mode: z.enum(["connect", "fix"]),
-    institutionLoginId: z.string().trim().min(1).max(128).optional(),
-  })
-  .superRefine((value, context) => {
-    if (value.mode === "fix" && !value.institutionLoginId) {
-      context.addIssue({
-        code: "custom",
-        path: ["institutionLoginId"],
-        message: "institutionLoginId is required for a fix session",
-      });
-    }
-    if (value.mode === "connect" && value.institutionLoginId) {
-      context.addIssue({
-        code: "custom",
-        path: ["institutionLoginId"],
-        message: "institutionLoginId is only valid for a fix session",
-      });
-    }
-  });
-
-export const bankingConnectSessionResponseSchema = z.object({
-  sessionId: z.uuid(),
-  url: z.url(),
+export const bankingConnectSessionRequestSchema = object({
+  agentId: uuid(),
+  mode: zEnum(["connect", "fix"]),
+  institutionLoginId: string().trim().min(1).max(128).optional(),
+}).superRefine((value, context) => {
+  if (value.mode === "fix" && !value.institutionLoginId) {
+    context.addIssue({
+      code: "custom",
+      path: ["institutionLoginId"],
+      message: "institutionLoginId is required for a fix session",
+    });
+  }
+  if (value.mode === "connect" && value.institutionLoginId) {
+    context.addIssue({
+      code: "custom",
+      path: ["institutionLoginId"],
+      message: "institutionLoginId is only valid for a fix session",
+    });
+  }
 });
 
-export const bankingAgentGrantRequestSchema = z.object({
-  agentId: z.uuid(),
-  accountIds: z.array(z.uuid()).min(1),
+export const bankingConnectSessionResponseSchema = object({
+  sessionId: uuid(),
+  url: url(),
+});
+
+export const bankingAgentGrantRequestSchema = object({
+  agentId: uuid(),
+  accountIds: array(uuid()).min(1),
   duration: bankingGrantDurationSchema,
-  purpose: z.string().trim().min(1).max(500),
+  purpose: string().trim().min(1).max(500),
 });
 
-export const bankingAgentGrantRevokeRequestSchema = z.object({
-  agentId: z.uuid(),
+export const bankingAgentGrantRevokeRequestSchema = object({
+  agentId: uuid(),
 });
 
 const bankingAccountsResponses = {
@@ -198,7 +204,7 @@ export const bankingContract = c.router({
     method: "POST",
     path: "/api/banking/accounts",
     headers: authHeadersSchema,
-    body: z.object({}),
+    body: object({}),
     responses: bankingAccountsResponses,
     summary: "List accounts through the managed banking gateway",
   },
@@ -236,7 +242,7 @@ export const bankingUserContract = c.router({
     method: "GET",
     path: "/api/banking/access-requests/:agentId",
     headers: authHeadersSchema,
-    pathParams: z.object({ agentId: z.uuid() }),
+    pathParams: object({ agentId: uuid() }),
     responses: {
       200: bankingAccessRequestStatusResponseSchema,
       401: apiErrorSchema,
@@ -285,21 +291,21 @@ export const bankingPublicContract = c.router({
     method: "GET",
     path: "/api/banking/connect/return",
     responses: {
-      200: c.otherResponse({ contentType: "text/html", body: z.unknown() }),
+      200: c.otherResponse({ contentType: "text/html", body: zUnknown() }),
     },
     summary: "Return a Mastercard Data Connect popup to Chat",
   },
   finicityWebhook: {
     method: "POST",
     path: "/api/webhooks/finicity",
-    headers: z.object({ "x-finicity-signature": z.string() }),
+    headers: object({ "x-finicity-signature": string() }),
     body: c.type<string>(),
     responses: {
-      200: z.string(),
-      400: z.object({ error: z.string() }),
-      401: z.object({ error: z.string() }),
-      500: z.object({ error: z.string() }),
-      503: z.object({ error: z.string() }),
+      200: string(),
+      400: object({ error: string() }),
+      401: object({ error: string() }),
+      500: object({ error: string() }),
+      503: object({ error: string() }),
     },
     summary: "Handle signed Mastercard Open Finance webhooks",
   },
@@ -308,34 +314,34 @@ export const bankingPublicContract = c.router({
 export type BankingContract = typeof bankingContract;
 export type BankingUserContract = typeof bankingUserContract;
 export type BankingPublicContract = typeof bankingPublicContract;
-export type BankingAccount = z.infer<typeof bankingAccountSchema>;
-export type BankingBalance = z.infer<typeof bankingBalanceSchema>;
-export type BankingTransaction = z.infer<typeof bankingTransactionSchema>;
-export type BankingAccountsResponse = z.infer<
+export type BankingAccount = zInfer<typeof bankingAccountSchema>;
+export type BankingBalance = zInfer<typeof bankingBalanceSchema>;
+export type BankingTransaction = zInfer<typeof bankingTransactionSchema>;
+export type BankingAccountsResponse = zInfer<
   typeof bankingAccountsResponseSchema
 >;
-export type BankingBalancesRequest = z.infer<
+export type BankingBalancesRequest = zInfer<
   typeof bankingBalancesRequestSchema
 >;
-export type BankingBalancesResponse = z.infer<
+export type BankingBalancesResponse = zInfer<
   typeof bankingBalancesResponseSchema
 >;
-export type BankingTransactionsRequest = z.infer<
+export type BankingTransactionsRequest = zInfer<
   typeof bankingTransactionsRequestSchema
 >;
-export type BankingTransactionsResponse = z.infer<
+export type BankingTransactionsResponse = zInfer<
   typeof bankingTransactionsResponseSchema
 >;
-export type BankingGrantDuration = z.infer<typeof bankingGrantDurationSchema>;
-export type BankingAccessRequestStatusResponse = z.infer<
+export type BankingGrantDuration = zInfer<typeof bankingGrantDurationSchema>;
+export type BankingAccessRequestStatusResponse = zInfer<
   typeof bankingAccessRequestStatusResponseSchema
 >;
-export type BankingConnectSessionRequest = z.infer<
+export type BankingConnectSessionRequest = zInfer<
   typeof bankingConnectSessionRequestSchema
 >;
-export type BankingConnectSessionResponse = z.infer<
+export type BankingConnectSessionResponse = zInfer<
   typeof bankingConnectSessionResponseSchema
 >;
-export type BankingAgentGrantRequest = z.infer<
+export type BankingAgentGrantRequest = zInfer<
   typeof bankingAgentGrantRequestSchema
 >;

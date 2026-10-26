@@ -1,7 +1,14 @@
-import { z } from "zod";
+import {
+  int,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 /** Connection evidence only, never command failure or authorization state. */
-export const sshConnectionFailureReasonSchema = z.enum([
+export const sshConnectionFailureReasonSchema = zEnum([
   "invalid_credential",
   "unsupported_credential",
   "credential_resource_limit",
@@ -17,16 +24,14 @@ export const sshConnectionFailureReasonSchema = z.enum([
   "access_protocol_failure",
 ]);
 
-export const sshConnectionObservationSchema = z
-  .object({
-    connectionId: z.uuid(),
-    connectionCreatedAt: z.string().datetime(),
-    generation: z.int().positive().max(2_147_483_647),
-    observedAt: z.string().datetime(),
-    failureReason: sshConnectionFailureReasonSchema.nullable(),
-  })
-  .strict();
+export const sshConnectionObservationSchema = object({
+  connectionId: uuid(),
+  connectionCreatedAt: string().datetime(),
+  generation: int().positive().max(2_147_483_647),
+  observedAt: string().datetime(),
+  failureReason: sshConnectionFailureReasonSchema.nullable(),
+}).strict();
 
-export type SshConnectionObservation = z.infer<
+export type SshConnectionObservation = zInfer<
   typeof sshConnectionObservationSchema
 >;

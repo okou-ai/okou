@@ -1,16 +1,16 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { Readable } from "node:stream";
-import { z } from "zod";
+import { number, strictObject, string } from "zod";
 
 const GUEST_TASK_EXEC = "/usr/local/bin/guest-task-exec";
 // One consumer deadline covers connection, placement and private reporting.
 const HELPER_TIMEOUT_MS = 30_000;
 const MAX_REPORT_BYTES = 4_096;
-export const guestTaskStartupSchema = z.strictObject({
-  handle: z
-    .string()
-    .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
-  pid: z.number().int().positive().max(0xffff_ffff),
+export const guestTaskStartupSchema = strictObject({
+  handle: string().regex(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+  ),
+  pid: number().int().positive().max(0xffff_ffff),
 });
 
 export interface GuestTask {

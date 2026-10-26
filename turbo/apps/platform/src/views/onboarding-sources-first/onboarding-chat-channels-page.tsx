@@ -9,12 +9,17 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
 import { Button, Card } from "@okouai/ui";
+import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   captureSourceOnboardingChannelClicked$,
   captureSourceOnboardingSlackInstallStarted$,
 } from "../../signals/bootstrap/source-onboarding-telemetry.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { agentPhoneLinkStatus$ } from "../../signals/okou-page/agentphone.ts";
+import { connectDiscordFromWorks$ } from "../../signals/okou-page/discord-connect-signals.ts";
+import { discordOrgData$ } from "../../signals/okou-page/discord.ts";
 import { slackOrgData$ } from "../../signals/okou-page/slack.ts";
 import { teamsEntryUrl } from "../../signals/okou-page/teams-connect-context.ts";
 import { teamsOrgData$ } from "../../signals/okou-page/teams.ts";
@@ -32,6 +37,11 @@ import {
   AgentPhoneConnectionCodeError,
   AgentPhoneConnectionCodeLoading,
 } from "../okou-page/agentphone-connect-dialog.tsx";
+import { DiscordMark } from "../okou-page/components/discord-mark.tsx";
+import {
+  canAuthorizeDiscord,
+  discordDescription,
+} from "../okou-page/discord-authorization-actions.tsx";
 import { ProductMark } from "./onboarding-step-parts.tsx";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
@@ -115,7 +125,7 @@ function ChannelButtonContent({
   channel,
   connected,
 }: {
-  readonly channel: "slack" | "telegram" | "teams";
+  readonly channel: "slack" | "telegram" | "teams" | "discord";
   readonly connected: boolean;
 }) {
   const { t } = useTranslation();
@@ -128,12 +138,20 @@ function ChannelButtonContent({
         ? t(($) => {
             return $.onboarding.sourcesFirst.slack.otherTelegram;
           })
-        : t(($) => {
-            return $.onboarding.sourcesFirst.slack.otherTeams;
-          });
+        : channel === "discord"
+          ? t(($) => {
+              return $.works.discord.title;
+            })
+          : t(($) => {
+              return $.onboarding.sourcesFirst.slack.otherTeams;
+            });
   return (
     <>
-      <ProductMark name={channel} alt="" size="mark" />
+      {channel === "discord" ? (
+        <DiscordMark size={16} />
+      ) : (
+        <ProductMark name={channel} alt="" size="mark" />
+      )}
       {label}
       {connected && (
         <>
@@ -238,6 +256,39 @@ function TelegramButton({ connected }: { readonly connected: boolean }) {
   );
 }
 
+function DiscordButton({ data }: { readonly data: DiscordOrgStatus | null }) {
+  const captureChannelClicked = useSet(captureSourceOnboardingChannelClicked$);
+  const pageSignal = useGet(pageSignal$);
+  const [connection, connect] = useLoadableSet(connectDiscordFromWorks$);
+  return (
+    <div className="flex min-w-0 flex-1 flex-col gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        className="min-w-0 flex-1 gap-2 px-3"
+        aria-pressed={data?.isConnected === true}
+        disabled={
+          !data || !canAuthorizeDiscord(data) || connection.state === "loading"
+        }
+        onClick={() => {
+          captureChannelClicked("discord", true);
+          detach(connect({}, pageSignal), Reason.DomCallback);
+        }}
+      >
+        <ChannelButtonContent
+          channel="discord"
+          connected={data?.isConnected === true}
+        />
+      </Button>
+      {data && !data.isAvailable ? (
+        <p role="status" className="text-xs leading-5 text-muted-foreground">
+          {discordDescription(data)}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function InlineImessageConnection() {
   const { t } = useTranslation();
   const statusLoadable = useLastLoadable(agentPhoneLinkStatus$);
@@ -332,6 +383,10 @@ function InlineImessageConnection() {
 export function OnboardingSlackPage() {
   const { t } = useTranslation();
   const flow = useSourcesFirstFlow("slack");
+  const discordEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.DiscordIntegration];
+  const discord = useLastLoadable(discordOrgData$);
+  const discordData = discord.state === "hasData" ? discord.data : null;
   const slack = loadedChannelState(useLastLoadable(slackOrgData$), (status) => {
     return {
       isConnected: status.isConnected,
@@ -364,6 +419,7 @@ export function OnboardingSlackPage() {
     slack.kind === "connected" ||
     teams.kind === "connected" ||
     (phone.state === "hasData" && phone.data.linked) ||
+    (discordEnabled && discordData?.isConnected === true) ||
     telegramConnected;
   return (
     <OnboardingStepLayout
@@ -400,10 +456,11 @@ export function OnboardingSlackPage() {
               return $.onboarding.sourcesFirst.chatChannels.othersLabel;
             })}
           </p>
-          <div className="flex gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:flex">
             <InstalledChannelButton channel="slack" state={slack} />
             <TelegramButton connected={telegramConnected} />
             <InstalledChannelButton channel="teams" state={teams} />
+            {discordEnabled ? <DiscordButton data={discordData} /> : null}
           </div>
           <div className="mt-2 space-y-1">
             <ChannelNote

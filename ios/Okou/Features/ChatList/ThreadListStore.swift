@@ -11,7 +11,8 @@ final class ThreadListStore {
   private(set) var pinnedAgentIDs: [String] = []
   private(set) var unreadAgentIDs: Set<String> = []
   private(set) var canUseComposerConnectors = false
-  private(set) var canArchiveChats = false
+  private var archivingEnabled: Bool?
+  var canArchiveChats: Bool { archivingEnabled == true }
   private(set) var canMuteChats = false
   var onlyUnread = false
   private(set) var markingAgentRead = false
@@ -23,6 +24,7 @@ final class ThreadListStore {
   var syncError: String? { refreshError ?? indicatorsError }
   var error: String? { actionError ?? syncError }
   private(set) var isLoading = false
+  private(set) var hasLoadedThreads = false
   private(set) var updatingThreads: Set<String> = []
   private let client: APIClient
   private let sync: ChatSync
@@ -36,6 +38,8 @@ final class ThreadListStore {
   private var creationRevision = 0
   private var refreshTask: Task<Void, Never>?
   private var navigationTask: Task<Void, Never>?
+  private var navigationRevision = 0
+  private var restoredNavigation = false
   private var indicatorsTask: Task<Void, Never>?
   private var updateTasks: [String: Task<Void, Never>] = [:]
   private var pinTasks: [String: Task<Void, Never>] = [:]
@@ -71,14 +75,30 @@ final class ThreadListStore {
 
   func restoreCached() async {
     guard !closed, !Task.isCancelled else { return }
+    if !restoredNavigation, navigationRevision == 0 {
+      let revision = navigationRevision
+      let cached = await sync.cachedNavigation()
+      guard !closed, !Task.isCancelled else { return }
+      if let cached, !restoredNavigation, navigationRevision == revision {
+        agents = cached.agents
+        pinnedAgentIDs = cached.preferences.pinnedAgentIds
+        applySwitches(cached.featureSwitches)
+      }
+      restoredNavigation = true
+    }
+    guard !closed, !hasLoadedThreads, !Task.isCancelled else { return }
     let revision = creationRevision
     if let cached = await sync.cachedThreads() {
-      guard !closed, !Task.isCancelled, revision == creationRevision else { return }
+      guard !closed, !hasLoadedThreads, !Task.isCancelled, revision == creationRevision else {
+        return
+      }
       projectThreads(cached)
     }
   }
 
   func refreshNavigation() async {
+    guard !closed, !blocked, !Task.isCancelled else { return }
+    await restoreCached()
     guard !closed, !blocked, !Task.isCancelled else { return }
     if let navigationTask {
       await navigationTask.value
@@ -99,6 +119,7 @@ final class ThreadListStore {
 
   private func loadNavigation() async {
     guard !closed, !blocked, !Task.isCancelled else { return }
+    navigationRevision += 1
     do {
       let result: [AgentRecord] = try await client.request("/api/agents")
       guard !closed, !Task.isCancelled else { return }
@@ -129,8 +150,18 @@ final class ThreadListStore {
     }
     guard !closed, !Task.isCancelled else { return }
     // Keep this workspace's last successful flags until a new response replaces them.
+    applySwitches(switches)
+    if navigationError == nil {
+      await sync.persistNavigation(
+        SidebarNavigationSnapshot(
+          agents: agents, preferences: SidebarPreferences(pinnedAgentIds: pinnedAgentIDs),
+          featureSwitches: switches))
+    }
+  }
+
+  private func applySwitches(_ switches: SidebarFeatureSwitches) {
     canUseComposerConnectors = switches.effectiveSwitches["iosComposerConnectors"] == true
-    canArchiveChats = switches.effectiveSwitches["chatThreadArchiving"] == true
+    archivingEnabled = switches.effectiveSwitches["chatThreadArchiving"] == true
     canMuteChats = switches.effectiveSwitches["chatThreadMuting"] == true
   }
 
@@ -147,7 +178,6 @@ final class ThreadListStore {
       if waitForCurrent { await refreshTask.value }
       return
     }
-    isLoading = true
     let generation = refreshGeneration
     let task = Task { [weak self] in
       guard let self else { return }
@@ -158,6 +188,9 @@ final class ThreadListStore {
         }
       }
       guard !Task.isCancelled, refreshGeneration == generation else { return }
+      await restoreCached()
+      guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
+      isLoading = true
       repeat {
         refreshAgain = false
         do {
@@ -203,6 +236,7 @@ final class ThreadListStore {
 
   func insertCreated(_ thread: ChatThread) {
     creationRevision += 1
+    hasLoadedThreads = true
     // Realtime can publish a committed thread before its POST response arrives.
     if !threads.contains(where: { $0.id == thread.id }) { threads.insert(thread, at: 0) }
   }
@@ -273,7 +307,9 @@ final class ThreadListStore {
         // PWA's unread list includes archived chats and retains active-indicator precedence.
         return !$0.isMuted && $0.indicator == .unread
       }
-      return !canArchiveChats || $0.isArchived == archived
+      // Cached recent chats can render before switches arrive. Keep archived
+      // chats in their own section until the server resolves that visibility.
+      return archivingEnabled == false || $0.isArchived == archived
     }
   }
 
@@ -392,6 +428,7 @@ final class ThreadListStore {
   private func projectThreads(_ snapshot: [ChatThread]) {
     let result = ChatThreadReplay.sidebarOrder(
       ChatThreadReplay.replay(snapshot: snapshot, events: optimisticChanges.map(\.change)))
+    hasLoadedThreads = true
     if threads != result { threads = result }
     didRefresh(result)
   }

@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { z } from "zod";
+import { array, strictObject, string, url as zUrl } from "zod";
 import {
   userPermissionGrantBatchItemSchema,
   userPermissionGrantBatchItemsSchema,
@@ -9,21 +9,20 @@ import { getPlatformOrigin } from "../../lib/platform-url";
 import { finalizeActionUrl } from "./action-url";
 import { diagnosePermissionRequest } from "./permission-request-diagnostic";
 
-const nonemptyString = z.string().trim().min(1);
-const batchFileSchema = z
-  .array(
-    z.strictObject({
-      connector: nonemptyString,
-      permission: userPermissionGrantBatchItemSchema.shape.permission,
-      url: z.url({ protocol: /^https?$/ }),
-      method: nonemptyString.max(16),
-      awsService: nonemptyString.optional(),
-      awsAction: nonemptyString.optional(),
-      awsTarget: nonemptyString.optional(),
-      awsQueryParam: z.array(nonemptyString).optional(),
-      awsHeaderPresent: z.array(nonemptyString).optional(),
-    }),
-  )
+const nonemptyString = string().trim().min(1);
+const batchFileSchema = array(
+  strictObject({
+    connector: nonemptyString,
+    permission: userPermissionGrantBatchItemSchema.shape.permission,
+    url: zUrl({ protocol: /^https?$/ }),
+    method: nonemptyString.max(16),
+    awsService: nonemptyString.optional(),
+    awsAction: nonemptyString.optional(),
+    awsTarget: nonemptyString.optional(),
+    awsQueryParam: array(nonemptyString).optional(),
+    awsHeaderPresent: array(nonemptyString).optional(),
+  }),
+)
   .min(1)
   .max(20);
 

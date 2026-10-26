@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string, union } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -44,21 +44,20 @@ export async function exchangeCopperCode(args: {
   if (!response.ok) {
     await throwOAuthError("Copper", "exchange", response);
   }
-  const token = z
-    .object({ access_token: z.string().min(1), scope: z.string().optional() })
-    .parse(await response.json());
+  const token = object({
+    access_token: string().min(1),
+    scope: string().optional(),
+  }).parse(await response.json());
   const accountResponse = await fetch(ACCOUNT_URL, {
     headers: { Authorization: `Bearer ${token.access_token}` },
   });
   if (!accountResponse.ok) {
     throw new Error(`Copper account request failed: ${accountResponse.status}`);
   }
-  const account = z
-    .object({
-      id: z.union([z.string(), z.number()]),
-      name: z.string().optional(),
-    })
-    .parse(await accountResponse.json());
+  const account = object({
+    id: union([string(), number()]),
+    name: string().optional(),
+  }).parse(await accountResponse.json());
   return {
     accessToken: token.access_token,
     scopes: effectiveOAuthScopes(token.scope, args.grant.scopes, " "),

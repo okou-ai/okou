@@ -18,7 +18,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { z } from "zod";
+import { array, int, literal, object, string, union } from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -48,7 +48,7 @@ import {
 } from "./connector-credential-storage-write.service";
 
 const log = logger("api:connector-credential-runtime");
-const oauthScopesSchema = z.array(z.string());
+const oauthScopesSchema = array(string());
 
 export interface BuiltinConnectorCredentialConnection {
   readonly access: BuiltinConnectorCredentialAccess;
@@ -658,13 +658,11 @@ const persistConnectorRefresh$ = command(
         }),
         sql` `,
       )}`;
-    const receiptSchema = z
-      .object({
-        parent_count: z.union([z.literal(0), z.literal(1)]),
-        child_count: z.int().min(0).max(groups.length),
-        assertion: z.literal(0),
-      })
-      .strict();
+    const receiptSchema = object({
+      parent_count: union([literal(0), literal(1)]),
+      child_count: int().min(0).max(groups.length),
+      assertion: literal(0),
+    }).strict();
     // Invoke both local scopes here: no query-executing closure or handle leaves the owner.
     // Decode/translate before the original final Abort observation, including on parent zero.
     const persisted = await (async () => {

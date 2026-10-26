@@ -1,13 +1,23 @@
-import { z } from "zod";
+import {
+  array,
+  iso,
+  number,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { composerDraftSchema } from "./chat-threads";
 import { apiErrorSchema } from "./errors";
 
 const SUGGESTION_LIMIT = 10;
 // UUID aliases must share one terminal identity in the JSONB collection.
-const suggestionIdSchema = z.uuid().toLowerCase();
-const suggestionOptionIdSchema = z.string().trim().min(1).max(64);
-const suggestionStatusSchema = z.enum(["active", "consumed", "removed"]);
+const suggestionIdSchema = uuid().toLowerCase();
+const suggestionOptionIdSchema = string().trim().min(1).max(64);
+const suggestionStatusSchema = zEnum(["active", "consumed", "removed"]);
 const suggestionDraftSchema = composerDraftSchema.refine(
   (draft) => {
     return (
@@ -21,16 +31,15 @@ const suggestionDraftSchema = composerDraftSchema.refine(
     path: ["draftUserMessage"],
   },
 );
-export const suggestionOptionSchema = z.object({
+export const suggestionOptionSchema = object({
   id: suggestionOptionIdSchema,
-  label: z.string().trim().min(1).max(80),
-  description: z.string().trim().max(160),
-  threadId: z.uuid().toLowerCase().nullable(),
+  label: string().trim().min(1).max(80),
+  description: string().trim().max(160),
+  threadId: uuid().toLowerCase().nullable(),
   draft: suggestionDraftSchema,
 });
-export type SuggestionOption = z.infer<typeof suggestionOptionSchema>;
-const suggestionOptionsSchema = z
-  .array(suggestionOptionSchema)
+export type SuggestionOption = zInfer<typeof suggestionOptionSchema>;
+const suggestionOptionsSchema = array(suggestionOptionSchema)
   .min(1)
   .max(3)
   .refine(
@@ -51,18 +60,18 @@ const suggestionOptionsSchema = z
     },
     { message: "Suggestion options exceed 65536 characters" },
   );
-const suggestionContentSchema = z.object({
-  title: z.string().trim().min(1).max(120),
-  rationale: z.string().trim().max(200),
-  priority: z.number().int().min(-2147483648).max(2147483647),
+const suggestionContentSchema = object({
+  title: string().trim().min(1).max(120),
+  rationale: string().trim().max(200),
+  priority: number().int().min(-2147483648).max(2147483647),
   options: suggestionOptionsSchema,
 });
 export const suggestionSchema = suggestionContentSchema.extend({
   id: suggestionIdSchema,
   status: suggestionStatusSchema,
   selectedOptionId: suggestionOptionIdSchema.nullable(),
-  createdAt: z.iso.datetime(),
-  updatedAt: z.iso.datetime(),
+  createdAt: iso.datetime(),
+  updatedAt: iso.datetime(),
 });
 export const suggestionReceiptSchema = suggestionSchema
   .pick({
@@ -72,8 +81,8 @@ export const suggestionReceiptSchema = suggestionSchema
     createdAt: true,
     updatedAt: true,
   })
-  .extend({ status: z.enum(["consumed", "removed"]) });
-export type SuggestionReceipt = z.infer<typeof suggestionReceiptSchema>;
+  .extend({ status: zEnum(["consumed", "removed"]) });
+export type SuggestionReceipt = zInfer<typeof suggestionReceiptSchema>;
 export const suggestionCreateSchema = suggestionContentSchema.extend({
   id: suggestionIdSchema,
   priority: suggestionContentSchema.shape.priority.default(0),
@@ -86,9 +95,9 @@ export const suggestionUpdateSchema = suggestionContentSchema.partial().refine(
     message: "Provide at least one suggestion field to update",
   },
 );
-export type Suggestion = z.infer<typeof suggestionSchema>;
-export type SuggestionCreate = z.infer<typeof suggestionCreateSchema>;
-export type SuggestionUpdate = z.infer<typeof suggestionUpdateSchema>;
+export type Suggestion = zInfer<typeof suggestionSchema>;
+export type SuggestionCreate = zInfer<typeof suggestionCreateSchema>;
+export type SuggestionUpdate = zInfer<typeof suggestionUpdateSchema>;
 
 const c = initContract();
 const errors = {
@@ -98,16 +107,16 @@ const errors = {
   404: apiErrorSchema,
   409: apiErrorSchema,
 };
-const params = z.object({ id: suggestionIdSchema });
+const params = object({ id: suggestionIdSchema });
 export const suggestionsContract = c.router({
   list: {
     method: "GET",
     path: "/api/suggestions",
     headers: authHeadersSchema,
     responses: {
-      200: z.object({
-        suggestions: z.array(suggestionSchema).max(SUGGESTION_LIMIT),
-        receipts: z.array(suggestionReceiptSchema).optional(),
+      200: object({
+        suggestions: array(suggestionSchema).max(SUGGESTION_LIMIT),
+        receipts: array(suggestionReceiptSchema).optional(),
       }),
       ...errors,
     },
@@ -143,7 +152,7 @@ export const suggestionsContract = c.router({
     path: "/api/suggestions/:id/consume",
     headers: authHeadersSchema,
     pathParams: params,
-    body: z.object({ optionId: suggestionOptionIdSchema.nullable() }),
+    body: object({ optionId: suggestionOptionIdSchema.nullable() }),
     responses: { 200: suggestionSchema, ...errors },
     summary: "Choose a suggestion option, or dismiss it with a null option ID",
   },

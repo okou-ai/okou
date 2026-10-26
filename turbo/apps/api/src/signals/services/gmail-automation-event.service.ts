@@ -18,7 +18,17 @@ import { command } from "ccstate";
 import { and, eq, exists, inArray, or, sql } from "drizzle-orm";
 import { OAuth2Client } from "google-auth-library";
 import { Buffer } from "node:buffer";
-import { z } from "zod";
+import {
+  array,
+  lazy,
+  number,
+  object,
+  string,
+  union,
+  type infer as zInfer,
+  type ZodType,
+} from "zod";
+
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
@@ -66,48 +76,42 @@ type GmailMatchRules = NonNullable<GmailNewMessageEventConfig["match"]>;
 
 type GmailTextMatch = NonNullable<GmailMatchRules["subject"]>;
 
-const gmailHistoryMessageSchema = z.object({
-  id: z.string(),
-  threadId: z.string().optional(),
-  labelIds: z.array(z.string()).optional(),
+const gmailHistoryMessageSchema = object({
+  id: string(),
+  threadId: string().optional(),
+  labelIds: array(string()).optional(),
 });
 
-const gmailHistoryResponseSchema = z.object({
-  history: z
-    .array(
-      z.object({
-        id: z.string().optional(),
-        messagesAdded: z
-          .array(
-            z.object({
-              message: gmailHistoryMessageSchema,
-            }),
-          )
-          .optional(),
-        labelsAdded: z
-          .array(
-            z.object({
-              message: gmailHistoryMessageSchema,
-              labelIds: z.array(z.string()).optional(),
-            }),
-          )
-          .optional(),
-      }),
-    )
-    .optional(),
-  nextPageToken: z.string().optional(),
-  historyId: z.string().optional(),
+const gmailHistoryResponseSchema = object({
+  history: array(
+    object({
+      id: string().optional(),
+      messagesAdded: array(
+        object({
+          message: gmailHistoryMessageSchema,
+        }),
+      ).optional(),
+      labelsAdded: array(
+        object({
+          message: gmailHistoryMessageSchema,
+          labelIds: array(string()).optional(),
+        }),
+      ).optional(),
+    }),
+  ).optional(),
+  nextPageToken: string().optional(),
+  historyId: string().optional(),
 });
 
-const gmailMessageHeaderSchema = z.object({
-  name: z.string(),
-  value: z.string(),
+const gmailMessageHeaderSchema = object({
+  name: string(),
+  value: string(),
 });
 
 interface GmailMessagePart {
   readonly mimeType?: string;
   readonly filename?: string;
-  readonly headers?: readonly z.infer<typeof gmailMessageHeaderSchema>[];
+  readonly headers?: readonly zInfer<typeof gmailMessageHeaderSchema>[];
   readonly body?: {
     readonly data?: string;
     readonly attachmentId?: string;
@@ -115,42 +119,38 @@ interface GmailMessagePart {
   readonly parts?: readonly GmailMessagePart[];
 }
 
-const gmailMessagePartSchema: z.ZodType<GmailMessagePart> = z.lazy(() => {
-  return z.object({
-    mimeType: z.string().optional(),
-    filename: z.string().optional(),
-    headers: z.array(gmailMessageHeaderSchema).optional(),
-    body: z
-      .object({
-        data: z.string().optional(),
-        attachmentId: z.string().optional(),
-      })
-      .optional(),
-    parts: z.array(gmailMessagePartSchema).optional(),
+const gmailMessagePartSchema: ZodType<GmailMessagePart> = lazy(() => {
+  return object({
+    mimeType: string().optional(),
+    filename: string().optional(),
+    headers: array(gmailMessageHeaderSchema).optional(),
+    body: object({
+      data: string().optional(),
+      attachmentId: string().optional(),
+    }).optional(),
+    parts: array(gmailMessagePartSchema).optional(),
   });
 });
 
-const gmailMessageSchema = z.object({
-  id: z.string(),
-  threadId: z.string().optional(),
-  labelIds: z.array(z.string()).optional(),
-  internalDate: z.string().optional(),
+const gmailMessageSchema = object({
+  id: string(),
+  threadId: string().optional(),
+  labelIds: array(string()).optional(),
+  internalDate: string().optional(),
   payload: gmailMessagePartSchema.optional(),
 });
 
-const pubSubPushSchema = z.object({
-  message: z.object({
-    data: z.string(),
-    messageId: z.string(),
+const pubSubPushSchema = object({
+  message: object({
+    data: string(),
+    messageId: string(),
   }),
-  subscription: z.string().optional(),
+  subscription: string().optional(),
 });
 
-const gmailPubSubDataSchema = z.object({
-  emailAddress: z.string(),
-  historyId: z
-    .union([z.string(), z.number().int().nonnegative()])
-    .transform(String),
+const gmailPubSubDataSchema = object({
+  emailAddress: string(),
+  historyId: union([string(), number().int().nonnegative()]).transform(String),
 });
 
 interface GmailHistoryMessageAdded {

@@ -363,6 +363,7 @@ export const checkInGetStarted$ = command(
       set(reloadAccountMenuCreditBalances$, signal),
     ]);
     signal.throwIfAborted();
+    set(internalCheckinClaimedOpen$, true);
   },
 );
 

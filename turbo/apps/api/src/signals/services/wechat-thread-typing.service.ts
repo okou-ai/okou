@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { and, eq, exists, inArray, isNull, notExists, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import { object } from "zod";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
@@ -30,7 +30,7 @@ import {
 const L = logger("WechatThreadTyping");
 const ACTIVE_RUN_STATUSES = ["pending", "running"] as const;
 const queueEventRevoker = alias(chatEvents, "wechat_typing_event_revoker");
-const typingPayloadSchema = z.object({
+const typingPayloadSchema = object({
   wechatDelivery: wechatDeliveryTargetSchema,
 });
 

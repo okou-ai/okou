@@ -2,7 +2,8 @@ import { createServer, type RequestListener } from "node:http";
 import { EventEmitter, once } from "node:events";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { fauxAssistantMessage, normalizeContext } from "@earendil-works/pi-ai";
-import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
+import { piAgentStreamForConfig } from "./model";
+import { resolvePiAgentModel } from "./model-catalog";
 import {
   piModelFailureReason,
   piModelTransportFailure,

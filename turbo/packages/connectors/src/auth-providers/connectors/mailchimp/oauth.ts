@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string, union } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { requireConnectorGrantUserId } from "../../grant-result";
@@ -76,12 +76,10 @@ export async function exchangeMailchimpCode(
     await throwOAuthError("Mailchimp", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      error: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    error: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(`Mailchimp OAuth error: ${data.error}`);
@@ -121,20 +119,16 @@ async function fetchMailchimpMetadata(accessToken: string): Promise<{
     );
   }
 
-  const data = z
-    .object({
-      dc: z.string().optional(),
-      user_id: z.union([z.string(), z.number()]).optional(),
-      accountname: z.string().nullable().optional(),
-      login: z
-        .object({
-          login_name: z.string().nullable().optional(),
-          login_email: z.string().nullable().optional(),
-        })
-        .optional(),
-      api_endpoint: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    dc: string().optional(),
+    user_id: union([string(), number()]).optional(),
+    accountname: string().nullable().optional(),
+    login: object({
+      login_name: string().nullable().optional(),
+      login_email: string().nullable().optional(),
+    }).optional(),
+    api_endpoint: string().optional(),
+  }).parse(await response.json());
 
   if (!data.api_endpoint) {
     throw new Error("No API endpoint in Mailchimp metadata response");
@@ -177,13 +171,11 @@ async function fetchMailchimpRootUserInfo(
     throw new Error(`Mailchimp API root fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      login_id: z.union([z.string(), z.number()]).optional(),
-      account_name: z.string().nullable().optional(),
-      email: z.string().nullable().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    login_id: union([string(), number()]).optional(),
+    account_name: string().nullable().optional(),
+    email: string().nullable().optional(),
+  }).parse(await response.json());
 
   return {
     id: requireConnectorGrantUserId(data.login_id?.toString(), "Mailchimp"),

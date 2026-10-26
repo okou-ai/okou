@@ -1,4 +1,11 @@
-import { z } from "zod";
+import {
+  array,
+  number,
+  object,
+  string,
+  union,
+  type infer as zInfer,
+} from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -20,23 +27,20 @@ interface TikTokAdsTokenResult {
   userInfo: TikTokAdsUserInfo;
 }
 
-const tiktokAdsTokenResponseSchema = z
-  .object({
-    code: z.number().optional(),
-    message: z.string().optional(),
-    request_id: z.string().optional(),
-    data: z
-      .object({
-        access_token: z.string().optional(),
-        advertiser_ids: z.array(z.union([z.string(), z.number()])).optional(),
-      })
-      .passthrough()
-      .optional(),
+const tiktokAdsTokenResponseSchema = object({
+  code: number().optional(),
+  message: string().optional(),
+  request_id: string().optional(),
+  data: object({
+    access_token: string().optional(),
+    advertiser_ids: array(union([string(), number()])).optional(),
   })
-  .passthrough();
+    .passthrough()
+    .optional(),
+}).passthrough();
 
 function throwTikTokAdsApiError(
-  data: z.infer<typeof tiktokAdsTokenResponseSchema>,
+  data: zInfer<typeof tiktokAdsTokenResponseSchema>,
   operation: string,
 ): void {
   if (data.code === undefined || data.code === 0) {

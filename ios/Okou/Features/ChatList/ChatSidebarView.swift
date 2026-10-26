@@ -69,7 +69,7 @@ struct ChatSidebarView: View {
             .font(.footnote.weight(.semibold))
         }
       }
-      if store.list.isLoading && store.list.threads.isEmpty {
+      if store.list.isLoading && !store.list.hasLoadedThreads {
         ProgressView("Loading chats…")
           .frame(maxWidth: .infinity)
       } else {

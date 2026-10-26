@@ -248,6 +248,43 @@ test("/onboarding opens the field question and continues to the sources step", a
   expect(fieldRadio(MARKETING_FIELD)).toBeChecked();
 });
 
+test("Waiting for the source catalog keeps onboarding in place and preserves its query", async () => {
+  mockOnboardingNeeded();
+  const ready = context.mocks.deferred<void>();
+  mockOnboardingConnectorCatalog(
+    context,
+    [
+      onboardingSourceItem({
+        slug: "gmail",
+        label: "Gmail",
+        description: "Connect Gmail to continue",
+        hasAccount: false,
+      }),
+    ],
+    { ready: ready.promise },
+  );
+  await setupPage({
+    context,
+    path: `${ROUTES.onboarding}?redeemCode=team-promo`,
+  });
+  await screen.findByRole("heading", { name: INDUSTRY_QUESTION });
+  click(fieldRadio(MARKETING_FIELD));
+  await waitFor(() => {
+    expect(getButtonByName("Continue")).toBeEnabled();
+  });
+  click(getButtonByName("Continue"));
+  await waitFor(() => {
+    expect(getButtonByName("Continue")).toBeDisabled();
+  });
+  expect(
+    screen.getByRole("heading", { name: INDUSTRY_QUESTION }),
+  ).toBeInTheDocument();
+  ready.resolve();
+  await screen.findByRole("heading", { name: SOURCES_QUESTION });
+  expect(pathname()).toBe(ROUTES.onboardingSources);
+  expect(new URLSearchParams(search()).get("redeemCode")).toBe("team-promo");
+});
+
 test("The first step introduces Okou and its compliance progress", async () => {
   mockOnboardingNeeded();
   mockCatalog();

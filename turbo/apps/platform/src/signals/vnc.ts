@@ -63,14 +63,7 @@ import { invalidateCloudflareAccess$ } from "./cloudflare-access.ts";
 import { invalidateTailscale$ } from "./tailscale.ts";
 import { onRef, resetSignal, settle, withCleanup } from "./utils.ts";
 
-export const vncEnabled$ = computed((get) => {
-  return get(featureSwitch$)[FeatureSwitchKey.VncAccess];
-});
-
 export const vncIdentity$ = computed(async (get) => {
-  if (!get(vncEnabled$)) {
-    return null;
-  }
   const [user, identity] = await Promise.all([
     get(user$),
     get(runtimeAuthenticatedIdentity$),
@@ -85,7 +78,6 @@ export const vncClients$ = computed(async (get) => {
     const session = clerk.session;
     if (
       !identity ||
-      !get(vncEnabled$) ||
       !session ||
       identity !== `${clerk.organization?.id}:${clerk.user?.id}`
     ) {
@@ -855,10 +847,7 @@ export const mountVncForm$ = onRef(
           set(resetKerberosImport$);
           // StrictMode replays callback refs within the same owner lifetime.
           // Only an actual authority change discards the stored draft here.
-          if (
-            get(authenticatedSessionKey$) !== mountedSession ||
-            !get(vncEnabled$)
-          ) {
+          if (get(authenticatedSessionKey$) !== mountedSession) {
             set(closeVncDialog$);
           }
         }

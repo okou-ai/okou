@@ -346,19 +346,15 @@ function RemoteDirectoryPlaceholder({
     </Card>
   );
 }
-function RemoteConnectionDirectory(props: { readonly vncEnabled: boolean }) {
+function RemoteConnectionDirectory() {
   const identity = useLoadable(sshIdentity$);
   if (identity.state !== "hasData" || !identity.data) {
     return null;
   }
-  return <OwnerRemoteConnectionDirectory key={identity.data} {...props} />;
+  return <OwnerRemoteConnectionDirectory key={identity.data} />;
 }
 
-function OwnerRemoteConnectionDirectory({
-  vncEnabled,
-}: {
-  readonly vncEnabled: boolean;
-}) {
+function OwnerRemoteConnectionDirectory() {
   const { t } = useTranslation();
   const start = useSet(enterRemoteSetup$);
   const ssh = useLastLoadable(sshConnections$);
@@ -366,13 +362,12 @@ function OwnerRemoteConnectionDirectory({
   const tailscale = useLoadable(tailscaleConfigs$);
   const access = useLoadable(cloudflareAccessConfigs$);
   const sshRows = ssh.state === "hasData" ? ssh.data : null;
-  const vncRows = vncEnabled && vnc.state === "hasData" ? vnc.data : null;
-  const loading =
-    ssh.state === "loading" || (vncEnabled && vnc.state === "loading");
+  const vncRows = vnc.state === "hasData" ? vnc.data : null;
+  const loading = ssh.state === "loading" || vnc.state === "loading";
   const hasRows = [sshRows, vncRows].some((rows) => {
     return Boolean(rows?.length);
   });
-  const empty = sshRows?.length === 0 && (!vncEnabled || vncRows?.length === 0);
+  const empty = sshRows?.length === 0 && vncRows?.length === 0;
   const networkLabel = (type: string, id: string | undefined) => {
     if (type === "direct") {
       return t(($) => {
@@ -420,7 +415,7 @@ function OwnerRemoteConnectionDirectory({
       hasRows={hasRows}
     >
       {ssh.state === "hasError" && <SshLoadError />}
-      {vncEnabled && vnc.state === "hasError" && <VncLoadError />}
+      {vnc.state === "hasError" && <VncLoadError />}
       {ssh.state === "hasData" && !ssh.data && (
         <p>
           {t(($) => {
@@ -428,7 +423,7 @@ function OwnerRemoteConnectionDirectory({
           })}
         </p>
       )}
-      {vncEnabled && vnc.state === "hasData" && !vnc.data && (
+      {vnc.state === "hasData" && !vnc.data && (
         <p>
           {t(($) => {
             return $.vnc.unavailable;
@@ -443,20 +438,16 @@ function OwnerRemoteConnectionDirectory({
     </RemoteDirectoryContent>
   );
 }
-export function GuidedRemoteControlPanel({
-  vncEnabled,
-}: {
-  readonly vncEnabled: boolean;
-}) {
+export function GuidedRemoteControlPanel() {
   const { t } = useTranslation();
   const setup = useGet(remoteSetup$);
   const mount = useSet(mountRemoteControlPanel$);
   if (setup) {
-    return <RemoteConnectionSetup vncEnabled={vncEnabled} />;
+    return <RemoteConnectionSetup />;
   }
   return (
     <div ref={mount} className="grid gap-6">
-      <RemoteConnectionDirectory vncEnabled={vncEnabled} />
+      <RemoteConnectionDirectory />
       <Link
         pathname="/connectors"
         options={{
@@ -473,7 +464,7 @@ export function GuidedRemoteControlPanel({
         })}
       </Link>
       <SshDialog />
-      {vncEnabled && <VncDialog />}
+      <VncDialog />
       <TailscaleDialog />
       <CloudflareAccessDialog />
     </div>

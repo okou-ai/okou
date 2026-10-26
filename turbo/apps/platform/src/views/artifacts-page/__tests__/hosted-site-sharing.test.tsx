@@ -4,7 +4,7 @@ import type { hostedSiteVisibilityStatusSchema } from "@okouai/api-contracts/con
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import {
   click,
   fill,
@@ -396,7 +396,7 @@ test("Public Site previews continue rendering the anonymous URL with visibility 
   });
 });
 
-type SiteVisibilityStatus = z.infer<typeof hostedSiteVisibilityStatusSchema>;
+type SiteVisibilityStatus = zInfer<typeof hostedSiteVisibilityStatusSchema>;
 
 test("Unavailable banner settings do not claim that the banner is hidden", async () => {
   mockSiteAlias();

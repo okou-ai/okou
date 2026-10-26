@@ -4,7 +4,7 @@ import {
   type TelegramLinkStatusResponse,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { telegramClient$ } from "./telegram-client.ts";
@@ -18,7 +18,7 @@ import {
 import { reloadTelegramBots$ } from "./telegram.ts";
 
 type TelegramConnectionSource = NonNullable<
-  z.infer<typeof integrationsTelegramContract.getLinkStatus.query>["source"]
+  zInfer<typeof integrationsTelegramContract.getLinkStatus.query>["source"]
 >;
 
 export function telegramReadinessErrorMessage(
@@ -53,7 +53,7 @@ const resetLink$ = resetSignal();
 export const linkTelegramAccount$ = command(
   async (
     { get, set },
-    body: z.infer<typeof integrationsTelegramContract.link.body>,
+    body: zInfer<typeof integrationsTelegramContract.link.body>,
     parentSignal: AbortSignal,
   ) => {
     const signal = set(resetLink$, parentSignal);

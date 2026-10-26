@@ -13,7 +13,6 @@ import {
 } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test } from "vitest";
@@ -98,9 +97,6 @@ async function page(path = "/connectors?scope=remote-control&type=ssh") {
     context,
     auth,
     path,
-    featureSwitches: {
-      [FeatureSwitchKey.VncAccess]: true,
-    },
   });
 }
 

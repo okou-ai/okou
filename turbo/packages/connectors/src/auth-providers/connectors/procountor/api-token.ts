@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 
 import { ProviderHttpError, ProviderResponseError } from "../../provider-error";
 
@@ -45,12 +45,10 @@ export async function fetchProcountorAccessToken(
   } catch {
     throw new ProviderResponseError("Invalid Procountor access token response");
   }
-  const parsed = z
-    .object({
-      access_token: z.string().min(1),
-      expires_in: z.number().positive(),
-    })
-    .safeParse(payload);
+  const parsed = object({
+    access_token: string().min(1),
+    expires_in: number().positive(),
+  }).safeParse(payload);
   if (!parsed.success) {
     throw new ProviderResponseError("Invalid Procountor access token response");
   }

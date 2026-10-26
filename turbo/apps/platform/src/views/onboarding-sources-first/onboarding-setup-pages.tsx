@@ -29,7 +29,7 @@ import {
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
 import {
   onboardingSourceConnectors$,
-  waitForSourcesFirstCatalog$,
+  continueSourcesFirstIndustry$,
 } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import {
   connectOnboardingSubscription$,
@@ -54,17 +54,13 @@ export function OnboardingIndustryPage() {
   const updateDraft = useSet(updateSourcesFirstDraft$);
   const catalog = useLastLoadable(onboardingSourceConnectors$);
   const pageSignal = useGet(pageSignal$);
-  const [catalogWait, waitForCatalog] = useLoadableSet(
-    waitForSourcesFirstCatalog$,
+  const [continueLoadable, continueToSources] = useLoadableSet(
+    continueSourcesFirstIndustry$,
   );
   const captureIndustrySelected = useSet(
     captureSourceOnboardingIndustrySelected$,
   );
   const flow = useSourcesFirstFlow("industry");
-  const continueToSources = async (): Promise<void> => {
-    await waitForCatalog(pageSignal);
-    flow.goNext();
-  };
 
   return (
     <OnboardingStepLayout
@@ -81,12 +77,12 @@ export function OnboardingIndustryPage() {
         return $.onboarding.sourcesFirst.common.continue;
       })}
       onPrimary={() => {
-        detach(continueToSources(), Reason.DomCallback);
+        detach(continueToSources(pageSignal), Reason.DomCallback);
       }}
       primaryDisabled={
         flow.draft.industry === null || catalog.state === "hasError"
       }
-      primaryBusy={catalogWait.state === "loading"}
+      primaryBusy={continueLoadable.state === "loading"}
       onBack={flow.goBack}
     >
       <RadioGroup

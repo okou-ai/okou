@@ -12,7 +12,16 @@ import type {
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { and, eq, isNull, lte, notExists, sql } from "drizzle-orm";
-import { z } from "zod";
+import {
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { env } from "../../lib/env";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -195,44 +204,44 @@ export const orgPlanSubscriptionId$ = command(
   },
 );
 
-const creditPurchasePreviewTokenSchema = z.object({
-  version: z.literal(1),
-  purchaseId: z.uuid(),
-  orgId: z.string().min(1),
-  customerId: z.string().min(1),
-  paymentMethodId: z.string().min(1),
-  couponId: z.string().min(1).nullable(),
-  priceId: z.string().min(1),
-  quantity: z.number().int().positive(),
-  credits: z.number().int().positive(),
-  amountCents: z.number().int().nonnegative(),
-  currency: z.string().length(3),
-  successUrl: z.string().url().optional(),
-  cancelUrl: z.string().url().optional(),
-  expiresAt: z.iso.datetime(),
+const creditPurchasePreviewTokenSchema = object({
+  version: literal(1),
+  purchaseId: uuid(),
+  orgId: string().min(1),
+  customerId: string().min(1),
+  paymentMethodId: string().min(1),
+  couponId: string().min(1).nullable(),
+  priceId: string().min(1),
+  quantity: number().int().positive(),
+  credits: number().int().positive(),
+  amountCents: number().int().nonnegative(),
+  currency: string().length(3),
+  successUrl: string().url().optional(),
+  cancelUrl: string().url().optional(),
+  expiresAt: iso.datetime(),
 });
 
-const planPurchasePreviewTokenSchema = z.object({
-  version: z.literal(1),
-  purchaseId: z.uuid(),
-  orgId: z.string().min(1),
-  customerId: z.string().min(1),
-  sourceSubscriptionId: z.string().min(1).nullable(),
-  paymentMethodId: z.string().min(1),
-  tier: z.enum(STRIPE_SUBSCRIPTION_PRICE_TIERS),
-  priceId: z.string().min(1),
-  trialDays: z.literal(7).optional(),
-  immediateAmountCents: z.number().int().nonnegative(),
-  nextRecurringAmountCents: z.number().int().nonnegative(),
-  currency: z.string().length(3),
-  successUrl: z.string().url(),
-  cancelUrl: z.string().url(),
-  expiresAt: z.iso.datetime(),
+const planPurchasePreviewTokenSchema = object({
+  version: literal(1),
+  purchaseId: uuid(),
+  orgId: string().min(1),
+  customerId: string().min(1),
+  sourceSubscriptionId: string().min(1).nullable(),
+  paymentMethodId: string().min(1),
+  tier: zEnum(STRIPE_SUBSCRIPTION_PRICE_TIERS),
+  priceId: string().min(1),
+  trialDays: literal(7).optional(),
+  immediateAmountCents: number().int().nonnegative(),
+  nextRecurringAmountCents: number().int().nonnegative(),
+  currency: string().length(3),
+  successUrl: string().url(),
+  cancelUrl: string().url(),
+  expiresAt: iso.datetime(),
 });
 
-type PlanPurchasePreviewToken = z.infer<typeof planPurchasePreviewTokenSchema>;
+type PlanPurchasePreviewToken = zInfer<typeof planPurchasePreviewTokenSchema>;
 
-type CreditPurchasePreviewToken = z.infer<
+type CreditPurchasePreviewToken = zInfer<
   typeof creditPurchasePreviewTokenSchema
 >;
 

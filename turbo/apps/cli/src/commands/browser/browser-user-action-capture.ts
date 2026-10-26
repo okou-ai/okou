@@ -1,6 +1,15 @@
 import { spawnSync } from "node:child_process";
 
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  number,
+  object,
+  string,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
 
 import {
   BrowserInputRequestError,
@@ -37,85 +46,63 @@ const DELETE_MARKER_FUNCTION =
   "function(key){delete this[key];const element=document.activeElement;if(element)delete element[key]}";
 const DELETE_OBJECT_MARKER_FUNCTION = "function(key){return delete this[key]}";
 
-const agentBrowserResponseSchema = z
-  .object({
-    success: z.boolean(),
-    data: z.unknown().optional(),
-  })
-  .passthrough();
+const agentBrowserResponseSchema = object({
+  success: boolean(),
+  data: zUnknown().optional(),
+}).passthrough();
 
-const agentBrowserCdpResponseSchema = z
-  .object({
-    success: z.literal(true),
-    data: z.object({ cdpUrl: z.string().min(1) }).passthrough(),
-  })
-  .passthrough();
+const agentBrowserCdpResponseSchema = object({
+  success: literal(true),
+  data: object({ cdpUrl: string().min(1) }).passthrough(),
+}).passthrough();
 
-const agentBrowserMarkerResponseSchema = z
-  .object({
-    success: z.literal(true),
-    data: z
-      .object({
-        result: z
-          .object({
-            key: z
-              .string()
-              .regex(
-                /^__okou_browser_user_action_(?:page|field|verify)_[0-9a-f]{32}$/u,
-              ),
-            value: z.string().regex(/^[0-9a-f]{32}$/u),
-          })
-          .strict(),
-      })
-      .passthrough(),
-  })
-  .passthrough();
+const agentBrowserMarkerResponseSchema = object({
+  success: literal(true),
+  data: object({
+    result: object({
+      key: string().regex(
+        /^__okou_browser_user_action_(?:page|field|verify)_[0-9a-f]{32}$/u,
+      ),
+      value: string().regex(/^[0-9a-f]{32}$/u),
+    }).strict(),
+  }).passthrough(),
+}).passthrough();
 
-const cdpResponseSchema = z
-  .object({
-    id: z.number().int().positive(),
-    result: z.unknown().optional(),
-    error: z.unknown().optional(),
-  })
-  .passthrough();
+const cdpResponseSchema = object({
+  id: number().int().positive(),
+  result: zUnknown().optional(),
+  error: zUnknown().optional(),
+}).passthrough();
 
-const cdpTargetsSchema = z.object({
-  targetInfos: z.array(
-    z
-      .object({
-        targetId: z.string().min(1),
-        type: z.string(),
-        url: z.string(),
-      })
-      .passthrough(),
+const cdpTargetsSchema = object({
+  targetInfos: array(
+    object({
+      targetId: string().min(1),
+      type: string(),
+      url: string(),
+    }).passthrough(),
   ),
 });
 
-const cdpAttachedTargetSchema = z.object({
-  sessionId: z.string().min(1),
+const cdpAttachedTargetSchema = object({
+  sessionId: string().min(1),
 });
 
-const cdpEvaluationSchema = z
-  .object({
-    result: z
-      .object({
-        type: z.string(),
-        subtype: z.string().optional(),
-        objectId: z.string().min(1).optional(),
-        value: z.unknown().optional(),
-      })
-      .passthrough(),
-    exceptionDetails: z.unknown().optional(),
-  })
-  .passthrough();
+const cdpEvaluationSchema = object({
+  result: object({
+    type: string(),
+    subtype: string().optional(),
+    objectId: string().min(1).optional(),
+    value: zUnknown().optional(),
+  }).passthrough(),
+  exceptionDetails: zUnknown().optional(),
+}).passthrough();
 
-const cdpNodeSchema = z.object({
-  node: z
-    .object({
-      backendNodeId: z.number().int().positive().safe(),
-      nodeName: z.string(),
-    })
-    .passthrough(),
+const cdpNodeSchema = object({
+  node: object({
+    backendNodeId: number().int().positive().safe(),
+    nodeName: string(),
+  }).passthrough(),
 });
 
 interface PendingCommand {
@@ -176,7 +163,7 @@ function boundedTimeout(maximumMs: number, deadline?: number): number {
 
 function parseAgentBrowserOutput(
   output: string,
-): z.infer<typeof agentBrowserResponseSchema> {
+): zInfer<typeof agentBrowserResponseSchema> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(output);
@@ -198,7 +185,7 @@ function runAgentBrowser(
   sessionName: string,
   args: readonly string[],
   deadline?: number,
-): z.infer<typeof agentBrowserResponseSchema> {
+): zInfer<typeof agentBrowserResponseSchema> {
   const result = spawnSync(
     "agent-browser",
     ["--session", sessionName, "--json", ...args],
@@ -649,7 +636,7 @@ async function evaluatedObjectId(
   functionDeclaration: string,
   args: readonly unknown[],
 ): Promise<string> {
-  let evaluation: z.infer<typeof cdpEvaluationSchema>;
+  let evaluation: zInfer<typeof cdpEvaluationSchema>;
   try {
     evaluation = cdpEvaluationSchema.parse(
       await callPageFunction(client, page, functionDeclaration, args, false),
@@ -695,7 +682,7 @@ async function describeInputNode(
   page: AttachedPage,
   objectId: string,
 ): Promise<number> {
-  let described: z.infer<typeof cdpNodeSchema>;
+  let described: zInfer<typeof cdpNodeSchema>;
   try {
     described = cdpNodeSchema.parse(
       await client.send("DOM.describeNode", { objectId }, page.sessionId),

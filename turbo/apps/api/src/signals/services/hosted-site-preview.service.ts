@@ -2,7 +2,7 @@ import { createHostedSitePreviewGrant$ } from "./private-hosted-preview.service"
 import { readArtifactDeliveryRecord$ } from "./artifact-delivery.service";
 import { resolveSharedThreadHostedPreview$ } from "./shared-thread-artifacts.service";
 import { command } from "ccstate";
-import { z } from "zod";
+import { uuid } from "zod";
 import { and, eq, isNull } from "drizzle-orm";
 import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
 import { hostedLinkOrigin } from "../../lib/link-layout";
@@ -29,11 +29,9 @@ const resolvePublishedSitePreview$ = command(
     const expected = new URL(hostedLinkOrigin("current", args.publicSlug));
     // Ordinary site and deployment URLs also cover publications predating the
     // delivery registry, as in the canonical hosted-site files resolver.
-    const parsedDeployment = z
-      .uuid()
-      .safeParse(
-        args.publicSlug.startsWith("dpl-") ? args.publicSlug.slice(4) : null,
-      );
+    const parsedDeployment = uuid().safeParse(
+      args.publicSlug.startsWith("dpl-") ? args.publicSlug.slice(4) : null,
+    );
     const deploymentId = parsedDeployment.success
       ? parsedDeployment.data
       : undefined;

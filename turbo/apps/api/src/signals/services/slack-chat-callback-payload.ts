@@ -1,9 +1,9 @@
-import { z } from "zod";
+import { object, string } from "zod";
 
-export const slackChatCallbackPayloadSchema = z.object({
-  workspaceId: z.string().optional(),
-  channelId: z.string(),
-  threadTs: z.string(),
-  routeThreadTs: z.string().optional(),
-  chatEventId: z.string(),
+export const slackChatCallbackPayloadSchema = object({
+  workspaceId: string().optional(),
+  channelId: string(),
+  threadTs: string(),
+  routeThreadTs: string().optional(),
+  chatEventId: string(),
 });

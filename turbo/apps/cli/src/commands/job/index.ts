@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { Command } from "commander";
-import { z } from "zod";
+import { string, uuid } from "zod";
 import {
   jobCreateSchema,
   jobListQuerySchema,
@@ -46,7 +46,7 @@ function jsonError(error: unknown, options: { readonly json?: boolean }) {
   );
   return true;
 }
-const jobId = z.uuid().toLowerCase();
+const jobId = uuid().toLowerCase();
 export function createJobCommand() {
   const job = new Command("task")
     .description(
@@ -86,7 +86,7 @@ Background executor:
     .action(
       withErrorHandler(
         async (options: { readonly key: string; readonly json?: boolean }) => {
-          const key = z.string().trim().min(1).max(2048).parse(options.key);
+          const key = string().trim().min(1).max(2048).parse(options.key);
           const result = await deriveJobIdentity(key);
           console.log(options.json ? JSON.stringify(result) : result.id);
         },

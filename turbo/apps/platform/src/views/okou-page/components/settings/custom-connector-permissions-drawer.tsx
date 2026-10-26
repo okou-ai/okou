@@ -12,7 +12,6 @@ import {
 } from "@okouai/ui";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useGet, useSet } from "ccstate-react";
-import { toast } from "@okouai/ui/components/ui/sonner";
 
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
@@ -81,29 +80,21 @@ function LoadedCustomConnectorPermissions({
       return;
     }
     detach(
-      (async () => {
-        await save(
-          {
-            surface: activeDraft.surface,
-            agentId,
-            connectorId,
-            permissionNames: permissions
-              .map((permission) => {
-                return permission.name;
-              })
-              .filter((permissionName) => {
-                return selected.has(permissionName);
-              }),
-          },
-          signal,
-        );
-        toast.success(
-          t(($) => {
-            return $.connectors.access.permissionsUpdated;
-          }),
-        );
-        onClose();
-      })(),
+      save(
+        {
+          surface: activeDraft.surface,
+          agentId,
+          connectorId,
+          permissionNames: permissions
+            .map((permission) => {
+              return permission.name;
+            })
+            .filter((permissionName) => {
+              return selected.has(permissionName);
+            }),
+        },
+        signal,
+      ),
       Reason.DomCallback,
     );
   };

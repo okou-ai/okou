@@ -14,7 +14,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import { boolean, object, string } from "zod";
 import {
   CHAT_EVENT_TYPES,
   chatEventCompatibilityRole,
@@ -77,10 +77,10 @@ interface IncompleteRoundSelection {
 
 const INCOMPLETE_ROUND_LIMIT = 20;
 
-const incompleteRoundFrontierRowSchema = z.object({
-  runId: z.string(),
-  runStatus: z.string(),
-  isSuccess: z.boolean(),
+const incompleteRoundFrontierRowSchema = object({
+  runId: string(),
+  runStatus: string(),
+  isSuccess: boolean(),
 });
 
 function isIncompleteRunStatus(value: string): value is IncompleteRunStatus {

@@ -3,7 +3,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { expect, test } from "vitest";
-import { z } from "zod";
+import { object, string } from "zod";
 
 import { browserUseCdpHandler } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -59,9 +59,7 @@ async function viewerScenario() {
   }
   server.use(
     http.post(`${PROVIDER_URL}/profiles`, async ({ request }) => {
-      const { name } = z
-        .object({ name: z.string() })
-        .parse(await request.json());
+      const { name } = object({ name: string() }).parse(await request.json());
       return HttpResponse.json(
         {
           id: randomUUID(),

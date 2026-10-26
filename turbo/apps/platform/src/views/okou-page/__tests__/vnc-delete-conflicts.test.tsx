@@ -8,7 +8,6 @@ import {
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -77,7 +76,6 @@ async function page() {
         memberships: [{ id: "org_vnc_delete" }],
       },
     },
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
 }
 

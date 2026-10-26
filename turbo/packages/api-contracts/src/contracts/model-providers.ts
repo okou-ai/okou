@@ -1,4 +1,17 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  url,
+  uuid,
+  enum as zEnum,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
 
 import {
   MODEL_PROVIDER_TYPE_IDS,
@@ -56,18 +69,18 @@ interface AuthMethodConfig {
 
 export type ModelProviderEnvBindings = Record<string, string>;
 
-export const modelProviderCodexRuntimeConfigSchema = z.object({
-  providerId: z.string().regex(/^[A-Za-z0-9_-]+$/),
-  name: z.string().min(1),
-  baseUrl: z.url(),
-  envKey: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
-  requiresOpenaiAuth: z.boolean().optional(),
-  wireApi: z.literal("responses"),
-  supportsWebsockets: z.boolean(),
-  modelCatalog: z.record(z.string(), z.unknown()).optional(),
+export const modelProviderCodexRuntimeConfigSchema = object({
+  providerId: string().regex(/^[A-Za-z0-9_-]+$/),
+  name: string().min(1),
+  baseUrl: url(),
+  envKey: string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+  requiresOpenaiAuth: boolean().optional(),
+  wireApi: literal("responses"),
+  supportsWebsockets: boolean(),
+  modelCatalog: record(string(), zUnknown()).optional(),
 });
 
-export type ModelProviderCodexRuntimeConfig = z.infer<
+export type ModelProviderCodexRuntimeConfig = zInfer<
   typeof modelProviderCodexRuntimeConfigSchema
 >;
 
@@ -90,11 +103,11 @@ const MODEL_PROVIDER_CODEX_RUNTIME_CAPABILITIES: Partial<
  * the ID against it, so clients can pass catalog models this package does
  * not list.
  */
-export const runModelIdSchema = z.string().trim().min(1).max(255);
+export const runModelIdSchema = string().trim().min(1).max(255);
 
-export const modelProviderCredentialScopeSchema = z.enum(["org", "member"]);
+export const modelProviderCredentialScopeSchema = zEnum(["org", "member"]);
 
-export type ModelProviderCredentialScope = z.infer<
+export type ModelProviderCredentialScope = zInfer<
   typeof modelProviderCredentialScopeSchema
 >;
 
@@ -256,9 +269,9 @@ export function normalizeRunModelId(model: string): string {
   return CANONICAL_RUN_MODEL_ALIASES[model] ?? model;
 }
 
-export const modelProviderTypeSchema = z.enum(MODEL_PROVIDER_TYPE_IDS);
+export const modelProviderTypeSchema = zEnum(MODEL_PROVIDER_TYPE_IDS);
 
-export const modelProviderFrameworkSchema = z.enum(["claude-code", "codex"]);
+export const modelProviderFrameworkSchema = zEnum(["claude-code", "codex"]);
 
 /**
  * Get framework for a model provider type
@@ -363,14 +376,14 @@ export function getModelProviderCodexCatalogForModel(
   };
 }
 
-export const modelProviderSubscriptionUsageWindowSchema = z.object({
-  usedPercent: z.number().nullable(),
-  remainingPercent: z.number().nullable(),
-  resetAt: z.string().nullable(),
-  windowSeconds: z.number().nullable(),
+export const modelProviderSubscriptionUsageWindowSchema = object({
+  usedPercent: number().nullable(),
+  remainingPercent: number().nullable(),
+  resetAt: string().nullable(),
+  windowSeconds: number().nullable(),
 });
 
-export const modelProviderSubscriptionUsageSchema = z.object({
+export const modelProviderSubscriptionUsageSchema = object({
   fiveHour: modelProviderSubscriptionUsageWindowSchema.nullable(),
   weekly: modelProviderSubscriptionUsageWindowSchema.nullable(),
 });
@@ -378,59 +391,54 @@ export const modelProviderSubscriptionUsageSchema = z.object({
 /**
  * Model provider response
  */
-export const modelProviderResponseSchema = z.object({
-  id: z.uuid(),
+export const modelProviderResponseSchema = object({
+  id: uuid(),
   // Present for concrete personal subscription accounts. `id` is the exact
   // credential identity pinned to a run, while `modelProviderId` is the
   // logical model route retained for compatibility with existing settings.
-  modelProviderId: z.uuid().optional(),
-  isActive: z.boolean().optional(),
+  modelProviderId: uuid().optional(),
+  isActive: boolean().optional(),
   type: modelProviderTypeSchema,
   framework: modelProviderFrameworkSchema,
-  createdAt: z.string(),
-  updatedAt: z.string(),
+  createdAt: string(),
+  updatedAt: string(),
   // OAuth account metadata populated by provider-specific connect flows. Other
   // provider types omit these.
-  accountEmail: z.string().nullable().optional(),
-  workspaceName: z.string().nullable().optional(),
-  planType: z.string().nullable().optional(),
+  accountEmail: string().nullable().optional(),
+  workspaceName: string().nullable().optional(),
+  planType: string().nullable().optional(),
   // Subscription quota metadata. Providers omit these until an upstream source
   // exposes the reset cadence or next reset timestamp.
-  subscriptionResetPeriod: z.string().nullable().optional(),
-  subscriptionNextResetAt: z.string().nullable().optional(),
+  subscriptionResetPeriod: string().nullable().optional(),
+  subscriptionNextResetAt: string().nullable().optional(),
   subscriptionUsage: modelProviderSubscriptionUsageSchema.nullable().optional(),
   // A provider capability, independent of the currently available reset credits.
-  subscriptionResetSupported: z.boolean().optional(),
-  subscriptionResetCredits: z
-    .number()
-    .int()
-    .nonnegative()
-    .nullable()
-    .optional(),
+  subscriptionResetSupported: boolean().optional(),
+  subscriptionResetCredits: number().int().nonnegative().nullable().optional(),
   // Soonest expiry among the reset credits the account can still redeem. Null
   // when nothing expires, and also when the upstream detail read degraded to a
   // bare count, so the UI must treat it as decoration on top of the count.
-  subscriptionResetCreditsNextExpiresAt: z.string().nullable().optional(),
+  subscriptionResetCreditsNextExpiresAt: string().nullable().optional(),
   // OAuth refresh state. `needsReconnect` flips to true when the firewall's
   // refresh attempt fails (written on the model_provider_accounts row).
   // `lastRefreshErrorCode` carries the typed code from `ChatgptRefreshError`
   // (e.g. `refresh_token_expired`) so the UI can render an actionable
   // re-connect message. Both fields are always emitted for OAuth-typed
   // providers; non-OAuth types default to false / null.
-  needsReconnect: z.boolean(),
-  lastRefreshErrorCode: z.string().nullable(),
+  needsReconnect: boolean(),
+  lastRefreshErrorCode: string().nullable(),
 });
 
-export type ModelProviderResponse = z.infer<typeof modelProviderResponseSchema>;
+export type ModelProviderResponse = zInfer<typeof modelProviderResponseSchema>;
 
 /**
  * List model providers response
  */
-export const modelProviderListResponseSchema = z.object({
-  modelProviders: z.array(modelProviderResponseSchema),
+export const modelProviderListResponseSchema = object({
+  modelProviders: array(modelProviderResponseSchema),
 });
 
-export type ModelProviderListResponse = z.infer<
+export type ModelProviderListResponse = zInfer<
   typeof modelProviderListResponseSchema
 >;
 
@@ -440,74 +448,68 @@ export type ModelProviderListResponse = z.infer<
  * Claude Code sends its OAuth token as `secret`. Codex sends
  * `authMethod: "auth_json"` with `secrets.CODEX_AUTH_JSON`.
  */
-export const upsertModelProviderRequestSchema = z.object({
-  type: z.enum(["claude-code-oauth-token", "codex-oauth-token"]),
-  secret: z.string().min(1).optional(),
-  authMethod: z.string().optional(),
-  secrets: z.record(z.string(), z.string()).optional(),
+export const upsertModelProviderRequestSchema = object({
+  type: zEnum(["claude-code-oauth-token", "codex-oauth-token"]),
+  secret: string().min(1).optional(),
+  authMethod: string().optional(),
+  secrets: record(string(), string()).optional(),
 });
 
-export type UpsertModelProviderRequest = z.infer<
+export type UpsertModelProviderRequest = zInfer<
   typeof upsertModelProviderRequestSchema
 >;
 
 /**
  * Upsert response includes created flag
  */
-export const upsertModelProviderResponseSchema = z.object({
+export const upsertModelProviderResponseSchema = object({
   provider: modelProviderResponseSchema,
-  created: z.boolean(),
+  created: boolean(),
 });
 
-export type UpsertModelProviderResponse = z.infer<
+export type UpsertModelProviderResponse = zInfer<
   typeof upsertModelProviderResponseSchema
 >;
 
-export const availableRunModelSchema = z.object({
+export const availableRunModelSchema = object({
   /** Null is Auto; any other value is a selectable personal subscription model. */
   model: runModelIdSchema.nullable(),
-  modelLabel: z.string(),
-  modelProviderId: z.uuid().nullable(),
+  modelLabel: string(),
+  modelProviderId: uuid().nullable(),
   // Present on member subscription models projected from the subscription
   // catalog; absent on Auto.
-  subscriptionOptions: z
-    .object({
-      efforts: z.array(
-        z.enum([
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "extra",
-          "max",
-          "ultra",
-          "ultracode",
-        ]),
-      ),
-      serviceTier: z.enum(["priority"]).nullable(),
-    })
-    .optional(),
+  subscriptionOptions: object({
+    efforts: array(
+      zEnum([
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "extra",
+        "max",
+        "ultra",
+        "ultracode",
+      ]),
+    ),
+    serviceTier: zEnum(["priority"]).nullable(),
+  }).optional(),
   // Caller-specific, response-only routing. A candidate has not captured a
   // concrete subscription account for a run.
-  memberEffective: z.object({
+  memberEffective: object({
     providerType: modelProviderTypeSchema,
     runtimeProviderType: modelProviderTypeSchema.nullable(),
     credentialScope: modelProviderCredentialScopeSchema,
-    availability: z.enum([
-      "available",
-      "reconnect_required",
-      "plan_restricted",
-    ]),
-    accountSelection: z.enum(["capture_required", "not_applicable"]),
+    availability: zEnum(["available", "reconnect_required", "plan_restricted"]),
+    accountSelection: zEnum(["capture_required", "not_applicable"]),
   }),
 });
 
-export type AvailableRunModel = z.infer<typeof availableRunModelSchema>;
+export type AvailableRunModel = zInfer<typeof availableRunModelSchema>;
 
-export const availableRunModelsResponseSchema = z.object({
-  models: z.array(availableRunModelSchema),
+export const availableRunModelsResponseSchema = object({
+  models: array(availableRunModelSchema),
 });
 
-export type AvailableRunModelsResponse = z.infer<
+export type AvailableRunModelsResponse = zInfer<
   typeof availableRunModelsResponseSchema
 >;

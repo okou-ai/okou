@@ -8,7 +8,7 @@ import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -35,7 +35,7 @@ import type { RouteEntry } from "../route-entry";
 
 const log = logger("api:telegram:link");
 
-type TelegramLinkBody = z.infer<typeof integrationsTelegramContract.link.body>;
+type TelegramLinkBody = zInfer<typeof integrationsTelegramContract.link.body>;
 type OrganizationAuth = AuthContext & { readonly orgId: string };
 type ErrorStatus = 400 | 403 | 404 | 409;
 type LinkOfficialTelegramUserConflictReason = Extract<

@@ -7,7 +7,7 @@ import type { CustomConnectorMcpResponse } from "@okouai/api-contracts/contracts
 import chalk from "chalk";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { z } from "zod";
+import { array, object, string } from "zod";
 
 import {
   catalogItem,
@@ -445,17 +445,14 @@ describe("run connector account inspection", () => {
     );
 
     await listCommand.parseAsync(["node", "cli", "--json"]);
-    const json = z
-      .object({
-        connectors: z.array(
-          z
-            .object({
-              slug: z.string(),
-              account: z.object({ connectionId: z.string() }).passthrough(),
-            })
-            .passthrough(),
-        ),
-      })
+    const json = object({
+      connectors: array(
+        object({
+          slug: string(),
+          account: object({ connectionId: string() }).passthrough(),
+        }).passthrough(),
+      ),
+    })
       .passthrough()
       .parse(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0])));
     expect(batchSizes).toStrictEqual([256, 1]);
@@ -501,8 +498,7 @@ describe("run connector account inspection", () => {
 
     await listCommand.parseAsync(["node", "cli", "--json"]);
     const output = String(mockConsoleLog.mock.calls[0]?.[0]);
-    const json = z
-      .object({ state: z.string(), reason: z.string() })
+    const json = object({ state: string(), reason: string() })
       .passthrough()
       .parse(JSON.parse(output));
     expect(json).toMatchObject({ state: "unavailable", reason });

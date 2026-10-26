@@ -9,7 +9,7 @@ import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/ru
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { HttpResponse, http } from "msw";
-import { z } from "zod";
+import { strictObject, string } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { browserUseCdpHandler } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -56,9 +56,9 @@ function profileProvider(beforeResponse?: () => Promise<void>) {
   }
   const handlers = [
     http.post(`${PROVIDER_URL}/profiles`, async ({ request }) => {
-      const { name } = z
-        .strictObject({ name: z.string() })
-        .parse(await request.json());
+      const { name } = strictObject({ name: string() }).parse(
+        await request.json(),
+      );
       const id = randomUUID();
       profiles.set(id, { id, name });
       createdIds.push(id);

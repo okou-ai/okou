@@ -1,5 +1,5 @@
 import { closeSshDialog$, openSshDialog$ } from "./ssh.ts";
-import { closeVncDialog$, openVncDialog$, vncEnabled$ } from "./vnc.ts";
+import { closeVncDialog$, openVncDialog$ } from "./vnc.ts";
 import type { SshConnectionResponse } from "@okouai/api-contracts/contracts/ssh-connections";
 import type { VncConnectionResponse } from "@okouai/api-contracts/contracts/vnc-connections";
 import { command, computed } from "ccstate";
@@ -110,9 +110,6 @@ export const remoteResource$ = computed((get) => {
   if (
     params.get("scope") !== (network ? "private-network" : "remote-control")
   ) {
-    return null;
-  }
-  if (kind === "vnc" && !get(vncEnabled$)) {
     return null;
   }
   return { kind, id };

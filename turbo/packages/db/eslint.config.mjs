@@ -1,3 +1,4 @@
+import { namedZodImportsConfig } from "@okouai/eslint-rules/zod";
 import { config, oxlint } from "@okouai/eslint-config/base";
 import {
   apiLintPlugin,
@@ -7,6 +8,7 @@ import {
 
 export default [
   ...config,
+  namedZodImportsConfig,
   {
     ignores: ["**/dist/**"],
   },

@@ -1,12 +1,12 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 
 import { ProviderHttpError, ProviderResponseError } from "../../provider-error";
 
 const TOKEN_URL = "https://accounts.noyo.com/auth/public/token";
 
-const noyoAccessTokenResponseSchema = z.object({
-  access_token: z.string().min(1),
-  expires_in: z.number().positive(),
+const noyoAccessTokenResponseSchema = object({
+  access_token: string().min(1),
+  expires_in: number().positive(),
 });
 
 export async function fetchNoyoAccessToken(

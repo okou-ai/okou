@@ -1,3 +1,5 @@
+import type { RequestBodyPolicy } from "./context/hono";
+import type { ClientResponseTransform } from "@okouai/api-contracts/client-transforms/types";
 import type { AppRoute } from "@okouai/api-contracts/contracts/trpc-contract";
 import type { JsonResponseObserver, SignalRouteHandler } from "./context/route";
 
@@ -6,6 +8,8 @@ export type { SignalRouteHandler };
 export interface RouteEntry {
   readonly route: AppRoute;
   readonly handler: SignalRouteHandler<unknown>;
+  readonly requestBodyPolicy?: RequestBodyPolicy;
+  readonly responseTransforms?: readonly ClientResponseTransform[];
   readonly observeJsonResponse?: JsonResponseObserver;
 }
 

@@ -1,45 +1,52 @@
-import { z } from "zod";
+import {
+  discriminatedUnion,
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  never as zNever,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
+
 import { chatEventContextTypeSchema, chatEventTypeSchema } from "./chat-events";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 
-const requiredJsonValueSchema = z.unknown().refine((value) => {
+const requiredJsonValueSchema = zUnknown().refine((value) => {
   return value !== undefined;
 }, "Expected a JSON value");
 
 /** Canonical payload envelope for a raw chat-event row. */
-const chatEventRowPayloadSchema = z
-  .object({
-    content: z.string().optional(),
-    userMessage: requiredJsonValueSchema.optional(),
-    error: z.string().optional(),
-    usage: requiredJsonValueSchema.optional(),
-  })
-  .strict();
+const chatEventRowPayloadSchema = object({
+  content: string().optional(),
+  userMessage: requiredJsonValueSchema.optional(),
+  error: string().optional(),
+  usage: requiredJsonValueSchema.optional(),
+}).strict();
 
 const chatEventRowBaseShape = {
-  id: z.string(),
-  chatThreadId: z.string(),
-  runId: z.string().nullable(),
-  revokesEventId: z.string().nullable(),
+  id: string(),
+  chatThreadId: string(),
+  runId: string().nullable(),
+  revokesEventId: string().nullable(),
   contextType: chatEventContextTypeSchema.nullable(),
-  contextId: z.string().nullable(),
-  runEventSequenceNumber: z.number().int().nullable(),
-  runEventId: z.string().nullable(),
+  contextId: string().nullable(),
+  runEventSequenceNumber: number().int().nullable(),
+  runEventId: string().nullable(),
   /** Strictly increasing within a thread; it may start above 1 and have gaps. */
-  seqId: z.number().int(),
-  createdAt: z.iso.datetime(),
+  seqId: number().int(),
+  createdAt: iso.datetime(),
 };
 
-const chatEventRowBaseSchema = z
-  .object({
-    ...chatEventRowBaseShape,
-    payload: chatEventRowPayloadSchema.nullable(),
-  })
-  .strict();
+const chatEventRowBaseSchema = object({
+  ...chatEventRowBaseShape,
+  payload: chatEventRowPayloadSchema.nullable(),
+}).strict();
 
 const failedChatEventRowSchema = chatEventRowBaseSchema
   .extend({
-    eventType: z.literal("run.failed"),
+    eventType: literal("run.failed"),
     failureReason: runFailureReasonTokenSchema.optional(),
   })
   .strict();
@@ -56,7 +63,7 @@ const inputChatEventRowSchema = chatEventRowBaseSchema
   .extend({
     eventType: chatEventTypeSchema.extract(INPUT_CHAT_EVENT_ROW_TYPES),
     contextType: chatEventContextTypeSchema,
-    failureReason: z.never().optional(),
+    failureReason: zNever().optional(),
   })
   .strict();
 
@@ -66,7 +73,7 @@ const otherChatEventRowSchema = chatEventRowBaseSchema
       ...INPUT_CHAT_EVENT_ROW_TYPES,
       "run.failed",
     ]),
-    failureReason: z.never().optional(),
+    failureReason: zNever().optional(),
   })
   .strict();
 
@@ -74,10 +81,10 @@ const otherChatEventRowSchema = chatEventRowBaseSchema
  * One canonical chat_events row and the strict output.tool-free outer wire
  * shape emitted by the Snapshot and Raw Event endpoints.
  */
-export const chatEventRowSchema = z.discriminatedUnion("eventType", [
+export const chatEventRowSchema = discriminatedUnion("eventType", [
   failedChatEventRowSchema,
   inputChatEventRowSchema,
   otherChatEventRowSchema,
 ]);
 
-export type ChatEventRow = z.infer<typeof chatEventRowSchema>;
+export type ChatEventRow = zInfer<typeof chatEventRowSchema>;

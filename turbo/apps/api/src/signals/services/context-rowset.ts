@@ -4,7 +4,7 @@ import {
   sql,
   type SQLWrapper,
 } from "drizzle-orm";
-import { z } from "zod";
+import { object, unknown as zUnknown, type ZodType } from "zod";
 
 /** Preserve native numeric precision in JSON; decode only in the consuming node. */
 export function contextJsonProjection(
@@ -27,9 +27,9 @@ export function contextJsonRows(query: SQLWrapper) {
     from (${query}) context_rows)`;
 }
 
-function columnSchema<T extends Column>(column: T): z.ZodType<GetColumnData<T>>;
-function columnSchema(column: Column): z.ZodType<unknown> {
-  return z.unknown().transform((value) => {
+function columnSchema<T extends Column>(column: T): ZodType<GetColumnData<T>>;
+function columnSchema(column: Column): ZodType<unknown> {
+  return zUnknown().transform((value) => {
     // Drizzle also bypasses column decoders for SQL NULL.
     return value === null ? null : column.mapFromDriverValue(value);
   });
@@ -38,11 +38,11 @@ function columnSchema(column: Column): z.ZodType<unknown> {
 /** The original columns still own enums, timestamps, JSON contracts and errors. */
 export function contextProjectionSchema<
   T extends Readonly<Record<string, Column>>,
->(columns: T): z.ZodType<{ [K in keyof T]: GetColumnData<T[K]> }>;
+>(columns: T): ZodType<{ [K in keyof T]: GetColumnData<T[K]> }>;
 export function contextProjectionSchema(
   columns: Readonly<Record<string, Column>>,
-): z.ZodType<Record<string, unknown>> {
-  return z.object(
+): ZodType<Record<string, unknown>> {
+  return object(
     Object.fromEntries(
       Object.entries(columns).map(([name, column]) => {
         return [name, columnSchema(column)];

@@ -1,17 +1,29 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  union,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { connectorAuthMethodIdSchema } from "../../connector-identity";
 
 import { connectorCatalogVersionSchema, privateNameSchema } from "./common";
 import { ConnectorCatalogRelationshipError } from "./relationship-error";
 
-export const publicFieldIdSchema = z.string().regex(/^[a-z][a-zA-Z0-9]*$/u);
-export const internalOptionNameSchema = z
-  .string()
-  .regex(/^[a-zA-Z][a-zA-Z0-9_]*$/u);
+export const publicFieldIdSchema = string().regex(/^[a-z][a-zA-Z0-9]*$/u);
+export const internalOptionNameSchema = string().regex(
+  /^[a-zA-Z][a-zA-Z0-9_]*$/u,
+);
 export { connectorAuthMethodIdSchema };
-const connectorCategoryIdSchema = z.string().regex(/^[a-z0-9][a-z0-9-]*$/u);
-const connectorGenerationTypeSchema = z.enum([
+const connectorCategoryIdSchema = string().regex(/^[a-z0-9][a-z0-9-]*$/u);
+const connectorGenerationTypeSchema = zEnum([
   "audio",
   "code",
   "document",
@@ -21,217 +33,171 @@ const connectorGenerationTypeSchema = z.enum([
   "video",
   "website",
 ]);
-export const connectorValueRefSchema = z
-  .string()
-  .regex(/^\$(?:secrets|vars)\.[A-Z][A-Z0-9_]*$/u);
-const connectorSecretRefSchema = z
-  .string()
-  .regex(/^\$secrets\.[A-Z][A-Z0-9_]*$/u);
+export const connectorValueRefSchema = string().regex(
+  /^\$(?:secrets|vars)\.[A-Z][A-Z0-9_]*$/u,
+);
+const connectorSecretRefSchema = string().regex(
+  /^\$secrets\.[A-Z][A-Z0-9_]*$/u,
+);
 
-export const connectorMcpSchema = z
-  .object({
-    transport: z.literal("streamable-http"),
-    endpoint: z
-      .string()
-      .url()
-      .refine((value) => {
-        if (!URL.canParse(value)) {
-          return false;
-        }
-        const url = new URL(value);
-        return (
-          url.protocol === "https:" &&
-          url.href === value &&
-          !url.username &&
-          !url.password &&
-          !url.hash &&
-          !url.search &&
-          !/[{}?#]/u.test(value) &&
-          /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z][a-z0-9-]*$/u.test(
-            url.hostname,
-          ) &&
-          url.hostname.split(".").every((label) => {
-            return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u.test(label);
-          }) &&
-          !/(?:^|\.)(?:localhost|local|internal|invalid)$/u.test(url.hostname)
-        );
-      }, "MCP endpoint must be a canonical fixed public HTTPS URL"),
-  })
-  .strict();
+export const connectorMcpSchema = object({
+  transport: literal("streamable-http"),
+  endpoint: string()
+    .url()
+    .refine((value) => {
+      if (!URL.canParse(value)) {
+        return false;
+      }
+      const url = new URL(value);
+      return (
+        url.protocol === "https:" &&
+        url.href === value &&
+        !url.username &&
+        !url.password &&
+        !url.hash &&
+        !url.search &&
+        !/[{}?#]/u.test(value) &&
+        /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z][a-z0-9-]*$/u.test(
+          url.hostname,
+        ) &&
+        url.hostname.split(".").every((label) => {
+          return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u.test(label);
+        }) &&
+        !/(?:^|\.)(?:localhost|local|internal|invalid)$/u.test(url.hostname)
+      );
+    }, "MCP endpoint must be a canonical fixed public HTTPS URL"),
+}).strict();
 
-const connectorAutomaticTokenBindingsSchema = z
-  .object({
-    accessToken: connectorSecretRefSchema,
-    refreshToken: connectorSecretRefSchema.optional(),
-  })
-  .strict();
+const connectorAutomaticTokenBindingsSchema = object({
+  accessToken: connectorSecretRefSchema,
+  refreshToken: connectorSecretRefSchema.optional(),
+}).strict();
 
-export const noneGrantSourceSchema = z
-  .object({ kind: z.literal("none") })
-  .strict();
-export const automaticGrantSourceSchema = z
-  .object({
-    kind: z.literal("automatic"),
-    callbackOrigin: z.literal("api"),
-    outputs: connectorAutomaticTokenBindingsSchema,
-  })
-  .strict();
+export const noneGrantSourceSchema = object({ kind: literal("none") }).strict();
+export const automaticGrantSourceSchema = object({
+  kind: literal("automatic"),
+  callbackOrigin: literal("api"),
+  outputs: connectorAutomaticTokenBindingsSchema,
+}).strict();
 
-const categoryGroupSourceSchema = z
-  .object({
-    id: connectorCategoryIdSchema,
-    label: z.string().min(1),
-    menuLabel: z.string().min(1),
-  })
-  .strict();
+const categoryGroupSourceSchema = object({
+  id: connectorCategoryIdSchema,
+  label: string().min(1),
+  menuLabel: string().min(1),
+}).strict();
 
-const categorySourceSchema = z
-  .object({
-    id: connectorCategoryIdSchema,
-    label: z.string().min(1),
-    menuLabel: z.string().min(1),
-    groupId: connectorCategoryIdSchema.nullable(),
-  })
-  .strict();
+const categorySourceSchema = object({
+  id: connectorCategoryIdSchema,
+  label: string().min(1),
+  menuLabel: string().min(1),
+  groupId: connectorCategoryIdSchema.nullable(),
+}).strict();
 
-export const catalogSourceSchema = z
-  .object({
-    catalogVersion: connectorCatalogVersionSchema,
-    categoryMetadata: z
-      .object({
-        categories: z.array(categorySourceSchema).min(1),
-        groups: z.array(categoryGroupSourceSchema),
-      })
-      .strict(),
-  })
-  .strict();
+export const catalogSourceSchema = object({
+  catalogVersion: connectorCatalogVersionSchema,
+  categoryMetadata: object({
+    categories: array(categorySourceSchema).min(1),
+    groups: array(categoryGroupSourceSchema),
+  }).strict(),
+}).strict();
 
-const staticConfidentialClientSourceSchema = z
-  .object({
-    clientRegistration: z.literal("static"),
-    clientType: z.literal("confidential"),
-    clientIdEnv: privateNameSchema,
-    clientSecretEnv: privateNameSchema,
-  })
-  .strict();
+const staticConfidentialClientSourceSchema = object({
+  clientRegistration: literal("static"),
+  clientType: literal("confidential"),
+  clientIdEnv: privateNameSchema,
+  clientSecretEnv: privateNameSchema,
+}).strict();
 
-const staticConfidentialLiteralClientSourceSchema = z
-  .object({
-    clientRegistration: z.literal("static"),
-    clientType: z.literal("confidential"),
-    clientId: z.string().min(1),
-    clientSecret: z.string().min(1),
-  })
-  .strict();
+const staticConfidentialLiteralClientSourceSchema = object({
+  clientRegistration: literal("static"),
+  clientType: literal("confidential"),
+  clientId: string().min(1),
+  clientSecret: string().min(1),
+}).strict();
 
-const staticPublicClientSourceSchema = z
-  .object({
-    clientRegistration: z.literal("static"),
-    clientType: z.literal("public"),
-    clientId: z.string().min(1),
-  })
-  .strict();
+const staticPublicClientSourceSchema = object({
+  clientRegistration: literal("static"),
+  clientType: literal("public"),
+  clientId: string().min(1),
+}).strict();
 
-const dynamicPublicClientSourceSchema = z
-  .object({
-    clientRegistration: z.literal("dynamic"),
-    clientType: z.literal("public"),
-  })
-  .strict();
+const dynamicPublicClientSourceSchema = object({
+  clientRegistration: literal("dynamic"),
+  clientType: literal("public"),
+}).strict();
 
-export const connectorAuthClientSourceSchema = z.union([
+export const connectorAuthClientSourceSchema = union([
   staticConfidentialClientSourceSchema,
   staticConfidentialLiteralClientSourceSchema,
   staticPublicClientSourceSchema,
   dynamicPublicClientSourceSchema,
 ]);
 
-export const connectorStorageSourceSchema = z
-  .object({
-    version: z.number().int().positive(),
-    secrets: z.array(privateNameSchema),
-    variables: z.array(privateNameSchema),
-  })
-  .strict();
+export const connectorStorageSourceSchema = object({
+  version: number().int().positive(),
+  secrets: array(privateNameSchema),
+  variables: array(privateNameSchema),
+}).strict();
 
-const manualGrantFieldSourceSchema = z
-  .object({
-    privateName: privateNameSchema,
-    publicId: publicFieldIdSchema,
-    label: z.string().min(1),
-    required: z.boolean(),
-    placeholder: z.string().min(1).optional(),
-    storage: z.enum(["secret", "variable"]),
-    normalize: z.literal("host").optional(),
-  })
-  .strict();
+const manualGrantFieldSourceSchema = object({
+  privateName: privateNameSchema,
+  publicId: publicFieldIdSchema,
+  label: string().min(1),
+  required: boolean(),
+  placeholder: string().min(1).optional(),
+  storage: zEnum(["secret", "variable"]),
+  normalize: literal("host").optional(),
+}).strict();
 
-const deviceStartOptionChoiceSourceSchema = z
-  .object({
-    value: z.string().min(1),
-    label: z.string().min(1),
-  })
-  .strict();
+const deviceStartOptionChoiceSourceSchema = object({
+  value: string().min(1),
+  label: string().min(1),
+}).strict();
 
-const deviceStartOptionSourceSchema = z
-  .object({
-    privateName: internalOptionNameSchema,
-    publicId: publicFieldIdSchema,
-    kind: z.literal("select"),
-    label: z.string().min(1),
-    required: z.boolean(),
-    defaultValue: z.string().min(1).optional(),
-    options: z.array(deviceStartOptionChoiceSourceSchema).min(1),
-  })
-  .strict();
+const deviceStartOptionSourceSchema = object({
+  privateName: internalOptionNameSchema,
+  publicId: publicFieldIdSchema,
+  kind: literal("select"),
+  label: string().min(1),
+  required: boolean(),
+  defaultValue: string().min(1).optional(),
+  options: array(deviceStartOptionChoiceSourceSchema).min(1),
+}).strict();
 
-const outputBindingsSchema = z.record(
-  z.string().min(1),
-  connectorValueRefSchema,
-);
+const outputBindingsSchema = record(string().min(1), connectorValueRefSchema);
 
-const manualGrantSourceSchema = z
-  .object({
-    kind: z.literal("manual"),
-    fields: z.array(manualGrantFieldSourceSchema).min(1),
-  })
-  .strict();
+const manualGrantSourceSchema = object({
+  kind: literal("manual"),
+  fields: array(manualGrantFieldSourceSchema).min(1),
+}).strict();
 
-const authCodeGrantSourceSchema = z
-  .object({
-    kind: z.literal("auth-code"),
-    scopes: z.array(z.string()),
-    callbackOrigin: z.enum(["web", "api"]),
-    outputs: outputBindingsSchema,
-  })
-  .strict();
+const authCodeGrantSourceSchema = object({
+  kind: literal("auth-code"),
+  scopes: array(string()),
+  callbackOrigin: zEnum(["web", "api"]),
+  outputs: outputBindingsSchema,
+}).strict();
 
-const openIdGrantSourceSchema = z
-  .object({
-    kind: z.literal("openid-auth"),
-    callbackOrigin: z.enum(["web", "api"]),
-    outputs: outputBindingsSchema,
-  })
-  .strict();
+const openIdGrantSourceSchema = object({
+  kind: literal("openid-auth"),
+  callbackOrigin: zEnum(["web", "api"]),
+  outputs: outputBindingsSchema,
+}).strict();
 
-const externalCodeGrantSourceSchema = z
-  .object({
-    kind: z.literal("external-code"),
-    scopes: z.array(z.string()),
-    outputs: outputBindingsSchema,
-  })
-  .strict();
+const externalCodeGrantSourceSchema = object({
+  kind: literal("external-code"),
+  scopes: array(string()),
+  outputs: outputBindingsSchema,
+}).strict();
 
-const deviceAuthGrantSourceSchema = z
-  .object({
-    kind: z.literal("device-auth"),
-    scopes: z.array(z.string()),
-    outputs: outputBindingsSchema,
-    startOptions: z.array(deviceStartOptionSourceSchema),
-  })
-  .strict();
+const deviceAuthGrantSourceSchema = object({
+  kind: literal("device-auth"),
+  scopes: array(string()),
+  outputs: outputBindingsSchema,
+  startOptions: array(deviceStartOptionSourceSchema),
+}).strict();
 
-const connectorGrantSourceSchema = z.discriminatedUnion("kind", [
+const connectorGrantSourceSchema = discriminatedUnion("kind", [
   noneGrantSourceSchema,
   automaticGrantSourceSchema,
   manualGrantSourceSchema,
@@ -241,90 +207,76 @@ const connectorGrantSourceSchema = z.discriminatedUnion("kind", [
   deviceAuthGrantSourceSchema,
 ]);
 
-const envBindingSourceSchema = z.union([
+const envBindingSourceSchema = union([
   connectorValueRefSchema,
-  z
-    .object({
-      valueRef: connectorValueRefSchema,
-      optional: z.literal(true),
-    })
-    .strict(),
+  object({
+    valueRef: connectorValueRefSchema,
+    optional: literal(true),
+  }).strict(),
 ]);
 
-const staticAccessSourceSchema = z
-  .object({
-    kind: z.literal("static"),
-    envBindings: z.record(z.string().min(1), envBindingSourceSchema),
-    platformSecrets: z.array(privateNameSchema).optional(),
-  })
-  .strict();
+const staticAccessSourceSchema = object({
+  kind: literal("static"),
+  envBindings: record(string().min(1), envBindingSourceSchema),
+  platformSecrets: array(privateNameSchema).optional(),
+}).strict();
 
-const refreshTokenAccessSourceSchema = z
-  .object({
-    kind: z.literal("refresh-token"),
-    envBindings: z.record(z.string().min(1), envBindingSourceSchema),
-    platformSecrets: z.array(privateNameSchema).optional(),
-    inputs: z.record(z.string().min(1), connectorValueRefSchema),
-    outputs: z.record(z.string().min(1), connectorValueRefSchema),
-    refreshableSecrets: z.array(privateNameSchema),
-  })
-  .strict();
+const refreshTokenAccessSourceSchema = object({
+  kind: literal("refresh-token"),
+  envBindings: record(string().min(1), envBindingSourceSchema),
+  platformSecrets: array(privateNameSchema).optional(),
+  inputs: record(string().min(1), connectorValueRefSchema),
+  outputs: record(string().min(1), connectorValueRefSchema),
+  refreshableSecrets: array(privateNameSchema),
+}).strict();
 
-export const connectorAccessSourceSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("none") }).strict(),
-  z
-    .object({
-      kind: z.literal("automatic"),
-      inputs: connectorAutomaticTokenBindingsSchema,
-      outputs: connectorAutomaticTokenBindingsSchema,
-    })
-    .strict(),
+export const connectorAccessSourceSchema = discriminatedUnion("kind", [
+  object({ kind: literal("none") }).strict(),
+  object({
+    kind: literal("automatic"),
+    inputs: connectorAutomaticTokenBindingsSchema,
+    outputs: connectorAutomaticTokenBindingsSchema,
+  }).strict(),
   staticAccessSourceSchema,
   refreshTokenAccessSourceSchema,
 ]);
 
-const noRevokeSourceSchema = z.object({ kind: z.literal("none") }).strict();
-const tokenRevokeSourceSchema = z
-  .object({
-    kind: z.literal("token-revoke"),
-    inputs: z.record(z.string().min(1), connectorSecretRefSchema),
-    revokePreviousOnReplace: z.boolean().optional(),
-  })
-  .strict();
+const noRevokeSourceSchema = object({ kind: literal("none") }).strict();
+const tokenRevokeSourceSchema = object({
+  kind: literal("token-revoke"),
+  inputs: record(string().min(1), connectorSecretRefSchema),
+  revokePreviousOnReplace: boolean().optional(),
+}).strict();
 
-export const connectorRevokeSourceSchema = z.discriminatedUnion("kind", [
+export const connectorRevokeSourceSchema = discriminatedUnion("kind", [
   noRevokeSourceSchema,
   tokenRevokeSourceSchema,
 ]);
 
-const connectorAuthMethodSourceSchema = z
-  .object({
-    id: connectorAuthMethodIdSchema,
-    label: z.string().min(1),
-    description: z.string().min(1).nullable(),
-    visible: z.boolean(),
-    client: connectorAuthClientSourceSchema.optional(),
-    storage: connectorStorageSourceSchema,
-    grant: connectorGrantSourceSchema,
-    access: connectorAccessSourceSchema,
-    revoke: connectorRevokeSourceSchema,
-  })
-  .strict();
+const connectorAuthMethodSourceSchema = object({
+  id: connectorAuthMethodIdSchema,
+  label: string().min(1),
+  description: string().min(1).nullable(),
+  visible: boolean(),
+  client: connectorAuthClientSourceSchema.optional(),
+  storage: connectorStorageSourceSchema,
+  grant: connectorGrantSourceSchema,
+  access: connectorAccessSourceSchema,
+  revoke: connectorRevokeSourceSchema,
+}).strict();
 
-export const connectorSourceSchema = z
-  .object({
-    label: z.string().min(1),
-    description: z.string().min(1),
-    category: connectorCategoryIdSchema,
-    generation: z.array(connectorGenerationTypeSchema),
-    tags: z.array(z.string().min(1)),
-    mcp: connectorMcpSchema.optional(),
-    authMethods: z.array(connectorAuthMethodSourceSchema).min(1),
-  })
-  .strict();
+export const connectorSourceSchema = object({
+  label: string().min(1),
+  description: string().min(1),
+  category: connectorCategoryIdSchema,
+  generation: array(connectorGenerationTypeSchema),
+  tags: array(string().min(1)),
+  mcp: connectorMcpSchema.optional(),
+  authMethods: array(connectorAuthMethodSourceSchema).min(1),
+}).strict();
 
-type CatalogSource = z.infer<typeof catalogSourceSchema>;
-type ConnectorSource = z.infer<typeof connectorSourceSchema>;
+type CatalogSource = zInfer<typeof catalogSourceSchema>;
+type ConnectorSource = zInfer<typeof connectorSourceSchema>;
 export type ConnectorAuthMethodSource = ConnectorSource["authMethods"][number];
 export type ConnectorGrantSource = ConnectorAuthMethodSource["grant"];
 

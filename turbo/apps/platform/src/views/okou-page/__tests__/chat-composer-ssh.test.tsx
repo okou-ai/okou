@@ -4,7 +4,6 @@ import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-conn
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -370,9 +369,6 @@ test("A chat can enable multiple VNC hosts independently", async () => {
   await setupPage({
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.VncAccess]: true,
-    },
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");

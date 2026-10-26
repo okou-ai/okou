@@ -1,6 +1,6 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
+import { literal, object, string, unknown as zUnknown } from "zod";
 import { env } from "../../lib/env";
 import { safeUrlParse, settle } from "../utils";
 
@@ -79,38 +79,32 @@ export async function readGetStartedRewardPost(
   if (!fetched.value.ok) {
     return { kind: "retry", reason: "verification_unavailable" };
   }
-  const response = z
-    .object({
-      result: z.object({
-        structuredContent: z.object({
-          data: z.object({
-            status: z.literal(200),
-            body: z.object({ result: z.object({ tweet: z.unknown() }) }),
-          }),
+  const response = object({
+    result: object({
+      structuredContent: object({
+        data: object({
+          status: literal(200),
+          body: object({ result: object({ tweet: zUnknown() }) }),
         }),
       }),
-    })
-    .safeParse(await fetched.value.json());
+    }),
+  }).safeParse(await fetched.value.json());
   signal.throwIfAborted();
   if (!response.success) {
     return { kind: "retry", reason: "incomplete_response" };
   }
   const result = response.data.result.structuredContent.data.body;
-  const tweet = z
-    .object({
-      id: z.string().min(1),
-      text: z.string().min(1),
-      author: z.unknown(),
-    })
-    .safeParse(result.result.tweet);
+  const tweet = object({
+    id: string().min(1),
+    text: string().min(1),
+    author: zUnknown(),
+  }).safeParse(result.result.tweet);
   if (!tweet.success || !tweet.data.text.trim()) {
     return { kind: "retry", reason: "incomplete_response" };
   }
   // A malformed author must not turn a readable post into a retry; the review
   // rejects a post whose author cannot be identified.
-  const author = z
-    .object({ profileUrl: z.string() })
-    .safeParse(tweet.data.author);
+  const author = object({ profileUrl: string() }).safeParse(tweet.data.author);
   const profileUrl = author.success ? author.data.profileUrl : null;
   return {
     kind: "post",

@@ -1,5 +1,6 @@
 import { Command } from "commander";
-import { z } from "zod";
+import { uuid, type output, type ZodType } from "zod";
+
 import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { readManagementInput } from "../../lib/management-input";
@@ -20,7 +21,7 @@ export function requireVncManagementCapability(
 }
 
 export function managementId(value: string): string {
-  const parsed = z.uuid().safeParse(value);
+  const parsed = uuid().safeParse(value);
   if (!parsed.success)
     throw new Error(
       "Use an exact UUID from the configured host or credential list.",
@@ -37,11 +38,11 @@ export function outputManagement(
   if (!options.json) console.log(next);
 }
 
-export function managementWriteCommand<T extends z.ZodType>(
+export function managementWriteCommand<T extends ZodType>(
   name: "create" | "update" | "delete",
   resource: "host" | "credential",
   schema: T,
-  operation: (body: z.output<T>, id?: string) => Promise<unknown>,
+  operation: (body: output<T>, id?: string) => Promise<unknown>,
 ) {
   const command = new Command(name)
     .description(

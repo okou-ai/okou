@@ -9,7 +9,14 @@ import type {
   DiscordCommandInteraction,
   DiscordComponentInteraction,
 } from "@okouai/api-contracts/contracts/discord-interactions";
-import { z } from "zod";
+import {
+  literal,
+  number,
+  object,
+  union,
+  uuid,
+  type infer as zInfer,
+} from "zod";
 
 import { now } from "./time";
 
@@ -26,14 +33,14 @@ export interface DiscordInteractionActor {
   readonly guildId: string | null;
 }
 
-const pickerStateSchema = z.object({
-  action: z.literal("org"),
-  page: z.number().int().min(0).max(4_294_967_295),
+const pickerStateSchema = object({
+  action: literal("org"),
+  page: number().int().min(0).max(4_294_967_295),
   // Organization selection happens before a DM has selected its binding.
-  connectionId: z.union([z.uuid(), z.literal("-")]),
+  connectionId: union([uuid(), literal("-")]),
 });
 
-export type DiscordPickerState = z.infer<typeof pickerStateSchema>;
+export type DiscordPickerState = zInfer<typeof pickerStateSchema>;
 export type DiscordPickerAction = DiscordPickerState["action"];
 
 export function verifyDiscordInteractionSignature(args: {

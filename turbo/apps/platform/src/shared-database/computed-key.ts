@@ -3,14 +3,21 @@ import {
   queueResponseSchema,
   type QueueResponse,
 } from "@okouai/api-contracts/contracts/runs";
-import { z } from "zod";
+import {
+  array,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import {
   chatThreadIndicatorsSchema,
   type ChatThreadIndicators,
 } from "./data-key.ts";
 
-export const computedKeySchema = z.enum([
+export const computedKeySchema = zEnum([
   "chat-thread-indicators",
   "computer-use-hosts",
   "indexeddb-diagnostics",
@@ -18,45 +25,37 @@ export const computedKeySchema = z.enum([
   "queue-data",
 ]);
 
-export type ComputedKey = z.infer<typeof computedKeySchema>;
+export type ComputedKey = zInfer<typeof computedKeySchema>;
 
-export const listedComputerUseHostSchema = z
-  .object({
-    id: z.string(),
-    hostName: z.string(),
-    displayName: z.string(),
-    lastSeenAt: z.string(),
-    status: computerUseHostStatusSchema,
-  })
-  .strict();
+export const listedComputerUseHostSchema = object({
+  id: string(),
+  hostName: string(),
+  displayName: string(),
+  lastSeenAt: string(),
+  status: computerUseHostStatusSchema,
+}).strict();
 
-export type ListedComputerUseHost = z.infer<typeof listedComputerUseHostSchema>;
+export type ListedComputerUseHost = zInfer<typeof listedComputerUseHostSchema>;
 
-const indexedDbDiagnosticsSchema = z
-  .object({
-    version: z.number().int().nonnegative(),
-    stores: z.array(
-      z
-        .object({
-          name: z.string().min(1),
-          recordCount: z.number().int().nonnegative(),
-        })
-        .strict(),
-    ),
-  })
-  .strict();
+const indexedDbDiagnosticsSchema = object({
+  version: number().int().nonnegative(),
+  stores: array(
+    object({
+      name: string().min(1),
+      recordCount: number().int().nonnegative(),
+    }).strict(),
+  ),
+}).strict();
 
-export type IndexedDbDiagnostics = z.infer<typeof indexedDbDiagnosticsSchema>;
+export type IndexedDbDiagnostics = zInfer<typeof indexedDbDiagnosticsSchema>;
 
-const indexedDbSnapshotMeasurementSchema = z
-  .object({
-    threadCount: z.number().int().nonnegative(),
-    payloadBytes: z.number().int().nonnegative(),
-    readDurationMs: z.number().nonnegative(),
-  })
-  .strict();
+const indexedDbSnapshotMeasurementSchema = object({
+  threadCount: number().int().nonnegative(),
+  payloadBytes: number().int().nonnegative(),
+  readDurationMs: number().nonnegative(),
+}).strict();
 
-export type IndexedDbSnapshotMeasurement = z.infer<
+export type IndexedDbSnapshotMeasurement = zInfer<
   typeof indexedDbSnapshotMeasurementSchema
 >;
 

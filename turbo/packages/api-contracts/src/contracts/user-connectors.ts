@@ -1,4 +1,11 @@
-import { z } from "zod";
+import {
+  array,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { connectorSlugSchema } from "./connector-identity";
 import { apiErrorSchema } from "./errors";
@@ -10,20 +17,18 @@ const c = initContract();
  * Sparse model: only connector slugs explicitly enabled by the user for this
  * agent.
  */
-export const userBuiltinConnectorEnabledSlugsSchema = z.object({
-  enabledConnectorSlugs: z.array(connectorSlugSchema),
+export const userBuiltinConnectorEnabledSlugsSchema = object({
+  enabledConnectorSlugs: array(connectorSlugSchema),
 });
-export type UserBuiltinConnectorEnabledSlugs = z.infer<
+export type UserBuiltinConnectorEnabledSlugs = zInfer<
   typeof userBuiltinConnectorEnabledSlugsSchema
 >;
 
-export const userBuiltinConnectorUpdateSchema = z
-  .object({
-    enabledConnectorSlugs: z.array(connectorSlugSchema),
-    operation: z.enum(["replace", "add", "remove"]).optional(),
-  })
-  .strict();
-export type UserBuiltinConnectorUpdate = z.infer<
+export const userBuiltinConnectorUpdateSchema = object({
+  enabledConnectorSlugs: array(connectorSlugSchema),
+  operation: zEnum(["replace", "add", "remove"]).optional(),
+}).strict();
+export type UserBuiltinConnectorUpdate = zInfer<
   typeof userBuiltinConnectorUpdateSchema
 >;
 
@@ -35,7 +40,7 @@ export const userBuiltinConnectorsContract = c.router({
     method: "GET",
     path: "/api/agents/:id/user-connectors",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
+    pathParams: object({ id: string().uuid() }),
     responses: {
       200: userBuiltinConnectorEnabledSlugsSchema,
       401: apiErrorSchema,
@@ -48,7 +53,7 @@ export const userBuiltinConnectorsContract = c.router({
     method: "PUT",
     path: "/api/agents/:id/user-connectors",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
+    pathParams: object({ id: string().uuid() }),
     body: userBuiltinConnectorUpdateSchema,
     responses: {
       200: userBuiltinConnectorEnabledSlugsSchema,

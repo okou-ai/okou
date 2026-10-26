@@ -44,7 +44,8 @@ import {
   runUploadedFiles,
   type CanonicalAssetClassification,
 } from "@okouai/db/schema/run-uploaded-file";
-import { z } from "zod";
+import { object, string, type infer as zInfer } from "zod";
+
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
 import { canonicalOkouArtifactCatalogUrl } from "../../lib/file-url";
@@ -81,11 +82,11 @@ const OFFICIAL_IMAGE_MARKER = "zero-official-image";
 const OFFICIAL_VIDEO_MARKER = "zero-official-video";
 const AVATAR_VIDEO_MARKER = "zero-joggai-avatar-video";
 
-const artifactCursorSchema = z.object({
-  createdAt: z.string(),
-  id: z.string(),
+const artifactCursorSchema = object({
+  createdAt: string(),
+  id: string(),
 });
-type ArtifactCursor = z.infer<typeof artifactCursorSchema>;
+type ArtifactCursor = zInfer<typeof artifactCursorSchema>;
 
 function encodeArtifactCursor(cursor: ArtifactCursor): string {
   return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");

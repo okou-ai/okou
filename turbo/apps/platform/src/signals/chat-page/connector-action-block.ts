@@ -1,5 +1,5 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { z } from "zod";
+import { uuid } from "zod";
 import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
@@ -203,7 +203,7 @@ export function parseConnectorAuthorizeUrl(
   const parsedCatalogSlug = connectorSlugSchema.safeParse(connectorSlug);
   const connectionId = match[3];
   if (connectionId !== undefined) {
-    const parsedConnectionId = z.uuid().safeParse(connectionId);
+    const parsedConnectionId = uuid().safeParse(connectionId);
     if (!parsedCatalogSlug.success || !parsedConnectionId.success) {
       return { status: "invalid", originalUrl: value };
     }

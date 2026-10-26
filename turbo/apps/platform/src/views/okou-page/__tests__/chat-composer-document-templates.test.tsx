@@ -1,5 +1,4 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -39,15 +38,12 @@ function control(
   return result;
 }
 
-async function setup(enabled = true) {
+async function setup() {
   const capture = mockTemplateChat();
   const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.BuiltinDocumentTemplates]: enabled,
-    },
   });
   return { user, capture };
 }

@@ -1,4 +1,14 @@
-import { z } from "zod";
+import {
+  array,
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  union,
+  enum as zEnum,
+  type RefinementCtx,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { connectorSlugSchema } from "./connector-identity";
@@ -14,43 +24,37 @@ import {
 
 const c = initContract();
 
-const boundedNameSchema = z.string().min(1).max(255);
-const connectorCheckAwsQuerySelectorSchema = z
-  .object({
-    key: z.string().min(1).max(128).regex(AWS_QUERY_KEY_RE),
-    value: z
-      .string()
-      .max(256)
-      .refine((value) => {
-        return value === "*" || AWS_QUERY_VALUE_RE.test(value);
-      })
-      .optional(),
-  })
-  .strict();
+const boundedNameSchema = string().min(1).max(255);
+const connectorCheckAwsQuerySelectorSchema = object({
+  key: string().min(1).max(128).regex(AWS_QUERY_KEY_RE),
+  value: string()
+    .max(256)
+    .refine((value) => {
+      return value === "*" || AWS_QUERY_VALUE_RE.test(value);
+    })
+    .optional(),
+}).strict();
 
-const connectorCheckAwsSelectorsBaseSchema = z
-  .object({
-    sigv4Service: z.string().min(1).max(128).regex(AWS_PREDICATE_VALUE_RE),
-    action: z.string().min(1).max(256).regex(AWS_PREDICATE_VALUE_RE).optional(),
-    target: z.string().min(1).max(256).regex(AWS_PREDICATE_VALUE_RE).optional(),
-    query: z.array(connectorCheckAwsQuerySelectorSchema).max(32).optional(),
-    headerNames: z
-      .array(z.enum(AWS_S3_PERMISSION_HEADER_NAMES))
-      .max(AWS_S3_PERMISSION_HEADER_NAMES.length)
-      .optional(),
-  })
-  .strict();
+const connectorCheckAwsSelectorsBaseSchema = object({
+  sigv4Service: string().min(1).max(128).regex(AWS_PREDICATE_VALUE_RE),
+  action: string().min(1).max(256).regex(AWS_PREDICATE_VALUE_RE).optional(),
+  target: string().min(1).max(256).regex(AWS_PREDICATE_VALUE_RE).optional(),
+  query: array(connectorCheckAwsQuerySelectorSchema).max(32).optional(),
+  headerNames: array(zEnum(AWS_S3_PERMISSION_HEADER_NAMES))
+    .max(AWS_S3_PERMISSION_HEADER_NAMES.length)
+    .optional(),
+}).strict();
 
-type ConnectorCheckAwsSelectors = z.infer<
+type ConnectorCheckAwsSelectors = zInfer<
   typeof connectorCheckAwsSelectorsBaseSchema
 >;
-type ConnectorCheckAwsQuerySelector = z.infer<
+type ConnectorCheckAwsQuerySelector = zInfer<
   typeof connectorCheckAwsQuerySelectorSchema
 >;
 
 function validateAwsQuerySelectors(
   selectors: readonly ConnectorCheckAwsQuerySelector[],
-  ctx: z.RefinementCtx,
+  ctx: RefinementCtx,
 ): void {
   const seenQueryKeys = new Set<string>();
   for (const [index, selector] of selectors.entries()) {
@@ -82,7 +86,7 @@ function validateAwsQuerySelectors(
 
 function validateAwsActionQuery(
   selectors: ConnectorCheckAwsSelectors,
-  ctx: z.RefinementCtx,
+  ctx: RefinementCtx,
 ): void {
   if (selectors.action === undefined) return;
   const actions = (selectors.query ?? []).filter((selector) => {
@@ -102,7 +106,7 @@ function validateAwsActionQuery(
 
 function validateAwsHeaderSelectors(
   selectors: ConnectorCheckAwsSelectors,
-  ctx: z.RefinementCtx,
+  ctx: RefinementCtx,
 ): void {
   const seenHeaderNames = new Set<string>();
   for (const [index, name] of (selectors.headerNames ?? []).entries()) {
@@ -132,7 +136,7 @@ function validateAwsHeaderSelectors(
 
 function validateAwsCheckSelectors(
   selectors: ConnectorCheckAwsSelectors,
-  ctx: z.RefinementCtx,
+  ctx: RefinementCtx,
 ): void {
   if (selectors.action !== undefined && selectors.target !== undefined) {
     ctx.addIssue({
@@ -161,42 +165,37 @@ function validateAwsCheckSelectors(
 const connectorCheckAwsSelectorsSchema =
   connectorCheckAwsSelectorsBaseSchema.superRefine(validateAwsCheckSelectors);
 
-const connectorCheckUrlRequestSchema = z
-  .object({
-    mode: z.literal("url"),
-    method: z.string().min(1).max(16),
-    url: z.string().min(1).max(8192),
-    aws: connectorCheckAwsSelectorsSchema.optional(),
-    connectorSlug: connectorSlugSchema.optional(),
-    environmentName: boundedNameSchema.optional(),
-  })
-  .strict();
+const connectorCheckUrlRequestSchema = object({
+  mode: literal("url"),
+  method: string().min(1).max(16),
+  url: string().min(1).max(8192),
+  aws: connectorCheckAwsSelectorsSchema.optional(),
+  connectorSlug: connectorSlugSchema.optional(),
+  environmentName: boundedNameSchema.optional(),
+}).strict();
 
-const connectorCheckEnvironmentRequestSchema = z
-  .object({
-    mode: z.literal("environment"),
-    environmentName: boundedNameSchema,
-    permission: boundedNameSchema.optional(),
-  })
-  .strict();
+const connectorCheckEnvironmentRequestSchema = object({
+  mode: literal("environment"),
+  environmentName: boundedNameSchema,
+  permission: boundedNameSchema.optional(),
+}).strict();
 
-export const connectorCheckRequestSchema = z.discriminatedUnion("mode", [
+export const connectorCheckRequestSchema = discriminatedUnion("mode", [
   connectorCheckUrlRequestSchema,
   connectorCheckEnvironmentRequestSchema,
 ]);
 
-export type ConnectorCheckRequest = z.infer<typeof connectorCheckRequestSchema>;
+export type ConnectorCheckRequest = zInfer<typeof connectorCheckRequestSchema>;
 
-export const connectorCheckTargetAwareUrlRequestSchema = z
-  .object({
-    mode: z.literal("url"),
-    method: z.string().min(1).max(16),
-    url: z.string().min(1).max(8192),
-    aws: connectorCheckAwsSelectorsSchema.optional(),
-    environmentName: boundedNameSchema.optional(),
-    includeCustomConnectors: z.literal(true).optional(),
-    target: connectorRuntimeTargetSchema.optional(),
-  })
+export const connectorCheckTargetAwareUrlRequestSchema = object({
+  mode: literal("url"),
+  method: string().min(1).max(16),
+  url: string().min(1).max(8192),
+  aws: connectorCheckAwsSelectorsSchema.optional(),
+  environmentName: boundedNameSchema.optional(),
+  includeCustomConnectors: literal(true).optional(),
+  target: connectorRuntimeTargetSchema.optional(),
+})
   .strict()
   .refine(
     (request) => {
@@ -207,224 +206,184 @@ export const connectorCheckTargetAwareUrlRequestSchema = z
     { message: "Target-aware connector checks require custom scope or target" },
   );
 
-export const connectorCheckRequestBodySchema = z.union([
+export const connectorCheckRequestBodySchema = union([
   connectorCheckUrlRequestSchema,
   connectorCheckTargetAwareUrlRequestSchema,
   connectorCheckEnvironmentRequestSchema,
 ]);
 
-export type ConnectorCheckTargetAwareUrlRequest = z.infer<
+export type ConnectorCheckTargetAwareUrlRequest = zInfer<
   typeof connectorCheckTargetAwareUrlRequestSchema
 >;
-export type ConnectorCheckRequestBody = z.infer<
+export type ConnectorCheckRequestBody = zInfer<
   typeof connectorCheckRequestBodySchema
 >;
 
-const connectorCheckIdentitySchema = z
-  .object({
-    target: connectorRuntimeTargetSchema,
-    label: z.string().min(1),
-    visibility: z.enum(["available", "unavailable"]),
-    credentialResolution: z.enum(["network-boundary", "none"]),
-  })
-  .strict();
+const connectorCheckIdentitySchema = object({
+  target: connectorRuntimeTargetSchema,
+  label: string().min(1),
+  visibility: zEnum(["available", "unavailable"]),
+  credentialResolution: zEnum(["network-boundary", "none"]),
+}).strict();
 
-const connectorCheckCandidateSchema = z
-  .object({
-    target: connectorRuntimeTargetSchema,
-    label: z.string().min(1),
-  })
-  .strict();
+const connectorCheckCandidateSchema = object({
+  target: connectorRuntimeTargetSchema,
+  label: string().min(1),
+}).strict();
 
-const connectorCheckNotScopedRunSchema = z
-  .object({ status: z.literal("not-scoped") })
-  .strict();
+const connectorCheckNotScopedRunSchema = object({
+  status: literal("not-scoped"),
+}).strict();
 
-const connectorCheckConfiguredRunSchema = z
-  .object({
-    status: z.literal("configured"),
-    bases: z.array(z.string().min(1)),
-  })
-  .strict();
+const connectorCheckConfiguredRunSchema = object({
+  status: literal("configured"),
+  bases: array(string().min(1)),
+}).strict();
 
-const connectorCheckNotConfiguredRunSchema = z
-  .object({ status: z.literal("not-configured") })
-  .strict();
+const connectorCheckNotConfiguredRunSchema = object({
+  status: literal("not-configured"),
+}).strict();
 
-const connectorCheckRunSchema = z.discriminatedUnion("status", [
+const connectorCheckRunSchema = discriminatedUnion("status", [
   connectorCheckNotScopedRunSchema,
   connectorCheckConfiguredRunSchema,
   connectorCheckNotConfiguredRunSchema,
 ]);
 
-const connectorCheckAllowPolicySchema = z
-  .object({
-    outcome: z.literal("allow"),
-    basis: z.enum(["allow-list", "not-blocked", "no-policy", "unknown-policy"]),
-  })
-  .strict();
+const connectorCheckAllowPolicySchema = object({
+  outcome: literal("allow"),
+  basis: zEnum(["allow-list", "not-blocked", "no-policy", "unknown-policy"]),
+}).strict();
 
-const connectorCheckDenyPolicySchema = z
-  .object({
-    outcome: z.literal("deny"),
-    basis: z.enum(["deny-list", "unknown-policy"]),
-  })
-  .strict();
+const connectorCheckDenyPolicySchema = object({
+  outcome: literal("deny"),
+  basis: zEnum(["deny-list", "unknown-policy"]),
+}).strict();
 
-const connectorCheckAskPolicySchema = z
-  .object({
-    outcome: z.literal("ask"),
-    basis: z.enum(["ask-list", "unknown-policy"]),
-  })
-  .strict();
+const connectorCheckAskPolicySchema = object({
+  outcome: literal("ask"),
+  basis: zEnum(["ask-list", "unknown-policy"]),
+}).strict();
 
-const connectorCheckUnavailablePolicySchema = z
-  .object({
-    outcome: z.literal("unavailable"),
-    basis: z.enum([
-      "not-run-scoped",
-      "policies-unavailable",
-      "connector-not-configured",
-    ]),
-  })
-  .strict();
+const connectorCheckUnavailablePolicySchema = object({
+  outcome: literal("unavailable"),
+  basis: zEnum([
+    "not-run-scoped",
+    "policies-unavailable",
+    "connector-not-configured",
+  ]),
+}).strict();
 
-export const connectorCheckPolicySchema = z.discriminatedUnion("outcome", [
+export const connectorCheckPolicySchema = discriminatedUnion("outcome", [
   connectorCheckAllowPolicySchema,
   connectorCheckDenyPolicySchema,
   connectorCheckAskPolicySchema,
   connectorCheckUnavailablePolicySchema,
 ]);
 
-export type ConnectorCheckPolicy = z.infer<typeof connectorCheckPolicySchema>;
+export type ConnectorCheckPolicy = zInfer<typeof connectorCheckPolicySchema>;
 
-const connectorCheckMatchedPermissionSchema = z
-  .object({
-    name: z.string().min(1),
-    policy: connectorCheckPolicySchema,
-  })
-  .strict();
+const connectorCheckMatchedPermissionSchema = object({
+  name: string().min(1),
+  policy: connectorCheckPolicySchema,
+}).strict();
 
-const connectorCheckMatchedPermissionsSchema = z
-  .object({
-    kind: z.literal("matched"),
-    permissions: z.array(connectorCheckMatchedPermissionSchema).min(1),
-  })
-  .strict();
+const connectorCheckMatchedPermissionsSchema = object({
+  kind: literal("matched"),
+  permissions: array(connectorCheckMatchedPermissionSchema).min(1),
+}).strict();
 
-const connectorCheckUnknownEndpointSchema = z
-  .object({
-    kind: z.literal("unknown-endpoint"),
-    policy: connectorCheckPolicySchema,
-  })
-  .strict();
+const connectorCheckUnknownEndpointSchema = object({
+  kind: literal("unknown-endpoint"),
+  policy: connectorCheckPolicySchema,
+}).strict();
 
-const connectorCheckPermissionResultSchema = z.discriminatedUnion("kind", [
+const connectorCheckPermissionResultSchema = discriminatedUnion("kind", [
   connectorCheckMatchedPermissionsSchema,
   connectorCheckUnknownEndpointSchema,
 ]);
 
-const connectorCheckResolvedUrlSchema = z
-  .object({
-    outcome: z.literal("resolved"),
-    mode: z.literal("url"),
-    connector: connectorCheckIdentitySchema,
-    environmentNames: z.array(boundedNameSchema).nullable(),
-    run: connectorCheckRunSchema,
-    method: z.string().min(1).max(16),
-    base: z.string().min(1),
-    relativePath: z.string().min(1),
-    permission: connectorCheckPermissionResultSchema,
-  })
-  .strict();
+const connectorCheckResolvedUrlSchema = object({
+  outcome: literal("resolved"),
+  mode: literal("url"),
+  connector: connectorCheckIdentitySchema,
+  environmentNames: array(boundedNameSchema).nullable(),
+  run: connectorCheckRunSchema,
+  method: string().min(1).max(16),
+  base: string().min(1),
+  relativePath: string().min(1),
+  permission: connectorCheckPermissionResultSchema,
+}).strict();
 
-const connectorCheckResolvedEnvironmentSchema = z
-  .object({
-    outcome: z.literal("resolved"),
-    mode: z.literal("environment"),
-    connector: connectorCheckIdentitySchema,
-    environmentName: boundedNameSchema,
-    run: connectorCheckRunSchema,
-    permission: connectorCheckPolicySchema.nullable(),
-  })
-  .strict();
+const connectorCheckResolvedEnvironmentSchema = object({
+  outcome: literal("resolved"),
+  mode: literal("environment"),
+  connector: connectorCheckIdentitySchema,
+  environmentName: boundedNameSchema,
+  run: connectorCheckRunSchema,
+  permission: connectorCheckPolicySchema.nullable(),
+}).strict();
 
-const connectorCheckUnsafeInputSchema = z
-  .object({
-    outcome: z.literal("unsafe-input"),
-    reason: z.enum(["invalid-method", "invalid-url", "unsafe-path"]),
-  })
-  .strict();
+const connectorCheckUnsafeInputSchema = object({
+  outcome: literal("unsafe-input"),
+  reason: zEnum(["invalid-method", "invalid-url", "unsafe-path"]),
+}).strict();
 
-const connectorCheckUnknownConnectorSchema = z
-  .object({ outcome: z.literal("unknown-connector") })
-  .strict();
+const connectorCheckUnknownConnectorSchema = object({
+  outcome: literal("unknown-connector"),
+}).strict();
 
-const connectorCheckUnknownEnvironmentSchema = z
-  .object({ outcome: z.literal("unknown-environment") })
-  .strict();
+const connectorCheckUnknownEnvironmentSchema = object({
+  outcome: literal("unknown-environment"),
+}).strict();
 
-const connectorCheckNoMatchSchema = z
-  .object({
-    outcome: z.literal("no-match"),
-    scope: z.enum(["run", "catalog"]),
-  })
-  .strict();
+const connectorCheckNoMatchSchema = object({
+  outcome: literal("no-match"),
+  scope: zEnum(["run", "catalog"]),
+}).strict();
 
-const connectorCheckAmbiguousSchema = z
-  .object({
-    outcome: z.literal("ambiguous"),
-    candidates: z.array(connectorCheckCandidateSchema).min(2),
-  })
-  .strict();
+const connectorCheckAmbiguousSchema = object({
+  outcome: literal("ambiguous"),
+  candidates: array(connectorCheckCandidateSchema).min(2),
+}).strict();
 
-const connectorCheckMismatchSchema = z
-  .object({
-    outcome: z.literal("connector-mismatch"),
-    connector: connectorCheckIdentitySchema,
-  })
-  .strict();
+const connectorCheckMismatchSchema = object({
+  outcome: literal("connector-mismatch"),
+  connector: connectorCheckIdentitySchema,
+}).strict();
 
-const connectorCheckEnvironmentNotOwnedSchema = z
-  .object({
-    outcome: z.literal("environment-not-owned"),
-    connector: connectorCheckIdentitySchema,
-  })
-  .strict();
+const connectorCheckEnvironmentNotOwnedSchema = object({
+  outcome: literal("environment-not-owned"),
+  connector: connectorCheckIdentitySchema,
+}).strict();
 
-const connectorCheckEnvironmentNotUsedSchema = z
-  .object({
-    outcome: z.literal("environment-not-used"),
-    connector: connectorCheckIdentitySchema,
-    environmentNames: z.array(boundedNameSchema),
-  })
-  .strict();
+const connectorCheckEnvironmentNotUsedSchema = object({
+  outcome: literal("environment-not-used"),
+  connector: connectorCheckIdentitySchema,
+  environmentNames: array(boundedNameSchema),
+}).strict();
 
-const connectorCheckUnresolvedDynamicBaseSchema = z
-  .object({
-    outcome: z.literal("unresolved-dynamic-base"),
-    connector: connectorCheckIdentitySchema,
-  })
-  .strict();
+const connectorCheckUnresolvedDynamicBaseSchema = object({
+  outcome: literal("unresolved-dynamic-base"),
+  connector: connectorCheckIdentitySchema,
+}).strict();
 
-const connectorCheckRunContextUnavailableSchema = z
-  .object({ outcome: z.literal("run-context-unavailable") })
-  .strict();
+const connectorCheckRunContextUnavailableSchema = object({
+  outcome: literal("run-context-unavailable"),
+}).strict();
 
-const connectorCheckTargetUnavailableSchema = z
-  .object({
-    outcome: z.literal("target-unavailable"),
-    target: connectorRuntimeTargetSchema,
-    reason: z.enum([
-      "not-admitted",
-      "connector-unavailable",
-      "permission-bundle-unavailable",
-      "runtime-configuration-unavailable",
-    ]),
-  })
-  .strict();
+const connectorCheckTargetUnavailableSchema = object({
+  outcome: literal("target-unavailable"),
+  target: connectorRuntimeTargetSchema,
+  reason: zEnum([
+    "not-admitted",
+    "connector-unavailable",
+    "permission-bundle-unavailable",
+    "runtime-configuration-unavailable",
+  ]),
+}).strict();
 
-export const connectorCheckDiagnosticResultSchema = z.union([
+export const connectorCheckDiagnosticResultSchema = union([
   connectorCheckResolvedUrlSchema,
   connectorCheckResolvedEnvironmentSchema,
   connectorCheckUnsafeInputSchema,
@@ -440,7 +399,7 @@ export const connectorCheckDiagnosticResultSchema = z.union([
   connectorCheckRunContextUnavailableSchema,
 ]);
 
-export type ConnectorCheckDiagnosticResult = z.infer<
+export type ConnectorCheckDiagnosticResult = zInfer<
   typeof connectorCheckDiagnosticResultSchema
 >;
 

@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
-import { z } from "zod";
+import { array, object, string } from "zod";
 import {
   hostContract,
   type HostedSiteCompleteResponse,
@@ -209,9 +209,9 @@ export function createHostBddApi(context: TestContext) {
           return Promise.resolve({ ETag: objectEtag(body) });
         }
         if (name === "DeleteObjectsCommand") {
-          const deleted = z
-            .object({ Objects: z.array(z.object({ Key: z.string() })) })
-            .parse(input.Delete);
+          const deleted = object({
+            Objects: array(object({ Key: string() })),
+          }).parse(input.Delete);
           for (const { Key } of deleted.Objects) {
             objects.delete(Key);
             capture.deletes.push(Key);

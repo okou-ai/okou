@@ -24,6 +24,7 @@ import {
   watchAgentPhoneConnection$,
 } from "../okou-page/agentphone.ts";
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
+import { watchDiscordConnection$ } from "../okou-page/discord.ts";
 import { watchSlackConnection$ } from "../okou-page/slack.ts";
 import { watchTeamsConnection$ } from "../okou-page/teams.ts";
 import {
@@ -295,6 +296,7 @@ export const setupOnboardingSlackPage$ = createSourcesFirstPageSetup({
   watch: [
     watchSlackConnection$,
     watchTeamsConnection$,
+    watchDiscordConnection$,
     watchOnboardingAgentPhone$,
     watchOnboardingTelegram$,
   ],

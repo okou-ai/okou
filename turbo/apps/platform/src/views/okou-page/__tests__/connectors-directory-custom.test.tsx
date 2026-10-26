@@ -1,8 +1,5 @@
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
-import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
@@ -157,40 +154,6 @@ test("Keep category search scoped and offer All for a custom-only match", async 
     expect(getConnectorCard("Acme Reports")).toBeVisible();
   });
   expect(locationSearch()).toContain("keywords=acme");
-});
-
-test("Remote control and Private network scopes omit VNC when its switch is off", async () => {
-  installCustomDirectory();
-  context.mocks.api(vncConnectionsContract.list, () => {
-    throw new Error("VNC connections must stay disabled");
-  });
-  context.mocks.api(vncCredentialsContract.list, () => {
-    throw new Error("VNC credentials must stay disabled");
-  });
-  await setupPage({
-    context,
-    path: "/connectors?scope=custom",
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: false },
-  });
-  await screen.findByText("Acme Reports");
-
-  click(screen.getByTestId("connectors-scope-remote-control"));
-  await screen.findByRole("heading", { name: "SSH" });
-  expect(locationSearch()).toBe("?scope=remote-control");
-  expect(screen.queryByRole("heading", { name: "VNC" })).toBeNull();
-  click(getConnectorAction("button", "Type: All"));
-  const menu = await screen.findByRole("menu");
-  expect(queryConnectorAction("menuitem", "VNC", menu)).toBeNull();
-  click(getConnectorAction("menuitem", "SSH", menu));
-
-  click(screen.getByTestId("connectors-scope-private-network"));
-  await screen.findByRole("heading", { name: "Cloudflare Access" });
-  expect(locationSearch()).toBe("?scope=private-network");
-  expect(screen.queryByRole("heading", { name: "SSH" })).toBeNull();
-
-  click(screen.getByTestId("connectors-scope-custom"));
-  await screen.findByText("Acme Reports");
-  expect(locationSearch()).toBe("?scope=custom");
 });
 
 test("Scope navigation returns directly to Remote control", async () => {

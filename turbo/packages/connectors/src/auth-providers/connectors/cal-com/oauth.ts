@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string, union } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -8,11 +8,11 @@ const AUTHORIZATION_URL = "https://app.cal.com/auth/oauth2/authorize";
 const TOKEN_URL = "https://api.cal.com/v2/auth/oauth2/token";
 const ME_URL = "https://api.cal.com/v2/me";
 
-const tokenSchema = z.object({
-  access_token: z.string().min(1),
-  refresh_token: z.string().nullable().optional(),
-  expires_in: z.number().positive().optional(),
-  scope: z.string().optional(),
+const tokenSchema = object({
+  access_token: string().min(1),
+  refresh_token: string().nullable().optional(),
+  expires_in: number().positive().optional(),
+  scope: string().optional(),
 });
 
 export function buildCalComAuthorizationUrl(
@@ -73,16 +73,14 @@ export async function exchangeCalComCode(args: {
   if (!userResponse.ok) {
     throw new Error(`Cal.com user info request failed: ${userResponse.status}`);
   }
-  const user = z
-    .object({
-      data: z.object({
-        id: z.union([z.string(), z.number()]),
-        username: z.string().nullable().optional(),
-        email: z.string().nullable().optional(),
-        name: z.string().nullable().optional(),
-      }),
-    })
-    .parse(await userResponse.json()).data;
+  const user = object({
+    data: object({
+      id: union([string(), number()]),
+      username: string().nullable().optional(),
+      email: string().nullable().optional(),
+      name: string().nullable().optional(),
+    }),
+  }).parse(await userResponse.json()).data;
   return {
     accessToken: token.access_token,
     refreshToken: token.refresh_token ?? null,

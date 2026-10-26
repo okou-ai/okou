@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -83,16 +83,14 @@ export async function exchangeSpotifyCode(
     await throwOAuthError("Spotify", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -144,16 +142,14 @@ export async function refreshSpotifyToken(
     await throwOAuthError("Spotify", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -189,14 +185,12 @@ async function fetchSpotifyUserInfo(
     throw new Error(`Spotify user info fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      account_id: z.string().optional(),
-      id: z.string().optional(),
-      display_name: z.string().nullable().optional(),
-      email: z.string().nullable().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    account_id: string().optional(),
+    id: string().optional(),
+    display_name: string().nullable().optional(),
+    email: string().nullable().optional(),
+  }).parse(await response.json());
 
   // Spotify defines `account_id` as the immutable account-linking key; tolerate legacy responses that only expose `id`. Ref: https://developer.spotify.com/documentation/web-api/reference/get-current-users-profile
   const id = data.account_id ?? data.id;

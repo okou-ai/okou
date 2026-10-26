@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect } from "vitest";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -9,7 +8,6 @@ import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { runnersRoutes } from "../../runners";
 import { createBddApi } from "./api-bdd";
 import { createRunsApi } from "./api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { useSecretKmsProbe } from "./secret-kms-probe";
 import { requireVncCredentialId } from "./vnc-response";
 import {
@@ -31,22 +29,19 @@ export function createClaimedVncApi(context: TestContext) {
   const runs = createRunsApi(context);
   const cleanups: (() => Promise<void>)[] = [];
 
-  async function owner(): Promise<Owner> {
+  function owner(): Owner {
     const actor = bdd.user();
     if (!actor.orgId) {
       throw new Error("Expected a VNC owner organization");
     }
     const value = { orgId: actor.orgId, userId: actor.userId };
-    await updateFeatureSwitchesForUser(context, value, {
-      [FeatureSwitchKey.VncAccess]: true,
-    });
     api.authenticate(value);
     return value;
   }
 
   /** Paid onboarding creates an Agent but no VNC host or Run. */
   async function paidOwner() {
-    const value = await owner();
+    const value = owner();
     const actor = bdd.user(value);
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();

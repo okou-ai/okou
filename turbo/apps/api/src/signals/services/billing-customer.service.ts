@@ -4,7 +4,7 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { z } from "zod";
+import { object, string } from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
@@ -19,7 +19,7 @@ interface GetOrCreateStripeCustomerArgs {
   readonly orgId: string;
 }
 
-const insertedMetadataSchema = z.object({ org_id: z.string() });
+const insertedMetadataSchema = object({ org_id: string() });
 
 const bindStripeCustomer$ = command(
   async (

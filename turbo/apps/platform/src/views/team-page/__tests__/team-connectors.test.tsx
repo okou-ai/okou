@@ -370,6 +370,60 @@ test("An unconfigured custom connector is not offered to an agent", async () => 
   expect(screen.queryByText("Acme Search")).not.toBeInTheDocument();
 });
 
+test("Granting custom access stays busy through account preparation and saving", async () => {
+  const connector = acmeConnectorFixture();
+  mockConnectorSurface(context, { customConnectors: [connector] });
+  const preparationStarted = context.mocks.deferred<void>();
+  const accountReady = context.mocks.deferred<void>();
+  const saveStarted = context.mocks.deferred<void>();
+  const saveReady = context.mocks.deferred<void>();
+  let grants: readonly AgentCustomConnectorGrant[] = [];
+  context.mocks.api(
+    connectorAccountsContract.connections,
+    async ({ respond }) => {
+      preparationStarted.resolve();
+      await accountReady.promise;
+      const account = customConnectorAccount(connector.id);
+      return respond(200, {
+        connections: [account],
+        defaultConnection: account,
+        nextCursor: null,
+      });
+    },
+  );
+  context.mocks.api(agentCustomConnectorsContract.get, ({ respond }) => {
+    return respond(200, { grants: [...grants] });
+  });
+  context.mocks.api(
+    agentCustomConnectorsContract.update,
+    async ({ body, respond }) => {
+      saveStarted.resolve();
+      await saveReady.promise;
+      grants = body.grants;
+      return respond(200, { grants: [...grants] });
+    },
+  );
+  await setupTeamPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
+  await screen.findByText("Acme Search");
+  click(connectorAccessSwitch("Grant Acme Search access"));
+  await preparationStarted.promise;
+  expect(connectorAccessSwitch("Grant Acme Search access")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  accountReady.resolve();
+  await saveStarted.promise;
+  expect(connectorAccessSwitch("Grant Acme Search access")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  saveReady.resolve();
+  await screen.findByText("Custom connectors saved");
+  expect(
+    connectorAccessSwitch("Revoke Acme Search access"),
+  ).not.toHaveAttribute("aria-disabled", "true");
+});
+
 test("An agent can grant access through a healthy configured default", async () => {
   const connector = acmeConnectorFixture();
   const saves: unknown[] = [];

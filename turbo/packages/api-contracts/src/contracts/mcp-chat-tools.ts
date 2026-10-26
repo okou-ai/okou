@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { object, record } from "zod";
 import { chatThreadActivitySummaryContract } from "./chat-thread-activity-summary";
 import {
   chatEventNormalSendBodySchema,
@@ -15,22 +15,18 @@ import {
 import { runsCancelContract } from "./run-routes";
 
 const normal = chatEventNormalSendBodySchema.shape;
-export const mcpSendChatMessageInputSchema = z
-  .object({
-    agentId: normal.agentId,
-    prompt: normal.prompt,
-    threadId: mcpThreadIdSchema.optional(),
-    model: normal.model,
-  })
-  .strict();
+export const mcpSendChatMessageInputSchema = object({
+  agentId: normal.agentId,
+  prompt: normal.prompt,
+  threadId: mcpThreadIdSchema.optional(),
+  model: normal.model,
+}).strict();
 
-export const mcpRevokeQueuedMessageInputSchema = z
-  .object({
-    agentId: chatEventsContract.send.body.options[1].shape.agentId,
-    threadId: mcpThreadIdSchema,
-    eventId: mcpEventIdSchema,
-  })
-  .strict();
+export const mcpRevokeQueuedMessageInputSchema = object({
+  agentId: chatEventsContract.send.body.options[1].shape.agentId,
+  threadId: mcpThreadIdSchema,
+  eventId: mcpEventIdSchema,
+}).strict();
 
 export const mcpSendChatMessageOutputSchema =
   chatEventsContract.send.responses[201].extend({
@@ -71,19 +67,16 @@ export const mcpUpdateChatThreadModelInputSchema =
     })
     .strict();
 
-export const mcpCancelRunInputSchema = z
-  .object({ runId: mcpRunIdSchema })
-  .strict();
+export const mcpCancelRunInputSchema = object({
+  runId: mcpRunIdSchema,
+}).strict();
 export const mcpCancelRunOutputSchema = runsCancelContract.cancel.responses[200]
   .omit({ id: true })
   .extend({ runId: mcpRunIdSchema });
 
 export const mcpGetChatIndicatorsOutputSchema = indicatorsSchema.extend({
-  threads: z.record(
-    mcpThreadIdSchema,
-    indicatorsSchema.shape.threads.valueType,
-  ),
-  unreadAt: z.record(
+  threads: record(mcpThreadIdSchema, indicatorsSchema.shape.threads.valueType),
+  unreadAt: record(
     mcpThreadIdSchema,
     indicatorsSchema.shape.unreadAt.valueType,
   ),

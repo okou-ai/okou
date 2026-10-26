@@ -3,7 +3,6 @@ import {
   vncCredentialsContract,
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -72,7 +71,6 @@ async function credentialPage() {
         memberships: [{ id: "org_vnc_lifecycle" }],
       },
     },
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
   await screen.findByText("Add a VNC host to get started.");
   click(getAction("radio", "Credentials"));
@@ -184,7 +182,6 @@ test("Returning to an owner never revives an abandoned uncertain credential draf
         memberships: [{ id: "org_vnc_lifecycle" }],
       },
     },
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
   await screen.findByText("Add a VNC host to get started.");
   click(getAction("radio", "Credentials"));

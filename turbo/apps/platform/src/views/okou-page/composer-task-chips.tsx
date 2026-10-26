@@ -22,7 +22,6 @@ import { AgentSuggestions } from "./agent-suggestions.tsx";
 import { EntrustedJobs } from "./entrusted-jobs.tsx";
 import { entrustedJobsEnabled$ } from "../../signals/okou-page/entrusted-jobs.ts";
 import { cn } from "@okouai/ui/lib/utils";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
 import {
   DOCUMENT_TEMPLATE_CATEGORIES,
@@ -31,7 +30,6 @@ import {
   type DocumentTemplateItem,
 } from "@okouai/core/document-template-items";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
   ComposerPromptRowTask,
@@ -563,9 +561,6 @@ function ComposerDocumentRecommendations({
   const categoryResult = useLastLoadable(signals.taskChips.documentCategory$);
   const category =
     categoryResult.state === "hasData" ? categoryResult.data : undefined;
-  const switches = useGet(featureSwitch$);
-  const builtinTemplatesEnabled =
-    switches[FeatureSwitchKey.BuiltinDocumentTemplates] === true;
   const custom = useCustomTemplateRecommendations(signals, "document");
   const items = DOCUMENT_TEMPLATE_ITEMS.filter((item) => {
     return item.category === category;
@@ -629,16 +624,14 @@ function ComposerDocumentRecommendations({
                 return $.templates.custom;
               }),
             },
-            ...(builtinTemplatesEnabled
-              ? DOCUMENT_CATEGORIES.map((id) => {
-                  return {
-                    id,
-                    label: t(($) => {
-                      return $.documentTemplates.categories[id];
-                    }),
-                  };
-                })
-              : []),
+            ...DOCUMENT_CATEGORIES.map((id) => {
+              return {
+                id,
+                label: t(($) => {
+                  return $.documentTemplates.categories[id];
+                }),
+              };
+            }),
           ]}
           onSelect={(id) => {
             if (id === "custom") {

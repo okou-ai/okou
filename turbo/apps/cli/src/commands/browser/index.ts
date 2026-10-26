@@ -18,7 +18,7 @@ import {
   browserUserActionCreateRequestSchema,
   browserUserActionFieldKindSchema,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
-import { z } from "zod";
+import { array, boolean, object, string, type infer as zInfer } from "zod";
 
 import {
   createBrowser,
@@ -41,23 +41,19 @@ const BROWSER_INPUT_TARGET_MAX_LENGTH = 2048;
 const BROWSER_ACTION_NEXT_STEP =
   "Return this exact action URL in your final response, then stop using the Browser in this turn.";
 
-const browserInputFieldOptionSchema = z
-  .object({
-    key: z.string().trim().min(1).max(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
-    label: z.string().trim().min(1).max(BROWSER_USER_ACTION_MAX_LABEL_LENGTH),
-    description: z
-      .string()
-      .trim()
-      .max(BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH)
-      .optional(),
-    fieldKind: browserUserActionFieldKindSchema,
-    required: z.boolean(),
-    target: z.string().trim().min(1).max(BROWSER_INPUT_TARGET_MAX_LENGTH),
-  })
-  .strict();
+const browserInputFieldOptionSchema = object({
+  key: string().trim().min(1).max(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+  label: string().trim().min(1).max(BROWSER_USER_ACTION_MAX_LABEL_LENGTH),
+  description: string()
+    .trim()
+    .max(BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH)
+    .optional(),
+  fieldKind: browserUserActionFieldKindSchema,
+  required: boolean(),
+  target: string().trim().min(1).max(BROWSER_INPUT_TARGET_MAX_LENGTH),
+}).strict();
 
-const browserInputFieldsOptionSchema = z
-  .array(browserInputFieldOptionSchema)
+const browserInputFieldsOptionSchema = array(browserInputFieldOptionSchema)
   .min(1)
   .max(BROWSER_USER_ACTION_MAX_FIELDS)
   .superRefine((fields, context) => {
@@ -74,7 +70,7 @@ const browserInputFieldsOptionSchema = z
     }
   });
 
-type BrowserInputFieldOption = z.infer<typeof browserInputFieldOptionSchema>;
+type BrowserInputFieldOption = zInfer<typeof browserInputFieldOptionSchema>;
 
 interface NewOptions {
   readonly name: string;

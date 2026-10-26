@@ -1,7 +1,7 @@
-import { z } from "zod";
+import { int, strictObject, string, uuid } from "zod";
 
-export const remoteHostIdentitySchema = z.strictObject({
-  id: z.uuid(),
-  createdAt: z.string().datetime(),
-  generation: z.int().positive().max(2_147_483_647),
+export const remoteHostIdentitySchema = strictObject({
+  id: uuid(),
+  createdAt: string().datetime(),
+  generation: int().positive().max(2_147_483_647),
 });

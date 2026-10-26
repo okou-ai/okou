@@ -16,7 +16,7 @@ import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { expect, test } from "vitest";
-import { z } from "zod";
+import { array, string, object as zObject } from "zod";
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -140,9 +140,10 @@ async function fixture() {
   const members = new Set([actor.userId]);
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
     (input) => {
-      const params = z
-        .object({ organizationId: z.string(), userId: z.array(z.string()) })
-        .parse(input);
+      const params = zObject({
+        organizationId: string(),
+        userId: array(string()),
+      }).parse(input);
       return Promise.resolve({
         data: params.userId
           .filter((userId) => {
@@ -161,7 +162,7 @@ async function fixture() {
   );
   context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
     (input) => {
-      const { userId } = z.object({ userId: z.string() }).parse(input);
+      const { userId } = zObject({ userId: string() }).parse(input);
       return Promise.resolve({
         data: members.has(userId)
           ? [{ organization: { id: actor.orgId }, role: "org:member" }]

@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 
 import type { JSONObject } from "@modelcontextprotocol/client";
 import { InvalidArgumentError } from "commander";
-import { z } from "zod";
+import { json, record, string } from "zod";
 
 import { parseDurationSeconds } from "../shared/duration";
 
@@ -10,7 +10,7 @@ const MAX_TOOL_INPUT_BYTES = 1024 * 1024;
 const DEFAULT_TIMEOUT_SECONDS = 60;
 const MAX_TIMEOUT_SECONDS = 15 * 60;
 
-const toolInputSchema = z.record(z.string(), z.json());
+const toolInputSchema = record(string(), json());
 
 interface McpCallInputOptions {
   readonly input?: string;

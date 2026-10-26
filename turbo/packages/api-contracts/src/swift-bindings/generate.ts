@@ -1,7 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { z } from "zod";
+import { toJSONSchema, type ZodType } from "zod";
+
 import { type SwiftConstantBinding, swiftConstantBindings } from "./constants";
 import { type SwiftRouteBinding, swiftRouteBindings } from "./routes";
 import { type SwiftTypeBinding, swiftTypeBindings } from "./types";
@@ -132,8 +133,8 @@ function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function toJsonSchema(schema: z.ZodType, label: string): JsonObject {
-  const json: unknown = z.toJSONSchema(schema);
+function toJsonSchema(schema: ZodType, label: string): JsonObject {
+  const json: unknown = toJSONSchema(schema);
   if (!isJsonObject(json)) {
     throw new Error(`${label} did not produce a JSON schema object`);
   }

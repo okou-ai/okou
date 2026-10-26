@@ -1,4 +1,12 @@
-import { z } from "zod";
+import {
+  array,
+  literal,
+  object,
+  string,
+  union,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import {
@@ -8,41 +16,38 @@ import {
 
 const c = initContract();
 
-export const sendDiscordMessageBodySchema = z
-  .object({
-    guildId: discordSnowflakeSchema.optional(),
-    channelId: discordSnowflakeSchema.optional(),
-    userId: z.union([z.literal("me"), discordSnowflakeSchema]).optional(),
-    replyToMessageId: discordSnowflakeSchema.optional(),
-    text: z
-      .string()
-      .min(1)
-      .max(20_000)
-      .refine(
-        (value) => {
-          return value.trim().length > 0;
-        },
-        { message: "Message text must not be blank" },
-      ),
-  })
-  .refine((body) => {
-    return (body.channelId === undefined) !== (body.userId === undefined);
-  }, "Provide exactly one of channelId or userId");
+export const sendDiscordMessageBodySchema = object({
+  guildId: discordSnowflakeSchema.optional(),
+  channelId: discordSnowflakeSchema.optional(),
+  userId: union([literal("me"), discordSnowflakeSchema]).optional(),
+  replyToMessageId: discordSnowflakeSchema.optional(),
+  text: string()
+    .min(1)
+    .max(20_000)
+    .refine(
+      (value) => {
+        return value.trim().length > 0;
+      },
+      { message: "Message text must not be blank" },
+    ),
+}).refine((body) => {
+  return (body.channelId === undefined) !== (body.userId === undefined);
+}, "Provide exactly one of channelId or userId");
 
-export const discordSentMessageSchema = z.object({
+export const discordSentMessageSchema = object({
   id: discordSnowflakeSchema,
   channelId: discordSnowflakeSchema,
-  url: z.string().url(),
+  url: string().url(),
 });
 
 export const discordSendErrorSchema = discordNativeErrorSchema.extend({
   error: discordNativeErrorSchema.shape.error.extend({
-    deliveredMessages: z.array(discordSentMessageSchema).optional(),
+    deliveredMessages: array(discordSentMessageSchema).optional(),
   }),
 });
 
-const sendDiscordMessageResponseSchema = z.object({
-  messages: z.array(discordSentMessageSchema).min(1),
+const sendDiscordMessageResponseSchema = object({
+  messages: array(discordSentMessageSchema).min(1),
 });
 
 /** Sends as the organization bot with mention notifications disabled. */
@@ -66,9 +71,9 @@ export const integrationsDiscordMessageContract = c.router({
   },
 });
 
-export type SendDiscordMessageBody = z.infer<
+export type SendDiscordMessageBody = zInfer<
   typeof sendDiscordMessageBodySchema
 >;
-export type SendDiscordMessageResponse = z.infer<
+export type SendDiscordMessageResponse = zInfer<
   typeof sendDiscordMessageResponseSchema
 >;

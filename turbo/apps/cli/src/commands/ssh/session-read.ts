@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { z } from "zod";
+import { uuid } from "zod";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { writeOutput } from "./rpc";
 import {
@@ -245,7 +245,7 @@ export function createSessionReadCommand(requireCapability: () => void) {
     .action(
       withErrorHandler(async (sessionId: string, options: ReadOptions) => {
         requireCapability();
-        if (!z.uuid().safeParse(sessionId).success)
+        if (!uuid().safeParse(sessionId).success)
           throw new Error("Use an exact ID from ssh session start or list.");
         const cursor = integer(
           options.cursor,

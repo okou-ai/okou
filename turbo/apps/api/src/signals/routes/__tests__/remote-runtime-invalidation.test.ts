@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -13,7 +12,6 @@ import { sshConnectionsRoutes } from "../ssh-connections";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createBddApi } from "./helpers/api-bdd";
 import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import {
@@ -57,9 +55,6 @@ describe("protocol-specific remote runtime invalidation", () => {
     const otherOrg = await claimed.runtime({
       orgId: `org-${randomUUID()}`,
       userId: owner.userId,
-    });
-    await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.VncAccess]: true,
     });
     vnc.authenticate(owner);
     const desktop = await accept(
