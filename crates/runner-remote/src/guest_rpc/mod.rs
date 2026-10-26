@@ -101,19 +101,16 @@ impl Runtime {
             .as_ref()
             .map(|runtime| runtime.for_context(context));
         let authority = context
-            .feature_flags
-            .as_ref()
-            .is_some_and(|flags| flags.get("remoteConnectionDiagnostics") == Some(&true))
-            .then(|| {
-                let token = context.platform_environment.get("OKOU_TOKEN")?;
+            .platform_environment
+            .get("OKOU_TOKEN")
+            .and_then(|token| {
                 let http = self
                     .ssh
                     .as_ref()
                     .map(|s| s.http_client())
                     .or_else(|| self.vnc.as_ref().map(|v| v.http_client()))?;
                 Some(Arc::new(crate::diagnostics::Authority::new(http, token)))
-            })
-            .flatten();
+            });
         Some(self.start_with_diagnostics(
             acceptor,
             sandbox.id().to_owned(),

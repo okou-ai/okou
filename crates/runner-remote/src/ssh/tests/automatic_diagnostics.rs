@@ -86,7 +86,7 @@ async fn concurrent_failures_return_their_own_committed_report_and_exact_query()
 }
 
 #[tokio::test]
-async fn strict_parameters_prevent_dispatch_and_feature_gate_controls_failure_text() {
+async fn strict_parameters_prevent_dispatch_and_authority_gates_failure_text() {
     let mut h = Harness::new(Reply::default()).await;
     let resolve = h.resolve(json!({"outcome":"unavailable"})).await;
     for params in [
