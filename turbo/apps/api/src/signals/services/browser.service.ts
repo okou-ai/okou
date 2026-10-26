@@ -1580,7 +1580,7 @@ const getOrCreateBrowserProfile$ = command(
 
     const provider = await providerCall(
       createBrowserUseProfile(
-        context.chatThreadId,
+        `okou-browser-profile-${context.chatThreadId}`,
         AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS),
       ),
     );
