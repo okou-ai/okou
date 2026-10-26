@@ -316,14 +316,13 @@ describe("Workflow schedules", () => {
 
 describe("Planning and action preference", () => {
   it("preserves the combined choice independently of Learning and Suggestions", async () => {
-    const app = await setupApp({
+    const app = setupApp({
       context,
       routes: [
         ...proactiveJobsRoutes,
         ...proactiveLearningRoutes,
         ...proactiveSuggestionsRoutes,
       ],
-      isolatePg: true,
     });
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor, { timezone: "UTC" });
@@ -383,10 +382,9 @@ describe("Planning and action preference", () => {
   });
 
   it("keeps an opt-in cancellable while the planning time zone is unavailable", async () => {
-    const app = await setupApp({
+    const app = setupApp({
       context,
       routes: proactiveJobsRoutes,
-      isolatePg: true,
     });
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor);
@@ -428,10 +426,9 @@ describe("Planning and action preference", () => {
 
 describe("Proactive Suggestions preference", () => {
   it("keeps the independent Suggestions choice while the catalog is unavailable", async () => {
-    const app = await setupApp({
+    const app = setupApp({
       context,
       routes: [...proactiveSuggestionsRoutes, ...proactiveJobsRoutes],
-      isolatePg: true,
     });
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor);
@@ -747,10 +744,9 @@ describe("Workflow schedule recovery", () => {
 
 describe("Morning Brief initialization", () => {
   it("keeps recovery of an absent brief free of installation side effects", async () => {
-    const app = await setupApp({
+    const app = setupApp({
       context,
       routes: morningBriefPreferenceRoutes,
-      isolatePg: true,
     });
     const { actor } = await prepareBriefMember();
     await initializeBriefMember(actor, "Asia/Tokyo");
@@ -766,10 +762,9 @@ describe("Morning Brief initialization", () => {
   });
 
   it("keeps an explicit timezone choice when initialization runs later", async () => {
-    const app = await setupApp({
+    const app = setupApp({
       context,
       routes: userPreferencesRoutes,
-      isolatePg: true,
     });
     const { actor } = await prepareBriefMember();
     await bdd.updateUserTimezone(actor, "Asia/Tokyo");
@@ -788,10 +783,9 @@ describe("Morning Brief initialization", () => {
 
 describe("Debug Morning Brief", () => {
   it("requires a signed-in session and Okou Debug", async () => {
-    const app = await setupApp({
+    const app = setupApp({
       context,
       routes: debugMorningBriefRoutes,
-      isolatePg: true,
     });
     const anonymous = await accept(
       app(debugMorningBriefContract).run({ body: { requestId: randomUUID() } }),
