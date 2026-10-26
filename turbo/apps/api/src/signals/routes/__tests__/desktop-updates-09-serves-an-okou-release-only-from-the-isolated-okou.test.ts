@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
 import { testContext } from "../../../__tests__/test-context";
+import { server } from "../../../mocks/server";
 
 import { createDesktopUpdatePublicApi } from "./helpers/desktop-update-public";
 
@@ -14,7 +16,15 @@ const {
 
 // Default Vitest file isolation gives this scenario a fresh module cache.
 describe("desktop update routes", () => {
-  it("serves an Okou release only from the isolated Okou manifest", async () => {
+  it("serves the R2 feed while the GitHub compatibility mirror is missing", async () => {
+    server.use(
+      http.get(
+        "https://github.com/okou-ai/okou/releases/download/ai-okou-desktop-updates/ai-okou-desktop-update-manifest.json",
+        () => {
+          return new HttpResponse(null, { status: 404 });
+        },
+      ),
+    );
     const zipUrl = okouZipUrl("1.2.3");
     mockDesktopUpdateManifest(
       stableManifest("1.2.3", {

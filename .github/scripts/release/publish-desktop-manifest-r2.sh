@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Publish the already-authoritative Desktop manifest without deleting readers'
-# current object. Arguments: S3 endpoint, bucket, manifest file, publication SHA.
-# Requires AWS CLI, jq, Python 3 and the caller's existing R2 credentials.
-if (( $# != 4 )) || [[ ! -f "$3" || ! "$4" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "usage: $0 <r2-endpoint> <bucket> <manifest-file> <publication-sha>" >&2
+# Advance the R2-owned manifest, then export its verified bytes for the GitHub
+# compatibility mirror. Requires AWS CLI, jq, Python 3, Node.js and R2 credentials.
+if (( $# != 6 )) || [[ ! "$4" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "usage: $0 <r2-endpoint> <bucket> <verified-manifest-file> <publication-sha> <version> <zip-url>" >&2
   exit 2
 fi
 : "${AWS_ACCESS_KEY_ID:?R2 access key is required}"
@@ -14,6 +13,7 @@ fi
 endpoint=$1
 bucket=$2
 publication_sha=$4
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 current_key=desktop-updates/okou/manifest.json
 work_dir=$(mktemp -d)
 aws_pid=
@@ -28,22 +28,6 @@ trap cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
-cp "$3" "$work_dir/candidate.json"
-
-digest=$(python3 - "$work_dir/candidate.json" <<'PY'
-import hashlib
-import json
-import sys
-from pathlib import Path
-
-body = Path(sys.argv[1]).read_bytes()
-manifest = json.loads(body)
-if manifest.get("schemaVersion") != 1 or manifest.get("product") != "okou":
-    raise SystemExit("Desktop manifest has an unsupported schema or product")
-print(hashlib.sha256(body).hexdigest())
-PY
-)
-snapshot_key="desktop-updates/okou/publications/$publication_sha/$digest.json"
 
 # A failed PUT may have committed. Never replay it automatically: read back the
 # exact bytes instead. Per-request timeouts bound both reads and writes.
@@ -70,17 +54,28 @@ error_code() {
     "$1" 2>/dev/null || printf 'unknown\n'
 }
 
-condition=(--if-none-match '*')
-if get_object "$current_key"; then
-  etag=$(jq -er '.ETag | select(type == "string" and length > 0)' "$work_dir/read-metadata.json")
-  condition=(--if-match "$etag")
-else
+# Stage one must have bootstrapped this object. A missing or unreadable R2 source
+# is a publication failure; GitHub cannot reconstruct the authoritative history.
+if ! get_object "$current_key"; then
   code=$(error_code "$work_dir/read-error.json")
-  if [[ "$code" != NoSuchKey ]]; then
-    printf 'Cannot read the current Desktop manifest from R2: %s\n' "$code" >&2
-    exit 1
-  fi
+  printf 'Cannot read the current Desktop manifest from R2: %s\n' "$code" >&2
+  exit 1
 fi
+etag=$(jq -er '.ETag | select(type == "string" and length > 0)' "$work_dir/read-metadata.json")
+cp "$work_dir/read.json" "$work_dir/candidate.json"
+jq -e '.schemaVersion == 1 and .product == "okou"' "$work_dir/candidate.json" >/dev/null
+node "$repo_root/desktop/scripts/update-desktop-release-manifest.mjs" \
+  --manifest "$work_dir/candidate.json" --version "$5" --zip-url "$6" \
+  --channel stable --platform darwin --arch arm64
+digest=$(python3 - "$work_dir/candidate.json" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+
+print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())
+PY
+)
+snapshot_key="desktop-updates/okou/publications/$publication_sha/$digest.json"
 
 put_verified() {
   local key=$1 cache_control=$2 status=0
@@ -100,5 +95,8 @@ put_verified() {
 # If a conditional write loses a race, only matching published bytes count as
 # success; a different revision remains untouched and this job fails.
 put_verified "$snapshot_key" 'public, max-age=31536000, immutable' --if-none-match '*'
-put_verified "$current_key" 'no-store' "${condition[@]}"
+# Match the ETag of the document used to construct this candidate, including
+# changes that raced with construction rather than only the final PUT.
+put_verified "$current_key" 'no-store' --if-match "$etag"
+cp "$work_dir/candidate.json" "$3"
 printf 'Verified Desktop manifest in R2: publication=%s sha256=%s\n' "$publication_sha" "$digest"

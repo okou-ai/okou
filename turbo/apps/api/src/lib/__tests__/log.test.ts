@@ -468,7 +468,7 @@ describe("Axiom log source field", () => {
     log.warn("Desktop update manifest upstream unavailable", {
       type: "desktop_update_manifest_upstream",
       outcome: "unavailable",
-      provider: "github_release_asset",
+      provider: "cloudflare_r2",
       provider_status: 503,
       failure_class: "transient_read_exhausted",
       attempts: 3,
@@ -483,7 +483,7 @@ describe("Axiom log source field", () => {
       {
         type: "desktop_update_manifest_upstream",
         outcome: "unavailable",
-        provider: "github_release_asset",
+        provider: "cloudflare_r2",
         provider_status: 503,
         failure_class: "transient_read_exhausted",
         attempts: 3,
@@ -496,7 +496,7 @@ describe("Axiom log source field", () => {
           source: "api",
           type: "desktop_update_manifest_upstream",
           outcome: "unavailable",
-          provider: "github_release_asset",
+          provider: "cloudflare_r2",
           provider_status: 503,
           failure_class: "transient_read_exhausted",
           attempts: 3,
@@ -514,7 +514,7 @@ describe("Axiom log source field", () => {
     log.warn("manifest event", {
       type: "desktop_update_manifest_upstream",
       outcome: "degraded",
-      provider: "github_release_asset",
+      provider: "cloudflare_r2",
       failure_class: "transient_read",
       attempts: 1,
       line: "ai-okou-desktop",
@@ -523,7 +523,7 @@ describe("Axiom log source field", () => {
     expect(axiomLogging.warn).toHaveBeenCalledWith("manifest event", {
       type: "desktop_update_manifest_upstream",
       outcome: "degraded",
-      provider: "github_release_asset",
+      provider: "cloudflare_r2",
       failure_class: "transient_read",
       attempts: 1,
       line: "ai-okou-desktop",

@@ -35,7 +35,7 @@ function fixture(t, manifest) {
   if (manifest) writeFileSync(path, JSON.stringify(manifest));
   return path;
 }
-function publish(path, version) {
+function publish(path, version, date = pubDate) {
   execFileSync(
     process.execPath,
     [
@@ -46,8 +46,7 @@ function publish(path, version) {
       version,
       "--zip-url",
       release(version).platforms.darwin.arm64.url,
-      "--pub-date",
-      pubDate,
+      ...(date ? ["--pub-date", date] : []),
     ],
     { stdio: ["ignore", "pipe", "pipe"] },
   );
@@ -88,7 +87,7 @@ test("publishing Native metadata preserves Native history and blocklists while p
     ...release("0.53.2"),
     notes: "",
   });
-  assert.deepEqual(publish(path, "0.53.2"), result);
+  assert.deepEqual(publish(path, "0.53.2", null), result);
 });
 test("publishing the first Native release creates a compatible manifest", (t) => {
   const path = fixture(t);

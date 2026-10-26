@@ -8,10 +8,11 @@ function etag(body) {
   return `"${createHash("sha256").update(body).digest("hex")}"`;
 }
 
-export async function startS3(t, { current, mode } = {}) {
+export async function startS3(t, { current, mode, concurrent } = {}) {
   const objects = new Map();
   if (current) objects.set(currentKey, current);
   const requests = [];
+  let sourceRead = false;
   let signalPut;
   const currentPut = new Promise((resolve) => {
     signalPut = resolve;
@@ -45,6 +46,10 @@ export async function startS3(t, { current, mode } = {}) {
         "content-length": object.length,
         "content-type": "application/json",
       });
+      if (mode === "conflict" && key === currentKey && !sourceRead) {
+        sourceRead = true;
+        objects.set(currentKey, concurrent);
+      }
       return response.end(object);
     }
     if (request.method !== "PUT")
@@ -55,8 +60,6 @@ export async function startS3(t, { current, mode } = {}) {
         request.socket.once("close", signalClosed);
         return;
       }
-      if (mode === "conflict")
-        objects.set(key, Buffer.from("other publication"));
     }
     const previous = objects.get(key);
     if (
