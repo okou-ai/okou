@@ -15,6 +15,10 @@ import { mailRoutes } from "../signals/routes/mail";
 import { iosClientCompatibility, testContext } from "./test-context";
 
 const TEST_APP_ROUTES = Object.freeze([...healthRoutes, ...mailRoutes]);
+const PREVIEW_APP_ORIGINS = Object.freeze([
+  "https://pr-20640-app.omby.ai",
+  "https://pr-20640-app-okou-app-preview.vm0.workers.dev",
+]);
 
 const MINIMUM_WEB_CLIENT_VERSION =
   webClientCompatibility.minimumSupportedVersion;
@@ -130,21 +134,93 @@ describe("createApp", () => {
       });
     });
 
-    it("allows preview requests with the matching Vercel bypass header", async () => {
+    it.each(
+      PREVIEW_APP_ORIGINS.flatMap((origin) => {
+        return [
+          { origin, bypass: null },
+          { origin, bypass: "incorrect-preview-secret" },
+        ];
+      }),
+    )(
+      "exposes preview access rejection to $origin with bypass $bypass",
+      async ({ origin, bypass }) => {
+        mockEnv("ENV", "preview");
+        mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const headers = new Headers({ origin });
+        if (bypass !== null) {
+          headers.set("x-vercel-protection-bypass", bypass);
+        }
+
+        const response = await app.request("/health", {
+          method: "GET",
+          headers,
+        });
+
+        expect(response.status).toBe(403);
+        expect(response.headers.get("access-control-allow-origin")).toBe(
+          origin,
+        );
+        expect(response.headers.get("access-control-allow-credentials")).toBe(
+          "true",
+        );
+        await expect(response.json()).resolves.toMatchObject({
+          error: "Preview automation bypass required",
+        });
+      },
+    );
+
+    it("denies preview access without allowing a lookalike App origin", async () => {
       mockEnv("ENV", "preview");
       mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
       const app = createApp({
         signal: context.signal,
         routes: TEST_APP_ROUTES,
       });
-
       const response = await app.request("/health", {
-        method: "GET",
-        headers: { "x-vercel-protection-bypass": "preview-secret" },
+        headers: {
+          origin:
+            "https://pr-20640-app-okou-app-preview.vm0.workers.dev.evil.example",
+        },
       });
 
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(403);
+      expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      await expect(response.json()).resolves.toMatchObject({
+        error: "Preview automation bypass required",
+      });
     });
+
+    it.each(PREVIEW_APP_ORIGINS)(
+      "allows preview requests from %s with the matching Vercel bypass header",
+      async (origin) => {
+        mockEnv("ENV", "preview");
+        mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+
+        const response = await app.request("/health", {
+          method: "GET",
+          headers: {
+            origin,
+            "x-vercel-protection-bypass": "preview-secret",
+          },
+        });
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("access-control-allow-origin")).toBe(
+          origin,
+        );
+        expect(response.headers.get("access-control-allow-credentials")).toBe(
+          "true",
+        );
+      },
+    );
 
     it("allows preview requests with a matching Vercel bypass cookie", async () => {
       mockEnv("ENV", "preview");
@@ -344,33 +420,39 @@ describe("createApp", () => {
       expect(allowHeaders).toContain("X-Client-Request-Id");
     });
 
-    it("answers preview preflight before enforcing the automation bypass", async () => {
-      mockEnv("ENV", "preview");
-      mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/api/chat-threads", {
-        method: "OPTIONS",
-        headers: {
-          origin: "https://pr-20640-app.omby.ai",
-          "access-control-request-method": "GET",
-          "access-control-request-headers":
-            "authorization,x-vercel-protection-bypass,x-client-version",
-        },
-      });
+    it.each(PREVIEW_APP_ORIGINS)(
+      "answers preview preflight from %s before enforcing the automation bypass",
+      async (origin) => {
+        mockEnv("ENV", "preview");
+        mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const response = await app.request("/api/chat-threads", {
+          method: "OPTIONS",
+          headers: {
+            origin,
+            "access-control-request-method": "GET",
+            "access-control-request-headers":
+              "authorization,x-vercel-protection-bypass,x-client-version",
+          },
+        });
 
-      expect(response.status).toBe(204);
-      expect(response.headers.get("access-control-allow-origin")).toBe(
-        "https://pr-20640-app.omby.ai",
-      );
-      const allowHeaders =
-        response.headers.get("access-control-allow-headers") ?? "";
-      expect(allowHeaders).toContain("Authorization");
-      expect(allowHeaders).toContain("X-Vercel-Protection-Bypass");
-      expect(allowHeaders).toContain("X-Client-Version");
-    });
+        expect(response.status).toBe(204);
+        expect(response.headers.get("access-control-allow-origin")).toBe(
+          origin,
+        );
+        expect(response.headers.get("access-control-allow-credentials")).toBe(
+          "true",
+        );
+        const allowHeaders =
+          response.headers.get("access-control-allow-headers") ?? "";
+        expect(allowHeaders).toContain("Authorization");
+        expect(allowHeaders).toContain("X-Vercel-Protection-Bypass");
+        expect(allowHeaders).toContain("X-Client-Version");
+      },
+    );
 
     it("allows okou preview app origins", async () => {
       mockEnv("ENV", "preview");
