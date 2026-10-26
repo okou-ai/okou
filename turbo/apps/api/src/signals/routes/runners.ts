@@ -27,7 +27,6 @@ import {
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -47,7 +46,6 @@ import {
   and,
   desc,
   eq,
-  exists,
   gt,
   inArray,
   isNotNull,
@@ -60,7 +58,6 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { PgDialect } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
 import {
@@ -86,7 +83,7 @@ import { authorization$, request$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { JsonResponseObserver } from "../context/route";
 import { waitUntil } from "../context/wait-until";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { readAgentInstructionsForClaim$ } from "../services/agent-instructions-claim.service";
 import {
   createRunnerGroupRealtimeToken,
@@ -125,7 +122,12 @@ import {
   runnerReusePreferenceLookupError,
   runnerReusePreferencePollPriority,
 } from "../services/runner-reuse-preference";
-import { runnerJobQueueExpiredCondition } from "../services/runner-job-queue-lifecycle.service";
+import {
+  buildClaimTransitionSql,
+  claimTransitionSqlRowSchema,
+  decodeClaimTransitionResult,
+  type ClaimTransitionResult,
+} from "../services/runner-claim-transition";
 
 import {
   mergeNetworkPolicyRefreshes,
@@ -1066,10 +1068,6 @@ function claimAuthorizationError(
     : forbidden("Only vm0/* runner groups are supported");
 }
 
-type ClaimTransitionResult =
-  | { readonly status: "claimed"; readonly claimedAt: Date }
-  | { readonly status: "job-not-found" }
-  | { readonly status: "run-not-found" };
 type ClaimedTransitionResult = Extract<
   ClaimTransitionResult,
   { readonly status: "claimed" }
@@ -1086,222 +1084,45 @@ function claimTransitionErrorResponse(result: FailedClaimTransitionResult) {
   return notFound("Run not found");
 }
 
-const claimTransitionSqlRowSchema = z.object({
-  status: z.enum([
-    "claimed",
-    "job-not-found",
-    "run-not-found",
-    "invariant-error",
-  ]),
-  claimedAtMs: z.number().nullable(),
-});
-
-function decodeClaimTransitionResult(
-  rows: readonly z.infer<typeof claimTransitionSqlRowSchema>[],
-): ClaimTransitionResult {
-  const row = rows[0];
-  if (!row || row.status === "invariant-error") {
-    throw new Error("Runner job claim transition violated its invariant");
-  }
-  if (row.status === "claimed") {
-    if (row.claimedAtMs === null) {
-      throw new Error("Claimed runner job is missing its transition time");
-    }
-    return { status: "claimed", claimedAt: new Date(row.claimedAtMs) };
-  }
-  return { status: row.status };
-}
-
-/** Consume the eligible locked Run/claim clock before the Run transition. */
-function buildClaimThreadStartSql(): SQL {
-  const dialect = new PgDialect();
-  // Like native publication, an identity write arbitrates against slot release.
-  // Only the first executable claim may invalidate the previous native binding.
-  const threadOwner = dialect.buildUpdateQuery({
-    table: activeAgentRuns,
-    set: { runId: sql`${activeAgentRuns.runId}` },
-    from: sql`locked_run, claim_clock`,
-    joins: [],
-    where: and(
-      eq(activeAgentRuns.runId, sql`locked_run."id"`),
-      eq(activeAgentRuns.chatThreadId, sql`locked_run."chatThreadId"`),
-      eq(activeAgentRuns.userId, sql`locked_run."userId"`),
-      eq(activeAgentRuns.orgId, sql`locked_run."orgId"`),
-    ),
-    returning: [{ path: ["runId"], field: activeAgentRuns.runId }],
-  });
-  const threadStart = dialect.buildUpdateQuery({
-    table: chatThreads,
-    set: {
-      framework: sql`NULL`,
-      frameworkSessionId: sql`NULL`,
-      frameworkSessionRunId: sql`locked_run."id"`,
-    },
-    from: sql`locked_run, claimed_thread_owner`,
-    joins: [],
-    where: and(
-      eq(chatThreads.id, sql`locked_run."chatThreadId"`),
-      eq(chatThreads.userId, sql`locked_run."userId"`),
-      eq(chatThreads.agentId, sql`locked_run."agentId"`),
-      sql`claimed_thread_owner."run_id" = locked_run."id"`,
-    ),
-    returning: [{ path: ["id"], field: chatThreads.id }],
-  });
-  return sql`claimed_thread_owner AS (${threadOwner}),
-             started_thread AS (${threadStart})`;
-}
-
-function buildClaimTransitionSql(
-  runId: string,
-  runnerId: string | null,
-  runnerHeartbeatGeneration: number | null,
-  runnerHostname: string | null,
-  runnerVersion: string | null,
-): SQL {
-  // Materialized outputs make the row locks depend on run, then queue.
-  return sql`
-          WITH locked_run AS MATERIALIZED (
-            SELECT
-              ${agentRuns.id} AS "id",
-              ${agentRuns.status} AS "status",
-              ${agentRuns.chatThreadId} AS "chatThreadId",
-              ${agentRuns.agentId} AS "agentId",
-              ${agentRuns.userId} AS "userId",
-              ${agentRuns.orgId} AS "orgId"
-            FROM ${agentRuns}
-            WHERE ${eq(agentRuns.id, runId)}
-            FOR UPDATE
-          ),
-          locked_job AS MATERIALIZED (
-            SELECT
-              ${runnerJobQueue.runId} AS "runId",
-              ${runnerJobQueueExpiredCondition()} AS "isExpired"
-            FROM ${runnerJobQueue}
-            INNER JOIN locked_run
-              ON locked_run."id" = ${runnerJobQueue.runId}
-            FOR UPDATE OF ${runnerJobQueue}
-          ),
-          claim_clock AS MATERIALIZED (
-            SELECT
-              date_trunc(
-                'milliseconds',
-                clock_timestamp() AT TIME ZONE 'UTC'
-              ) AS "claimedAt"
-            FROM locked_run
-            INNER JOIN locked_job
-              ON locked_job."runId" = locked_run."id"
-            WHERE
-              locked_run."status" = 'pending'
-              AND NOT locked_job."isExpired"
-          ),
-          ${buildClaimThreadStartSql()},
-          updated_run AS (
-            UPDATE ${agentRuns}
-            SET
-              status = 'running',
-              started_at = claim_clock."claimedAt",
-              cancellation_recovery_completed = false,
-              runner_id = ${runnerId},
-              runner_heartbeat_generation = ${runnerHeartbeatGeneration},
-              runner_hostname = ${runnerHostname},
-              runner_version = ${runnerVersion}
-            FROM locked_run
-            INNER JOIN locked_job
-              ON locked_job."runId" = locked_run."id"
-            CROSS JOIN claim_clock
-            WHERE ${and(
-              eq(agentRuns.id, sql`locked_run."id"`),
-              eq(agentRuns.status, sql`'pending'`),
-              or(
-                isNull(sql`locked_run."chatThreadId"`),
-                exists(sql`(SELECT 1 FROM started_thread)`),
-              ),
-            )}
-            RETURNING ${agentRuns.id} AS "id", ${agentRuns.startedAt} AS "claimedAt"
-          ),
-          deleted_job AS (
-            DELETE FROM ${runnerJobQueue}
-            USING locked_run, locked_job
-            WHERE ${and(
-              eq(runnerJobQueue.runId, sql`locked_job."runId"`),
-              sql`locked_job."runId" = locked_run."id"`,
-              sql`(
-                locked_run."status" <> 'pending'
-                OR EXISTS (
-                  SELECT 1
-                  FROM updated_run
-                  WHERE updated_run."id" = locked_run."id"
-                )
-              )`,
-            )}
-            RETURNING ${runnerJobQueue.runId} AS "runId"
-          )
-          SELECT
-            CASE
-              WHEN NOT EXISTS (SELECT 1 FROM locked_run)
-                THEN 'run-not-found'
-              WHEN EXISTS (
-                SELECT 1
-                FROM locked_run
-                WHERE locked_run."status" <> 'pending'
-              )
-                THEN 'run-not-found'
-              WHEN NOT EXISTS (SELECT 1 FROM locked_job)
-                OR EXISTS (
-                  SELECT 1
-                  FROM locked_job
-                  WHERE locked_job."isExpired"
-                )
-                THEN 'job-not-found'
-              WHEN EXISTS (SELECT 1 FROM updated_run)
-                AND EXISTS (SELECT 1 FROM deleted_job)
-                THEN 'claimed'
-              ELSE 'invariant-error'
-            END AS "status",
-            (
-              SELECT
-                (
-                  EXTRACT(EPOCH FROM updated_run."claimedAt") * 1000
-                )::double precision
-              FROM updated_run
-            ) AS "claimedAtMs"
-          `;
-}
-
-async function transitionClaimedJobToRunning(
-  db: Db,
-  runId: string,
-  runnerAttribution: RunnerClaimAttribution | undefined,
-  signal: AbortSignal,
-  timing: ClaimRouteTimingCollector,
-): Promise<ClaimTransitionResult> {
-  const query = buildClaimTransitionSql(
-    runId,
-    runnerAttribution?.runnerIdentity.runnerId ?? null,
-    runnerAttribution?.runnerIdentity.heartbeatGeneration ?? null,
-    runnerAttribution?.runnerHostname ?? null,
-    runnerAttribution?.runnerVersion ?? null,
-  );
-  const result = await timing.measure(
-    "claim_route_transition_execute",
-    "nested",
-    async () => {
-      const rowSchema = claimTransitionSqlRowSchema;
-      return await (async () => {
-        return parseRawRows(rowSchema, await db.execute(query));
-      })();
-    },
-  );
-  const transition = decodeClaimTransitionResult(result);
-  if (transition.status === "claimed") {
-    await db
-      .update(activeAgentRuns)
-      .set({ lastHeartbeatAt: transition.claimedAt })
-      .where(eq(activeAgentRuns.runId, runId));
-  }
-  signal.throwIfAborted();
-  return transition;
-}
+const transitionClaimedJobToRunning$ = command(
+  (
+    { set },
+    runId: string,
+    runnerAttribution: RunnerClaimAttribution | undefined,
+    timing: ClaimRouteTimingCollector,
+    signal: AbortSignal,
+  ): Promise<ClaimTransitionResult> => {
+    const db = set(writeDb$);
+    return (async () => {
+      const query = buildClaimTransitionSql(
+        runId,
+        runnerAttribution?.runnerIdentity.runnerId ?? null,
+        runnerAttribution?.runnerIdentity.heartbeatGeneration ?? null,
+        runnerAttribution?.runnerHostname ?? null,
+        runnerAttribution?.runnerVersion ?? null,
+      );
+      const result = await timing.measure(
+        "claim_route_transition_execute",
+        "nested",
+        async () => {
+          const rowSchema = claimTransitionSqlRowSchema;
+          return await (async () => {
+            return parseRawRows(rowSchema, await db.execute(query));
+          })();
+        },
+      );
+      const transition = decodeClaimTransitionResult(result);
+      if (transition.status === "claimed") {
+        await db
+          .update(activeAgentRuns)
+          .set({ lastHeartbeatAt: transition.claimedAt })
+          .where(eq(activeAgentRuns.runId, runId));
+      }
+      signal.throwIfAborted();
+      return transition;
+    })();
+  },
+);
 
 type PoisonJobResult =
   | {
@@ -2066,7 +1887,6 @@ const claimAuthorizedJob$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly runId: string;
       readonly authType: RunnerAuthContext["type"];
       readonly runnerAttribution: RunnerClaimAttribution | undefined;
@@ -2078,7 +1898,7 @@ const claimAuthorizedJob$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const { db, runId, jobWithRun, claimRouteTiming } = args;
+    const { runId, jobWithRun, claimRouteTiming } = args;
     const run = jobWithRun.run;
 
     const storedContextResult = await set(
@@ -2137,12 +1957,12 @@ const claimAuthorizedJob$ = command(
       "claim_route_transition_running",
       "top_level",
       async () => {
-        return await transitionClaimedJobToRunning(
-          db,
+        return await set(
+          transitionClaimedJobToRunning$,
           runId,
           args.runnerAttribution,
-          signal,
           claimRouteTiming,
+          signal,
         );
       },
     );
@@ -2216,7 +2036,7 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       : undefined;
 
   const runId = get(pathParamsOf(runnersJobClaimContract.claim)).id;
-  const db = set(writeDb$);
+  set(writeDb$);
   claimRouteTiming.recordElapsed(
     "claim_route_request_prepare",
     "top_level",
@@ -2253,7 +2073,6 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   return await set(
     claimAuthorizedJob$,
     {
-      db,
       runId,
       authType: auth.type,
       runnerAttribution,
