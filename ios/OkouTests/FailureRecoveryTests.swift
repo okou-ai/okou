@@ -101,19 +101,43 @@ final class FailureRecoveryTests: XCTestCase {
       models.close()
     }
     let failure = try XCTUnwrap(conversation.messages.last?.failure)
-    let gate = ModelResponseGate()
-    defer { gate.open() }
+    let cardGate = ModelResponseGate()
+    let settingsGate = ModelResponseGate()
+    let cardStarted = expectation(description: "The card account request is held")
+    let settingsStarted = expectation(description: "The superseding settings request is held")
+    defer {
+      cardGate.open()
+      settingsGate.open()
+    }
     fixture.state.value.withLock {
-      $0.accountGate = gate
+      $0.accountGate = cardGate
+      $0.accountRequested = { cardStarted.fulfill() }
       $0.accounts = $0.accounts.replacingOccurrences(
         of: "sample@example.invalid", with: "new-active@example.invalid")
     }
     let cardRead = Task { await conversation.refreshFailureAccounts() }
-    try await eventually { models.subscriptions.isLoading }
+    addTeardownBlock {
+      cardRead.cancel()
+      cardGate.open()
+      settingsGate.open()
+      await cardRead.value
+    }
+    await fulfillment(of: [cardStarted], timeout: 3)
+    fixture.state.value.withLock {
+      $0.accountGate = settingsGate
+      $0.accountRequested = { settingsStarted.fulfill() }
+    }
     let settingsRead = Task { await models.subscriptions.refresh(force: true) }
-    await Task.yield()
-    gate.open()
+    addTeardownBlock {
+      settingsRead.cancel()
+      cardGate.open()
+      settingsGate.open()
+      _ = await settingsRead.value
+    }
+    await fulfillment(of: [settingsStarted], timeout: 3)
+    cardGate.open()
     await cardRead.value
+    settingsGate.open()
     _ = await settingsRead.value
     XCTAssertEqual(conversation.failureState(failure).accountLabel, "new-active@example.invalid")
     XCTAssertFalse(conversation.failureState(failure).isBusy)

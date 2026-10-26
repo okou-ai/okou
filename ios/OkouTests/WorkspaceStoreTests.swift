@@ -218,7 +218,7 @@ final class WorkspaceStoreTests: XCTestCase {
     await store.refresh()
     await fulfillment(of: [warmingScheduled], timeout: 3)
     releaseWarming.open()
-    try await eventually { store.needsUpgrade }
+    try await waitForBusinessResult { store.needsUpgrade }
     let before = requests.withLock { $0 }
     await store.refresh()
     XCTAssertEqual(requests.withLock { $0 }, before)
