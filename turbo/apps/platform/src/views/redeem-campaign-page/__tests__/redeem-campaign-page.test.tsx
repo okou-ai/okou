@@ -86,7 +86,7 @@ test("A processing redemption confirms payment", async () => {
   await expect(screen.findByText("Payment received")).resolves.toBeVisible();
   expect(
     screen.getByText(
-      "We're applying your credits to Default Org now. This usually takes a few seconds — refresh in a moment to see the updated balance.",
+      "We're applying your credits to Default Org now. This usually takes a few seconds.",
     ),
   ).toBeVisible();
 });
