@@ -16,13 +16,14 @@ import {
 const context = testContext();
 
 test.each(["feishu", "lark"] as const)(
-  "%s setup completion preserves a newer bot draft",
+  "%s setup completion preserves a newer bot draft and its page",
   async (platform) => {
     const contract =
       platform === "lark" ? larkConnectContract : feishuConnectContract;
     const installation: FeishuInstallationStatus = {
       id: "f0000000-0000-4000-a000-000000000001",
-      isConnected: true,
+      isConnected: false,
+      connectUrl: `https://api.okou.test/api/${platform}/oauth/connect?state=old-installation`,
       appId: "cli_first_bot",
       callbackUrl: "https://api.okou.test/callback",
       callbackVerified: true,
@@ -50,6 +51,7 @@ test.each(["feishu", "lark"] as const)(
       return respond(200, { ...installation, setupCompleted: true });
     });
     await setupFeishuSettingsPage(context, platform);
+    const settingsUrl = window.location.href;
     await screen.findByText("First bot");
     click(getAction("button", "More options for First bot"));
     click(getAction("button", "Manage"));
@@ -73,6 +75,7 @@ test.each(["feishu", "lark"] as const)(
     await screen.findByText(
       `${platform === "lark" ? "Lark" : "Feishu"} bot installed successfully`,
     );
+    expect(window.location.href).toBe(settingsUrl);
     await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
     expect(screen.getByLabelText("App Secret")).toHaveValue("new-test-secret");
   },
