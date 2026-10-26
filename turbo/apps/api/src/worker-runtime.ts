@@ -252,7 +252,7 @@ export function createApiWorker(createApp: (signal: AbortSignal) => Hono) {
         },
       };
     },
-    Object.freeze({
+    {
       fetch(
         request: Request,
         bindings: WorkerBindings,
@@ -260,6 +260,6 @@ export function createApiWorker(createApp: (signal: AbortSignal) => Hono) {
       ) {
         return workerFetch(request, bindings, context, createApp);
       },
-    }),
+    },
   );
 }

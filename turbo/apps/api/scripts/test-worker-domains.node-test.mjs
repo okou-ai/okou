@@ -84,7 +84,7 @@ async function initializeWorkers(t) {
   t.after(() => {
     return rm(directory, { recursive: true, force: true });
   });
-  for (const name of ["gateway", ...domains, "processor"]) {
+  for (const name of domains) {
     await copyFile(
       resolve(apiRoot, `dist-worker-domains/${name}/worker.js`),
       resolve(directory, `${name}.js`),
@@ -112,40 +112,19 @@ async function initializeWorkers(t) {
     API_ENV_JSON_PARTS: "1",
     API_ENV_JSON_0: JSON.stringify(environment),
   };
-  const mf = new Miniflare(
-    convertV4MiniflareOptions({
-      rootPath: directory,
-      workers: [
-        {
-          ...common,
-          name: "gateway",
-          scriptPath: resolve(directory, "gateway.js"),
-          serviceBindings: Object.fromEntries(
-            domains.map((name) => {
-              return [name.toUpperCase(), name];
-            }),
-          ),
-        },
-        ...domains.map((name) => {
-          return {
-            ...common,
-            name,
-            bindings,
-            scriptPath: resolve(directory, `${name}.js`),
-            serviceBindings: { SLIDES_PREPARER: "processor" },
-          };
-        }),
-        {
-          ...common,
-          name: "processor",
-          scriptPath: resolve(directory, "processor.js"),
-        },
-      ],
-    }),
-  );
-  t.after(() => {
-    return mf.dispose();
-  });
+  const workers = new Map();
+  for (const name of domains) {
+    const runtime = new Miniflare(
+      convertV4MiniflareOptions({
+        rootPath: directory,
+        ...common,
+        bindings,
+        scriptPath: resolve(directory, `${name}.js`),
+      }),
+    );
+    t.after(() => runtime.dispose());
+    workers.set(name, { fetch: runtime.dispatchFetch });
+  }
   // Use HTTP dispatch rather than the SDK's /cdn-cgi proxy, whose Origin
   // protection would intercept cross-origin preflights before the API sees them.
   const baseline = new Miniflare(
@@ -164,16 +143,21 @@ async function initializeWorkers(t) {
   t.after(() => {
     return baseline.dispose();
   });
-  const gateway = { fetch: mf.dispatchFetch };
   const monolith = { fetch: baseline.dispatchFetch };
-  return { gateway, monolith };
+  return { workers, monolith };
 }
 
 test(
-  "the built domain gateway preserves real API HTTP behavior through native Service Bindings",
+  "direct domain Workers preserve real API HTTP behavior without Service Bindings",
   { timeout: 120_000 },
   async (t) => {
-    const { gateway, monolith } = await initializeWorkers(t);
+    const { workers, monolith } = await initializeWorkers(t);
+    const manifest = JSON.parse(
+      await readFile(
+        resolve(apiRoot, "dist-worker-domains/route-manifest.json"),
+        "utf8",
+      ),
+    );
     for (const item of cases) {
       await t.test(
         `${item.method ?? "GET"} ${item.path} returns ${item.status}`,
@@ -188,18 +172,25 @@ test(
             ...(item.body ? { body: item.body } : {}),
           };
           const expected = await responseOf(monolith, item.path, options);
-          const actual = await responseOf(gateway, item.path, options);
+          const path = new URL(item.path, "https://api.example.invalid")
+            .pathname;
+          const owner =
+            manifest.find(
+              (route) =>
+                route.path === path &&
+                route.method ===
+                  (item.method === "HEAD" ? "GET" : (item.method ?? "GET")),
+            )?.domain ?? "core";
+          const actual = await responseOf(
+            workers.get(owner),
+            item.path,
+            options,
+          );
           assert.equal(actual.status, item.status, actual.body);
           assert.deepEqual(actual, expected);
         },
       );
     }
-    const manifest = JSON.parse(
-      await readFile(
-        resolve(apiRoot, "dist-worker-domains/route-manifest.json"),
-        "utf8",
-      ),
-    );
     for (const domain of domains) {
       await t.test(
         `${domain} CORS preflight reaches the common middleware`,
@@ -216,7 +207,7 @@ test(
               "Access-Control-Request-Headers": "authorization,content-type",
             },
           };
-          const actual = await responseOf(gateway, path, options);
+          const actual = await responseOf(workers.get(domain), path, options);
           assert.equal(actual.status, 204, actual.body);
           assert.deepEqual(actual, await responseOf(monolith, path, options));
         },

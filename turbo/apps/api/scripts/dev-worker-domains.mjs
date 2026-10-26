@@ -103,14 +103,11 @@ async function developWorkers() {
   if (!apiEnv.DATABASE_URL) {
     throw new Error("API .env.local requires the development DATABASE_URL");
   }
-  const workers = [
-    "gateway",
-    "core",
-    "execution",
-    "integrations",
-    "data",
-    "processor",
-  ];
+  const domain = process.argv[2];
+  if (!["core", "execution", "integrations", "data"].includes(domain)) {
+    throw new Error("Choose a domain: core, execution, integrations, or data");
+  }
+  const workers = [domain];
   const runtimeRoot = resolve(apiRoot, ".wrangler");
   await mkdir(runtimeRoot, { recursive: true });
   const directory = await mkdtemp(resolve(runtimeRoot, "domain-dev-"));
@@ -147,17 +144,15 @@ async function developWorkers() {
           { mode: 0o600 },
         );
       }
-      if (name === "gateway") {
-        config.build = {
-          command: "node scripts/build-worker-domains.mjs",
-          cwd: apiRoot,
-          watch_dir: [
-            resolve(apiRoot, "src"),
-            resolve(apiRoot, "scripts"),
-            resolve(apiRoot, "../../packages"),
-          ],
-        };
-      }
+      config.build = {
+        command: "node scripts/build-worker-domains.mjs",
+        cwd: apiRoot,
+        watch_dir: [
+          resolve(apiRoot, "src"),
+          resolve(apiRoot, "scripts"),
+          resolve(apiRoot, "../../packages"),
+        ],
+      };
       const path = resolve(folder, "wrangler.json");
       await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, {
         mode: 0o600,
@@ -182,7 +177,7 @@ async function developWorkers() {
 
 if (process.argv.includes("--help")) {
   process.stdout.write(
-    "Usage: pnpm dev:worker-domains\nRuns six local Workers at http://localhost:3001, using API .env.local and its local PostgreSQL URL. Watches API/shared-package sources. No Cloudflare deployment.\n",
+    "Usage: pnpm dev:worker-domains <core|execution|integrations|data>\nRuns the selected domain directly at http://localhost:3001, using API .env.local and its local PostgreSQL URL. Watches API/shared-package sources. No Cloudflare deployment.\n",
   );
 } else {
   await developWorkers();

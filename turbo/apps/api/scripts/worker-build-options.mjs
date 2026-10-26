@@ -30,7 +30,7 @@ export function workerBuildOptions({
     write: false,
     // Keep Cloudflare's native modules intact; Wrangler must not rebundle this.
     external: ["cloudflare:*"],
-    conditions: ["workerd", "worker"],
+    conditions: ["workerd", "worker", "module"],
     // Preserve real error reporting using Sentry's Workers-native SDK.
     alias: { "@sentry/node": "@sentry/cloudflare" },
     banner: {

@@ -1448,19 +1448,13 @@ jobs:
           node --test .github/scripts/api-worker-workflow.test.cjs .github/scripts/api-worker-preview.test.cjs
           pnpm --dir turbo/apps/api test:worker-build
 
-      - name: Fetch frozen Worker startup benchmark baseline
-        if: >-
-          github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name == github.repository &&
-          github.event.pull_request.number == 42640 &&
-          github.head_ref == 'perf/worker-domain-split'
-        run: git fetch --no-tags --depth=1 origin 197b2bc9d1e88e777dfe0882c503eba06bbb2012
-
+      # This draft startup experiment must not activate a candidate Worker.
       - name: Build and deploy API Worker using the shared preview database
         id: api-worker-deploy
         continue-on-error: true
         if: >-
-          steps.api-worker-checks.outcome == 'success' && (
+          steps.api-worker-checks.outcome == 'success' &&
+          (github.event_name != 'pull_request' || github.event.pull_request.number != 42640) && (
             (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
             (github.event_name == 'push' && github.ref == 'refs/heads/main')
           )
@@ -1485,21 +1479,7 @@ jobs:
           # Validate native export on isolated PR Workers before staging rollout.
           CF_API_NATIVE_TELEMETRY: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
           GH_TOKEN: ${{ github.token }}
-          # Temporary experiment, restricted to this existing same-repo PR.
-          API_WORKER_STARTUP_BENCH: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 42640 && github.head_ref == 'perf/worker-domain-split' && 'workflow-schema-reuse' || '' }}
         run: node .github/scripts/api-worker-preview.cjs deploy
-
-      - name: Upload API Worker startup benchmark receipts
-        if: >-
-          always() && github.event_name == 'pull_request' &&
-          github.event.pull_request.number == 42640 &&
-          github.head_ref == 'perf/worker-domain-split'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: api-worker-startup-${{ github.run_id }}-${{ github.run_attempt }}
-          path: generated/worker-startup-benchmark/
-          if-no-files-found: warn
-          retention-days: 7
 
       - name: Report API Worker preview failure
         if: >-

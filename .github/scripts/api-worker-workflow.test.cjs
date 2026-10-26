@@ -181,36 +181,20 @@ test("both Worker steps run only for same-repository PRs and main pushes", () =>
   }
 });
 
-test("startup baseline fetch and upload opt-in are restricted to the existing experiment PR", () => {
-  const fetch = stepNamed("Fetch frozen Worker startup benchmark baseline");
-  const worker = stepNamed(workerName);
-  const expression = field(worker, "API_WORKER_STARTUP_BENCH", 10).match(
-    /^\$\{\{(.*)\}\}$/,
-  )[1];
-  for (const [number, branch, event, expected] of [
-    [42640, "perf/worker-domain-split", "pull_request", true],
-    [42641, "perf/worker-domain-split", "pull_request", false],
-    [42640, "other", "pull_request", false],
-    [42640, "perf/worker-domain-split", "push", false],
+test("the startup experiment runs checks without activating a candidate Worker", () => {
+  for (const [event, number, expected] of [
+    ["pull_request", 42640, false],
+    ["pull_request", 42641, true],
+    ["push", undefined, true],
   ]) {
     const data = context(event);
-    data.github.head_ref = branch;
     data.github.event.pull_request.number = number;
-    assert.equal(evaluate(field(fetch, "if", 8), data), expected);
+    assert.equal(evaluate(field(stepNamed(contractName), "if", 8), data), true);
     assert.equal(
-      evaluate(expression, data),
-      expected ? "workflow-schema-reuse" : "",
+      evaluate(field(stepNamed(workerName), "if", 8), data),
+      expected,
     );
   }
-  const fork = context("pull_request", false);
-  fork.github.head_ref = "perf/worker-domain-split";
-  fork.github.event.pull_request.number = 42640;
-  assert.equal(evaluate(field(fetch, "if", 8), fork), false);
-  assert.equal(evaluate(field(worker, "if", 8), fork), false);
-  assert.match(
-    field(fetch, "run", 8),
-    /^git fetch --no-tags --depth=1 origin 197b2bc9d1e88e777dfe0882c503eba06bbb2012$/,
-  );
 });
 
 test("Worker reuses API setup, environment and sole shared database owner", () => {

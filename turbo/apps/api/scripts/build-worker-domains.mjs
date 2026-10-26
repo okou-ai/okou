@@ -13,21 +13,6 @@ import {
 
 const outputRoot = resolve(apiRoot, "dist-worker-domains");
 const domains = ["core", "execution", "integrations", "data"];
-const originalSlides = resolve(
-  apiRoot,
-  "src/signals/services/google-slides-import.service.ts",
-);
-const slidesClient = resolve(apiRoot, "src/worker-domains/slides-client.ts");
-
-function domainBindings() {
-  return domains.map((domain) => {
-    return {
-      binding: domain.toUpperCase(),
-      service: `okou-api-split-${domain}`,
-    };
-  });
-}
-
 function retainedModules(metafile) {
   const retained = new Map();
   for (const output of Object.values(metafile.outputs)) {
@@ -45,40 +30,13 @@ await mkdir(outputRoot, { recursive: true });
 try {
   const manifest = await generateWorkerRouteManifest(outputRoot);
   const summary = [];
-  for (const name of ["gateway", ...domains, "processor"]) {
+  for (const name of domains) {
     const outputDirectory = resolve(outputRoot, name);
     await mkdir(outputDirectory, { recursive: true });
-    const plugins = [
-      {
-        name: "domain-composition",
-        setup(builder) {
-          builder.onResolve({ filter: /^okou:worker-route-manifest$/ }, () => {
-            return {
-              path: resolve(outputRoot, "route-manifest.ts"),
-            };
-          });
-          if (domains.includes(name)) {
-            builder.onResolve(
-              { filter: /google-slides-import\.service(?:\.ts)?$/ },
-              ({ path, resolveDir }) => {
-                const target = resolve(
-                  resolveDir,
-                  path.replace(/\.ts$/, "") + ".ts",
-                );
-                if (target === originalSlides) {
-                  return { path: slidesClient };
-                }
-              },
-            );
-          }
-        },
-      },
-    ];
     const result = await build(
       workerBuildOptions({
         entryPoint: `src/worker-domains/${name}.ts`,
         outputDirectory,
-        plugins,
       }),
     );
     validateWorkerExternals(result);
@@ -91,24 +49,6 @@ try {
     );
     const bytes = await readFile(resolve(outputDirectory, "worker.js"));
     const retained = retainedModules(result.metafile);
-    if (
-      name === "gateway" &&
-      [...retained.keys()].some((path) => {
-        return /signals\/routes\/|api-contracts\/|app-factory/.test(path);
-      })
-    ) {
-      throw new Error("Gateway unexpectedly imports API handlers or schemas");
-    }
-    if (
-      domains.includes(name) &&
-      [...retained.keys()].some((path) => {
-        return /fontkit|brotli|google-slides-preparation/.test(path);
-      })
-    ) {
-      throw new Error(
-        `${name} retained presentation processing code instead of the service binding`,
-      );
-    }
     const stats = {
       name,
       bytes: bytes.length,
@@ -144,25 +84,14 @@ try {
       compatibility_flags: ["nodejs_compat", "enable_request_signal"],
       workers_dev: false,
       preview_urls: false,
-      ...(name === "gateway" ? { services: domainBindings() } : {}),
-      ...(domains.includes(name)
-        ? {
-            services: [
-              {
-                binding: "SLIDES_PREPARER",
-                service: "okou-api-split-processor",
-              },
-            ],
-            hyperdrive: [
-              {
-                binding: "HYPERDRIVE",
-                id: "00000000000000000000000000000000",
-                localConnectionString:
-                  "postgresql://postgres:postgres@127.0.0.1:5432/postgres",
-              },
-            ],
-          }
-        : {}),
+      hyperdrive: [
+        {
+          binding: "HYPERDRIVE",
+          id: "00000000000000000000000000000000",
+          localConnectionString:
+            "postgresql://postgres:postgres@127.0.0.1:5432/postgres",
+        },
+      ],
     };
     await writeFile(
       resolve(outputDirectory, "wrangler.json"),

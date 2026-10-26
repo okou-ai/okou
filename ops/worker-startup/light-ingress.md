@@ -1,4 +1,7 @@
-# Minimal Worker ingress experiment
+# Archived minimal Worker ingress experiment
+
+This forwarding prototype is retired. Its source and commands below refer to
+commit `3bfb17b3`; current builds use four direct domain Worker entries.
 
 The first experiment needs **zero new npm packages and two Worker deployment
 units**. Both entry points remain in `turbo/apps/api`: a dependency-free ingress

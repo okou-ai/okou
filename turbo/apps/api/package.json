@@ -6,7 +6,7 @@
   "scripts": {
     "build": "vite build",
     "build:worker": "node scripts/build-worker.mjs",
-    "test:worker-build": "node --test scripts/build-worker.node-test.mjs",
+    "test:worker-build": "node --test --test-concurrency=1 scripts/build-worker.node-test.mjs scripts/test-worker-runtime.node-test.mjs",
     "check-types:worker": "bash scripts/check-types.sh worker",
     "dev": "bash scripts/dev.sh",
     "start": "tsx src/server.ts",
@@ -28,7 +28,7 @@
     "check-types:tests": "bash scripts/check-types.sh tests",
     "check-types:bootstrap-wiring": "bash scripts/check-types.sh bootstrap-wiring",
     "build:worker-domains": "node scripts/build-worker-domains.mjs",
-    "test:worker-domains": "node --test --test-concurrency=1 scripts/test-worker-domains.node-test.mjs scripts/test-worker-processor.node-test.mjs scripts/worker-dev-env.node-test.mjs",
+    "test:worker-domains": "node --test --test-concurrency=1 scripts/test-worker-domains.node-test.mjs scripts/worker-dev-env.node-test.mjs",
     "dev:worker-domains": "node scripts/dev-worker-domains.mjs"
   },
   "dependencies": {

@@ -1,4 +1,10 @@
-# Workflow schema startup experiment
+# Worker startup experiments
+
+The current candidate uses [four direct domain entries](direct-domains.md).
+PR #42640 runs build and native behavior checks, but its auxiliary Cloudflare
+deployment is disabled: pushes do not activate a candidate or run uploads.
+
+## Archived workflow schema experiment
 
 This temporary experiment keeps the complete API in one Worker and shares
 identical Zod leaf schemas within the workflow contract. It retains validation,
@@ -22,15 +28,15 @@ node ops/worker-startup/build-workflow-schema-bench.mjs --out /tmp/workflow-sche
 The output contains both complete bundles, source maps, esbuild metadata and a
 manifest with source, lockfile and bundle identities. The builder makes no
 network requests or deployments. It requires the baseline Git object locally;
-the opt-in CI step fetches that exact revision first.
+historical sampling fetched that exact revision first. Current CI does not run this frozen experiment.
 
 ## Cloudflare measurement
 
-The existing preview adapter enables this experiment only for pull request
-42640 on `perf/worker-domain-split`, with
-`API_WORKER_STARTUP_BENCH=workflow-schema-reuse`. All other previews retain
-their existing behavior. This is an experimental branch-specific hook, not a
-new repository-wide required benchmark.
+The retained preview adapter supports the historical
+`API_WORKER_STARTUP_BENCH=workflow-schema-reuse` mode. Its automatic CI opt-in
+has been removed because the baseline no longer matches the candidate.
+The following records the old measurement procedure; refreshing it requires
+new frozen bundles and current provider permissions.
 
 The experiment requires the existing PR Worker with version preview URLs
 disabled. It inherits its secret bindings and reuses its Hyperdrive binding;
@@ -42,7 +48,7 @@ Before and after checks verify the active deployment, binding identities,
 compatibility date and compatibility flags. Secret values are never read.
 
 Safe receipts and summaries go to `generated/worker-startup-benchmark/` and
-the Actions artifact. They contain bundle identities, numeric startup times,
+the historical Actions artifact. They contain bundle identities, numeric startup times,
 version IDs and bounded failure classifications, never secret values or raw
 provider diagnostics. Uploaded inactive versions remain under the existing
 PR Worker and its normal PR-close cleanup owner.
@@ -66,5 +72,5 @@ Run the deployment safety checks locally without provider calls:
 node --test .github/scripts/api-worker-workflow.test.cjs .github/scripts/api-worker-preview.test.cjs
 ```
 
-Remove the branch-specific measurement hook before treating the experiment as
-a production-ready performance change. A measured speedup is not assumed.
+The branch-specific deployment exclusion must be removed only when candidate
+activation is intended. A measured speedup is not assumed.

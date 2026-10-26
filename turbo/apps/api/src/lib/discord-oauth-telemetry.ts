@@ -1,5 +1,5 @@
 import type { Breadcrumb, ErrorEvent } from "@sentry/node";
-import { safeSync } from "../signals/utils";
+import { safeSync } from "../signals/async-utils";
 
 export const DISCORD_OAUTH_CALLBACK_PATH =
   "/api/integrations/discord/oauth/callback";
