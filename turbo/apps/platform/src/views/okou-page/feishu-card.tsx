@@ -1837,7 +1837,9 @@ function FeishuSetupDialog({
   );
 }
 
-function FeishuUninstallDialog({ bot }: { bot: FeishuBotInstallation | null }) {
+function FeishuUninstallDialog({ bots }: { bots: FeishuBotInstallation[] }) {
+  const uninstallInstallationId = useGet(feishuUninstallInstallationId$);
+  const bot = findFeishuBot(bots, uninstallInstallationId);
   const brandName = useGet(brandName$);
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
@@ -1983,7 +1985,6 @@ export function FeishuSettingsPage() {
   const botsLoadable = useLastLoadable(feishuInstallations$);
   const dialogExisting = useGet(feishuDialogExisting$);
   const dialogInstallationId = useGet(feishuDialogInstallationId$);
-  const uninstallInstallationId = useGet(feishuUninstallInstallationId$);
   const open = useSet(openFeishuDialog$);
   const data = loadableData(dataLoadable) ?? null;
   const bots = loadableData(botsLoadable) ?? [];
@@ -1993,7 +1994,6 @@ export function FeishuSettingsPage() {
     existing: dialogExisting,
     installationId: dialogInstallationId,
   });
-  const uninstallBot = findFeishuBot(bots, uninstallInstallationId);
   const loading = feishuSettingsLoading({
     dataState: dataLoadable.state,
     botsState: botsLoadable.state,
@@ -2070,7 +2070,7 @@ export function FeishuSettingsPage() {
                 }}
               />
               <FeishuSetupDialog data={dialogData} isAdmin={isAdmin} />
-              <FeishuUninstallDialog bot={uninstallBot} />
+              <FeishuUninstallDialog bots={bots} />
             </>
           )}
           <FeishuSetupFaq />
