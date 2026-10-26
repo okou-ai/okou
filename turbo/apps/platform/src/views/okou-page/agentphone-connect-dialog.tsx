@@ -13,7 +13,7 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import type { AgentPhoneLinkCodeResponse } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { Check, Copy, Loader2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { Button, cn, buttonVariants } from "@okouai/ui";
+import { cn, buttonVariants } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   Dialog,
@@ -284,11 +284,7 @@ export function AgentPhoneConnectionCodeLoading() {
   );
 }
 
-export function AgentPhoneConnectionCodeError({
-  onRetry,
-}: {
-  readonly onRetry: () => void;
-}) {
+export function AgentPhoneConnectionCodeError() {
   const { t } = useTranslation();
   return (
     <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-center">
@@ -297,11 +293,6 @@ export function AgentPhoneConnectionCodeError({
           return $.connectors.providerSettings.agentphone.createCodeError;
         })}
       </p>
-      <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-        {t(($) => {
-          return $.connectors.providerSettings.agentphone.tryAgain;
-        })}
-      </Button>
     </div>
   );
 }
@@ -310,12 +301,10 @@ export function AgentPhoneConnectDialog({
   phoneNumber,
   connectionCode,
   connectionCodeFailed,
-  onRetry,
 }: {
   readonly phoneNumber: string | null;
   readonly connectionCode: AgentPhoneLinkCodeResponse | null;
   readonly connectionCodeFailed: boolean;
-  readonly onRetry: () => void;
 }) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
@@ -369,7 +358,7 @@ export function AgentPhoneConnectDialog({
               connectionCode={connectionCode}
             />
           ) : connectionCodeFailed ? (
-            <AgentPhoneConnectionCodeError onRetry={onRetry} />
+            <AgentPhoneConnectionCodeError />
           ) : (
             <AgentPhoneConnectionCodeLoading />
           )}

@@ -99,11 +99,6 @@ export const tailscaleConfigs$ = computed(async (get) => {
   return result.body.configs;
 });
 
-export const retryTailscale$ = command(({ set }, signal: AbortSignal) => {
-  signal.throwIfAborted();
-  set(invalidateTailscale$);
-});
-
 const catchUpTailscale$ = command(({ set }) => {
   set(invalidateTailscale$);
   return false;
@@ -148,9 +143,7 @@ export interface TailscaleDialogState {
 const dialog$ = state<TailscaleDialogState | null>(null);
 const scope$ = state<"personal" | "organization">("personal");
 const replace$ = state(false);
-const reviewedRevision$ = state<number | null>(null);
 const acknowledged$ = state<string | null>(null);
-const previewReload$ = state(0);
 // Never retain a request body: only its immutable identity survives uncertainty.
 const attempt$ = state<{
   readonly dialog: TailscaleDialogState;
@@ -212,7 +205,6 @@ export const closeTailscaleDialog$ = command(
 
     set(attempt$, null);
     set(replace$, false);
-    set(reviewedRevision$, null);
     set(acknowledged$, null);
   },
 );
@@ -299,7 +291,6 @@ export const openTailscaleDialog$ = command(
 );
 
 export const tailscaleImpact$ = computed(async (get) => {
-  get(previewReload$);
   get(reload$);
   const dialog = await get(tailscaleDialog$);
   if (
@@ -324,92 +315,6 @@ export const tailscaleImpact$ = computed(async (get) => {
   );
   return result.body;
 });
-export const tailscaleLatestConfig$ = computed(async (get) => {
-  get(reload$);
-  const dialog = await get(tailscaleDialog$);
-  if (dialog?.kind !== "edit" || !dialog.config) {
-    return null;
-  }
-  const clients = await get(tailscaleClient$);
-  if (clients.identity !== dialog.identity) {
-    return null;
-  }
-  const result = await accept(clients.client.list(), [200], undefined, {
-    showErrorToast: false,
-  });
-  return (
-    result.body.configs.find((config) => {
-      return config.id === dialog.config?.id;
-    }) ?? null
-  );
-});
-export const reviewTailscale$ = command(
-  async ({ get, set }, reviewed: TailscaleConfig, signal: AbortSignal) => {
-    const dialog = await get(tailscaleDialog$);
-    signal.throwIfAborted();
-    if (!dialog) {
-      return;
-    }
-    const clients = await get(tailscaleClient$);
-    signal.throwIfAborted();
-    if (clients.identity !== dialog.identity) {
-      return;
-    }
-    const result = await accept(
-      clients.client.list({ fetchOptions: { signal } }),
-      [200],
-      signal,
-    );
-    if (get(dialog$) !== dialog) {
-      return;
-    }
-    const latest = result.body.configs.find((config) => {
-      return config.id === dialog.config?.id;
-    });
-    if (!latest) {
-      throw new ApiError(
-        "Tailscale configuration is unavailable",
-        TAILSCALE_ERROR_CODES.NOT_FOUND,
-        404,
-        true,
-      );
-    }
-    if (
-      latest.id !== reviewed.id ||
-      latest.revision !== reviewed.revision ||
-      latest.generation !== reviewed.generation ||
-      latest.scope !== reviewed.scope ||
-      latest.scope !== dialog.config?.scope
-    ) {
-      set(invalidateTailscale$);
-      throw new ApiError(
-        "Tailscale revision changed",
-        TAILSCALE_ERROR_CODES.REVISION_CONFLICT,
-        409,
-        true,
-      );
-    }
-    set(reviewedRevision$, latest.revision);
-
-    set(attempt$, null);
-    set(acknowledged$, null);
-    set(previewReload$, (value) => {
-      return value + 1;
-    });
-    set(invalidateTailscale$);
-  },
-);
-export const refreshTailscaleReview$ = command(
-  ({ set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    set(acknowledged$, null);
-    set(previewReload$, (value) => {
-      return value + 1;
-    });
-    set(invalidateTailscale$);
-  },
-);
-
 function formText(form: HTMLFormElement, name: string): string {
   const field = form.elements.namedItem(name);
   if (!(
@@ -444,8 +349,10 @@ const createTailscale$ = command(
     if (clients.identity !== dialog.identity || get(dialog$) !== dialog) {
       return false;
     }
-    const attempt = get(attempt$);
-    const id = attempt?.dialog === dialog ? attempt.id : crypto.randomUUID();
+    if (get(tailscaleSaveUncertain$)) {
+      return false;
+    }
+    const id = crypto.randomUUID();
     const parsed = tailscaleContract.create.body.safeParse({
       id,
       scope: get(scope$),
@@ -470,7 +377,6 @@ const createTailscale$ = command(
     if (result.status !== 500) {
       set(attempt$, null);
     }
-    set(invalidateTailscale$);
     throw new ApiError(
       "Tailscale request failed",
       result.status >= 500 ? "uncertain" : result.body.error.code,
@@ -482,7 +388,7 @@ const createTailscale$ = command(
 
 const editTailscale$ = command(
   async (
-    { get, set },
+    { get },
     dialog: TailscaleDialogState,
     form: HTMLFormElement,
     signal: AbortSignal,
@@ -497,7 +403,7 @@ const editTailscale$ = command(
       return false;
     }
     const parsed = tailscaleContract.update.body.safeParse({
-      expectedRevision: get(reviewedRevision$) ?? config.revision,
+      expectedRevision: config.revision,
       name: formText(form, "tailscaleName"),
       tags: formText(form, "tailscaleTags")
         .split(/[,\s]+/u)
@@ -510,7 +416,6 @@ const editTailscale$ = command(
       throw new ApiError("Invalid Tailscale input", "INVALID_INPUT", 400, true);
     }
     if (
-      get(reviewedRevision$) === null &&
       !get(replace$) &&
       parsed.data.name === config.name &&
       parsed.data.tags?.length === config.tags.length &&
@@ -536,7 +441,6 @@ const editTailscale$ = command(
     if (result.status === 200) {
       return true;
     }
-    set(invalidateTailscale$);
     throw new ApiError(
       "Tailscale request failed",
       result.status >= 500 ? "uncertain" : result.body.error.code,
@@ -642,7 +546,6 @@ const confirmTailscaleChange$ = command(
     if (result.status === 200 || result.status === 204) {
       return true;
     }
-    set(invalidateTailscale$);
     throw new ApiError(
       "Tailscale request failed",
       result.status >= 500 ? "uncertain" : result.body.error.code,
@@ -694,7 +597,6 @@ export const saveTailscale$ = command(
       );
       signal.throwIfAborted();
       if (!config) {
-        set(invalidateTailscale$);
         return;
       }
       if (get(dialog$) !== dialog) {
@@ -703,7 +605,6 @@ export const saveTailscale$ = command(
       if (config !== dialog.config) {
         dialog = { ...dialog, config: { ...dialog.config, ...config } };
         set(dialog$, dialog);
-        set(reviewedRevision$, null);
         set(invalidateTailscale$);
       }
     }
@@ -727,33 +628,5 @@ export const saveTailscale$ = command(
       return savedId;
     }
     return;
-  },
-);
-
-// One dialog owns these related actions, including reviewing a failed save.
-export const actOnTailscaleDialog$ = command(
-  async (
-    { set },
-    action:
-      | {
-          readonly kind: "save";
-          readonly form: HTMLFormElement;
-          readonly save$: typeof saveTailscale$;
-        }
-      | { readonly kind: "review"; readonly config: TailscaleConfig }
-      | { readonly kind: "refresh" },
-    signal: AbortSignal,
-  ) => {
-    switch (action.kind) {
-      case "save": {
-        return await set(action.save$, action.form, signal);
-      }
-      case "review": {
-        return await set(reviewTailscale$, action.config, signal);
-      }
-      case "refresh": {
-        return set(refreshTailscaleReview$, signal);
-      }
-    }
   },
 );

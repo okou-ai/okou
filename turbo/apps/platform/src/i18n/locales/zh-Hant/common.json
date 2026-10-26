@@ -87,7 +87,7 @@
           "title": "積分已用完"
         },
         "noModelProvider": {
-          "guidance": "請稍後重試，或在設定中連結個人 Claude Code 或 Codex 訂閱。",
+          "guidance": "請在設定中連結個人 Claude Code 或 Codex 訂閱。",
           "title": "此次執行沒有可用的模型提供者"
         },
         "paidPlanRequired": {
@@ -99,7 +99,7 @@
           "title": "提供方不相容"
         },
         "providerTemporarilyUnavailable": {
-          "guidance": "模型提供方暫時不可用，請稍後重試。",
+          "guidance": "模型提供方暫時不可用。",
           "title": "提供方暫時不可用"
         }
       },
@@ -112,7 +112,6 @@
         "time": "時間"
       },
       "log": "日誌",
-      "manualReloadNotice": "日誌不會自動更新。",
       "modelProvidedBy": "{{model}}，由 {{provider}} 提供",
       "networkEmpty": {
         "description": "本次執行沒有記錄到網路流量。",
@@ -123,7 +122,6 @@
         "description": "該日誌不存在，或者你在當前工作區沒有檢視權限。",
         "title": "未找到日誌"
       },
-      "refresh": "重新整理",
       "runner": {
         "environment": "環境",
         "framework": "框架",
@@ -437,16 +435,15 @@
       "signedInAs": "當前登入帳號：{{email}}",
       "signedInDescription": "它可能不存在，也可能分享給了其他帳號或組織。",
       "signIn": "登入",
-      "signInFailed": "無法開啟登入頁面，請重試。",
+      "signInFailed": "無法開啟登入頁面。",
       "switchAccount": "切換帳號",
-      "switchAccountFailed": "無法開啟帳號切換器，請重試。",
+      "switchAccountFailed": "無法開啟帳號切換器。",
       "title": "你沒有權限檢視這個成果",
-      "tryAgain": "重試",
       "websiteAuthenticationDescription": "請使用有權存取此網站的帳號登入。",
       "websiteAuthenticationSignedInDescription": "繼續以目前帳號驗證存取權限。",
       "websiteAuthenticationTitle": "驗證此網站的存取權限",
       "websiteTitle": "你無法查看此網站",
-      "websiteUnavailableDescription": "請稍後再試。",
+      "websiteUnavailableDescription": "此網站暫時無法使用。",
       "websiteUnavailableTitle": "此網站暫時無法使用"
     },
     "actions": {
@@ -621,8 +618,7 @@
       "organizationOptionUnnamed": "組織內的所有成員",
       "permissionsUpdated": "訪問權限已更新",
       "publicAccess": "公開訪問",
-      "publicOption": "知道連結的所有人",
-      "retry": "重試"
+      "publicOption": "知道連結的所有人"
     },
     "sidebar": {
       "openSharedConversation": "開啟分享的對話",
@@ -638,7 +634,7 @@
     "siteUrl": {
       "available": "可以使用",
       "cancel": "取消",
-      "checkFailed": "無法檢查此網址，請修改後重試",
+      "checkFailed": "無法檢查此地址。",
       "checking": "正在檢查…",
       "customize": "自訂網址",
       "hint": "選擇一個簡短易記的名稱",
@@ -648,7 +644,7 @@
       "oldUrlWarning": "舊網址將失效，請更新已分享的連結。",
       "published": "已發佈",
       "save": "儲存",
-      "saveFailed": "儲存失敗，網址可能已被使用或變更。請重新整理後重試。",
+      "saveFailed": "無法儲存。此地址可能已被使用或變更。",
       "taken": "此網址已被使用",
       "updated": "網站網址已更新"
     },
@@ -950,7 +946,7 @@
   },
   "authorization": {
     "browser": {
-      "actionFailed": "無法繼續，請重試。",
+      "actionFailed": "無法繼續。",
       "allow": "允許",
       "allowed": "已允許",
       "callbackPrompt": "瀏覽器已啟用，請繼續完成剛才的任務。",
@@ -959,7 +955,6 @@
       "enable": "為這個會話啟用",
       "enabled": "雲端瀏覽器已啟用",
       "linkExpires": "連結將於{{date}}過期。",
-      "retry": "重試",
       "title": "啟用雲端瀏覽器",
       "unavailableDescription": "這個雲端瀏覽器授權連結無效、已過期，或不適用於當前工作區。",
       "unavailableTitle": "授權連結不可用"
@@ -973,7 +968,7 @@
       "lastSeen": "最後線上於{{date}}",
       "linkExpires": "連結將於{{date}}過期。",
       "macRequirement": "需要搭載 Apple 晶片、系統為 macOS 14 或更高版本的 Mac，不支援 Intel 版 Mac。",
-      "noHostsDescription": "在 Mac 上開啟 {{desktopApplicationName}}，等它上線後重新整理本頁。",
+      "noHostsDescription": "在 Mac 上開啟 {{desktopApplicationName}}，讓裝置上線。",
       "noHostsTitle": "沒有線上的電腦",
       "sources": {
         "chat": "這個聊天會話",
@@ -1037,10 +1032,8 @@
       "allowed": "權限已允許",
       "allowedCount": "已允許 {{allowed}} / {{total}} 項權限",
       "alwaysNote": "這些權限會持續允許，直到你變更或撤銷為止。",
-      "continue": "繼續",
       "continued": "對話已繼續。",
-      "continueFailed": "權限已允許，但無法繼續對話。請再試一次。",
-      "continuing": "正在繼續…",
+      "continueFailed": "權限已允許，但無法繼續對話。",
       "details": "查看權限詳情",
       "dismissed": "未變更任何權限。",
       "invalid": "此權限連結無效或無法使用。",
@@ -1074,7 +1067,6 @@
       "preparing": "準備中…",
       "redirecting": "跳轉中…",
       "restore": "恢復",
-      "retry": "重試",
       "unavailable": "不可用",
       "updating": "更新中…"
     },
@@ -1255,7 +1247,7 @@
           "confirmDescription": "你當前的套餐和權益會持續到本帳單週期結束。新套餐開始時，Stripe 會按新的週期總額扣款。",
           "convertPlan": "轉換套餐",
           "description": "把你的舊版{{plan}}工作區轉換成新套餐，為每位成員配置獨立的月度用量套包。",
-          "error": "無法遷移這個訂閱。請重新整理後重試。",
+          "error": "無法遷移此訂閱。",
           "invoice": "檢視帳單",
           "processing": "正在透過 Stripe 安排轉換。",
           "ready": "為每位成員和待接受的邀請選擇月度套包，或選擇「無套包」。",
@@ -1274,7 +1266,7 @@
         "packCreditsDiscount": "{{credits}} 積分 · 省 {{discount}}%",
         "packOption": "{{price}} · {{credits}} 積分 · 省 {{discount}}%",
         "paidPackageRequired": "至少為一位成員選擇付費套包才能繼續。",
-        "planChangeError": "無法準備這次訂閱變更，請重試。",
+        "planChangeError": "無法準備這次訂閱變更。",
         "planPlusPackages": "套餐 {{plan}} · 成員套包每人 {{lowest}}–{{highest}}",
         "planStep": "套餐",
         "priceFrom": "起價",
@@ -1400,7 +1392,7 @@
       "generatePdf": "產生 PDF",
       "generatingPdf": "正在產生 PDF…",
       "more": "更多操作",
-      "pdfGenerationFailed": "無法產生 PDF，請重試。",
+      "pdfGenerationFailed": "無法產生 PDF。",
       "remove": "移除",
       "rename": "重新命名",
       "saving": "正在儲存…",
@@ -1447,7 +1439,7 @@
             "connected": "已連線",
             "description": "選一個，{{assistantName}} 就能在裡面開始工作。",
             "notConnected": "未連線",
-            "pickerFailed": "連接器載入失敗。開啟連接器頁面再試一次。",
+            "pickerFailed": "無法載入連接器。",
             "pickerLoading": "正在載入連接器…",
             "title": "{{assistantName}} 直接在你已經在用的工具裡幹活"
           },
@@ -1566,8 +1558,7 @@
       "next": "下一則建議",
       "position": "{{current}} / {{total}}",
       "previous": "上一則建議",
-      "recoveryHint": "重新傳送前請先檢查聊天。你可以將建議還原到草稿。",
-      "restoreDraft": "還原至草稿"
+      "useSuggestion": "使用建議"
     },
     "attachments": {
       "attach": "新增附件",
@@ -1578,7 +1569,7 @@
       "title": "附件",
       "unavailable": "{{filename}} 已不可用。重新上傳後才能傳送。",
       "unavailableCount_other": "有 {{count}} 個附件已不可用。重新上傳後才能傳送。",
-      "uploadFailedRetry": "{{filename}} 上傳失敗，請重試。"
+      "uploadFailed": "{{filename}} 上傳失敗。"
     },
     "automations": {
       "active": "已啟用",
@@ -1698,7 +1689,6 @@
       "readOnly": "帳戶、餘額和交易記錄 · 只讀",
       "repair": "修復",
       "repairRequired": "{{institution}} 需要修復",
-      "retry": "重試",
       "revoke": "撤銷",
       "revokeConfirm": "撤銷這個智能體的銀行訪問權限？",
       "selectAccounts": "選擇帳戶",
@@ -1733,21 +1723,18 @@
       "unavailableDescription": "此瀏覽器請求無效或已不可用。"
     },
     "browserInput": {
-      "applyFailed": "無法新增資訊。你填寫的內容仍然保留，請重試。",
+      "applyFailed": "無法新增資訊。",
       "applying": "正在新增資訊",
       "applyingDescription": "瀏覽器正在完成這個請求。",
-      "callbackFailed": "未能通知 Agent。",
       "cancel": "取消",
-      "cancelFailed": "無法取消這個請求，請重試。",
+      "cancelFailed": "無法取消這個請求。",
       "cancelled": "請求已取消",
       "cancelling": "正在取消…",
-      "checkFailed": "無法檢查瀏覽器。填寫內容已保留，請重試後提交。",
+      "checkFailed": "無法檢查瀏覽器。",
       "checkingOutcome": "正在檢查瀏覽器狀態",
       "checkingOutcomeDescription": "正在等待瀏覽器確認此請求。",
       "completed": "資訊已新增",
       "confirmRangeValue": "使用目前值",
-      "continue": "通知 Agent",
-      "continuing": "正在通知 Agent…",
       "delivered": "已通知 Agent",
       "expired": "請求已過期",
       "expiredDescription": "瀏覽器已關閉，或這個請求已不再有效。",
@@ -1755,12 +1742,11 @@
       "fileLimit": "最多選 3 個檔案（單檔案控件只能選 1 個），合計不超過 10 MiB。",
       "fileNotice": "點選「加入瀏覽器」會將所選檔案傳給此網站。網站可能在檔案控件變更時自行上傳或提交：",
       "loadFailed": "無法載入這個請求",
-      "loadFailedDescription": "請稍後重試。",
+      "loadFailedDescription": "目前無法使用。",
       "loadingDescription": "正在檢查這個請求…",
       "open": "輸入資訊",
       "optional": "（選填）",
       "required": "（必填）",
-      "retry": "重試",
       "site": "網站",
       "stale": "欄位已變更",
       "staleDescription": "請讓 Agent 建立一個新請求。",
@@ -1770,7 +1756,7 @@
       "title": "在瀏覽器中輸入資訊",
       "unavailable": "請求不可用",
       "uncertain": "請檢查瀏覽器",
-      "uncertainDescription": "瀏覽器可能已收到這些資訊。重試前，請先讓 Agent 檢查。"
+      "uncertainDescription": "瀏覽器可能已收到這些資訊。請讓代理檢查結果。"
     },
     "cards": {
       "viewDetails": "檢視詳情"
@@ -1866,11 +1852,10 @@
     },
     "connectorAccountSwitch": {
       "accountFallback": "連接器帳戶",
-      "actionFailed": "帳戶切換失敗，請重試。",
+      "actionFailed": "帳戶切換失敗。",
       "customConnector": "自定義連接器",
       "loadFailed": "無法載入這個連接器帳戶。",
       "reconnectRequired": "需要重新連線。之後的執行可能會繼續使用現有的備用帳戶。",
-      "retry": "重試",
       "selected": "已切換到 {{account}}",
       "switch": "切換",
       "switching": "正在切換…",
@@ -1952,7 +1937,6 @@
       "replies": "Your replies",
       "reply": "Reply",
       "result": "Result",
-      "retry": "Retry",
       "saved": "Saved for the next evaluation",
       "saveReply": "Save reply",
       "sourceUpdate": "來源更新",
@@ -1968,22 +1952,21 @@
       "genericTitle": "這次執行沒能完成",
       "loadMessages": "訊息載入失敗",
       "noModelProviderAction": "管理訂閱",
-      "noModelProviderPrefix": "此次執行沒有可用的模型提供者。請重試，或連結個人訂閱。",
+      "noModelProviderPrefix": "此次執行沒有可用的模型提供者。請連結個人訂閱。",
       "providerIncompatibleAction": "開始新會話",
       "providerIncompatiblePrefix": "這個會話是用另一個模型提供方開始的，無法用當前的提供方繼續。",
       "recovery": {
-        "accessProgramDescription": "稍後再試，仍可在這段聊天中繼續。",
+        "accessProgramDescription": "仍可在這段聊天中繼續。",
         "accessProgramTitle": "Codex 暫時無法存取",
-        "autonomyLimitDescription": "連續自動執行的次數已達上限。確認後可以繼續。",
+        "autonomyLimitDescription": "連續自動執行的次數已達上限。",
         "autonomyLimitTitle": "已達自動執行上限",
-        "capacityDescription": "可以稍等片刻再試，或換個模型繼續。",
+        "capacityDescription": "可以換個模型繼續。",
         "capacityTitle": "這個模型現在很忙",
         "claudeCode": "Claude Code",
         "codex": "Codex",
         "connectionLostTitle": "回覆中途斷開了",
         "contextWindowTitle": "這個聊天太長了",
-        "continue": "繼續",
-        "filesystemFullDescription": "這次執行無法再儲存檔案。請重試後繼續。",
+        "filesystemFullDescription": "這次執行無法再儲存檔案。",
         "filesystemFullTitle": "這次執行的儲存空間用完了",
         "fiveHourReset": "5 小時額度於 {{time}} 重置",
         "inputTooLargeDescription": "請縮短訊息內容後重新傳送。",
@@ -1993,7 +1976,7 @@
         "newChat": "新聊天",
         "newChatDescription": "開啟新聊天，並帶上想繼續使用的重要資訊。",
         "openClaude": "開啟 Claude",
-        "outputLimitDescription": "回覆還沒完成就停止了。點選「繼續」可以接著生成。",
+        "outputLimitDescription": "回覆還沒完成就停止了。",
         "outputLimitTitle": "回覆達到了長度上限",
         "personalAccount": "個人訂閱 {{account}}",
         "personalAccountDisconnected": "個人訂閱已中斷",
@@ -2006,16 +1989,13 @@
         "providerStreamTimeoutTitle": "模型回應已逾時",
         "reconnectTitle": "重新連接模型帳戶",
         "resetsAt": "{{time}} 重置",
-        "resetUsageRemaining": "重置 · 剩 {{value}} 次",
         "safetyDescription": "這個請求未通過模型的安全檢查。可以換個說法，或選擇其他模型。",
         "safetyTitle": "模型無法處理這個請求",
-        "selectModel": "切換模型",
         "sessionHistoryTitle": "這段聊天已達到上限",
         "termsDescription": "先在 Claude 接受最新條款，再回來重試。",
         "termsTitle": "需要接受 Claude 新條款",
-        "timeoutDescription": "可以從上次停止的地方繼續。",
+        "timeoutDescription": "傳送新訊息以繼續。",
         "timeoutTitle": "已達時間上限",
-        "tryAgain": "重試",
         "unavailableDescription": "請選擇目前服務商帳戶支援的其他模型。",
         "unavailableTitle": "所選模型不可用",
         "usageDescription": "等用量額度重置後可以繼續，也可以現在換個模型。",
@@ -2081,7 +2061,6 @@
         "open": "管理郵件",
         "openEmail": "開啟郵件：{{subject}}",
         "result": "{{succeeded}} 封已完成 · {{failed}} 封失敗",
-        "retry": "重試",
         "search": "搜尋主旨或寄件者",
         "selectAll": "全選",
         "selected": "已選 {{quantity}} 封",
@@ -2205,7 +2184,6 @@
       "off": "關閉",
       "on": "開啟",
       "requiresSsh": "需要 SSH：{{name}}",
-      "retry": "重試",
       "sshDisabled": "需開啟 SSH：{{name}}",
       "sshEnabled": "已開啟 SSH：{{name}}",
       "title": "遠端存取",
@@ -2217,7 +2195,6 @@
       "empty": "這個對話的成果和關聯對話會顯示在這裡。",
       "loadFailed": "無法載入聊天資源",
       "loading": "正在載入資源",
-      "retry": "重試",
       "showMore": "顯示更多",
       "title": "聊天資源"
     },
@@ -2274,10 +2251,10 @@
       "copyFailed": "無法複製連結",
       "copyLink": "複製連結",
       "create": "分享",
-      "createFailed": "無法建立分享對話，請重試。",
+      "createFailed": "無法建立分享對話。",
       "deselectGroup": "取消選擇該組訊息",
       "linkCopied": "連結已複製",
-      "messageShareFailed": "分享連結建立失敗，請再試一次。",
+      "messageShareFailed": "分享連結建立失敗。",
       "publicDescription": "選中的訊息及其附件將公開可見。",
       "selectedCount_other": "已選 {{count}} 條",
       "selectGroup": "選擇該組訊息",
@@ -2335,7 +2312,7 @@
       "confirmUnknown": "— 次重設",
       "credits_other": "剩餘重設次數：{{count}}",
       "creditsUnknown": "剩餘重設次數：未知",
-      "error": "重設失敗。可重試同一請求。",
+      "error": "無法確認重設結果。",
       "expiresAt": "重設次數到期：{{time}}",
       "loadFailed": "無法讀取訂閱用量。",
       "loading": "正在讀取訂閱…",
@@ -2349,7 +2326,6 @@
       "unknown": "未知",
       "unsupported": "不支援手動重設；用量將自然恢復。"
     },
-    "syncFailed": "聊天內容可能尚未更新",
     "taskChips": {
       "chooseTask": "選擇任務",
       "ideas": {
@@ -2965,7 +2941,7 @@
       "checkingLimit": "正在檢查語音輸入額度",
       "cleanupFailed": "文字已新增，但儲存的錄音沒能刪除。",
       "confirmRecording": "完成",
-      "detectionFailed": "語音偵測暫時無法使用。錄音已保留，請重試。",
+      "detectionFailed": "語音偵測暫時無法使用。",
       "discarding": "正在刪除語音草稿…",
       "input": "語音輸入",
       "inputLimitReached": "語音輸入額度已用完。升級到 Pro 或 Team 可獲得更高額度。",
@@ -2976,31 +2952,30 @@
       "microphoneAccessDenied": "麥克風權限被拒絕。請允許使用麥克風後重試。",
       "noSpeechDetected": "未偵測到語音，請重新錄音。",
       "openingMicrophone": "正在開啟麥克風…",
+      "recordingSaved": "錄音已儲存。",
       "removeDraft": "刪除語音草稿",
-      "restoreFailed": "無法載入你的語音草稿，請重試。",
-      "retry": "重試",
-      "retryingSavedAudio": "正在重試已儲存的音訊",
-      "retryReady": "錄音已保留，可以重新轉寫。",
+      "restoreFailed": "無法載入你的語音草稿。",
       "returningToComposer": "正在返回輸入框",
       "starting": "正在啟動語音輸入",
       "stopRecording": "停止錄音",
-      "storageFailed": "音訊未能儲存。重試只能恢復這臺裝置上已儲存的音訊。",
+      "storageFailed": "音訊未能儲存。只能使用已儲存在此裝置上的音訊。",
       "textTakingShape": "文字正在成形",
       "transcribing": "正在轉寫",
-      "transcriptionFailed": "語音轉寫失敗，請重試。"
+      "transcriptionFailed": "語音轉寫失敗。",
+      "useRecording": "使用錄音"
     },
     "walletAction": {
       "approvalApproved": "審批已通過，等待接續",
       "approvalContinued": "已接續此購買請求",
       "approvalRecorded": "狀態已更新",
-      "approvalStopped": "自動等待已結束，可手動繼續",
+      "approvalStopped": "自動等待已結束。",
       "approvalWaiting": "等待購買審批",
       "approveButton": "審核",
       "approveTitle": "審核購買",
       "authorized": "已授權",
-      "callbackFailed": "已授權，點擊「繼續」重試傳送訊息。",
+      "callbackFailed": "已授權，但未能傳送你的訊息。",
       "callbackPrompt": "Link 錢包授權已完成，請繼續先前的任務。",
-      "checkFailed": "無法檢查授權狀態，請重試。",
+      "checkFailed": "無法檢查授權狀態。",
       "connectButton": "授權",
       "connectTitle": "授權 Link 錢包",
       "continueButton": "繼續",
@@ -3019,7 +2994,7 @@
     "add": "新增 Cloudflare Access",
     "affectedMembers_other": "{{count}} 位成員",
     "cancel": "取消",
-    "changed": "該 Cloudflare Access 在你編輯期間發生了變化。請先檢視最新設定，再儲存你的更改。",
+    "changed": "此 Cloudflare Access 在編輯期間發生了變更。變更未儲存。",
     "clientId": "Service Token Client ID",
     "clientIdPlaceholder": "貼上 Service Token Client ID",
     "clientSecret": "Service Token Client Secret",
@@ -3027,20 +3002,18 @@
     "configuration": "Cloudflare Access",
     "convert": "轉為個人設定",
     "convertHelp": "此組織 Cloudflare Access 將轉為你自己的個人設定，即使它是由其他人建立的。Service Token 保持不變，你的 SSH 主機可以保持連線。",
-    "convertUncertain": "無法確認轉換是否成功。請查看最新設定後再嘗試。",
+    "convertUncertain": "無法確認轉換是否成功。",
     "createNew": "新建 Cloudflare Access",
     "delete": "刪除 Cloudflare Access",
     "deleteHelp": "確定刪除這個 Cloudflare Access？儲存的 Service Token 無法復原。你自己的主機必須先重新綁定。",
-    "deleteUncertain": "無法確認是否已刪除。請查看最新影響範圍後再嘗試。",
+    "deleteUncertain": "無法確認是否已刪除。",
     "edit": "編輯 Cloudflare Access",
-    "failed": "無法儲存 Cloudflare Access 更改，請重試。",
+    "failed": "無法儲存 Cloudflare Access 更改。",
     "forbidden": "只有組織管理員可以修改共用的 Cloudflare Access。",
-    "impactChanged": "受影響的主機發生了變化。請查看最新影響範圍後再確認。",
+    "impactChanged": "受影響的主機已發生變更，此次變更未套用。",
     "inUse": "有 SSH 主機正在使用此 Cloudflare Access。主機擁有者須先重新綁定或刪除該主機。",
     "invalidInput": "部分 Cloudflare Access 設定無效，請檢查各欄位後重試。",
-    "keepChanges": "在該版本上保留我的更改",
-    "latest": "最新儲存的設定",
-    "loadFailed": "無法載入 Cloudflare Access，請重試。",
+    "loadFailed": "無法載入 Cloudflare Access。",
     "loading": "正在載入 Cloudflare Access…",
     "memberIdentifier": "（ID {{identifier}}）",
     "missing": "該 Cloudflare Access 已不可用。請選擇其他項或新建一個。",
@@ -3053,12 +3026,9 @@
     "promote": "轉為組織設定",
     "promoteConfirm": "我了解組織內所有成員都將能夠使用這個 Service Token。",
     "promoteHelp": "將你的個人 Cloudflare Access 分享給整個組織。Service Token 和你現有的 SSH 主機綁定保持不變。",
-    "promoteUncertain": "無法確認是否已轉換。請關閉此視窗，查看最新設定後再嘗試。",
+    "promoteUncertain": "無法確認此次轉換。",
     "replace": "替換 Service Token",
-    "resourceIdConflict": "該資源 ID 無法使用。請關閉表單並重新開啟後再試。",
-    "retry": "重試",
-    "reviewHelp": "你的草稿已保留。請先確認最新儲存的設定，再應用你的更改。",
-    "reviewLatest": "查看最新影響範圍",
+    "resourceIdConflict": "此資源 ID 無法使用。",
     "revisionExhausted": "該配置已無法繼續更新，請新建一個。",
     "save": "儲存",
     "saveUncertain": "儲存失敗。",
@@ -3144,7 +3114,6 @@
       "save": "儲存",
       "saving": "正在儲存…",
       "savingEllipsis": "正在儲存…",
-      "tryAgain": "重試",
       "uninstall": "解除安裝",
       "uninstalling": "正在解除安裝…"
     },
@@ -3258,7 +3227,6 @@
         "loading": "正在載入連接器…",
         "noCategoryMatches": "此分類下沒有匹配的連接器。",
         "noCustomMatches": "沒有與搜尋匹配的自定義連接器。",
-        "retry": "重試",
         "searchAll": "搜尋全部連接器"
       },
       "empty": {
@@ -3323,7 +3291,7 @@
         "denied": "連線被拒絕，請重新發起。",
         "expired": "連線會話已過期，請重新發起。",
         "failed": "連線失敗，請重新發起。",
-        "verificationOpen": "無法開啟驗證頁面，請重試。"
+        "verificationOpen": "無法開啟驗證頁面。"
       },
       "external": {
         "code": "驗證碼",
@@ -3364,7 +3332,7 @@
           "clientRegistrationRejected": "該 OAuth 服務商拒絕了自動客戶端註冊，可能限制了支援的 MCP 客戶端或註冊資訊。請改用該服務商支援的 MCP 客戶端；如果你已有註冊的客戶端憑據，可改用自定義 OAuth；也可以聯絡 Okou 支援團隊。",
           "clientRegistrationUnavailable": "該 OAuth 服務商沒有提供受支援的自動客戶端註冊方式。如果你已有註冊的客戶端憑據，請改用自定義 OAuth，或聯絡 Okou 支援團隊。",
           "discoveryInvalid": "MCP 伺服器的 OAuth 發現資訊不完整或不一致。如果伺服器由你管理，請修正對外公佈的後設資料，否則請聯絡伺服器管理員。",
-          "providerUnavailable": "MCP 的 OAuth 服務商暫時不可用或已觸發限流。請稍後重試，並確認該服務商的可用狀態。",
+          "providerUnavailable": "MCP 的 OAuth 服務商暫時不可用或已觸發限流。請確認該服務商的可用狀態。",
           "unsafeUrl": "MCP 伺服器公佈的 OAuth 地址不是公開的 HTTPS 端點。請先修正伺服器公佈的 OAuth 地址再重試。"
         },
         "save": "儲存",
@@ -3553,7 +3521,7 @@
         "linkIncompleteTitle": "連線連結不完整",
         "notInstalledDescription": "請先讓組織管理員安裝 GitHub，再連線你的帳號。",
         "notInstalledTitle": "尚未安裝 GitHub",
-        "refresh": "請重新整理此頁面後重試。",
+        "refresh": "無法檢查你的登入狀態。",
         "signInButton": "登入 {{brandName}}",
         "signInCheckFailed": "無法檢查登入狀態",
         "signInDescription": "連線此 GitHub 使用者前，請先登入你的 {{brandName}} 帳號。",
@@ -3576,17 +3544,15 @@
         "connectDescription": "把你的帳號關聯到這個 Slack 工作區，就可以直接在 Slack 裡與你的智能體交流。",
         "connectTitle": "連線到 Slack",
         "currentConnection": "Slack 已連線",
-        "errorFallback": "無法檢查或開始 Slack 連線，請重試。",
+        "errorFallback": "無法檢查或開始 Slack 連線。",
         "invalidDescription": "此頁面需要從 Slack 連線連結開啟。",
         "keepAccount": "保留{{account}}",
         "open": "開啟 Slack",
         "reauthorize": "更新 Slack 權限",
-        "retryStatus": "重新檢查",
-        "startAgain": "重新開始",
         "successDescription": "在任意頻道@已安裝的機器人，或給它發私信，即可開始對話。",
         "successDescriptionWorkspace": "你已連線到{{workspace}}。在任意頻道@已安裝的機器人，或給它發私信，即可開始對話。",
         "switchAccount": "切換到{{account}}",
-        "unavailable": "暫時無法連線 Slack，請稍後重試。",
+        "unavailable": "暫時無法連線 Slack。",
         "workspaceMismatchDescription": "此 Slack 工作區不屬於你目前的 Okou 組織。請切換組織，或聯絡管理員處理。",
         "workspaceMismatchDescriptionNamed": "你目前的 Okou 組織已連線到{{workspace}}。請切換組織，或請管理員先解除安裝，再連線此 Slack 工作區。",
         "workspaceMismatchTitle": "Slack 工作區不相符"
@@ -3605,7 +3571,7 @@
         "pendingTitle": "在 Teams 中安裝以完成連線",
         "providerName": "Microsoft Teams",
         "reinstall": "在 Teams 中重新安裝",
-        "statusFailed": "無法檢查 Teams 連線，請重試。",
+        "statusFailed": "無法檢查 Teams 連線。",
         "successDescription": "你已連線到{{team}}。在 Teams 中@{{botName}}，即可開始對話。",
         "successTitle": "已連線到 Microsoft Teams",
         "unavailable": "Teams 設定暫不可用，請聯絡組織管理員。"
@@ -3618,10 +3584,10 @@
         "conflictDescription": "目前連接的是 {{current}}，但此連結要求連接 {{requested}}。你可以保留目前連接，或先手動管理連接再重試。",
         "conflictTitle": "已連接其他 Telegram 帳號",
         "connectDescription": "把你的帳號關聯到這個 Telegram 機器人，就可以直接在 Telegram 裡與你的智能體交流。",
-        "connectionCheckFailed": "暫時無法存取 Telegram 以檢查連線，請稍後重試。",
+        "connectionCheckFailed": "暫時無法存取 Telegram 以檢查連線。",
         "connectTitle": "連線到 Telegram",
         "continue": "使用 Telegram 繼續",
-        "domainNotVerified": "暫時無法驗證此應用程式的 Telegram 登入。請重試；如果問題持續，請聯絡支援團隊。",
+        "domainNotVerified": "暫時無法驗證此應用程式的 Telegram 登入。如果問題持續，請聯絡支援團隊。",
         "errorFallback": "我們無法連線 Telegram。請從 Telegram 重試。",
         "interrupted": "本次操作未能確認連接。請檢查目前狀態後再重試。",
         "invalidSignature": "此連結的簽名無效。",
@@ -3655,7 +3621,7 @@
         "copyCodeSuccess": "連線碼已複製",
         "copyError": "電話號碼複製失敗",
         "copySuccess": "電話號碼已複製",
-        "createCodeError": "無法建立連線碼，請重試。",
+        "createCodeError": "無法建立連線碼。",
         "creatingCode": "正在建立連線碼…",
         "description": "透過簡訊使用 {{assistantName}}",
         "openMessages": "開啟 Messages",
@@ -3663,8 +3629,7 @@
         "phoneLabel": "電話",
         "qrTitle": "掃碼開啟 Messages，連線碼已填好",
         "risk": "儘量使用 iMessage。簡訊和彩信的回覆可能無法可靠送達。",
-        "sendToLabel": "傳送至",
-        "tryAgain": "重試"
+        "sendToLabel": "傳送至"
       },
       "errors": {
         "githubAuthorizationWindow": "無法開啟授權視窗"
@@ -3974,7 +3939,7 @@
     }
   },
   "desktopShellAuthorization": {
-    "actionFailed": "無法更新授權，請重新整理後再試。",
+    "actionFailed": "無法更新授權。",
     "allow": "允許 1 小時",
     "approved": "已允許使用 Shell",
     "deadline": "到期時間：{{date}}",
@@ -3985,7 +3950,6 @@
     "expired": "授權已到期",
     "loading": "正在載入授權…",
     "pending": "等待批准",
-    "refresh": "重新整理",
     "revoke": "撤銷授權",
     "revoked": "已撤銷 Shell 授權",
     "scope": "僅限目前的 Chat 和電腦。授權結束後，既有終端仍保持開啟。",
@@ -4044,14 +4008,10 @@
     "page": "第 {{page}} 頁",
     "preview": "預覽 {{title}}",
     "previousPage": "上一頁樣張",
-    "retry": "重試",
     "title": "文件",
     "useNamed": "使用 {{title}}"
   },
   "global": {
-    "actions": {
-      "tryAgain": "重試"
-    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "請求失敗"
@@ -4108,11 +4068,11 @@
           "title": "你已經兌換過這個優惠"
         },
         "billingUnavailable": {
-          "body": "支付系統暫時不可用，請過幾分鐘再試。",
+          "body": "支付系統暫時不可用。",
           "title": "帳單服務暫時不可用"
         },
         "broken": {
-          "body": "兌換沒有完成。請重試，或聯絡客服。",
+          "body": "兌換沒有完成。請聯絡客服。",
           "title": "出了點問題"
         },
         "campaignUnavailable": {
@@ -4124,7 +4084,7 @@
           "title": "支付成功"
         },
         "processing": {
-          "body": "我們正在把積分發放到{{orgName}}。通常只需幾秒，稍後重新整理就能看到更新後的餘額。",
+          "body": "正在將額度套用至 {{orgName}}，通常只需幾秒鐘。",
           "title": "已收到付款"
         },
         "ready": {
@@ -4267,6 +4227,8 @@
         "teamTitle": "邀請同事"
       },
       "prompt": {
+        "connectorsDescription": "連接這些工具，讓 Okou 更了解你的工作情境，更有針對性地幫你完成任務。也可以稍後再連接。",
+        "connectorsTitle": "連接你的工作工具",
         "intro": "Okou 是你和團隊的工作助理，在雲端把零散的資訊變成完成的工作。"
       },
       "skills": {
@@ -4317,7 +4279,6 @@
         "showFullPrompt": "查看完整提示詞",
         "startError": "無法開啟匯入會話。",
         "title": "把你已有的技能匯入 Okou",
-        "tryAgain": "重試",
         "waiting": "匯入的技能會在到達後顯示在這裡。"
       },
       "slack": {
@@ -4667,10 +4628,9 @@
         "connect": "連線{{provider}}",
         "connected": "已連線",
         "connecting": "連線中…",
-        "failedNote": "無法連線{{provider}}。你可以重試，也可以先繼續，稍後再連線。",
-        "retry": "重試",
+        "failedNote": "無法連線{{provider}}。",
         "rowCopy": "連接後可使用你的方案執行，不消耗 Okou 點數。",
-        "unconfirmedNote": "無法確認{{provider}}的連線狀態。你可以重試，也可以先繼續，稍後再連線。"
+        "unconfirmedNote": "無法確認{{provider}}的連線狀態。"
       },
       "team": {
         "copy": "邀請團隊成員共享你的工作流程，每個人各自連接自己的工具。",
@@ -4858,7 +4818,7 @@
     "emptyTitle": "尚未新增裝置",
     "entryDescription": "選擇 Okou 與裝置互動的方式。",
     "entryTitle": "新增遠端連線",
-    "failedLoad": "無法載入此步驟。表單中的內容已儲存，請重試。",
+    "failedLoad": "無法載入此步驟。",
     "hideSecret": "隱藏輸入的值",
     "keepSavedLoginHelp": "欄位留白即可保留已儲存的登入資訊。更換帳戶或憑證時，請提供完整的新資料，包括憑證的私鑰。",
     "keepSavedSecret": "留白以保留已儲存的值",
@@ -4886,7 +4846,7 @@
     "networkSettings": "私人網路設定",
     "networkTailscaleHelp": "連線家中或辦公室的電腦，需在裝置上安裝 Tailscale。",
     "networkTitle": "私人網路",
-    "networkUnavailable": "此網路已無法使用，請選擇其他網路或重新整理頁面。",
+    "networkUnavailable": "此網路已無法使用，請選擇其他網路。",
     "newLogin": "改為手動輸入",
     "next": "繼續",
     "optionalName": "連線名稱（選填）",
@@ -4894,7 +4854,6 @@
     "passwordHelp": "輸入此裝置帳戶的密碼。Windows 請使用帳戶密碼，不支援 PIN。",
     "passwordPlaceholder": "輸入裝置帳戶密碼",
     "resourceUnavailable": "此設定無法使用，或你已失去存取權限。",
-    "retry": "重試",
     "rsaGroup": "RSA-AES",
     "saved": "已新增連線",
     "savedHelp": "你可以在「設定」中檢視或編輯連線詳細資料。",
@@ -5037,7 +4996,7 @@
     "scopeDescription": "為網路命名，並選擇可使用的對象。",
     "scopeSaved": "網路共享設定已儲存。其他變更尚未儲存。請儲存變更，或返回網路詳細資料。",
     "scopeUnavailable": "此網路無法使用，或你已不具備所需的管理員權限。",
-    "scopeUncertain": "暫時無法確認變更結果。請重新載入並確認已儲存的設定，再決定是否提交。",
+    "scopeUncertain": "無法確認此次變更，尚未核實已儲存的設定。",
     "unknownOrganization": "你的組織",
     "view": "檢視"
   },
@@ -5055,12 +5014,12 @@
     "contentPolicyRejected": "模型服務商依據內容安全政策拒絕了這次請求。用相同內容重試仍會失敗。可以換一種說法、開啟新對話，或改用其他模型。",
     "executionTimeout": "本次執行已達到執行時長上限。",
     "failed": "執行失敗",
-    "modelRoutesUnavailable": "該模型的所有內建線路都暫時不可用，請稍後再試。",
+    "modelRoutesUnavailable": "該模型的所有內建線路都暫時不可用。",
     "modelTemporarilyUnavailable": "模型暫時不可用",
     "modelUnavailable": "當前模型不可用。",
-    "overloaded": "{{model}}負載過高。請稍等幾分鐘後重試，或改用其他模型。",
+    "overloaded": "{{model}}負載過高。請改用其他模型。",
     "providerBalance": "你連結的訂閱帳號餘額不足。",
-    "transient": "出了點問題，請稍後再試。",
+    "transient": "出了點問題。",
     "vm0Credits": "積分不足。請充值積分，或連接個人 Codex 或 Claude 訂閱後繼續。"
   },
   "serviceStatus": {
@@ -5190,7 +5149,7 @@
         "downloadTitle": "匯出已準備好",
         "expiredDescription": "重新匯出即可獲得新的下載連結。",
         "expiredTitle": "上次匯出已過期",
-        "failedDescription": "請重試；如果一直這樣，請聯絡客服。",
+        "failedDescription": "如果一直這樣，請聯絡客服。",
         "failedTitle": "匯出未完成",
         "preparingDescription": "這可能需要幾分鐘。你可以讓這個頁面一直開著。",
         "preparingTitle": "正在準備匯出",
@@ -5281,7 +5240,6 @@
         "noAccounts": "還沒有連線任何帳號。",
         "ownPlan": "使用你自己的方案",
         "reconnectAccount": "重新連線",
-        "retry": "重試",
         "status": {
           "connected": "已連線",
           "fiveHour": "5 小時",
@@ -5363,7 +5321,6 @@
       "loadError": "無法載入你的工具設定。",
       "loading": "正在載入你的工具設定…",
       "openSettings": "開啟內建工具設定",
-      "retry": "重試",
       "saveError": "修改沒有儲存成功。",
       "saving": "正在儲存…",
       "scope": "這些設定只對你在{{workspace}}中的使用生效。",
@@ -5461,11 +5418,10 @@
           "countExplanation": "計數使用只讀事務，不會讀取記錄內容。",
           "description": "檢視共享 Worker 持有的本地聊天快取中的記錄數。",
           "loading": "正在載入 IndexedDB 儲存…",
-          "measurementUnavailable": "快照測量失敗，請重試。",
+          "measurementUnavailable": "快照測量失敗。",
           "measureSnapshot": "測量快照",
           "measuring": "正在測量…",
           "records": "條記錄",
-          "refresh": "重新整理",
           "schema": "結構版本",
           "snapshotDescription": "一條記錄可能包含多個會話。體積按 UTF-8 JSON 估算，不含資料庫開銷；讀取時間不包含體積估算。",
           "snapshotEmpty": "沒有快取的會話快照。",
@@ -5478,11 +5434,9 @@
           "unavailable": "IndexedDB 儲存不可用。"
         },
         "morningBrief": {
-          "checkStatus": "查看執行狀態",
           "description": "立即執行一次帳號已開啟的晨間簡報。它可能更新建議並寄送實際郵件，每日執行時間保持不變。",
           "openChat": "開啟對話",
-          "requestFailed": "請求未完成。重試會沿用同一請求，避免重複執行。",
-          "retry": "重試晨間簡報",
+          "requestFailed": "請求未完成。",
           "run": "執行晨間簡報",
           "runAgain": "再次執行晨間簡報",
           "starting": "正在啟動…",
@@ -5505,7 +5459,7 @@
           "create": "建立歡迎會話",
           "creating": "建立中…",
           "description": "建立一個包含介紹和示例的歡迎對話。",
-          "failed": "無法建立歡迎會話，請重試。",
+          "failed": "無法建立歡迎會話。",
           "title": "歡迎會話"
         }
       },
@@ -5537,44 +5491,40 @@
         "title": "語言"
       },
       "morningBrief": {
-        "conflict": "晨報的安裝狀態不一致，暫時無法使用。請在狀態同步完成後重試。",
+        "conflict": "晨報的安裝狀態不一致，暫時無法使用。",
         "description": "每天早上 7:00 前（按你的時區）接收當日重點。",
+        "errorMessage": "晨報設定無法載入或更新。",
         "missingDefaultAgent": "啟用晨報前，請先選擇一個可用的預設智能體。",
         "missingTimezone": "啟用晨報前，請先設定有效的時區。",
-        "preparationFailed": "暫時無法執行，Okou 會自動重試。",
+        "preparationFailed": "暫時無法執行。",
         "preparing": "正在準備你的第一份晨報，你可以隨時關閉。",
-        "retry": "重試",
-        "retryMessage": "晨報設定無法載入或更新，請重試以繼續。",
         "title": "晨報"
       },
       "proactiveLearning": {
         "description": "夜間回顧你的資訊和工作，整理個人記憶、更新理解。",
+        "errorMessage": "無法載入或更新此設定。",
         "missingDefaultAgent": "請先選擇可用的預設 Agent。",
         "missingTimezone": "請在偏好設定中設定時區。",
-        "preparationFailed": "此工作流程暫不可用，Okou 會重試。",
+        "preparationFailed": "此工作流程暫不可用。",
         "preparing": "正在準備此工作流程。",
-        "retry": "重試",
-        "retryMessage": "無法載入或更新此設定，請重試。",
         "title": "主動學習"
       },
       "proactivePlanningAction": {
         "description": "在你交辦的範圍內規劃並推進任務，需要你處理時提醒你。",
+        "errorMessage": "無法載入或更新此設定。",
         "missingDefaultAgent": "請先選擇可用的預設 Agent。",
         "missingTimezone": "請在偏好設定中設定時區。",
-        "preparationFailed": "此工作流程暫不可用，Okou 會重試。",
+        "preparationFailed": "此工作流程暫不可用。",
         "preparing": "正在準備此工作流程。",
-        "retry": "重試",
-        "retryMessage": "無法載入或更新此設定，請重試。",
         "title": "規劃與執行"
       },
       "proactiveSuggestions": {
         "description": "讓 Okou 每小時檢查已連接的資訊來源，並在首頁推薦實用的下一步行動。",
+        "errorMessage": "無法載入或更新主動建議設定。",
         "missingDefaultAgent": "請選擇可用的預設 Agent 以接收主動建議。",
         "missingTimezone": "請在偏好設定中設定時區。",
-        "preparationFailed": "暫時無法執行，Okou 會自動重試。",
+        "preparationFailed": "暫時無法執行。",
         "preparing": "正在準備每小時建議，你可以隨時關閉。",
-        "retry": "重試",
-        "retryMessage": "無法載入或更新主動建議設定，請重試。",
         "title": "建議"
       },
       "send": {
@@ -5635,7 +5585,7 @@
         "description": "在 Link 錢包中新增卡片或變更預設卡片。",
         "empty": "你的 Link 錢包中尚無卡片",
         "expires": "有效期限 {{date}}",
-        "loadError": "無法載入卡片，請再試一次。",
+        "loadError": "無法載入卡片。",
         "loading": "正在載入卡片",
         "manage": "管理卡片",
         "title": "你的 Link 卡片"
@@ -5644,13 +5594,12 @@
       "description": "讓代理程式提出購買請求並查看 Link 交易。每筆購買均由你核准。",
       "disconnect": "中斷連線",
       "loadError": "無法載入錢包。",
-      "retry": "重試",
       "scope": "讓 Okou 代你購買並查看 Link 交易。",
       "title": "錢包",
       "transactions": {
         "description": "已連接 Link 帳戶的最近交易。",
         "empty": "尚無 Link 交易紀錄",
-        "loadError": "無法載入交易紀錄，請重試。",
+        "loadError": "無法載入交易紀錄。",
         "loading": "正在載入交易紀錄",
         "merchant": "商家",
         "refunded": "已退款",
@@ -5772,7 +5721,6 @@
           "fallbackAlt": "工作區",
           "loadError": "無法載入工作區標誌。",
           "loading": "正在載入工作區標誌",
-          "retry": "重試",
           "title": "標識",
           "upload": "上傳標識"
         },
@@ -5829,8 +5777,7 @@
       "title": "哎呀，出了點小問題"
     },
     "forceUpgrade": {
-      "action": "重新整理",
-      "description": "當前版本的 {{brandName}} 已不再支援，請重新整理以載入最新版本。",
+      "description": "當前版本的 {{brandName}} 已不再支援。",
       "title": "需要更新"
     },
     "mermaid": {
@@ -5847,9 +5794,8 @@
       "title": "這個頁面不在這裡。"
     },
     "workerFailure": {
-      "action": "重新整理",
-      "description": "連線已中斷，請重新整理頁面以繼續。",
-      "title": "重新整理以繼續"
+      "description": "與此應用程式的連線已中斷。",
+      "title": "連線已中斷"
     }
   },
   "sharedThread": {
@@ -5869,14 +5815,11 @@
     "choosePrivateKeyFile": "選擇私鑰檔案",
     "cloudflare": {
       "direct": "直連",
-      "keepChanges": "在該版本上保留我的更改",
-      "latest": "最新儲存的設定",
       "mode": "連線方式",
       "needsRebind": "這台主機需要重新綁定 Cloudflare Access。編輯主機並選擇新設定或直連；在此之前無法連線。",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "對外發布的主機名",
       "rebindHelp": "選擇有權使用的 Cloudflare Access 設定或直連，然後儲存以恢復這台主機。儲存前不會變更連線方式。",
-      "reviewHelp": "你的草稿已保留。請先確認最新儲存的設定，再應用你的更改。",
       "title": "Cloudflare Access",
       "unavailable": "該帳號無法使用 Cloudflare Access。"
     },
@@ -5919,24 +5862,17 @@
     "credentialsHelp": "憑據只寫入不回顯，並且儲存在沙箱之外。請貼上完整的金鑰，空白字元會原樣保留。關閉此表單時各欄位會被清空。",
     "delete": "刪除主機",
     "deleteHelp": "確定刪除該主機？它的憑據會保留。智能體將不再在可用主機列表中看到它。",
-    "deleteReview": {
-      "acknowledge": "使用此版本刪除",
-      "changed": "此主機已變更。刪除前請確認最新儲存的設定。",
-      "help": "確認這些已儲存的設定後，再點選「刪除主機」刪除此版本。",
-      "unavailable": "此主機已無法使用。請關閉對話框並重新整理設定後再試。",
-      "version": "版本 {{version}}"
-    },
     "description": "讓你的智能體在遠端機器上執行命令。",
     "displayName": "顯示名稱",
     "edit": "編輯主機",
     "editHelp": "選擇其他憑據只會影響該主機。修改直連地址會清除已記錄的主機金鑰；涉及 Cloudflare Access 的修改則會保留它。",
     "empty": "還沒有配置 SSH 主機。新增主機後，可將其設為預設啟用，或在個別聊天中啟用。",
     "errors": {
-      "configurationChanged": "該主機在你編輯期間發生了變化。你的草稿已保留。請先檢視最新設定，再應用你的更改。",
-      "credentialChanged": "該憑據在你編輯期間發生了變化。你的草稿已保留。請先檢視最新設定和受影響的主機，再儲存你的更改。",
+      "configurationChanged": "此主機在編輯期間發生了變更。變更未儲存，草稿已保留。",
+      "credentialChanged": "此憑證在編輯期間發生了變更。變更未儲存，草稿已保留。",
       "credentialInUse": "該憑據正在被主機使用。請為這些主機選擇其他憑據，或先刪除這些主機。",
       "credentialUnavailable": "該 SSH 憑據已不可用。請選擇已有憑據或新建一個。",
-      "failed": "無法儲存 SSH 更改，請重試。",
+      "failed": "無法儲存 SSH 更改。",
       "hostInUse": "此 SSH 主機正被 VNC 路由使用。刪除該主機前，請為這些 VNC 路由選擇其他 SSH 主機、明確切換為直接連線，或先刪除這些路由。",
       "hostUnavailable": "該 SSH 主機已不可用。請返回主機列表，選擇已有的主機。",
       "invalidHost": "請輸入主機名或 IP 地址，不要包含 URL 協議頭、路徑或空格。",
@@ -5950,7 +5886,7 @@
     "host": "公網主機名或 IP 地址",
     "hostSection": "主機",
     "label": "SSH",
-    "loadFailed": "無法載入 SSH 設定，請重試。",
+    "loadFailed": "無法載入 SSH 設定。",
     "loading": "正在載入 SSH 主機…",
     "manage": "管理 SSH 主機",
     "notLearned": "尚未記錄主機金鑰",
@@ -5968,10 +5904,9 @@
     "privateKey": "私鑰",
     "reset": "重置主機金鑰",
     "resetHelp": "請只在自行核實新伺服器身份後再重置。下一次連線會信任並記錄新的主機金鑰。",
-    "retry": "重試",
     "save": "儲存",
     "saveRecovery": {
-      "resourceIdConflict": "該資源 ID 無法使用。請關閉表單並重新開啟後再試。",
+      "resourceIdConflict": "此資源 ID 無法使用。",
       "uncertain": "儲存失敗。"
     },
     "summary_one": "已配置 {{count}} 臺主機",
@@ -5991,14 +5926,14 @@
     "add": "新增 Tailscale",
     "addressHelp": "使用已註冊的 Tailnet 節點 IP、完整主機名稱或簡稱。仍需 SSH 登入憑證及主機金鑰驗證。",
     "adoptHelp": "將此組織網路改為你的個人網路。其他擁有者須重新綁定已儲存的主機。",
-    "changed": "此 Tailscale 網路已變更。儲存草稿前，請確認最新設定。",
+    "changed": "此 Tailscale 網路已發生變更。變更未儲存，草稿已保留。",
     "clientId": "OAuth 用戶端 ID",
     "clientSecret": "OAuth 用戶端密鑰",
     "createNew": "建立 Tailscale 網路",
     "delete": "刪除 Tailscale",
     "deleteHelp": "刪除此網路？已儲存的憑證無法復原。請先重新綁定自己的主機。",
     "edit": "編輯 Tailscale",
-    "failed": "無法儲存 Tailscale 變更。請重試。",
+    "failed": "無法儲存 Tailscale 變更。",
     "forbidden": "你無法管理此 Tailscale 網路。組織網路需要管理員權限。",
     "guide": {
       "accessControls": "Access controls",
@@ -6020,7 +5955,7 @@
     },
     "inUse": "你的 SSH 主機仍使用此網路。請先重新綁定或刪除這些主機。",
     "invalid": "部分 Tailscale 設定無效。請檢查欄位後重試。",
-    "loadFailed": "無法載入 Tailscale。請重試。",
+    "loadFailed": "無法載入 Tailscale。",
     "loading": "正在載入 Tailscale…",
     "missing": "此 Tailscale 網路已無法使用。請選取其他網路或建立新網路。",
     "peer": "Tailnet 主機名稱或 IP 位址",
@@ -6053,7 +5988,7 @@
       "confirm": "刪除範本",
       "deleting": "正在刪除...",
       "description": "「{{title}}」將對所有可以看到它的人移除。此操作無法復原。",
-      "failed": "無法刪除範本，請再試一次。",
+      "failed": "無法刪除範本。",
       "title": "刪除範本？"
     },
     "detail": {
@@ -6067,7 +6002,6 @@
       "save": "儲存"
     },
     "renameFailed": "無法重新命名該模板。",
-    "retry": "重試",
     "sharedBy": "由{{owner}}分享",
     "sharedByMember": "由組織內的成員分享",
     "visibility": {
@@ -6225,7 +6159,7 @@
       "keytabFile": "金鑰表檔案（.keytab）",
       "lifetime": "要求的票據有效期（秒）",
       "offlineHelp": "僅使用所選服務票據，不連線 KDC，也不續期。",
-      "onlineHelp": "允許透過獨立的 KDC 路由取得票據。更新僅用於準備新連線；現有工作階段保留原到期時間。",
+      "onlineHelp": "允許此來源透過獨立的 KDC 路由取得票據。新連線會取得新票據，現有工作階段保留原有到期時間。",
       "password": "Kerberos · 密碼",
       "realm": "發起方領域",
       "renewableLifetime": "可續期時限（秒；0 表示停用）",
@@ -6262,7 +6196,6 @@
       "select": "選取已儲存的網路設定"
     },
     "port": "埠",
-    "retry": "重試",
     "rsaAes": {
       "fieldHelp": "每個欄位為 1–255 個 UTF-8 位元組，不允許 NUL。保留空格；不是傳統 VNC 的八位元組密碼。",
       "fullHelp": "RA2 和 RA2_256 使用 EAX 加密整個 RFB 工作階段。必須獨立核實完整 RSA 公鑰線格式 pin；CA 信任不能取代它。",
@@ -6286,17 +6219,8 @@
     },
     "save": "儲存",
     "saveRecovery": {
-      "deleteHelp": "刪除前請核對這些已儲存的資訊。此操作只選擇版本；刪除仍需另外確認。",
-      "incompatible": "驗證方式已變更。請關閉此對話框並重新開啟憑證，以編輯目前的驗證方式。",
-      "keepChanges": "使用此版本保留我的修改",
-      "keepDeletion": "使用此版本繼續刪除",
-      "keepHelp": "請確認這些內容，再保留草稿並依此版本儲存。你的驗證與信任設定將保留。",
-      "latest": "目前已儲存的內容",
-      "resourceIdConflict": "該資源建立失敗。請關閉此對話方塊後重試。",
-      "review": "配置已重新整理。請關閉此對話方塊，確認當前內容後再重試。",
-      "unavailable": "此資源已無法使用。請關閉此對話框並重新整理設定後再試。",
-      "uncertain": "儲存失敗。",
-      "version": "版本 {{version}}"
+      "resourceIdConflict": "該資源建立失敗。",
+      "uncertain": "儲存失敗。"
     },
     "saving": "正在儲存…",
     "security": {
@@ -6374,25 +6298,20 @@
         "cancelledDescription": "當日歷中的日程被取消時執行。",
         "cancelledRule": "當日歷{{calendar}}中的日程被取消時",
         "cancelledTitle": "Google Calendar 日程已取消",
-        "cancelRecovery": "取消",
         "changeAria": "更改 Google Calendar 自動化",
         "changeCalendar": "更換日曆",
-        "checkingRecovery": "正在檢查此自動化能否恢復…",
-        "checkRecoveryStatus": "檢視狀態",
         "createdDescription": "當日歷中新增日程時執行。",
         "createdRule": "當日歷{{calendar}}新增日程時",
         "createdTitle": "Google Calendar 日程已建立",
         "enabledIntent": "已啟用",
         "reconnectDescription": "需要重新連線 Google Calendar，此自動化才能恢復。",
         "reconnectGoogleCalendar": "重新連線 Google Calendar",
-        "recoveryStatus": "Google Calendar 恢復情況",
-        "recoveryUnconfirmed": "投遞尚未確認恢復。請先檢視此自動化的警告，然後再次檢查狀態。",
         "saveCalendar": "儲存日曆",
         "summary": "日曆{{calendar}}",
         "updatedDescription": "當日歷中的日程更新時執行。",
         "updatedRule": "當日歷{{calendar}}中的日程更新時",
         "updatedTitle": "Google Calendar 日程已更新",
-        "updateError": "無法更換日曆，請重試。"
+        "updateError": "無法更換日曆。"
       },
       "chat": {
         "addAction": "新增聊天自動化",
@@ -6952,7 +6871,6 @@
       "open": "開啟{{title}}",
       "openRecovery": "開啟{{title}}的恢復",
       "ownerLoading": "正在載入作者…",
-      "ownerRetry": "無法獲取作者資訊。重新開啟可重試。",
       "ownerUnavailable": "無法獲取作者",
       "runsAs": "執行身份",
       "runsAsAria": "以{{agent}}身份執行",
@@ -7001,8 +6919,8 @@
     "discord": {
       "addNewServer": "加入新的伺服器",
       "approvalFailed": "確認失敗。請使用原先的 Okou 帳號和組織登入，或重新發起授權。",
-      "authorizationError": "無法完成 Discord 授權，請重試。",
-      "cancelled": "Discord 授權已取消，可以重新開始。",
+      "authorizationError": "未能完成 Discord 授權。",
+      "cancelled": "Discord 授權已取消。",
       "chooseWorkspace": "選擇工作區",
       "connectDescription": "連接 Discord 帳號，與智慧代理聊天。",
       "connectedTitle": "已連接 Discord",
@@ -7014,10 +6932,8 @@
       "installTitle": "將 Okou 新增至伺服器",
       "invalidLink": "此 Discord 連接連結無效，請從 Discord 取得新連結。",
       "open": "開啟 Discord",
-      "pendingConsent": "授權已中斷或頁面已重新整理，請重新開始以驗證新連接。",
-      "popupBlocked": "請允許彈出視窗以授權 Discord，然後重試。",
-      "restartAuthorization": "重新授權",
-      "retry": "重試",
+      "pendingConsent": "此授權已中斷或重新整理。",
+      "popupBlocked": "Discord 授權彈出視窗被封鎖。",
       "serverPermissionRequired": "請確認伺服器成員身分、機器人安裝狀態及新增機器人的權限，然後重試。",
       "suspended": "Discord 暫時無法使用。現有連線會保留。",
       "title": "Discord",
@@ -7072,7 +6988,7 @@
       "description": "在微信中與智能體對話。",
       "disconnect": "中斷連接",
       "expired": "QR code 已過期，請重新產生。",
-      "failed": "連接微信失敗，請重試。",
+      "failed": "連接微信失敗。",
       "instructions": "使用微信掃描 QR code，然後在手機上確認。",
       "linkUnavailable": "此連結無法使用。請使用原帳號和工作區，並在微信中再傳送一則訊息以取得新連結。也可以重新掃碼連接。",
       "name": "微信",
@@ -7081,7 +6997,6 @@
       "reconnect_required": "請重新掃碼連接。",
       "restart_required": "此微信已綁定，請重新產生 QR code 以連接。",
       "restoreDescription": "將微信重新連接至以下帳號和工作區。",
-      "retry": "重新產生 QR code",
       "returnToWechat": "返回微信，傳送訊息即可開始對話。",
       "scanned": "已掃碼，請在手機上確認。",
       "scope": "只連接你與此智能體的單聊，目前支援文字訊息。",

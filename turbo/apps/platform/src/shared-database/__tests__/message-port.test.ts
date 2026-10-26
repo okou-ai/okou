@@ -782,31 +782,25 @@ test.each([
   { response: "second-tab-token", outcome: "a token" },
   { response: null, outcome: "null" },
 ])(
-  "Remember the first broadcast responder returning $outcome despite later responses and heartbeats",
+  "Authenticate a shared read with the first tab response returning $outcome",
   async ({ response }) => {
     initializeWorker();
     const delayedToken = context.mocks.deferred<string | null>();
     const firstRequested = context.mocks.deferred<void>();
-    let firstResponsePending = true;
     const first = connectProtocolTransport(
       context.signal,
       () => {
-        if (firstResponsePending) {
-          firstResponsePending = false;
-          firstRequested.resolve();
-          return delayedToken.promise;
-        }
-        return Promise.resolve("first-tab-token");
+        firstRequested.resolve();
+        return delayedToken.promise;
       },
       bridgeEvents(),
       context.workerStore,
       deferHeartbeatLoop,
     );
-    let secondToken = response;
     const second = connectProtocolTransport(
       context.signal,
       () => {
-        return Promise.resolve(secondToken);
+        return Promise.resolve(response);
       },
       bridgeEvents(),
       context.workerStore,
@@ -814,20 +808,13 @@ test.each([
     );
     await first.bridge.registerTab(context.signal);
     await second.bridge.registerTab(context.signal);
-    let requestTokens = new Set<string | null>();
+    const requestTokens = new Set<string | null>();
     const indicators = { agents: {}, threads: {}, unreadAt: {} };
     context.mocks.api(
       chatThreadsContract.indicators,
       ({ request, respond }) => {
         requestTokens.add(request.headers.get("authorization"));
         return respond(200, indicators);
-      },
-    );
-    context.mocks.api(
-      chatThreadEventsContract.rows,
-      ({ query, request, respond }) => {
-        requestTokens.add(request.headers.get("authorization"));
-        return respond(200, chatEventRowsResponse([], query));
       },
     );
 
@@ -837,119 +824,8 @@ test.each([
     expect(requestTokens).toStrictEqual(
       new Set([response ? `Bearer ${response}` : null]),
     );
-
-    // A null responder is remembered too: its next valid token must be used
-    // without broadcasting to the now-responsive first tab.
-    secondToken = "second-tab-fresh-token";
-    delayedToken.resolve("late-first-tab-token");
-    await vi.waitFor(() => {
-      expect(first.platformPort.postedMessages).toContainEqual({
-        type: "token-result",
-        requestId: tokenRequestId(first.workerPort),
-        token: "late-first-tab-token",
-      });
-    });
-    first.platformPort.postMessage({ type: "heartbeat" });
-    await vi.waitFor(() => {
-      expect(
-        context.mocks.ably.hasChannelSubscriptionOnChannel(credentialChannel()),
-      ).toBeTruthy();
-    });
-    requestTokens = new Set<string | null>();
-    await expect(
-      first.bridge.query(
-        {
-          dataKey: dataKey(crypto.randomUUID()),
-          afterSeqId: null,
-          consistency: "catch-up",
-        },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual([]);
-    expect(requestTokens).toStrictEqual(
-      new Set(["Bearer second-tab-fresh-token"]),
-    );
-    // The query round trip follows the late response and heartbeat on the
-    // first tab's port, so this negative assertion has a completion boundary.
     tokenRequestId(first.workerPort);
-  },
-);
-
-test.each(["null", "unresponsive", "disconnected"] as const)(
-  "Recover a live tab's query when the preferred token provider is %s",
-  async (failure) => {
-    initializeWorker();
-    const resetFirstOwner$ = resetSignal();
-    const firstOwnerSignal = context.store.set(
-      resetFirstOwner$,
-      context.signal,
-    );
-    const preferredRequested = context.mocks.deferred<void>();
-    const delayedToken = context.mocks.deferred<string | null>();
-    let preferredUnavailable = false;
-    let preferredRequestStarted = false;
-    const first = connectProtocolTransport(
-      firstOwnerSignal,
-      () => {
-        if (!preferredUnavailable) {
-          return Promise.resolve("first-tab-token");
-        }
-        if (!preferredRequestStarted) {
-          preferredRequestStarted = true;
-          preferredRequested.resolve();
-          if (failure === "null") {
-            return Promise.resolve(null);
-          }
-        }
-        return delayedToken.promise;
-      },
-      bridgeEvents(),
-      context.workerStore,
-      deferHeartbeatLoop,
-    );
-    await first.bridge.registerTab(firstOwnerSignal);
-    await first.bridge.getComputed("chat-thread-indicators");
-    preferredUnavailable = true;
-    const second = connectProtocolTransport(
-      context.signal,
-      () => {
-        return Promise.resolve("second-tab-token");
-      },
-      bridgeEvents(),
-      context.workerStore,
-      deferHeartbeatLoop,
-    );
-    await second.bridge.registerTab(context.signal);
-    const key = dataKey(crypto.randomUUID());
-    const recoveredRow = row(key.threadId, 1);
-    const requestTokens = new Set<string | null>();
-    context.mocks.api(
-      chatThreadEventsContract.rows,
-      ({ query, request, respond }) => {
-        requestTokens.add(request.headers.get("authorization"));
-        return respond(
-          200,
-          chatEventRowsResponse(
-            query.sinceSeqId === 0 ? [recoveredRow] : [],
-            query,
-          ),
-        );
-      },
-    );
-
-    const pending = second.bridge.query(
-      { dataKey: key, afterSeqId: null, consistency: "catch-up" },
-      context.signal,
-    );
-    await preferredRequested.promise;
-    if (failure === "disconnected") {
-      context.store.set(resetFirstOwner$);
-    }
-    // The unresponsive case awaits the production two-second deadline through
-    // the live caller's result, without sleeping or changing the clock.
-    await expect(pending).resolves.toStrictEqual([recoveredRow]);
-    expect(requestTokens).toStrictEqual(new Set(["Bearer second-tab-token"]));
-    expect(second.workerPort.closed).toBeFalsy();
+    tokenRequestId(second.workerPort);
     delayedToken.resolve("late-first-tab-token");
   },
 );

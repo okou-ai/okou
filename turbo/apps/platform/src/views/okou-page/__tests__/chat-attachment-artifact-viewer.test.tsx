@@ -792,7 +792,7 @@ test.each([
   { status: 500, sidebar: false },
   { status: 404, sidebar: true },
 ] as const)(
-  "a website preview failure ($status, sidebar=$sidebar) shows App recovery instead of an empty frame",
+  "a website preview failure ($status, sidebar=$sidebar) shows the access or availability error",
   async ({ status, sidebar }) => {
     const site = "https://unavailable-report.okou.app/";
     mockAttachmentChat(context, {

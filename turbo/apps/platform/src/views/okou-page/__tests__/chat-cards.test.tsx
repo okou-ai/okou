@@ -6,10 +6,7 @@ import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connec
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
-import {
-  chatEventsContract,
-  chatThreadConnectorSelectionContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
 
 import {
@@ -1088,9 +1085,10 @@ test("A missing exact reconnect account never falls back to the default", async 
   expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
 });
 
-test("A connector account switch keeps its icon and retries its continuation with the same identity", async () => {
+test("Connector account switches A → B → A keep their icon and continue with fresh callback IDs", async () => {
   const github = connectorSlugSchema.parse("github");
   const connectionId = "f0000000-0000-4000-a000-000000000901";
+  const otherConnectionId = "f0000000-0000-4000-a000-000000000902";
   const iconUrl = "https://icons.example.test/account-switch-github.svg";
   const switchUrl = new URL(
     `https://app.okou.ai/agents/${AGENT_ID}/connector-accounts/${connectionId}/select`,
@@ -1117,7 +1115,10 @@ test("A connector account switch keeps its icon and retries its continuation wit
         id: params.connectionId,
         target: { kind: "builtin", connectorSlug: github },
         authMethod: "oauth",
-        displayName: "Work GitHub",
+        displayName:
+          params.connectionId === connectionId
+            ? "Work GitHub"
+            : "Personal GitHub",
         isDefault: false,
         externalId: null,
         externalUsername: null,
@@ -1132,21 +1133,29 @@ test("A connector account switch keeps its icon and retries its continuation wit
     },
   );
   let selectionWrites = 0;
+  let selectedConnectionId: string | null = null;
   const selection = {
     target: { kind: "builtin" as const, connectorSlug: github },
     connectionId,
   };
   context.mocks.api(chatThreadConnectorSelectionContract.get, ({ respond }) => {
     return respond(200, {
-      selections: selectionWrites > 0 ? [selection] : [],
+      selections: selectedConnectionId
+        ? [{ ...selection, connectionId: selectedConnectionId }]
+        : [],
       selectedConnections: [],
     });
   });
   context.mocks.api(
     chatThreadConnectorSelectionContract.update,
     ({ body, respond }) => {
-      expect(body).toStrictEqual(selection);
+      expect(body).toStrictEqual({
+        ...selection,
+        connectionId: selectionWrites === 1 ? otherConnectionId : connectionId,
+      });
+      selectedConnectionId = body.connectionId;
       selectionWrites += 1;
+      context.mocks.ably.trigger(`chatThreadDetailChanged:${THREAD_ID}`);
       return respond(200, body);
     },
   );
@@ -1191,7 +1200,33 @@ test("A connector account switch keeps its icon and retries its continuation wit
     return respond(200, { connectors: [] });
   });
 
-  await setupChat(`Use the work account\n\n${switchUrl.toString()}`);
+  const callbackIds: {
+    clientEventId?: string;
+    chatThreadSortEventId?: string;
+  }[] = [];
+  const lifecycle = mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    threadTitle: "Action requests",
+    chatEvents: [
+      assistantMessage(
+        "action-request",
+        `Use the work account\n\n${switchUrl.toString()}`,
+      ),
+    ],
+    onSendRequest: (body) => {
+      expect(body.prompt).toBe("Continue");
+      expect(body.threadId).toBe(THREAD_ID);
+      callbackIds.push({
+        clientEventId: body.clientEventId,
+        chatThreadSortEventId: body.chatThreadSortEventId,
+      });
+    },
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+  });
 
   const card = await screen.findByTestId("connector-account-action-card");
   expect(card).toHaveTextContent("Switch to Work GitHub?");
@@ -1201,37 +1236,73 @@ test("A connector account switch keeps its icon and retries its continuation wit
   expect(itemReads).toStrictEqual([github]);
   expect(statusReads).toBe(0);
 
-  const callbackIds: {
-    clientEventId?: string;
-    chatThreadSortEventId?: string;
-  }[] = [];
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    callbackIds.push({
-      clientEventId: body.clientEventId,
-      chatThreadSortEventId: body.chatThreadSortEventId,
-    });
-    return callbackIds.length === 1
-      ? respond(500, {
-          error: { code: "INTERNAL_SERVER_ERROR", message: "Response lost" },
-        })
-      : respond(201, { threadId: THREAD_ID });
-  });
   click(buttonIn(card, "Switch"));
-  click(
-    await waitFor(() => {
-      return buttonIn(card, "Retry");
-    }),
-  );
   await waitFor(() => {
-    expect(callbackIds).toHaveLength(2);
-    expect(queryAllByRoleFast("button", card)).toHaveLength(0);
+    expect(callbackIds).toHaveLength(1);
   });
   expect(callbackIds[0]).toStrictEqual({
     clientEventId: expect.any(String),
     chatThreadSortEventId: expect.any(String),
   });
-  expect(callbackIds[1]).toStrictEqual(callbackIds[0]);
   expect(selectionWrites).toBe(1);
+  await waitFor(() => {
+    expect(card).toHaveTextContent("Switched to Work GitHub");
+  });
+
+  const otherSwitchUrl = new URL(switchUrl);
+  otherSwitchUrl.pathname = otherSwitchUrl.pathname.replace(
+    connectionId,
+    otherConnectionId,
+  );
+  lifecycle.completeRun(
+    `Use the personal account\n\n${otherSwitchUrl.toString()}`,
+  );
+  await expect(
+    screen.findByText("Use the personal account"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.getAllByTestId("connector-account-action-card")).toHaveLength(
+      2,
+    );
+  });
+  const otherCard = screen.getAllByTestId("connector-account-action-card")[1]!;
+  expect(otherCard).toHaveTextContent("Switch to Personal GitHub?");
+  click(buttonIn(otherCard, "Switch"));
+  await waitFor(() => {
+    expect(otherCard).toHaveTextContent("Switched to Personal GitHub");
+    expect(buttonIn(card, "Switch")).toBeEnabled();
+    expect(callbackIds).toHaveLength(2);
+  });
+  expect(selectionWrites).toBe(2);
+  lifecycle.completeRun("Continued with Personal GitHub");
+  await expect(
+    screen.findByText("Continued with Personal GitHub"),
+  ).resolves.toBeInTheDocument();
+
+  click(buttonIn(card, "Switch"));
+  await waitFor(() => {
+    expect(card).toHaveTextContent("Switched to Work GitHub");
+    expect(callbackIds).toHaveLength(3);
+  });
+  expect(selectionWrites).toBe(3);
+  for (const ids of callbackIds) {
+    expect(ids).toStrictEqual({
+      clientEventId: expect.any(String),
+      chatThreadSortEventId: expect.any(String),
+    });
+  }
+  const clientEventIds = callbackIds.map((ids) => {
+    return ids.clientEventId;
+  });
+  const chatThreadSortEventIds = callbackIds.map((ids) => {
+    return ids.chatThreadSortEventId;
+  });
+  expect(new Set(clientEventIds).size).toBe(3);
+  expect(new Set(chatThreadSortEventIds).size).toBe(3);
+  lifecycle.completeRun("Continued with Work GitHub again");
+  await expect(
+    screen.findByText("Continued with Work GitHub again"),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Ordinary or code links remain message content", async () => {

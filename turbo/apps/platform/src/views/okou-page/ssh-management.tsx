@@ -24,7 +24,6 @@ import { requestRemoteLoginSave$ } from "../../signals/remote-login.ts";
 import {
   sshLoginPatch,
   type SshDialogState,
-  type SshConflictReviewState,
   sshCredentials$,
   sshCredentialEditor$,
   chooseSshCredential$,
@@ -33,8 +32,6 @@ import {
   openSshCredentialDialog$,
   sshConnections$,
   sshConflict$,
-  sshConflictReview$,
-  acceptSshConflictReview$,
   sshDialog$,
   openSshDialog$,
   closeSshDialog$,
@@ -88,7 +85,6 @@ import {
   type SshConnectionResponse,
   type SshConnectionMode,
 } from "@okouai/api-contracts/contracts/ssh-connections";
-import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
 import { AccessSelection } from "./ssh-cloudflare-access.tsx";
 import { TailscaleSelection } from "./ssh-tailscale.tsx";
@@ -1048,146 +1044,19 @@ function CredentialImpact({
   );
 }
 
-function SshConflictDetails({
-  current,
-}: {
-  readonly current: SshConflictReviewState;
-}) {
-  const { t } = useTranslation();
-  const connectionEditor = useGet(sshConnectionModeEditor$);
-  const acceptReview = useSet(acceptSshConflictReview$);
-  const signal = useGet(pageSignal$);
-  const deleting = current.kind === "delete";
-  const editingTailscale =
-    current.kind === "edit" && usesTailscaleNetwork(current.connection);
-  return (
-    <>
-      <h3 className="font-semibold">
-        {t(($) => {
-          return $.ssh.cloudflare.latest;
-        })}
-      </h3>
-      {current.credential && (
-        <>
-          <p>
-            {current.credential.name} · {current.credential.username}
-          </p>
-          <CredentialImpact credential={current.credential} />
-        </>
-      )}
-      {current.connection && (
-        <div className="grid gap-1">
-          {deleting && (
-            <p>
-              {t(
-                ($) => {
-                  return $.ssh.deleteReview.version;
-                },
-                { version: current.connection.generation },
-              )}
-            </p>
-          )}
-          <p>{current.connection.displayName}</p>
-          <p className="break-all">
-            {current.connection.username}@{current.connection.host}:
-            {current.connection.port}
-          </p>
-          <p>
-            {"credentialName" in current.connection
-              ? current.connection.credentialName
-              : t(($) => {
-                  return $.ssh.tailscale.sshTitle;
-                })}
-          </p>
-          <p>
-            {"transport" in current.connection
-              ? current.connection.transport.type === "tailscale" ||
-                current.connection.transport.type === "tailscale_ssh"
-                ? "Tailscale"
-                : t(($) => {
-                    return $.ssh.cloudflare.title;
-                  })
-              : t(($) => {
-                  return $.ssh.cloudflare.direct;
-                })}
-          </p>
-        </div>
-      )}
-      <p role={editingTailscale ? "alert" : undefined}>
-        {t(($) => {
-          return editingTailscale
-            ? $.tailscale.rebindHelp
-            : deleting
-              ? $.ssh.deleteReview.help
-              : $.ssh.cloudflare.reviewHelp;
-        })}
-      </p>
-      <Button
-        type="button"
-        variant="outline"
-        disabled={
-          (editingTailscale &&
-            connectionEditor.mode !== "tailscale" &&
-            connectionEditor.mode !== "tailscale_ssh") ||
-          (current.kind === "delete-credential" &&
-            (current.credential?.hosts.length ?? 0) > 0)
-        }
-        onClick={() => {
-          return detach(acceptReview(current, signal), Reason.DomCallback);
-        }}
-      >
-        {t(($) => {
-          return deleting
-            ? $.ssh.deleteReview.acknowledge
-            : $.ssh.cloudflare.keepChanges;
-        })}
-      </Button>
-    </>
-  );
-}
-
-function SshConflictReview({ dialog }: { readonly dialog: SshDialogState }) {
+function SshConflictNotice() {
   const { t } = useTranslation();
   const conflict = useGet(sshConflict$);
-  const review = useLoadable(sshConflictReview$);
   if (!conflict) {
     return null;
   }
-  const current = review.state === "hasData" ? review.data : null;
-  const deleting = dialog.kind === "delete";
-  const hostConflict = conflict === SSH_ERROR_CODES.GENERATION_CONFLICT;
   return (
-    <div className="grid gap-3 rounded-lg border p-4 text-sm">
-      <p role="alert">
-        {deleting && hostConflict
-          ? t(($) => {
-              return $.ssh.deleteReview.changed;
-            })
-          : (localizedSshError(conflict) ??
-            t(($) => {
-              return $.ssh.errors.failed;
-            }))}
-      </p>
-      {review.state === "hasError" && <SshLoadError />}
-      {review.state === "loading" && (
-        <p role="status">
-          {t(($) => {
-            return hostConflict ? $.ssh.loading : $.ssh.credential.loading;
-          })}
-        </p>
-      )}
-      {deleting &&
-        review.state === "hasData" &&
-        !current &&
-        (hostConflict || conflict === SSH_ERROR_CODES.CONNECTION_NOT_FOUND) && (
-          <p>
-            {t(($) => {
-              return $.ssh.deleteReview.unavailable;
-            })}
-          </p>
-        )}
-      {current && <SshConflictDetails current={current} />}
-    </div>
+    <p role="alert" className="text-sm text-destructive">
+      {localizedSshError(conflict) ??
+        t(($) => {
+          return $.ssh.errors.failed;
+        })}
+    </p>
   );
 }
 
@@ -1627,24 +1496,20 @@ function useSshFormSubmission(
     isSaving,
     uncertain,
     destructive,
-    submitDisabled: isSaving || (!uncertain && blocked),
+    submitDisabled: isSaving || uncertain || blocked,
     submitLabel: isSaving
       ? t(($) => {
           return $.connectors.actions.saving;
         })
-      : uncertain
-        ? t(($) => {
-            return $.ssh.retry;
-          })
-        : destructive
-          ? title
-          : t(($) => {
-              return inline && dialog.kind === "create"
-                ? $.remoteControlSetup.add
-                : $.ssh.save;
-            }),
+      : destructive
+        ? title
+        : t(($) => {
+            return inline && dialog.kind === "create"
+              ? $.remoteControlSetup.add
+              : $.ssh.save;
+          }),
     submit(form: HTMLFormElement) {
-      if (isSaving || (!uncertain && blocked)) {
+      if (isSaving || uncertain || blocked) {
         return;
       }
       if (
@@ -1665,7 +1530,7 @@ function useSshFormSubmission(
       ) {
         return;
       }
-      // Keep retryable input only in this form, never in ccstate or caches.
+      // Keep sensitive input only in this form, never in ccstate or caches.
       detach(save(form, signal), Reason.DomCallback);
     },
   };
@@ -1740,7 +1605,7 @@ function SshHostForm({
           {dialog.credential && (
             <CredentialImpact credential={dialog.credential} />
           )}
-          <SshConflictReview dialog={dialog} />
+          <SshConflictNotice />
           {!isSaving && <SshSaveNotice />}
           {dialog.connectionSaved && (
             <p role="alert" className="text-sm text-muted-foreground">

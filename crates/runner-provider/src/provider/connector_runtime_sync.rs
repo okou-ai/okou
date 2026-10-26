@@ -46,7 +46,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::pin::Pin;
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use api_contracts::generated::constants::runners::CONNECTOR_RUNTIME_SYNC_TARGETS_MAX;
@@ -93,7 +93,7 @@ pub struct ConnectorRuntimeSyncHandle {
 
 struct ConnectorRuntimeSyncWorker {
     core: ConnectorRuntimeSyncCore,
-    task: StdMutex<Option<tokio::task::JoinHandle<()>>>,
+    task: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 #[derive(Clone)]
@@ -426,18 +426,24 @@ impl ConnectorRuntimeSyncHandle {
             core: core.clone(),
             worker: Arc::new(ConnectorRuntimeSyncWorker {
                 core,
-                task: StdMutex::new(Some(worker_task)),
+                task: Mutex::new(Some(worker_task)),
             }),
         }
     }
 
     pub async fn shutdown(&self) {
         self.core.shutdown_active_runs().await;
-        let worker_task = self.take_worker_task();
-        if let Some(worker_task) = worker_task
-            && let Err(error) = worker_task.await
         {
-            warn!(error = %error, "connector runtime sync worker failed during shutdown");
+            let mut worker_task = self.worker.task.lock().await;
+            if let Some(task) = worker_task.as_mut() {
+                // Cancelling a shutdown waiter must retain the dispatcher join
+                // for the next caller and last-handle Drop.
+                let result = task.await;
+                *worker_task = None;
+                if let Err(error) = result {
+                    warn!(error = %error, "connector runtime sync worker failed during shutdown");
+                }
+            }
         }
         // Joining the dispatcher stops publication admission. Its cancelled
         // waiters do not own the local writes, which must settle before shutdown
@@ -475,24 +481,16 @@ impl ConnectorRuntimeSyncHandle {
             .await;
     }
 
-    fn take_worker_task(&self) -> Option<tokio::task::JoinHandle<()>> {
-        self.worker.take_task()
-    }
-}
-
-impl ConnectorRuntimeSyncWorker {
-    fn take_task(&self) -> Option<tokio::task::JoinHandle<()>> {
-        self.task
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .take()
+    #[cfg(test)]
+    async fn take_worker_task(&self) -> Option<tokio::task::JoinHandle<()>> {
+        self.worker.task.lock().await.take()
     }
 }
 
 impl Drop for ConnectorRuntimeSyncWorker {
     fn drop(&mut self) {
         self.core.inner.cancel.cancel();
-        if let Some(worker_task) = self.take_task() {
+        if let Some(worker_task) = self.task.get_mut().take() {
             worker_task.abort();
         }
     }
@@ -3108,11 +3106,7 @@ mod tests {
             .await
             .expect("connector runtime sync shutdown timed out");
 
-        let worker_task = handle
-            .worker
-            .task
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
+        let worker_task = handle.worker.task.lock().await;
         assert!(worker_task.is_none());
     }
 
@@ -3164,7 +3158,7 @@ mod tests {
         // Own the worker join solely to observe cancellation deterministically.
         // Shutdown must still drain publications when its worker was already
         // taken by another caller.
-        let worker = harness.handle.take_worker_task().unwrap();
+        let worker = harness.handle.take_worker_task().await.unwrap();
         let shutdown = harness.handle.shutdown();
         tokio::pin!(shutdown);
         let mut shutdown_finished_early = futures_util::poll!(shutdown.as_mut()).is_ready();
@@ -3450,13 +3444,7 @@ mod tests {
             "shutdown should not retry the cancelled sync request"
         );
         assert!(
-            harness
-                .handle
-                .worker
-                .task
-                .lock()
-                .unwrap_or_else(|poison| poison.into_inner())
-                .is_none(),
+            harness.handle.worker.task.lock().await.is_none(),
             "shutdown should reap the sync worker task"
         );
         assert!(
@@ -3874,6 +3862,7 @@ mod tests {
         let handle = ConnectorRuntimeSyncHandle::new(api_client_for_server(&server));
         let worker_task = handle
             .take_worker_task()
+            .await
             .expect("sync worker task should be running");
 
         drop(handle);

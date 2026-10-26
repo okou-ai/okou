@@ -5,7 +5,6 @@ import {
 } from "@okouai/api-contracts/contracts/tailscale";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { act, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -36,8 +35,6 @@ const impact: TailscaleImpactPreview = Object.freeze({
   affectedOwners: [{ userId: "other-owner", displayName: "Other Owner" }],
   impactSnapshot: "a".repeat(64),
 });
-const acknowledgement =
-  "I understand these members' hosts will remain saved but cannot connect until their owners rebind them.";
 
 beforeEach(() => {
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
@@ -230,63 +227,3 @@ test.each([
     ]);
   },
 );
-
-test("An uncertain shared conversion requires reviewing and acknowledging fresh impact before retry", async () => {
-  let currentImpact = impact;
-  const requests: unknown[] = [];
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, { configs: [shared] });
-  });
-  context.mocks.api(tailscaleContract.impactPreview, ({ respond }) => {
-    return respond(200, currentImpact);
-  });
-  context.mocks.api(
-    tailscaleContract.convertToPersonal,
-    ({ body, respond }) => {
-      requests.push(body);
-      if (requests.length === 1) {
-        currentImpact = {
-          ...impact,
-          expectedRevision: 2,
-          otherHostCount: 3,
-          impactSnapshot: "b".repeat(64),
-        };
-        return respond(500, {
-          error: { code: "INTERNAL_ERROR", message: "provider-secret-canary" },
-        });
-      }
-      return respond(200, { ...shared, scope: "personal", revision: 3 });
-    },
-  );
-  const section = await page();
-  click(getAction("button", "Make personal", section));
-  const dialog = await screen.findByRole("dialog");
-  await within(dialog).findByText("Other Owner");
-  await userEvent.click(
-    within(dialog).getByRole("checkbox", { name: acknowledgement }),
-  );
-  click(getAction("button", "Make personal", dialog));
-  await within(dialog).findByText(
-    "We could not confirm the conversion. Review the latest configuration before trying again.",
-  );
-  expect(getAction("button", "Make personal", dialog)).toBeDisabled();
-  expect(dialog.textContent).not.toContain("provider-secret-canary");
-  click(getAction("button", "Review latest impact", dialog));
-  await within(dialog).findByText(/Affected: 1 member and 3 hosts\./u);
-  expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
-  expect(getAction("button", "Make personal", dialog)).toBeDisabled();
-  expect(requests).toStrictEqual([
-    { expectedRevision: 1, impactSnapshot: "a".repeat(64) },
-  ]);
-  await userEvent.click(
-    within(dialog).getByRole("checkbox", { name: acknowledgement }),
-  );
-  click(getAction("button", "Make personal", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests).toStrictEqual([
-    { expectedRevision: 1, impactSnapshot: "a".repeat(64) },
-    { expectedRevision: 2, impactSnapshot: "b".repeat(64) },
-  ]);
-});

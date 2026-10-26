@@ -4,7 +4,6 @@ import {
   useLastLoadable,
   useLastResolved,
   useLoadable,
-  useLoadableState,
   useSet,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -22,7 +21,6 @@ export type ComposerActions = ReturnType<typeof useComposerActions>;
 
 /** One submission invocation owner shared by the editor and send control. */
 export function useComposerActions(signals: ComposerSignals) {
-  const voice = useSet(signals.voice.run$);
   const bindVoiceShortcut = useSet(signals.voice.setRootRef$);
   const [submissionLoadable, submit] = useLoadableSet(
     signals.submission.activatePrimaryAction$,
@@ -30,24 +28,16 @@ export function useComposerActions(signals: ComposerSignals) {
   const hasCurrentSubmission = useGet(signals.submission.hasCurrentInvocation$);
   return {
     bind: bindVoiceShortcut,
-    voice,
     submit,
     submitting: hasCurrentSubmission && submissionLoadable.state === "loading",
   };
-}
-
-/** Read shared voice execution state only where it changes a control. */
-export function useComposerVoiceAction(signals: ComposerSignals) {
-  const voiceState = useLoadableState(signals.voice.result$);
-  const voiceAction = useGet(signals.voice.action$);
-  return voiceState === "loading" ? voiceAction : null;
 }
 
 export function useComposerPrimaryAction(
   signals: ComposerSignals,
   actions: ComposerActions,
 ): ComposerPrimaryAction {
-  const voiceAction = useComposerVoiceAction(signals);
+  const voiceDraft = useLoadable(signals.voice.state$);
   // Keep the last action while the thread's events resync; falling back to
   // "disabled" on every recompute would unmount and remount Stop mid-run.
   const action =
@@ -64,7 +54,8 @@ export function useComposerPrimaryAction(
     useLastResolved(signals.model.selectedModelOauthAvailable$) ?? true;
   return selectedModelOauthAvailable &&
     (!actions.submitting || availableAction === "stop") &&
-    voiceAction === null
+    voiceDraft.state === "hasData" &&
+    voiceDraft.data.status === "idle"
     ? availableAction
     : "disabled";
 }

@@ -24,10 +24,7 @@ import {
   upgradeChatIdb,
 } from "../../signals/external/chat-idb-schema.ts";
 import { openDB } from "idb";
-import {
-  indexedDbSnapshotMeasurementFromWorker$,
-  measureIndexedDbSnapshotFromWorker$,
-} from "../../signals/shared-database.ts";
+import { measureIndexedDbSnapshotFromWorker$ } from "../../signals/shared-database.ts";
 
 const context = testContext();
 const CREATED_AT = "2026-08-14T10:00:00.000Z";
@@ -141,9 +138,9 @@ test("Preserve exact UTF-8 snapshot bytes across the worker protocol", async () 
     ).toBe(snapshotThread.title);
   });
 
-  context.store.set(measureIndexedDbSnapshotFromWorker$);
-  const measurement = await context.store.get(
-    indexedDbSnapshotMeasurementFromWorker$,
+  const measurement = await context.store.set(
+    measureIndexedDbSnapshotFromWorker$,
+    context.signal,
   );
   const serializedSnapshot = JSON.stringify({ id: "current", ...snapshot });
   const expectedBytes = new Blob([serializedSnapshot]).size;

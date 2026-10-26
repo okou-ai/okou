@@ -10,19 +10,17 @@ use runner_lifecycle::host_memory_operations::{
     MemoryObservationSource, ProcMemoryObservationSource,
 };
 use serde_json::{Value, json};
-use tokio::sync::{Notify, Semaphore, watch};
+use tokio::sync::{Notify, watch};
 
 use super::*;
 
 pub struct Source {
     epoch: tokio::time::Instant,
     open: watch::Sender<bool>,
-    passes: Semaphore,
     waiting: AtomicUsize,
     entered: Notify,
     samples: Mutex<Vec<Value>>,
     failure: Mutex<Option<String>>,
-    next_delivery_delay: Mutex<Option<Duration>>,
     next_read: Mutex<Option<Arc<ReadGate>>>,
 }
 
@@ -61,12 +59,10 @@ impl Source {
         Self {
             epoch: tokio::time::Instant::now(),
             open: watch::channel(true).0,
-            passes: Semaphore::new(0),
             waiting: AtomicUsize::new(0),
             entered: Notify::new(),
             samples: Mutex::new(Vec::new()),
             failure: Mutex::new(None),
-            next_delivery_delay: Mutex::new(None),
             next_read: Mutex::new(None),
         }
     }
@@ -93,22 +89,6 @@ impl Source {
 
     pub fn resume(&self) {
         self.open.send_replace(true);
-    }
-
-    pub fn one_read(&self) {
-        self.passes.add_permits(1);
-    }
-
-    pub fn delay_next_delivery(&self, delay: Duration) -> TestResult<()> {
-        let mut pending = self
-            .next_delivery_delay
-            .lock()
-            .map_err(|_| io::Error::other("native delivery delay poisoned"))?;
-        if pending.is_some() {
-            return Err(io::Error::other("native delivery delay already armed").into());
-        }
-        *pending = Some(delay);
-        Ok(())
     }
 
     pub async fn wait_for_readers(&self, count: usize) {
@@ -152,12 +132,8 @@ impl Source {
             if *opened.borrow_and_update() {
                 break;
             }
-            tokio::select! {
-                changed = opened.changed() => if changed.is_err() { break; },
-                permit = self.passes.acquire() => {
-                    if let Ok(permit) = permit { permit.forget(); }
-                    break;
-                }
+            if opened.changed().await.is_err() {
+                break;
             }
         }
         self.waiting.fetch_sub(1, Ordering::SeqCst);
@@ -185,16 +161,6 @@ impl MemoryObservationSource for Source {
             let captured: TestResult<HostMemoryObservation> = async {
                 let started = evidence::clocks()?.0;
                 let observation = ProcMemoryObservationSource.observe().await;
-                let delay = self
-                    .next_delivery_delay
-                    .lock()
-                    .map_err(|_| io::Error::other("native delivery delay poisoned"))?
-                    .take();
-                if let Some(delay) = delay {
-                    // Deliver this one actual read with its unchanged timestamp.
-                    // Elapsed delivery time must never renew its freshness.
-                    tokio::time::sleep(delay).await;
-                }
                 let now = tokio::time::Instant::now();
                 let finished = evidence::clocks()?.0;
                 let age = observation

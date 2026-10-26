@@ -124,7 +124,7 @@ test.each(["/settings/discord", "/settings/discord/install"])(
       screen.findByRole("heading", { name: "Connection failed" }),
     ).resolves.toBeInTheDocument();
     expect(
-      screen.getByText(/restart the connection|Start again/u),
+      screen.getByText("This authorization was interrupted or refreshed."),
     ).toBeInTheDocument();
     expect(screen.getByText("Back to settings").closest("a")).toHaveAttribute(
       "href",

@@ -1,5 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { delay } from "signal-timers";
 
 import { logger } from "../signals/log.ts";
 import { rootSignal$ } from "../signals/root-signal.ts";
@@ -8,7 +7,6 @@ import {
   isAbortError,
   onRejection,
   resetSignal,
-  settle,
   withCleanup,
 } from "../signals/utils.ts";
 import type {
@@ -79,8 +77,6 @@ interface RegisteredConnection {
 const connectionsState$ = state<
   ReadonlyMap<ConnectionId, RegisteredConnection>
 >(new Map());
-const lastTokenConnectionIdState$ = state<ConnectionId | null>(null);
-const PREFERRED_TOKEN_TIMEOUT_MS = 2000;
 const visibleTabChangeState$ = state<ReturnType<
   typeof createDeferredPromise<void>
 > | null>(null);
@@ -189,9 +185,6 @@ export const closeConnection$ = command(
       deleteMapKey(get(connectionLifetimesState$), connectionId),
     );
     set(connectionsState$, deleteMapKey(get(connectionsState$), connectionId));
-    if (get(lastTokenConnectionIdState$) === connectionId) {
-      set(lastTokenConnectionIdState$, null);
-    }
     set(notifyVisibleTabChange$);
     set(lifetime.graph.resetConnection$);
   },
@@ -306,59 +299,25 @@ function requestConnectionToken(
 }
 
 export const requestTokenFromTabs$ = command(
-  async ({ get, set }, callerSignal?: AbortSignal): Promise<string | null> => {
+  async ({ get }, callerSignal?: AbortSignal): Promise<string | null> => {
     const signal = callerSignal
       ? AbortSignal.any([get(rootSignal$), callerSignal])
       : get(rootSignal$);
     signal.throwIfAborted();
-    const lastConnectionId = get(lastTokenConnectionIdState$);
-    const preferred = lastConnectionId
-      ? get(connectionsState$).get(lastConnectionId)
-      : undefined;
-    if (preferred) {
-      const result = await settle(
-        Promise.race([
-          requestConnectionToken(preferred.getToken, preferred.signal, signal),
-          delay(PREFERRED_TOKEN_TIMEOUT_MS, { signal }),
-        ]),
-        signal,
-      );
-      signal.throwIfAborted();
-      if (result.ok && result.value) {
-        return result.value;
-      }
-      if (!result.ok && !preferred.signal.aborted) {
-        throw result.error;
-      }
-    }
-
     const connections = get(connectionsState$);
     if (connections.size === 0) {
       throw new Error("Shared database token requires a registered tab");
     }
-    // Broadcast intentionally accepts the first response, including null.
-    // Each request owns its race, so a late loser cannot change the preference.
+    // Each request broadcasts once and accepts the first response, including null.
     const attempts = [];
-    for (const [connectionId, connection] of connections) {
+    for (const connection of connections.values()) {
       attempts.push(
-        (async () => {
-          return {
-            connectionId,
-            token: await requestConnectionToken(
-              connection.getToken,
-              connection.signal,
-              signal,
-            ),
-          };
-        })(),
+        requestConnectionToken(connection.getToken, connection.signal, signal),
       );
     }
     const response = await Promise.race(attempts);
     signal.throwIfAborted();
-    if (get(connectionsState$).has(response.connectionId)) {
-      set(lastTokenConnectionIdState$, response.connectionId);
-    }
-    return response.token;
+    return response;
   },
 );
 

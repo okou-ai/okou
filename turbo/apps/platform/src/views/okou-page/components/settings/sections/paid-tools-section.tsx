@@ -1,5 +1,5 @@
 import type { Select as SelectPrimitive } from "@base-ui/react/select";
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
@@ -12,7 +12,6 @@ import {
   Users,
   MessageCircle,
 } from "lucide-react";
-import { Button } from "@okouai/ui";
 import {
   Select,
   SelectContent,
@@ -96,17 +95,6 @@ function PaidToolRow({
                 return $.settings.paidTools.saveError;
               })}
             </p>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                return toggle(!current);
-              }}
-            >
-              {t(($) => {
-                return $.settings.paidTools.retry;
-              })}
-            </Button>
           </div>
         ) : null
       }
@@ -209,17 +197,6 @@ function ImageModelRow({
                 return $.settings.paidTools.imageModel.saveError;
               })}
             </p>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                submit(draft);
-              }}
-            >
-              {t(($) => {
-                return $.settings.paidTools.retry;
-              })}
-            </Button>
           </div>
         ) : null}
       </div>
@@ -283,10 +260,8 @@ function ImageGenerationRows({
 
 function PaidToolsLoadStatus({
   failed = false,
-  retry,
 }: {
   readonly failed?: boolean;
-  readonly retry?: () => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -303,13 +278,6 @@ function PaidToolsLoadStatus({
             : $.settings.paidTools.loading;
         })}
       </p>
-      {failed && retry && (
-        <Button variant="outline" size="sm" onClick={retry}>
-          {t(($) => {
-            return $.settings.paidTools.retry;
-          })}
-        </Button>
-      )}
     </div>
   );
 }
@@ -320,16 +288,12 @@ function PaidToolsContent({
   readonly settings: PaidToolsSettings;
 }) {
   const { t } = useTranslation();
-  const loadable = useLoadable(settings.disabledTools$);
+  const loadable = useLastLoadable(settings.disabledTools$);
   const workspace = useLoadable(currentOrgInfo$);
-  const retry = useSet(settings.retry$);
   return (
     <div className="flex flex-col gap-4">
       {loadable.state !== "hasData" ? (
-        <PaidToolsLoadStatus
-          failed={loadable.state === "hasError"}
-          retry={retry}
-        />
+        <PaidToolsLoadStatus failed={loadable.state === "hasError"} />
       ) : (
         <>
           <div className="flex flex-col gap-3">

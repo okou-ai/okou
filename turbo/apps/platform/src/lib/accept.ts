@@ -76,10 +76,9 @@ interface AcceptOptions {
 
 /**
  * Awaits a typed API response and returns it if the status code is in `codes`.
- * Otherwise throws an `ApiError` and, by default, shows a toast. A 401 is
- * never toasted because the authenticated clients own sign-in recovery. A
- * force-upgrade response is never toasted because the blocking dialog owns
- * recovery.
+ * Otherwise throws an `ApiError` and, by default, shows a toast. A 401
+ * propagates without a toast or request replay. A force-upgrade response is
+ * presented by the blocking update dialog instead of a toast.
  *
  * Browser network failures propagate without showing their raw error message.
  *

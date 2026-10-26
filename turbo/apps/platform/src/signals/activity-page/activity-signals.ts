@@ -106,49 +106,21 @@ async function fetchActivityDetail(
   return result.body;
 }
 
-const activityData$ = computed((get) => {
+export const activityEvents$ = computed(async (get) => {
   get(pageVersion$);
   const runId = get(currentRunId$);
-  const reload$ = state(0);
-  return {
-    reload$,
-    detail$: computed(async (get) => {
-      get(reload$);
-      return runId
-        ? await fetchActivityDetail(get(apiClient$)(logsByIdContract), runId)
-        : null;
-    }),
-    events$: computed(async (get) => {
-      get(reload$);
-      return runId
-        ? await fetchAgentEventBatch(
-            get(apiClient$)(runAgentEventsContract),
-            runId,
-          )
-        : null;
-    }),
-  };
-});
-
-export const activityEvents$ = computed(async (get) => {
-  return await get(get(activityData$).events$);
+  return runId
+    ? await fetchAgentEventBatch(get(apiClient$)(runAgentEventsContract), runId)
+    : null;
 });
 
 export const activityDetail$ = computed(async (get) => {
-  return await get(get(activityData$).detail$);
+  get(pageVersion$);
+  const runId = get(currentRunId$);
+  return runId
+    ? await fetchActivityDetail(get(apiClient$)(logsByIdContract), runId)
+    : null;
 });
-
-export const refreshActivity$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    const data = get(activityData$);
-    set(data.reload$, (value) => {
-      return value + 1;
-    });
-    await Promise.all([get(data.detail$), get(data.events$)]);
-    signal.throwIfAborted();
-  },
-);
 
 const internalStepSearch$ = state("");
 

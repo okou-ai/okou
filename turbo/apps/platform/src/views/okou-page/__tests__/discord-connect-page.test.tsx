@@ -97,7 +97,7 @@ test.each([true, false])(
       screen.findByText(
         approved
           ? "Connected to Discord"
-          : "Discord authorization could not be completed. Try again.",
+          : "Discord authorization could not be completed.",
       ),
     ).resolves.toBeInTheDocument();
     expect(popup.closed).toBeFalsy();
@@ -123,9 +123,6 @@ test.each([true, false])(
     expect(
       queryAction("link", "Open Discord")?.getAttribute("href") ?? null,
     ).toBe(approved ? `discord://-/channels/${guildId}` : null);
-    expect(
-      queryAction("button", "Retry")?.hasAttribute("disabled") ?? null,
-    ).toBe(approved ? null : false);
   },
 );
 
@@ -417,7 +414,7 @@ test.each([
       screen.findByRole("heading", { name: title }),
     ).resolves.toBeInTheDocument();
     expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
-    expect(queryAction("button", "Retry")).toBeNull();
+    expect(queryAction("button", "Connect")).toBeNull();
     expect(new URLSearchParams(window.location.search).get("status")).toBe(
       result,
     );
@@ -435,7 +432,7 @@ test.each([
       );
     });
     expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
-    expect(queryAction("button", "Retry")).toBeNull();
+    expect(queryAction("button", "Connect")).toBeNull();
     expect(new URLSearchParams(window.location.search).get("status")).toBe(
       result,
     );
@@ -469,7 +466,7 @@ test.each([false, true])(
   },
 );
 
-test("A blocked Discord popup shows a retry action on the connection page", async () => {
+test("A blocked Discord popup keeps authorization incomplete", async () => {
   context.mocks.browser.open(null);
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
     return respond(200, status());
@@ -480,21 +477,15 @@ test("A blocked Discord popup shows a retry action on the connection page", asyn
   });
   click(getAction("button", "Connect"));
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-    "Allow popups to authorize Discord, then try again.",
+    "The Discord authorization popup was blocked.",
   );
-  expect(getAction("button", "Retry")).toBeEnabled();
   expect(queryAction("link", "Open Discord")).not.toBeInTheDocument();
 });
 
-test("Closing Discord consent shows cancellation without failure capture and can retry to a verified connection", async () => {
+test("Closing Discord consent shows cancellation without failure capture", async () => {
   const sentry = context.mocks.sentry();
   initSentry();
-  let current = status();
-  let retrying = false;
-  let approved = false;
-  const retryState = "r".repeat(43);
-  const retryToken = "t".repeat(43);
-  let completionBody: unknown;
+  const current = status();
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
     return respond(200, current);
   });
@@ -505,22 +496,13 @@ test("Closing Discord consent shows cancellation without failure capture and can
   });
   context.mocks.browser.open(popup);
   const authorizationUrl = `https://discord.com/oauth2/authorize?state=${"s".repeat(43)}`;
-  const retryUrl = `https://discord.com/oauth2/authorize?state=${retryState}`;
   context.mocks.api(discordOauthContract.start, ({ respond }) => {
     return respond(200, {
-      authorizationUrl: retrying ? retryUrl : authorizationUrl,
-      completionToken: retrying ? retryToken : "c".repeat(43),
+      authorizationUrl,
+      completionToken: "c".repeat(43),
     });
   });
-  context.mocks.api(discordOauthContract.complete, ({ body, respond }) => {
-    completionBody = body;
-    if (body.state === retryState && approved) {
-      current = status({
-        isConnected: true,
-        discordUserId: "234567890123456789",
-      });
-      return respond(200, { status: "connected" });
-    }
+  context.mocks.api(discordOauthContract.complete, ({ respond }) => {
     return respond(409, {
       error: {
         code: "DISCORD_OAUTH_APPROVAL_REQUIRED",
@@ -538,9 +520,8 @@ test("Closing Discord consent shows cancellation without failure capture and can
   });
   popup.close();
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-    "Discord authorization was cancelled. You can start again.",
+    "Discord authorization was cancelled.",
   );
-  expect(getAction("button", "Retry")).toBeEnabled();
   expect(queryAction("link", "Open Discord")).not.toBeInTheDocument();
   expect(new URLSearchParams(window.location.search).get("status")).not.toBe(
     "connected",
@@ -548,39 +529,6 @@ test("Closing Discord consent shows cancellation without failure capture and can
   expect(
     screen.queryByText("Discord consent has not been approved"),
   ).toBeNull();
-  expect(sentry.reports).toStrictEqual([]);
-
-  const retryPopup = context.mocks.browser.authWindow();
-  Object.defineProperty(retryPopup, "location", {
-    configurable: true,
-    value: { href: "" },
-  });
-  context.mocks.browser.open(retryPopup);
-  retrying = true;
-  click(getAction("button", "Retry"));
-  await waitFor(() => {
-    expect(retryPopup.location.href).toBe(retryUrl);
-  });
-  expect(getAction("button", "Connecting...")).toBeDisabled();
-  expect(queryAction("link", "Open Discord")).toBeNull();
-  approved = true;
-  await expect(
-    screen.findByRole("heading", { name: "Connected to Discord" }),
-  ).resolves.toBeInTheDocument();
-  expect(getAction("link", "Open Discord")).toHaveAttribute(
-    "href",
-    `discord://-/channels/${guildId}`,
-  );
-  await waitFor(() => {
-    expect(new URLSearchParams(window.location.search).get("status")).toBe(
-      "connected",
-    );
-  });
-  expect(retryPopup.closed).toBeFalsy();
-  expect(completionBody).toStrictEqual({
-    state: retryState,
-    completionToken: retryToken,
-  });
   expect(sentry.reports).toStrictEqual([]);
 });
 
@@ -627,12 +575,11 @@ test.each([
     popup.close();
     respondToCompletion.resolve();
     await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-      "Discord authorization could not be completed. Try again.",
+      "Discord authorization could not be completed.",
     );
     expect(
       screen.getByText("Discord completion failed verification"),
     ).toBeInTheDocument();
-    expect(getAction("button", "Retry")).toBeEnabled();
     expect(queryAction("link", "Open Discord")).toBeNull();
     expect(new URLSearchParams(window.location.search).get("status")).not.toBe(
       "connected",

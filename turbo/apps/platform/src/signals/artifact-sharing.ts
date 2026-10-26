@@ -21,7 +21,7 @@ import {
 import { throttleCommand } from "./command-scheduling.ts";
 import { pageSignal$ } from "./page-signal.ts";
 import { createShareLinkCopy } from "./share-link-copy.ts";
-import { onRef, resetSignal, settle, withCleanup } from "./utils.ts";
+import { onRef, resetSignal } from "./utils.ts";
 
 // Hosted sites are public publications addressed by their own URL, so the
 // viewer offers their link instead of an artifact permission control.
@@ -119,25 +119,18 @@ function createAudienceSignals(
       ) {
         return false;
       }
-      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-      await withCleanup(
-        accept(
-          get(apiClient$)(artifactSharesContract).update({
-            body: { target: details.target, audience },
-            fetchOptions: { signal },
-          }),
-          [200],
-          signal,
-        ),
-        () => {
-          if (!signal.aborted) {
-            set(reload$, (value) => {
-              return value + 1;
-            });
-          }
-        },
+      await accept(
+        get(apiClient$)(artifactSharesContract).update({
+          body: { target: details.target, audience },
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
       );
       signal.throwIfAborted();
+      set(reload$, (value) => {
+        return value + 1;
+      });
       await get(details$);
       signal.throwIfAborted();
       toast.success(
@@ -171,24 +164,14 @@ function createArtifactShareSession(source: ShareSource) {
   const show$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
     const signal = set(resetOpenSignal$, parentSignal);
     set(open$, true);
-    // Errors belong to the popover's retry state, not a toast from opening it.
-    const result = await settle(get(details$), signal);
-    if (result.ok && !result.value?.status) {
+    const details = await get(details$);
+    signal.throwIfAborted();
+    if (!details?.status) {
       set(open$, false);
-      if (result.value) {
-        await copyAttachmentLinkToClipboard(
-          result.value.copyUrl,
-          undefined,
-          signal,
-        );
+      if (details) {
+        await copyAttachmentLinkToClipboard(details.copyUrl, undefined, signal);
       }
     }
-  });
-  const refresh$ = command(({ set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    set(reload$, (value) => {
-      return value + 1;
-    });
   });
   const copy$ = command(async ({ get, set }, signal: AbortSignal) => {
     const details = await get(details$);
@@ -210,7 +193,6 @@ function createArtifactShareSession(source: ShareSource) {
     open$,
     close$,
     show$,
-    refresh$,
     copy$,
     copiedUrl$: linkCopy.copiedUrl$,
     change$,

@@ -6,9 +6,8 @@ import {
   useLastLoadable,
   useLastResolved,
 } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
-import { Search, Loader2, Download, ChartLine, RefreshCw } from "lucide-react";
+import { Search, Loader2, Download, ChartLine } from "lucide-react";
 import {
   surfaceVariants,
   Button,
@@ -53,7 +52,6 @@ import { StatusBadge } from "./components/log-views/status-badge.tsx";
 import {
   activityDetail$,
   activityEvents$,
-  refreshActivity$,
   activityVisibleGroups$,
   activityStepSearch$,
   setActivityStepSearch$,
@@ -515,8 +513,6 @@ function ActivityStepsContent({
   const { t } = useTranslation();
   const stepSearch = useGet(activityStepSearch$);
   const setStepSearch = useSet(setActivityStepSearch$);
-  const pageSignal = useGet(pageSignal$);
-  const [refreshState, refresh] = useLoadableSet(refreshActivity$);
   const visibleGroupsLoadable = useLastLoadable(activityVisibleGroups$);
   const visibleGroupsData =
     visibleGroupsLoadable.state === "hasData" &&
@@ -595,31 +591,6 @@ function ActivityStepsContent({
         isLoading={visibleGroupsLoading}
         startedAt={detail.startedAt}
       />
-      {isActiveRunStatus(detail.status) && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <p className="text-sm text-muted-foreground">
-            {t(($) => {
-              return $.activity.detail.manualReloadNotice;
-            })}
-          </p>
-          <Button
-            type="button"
-            variant="neutral"
-            size="sm"
-            className="shrink-0"
-            pending={refreshState.state === "loading"}
-            disabled={visibleGroupsLoading}
-            onClick={() => {
-              detach(refresh(pageSignal), Reason.DomCallback);
-            }}
-          >
-            <RefreshCw aria-hidden />
-            {t(($) => {
-              return $.activity.detail.refresh;
-            })}
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
@@ -1160,21 +1131,11 @@ export function ActivityDetailPage() {
 
 function ActivityLoadError() {
   const { t } = useTranslation("common");
-  const [refresh, retry] = useLoadableSet(refreshActivity$);
-  const signal = useGet(pageSignal$);
   return (
     <LoadErrorRow
       message={t(($) => {
         return $.global.errors.requestFailed;
       })}
-      retryLabel={t(($) => {
-        return $.global.actions.tryAgain;
-      })}
-      onRetry={() => {
-        if (refresh.state !== "loading") {
-          detach(retry(signal), Reason.DomCallback);
-        }
-      }}
     />
   );
 }
@@ -1194,7 +1155,6 @@ function ActivitySkeleton() {
           <div className="h-4 w-20 rounded bg-muted/50 animate-pulse" />
         </nav>
         <div className="mx-auto max-w-[900px] px-4 sm:px-6 pt-4 pb-safe-or-8 w-full">
-          {/* Header card skeleton */}
           <div className={surfaceVariants({ className: "shrink-0 px-4 py-3" })}>
             <div className="flex flex-wrap items-center gap-y-2 gap-x-3">
               <div className="h-5 w-28 rounded bg-muted/50 animate-pulse" />
@@ -1208,7 +1168,6 @@ function ActivitySkeleton() {
             </div>
           </div>
 
-          {/* Steps skeleton */}
           <div className="flex flex-col gap-4 flex-1 min-h-0 mt-6">
             <div className="flex items-center gap-3">
               <div className="h-5 w-12 rounded bg-muted/50 animate-pulse" />

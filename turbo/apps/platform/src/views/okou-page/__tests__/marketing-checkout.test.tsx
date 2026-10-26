@@ -3,8 +3,7 @@ import {
   billingCheckoutContract,
   billingStatusContract,
 } from "@okouai/api-contracts/contracts/billing";
-import { marketingEventRequestSchema } from "@okouai/api-contracts/contracts/marketing-events";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -151,18 +150,13 @@ test("A Marketing failure does not prevent the Stripe redirect or start retries"
   expect(requests).toBe(1);
 });
 
-test("A Plan preview does not record Checkout Start; a conflict-refresh redirect does", async () => {
+test("An expired plan preview keeps the quoted amount visible with the confirmation error", async () => {
   prepareCheckout();
-  let checkoutRequests = 0;
   context.mocks.api(billingCheckoutContract.create, ({ body, respond }) => {
-    checkoutRequests++;
     if (body.previewToken !== undefined) {
       return respond(409, {
         error: { code: "CONFLICT", message: "Preview expired" },
       });
-    }
-    if (checkoutRequests > 1) {
-      return respond(200, { url: STRIPE_URL });
     }
     return respond(200, {
       status: "preview",
@@ -175,27 +169,11 @@ test("A Plan preview does not record Checkout Start; a conflict-refresh redirect
       previewToken: "preview-plan",
     });
   });
-  const received = context.mocks.deferred<Request>();
-  const requests: Request[] = [];
-  context.mocks.http.post(ENDPOINT, ({ request }) => {
-    requests.push(request);
-    received.resolve(request);
-    return new Response(null, { status: 204 });
-  });
   await openCheckout();
   click(await findButton("Upgrade to Pro"));
   const dialog = await screen.findByRole("dialog", { name: "Upgrade to Pro" });
-  expect(requests).toHaveLength(0);
-  expect(window.location.href).not.toBe(STRIPE_URL);
   click(confirmButton(dialog));
-  const request = await received.promise;
-  await waitFor(() => {
-    expect(window.location.href).toBe(STRIPE_URL);
-  });
-  expect(marketingEventRequestSchema.parse(await request.json())).toMatchObject(
-    {
-      tag: "checkout-start",
-    },
-  );
-  expect(requests).toHaveLength(1);
+  await within(dialog).findByText(/Could not prepare the subscription change/u);
+  expect(within(dialog).getAllByText("$20.00")).toHaveLength(2);
+  expect(confirmButton(dialog)).toBeEnabled();
 });

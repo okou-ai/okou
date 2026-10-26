@@ -22,9 +22,7 @@ import {
 import { Button, cn, LoadErrorRow } from "@okouai/ui";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { connectedConnectorTargetKeys$ } from "../../signals/okou-page/connector-accounts.ts";
-import { reloadUserConnectedConnectors$ } from "../../signals/okou-page/connector-overview.ts";
 import { cancelBuiltinConnectorConnection$ } from "../../signals/okou-page/settings/connectors.ts";
-import { retryCustomConnectors$ } from "../../signals/okou-page/settings/custom-connectors.ts";
 import { vncSummary$ } from "../../signals/vnc.ts";
 import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
@@ -444,9 +442,7 @@ function DirectoryCategoryChips({
                   }}
                 >
                   {section.menuLabel}
-                  {/* The chip stands for the whole category, not the slice
-                    discovery returned, so it counts only what the server
-                    reported and shows nothing when it reported nothing. */}
+
                   {categoryCounts?.[section.category] !== undefined && (
                     <span className="text-[11px] text-muted-foreground/70 tabular-nums">
                       {categoryCounts[section.category]}
@@ -682,21 +678,13 @@ function DirectoryCustomPanel({
 function DirectorySourceStatus({
   state,
   message,
-  retry,
 }: {
   readonly state: LoadableState;
   readonly message: string;
-  readonly retry: () => void;
 }) {
   const { t } = useTranslation();
   return state === "hasError" ? (
-    <LoadErrorRow
-      message={message}
-      retryLabel={t(($) => {
-        return $.connectors.catalog.directory.retry;
-      })}
-      onRetry={retry}
-    />
+    <LoadErrorRow message={message} />
   ) : (
     <p role="status" className="py-4 text-sm text-muted-foreground">
       {t(($) => {
@@ -1148,8 +1136,6 @@ export function ConnectorDirectoryDialog({
 }: ConnectorDirectoryDialogProps) {
   const { t } = useTranslation();
   const accountsLoadable = useLoadable(connectedConnectorTargetKeys$);
-  const retryAccounts = useSet(reloadUserConnectedConnectors$);
-  const retryCustom = useSet(retryCustomConnectors$);
   const onOpenChange = useDirectoryDialogOpenChange(connecting, onClose);
   const connectedTargets =
     accountsLoadable.state === "hasData" ? accountsLoadable.data : undefined;
@@ -1160,7 +1146,6 @@ export function ConnectorDirectoryDialog({
         message={t(($) => {
           return $.connectors.accounts.accountsUnavailable;
         })}
-        retry={retryAccounts}
       />
     );
   const customStatus =
@@ -1170,7 +1155,6 @@ export function ConnectorDirectoryDialog({
         message={t(($) => {
           return $.connectors.catalog.directory.customLoadFailed;
         })}
-        retry={retryCustom}
       />
     );
 

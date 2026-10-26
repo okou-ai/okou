@@ -1,9 +1,5 @@
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import {
-  chatEventsContract,
-  chatThreadMetadataContract,
-  type ChatEventSendBody,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   userPermissionGrantsContract,
   type ApplyUserPermissionGrantsBatchRequest,
@@ -12,19 +8,16 @@ import {
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
-import { cleanup, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 
 import {
   click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import {
-  createTestRuntime,
-  testContext,
-} from "../../../signals/__tests__/test-helpers.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { permissionMetadata } from "./chat-capability-connector-test-helpers.ts";
 import {
   CAPABILITY_AGENT_ID,
@@ -36,8 +29,6 @@ import {
 } from "./chat-capability-test-helpers.ts";
 
 const context = testContext();
-const firstRuntime = createTestRuntime(context);
-const reloadedRuntime = createTestRuntime(context);
 const { installCapabilityChat } = createChatCapabilityHelpers(context);
 const featureSwitches = Object.freeze({
   [FeatureSwitchKey.BatchConnectorPermissions]: true,
@@ -175,6 +166,7 @@ function installGrants(initial: readonly UserPermissionGrantResponse[] = []) {
         });
       });
       grants = [...grants, ...saved];
+      context.mocks.ably.trigger("connectorPermissionUpdated");
       return respond(200, saved);
     },
   );
@@ -324,6 +316,7 @@ test("Review every scope in a large batch as metadata and grants arrive separate
     ({ body, respond }) => {
       applied.push(body);
       grants = largeBatch.map(activeGrant);
+      context.mocks.ably.trigger("connectorPermissionUpdated");
       return respond(200, grants);
     },
   );
@@ -404,218 +397,6 @@ test("Review every scope in a large batch as metadata and grants arrive separate
   for (const group of applied[0]!.groups) {
     expect(group.grants).toHaveLength(10);
   }
-});
-
-test("Reopen approved permissions and retry only the failed callback", async () => {
-  const user = userEvent.setup();
-  installMetadata();
-  const saveResponse = context.mocks.deferred<void>();
-  const callbackResponse = context.mocks.deferred<void>();
-  const grants: UserPermissionGrantResponse[] = [];
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, grants);
-  });
-  const applied: ApplyUserPermissionGrantsBatchRequest[] = [];
-  context.mocks.api(
-    userPermissionGrantsContract.applyBatch,
-    async ({ body, respond }) => {
-      applied.push(body);
-      await saveResponse.promise;
-      grants.push(...items.map(activeGrant));
-      return respond(200, grants);
-    },
-  );
-  installConversation(
-    batchUrl({ callbackPrompt: "Continue preparing the report" }),
-  );
-  const sends: ChatEventSendBody[] = [];
-  let available = false;
-  context.mocks.api(chatEventsContract.send, async ({ body, respond }) => {
-    sends.push(body);
-    await callbackResponse.promise;
-    return available
-      ? respond(201, { threadId: RUN_THREAD_ID })
-      : respond(500, {
-          error: { code: "INTERNAL_SERVER_ERROR", message: "Chat unavailable" },
-        });
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches,
-  });
-  await readyChat();
-  const card = await screen.findByTestId("permission-batch-action-card");
-  const dialog = await openPermissions(card);
-  await waitFor(() => {
-    expect(getButton("Allow all 3 permissions", dialog)).toBeEnabled();
-  });
-  click(getButton("Allow all 3 permissions", dialog));
-  await waitFor(() => {
-    expect(getButton("Saving...", dialog)).toBeDisabled();
-  });
-  expect(within(dialog).getByText(items[2]!.permission)).toBeInTheDocument();
-
-  saveResponse.resolve(undefined);
-  await expect(
-    within(card).findByText("Permissions allowed"),
-  ).resolves.toBeInTheDocument();
-  expect(getButton("Continuing…", dialog)).toBeDisabled();
-  expect(within(dialog).getByText(items[2]!.permission)).toBeInTheDocument();
-
-  callbackResponse.resolve(undefined);
-  await expect(
-    within(dialog).findByText(
-      "Permissions allowed, but could not continue. Try continuing again.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(within(dialog).getByText("Permissions allowed")).toBeInTheDocument();
-  expect(
-    within(card).getByText(
-      "Permissions allowed, but could not continue. Try continuing again.",
-    ),
-  ).toBeInTheDocument();
-  expect(applied).toHaveLength(1);
-  expect(sends).toHaveLength(1);
-
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(getButton("View permission details", card)).toHaveFocus();
-  });
-  const reopened = await openPermissions(card, "View permission details");
-  expect(
-    within(reopened).getByText(
-      "Permissions allowed, but could not continue. Try continuing again.",
-    ),
-  ).toBeInTheDocument();
-  expect(getButton("Continue", reopened)).toBeEnabled();
-
-  available = true;
-  click(getButton("Continue", reopened));
-
-  await expect(
-    within(reopened).findByText("The conversation has continued."),
-  ).resolves.toBeInTheDocument();
-  expect(
-    within(card).getByText("The conversation has continued."),
-  ).toBeInTheDocument();
-  for (const container of [card, reopened]) {
-    expect(
-      within(container).queryByText(
-        "Permissions allowed, but could not continue. Try continuing again.",
-      ),
-    ).not.toBeInTheDocument();
-  }
-  expect(applied).toHaveLength(1);
-  expect(sends).toHaveLength(2);
-  expect(sends[1]).toMatchObject({
-    prompt: "Continue preparing the report",
-    threadId: RUN_THREAD_ID,
-    clientEventId: sends[0]!.clientEventId,
-    chatThreadSortEventId: sends[0]!.chatThreadSortEventId,
-  });
-});
-
-test("Reauthorize revoked scopes after a callback failure instead of retrying with stale approval", async () => {
-  installMetadata();
-  let grants: UserPermissionGrantResponse[] = [];
-  const applied: ApplyUserPermissionGrantsBatchRequest[] = [];
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, grants);
-  });
-  context.mocks.api(
-    userPermissionGrantsContract.applyBatch,
-    ({ body, respond }) => {
-      applied.push(body);
-      const saved = body.groups.flatMap((group) => {
-        return group.grants.map((grant) => {
-          return activeGrant({
-            connectorSlug: group.connectorSlug,
-            permission: grant.permission,
-          });
-        });
-      });
-      grants = [...grants, ...saved];
-      return respond(200, saved);
-    },
-  );
-  installConversation(
-    batchUrl({ callbackPrompt: "Continue only with current access" }),
-  );
-  let available = false;
-  const prompts: (string | undefined)[] = [];
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    prompts.push(body.prompt);
-    return available
-      ? respond(201, { threadId: RUN_THREAD_ID })
-      : respond(500, {
-          error: { code: "INTERNAL_SERVER_ERROR", message: "Chat unavailable" },
-        });
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches,
-  });
-  await readyChat();
-  const card = await screen.findByTestId("permission-batch-action-card");
-  const dialog = await openPermissions(card);
-  await waitFor(() => {
-    expect(getButton("Allow all 3 permissions", dialog)).toBeEnabled();
-  });
-  click(getButton("Allow all 3 permissions", dialog));
-  await expect(
-    within(dialog).findByText(
-      "Permissions allowed, but could not continue. Try continuing again.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(getButton("Continue", dialog)).toBeEnabled();
-
-  grants = grants.filter((grant) => {
-    return grant.connectorSlug !== "reports-service";
-  });
-  context.mocks.ably.trigger("connectorPermissionUpdated");
-  await waitFor(() => {
-    expect(getButton("Allow all 3 permissions", dialog)).toBeEnabled();
-  });
-  expect(
-    queryAllByRoleFast("button", dialog).some((button) => {
-      return button.textContent?.trim() === "Continue";
-    }),
-  ).toBeFalsy();
-  expect(prompts).toStrictEqual(["Continue only with current access"]);
-  expect(applied).toHaveLength(1);
-
-  available = true;
-  click(getButton("Allow all 3 permissions", dialog));
-
-  await expect(
-    within(dialog).findByText("The conversation has continued."),
-  ).resolves.toBeInTheDocument();
-  expect(applied).toHaveLength(2);
-  expect(applied[1]).toStrictEqual({
-    agentId: CAPABILITY_AGENT_ID,
-    groups: [
-      {
-        connectorSlug: "reports-service",
-        grants: [
-          {
-            permission: items[2]!.permission,
-            action: "allow",
-            expiresIn: "1h",
-          },
-        ],
-      },
-    ],
-  });
-  expect(prompts).toStrictEqual([
-    "Continue only with current access",
-    "Continue only with current access",
-  ]);
 });
 
 test("Approve only missing scopes without reapplying or extending active grants", async () => {
@@ -715,73 +496,6 @@ test("Keep the whole batch unavailable when one connector's delayed authoritativ
   expect(applied).toHaveLength(0);
 });
 
-test("Reload from persisted grants with independent callback continuation and no renewed approval", async () => {
-  installMetadata();
-  const applied = installGrants();
-  installConversation(batchUrl({ callbackPrompt: "Continue after reload" }));
-  let available = false;
-  const prompts: (string | undefined)[] = [];
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    prompts.push(body.prompt);
-    return available
-      ? respond(201, { threadId: RUN_THREAD_ID })
-      : respond(500, {
-          error: { code: "INTERNAL_SERVER_ERROR", message: "Chat unavailable" },
-        });
-  });
-
-  await setupPage({
-    context: firstRuntime,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches,
-  });
-  await readyChat();
-  const firstCard = await screen.findByTestId("permission-batch-action-card");
-  const firstDialog = await openPermissions(firstCard);
-  await waitFor(() => {
-    expect(getButton("Allow all 3 permissions", firstDialog)).toBeEnabled();
-  });
-  click(getButton("Allow all 3 permissions", firstDialog));
-  await expect(
-    within(firstDialog).findByText(
-      "Permissions allowed, but could not continue. Try continuing again.",
-    ),
-  ).resolves.toBeInTheDocument();
-
-  firstRuntime.dispose();
-  cleanup();
-  vi.mocked(window.history.pushState).mockRestore();
-  vi.mocked(window.history.replaceState).mockRestore();
-  vi.mocked(window.history.back).mockRestore();
-  available = true;
-  await setupPage({
-    context: reloadedRuntime,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches,
-  });
-  await readyChat();
-  const card = await screen.findByTestId("permission-batch-action-card");
-  await expect(
-    within(card).findByText("Permissions allowed"),
-  ).resolves.toBeInTheDocument();
-  const dialog = await openPermissions(card, "View permission details");
-  expect(getButton("Continue", dialog)).toBeEnabled();
-  expect(prompts).toStrictEqual(["Continue after reload"]);
-
-  click(getButton("Continue", dialog));
-
-  await expect(
-    within(dialog).findByText("The conversation has continued."),
-  ).resolves.toBeInTheDocument();
-  expect(prompts).toStrictEqual([
-    "Continue after reload",
-    "Continue after reload",
-  ]);
-  expect(applied).toHaveLength(1);
-});
-
 test("Reject the entire batch with an invalid original row", async () => {
   const url = batchUrl({
     rows: [items[0], { ...items[0], permission: 42 }],
@@ -834,6 +548,7 @@ test("A batch save does not empty sibling permission cards during a grants reloa
         });
       });
       refreshing = true;
+      context.mocks.ably.trigger("connectorPermissionUpdated");
       return respond(200, grants);
     },
   );
@@ -863,9 +578,6 @@ test("A batch save does not empty sibling permission cards during a grants reloa
   });
   click(getButton("Allow all 3 permissions", dialog));
   await reloadStarted.promise;
-  await expect(
-    within(batch).findByText("Permissions allowed"),
-  ).resolves.toBeInTheDocument();
   click(getButton("Close", dialog));
   await waitFor(() => {
     expect(getButton("Confirm", sibling)).toBeEnabled();
@@ -874,6 +586,9 @@ test("A batch save does not empty sibling permission cards during a grants reloa
     within(sibling).getByText(`Allow ${items[2]!.permission}`, { exact: true }),
   ).toBeInTheDocument();
   reloadResponse.resolve(undefined);
+  await expect(
+    within(batch).findByText("Permissions allowed"),
+  ).resolves.toBeInTheDocument();
   await expect(
     within(sibling).findByText("Already allowed"),
   ).resolves.toBeInTheDocument();

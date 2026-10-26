@@ -190,7 +190,7 @@ test("Returning to an owner never revives an abandoned uncertain credential draf
   const secret = within(dialog).getByLabelText("VNC password");
   click(getAction("button", "Save", dialog));
   await screen.findByText("Save failed.");
-  expect(getAction("button", "Retry", dialog)).toBeEnabled();
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
 
   const clerk = context.mocks.clerk();
   act(() => {

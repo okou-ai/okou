@@ -56,7 +56,6 @@ export interface BankingCardUiState {
 
 export interface BankingSignals extends BankingActionDescriptor {
   readonly status$: Computed<Promise<BankingAccessRequestStatusResponse>>;
-  readonly refresh$: Command<void, []>;
   readonly subscribe$: Command<void, [AbortSignal]>;
   readonly uiState$: Computed<BankingCardUiState>;
   readonly runAction$: Command<Promise<void>, [BankingCardAction, AbortSignal]>;
@@ -135,7 +134,7 @@ function createBankingStatusSignals(descriptor: BankingActionDescriptor) {
 
 function createBankingMutationSignals(
   descriptor: BankingActionDescriptor,
-  refresh$: BankingSignals["refresh$"],
+  refresh$: ReturnType<typeof createBankingStatusSignals>["refresh$"],
 ) {
   const startSession$ = command(
     async (
@@ -239,7 +238,7 @@ function createBankingContinueSignal(descriptor: BankingActionDescriptor) {
 }
 
 function createBankingSubscription(
-  refresh$: BankingSignals["refresh$"],
+  refresh$: ReturnType<typeof createBankingStatusSignals>["refresh$"],
 ): BankingSignals["subscribe$"] {
   const invalidate$ = command(({ set }) => {
     set(refresh$);
@@ -334,7 +333,7 @@ function createBankingSignals(
   );
   return {
     ...descriptor,
-    ...statusSignals,
+    status$: statusSignals.status$,
     ...uiSignals,
     subscribe$: createBankingSubscription(statusSignals.refresh$),
     runAction$: performAction$,

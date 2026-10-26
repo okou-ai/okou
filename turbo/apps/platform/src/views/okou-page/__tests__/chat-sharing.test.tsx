@@ -929,7 +929,7 @@ test("Revert the button and report a dead copied link when creation fails", asyn
   expect(buttonsNamed("Share link copied")).toHaveLength(1);
   response.resolve();
   await expect(
-    screen.findByText("The shared link could not be created. Try again."),
+    screen.findByText("The shared link could not be created."),
   ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(buttonsNamed("Share message")).toHaveLength(1);

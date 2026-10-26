@@ -7,7 +7,6 @@
     "delete": "Agent löschen",
     "deleting": "Löschen…",
     "discard": "Verwerfen",
-    "retry": "Wiederholen",
     "save": "Speichern",
     "saving": "Speichern…"
   },
@@ -61,16 +60,13 @@
     "success": "Agent gelöscht",
     "title": "{{agentName}} löschen?",
     "workflows": {
-      "copiedTitle": "Bereits kopiert",
-      "copiedTo": "{{workflowTitle}} nach {{agentName}} kopiert",
       "copyTo": "Nach {{agentName}} kopieren",
       "deleteWithAgent": "Mit Agent löschen",
       "description": "Kopieren Sie einen Workflow auf einen anderen Agenten, um ihn zu behalten. Alles, was noch übrig ist, wird gelöscht.",
       "handle": "Workflow {{workflowTitle}} verwalten",
-      "loadFailed": "Workflows konnten nicht geladen werden. Versuchen Sie es erneut, bevor Sie diesen Agenten löschen.",
+      "loadFailed": "Workflows konnten nicht geladen werden.",
       "loading": "Workflows werden geladen…",
-      "title": "Workflows behalten?",
-      "untitled": "Workflow"
+      "title": "Workflows behalten?"
     }
   },
   "detail": {

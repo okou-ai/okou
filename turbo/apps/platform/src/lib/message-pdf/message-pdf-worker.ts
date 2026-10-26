@@ -20,7 +20,7 @@ scope.addEventListener("message", async (event) => {
     scope.postMessage({ ok: true, blob: result.value });
   } else {
     // Vendor exceptions can contain authored text or private asset URLs.
-    // Send only the outcome; the owning UI already localizes its retry message.
+    // Send only the outcome; the owning UI localizes the failure message.
     scope.postMessage({ ok: false });
   }
 });

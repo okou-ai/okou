@@ -15,8 +15,6 @@ import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import {
   agentSuggestionIndex$,
-  agentSuggestionRecoveryId$,
-  agentSuggestionSelectedOptionId$,
   dismissAgentSuggestion$,
   showAgentSuggestion$,
   startAgentSuggestion$,
@@ -90,23 +88,16 @@ function AgentSuggestionHeader({
 
 function AgentSuggestionOption({
   option,
-  restoring,
   starting,
   disabled,
   onClick,
 }: {
   readonly option: SuggestionOption;
-  readonly restoring: boolean;
   readonly starting: boolean;
   readonly disabled: boolean;
   readonly onClick: () => void;
 }) {
-  const { t } = useTranslation();
-  const label = restoring
-    ? t(($) => {
-        return $.chat.agentSuggestions.restoreDraft;
-      })
-    : option.label;
+  const label = option.label;
   return (
     <Button
       type="button"
@@ -145,8 +136,6 @@ export function AgentSuggestions() {
   const [dismissal, dismiss] = useLoadableSet(dismissAgentSuggestion$);
   const starting = operation.state === "loading";
   const dismissing = dismissal.state === "loading";
-  const recoveryId = useGet(agentSuggestionRecoveryId$);
-  const selectedOptionId = useGet(agentSuggestionSelectedOptionId$);
   const signal = useGet(pageSignal$);
   const requested = useGet(agentSuggestionIndex$);
   if (result.state !== "hasData" || result.data.length === 0) {
@@ -155,7 +144,6 @@ export function AgentSuggestions() {
   const items = result.data;
   const index = Math.min(requested, items.length - 1);
   const item = items[index];
-  const recoverable = item.id === recoveryId;
   const behind = Math.min(items.length - 1, 2);
   return (
     <section
@@ -186,15 +174,18 @@ export function AgentSuggestions() {
               </p>
             </div>
             <div className="flex flex-col gap-2 pt-1">
+              <p className="text-xs text-muted-foreground">
+                {t(($) => {
+                  return $.chat.agentSuggestions.useSuggestion;
+                })}
+              </p>
               {item.options.map((option) => {
-                const selected = option.id === selectedOptionId;
                 return (
                   <AgentSuggestionOption
                     key={option.id}
                     option={option}
-                    restoring={recoverable && selected}
-                    starting={starting && selected}
-                    disabled={recoverable && !selected}
+                    starting={starting}
+                    disabled={starting || dismissing}
                     onClick={() => {
                       detach(
                         start(item, option.id, signal),
@@ -204,13 +195,6 @@ export function AgentSuggestions() {
                   />
                 );
               })}
-              {recoverable && !starting && (
-                <p className="text-xs leading-5 text-muted-foreground">
-                  {t(($) => {
-                    return $.chat.agentSuggestions.recoveryHint;
-                  })}
-                </p>
-              )}
               <div className="border-t border-border pt-1">
                 <Button
                   type="button"

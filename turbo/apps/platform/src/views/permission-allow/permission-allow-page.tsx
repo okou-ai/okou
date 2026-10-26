@@ -340,19 +340,9 @@ interface ConfirmGrantCardProps {
   action: "allow" | "deny";
   initialExpiresIn: UserPermissionGrantExpiresIn | null;
   userName: string;
-  grantLoadable: { state: string };
-  applyGrant: (
-    params: {
-      agentId: string;
-      connectorSlug: string;
-      permission: string;
-      action: "allow" | "deny";
-      expiresIn?: UserPermissionGrantExpiresIn;
-    },
-    callback: ChatActionCallback,
-    signal: AbortSignal,
-  ) => Promise<PlatformUserPermissionGrant>;
-  actionCallback: ChatActionCallback;
+  saving: boolean;
+  saveError: boolean;
+  onConfirm: (expiresIn: UserPermissionGrantExpiresIn) => void;
 }
 
 function GrantDurationField({
@@ -393,12 +383,11 @@ function ConfirmGrantCard({
   action,
   initialExpiresIn,
   userName,
-  grantLoadable,
-  applyGrant,
-  actionCallback,
+  saving,
+  saveError,
+  onConfirm,
 }: ConfirmGrantCardProps) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
   const durationScope = `agent\u0000${target.id}\u0000${connectorSlug}\u0000${permission.name}\u0000${action}\u0000${initialExpiresIn ?? ""}`;
   const expiresInByScope = useGet(permissionGrantExpiresInByScope$);
   const setExpiresInForScope = useSet(setPermissionGrantExpiresIn$);
@@ -407,25 +396,6 @@ function ConfirmGrantCard({
     initialExpiresIn ??
     DEFAULT_USER_PERMISSION_GRANT_EXPIRES_IN;
   const expirationAvailable = action === "allow";
-  const saving = grantLoadable.state === "loading";
-  const saveError = grantLoadable.state === "hasError";
-
-  const handleSave = () => {
-    detach(
-      applyGrant(
-        {
-          agentId: target.id,
-          connectorSlug,
-          permission: permission.name,
-          action,
-          ...(expirationAvailable ? { expiresIn } : {}),
-        },
-        actionCallback,
-        pageSignal,
-      ),
-      Reason.DomCallback,
-    );
-  };
 
   return (
     <div className="fixed inset-0 flex h-viewport flex-col items-center overflow-y-auto pt-safe-offset-8 pr-safe-offset-6 pb-safe-offset-8 pl-safe-offset-6 pointer-events-none">
@@ -463,7 +433,7 @@ function ConfirmGrantCard({
           {expirationAvailable && (
             <GrantDurationField
               value={expiresIn}
-              disabled={saving}
+              disabled={saving || saveError}
               onChange={(value) => {
                 setExpiresInForScope(durationScope, value);
               }}
@@ -484,8 +454,10 @@ function ConfirmGrantCard({
           )}
           <Button
             type="button"
-            onClick={handleSave}
-            disabled={saving}
+            onClick={() => {
+              onConfirm(expiresIn);
+            }}
+            disabled={saving || saveError}
             className="h-9 w-full rounded-[10px]"
           >
             {saving
@@ -500,6 +472,40 @@ function ConfirmGrantCard({
       </div>
     </div>
   );
+}
+
+function resolvePermissionGrantMetadata(
+  metadata: PlatformConnectorPermissionMetadata | null,
+  connectorSlug: string,
+  permission: string,
+):
+  | {
+      metadata: PlatformConnectorPermissionMetadata;
+      focusedPermission: Permission;
+    }
+  | { message: string } {
+  if (!metadata) {
+    return {
+      message: i18n.t(
+        ($) => {
+          return $.authorization.permission.errors.unknownConnector;
+        },
+        { connector: connectorSlug },
+      ),
+    };
+  }
+  const focusedPermission = findPermissionInMetadata(metadata, permission);
+  if (!focusedPermission) {
+    return {
+      message: i18n.t(
+        ($) => {
+          return $.authorization.permission.errors.unknownPermission;
+        },
+        { permission },
+      ),
+    };
+  }
+  return { metadata, focusedPermission };
 }
 
 function PermissionAllowDoctorPage({
@@ -523,12 +529,13 @@ function PermissionAllowDoctorPage({
   const metadataLoadable = useLoadable(
     permissionAllowFirewallPermissionMetadata$,
   );
+  const pageSignal = useGet(pageSignal$);
   const [grantLoadable, applyGrant] = useLoadableSet(
     applyPermissionAndResumeChat$,
   );
+  const saving = grantLoadable.state === "loading";
+  const saveError = grantLoadable.state === "hasError";
   const grants = grantsLoadable.state === "hasData" ? grantsLoadable.data : [];
-  const savedGrant =
-    grantLoadable.state === "hasData" ? grantLoadable.data : null;
   if (
     anyLoadableIsLoading([
       agentLoadable,
@@ -558,40 +565,21 @@ function PermissionAllowDoctorPage({
     return <ErrorMessage message={targetResult.message} />;
   }
 
-  const metadata =
-    metadataLoadable.state === "hasData" ? metadataLoadable.data : null;
-  if (!metadata) {
-    return (
-      <ErrorMessage
-        message={i18n.t(
-          ($) => {
-            return $.authorization.permission.errors.unknownConnector;
-          },
-          { connector: connectorSlug },
-        )}
-      />
-    );
+  const permissionResult = resolvePermissionGrantMetadata(
+    metadataLoadable.state === "hasData" ? metadataLoadable.data : null,
+    connectorSlug,
+    permission,
+  );
+  if ("message" in permissionResult) {
+    return <ErrorMessage message={permissionResult.message} />;
   }
+  const { metadata, focusedPermission } = permissionResult;
 
-  const focusedPermission = findPermissionInMetadata(metadata, permission);
-  if (!focusedPermission) {
-    return (
-      <ErrorMessage
-        message={i18n.t(
-          ($) => {
-            return $.authorization.permission.errors.unknownPermission;
-          },
-          { permission },
-        )}
-      />
-    );
-  }
-
-  if (savedGrant && isActiveUserPermissionGrant(savedGrant)) {
+  if (grantLoadable.state === "hasData") {
     return (
       <ResultCard
         action={action}
-        expiresAt={savedGrant.expiresAt}
+        expiresAt={grantLoadable.data.expiresAt}
         showExpiry={action === "allow"}
       />
     );
@@ -604,11 +592,7 @@ function PermissionAllowDoctorPage({
     grants,
     metadata,
   });
-  if (
-    existingGrantResult &&
-    grantLoadable.state !== "loading" &&
-    grantLoadable.state !== "hasError"
-  ) {
+  if (existingGrantResult && !saving && !saveError) {
     return (
       <ResultCard
         action={action}
@@ -631,9 +615,24 @@ function PermissionAllowDoctorPage({
       action={action}
       initialExpiresIn={initialExpiresIn}
       userName={resolveUserName(currentUser)}
-      grantLoadable={grantLoadable}
-      applyGrant={applyGrant}
-      actionCallback={actionCallback}
+      saving={saving}
+      saveError={saveError}
+      onConfirm={(expiresIn) => {
+        detach(
+          applyGrant(
+            {
+              agentId,
+              connectorSlug,
+              permission: focusedPermission.name,
+              action,
+              ...(action === "allow" ? { expiresIn } : {}),
+            },
+            actionCallback,
+            pageSignal,
+          ),
+          Reason.DomCallback,
+        );
+      }}
     />
   );
 }

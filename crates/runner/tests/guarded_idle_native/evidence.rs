@@ -15,7 +15,6 @@ mod artifact_digest;
 pub const PREFIX: &str = "NATIVE_TERMINAL_RECEIPT ";
 const PRESSURE_PREFIX: &str = "NATIVE_PRESSURE_WITNESS ";
 const CONTINUATION_PREFIX: &str = "NATIVE_CONTINUATION_WITNESS ";
-const OPTIONAL_PREFIX: &str = "NATIVE_OPTIONAL_WITNESS ";
 pub const TAIL_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Clone, Deserialize)]
@@ -173,7 +172,6 @@ pub struct Case {
     exit_observer: Mutex<Option<tokio::task::JoinHandle<io::Result<()>>>>,
     retained: Mutex<Vec<Box<dyn Send>>>,
     foreground_io: Mutex<Option<Arc<super::foreground_io::Gate>>>,
-    incoming_creations: std::sync::atomic::AtomicBool,
 }
 
 impl Case {
@@ -191,7 +189,6 @@ impl Case {
             exit_observer: Mutex::new(None),
             retained: Mutex::new(Vec::new()),
             foreground_io: Mutex::new(None),
-            incoming_creations: std::sync::atomic::AtomicBool::new(false),
         });
         case.event(
             "case_started",
@@ -210,34 +207,6 @@ impl Case {
 
     pub fn continuation_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event(CONTINUATION_PREFIX, phase, evidence)
-    }
-
-    pub fn optional_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
-        self.write_event(OPTIONAL_PREFIX, phase, evidence)
-    }
-
-    pub fn recovery_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
-        self.write_event("NATIVE_RECOVERY_WITNESS ", phase, evidence)
-    }
-
-    pub fn critical_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
-        self.write_event("NATIVE_CRITICAL_WITNESS ", phase, evidence)
-    }
-
-    pub fn critical_progress_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
-        self.write_event("NATIVE_CRITICAL_PROGRESS_WITNESS ", phase, evidence)
-    }
-
-    pub fn read_cancellation_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
-        self.write_event("NATIVE_READ_CANCELLATION_WITNESS ", phase, evidence)
-    }
-
-    pub fn read_revocation_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
-        self.write_event("NATIVE_READ_REVOCATION_WITNESS ", phase, evidence)
-    }
-
-    pub fn read_stop_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
-        self.write_event("NATIVE_READ_STOP_WITNESS ", phase, evidence)
     }
 
     pub fn observer_loss_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
@@ -323,24 +292,12 @@ impl Case {
         Ok(())
     }
 
-    pub fn shared_reads_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
-        self.write_event("NATIVE_SHARED_READS_WITNESS ", phase, evidence)
-    }
-
     pub fn create_cancellation_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event("NATIVE_CREATE_CANCELLATION_WITNESS ", phase, evidence)
     }
 
     pub fn returned_guest_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event("NATIVE_RETURNED_GUEST_WITNESS ", phase, evidence)
-    }
-
-    pub fn startup_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
-        self.write_event("NATIVE_STARTUP_WITNESS ", phase, evidence)
-    }
-
-    pub fn foreground_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
-        self.write_event("NATIVE_FOREGROUND_WITNESS ", phase, evidence)
     }
 
     pub fn install_foreground_io(&self, gate: Arc<super::foreground_io::Gate>) -> io::Result<()> {
@@ -410,36 +367,6 @@ impl Case {
                 "evidence": evidence,
             })
         );
-        Ok(())
-    }
-
-    pub fn fence_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
-        self.write_event("NATIVE_FENCE_WITNESS ", phase, evidence)
-    }
-
-    pub fn logical_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
-        self.write_event("NATIVE_LOGICAL_PROGRESS_WITNESS ", phase, evidence)
-    }
-
-    pub fn incoming_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
-        self.write_event("NATIVE_INCOMING_PROGRESS_WITNESS ", phase, evidence)
-    }
-
-    pub fn observe_incoming_creations(&self, enabled: bool) {
-        self.incoming_creations
-            .store(enabled, std::sync::atomic::Ordering::SeqCst);
-    }
-
-    pub fn incoming_creation(&self, id: sandbox::SandboxId) -> io::Result<()> {
-        if self
-            .incoming_creations
-            .load(std::sync::atomic::Ordering::SeqCst)
-        {
-            self.incoming_witness(
-                "guest_creation_started",
-                json!({"sandbox_id": id.to_string()}),
-            )?;
-        }
         Ok(())
     }
 

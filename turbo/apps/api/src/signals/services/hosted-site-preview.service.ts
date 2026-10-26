@@ -1,3 +1,6 @@
+import { createHostedSitePreviewGrant$ } from "./private-hosted-preview.service";
+import { readArtifactDeliveryRecord$ } from "./artifact-delivery.service";
+import { resolveSharedThreadHostedPreview$ } from "./shared-thread-artifacts.service";
 import { command } from "ccstate";
 import { uuid } from "zod";
 import { and, eq, isNull } from "drizzle-orm";
@@ -8,14 +11,12 @@ import { hostedPreviewArtifactIds } from "./hosted-preview.service";
 import { privateArtifactRecord$ } from "./private-artifact-storage.service";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import { db$ } from "../external/db";
-import { createHostedSitePreviewGrant$ } from "./private-hosted-preview.service";
-import { resolveSharedThreadHostedPreview$ } from "./shared-thread-artifacts.service";
 import {
   checkHostedSiteAccess$,
   readHostedSitePolicy$,
 } from "./hosted-site-access.service";
 
-export const resolveHostedSitePreview$ = command(
+const resolvePublishedSitePreview$ = command(
   async (
     { get, set },
     args: {
@@ -26,9 +27,8 @@ export const resolveHostedSitePreview$ = command(
     signal: AbortSignal,
   ) => {
     const expected = new URL(hostedLinkOrigin("current", args.publicSlug));
-    if (expected.hostname !== args.hostname.toLowerCase()) {
-      return null;
-    }
+    // Ordinary site and deployment URLs also cover publications predating the
+    // delivery registry, as in the canonical hosted-site files resolver.
     const parsedDeployment = uuid().safeParse(
       args.publicSlug.startsWith("dpl-") ? args.publicSlug.slice(4) : null,
     );
@@ -57,16 +57,7 @@ export const resolveHostedSitePreview$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!row) {
-      // Conversation snapshots have a delivery alias rather than a named Site
-      // row. Authorize the selected snapshot, not the owner's latest version.
-      return set(
-        resolveSharedThreadHostedPreview$,
-        { publicSlug: args.publicSlug, viewerId: args.userId },
-        signal,
-      );
-    }
-    if (row.deployment.manifest.access !== undefined) {
+    if (!row || row.deployment.manifest.access !== undefined) {
       return null;
     }
     const policy = await set(readHostedSitePolicy$, row.site.id, signal);
@@ -132,5 +123,46 @@ export const resolveHostedSitePreview$ = command(
       ...target,
       ...(image ? { previewImageUrl: image.url } : {}),
     };
+  },
+);
+
+export const resolveHostedSitePreview$ = command(
+  async (
+    { set },
+    args: {
+      readonly publicSlug: string;
+      readonly hostname: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const expected = new URL(hostedLinkOrigin("current", args.publicSlug));
+    if (expected.hostname !== args.hostname.toLowerCase()) {
+      return null;
+    }
+    const delivery = await set(
+      readArtifactDeliveryRecord$,
+      {
+        layout: "current",
+        kind: "html",
+        alias: args.publicSlug,
+      },
+      signal,
+    );
+    if (delivery?.kind === "thread-resource") {
+      return await set(
+        resolveSharedThreadHostedPreview$,
+        {
+          publicSlug: args.publicSlug,
+          viewerId: args.userId,
+          record: delivery,
+        },
+        signal,
+      );
+    }
+    if (delivery && delivery.kind !== "legacy-site") {
+      return null;
+    }
+    return await set(resolvePublishedSitePreview$, args, signal);
   },
 );

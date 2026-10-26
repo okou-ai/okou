@@ -104,7 +104,7 @@ export async function readConnectorAccountCompletion(
       connectorAccountTargetKey(target)
   ) {
     throw new ConnectorConnectionError(
-      "Connector account setup information is unavailable. Refresh and try again.",
+      "Connector account setup information is unavailable.",
     );
   }
   const account = parsed.data;

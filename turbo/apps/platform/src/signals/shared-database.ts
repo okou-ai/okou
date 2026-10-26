@@ -18,7 +18,6 @@ import {
   reloadChatIndicatorsLocally$,
 } from "./chat-thread-list-reload.ts";
 import { installedSharedDatabaseBridge$ } from "./shared-database-bridge-state.ts";
-import { readChatWithRecovery } from "./chat-read-recovery.ts";
 
 const internalReloadQueueDataFromWorker$ = state(0);
 
@@ -29,22 +28,27 @@ const reloadQueueDataFromWorker$ = command(({ set }): void => {
 });
 
 const internalReloadIndexedDbDiagnosticsFromWorker$ = state(0);
-const internalIndexedDbSnapshotMeasurementRequest$ = state(0);
 
 export const reloadIndexedDbDiagnosticsFromWorker$ = command(
   ({ set }): void => {
-    set(internalIndexedDbSnapshotMeasurementRequest$, 0);
     set(internalReloadIndexedDbDiagnosticsFromWorker$, (value) => {
       return value + 1;
     });
   },
 );
 
-export const measureIndexedDbSnapshotFromWorker$ = command(({ set }): void => {
-  set(internalIndexedDbSnapshotMeasurementRequest$, (value) => {
-    return value + 1;
-  });
-});
+export const measureIndexedDbSnapshotFromWorker$ = command(
+  async (
+    { get },
+    signal: AbortSignal,
+  ): Promise<IndexedDbSnapshotMeasurement | null> => {
+    return await get(installedSharedDatabaseBridge$).getComputed(
+      "indexeddb-snapshot-measurement",
+      undefined,
+      signal,
+    );
+  },
+);
 
 export const reloadComputedFromWorker$ = command(
   ({ set }, computedKey: ComputedKey): void => {
@@ -62,7 +66,6 @@ export const reloadComputedFromWorker$ = command(
         return;
       }
       case "indexeddb-snapshot-measurement": {
-        set(internalIndexedDbSnapshotMeasurementRequest$, 0);
         return;
       }
       case "queue-data": {
@@ -98,17 +101,6 @@ export const indexedDbDiagnosticsFromWorker$ = computed(
   },
 );
 
-export const indexedDbSnapshotMeasurementFromWorker$ = computed(
-  async (get): Promise<IndexedDbSnapshotMeasurement | null | undefined> => {
-    if (get(internalIndexedDbSnapshotMeasurementRequest$) === 0) {
-      return undefined;
-    }
-    return await get(installedSharedDatabaseBridge$).getComputed(
-      "indexeddb-snapshot-measurement",
-    );
-  },
-);
-
 type QueryChatEventSharedDatabaseCommand = Command<
   Promise<SharedDatabaseQueryResult<ChatEventDataKey>>,
   [SharedDatabaseQuery<ChatEventDataKey>, AbortSignal]
@@ -126,12 +118,7 @@ const querySharedDatabaseCommand$ = command(
     signal: AbortSignal,
   ): Promise<SharedDatabaseQueryResult<SharedDatabaseDataKey>> => {
     const bridge = get(installedSharedDatabaseBridge$);
-    if (query.consistency === "cache-only") {
-      return await bridge.query(query, signal);
-    }
-    return await readChatWithRecovery((readSignal) => {
-      return bridge.query(query, readSignal);
-    }, signal);
+    return await bridge.query(query, signal);
   },
 );
 

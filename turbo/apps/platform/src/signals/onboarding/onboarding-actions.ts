@@ -125,7 +125,7 @@ export const skipPreviewOnboarding$ = command(
  * onboarding complete, so the request goes out after it: otherwise
  * `needsOnboarding` stays true and the bootstrap guard returns the user to
  * onboarding on the next load. When completion fails the rejected command
- * keeps the user on the step, ready to try again.
+ * keeps the user on the step with their input intact.
  */
 export const runOnboardingRequest$ = command(
   async (

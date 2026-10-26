@@ -7,7 +7,11 @@ mod status;
 pub(super) mod wire;
 
 use super::fixture::bounded;
-use crate::tailscale::{Failure, map_reader::MapReader, peers::Peers};
+use crate::tailscale::{
+    Failure,
+    map_reader::MapReader,
+    peers::{Clock, Peers},
+};
 use futures_util::StreamExt;
 use serde_json::{Value, json};
 use std::{net::SocketAddr, sync::Arc};
@@ -901,10 +905,12 @@ async fn an_authenticated_zero_expiry_patch_restores_peer_crypto_and_preserves_o
 #[tokio::test]
 async fn natural_peer_key_expiry_cuts_old_crypto_and_wakes_its_binding_only() {
     inside(|control| async move {
-        let mut fixture = wire::Fixture::new().await;
+        let clock = Clock::held();
+        let mut fixture = wire::Fixture::with_clock(clock.clone()).await;
         control.ready();
         let original_b = fixture.connect_b().await;
-        let expiry = (chrono::Utc::now() + chrono::Duration::milliseconds(150)).to_rfc3339();
+        let expires = clock.now() + chrono::Duration::milliseconds(150);
+        let expiry = expires.to_rfc3339();
         fixture
             .peers
             .update(update(json!({"PeersChangedPatch":[{"NodeID":2,"KeyExpiry":expiry}]})).await)
@@ -925,7 +931,11 @@ async fn natural_peer_key_expiry_cuts_old_crypto_and_wakes_its_binding_only() {
         let late = fixture
             .a
             .answer(wire::routed(&mut fixture.peers, handshake));
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(binding.live(), "the real handshake precedes key expiry");
+        // Setup cannot consume the interval. Start the real expiry timer only
+        // after retaining the old peer's actual handshake response.
+        clock.start();
+        bounded(clock.wait_until(expires)).await;
         let events = fixture.peers.events().unwrap();
         drop(events);
         assert!(
@@ -948,7 +958,16 @@ async fn natural_peer_key_expiry_cuts_old_crypto_and_wakes_its_binding_only() {
 }
 
 pub(super) async fn fixture_peers(keys: &NodeKeyPair, a: &NodeKeyPair, b: &NodeKeyPair) -> Peers {
-    let mut peers = Peers::new(keys.clone(), own(keys).await).unwrap();
+    fixture_peers_with_clock(keys, a, b, Clock::default()).await
+}
+
+async fn fixture_peers_with_clock(
+    keys: &NodeKeyPair,
+    a: &NodeKeyPair,
+    b: &NodeKeyPair,
+    clock: Clock,
+) -> Peers {
+    let mut peers = Peers::with_clock(keys.clone(), own(keys).await, clock).unwrap();
     // An SSH client needs no blanket inbound ephemeral-port grant. The
     // production adapter must admit only replies to its initiated exact tuples.
     peers.update(update(json!({"Peers":[node(2,"a.tail-okou.ts.net.",2,a),node(3,"b.tail-okou.ts.net.",3,b)],"PacketFilter":[]})).await).unwrap();

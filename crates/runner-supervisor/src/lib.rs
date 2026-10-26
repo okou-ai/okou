@@ -20,7 +20,7 @@ use runner_executor::test_fixtures;
 use runner_executor::{executor, telemetry};
 use runner_host::idle_prune_control;
 use runner_lifecycle::{
-    guest_timezone, home_image_cache, idle_pool, lifecycle, prefetch, resource_budget, status,
+    guest_timezone, home_image_cache, idle_pool, lifecycle, resource_budget, status,
 };
 #[cfg(test)]
 use runner_lifecycle::{home_promotion, idle_reuse_preparation, restored_session_identity};

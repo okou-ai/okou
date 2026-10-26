@@ -11,8 +11,8 @@ All HTTP calls via `apiClient$` must use the `accept` utility function. This is 
 `accept` takes a ts-rest call promise and a **required non-empty** array of accepted status codes. It returns a type-narrowed result containing only the accepted status codes. Any response **not** in the accept list is automatically:
 
 1. Shown as a `toast.error` (with the server's error message), except for 401
-   responses handled by the authenticated client's sign-in recovery and the
-   dedicated force-upgrade response handled by the blocking update dialog
+   responses and the dedicated force-upgrade response handled by the blocking
+   update dialog. A 401 still propagates without redirecting or replaying the request.
 2. Thrown as an `ApiError` (so the calling code stops executing)
 
 ```typescript
@@ -28,7 +28,7 @@ export const inviteMember$ = command(
     );
     // result type is narrowed to { status: 200, body: OrgMessageResponse }
     // If status was 400/403/500 → toast + throw already happened.
-    // A 401 redirects to sign-in without an error toast.
+    // A 401 throws without an error toast or request replay.
     toast.success(`Invitation sent to ${email}`);
     set(refreshOrgMembers$);
   },
@@ -72,7 +72,7 @@ export const getAgent$ = computed(async (get) => {
 
 ### Fail fast for background fetches
 
-For `computed` (background data fetching), call `accept` directly and let errors propagate. `accept` already handles API errors by showing the server message (except for 401 responses owned by sign-in recovery and the dedicated force-upgrade response owned by the blocking update dialog) and throwing an `ApiError`; application code should not catch or replace that error handling.
+For `computed` (background data fetching), call `accept` directly and let errors propagate. `accept` already handles API errors by showing the server message (except for 401 responses and the dedicated force-upgrade response owned by the blocking update dialog) and throwing an `ApiError`; application code should not catch or replace that error handling.
 
 ```typescript
 export const billingStatus$ = computed(async (get) => {

@@ -34,9 +34,8 @@ export async function signInWithClerkEmailCode(
   const signInUrl = new URL("/sign-in", appUrl);
   await page.goto(signInUrl.toString(), { waitUntil: "domcontentloaded" });
   const signInFormDeadline = performance.now() + 30_000;
-  // The shared runtime stays pending while the core script retries. Await its
-  // final outcome before the form so a terminal failure does not become an
-  // unrelated email-input timeout. Both waits retain one 30-second deadline.
+  // Await the shared runtime before the form so a terminal failure does not
+  // become an unrelated email-input timeout. Both waits retain one deadline.
   const runtimeReady = await page.waitForFunction(
     async () => {
       const bootstrap = window.__okouClerkBootstrap;

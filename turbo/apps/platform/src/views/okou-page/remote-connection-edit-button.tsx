@@ -27,10 +27,7 @@ export function RemoteConnectionEditButton({
         disabled={disabled || opening.state === "loading"}
         aria-busy={opening.state === "loading"}
         onClick={() => {
-          detach(
-            open(resource, opening.state === "hasError", signal),
-            Reason.DomCallback,
-          );
+          detach(open(resource, signal), Reason.DomCallback);
         }}
       >
         {opening.state === "loading" && (
@@ -47,12 +44,6 @@ export function RemoteConnectionEditButton({
               ? $.ssh.loadFailed
               : $.vnc.loadFailed;
           })}
-          retryLabel={t(($) => {
-            return $.remoteControlSetup.retry;
-          })}
-          onRetry={() => {
-            detach(open(resource, true, signal), Reason.DomCallback);
-          }}
         />
       )}
     </div>

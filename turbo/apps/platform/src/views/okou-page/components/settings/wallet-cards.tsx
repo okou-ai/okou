@@ -1,20 +1,11 @@
 import type { WalletPaymentMethod } from "@okouai/api-contracts/contracts/wallet";
-import {
-  Badge,
-  Button,
-  buttonVariants,
-  Card,
-  surfaceVariants,
-} from "@okouai/ui";
+import { Badge, buttonVariants, Card, surfaceVariants } from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
-import { useLastLoadable, useSet } from "ccstate-react";
+import { useLastLoadable } from "ccstate-react";
 import { CreditCard, ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { platformStaticAssetUrl } from "../../../../lib/static-assets.ts";
-import {
-  refreshWalletCards$,
-  walletCards$,
-} from "../../../../signals/okou-page/settings/wallet.ts";
+import { walletCards$ } from "../../../../signals/okou-page/settings/wallet.ts";
 
 const CARD_BRAND_ICONS: ReadonlyMap<string, string> = new Map([
   ["visa", "visa-8d837bb887be.svg"],
@@ -88,7 +79,6 @@ function WalletCardRow({ method }: { readonly method: WalletPaymentMethod }) {
 export function WalletCards() {
   const { t } = useTranslation();
   const cards = useLastLoadable(walletCards$);
-  const retry = useSet(refreshWalletCards$);
   const title = t(($) => {
     return $.settings.wallet.cards.title;
   });
@@ -123,11 +113,6 @@ export function WalletCards() {
               return $.settings.wallet.cards.loadError;
             })}
           </p>
-          <Button variant="quiet" size="sm" onClick={retry}>
-            {t(($) => {
-              return $.settings.wallet.retry;
-            })}
-          </Button>
         </div>
       ) : cards.data.length === 0 ? (
         <p className="px-5 py-4 text-sm text-muted-foreground">

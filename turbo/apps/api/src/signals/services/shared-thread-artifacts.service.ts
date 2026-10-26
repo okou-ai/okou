@@ -35,7 +35,6 @@ import { checkHostedSiteAccess$ } from "./hosted-site-access.service";
 import { privateArtifactsBucket } from "./private-artifact-storage.service";
 import { createHostedPreviewGrant$ } from "./private-hosted-preview.service";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
-import { readArtifactDeliveryRecord$ } from "./artifact-delivery.service";
 import {
   copySharedThreadArtifacts$,
   SharedThreadArtifactUnavailable,
@@ -120,17 +119,10 @@ const authorizedSharedThreadHostedSnapshot$ = command(
 export const resolveSharedThreadHostedPreview$ = command(
   async (
     { set },
-    args: { readonly publicSlug: string; readonly viewerId?: string },
+    args: SharedThreadHostedSnapshotArgs & { readonly publicSlug: string },
     signal: AbortSignal,
   ) => {
-    const record = await set(
-      readArtifactDeliveryRecord$,
-      { layout: "current", kind: "html", alias: args.publicSlug },
-      signal,
-    );
-    if (record?.kind !== "thread-resource" || record.targetKind !== "html") {
-      return null;
-    }
+    const { record } = args;
     const snapshot = await set(
       authorizedSharedThreadHostedSnapshot$,
       { record, viewerId: args.viewerId },

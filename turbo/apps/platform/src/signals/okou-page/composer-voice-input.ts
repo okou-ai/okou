@@ -22,11 +22,11 @@ import {
 
 const L = logger("Composer:VoiceDraft");
 export type ComposerVoiceInputStatus =
-  "idle" | "recording" | "transcribing" | "failed" | "discarding";
-type ComposerVoiceAction = "toggle" | "retry" | "discard";
+  "idle" | "recording" | "transcribing" | "recorded" | "failed" | "discarding";
+type ComposerVoiceAction = "toggle" | "finish" | "discard";
 type DeliverVoiceTextCommand = Command<Promise<void>, [string, AbortSignal]>;
 interface ComposerVoiceInputState {
-  readonly status: "idle" | "recording" | "failed";
+  readonly status: "idle" | "recording" | "recorded";
   readonly recording: VoiceDraftRecordingRecord | null;
   readonly message?: string;
 }
@@ -84,17 +84,6 @@ function createVoiceDraftData(draftTarget: string) {
       return recording?.sampleCount ? recording : null;
     },
   );
-  // Retry reads storage again so a failed restore can recover and a recording
-  // saved by another composer for the same target can be transcribed.
-  const restoreRecording$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const key = await get(storageKey$);
-      signal.throwIfAborted();
-      const recording = await readVoiceDraftRecording(key);
-      signal.throwIfAborted();
-      set(ownedRecording$, { key, recording });
-    },
-  );
   const capture = createVoiceDraftCaptureSignals();
   const providerUnavailable$ = state<{
     readonly recordingId: string;
@@ -105,13 +94,11 @@ function createVoiceDraftData(draftTarget: string) {
     const unavailable = get(providerUnavailable$);
     const restored = await get(recording$);
     return {
-      status: active ? "recording" : restored ? "failed" : "idle",
+      status: active ? "recording" : restored ? "recorded" : "idle",
       recording: restored,
       message:
         unavailable && unavailable.recordingId === restored?.id
-          ? `${unavailable.message} ${i18n.t(($) => {
-              return $.chat.voice.retryReady;
-            })}`
+          ? unavailable.message
           : undefined,
     };
   });
@@ -119,7 +106,6 @@ function createVoiceDraftData(draftTarget: string) {
     storageKey$,
     ownedRecording$,
     recording$,
-    restoreRecording$,
     capture,
     providerUnavailable$,
     state$,
@@ -179,7 +165,7 @@ function createVoiceDraftTranscription(
 
     signal.throwIfAborted();
     // A successful text handoff consumes this recording even if local deletion
-    // fails, so Retry cannot insert the same text twice.
+    // fails, so the delivered text is not inserted twice.
     set(ownedRecording$, { key, recording: null });
     const removed = await settle(
       deleteVoiceDraftRecording(key, recording.id),
@@ -275,14 +261,9 @@ function createVoiceDraftMutations(
     signal.throwIfAborted();
   });
   const finish$ = command(async ({ set }, signal: AbortSignal) => {
-    const finished = await withVoiceDraftFailureToast(
-      set(capture.finish$, signal),
-      signal,
-    );
+    await withVoiceDraftFailureToast(set(capture.finish$, signal), signal);
     signal.throwIfAborted();
-    if (finished) {
-      await set(transcribe$, signal);
-    }
+    await set(transcribe$, signal);
   });
   return { start$, finish$, discard$, transcribe$ };
 }
@@ -291,8 +272,8 @@ function createVoiceActionBindings(
   data: VoiceDraftData,
   mutations: ReturnType<typeof createVoiceDraftMutations>,
 ) {
-  const { state$, capture, restoreRecording$ } = data;
-  const { start$, finish$, discard$, transcribe$ } = mutations;
+  const { capture } = data;
+  const { start$, finish$, discard$ } = mutations;
   const internalOwner$ = state<ComposerVoiceInputOwner | null>(null);
   const resetOwner$ = resetSignal();
   const owner$ = computed((get) => {
@@ -316,27 +297,7 @@ function createVoiceActionBindings(
       { once: true },
     );
   });
-  const invocation$ = state<{
-    readonly action: "start" | "finish" | "retry" | "discard";
-    readonly owner: ComposerVoiceInputOwner;
-  } | null>(null);
-  const execution$ = state<{
-    readonly owner: ComposerVoiceInputOwner | null;
-    readonly promise: Promise<void>;
-  } | null>(null);
-  const result$ = computed(async (get) => {
-    const execution = get(execution$);
-    if (execution && execution.owner === get(owner$)) {
-      await execution.promise;
-    }
-  });
-  const action$ = computed((get) => {
-    const invocation = get(invocation$);
-    return invocation?.owner === get(owner$)
-      ? (invocation?.action ?? null)
-      : null;
-  });
-  const execute$ = command(
+  const run$ = command(
     async (
       { get, set },
       action: ComposerVoiceAction,
@@ -348,35 +309,14 @@ function createVoiceActionBindings(
       }
       const signal = AbortSignal.any([owner.signal, parentSignal]);
       signal.throwIfAborted();
-      const resolvedAction =
-        action === "toggle"
-          ? get(capture.capture$)
-            ? "finish"
-            : (await get(state$)).status === "failed"
-              ? "retry"
-              : "start"
-          : action;
-      signal.throwIfAborted();
-      set(invocation$, { action: resolvedAction, owner });
-      if (resolvedAction === "start") {
-        await set(start$, signal);
-      } else if (resolvedAction === "finish") {
-        await set(finish$, signal);
-      } else if (resolvedAction === "discard") {
+      if (action === "discard") {
         await set(discard$, signal);
+      } else if (action === "finish" || get(capture.capture$)) {
+        await set(finish$, signal);
       } else {
-        await set(restoreRecording$, signal);
-        await set(transcribe$, signal);
+        await set(start$, signal);
       }
       signal.throwIfAborted();
-    },
-  );
-  const run$ = command(
-    ({ get, set }, action: ComposerVoiceAction, signal: AbortSignal) => {
-      const owner = get(owner$);
-      const promise = set(execute$, action, signal);
-      set(execution$, { owner, promise });
-      return promise;
     },
   );
   const root$ = state<{ readonly element: HTMLElement } | null>(null);
@@ -402,7 +342,7 @@ function createVoiceActionBindings(
       ?.element.querySelector<HTMLButtonElement>("[data-composer-voice-toggle]")
       ?.click();
   });
-  return { owner$, action$, result$, setup$, run$, setRootRef$, toggle$ };
+  return { owner$, setup$, run$, setRootRef$, toggle$ };
 }
 
 export function createComposerVoiceInputSignals(
@@ -427,6 +367,8 @@ export function createComposerVoiceInputSignals(
     ),
   );
   return {
+    // A mounted footer retains async read snapshots only within this owner.
+    key: crypto.randomUUID(),
     ...actions,
     state$: data.state$,
     capture$: data.capture.capture$,

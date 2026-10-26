@@ -162,7 +162,7 @@ export const startDiscordAuthorization$ = command(
             },
             1000,
             flowSignal,
-            { retryTransientErrors: false, testIntervalMs: 10 },
+            { testIntervalMs: 10 },
           ),
           flowSignal,
         );

@@ -1,5 +1,4 @@
 import { browserAuthorizationRequestsContract } from "@okouai/api-contracts/contracts/browser";
-import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
@@ -19,15 +18,20 @@ const CALLBACK =
   "The cloud browser is enabled. Please continue the previous task.";
 
 function mockRequest(options?: { threadId?: string; enabled?: boolean }) {
+  let enabled = options?.enabled ?? false;
   context.mocks.api(browserAuthorizationRequestsContract.get, ({ respond }) => {
     return respond(200, {
       id: REQUEST_ID,
       chatThreadId: options?.threadId ?? THREAD_ID,
       expiresAt: "2099-09-01T10:00:00.000Z",
-      completedAt: options?.enabled ? "2026-09-01T10:00:00.000Z" : null,
-      cloudBrowserEnabled: options?.enabled ?? false,
+      completedAt: enabled ? "2026-09-01T10:00:00.000Z" : null,
+      cloudBrowserEnabled: enabled,
     });
   });
+  return () => {
+    enabled = true;
+    context.mocks.ably.trigger("desktopShellAuthorizationChanged");
+  };
 }
 
 function mockConversation(
@@ -79,7 +83,7 @@ test.each([
   `/browser/authorize/${REQUEST_TOKEN}`,
   `[Enable browser](${AUTHORIZATION_URL})`,
 ])("A user allows a browser request and continues from %s", async (url) => {
-  mockRequest();
+  const complete = mockRequest();
   let authorized = false;
   const sent: string[] = [];
   context.mocks.api(
@@ -87,6 +91,7 @@ test.each([
     ({ params, respond }) => {
       expect(params.requestToken).toBe(REQUEST_TOKEN);
       authorized = true;
+      complete();
       return respond(200, { ok: true, cloudBrowserEnabled: true });
     },
   );
@@ -110,49 +115,6 @@ test.each([
   expect(screen.getByText("I need a browser to continue.")).toBeInTheDocument();
 });
 
-test("A failed continuation retries with the same callback event identity", async () => {
-  mockRequest();
-  context.mocks.api(
-    browserAuthorizationRequestsContract.apply,
-    ({ respond }) => {
-      return respond(200, { ok: true, cloudBrowserEnabled: true });
-    },
-  );
-  mockConversation();
-  const events: { prompt: string | undefined; eventId: string | undefined }[] =
-    [];
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    events.push({ prompt: body.prompt, eventId: body.clientEventId });
-    return events.length === 1
-      ? respond(500, {
-          error: { code: "INTERNAL_SERVER_ERROR", message: "Chat unavailable" },
-        })
-      : respond(201, { threadId: THREAD_ID });
-  });
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  const card = await screen.findByTestId("browser-authorization-card");
-  await waitFor(() => {
-    expect(getButton(card, "Allow")).toBeEnabled();
-  });
-
-  click(getButton(card, "Allow"));
-
-  await within(card).findByText("Couldn't continue. Try again.");
-  click(getButton(card, "Retry"));
-
-  await waitFor(() => {
-    expect(getButton(card, "Allowed")).toBeDisabled();
-  });
-  expect(events).toStrictEqual([
-    { prompt: CALLBACK, eventId: REQUEST_ID },
-    { prompt: CALLBACK, eventId: REQUEST_ID },
-  ]);
-});
-
 test("Failed authorization leaves the task paused", async () => {
   mockRequest();
   const sent: string[] = [];
@@ -174,9 +136,9 @@ test("Failed authorization leaves the task paused", async () => {
 
   click(getButton(card, "Allow"));
 
-  await within(card).findByText("Couldn't continue. Try again.");
+  await within(card).findByText("Couldn't continue.");
   expect(sent).toStrictEqual([]);
-  expect(getButton(card, "Retry")).toBeEnabled();
+  expect(getButton(card, "Allow")).toBeDisabled();
 });
 
 test("A request from another chat cannot enable a browser or continue this task", async () => {
@@ -186,7 +148,6 @@ test("A request from another chat cannot enable a browser or continue this task"
   await within(card).findByText(
     "This cloud browser authorization link is invalid, expired, or not available for this workspace.",
   );
-  expect(getButton(card, "Retry")).toBeEnabled();
   expect(
     queryAllByRoleFast("button", card).find((button) => {
       return button.textContent?.trim() === "Allow";

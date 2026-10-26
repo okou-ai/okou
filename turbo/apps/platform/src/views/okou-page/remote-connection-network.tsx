@@ -14,12 +14,10 @@ import {
 } from "@okouai/ui";
 import {
   remoteSetupNetworks$,
-  retryRemoteSetupNetworks$,
   chooseRemoteSshConnection$,
   type RemoteSetupNetwork,
 } from "../../signals/remote-control-setup.ts";
 import { sshConnectionModeEditor$ } from "../../signals/ssh.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
 
 interface ConnectionOption {
   readonly value: string;
@@ -143,10 +141,8 @@ export function RemoteConnectionNetwork({
 }) {
   const { t } = useTranslation();
   const networks = useLoadable(remoteSetupNetworks$);
-  const retry = useSet(retryRemoteSetupNetworks$);
   const editor = useGet(sshConnectionModeEditor$);
   const choose = useSet(chooseRemoteSshConnection$);
-  const signal = useGet(pageSignal$);
   const available = networks.state === "hasData" ? networks.data : [];
   const isEmpty = networks.state === "hasData" && available.length === 0;
   const groups = useNetworkGroups(available);
@@ -217,12 +213,6 @@ export function RemoteConnectionNetwork({
           message={t(($) => {
             return $.remoteControlSetup.failedLoad;
           })}
-          retryLabel={t(($) => {
-            return $.remoteControlSetup.retry;
-          })}
-          onRetry={() => {
-            return retry(signal);
-          }}
         />
       )}
       {networks.state === "hasData" && !ready && (

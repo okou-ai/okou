@@ -11,9 +11,7 @@ import { ROUTES } from "../../route-paths.ts";
 import { withCleanup } from "../../utils.ts";
 
 const version$ = state(0);
-const cardsVersion$ = state(0);
 export const walletCards$ = computed(async (get) => {
-  get(cardsVersion$);
   const connection = await get(walletConnection$);
   if (
     !connection.connected ||
@@ -34,14 +32,7 @@ export const walletCards$ = computed(async (get) => {
       return Number(b.isDefault) - Number(a.isDefault);
     });
 });
-export const refreshWalletCards$ = command(({ set }) => {
-  set(cardsVersion$, (version) => {
-    return version + 1;
-  });
-});
-const transactionsVersion$ = state(0);
 export const walletTransactions$ = computed(async (get) => {
-  get(transactionsVersion$);
   const connection = await get(walletConnection$);
   if (
     connection.connected &&
@@ -64,11 +55,6 @@ export const walletTransactions$ = computed(async (get) => {
     transactions: result.body.transactions,
   };
 });
-export const refreshWalletTransactions$ = command(({ set }) => {
-  set(transactionsVersion$, (version) => {
-    return version + 1;
-  });
-});
 export const walletConnection$ = computed(async (get) => {
   get(version$);
   const result = await accept(
@@ -78,7 +64,6 @@ export const walletConnection$ = computed(async (get) => {
   return result.body;
 });
 export const refreshWalletConnection$ = command(({ set }) => {
-  set(refreshWalletTransactions$);
   set(version$, (version) => {
     return version + 1;
   });

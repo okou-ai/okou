@@ -13,8 +13,8 @@ const APP_URL = "https://clerk-bootstrap-fixture.test";
 const CORE_URL = `${APP_URL}/clerk.browser.js`;
 
 // Run the actual document bootstrap in Chromium so script fetch/error events
-// and dynamically inserted retries follow browser semantics. Only the external
-// Clerk SDK/UI is substituted; deployed auth-v1 tests cover the real sign-in UI.
+// follow browser semantics. Only the external Clerk SDK/UI is substituted;
+// deployed auth-v1 tests cover the real sign-in UI.
 async function fixture(
   context: TestContext,
   core: (route: Route) => Promise<void>,
@@ -50,11 +50,9 @@ async function fixture(
   });
   context.after(() => browser.close());
   const page = await browser.newPage();
-  const coreRequests: string[] = [];
   await page.route(`${APP_URL}/**`, async (route) => {
     const url = route.request().url();
     if (url.startsWith(CORE_URL)) {
-      coreRequests.push(url);
       await core(route);
     } else if (url === `${APP_URL}/clerk-ui.js`) {
       await route.fulfill({
@@ -65,7 +63,7 @@ async function fixture(
       await route.fulfill({ contentType: "text/html", body: html });
     }
   });
-  return { page, coreRequests };
+  return { page };
 }
 
 const CLERK_FIXTURE = `
@@ -109,40 +107,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-for (const failures of [0, 1, 2]) {
-  test(`email-code sign-in succeeds after ${failures} core resource failures`, async (context) => {
-    let attempts = 0;
-    const { page, coreRequests } = await fixture(context, async (route) => {
-      if (attempts++ < failures) {
-        await route.abort("connectionreset");
-      } else {
-        await route.fulfill({
-          contentType: "text/javascript",
-          body: CLERK_FIXTURE,
-        });
-      }
-    });
+test("email-code sign-in succeeds after Clerk bootstrap", async (context) => {
+  const { page } = await fixture(context, (route) =>
+    route.fulfill({
+      contentType: "text/javascript",
+      body: CLERK_FIXTURE,
+    }),
+  );
 
-    const token = await signInWithClerkEmailCode(
-      page,
-      "fixture+clerk_test@example.com",
-      APP_URL,
-      { activeOrganizationId: "org_fixture" },
-    );
+  const token = await signInWithClerkEmailCode(
+    page,
+    "fixture+clerk_test@example.com",
+    APP_URL,
+    { activeOrganizationId: "org_fixture" },
+  );
 
-    assert.equal(token, "fixture-token");
-    await expect(
-      page.getByRole("heading", { name: "Signed in" }),
-    ).toBeVisible();
-    assert.deepEqual(coreRequests, Array<string>(failures + 1).fill(CORE_URL));
-  });
-}
+  assert.equal(token, "fixture-token");
+  await expect(page.getByRole("heading", { name: "Signed in" })).toBeVisible();
+});
 
 test(
-  "exhausted core retries fail promptly and retain sanitized runner evidence",
+  "a core resource failure stops sign-in and retains sanitized runner evidence",
   { timeout: 15_000 },
   async (context) => {
-    const { page, coreRequests } = await fixture(context, (route) =>
+    const { page } = await fixture(context, (route) =>
       route.abort("connectionreset"),
     );
     const directory = await mkdtemp(join(tmpdir(), "clerk-bootstrap-"));
@@ -163,14 +151,13 @@ test(
     await expect(page.getByRole("status")).toHaveText(
       "Clerk core resource is unavailable",
     );
-    assert.deepEqual(coreRequests, [CORE_URL, CORE_URL, CORE_URL]);
     const report = await readFile(diagnosticPath, "utf8");
     const diagnostic: unknown = JSON.parse(report);
     assert.ok(isRecord(diagnostic) && isRecord(diagnostic.network));
     assert.equal(diagnostic.network.kind, "observed");
     for (const requests of [diagnostic.requests, diagnostic.network.requests]) {
       assert.ok(Array.isArray(requests));
-      const coreFailures = requests.filter((request: unknown) => {
+      const coreFailure = requests.find((request: unknown) => {
         assert.ok(isRecord(request));
         return (
           request.url === CORE_URL &&
@@ -178,7 +165,7 @@ test(
           request.failureCode === "net::ERR_CONNECTION_RESET"
         );
       });
-      assert.equal(coreFailures.length, 3);
+      assert.ok(coreFailure);
     }
     assert.match(report, /"clerk": "absent"/u);
     assert.doesNotMatch(report, /email-secret|fixture-token/u);
@@ -203,13 +190,12 @@ for (const scenario of [
   },
 ]) {
   test(`core ${scenario.name} remains a terminal failure`, async (context) => {
-    const { page, coreRequests } = await fixture(context, (route) =>
+    const { page } = await fixture(context, (route) =>
       route.fulfill({ contentType: "text/javascript", body: scenario.body }),
     );
 
     await page.goto(`${APP_URL}/sign-in`, { waitUntil: "domcontentloaded" });
 
     await expect(page.getByRole("status")).toHaveText(scenario.error);
-    assert.deepEqual(coreRequests, [CORE_URL]);
   });
 }

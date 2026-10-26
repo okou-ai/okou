@@ -1008,9 +1008,12 @@ impl JobProvider for ApiProvider {
 
     async fn shutdown(&self) {
         self.cancellation_reconciliation.shutdown().await;
-        let ably_supervisor = self.ably_supervisor.lock().await.take();
-        if let Some(ably_supervisor) = ably_supervisor {
-            ably_supervisor.shutdown().await;
+        {
+            let mut owner = self.ably_supervisor.lock().await;
+            if let Some(supervisor) = owner.as_ref() {
+                supervisor.shutdown().await;
+                *owner = None;
+            }
         }
         self.connector_runtime_sync.shutdown().await;
         self.builtin_firewall_catalog_refresh.shutdown().await;

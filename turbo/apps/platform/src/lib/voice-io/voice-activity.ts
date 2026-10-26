@@ -97,7 +97,7 @@ export async function analyzeVoiceActivity(
         },
         0,
         signal,
-        { testIntervalMs: 0, retryTransientErrors: false },
+        { testIntervalMs: 0 },
       );
       signal.throwIfAborted();
       return decision;

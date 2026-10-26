@@ -1,5 +1,5 @@
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 
 /** Consent or grant identity supplied by its credential-owning command. */
 export interface DeviceAuthSessionPublication {
@@ -15,6 +15,7 @@ export function deviceAuthSessionPublicationSql(args: {
   readonly type: string;
   readonly modelProviderAccountId: string;
   readonly authSession?: DeviceAuthSessionPublication;
+  readonly publicationReadyAt: SQL;
 }) {
   const session = args.authSession;
   return session === undefined
@@ -32,6 +33,6 @@ export function deviceAuthSessionPublicationSql(args: {
       AND ${modelProviderAuthSessions.connectorType} = ${args.type}
       AND ${modelProviderAuthSessions.source} = ${session.source}
       AND ${modelProviderAuthSessions.status} = 'completing'
-      AND ${modelProviderAuthSessions.expiresAt} > clock_timestamp()
+      AND ${modelProviderAuthSessions.expiresAt} > ${args.publicationReadyAt}
     RETURNING ${modelProviderAuthSessions.id}`;
 }

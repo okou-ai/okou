@@ -526,7 +526,7 @@ pub(super) struct PollWakeupsSnapshot {
 
 pub(super) struct AblySupervisor {
     shutdown: CancellationToken,
-    task: StdMutex<Option<tokio::task::JoinHandle<()>>>,
+    task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 pub(super) struct AblySupervisorConfig {
@@ -585,16 +585,21 @@ impl AblySupervisor {
         });
         Self {
             shutdown,
-            task: StdMutex::new(Some(task)),
+            task: tokio::sync::Mutex::new(Some(task)),
         }
     }
 
     pub(super) async fn shutdown(&self) {
         self.shutdown.cancel();
-        let task = self.take_task();
-        if let Some(task) = task
-            && let Err(e) = task.await
-        {
+        let mut slot = self.task.lock().await;
+        let Some(task) = slot.as_mut() else {
+            return;
+        };
+        // Keep the join capability if this shutdown waiter is cancelled.
+        let result = task.await;
+        *slot = None;
+        drop(slot);
+        if let Err(e) = result {
             warn!(error = %e, "ably supervisor task failed during shutdown");
         }
     }
@@ -611,7 +616,7 @@ impl AblySupervisor {
     pub(super) fn disabled() -> Self {
         Self {
             shutdown: CancellationToken::new(),
-            task: StdMutex::new(None),
+            task: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -624,15 +629,8 @@ impl AblySupervisor {
         let task = tokio::spawn(build(shutdown.clone()));
         Self {
             shutdown,
-            task: StdMutex::new(Some(task)),
+            task: tokio::sync::Mutex::new(Some(task)),
         }
-    }
-
-    fn take_task(&self) -> Option<tokio::task::JoinHandle<()>> {
-        self.task
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .take()
     }
 }
 

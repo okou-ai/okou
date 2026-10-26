@@ -146,7 +146,6 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   >;
   readonly submit$: Command<Promise<void>, [BrowserInputAction, AbortSignal]>;
   readonly cancel$: Command<Promise<void>, [AbortSignal]>;
-  readonly continue$: Command<Promise<void>, [AbortSignal]>;
 }
 
 export type BrowserInputEntry =
@@ -180,7 +179,7 @@ function createEntrySignals(descriptor: BrowserUserActionDescriptor): Pick<
 > & {
   readonly rejectEntry$: Command<void, []>;
 } {
-  // Opening the form or Retry asks for a fresh check; thread notifications
+  // Opening the form asks for a fresh check; thread notifications
   // re-read the request without touching the website.
   const check$ = state({ revision: 0, rejected: false });
   const entry$ = computed(async (get): Promise<BrowserInputEntry> => {
@@ -1429,37 +1428,6 @@ function createCancelSignal({
   return cancel$;
 }
 
-function createContinueSignal({
-  descriptor,
-  request$,
-  deliverCallback$,
-}: BrowserUserActionMutationContext): BrowserUserActionSignals["continue$"] {
-  const continue$ = command(async ({ get, set }, signal: AbortSignal) => {
-    const request = await get(request$);
-    signal.throwIfAborted();
-    if (request.kind !== "action") {
-      return;
-    }
-    const callback =
-      request.action.state === "succeeded"
-        ? {
-            prompt: descriptor.callbackPrompt,
-            ids: request.action.callbackIds.success,
-          }
-        : request.action.state === "cancelled"
-          ? {
-              prompt: BROWSER_INPUT_CANCELLATION_PROMPT,
-              ids: request.action.callbackIds.cancellation,
-            }
-          : null;
-    if (!callback) {
-      return;
-    }
-    await set(deliverCallback$, callback.prompt, callback.ids, signal);
-  });
-  return continue$;
-}
-
 function createMutationSignals({
   descriptor,
   request$,
@@ -1485,7 +1453,7 @@ function createMutationSignals({
   | "fileDraft$"
   | "clearDraft$"
   | "rejectEntry$"
->): Pick<BrowserUserActionSignals, "submit$" | "cancel$" | "continue$"> {
+>): Pick<BrowserUserActionSignals, "submit$" | "cancel$"> {
   const write$ = createBrowserMutationSignal(descriptor);
   const deliverCallback$ = command(
     async (
@@ -1521,7 +1489,6 @@ function createMutationSignals({
   return {
     submit$: createSubmitSignal(context),
     cancel$: createCancelSignal(context),
-    continue$: createContinueSignal(context),
   };
 }
 

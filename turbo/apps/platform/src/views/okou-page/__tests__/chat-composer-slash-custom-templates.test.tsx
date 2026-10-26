@@ -204,15 +204,12 @@ test("The open slash pane refreshes published and removed templates", async () =
   ).not.toBeInTheDocument();
 });
 
-test("A failed custom catalog can be retried without hiding built-in templates", async () => {
+test("A failed custom catalog keeps built-in templates visible", async () => {
   mockTemplateChat();
-  let failed = true;
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-    return failed
-      ? respond(500, {
-          error: { code: "INTERNAL_ERROR", message: "Unavailable" },
-        })
-      : respond(200, [template("presentation")]);
+    return respond(500, {
+      error: { code: "INTERNAL_ERROR", message: "Unavailable" },
+    });
   });
   const { menu } = await openSlashMenu();
   await userEvent.setup().hover(button("Presentation", menu));
@@ -223,10 +220,4 @@ test("A failed custom catalog can be retried without hiding built-in templates",
   expect(
     within(pane).getByText(PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title),
   ).toBeInTheDocument();
-  failed = false;
-  click(button("Try again", pane));
-  await within(pane).findByText(template("presentation").title);
-  expect(
-    within(pane).queryByText("Couldn't load templates."),
-  ).not.toBeInTheDocument();
 });

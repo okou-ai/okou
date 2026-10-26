@@ -48,7 +48,7 @@ the root test lifetime. Individual tests inherit `context.signal` or use a
 stable `resetSignal()` command. The `ccstate/no-create-child-abort-controller`
 rule prohibits imperative child controller creation and is enforced as an error.
 
-Polling and timed retries use the shared loop primitives: `setLoop` starts an
+Periodic work and protocol waiting use the shared loop primitives: `setLoop` starts an
 owner-scoped daemon, while `waitLoopUntil` waits for completion. The Ably
 counterparts are `setAbly*Loop$` and `waitAbly*LoopUntil$`. They detach their
 background work under the owner signal they are given. Explicitly background
@@ -69,8 +69,8 @@ external browser/protocol lifetimes. These broad exclusions are separate from
 the explicit primitive exceptions above.
 
 Operations whose terminal error or result controls subsequent work use the
-waiting entry point. Preserve each operation's existing retry policy when
-selecting an entry point.
+waiting entry point. Loops propagate failures without replaying the body; a fresh notification or
+business action can initiate new work.
 
 ## Active module state
 

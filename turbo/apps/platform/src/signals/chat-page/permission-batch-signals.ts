@@ -13,7 +13,6 @@ import { featureSwitch$ } from "../external/feature-switch.ts";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import {
   findPermissionInMetadata,
-  refreshUserPermissionGrants$,
   resolveUserPermissionGrantPolicy,
   userPermissionGrantsByAgent,
 } from "../permission-allow/permission-allow-signals.ts";
@@ -22,10 +21,7 @@ import type {
   PlatformUserPermissionGrant,
 } from "../connector-domain.ts";
 import { DEFAULT_USER_PERMISSION_GRANT_EXPIRES_IN } from "../permission-allow/permission-grant-expiration.ts";
-import {
-  runChatActionCallback$,
-  type ChatActionCallbackIds,
-} from "./action-callback.ts";
+import { runChatActionCallback$ } from "./action-callback.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import { chatActionIdMatches } from "./chat-action-context.ts";
 import {
@@ -94,16 +90,7 @@ function createBatchState(descriptor: PermissionBatchActionDescriptor) {
   const expiresIn$ = state<UserPermissionGrantExpiresIn>(
     descriptor.expiresIn ?? DEFAULT_USER_PERMISSION_GRANT_EXPIRES_IN,
   );
-  // Save history is not current authorization. Fresh grants always supersede
-  // the acknowledged snapshot, including revocation and expiration.
-  const saved$ = state(false);
-  const savedSnapshot$ = state<{
-    previousGrants: readonly PlatformUserPermissionGrant[];
-    grants: readonly PlatformUserPermissionGrant[];
-  } | null>(null);
-  const continued$ = state(false);
   const dismissed$ = state(false);
-  const callbackIds$ = state<ChatActionCallbackIds | null>(null);
   const setExpiresIn$ = command(
     ({ set }, value: UserPermissionGrantExpiresIn) => {
       set(expiresIn$, value);
@@ -114,11 +101,7 @@ function createBatchState(descriptor: PermissionBatchActionDescriptor) {
   });
   return {
     expiresIn$,
-    saved$,
-    savedSnapshot$,
-    continued$,
     dismissed$,
-    callbackIds$,
     setExpiresIn$,
     dismiss$,
   };
@@ -223,12 +206,16 @@ function createBatchSaveCommand(
   resources: BatchResources,
   local: BatchState,
 ) {
+  const callbackIds = {
+    clientEventId: crypto.randomUUID(),
+    chatThreadSortEventId: crypto.randomUUID(),
+  };
   const performSave$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
       const expiresIn = get(local.expiresIn$);
       await set(assertBatchEnabled$, signal);
       if (get(local.dismissed$)) {
-        return;
+        return false;
       }
       const [agent, grants, metadata] = await Promise.all([
         get(resources.agent$),
@@ -256,7 +243,6 @@ function createBatchSaveCommand(
           [200],
         );
         signal.throwIfAborted();
-        set(refreshUserPermissionGrants$);
         acknowledged = mergeBatchAcknowledgements(
           descriptor.agentId,
           groups,
@@ -269,66 +255,22 @@ function createBatchSaveCommand(
           "Batch permission response does not allow the requested permissions",
         );
       }
-      // Show the acknowledged save immediately; fresh reload data supersedes it.
-      set(local.savedSnapshot$, {
-        previousGrants: grants,
-        grants: acknowledged,
-      });
-      set(local.saved$, true);
+      if (descriptor.threadId && descriptor.callbackPrompt) {
+        await set(
+          runChatActionCallback$,
+          {
+            agentId: descriptor.agentId,
+            threadId: descriptor.threadId,
+            callbackPrompt: descriptor.callbackPrompt,
+            callbackIds,
+          },
+          signal,
+        );
+      }
+      return true;
     },
   );
   return performSave$;
-}
-
-function createBatchContinueCommand(
-  descriptor: PermissionBatchActionDescriptor,
-  resources: BatchResources,
-  local: BatchState,
-) {
-  const performContinue$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      await set(assertBatchEnabled$, signal);
-      if (
-        get(local.continued$) ||
-        get(local.dismissed$) ||
-        !descriptor.threadId ||
-        !descriptor.callbackPrompt
-      ) {
-        return;
-      }
-      // Re-read on every attempt, including retries after a failed callback.
-      set(refreshUserPermissionGrants$);
-      const [grants, metadata] = await Promise.all([
-        get(resources.grants$),
-        get(resources.metadata$),
-      ]);
-      signal.throwIfAborted();
-      if (!allBatchPermissionsAllowed(descriptor, grants, metadata)) {
-        throw new Error("Permissions must be allowed before continuing");
-      }
-      let callbackIds = get(local.callbackIds$);
-      if (!callbackIds) {
-        callbackIds = {
-          clientEventId: crypto.randomUUID(),
-          chatThreadSortEventId: crypto.randomUUID(),
-        };
-        set(local.callbackIds$, callbackIds);
-      }
-      await set(
-        runChatActionCallback$,
-        {
-          agentId: descriptor.agentId,
-          threadId: descriptor.threadId,
-          callbackPrompt: descriptor.callbackPrompt,
-          callbackIds,
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      set(local.continued$, true);
-    },
-  );
-  return performContinue$;
 }
 
 /** Constructed by the thread registry or route graph, never during React render. */
@@ -337,31 +279,16 @@ export function createPermissionBatchSignals(
 ) {
   const resources = createBatchResources(descriptor);
   const local = createBatchState(descriptor);
-  const save$ = createBatchSaveCommand(descriptor, resources, local);
-  const continue$ = createBatchContinueCommand(descriptor, resources, local);
-  const confirm$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      await set(save$, signal);
-      if (get(local.saved$)) {
-        await set(continue$, signal);
-      }
-    },
-  );
+  const confirm$ = createBatchSaveCommand(descriptor, resources, local);
   return {
     ...descriptor,
     descriptor,
     href: permissionBatchActionResourceKey(descriptor),
     ...resources,
     expiresIn$: local.expiresIn$,
-    saved$: local.saved$,
-    savedSnapshot$: local.savedSnapshot$,
-    continued$: local.continued$,
     dismissed$: local.dismissed$,
-    callbackIds$: local.callbackIds$,
     setExpiresIn$: local.setExpiresIn$,
     dismiss$: local.dismiss$,
-    save$,
-    continue$,
     confirm$,
   };
 }

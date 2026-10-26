@@ -2,14 +2,11 @@ import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integ
 import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
 
-import {
-  getAction,
-  queryAction,
-} from "./connector-integrations-test-helpers.ts";
+import { getAction } from "./connector-integrations-test-helpers.ts";
 
 const context = testContext();
 const installUrl =
@@ -200,63 +197,6 @@ test.each([
   },
 );
 
-test("A failed status read can be retried without starting authorization", async () => {
-  const launched = context.mocks.browser.locationAssign();
-  let unavailable = true;
-  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
-    return unavailable
-      ? respond(401, {
-          error: { code: "UNAUTHORIZED", message: "Status unavailable" },
-        })
-      : respond(200, {
-          isConnected: false,
-          isInstalled: true,
-          isAdmin: false,
-          connectUrl,
-        });
-  });
-  await setupPage({ context, path: "/settings/slack?status=connected" });
-  const retry = await waitFor(() => {
-    return getAction("button", "Check again");
-  });
-  expect(queryAction("link", "Open Slack")).not.toBeInTheDocument();
-  unavailable = false;
-  click(retry);
-  await expect(
-    waitFor(() => {
-      return getAction("link", "Connect");
-    }),
-  ).resolves.toHaveAttribute("href", connectUrl);
-  expect(pathname()).toBe("/settings/slack");
-  expect(launched.calls).toStrictEqual([]);
-});
-
-test("Retrying a failed status read opens Slack after the connection is confirmed", async () => {
-  const launched = context.mocks.browser.locationAssign();
-  let unavailable = true;
-  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
-    return unavailable
-      ? respond(401, {
-          error: { code: "UNAUTHORIZED", message: "Status unavailable" },
-        })
-      : respond(200, {
-          isConnected: true,
-          isInstalled: true,
-          isAdmin: false,
-          workspaceName: "Actual workspace",
-        });
-  });
-  await setupPage({ context, path: "/settings/slack?status=connected" });
-  expect(getAction("button", "Check again")).toBeEnabled();
-  expect(launched.calls).toStrictEqual([]);
-  unavailable = false;
-  click(getAction("button", "Check again"));
-  await waitFor(() => {
-    expect(launched.calls).toStrictEqual(["slack://open"]);
-  });
-  expect(getAction("link", "Open Slack")).toBeInTheDocument();
-});
-
 test("A success hint cannot bypass the authenticated account mismatch check", async () => {
   const launched = context.mocks.browser.locationAssign();
   context.mocks.api(slackConnectContract.getLinkStatus, ({ respond }) => {
@@ -395,15 +335,6 @@ test.each(["/settings/slack", "/settings/slack?w=T_ACTUAL&u=U_ACTUAL"])(
     expect(launched.calls).toStrictEqual([]);
   },
 );
-
-test("A partial provider link offers a clean restart", async () => {
-  await setupPage({ context, path: "/settings/slack?w=T_ACTUAL" });
-  await expect(
-    waitFor(() => {
-      return getAction("link", "Start again");
-    }),
-  ).resolves.toHaveAttribute("href", "/settings/slack");
-});
 
 test("A member without an installation gets an admin action rather than an install grant", async () => {
   context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {

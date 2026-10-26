@@ -1,7 +1,6 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
-  Button,
   Checkbox,
   Input,
   Textarea,
@@ -17,11 +16,8 @@ import {
   VNC_CA_BUNDLE_MAX_LENGTH,
   VNC_HOST_MAX_LENGTH,
 } from "@okouai/api-contracts/contracts/vnc-connections";
-import {
-  cloudflareAccessConfigs$,
-  retryCloudflareAccess$,
-} from "../../signals/cloudflare-access.ts";
-import { tailscaleConfigs$, retryTailscale$ } from "../../signals/tailscale.ts";
+import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
+import { tailscaleConfigs$ } from "../../signals/tailscale.ts";
 import {
   chooseVncTransport$,
   chooseVncKdcTransport$,
@@ -36,9 +32,7 @@ import {
   vncOriginTlsTrust$,
   vncOriginTlsCaBundle$,
 } from "../../signals/vnc.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
 import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
-import { detach, Reason } from "../../signals/utils.ts";
 import { RemoteConnectionMethodHelp } from "./remote-field-help.tsx";
 
 interface NetworkConfigOption {
@@ -122,9 +116,6 @@ function VncNetworkConfig({
   const access = useLoadable(cloudflareAccessConfigs$);
   const tailscale = useLoadable(tailscaleConfigs$);
   const configs = type === "cloudflare_access" ? access : tailscale;
-  const retryAccess = useSet(retryCloudflareAccess$);
-  const retryTailscale = useSet(retryTailscale$);
-  const signal = useGet(pageSignal$);
   if (configs.state === "loading") {
     return (
       <p role="status">
@@ -142,22 +133,6 @@ function VncNetworkConfig({
             return $.vnc.native.loadFailed;
           })}
         </p>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            detach(
-              type === "cloudflare_access"
-                ? retryAccess(signal)
-                : retryTailscale(signal),
-              Reason.DomCallback,
-            );
-          }}
-        >
-          {t(($) => {
-            return $.global.actions.tryAgain;
-          })}
-        </Button>
       </div>
     );
   }

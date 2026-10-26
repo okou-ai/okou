@@ -11,14 +11,14 @@ import unittest
 import uuid
 
 import create_cancellation_report as create
-import read_cancellation_report_test
+import snapshot_report_fixture
 import report
-import startup_report as startup
+import snapshot_report as startup
 
 
 class CreateCancellationTests(unittest.TestCase):
     def setUp(self):
-        read_cancellation_report_test.ReadCancellationTests.setUp(self)
+        snapshot_report_fixture.prepare(self)
         raw=json.dumps(self.inputs)
         self.collector["metadata"].update(native_create_cancellation_policy_json=json.dumps(self.policy),
             native_create_cancellation_inputs_json=raw,native_create_cancellation_snapshot_bytes=startup.BYTES)
@@ -37,7 +37,7 @@ class CreateCancellationTests(unittest.TestCase):
             values=[
                 {"policy":self.policy,"inputs_sha256":hashlib.sha256(raw.encode()).hexdigest(),
                  "snapshot_sha256":self.artifacts["snapshot_files"]["memory.bin"],"snapshot_bytes":startup.BYTES,
-                 "prefetch_overhead_bytes":1024**2,"preparation_bytes":self.policy["replacement_preparation_bytes"],
+                 "preparation_bytes":self.policy["replacement_preparation_bytes"],
                  "allocated":[2,4096,1],"checkpoint_models_stalled_storage":False},
                 {"created":{"home_path":path,"home_bytes":report.NATIVE_HOME_BYTES,"ext4_magic":"53ef",
                     "superblock_hex":block.hex(),"superblock_sha256":hashlib.sha256(block).hexdigest(),"held_ns":clock(490)},

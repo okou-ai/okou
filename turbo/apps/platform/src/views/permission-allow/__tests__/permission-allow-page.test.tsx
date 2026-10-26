@@ -16,7 +16,7 @@ import {
   userPermissionGrantsContract,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -43,7 +43,9 @@ interface PermissionPageOptions {
   readonly action?: string;
   readonly expiresIn?: "1h" | "24h" | "7d" | "always";
   readonly connectorParam?: "connectorSlug" | "ref";
-  readonly grants?: readonly UserPermissionGrantResponse[];
+  readonly grants?:
+    | readonly UserPermissionGrantResponse[]
+    | (() => readonly UserPermissionGrantResponse[]);
   readonly grantLoadError?: boolean;
   readonly connectorAvailable?: boolean;
   readonly permissionDefault?: "allow" | "deny" | "ask";
@@ -205,7 +207,9 @@ function setupPermissionPage(options: PermissionPageOptions): Promise<void> {
         error: { code: "FORBIDDEN", message: "Permission grants unavailable" },
       });
     }
-    return respond(200, [...(options.grants ?? [])]);
+    const grants =
+      typeof options.grants === "function" ? options.grants() : options.grants;
+    return respond(200, [...(grants ?? [])]);
   });
 
   const params = new URLSearchParams({
@@ -311,9 +315,12 @@ test("A user grants a time-limited connector permission and resumes the chat", a
   );
 });
 
-test("Permission confirmation stays pending until its chat callback completes", async () => {
+async function confirmPermissionAfterGrantNotification(
+  outcome: "success" | "failure",
+) {
   const callbackStarted = context.mocks.deferred<void>();
   const callbackResponse = context.mocks.deferred<void>();
+  const grantsRefreshed = context.mocks.deferred<void>();
   const grants: UserPermissionGrantResponse[] = [];
   context.mocks.api(userPermissionGrantsContract.apply, ({ respond }) => {
     const grant = permissionGrant({ expiresAt: null });
@@ -323,75 +330,66 @@ test("Permission confirmation stays pending until its chat callback completes", 
   context.mocks.api(chatEventsContract.send, async ({ respond }) => {
     callbackStarted.resolve(undefined);
     await callbackResponse.promise;
-    return respond(201, {
-      threadId: THREAD_ID,
-    });
+    return outcome === "success"
+      ? respond(201, { threadId: THREAD_ID })
+      : respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Chat unavailable",
+          },
+        });
   });
   await setupPermissionPage({
     userName: "Dana",
     agentName: "Research Bot",
-    grants,
+    grants: () => {
+      if (grants.length > 0 && !grantsRefreshed.settled()) {
+        grantsRefreshed.resolve(undefined);
+      }
+      return grants;
+    },
     callback: { prompt: "Resume the review", threadId: THREAD_ID },
   });
   await screen.findByText(
     "Hey Dana, you're updating your permissions for Research Bot.",
   );
-
   click(buttonByText("Confirm"));
-
   await callbackStarted.promise;
-  await waitFor(() => {
-    expect(buttonByText("Saving...")).toBeDisabled();
+  await act(async () => {
+    context.mocks.ably.trigger("connectorPermissionUpdated");
+    await grantsRefreshed.promise;
   });
+  const pending = await waitFor(() => {
+    const control = buttonByText("Saving...");
+    expect(control).toBeDisabled();
+    return control;
+  });
+  click(pending);
   expect(screen.queryByText("Permissions updated")).not.toBeInTheDocument();
   expect(screen.queryByText("Already allowed")).not.toBeInTheDocument();
+
+  return callbackResponse;
+}
+
+test("Permission confirmation stays pending across a grant notification until its callback succeeds", async () => {
+  const callbackResponse =
+    await confirmPermissionAfterGrantNotification("success");
   callbackResponse.resolve(undefined);
   await expect(
     screen.findByText("Permissions updated"),
   ).resolves.toBeInTheDocument();
 });
 
-test("A failed chat callback remains a retryable permission action error after the grant is applied", async () => {
-  const grants: UserPermissionGrantResponse[] = [];
-  let callbackAvailable = false;
-  context.mocks.api(userPermissionGrantsContract.apply, ({ respond }) => {
-    const grant = permissionGrant({ expiresAt: null });
-    grants.push(grant);
-    return respond(200, [grant]);
-  });
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    if (!callbackAvailable) {
-      return respond(500, {
-        error: { code: "INTERNAL_SERVER_ERROR", message: "Chat unavailable" },
-      });
-    }
-    return respond(201, {
-      threadId: THREAD_ID,
-    });
-  });
-  await setupPermissionPage({
-    userName: "Dana",
-    agentName: "Research Bot",
-    grants,
-    callback: { prompt: "Resume the review", threadId: THREAD_ID },
-  });
-  await screen.findByText(
-    "Hey Dana, you're updating your permissions for Research Bot.",
-  );
-
-  click(buttonByText("Confirm"));
-
+test("Permission confirmation shows callback failure after a grant notification and disables further changes", async () => {
+  const callbackResponse =
+    await confirmPermissionAfterGrantNotification("failure");
+  callbackResponse.resolve(undefined);
   await expect(
     screen.findByText("Couldn't update permissions"),
   ).resolves.toBeInTheDocument();
-  expect(buttonByText("Confirm")).toBeEnabled();
-  expect(screen.queryByText("Permissions updated")).not.toBeInTheDocument();
+  expect(buttonByText("Confirm")).toBeDisabled();
+  expect(screen.getByLabelText("Permission duration")).toBeDisabled();
   expect(screen.queryByText("Already allowed")).not.toBeInTheDocument();
-  callbackAvailable = true;
-  click(buttonByText("Confirm"));
-  await expect(
-    screen.findByText("Permissions updated"),
-  ).resolves.toBeInTheDocument();
 });
 
 test("A user can allow a connector's uncatalogued endpoints without exposing an internal token", async () => {

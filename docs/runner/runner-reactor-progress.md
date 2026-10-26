@@ -12,13 +12,6 @@ prune binding, provider readiness, factory startup/rollback and ready publicatio
 order. The root's image/base-dir locks and live registry span the full call.
 Moving source ownership does not change the progress or cleanup rules below.
 
-Snapshot warming begins after fallible root setup and live-instance publication,
-immediately before the concrete Reactor handoff. Before then, root owns only
-validated candidates and limits. Supervisor's startup owner cancels and joins
-accepted File reads on every later startup failure; normal teardown joins the
-same owner before dependent resources and the root's image/base locks are
-released. A cancellation request or dropped handle alone is not an IO join.
-
 ## A retained future is not an independent task
 
 Keeping a future outside `tokio::select!` preserves its progress when another
@@ -313,32 +306,14 @@ production cold-start savings or wall-clock
 guarantees. Isolated temporary-file trials and injected filesystem budgets do
 not establish production pressure, IO or startup performance.
 
-## Optional snapshot IO
+## Optional preparation
 
-Startup snapshot selection carries each declared profile-byte bound into the
-actual blocking File reader. Startup and pressure-guarded reads share opened-file
-size validation, a remaining-byte cap on every read and unchanged-size completion
-checks. An oversized or growing snapshot cannot consume past its declared bound
-or report a truncated read as complete. Refusing optional warming leaves the
-snapshot contents intact; the read-byte bound is separate from kernel readahead
-and a whole-host physical-memory envelope.
-
-Supplied-policy optional consumers share the pressure controller's current
+Optional preparation uses the pressure controller's current
 observation state and global cadence through a restricted capability bound to
 its original physical-memory authority. Notifications carry no cached
 permission. Revalidate an opportunity after outside-lock admission waits;
 Critical/Unknown/stale/wave/stop transitions revoke the original offer even
 after a later recovery. No pressure-state lock survives IO or provider work.
-
-The concrete prefetch owner moves the physical operation and tracking token
-into accepted blocking reads. Dropped receivers/coordinators cannot make its
-drain finish while that producer remains active. Shutdown cancels future
-optional work and joins actual IO before dependent cache/factory teardown.
-Positive phase settlement still requires a fresh fenced observation; producer
-loss retains uncertainty. Cancellation, completed reads and declared file bounds
-are not resident-cache, released-byte or production memory-saving proof.
-
-- [Supplied-envelope prefetch fixture](../../crates/runner/tests/guarded_prefetch_native/README.md)
 
 ## Other retained work
 

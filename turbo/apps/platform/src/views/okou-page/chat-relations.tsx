@@ -179,7 +179,7 @@ function MessageCard({
         </span>
         <span className="flex-1" />
         <MessageTime value={message.createdAt} />
-        {/* Reserved even at rest, so revealing it never moves the time. */}
+
         <span className="flex size-3.5 shrink-0 items-center justify-center">
           {linked && (
             <ArrowUpRight
@@ -233,12 +233,10 @@ function MessageCards({
   id,
   list,
   unavailable,
-  retry,
 }: {
   readonly id: string;
   readonly list: ChatRelationList<ChatRelationMessage>;
   readonly unavailable: boolean;
-  readonly retry: () => void;
 }) {
   const { t } = useTranslation();
   const data = useLastLoadable(list.data$);
@@ -256,11 +254,6 @@ function MessageCards({
             return $.chat.relations.loadFailed;
           })}
         </p>
-        <Button variant="quiet" size="xs" onClick={retry}>
-          {t(($) => {
-            return $.chat.resources.retry;
-          })}
-        </Button>
       </div>
     );
   }
@@ -300,7 +293,6 @@ function ExchangedChatRow({
   const selectedPeer = useGet(signals.selectedPeer$);
   const messages = useGet(signals.messages$);
   const toggle = useSet(signals.togglePeer$);
-  const retry = useSet(signals.retry$);
   const unavailable = chat.status === "unavailable";
   const expanded = selectedPeer === chat.threadId;
   const messagesId = `${thread.threadId}-messages-${chat.threadId}`;
@@ -358,7 +350,6 @@ function ExchangedChatRow({
           id={messagesId}
           list={messages}
           unavailable={unavailable}
-          retry={retry}
         />
       )}
     </li>
@@ -473,7 +464,6 @@ export function ChatRelationships({
   const chatsId = `${thread.threadId}-resource-chats`;
   const { t } = useTranslation();
   const signals = thread.relations;
-  const retry = useSet(signals.retry$);
   const chats = useLastLoadable(signals.chats.data$);
   const origin = useAgentOrigin(thread);
   const expanded = useGet(thread.resources.expandedSections$).chats;
@@ -516,11 +506,6 @@ export function ChatRelationships({
               return $.chat.relations.loadFailed;
             })}
           </p>
-          <Button variant="quiet" size="sm" onClick={retry}>
-            {t(($) => {
-              return $.chat.resources.retry;
-            })}
-          </Button>
         </div>
       )}
       <ul id={chatsId} className="m-0 list-none p-0">

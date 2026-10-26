@@ -1,5 +1,5 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { screen, waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -15,7 +15,7 @@ const { installRunChat } = createChatRunFixtures(context);
 
 const endpoint = "*/api/voice-io/transcribe/segment";
 
-test("Keep recording after an incremental segment fails and finish in order", async () => {
+test("Keep recording data after an incremental segment fails", async () => {
   const capture = context.mocks.deferred<(samples: Float32Array) => void>();
   const unavailable = context.mocks.deferred<void>();
   context.mocks.browser.voiceInput({
@@ -24,32 +24,17 @@ test("Keep recording after an incremental segment fails and finish in order", as
     finalPcmSamples: new Float32Array(0),
   });
   installRunChat();
-  let requestAttempts = 0;
-  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
-    return HttpResponse.json({ text: "First part. Last part." });
-  });
   context.mocks.http.post(endpoint, () => {
-    requestAttempts += 1;
-    if (requestAttempts === 1) {
-      unavailable.resolve();
-      return HttpResponse.json(
-        {
-          error: {
-            code: "PROVIDER_UNAVAILABLE",
-            message: "Segment temporarily unavailable",
-          },
+    unavailable.resolve();
+    return HttpResponse.json(
+      {
+        error: {
+          code: "PROVIDER_UNAVAILABLE",
+          message: "Segment temporarily unavailable",
         },
-        { status: 503 },
-      );
-    }
-    if (requestAttempts === 2) {
-      return HttpResponse.json({ transcript: "First part.", language: "en" });
-    }
-    return HttpResponse.json({
-      transcript: "Last part.",
-
-      language: "en",
-    });
+      },
+      { status: 503 },
+    );
   });
   await setupPage({
     context,
@@ -62,19 +47,17 @@ test("Keep recording after an incremental segment fails and finish in order", as
   await expect(findEnabledButton("Stop recording")).resolves.toBeVisible();
   emit(new Float32Array(5 * 16_000).fill(0.2));
   click(await findEnabledButton("Stop recording"));
-  await waitFor(() => {
-    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-      "First part. Last part.",
-    );
-  });
+  await expect(
+    screen.findByText("Segment temporarily unavailable", { exact: false }),
+  ).resolves.toBeVisible();
+  await expect(findEnabledButton("Remove voice draft")).resolves.toBeVisible();
 });
 
-test("Preserve audio and allow retry when transcription is busy", async () => {
+test("Preserve audio and retain its draft when transcription is busy", async () => {
   const message =
     "Speech recognition is temporarily busy. Please retry in a moment.";
   context.mocks.browser.voiceInput({ rms: 0.1 });
   installRunChat();
-  let available = false;
   const audio: ArrayBuffer[] = [];
   context.mocks.http.post("*/api/voice-io/polish/segments", () => {
     return HttpResponse.json({ text: "Retained speech." });
@@ -86,43 +69,20 @@ test("Preserve audio and allow retry when transcription is busy", async () => {
       throw new Error("Expected retained audio");
     }
     audio.push(await file.arrayBuffer());
-    if (!available) {
-      return HttpResponse.json(
-        {
-          error: {
-            code: "PROVIDER_UNAVAILABLE",
-            message,
-          },
-        },
-        { status: 503 },
-      );
-    }
-    return HttpResponse.json({
-      transcript: "Retained speech.",
-
-      language: "en",
-    });
+    return HttpResponse.json(
+      { error: { code: "PROVIDER_UNAVAILABLE", message } },
+      { status: 503 },
+    );
   });
   await setupPage({ context, path: RUN_PATH });
   click(await findEnabledButton("Voice input"));
   click(await findEnabledButton("Stop recording"));
-  await findEnabledButton("Retry");
+  await findEnabledButton("Remove voice draft");
   await expect(
     screen.findByText(message, { exact: false }),
   ).resolves.toBeVisible();
-  expect(
-    screen.getByText("Your recording is kept. Retry transcription.", {
-      exact: false,
-    }),
-  ).toBeVisible();
-  available = true;
-  click(await findEnabledButton("Retry"));
-  await waitFor(() => {
-    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-      "Retained speech.",
-    );
-  });
-  expect(audio[1]).toStrictEqual(audio[0]);
+  await expect(findEnabledButton("Remove voice draft")).resolves.toBeVisible();
+  expect(audio).toHaveLength(1);
 });
 
 test("Keep genuine transcription failures actionable", async () => {
@@ -141,7 +101,7 @@ test("Keep genuine transcription failures actionable", async () => {
   await setupPage({ context, path: RUN_PATH });
   click(await findEnabledButton("Voice input"));
   click(await findEnabledButton("Stop recording"));
-  await findEnabledButton("Retry");
+  await findEnabledButton("Remove voice draft");
   await expect(
     screen.findByText("Transcription configuration failed"),
   ).resolves.toBeVisible();

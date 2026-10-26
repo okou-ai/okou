@@ -39,7 +39,6 @@ import {
   respondToJobAuthorization$,
   archiveSelectedJob$,
   bindJobResult$,
-  reloadEntrustedJobs$,
   selectedJobGrant$,
   bindJobFilterTab$,
   jobReturnFocus$,
@@ -338,7 +337,6 @@ function JobDialog({
   const id = useGet(selectedJobId$);
   const select = useSet(selectJob$);
   const detail = useLastLoadable(selectedJob$);
-  const reload = useSet(reloadEntrustedJobs$);
   const job =
     detail.state === "hasData" && detail.data?.id === id ? detail.data : null;
   return (
@@ -367,11 +365,11 @@ function JobDialog({
         {job ? (
           <JobDetails job={job} />
         ) : detail.state === "hasError" ? (
-          <Button type="button" variant="outline" onClick={reload}>
+          <p role="status">
             {t(($) => {
-              return $.chat.entrustedJobs.retry;
+              return $.global.errors.requestFailed;
             })}
-          </Button>
+          </p>
         ) : (
           <LoaderCircle
             className="animate-spin"
@@ -453,7 +451,6 @@ export function EntrustedJobs() {
   const filter = useGet(jobListFilter$);
   const chooseFilter = useSet(selectJobListFilter$);
   const openJob = useSet(openJobFromCard$);
-  const reload = useSet(reloadEntrustedJobs$);
   const jobs =
     page.state === "hasData"
       ? [...page.data.jobs].sort((left, right) => {
@@ -489,11 +486,11 @@ export function EntrustedJobs() {
         </TabsList>
       </Tabs>
       {page.state === "hasError" ? (
-        <Button type="button" variant="outline" onClick={reload}>
+        <p role="status">
           {t(($) => {
-            return $.chat.entrustedJobs.retry;
+            return $.global.errors.requestFailed;
           })}
-        </Button>
+        </p>
       ) : pending.state === "loading" && page.state !== "hasData" ? (
         <LoaderCircle
           className="animate-spin"

@@ -87,7 +87,7 @@
           "title": "Credits aufgebraucht"
         },
         "noModelProvider": {
-          "guidance": "Versuche es gleich noch einmal oder verbinde in den Einstellungen ein persönliches Claude Code- oder Codex-Abonnement.",
+          "guidance": "Verbinde in den Einstellungen ein persönliches Claude Code- oder Codex-Abonnement.",
           "title": "Für diese Ausführung ist kein Modellanbieter verfügbar"
         },
         "paidPlanRequired": {
@@ -99,7 +99,7 @@
           "title": "Anbieter nicht kompatibel"
         },
         "providerTemporarilyUnavailable": {
-          "guidance": "Der Modellanbieter ist vorübergehend nicht erreichbar. Bitte versuchen Sie es später noch einmal.",
+          "guidance": "Der Modellanbieter ist vorübergehend nicht erreichbar.",
           "title": "Anbieter vorübergehend nicht erreichbar"
         }
       },
@@ -112,7 +112,6 @@
         "time": "Zeit"
       },
       "log": "Log",
-      "manualReloadNotice": "Protokolle werden nicht automatisch aktualisiert.",
       "modelProvidedBy": "{{model}} bereitgestellt von {{provider}}",
       "networkEmpty": {
         "description": "Für diese Ausführung wurde kein Netzwerkverkehr aufgezeichnet.",
@@ -123,7 +122,6 @@
         "description": "Dieses Protokoll existiert nicht oder Sie haben keine Berechtigung, es im aktuellen Arbeitsbereich anzuzeigen.",
         "title": "Protokoll nicht gefunden"
       },
-      "refresh": "Aktualisieren",
       "runner": {
         "environment": "Umgebung",
         "framework": "Framework",
@@ -437,16 +435,15 @@
       "signedInAs": "Angemeldet als {{email}}",
       "signedInDescription": "Es existiert möglicherweise nicht oder wurde für ein anderes Konto oder eine andere Organisation freigegeben.",
       "signIn": "Anmelden",
-      "signInFailed": "Die Anmeldung konnte nicht geöffnet werden. Bitte versuche es erneut.",
+      "signInFailed": "Die Anmeldung konnte nicht geöffnet werden.",
       "switchAccount": "Konto wechseln",
-      "switchAccountFailed": "Die Kontoauswahl konnte nicht geöffnet werden. Bitte versuche es erneut.",
+      "switchAccountFailed": "Die Kontoauswahl konnte nicht geöffnet werden.",
       "title": "Du kannst dieses Artefakt nicht ansehen",
-      "tryAgain": "Erneut versuchen",
       "websiteAuthenticationDescription": "Melde dich mit einem Konto an, das auf diese Website zugreifen kann.",
       "websiteAuthenticationSignedInDescription": "Fahre fort, um den Zugriff mit deinem aktuellen Konto zu prüfen.",
       "websiteAuthenticationTitle": "Zugriff auf diese Website prüfen",
       "websiteTitle": "Du kannst diese Website nicht ansehen",
-      "websiteUnavailableDescription": "Versuche es gleich noch einmal.",
+      "websiteUnavailableDescription": "Diese Website ist vorübergehend nicht verfügbar.",
       "websiteUnavailableTitle": "Diese Website ist vorübergehend nicht verfügbar"
     },
     "actions": {
@@ -622,8 +619,7 @@
       "organizationOptionUnnamed": "Alle in Ihrer Organisation",
       "permissionsUpdated": "Zugriff aktualisiert",
       "publicAccess": "Öffentlicher Zugriff",
-      "publicOption": "Alle mit dem Link",
-      "retry": "Erneut versuchen"
+      "publicOption": "Alle mit dem Link"
     },
     "sidebar": {
       "openSharedConversation": "Geteilte Unterhaltung öffnen",
@@ -639,7 +635,7 @@
     "siteUrl": {
       "available": "Verfügbar",
       "cancel": "Abbrechen",
-      "checkFailed": "Adresse konnte nicht geprüft werden. Bearbeite sie und versuche es erneut.",
+      "checkFailed": "Diese Adresse konnte nicht geprüft werden.",
       "checking": "Verfügbarkeit wird geprüft…",
       "customize": "URL anpassen",
       "hint": "Wähle einen kurzen, einprägsamen Namen",
@@ -649,7 +645,7 @@
       "oldUrlWarning": "Die alte URL funktioniert nicht mehr. Aktualisiere bereits geteilte Links.",
       "published": "Veröffentlicht",
       "save": "Speichern",
-      "saveFailed": "Speichern fehlgeschlagen. Die Adresse ist möglicherweise vergeben oder geändert. Lade die Seite neu und versuche es erneut.",
+      "saveFailed": "Speichern fehlgeschlagen. Die Adresse ist möglicherweise vergeben oder wurde geändert.",
       "taken": "Diese Adresse ist bereits vergeben",
       "updated": "Website-URL aktualisiert"
     },
@@ -951,7 +947,7 @@
   },
   "authorization": {
     "browser": {
-      "actionFailed": "Fortfahren fehlgeschlagen. Bitte erneut versuchen.",
+      "actionFailed": "Fortfahren fehlgeschlagen.",
       "allow": "Zulassen",
       "allowed": "Zugelassen",
       "callbackPrompt": "Der Cloud-Browser ist aktiviert. Bitte setzen Sie die vorherige Aufgabe fort.",
@@ -960,7 +956,6 @@
       "enable": "Für diesen Thread aktivieren",
       "enabled": "Cloud-Browser aktiviert",
       "linkExpires": "Link läuft am {{date}} ab.",
-      "retry": "Erneut versuchen",
       "title": "Cloud-Browser aktivieren",
       "unavailableDescription": "Dieser Cloud-Browser-Autorisierungslink ist ungültig, abgelaufen oder für diesen Arbeitsbereich nicht verfügbar.",
       "unavailableTitle": "Autorisierungslink nicht verfügbar"
@@ -974,7 +969,7 @@
       "lastSeen": "Zuletzt gesehen {{date}}",
       "linkExpires": "Link läuft am {{date}} ab.",
       "macRequirement": "Erfordert einen Apple Silicon Mac mit macOS 14 oder neuer. Intel-Macs werden nicht unterstützt.",
-      "noHostsDescription": "Öffnen Sie {{desktopApplicationName}} auf Ihrem Mac und aktualisieren Sie diese Seite, wenn sie online ist.",
+      "noHostsDescription": "Öffne {{desktopApplicationName}} auf deinem Mac, um ihn online zu bringen.",
       "noHostsTitle": "Keine Online-Computer",
       "sources": {
         "chat": "dieser Chat-Thread",
@@ -1039,10 +1034,8 @@
       "allowed": "Berechtigungen erlaubt",
       "allowedCount": "{{allowed}} von {{total}} Berechtigungen erlaubt",
       "alwaysNote": "Diese Berechtigungen bleiben erlaubt, bis du sie änderst oder widerrufst.",
-      "continue": "Fortfahren",
       "continued": "Die Unterhaltung wurde fortgesetzt.",
-      "continueFailed": "Die Berechtigungen wurden erlaubt, aber die Unterhaltung konnte nicht fortgesetzt werden. Versuche erneut, fortzufahren.",
-      "continuing": "Wird fortgesetzt…",
+      "continueFailed": "Die Berechtigungen wurden erlaubt, aber die Unterhaltung konnte nicht fortgesetzt werden.",
       "details": "Berechtigungsdetails anzeigen",
       "dismissed": "Es wurden keine Berechtigungen geändert.",
       "invalid": "Dieser Berechtigungslink ist ungültig oder nicht verfügbar.",
@@ -1076,7 +1069,6 @@
       "preparing": "Wird vorbereitet...",
       "redirecting": "Weiterleitung...",
       "restore": "Wiederherstellen",
-      "retry": "Wiederholen",
       "unavailable": "Nicht verfügbar",
       "updating": "Aktualisierung..."
     },
@@ -1257,7 +1249,7 @@
           "confirmDescription": "Ihr aktueller Plan und Ihre Berechtigungen bleiben bis zum Ende dieses Abrechnungszeitraums aktiv. Stripe berechnet den neuen wiederkehrenden Betrag, wenn der neue Plan beginnt.",
           "convertPlan": "Plan umstellen",
           "description": "Stellen Sie Ihren bisherigen {{plan}}-Workspace auf einen neuen Plan mit einem individuellen monatlichen Nutzungspaket für jedes Mitglied um.",
-          "error": "Dieses Abonnement konnte nicht migriert werden. Aktualisieren Sie die Seite und versuchen Sie es erneut.",
+          "error": "Dieses Abonnement konnte nicht migriert werden.",
           "invoice": "Rechnung anzeigen",
           "processing": "Die Umstellung wird bei Stripe geplant.",
           "ready": "Wähle für jedes Mitglied und jede ausstehende Einladung ein monatliches Paket oder „Kein Paket“.",
@@ -1276,7 +1268,7 @@
         "packCreditsDiscount": "{{credits}} Credits · {{discount}}% Rabatt",
         "packOption": "{{price}} · {{credits}} Credits · {{discount}} % Rabatt",
         "paidPackageRequired": "Wähle für mindestens ein Mitglied ein kostenpflichtiges Paket aus, um fortzufahren.",
-        "planChangeError": "Die Abonnementänderung konnte nicht vorbereitet werden. Versuche es erneut.",
+        "planChangeError": "Die Abonnementänderung konnte nicht vorbereitet werden.",
         "planPlusPackages": "Tarif {{plan}} · Mitgliedspakete je {{lowest}}–{{highest}}",
         "planStep": "Plan",
         "priceFrom": "ab",
@@ -1402,7 +1394,7 @@
       "generatePdf": "PDF erstellen",
       "generatingPdf": "PDF wird erstellt…",
       "more": "Weitere Aktionen",
-      "pdfGenerationFailed": "PDF konnte nicht erstellt werden. Versuche es erneut.",
+      "pdfGenerationFailed": "PDF konnte nicht erstellt werden.",
       "remove": "Entfernen",
       "rename": "Umbenennen",
       "saving": "Speichern...",
@@ -1449,7 +1441,7 @@
             "connected": "Verbunden",
             "description": "Wählen Sie eines aus, und {{assistantName}} beginnt darin zu arbeiten.",
             "notConnected": "Nicht verbunden",
-            "pickerFailed": "Konnektoren konnten nicht geladen werden. Bitte auf der Konnektoren-Seite erneut versuchen.",
+            "pickerFailed": "Konnektoren konnten nicht geladen werden.",
             "pickerLoading": "Konnektoren werden geladen …",
             "title": "{{assistantName}} arbeitet in den Tools, die Sie ohnehin nutzen"
           },
@@ -1568,8 +1560,7 @@
       "next": "Nächster Vorschlag",
       "position": "{{current}} von {{total}}",
       "previous": "Vorheriger Vorschlag",
-      "recoveryHint": "Prüfe den Chat, bevor du erneut sendest. Du kannst den Vorschlag im Entwurf wiederherstellen.",
-      "restoreDraft": "Entwurf wiederherstellen"
+      "useSuggestion": "Vorschlag verwenden"
     },
     "attachments": {
       "attach": "Anhängen",
@@ -1581,7 +1572,7 @@
       "unavailable": "{{filename}} ist nicht mehr verfügbar. Laden Sie die Datei erneut hoch, um sie zu senden.",
       "unavailableCount_one": "{{count}} Anhang ist nicht mehr verfügbar. Laden Sie ihn erneut hoch, um ihn zu senden.",
       "unavailableCount_other": "{{count}} Anhänge sind nicht mehr verfügbar. Laden Sie sie erneut hoch, um sie zu senden.",
-      "uploadFailedRetry": "Fehler beim Hochladen von {{filename}}. Versuchen Sie es erneut."
+      "uploadFailed": "Fehler beim Hochladen von {{filename}}."
     },
     "automations": {
       "active": "Aktiv",
@@ -1702,7 +1693,6 @@
       "readOnly": "Konten, Salden und Transaktionen · schreibgeschützt",
       "repair": "Reparieren",
       "repairRequired": "{{institution}} muss repariert werden",
-      "retry": "Erneut versuchen",
       "revoke": "Widerrufen",
       "revokeConfirm": "Banking-Zugriff dieses Agenten widerrufen?",
       "selectAccounts": "Konten auswählen",
@@ -1737,21 +1727,18 @@
       "unavailableDescription": "Diese Browseranfrage ist ungültig oder nicht mehr verfügbar."
     },
     "browserInput": {
-      "applyFailed": "Die Informationen konnten nicht hinzugefügt werden. Ihre Eingaben sind noch vorhanden. Versuchen Sie es erneut.",
+      "applyFailed": "Die Informationen konnten nicht hinzugefügt werden. Ihre Eingaben sind noch vorhanden.",
       "applying": "Informationen werden hinzugefügt",
       "applyingDescription": "Der Browser schließt diese Anfrage ab.",
-      "callbackFailed": "Der Agent wurde nicht benachrichtigt.",
       "cancel": "Abbrechen",
-      "cancelFailed": "Die Anfrage konnte nicht abgebrochen werden. Versuchen Sie es erneut.",
+      "cancelFailed": "Die Anfrage konnte nicht abgebrochen werden.",
       "cancelled": "Anfrage abgebrochen",
       "cancelling": "Wird abgebrochen…",
-      "checkFailed": "Der Browser konnte nicht überprüft werden. Ihre Eingaben bleiben erhalten; versuchen Sie es vor dem Senden erneut.",
+      "checkFailed": "Der Browser konnte nicht überprüft werden. Ihre Eingaben sind noch vorhanden.",
       "checkingOutcome": "Browserstatus wird geprüft",
       "checkingOutcomeDescription": "Warten auf die Bestätigung dieser Anfrage durch den Browser.",
       "completed": "Informationen hinzugefügt",
       "confirmRangeValue": "Aktuellen Wert verwenden",
-      "continue": "Agent benachrichtigen",
-      "continuing": "Wird benachrichtigt…",
       "delivered": "Agent benachrichtigt",
       "expired": "Anfrage abgelaufen",
       "expiredDescription": "Der Browser wurde geschlossen oder diese Anfrage ist nicht mehr aktiv.",
@@ -1759,12 +1746,11 @@
       "fileLimit": "Bis zu 3 Dateien auswählen (1 bei Einzelauswahl), insgesamt 10 MiB.",
       "fileNotice": "Mit „Zum Browser hinzufügen“ wird die Datei an diese Website übertragen. Die Website kann sie beim Ändern der Dateiauswahl selbst hochladen oder das Formular absenden:",
       "loadFailed": "Diese Anfrage konnte nicht geladen werden",
-      "loadFailedDescription": "Versuchen Sie es gleich noch einmal.",
+      "loadFailedDescription": "Diese Anfrage ist derzeit nicht verfügbar.",
       "loadingDescription": "Anfrage wird geprüft…",
       "open": "Informationen eingeben",
       "optional": "(Optional)",
       "required": "(Erforderlich)",
-      "retry": "Erneut versuchen",
       "site": "Website",
       "stale": "Felder wurden geändert",
       "staleDescription": "Bitten Sie den Agenten, eine neue Anfrage zu erstellen.",
@@ -1774,7 +1760,7 @@
       "title": "Informationen im Browser eingeben",
       "unavailable": "Anfrage nicht verfügbar",
       "uncertain": "Browser prüfen",
-      "uncertainDescription": "Der Browser hat die Informationen möglicherweise erhalten. Bitten Sie den Agenten um eine Prüfung, bevor Sie es erneut versuchen."
+      "uncertainDescription": "Der Browser hat die Informationen möglicherweise erhalten. Bitte den Agenten, das Ergebnis zu prüfen."
     },
     "cards": {
       "viewDetails": "Details ansehen"
@@ -1870,11 +1856,10 @@
     },
     "connectorAccountSwitch": {
       "accountFallback": "Connector-Konto",
-      "actionFailed": "Kontowechsel fehlgeschlagen. Versuchen Sie es erneut.",
+      "actionFailed": "Kontowechsel fehlgeschlagen.",
       "customConnector": "Benutzerdefinierter Connector",
       "loadFailed": "Dieses Connector-Konto konnte nicht geladen werden.",
       "reconnectRequired": "Erneute Verbindung erforderlich. Spätere Läufe verwenden möglicherweise den vorhandenen Fallback.",
-      "retry": "Erneut versuchen",
       "selected": "Zu {{account}} gewechselt",
       "switch": "Wechseln",
       "switching": "Wechseln...",
@@ -1959,7 +1944,6 @@
       "replies": "Your replies",
       "reply": "Reply",
       "result": "Result",
-      "retry": "Retry",
       "saved": "Saved for the next evaluation",
       "saveReply": "Save reply",
       "sourceUpdate": "Quellenaktualisierung",
@@ -1975,22 +1959,21 @@
       "genericTitle": "Dieser Lauf konnte nicht abgeschlossen werden",
       "loadMessages": "Nachrichten konnten nicht geladen werden",
       "noModelProviderAction": "Abonnements verwalten",
-      "noModelProviderPrefix": "Für diese Ausführung ist kein Modellanbieter verfügbar. Versuche es erneut oder verbinde ein persönliches Abonnement.",
+      "noModelProviderPrefix": "Für diese Ausführung ist kein Modellanbieter verfügbar. Verbinde ein persönliches Abonnement.",
       "providerIncompatibleAction": "Starten Sie eine neue Sitzung",
       "providerIncompatiblePrefix": "Diese Sitzung wurde bei einem anderen Modellanbieter gestartet und kann nicht mit dem aktuellen fortgesetzt werden.",
       "recovery": {
-        "accessProgramDescription": "Versuchen Sie es in Kürze erneut. Sie können diesen Chat geöffnet lassen.",
+        "accessProgramDescription": "Sie können diesen Chat geöffnet lassen.",
         "accessProgramTitle": "Codex-Zugriff ist vorübergehend nicht verfügbar",
-        "autonomyLimitDescription": "Das Limit für aufeinanderfolgende automatische Ausführungen wurde erreicht. Bestätige, um fortzufahren.",
+        "autonomyLimitDescription": "Das Limit für aufeinanderfolgende automatische Ausführungen wurde erreicht.",
         "autonomyLimitTitle": "Limit für automatische Ausführungen erreicht",
-        "capacityDescription": "Versuchen Sie es gleich noch einmal oder arbeiten Sie mit einem anderen Modell weiter.",
+        "capacityDescription": "Arbeiten Sie mit einem anderen Modell weiter.",
         "capacityTitle": "Dieses Modell ist gerade ausgelastet",
         "claudeCode": "Claude Code",
         "codex": "Codex",
         "connectionLostTitle": "Die Antwort wurde unterbrochen",
         "contextWindowTitle": "Dieser Chat ist zu lang",
-        "continue": "Fortfahren",
-        "filesystemFullDescription": "Dieser Lauf konnte keine weiteren Dateien speichern. Versuchen Sie es erneut.",
+        "filesystemFullDescription": "Dieser Lauf konnte keine weiteren Dateien speichern.",
         "filesystemFullTitle": "Für diesen Lauf ist kein Speicherplatz mehr frei",
         "fiveHourReset": "Das 5-Stunden-Limit wird {{time}} zurückgesetzt",
         "inputTooLargeDescription": "Kürzen Sie Ihre Nachricht und senden Sie sie erneut.",
@@ -2000,7 +1983,7 @@
         "newChat": "Neuer Chat",
         "newChatDescription": "Starten Sie einen neuen Chat und übernehmen Sie die wichtigen Angaben, die Sie weiter brauchen.",
         "openClaude": "Claude öffnen",
-        "outputLimitDescription": "Die Antwort wurde vorzeitig beendet. Mit „Fortfahren“ können Sie dort weitermachen.",
+        "outputLimitDescription": "Die Antwort wurde vorzeitig beendet.",
         "outputLimitTitle": "Die Antwort hat ihre Längenbegrenzung erreicht",
         "personalAccount": "Persönliches Abonnement {{account}}",
         "personalAccountDisconnected": "Persönliches Abonnement getrennt",
@@ -2013,16 +1996,13 @@
         "providerStreamTimeoutTitle": "Die Modellantwort ist abgelaufen",
         "reconnectTitle": "Modellkonto erneut verbinden",
         "resetsAt": "Wird um {{time}} zurückgesetzt",
-        "resetUsageRemaining": "Zurücksetzen · {{value}} übrig",
         "safetyDescription": "Die Anfrage entsprach nicht den Sicherheitsregeln des Modells. Formulieren Sie sie anders oder wählen Sie ein anderes Modell.",
         "safetyTitle": "Das Modell konnte bei dieser Anfrage nicht helfen",
-        "selectModel": "Modell wechseln",
         "sessionHistoryTitle": "Dieser Chat hat sein Limit erreicht",
         "termsDescription": "Akzeptieren Sie die aktuellen Nutzungsbedingungen bei Claude und versuchen Sie es dann erneut.",
         "termsTitle": "Die Claude-Bedingungen müssen akzeptiert werden",
-        "timeoutDescription": "Sie können dort weitermachen, wo dieser Lauf aufgehört hat.",
+        "timeoutDescription": "Sende eine neue Nachricht, um fortzufahren.",
         "timeoutTitle": "Zeitlimit erreicht",
-        "tryAgain": "Erneut versuchen",
         "unavailableDescription": "Wählen Sie ein anderes Modell, das mit Ihrem Anbieterkonto funktioniert.",
         "unavailableTitle": "Ausgewähltes Modell ist nicht verfügbar",
         "usageDescription": "Sie können fortfahren, wenn Ihr Nutzungslimit zurückgesetzt wird, oder jetzt das Modell wechseln.",
@@ -2088,7 +2068,6 @@
         "open": "E-Mails verwalten",
         "openEmail": "E-Mail öffnen: {{subject}}",
         "result": "{{succeeded}} abgeschlossen · {{failed}} fehlgeschlagen",
-        "retry": "Erneut versuchen",
         "search": "Nach Betreff oder Absender suchen",
         "selectAll": "Alle auswählen",
         "selected": "{{quantity}} ausgewählt",
@@ -2213,7 +2192,6 @@
       "off": "Aus",
       "on": "Ein",
       "requiresSsh": "Benötigt SSH: {{name}}",
-      "retry": "Erneut versuchen",
       "sshDisabled": "SSH aktivieren: {{name}}",
       "sshEnabled": "SSH aktiviert: {{name}}",
       "title": "Fernzugriff",
@@ -2225,7 +2203,6 @@
       "empty": "Artefakte und verwandte Chats aus diesem Chat erscheinen hier.",
       "loadFailed": "Ressourcen konnten nicht geladen werden",
       "loading": "Ressourcen werden geladen",
-      "retry": "Erneut versuchen",
       "showMore": "Mehr anzeigen",
       "title": "Chat-Ressourcen"
     },
@@ -2282,10 +2259,10 @@
       "copyFailed": "Der Link konnte nicht kopiert werden",
       "copyLink": "Link kopieren",
       "create": "Teilen",
-      "createFailed": "Die geteilte Unterhaltung konnte nicht erstellt werden. Versuche es erneut.",
+      "createFailed": "Die geteilte Unterhaltung konnte nicht erstellt werden.",
       "deselectGroup": "Nachrichtengruppe abwählen",
       "linkCopied": "Link kopiert",
-      "messageShareFailed": "Der geteilte Link konnte nicht erstellt werden. Versuche es erneut.",
+      "messageShareFailed": "Der geteilte Link konnte nicht erstellt werden.",
       "publicDescription": "Ausgewählte Nachrichten und ihre Anhänge werden öffentlich.",
       "selectedCount_one": "{{count}} ausgewählt",
       "selectedCount_other": "{{count}} ausgewählt",
@@ -2346,7 +2323,7 @@
       "credits_one": "Verbleibende Zurücksetzungen: {{count}}",
       "credits_other": "Verbleibende Zurücksetzungen: {{count}}",
       "creditsUnknown": "Verbleibende Zurücksetzungen: unbekannt",
-      "error": "Zurücksetzen fehlgeschlagen. Dieselbe Anfrage erneut versuchen.",
+      "error": "Das Zurücksetzen konnte nicht bestätigt werden.",
       "expiresAt": "Guthaben läuft ab: {{time}}",
       "loadFailed": "Die Nutzung des Abonnements konnte nicht gelesen werden.",
       "loading": "Abonnement wird geladen…",
@@ -2360,7 +2337,6 @@
       "unknown": "Unbekannt",
       "unsupported": "Manuelles Zurücksetzen wird nicht unterstützt; die Nutzung erholt sich automatisch."
     },
-    "syncFailed": "Deine Chats sind möglicherweise nicht aktuell",
     "taskChips": {
       "chooseTask": "Aufgabe wählen",
       "ideas": {
@@ -2976,7 +2952,7 @@
       "checkingLimit": "Überprüfung des Spracheingabelimits",
       "cleanupFailed": "Der Text wurde eingefügt, aber die gespeicherte Aufnahme konnte nicht entfernt werden.",
       "confirmRecording": "Erledigt",
-      "detectionFailed": "Die Spracherkennung ist nicht verfügbar. Deine Aufnahme bleibt gespeichert. Bitte versuche es erneut.",
+      "detectionFailed": "Die Spracherkennung ist nicht verfügbar. Deine Aufnahme bleibt gespeichert.",
       "discarding": "Sprachentwurf wird entfernt...",
       "input": "Spracheingabe",
       "inputLimitReached": "Das Limit für die Spracheingabe wurde erreicht. Für höhere Limits upgraden Sie auf Pro oder Team.",
@@ -2987,31 +2963,30 @@
       "microphoneAccessDenied": "Der Zugriff auf das Mikrofon wurde verweigert. Erlauben Sie den Mikrofonzugriff und versuchen Sie es erneut.",
       "noSpeechDetected": "Keine Sprache erkannt. Bitte nimm erneut auf.",
       "openingMicrophone": "Mikrofon öffnen...",
+      "recordingSaved": "Deine Aufnahme wurde gespeichert.",
       "removeDraft": "Sprachentwurf entfernen",
-      "restoreFailed": "Ihr Sprachentwurf konnte nicht geladen werden. Versuchen Sie es erneut.",
-      "retry": "Erneut versuchen",
-      "retryingSavedAudio": "Gespeichertes Audio wird erneut verarbeitet",
-      "retryReady": "Ihre Aufnahme bleibt erhalten. Versuchen Sie die Transkription erneut.",
+      "restoreFailed": "Ihr Sprachentwurf konnte nicht geladen werden.",
       "returningToComposer": "Zurück zum Eingabefeld",
       "starting": "Spracheingabe starten",
       "stopRecording": "Aufnahme stoppen",
-      "storageFailed": "Audio konnte nicht gespeichert werden. Erneut versuchen stellt nur bereits auf diesem Gerät gespeichertes Audio wieder her.",
+      "storageFailed": "Audio konnte nicht gespeichert werden. Nur bereits auf diesem Gerät gespeichertes Audio ist verfügbar.",
       "textTakingShape": "Der Text nimmt Form an",
       "transcribing": "Transkribieren",
-      "transcriptionFailed": "Die Sprachtranskription ist fehlgeschlagen. Versuchen Sie es erneut."
+      "transcriptionFailed": "Die Sprachtranskription ist fehlgeschlagen.",
+      "useRecording": "Aufnahme verwenden"
     },
     "walletAction": {
       "approvalApproved": "Genehmigt; wartet auf Fortsetzung",
       "approvalContinued": "Kaufanfrage fortgesetzt",
       "approvalRecorded": "Status aktualisiert",
-      "approvalStopped": "Automatisches Warten beendet; du kannst manuell fortfahren",
+      "approvalStopped": "Das automatische Warten wurde beendet.",
       "approvalWaiting": "Warten auf die Kaufgenehmigung",
       "approveButton": "Prüfen",
       "approveTitle": "Kauf prüfen",
       "authorized": "Autorisiert",
-      "callbackFailed": "Autorisiert. Wähle Weiter, um die Nachricht erneut zu senden.",
+      "callbackFailed": "Autorisiert. Deine Nachricht konnte nicht gesendet werden.",
       "callbackPrompt": "Die Link-Wallet wurde autorisiert. Setze die vorherige Aufgabe fort.",
-      "checkFailed": "Die Autorisierung konnte nicht geprüft werden. Versuche es erneut.",
+      "checkFailed": "Die Autorisierung konnte nicht geprüft werden.",
       "connectButton": "Autorisieren",
       "connectTitle": "Link-Wallet autorisieren",
       "continueButton": "Weiter",
@@ -3031,7 +3006,7 @@
     "affectedMembers_one": "{{count}} Mitglied",
     "affectedMembers_other": "{{count}} Mitglieder",
     "cancel": "Abbrechen",
-    "changed": "Dieser Cloudflare Access wurde während der Bearbeitung geändert. Prüfen Sie vor dem Speichern die neuesten Einstellungen.",
+    "changed": "Dieser Cloudflare Access wurde während der Bearbeitung geändert. Deine Änderungen wurden nicht gespeichert.",
     "clientId": "Client-ID des Service-Tokens",
     "clientIdPlaceholder": "Client-ID des Service-Tokens einfügen",
     "clientSecret": "Client-Secret des Service-Tokens",
@@ -3039,20 +3014,18 @@
     "configuration": "Cloudflare Access",
     "convert": "Persönlich machen",
     "convertHelp": "Diese Cloudflare-Access-Konfiguration der Organisation wird zu Ihrer eigenen persönlichen Konfiguration – auch wenn sie von jemand anderem erstellt wurde. Das Service Token bleibt unverändert und Ihre SSH-Hosts können verbunden bleiben.",
-    "convertUncertain": "Die Umstellung konnte nicht bestätigt werden. Prüfen Sie die aktuelle Konfiguration, bevor Sie es erneut versuchen.",
+    "convertUncertain": "Die Umstellung konnte nicht bestätigt werden.",
     "createNew": "Neuen Cloudflare Access erstellen",
     "delete": "Cloudflare Access löschen",
     "deleteHelp": "Diesen Cloudflare Access löschen? Das gespeicherte Service-Token kann nicht wiederhergestellt werden. Eigene Hosts müssen zuvor neu zugewiesen werden.",
-    "deleteUncertain": "Der Löschvorgang konnte nicht bestätigt werden. Prüfen Sie die aktuellen Auswirkungen, bevor Sie es erneut versuchen.",
+    "deleteUncertain": "Der Löschvorgang konnte nicht bestätigt werden.",
     "edit": "Cloudflare Access bearbeiten",
-    "failed": "Die Cloudflare-Access-Änderung konnte nicht gespeichert werden. Versuche es erneut.",
+    "failed": "Die Cloudflare-Access-Änderung konnte nicht gespeichert werden.",
     "forbidden": "Nur Organisationsadministratoren können gemeinsam genutzten Cloudflare Access ändern.",
-    "impactChanged": "Die betroffenen Hosts haben sich geändert. Prüfen Sie die aktuellen Auswirkungen erneut.",
+    "impactChanged": "Die betroffenen Hosts haben sich geändert. Die Änderung wurde nicht angewendet.",
     "inUse": "Ein SSH-Host verwendet diesen Cloudflare Access. Sein Besitzer muss ihn zuerst neu zuordnen oder löschen.",
     "invalidInput": "Einige Cloudflare-Access-Einstellungen sind ungültig. Überprüfe die Felder und versuche es erneut.",
-    "keepChanges": "Meine Änderungen mit dieser Version übernehmen",
-    "latest": "Zuletzt gespeicherte Einstellungen",
-    "loadFailed": "Cloudflare Access konnte nicht geladen werden. Versuchen Sie es erneut.",
+    "loadFailed": "Cloudflare Access konnte nicht geladen werden.",
     "loading": "Cloudflare Access wird geladen…",
     "memberIdentifier": " (ID {{identifier}})",
     "missing": "Dieser Cloudflare Access ist nicht mehr verfügbar. Wählen oder erstellen Sie einen anderen.",
@@ -3065,12 +3038,9 @@
     "promote": "Für Organisation freigeben",
     "promoteConfirm": "Ich verstehe, dass alle Mitglieder der Organisation dieses Service-Token verwenden können.",
     "promoteHelp": "Geben Sie Ihren persönlichen Cloudflare Access für die Organisation frei. Service-Token und eigene SSH-Hostbindungen bleiben erhalten.",
-    "promoteUncertain": "Die Umwandlung konnte nicht bestätigt werden. Schließen Sie diesen Dialog und prüfen Sie die aktuelle Konfiguration vor einem erneuten Versuch.",
+    "promoteUncertain": "Die Umwandlung konnte nicht bestätigt werden.",
     "replace": "Service-Token ersetzen",
-    "resourceIdConflict": "Diese Ressourcen-ID kann nicht verwendet werden. Schließen Sie das Formular und öffnen Sie es erneut, um es noch einmal zu versuchen.",
-    "retry": "Erneut versuchen",
-    "reviewHelp": "Ihr Entwurf bleibt erhalten. Bestätigen Sie die zuletzt gespeicherten Einstellungen, bevor Sie Ihre Änderungen anwenden.",
-    "reviewLatest": "Aktuelle Auswirkungen prüfen",
+    "resourceIdConflict": "Diese Ressourcen-ID kann nicht verwendet werden.",
     "revisionExhausted": "Diese Konfiguration kann nicht mehr aktualisiert werden. Erstelle eine neue.",
     "save": "Speichern",
     "saveUncertain": "Speichern fehlgeschlagen.",
@@ -3159,7 +3129,6 @@
       "save": "Speichern",
       "saving": "Speichern...",
       "savingEllipsis": "Speichern…",
-      "tryAgain": "Versuchen Sie es erneut",
       "uninstall": "Deinstallieren",
       "uninstalling": "Deinstallation..."
     },
@@ -3273,7 +3242,6 @@
         "loading": "Konnektoren werden geladen…",
         "noCategoryMatches": "Keine passenden Konnektoren in dieser Kategorie.",
         "noCustomMatches": "Keine benutzerdefinierten Konnektoren entsprechen Ihrer Suche.",
-        "retry": "Erneut versuchen",
         "searchAll": "Alle Konnektoren durchsuchen"
       },
       "empty": {
@@ -3338,7 +3306,7 @@
         "denied": "Die Verbindung wurde verweigert. Beginnen Sie erneut, um es erneut zu versuchen.",
         "expired": "Verbindungssitzung abgelaufen. Beginnen Sie erneut, um es erneut zu versuchen.",
         "failed": "Verbindung fehlgeschlagen. Beginnen Sie erneut, um es erneut zu versuchen.",
-        "verificationOpen": "Die Bestätigungsseite konnte nicht geöffnet werden. Versuchen Sie es erneut."
+        "verificationOpen": "Die Bestätigungsseite konnte nicht geöffnet werden."
       },
       "external": {
         "code": "Code",
@@ -3379,7 +3347,7 @@
           "clientRegistrationRejected": "Der OAuth-Anbieter hat die automatische Client-Registrierung abgelehnt und beschränkt möglicherweise unterstützte MCP-Clients oder Registrierungsdaten. Verwenden Sie einen vom Anbieter unterstützten MCP-Client, benutzerdefiniertes OAuth nur mit bereits registrierten Client-Anmeldedaten oder wenden Sie sich an den Okou-Support.",
           "clientRegistrationUnavailable": "Der OAuth-Anbieter bietet keine unterstützte Methode zur automatischen Client-Registrierung an. Verwenden Sie benutzerdefiniertes OAuth, wenn Sie bereits registrierte Client-Anmeldedaten haben, oder wenden Sie sich an den Okou-Support.",
           "discoveryInvalid": "Die OAuth-Discovery-Metadaten des MCP-Servers sind unvollständig oder widersprüchlich. Korrigieren Sie die veröffentlichten Metadaten, wenn Sie den Server verwalten, oder wenden Sie sich an den Serveradministrator.",
-          "providerUnavailable": "Der MCP-OAuth-Anbieter ist vorübergehend nicht verfügbar oder begrenzt Anfragen. Versuchen Sie es später erneut und prüfen Sie die Verfügbarkeit des Anbieters.",
+          "providerUnavailable": "Der MCP-OAuth-Anbieter ist vorübergehend nicht verfügbar oder begrenzt Anfragen. Prüfen Sie die Verfügbarkeit des Anbieters.",
           "unsafeUrl": "Der MCP-Server hat eine OAuth-URL veröffentlicht, die kein öffentlicher HTTPS-Endpunkt ist. Korrigieren Sie die veröffentlichten OAuth-URLs des Servers und versuchen Sie es erneut."
         },
         "save": "Speichern",
@@ -3568,7 +3536,7 @@
         "linkIncompleteTitle": "Der Connect-Link ist unvollständig",
         "notInstalledDescription": "Bitten Sie einen Organisationsadministrator, GitHub zu installieren, bevor Sie Ihr Konto verbinden.",
         "notInstalledTitle": "GitHub ist nicht installiert",
-        "refresh": "Aktualisieren Sie diese Seite und versuchen Sie es erneut.",
+        "refresh": "Dein Anmeldestatus konnte nicht überprüft werden.",
         "signInButton": "Melden Sie sich bei {{brandName}} an",
         "signInCheckFailed": "Die Anmeldung konnte nicht überprüft werden",
         "signInDescription": "Verwenden Sie Ihr {{brandName}}-Konto, bevor Sie diesen GitHub-Benutzer verbinden.",
@@ -3591,17 +3559,15 @@
         "connectDescription": "Verknüpfen Sie Ihr Konto mit diesem Slack-Arbeitsbereich, damit Sie direkt über Slack mit Ihrem Agenten interagieren können.",
         "connectTitle": "Stellen Sie eine Verbindung zu Slack her",
         "currentConnection": "Slack ist verbunden",
-        "errorFallback": "Die Slack-Verbindung konnte nicht geprüft oder gestartet werden. Versuchen Sie es erneut.",
+        "errorFallback": "Die Slack-Verbindung konnte nicht geprüft oder gestartet werden.",
         "invalidDescription": "Diese Seite soll über einen Slack-Connect-Link geöffnet werden.",
         "keepAccount": "{{account}} beibehalten",
         "open": "Öffnen Sie Slack",
         "reauthorize": "Slack-Berechtigungen aktualisieren",
-        "retryStatus": "Erneut prüfen",
-        "startAgain": "Neu starten",
         "successDescription": "Erwähnen Sie den installierten Bot in einem beliebigen Kanal oder senden Sie eine DM, um mit dem Chatten zu beginnen.",
         "successDescriptionWorkspace": "Sie sind mit {{workspace}} verbunden. Erwähnen Sie den installierten Bot in einem beliebigen Kanal oder senden Sie eine DM, um mit dem Chatten zu beginnen.",
         "switchAccount": "Zu {{account}} wechseln",
-        "unavailable": "Slack ist derzeit nicht verfügbar. Bitte versuche es später erneut.",
+        "unavailable": "Slack ist derzeit nicht verfügbar.",
         "workspaceMismatchDescription": "Dieser Slack-Arbeitsbereich ist für Ihre aktuelle Okou-Organisation nicht verfügbar. Wechseln Sie die Organisation oder bitten Sie einen Administrator um Hilfe.",
         "workspaceMismatchDescriptionNamed": "Ihre aktuelle Okou-Organisation ist mit {{workspace}} verbunden. Wechseln Sie die Organisation oder bitten Sie einen Administrator, die Installation zu entfernen, bevor Sie diesen Slack-Arbeitsbereich verbinden.",
         "workspaceMismatchTitle": "Slack-Arbeitsbereich stimmt nicht überein"
@@ -3620,7 +3586,7 @@
         "pendingTitle": "Zum Abschluss in Teams installieren",
         "providerName": "Microsoft Teams",
         "reinstall": "In Teams neu installieren",
-        "statusFailed": "Die Teams-Verbindung konnte nicht geprüft werden. Bitte erneut versuchen.",
+        "statusFailed": "Die Teams-Verbindung konnte nicht geprüft werden.",
         "successDescription": "Sie sind mit {{team}} verbunden. Erwähnen Sie @{{botName}} in Teams, um mit dem Chatten zu beginnen.",
         "successTitle": "Verbunden mit Microsoft Teams",
         "unavailable": "Die Teams-Einrichtung ist nicht verfügbar. Bitten Sie Ihren Organisationsadministrator um Hilfe."
@@ -3633,10 +3599,10 @@
         "conflictDescription": "Sie sind als {{current}} verbunden, aber dieser Link fordert {{requested}} an. Behalten Sie die Verbindung bei oder verwalten Sie sie ausdrücklich, bevor Sie es erneut versuchen.",
         "conflictTitle": "Ein anderes Telegram-Konto ist verbunden",
         "connectDescription": "Verknüpfen Sie Ihr Konto mit diesem Telegram-Bot, damit Sie direkt über Telegram mit Ihrem Agenten interagieren können.",
-        "connectionCheckFailed": "Telegram konnte zur Prüfung der Verbindung nicht erreicht werden. Bitte versuchen Sie es gleich erneut.",
+        "connectionCheckFailed": "Telegram konnte zur Prüfung der Verbindung nicht erreicht werden.",
         "connectTitle": "Stellen Sie eine Verbindung zu Telegram her",
         "continue": "Weiter mit Telegram",
-        "domainNotVerified": "Die Telegram-Anmeldung für diese App konnte nicht bestätigt werden. Versuchen Sie es erneut oder kontaktieren Sie den Support, falls das Problem weiterhin besteht.",
+        "domainNotVerified": "Die Telegram-Anmeldung für diese App konnte nicht bestätigt werden. Kontaktieren Sie den Support, falls das Problem weiterhin besteht.",
         "errorFallback": "Wir konnten Telegram nicht verbinden. Versuchen Sie es erneut über Telegram.",
         "interrupted": "Bei diesem Versuch wurde keine Verbindung bestätigt. Prüfen Sie den aktuellen Status, bevor Sie es erneut versuchen.",
         "invalidSignature": "Die Signatur auf diesem Link ist ungültig.",
@@ -3670,7 +3636,7 @@
         "copyCodeSuccess": "Verbindungscode kopiert",
         "copyError": "Telefonnummer konnte nicht kopiert werden",
         "copySuccess": "Telefonnummer kopiert",
-        "createCodeError": "Verbindungscode konnte nicht erstellt werden. Versuchen Sie es erneut.",
+        "createCodeError": "Verbindungscode konnte nicht erstellt werden.",
         "creatingCode": "Verbindungscode wird erstellt…",
         "description": "SMS-Zugriff auf {{assistantName}}",
         "openMessages": "Nachrichten öffnen",
@@ -3678,8 +3644,7 @@
         "phoneLabel": "Telefon",
         "qrTitle": "Scannen, um Nachrichten mit dem vorausgefüllten Verbindungscode zu öffnen",
         "risk": "Verwenden Sie nach Möglichkeit iMessage. SMS- und MMS-Antworten kommen möglicherweise nicht zuverlässig an.",
-        "sendToLabel": "Senden an",
-        "tryAgain": "Erneut versuchen"
+        "sendToLabel": "Senden an"
       },
       "errors": {
         "githubAuthorizationWindow": "Das Autorisierungsfenster konnte nicht geöffnet werden"
@@ -3989,7 +3954,7 @@
     }
   },
   "desktopShellAuthorization": {
-    "actionFailed": "Autorisierung konnte nicht aktualisiert werden. Aktualisiere die Seite und versuche es erneut.",
+    "actionFailed": "Autorisierung konnte nicht aktualisiert werden.",
     "allow": "Für 1 Stunde erlauben",
     "approved": "Shell-Zugriff erlaubt",
     "deadline": "Läuft ab: {{date}}",
@@ -4000,7 +3965,6 @@
     "expired": "Autorisierung abgelaufen",
     "loading": "Autorisierung wird geladen…",
     "pending": "Bereit zur Genehmigung",
-    "refresh": "Aktualisieren",
     "revoke": "Zugriff widerrufen",
     "revoked": "Shell-Zugriff widerrufen",
     "scope": "Nur dieser Chat und Computer. Bestehende Terminals bleiben nach Ablauf geöffnet.",
@@ -4059,14 +4023,10 @@
     "page": "Seite {{page}}",
     "preview": "Vorschau: {{title}}",
     "previousPage": "Vorherige Beispielseite",
-    "retry": "Erneut versuchen",
     "title": "Dokument",
     "useNamed": "{{title}} verwenden"
   },
   "global": {
-    "actions": {
-      "tryAgain": "Erneut versuchen"
-    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Die Anfrage ist fehlgeschlagen"
@@ -4123,11 +4083,11 @@
           "title": "Sie haben dieses Angebot bereits eingelöst"
         },
         "billingUnavailable": {
-          "body": "Unser Zahlungssystem ist derzeit nicht verfügbar. Bitte versuchen Sie es in ein paar Minuten noch einmal.",
+          "body": "Unser Zahlungssystem ist derzeit nicht verfügbar.",
           "title": "Die Abrechnung ist vorübergehend nicht verfügbar"
         },
         "broken": {
-          "body": "Wir konnten Ihre Einlösung nicht abschließen. Bitte versuchen Sie es erneut oder wenden Sie sich an den Support.",
+          "body": "Wir konnten Ihre Einlösung nicht abschließen. Bitte wenden Sie sich an den Support.",
           "title": "Etwas ist schief gelaufen"
         },
         "campaignUnavailable": {
@@ -4139,7 +4099,7 @@
           "title": "Zahlung erfolgreich"
         },
         "processing": {
-          "body": "Wir schreiben {{orgName}} Ihre Credits jetzt gut. Dies dauert in der Regel nur wenige Sekunden. Aktualisieren Sie die Seite gleich, um den neuen Kontostand zu sehen.",
+          "body": "Dein Guthaben wird jetzt {{orgName}} gutgeschrieben. Das dauert normalerweise einige Sekunden.",
           "title": "Zahlung erhalten"
         },
         "ready": {
@@ -4282,6 +4242,8 @@
         "teamTitle": "Teammitglied einladen"
       },
       "prompt": {
+        "connectorsDescription": "Verbinde deine Tools, damit Okou deinen Arbeitskontext versteht und Aufgaben passend zu deinen Bedürfnissen erledigt. Du kannst das auch später tun.",
+        "connectorsTitle": "Verbinde deine Arbeitstools",
         "intro": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud."
       },
       "skills": {
@@ -4333,7 +4295,6 @@
         "showFullPrompt": "Vollständigen Prompt anzeigen",
         "startError": "Die Import-Sitzung konnte nicht geöffnet werden.",
         "title": "Bring deine vorhandenen Skills zu Okou",
-        "tryAgain": "Erneut versuchen",
         "waiting": "Importierte Skills erscheinen hier, sobald sie ankommen."
       },
       "slack": {
@@ -4683,10 +4644,9 @@
         "connect": "{{provider}} verbinden",
         "connected": "Verbunden",
         "connecting": "Wird verbunden …",
-        "failedNote": "{{provider}} konnte nicht verbunden werden. Versuch es erneut oder verbinde es später.",
-        "retry": "Erneut versuchen",
+        "failedNote": "{{provider}} konnte nicht verbunden werden. Du kannst fortfahren und die Verbindung später herstellen.",
         "rowCopy": "Verbinde deinen Plan, damit Aufgaben statt mit Okou-Credits darüber laufen.",
-        "unconfirmedNote": "Deine {{provider}}-Verbindung konnte nicht geprüft werden. Versuch es erneut oder verbinde es später."
+        "unconfirmedNote": "Deine Verbindung zu {{provider}} konnte nicht geprüft werden. Du kannst fortfahren und die Verbindung später herstellen."
       },
       "team": {
         "copy": "Lade ein Teammitglied ein, deine Workflows zu teilen – jede Person verbindet dabei ihre eigenen Tools.",
@@ -4874,7 +4834,7 @@
     "emptyTitle": "Noch keine Geräte hinzugefügt",
     "entryDescription": "Wähle aus, wie Okou mit dem Gerät interagieren soll.",
     "entryTitle": "Remoteverbindung hinzufügen",
-    "failedLoad": "Dieser Schritt kann nicht geladen werden. Deine Eingaben sind im Formular gespeichert. Versuche es erneut.",
+    "failedLoad": "Dieser Schritt kann nicht geladen werden. Deine Eingaben sind im Formular gespeichert.",
     "hideSecret": "Eingegebenen Wert ausblenden",
     "keepSavedLoginHelp": "Lass die Felder leer, um die gespeicherten Anmeldedaten beizubehalten. Wenn du ein Konto oder Zertifikat änderst, gib alle neuen Angaben einschließlich des privaten Schlüssels des Zertifikats ein.",
     "keepSavedSecret": "Leer lassen, um den gespeicherten Wert beizubehalten",
@@ -4902,7 +4862,7 @@
     "networkSettings": "Einstellungen für private Netzwerke",
     "networkTailscaleHelp": "Mit Tailscale auf Geräte zugreifen",
     "networkTitle": "Private Netzwerke",
-    "networkUnavailable": "Dieses Netzwerk ist nicht verfügbar. Wähle ein anderes oder lade die Seite neu.",
+    "networkUnavailable": "Dieses Netzwerk ist nicht mehr verfügbar. Wähle ein anderes Netzwerk.",
     "newLogin": "Daten manuell eingeben",
     "next": "Weiter",
     "optionalName": "Verbindungsname (optional)",
@@ -4910,7 +4870,6 @@
     "passwordHelp": "Gib das Passwort für dieses Gerätekonto ein. Verwende unter Windows das Kontopasswort; eine PIN wird nicht unterstützt.",
     "passwordPlaceholder": "Passwort des Gerätekontos eingeben",
     "resourceUnavailable": "Diese Konfiguration ist nicht verfügbar oder du hast keinen Zugriff mehr darauf.",
-    "retry": "Erneut versuchen",
     "rsaGroup": "RSA-AES",
     "saved": "Verbindung hinzugefügt",
     "savedHelp": "Unter Einstellungen kannst du die Verbindungsdetails ansehen oder bearbeiten.",
@@ -5053,7 +5012,7 @@
     "scopeDescription": "Benenne das Netzwerk und wähle aus, wer es verwenden kann.",
     "scopeSaved": "Die Freigabeeinstellungen des Netzwerks wurden gespeichert. Andere Änderungen sind noch nicht gespeichert. Speichere sie oder kehre zu den Netzwerkdetails zurück.",
     "scopeUnavailable": "Dieses Netzwerk ist nicht verfügbar oder dir fehlt die erforderliche Administratorberechtigung.",
-    "scopeUncertain": "Die Änderung konnte nicht bestätigt werden. Lade die Seite neu und prüfe die gespeicherten Einstellungen, bevor du sie erneut übermittelst.",
+    "scopeUncertain": "Die Änderung konnte nicht bestätigt werden. Die gespeicherten Einstellungen wurden nicht überprüft.",
     "unknownOrganization": "deine Organisation",
     "view": "Ansehen"
   },
@@ -5071,12 +5030,12 @@
     "contentPolicyRejected": "Der Modellanbieter hat diese Anfrage aufgrund seiner Richtlinie zur Inhaltssicherheit abgelehnt. Ein erneuter Versuch mit derselben Eingabe wird wieder fehlschlagen. Formulieren Sie die Anfrage um, beginnen Sie eine neue Unterhaltung oder wechseln Sie das Modell.",
     "executionTimeout": "Dieser Lauf hat sein Zeitlimit erreicht.",
     "failed": "Lauf fehlgeschlagen",
-    "modelRoutesUnavailable": "Alle integrierten Routen für dieses Modell sind vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut.",
+    "modelRoutesUnavailable": "Alle integrierten Routen für dieses Modell sind vorübergehend nicht verfügbar.",
     "modelTemporarilyUnavailable": "Modell vorübergehend nicht verfügbar",
     "modelUnavailable": "Das aktuelle Modell ist nicht verfügbar.",
-    "overloaded": "{{model}} ist überlastet. Warten Sie einige Minuten und versuchen Sie es erneut oder wechseln Sie zu einem anderen Modell.",
+    "overloaded": "{{model}} ist überlastet. Wechseln Sie zu einem anderen Modell.",
     "providerBalance": "Dein verbundenes Abonnementkonto hat nicht genügend Guthaben.",
-    "transient": "Ein Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.",
+    "transient": "Ein Fehler ist aufgetreten.",
     "vm0Credits": "Nicht genügend Guthaben. Fügen Sie Guthaben hinzu oder verbinden Sie ein persönliches Codex- oder Claude-Abonnement, um fortzufahren."
   },
   "serviceStatus": {
@@ -5206,7 +5165,7 @@
         "downloadTitle": "Ihr Export ist fertig",
         "expiredDescription": "Starten Sie einen neuen Export, um einen neuen Download-Link zu erhalten.",
         "expiredTitle": "Der vorherige Export ist abgelaufen",
-        "failedDescription": "Versuchen Sie es erneut oder wenden Sie sich an den Support, wenn das Problem weiterhin auftritt.",
+        "failedDescription": "Der Export konnte nicht abgeschlossen werden.",
         "failedTitle": "Der Export wurde nicht abgeschlossen",
         "preparingDescription": "Dies kann einige Minuten dauern. Sie können diese Seite geöffnet lassen.",
         "preparingTitle": "Bereiten Sie Ihren Export vor",
@@ -5297,7 +5256,6 @@
         "noAccounts": "Keine Konten verbunden.",
         "ownPlan": "Mit deinem eigenen Plan ausführen",
         "reconnectAccount": "Erneut verbinden",
-        "retry": "Erneut versuchen",
         "status": {
           "connected": "Verbunden",
           "fiveHour": "5h",
@@ -5380,7 +5338,6 @@
       "loadError": "Deine Tool-Einstellungen konnten nicht geladen werden.",
       "loading": "Deine Tool-Einstellungen werden geladen…",
       "openSettings": "Einstellungen öffnen",
-      "retry": "Erneut versuchen",
       "saveError": "Deine Änderung wurde nicht gespeichert.",
       "saving": "Wird gespeichert…",
       "scope": "Diese Einstellungen gelten nur für dich in {{workspace}}.",
@@ -5478,11 +5435,10 @@
           "countExplanation": "Die Zählung verwendet schreibgeschützte Transaktionen und liest keine Datensatzinhalte.",
           "description": "Datensatzanzahlen im lokalen Chat-Cache des Shared Workers prüfen.",
           "loading": "IndexedDB-Speicher wird geladen...",
-          "measurementUnavailable": "Snapshot-Messung fehlgeschlagen. Erneut versuchen.",
+          "measurementUnavailable": "Snapshot-Messung fehlgeschlagen.",
           "measureSnapshot": "Snapshot messen",
           "measuring": "Messung läuft...",
           "records": "Datensätze",
-          "refresh": "Aktualisieren",
           "schema": "Schema",
           "snapshotDescription": "Ein Datensatz kann viele Threads enthalten. Die Größe schätzt UTF-8-JSON ohne Datenbank-Overhead; die Lesezeit schließt die Größenschätzung aus.",
           "snapshotEmpty": "Kein Thread-Snapshot im Cache.",
@@ -5495,11 +5451,9 @@
           "unavailable": "IndexedDB-Speicher ist nicht verfügbar."
         },
         "morningBrief": {
-          "checkStatus": "Status prüfen",
           "description": "Führe das aktivierte Morgenbriefing deines Kontos einmal aus. Dabei können Vorschläge aktualisiert und echte E-Mails versendet werden. Dein täglicher Zeitplan bleibt unverändert.",
           "openChat": "Gespräch öffnen",
-          "requestFailed": "Die Anfrage wurde nicht abgeschlossen. Ein erneuter Versuch verwendet dieselbe Anfrage, um doppelte Ausführungen zu vermeiden.",
-          "retry": "Erneut versuchen",
+          "requestFailed": "Die Anfrage konnte nicht bestätigt werden.",
           "run": "Morgenbriefing starten",
           "runAgain": "Erneut starten",
           "starting": "Wird gestartet…",
@@ -5522,7 +5476,7 @@
           "create": "Willkommenschat erstellen",
           "creating": "Wird erstellt…",
           "description": "Erstelle einen Willkommenschat mit einer Einführung und Beispielen.",
-          "failed": "Der Willkommenschat konnte nicht erstellt werden. Versuche es erneut.",
+          "failed": "Der Willkommenschat konnte nicht erstellt werden.",
           "title": "Willkommenschat"
         }
       },
@@ -5554,44 +5508,40 @@
         "title": "Sprache"
       },
       "morningBrief": {
-        "conflict": "Morning Brief ist vorübergehend nicht verfügbar, da der Installationsstatus inkonsistent ist. Versuchen Sie es erneut, wenn die Abstimmung abgeschlossen ist.",
+        "conflict": "Morning Brief ist vorübergehend nicht verfügbar, da der Installationsstatus inkonsistent ist.",
         "description": "Tägliche Prioritäten bis 7 Uhr in deiner Zeitzone.",
+        "errorMessage": "Die Morning-Brief-Einstellungen konnten nicht geladen oder aktualisiert werden.",
         "missingDefaultAgent": "Wählen Sie einen verwendbaren Standard-Agenten aus, bevor Sie Morning Brief aktivieren.",
         "missingTimezone": "Legen Sie eine gültige Zeitzone fest, bevor Sie Morning Brief aktivieren.",
-        "preparationFailed": "Vorübergehend nicht verfügbar. Okou versucht es automatisch erneut.",
+        "preparationFailed": "Vorübergehend nicht verfügbar.",
         "preparing": "Ihr erster Morgenbericht wird vorbereitet. Sie können ihn jederzeit deaktivieren.",
-        "retry": "Erneut versuchen",
-        "retryMessage": "Die Morning-Brief-Einstellungen konnten nicht geladen oder aktualisiert werden. Versuchen Sie es erneut.",
         "title": "Morgenbrief"
       },
       "proactiveLearning": {
         "description": "Aktivitäten nachts überprüfen und persönliche Erinnerungen verbessern.",
+        "errorMessage": "Diese Einstellung konnte nicht geladen oder aktualisiert werden.",
         "missingDefaultAgent": "Wählen Sie einen verfügbaren Standard-Agent.",
         "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
-        "preparationFailed": "Dieser Workflow ist vorübergehend nicht verfügbar. Okou versucht es erneut.",
+        "preparationFailed": "Dieser Workflow ist vorübergehend nicht verfügbar.",
         "preparing": "Dieser Workflow wird vorbereitet.",
-        "retry": "Retry",
-        "retryMessage": "Diese Einstellung konnte nicht geladen oder aktualisiert werden. Erneut versuchen.",
         "title": "Lernen"
       },
       "proactivePlanningAction": {
         "description": "Okou plant und erledigt deine übertragenen Aufgaben und benachrichtigt dich, wenn deine Eingabe nötig ist.",
+        "errorMessage": "Diese Einstellung konnte nicht geladen oder aktualisiert werden.",
         "missingDefaultAgent": "Wählen Sie einen verfügbaren Standard-Agent.",
         "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
-        "preparationFailed": "Dieser Workflow ist vorübergehend nicht verfügbar. Okou versucht es erneut.",
+        "preparationFailed": "Dieser Workflow ist vorübergehend nicht verfügbar.",
         "preparing": "Dieser Workflow wird vorbereitet.",
-        "retry": "Retry",
-        "retryMessage": "Diese Einstellung konnte nicht geladen oder aktualisiert werden. Erneut versuchen.",
         "title": "Planung & Ausführung"
       },
       "proactiveSuggestions": {
         "description": "Okou prüft stündlich deine verbundenen Quellen und schlägt auf der Startseite sinnvolle nächste Schritte vor.",
+        "errorMessage": "Die Einstellungen konnten nicht geladen oder aktualisiert werden.",
         "missingDefaultAgent": "Wähle einen verfügbaren Standard-Agent für proaktive Vorschläge.",
         "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
-        "preparationFailed": "Vorübergehend nicht verfügbar. Okou versucht es automatisch erneut.",
+        "preparationFailed": "Vorübergehend nicht verfügbar.",
         "preparing": "Stündliche Vorschläge werden vorbereitet. Du kannst sie jederzeit deaktivieren.",
-        "retry": "Erneut versuchen",
-        "retryMessage": "Die Einstellungen konnten nicht geladen oder aktualisiert werden. Versuche es erneut.",
         "title": "Vorschläge"
       },
       "send": {
@@ -5652,7 +5602,7 @@
         "description": "Füge in deinem Link-Wallet eine Karte hinzu oder ändere deine Standardkarte.",
         "empty": "Noch keine Karten in deinem Link-Wallet",
         "expires": "Gültig bis {{date}}",
-        "loadError": "Deine Karten konnten nicht geladen werden. Versuche es erneut.",
+        "loadError": "Deine Karten konnten nicht geladen werden.",
         "loading": "Karten werden geladen",
         "manage": "Karten verwalten",
         "title": "Deine Karten bei Link"
@@ -5661,13 +5611,12 @@
       "description": "Deine Agenten können Käufe anfragen und Link-Transaktionen einsehen. Du genehmigst jeden Kauf.",
       "disconnect": "Trennen",
       "loadError": "Dein Wallet konnte nicht geladen werden.",
-      "retry": "Erneut versuchen",
       "scope": "Lass Okou für dich einkaufen und deine Link-Transaktionen einsehen.",
       "title": "Wallet",
       "transactions": {
         "description": "Letzte Transaktionen deines verbundenen Link-Kontos.",
         "empty": "Noch keine Link-Transaktionen",
-        "loadError": "Transaktionen konnten nicht geladen werden. Versuche es erneut.",
+        "loadError": "Transaktionen konnten nicht geladen werden.",
         "loading": "Transaktionen werden geladen",
         "merchant": "Händler",
         "refunded": "Erstattet",
@@ -5789,7 +5738,6 @@
           "fallbackAlt": "Arbeitsbereich",
           "loadError": "Das Workspace-Logo konnte nicht geladen werden.",
           "loading": "Workspace-Logo wird geladen",
-          "retry": "Erneut versuchen",
           "title": "Logo",
           "upload": "Logo hochladen"
         },
@@ -5846,8 +5794,7 @@
       "title": "Hoppla! Etwas ging schief"
     },
     "forceUpgrade": {
-      "action": "Aktualisieren",
-      "description": "Diese Version von {{brandName}} wird nicht mehr unterstützt. Aktualisieren Sie, um die neueste Version zu laden.",
+      "description": "Diese Version von {{brandName}} wird nicht mehr unterstützt.",
       "title": "Update erforderlich"
     },
     "mermaid": {
@@ -5864,9 +5811,8 @@
       "title": "Diese Seite ist nicht hier."
     },
     "workerFailure": {
-      "action": "Aktualisieren",
-      "description": "Deine Verbindung wurde unterbrochen. Aktualisiere die Seite, um fortzufahren.",
-      "title": "Zum Fortfahren aktualisieren"
+      "description": "Die Verbindung zu dieser App wurde unterbrochen.",
+      "title": "Verbindung unterbrochen"
     }
   },
   "sharedThread": {
@@ -5886,14 +5832,11 @@
     "choosePrivateKeyFile": "Datei mit privatem Schlüssel auswählen",
     "cloudflare": {
       "direct": "Direkt",
-      "keepChanges": "Meine Änderungen mit dieser Version übernehmen",
-      "latest": "Zuletzt gespeicherte Einstellungen",
       "mode": "Verbindung",
       "needsRebind": "Dieser Host benötigt eine neue Cloudflare-Access-Konfiguration. Bearbeite ihn, um ihn neu zu verknüpfen oder Direct auszuwählen. Bis dahin ist keine Verbindung möglich.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Veröffentlichter Hostname",
       "rebindHelp": "Wähle eine zulässige Cloudflare-Access-Konfiguration oder Direct, um diesen Host wiederherzustellen. Bis zum Speichern ändert sich nichts.",
-      "reviewHelp": "Ihr Entwurf bleibt erhalten. Bestätigen Sie die zuletzt gespeicherten Einstellungen, bevor Sie Ihre Änderungen anwenden.",
       "title": "Cloudflare Access",
       "unavailable": "Cloudflare Access ist für dieses Konto nicht verfügbar."
     },
@@ -5939,24 +5882,17 @@
     "credentialsHelp": "Zugangsdaten können nur geschrieben werden und bleiben außerhalb der Sandbox. Fügen Sie den vollständigen Schlüssel ein; Leerzeichen bleiben erhalten. Die Felder werden beim Schließen des Formulars geleert.",
     "delete": "Host löschen",
     "deleteHelp": "Diesen Host löschen? Seine Zugangsdaten bleiben erhalten. Agents sehen ihn nicht mehr im Inventar.",
-    "deleteReview": {
-      "acknowledge": "Diese Version zum Löschen verwenden",
-      "changed": "Dieser Host wurde geändert. Prüfe vor dem Löschen die zuletzt gespeicherten Einstellungen.",
-      "help": "Prüfe diese gespeicherten Einstellungen und wähle dann „Host löschen“, um diese Version zu löschen.",
-      "unavailable": "Dieser Host ist nicht mehr verfügbar. Schließe diesen Dialog und aktualisiere die Konfiguration, bevor du es erneut versuchst.",
-      "version": "Version {{version}}"
-    },
     "description": "Konfiguriere SSH-Hosts, auf denen deine Agents Remote-Befehle ausführen können.",
     "displayName": "Anzeigename",
     "edit": "Host bearbeiten",
     "editHelp": "Andere Zugangsdaten auszuwählen ändert nur diesen Host. Änderungen am direkten Endpunkt löschen den gespeicherten Hostschlüssel; Änderungen mit Cloudflare Access behalten ihn bei.",
     "empty": "Keine SSH-Hosts konfiguriert. Füge einen Host hinzu und aktiviere ihn standardmäßig oder in einzelnen Chats.",
     "errors": {
-      "configurationChanged": "Dieser Host wurde während der Bearbeitung geändert. Dein Entwurf bleibt erhalten. Prüfe die aktuellen Einstellungen, bevor du deine Änderungen anwendest.",
-      "credentialChanged": "Diese Zugangsdaten wurden während der Bearbeitung geändert. Ihr Entwurf bleibt erhalten. Prüfen Sie vor dem Speichern die neuesten Einstellungen und betroffenen Hosts.",
+      "configurationChanged": "Dieser Host wurde während der Bearbeitung geändert. Deine Änderungen wurden nicht gespeichert; dein Entwurf bleibt erhalten.",
+      "credentialChanged": "Diese Zugangsdaten wurden während der Bearbeitung geändert. Deine Änderungen wurden nicht gespeichert; dein Entwurf bleibt erhalten.",
       "credentialInUse": "Diese Zugangsdaten werden verwendet. Weisen Sie den Hosts andere zu oder löschen Sie die Hosts zuerst.",
       "credentialUnavailable": "Diese SSH-Zugangsdaten sind nicht mehr verfügbar. Wählen oder erstellen Sie andere Zugangsdaten.",
-      "failed": "Die SSH-Änderung konnte nicht gespeichert werden. Versuche es erneut.",
+      "failed": "Die SSH-Änderung konnte nicht gespeichert werden.",
       "hostInUse": "Dieser SSH-Host wird von einer VNC-Route verwendet. Wähle für diese VNC-Routen einen anderen SSH-Host, stelle sie ausdrücklich auf Direkt um oder lösche sie, bevor du diesen Host löschst.",
       "hostUnavailable": "Dieser SSH-Host ist nicht mehr verfügbar. Kehre zur Hostliste zurück und wähle einen vorhandenen Host.",
       "invalidHost": "Gib einen Hostnamen oder eine IP-Adresse ohne URL-Schema, Pfad oder Leerzeichen ein.",
@@ -5970,7 +5906,7 @@
     "host": "Öffentlicher Hostname oder IP-Adresse",
     "hostSection": "Host",
     "label": "SSH",
-    "loadFailed": "SSH-Einstellungen konnten nicht geladen werden. Versuche es erneut.",
+    "loadFailed": "SSH-Einstellungen konnten nicht geladen werden.",
     "loading": "SSH-Hosts werden geladen…",
     "manage": "SSH-Hosts verwalten",
     "notLearned": "Noch kein Hostschlüssel gespeichert",
@@ -5988,10 +5924,9 @@
     "privateKey": "Privater Schlüssel",
     "reset": "Hostschlüssel zurücksetzen",
     "resetHelp": "Setzen Sie den Schlüssel erst zurück, nachdem Sie die neue Serveridentität unabhängig geprüft haben. Die nächste Verbindung vertraut einem neuen Hostschlüssel und speichert ihn.",
-    "retry": "Erneut versuchen",
     "save": "Speichern",
     "saveRecovery": {
-      "resourceIdConflict": "Diese Ressourcen-ID kann nicht verwendet werden. Schließen Sie das Formular und öffnen Sie es erneut, um es noch einmal zu versuchen.",
+      "resourceIdConflict": "Diese Ressourcen-ID kann nicht verwendet werden.",
       "uncertain": "Speichern fehlgeschlagen."
     },
     "summary_one": "{{count}} Host konfiguriert",
@@ -6011,14 +5946,14 @@
     "add": "Tailscale hinzufügen",
     "addressHelp": "Verwende die IP, den vollständigen Hostnamen oder Kurznamen eines registrierten Tailnet-Peers. SSH-Anmeldung und Hostschlüsselprüfung bleiben erforderlich.",
     "adoptHelp": "Mache dieses Organisationsnetzwerk zu deinem persönlichen Netzwerk. Andere Besitzer müssen ihre gespeicherten Hosts neu binden.",
-    "changed": "Dieses Tailscale-Netzwerk wurde geändert. Prüfe die neuesten Einstellungen vor dem Speichern deines Entwurfs.",
+    "changed": "Dieses Tailscale-Netzwerk wurde geändert. Deine Änderungen wurden nicht gespeichert; dein Entwurf bleibt erhalten.",
     "clientId": "OAuth-Client-ID",
     "clientSecret": "OAuth-Client-Geheimnis",
     "createNew": "Neues Tailscale-Netzwerk erstellen",
     "delete": "Tailscale löschen",
     "deleteHelp": "Dieses Netzwerk löschen? Gespeicherte Zugangsdaten können nicht wiederhergestellt werden. Binde zuerst deine eigenen Hosts neu.",
     "edit": "Tailscale bearbeiten",
-    "failed": "Die Tailscale-Änderung konnte nicht gespeichert werden. Versuche es erneut.",
+    "failed": "Die Tailscale-Änderung konnte nicht gespeichert werden.",
     "forbidden": "Du kannst dieses Tailscale-Netzwerk nicht verwalten. Organisationsnetzwerke erfordern einen Administrator.",
     "guide": {
       "accessControls": "Access controls",
@@ -6040,7 +5975,7 @@
     },
     "inUse": "Deine SSH-Hosts verwenden dieses Netzwerk noch. Binde sie zuerst neu oder lösche sie.",
     "invalid": "Einige Tailscale-Einstellungen sind ungültig. Prüfe die Felder und versuche es erneut.",
-    "loadFailed": "Tailscale konnte nicht geladen werden. Versuche es erneut.",
+    "loadFailed": "Tailscale konnte nicht geladen werden.",
     "loading": "Tailscale wird geladen…",
     "missing": "Dieses Tailscale-Netzwerk ist nicht mehr verfügbar. Wähle ein anderes oder erstelle eines.",
     "peer": "Tailnet-Hostname oder IP-Adresse",
@@ -6074,7 +6009,7 @@
       "confirm": "Vorlage löschen",
       "deleting": "Wird gelöscht...",
       "description": "\"{{title}}\" wird für alle entfernt, die sie sehen können. Diese Aktion kann nicht rückgängig gemacht werden.",
-      "failed": "Die Vorlage konnte nicht gelöscht werden. Versuchen Sie es erneut.",
+      "failed": "Die Vorlage konnte nicht gelöscht werden.",
       "title": "Vorlage löschen?"
     },
     "detail": {
@@ -6088,7 +6023,6 @@
       "save": "Speichern"
     },
     "renameFailed": "Vorlage konnte nicht umbenannt werden.",
-    "retry": "Erneut versuchen",
     "sharedBy": "Geteilt von {{owner}}",
     "sharedByMember": "Von einem Organisationsmitglied geteilt",
     "visibility": {
@@ -6248,7 +6182,7 @@
       "keytabFile": "Keytab-Datei (.keytab)",
       "lifetime": "Angeforderte Ticketgültigkeit (Sekunden)",
       "offlineHelp": "Nur das ausgewählte Service-Ticket verwenden. Keine KDC-Verbindung oder Verlängerung.",
-      "onlineHelp": "Ticketbezug über den separaten KDC-Verbindungsweg erlauben. Eine Aktualisierung bereitet eine neue Verbindung vor; bestehende Sitzungen behalten ihr Ablaufdatum.",
+      "onlineHelp": "Erlaube dieser Quelle, Tickets über die separate KDC-Route zu beziehen. Neue Verbindungen erhalten neue Tickets; bestehende Sitzungen behalten ihre ursprüngliche Ablaufzeit.",
       "password": "Kerberos · Passwort",
       "realm": "Realm des Initiators",
       "renewableLifetime": "Verlängerungszeitraum (Sekunden; 0 deaktiviert)",
@@ -6286,7 +6220,6 @@
       "select": "Gespeicherte Netzwerkkonfiguration auswählen"
     },
     "port": "Port",
-    "retry": "Erneut versuchen",
     "rsaAes": {
       "fieldHelp": "Je Feld 1–255 UTF-8-Bytes, ohne NUL. Leerzeichen bleiben erhalten; kein klassisches VNC-Passwort mit acht Bytes.",
       "fullHelp": "RA2 und RA2_256 verschlüsseln die gesamte RFB-Sitzung mit EAX. Den vollständigen RSA-Wire-Key-Pin unabhängig prüfen; CA-Vertrauen ersetzt ihn nicht.",
@@ -6310,17 +6243,8 @@
     },
     "save": "Speichern",
     "saveRecovery": {
-      "deleteHelp": "Prüfe diese gespeicherten Angaben vor dem Löschen. Diese Aktion wählt nur die Version aus; bestätige das Löschen anschließend separat.",
-      "incompatible": "Die Authentifizierungsmethode wurde geändert. Schließe diesen Dialog und öffne die Zugangsdaten erneut, um die aktuelle Methode zu bearbeiten.",
-      "keepChanges": "Meine Änderungen mit dieser Version behalten",
-      "keepDeletion": "Diese Version zum Löschen verwenden",
-      "keepHelp": "Prüfe diese Angaben, behalte dann deinen Entwurf und speichere ihn auf Basis dieser Version. Deine Authentifizierungs- und Vertrauenseinstellungen bleiben erhalten.",
-      "latest": "Aktuell gespeicherte Angaben",
-      "resourceIdConflict": "Diese Ressource konnte nicht erstellt werden. Schließe diesen Dialog und versuche es erneut.",
-      "review": "Die Konfiguration wurde aktualisiert. Schließe diesen Dialog und prüfe die aktuellen Angaben, bevor du es erneut versuchst.",
-      "unavailable": "Diese Ressource ist nicht mehr verfügbar. Schließe diesen Dialog und aktualisiere die Konfiguration, bevor du es erneut versuchst.",
-      "uncertain": "Speichern fehlgeschlagen.",
-      "version": "Version {{version}}"
+      "resourceIdConflict": "Diese Ressource konnte nicht erstellt werden.",
+      "uncertain": "Speichern fehlgeschlagen."
     },
     "saving": "Wird gespeichert…",
     "security": {
@@ -6398,25 +6322,20 @@
         "cancelledDescription": "Wird ausgeführt, wenn ein Kalenderereignis abgesagt wird.",
         "cancelledRule": "Wenn das Kalenderereignis {{calendar}} abgesagt wird",
         "cancelledTitle": "Google Calendar-Ereignis abgesagt",
-        "cancelRecovery": "Abbrechen",
         "changeAria": "Google Calendar-Automatisierung ändern",
         "changeCalendar": "Kalender ändern",
-        "checkingRecovery": "Es wird geprüft, ob diese Automatisierung fortgesetzt werden kann…",
-        "checkRecoveryStatus": "Status prüfen",
         "createdDescription": "Wird ausgeführt, wenn ein Kalenderereignis erstellt wird.",
         "createdRule": "Wenn Kalender {{calendar}} ein neues Ereignis erhält",
         "createdTitle": "Google Calendar-Ereignis erstellt",
         "enabledIntent": "Aktiviert",
         "reconnectDescription": "Google Calendar muss erneut verbunden werden, bevor diese Automatisierung fortgesetzt werden kann.",
         "reconnectGoogleCalendar": "Google Calendar erneut verbinden",
-        "recoveryStatus": "Google Kalender wiederherstellen",
-        "recoveryUnconfirmed": "Die Wiederherstellung ist nicht bestätigt. Prüfe die Warnung dieser Automatisierung und dann erneut ihren Status.",
         "saveCalendar": "Kalender speichern",
         "summary": "Kalender {{calendar}}",
         "updatedDescription": "Wird ausgeführt, wenn ein Kalenderereignis aktualisiert wird.",
         "updatedRule": "Wenn das Kalenderereignis {{calendar}} aktualisiert wird",
         "updatedTitle": "Google Calendar-Ereignis aktualisiert",
-        "updateError": "Dieser Kalender konnte nicht geändert werden. Versuchen Sie es erneut."
+        "updateError": "Dieser Kalender konnte nicht geändert werden."
       },
       "chat": {
         "addAction": "Chat-Automatisierung hinzufügen",
@@ -6976,7 +6895,6 @@
       "open": "Öffnen Sie {{title}}",
       "openRecovery": "Wiederherstellung für {{title}} öffnen",
       "ownerLoading": "Autor wird geladen…",
-      "ownerRetry": "Autor nicht verfügbar. Zum Wiederholen erneut öffnen.",
       "ownerUnavailable": "Autor nicht verfügbar",
       "runsAs": "Läuft als",
       "runsAsAria": "Läuft als {{agent}}",
@@ -7025,8 +6943,8 @@
     "discord": {
       "addNewServer": "Neuem Server beitreten",
       "approvalFailed": "Bestätigung fehlgeschlagen. Melden Sie sich mit dem ursprünglichen Okou-Konto und der Organisation an oder starten Sie die Autorisierung erneut.",
-      "authorizationError": "Die Discord-Autorisierung konnte nicht abgeschlossen werden. Versuche es erneut.",
-      "cancelled": "Die Discord-Autorisierung wurde abgebrochen. Du kannst erneut beginnen.",
+      "authorizationError": "Die Discord-Autorisierung konnte nicht abgeschlossen werden.",
+      "cancelled": "Die Discord-Autorisierung wurde abgebrochen.",
       "chooseWorkspace": "Workspace auswählen",
       "connectDescription": "Verbinde dein Discord-Konto, um mit deinem Agenten zu chatten.",
       "connectedTitle": "Mit Discord verbunden",
@@ -7038,10 +6956,8 @@
       "installTitle": "Okou zu einem Server hinzufügen",
       "invalidLink": "Dieser Discord-Verbindungslink ist ungültig. Öffne einen neuen Link in Discord.",
       "open": "Discord öffnen",
-      "pendingConsent": "Die Autorisierung wurde unterbrochen oder die Seite neu geladen. Starte erneut, um eine neue Verbindung zu prüfen.",
-      "popupBlocked": "Erlauben Sie Pop-ups für die Discord-Autorisierung und versuchen Sie es erneut.",
-      "restartAuthorization": "Autorisierung neu starten",
-      "retry": "Erneut versuchen",
+      "pendingConsent": "Diese Autorisierung wurde unterbrochen oder die Seite wurde neu geladen.",
+      "popupBlocked": "Das Discord-Autorisierungsfenster wurde blockiert.",
       "serverPermissionRequired": "Prüfe Servermitgliedschaft, Bot-Installation und die Berechtigung zum Hinzufügen des Bots und versuche es erneut.",
       "suspended": "Discord ist vorübergehend nicht verfügbar. Bestehende Verbindungen bleiben erhalten.",
       "title": "Discord",
@@ -7096,7 +7012,7 @@
       "description": "Chatte mit deinem Agenten in WeChat.",
       "disconnect": "Trennen",
       "expired": "Dieser QR-Code ist abgelaufen. Erstelle einen neuen.",
-      "failed": "Die Verbindung zu WeChat ist fehlgeschlagen. Versuche es erneut.",
+      "failed": "Die Verbindung zu WeChat ist fehlgeschlagen.",
       "instructions": "Scanne diesen QR-Code mit WeChat und bestätige auf deinem Smartphone.",
       "linkUnavailable": "Dieser Link ist nicht verfügbar. Verwende das ursprüngliche Konto und den Arbeitsbereich und sende eine weitere WeChat-Nachricht, um einen neuen Link zu erhalten. Du kannst auch einen neuen QR-Code scannen.",
       "name": "WeChat",
@@ -7105,7 +7021,6 @@
       "reconnect_required": "Scanne erneut, um die Verbindung wiederherzustellen.",
       "restart_required": "Dieses WeChat-Konto ist bereits verbunden. Erstelle zum erneuten Verbinden einen neuen QR-Code.",
       "restoreDescription": "WeChat wieder mit dem folgenden Konto und Arbeitsbereich verbinden.",
-      "retry": "Neuen QR-Code erstellen",
       "returnToWechat": "Kehre zu WeChat zurück und sende eine Nachricht, um den Chat zu starten.",
       "scanned": "Gescannt. Bestätige auf deinem Smartphone.",
       "scope": "Nur deine Direktnachrichten an diesen Agenten werden verbunden. Textnachrichten werden unterstützt.",

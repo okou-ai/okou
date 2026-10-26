@@ -1,5 +1,5 @@
 import type { DesktopShellAuthorization } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Terminal, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -105,7 +105,6 @@ function AuthorizationActions({
   loading: boolean;
 }) {
   const { t } = useTranslation();
-  const refresh = useSet(signals.refresh$);
   const signal = useGet(pageSignal$);
   const [action, act] = useLoadableSet(signals.act$);
   const busy = action.state === "loading";
@@ -119,7 +118,7 @@ function AuthorizationActions({
         <>
           <Button
             size="sm"
-            disabled={busy || blocked}
+            disabled={busy || blocked || failed}
             onClick={() => {
               detach(act("approve", signal), Reason.DomCallback);
             }}
@@ -131,7 +130,7 @@ function AuthorizationActions({
           <Button
             size="sm"
             variant="outline"
-            disabled={busy}
+            disabled={busy || failed}
             onClick={() => {
               detach(act("deny", signal), Reason.DomCallback);
             }}
@@ -146,27 +145,13 @@ function AuthorizationActions({
         <Button
           size="sm"
           variant="outline"
-          disabled={busy}
+          disabled={busy || failed}
           onClick={() => {
             detach(act("revoke", signal), Reason.DomCallback);
           }}
         >
           {t(($) => {
             return $.desktopShellAuthorization.revoke;
-          })}
-        </Button>
-      )}
-      {!loading && (data === null || failed || blocked) && (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() => {
-            refresh();
-          }}
-        >
-          {t(($) => {
-            return $.desktopShellAuthorization.refresh;
           })}
         </Button>
       )}

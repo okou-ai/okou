@@ -23,18 +23,18 @@ export function WechatConnectForm({
 }) {
   const { t } = useTranslation();
   const flow = useGet(wechatFlow$);
-  const retry =
-    failed ||
-    ["expired", "verification_blocked", "restart_required"].includes(
-      flow.status,
-    );
+  const needsNewSession = [
+    "expired",
+    "verification_blocked",
+    "restart_required",
+  ].includes(flow.status);
   return (
     <>
       <div className="flex flex-col items-center gap-4 py-4">
         {loading && !flow.attempt ? (
           <Loader2 className="size-6 animate-spin" aria-hidden="true" />
         ) : null}
-        {flow.attempt && !retry ? (
+        {flow.attempt && !needsNewSession ? (
           <div className="rounded-xl bg-white p-3">
             <QRCodeSVG
               value={flow.attempt.qrContent}
@@ -47,14 +47,14 @@ export function WechatConnectForm({
             />
           </div>
         ) : null}
-        <WechatFlowStatus retry={retry} failed={failed} />
+        <WechatFlowStatus failed={failed} />
         {flow.status === "verification_required" && !failed ? (
           <WechatVerificationForm loading={loading} onVerify={onVerify} />
         ) : null}
-        {retry ? (
+        {needsNewSession ? (
           <Button variant="outline" onClick={onStart} disabled={loading}>
             {t(($) => {
-              return $.works.wechat.retry;
+              return $.works.wechat.connect;
             })}
           </Button>
         ) : null}
@@ -111,13 +111,7 @@ function WechatVerificationForm({
   );
 }
 
-function WechatFlowStatus({
-  retry,
-  failed,
-}: {
-  readonly retry: boolean;
-  readonly failed: boolean;
-}) {
+function WechatFlowStatus({ failed }: { readonly failed: boolean }) {
   const { t } = useTranslation();
   const flow = useGet(wechatFlow$);
   const statusMessages = {
@@ -148,7 +142,7 @@ function WechatFlowStatus({
   }
   return (
     <p
-      role={retry ? "alert" : "status"}
+      role={failed ? "alert" : "status"}
       className="text-center text-sm text-muted-foreground"
     >
       {failed

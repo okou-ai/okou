@@ -19,7 +19,6 @@ import {
   completeDirectedConnectorAuthorization$,
   directedAuthorizeConnectModalKey$,
   setDirectedAuthorizeConnectModalKey$,
-  retryDirectedAuthorize$,
 } from "../../signals/connectors-page/directed-authorize-slug.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { routeChatActionCallback$ } from "../../signals/chat-page/action-callback.ts";
@@ -261,7 +260,6 @@ function useDirectedAuthorizeCardState() {
 
 function DirectedAuthorizeReadError() {
   const { t } = useTranslation();
-  const retry = useSet(retryDirectedAuthorize$);
   return (
     <DirectedCardShell
       icon={<CircleAlert size={20} />}
@@ -271,17 +269,7 @@ function DirectedAuthorizeReadError() {
       description=""
       isLoading={false}
     >
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => {
-          retry();
-        }}
-      >
-        {t(($) => {
-          return $.connectors.actions.tryAgain;
-        })}
-      </Button>
+      {null}
     </DirectedCardShell>
   );
 }

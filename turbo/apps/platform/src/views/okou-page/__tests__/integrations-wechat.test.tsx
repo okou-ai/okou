@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import userEvent from "@testing-library/user-event";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import { state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { integrationsWechatContract as contract } from "@okouai/api-contracts/contracts/integrations-wechat";
 import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
@@ -34,7 +35,7 @@ test("WeChat is hidden with its feature disabled", async () => {
   expect(screen.queryByText("WeChat")).not.toBeInTheDocument();
 });
 test("Connect displays a QR and an expired code can be replaced", async () => {
-  let expired = true;
+  const expired$ = state(true);
   context.mocks.api(contract.status, ({ respond }) => {
     return respond(200, {
       configured: true,
@@ -45,7 +46,7 @@ test("Connect displays a QR and an expired code can be replaced", async () => {
   context.mocks.api(contract.connect, ({ respond }) => {
     return respond(
       200,
-      expired
+      context.store.get(expired$)
         ? attempt
         : {
             ...attempt,
@@ -56,19 +57,22 @@ test("Connect displays a QR and an expired code can be replaced", async () => {
   });
   context.mocks.api(contract.poll, ({ respond }) => {
     return respond(200, {
-      status: expired ? "expired" : "verification_required",
+      status: context.store.get(expired$) ? "expired" : "verification_required",
     });
   });
   await setup();
   click(getAction("button", "Connect", getIntegrationCard("WeChat")));
-  await expect(screen.findByRole("dialog")).resolves.toHaveTextContent(
-    "Scan this QR code with WeChat",
-  );
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog).toHaveTextContent("Scan this QR code with WeChat");
   await expect(
     screen.findByText("This QR code expired. Create a new one."),
   ).resolves.toBeInTheDocument();
-  expired = false;
-  click(getAction("button", "Create a new QR code"));
+  context.store.set(expired$, false);
+  const connect = getAction("button", "Connect", dialog);
+  await waitFor(() => {
+    expect(connect).toBeEnabled();
+  });
+  click(connect);
   await expect(
     screen.findByTestId("wechat-connect-qr"),
   ).resolves.toBeInTheDocument();
@@ -189,8 +193,8 @@ test("keyboard activation and Escape restore focus to Connect", async () => {
   });
 });
 
-test("a failed QR request can be retried from the dialog", async () => {
-  let available = false;
+test("A failed QR request can be restarted by reopening authorization", async () => {
+  const available$ = state(false);
   context.mocks.api(contract.status, ({ respond }) => {
     return respond(200, {
       configured: true,
@@ -199,7 +203,7 @@ test("a failed QR request can be retried from the dialog", async () => {
     });
   });
   context.mocks.api(contract.connect, ({ respond }) => {
-    return available
+    return context.store.get(available$)
       ? respond(200, attempt)
       : respond(503, {
           error: {
@@ -213,16 +217,19 @@ test("a failed QR request can be retried from the dialog", async () => {
   });
   await setup();
   click(getAction("button", "Connect", getIntegrationCard("WeChat")));
-  const retry = await waitFor(() => {
-    return getAction("button", "Create a new QR code");
+  const dialog = await screen.findByRole("dialog");
+  await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
+    "Could not connect to WeChat.",
+  );
+  context.store.set(available$, true);
+  click(within(dialog).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  expect(retry).toBeEnabled();
-  available = true;
-  click(retry);
+  click(getAction("button", "Connect", getIntegrationCard("WeChat")));
   await expect(
     screen.findByRole("textbox", { name: "Verification code" }),
   ).resolves.toBeInTheDocument();
-  expect(queryAction("button", "Create a new QR code")).not.toBeInTheDocument();
 });
 
 test("the connected card identifies its workspace and WeChat account", async () => {
