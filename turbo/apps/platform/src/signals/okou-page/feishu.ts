@@ -311,6 +311,7 @@ export const checkFeishuAppIdAvailable$ = command(
 
 export const completeFeishuInstallationSetup$ = command(
   async ({ get, set }, installationId: string, signal: AbortSignal) => {
+    const form = get(internalSetupForm$);
     const client = get(apiClient$)(
       get(feishuPlatform$) === "lark"
         ? larkConnectContract
@@ -334,6 +335,10 @@ export const completeFeishuInstallationSetup$ = command(
           .botInstalled;
       }),
     );
+    if (!get(internalDialogOpen$) || get(internalSetupForm$) !== form) {
+      return;
+    }
+    set(closeFeishuDialog$);
     if (!result.body.isConnected && result.body.connectUrl) {
       const url = new URL(result.body.connectUrl);
       url.searchParams.set("callbackTarget", "app");

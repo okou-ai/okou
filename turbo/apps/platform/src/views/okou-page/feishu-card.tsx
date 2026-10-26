@@ -1225,13 +1225,7 @@ function FeishuSetupWizard({
       if (!installationId) {
         return;
       }
-      detach(
-        (async () => {
-          await completeSetup(installationId, signal);
-          onClose();
-        })(),
-        Reason.DomCallback,
-      );
+      detach(completeSetup(installationId, signal), Reason.DomCallback);
       return;
     }
     if (step === "credentials" && !data) {
