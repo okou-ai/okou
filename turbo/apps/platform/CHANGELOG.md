@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1064.1](https://github.com/okou-ai/okou/compare/app-v0.1064.0...app-v0.1064.1) (2026-10-26)
+
+
+### Refactoring
+
+* **app:** own custom connector connection completion ([#43034](https://github.com/okou-ai/okou/issues/43034)) ([cdfbcf1](https://github.com/okou-ai/okou/commit/cdfbcf1b57de1e2a6e8b2c8845aa279d7a4590d8))
+
 ## [0.1064.0](https://github.com/okou-ai/okou/compare/app-v0.1063.2...app-v0.1064.0) (2026-10-26)
 
 

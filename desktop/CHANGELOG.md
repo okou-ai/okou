@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.6](https://github.com/okou-ai/okou/compare/desktop-v0.54.5...desktop-v0.54.6) (2026-10-26)
+
+
+### Bug Fixes
+
+* publish desktop update manifests atomically from r2 ([#43047](https://github.com/okou-ai/okou/issues/43047)) ([2cb8694](https://github.com/okou-ai/okou/commit/2cb8694d3a9a6172219e515bc47981329e707ca5))
+
 ## [0.54.5](https://github.com/okou-ai/okou/compare/desktop-v0.54.4...desktop-v0.54.5) (2026-10-23)
 
 

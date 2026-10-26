@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.9.0](https://github.com/okou-ai/okou/compare/api-v2.8.0...api-v2.9.0) (2026-10-26)
+
+
+### Features
+
+* **api:** authenticate workers to google with certificate federation ([#43020](https://github.com/okou-ai/okou/issues/43020)) ([3b4c49c](https://github.com/okou-ai/okou/commit/3b4c49cf1ae93bf640d00da44069890c7b1d9d22))
+
+
+### Bug Fixes
+
+* publish desktop update manifests atomically from r2 ([#43047](https://github.com/okou-ai/okou/issues/43047)) ([2cb8694](https://github.com/okou-ai/okou/commit/2cb8694d3a9a6172219e515bc47981329e707ca5))
+
+
+### Refactoring
+
+* **api:** localize connected automation reprojection ([#43037](https://github.com/okou-ai/okou/issues/43037)) ([1a42597](https://github.com/okou-ai/okou/commit/1a425971e2597fb91e648fd190f3307caa931717))
+
 ## [2.8.0](https://github.com/okou-ai/okou/compare/api-v2.7.0...api-v2.8.0) (2026-10-26)
 
 
