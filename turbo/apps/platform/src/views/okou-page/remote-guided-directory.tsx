@@ -44,11 +44,7 @@ import {
 } from "../../signals/remote-control-setup.ts";
 import { sshConnections$, sshIdentity$ } from "../../signals/ssh.ts";
 import { vncConnections$ } from "../../signals/vnc.ts";
-import {
-  tailscaleConfigs$,
-  tailscaleSettingsEnabled$,
-  retryTailscale$,
-} from "../../signals/tailscale.ts";
+import { tailscaleConfigs$, retryTailscale$ } from "../../signals/tailscale.ts";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { SshDialog } from "./ssh-management.tsx";
@@ -697,19 +693,12 @@ function OwnerPrivateNetworkPanel() {
   connectionsParams.delete("setup");
   const tailscale = useLastLoadable(tailscaleConfigs$);
   const access = useLastLoadable(cloudflareAccessConfigs$);
-  const tailscaleEnabled = useGet(tailscaleSettingsEnabled$);
   const open = useSet(setRemoteNetworkPicker$);
   const retry = useSet(retryTailscale$);
   const signal = useGet(pageSignal$);
-  const ts = !tailscaleEnabled
-    ? []
-    : tailscale.state === "hasData"
-      ? tailscale.data
-      : null;
+  const ts = tailscale.state === "hasData" ? tailscale.data : null;
   const cf = access.state === "hasData" ? access.data : null;
-  const loading =
-    access.state === "loading" ||
-    (tailscaleEnabled && tailscale.state === "loading");
+  const loading = access.state === "loading" || tailscale.state === "loading";
   const hasRows = Boolean(ts?.length || cf?.length);
   const empty = ts?.length === 0 && cf?.length === 0;
   return (
@@ -739,7 +728,7 @@ function OwnerPrivateNetworkPanel() {
         hasRows={hasRows}
       >
         {access.state === "hasError" && <CloudflareAccessLoadError />}
-        {tailscaleEnabled && tailscale.state === "hasError" && (
+        {tailscale.state === "hasError" && (
           <LoadErrorRow
             message={t(($) => {
               return $.tailscale.loadFailed;

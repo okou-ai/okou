@@ -24,7 +24,6 @@ import {
   saveTailscale$,
   tailscaleDialog$,
   tailscaleConfigs$,
-  tailscaleSettingsEnabled$,
 } from "./tailscale.ts";
 import {
   closeCloudflareAccessDialog$,
@@ -99,9 +98,7 @@ export const remoteNetworkConnections$ = computed((get) => {
     return null;
   }
   const [kind, id] = (params.get("networkConnections") ?? "").split(":");
-  return id &&
-    (kind === "cloudflare" ||
-      (kind === "tailscale" && get(tailscaleSettingsEnabled$)))
+  return id && (kind === "cloudflare" || kind === "tailscale")
     ? { kind, id }
     : null;
 });
@@ -132,9 +129,6 @@ export const remoteResource$ = computed((get) => {
     return null;
   }
   if (kind === "vnc" && !get(vncEnabled$)) {
-    return null;
-  }
-  if (kind === "tailscale" && !get(tailscaleSettingsEnabled$)) {
     return null;
   }
   return { kind, id };

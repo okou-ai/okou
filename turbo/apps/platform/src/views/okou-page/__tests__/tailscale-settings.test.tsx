@@ -5,7 +5,6 @@ import {
 } from "@okouai/api-contracts/contracts/tailscale";
 import { TAILSCALE_ERROR_CODES } from "@okouai/api-contracts/contracts/tailscale-errors";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test } from "vitest";
@@ -66,13 +65,12 @@ beforeEach(() => {
   });
 });
 
-async function page(role: "admin" | "member" = "member", enabled = true) {
+async function page(role: "admin" | "member" = "member") {
   context.mocks.data.org({ id: orgId, name: "Engineering", role });
   await setupPage({
     context,
     auth,
     path: "/connectors?scope=private-network",
-    featureSwitches: { [FeatureSwitchKey.TailscaleAccess]: enabled },
   });
 }
 
@@ -122,18 +120,6 @@ async function createForm() {
   await fill(fields.getByLabelText("OAuth client secret"), "secret-canary");
   return dialog;
 }
-
-test("The default-off switch hides Tailscale management and performs no configuration reads", async () => {
-  const reads: unknown[] = [];
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    reads.push(true);
-    return respond(200, { configs: [config] });
-  });
-  await page("member", false);
-  await screen.findByRole("heading", { name: "Cloudflare Access" });
-  expect(screen.queryByRole("region", { name: "Tailscale" })).toBeNull();
-  expect(reads).toHaveLength(0);
-});
 
 test("Members see shared metadata without management or other owners' hosts", async () => {
   await page();

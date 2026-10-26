@@ -1139,7 +1139,7 @@ test.each<{
     port: 22,
     destination: "100.100.10.2",
     warning:
-      "The SSH host for this VNC connection needs a new Tailscale configuration. Tailscale setup and rebinding are not available here yet.",
+      "Rebind this saved SSH host to a Tailscale network before using VNC.",
   },
 ])(
   "A VNC host explains its retained $type SSH carrier and recovers after SSH refresh",

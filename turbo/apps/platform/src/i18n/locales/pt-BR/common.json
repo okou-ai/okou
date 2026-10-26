@@ -6057,8 +6057,6 @@
     "tailscale": {
       "authenticationFailed": "A autenticação do Tailscale SSH falhou. Verifique o nome de usuário do sistema, ative o Tailscale SSH no destino com tag e permita este login na política SSH accept da tailnet.",
       "deleteHelp": "Excluir este host? Os agentes não verão mais este host no inventário em tempo real.",
-      "editUnavailable": "Este host agora usa Tailscale. A edição e a revinculação do Tailscale ainda não estão disponíveis aqui. Cancele esta edição para manter o transporte salvo.",
-      "needsRebind": "Este host precisa de uma nova configuração do Tailscale. A configuração e a revinculação do Tailscale ainda não estão disponíveis aqui.",
       "sshDocs": "Documentação do Tailscale SSH",
       "sshHelp": "Usa a identidade da rede Tailscale selecionada, sem senha SSH nem chave privada. Ative o Tailscale SSH em um dispositivo de destino com tag e permita este nome de usuário do sistema em uma política SSH accept.",
       "sshTitle": "Tailscale SSH",
@@ -6444,7 +6442,6 @@
       "sshHelp": "O SSH protege o trecho do Runner até o servidor SSH. Esse servidor deve conseguir acessar o destino RFB. Um chat só pode usar esta rota se esse host SSH também estiver ativado nele.",
       "sshNeedsRebind": "O host SSH desta conexão VNC precisa ser vinculado novamente ao Cloudflare Access. Vincule-o nas configurações de SSH ou escolha explicitamente Direta ali antes de conectar.",
       "sshNeedsRebindStatus": "SSH precisa de nova vinculação",
-      "sshTailscaleNeedsRebind": "O host SSH desta conexão VNC precisa de uma nova configuração do Tailscale. A configuração e a vinculação do Tailscale ainda não estão disponíveis aqui.",
       "title": "Rota de conexão",
       "unavailable": "As configurações de SSH não estão disponíveis para esta conta.",
       "via": "Host SSH:"

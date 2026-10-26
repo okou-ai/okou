@@ -92,10 +92,7 @@ import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
 import { AccessSelection } from "./ssh-cloudflare-access.tsx";
 import { TailscaleSelection } from "./ssh-tailscale.tsx";
-import {
-  tailscaleConfigs$,
-  tailscaleEnabled$,
-} from "../../signals/tailscale.ts";
+import { tailscaleConfigs$ } from "../../signals/tailscale.ts";
 import {
   SSH_PASSWORD_MAX_LENGTH,
   type SshCredentialResponse,
@@ -111,7 +108,6 @@ function SshConnectionType({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
   const editor = useGet(sshConnectionModeEditor$);
   const choose = useSet(chooseSshConnectionMode$);
-  const tailscaleEnabled = useGet(tailscaleEnabled$);
   const items = [
     {
       value: "direct",
@@ -125,22 +121,18 @@ function SshConnectionType({ disabled }: { readonly disabled: boolean }) {
         return $.ssh.cloudflare.title;
       }),
     },
-    ...(tailscaleEnabled
-      ? [
-          {
-            value: "tailscale" as const,
-            label: t(($) => {
-              return $.tailscale.title;
-            }),
-          },
-          {
-            value: "tailscale_ssh" as const,
-            label: t(($) => {
-              return $.ssh.tailscale.sshTitle;
-            }),
-          },
-        ]
-      : []),
+    {
+      value: "tailscale",
+      label: t(($) => {
+        return $.tailscale.title;
+      }),
+    },
+    {
+      value: "tailscale_ssh",
+      label: t(($) => {
+        return $.ssh.tailscale.sshTitle;
+      }),
+    },
   ] satisfies { value: SshConnectionMode; label: string }[];
   return (
     <div className="grid gap-2">
@@ -1056,23 +1048,12 @@ function CredentialImpact({
   );
 }
 
-function tailscaleReviewBlocked(
-  editing: boolean,
-  enabled: boolean,
-  mode: SshConnectionMode,
-) {
-  return (
-    editing && (!enabled || (mode !== "tailscale" && mode !== "tailscale_ssh"))
-  );
-}
-
 function SshConflictDetails({
   current,
 }: {
   readonly current: SshConflictReviewState;
 }) {
   const { t } = useTranslation();
-  const enabled = useGet(tailscaleEnabled$);
   const connectionEditor = useGet(sshConnectionModeEditor$);
   const acceptReview = useSet(acceptSshConflictReview$);
   const signal = useGet(pageSignal$);
@@ -1135,9 +1116,7 @@ function SshConflictDetails({
       <p role={editingTailscale ? "alert" : undefined}>
         {t(($) => {
           return editingTailscale
-            ? enabled
-              ? $.tailscale.rebindHelp
-              : $.ssh.tailscale.editUnavailable
+            ? $.tailscale.rebindHelp
             : deleting
               ? $.ssh.deleteReview.help
               : $.ssh.cloudflare.reviewHelp;
@@ -1147,11 +1126,9 @@ function SshConflictDetails({
         type="button"
         variant="outline"
         disabled={
-          tailscaleReviewBlocked(
-            editingTailscale,
-            enabled,
-            connectionEditor.mode,
-          ) ||
+          (editingTailscale &&
+            connectionEditor.mode !== "tailscale" &&
+            connectionEditor.mode !== "tailscale_ssh") ||
           (current.kind === "delete-credential" &&
             (current.credential?.hosts.length ?? 0) > 0)
         }
@@ -1807,15 +1784,8 @@ export function SshDialog({
 } = {}) {
   const lastDialog = useLastResolved(sshDialog$);
   const sessionKey = useGet(authenticatedSessionKey$);
-  const editor = useGet(sshConnectionModeEditor$);
-  const tailscaleEnabled = useGet(tailscaleEnabled$);
   const dialog = lastDialog?.sessionKey === sessionKey ? lastDialog : null;
-  if (
-    !dialog ||
-    ((dialog.kind === "create" || dialog.kind === "edit") &&
-      (editor.mode === "tailscale" || editor.mode === "tailscale_ssh") &&
-      !tailscaleEnabled)
-  ) {
+  if (!dialog) {
     return null;
   }
   return (
@@ -1895,7 +1865,6 @@ function TailscaleHostLabel({
 
 function useSshHostDetails(connection: SshConnectionResponse) {
   const configs = useLoadable(cloudflareAccessConfigs$);
-  const tailscaleEnabled = useGet(tailscaleEnabled$);
   const transport = "transport" in connection ? connection.transport : null;
   const tailscale = usesTailscaleNetwork(connection);
   const configId = cloudflareConfigId(connection);
@@ -1912,7 +1881,6 @@ function useSshHostDetails(connection: SshConnectionResponse) {
   return {
     transport,
     tailscale,
-    tailscaleEnabled,
     configId,
     needsRebind,
     unavailable,
@@ -1927,15 +1895,8 @@ function SshHostOverview({
   readonly detail: boolean;
 }) {
   const { t } = useTranslation();
-  const {
-    transport,
-    tailscale,
-    tailscaleEnabled,
-    configId,
-    needsRebind,
-    unavailable,
-    config,
-  } = useSshHostDetails(connection);
+  const { transport, tailscale, configId, needsRebind, unavailable, config } =
+    useSshHostDetails(connection);
   return (
     <>
       {" "}
@@ -1973,9 +1934,7 @@ function SshHostOverview({
         >
           {t(($) => {
             return tailscale
-              ? tailscaleEnabled
-                ? $.tailscale.rebindAvailable
-                : $.ssh.tailscale.needsRebind
+              ? $.tailscale.rebindAvailable
               : $.ssh.cloudflare.needsRebind;
           })}
         </p>
@@ -2040,8 +1999,7 @@ export function SshHostCard({
   const { t } = useTranslation();
   const open = useSet(openSshDialog$);
   const signal = useGet(pageSignal$);
-  const { unavailable, tailscale, tailscaleEnabled } =
-    useSshHostDetails(connection);
+  const { unavailable } = useSshHostDetails(connection);
   return (
     <article
       className={
@@ -2077,12 +2035,12 @@ export function SshHostCard({
         {detail ? (
           <RemoteConnectionEditButton
             resource={{ kind: "ssh", connection }}
-            disabled={unavailable || (tailscale && !tailscaleEnabled)}
+            disabled={unavailable}
           />
         ) : (
           <Button
             variant="outline"
-            disabled={unavailable || (tailscale && !tailscaleEnabled)}
+            disabled={unavailable}
             onClick={() => {
               return detach(
                 open("edit", connection, signal),

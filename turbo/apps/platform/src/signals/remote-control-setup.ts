@@ -50,10 +50,7 @@ import {
   closeTailscaleDialog$,
   openTailscaleDialog$,
   tailscaleConfigs$,
-  scopedTailscaleConfigs$,
   tailscaleDialog$,
-  tailscaleEnabled$,
-  tailscaleSettingsEnabled$,
   retryTailscale$,
 } from "./tailscale.ts";
 import {
@@ -167,9 +164,6 @@ const remoteSetupProtocol$ = computed((get) => {
   const requested = get(searchParams$).get("setup");
   if (requested === "vnc") {
     return get(vncEnabled$) ? "vnc" : null;
-  }
-  if (requested === "computer" && !get(tailscaleSettingsEnabled$)) {
-    return null;
   }
   if (
     requested !== "add" &&
@@ -306,10 +300,6 @@ const writeRemoteSetupLocation$ = command(
     }
   },
 );
-const remoteSetupTailscaleAllowed$ = computed((get) => {
-  const setup = get(remoteSetup$);
-  return setup?.protocol === "vnc" || get(tailscaleEnabled$);
-});
 export const remoteComputerNetworks$ = computed(
   async (get): Promise<readonly RemoteSetupNetwork[]> => {
     const configs = await get(tailscaleConfigs$);
@@ -324,9 +314,8 @@ export const remoteComputerNetworks$ = computed(
 /** Only saved networks are available here; provisioning belongs to private networks. */
 export const remoteSetupNetworks$ = computed(
   async (get): Promise<readonly RemoteSetupNetwork[]> => {
-    const allowTailscale = get(remoteSetupTailscaleAllowed$);
     const [tailscale, access] = await Promise.all([
-      allowTailscale ? get(tailscaleConfigs$) : Promise.resolve([]),
+      get(tailscaleConfigs$),
       get(cloudflareAccessConfigs$),
     ]);
     if (!tailscale || !access) {
@@ -365,7 +354,7 @@ export const remoteVncConnectionOptionsAvailable$ = computed(async (get) => {
   const options = await (transport === "ssh"
     ? get(sshConnections$)
     : transport === "tailscale"
-      ? get(scopedTailscaleConfigs$)
+      ? get(tailscaleConfigs$)
       : get(cloudflareAccessConfigs$));
   return options !== null && options.length > 0;
 });
@@ -415,14 +404,10 @@ export const enterRemoteSetup$ = command(
     fromComputer?: boolean,
   ) => {
     const sessionKey = get(authenticatedSessionKey$);
-    const selectedProtocol =
-      sourceNetwork?.route === "tailscale" && !get(tailscaleEnabled$)
-        ? "vnc"
-        : protocol;
     if (
       !sessionKey ||
       !get(remoteControlGuidedEnabled$) ||
-      (selectedProtocol === "vnc" && !get(vncEnabled$))
+      (protocol === "vnc" && !get(vncEnabled$))
     ) {
       return;
     }
@@ -444,7 +429,7 @@ export const enterRemoteSetup$ = command(
       setup$,
       initialSetup(
         sessionKey,
-        selectedProtocol,
+        protocol,
         get(flowSequence$),
         sourceNetwork,
         fromComputer,
@@ -466,11 +451,7 @@ export const chooseRemoteProtocol$ = command(
   },
 );
 export const startComputerSetup$ = command(({ get, set }) => {
-  if (
-    !get(remoteControlGuidedEnabled$) ||
-    !get(authenticatedSessionKey$) ||
-    !get(tailscaleSettingsEnabled$)
-  ) {
+  if (!get(remoteControlGuidedEnabled$) || !get(authenticatedSessionKey$)) {
     return;
   }
   set(resetRemoteSetup$);
@@ -509,11 +490,8 @@ export const updateRemoteSetup$ = command(
   },
 );
 export const chooseRemoteSshConnection$ = command(
-  ({ get, set }, mode: SshConnectionMode, networkId: string) => {
+  ({ set }, mode: SshConnectionMode, networkId: string) => {
     const tailscale = mode === "tailscale" || mode === "tailscale_ssh";
-    if (tailscale && !get(tailscaleEnabled$)) {
-      return;
-    }
     set(chooseSshConnectionMode$, mode);
     if (tailscale) {
       set(chooseSshTailscaleConfig$, networkId);
@@ -793,10 +771,7 @@ export const chooseRemoteNetworkProvider$ = command(
 );
 export const addComputerNetwork$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    if (
-      get(remoteSetup$)?.step !== "computer-network" ||
-      !get(tailscaleSettingsEnabled$)
-    ) {
+    if (get(remoteSetup$)?.step !== "computer-network") {
       return;
     }
     await set(chooseRemoteNetworkProvider$, "tailscale", "tag:okou", signal);

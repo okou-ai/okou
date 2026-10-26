@@ -16,8 +16,6 @@ import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { createRouteMocks } from "./helpers/route-test";
 import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, joinAll } from "../../utils";
 
@@ -152,17 +150,6 @@ describe("Tailscale configuration and saved-host authority", () => {
   afterEach(ordinary.cleanup);
   it("creates a credential-free Tailscale SSH host, enforces transitions and retains network identity", async () => {
     const first = owner();
-    const draft = {
-      id: randomUUID(),
-      displayName: "Gated identity",
-      host: "peer",
-      username: "ubuntu",
-      transport: { type: "tailscale_ssh" as const, configId: randomUUID() },
-    };
-    await accept(hosts().create({ headers, body: draft }), [403]);
-    await updateFeatureSwitchesForUser(context, first, {
-      [FeatureSwitchKey.TailscaleAccess]: true,
-    });
     const c = await config();
     const created = (
       await accept(
@@ -249,10 +236,7 @@ describe("Tailscale configuration and saved-host authority", () => {
     ).body;
     expect(identity).not.toHaveProperty("credentialId");
     expect((await resources()).logins).toHaveLength(1);
-    const other = owner({ orgId: first.orgId });
-    await updateFeatureSwitchesForUser(context, other, {
-      [FeatureSwitchKey.TailscaleAccess]: true,
-    });
+    owner({ orgId: first.orgId });
     await accept(
       hosts().create({
         headers,
@@ -270,9 +254,6 @@ describe("Tailscale configuration and saved-host authority", () => {
   });
   it("resolves only authorized Tailscale SSH identity and preserves pin/config-generation fences", async () => {
     const o = owner();
-    await updateFeatureSwitchesForUser(context, o, {
-      [FeatureSwitchKey.TailscaleAccess]: true,
-    });
     const c = await config();
     const h = (
       await accept(
@@ -371,9 +352,6 @@ describe("Tailscale configuration and saved-host authority", () => {
   });
   it("creates an inline identity network without a login and preserves the mode through adoption and rebind", async () => {
     const initial = owner();
-    await updateFeatureSwitchesForUser(context, initial, {
-      [FeatureSwitchKey.TailscaleAccess]: true,
-    });
     const h = (
       await accept(
         hosts().create({

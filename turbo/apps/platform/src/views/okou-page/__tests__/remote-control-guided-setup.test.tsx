@@ -112,7 +112,7 @@ async function page(
   path = "/connectors?scope=remote-control",
   enabled = true,
   role?: "admin" | "member",
-  capabilities: { vnc?: boolean; tailscale?: boolean } = {},
+  capabilities: { vnc?: boolean } = {},
   userId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
 ) {
   if (role) {
@@ -139,7 +139,6 @@ async function page(
     featureSwitches: {
       [FeatureSwitchKey.RemoteControlGuidedSetup]: enabled,
       [FeatureSwitchKey.VncAccess]: capabilities.vnc ?? true,
-      [FeatureSwitchKey.TailscaleAccess]: capabilities.tailscale ?? true,
     },
   });
 }
@@ -162,13 +161,13 @@ test.each([
   ["ssh", true],
   ["vnc", true],
 ] as const)(
-  "The new deep link %s keeps the existing experience when guided is off and legacy=%s",
-  async (protocol, legacyEnabled) => {
+  "The new deep link %s keeps the existing experience when guided is off and VNC=%s",
+  async (protocol, vncEnabled) => {
     await page(
       `/connectors?scope=remote-control&setup=${protocol}`,
       false,
       undefined,
-      { vnc: legacyEnabled, tailscale: legacyEnabled },
+      { vnc: vncEnabled },
     );
     await waitFor(() => {
       expect(getAction("button", "Add host")).toBeInTheDocument();
@@ -317,7 +316,7 @@ test("A Computer use URL restores the guide without SSH or VNC capabilities", as
     "/connectors?scope=remote-control&setup=computer-use&computerUseStep=install",
     true,
     undefined,
-    { tailscale: false, vnc: false },
+    { vnc: false },
   );
   const dialog = await screen.findByRole("dialog", {
     name: "Install and sign in",
@@ -589,25 +588,6 @@ test("Computer setup retries Tailscale loading independently of Cloudflare", asy
   expect(getAction("button", "Continue with this network")).toBeEnabled();
 });
 
-test("Computer setup is unavailable without Tailscale or VNC capability", async () => {
-  await page(
-    "/connectors?scope=remote-control&setup=computer",
-    true,
-    undefined,
-    {
-      tailscale: false,
-      vnc: false,
-    },
-  );
-  await screen.findByRole("heading", { name: "No devices added yet" });
-  expect(
-    screen.queryByRole("heading", { name: "Connect my computer" }),
-  ).toBeNull();
-  click(getAction("button", "Add connection"));
-  expect(screen.queryByText("Connect my computer")).toBeNull();
-  expect(screen.getByText("Run commands on the device.")).toBeVisible();
-});
-
 async function computerForm(protocol: "ssh" | "vnc") {
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
     return respond(200, { configs: [network] });
@@ -751,7 +731,7 @@ test.each(["staff-colleague", "external-user"])(
       "/connectors?scope=remote-control&setup=vnc",
       true,
       "member",
-      { vnc: true, tailscale: true },
+      { vnc: true },
       userId,
     );
     await expect(
@@ -841,10 +821,9 @@ test("A delayed feature response cannot enable remote UI for the next account", 
     screen.queryByRole("heading", { name: "Add remote connection" }),
   ).toBeNull();
 });
-test("The UI switch does not expose disabled VNC or Tailscale setup", async () => {
+test("The UI switch does not expose disabled VNC setup", async () => {
   await page("/connectors?scope=remote-control", true, undefined, {
     vnc: false,
-    tailscale: false,
   });
   await screen.findByRole("heading", { name: "No devices added yet" });
   click(getAction("button", "Add connection"));
@@ -857,45 +836,29 @@ test("The UI switch does not expose disabled VNC or Tailscale setup", async () =
   expect(queryAction("button", "Back")).toBeNull();
   click(screen.getByText("Run commands on the device."));
   await screen.findByLabelText("SSH username");
-  click(screen.getByLabelText("Connection method"));
-  expect(screen.queryByRole("option", { name: /Tailscale/u })).toBeNull();
-  await userEvent.keyboard("{Escape}");
   click(getAction("button", "Back"));
   await screen.findByRole("heading", { name: "Add remote connection" });
   expect(queryAction("button", "Back")).toBeNull();
 });
-test.each([false, true])(
-  "With Tailscale SSH disabled, reusable Tailscale networks follow the existing VNC gate (%s)",
-  async (vnc) => {
-    context.mocks.api(tailscaleContract.list, ({ respond }) => {
-      return respond(200, { configs: [network] });
-    });
-    await page("/connectors?scope=private-network", true, undefined, {
-      vnc,
-      tailscale: false,
-    });
-    if (vnc) {
-      await screen.findByText(network.name);
-      click(getAction("link", `Manage ${network.name}`));
-      await screen.findByRole("heading", { name: network.name });
-      click(getAction("button", "Back to private networks"));
-      await screen.findByText(network.name);
-    } else {
-      await screen.findByRole("heading", {
-        name: "No networks added yet",
-      });
-    }
-    expect(screen.queryAllByText(network.name)).toHaveLength(vnc ? 1 : 0);
-    click(getAction("button", "Add network"));
-    await screen.findByRole("heading", { name: "Add a private network" });
-    expect(
-      screen.getByText("Cloudflare Access", { exact: true }),
-    ).toBeInTheDocument();
-    expect(screen.queryAllByText("Tailscale", { exact: true })).toHaveLength(
-      vnc ? 1 : 0,
-    );
-  },
-);
+test("Saved Tailscale networks can be managed when VNC is disabled", async () => {
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, { configs: [network] });
+  });
+  await page("/connectors?scope=private-network", true, undefined, {
+    vnc: false,
+  });
+  await screen.findByText(network.name);
+  click(getAction("link", `Manage ${network.name}`));
+  await screen.findByRole("heading", { name: network.name });
+  click(getAction("button", "Back to private networks"));
+  await screen.findByText(network.name);
+  click(getAction("button", "Add network"));
+  await screen.findByRole("heading", { name: "Add a private network" });
+  expect(
+    screen.getByText("Cloudflare Access", { exact: true }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Tailscale", { exact: true })).toBeInTheDocument();
+});
 test("Private network links to connection management without starting device setup", async () => {
   await page("/connectors?scope=private-network&setup=ssh");
   click(
@@ -971,7 +934,7 @@ test.each(["ssh", "vnc"] as const)(
 );
 async function setupWithSavedNetworks(
   provider: "tailscale" | "cloudflare",
-  capabilities: { vnc?: boolean; tailscale?: boolean } = {},
+  capabilities: { vnc?: boolean } = {},
 ) {
   const otherNetwork = {
     id: "a0000000-0000-4000-8000-000000000002",
@@ -1088,7 +1051,7 @@ test.each(["tailscale", "cloudflare"] as const)(
   },
 );
 test("Manual setup respects disabled VNC and clears the chosen network when leaving for the remote directory", async () => {
-  await setupWithSavedNetworks("cloudflare", { vnc: false, tailscale: false });
+  await setupWithSavedNetworks("cloudflare", { vnc: false });
   expect(
     screen.queryByText(
       "Control the device’s screen with a mouse and keyboard.",
@@ -1109,8 +1072,8 @@ test("Manual setup respects disabled VNC and clears the chosen network when leav
   await screen.findByRole("heading", { name: "Add remote connection" });
   expect(queryAction("button", "Back")).toBeNull();
 });
-test("Manual VNC can select a Tailscale network when Tailscale SSH is disabled", async () => {
-  await setupWithSavedNetworks("tailscale", { vnc: true, tailscale: false });
+test("Manual VNC can select a saved Tailscale network", async () => {
+  await setupWithSavedNetworks("tailscale", { vnc: true });
   click(
     screen.getByText("Control the device’s screen with a mouse and keyboard."),
   );
@@ -3977,19 +3940,6 @@ test.each(["tailscale", "cloudflare"] as const)(
   },
 );
 
-test("A Tailscale editor URL does not bypass disabled remote capabilities", async () => {
-  await page(
-    "/connectors?scope=private-network&network=tailscale",
-    true,
-    undefined,
-    { tailscale: false, vnc: false },
-  );
-  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-    "Unable to load",
-  );
-  expect(screen.queryByRole("textbox", { name: "Network name" })).toBeNull();
-});
-
 test("Cloudflare three-step guide preserves the draft and resumes after returning", async () => {
   const name = await openNetworkForm("Cloudflare Access");
   await fill(name, "Cloudflare draft");
@@ -4282,26 +4232,6 @@ test.each(["Tailscale", "Cloudflare Access"] as const)(
     ).toBeNull();
   },
 );
-
-test("Private network directory can show its empty state when Tailscale is disabled", async () => {
-  await page("/connectors?scope=private-network", true, undefined, {
-    vnc: false,
-    tailscale: false,
-  });
-  await screen.findByRole("heading", { name: "No networks added yet" });
-  expect(
-    screen.queryByRole("region", { name: "Personal networks" }),
-  ).toBeNull();
-  expect(
-    screen.queryByRole("region", { name: "Organization networks" }),
-  ).toBeNull();
-  click(getAction("button", "Add network"));
-  await screen.findByRole("heading", { name: "Add a private network" });
-  expect(screen.queryByText("Tailscale", { exact: true })).toBeNull();
-  expect(
-    screen.getByText("Cloudflare Access", { exact: true }),
-  ).toBeInTheDocument();
-});
 
 test("Members see personal and organization networks together, with separate management rights", async () => {
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
