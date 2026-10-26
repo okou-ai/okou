@@ -184,7 +184,6 @@ export async function downloadWechatMedia(
   const { key, url } = source.ok;
   const controller = new AbortController();
   const response = await fetch(url, {
-    redirect: "error",
     signal: AbortSignal.any([
       signal,
       controller.signal,
@@ -353,7 +352,6 @@ async function uploadEncryptedMedia(
         method: "POST",
         body: new Uint8Array(encrypted),
         headers: { "Content-Type": "application/octet-stream" },
-        redirect: "error",
         signal: AbortSignal.any([signal, AbortSignal.timeout(40_000)]),
       }),
       signal,

@@ -60,7 +60,6 @@ async function request<T>(
   const response = await settle(
     fetch(`${API}${path}`, {
       ...init,
-      redirect: "error",
       signal: AbortSignal.any([signal, timeout]),
     }),
     signal,

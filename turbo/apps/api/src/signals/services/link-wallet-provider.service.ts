@@ -190,7 +190,6 @@ async function linkFetch(
   const result = await settleIncludingAbort(
     fetch(url, {
       ...options,
-      redirect: "error",
       signal: AbortSignal.any([signal, timeout]),
     }),
   );

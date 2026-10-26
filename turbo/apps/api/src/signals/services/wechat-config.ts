@@ -84,7 +84,6 @@ async function controlWechatPoller(
   }
   const response = await fetch(new URL(path, url), {
     method: "POST",
-    redirect: "error",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${secret}`,

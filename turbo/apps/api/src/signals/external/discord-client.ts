@@ -236,7 +236,6 @@ async function requestDiscord<T>(
       method: args.method,
       headers,
       ...(args.body !== undefined ? { body: args.body } : {}),
-      redirect: "error",
       signal: requestSignal,
     }),
     signal,
