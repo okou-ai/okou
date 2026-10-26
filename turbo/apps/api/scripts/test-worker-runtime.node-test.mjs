@@ -92,7 +92,9 @@ test(
           const lines = (await request.text()).split("\n");
           for (let index = 1; index + 1 < lines.length; index += 2) {
             const header = JSON.parse(lines[index]);
-            if (header.type !== "event") continue;
+            if (header.type !== "event") {
+              continue;
+            }
             const event = JSON.parse(lines[index + 1]);
             const value = event.exception?.values?.[0]?.value;
             const delivery = deliveries.get(value);
