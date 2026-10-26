@@ -62,7 +62,8 @@ describe("email subscription settings", () => {
     );
 
     const region = await openPreferences();
-    const brief = await within(region).findByRole("switch", {
+    const proactive = await screen.findByRole("region", { name: "Proactive" });
+    const brief = await within(proactive).findByRole("switch", {
       name: "Morning brief",
     });
     await waitFor(() => {

@@ -10,7 +10,7 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
 import { WechatLaunchUnavailableError } from "./wechat-context.service";
@@ -199,8 +199,7 @@ const steeringAnchorSeqId$ = command(
  */
 export const loadNextSteerableInput$ = command(
   async (
-    { set },
-    db: Db,
+    { get, set },
     args: {
       readonly runId: string;
       readonly userId: string;
@@ -208,6 +207,7 @@ export const loadNextSteerableInput$ = command(
     },
     signal: AbortSignal,
   ): Promise<NextSteerableInputResult> => {
+    const db = get(db$);
     const scope = await set(loadActiveInputDeliveryScope$, args, signal);
     if (!scope) {
       return { outcome: "forbidden" };
@@ -243,7 +243,7 @@ export const loadNextSteerableInput$ = command(
       throw new Error("Pending steerable input disappeared from its thread");
     }
     const prompt = await settle(
-      set(materializeActiveInputSource$, db, source, scope, signal),
+      set(materializeActiveInputSource$, source, scope, signal),
       signal,
     );
     if (!prompt.ok) {
