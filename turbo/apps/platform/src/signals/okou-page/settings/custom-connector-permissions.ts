@@ -1,4 +1,5 @@
 import { command, computed, state } from "ccstate";
+import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorPermissionBundleResponse,
@@ -8,6 +9,7 @@ import {
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 
 import { apiClient$ } from "../../api-client.ts";
+import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
 import { resetSignal, withCleanup } from "../../utils.ts";
 import {
@@ -229,5 +231,11 @@ export const saveCustomConnectorPermissions$ = command(
       : get(customConnectorAgentAuthorizations$));
     signal.throwIfAborted();
     sessionSignal.throwIfAborted();
+    toast.success(
+      i18n.t(($) => {
+        return $.connectors.access.permissionsUpdated;
+      }),
+    );
+    set(closeCustomConnectorPermissions$);
   },
 );
