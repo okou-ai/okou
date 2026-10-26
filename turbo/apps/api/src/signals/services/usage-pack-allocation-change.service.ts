@@ -1,3 +1,4 @@
+import { memberRemovalReservationPlan } from "./usage-pack-member-removal-reservation-sql";
 import { subscriptionInvoicePublicationPlan } from "./usage-pack-subscription-invoice-sql";
 import { prepareUsagePackMemberRemovalPlan } from "./usage-pack-member-removal-plan";
 import { upgradeInvoicePublicationPlan } from "./usage-pack-upgrade-invoice-sql";
@@ -418,48 +419,6 @@ function usagePackSubscriptionIdFromMetadata(
   return metadata.usagePackSubscriptionId ?? null;
 }
 
-function usagePackChangeContextSelection(usagePackSubscriptionId: string) {
-  const allocationColumns = getTableColumns(usagePackAllocations);
-  const changeColumns = getTableColumns(usagePackAllocationChanges);
-  const allocationSchema = contextProjectionSchema(allocationColumns);
-  const changeSchema = contextProjectionSchema(changeColumns);
-  const allocations = new QueryBuilder()
-    .select({
-      payload: contextJsonProjection(allocationColumns)
-        .mapWith(zodDriverValueDecoder(allocationSchema))
-        .as("payload"),
-    })
-    .from(usagePackAllocations)
-    .where(
-      eq(usagePackAllocations.usagePackSubscriptionId, usagePackSubscriptionId),
-    );
-  const changes = new QueryBuilder()
-    .select({
-      payload: contextJsonProjection(changeColumns)
-        .mapWith(zodDriverValueDecoder(changeSchema))
-        .as("payload"),
-    })
-    .from(usagePackAllocationChanges)
-    .where(
-      and(
-        eq(
-          usagePackAllocationChanges.usagePackSubscriptionId,
-          usagePackSubscriptionId,
-        ),
-        inArray(usagePackAllocationChanges.status, [...OPEN_CHANGE_STATUSES]),
-      ),
-    );
-  return {
-    subscription: usagePackSubscriptions,
-    allocations: contextJsonRows(allocations).mapWith(
-      zodDriverValueDecoder(allocationSchema.array()),
-    ),
-    changes: contextJsonRows(changes).mapWith(
-      zodDriverValueDecoder(changeSchema.array()),
-    ),
-  };
-}
-
 function activeMemberAllocations(
   context: UsagePackChangeContext,
 ): readonly UsagePackAllocationRow[] {
@@ -785,26 +744,6 @@ function usagePackAllocationAdditionCharge(
         ? [{ amountCents: netAmountCents, taxRateIds: [] }]
         : []
       : invoiceItems,
-  };
-}
-
-function expiredUsagePackPreviewCondition(orgId: string, at: Date) {
-  return and(
-    eq(usagePackAllocationChanges.orgId, orgId),
-    eq(usagePackAllocationChanges.status, "previewed"),
-    lte(usagePackAllocationChanges.previewExpiresAt, at),
-  );
-}
-
-function failedUsagePackPreviewValues(
-  at: Date,
-  reason: string,
-): PgUpdateSetSource<typeof usagePackAllocationChanges> {
-  return {
-    status: "failed",
-    failureReason: reason,
-    completedAt: at,
-    updatedAt: at,
   };
 }
 
@@ -2614,58 +2553,45 @@ async function scheduleUsagePackAllocationChange(
   };
 }
 
-function memberRemovalReservationContext(
-  context: UsagePackChangeContext | null,
-  userId: string,
-) {
-  if (!context?.subscription.stripeSubscriptionId) {
+function adaptMemberRemovalReservationError(error: unknown): never {
+  if (
+    !(error instanceof DrizzleQueryError) ||
+    typeof error.cause !== "object" ||
+    error.cause === null ||
+    !("code" in error.cause) ||
+    error.cause.code !== "22P02" ||
+    !("message" in error.cause) ||
+    typeof error.cause.message !== "string"
+  ) {
+    throw error;
+  }
+  const match =
+    /^invalid input syntax for type integer: "__TX0267_GUARD_V1_(NOT_READY|CONFLICT|BLOCKED_[0-9a-f-]{36}|EXISTING_[0-9a-f-]{36})__"$/.exec(
+      error.cause.message,
+    );
+  if (!match) {
+    throw error;
+  }
+  const stage = match[1];
+  if (stage === "NOT_READY") {
     throw new Error("Usage pack subscription is not ready for member removal");
   }
-  const blockingChange = context.changes.find((change) => {
-    return (
-      change.status === "applying" ||
-      change.status === "pending_payment" ||
-      change.status === "applied"
-    );
-  });
-  if (blockingChange) {
+  if (stage?.startsWith("BLOCKED_")) {
     throw new Error(
-      `Usage pack billing change ${blockingChange.id} must finish before member removal`,
+      `Usage pack billing change ${stage.slice(8)} must finish before member removal`,
     );
   }
-  const existing = context.changes.find((change) => {
-    return change.userId === userId;
-  });
-  if (existing?.status === "scheduled" && existing.kind !== "removal") {
+  if (stage?.startsWith("EXISTING_")) {
     throw new Error(
-      `Usage pack change ${existing.id} must finish before member removal`,
+      `Usage pack change ${stage.slice(9)} must finish before member removal`,
     );
   }
-  const existingRemoval = existing?.kind === "removal" ? existing : null;
-  return { context, existing, existingRemoval };
-}
-
-function memberRemovalReservationValues(
-  context: UsagePackChangeContext,
-  allocation: UsagePackAllocationRow,
-  args: { readonly orgId: string; readonly userId: string },
-  at: Date,
-): typeof usagePackAllocationChanges.$inferInsert {
-  return {
-    usagePackSubscriptionId: context.subscription.id,
-    orgId: args.orgId,
-    userId: args.userId,
-    sourceAllocationId: allocation.id,
-    kind: "removal",
-    status: "previewed",
-    sourceUsagePackUsd: allocation.usagePackUsd,
-    sourceStripePriceId: allocation.stripePriceId,
-    immediateAmountCents: 0,
-    nextRecurringAmountCents: 0,
-    previewExpiresAt: new Date(at.getTime() + PREVIEW_TTL_MS),
-    createdAt: at,
-    updatedAt: at,
-  };
+  if (stage === "CONFLICT") {
+    throw new Error(
+      "A usage pack billing change must finish before member removal",
+    );
+  }
+  throw error;
 }
 
 export const reserveUsagePackMemberRemoval$ = command(
@@ -2677,98 +2603,27 @@ export const reserveUsagePackMemberRemoval$ = command(
     const db = set(writeDb$);
     signal.throwIfAborted();
     const at = nowDate();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0267; new non-billing transactions are prohibited.
-    const reservationId = await db.transaction(async (tx) => {
-      await tx
-        .update(usagePackAllocationChanges)
-        .set(failedUsagePackPreviewValues(at, "preview_expired"))
-        .where(expiredUsagePackPreviewCondition(args.orgId, at));
-      const [allocation] = await tx
-        .select()
-        .from(usagePackAllocations)
-        .where(
-          and(
-            eq(usagePackAllocations.orgId, args.orgId),
-            eq(usagePackAllocations.userId, args.userId),
-            eq(usagePackAllocations.status, "active"),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      if (!allocation) {
-        return null;
-      }
-      const [subscription] = await tx
-        .select()
-        .from(usagePackSubscriptions)
-        .where(
-          and(
-            eq(usagePackSubscriptions.orgId, args.orgId),
-            isNotNull(usagePackSubscriptions.stripeSubscriptionId),
-            notInArray(usagePackSubscriptions.subscriptionStatus, [
-              ...TERMINAL_SUBSCRIPTION_STATUSES,
-            ]),
-          ),
-        )
-        .orderBy(desc(usagePackSubscriptions.updatedAt))
-        .limit(1);
-      let loaded: UsagePackChangeContext | null = null;
-      if (subscription) {
-        // Allocation replacement and its change-status transition commit together.
-        // One statement prevents mixing child rows from either side of that commit.
-        const [context] = await tx
-          .select(usagePackChangeContextSelection(subscription.id))
-          .from(usagePackSubscriptions)
-          .where(eq(usagePackSubscriptions.id, subscription.id))
-          .limit(1);
-        loaded = context ?? null;
-      }
-      const { context, existing, existingRemoval } =
-        memberRemovalReservationContext(loaded, args.userId);
-      await tx
-        .update(usagePackAllocationChanges)
-        .set(failedUsagePackPreviewValues(at, "member_removal_reserved"))
-        .where(
-          invalidatedUsagePackPreviewCondition({
-            orgId: args.orgId,
-            ...(existingRemoval
-              ? { preservedChangeId: existingRemoval.id }
-              : {}),
-          }),
-        );
-      if (existingRemoval) {
-        if (existingRemoval.status === "previewed") {
-          await tx
-            .update(usagePackAllocationChanges)
-            .set({
-              previewExpiresAt: new Date(at.getTime() + PREVIEW_TTL_MS),
-              updatedAt: at,
-            })
-            .where(eq(usagePackAllocationChanges.id, existingRemoval.id));
-        }
-        return existingRemoval.id;
-      }
-      if (existing) {
-        await tx
-          .update(usagePackAllocationChanges)
-          .set(failedUsagePackPreviewValues(at, "member_removal_reserved"))
-          .where(eq(usagePackAllocationChanges.id, existing.id));
-      }
-      const [reservation] = await tx
-        .insert(usagePackAllocationChanges)
-        .values(memberRemovalReservationValues(context, allocation, args, at))
-        // The same member's reservations queue on its active allocation row.
-        // Another member's committed open change keeps the active-org unique
-        // index occupied; that is the same blocking outcome as above.
-        .onConflictDoNothing()
-        .returning({ id: usagePackAllocationChanges.id });
-      if (!reservation) {
-        throw new Error(
-          "A usage pack billing change must finish before member removal",
-        );
-      }
-      return reservation.id;
+    const plan = memberRemovalReservationPlan({
+      ...args,
+      at,
+      expiresAt: new Date(at.getTime() + PREVIEW_TTL_MS),
     });
+    const reservationId = await (async () => {
+      const result = await settle(
+        db
+          .with(...plan.ctes)
+          .select(plan.fields)
+          .from(plan.from),
+      );
+      if (!result.ok) {
+        adaptMemberRemovalReservationError(result.error);
+      }
+      const rows = result.value;
+      if (rows.length !== 1 || !rows[0]) {
+        throw new Error("Expected one member removal reservation result");
+      }
+      return rows[0].reservationId;
+    })();
     signal.throwIfAborted();
     return reservationId;
   },
@@ -2798,22 +2653,6 @@ export const cancelUsagePackMemberRemovalReservation$ = command(
       );
   },
 );
-
-function invalidatedUsagePackPreviewCondition(args: {
-  readonly orgId: string;
-  readonly preservedChangeId?: string;
-}) {
-  return args.preservedChangeId
-    ? and(
-        eq(usagePackAllocationChanges.orgId, args.orgId),
-        eq(usagePackAllocationChanges.status, "previewed"),
-        ne(usagePackAllocationChanges.id, args.preservedChangeId),
-      )
-    : and(
-        eq(usagePackAllocationChanges.orgId, args.orgId),
-        eq(usagePackAllocationChanges.status, "previewed"),
-      );
-}
 
 const prepareUsagePackMemberRemoval$ = command(
   async function prepareUsagePackMemberRemoval(
