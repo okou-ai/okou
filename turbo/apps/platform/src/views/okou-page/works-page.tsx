@@ -1,3 +1,4 @@
+import type { Command } from "ccstate";
 import { ProviderCardMenu } from "./components/provider-card-menu.tsx";
 import { ConnectedIndicator } from "./components/connected-indicator.tsx";
 import {
@@ -214,19 +215,20 @@ function PermissionWarning({
 function UninstallConfirmDialog({
   open,
   setOpen,
-  uninstalling,
-  uninstall,
+  uninstall$,
   title,
   description,
 }: {
   open: boolean;
   setOpen: (open: boolean) => void;
-  uninstalling: boolean;
-  uninstall: () => Promise<unknown>;
+  uninstall$: Command<Promise<unknown>, [AbortSignal]>;
   title: string;
   description: string;
 }) {
   const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const [uninstallLoadable, uninstall] = useLoadableSet(uninstall$);
+  const uninstalling = uninstallLoadable.state === "loading";
   return (
     <Dialog
       open={open}
@@ -257,13 +259,7 @@ function UninstallConfirmDialog({
             variant="destructive"
             disabled={uninstalling}
             onClick={() => {
-              detach(
-                (async () => {
-                  await uninstall();
-                  setOpen(false);
-                })(),
-                Reason.DomCallback,
-              );
+              detach(uninstall(pageSignal), Reason.DomCallback);
             }}
           >
             {uninstalling
@@ -289,8 +285,6 @@ function SlackCard({ displayName }: { displayName: string }) {
     slackDataLoadable.state === "hasData" ? slackDataLoadable.data : null;
   const [disconnectLoadable, disconnect] = useLoadableSet(disconnectSlackOrg$);
   const disconnecting = disconnectLoadable.state === "loading";
-  const [uninstallLoadable, uninstall] = useLoadableSet(uninstallSlackOrg$);
-  const uninstalling = uninstallLoadable.state === "loading";
   const pageSignal = useGet(pageSignal$);
 
   const showUninstallDialog = useGet(showUninstallDialog$);
@@ -370,10 +364,7 @@ function SlackCard({ displayName }: { displayName: string }) {
       <UninstallConfirmDialog
         open={showUninstallDialog}
         setOpen={setShowUninstallDialog}
-        uninstalling={uninstalling}
-        uninstall={() => {
-          return uninstall(pageSignal);
-        }}
+        uninstall$={uninstallSlackOrg$}
         title={t(($) => {
           return $.works.slack.uninstallTitle;
         })}
@@ -590,8 +581,6 @@ function TeamsCard({ displayName }: { displayName: string }) {
     teamsDataLoadable.state === "hasData" ? teamsDataLoadable.data : null;
   const [disconnectLoadable, disconnect] = useLoadableSet(disconnectTeamsOrg$);
   const disconnecting = disconnectLoadable.state === "loading";
-  const [uninstallLoadable, uninstall] = useLoadableSet(uninstallTeamsOrg$);
-  const uninstalling = uninstallLoadable.state === "loading";
   const pageSignal = useGet(pageSignal$);
 
   const showUninstallDialog = useGet(showTeamsUninstallDialog$);
@@ -680,10 +669,7 @@ function TeamsCard({ displayName }: { displayName: string }) {
       <UninstallConfirmDialog
         open={showUninstallDialog}
         setOpen={setShowUninstallDialog}
-        uninstalling={uninstalling}
-        uninstall={() => {
-          return uninstall(pageSignal);
-        }}
+        uninstall$={uninstallTeamsOrg$}
         title={t(($) => {
           return $.works.teams.uninstallTitle;
         })}

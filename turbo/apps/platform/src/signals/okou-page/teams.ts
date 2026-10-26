@@ -212,6 +212,8 @@ export const uninstallTeamsOrg$ = command(
     );
     signal.throwIfAborted();
     await set(refreshTeamsOrg$, signal);
+    signal.throwIfAborted();
+    set(showTeamsUninstallDialogState$, false);
   },
 );
 
