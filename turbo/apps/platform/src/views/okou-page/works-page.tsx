@@ -257,13 +257,7 @@ function UninstallConfirmDialog({
             variant="destructive"
             disabled={uninstalling}
             onClick={() => {
-              detach(
-                (async () => {
-                  await uninstall();
-                  setOpen(false);
-                })(),
-                Reason.DomCallback,
-              );
+              detach(uninstall(), Reason.DomCallback);
             }}
           >
             {uninstalling
