@@ -44,9 +44,9 @@ function expectDocumentOrder(...elements: readonly Element[]): void {
   }
 }
 
-function viewAgentProfileLinks(): HTMLElement[] {
+function agentNameLines(): HTMLElement[] {
   return queryAllByRoleFast("link").filter((link) => {
-    return link.getAttribute("aria-label") === "View agent profile";
+    return link.dataset.chatAssistantNameLine !== undefined;
   });
 }
 
@@ -180,7 +180,7 @@ test("Expose an artifact referenced only by history from the main result actions
   );
   expect(actions).toContainElement(artifactTrigger);
   expect(artifactTrigger).toHaveAccessibleName("1 artifact");
-  expect(viewAgentProfileLinks()).toHaveLength(1);
+  expect(agentNameLines()).toHaveLength(1);
   const dialog = await openRelatedArtifacts();
   expect(relatedArtifactRow(dialog, reportUrl)).toHaveTextContent("Report");
   expect(queryWorkHistoryToggle("collapsed")).toBeVisible();

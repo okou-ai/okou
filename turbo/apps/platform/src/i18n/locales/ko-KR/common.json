@@ -1562,8 +1562,7 @@
         "whatsCooking": "무슨 일이 있나요, {{userName}}?",
         "whatsOnYourMind": "무슨 생각 중이신가요, {{userName}}?",
         "whatsTheMove": "어떤 계획이 있나요, {{userName}}?"
-      },
-      "viewAgentProfile": "에이전트 프로필 보기"
+      }
     },
     "agentSuggestions": {
       "dismiss": "무시",
@@ -3670,7 +3669,6 @@
         "createCodeError": "연결 코드를 만들지 못했습니다. 다시 시도하세요.",
         "creatingCode": "연결 코드 만드는 중…",
         "description": "{{assistantName}}에 문자 메시지 접근",
-        "destination": "iMessage 또는 SMS 수신처",
         "openMessages": "메시지 열기",
         "options": "전화 옵션",
         "phoneLabel": "전화",

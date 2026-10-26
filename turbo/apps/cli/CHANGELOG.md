@@ -1,5 +1,26 @@
 # Changelog
 
+## [10.3.0](https://github.com/okou-ai/okou/compare/cli-v10.2.5...cli-v10.3.0) (2026-10-26)
+
+
+### Features
+
+* add expanded action options to homepage suggestions ([#43104](https://github.com/okou-ai/okou/issues/43104)) ([fdf92c5](https://github.com/okou-ai/okou/commit/fdf92c5beea97015267ae6dbb74e7db58ce0a344))
+
+
+### Refactoring
+
+* **data:** drop retired managed data storage ([#42942](https://github.com/okou-ai/okou/issues/42942)) ([c9b25eb](https://github.com/okou-ai/okou/commit/c9b25eb26d18dab6cb01c60453fa4729fdd50247))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.8.0
+    * @okouai/core bumped to 8.790.3
+    * @okouai/pi-agent-runtime bumped to 1.50.76
+
 ## [10.2.5](https://github.com/okou-ai/okou/compare/cli-v10.2.4...cli-v10.2.5) (2026-10-26)
 
 

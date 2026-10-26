@@ -23,10 +23,7 @@ import {
 } from "../../signals/okou-page/agentphone.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
-import {
-  AgentPhoneConnectDialog,
-  PhoneNumberCopyButton,
-} from "./agentphone-connect-dialog.tsx";
+import { AgentPhoneConnectDialog } from "./agentphone-connect-dialog.tsx";
 
 const imessageIconImg = settingsIconAssetUrl("imessage");
 
@@ -181,21 +178,9 @@ export function AgentPhoneCard() {
               </div>
             </div>
             <div className="truncate text-sm text-muted-foreground">
-              {agentPhoneNumber ? (
-                <span className="inline-flex max-w-full items-center gap-1">
-                  <span className="shrink-0">
-                    {t(($) => {
-                      return $.connectors.providerSettings.agentphone
-                        .destination;
-                    })}
-                  </span>
-                  <PhoneNumberCopyButton phoneNumber={agentPhoneNumber} />
-                </span>
-              ) : (
-                t(($) => {
-                  return $.connectors.providerSettings.agentphone.description;
-                })
-              )}
+              {t(($) => {
+                return $.connectors.providerSettings.agentphone.description;
+              })}
             </div>
           </div>
           <AgentPhoneCardActions

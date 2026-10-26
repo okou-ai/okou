@@ -1562,8 +1562,7 @@
         "whatsCooking": "在忙什麼呢，{{userName}}？",
         "whatsOnYourMind": "在想些什麼，{{userName}}？",
         "whatsTheMove": "下一步怎麼走，{{userName}}？"
-      },
-      "viewAgentProfile": "檢視智能體資料"
+      }
     },
     "agentSuggestions": {
       "dismiss": "忽略",
@@ -3670,7 +3669,6 @@
         "createCodeError": "無法建立連線碼，請重試。",
         "creatingCode": "正在建立連線碼…",
         "description": "透過簡訊使用 {{assistantName}}",
-        "destination": "iMessage 或簡訊傳送至",
         "openMessages": "開啟 Messages",
         "options": "手機選項",
         "phoneLabel": "電話",
