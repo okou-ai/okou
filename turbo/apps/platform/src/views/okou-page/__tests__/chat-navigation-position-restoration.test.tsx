@@ -372,6 +372,18 @@ async function waitForThreadMessage(
   });
 }
 
+async function loadEarlierThreadMessage(
+  threadId: string,
+  latestText: string,
+  earlierText: string,
+): Promise<void> {
+  await waitForThreadMessage(threadId, latestText);
+  const container = threadContainer(threadId);
+  container.scrollTop = 0;
+  fireEvent.scroll(container);
+  await waitForThreadMessage(threadId, earlierText);
+}
+
 async function waitForInteractiveThread(
   threadId: string,
   title: string,
@@ -408,7 +420,7 @@ async function expectReadingPosition(
   viewportOffsetTop = READING_OFFSET,
 ): Promise<void> {
   await waitFor(() => {
-    expect(geometry.viewportOffsetFor(text)).toBe(viewportOffsetTop);
+    expect(geometry.viewportOffsetFor(text)).toBeCloseTo(viewportOffsetTop, 5);
   });
 }
 
@@ -693,7 +705,11 @@ test("Follow a run link in the current conversation", async () => {
     path: `/chats/${DEEP_LINK_THREAD_ID}`,
   });
   const linkedText = "Linked message 3";
-  await waitForThreadMessage(DEEP_LINK_THREAD_ID, linkedText);
+  await loadEarlierThreadMessage(
+    DEEP_LINK_THREAD_ID,
+    "Linked message 6",
+    linkedText,
+  );
   const geometry = installChatScrollGeometry(
     threadContainer(DEEP_LINK_THREAD_ID),
   );
@@ -939,7 +955,11 @@ test("Preserve the reading position while entering and leaving sharing mode", as
   });
 
   const targetText = "Shareable message 3";
-  await waitForThreadMessage(SHARING_THREAD_ID, targetText);
+  await loadEarlierThreadMessage(
+    SHARING_THREAD_ID,
+    "Shareable message 6",
+    targetText,
+  );
   const geometry = installChatScrollGeometry(
     threadContainer(SHARING_THREAD_ID),
   );

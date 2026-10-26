@@ -1,7 +1,6 @@
 import type { ChatEventRow } from "./chat-event-rows";
 import type { ChatEventType } from "./chat-events";
 import { chatEventSchema, type ChatEvent } from "./chat-threads";
-import { visiblePiMemoryCitationText } from "./pi-memory-citations";
 
 function requiredRowField<T>(
   value: T | null,
@@ -15,22 +14,17 @@ function requiredRowField<T>(
 }
 
 /**
- * Projects one canonical row into the public ChatEvent response shape. This
- * projection must stay field-for-field equivalent to the API's own row
- * projection, and the contract test suite pins every supported event type. A
- * control.interrupt target is emitted as interruptsRunId, never as run
- * ownership.
+ * Projects one canonical row into the public ChatEvent response shape without
+ * rewriting its text. The contract test suite pins every supported event type.
+ * A control.interrupt target is emitted as interruptsRunId, never as run ownership.
  */
 export function chatEventFromRow(row: ChatEventRow): ChatEvent {
   const payload = row.payload;
-  const visibleContent =
-    payload?.content === undefined
-      ? null
-      : visiblePiMemoryCitationText(payload.content);
+  const content = payload?.content ?? null;
   const base = {
     id: row.id,
     threadId: row.chatThreadId,
-    content: visibleContent,
+    content,
     runId:
       row.eventType === "control.interrupt"
         ? undefined
@@ -91,7 +85,7 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
       return {
         ...base,
         eventType: "output.message",
-        content: requiredRowField(visibleContent, row.eventType, "content"),
+        content: requiredRowField(content, row.eventType, "content"),
       };
     },
     "output.error": () => {
@@ -105,7 +99,7 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
       return {
         ...base,
         eventType: "output.followups",
-        content: requiredRowField(visibleContent, row.eventType, "content"),
+        content: requiredRowField(content, row.eventType, "content"),
       };
     },
     "run.completed": () => {

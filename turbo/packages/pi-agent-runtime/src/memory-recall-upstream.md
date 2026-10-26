@@ -13,19 +13,24 @@ OpenAI Codex files at commit `5adb68a49933ae446bf11935662c83dba55a0804`, under t
 Okou's TypeScript authority is
 `api-contracts/src/contracts/pi-memory-citations.ts`; the Rust Sandbox adapter
 is `guest-agent/src/cli/pi_memory_citation.rs`. Both consume the same
-`fixtures/pi-memory-citations.json`. Okou additionally removes complete stray
-delimiters, bounds untrusted fields and counts, and never exposes citation
-metadata through public text, logs, metrics, or exported Pi
-JSONL derivatives.
+`fixtures/pi-memory-citations.json`. The producer projection additionally
+removes complete stray delimiters, bounds untrusted fields and counts, and
+keeps citation metadata out of derived public text and exported Pi JSONL.
 
-Canonical Pi session JSONL remains immutable. Sandbox runtime and shared projections normalize
-only derived assistant/result events. The common API defensively normalizes old
-Guest output and transactionally stores private provenance in the additive
-`run_output_memory_citations` table, keyed by run and event sequence. Historical
-chat, Snapshot, browser-cache, shared-thread, search, callback, and activity
-reads apply the same text-only defense without rewriting source rows or blobs.
+Canonical Pi session JSONL remains immutable. Guest normalizes derived
+assistant/result text before admission. The API separates supplied citation
+metadata and stores it in `run_output_memory_citations`, keyed by run and event
+sequence, as an auxiliary write after event admission.
+
+Chat event row projection preserves stored content without parsing citation
+markup. Browser cache hydration, incremental synchronization, and Snapshot
+validation use that projection, so loading a thread does not rescan its entire
+history for citations. Existing historical content is passed through unchanged;
+these reads neither rewrite stored rows nor perform deferred text cleanup.
+Other public projections, including shared-thread, search, callback, and
+activity reads, retain their text-only citation handling.
 
 Issue #32569 adds bounded escaping for isolated, closed code examples of the
-delimiter constants. Real envelopes inside code remain private. The native
-Codex 0.153.4 source/order evidence, literal grammar and public caller audit are
+delimiter constants. The producer projection also hides real envelopes inside
+code. The native Codex 0.153.4 source/order evidence, literal grammar and public caller audit are
 documented in [the delimiter boundary](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/citation-delimiter-literals.md).
