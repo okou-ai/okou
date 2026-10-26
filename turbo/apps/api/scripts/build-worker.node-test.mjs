@@ -6,6 +6,60 @@ import { test } from "node:test";
 
 import { build } from "esbuild";
 import { workerRequireBanner } from "./worker-bundle-banner.mjs";
+import { validateWorkerRouteBoundaries } from "./worker-route-boundaries.mjs";
+
+test("domain build rejects reintroduced global and foreign route tables", () => {
+  for (const path of [
+    "src/signals/route.ts",
+    "src/signals/route-groups/core.ts",
+    "../../packages/api-contracts/src/client-transforms/desktop.ts",
+  ]) {
+    assert.throws(() => {
+      validateWorkerRouteBoundaries({
+        outputs: {
+          "worker.js": {
+            entryPoint: "src/worker-domains/data.ts",
+            inputs: { [path]: { bytesInOutput: 1 } },
+          },
+        },
+      });
+    }, /global or foreign registry/);
+  }
+});
+
+test("Data build rejects a runtime contract brought back by a shared helper", () => {
+  assert.throws(() => {
+    validateWorkerRouteBoundaries({
+      outputs: {
+        "worker.js": {
+          entryPoint: "src/worker-domains/data.ts",
+          inputs: {
+            "../../packages/api-contracts/src/contracts/browser-user-actions.ts":
+              {
+                bytesInOutput: 200,
+              },
+          },
+        },
+      },
+    });
+  }, /unrelated business contract/);
+});
+
+test("build boundaries allow full API composition and erased dependencies", () => {
+  for (const [entryPoint, bytesInOutput] of [
+    ["src/worker.ts", 200],
+    ["src/worker-domains/data.ts", 0],
+  ]) {
+    validateWorkerRouteBoundaries({
+      outputs: {
+        "worker.js": {
+          entryPoint,
+          inputs: { "src/signals/route.ts": { bytesInOutput } },
+        },
+      },
+    });
+  }
+});
 
 const apiRoot = resolve(import.meta.dirname, "..");
 const { outputFiles } = await build({

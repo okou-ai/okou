@@ -4,22 +4,39 @@ The API can be built as a complete Worker or as six independently bundled
 Workers. The domain build is an opt-in experiment; existing Node/Vercel and
 production Worker deployment entry points continue to use the complete API.
 
-| Worker       | Responsibility                                               |
-| ------------ | ------------------------------------------------------------ |
-| Gateway      | Route requests using build-time method/path metadata         |
-| Core         | Organization, billing, settings and resource management      |
-| Execution    | Chat, runs, agents, workflows and execution callbacks        |
-| Integrations | Connector authorization and external platform integrations   |
-| Data         | Data Router discovery, history and usage callbacks |
-| Processor    | Private presentation-byte preparation                        |
+| Worker       | Responsibility                                             |
+| ------------ | ---------------------------------------------------------- |
+| Gateway      | Route requests using build-time method/path metadata       |
+| Core         | Organization, billing, settings and resource management    |
+| Execution    | Chat, runs, agents, workflows and execution callbacks      |
+| Integrations | Connector authorization and external platform integrations |
+| Data         | Data Router discovery, history and usage callbacks         |
+| Processor    | Private presentation-byte preparation                      |
 
 ## Dependency boundaries
 
-Each business entry imports its own static route list. The gateway does not
-import handlers or schemas. The manifest generator reads the existing route
-declarations and evaluates only contract metadata at build time. It rejects
-missing ownership, duplicate method/path registrations, order changes and
-unsupported declaration shapes. New routes require explicit domain ownership.
+The four files in `src/signals/route-groups/` are the route membership source.
+Each business Worker imports only its group. `src/signals/route.ts` aggregates
+those same groups for Node/Vercel and the complete Worker; tests can pass a group
+to `setupApp({ context, routes })` or use a smaller existing business route array.
+The full aggregate keeps Core before Integrations so the exact Link callback
+precedes the parameterized connector callback.
+
+The manifest generator reads these tables and evaluates only contract metadata
+at build time. It rejects missing/repeated domains, repeated ownership,
+duplicate method/path registrations and unsupported declaration shapes. There
+is no second per-route ownership list to update. The gateway imports no handlers
+or schemas. Normal Worker bundle validation rejects global/foreign route tables
+in domain builds and the unrelated contracts removed from the Data domain.
+
+Route entries own response transforms and request-body policies. The shared
+adapter selects and applies only the supplied transforms, after current-response
+validation and before serialization. Body policies bound stream reads before
+JSON parsing; the owning route supplies the byte limit and error message.
+Shared request/response code must not import business contracts or registries.
+The complete Desktop compatibility inventory remains a build-time input; the
+production route-registration check verifies every listed transform is mounted
+on its matching route.
 
 Business Workers preserve the existing middleware, authentication, validation,
 request database lifetime, response streaming, telemetry and `waitUntil`

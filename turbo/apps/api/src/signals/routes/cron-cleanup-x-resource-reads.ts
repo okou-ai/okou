@@ -1,4 +1,4 @@
-import { cronCleanupXResourceReadsContract } from "@okouai/api-contracts/contracts/cron";
+import { cronCleanupXResourceReadsContract } from "@okouai/api-contracts/contracts/cron-cleanup-x-resource-reads";
 import { command } from "ccstate";
 
 import type { RouteEntry } from "../route-entry";

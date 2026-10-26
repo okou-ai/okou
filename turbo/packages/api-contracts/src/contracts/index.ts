@@ -261,7 +261,6 @@ export {
 export {
   cronCompactChatThreadSnapshotsContract,
   cronCleanupSandboxesContract,
-  cronCleanupXResourceReadsContract,
   cronConnectorOauthStateCleanupContract,
   cronConnectorOauthStateCleanupResponseSchema,
   cronDrainEmailOutboxContract,
@@ -286,7 +285,6 @@ export {
   cleanupResultSchema,
   type CronCompactChatThreadSnapshotsContract,
   type CronCleanupSandboxesContract,
-  type CronCleanupXResourceReadsContract,
   type CronConnectorOauthStateCleanupContract,
   type CronDrainEmailOutboxContract,
   type CronProcessUsageEventsContract,
@@ -1469,3 +1467,8 @@ export {
   desktopShellAuthorizationSchema,
   type DesktopShellAuthorization,
 } from "./desktop-shell-authorization";
+
+export {
+  cronCleanupXResourceReadsContract,
+  type CronCleanupXResourceReadsContract,
+} from "./cron-cleanup-x-resource-reads";

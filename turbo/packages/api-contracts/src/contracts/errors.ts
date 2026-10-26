@@ -95,18 +95,7 @@ export function createErrorResponse<K extends ApiErrorKey>(
   };
 }
 
-/**
- * Standard API error response schema
- * Used across all API endpoints for consistent error handling
- */
-export const apiErrorSchema = z.object({
-  error: z.object({
-    message: z.string(),
-    code: z.string(),
-  }),
-});
-
-export type ApiErrorResponse = z.infer<typeof apiErrorSchema>;
+export { apiErrorSchema, type ApiErrorResponse } from "./api-error";
 
 export const PLAN_UPGRADE_RUN_GUIDANCE =
   "Return the plan upgrade link to the user.";

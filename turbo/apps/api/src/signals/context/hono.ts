@@ -8,15 +8,28 @@ import {
   requestHasPreviewAutomationBypassHeaderOrCookie,
 } from "../../lib/preview-automation-bypass";
 
+export interface RequestBodyPolicy {
+  readonly maxBytes: number;
+  readonly tooLargeMessage: string;
+}
+
+const innerRequestBodyPolicy$ = state<RequestBodyPolicy | undefined>(undefined);
 const innerHonoContext$ = state<Context>({} as Context);
 const innerRoute$ = state<AppRoute | null>(null);
 const innerApiStartTime$ = state<number | null>(null);
 
 export const initHono$ = command(
-  ({ set }, context: Context, route: AppRoute, apiStartTime: number): void => {
+  (
+    { set },
+    context: Context,
+    route: AppRoute,
+    apiStartTime: number,
+    requestBodyPolicy: RequestBodyPolicy | undefined,
+  ): void => {
     set(innerHonoContext$, context);
     set(innerRoute$, route);
     set(innerApiStartTime$, apiStartTime);
+    set(innerRequestBodyPolicy$, requestBodyPolicy);
   },
 );
 
@@ -49,6 +62,10 @@ function resHeader(name: string) {
 export const resUserAgent$ = resHeader("User-Agent");
 
 // Request
+export const requestBodyPolicy$ = computed((get) => {
+  return get(innerRequestBodyPolicy$);
+});
+
 export const request$ = computed((get) => {
   const context = get(innerHonoContext$);
   return context.req;

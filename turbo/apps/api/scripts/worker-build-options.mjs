@@ -1,6 +1,7 @@
 import { builtinModules } from "node:module";
 import { resolve } from "node:path";
 import { workerRequireBanner } from "./worker-bundle-banner.mjs";
+import { validateWorkerRouteBoundaries } from "./worker-route-boundaries.mjs";
 
 export const apiRoot = resolve(import.meta.dirname, "..");
 const builtins = new Set(
@@ -79,6 +80,7 @@ export function workerBuildOptions({
 }
 
 export function validateWorkerExternals(result) {
+  validateWorkerRouteBoundaries(result.metafile);
   // A no-bundle deployment cannot resolve third-party packages at runtime.
   // Only Workers native modules and nodejs_compat builtins may stay external.
   const unresolvedDependencies = new Set();

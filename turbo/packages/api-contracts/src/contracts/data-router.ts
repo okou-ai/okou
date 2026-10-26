@@ -1,6 +1,6 @@
 import { initContract } from "./base";
 import * as z from "zod";
-import { apiErrorSchema } from "./errors";
+import { apiErrorSchema } from "./api-error";
 
 const c = initContract();
 

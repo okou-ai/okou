@@ -1,3 +1,4 @@
+import { cronCleanupXResourceReadsContract } from "@okouai/api-contracts/contracts/cron-cleanup-x-resource-reads";
 import { cronGetStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -6,7 +7,6 @@ import {
   cronCompactChatThreadSnapshotsContract,
   cronCompactUsageEventsContract,
   cronCleanupSandboxesContract,
-  cronCleanupXResourceReadsContract,
   cronConnectorCatalogContract,
   cronConnectorOauthStateCleanupContract,
   cronComputerUseScreenshotCleanupContract,

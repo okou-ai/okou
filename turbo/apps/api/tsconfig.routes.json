@@ -4,7 +4,11 @@
     "outDir": "./.typecheck/routes",
     "tsBuildInfoFile": "./.typecheck/routes.tsbuildinfo"
   },
-  "include": ["src/signals/routes/**/*", "src/signals/routes/**/*.json"],
+  "include": [
+    "src/signals/routes/**/*",
+    "src/signals/route-groups/*.ts",
+    "src/signals/routes/**/*.json"
+  ],
   "exclude": [
     "node_modules",
     "dist",

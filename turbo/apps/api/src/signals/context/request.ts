@@ -1,4 +1,3 @@
-import { BROWSER_USER_ACTION_MAX_APPLY_BODY_BYTES } from "@okouai/api-contracts/contracts/browser-user-actions";
 import type {
   AppRoute,
   SchemaOutput,
@@ -6,7 +5,13 @@ import type {
 import { computed, type Computed } from "ccstate";
 
 import { badRequest, badRequestMessage } from "../../lib/error";
-import { rawPathParams$, rawQuery$, request$, route$ } from "./hono";
+import {
+  rawPathParams$,
+  rawQuery$,
+  request$,
+  route$,
+  requestBodyPolicy$,
+} from "./hono";
 import { safeJsonParse } from "../utils";
 
 interface ZodLikeIssue {
@@ -135,10 +140,10 @@ export function queryOf<R extends RouteWithQuery>(
   return validatedQuery$ as Computed<InferQuery<R>>;
 }
 
-async function boundedBrowserApplyBody(request: {
-  readonly raw: Request;
-}): Promise<string | null> {
-  const limit = BROWSER_USER_ACTION_MAX_APPLY_BODY_BYTES;
+async function boundedBody(
+  request: { readonly raw: Request },
+  limit: number,
+): Promise<string | null> {
   const declared = Number(request.raw.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > limit) {
     return null;
@@ -173,15 +178,19 @@ async function boundedBrowserApplyBody(request: {
 
 const bodyResult$ = computed(async (get): Promise<BodyResult<unknown>> => {
   const route = get(route$);
-  const text =
-    route.path === "/api/browser/user-actions/:requestToken/apply"
-      ? await boundedBrowserApplyBody(get(request$))
-      : await get(request$).text();
-  if (text === null) {
-    return {
-      ok: false,
-      response: badRequestMessage("Browser input request is too large"),
-    };
+  const policy = get(requestBodyPolicy$);
+  let text: string;
+  if (policy) {
+    const bounded = await boundedBody(get(request$), policy.maxBytes);
+    if (bounded === null) {
+      return {
+        ok: false,
+        response: badRequestMessage(policy.tooLargeMessage),
+      };
+    }
+    text = bounded;
+  } else {
+    text = await get(request$).text();
   }
 
   const parsed = text.length === 0 ? {} : safeJsonParse(text);

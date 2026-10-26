@@ -239,9 +239,13 @@ issue or PR. Removing historical notes does not establish that acceptance.
 Installed Desktop builds decode bound responses strictly and change only after
 a Desktop release reaches them, while the API deploys shortly after merge. A
 shape-only breaking change to a Desktop-consumed `2xx` response can keep serving
-the previous shape to those builds through a response transform registered in
+the previous shape to those builds through a response transform attached to its API `RouteEntry.responseTransforms`
+and included in the build-time compatibility inventory in
 [`client-transforms/desktop.ts`](../turbo/packages/api-contracts/src/client-transforms/desktop.ts).
 
+- **Ownership.** Each API route imports its own transform module. The common
+  route adapter must not import the complete Desktop inventory. The production
+  route-registration check keeps the inventory and mounted transforms aligned.
 - **Selection.** The API applies transforms only to `2xx` bodies of requests
   that send `X-Client-Type: Desktop` (exact) and a stable `x.y.z`
   `X-Client-Version`. An entry matches the contract method, path template, and
@@ -289,8 +293,8 @@ Desktop finding fails the job unless the same PR carries one of two proofs:
   the published Desktop version. A raise covers every Desktop finding in the PR;
   review confirms that the new floor tolerates the new shape. Semantic changes
   expand additively, ship Desktop, then contract together with the raise.
-- **(B) Response transform.** Register a transform for the same method, path,
-  and `2xx` status in
+- **(B) Response transform.** Mount a transform on the matching API route and
+  register it for the same method, path, and `2xx` status in
   [`client-transforms/desktop.ts`](../turbo/packages/api-contracts/src/client-transforms/desktop.ts)
   with `maxVersion` `null` or at least the published Desktop version.
   Transforms cannot prove request findings, non-`2xx` findings, or route

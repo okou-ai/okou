@@ -726,6 +726,8 @@ export function createAppWithRoutes({
     const routeHandler = honoSignalHandler(entry.handler, route, signal, {
       initializeServices$,
 
+      responseTransforms: entry.responseTransforms,
+      requestBodyPolicy: entry.requestBodyPolicy,
       observeJsonResponse: entry.observeJsonResponse,
     });
     app.on(route.method, route.path, routeHandler);

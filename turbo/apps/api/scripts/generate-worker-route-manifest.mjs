@@ -4,14 +4,11 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import ts from "typescript";
-import {
-  ROUTE_MODULE_OWNERSHIP,
-  WORKER_DOMAINS,
-} from "./worker-domain-ownership.mjs";
+import { WORKER_DOMAINS } from "./worker-domain-ownership.mjs";
 
 const apiRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const routeRoot = resolve(apiRoot, "src/signals/routes");
-const domainsRoot = resolve(apiRoot, "src/worker-domains");
+const domainsRoot = resolve(apiRoot, "src/signals/route-groups");
 
 function fail(context, node, message) {
   throw new Error(`${context.path}: ${message}: ${node.getText(context.file)}`);
@@ -321,7 +318,7 @@ class RouteMetadataExtractor {
   }
 }
 
-async function validateOwnership(extractor) {
+async function readOwnership(extractor) {
   const registry = await extractor.loadModule(
     resolve(apiRoot, "src/signals/route.ts"),
   );
@@ -329,79 +326,72 @@ async function validateOwnership(extractor) {
   if (!original || !ts.isArrayLiteralExpression(original)) {
     throw new Error("Expected the production ROUTES array");
   }
-  const originalRecords = original.elements.map((element) => {
+  const records = [];
+  const domains = new Set();
+  const registrations = new Set();
+  for (const element of original.elements) {
     if (!ts.isSpreadElement(element) || !ts.isIdentifier(element.expression)) {
       fail(
         registry,
         element,
-        "New production route registration needs explicit ownership",
+        "The full API must aggregate domain route tables",
       );
     }
     const imported = registry.imports.get(element.expression.text);
-    if (!imported) {
-      fail(registry, element, "Missing production route import");
-    }
-    return {
-      module: `../signals/${imported.module.slice(2)}`,
-      exportName: imported.exported,
-    };
-  });
-  if (originalRecords.length !== ROUTE_MODULE_OWNERSHIP.length) {
-    throw new Error(
-      "Worker ownership does not cover the production route registry",
-    );
-  }
-  for (const [index, record] of ROUTE_MODULE_OWNERSHIP.entries()) {
-    if (
-      !WORKER_DOMAINS.includes(record.domain) ||
-      record.module !== originalRecords[index].module ||
-      record.exportName !== originalRecords[index].exportName
-    ) {
-      throw new Error(
-        `Worker ownership diverges from production route order at ${index}: ${record.exportName}`,
+    const domain = WORKER_DOMAINS.find((name) => {
+      return (
+        imported?.module === `./route-groups/${name}` &&
+        imported.exported === `${name.toUpperCase()}_ROUTES`
       );
+    });
+    if (!domain || domains.has(domain)) {
+      fail(registry, element, "Unknown or repeated domain route table");
     }
-  }
-  for (const domain of WORKER_DOMAINS) {
-    const domainContext = await extractor.loadModule(
-      resolve(domainsRoot, `routes-${domain}.ts`),
+    domains.add(domain);
+    const context = await extractor.loadModule(
+      resolve(domainsRoot, `${domain}.ts`),
     );
-    const domainRoutes = domainContext.variables.get(
-      `${domain.toUpperCase()}_ROUTES`,
-    );
-    if (!domainRoutes || !ts.isArrayLiteralExpression(domainRoutes)) {
+    const routes = context.variables.get(imported.exported);
+    if (!routes || !ts.isArrayLiteralExpression(routes)) {
       throw new Error(`Missing ${domain} route array`);
     }
-    const actual = domainRoutes.elements.map((element) => {
-      if (
-        !ts.isSpreadElement(element) ||
-        !ts.isIdentifier(element.expression)
-      ) {
+    for (const entry of routes.elements) {
+      if (!ts.isSpreadElement(entry) || !ts.isIdentifier(entry.expression)) {
         fail(
-          domainContext,
-          element,
-          "Domain entries must directly spread owned route imports",
+          context,
+          entry,
+          "Domain tables must spread explicit route imports",
         );
       }
-      const imported = domainContext.imports.get(element.expression.text);
-      return { module: imported?.module, exportName: imported?.exported };
-    });
-    const expected = ROUTE_MODULE_OWNERSHIP.filter((record) => {
-      return record.domain === domain;
-    }).map(({ module, exportName }) => {
-      return { module, exportName };
-    });
-    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-      throw new Error(
-        `Static ${domain} imports disagree with the ownership registry`,
-      );
+      const routeImport = context.imports.get(entry.expression.text);
+      if (!routeImport?.module.startsWith("../routes/")) {
+        fail(
+          context,
+          entry,
+          "Domain tables must import route modules directly",
+        );
+      }
+      const key = `${routeImport.module}:${routeImport.exported}`;
+      if (registrations.has(key)) {
+        fail(context, entry, "A route array belongs to exactly one domain");
+      }
+      registrations.add(key);
+      records.push({
+        module: routeImport.module,
+        exportName: routeImport.exported,
+        domain,
+      });
     }
   }
+  if (domains.size !== WORKER_DOMAINS.length) {
+    throw new Error("The full API must include every domain route table");
+  }
+  return records;
 }
 
-async function evaluateManifest(extractor) {
+async function evaluateManifest(extractor, ownership) {
   const expressions = [];
-  for (const record of ROUTE_MODULE_OWNERSHIP) {
+  for (const record of ownership) {
     const context = await extractor.loadModule(
       resolve(domainsRoot, `${record.module}.ts`),
     );
@@ -474,8 +464,8 @@ async function evaluateManifest(extractor) {
 // database modules are never imported while producing the gateway's plain table.
 export async function generateWorkerRouteManifest(outputDirectory) {
   const extractor = new RouteMetadataExtractor();
-  await validateOwnership(extractor);
-  const manifest = await evaluateManifest(extractor);
+  const ownership = await readOwnership(extractor);
+  const manifest = await evaluateManifest(extractor, ownership);
   await mkdir(outputDirectory, { recursive: true });
   const json = JSON.stringify(manifest, null, 2);
   await writeFile(resolve(outputDirectory, "route-manifest.json"), `${json}\n`);

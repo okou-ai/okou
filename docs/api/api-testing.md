@@ -107,6 +107,13 @@ ts-rest responses. This keeps tests independent from the production bootstrap
 registry while preserving the real route behavior. A route test should fail if
 the handler returns a body that no longer matches the contract.
 
+Suites spanning a Worker domain may import its table from
+`src/signals/route-groups/` and pass it to the same `setupApp` helper. For example,
+Data Router tests use `DATA_ROUTES`, the exact table imported by the Data Worker.
+The Node/Vercel bootstrap aggregates these tables in `src/signals/route.ts`;
+domain suites must not import that full aggregate. Smaller business route arrays
+remain appropriate when a test needs only one endpoint group.
+
 ## Mocks
 
 Only mock external services. API tests use the shared mock registry in

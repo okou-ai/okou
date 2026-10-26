@@ -13,8 +13,7 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { billingStatusRoutes } from "../billing-status";
-import { dataRouterHistoryRoutes } from "../data-router-history";
-import { webhooksAgentDataRequestRoutes } from "../webhooks-agent-data-request";
+import { DATA_ROUTES } from "../../route-groups/data";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -82,7 +81,7 @@ function register(
   run: Awaited<ReturnType<typeof createRun>>,
   requestId: string,
 ) {
-  return setupApp({ context, routes: webhooksAgentDataRequestRoutes })(
+  return setupApp({ context, routes: DATA_ROUTES })(
     dataRouterRequestContract,
   ).register({ headers: run.headers, body: { runId: run.runId, requestId } });
 }
@@ -241,7 +240,7 @@ describe("Data Router completion accounting", () => {
     await accept(register(other, otherId), [200]);
     await accept(register(otherOrg, otherOrgId), [200]);
     await accept(
-      setupApp({ context, routes: webhooksAgentDataRequestRoutes })(
+      setupApp({ context, routes: DATA_ROUTES })(
         dataRouterRequestContract,
       ).register({
         headers: other.headers,
@@ -264,7 +263,7 @@ describe("Data Router completion accounting", () => {
       { authorization: `Bearer ${own.claim.platformEnvironment.OKOU_TOKEN}` },
     ]) {
       const history = await accept(
-        setupApp({ context, routes: dataRouterHistoryRoutes })(
+        setupApp({ context, routes: DATA_ROUTES })(
           dataRouterHistoryContract,
         ).list({ headers }),
         [200],
