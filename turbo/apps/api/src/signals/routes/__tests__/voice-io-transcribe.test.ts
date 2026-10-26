@@ -756,6 +756,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
   });
 
   it("retains bounded failure evidence without private content or duplicate reports", async () => {
+    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
     // The single redaction check covers the incident's diagnostic contract
     // through the real endpoint; other cases assert HTTP/recovery behavior.
     await voiceActor();
@@ -1145,6 +1146,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
   });
 
   it("counts a recording only after independent polish succeeds", async () => {
+    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
     const owner = await publicVoiceActor({ limitedFree: true });
     await owner.run(async () => {
       const headers = { authorization: "Bearer clerk-session" };
