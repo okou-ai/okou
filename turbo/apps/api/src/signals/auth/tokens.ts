@@ -61,8 +61,6 @@ const CONDITIONAL_CAPABILITIES = [
   ["discord:read", FeatureSwitchKey.DiscordIntegration],
   ["discord:write", FeatureSwitchKey.DiscordIntegration],
   ["presentation-convert:write", FeatureSwitchKey.PresentationConvert],
-  ["vnc:read", FeatureSwitchKey.VncAccess],
-  ["vnc:write", FeatureSwitchKey.VncAccess],
 ] as const satisfies readonly (readonly [Capability, FeatureSwitchKey])[];
 
 const AGENT_EXCLUDED_CAPABILITIES = [

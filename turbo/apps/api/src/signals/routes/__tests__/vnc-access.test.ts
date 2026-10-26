@@ -4,7 +4,6 @@ import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncHostsContract } from "@okouai/api-contracts/contracts/vnc-access";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -19,7 +18,6 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
 import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { certificateChain, privateKey } from "./helpers/vnc-synthetic-client";
@@ -41,15 +39,12 @@ interface Owner {
   readonly userId: string;
 }
 
-async function owner(overrides: Partial<Owner> = {}) {
+function owner(overrides: Partial<Owner> = {}) {
   const value = {
     orgId: `org_vnc_access_${randomUUID()}`,
     userId: `user_vnc_access_${randomUUID()}`,
     ...overrides,
   };
-  await updateFeatureSwitchesForUser(context, value, {
-    [FeatureSwitchKey.VncAccess]: true,
-  });
   api.authenticate(value);
   return value;
 }
@@ -106,9 +101,6 @@ describe("live chat VNC Run inventory", () => {
     const kms = useSecretKmsProbe();
     const f = await claimed.fixture({
       defaultEnabled: false,
-    });
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.VncAccess]: true,
     });
     api.authenticate(f);
     const created = await accept(
@@ -237,9 +229,6 @@ describe("live chat VNC Run inventory", () => {
       throw new Error("Missing fixture chat thread");
     }
     const threadId = f.threadId;
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.VncAccess]: true,
-    });
     api.authenticate(f);
     const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
       chatRemoteAccessContract,
@@ -712,7 +701,7 @@ describe("live chat VNC Run inventory", () => {
       })),
       connectionId: creatorHost.body.id,
     };
-    const consumer = await owner({ orgId: creator.orgId });
+    const consumer = owner({ orgId: creator.orgId });
     const consumerActor = bdd.user(consumer);
     // Memory initialization and model selection are personal to each Run owner.
     await bdd.completeOnboarding(consumerActor);
@@ -771,7 +760,7 @@ describe("live chat VNC Run inventory", () => {
 
   it("does not accept another organization or Run owner from a valid token", async () => {
     const f = await claimed.fixture();
-    const foreign = await owner({ userId: f.userId });
+    const foreign = owner({ userId: f.userId });
     expect(
       (
         await accept(
@@ -780,7 +769,7 @@ describe("live chat VNC Run inventory", () => {
         )
       ).status,
     ).toBe(404);
-    const other = await owner({ orgId: f.orgId });
+    const other = owner({ orgId: f.orgId });
     expect(
       (
         await accept(
@@ -800,30 +789,20 @@ describe("live chat VNC Run inventory", () => {
     ).toBe(404);
   });
 
-  it("rechecks the VNC feature and membership for already issued tokens", async () => {
+  it("rechecks membership for already issued tokens", async () => {
     const f = await claimed.fixture();
     const stale = claimed.agentHeaders(f);
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.VncAccess]: false,
-    });
-    const disabledInventory = await accept(
-      inventory().list({ headers: stale }),
-      [404],
-    );
-    expect(disabledInventory.body.error.code).toBe("VNC_UNAVAILABLE");
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.VncAccess]: true,
-    });
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
       { data: [], totalCount: 0 },
     );
-    await accept(inventory().list({ headers: stale }), [404]);
+    const response = await accept(inventory().list({ headers: stale }), [404]);
+    expect(response.body.error.code).toBe("VNC_UNAVAILABLE");
   });
 
   it.each(["pending", "completed", "cancelled", "failed"] as const)(
     "rejects inventory for a %s Run despite an enabled host default",
     async (status) => {
-      const value = await owner();
+      const value = owner();
       const connection = await accept(
         api.connections().create({ headers, body: vncConnectionBody() }),
         [201],

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { rootCertificates } from "node:tls";
 import { beforeEach, describe, expect, it, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
 import {
@@ -17,7 +16,6 @@ import { tailscaleRoutes } from "../tailscale";
 import { vncConnectionsRoutes } from "../vnc-connections";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createDeferredPromise } from "../../utils";
 
@@ -53,10 +51,7 @@ const oauth = Object.freeze({
   clientSecret: "native-secret-canary",
 });
 
-async function authenticate(owner: { orgId: string; userId: string }) {
-  await updateFeatureSwitchesForUser(context, owner, {
-    [FeatureSwitchKey.VncAccess]: true,
-  });
+function authenticate(owner: { orgId: string; userId: string }) {
   mocks.clerk.session(owner.userId, owner.orgId);
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {
@@ -72,9 +67,9 @@ async function authenticate(owner: { orgId: string; userId: string }) {
     },
   );
 }
-beforeEach(async () => {
+beforeEach(() => {
   useSecretKmsProbe();
-  await authenticate({
+  authenticate({
     orgId: `org_native_${randomUUID()}`,
     userId: `user_native_${randomUUID()}`,
   });
@@ -655,9 +650,9 @@ describe.each(providers)(
         orgId: `org_private_${randomUUID()}`,
         userId: `owner_${randomUUID()}`,
       };
-      await authenticate(owner);
+      authenticate(owner);
       const selected = await config(provider);
-      await authenticate({
+      authenticate({
         orgId: owner.orgId,
         userId: `other_${randomUUID()}`,
       });
@@ -678,17 +673,17 @@ describe.each(providers)(
         orgId: `org_detach_${randomUUID()}`,
         userId: `admin_${randomUUID()}`,
       };
-      await authenticate(organization);
+      authenticate(organization);
       const selected = await config(provider, "organization");
       const member = {
         orgId: organization.orgId,
         userId: `member_${randomUUID()}`,
       };
-      await authenticate(member);
+      authenticate(member);
       const body = hostBody(provider, selected.id);
       const created = (await accept(vnc().create({ headers, body }), [201]))
         .body;
-      await authenticate(organization);
+      authenticate(organization);
       const preview = await impact(provider, selected.id);
       expect(preview).toMatchObject({ ownHostCount: 0, otherHostCount: 1 });
       expect(
@@ -697,7 +692,7 @@ describe.each(providers)(
         }),
       ).toStrictEqual([member.userId]);
       expect(JSON.stringify(preview)).not.toContain(created.displayName);
-      await authenticate(member);
+      authenticate(member);
       await accept(
         vnc().update({
           headers,
@@ -709,7 +704,7 @@ describe.each(providers)(
         }),
         [200],
       );
-      await authenticate(organization);
+      authenticate(organization);
       expect(
         (await deleteConfig(provider, selected, preview.impactSnapshot)).status,
       ).toBe(409);
@@ -718,7 +713,7 @@ describe.each(providers)(
         (await deleteConfig(provider, selected, currentPreview.impactSnapshot))
           .status,
       ).toBe(204);
-      await authenticate(member);
+      authenticate(member);
       const detached = await latest(created.id);
       expect(detached).toMatchObject({
         id: created.id,
