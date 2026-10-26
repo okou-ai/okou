@@ -26,14 +26,14 @@ const L = logger("DesktopUpdates");
  */
 export const DESKTOP_UPDATE_MANIFEST_LOG_TYPE =
   "desktop_update_manifest_upstream";
-export const DESKTOP_UPDATE_MANIFEST_PROVIDER = "github_release_asset";
+export const DESKTOP_UPDATE_MANIFEST_PROVIDER = "cloudflare_r2";
 
 const DESKTOP_RELEASE_DOWNLOAD_URL_PREFIX =
   "https://github.com/okou-ai/okou/releases/download";
 const DESKTOP_RELEASE_PAGE_URL_PREFIX =
   "https://github.com/okou-ai/okou/releases/tag";
 const DESKTOP_UPDATE_MANIFEST_URL =
-  "https://github.com/okou-ai/okou/releases/download/ai-okou-desktop-updates/ai-okou-desktop-update-manifest.json";
+  "https://static.okou.io/desktop-updates/okou/manifest.json";
 // 0.50.0 is the first Native release, independent of Computer Use admission.
 const MIN_NATIVE_DESKTOP_VERSION = "0.50.0";
 

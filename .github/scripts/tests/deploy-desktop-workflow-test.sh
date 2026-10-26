@@ -114,19 +114,11 @@ publish = release.fetch("publish-desktop-update-manifest")
 raise "feed must wait for notarized release assets" unless publish.fetch("needs").include?("promote-desktop-release") && publish.fetch("if").include?("needs.promote-desktop-release.result == 'success'")
 raise "feed must wait for the API appcast deployment" unless publish.fetch("needs").include?("promote-api-production") && publish.fetch("if").include?("needs.promote-api-production.result == 'success'")
 raise "Native updater manifest must retain its published identity" unless publish.fetch("steps").any? { |step| step.fetch("run", "").include?("ai-okou-desktop-update-manifest.json") }
-mirror = release.fetch("publish-desktop-update-manifest-r2")
-raise "R2 must follow the authoritative GitHub publisher" unless mirror.fetch("needs").sort == %w[publish-desktop-update-manifest release-please]
-mirror_condition = mirror.fetch("if").strip.delete_prefix('${{').delete_suffix('}}')
-  .gsub("always()", "true").gsub("cancelled()", "cancelled")
-  .gsub("needs.release-please.outputs.releases_created", "created")
-  .gsub("needs.release-please.result", "release_result")
-  .gsub("needs.publish-desktop-update-manifest.result", "legacy_result")
-[["success", "true", "success", false, true], ["success", "true", "skipped", false, true],
- ["failure", "true", "skipped", false, false], ["success", "false", "skipped", false, false],
- ["success", "true", "failure", false, false], ["success", "true", "cancelled", false, false],
- ["success", "true", "success", true, false]].each do |release_result, created, legacy_result, cancelled, expected|
-  raise "Unexpected R2 publication selection" unless eval(mirror_condition, binding) == expected
-end
+publication = publish.fetch("steps").find { |step| step["name"] == "Publish Desktop update manifest to R2" }
+mirror = publish.fetch("steps").find { |step| step["name"] == "Mirror Desktop update manifest for previous API releases" }
+raise "R2 publication must precede the compatibility mirror" unless publish.fetch("steps").index(publication) < publish.fetch("steps").index(mirror)
+raise "R2 publication must retain the exact release identity" unless publication.fetch("env").fetch("PUBLICATION_SHA") == '${{ needs.release-please.outputs.release_target }}'
+raise "R2 publication must use the static bucket" unless publication.fetch("env").fetch("R2_BUCKET_NAME") == '${{ vars.R2_STATIC_BUCKET_NAME }}'
 RUBY
 node --test "$repo_root/.github/scripts/tests/desktop-release-manifest-test.mjs"
 echo "native Desktop workflow tests passed"

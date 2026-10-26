@@ -11,7 +11,7 @@ import { desktopUpdateRoutes } from "../../desktop-updates";
 const TEST_APP_ROUTES = Object.freeze([...desktopUpdateRoutes]);
 
 const OKOU_DESKTOP_UPDATE_MANIFEST_URL =
-  "https://github.com/okou-ai/okou/releases/download/ai-okou-desktop-updates/ai-okou-desktop-update-manifest.json";
+  "https://static.okou.io/desktop-updates/okou/manifest.json";
 const LEGACY_OKOU_DESKTOP_UPDATE_MANIFEST_URL =
   "https://github.com/okou-ai/okou/releases/download/okou-desktop-updates/okou-desktop-update-manifest.json";
 

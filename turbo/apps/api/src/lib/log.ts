@@ -253,7 +253,7 @@ type DesktopUpdateManifestOutcome =
 interface DesktopUpdateManifestRootFields {
   readonly type: "desktop_update_manifest_upstream";
   readonly outcome: DesktopUpdateManifestOutcome;
-  readonly provider: "github_release_asset";
+  readonly provider: "cloudflare_r2";
   readonly provider_status?: number;
   readonly failure_class: "transient_read" | "transient_read_exhausted";
   readonly attempts: number;
@@ -408,7 +408,7 @@ function desktopUpdateManifestRootFields(
   if (
     type !== "desktop_update_manifest_upstream" ||
     !isDesktopUpdateManifestOutcome(outcome) ||
-    provider !== "github_release_asset" ||
+    provider !== "cloudflare_r2" ||
     !isOptionalUpstreamStatus(providerStatus) ||
     !isDesktopUpdateManifestFailureClass(failureClass) ||
     !isPositiveInteger(attempts) ||
