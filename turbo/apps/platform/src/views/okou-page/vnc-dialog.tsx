@@ -19,6 +19,7 @@ import { KerberosConnectionFields } from "./vnc-kerberos-fields.tsx";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { RemoteFormFooter } from "./remote-form-footer.tsx";
 import { useTranslation } from "react-i18next";
+import { useMemo } from "react";
 import { Button, DialogBody } from "@okouai/ui";
 import {
   clearVncSaveMessage$,
@@ -688,6 +689,15 @@ function VncForm({
   const update = useSet(updateRemoteSetup$);
   const destructive =
     dialog.kind === "delete" || dialog.kind === "delete-credential";
+  const fields = useMemo(() => {
+    return (
+      <VncFormFields
+        dialog={dialog}
+        inline={inline}
+        disabled={fieldsDisabled}
+      />
+    );
+  }, [dialog, inline, fieldsDisabled]);
   return (
     <RemoteEditorFrame
       inline={inline}
@@ -725,11 +735,7 @@ function VncForm({
         }}
       >
         <DialogBody className={guided ? "-m-1 grid gap-4 p-1" : "grid gap-4"}>
-          <VncFormFields
-            dialog={dialog}
-            inline={inline}
-            disabled={fieldsDisabled}
-          />
+          {fields}
           {!saving && (
             <VncSaveNotice
               dialog={dialog}
