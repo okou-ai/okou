@@ -1,3 +1,4 @@
+use runner_provider::AblySideMessageHandler;
 use runner_rpc_proto::{
     Response,
     stream::{Frame, Reader, Writer},
@@ -51,10 +52,10 @@ async fn response(guest: impl tokio::io::AsyncRead + Unpin) -> (Value, Vec<u8>) 
 }
 
 #[tokio::test]
-async fn direct_file_transfer_completes_across_notification_outages() {
+async fn direct_file_transfer_completes_without_a_subscription() {
     let mut h = Harness::new(Reply::Sftp("normal")).await;
     let _resolve = h.resolve(h.credential(true)).await;
-    upload_across_notification_outages(&h).await;
+    upload_without_subscription(&h).await;
     h.shutdown().await;
 }
 
@@ -65,7 +66,6 @@ async fn active_binary_upload_and_followup_download_survive_vnc_only_invalidatio
         test_fixtures::http::{HttpClientConfig, http_client},
         vnc::VncRuntime,
     };
-    use runner_provider::AblySideMessageHandler;
     use std::sync::Arc;
     let mut h = Harness::new(Reply::Sftp("normal")).await;
     let vnc = VncRuntime::official(
@@ -148,11 +148,10 @@ async fn active_upload_outlives_the_common_rpc_setup_deadline() {
     h.shutdown().await;
 }
 
-pub(super) async fn upload_across_notification_outages(h: &Harness) {
+pub(super) async fn upload_without_subscription(h: &Harness) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("file");
-    let data = b"bytes across a notification outage";
-    let mut notifications = h.notifications();
+    let data = b"bytes without a notification subscription";
     let guest = open(
         h,
         "upload",
@@ -161,12 +160,8 @@ pub(super) async fn upload_across_notification_outages(h: &Harness) {
     )
     .await;
     let (read, write) = tokio::io::split(guest);
-    // Actual remote staging proves SFTP has started before transport events arrive.
+    // Actual remote staging proves SFTP has started before sending the body.
     wait_for(|| std::fs::read_dir(dir.path()).unwrap().count() == 1).await;
-    for event in super::notifications::outage_events() {
-        notifications.send(event).await;
-    }
-    drop(notifications);
     let mut writer = Writer::input(write);
     writer.send(&Frame::Data(data.to_vec())).await.unwrap();
     writer.send(&Frame::End).await.unwrap();
@@ -595,22 +590,13 @@ async fn transfer_capacity_and_invalidation_apply_without_subscription_readiness
         "transfer_limit"
     );
     resolve.assert_calls_async(1).await;
-    let mut notifications = h.notifications();
-    for event in super::notifications::outage_events() {
-        notifications.send(event).await;
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
-    }
-    notifications
-        .send(Some(ably_subscriber::Event::Message(
-            ably_subscriber::Message {
-                name: Some("ssh-authority-invalidated".into()),
-                data: json!({"runId":h.run,"connectionId":CONNECTION}),
-                id: None,
-                client_id: None,
-                timestamp: None,
-            },
-        )))
-        .await;
+    assert!(h.runtime.handle(&ably_subscriber::Message {
+        name: Some("ssh-authority-invalidated".into()),
+        data: json!({"runId":h.run,"connectionId":CONNECTION}),
+        id: None,
+        client_id: None,
+        timestamp: None,
+    }));
     for stream in [first, second] {
         let outcome = response(stream).await.0;
         assert_eq!(outcome["failure_reason"], "configuration_changed");
