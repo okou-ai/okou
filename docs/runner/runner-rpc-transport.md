@@ -347,6 +347,8 @@ untrusted hint, enforce their own admission limits, and observe exact current
 Run/lifecycle cancellation throughout. Splitting I/O does not release the owned
 GuestRpcStream or its park reservation; retain it through live guest I/O, and
 retain separate host-work permits until cleanup actually completes.
+System resolver work may outlive a cancelled waiter. Retain its host capacity
+until resolution finishes, independently of the Guest stream and park reservation.
 
 An explicitly validated continuous consumer may select a longer method-owned
 budget without increasing ordinary RPC or file-transfer defaults. The Browser

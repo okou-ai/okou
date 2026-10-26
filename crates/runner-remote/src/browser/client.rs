@@ -60,12 +60,21 @@ pub(super) fn endpoint(raw: &str, websocket: bool) -> Result<Url> {
 
 async fn tls(
     url: &Url,
-    network: &dyn Network,
+    network: Arc<dyn Network>,
     config: Arc<rustls::ClientConfig>,
+    capacity: Arc<OwnedSemaphorePermit>,
 ) -> Result<TlsStream<TcpStream>> {
     let host = url.host_str().ok_or(Failure)?;
     let port = url.port_or_known_default().ok_or(Failure)?;
-    let addresses = network.resolve(host, port).await.map_err(|_| Failure)?;
+    // Like public SSH, retain host capacity through system DNS even when its
+    // waiter is cancelled. Dropping lookup_host cannot stop libc resolver work.
+    let resolver_network = Arc::clone(&network);
+    let resolver_host = host.to_owned();
+    let resolver = tokio::spawn(async move {
+        let _capacity = capacity;
+        resolver_network.resolve(&resolver_host, port).await
+    });
+    let addresses = resolver.await.map_err(|_| Failure)?.map_err(|_| Failure)?;
     let address = select_public_address(&addresses, port).ok_or(Failure)?;
     let tcp = network.connect(address).await.map_err(|_| Failure)?;
     let name = rustls::pki_types::ServerName::try_from(host.to_owned()).map_err(|_| Failure)?;
@@ -77,12 +86,13 @@ async fn tls(
 
 async fn discovery(
     url: &Url,
-    network: &dyn Network,
+    network: Arc<dyn Network>,
     config: Arc<rustls::ClientConfig>,
+    capacity: Arc<OwnedSemaphorePermit>,
 ) -> Result<Url> {
     let mut discovery = url.clone();
     discovery.set_path("/json/version");
-    let stream = tls(&discovery, network, config).await?;
+    let stream = tls(&discovery, network, config, capacity).await?;
     let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
         .await
         .map_err(|_| Failure)?;
@@ -143,16 +153,23 @@ impl Client {
     }
     pub(super) async fn connect(
         raw: &str,
-        network: &dyn Network,
+        network: Arc<dyn Network>,
         config: Arc<rustls::ClientConfig>,
+        capacity: Arc<OwnedSemaphorePermit>,
     ) -> Result<Socket> {
         let url = endpoint(raw, false)?;
         let url = if url.scheme() == "https" {
-            discovery(&url, network, Arc::clone(&config)).await?
+            discovery(
+                &url,
+                Arc::clone(&network),
+                Arc::clone(&config),
+                Arc::clone(&capacity),
+            )
+            .await?
         } else {
             url
         };
-        let tls = tls(&url, network, config).await?;
+        let tls = tls(&url, network, config, capacity).await?;
         let options = WebSocketConfig::default()
             .max_message_size(Some(MAX_MESSAGE_BYTES))
             .max_frame_size(Some(MAX_MESSAGE_BYTES));

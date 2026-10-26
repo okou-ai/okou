@@ -284,6 +284,54 @@ async fn native_metadata_races_and_invalid_window_replies_cannot_release_results
 }
 
 #[tokio::test]
+async fn cancelled_setup_retains_host_capacity_until_its_resolver_finishes() {
+    use tokio::io::AsyncReadExt;
+    let peer = Peer::new().await;
+    let network = Arc::new(GatedResolver::new(peer.address));
+    let harness = Harness::with_network(
+        peer.address,
+        Arc::clone(&peer.tls),
+        network.clone(),
+        Arc::new(Semaphore::new(1)),
+    )
+    .await;
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let mut first = harness.request(json!({}), cancel.clone()).await;
+    tokio::time::timeout(Duration::from_secs(3), network.entered.notified())
+        .await
+        .unwrap();
+    cancel.cancel();
+    let mut bytes = Vec::new();
+    tokio::time::timeout(Duration::from_secs(3), first.read_to_end(&mut bytes))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(bytes.is_empty());
+    let denied = tokio::time::timeout(Duration::from_secs(3), harness.forged_request(json!({})))
+        .await
+        .unwrap();
+    assert_eq!(
+        denied,
+        vec![json!({"type":"error","code":"resource_exhausted","delivery":"not_dispatched"})]
+    );
+    network.release.notify_one();
+    tokio::time::timeout(Duration::from_secs(3), network.finished.notified())
+        .await
+        .unwrap();
+    let mut next = harness.connect().await;
+    assert!(
+        command(&mut next, 1, "Browser.getVersion", json!({}), None)
+            .await
+            .get("result")
+            .is_some()
+    );
+    next.close(None).await.unwrap();
+    harness.shutdown().await;
+    peer.wait_closed().await;
+    peer.shutdown().await;
+}
+
+#[tokio::test]
 async fn revocation_during_native_event_validation_withholds_the_event() {
     let peer = Peer::new().await;
     let mut harness = Harness::new(&peer).await;

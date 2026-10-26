@@ -102,18 +102,20 @@ impl BrowserRuntime {
             initial.error(input, ErrorCode::InvalidRequest).await;
             return;
         }
-        let Ok(_capacity) = Arc::clone(&self.capacity).try_acquire_owned() else {
+        let Ok(capacity) = Arc::clone(&self.capacity).try_acquire_owned() else {
             initial.error(input, ErrorCode::ResourceExhausted).await;
             return;
         };
+        let capacity = Arc::new(capacity);
         let setup = async {
             let mut scope = self.authority.current(run, None).await?;
             let connection = self.authority.connection(run, &scope).await?;
             scope.expires = scope.expires.min(connection.expires_at);
             let socket = client::Client::connect(
                 &connection.cdp_url,
-                self.network.as_ref(),
+                Arc::clone(&self.network),
                 Arc::clone(&self.tls),
+                Arc::clone(&capacity),
             )
             .await?;
             Ok::<_, Failure>((scope, socket))

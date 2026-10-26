@@ -80,6 +80,43 @@ impl crate::destination::Network for Network {
     }
 }
 
+pub(super) struct GatedResolver {
+    network: Network,
+    used: AtomicBool,
+    pub entered: tokio::sync::Notify,
+    pub release: tokio::sync::Notify,
+    pub finished: tokio::sync::Notify,
+}
+
+impl GatedResolver {
+    pub fn new(address: SocketAddr) -> Self {
+        Self {
+            network: Network { address },
+            used: AtomicBool::new(false),
+            entered: tokio::sync::Notify::new(),
+            release: tokio::sync::Notify::new(),
+            finished: tokio::sync::Notify::new(),
+        }
+    }
+}
+
+#[async_trait]
+impl crate::destination::Network for GatedResolver {
+    async fn resolve(&self, host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
+        if !self.used.swap(true, Ordering::SeqCst) {
+            self.entered.notify_one();
+            self.release.notified().await;
+            let result = crate::destination::Network::resolve(&self.network, host, port).await;
+            self.finished.notify_one();
+            return result;
+        }
+        crate::destination::Network::resolve(&self.network, host, port).await
+    }
+    async fn connect(&self, address: SocketAddr) -> io::Result<TcpStream> {
+        crate::destination::Network::connect(&self.network, address).await
+    }
+}
+
 pub(super) fn certificate() -> (Arc<ServerConfig>, Arc<ClientConfig>) {
     let key = rcgen::KeyPair::generate().unwrap();
     let cert = rcgen::CertificateParams::new(vec![HOST.to_owned()])
@@ -398,12 +435,21 @@ pub(super) struct Harness {
 
 impl Harness {
     pub async fn forged_request(&self, params: Value) -> Vec<Value> {
+        let client = self.request(params, self.sandbox_cancelled.clone()).await;
+        let mut reader = runner_rpc_proto::ResponseReader::new(client);
+        let mut result = Vec::new();
+        while let Some(frame) = reader.next().await.unwrap() {
+            result.push(serde_json::to_value(frame).unwrap());
+        }
+        result
+    }
+    pub async fn request(&self, params: Value, cancelled: CancellationToken) -> UnixStream {
         let (mut client, server) = UnixStream::pair().unwrap();
         self.incoming
             .send(AcceptedGuestRpc {
                 sandbox_id: "assigned-browser-guest".into(),
                 stream: Box::new(Stream(server)),
-                cancelled: self.sandbox_cancelled.clone(),
+                cancelled,
             })
             .await
             .unwrap();
@@ -416,17 +462,26 @@ impl Harness {
         runner_rpc_proto::write_request(&mut client, &request)
             .await
             .unwrap();
-        let mut reader = runner_rpc_proto::ResponseReader::new(client);
-        let mut result = Vec::new();
-        while let Some(frame) = reader.next().await.unwrap() {
-            result.push(serde_json::to_value(frame).unwrap());
-        }
-        result
+        client
     }
     pub async fn new(peer: &Peer) -> Self {
         Self::for_endpoint(peer.address, Arc::clone(&peer.tls)).await
     }
     pub async fn for_endpoint(address: SocketAddr, tls: Arc<ClientConfig>) -> Self {
+        Self::with_network(
+            address,
+            tls,
+            Arc::new(Network { address }),
+            Arc::new(Semaphore::new(64)),
+        )
+        .await
+    }
+    pub async fn with_network(
+        address: SocketAddr,
+        tls: Arc<ClientConfig>,
+        network: Arc<dyn crate::destination::Network>,
+        capacity: Arc<Semaphore>,
+    ) -> Self {
         let api = MockServer::start_async().await;
         let run_id = runner_types::ids::RunId::new_v4();
         let token = "vm0_official_fixture";
@@ -439,9 +494,9 @@ impl Harness {
             });
         let runtime = Arc::new(BrowserRuntime {
             authority: authority::Authority::new(http, token, identity).unwrap(),
-            network: Arc::new(Network { address }),
+            network,
             tls,
-            capacity: Arc::new(Semaphore::new(64)),
+            capacity,
         });
         let (incoming, receive) = mpsc::channel(16);
         let cancelled = CancellationToken::new();
