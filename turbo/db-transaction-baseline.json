@@ -37,11 +37,6 @@
       "owner": "deleteAgentRows$"
     },
     {
-      "id": "TX-0050",
-      "file": "turbo/apps/api/src/signals/services/agent-webhook-complete.service.ts",
-      "owner": "createAgentRunCompletion/complete$"
-    },
-    {
       "id": "TX-0073",
       "file": "turbo/apps/api/src/signals/services/browser.service.ts",
       "owner": "claimExpiredInactiveBrowser$"
