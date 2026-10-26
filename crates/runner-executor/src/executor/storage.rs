@@ -219,14 +219,15 @@ pub(super) async fn download_storages_with_files(
         batch_count_bucket(batch_count),
         None,
     );
-    for (index, input) in inputs.iter().enumerate() {
+    // Release each completed buffer before later Guest operations await.
+    for (index, input) in inputs.into_iter().enumerate() {
         let started = Instant::now();
         let mut guest_duration_ms = None;
         let mut host_timing = StorageManifestTiming::default();
         let result = apply_storage_input(
             sandbox,
             context,
-            input,
+            &input,
             &mut guest_duration_ms,
             &mut host_timing,
         )
@@ -240,7 +241,7 @@ pub(super) async fn download_storages_with_files(
                 guest_duration_ms,
                 &host_timing,
                 StorageBatchDimensions {
-                    transport_position: batch_outcome(input, index, batch_count),
+                    transport_position: batch_outcome(&input, index, batch_count),
                     manifest_size_bucket: manifest_size_bucket(input.manifest_bytes()),
                     payload_size_bucket: input.payload_size_bucket(),
                 },
